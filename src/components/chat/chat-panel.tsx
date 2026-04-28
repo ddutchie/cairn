@@ -16,6 +16,8 @@ import {
   Sparkles,
   ChevronDown,
 } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { cn, formatRelative } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { Button } from "@/components/ui/button";
@@ -310,7 +312,10 @@ function ChatMessageItem({
               : "bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-secondary)] rounded-tl-sm"
           )}
         >
-          <MarkdownContent content={message.content} />
+          {isUser
+            ? <span className="whitespace-pre-wrap">{message.content}</span>
+            : <MarkdownContent content={message.content} />
+          }
         </div>
 
         {/* Context refs */}
@@ -419,44 +424,53 @@ function PendingActionCard({
   );
 }
 
-/** Very simple markdown renderer for chat messages */
+/** Markdown renderer for assistant chat messages */
 function MarkdownContent({ content }: { content: string }) {
-  const lines = content.split("\n");
   return (
-    <>
-      {lines.map((line, i) => {
-        if (line.startsWith("**") && line.endsWith("**")) {
-          return (
-            <div key={i} className="font-semibold text-[var(--text-primary)] mt-1">
-              {line.slice(2, -2)}
-            </div>
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={{
+        p: ({ children }) => <p className="mb-1.5 last:mb-0 leading-relaxed">{children}</p>,
+        strong: ({ children }) => <strong className="font-semibold text-[var(--text-primary)]">{children}</strong>,
+        em: ({ children }) => <em className="italic opacity-80">{children}</em>,
+        ul: ({ children }) => <ul className="my-1.5 space-y-0.5 pl-3">{children}</ul>,
+        ol: ({ children }) => <ol className="my-1.5 space-y-0.5 pl-3 list-decimal">{children}</ol>,
+        li: ({ children }) => (
+          <li className="flex gap-1.5 text-[var(--text-secondary)]">
+            <span className="opacity-40 flex-shrink-0 mt-0.5">•</span>
+            <span>{children}</span>
+          </li>
+        ),
+        h1: ({ children }) => <p className="font-semibold text-[var(--text-primary)] mt-2 mb-1">{children}</p>,
+        h2: ({ children }) => <p className="font-semibold text-[var(--text-primary)] mt-2 mb-1">{children}</p>,
+        h3: ({ children }) => <p className="font-medium text-[var(--text-primary)] mt-1.5 mb-0.5">{children}</p>,
+        code: ({ children, className }) => {
+          const isBlock = className?.includes("language-");
+          return isBlock ? (
+            <code className="block my-1.5 px-3 py-2 rounded-md bg-[var(--surface-3)] border border-[var(--border)] font-mono text-[11px] text-[var(--text-primary)] overflow-x-auto whitespace-pre">
+              {children}
+            </code>
+          ) : (
+            <code className="px-1 py-0.5 rounded bg-[var(--surface-3)] font-mono text-[11px] text-[var(--text-primary)]">
+              {children}
+            </code>
           );
-        }
-        if (line.startsWith("- ") || line.startsWith("* ")) {
-          return (
-            <div key={i} className="flex gap-1.5 mt-0.5">
-              <span className="opacity-50 flex-shrink-0">•</span>
-              <span>{renderInline(line.slice(2))}</span>
-            </div>
-          );
-        }
-        if (line === "") return <div key={i} className="h-2" />;
-        return <div key={i}>{renderInline(line)}</div>;
-      })}
-    </>
+        },
+        pre: ({ children }) => <>{children}</>,
+        blockquote: ({ children }) => (
+          <blockquote className="border-l-2 border-[var(--accent)] pl-2.5 my-1.5 text-[var(--text-tertiary)] italic">
+            {children}
+          </blockquote>
+        ),
+        a: ({ href, children }) => (
+          <a href={href} className="text-[var(--accent)] hover:underline" target="_blank" rel="noreferrer">
+            {children}
+          </a>
+        ),
+        hr: () => <hr className="my-2 border-[var(--border)]" />,
+      }}
+    >
+      {content}
+    </ReactMarkdown>
   );
-}
-
-function renderInline(text: string): React.ReactNode {
-  // Simple bold (**text**) and italic (_text_) rendering
-  const parts = text.split(/(\*\*[^*]+\*\*|_[^_]+_)/g);
-  return parts.map((part, i) => {
-    if (part.startsWith("**") && part.endsWith("**")) {
-      return <strong key={i} className="font-semibold text-inherit">{part.slice(2, -2)}</strong>;
-    }
-    if (part.startsWith("_") && part.endsWith("_")) {
-      return <em key={i} className="italic opacity-80">{part.slice(1, -1)}</em>;
-    }
-    return part;
-  });
 }
