@@ -73,9 +73,9 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          cross-env ELECTRON_BUILD=true next build
+          npx cross-env ELECTRON_BUILD=true npx next build
           npm run compile
-          electron-builder --mac --publish always
+          npx electron-builder --mac --publish always
 
   # ── Windows ───────────────────────────────────────────────────────────────
   build-win:
@@ -101,9 +101,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          npx cross-env ELECTRON_BUILD=true next build
+          npx cross-env ELECTRON_BUILD=true npx next build
           npm run compile
-          electron-builder --win --publish always
+          npx electron-builder --win --publish always
 
   # ── Linux ─────────────────────────────────────────────────────────────────
   build-linux:
@@ -129,6 +129,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cross-env ELECTRON_BUILD=true next build
+          npx cross-env ELECTRON_BUILD=true npx next build
           npm run compile
-          electron-builder --linux --publish always
+          npx electron-builder --linux --publish always
