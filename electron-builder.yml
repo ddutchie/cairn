@@ -17,15 +17,16 @@ files:
   - electron-native/**/*
   # System-Node-ABI better-sqlite3 binary for the MCP server
   - mcp-native/**/*
-  # better-sqlite3 native addon (cannot be bundled by esbuild)
+  # better-sqlite3 and its helpers — needed at runtime (native, can't be inlined)
   - node_modules/better-sqlite3/**/*
   - node_modules/bindings/**/*
   - node_modules/file-uri-to-path/**/*
-  # Exclude all other node_modules — everything else is inlined by esbuild
+  # Exclude everything else in node_modules
   - "!node_modules/!(better-sqlite3|bindings|file-uri-to-path)/**"
 
-# Unpack from asar so native addons and the MCP bundle can load at runtime
+# Unpack from asar — native .node files and anything that needs real filesystem paths
 asarUnpack:
+  - electron-native/**/*
   - dist-mcp/mcp-server.bundle.js
   - mcp-native/**/*
   - node_modules/better-sqlite3/**/*

@@ -16,12 +16,11 @@ import { app } from "electron";
 import { applySchema } from "./schema";
 
 // Path to the Electron-ABI native binary (built with electron-rebuild).
-// In dev:  dist-electron/main.js → __dirname = <project>/dist-electron
-//          → ../electron-native/better_sqlite3_electron.node
-// In prod: packaged asar → use process.resourcesPath which points at
-//          Contents/Resources where electron-native/ is unpacked.
+// In dev:  __dirname = <project>/dist-electron  →  ../electron-native/
+// In prod: binary is in app.asar.unpacked/electron-native/ (listed in asarUnpack)
+//          process.resourcesPath = Contents/Resources
 const ELECTRON_BINDING = app.isPackaged
-  ? path.join(process.resourcesPath, "electron-native", "better_sqlite3_electron.node")
+  ? path.join(process.resourcesPath, "app.asar.unpacked", "electron-native", "better_sqlite3_electron.node")
   : path.join(__dirname, "..", "electron-native", "better_sqlite3_electron.node");
 
 let _db: Database.Database | null = null;
