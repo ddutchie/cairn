@@ -975,16 +975,14 @@ function AboutSection() {
   return (
     <SettingsGroup title="About Cairn">
       <div className="space-y-4 text-sm text-[var(--text-secondary)]">
-        <div className="p-4 rounded-xl border border-[var(--border)] bg-[var(--surface)] space-y-2">
-          <div className="flex items-center gap-2 mb-3">
-            <img src="/Cairn_No_BG.png" alt="Cairn" className="w-8 h-8 object-contain" />
-            <div>
-              <div className="font-semibold text-[var(--text-primary)]">Cairn</div>
-              <div className="text-xs text-[var(--text-tertiary)]">v{process.env.NEXT_PUBLIC_APP_VERSION ?? "0.1.0"}</div>
-            </div>
+        <div className="p-6 rounded-xl border border-[var(--border)] bg-[var(--surface)] flex flex-col items-center text-center gap-3">
+          <img src="/Cairn_No_BG.png" alt="Cairn" className="w-20 h-20 object-contain" />
+          <div>
+            <div className="text-base font-semibold text-[var(--text-primary)]">Cairn</div>
+            <div className="text-xs text-[var(--text-tertiary)] mt-0.5">v{process.env.NEXT_PUBLIC_APP_VERSION ?? "0.1.0"}</div>
           </div>
-          <p className="text-xs leading-relaxed">
-            Local-first notes + kanban. Every project has documentation and workflow in one place. Notes and tasks share a unified data model and link to each other bidirectionally.
+          <p className="text-xs leading-relaxed max-w-xs">
+            Local-first notes and kanban in one place. All data lives in a SQLite database on your machine — no accounts, no cloud. An embedded MCP server lets AI agents read and write your workspace directly.
           </p>
         </div>
 
@@ -992,14 +990,18 @@ function AboutSection() {
           <div className="text-xs font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">Stack</div>
           <div className="grid grid-cols-2 gap-2">
             {[
-              ["Next.js 16", "App framework"],
+              ["Electron 41", "Desktop shell"],
+              ["Next.js 16", "UI framework"],
+              ["React 19", "Renderer"],
               ["TypeScript", "Language"],
               ["Tailwind CSS v4", "Styling"],
+              ["SQLite", "Local database"],
               ["Zustand", "State"],
-              ["TipTap", "Editor"],
               ["dnd-kit", "Drag & drop"],
+              ["Lucide", "Icons"],
               ["MCP SDK", "Agent protocol"],
-              ["OpenAI-compat", "AI chat"],
+              ["Vercel AI SDK", "AI chat"],
+              ["esbuild", "Bundler"],
             ].map(([tech, role]) => (
               <div
                 key={tech}

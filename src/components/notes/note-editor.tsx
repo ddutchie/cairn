@@ -1,37 +1,41 @@
 "use client";
 
-import React, { useEffect, useRef, useCallback, useState } from "react";
+import React, { useRef, useCallback, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Pin, PinOff, Calendar } from "lucide-react";
+import { Pin, PinOff, Calendar, Eye, Pencil } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { cn, formatRelative } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { Note } from "@/types";
 import { AITextToolbar, buildAIActionPrompt, type AITextAction } from "./ai-text-toolbar";
+import { MarkdownEditor, type MarkdownEditorHandle } from "./markdown-editor";
 
 interface NoteEditorProps {
   note: Note;
 }
 
+type EditorMode = "write" | "read";
+
 export function NoteEditor({ note }: NoteEditorProps) {
   const { updateNote, aiConfig } = useCairnStore();
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const editorRef = useRef<MarkdownEditorHandle>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+
+  const [mode, setMode] = useState<EditorMode>("write");
+
+
 
   // AI toolbar state
   const [toolbarPos, setToolbarPos] = useState<{ top: number; left: number } | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
-  const selectionRef = useRef<{ start: number; end: number; text: string } | null>(null);
+  const selectionRef = useRef<{ text: string } | null>(null);
 
-  // Focus editor when note changes
-  useEffect(() => {
-    textareaRef.current?.focus();
-  }, [note.id]);
-
+  // ── Save ──────────────────────────────────────────────────────────────────
   const handleContentChange = useCallback(
-    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      const markdown = e.target.value;
+    (markdown: string) => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(() => {
         updateNote(note.id, {
@@ -50,95 +54,99 @@ export function NoteEditor({ note }: NoteEditorProps) {
     [note.id, updateNote]
   );
 
-  // Show AI toolbar when user releases mouse with a selection in the textarea
-  const handleMouseUp = useCallback((e: React.MouseEvent<HTMLTextAreaElement>) => {
-    const ta = textareaRef.current;
-    if (!ta) return;
-    const start = ta.selectionStart;
-    const end = ta.selectionEnd;
-    const selected = ta.value.slice(start, end).trim();
-    if (!selected || selected.length < 3) { setToolbarPos(null); return; }
-
-    selectionRef.current = { start, end, text: selected };
-
-    // Position toolbar above where the mouse was released.
-    // window.getSelection() is always empty for textareas, so we use the event coords.
-    const TOOLBAR_HEIGHT = 40;
-    const OFFSET = 8;
-    setToolbarPos({
-      top: e.clientY - TOOLBAR_HEIGHT - OFFSET,
-      left: Math.max(8, e.clientX - 100),
-    });
-  }, []);
-
-  const handleAIAction = useCallback(async (action: AITextAction, customPrompt?: string) => {
-    const sel = selectionRef.current;
-    if (!sel) return;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const electron = (window as any).electron;
-    if (!electron) return;
-
-    setAiLoading(true);
-    try {
-      const prompt = buildAIActionPrompt(action, sel.text, customPrompt);
-      const result = await electron.chatSend({
-        message: prompt,
-        threadId: "ai-text-action",
-        config: { baseUrl: aiConfig.baseUrl, model: aiConfig.model, apiKey: aiConfig.apiKey },
-      }) as { content: string };
-
-      const replacement = result.content?.trim();
-      if (!replacement) return;
-
-      const ta = textareaRef.current;
-      if (!ta) return;
-
-      const newValue = ta.value.slice(0, sel.start) + replacement + ta.value.slice(sel.end);
-      const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set;
-      nativeSetter?.call(ta, newValue);
-      ta.dispatchEvent(new Event("input", { bubbles: true }));
-      requestAnimationFrame(() => {
-        ta.selectionStart = sel.start;
-        ta.selectionEnd = sel.start + replacement.length;
-        ta.focus();
+  // ── AI toolbar — driven by CodeMirror selection events ────────────────────
+  const handleSelectionChange = useCallback(
+    (sel: { text: string; coords: { top: number; left: number } } | null) => {
+      if (!sel) {
+        setToolbarPos(null);
+        selectionRef.current = null;
+        return;
+      }
+      selectionRef.current = { text: sel.text };
+      const rect = containerRef.current?.getBoundingClientRect();
+      const centerX = rect ? rect.left + rect.width / 2 : window.innerWidth / 2;
+      const OFFSET = 10;
+      setToolbarPos({
+        top: sel.coords.top - OFFSET,
+        left: centerX,
       });
-    } finally {
-      setAiLoading(false);
-      setToolbarPos(null);
-      selectionRef.current = null;
-    }
-  }, [aiConfig]);
+    },
+    []
+  );
 
-  // Tab key inserts 2 spaces instead of moving focus
-  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Tab") {
-      e.preventDefault();
-      const ta = e.currentTarget;
-      const start = ta.selectionStart;
-      const end = ta.selectionEnd;
-      const newValue = ta.value.slice(0, start) + "  " + ta.value.slice(end);
-      // Use native input value setter so React picks it up
-      const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-        window.HTMLTextAreaElement.prototype,
-        "value"
-      )?.set;
-      nativeInputValueSetter?.call(ta, newValue);
-      ta.dispatchEvent(new Event("input", { bubbles: true }));
-      requestAnimationFrame(() => {
-        ta.selectionStart = ta.selectionEnd = start + 2;
-      });
-    }
-  }, []);
+  const handleAIAction = useCallback(
+    async (action: AITextAction, customPrompt?: string) => {
+      const sel = selectionRef.current;
+      if (!sel) return;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const electron = (window as any).electron;
+      if (!electron) return;
+
+      setAiLoading(true);
+      try {
+        const prompt = buildAIActionPrompt(action, sel.text, customPrompt);
+        const result = (await electron.chatSend({
+          message: prompt,
+          threadId: "ai-text-action",
+          config: { baseUrl: aiConfig.baseUrl, model: aiConfig.model, apiKey: aiConfig.apiKey },
+        })) as { content: string };
+
+        const replacement = result.content?.trim();
+        if (!replacement) return;
+
+        editorRef.current?.replaceSelection(replacement);
+      } finally {
+        setAiLoading(false);
+        setToolbarPos(null);
+        selectionRef.current = null;
+      }
+    },
+    [aiConfig]
+  );
 
   return (
-    <div className="flex flex-col h-full overflow-hidden" onMouseDown={(e) => { if (!(e.target instanceof HTMLTextAreaElement)) { setToolbarPos(null); } }}>
-      {/* Header bar */}
+    <div
+      ref={containerRef}
+      className="flex flex-col h-full overflow-hidden"
+      onMouseDown={(e) => {
+        // Dismiss toolbar when clicking outside the editor content
+        const target = e.target as HTMLElement;
+        if (!target.closest(".cm-editor") && !target.closest("[data-ai-toolbar]")) {
+          setToolbarPos(null);
+        }
+      }}
+    >
+      {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-[var(--border)] flex-shrink-0">
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-[var(--text-tertiary)] font-mono uppercase tracking-wider">Edit</span>
-          <div className="w-px h-3 bg-[var(--border)]" />
-          <span className="text-xs text-[var(--text-tertiary)] font-mono uppercase tracking-wider">Preview</span>
+        {/* Mode toggle */}
+        <div className="flex items-center gap-0.5 bg-[var(--surface-2)] rounded-md p-0.5">
+          <button
+            onClick={() => { setMode("write"); setTimeout(() => editorRef.current?.focus(), 50); }}
+            className={cn(
+              "flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors",
+              mode === "write"
+                ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm"
+                : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
+            )}
+          >
+            <Pencil size={11} />
+            Write
+          </button>
+          <button
+            onClick={() => setMode("read")}
+            className={cn(
+              "flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors",
+              mode === "read"
+                ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm"
+                : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
+            )}
+          >
+            <Eye size={11} />
+            Read
+          </button>
         </div>
+
+        {/* Meta */}
         <div className="flex items-center gap-2">
           <Tooltip content={note.isPinned ? "Unpin note" : "Pin note"}>
             <button
@@ -160,72 +168,59 @@ export function NoteEditor({ note }: NoteEditorProps) {
         </div>
       </div>
 
-      {/* Title */}
+      {/* ── Title ──────────────────────────────────────────────────────────── */}
       <div className="px-6 pt-5 pb-3 flex-shrink-0 border-b border-[var(--border)]">
         <input
           type="text"
           value={note.title}
           onChange={handleTitleChange}
           placeholder="Note title"
-          className="w-full bg-transparent text-2xl font-bold text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none tracking-tight"
+          className="w-full bg-transparent text-2xl font-bold text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none tracking-tight max-w-[680px] mx-auto block"
         />
       </div>
 
-      {/* Split pane */}
-      <div className="flex flex-1 min-h-0 overflow-hidden">
-        {/* Editor pane */}
-        <div className="flex-1 min-w-0 border-r border-[var(--border)] overflow-hidden flex flex-col">
-          <textarea
-            ref={textareaRef}
-            defaultValue={note.content ?? ""}
+      {/* ── Editor / Preview ────────────────────────────────────────────────── */}
+      <div className="flex-1 min-h-0 overflow-hidden relative">
+        {/* CodeMirror — always mounted so state is preserved when toggling */}
+        <div className={cn("absolute inset-0 overflow-auto", mode === "read" && "invisible pointer-events-none")}>
+          <MarkdownEditor
             key={note.id}
+            ref={editorRef}
+            initialValue={note.content ?? ""}
             onChange={handleContentChange}
-            onKeyDown={(e) => { if (e.key === "Escape") setToolbarPos(null); handleKeyDown(e); }}
-            onMouseUp={handleMouseUp}
-            onKeyUp={(e) => {
-              // Handle keyboard selections (shift+arrows)
-              if (!e.shiftKey) return;
-              const ta = e.currentTarget;
-              const start = ta.selectionStart;
-              const end = ta.selectionEnd;
-              const selected = ta.value.slice(start, end).trim();
-              if (!selected || selected.length < 3) { setToolbarPos(null); return; }
-              selectionRef.current = { start, end, text: selected };
-              const rect = ta.getBoundingClientRect();
-              setToolbarPos({ top: rect.top - 48, left: rect.left + rect.width / 2 - 100 });
-            }}
-            placeholder="Write markdown here…"
-            spellCheck={false}
-            className={cn(
-              "flex-1 w-full h-full resize-none bg-transparent",
-              "px-6 py-5 text-sm font-mono leading-relaxed",
-              "text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]",
-              "focus:outline-none"
-            )}
+            onSelectionChange={handleSelectionChange}
+            placeholder="Write here…"
           />
         </div>
 
-        {/* Preview pane */}
-        <div className="flex-1 min-w-0 overflow-y-auto px-6 py-5">
-          {note.content ? (
-            <div className="prose-cairn">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {note.content}
-              </ReactMarkdown>
+        {/* Read / preview pane */}
+        {mode === "read" && (
+          <div className="absolute inset-0 overflow-y-auto">
+            <div className="px-6 py-5 max-w-[680px] mx-auto">
+              {note.content ? (
+                <div className="prose-cairn">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {note.content}
+                  </ReactMarkdown>
+                </div>
+              ) : (
+                <p className="text-sm text-[var(--text-tertiary)] italic">Nothing to preview yet.</p>
+              )}
             </div>
-          ) : (
-            <p className="text-sm text-[var(--text-tertiary)] italic">Nothing to preview yet.</p>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
-      {/* AI floating toolbar */}
+      {/* ── AI floating toolbar ─────────────────────────────────────────────── */}
       {toolbarPos && (
         <AITextToolbar
           position={toolbarPos}
           onAction={handleAIAction}
           loading={aiLoading}
-          onDismiss={() => { setToolbarPos(null); selectionRef.current = null; }}
+          onDismiss={() => {
+            setToolbarPos(null);
+            selectionRef.current = null;
+          }}
         />
       )}
     </div>
@@ -235,16 +230,16 @@ export function NoteEditor({ note }: NoteEditorProps) {
 /** Strip markdown syntax to get plain text for search indexing */
 function stripMarkdown(md: string): string {
   return md
-    .replace(/^#{1,6}\s+/gm, "")       // headings
-    .replace(/\*\*(.+?)\*\*/g, "$1")    // bold
-    .replace(/\*(.+?)\*/g, "$1")        // italic
-    .replace(/`{1,3}[^`]*`{1,3}/g, "") // code
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1") // links
-    .replace(/^[-*+]\s+/gm, "")        // bullet lists
-    .replace(/^\d+\.\s+/gm, "")        // ordered lists
-    .replace(/^>\s+/gm, "")            // blockquotes
-    .replace(/^---+$/gm, "")           // hr
-    .replace(/\|/g, " ")               // tables
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/\*\*(.+?)\*\*/g, "$1")
+    .replace(/\*(.+?)\*/g, "$1")
+    .replace(/`{1,3}[^`]*`{1,3}/g, "")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/^[-*+]\s+/gm, "")
+    .replace(/^\d+\.\s+/gm, "")
+    .replace(/^>\s+/gm, "")
+    .replace(/^---+$/gm, "")
+    .replace(/\|/g, " ")
     .replace(/\n{2,}/g, "\n")
     .trim();
 }

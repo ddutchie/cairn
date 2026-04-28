@@ -33,6 +33,7 @@ export function AITextToolbar({ position, onAction, loading, onDismiss }: AIText
   const [showCustom, setShowCustom] = useState(false);
   const [customPrompt, setCustomPrompt] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const toolbarRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (showCustom) inputRef.current?.focus();
@@ -56,8 +57,14 @@ export function AITextToolbar({ position, onAction, loading, onDismiss }: AIText
 
   const toolbar = (
     <div
+      ref={toolbarRef}
+      data-ai-toolbar
       className="fixed z-50 animate-fade-in"
-      style={{ top: position.top, left: position.left }}
+      style={{
+        top: 0,
+        left: 0,
+        transform: `translate(calc(${position.left}px - 50%), calc(${position.top}px - 100%))`,
+      }}
       // Prevent mousedown from bubbling up and dismissing the toolbar
       onMouseDown={(e) => e.stopPropagation()}
     >

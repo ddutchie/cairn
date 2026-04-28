@@ -17,14 +17,25 @@
     "mcp": "node dist-mcp/mcp-server.bundle.js"
   },
   "main": "dist-electron/main.js",
+  "overrides": {
+    "postcss": "^8.5.10"
+  },
   "dependencies": {
     "better-sqlite3": "^12.9.0"
   },
   "devDependencies": {
+    "@codemirror/commands": "^6.10.3",
+    "@codemirror/history": "^0.19.2",
+    "@codemirror/lang-markdown": "^6.5.0",
+    "@codemirror/language": "^6.12.3",
+    "@codemirror/language-data": "^6.5.2",
+    "@codemirror/state": "^6.6.0",
+    "@codemirror/view": "^6.41.1",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@electron/rebuild": "^4.0.4",
+    "@lezer/highlight": "^1.2.3",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-dropdown-menu": "^2.1.16",
