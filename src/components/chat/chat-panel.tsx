@@ -118,7 +118,7 @@ export function ChatPanel() {
     if (chatOpen) inputRef.current?.focus();
   }, [chatOpen]);
 
-  async function handleSend(text?: string) {
+  function handleSend(text?: string) {
     const content = text ?? input.trim();
     if (!content || !threadId) return;
 
@@ -141,10 +141,10 @@ export function ChatPanel() {
       },
     };
 
-    // Fire-and-forget — response arrives via chat:token / chat:done events
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (window as any).electron.chatStream(chatReq);
-    // isLoading / toolCalls / streamingContent are cleared by the onChatDone handler
+    // Fire-and-forget — response arrives via chat:token / chat:done events.
+    // window.electron is typed via ElectronAPI but not imported here; use optional chaining.
+    const electron = (window as Window & { electron?: { chatStream: (req: unknown) => void } }).electron;
+    electron?.chatStream(chatReq);
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
