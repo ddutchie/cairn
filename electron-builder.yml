@@ -47,10 +47,9 @@ mac:
   gatekeeperAssess: false
   entitlements: build-resources/entitlements.mac.plist
   entitlementsInherit: build-resources/entitlements.mac.plist
-  # Notarization — credentials supplied via env vars (CSC_LINK, APPLE_ID, etc.)
-  # Only runs when those env vars are present (i.e. in CI, not local builds)
-  notarize:
-    teamId: ${APPLE_TEAM_ID}
+  # Notarization is triggered automatically by electron-builder when
+  # APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, and APPLE_TEAM_ID are set in the environment.
+  # No config needed here — presence of those env vars is the switch.
 
 dmg:
   sign: false

@@ -58,6 +58,13 @@ jobs:
           node-version: 20
           cache: npm
 
+      - name: Cache Next.js build
+        uses: actions/cache@v4
+        with:
+          path: .next/cache
+          key: nextjs-mac-${{ hashFiles('package-lock.json') }}
+          restore-keys: nextjs-mac-
+
       - name: Install dependencies
         run: npm ci
 
@@ -91,6 +98,13 @@ jobs:
           node-version: 20
           cache: npm
 
+      - name: Cache Next.js build
+        uses: actions/cache@v4
+        with:
+          path: .next/cache
+          key: nextjs-win-${{ hashFiles('package-lock.json') }}
+          restore-keys: nextjs-win-
+
       - name: Install dependencies
         run: npm ci
 
@@ -118,6 +132,13 @@ jobs:
         with:
           node-version: 20
           cache: npm
+
+      - name: Cache Next.js build
+        uses: actions/cache@v4
+        with:
+          path: .next/cache
+          key: nextjs-linux-${{ hashFiles('package-lock.json') }}
+          restore-keys: nextjs-linux-
 
       - name: Install dependencies
         run: npm ci
