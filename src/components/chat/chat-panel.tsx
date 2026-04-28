@@ -482,6 +482,24 @@ function MarkdownContent({ content }: { content: string }) {
           </a>
         ),
         hr: () => <hr className="my-2 border-[var(--border)]" />,
+        table: ({ children }) => (
+          <div className="my-2 overflow-x-auto">
+            <table className="w-full border-collapse text-xs">{children}</table>
+          </div>
+        ),
+        thead: ({ children }) => <thead>{children}</thead>,
+        tbody: ({ children }) => <tbody>{children}</tbody>,
+        tr: ({ children }) => <tr className="border-b border-[var(--border)]">{children}</tr>,
+        th: ({ children }) => (
+          <th className="px-2.5 py-1.5 text-left font-semibold text-[var(--text-primary)] bg-[var(--surface-2)] border border-[var(--border)]">
+            {children}
+          </th>
+        ),
+        td: ({ children }) => (
+          <td className="px-2.5 py-1.5 text-[var(--text-secondary)] border border-[var(--border)]">
+            {children}
+          </td>
+        ),
       }}
     >
       {content}
