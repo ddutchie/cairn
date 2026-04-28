@@ -41,6 +41,21 @@ protocol.registerSchemesAsPrivileged([
   },
 ]);
 
+function getStoredThemeBackground(): string {
+  try {
+    const userDataPath = app.getPath("userData");
+    const lsPath = path.join(userDataPath, "Local Storage", "leveldb");
+    // Can't easily read leveldb from main — use a simple fallback:
+    // write theme to a plain JSON sidecar file whenever it changes (see IPC below)
+    const themeFile = path.join(userDataPath, "theme.json");
+    if (fs.existsSync(themeFile)) {
+      const t = JSON.parse(fs.readFileSync(themeFile, "utf8")).theme;
+      if (t === "light") return "#f5f4f1";
+    }
+  } catch { /* ignore */ }
+  return "#0d0d0d";
+}
+
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: 1400,
@@ -48,7 +63,7 @@ function createWindow(): BrowserWindow {
     minWidth: 900,
     minHeight: 600,
     titleBarStyle: "hiddenInset",
-    backgroundColor: "#0f0f0f",
+    backgroundColor: getStoredThemeBackground(),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -143,6 +158,12 @@ app.whenReady().then(async () => {
 
   ipcMain.handle("app:needsWorkspaceSetup", () => {
     return readWorkspaceConfig(userDataPath) === null;
+  });
+
+  // Persist theme choice so the main process can read it for backgroundColor
+  ipcMain.handle("app:setTheme", (_e, theme: string) => {
+    const themeFile = path.join(userDataPath, "theme.json");
+    fs.writeFileSync(themeFile, JSON.stringify({ theme }), "utf8");
   });
 
   // Write config and create the folder; no migration needed for new users.

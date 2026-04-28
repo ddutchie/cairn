@@ -47,6 +47,19 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
 
 const AI_CONFIG_KEY = "ai-config";
 
+// ── Theme ─────────────────────────────────────────────
+
+export type Theme = "light" | "dark" | "system";
+const THEME_KEY = "theme";
+
+function applyTheme(theme: Theme): void {
+  if (typeof document === "undefined") return;
+  const resolved = theme === "system"
+    ? (window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark")
+    : theme;
+  document.documentElement.setAttribute("data-theme", resolved);
+}
+
 // ── Persisted shape ───────────────────────────
 
 interface PersistedState {
@@ -72,6 +85,10 @@ interface CairnStore extends PersistedState, AppUIState {
   aiConfig: AIConfig;
   setAIConfig: (patch: Partial<AIConfig>) => void;
 
+  // ── Theme ──────────────────────────────────
+  theme: Theme;
+  setTheme: (theme: Theme) => void;
+
   // ── UI ────────────────────────────────────
   setActiveWorkspace: (id: ID) => void;
   setActiveProject: (id: ID | null) => void;
@@ -87,6 +104,7 @@ interface CairnStore extends PersistedState, AppUIState {
   createProject: (workspaceId: ID, name: string) => Promise<Project>;
   updateProject: (id: ID, patch: Partial<Project>) => void;
   archiveProject: (id: ID) => void;
+  deleteProject: (id: ID) => void;
 
   // ── Notes ─────────────────────────────────
   createNote: (projectId: ID, title: string) => Note;
@@ -116,6 +134,7 @@ interface CairnStore extends PersistedState, AppUIState {
   getColumnCards: (columnId: ID) => TaskCard[];
   getProjectCards: (projectId: ID) => TaskCard[];
   getTagById: (id: ID) => Tag | undefined;
+  createTag: (workspaceId: ID, name: string, color?: string) => Tag;
   getWorkspaceProjects: (workspaceId: ID) => Project[];
   searchAll: (query: string) => SearchResult[];
 }
@@ -191,6 +210,9 @@ export const useCairnStore = create<CairnStore>()(
     // ── AI config (loaded from storage) ───────────
     aiConfig: DEFAULT_AI_CONFIG,
 
+    // ── Theme (loaded from storage) ───────────────
+    theme: "dark" as Theme,
+
     // ── UI state ──────────────────────────────────
     activeWorkspaceId: null,
     activeProjectId: null,
@@ -199,8 +221,37 @@ export const useCairnStore = create<CairnStore>()(
     chatOpen: false,
     searchOpen: false,
 
+    // ── Theme ─────────────────────────────────────
+    setTheme(theme: Theme) {
+      set({ theme });
+      storage.set(THEME_KEY, theme);
+      applyTheme(theme);
+      // Persist to a file the main process can read for window backgroundColor
+      if (typeof window !== "undefined" && window.electron) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (window.electron as any).setTheme?.(theme);
+      }
+      // Keep system preference in sync
+      if (theme === "system") {
+        const mq = window.matchMedia("(prefers-color-scheme: light)");
+        const handler = (e: MediaQueryListEvent) => {
+          document.documentElement.setAttribute("data-theme", e.matches ? "light" : "dark");
+        };
+        mq.addEventListener("change", handler);
+      }
+    },
+
     // ── Hydration ─────────────────────────────────
     hydrate() {
+      // Load theme first so there's no flash
+      const savedTheme = storage.get<Theme>(THEME_KEY);
+      if (savedTheme) {
+        set({ theme: savedTheme });
+        applyTheme(savedTheme);
+      } else {
+        applyTheme("dark");
+      }
+
       // Load AI config separately (survives seed resets)
       const savedConfig = storage.get<AIConfig>(AI_CONFIG_KEY);
       if (savedConfig) {
@@ -218,6 +269,17 @@ export const useCairnStore = create<CairnStore>()(
     },
 
     async hydrateFromElectron(isRefresh = false) {
+      // Load theme on first hydration only (system watcher may already be active)
+      if (!isRefresh) {
+        const savedTheme = storage.get<Theme>(THEME_KEY);
+        if (savedTheme) {
+          set({ theme: savedTheme });
+          applyTheme(savedTheme);
+        } else {
+          applyTheme("dark");
+        }
+      }
+
       // Load AI config from localStorage (still used for settings in Electron)
       const savedConfig = storage.get<AIConfig>(AI_CONFIG_KEY);
       if (savedConfig) {
@@ -378,6 +440,24 @@ export const useCairnStore = create<CairnStore>()(
 
     archiveProject(projId) {
       get().updateProject(projId, { archivedAt: now(), status: "archived" });
+    },
+
+    deleteProject(projId) {
+      const s = get();
+      // Determine next active project before removing
+      const remaining = s.projects.filter((p) => p.id !== projId && !p.archivedAt);
+      const nextProject = remaining[0]?.id ?? null;
+      set((st) => ({
+        projects: st.projects.filter((p) => p.id !== projId),
+        notes: st.notes.filter((n) => n.projectId !== projId),
+        columns: st.columns.filter((c) => c.projectId !== projId),
+        cards: st.cards.filter((c) => c.projectId !== projId),
+        // If deleted project was active, switch to next
+        activeProjectId: st.activeProjectId === projId ? nextProject : st.activeProjectId,
+        activeView: st.activeProjectId === projId ? "overview" : st.activeView,
+      }));
+      get().persist();
+      ipc((e) => (e.project as { delete: (id: string) => Promise<unknown> }).delete(projId));
     },
 
     // ── Notes ─────────────────────────────────────
@@ -579,6 +659,8 @@ export const useCairnStore = create<CairnStore>()(
       };
       set((s) => ({ chatThreads: [...s.chatThreads, thread] }));
       get().persist();
+      // Persist to SQLite so thread survives restarts
+      ipc((e) => e.chat.upsertThread(thread));
       return thread;
     },
 
@@ -598,6 +680,11 @@ export const useCairnStore = create<CairnStore>()(
         ),
       }));
       get().persist();
+      // Persist to SQLite so messages survive restarts
+      ipc((e) => e.chat.addMessage(msg));
+      // Also keep the thread's updatedAt current in SQLite
+      const thread = get().chatThreads.find((t) => t.id === threadId);
+      if (thread) ipc((e) => e.chat.upsertThread({ ...thread, updatedAt: now() }));
       return msg;
     },
 
@@ -649,6 +736,14 @@ export const useCairnStore = create<CairnStore>()(
 
     getTagById(tagId) {
       return get().tags.find((t) => t.id === tagId);
+    },
+
+    createTag(workspaceId, name, color = "#6366f1") {
+      const tag: Tag = { id: id(), workspaceId, name, color };
+      set((s) => ({ tags: [...s.tags, tag] }));
+      get().persist();
+      ipc((e) => e.tag.create(tag));
+      return tag;
     },
 
     getWorkspaceProjects(workspaceId) {

@@ -17,12 +17,21 @@ import {
   Layers,
   Check,
   X,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 import { cn, formatRelative } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { WorkspaceIcon, ProjectIcon } from "@/lib/workspace-icons";
 import { Tooltip } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown";
 import type { Project, Note } from "@/types";
 
 export function Sidebar() {
@@ -40,6 +49,8 @@ export function Sidebar() {
     toggleSearch,
     toggleChat,
     createProject,
+    updateProject,
+    deleteProject,
     chatOpen,
     searchOpen,
   } = useCairnStore();
@@ -213,6 +224,8 @@ export function Sidebar() {
                 setView(view);
               }}
               notes={getProjectNotes(project.id).slice(0, 5)}
+              onRename={(name) => updateProject(project.id, { name })}
+              onDelete={() => deleteProject(project.id)}
             />
           ))}
 
@@ -287,6 +300,8 @@ interface ProjectItemProps {
   activeView: string;
   onSelectView: (view: "overview" | "notes" | "board" | "chat") => void;
   notes: Note[];
+  onRename: (name: string) => void;
+  onDelete: () => void;
 }
 
 function ProjectItem({
@@ -298,7 +313,35 @@ function ProjectItem({
   activeView,
   onSelectView,
   notes,
+  onRename,
+  onDelete,
 }: ProjectItemProps) {
+  const [renaming, setRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState(project.name);
+  const renameInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (renaming) {
+      setRenameValue(project.name);
+      renameInputRef.current?.focus();
+      renameInputRef.current?.select();
+    }
+  }, [renaming, project.name]);
+
+  function commitRename() {
+    const trimmed = renameValue.trim();
+    if (trimmed && trimmed !== project.name) {
+      onRename(trimmed);
+    }
+    setRenaming(false);
+  }
+
+  function handleDeleteConfirm() {
+    if (window.confirm(`Delete "${project.name}"? This will permanently delete all notes and tasks in this project.`)) {
+      onDelete();
+    }
+  }
+
   return (
     <div>
       <div
@@ -315,13 +358,55 @@ function ProjectItem({
         >
           {isExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
         </button>
-        <button
-          onClick={onSelectProject}
-          className="flex items-center gap-1.5 flex-1 min-w-0 text-left"
-        >
-          <ProjectIcon name={project.icon} size={13} className="text-[var(--text-tertiary)] flex-shrink-0" />
-          <span className="text-xs font-medium truncate">{project.name}</span>
-        </button>
+        {renaming ? (
+          <input
+            ref={renameInputRef}
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onBlur={commitRename}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commitRename();
+              if (e.key === "Escape") setRenaming(false);
+            }}
+            className="flex-1 min-w-0 bg-transparent text-xs font-medium text-[var(--text-primary)] outline-none border-b border-[var(--accent)]"
+            onClick={(e) => e.stopPropagation()}
+          />
+        ) : (
+          <button
+            onClick={onSelectProject}
+            className="flex items-center gap-1.5 flex-1 min-w-0 text-left"
+          >
+            <ProjectIcon name={project.icon} size={13} className="text-[var(--text-tertiary)] flex-shrink-0" />
+            <span className="text-xs font-medium truncate">{project.name}</span>
+          </button>
+        )}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              className="opacity-0 group-hover:opacity-100 flex-shrink-0 p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface)] transition-all"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <MoreHorizontal size={12} />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" side="right" className="w-40">
+            <DropdownMenuItem
+              onClick={(e: React.MouseEvent) => { e.stopPropagation(); setRenaming(true); }}
+              className="flex items-center gap-2 text-xs"
+            >
+              <Pencil size={11} />
+              Rename
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={(e: React.MouseEvent) => { e.stopPropagation(); handleDeleteConfirm(); }}
+              className="flex items-center gap-2 text-xs text-[var(--danger)] focus:text-[var(--danger)]"
+            >
+              <Trash2 size={11} />
+              Delete project
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {isExpanded && isActive && (

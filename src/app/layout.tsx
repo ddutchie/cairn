@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
@@ -28,9 +29,24 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark`}
+      suppressHydrationWarning
+      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="h-full flex flex-col bg-[var(--background)]">
+        <Script id="theme-init" strategy="beforeInteractive">{`
+          (function() {
+            try {
+              var raw = localStorage.getItem('cairn:v1:theme');
+              var t = raw ? JSON.parse(raw) : 'dark';
+              var resolved = t === 'light' ? 'light' : t === 'system'
+                ? (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
+                : 'dark';
+              document.documentElement.setAttribute('data-theme', resolved);
+            } catch(e) {
+              document.documentElement.setAttribute('data-theme', 'dark');
+            }
+          })();
+        `}</Script>
         <TooltipProvider delayDuration={400}>{children}</TooltipProvider>
       </body>
     </html>

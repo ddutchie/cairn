@@ -221,6 +221,14 @@ export function updateProject(db: Database.Database, id: string, patch: Partial<
   return toProject(db.prepare("SELECT * FROM projects WHERE id = ?").get(id));
 }
 
+export function deleteProject(db: Database.Database, id: string) {
+  // Cascade: delete cards, columns, notes (caller deletes .md files first)
+  db.prepare("DELETE FROM task_cards WHERE project_id = ?").run(id);
+  db.prepare("DELETE FROM board_columns WHERE project_id = ?").run(id);
+  db.prepare("DELETE FROM notes WHERE project_id = ?").run(id);
+  db.prepare("DELETE FROM projects WHERE id = ?").run(id);
+}
+
 // ── Notes ─────────────────────────────────────
 
 export function getNotes(db: Database.Database, projectId?: string) {

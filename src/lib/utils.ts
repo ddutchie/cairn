@@ -53,6 +53,23 @@ export const PRIORITY_COLORS: Record<string, string> = {
   urgent: "text-red-400",
 };
 
+/**
+ * Returns "overdue" | "today" | "upcoming" | "none" for a due date string.
+ * Compares calendar days (not timestamps) so due-today is correct regardless of time.
+ */
+export function getDueDateStatus(dueDate: string | null | undefined): "overdue" | "today" | "upcoming" | "none" {
+  if (!dueDate) return "none";
+  const due = new Date(dueDate);
+  const today = new Date();
+  // Normalise both to midnight local time for day comparison
+  due.setHours(0, 0, 0, 0);
+  today.setHours(0, 0, 0, 0);
+  const diff = due.getTime() - today.getTime();
+  if (diff < 0) return "overdue";
+  if (diff === 0) return "today";
+  return "upcoming";
+}
+
 export const STATUS_COLORS: Record<string, string> = {
   active: "text-emerald-400",
   on_hold: "text-amber-400",

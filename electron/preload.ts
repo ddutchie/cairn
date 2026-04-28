@@ -30,6 +30,7 @@ const api = {
     list:   (workspaceId?: string) => invoke("db:project:list", { workspaceId }),
     create: (args: unknown) => invoke("db:project:create", args),
     update: (id: string, patch: unknown) => invoke("db:project:update", { id, patch }),
+    delete: (id: string) => invoke("db:project:delete", { id }),
   },
 
   // ── Notes ────────────────────────────────────
@@ -75,10 +76,14 @@ const api = {
   // ── App paths ─────────────────────────────────
   mcpServerPath: () => invoke<string>("app:mcpServerPath"),
 
+  // ── Reveal note in Finder / Explorer ─────────
+  revealNote: (noteId: string, projectId: string) => invoke("app:revealNote", { noteId, projectId }),
+
   // ── Workspace folder ──────────────────────────
   selectWorkspaceFolder: () => invoke<string | null>("app:selectWorkspaceFolder"),
   getWorkspacePath: () => invoke<string | null>("app:getWorkspacePath"),
   needsWorkspaceSetup: () => invoke<boolean>("app:needsWorkspaceSetup"),
+  setTheme: (theme: string) => invoke("app:setTheme", theme),
   initWorkspace: (workspacePath: string) => invoke<{ requiresRestart: boolean }>("app:initWorkspace", { workspacePath }),
 
   // ── Auto-updater ──────────────────────────────

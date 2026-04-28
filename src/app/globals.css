@@ -2,7 +2,10 @@
 @import "tailwindcss";
 
 /* ── Cairn Design Tokens ──────────────────────────────── */
-:root {
+
+/* Dark theme — applied via data-theme="dark" on <html> */
+:root, [data-theme="dark"] {
+  color-scheme: dark;
   --background: #0d0d0d;
   --foreground: #e8e4dc;
   --surface: #141414;
@@ -22,6 +25,30 @@
   --warning: #f59e0b;
   --danger: #ef4444;
   --info: #60a5fa;
+}
+
+/* Light theme — applied via data-theme="light" on <html> */
+[data-theme="light"] {
+  color-scheme: light;
+  --background: #f5f4f1;
+  --foreground: #1a1917;
+  --surface: #ffffff;
+  --surface-2: #f0eeeb;
+  --surface-3: #e8e5e1;
+  --border: #dddad6;
+  --border-subtle: #eae7e3;
+  --accent: #6457e8;
+  --accent-hover: #7c6af7;
+  --accent-dim: rgba(100, 87, 232, 0.12);
+  --muted: #a09c96;
+  --muted-fg: #66635f;
+  --text-primary: #1a1917;
+  --text-secondary: #4a4744;
+  --text-tertiary: #9e9a94;
+  --success: #1a9e68;
+  --warning: #d97706;
+  --danger: #dc2626;
+  --info: #2563eb;
 }
 
 @theme inline {
@@ -232,7 +259,7 @@ body {
 .dnd-card-dragging {
   opacity: 0.5;
   transform: rotate(1deg);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
 }
 
 .dnd-drop-target {
@@ -324,4 +351,4 @@ body {
 .prose-cairn table { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin: 0.75rem 0; }
 .prose-cairn th { background: var(--surface-2); font-weight: 600; text-align: left; padding: 0.4rem 0.6rem; border: 1px solid var(--border); }
 .prose-cairn td { padding: 0.35rem 0.6rem; border: 1px solid var(--border); }
-.prose-cairn tr:nth-child(even) td { background: var(--surface-1); }
+.prose-cairn tr:nth-child(even) td { background: var(--surface-2); }

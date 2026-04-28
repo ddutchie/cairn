@@ -12,6 +12,7 @@ import {
   Wand2,
   Loader2,
   X,
+  FolderOpen,
 } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { cn, formatRelative } from "@/lib/utils";
@@ -30,26 +31,36 @@ import {
 export function NotesView() {
   const {
     activeProjectId,
+    activeWorkspaceId,
     getProjectNotes,
     createNote,
     updateNote,
     deleteNote,
     aiConfig,
     getProjectColumns,
+    tags,
+    getTagById,
   } = useCairnStore();
 
   const [activeNoteId, setActiveNoteId] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
+  const [activeTagId, setActiveTagId] = useState<string | null>(null);
   const [prdModalOpen, setPrdModalOpen] = useState(false);
 
   const notes = activeProjectId ? getProjectNotes(activeProjectId) : [];
-  const filtered = filter
-    ? notes.filter(
-        (n) =>
-          n.title.toLowerCase().includes(filter.toLowerCase()) ||
-          n.contentText.toLowerCase().includes(filter.toLowerCase())
-      )
-    : notes;
+  const workspaceTags = tags.filter((t) => t.workspaceId === activeWorkspaceId);
+  // Tags that appear on at least one note in this project
+  const projectTagIds = [...new Set(notes.flatMap((n) => n.tagIds))];
+  const projectTags = projectTagIds.map((id) => getTagById(id)).filter(Boolean) as import("@/types").Tag[];
+
+  const filtered = notes.filter((n) => {
+    const matchesText =
+      !filter ||
+      n.title.toLowerCase().includes(filter.toLowerCase()) ||
+      n.contentText.toLowerCase().includes(filter.toLowerCase());
+    const matchesTag = !activeTagId || n.tagIds.includes(activeTagId);
+    return matchesText && matchesTag;
+  });
 
   const activeNote = notes.find((n) => n.id === activeNoteId) ?? notes[0] ?? null;
 
@@ -118,6 +129,26 @@ export function NotesView() {
               className="w-full pl-7 pr-2 py-1.5 text-xs rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)]"
             />
           </div>
+          {/* Tag filter chips */}
+          {projectTags.length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-1.5">
+              {projectTags.map((tag) => (
+                <button
+                  key={tag.id}
+                  onClick={() => setActiveTagId(activeTagId === tag.id ? null : tag.id)}
+                  className={cn(
+                    "flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] border transition-colors",
+                    activeTagId === tag.id
+                      ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
+                      : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
+                  )}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: tag.color }} />
+                  {tag.name}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* List */}
@@ -126,9 +157,9 @@ export function NotesView() {
             <div className="px-3 py-8 text-center">
               <FileText size={20} className="mx-auto mb-2 text-[var(--text-tertiary)] opacity-40" />
               <p className="text-xs text-[var(--text-tertiary)]">
-                {filter ? "No matching notes" : "No notes yet"}
+                {filter || activeTagId ? "No matching notes" : "No notes yet"}
               </p>
-              {!filter && (
+              {!filter && !activeTagId && (
                 <button
                   onClick={handleCreateNote}
                   className="mt-2 text-xs text-[var(--accent)] hover:underline"
@@ -146,6 +177,10 @@ export function NotesView() {
                 onClick={() => setActiveNoteId(note.id)}
                 onPin={() => updateNote(note.id, { isPinned: !note.isPinned })}
                 onDelete={() => handleDelete(note.id)}
+                onReveal={() => {
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  (window as any).electron?.revealNote?.(note.id, note.projectId);
+                }}
               />
             ))
           )}
@@ -336,9 +371,10 @@ interface NoteListItemProps {
   onClick: () => void;
   onPin: () => void;
   onDelete: () => void;
+  onReveal: () => void;
 }
 
-function NoteListItem({ note, isActive, onClick, onPin, onDelete }: NoteListItemProps) {
+function NoteListItem({ note, isActive, onClick, onPin, onDelete, onReveal }: NoteListItemProps) {
   return (
     <div
       onClick={onClick}
@@ -380,6 +416,15 @@ function NoteListItem({ note, isActive, onClick, onPin, onDelete }: NoteListItem
             >
               {note.isPinned ? <PinOff size={12} /> : <Pin size={12} />}
               {note.isPinned ? "Unpin" : "Pin"}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={(e) => {
+                e.stopPropagation();
+                onReveal();
+              }}
+            >
+              <FolderOpen size={12} />
+              Reveal in Finder
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem

@@ -21,12 +21,15 @@ import {
   Cpu,
   Wifi,
   WifiOff,
+  Sun,
+  Moon,
+  Monitor,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tooltip } from "@/components/ui/tooltip";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
-import { useCairnStore, DEFAULT_AI_CONFIG } from "@/store";
+import { useCairnStore, DEFAULT_AI_CONFIG, type Theme } from "@/store";
 import { storage } from "@/lib/storage";
 import { cn } from "@/lib/utils";
 
@@ -156,7 +159,7 @@ function Toggle({
     >
       <span
         className={cn(
-          "inline-block h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform",
+          "inline-block h-3.5 w-3.5 rounded-full bg-[var(--surface)] shadow-sm transition-transform",
           checked ? "translate-x-4.5" : "translate-x-0.5"
         )}
       />
@@ -167,22 +170,37 @@ function Toggle({
 // ── General settings ──────────────────────────
 
 function GeneralSettings() {
-  const { workspaces } = useCairnStore();
+  const { workspaces, theme, setTheme } = useCairnStore();
   const workspace = workspaces[0];
+
+  const themeOptions: { value: Theme; label: string; icon: React.ReactNode }[] = [
+    { value: "light", label: "Light", icon: <Sun size={13} /> },
+    { value: "system", label: "System", icon: <Monitor size={13} /> },
+    { value: "dark", label: "Dark", icon: <Moon size={13} /> },
+  ];
 
   return (
     <SettingsGroup title="General" description="Basic app preferences">
       <SettingsRow label="Workspace name" description="Name shown in the sidebar">
         <Input defaultValue={workspace?.name ?? "Personal"} className="w-48 text-xs" />
       </SettingsRow>
-      <SettingsRow label="Theme" description="Cairn is dark mode by default">
-        <div className="flex gap-2">
-          <button className="px-3 py-1.5 text-xs rounded-md bg-[var(--surface-3)] border border-[var(--accent)] text-[var(--accent)]">
-            Dark
-          </button>
-          <button className="px-3 py-1.5 text-xs rounded-md border border-[var(--border)] text-[var(--text-tertiary)] opacity-50 cursor-not-allowed" disabled>
-            Light (soon)
-          </button>
+      <SettingsRow label="Theme" description="Choose light, dark, or follow your system setting">
+        <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-[var(--surface-2)] border border-[var(--border)]">
+          {themeOptions.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => setTheme(opt.value)}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
+                theme === opt.value
+                  ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm border border-[var(--border)]"
+                  : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
+              )}
+            >
+              {opt.icon}
+              {opt.label}
+            </button>
+          ))}
         </div>
       </SettingsRow>
     </SettingsGroup>

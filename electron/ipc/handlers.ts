@@ -11,12 +11,12 @@
  * Channel naming: "db:<entity>:<action>"
  */
 
-import { ipcMain, app } from "electron";
+import { ipcMain, app, shell } from "electron";
 import path from "path";
 import type Database from "better-sqlite3";
 import * as q from "../db/queries";
 import { registerChatHandler, callLLM } from "./chat";
-import { writeNoteFile, deleteNoteFile, stripMarkdown } from "../notes-files";
+import { writeNoteFile, deleteNoteFile, deleteProjectNotesDir, stripMarkdown, findNoteFilePath } from "../notes-files";
 
 function getProjectName(db: Database.Database, projectId: string): string {
   const row = db.prepare("SELECT name FROM projects WHERE id = ?").get(projectId) as { name: string } | undefined;
@@ -45,6 +45,14 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
   ipcMain.handle("db:project:list",   (_e, { workspaceId }) => q.getProjects(db, workspaceId));
   ipcMain.handle("db:project:create", (_e, args) => q.createProject(db, args));
   ipcMain.handle("db:project:update", (_e, { id, patch }) => q.updateProject(db, id, patch));
+  ipcMain.handle("db:project:delete", (_e, { id }) => {
+    // Delete .md files before wiping SQLite rows (we need the project name for folder lookup)
+    const project = db.prepare("SELECT name FROM projects WHERE id = ?").get(id) as { name: string } | undefined;
+    if (project) {
+      deleteProjectNotesDir(workspacePath, project.name);
+    }
+    q.deleteProject(db, id);
+  });
 
   // ── Notes ─────────────────────────────────────────
   // All note mutations also write/update/delete the corresponding .md file.
@@ -84,6 +92,15 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
       deleteNoteFile(workspacePath, projectName, id);
     } else {
       q.deleteNote(db, id);
+    }
+  });
+
+  // ── Reveal in Finder / Explorer ───────────────────
+  ipcMain.handle("app:revealNote", (_e, { noteId, projectId }) => {
+    const projectName = getProjectName(db, projectId);
+    const fp = findNoteFilePath(workspacePath, projectName, noteId);
+    if (fp) {
+      shell.showItemInFolder(fp);
     }
   });
 

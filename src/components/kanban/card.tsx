@@ -4,7 +4,7 @@ import React from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Calendar, FileText, Paperclip } from "lucide-react";
-import { cn, formatDate, PRIORITY_COLORS } from "@/lib/utils";
+import { cn, formatDate, getDueDateStatus, PRIORITY_COLORS } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { useCairnStore } from "@/store";
 import type { TaskCard } from "@/types";
@@ -93,12 +93,22 @@ export function KanbanCard({ card, onClick, isDragging = false }: KanbanCardProp
         {/* Footer */}
         {(card.dueDate || card.linkedNoteIds.length > 0) && (
           <div className="flex items-center gap-2 mt-2.5 pt-2 border-t border-[var(--border-subtle)]">
-            {card.dueDate && (
-              <span className="flex items-center gap-1 text-[10px] text-[var(--text-tertiary)]">
-                <Calendar size={9} />
-                {formatDate(card.dueDate)}
-              </span>
-            )}
+            {card.dueDate && (() => {
+              const status = getDueDateStatus(card.dueDate);
+              return (
+                <span className={cn(
+                  "flex items-center gap-1 text-[10px] font-medium rounded px-1 py-0.5",
+                  status === "overdue" && "text-red-400 bg-red-400/10",
+                  status === "today" && "text-amber-400 bg-amber-400/10",
+                  status === "upcoming" && "text-[var(--text-tertiary)]",
+                )}>
+                  <Calendar size={9} />
+                  {status === "overdue" ? `Overdue · ${formatDate(card.dueDate)}` :
+                   status === "today" ? "Due today" :
+                   formatDate(card.dueDate)}
+                </span>
+              );
+            })()}
             {card.linkedNoteIds.length > 0 && (
               <span className="flex items-center gap-1 text-[10px] text-[var(--text-tertiary)] ml-auto">
                 <FileText size={9} />

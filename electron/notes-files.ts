@@ -165,6 +165,20 @@ export function deleteNoteFile(
   }
 }
 
+/**
+ * Delete the entire project notes folder (and all .md files inside it).
+ * Called when a project is deleted.
+ */
+export function deleteProjectNotesDir(
+  workspacePath: string,
+  projectName: string,
+): void {
+  const dir = projectNotesDir(workspacePath, projectName);
+  if (fs.existsSync(dir)) {
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
+  }
+}
+
 // ── Parse .md file → note data ────────────────
 
 export function parseNoteFile(filePath: string): NoteData | null {

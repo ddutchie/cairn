@@ -3,10 +3,11 @@
 import React, { useRef, useCallback, useState, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Pin, PinOff, Calendar, Eye, Pencil, Wand2, Loader2, CheckCircle2 } from "lucide-react";
+import { Pin, PinOff, Calendar, Eye, Pencil, Wand2, Loader2, CheckCircle2, Tag, Plus, X } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { cn, formatRelative } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
+import { Badge } from "@/components/ui/badge";
 import type { Note } from "@/types";
 import { AITextToolbar, buildAIActionPrompt, type AITextAction } from "./ai-text-toolbar";
 import { MarkdownEditor, type MarkdownEditorHandle } from "./markdown-editor";
@@ -18,7 +19,7 @@ interface NoteEditorProps {
 type EditorMode = "write" | "read";
 
 export function NoteEditor({ note }: NoteEditorProps) {
-  const { updateNote, aiConfig, activeProjectId, getProjectColumns } = useCairnStore();
+  const { updateNote, aiConfig, activeProjectId, getProjectColumns, tags, createTag, getTagById, activeWorkspaceId } = useCairnStore();
   const editorRef = useRef<MarkdownEditorHandle>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -212,7 +213,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
                 className={cn(
                   "flex items-center gap-1.5 px-2 py-1 rounded-md text-xs transition-colors",
                   spawnResult
-                    ? "text-green-400 bg-green-400/10"
+                    ? "text-[var(--success)] bg-[var(--success)]/10"
                     : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]"
                 )}
               >
@@ -249,6 +250,21 @@ export function NoteEditor({ note }: NoteEditorProps) {
           onChange={handleTitleChange}
           placeholder="Note title"
           className="w-full bg-transparent text-2xl font-bold text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none tracking-tight max-w-[680px] mx-auto block"
+        />
+        {/* Tag bar */}
+        <NoteTagBar
+          note={note}
+          workspaceTags={tags.filter((t) => t.workspaceId === activeWorkspaceId)}
+          onToggleTag={(tagId) => {
+            const has = note.tagIds.includes(tagId);
+            updateNote(note.id, { tagIds: has ? note.tagIds.filter((id) => id !== tagId) : [...note.tagIds, tagId] });
+          }}
+          onCreateTag={(name) => {
+            if (!activeWorkspaceId) return;
+            const tag = createTag(activeWorkspaceId, name);
+            updateNote(note.id, { tagIds: [...note.tagIds, tag.id] });
+          }}
+          getTagById={getTagById}
         />
       </div>
 
@@ -296,6 +312,125 @@ export function NoteEditor({ note }: NoteEditorProps) {
           }}
         />
       )}
+    </div>
+  );
+}
+
+// ── Note Tag Bar ──────────────────────────────────────────────────────────────
+
+interface NoteTagBarProps {
+  note: Note;
+  workspaceTags: import("@/types").Tag[];
+  onToggleTag: (tagId: string) => void;
+  onCreateTag: (name: string) => void;
+  getTagById: (id: string) => import("@/types").Tag | undefined;
+}
+
+function NoteTagBar({ note, workspaceTags, onToggleTag, onCreateTag, getTagById }: NoteTagBarProps) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [newTagName, setNewTagName] = useState("");
+  const pickerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Close picker when clicking outside
+  useEffect(() => {
+    if (!pickerOpen) return;
+    function handleClick(e: MouseEvent) {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+        setPickerOpen(false);
+        setNewTagName("");
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [pickerOpen]);
+
+  useEffect(() => {
+    if (pickerOpen) inputRef.current?.focus();
+  }, [pickerOpen]);
+
+  const assignedTags = note.tagIds.map((id) => getTagById(id)).filter(Boolean) as import("@/types").Tag[];
+  const unassignedTags = workspaceTags.filter((t) => !note.tagIds.includes(t.id));
+  const filteredUnassigned = newTagName
+    ? unassignedTags.filter((t) => t.name.toLowerCase().includes(newTagName.toLowerCase()))
+    : unassignedTags;
+
+  function handleCreateTag() {
+    const trimmed = newTagName.trim();
+    if (!trimmed) return;
+    onCreateTag(trimmed);
+    setNewTagName("");
+    setPickerOpen(false);
+  }
+
+  return (
+    <div className="flex items-center gap-1.5 mt-2.5 max-w-[680px] mx-auto flex-wrap relative">
+      {/* Assigned tags */}
+      {assignedTags.map((tag) => (
+        <button
+          key={tag.id}
+          onClick={() => onToggleTag(tag.id)}
+          className="group flex items-center gap-0.5"
+          title={`Remove tag "${tag.name}"`}
+        >
+          <Badge color={tag.color}>{tag.name}</Badge>
+          <X size={9} className="opacity-0 group-hover:opacity-100 text-[var(--text-tertiary)] transition-opacity -ml-1" />
+        </button>
+      ))}
+
+      {/* Add tag button */}
+      <div className="relative" ref={pickerRef}>
+        <button
+          onClick={() => setPickerOpen((o) => !o)}
+          className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)] border border-dashed border-[var(--border)] transition-colors"
+        >
+          <Tag size={9} />
+          Add tag
+        </button>
+
+        {pickerOpen && (
+          <div className="absolute top-full left-0 mt-1 z-20 bg-[var(--surface)] border border-[var(--border)] rounded-lg shadow-lg p-2 w-48">
+            <input
+              ref={inputRef}
+              value={newTagName}
+              onChange={(e) => setNewTagName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  if (filteredUnassigned.length === 0 && newTagName.trim()) handleCreateTag();
+                  else if (filteredUnassigned.length > 0) { onToggleTag(filteredUnassigned[0].id); setPickerOpen(false); setNewTagName(""); }
+                }
+                if (e.key === "Escape") { setPickerOpen(false); setNewTagName(""); }
+              }}
+              placeholder="Search or create…"
+              className="w-full px-2 py-1 text-xs rounded bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] mb-2"
+            />
+            <div className="max-h-36 overflow-y-auto space-y-0.5">
+              {filteredUnassigned.map((tag) => (
+                <button
+                  key={tag.id}
+                  onClick={() => { onToggleTag(tag.id); setPickerOpen(false); setNewTagName(""); }}
+                  className="flex items-center gap-2 w-full px-2 py-1 rounded text-xs hover:bg-[var(--surface-2)] transition-colors text-left"
+                >
+                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: tag.color }} />
+                  <span className="text-[var(--text-secondary)] truncate">{tag.name}</span>
+                </button>
+              ))}
+              {newTagName.trim() && (
+                <button
+                  onClick={handleCreateTag}
+                  className="flex items-center gap-2 w-full px-2 py-1 rounded text-xs hover:bg-[var(--surface-2)] transition-colors text-left text-[var(--accent)]"
+                >
+                  <Plus size={10} />
+                  Create &quot;{newTagName.trim()}&quot;
+                </button>
+              )}
+              {filteredUnassigned.length === 0 && !newTagName.trim() && (
+                <p className="text-[11px] text-[var(--text-tertiary)] px-2 py-1">No tags yet</p>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
