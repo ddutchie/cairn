@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Download, X } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { TitleBar } from "@/components/layout/title-bar";
 import { Sidebar } from "@/components/layout/sidebar";
@@ -31,6 +32,9 @@ export default function Home() {
   // false = fully set up
   const [onboardingState, setOnboardingState] = useState<"workspace" | "create" | false | null>(null);
 
+  // Auto-updater state
+  const [updateInfo, setUpdateInfo] = useState<{ version: string; downloaded: boolean } | null>(null);
+
   useEffect(() => {
     if (typeof window !== "undefined" && window.electron) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -49,10 +53,23 @@ export default function Home() {
       });
 
       // Register db:changed listener synchronously so React gets the cleanup fn
-      const unsub = e.onDbChanged(() => {
+      const unsubDb = e.onDbChanged(() => {
         hydrateFromElectron(true);
       });
-      return unsub;
+
+      // Auto-updater listeners
+      const unsubAvailable = e.updater?.onUpdateAvailable?.((info: { version: string }) => {
+        setUpdateInfo({ version: info.version, downloaded: false });
+      });
+      const unsubDownloaded = e.updater?.onUpdateDownloaded?.(() => {
+        setUpdateInfo((prev) => prev ? { ...prev, downloaded: true } : prev);
+      });
+
+      return () => {
+        unsubDb?.();
+        unsubAvailable?.();
+        unsubDownloaded?.();
+      };
     } else {
       hydrate();
       setOnboardingState(false);
@@ -104,6 +121,34 @@ export default function Home() {
     <main className="flex flex-col h-dvh w-screen overflow-hidden bg-[var(--background)]">
       {/* Electron title bar — draggable, clears macOS traffic lights */}
       <TitleBar />
+
+      {/* Auto-update banner */}
+      {updateInfo && (
+        <div className="flex items-center gap-3 px-4 py-2 bg-[var(--accent-dim)] border-b border-[var(--accent)]/30 flex-shrink-0">
+          <Download size={13} className="text-[var(--accent)] shrink-0" />
+          <span className="text-xs text-[var(--text-secondary)] flex-1">
+            {updateInfo.downloaded
+              ? <>Cairn <strong className="text-[var(--text-primary)]">v{updateInfo.version}</strong> is ready to install.</>
+              : <>Downloading Cairn <strong className="text-[var(--text-primary)]">v{updateInfo.version}</strong>…</>
+            }
+          </span>
+          {updateInfo.downloaded && (
+            <button
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              onClick={() => (window as any).electron?.updater?.install()}
+              className="px-3 py-1 rounded-md text-xs font-medium bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors"
+            >
+              Restart &amp; install
+            </button>
+          )}
+          <button
+            onClick={() => setUpdateInfo(null)}
+            className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+          >
+            <X size={12} />
+          </button>
+        </div>
+      )}
 
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* Left sidebar */}

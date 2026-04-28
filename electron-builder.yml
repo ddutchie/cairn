@@ -22,7 +22,7 @@ files:
   - node_modules/bindings/**/*
   - node_modules/file-uri-to-path/**/*
   # Exclude everything else in node_modules
-  - "!node_modules/!(better-sqlite3|bindings|file-uri-to-path)/**"
+  - "!node_modules/!(better-sqlite3|bindings|file-uri-to-path|electron-updater)/**"
 
 # Unpack from asar — native .node files and anything that needs real filesystem paths
 asarUnpack:
@@ -32,6 +32,7 @@ asarUnpack:
   - node_modules/better-sqlite3/**/*
   - node_modules/bindings/**/*
   - node_modules/file-uri-to-path/**/*
+  - node_modules/electron-updater/**/*
 
 # Rebuild native modules against Electron's Node version
 npmRebuild: true
@@ -46,6 +47,10 @@ mac:
   gatekeeperAssess: false
   entitlements: build-resources/entitlements.mac.plist
   entitlementsInherit: build-resources/entitlements.mac.plist
+  # Notarization — credentials supplied via env vars (CSC_LINK, APPLE_ID, etc.)
+  # Only runs when those env vars are present (i.e. in CI, not local builds)
+  notarize:
+    teamId: ${APPLE_TEAM_ID}
 
 dmg:
   sign: false
@@ -69,5 +74,6 @@ linux:
   icon: build-resources/icon.png
   category: Utility
 
-# Don't publish automatically
-publish: null
+publish:
+  provider: github
+  releaseType: release

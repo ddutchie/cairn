@@ -15,6 +15,7 @@ import { app, BrowserWindow, shell, session, protocol, net, dialog, ipcMain } fr
 import path from "path";
 import fs from "fs";
 import { pathToFileURL } from "url";
+import { autoUpdater } from "electron-updater";
 import { initDb } from "./db/client";
 import { registerIpcHandlers } from "./ipc/handlers";
 import {
@@ -165,6 +166,37 @@ app.whenReady().then(async () => {
   registerIpcHandlers(db, workspacePath);
 
   const win = createWindow();
+
+  // ── Auto-updater ──────────────────────────────────────────────────────
+  if (!isDev) {
+    autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = true;
+
+    autoUpdater.on("update-available", (info) => {
+      win.webContents.send("updater:update-available", {
+        version: info.version,
+        releaseNotes: info.releaseNotes ?? null,
+      });
+    });
+
+    autoUpdater.on("update-downloaded", () => {
+      win.webContents.send("updater:update-downloaded");
+    });
+
+    autoUpdater.on("error", (err) => {
+      // Log silently — don't surface network errors to the user
+      console.error("[updater]", err.message);
+    });
+
+    // IPC: renderer asks to install now and restart
+    ipcMain.handle("updater:install", () => {
+      autoUpdater.quitAndInstall();
+    });
+
+    // Check on launch, then every 4 hours
+    autoUpdater.checkForUpdates().catch(() => {});
+    setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), 4 * 60 * 60 * 1000);
+  }
 
   // ── File watcher for external .md edits ──────────────────────────────
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;

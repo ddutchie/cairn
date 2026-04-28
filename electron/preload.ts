@@ -81,6 +81,22 @@ const api = {
   needsWorkspaceSetup: () => invoke<boolean>("app:needsWorkspaceSetup"),
   initWorkspace: (workspacePath: string) => invoke<{ requiresRestart: boolean }>("app:initWorkspace", { workspacePath }),
 
+  // ── Auto-updater ──────────────────────────────
+  updater: {
+    onUpdateAvailable: (cb: (info: { version: string; releaseNotes: string | null }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, info: { version: string; releaseNotes: string | null }) => cb(info);
+      ipcRenderer.on("updater:update-available", handler);
+      return () => ipcRenderer.off("updater:update-available", handler);
+    },
+    onUpdateDownloaded: (cb: () => void) => {
+      const handler = () => cb();
+      ipcRenderer.on("updater:update-downloaded", handler);
+      return () => ipcRenderer.off("updater:update-downloaded", handler);
+    },
+    install: () => ipcRenderer.invoke("updater:install"),
+  },
+
   // ── DB change notifications (from MCP writes) ─
   onDbChanged: (cb: () => void) => {
     const handler = () => cb();
