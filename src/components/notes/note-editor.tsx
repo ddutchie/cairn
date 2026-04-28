@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useRef, useCallback, useState } from "react";
+import React, { useRef, useCallback, useState, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Pin, PinOff, Calendar, Eye, Pencil } from "lucide-react";
+import { Pin, PinOff, Calendar, Eye, Pencil, Wand2, Loader2, CheckCircle2 } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { cn, formatRelative } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -18,15 +18,17 @@ interface NoteEditorProps {
 type EditorMode = "write" | "read";
 
 export function NoteEditor({ note }: NoteEditorProps) {
-  const { updateNote, aiConfig } = useCairnStore();
+  const { updateNote, aiConfig, activeProjectId, getProjectColumns } = useCairnStore();
   const editorRef = useRef<MarkdownEditorHandle>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-
   const [mode, setMode] = useState<EditorMode>("write");
 
-
+  // Spawn tasks state
+  const [spawnLoading, setSpawnLoading] = useState(false);
+  const [spawnResult, setSpawnResult] = useState<{ count: number } | null>(null);
+  const [spawnToolCalls, setSpawnToolCalls] = useState<string[]>([]);
 
   // AI toolbar state
   const [toolbarPos, setToolbarPos] = useState<{ top: number; left: number } | null>(null);
@@ -104,6 +106,49 @@ export function NoteEditor({ note }: NoteEditorProps) {
     [aiConfig]
   );
 
+  useEffect(() => {
+    if (!spawnLoading) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const electron = (window as any).electron;
+    if (!electron?.onToolCall) return;
+    const unsub = electron.onToolCall((e: { tool: string; label: string }) => {
+      if (e.tool === "create_task") {
+        setSpawnToolCalls((prev) => [...prev, e.label]);
+      }
+    });
+    return unsub;
+  }, [spawnLoading]);
+
+  const handleSpawnTasks = useCallback(async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const electron = (window as any).electron;
+    if (!electron || !activeProjectId) return;
+
+    const columns = getProjectColumns(activeProjectId);
+    const backlogCol = columns.find((c) => c.type === "backlog") ?? columns[0];
+    if (!backlogCol) return;
+
+    setSpawnLoading(true);
+    setSpawnResult(null);
+    setSpawnToolCalls([]);
+    try {
+      const result = await electron.chatSend({
+        message: `Spawn tasks from the note with id="${note.id}" into column "${backlogCol.id}". Use the spawn_tasks_from_note tool.`,
+        threadId: "spawn-tasks",
+        projectId: activeProjectId,
+        config: { baseUrl: aiConfig.baseUrl, model: aiConfig.model, apiKey: aiConfig.apiKey },
+      }) as { content: string };
+
+      // Try to parse task count from the tool result embedded in the response
+      const match = result.content?.match(/(\d+)\s+task/i);
+      const count = match ? parseInt(match[1], 10) : null;
+      setSpawnResult({ count: count ?? 0 });
+      setTimeout(() => setSpawnResult(null), 4000);
+    } finally {
+      setSpawnLoading(false);
+    }
+  }, [note.id, activeProjectId, getProjectColumns, aiConfig]);
+
   return (
     <div
       ref={containerRef}
@@ -148,6 +193,34 @@ export function NoteEditor({ note }: NoteEditorProps) {
 
         {/* Meta */}
         <div className="flex items-center gap-2">
+          {spawnLoading ? (
+            <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-[var(--surface-2)] border border-[var(--border)]">
+              <Loader2 size={11} className="animate-spin text-[var(--accent)] shrink-0" />
+              <span className="text-[11px] text-[var(--text-tertiary)]">
+                {spawnToolCalls.length === 0
+                  ? "Analysing…"
+                  : spawnToolCalls[spawnToolCalls.length - 1].replace("Creating task ", "").replace(/^"|"$/g, "")}
+              </span>
+              {spawnToolCalls.length > 0 && (
+                <span className="text-[10px] text-[var(--accent)] font-medium">{spawnToolCalls.length}</span>
+              )}
+            </div>
+          ) : (
+            <Tooltip content="Spawn tasks from this note">
+              <button
+                onClick={handleSpawnTasks}
+                className={cn(
+                  "flex items-center gap-1.5 px-2 py-1 rounded-md text-xs transition-colors",
+                  spawnResult
+                    ? "text-green-400 bg-green-400/10"
+                    : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]"
+                )}
+              >
+                {spawnResult ? <CheckCircle2 size={12} /> : <Wand2 size={12} />}
+                {spawnResult ? `${spawnResult.count} tasks added` : "Spawn tasks"}
+              </button>
+            </Tooltip>
+          )}
           <Tooltip content={note.isPinned ? "Unpin note" : "Pin note"}>
             <button
               onClick={() => updateNote(note.id, { isPinned: !note.isPinned })}

@@ -56,18 +56,34 @@ export function ChatPanel() {
 
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [threadId, setThreadId] = useState<string | null>(null);
+  const [toolCalls, setToolCalls] = useState<Array<{ tool: string; label: string }>>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const project = projects.find((p) => p.id === activeProjectId);
   const workspace = workspaces.find((w) => w.id === activeWorkspaceId);
 
-  const thread = activeWorkspaceId
-    ? getOrCreateThread(activeWorkspaceId, activeProjectId ?? undefined)
-    : null;
+  // getOrCreateThread calls set() — must never be called during render
+  useEffect(() => {
+    if (!activeWorkspaceId) return;
+    const t = getOrCreateThread(activeWorkspaceId, activeProjectId ?? undefined);
+    setThreadId(t.id);
+  }, [activeWorkspaceId, activeProjectId, getOrCreateThread]);
 
-  const messages = thread
-    ? chatMessages.filter((m) => m.threadId === thread.id)
+  // Subscribe to live tool call events from the main process
+  useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const electron = (window as any).electron;
+    if (!electron?.onToolCall) return;
+    const unsub = electron.onToolCall((e: { tool: string; label: string }) => {
+      setToolCalls((prev) => [...prev, e]);
+    });
+    return unsub;
+  }, []);
+
+  const messages = threadId
+    ? chatMessages.filter((m) => m.threadId === threadId)
     : [];
 
   useEffect(() => {
@@ -80,11 +96,12 @@ export function ChatPanel() {
 
   async function handleSend(text?: string) {
     const content = text ?? input.trim();
-    if (!content || !thread) return;
+    if (!content || !threadId) return;
 
     setInput("");
-    addMessage(thread.id, "user", content);
+    addMessage(threadId, "user", content);
     setIsLoading(true);
+    setToolCalls([]);
 
     // Build a store snapshot to send to the API so tools have real data
     const snapshot = {
@@ -98,7 +115,7 @@ export function ChatPanel() {
 
     const chatReq = {
       message: content,
-      threadId: thread.id,
+      threadId,
       projectId: activeProjectId,
       workspaceId: activeWorkspaceId,
       history: messages.slice(-10).map((m) => ({ role: m.role, content: m.content })),
@@ -113,11 +130,11 @@ export function ChatPanel() {
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const data = await (window as any).electron.chatSend(chatReq);
-      addMessage(thread.id, "assistant", data.content, data.contextRefs);
+      addMessage(threadId, "assistant", data.content, data.contextRefs);
       // UI updates happen automatically via the db:changed watcher → hydrateFromElectron(true)
     } catch (err) {
       addMessage(
-        thread.id,
+        threadId,
         "assistant",
         err instanceof Error && err.message.includes("fetch")
           ? "Could not reach the server. Is the app running?"
@@ -125,6 +142,7 @@ export function ChatPanel() {
       );
     } finally {
       setIsLoading(false);
+      setToolCalls([]);
     }
   }
 
@@ -199,12 +217,22 @@ export function ChatPanel() {
 
         {isLoading && (
           <div className="flex gap-2 items-start">
-            <div className="w-6 h-6 rounded-full bg-[var(--accent-dim)] flex items-center justify-center flex-shrink-0 mt-0.5">
+            <div className="w-6 h-6 rounded-full bg-[var(--accent-dim)] flex items-center justify-center flex-shrink-0 mt-0.5 shrink-0">
               <Bot size={11} className="text-[var(--accent)]" />
             </div>
-            <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[var(--surface-2)] border border-[var(--border)]">
-              <Loader2 size={11} className="text-[var(--accent)] animate-spin" />
-              <span className="text-xs text-[var(--text-tertiary)]">Thinking…</span>
+            <div className="flex flex-col gap-1 min-w-0">
+              {toolCalls.map((tc, i) => (
+                <div key={i} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--surface-2)] border border-[var(--border)] w-fit">
+                  <CheckCircle size={10} className="text-[var(--accent)] shrink-0" />
+                  <span className="text-[11px] text-[var(--text-secondary)]">{tc.label}</span>
+                </div>
+              ))}
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--surface-2)] border border-[var(--border)] w-fit">
+                <Loader2 size={10} className="text-[var(--accent)] animate-spin shrink-0" />
+                <span className="text-[11px] text-[var(--text-tertiary)]">
+                  {toolCalls.length === 0 ? "Thinking…" : "Working…"}
+                </span>
+              </div>
             </div>
           </div>
         )}

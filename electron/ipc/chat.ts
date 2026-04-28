@@ -281,10 +281,104 @@ const TOOLS = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "generate_prd",
+      description: "Generate a structured Product Requirements Document (PRD) from a plain-language description and save it as a note in the project. Returns the created note with its ID.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string", description: "ID of the project to save the PRD note in" },
+          title: { type: "string", description: "Title for the PRD note, e.g. 'PRD — Login System'" },
+          requirements: { type: "string", description: "Plain-language description of what the user wants to build" },
+        },
+        required: ["projectId", "title", "requirements"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "spawn_tasks_from_note",
+      description: "Read a PRD or spec note and create structured task cards on the board from it. Links the tasks back to the note bidirectionally. Returns the list of created tasks.",
+      parameters: {
+        type: "object",
+        properties: {
+          noteId: { type: "string", description: "ID of the note to generate tasks from" },
+          columnId: { type: "string", description: "Column to place the tasks in (use Backlog by default)" },
+        },
+        required: ["noteId", "columnId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "link_note_to_task",
+      description: "Bidirectionally link a note and a task card. The note gains the card in linkedCardIds, the card gains the note in linkedNoteIds.",
+      parameters: {
+        type: "object",
+        properties: {
+          noteId: { type: "string" },
+          cardId: { type: "string" },
+        },
+        required: ["noteId", "cardId"],
+      },
+    },
+  },
 ];
 
+export interface LLMConfig { baseUrl: string; model: string; apiKey: string; }
+
+export async function callLLM(config: LLMConfig, systemPrompt: string, userPrompt: string): Promise<string> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (config.apiKey) headers["Authorization"] = `Bearer ${config.apiKey}`;
+  const response = await fetch(`${config.baseUrl}/v1/chat/completions`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      model: config.model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      max_tokens: 4096,
+      temperature: 0.4,
+    }),
+  });
+  if (!response.ok) throw new Error(`LLM error ${response.status}: ${await response.text().catch(() => response.statusText)}`);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = await response.json() as any;
+  return (data.choices?.[0]?.message?.content as string) ?? "";
+}
+
+// Human-readable labels for each tool call, shown in the UI
+const TOOL_LABELS: Record<string, (args: Record<string, unknown>) => string> = {
+  get_cairn_context:      () => "Reading workspace context",
+  get_active_context:     () => "Reading active context",
+  get_note:               (a) => `Reading note`,
+  list_notes:             () => "Listing notes",
+  list_tasks:             () => "Listing tasks",
+  search_notes:           (a) => `Searching notes for "${a.query}"`,
+  search_tasks:           (a) => `Searching tasks for "${a.query}"`,
+  get_project_summary:    () => "Reading project summary",
+  get_task:               () => "Reading task",
+  create_note:            (a) => `Creating note "${a.title}"`,
+  update_note:            () => "Updating note",
+  create_task:            (a) => `Creating task "${a.title}"`,
+  update_task_status:     () => "Moving task",
+  create_project:         (a) => `Creating project "${a.name}"`,
+  delete_note:            () => "Deleting note",
+  delete_task:            () => "Deleting task",
+  generate_prd:           (a) => `Generating PRD "${a.title}"`,
+  spawn_tasks_from_note:  () => "Spawning tasks from note",
+  link_note_to_task:      () => "Linking note to task",
+};
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function executeTool(db: Database.Database, req: ChatRequest, workspacePath: string, name: string, args: Record<string, any>): unknown {
+async function executeTool(db: Database.Database, req: ChatRequest, workspacePath: string, llmConfig: LLMConfig, name: string, args: Record<string, any>, emit?: (event: { tool: string; label: string; args: Record<string, unknown> }) => void): Promise<unknown> {
+  emit?.({ tool: name, label: TOOL_LABELS[name]?.(args) ?? name, args });
   const snap = q.getFullSnapshot(db);
   const now = new Date().toISOString();
   const newId = () => Math.random().toString(36).slice(2, 14);
@@ -497,13 +591,107 @@ function executeTool(db: Database.Database, req: ChatRequest, workspacePath: str
       q.deleteCard(db, args.cardId as string);
       return { deleted: true, id: args.cardId, title: card.title };
     }
+    case "generate_prd": {
+      const project = snap.projects.find((p) => p.id === args.projectId);
+      if (!project) return { error: "Project not found" };
+
+      const systemPrompt = `You are an expert product manager. Generate a thorough, well-structured Product Requirements Document (PRD) in markdown format. Include all standard sections. Be specific and actionable.`;
+      const userPrompt = `Generate a complete PRD for the following:\n\n${args.requirements as string}\n\nInclude these sections:\n# ${args.title as string}\n\n## Overview\n## Problem Statement\n## Goals & Non-Goals\n## User Stories\n## Functional Requirements\n## Non-Functional Requirements\n## Acceptance Criteria\n## Open Questions\n\nReturn only the markdown document, no commentary.`;
+
+      let prdMarkdown: string;
+      try {
+        prdMarkdown = await callLLM(llmConfig, systemPrompt, userPrompt);
+      } catch (err) {
+        return { error: `Failed to generate PRD: ${(err as Error).message}` };
+      }
+
+      const noteId = newId();
+      const note = q.createNote(db, {
+        id: noteId, projectId: args.projectId as string, workspaceId: project.workspaceId,
+        title: args.title as string, content: prdMarkdown, contentText: stripMarkdown(prdMarkdown),
+      });
+      writeNoteFile(workspacePath, { ...note, projectName: project.name });
+      return { id: note.id, title: note.title, projectId: note.projectId, content: prdMarkdown };
+    }
+    case "spawn_tasks_from_note": {
+      const note = snap.notes.find((n) => n.id === args.noteId);
+      if (!note) return { error: "Note not found" };
+      const col = snap.columns.find((c) => c.id === args.columnId);
+      if (!col) return { error: "Column not found" };
+      const project = snap.projects.find((p) => p.id === col.projectId);
+
+      const systemPrompt = `You are an expert project manager. Extract a list of actionable development tasks from the given document. Return ONLY a valid JSON array, nothing else. Each item must have: title (string), description (string, 1-2 sentences), priority ("low"|"medium"|"high"|"urgent").`;
+      const userPrompt = `Extract tasks from this document:\n\n${note.content ?? note.contentText}`;
+
+      let tasksRaw: string;
+      try {
+        tasksRaw = await callLLM(llmConfig, systemPrompt, userPrompt);
+      } catch (err) {
+        return { error: `Failed to generate tasks: ${(err as Error).message}` };
+      }
+
+      // Parse JSON — strip potential markdown code fence
+      let tasks: Array<{ title: string; description: string; priority: string }> = [];
+      try {
+        const jsonStr = tasksRaw.replace(/^```(?:json)?\n?/i, "").replace(/\n?```$/i, "").trim();
+        tasks = JSON.parse(jsonStr);
+      } catch {
+        return { error: `Could not parse task list from AI response: ${tasksRaw.slice(0, 200)}` };
+      }
+
+      const createdCards = [];
+      const existingCount = snap.cards.filter((c) => c.columnId === args.columnId).length;
+      for (let i = 0; i < tasks.length; i++) {
+        const task = tasks[i];
+        const cardId = newId();
+        emit?.({ tool: "create_task", label: `Creating task "${task.title}"`, args: { title: task.title } });
+        const card = q.createCard(db, {
+          id: cardId, columnId: args.columnId as string,
+          projectId: col.projectId, workspaceId: col.workspaceId,
+          title: task.title, description: task.description,
+          priority: task.priority ?? "medium",
+          order: existingCount + i,
+        });
+        // Link card → note
+        q.updateCard(db, cardId, { linkedNoteIds: [args.noteId as string] });
+        createdCards.push({ id: card.id, title: card.title, priority: card.priority });
+      }
+
+      // Link note → all created cards
+      const existingCardIds = note.linkedCardIds ?? [];
+      const newCardIds = createdCards.map((c) => c.id);
+      const updatedNote = q.updateNote(db, args.noteId as string, {
+        linkedCardIds: [...existingCardIds, ...newCardIds],
+      });
+      writeNoteFile(workspacePath, { ...updatedNote, projectName: project?.name ?? col.projectId });
+
+      return { tasksCreated: createdCards.length, tasks: createdCards, noteId: args.noteId };
+    }
+    case "link_note_to_task": {
+      const note = snap.notes.find((n) => n.id === args.noteId);
+      if (!note) return { error: "Note not found" };
+      const card = snap.cards.find((c) => c.id === args.cardId);
+      if (!card) return { error: "Task not found" };
+      const project = snap.projects.find((p) => p.id === note.projectId);
+
+      // Add card to note's linkedCardIds (deduped)
+      const noteCardIds = [...new Set([...(note.linkedCardIds ?? []), args.cardId as string])];
+      const updatedNote = q.updateNote(db, args.noteId as string, { linkedCardIds: noteCardIds });
+      writeNoteFile(workspacePath, { ...updatedNote, projectName: project?.name ?? note.projectId });
+
+      // Add note to card's linkedNoteIds (deduped)
+      const cardNoteIds = [...new Set([...(card.linkedNoteIds ?? []), args.noteId as string])];
+      q.updateCard(db, args.cardId as string, { linkedNoteIds: cardNoteIds });
+
+      return { linked: true, noteId: args.noteId, cardId: args.cardId };
+    }
     default:
       return { error: `Unknown tool: ${name}` };
   }
 }
 
 export function registerChatHandler(db: Database.Database, workspacePath: string): void {
-  ipcMain.handle("chat:send", async (_event, req: ChatRequest) => {
+  ipcMain.handle("chat:send", async (event, req: ChatRequest) => {
     const baseUrl = (req.config?.baseUrl ?? "https://api.openai.com").replace(/\/$/, "");
     const model = req.config?.model ?? "gpt-4o-mini";
     const apiKey = req.config?.apiKey ?? "";
@@ -557,7 +745,10 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
       for (const call of assistantMsg.tool_calls) {
         let args: Record<string, unknown> = {};
         try { args = JSON.parse(call.function.arguments); } catch { args = {}; }
-        const result = executeTool(db, req, workspacePath, call.function.name, args);
+        const emit = (e: { tool: string; label: string; args: Record<string, unknown> }) => {
+          event.sender.send("chat:tool-call", e);
+        };
+        const result = await executeTool(db, req, workspacePath, { baseUrl, model, apiKey }, call.function.name, args, emit);
         messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
       }
     }

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   FileText,
   Plus,
@@ -8,13 +8,14 @@ import {
   PinOff,
   Trash2,
   MoreHorizontal,
-  Link,
   Search,
+  Wand2,
+  Loader2,
+  X,
 } from "lucide-react";
 import { useCairnStore } from "@/store";
-import { cn, formatRelative, id } from "@/lib/utils";
+import { cn, formatRelative } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { NoteEditor } from "./note-editor";
 import type { Note } from "@/types";
 import {
@@ -32,10 +33,13 @@ export function NotesView() {
     createNote,
     updateNote,
     deleteNote,
+    aiConfig,
+    getProjectColumns,
   } = useCairnStore();
 
   const [activeNoteId, setActiveNoteId] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
+  const [prdModalOpen, setPrdModalOpen] = useState(false);
 
   const notes = activeProjectId ? getProjectNotes(activeProjectId) : [];
   const filtered = filter
@@ -53,6 +57,16 @@ export function NotesView() {
       setActiveNoteId(notes[0].id);
     }
   }, [activeNoteId, notes]);
+
+  // When a new note appears that we haven't selected yet (e.g. PRD just created), auto-select it
+  const prevNoteCountRef = useRef(notes.length);
+  useEffect(() => {
+    if (notes.length > prevNoteCountRef.current) {
+      // A note was added — select the most recently updated one (first in sorted list)
+      setActiveNoteId(notes[0].id);
+    }
+    prevNoteCountRef.current = notes.length;
+  }, [notes]);
 
   function handleCreateNote() {
     if (!activeProjectId) return;
@@ -77,9 +91,19 @@ export function NotesView() {
           <span className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider">
             Notes
           </span>
-          <Button variant="ghost" size="icon" onClick={handleCreateNote}>
-            <Plus size={14} />
-          </Button>
+          <div className="flex items-center gap-0.5">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setPrdModalOpen(true)}
+              title="Generate PRD with AI"
+            >
+              <Wand2 size={13} />
+            </Button>
+            <Button variant="ghost" size="icon" onClick={handleCreateNote}>
+              <Plus size={14} />
+            </Button>
+          </div>
         </div>
 
         {/* Search */}
@@ -150,12 +174,155 @@ export function NotesView() {
             <div className="text-center">
               <FileText size={32} className="mx-auto mb-3 text-[var(--text-tertiary)] opacity-30" />
               <p className="text-sm text-[var(--text-tertiary)]">Select a note or create a new one</p>
-              <Button variant="accent" size="sm" className="mt-4" onClick={handleCreateNote}>
-                <Plus size={13} /> New Note
-              </Button>
+              <div className="flex items-center gap-2 mt-4 justify-center">
+                <Button variant="accent" size="sm" onClick={handleCreateNote}>
+                  <Plus size={13} /> New Note
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setPrdModalOpen(true)}>
+                  <Wand2 size={13} /> Generate PRD
+                </Button>
+              </div>
             </div>
           </div>
         )}
+      </div>
+
+      {prdModalOpen && activeProjectId && (
+        <PrdModal
+          projectId={activeProjectId}
+          aiConfig={aiConfig}
+          onClose={() => setPrdModalOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── PRD Generation Modal ────────────────────────────────────────────────────
+
+interface PrdModalProps {
+  projectId: string;
+  aiConfig: { baseUrl: string; model: string; apiKey: string };
+  onClose: () => void;
+}
+
+function PrdModal({ projectId, aiConfig, onClose }: PrdModalProps) {
+  const [title, setTitle] = useState("");
+  const [requirements, setRequirements] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const titleRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    titleRef.current?.focus();
+  }, []);
+
+  async function handleGenerate() {
+    if (!title.trim() || !requirements.trim()) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const electron = (window as any).electron;
+    if (!electron) return;
+
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await electron.generatePrd({
+        projectId,
+        title: title.trim(),
+        requirements: requirements.trim(),
+        config: {
+          baseUrl: aiConfig.baseUrl || "https://api.openai.com",
+          model: aiConfig.model || "gpt-4o-mini",
+          apiKey: aiConfig.apiKey || "",
+        },
+      });
+      if (result?.error) {
+        setError(result.error);
+      } else {
+        onClose();
+      }
+    } catch (err) {
+      setError((err as Error).message ?? "Failed to generate PRD");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div
+        className="bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-2xl w-full max-w-lg mx-4 p-5 flex flex-col gap-4"
+        onKeyDown={(e) => e.key === "Escape" && !loading && onClose()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Wand2 size={15} className="text-[var(--accent)]" />
+            <span className="text-sm font-semibold text-[var(--text-primary)]">Generate PRD</span>
+          </div>
+          <button
+            onClick={onClose}
+            disabled={loading}
+            className="p-1 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors disabled:opacity-40"
+          >
+            <X size={14} />
+          </button>
+        </div>
+
+        {/* Title */}
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-medium text-[var(--text-secondary)]">PRD title</label>
+          <input
+            ref={titleRef}
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="e.g. PRD — User Authentication"
+            disabled={loading}
+            className="w-full px-3 py-2 text-sm rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] disabled:opacity-50"
+          />
+        </div>
+
+        {/* Requirements */}
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-medium text-[var(--text-secondary)]">Describe what you want to build</label>
+          <textarea
+            value={requirements}
+            onChange={(e) => setRequirements(e.target.value)}
+            placeholder="e.g. I want to build a login system with email/password and Google OAuth. Users should be able to reset their password via email. The session should expire after 30 days."
+            disabled={loading}
+            rows={5}
+            className="w-full px-3 py-2 text-sm rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] resize-none disabled:opacity-50"
+          />
+        </div>
+
+        {error && (
+          <p className="text-xs text-red-400 bg-red-400/10 rounded-md px-3 py-2">{error}</p>
+        )}
+
+        {/* Actions */}
+        <div className="flex items-center justify-end gap-2">
+          <Button variant="ghost" size="sm" onClick={onClose} disabled={loading}>
+            Cancel
+          </Button>
+          <Button
+            variant="accent"
+            size="sm"
+            onClick={handleGenerate}
+            disabled={loading || !title.trim() || !requirements.trim()}
+          >
+            {loading ? (
+              <>
+                <Loader2 size={12} className="animate-spin" />
+                Generating…
+              </>
+            ) : (
+              <>
+                <Wand2 size={12} />
+                Generate PRD
+              </>
+            )}
+          </Button>
+        </div>
       </div>
     </div>
   );

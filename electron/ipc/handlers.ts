@@ -15,7 +15,7 @@ import { ipcMain, app } from "electron";
 import path from "path";
 import type Database from "better-sqlite3";
 import * as q from "../db/queries";
-import { registerChatHandler } from "./chat";
+import { registerChatHandler, callLLM } from "./chat";
 import { writeNoteFile, deleteNoteFile, stripMarkdown } from "../notes-files";
 
 function getProjectName(db: Database.Database, projectId: string): string {
@@ -110,4 +110,61 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
 
   // ── AI Chat completions ────────────────────────────
   registerChatHandler(db, workspacePath);
+
+  // ── AI PRD generation (direct, no chat loop) ──────
+  ipcMain.handle("ai:generatePrd", async (_e, args: {
+    projectId: string;
+    title: string;
+    requirements: string;
+    config: { baseUrl: string; model: string; apiKey: string };
+  }) => {
+    const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(args.projectId) as { id: string; name: string; workspace_id: string } | undefined;
+    if (!project) return { error: "Project not found" };
+
+    const baseUrl = (args.config.baseUrl || "https://api.openai.com").replace(/\/$/, "");
+    const model = args.config.model || "gpt-4o-mini";
+    const apiKey = args.config.apiKey || "";
+    const isLocal = baseUrl.includes("localhost") || baseUrl.includes("127.0.0.1") || baseUrl.includes("0.0.0.0");
+    if (!apiKey && !isLocal) {
+      return { error: "AI is not configured. Add an API key in Settings → AI & Chat, or use a local endpoint." };
+    }
+    const llmConfig = { baseUrl, model, apiKey };
+
+    const systemPrompt = `You are an expert product manager. Generate a thorough, well-structured Product Requirements Document (PRD) in markdown format. Be specific and actionable.`;
+    const userPrompt = `Generate a complete PRD titled "${args.title}" for the following:\n\n${args.requirements}\n\nInclude these sections:\n## Overview\n## Problem Statement\n## Goals & Non-Goals\n## User Stories\n## Functional Requirements\n## Non-Functional Requirements\n## Acceptance Criteria\n## Open Questions\n\nStart directly with the markdown. No preamble.`;
+
+    let prdMarkdown: string;
+    try {
+      prdMarkdown = await callLLM(llmConfig, systemPrompt, userPrompt);
+    } catch (err) {
+      return { error: `LLM call failed (endpoint: ${baseUrl}, model: ${model}): ${(err as Error).message}` };
+    }
+
+    const noteId = Math.random().toString(36).slice(2, 14);
+    const now = new Date().toISOString();
+    db.prepare(`
+      INSERT INTO notes (id, project_id, workspace_id, title, content, content_text,
+        tag_ids, linked_note_ids, linked_card_ids, is_pinned, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, '[]', '[]', '[]', 0, ?, ?)
+    `).run(noteId, args.projectId, project.workspace_id, args.title, prdMarkdown, stripMarkdown(prdMarkdown), now, now);
+
+    const note = db.prepare("SELECT * FROM notes WHERE id = ?").get(noteId) as { id: string; title: string; project_id: string };
+    writeNoteFile(workspacePath, {
+      id: note.id,
+      projectId: note.project_id,
+      workspaceId: project.workspace_id,
+      title: args.title,
+      content: prdMarkdown,
+      contentText: stripMarkdown(prdMarkdown),
+      tagIds: [],
+      linkedNoteIds: [],
+      linkedCardIds: [],
+      isPinned: false,
+      createdAt: now,
+      updatedAt: now,
+      projectName: project.name,
+    });
+
+    return { id: noteId, title: args.title, projectId: args.projectId };
+  });
 }

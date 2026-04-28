@@ -70,6 +70,7 @@ const api = {
   },
   // ── AI Chat completions ────────────────────────
   chatSend: (req: unknown) => invoke<unknown>("chat:send", req),
+  generatePrd: (args: unknown) => invoke<{ id: string; title: string; projectId: string } | { error: string }>("ai:generatePrd", args),
 
   // ── App paths ─────────────────────────────────
   mcpServerPath: () => invoke<string>("app:mcpServerPath"),
@@ -85,6 +86,14 @@ const api = {
     const handler = () => cb();
     ipcRenderer.on("db:changed", handler);
     return () => ipcRenderer.off("db:changed", handler);
+  },
+
+  // ── Live tool call events during chat:send ────
+  onToolCall: (cb: (e: { tool: string; label: string; args: Record<string, unknown> }) => void) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const handler = (_: any, e: { tool: string; label: string; args: Record<string, unknown> }) => cb(e);
+    ipcRenderer.on("chat:tool-call", handler);
+    return () => ipcRenderer.off("chat:tool-call", handler);
   },
 } as const;
 
