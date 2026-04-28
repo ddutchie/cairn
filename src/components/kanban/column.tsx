@@ -6,6 +6,7 @@ import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable"
 import { Plus, MoreHorizontal, Grip } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Tooltip } from "@/components/ui/tooltip";
 import { KanbanCard } from "./card";
 import type { BoardColumn, TaskCard } from "@/types";
 
@@ -77,14 +78,16 @@ export function KanbanColumn({
         <span className="text-[11px] text-[var(--text-tertiary)] flex-shrink-0 font-mono">
           {cards.length}
         </span>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="opacity-0 hover:opacity-100 group-hover:opacity-100 w-5 h-5"
-          onClick={() => setIsAddingCard(true)}
-        >
-          <Plus size={11} />
-        </Button>
+        <Tooltip content="Add card">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="opacity-0 hover:opacity-100 group-hover:opacity-100 w-5 h-5"
+            onClick={() => setIsAddingCard(true)}
+          >
+            <Plus size={11} />
+          </Button>
+        </Tooltip>
       </div>
 
       {/* Cards */}

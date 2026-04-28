@@ -137,12 +137,14 @@ export function Sidebar() {
         <span className="text-sm font-semibold text-[var(--text-primary)] truncate flex-1">
           {workspace?.name ?? "Workspace"}
         </span>
-        <button
-          onClick={toggleSidebar}
-          className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
-        >
-          <ChevronRight size={13} />
-        </button>
+        <Tooltip content="Collapse sidebar" side="right">
+          <button
+            onClick={toggleSidebar}
+            className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
+          >
+            <ChevronRight size={13} />
+          </button>
+        </Tooltip>
       </div>
 
       {/* Quick actions */}
@@ -229,12 +231,16 @@ export function Sidebar() {
                 placeholder="Project name"
                 className="flex-1 min-w-0 bg-transparent text-xs text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none"
               />
-              <button onClick={commitCreateProject} className="p-0.5 text-[var(--success)] hover:opacity-80">
-                <Check size={11} />
-              </button>
-              <button onClick={cancelCreateProject} className="p-0.5 text-[var(--text-tertiary)] hover:opacity-80">
-                <X size={11} />
-              </button>
+              <Tooltip content="Confirm">
+                <button onClick={commitCreateProject} className="p-0.5 text-[var(--success)] hover:opacity-80">
+                  <Check size={11} />
+                </button>
+              </Tooltip>
+              <Tooltip content="Cancel">
+                <button onClick={cancelCreateProject} className="p-0.5 text-[var(--text-tertiary)] hover:opacity-80">
+                  <X size={11} />
+                </button>
+              </Tooltip>
             </div>
           )}
         </div>

@@ -19,6 +19,7 @@ import {
 import { cn, formatRelative } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { Button } from "@/components/ui/button";
+import { Tooltip } from "@/components/ui/tooltip";
 import type { ChatMessage, LinkedContextReference, PendingAction } from "@/types";
 
 const SUGGESTED_PROMPTS = [
@@ -166,12 +167,14 @@ export function ChatPanel() {
         <span className="text-xs text-[var(--text-tertiary)] truncate max-w-24">
           {project?.name ?? workspace?.name}
         </span>
-        <button
-          onClick={toggleChat}
-          className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
-        >
-          <X size={13} />
-        </button>
+        <Tooltip content="Close chat" side="left">
+          <button
+            onClick={toggleChat}
+            className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
+          >
+            <X size={13} />
+          </button>
+        </Tooltip>
       </div>
 
       {/* Messages */}
@@ -252,13 +255,15 @@ export function ChatPanel() {
             rows={2}
             className="w-full resize-none rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5 pr-10 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] transition-colors leading-relaxed"
           />
-          <button
-            onClick={() => handleSend()}
-            disabled={!input.trim() || isLoading}
-            className="absolute right-2 bottom-2 p-1.5 rounded-md text-[var(--accent)] hover:bg-[var(--accent-dim)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <Send size={13} />
-          </button>
+          <Tooltip content="Send (Enter)" side="left">
+            <button
+              onClick={() => handleSend()}
+              disabled={!input.trim() || isLoading}
+              className="absolute right-2 bottom-2 p-1.5 rounded-md text-[var(--accent)] hover:bg-[var(--accent-dim)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Send size={13} />
+            </button>
+          </Tooltip>
         </div>
         <p className="text-[10px] text-[var(--text-tertiary)] mt-1.5 text-center">
           Shift+Enter for new line · Enter to send

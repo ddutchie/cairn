@@ -16,6 +16,7 @@ import {
 import { useCairnStore } from "@/store";
 import { cn, formatRelative } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Tooltip } from "@/components/ui/tooltip";
 import { NoteEditor } from "./note-editor";
 import type { Note } from "@/types";
 import {
@@ -92,17 +93,16 @@ export function NotesView() {
             Notes
           </span>
           <div className="flex items-center gap-0.5">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setPrdModalOpen(true)}
-              title="Generate PRD with AI"
-            >
-              <Wand2 size={13} />
-            </Button>
-            <Button variant="ghost" size="icon" onClick={handleCreateNote}>
-              <Plus size={14} />
-            </Button>
+            <Tooltip content="Generate PRD with AI">
+              <Button variant="ghost" size="icon" onClick={() => setPrdModalOpen(true)}>
+                <Wand2 size={13} />
+              </Button>
+            </Tooltip>
+            <Tooltip content="New note">
+              <Button variant="ghost" size="icon" onClick={handleCreateNote}>
+                <Plus size={14} />
+              </Button>
+            </Tooltip>
           </div>
         </div>
 
@@ -260,13 +260,15 @@ function PrdModal({ projectId, aiConfig, onClose }: PrdModalProps) {
             <Wand2 size={15} className="text-[var(--accent)]" />
             <span className="text-sm font-semibold text-[var(--text-primary)]">Generate PRD</span>
           </div>
-          <button
-            onClick={onClose}
-            disabled={loading}
-            className="p-1 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors disabled:opacity-40"
-          >
-            <X size={14} />
-          </button>
+          <Tooltip content="Close">
+            <button
+              onClick={onClose}
+              disabled={loading}
+              className="p-1 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors disabled:opacity-40"
+            >
+              <X size={14} />
+            </button>
+          </Tooltip>
         </div>
 
         {/* Title */}

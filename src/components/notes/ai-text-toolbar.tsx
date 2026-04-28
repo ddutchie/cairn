@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Loader2, Wand2, RefreshCw, AlignLeft, Expand, SpellCheck, MessageSquare, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Tooltip } from "@/components/ui/tooltip";
 
 export type AITextAction =
   | "rephrase"
@@ -93,12 +94,14 @@ export function AITextToolbar({ position, onAction, loading, onDismiss }: AIText
                 </button>
               ))}
               <div className="w-px h-4 bg-[var(--border)] mx-0.5" />
-              <button
-                onClick={onDismiss}
-                className="p-1 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
-              >
-                <X size={11} />
-              </button>
+              <Tooltip content="Dismiss" side="top">
+                <button
+                  onClick={onDismiss}
+                  className="p-1 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
+                >
+                  <X size={11} />
+                </button>
+              </Tooltip>
             </>
           )}
         </div>

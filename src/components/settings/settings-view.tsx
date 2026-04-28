@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Tooltip } from "@/components/ui/tooltip";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { useCairnStore, DEFAULT_AI_CONFIG } from "@/store";
 import { storage } from "@/lib/storage";
@@ -354,12 +355,14 @@ function AISettings() {
               placeholder={isLocal ? "optional" : "sk-…"}
               className="pl-7 pr-8 py-1.5 text-xs w-52 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)]"
             />
-            <button
-              onClick={() => setShowKey((s) => !s)}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-            >
-              {showKey ? <EyeOff size={11} /> : <Eye size={11} />}
-            </button>
+            <Tooltip content={showKey ? "Hide API key" : "Show API key"} side="top">
+              <button
+                onClick={() => setShowKey((s) => !s)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+              >
+                {showKey ? <EyeOff size={11} /> : <Eye size={11} />}
+              </button>
+            </Tooltip>
           </div>
         </SettingsRow>
 
