@@ -74,6 +74,12 @@ const api = {
   // ── App paths ─────────────────────────────────
   mcpServerPath: () => invoke<string>("app:mcpServerPath"),
 
+  // ── Workspace folder ──────────────────────────
+  selectWorkspaceFolder: () => invoke<string | null>("app:selectWorkspaceFolder"),
+  getWorkspacePath: () => invoke<string | null>("app:getWorkspacePath"),
+  needsWorkspaceSetup: () => invoke<boolean>("app:needsWorkspaceSetup"),
+  initWorkspace: (workspacePath: string) => invoke<{ requiresRestart: boolean }>("app:initWorkspace", { workspacePath }),
+
   // ── DB change notifications (from MCP writes) ─
   onDbChanged: (cb: () => void) => {
     const handler = () => cb();

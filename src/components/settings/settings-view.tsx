@@ -982,7 +982,7 @@ function AboutSection() {
             <div className="text-xs text-[var(--text-tertiary)] mt-0.5">v{process.env.NEXT_PUBLIC_APP_VERSION ?? "0.1.0"}</div>
           </div>
           <p className="text-xs leading-relaxed max-w-xs">
-            Local-first notes and kanban in one place. All data lives in a SQLite database on your machine — no accounts, no cloud. An embedded MCP server lets AI agents read and write your workspace directly.
+            Local-first notes and kanban in one place. Notes are saved as Markdown files in a folder you choose; project and task data lives in SQLite alongside them. No accounts, no cloud. An embedded MCP server lets AI agents read and write your workspace directly.
           </p>
         </div>
 
@@ -995,12 +995,13 @@ function AboutSection() {
               ["React 19", "Renderer"],
               ["TypeScript", "Language"],
               ["Tailwind CSS v4", "Styling"],
-              ["SQLite", "Local database"],
+              ["better-sqlite3", "Local database"],
+              ["gray-matter", "Note frontmatter"],
+              ["chokidar", "File watcher"],
               ["Zustand", "State"],
               ["dnd-kit", "Drag & drop"],
               ["Lucide", "Icons"],
               ["MCP SDK", "Agent protocol"],
-              ["Vercel AI SDK", "AI chat"],
               ["esbuild", "Bundler"],
             ].map(([tech, role]) => (
               <div

@@ -14,6 +14,7 @@ import path from "path";
 import os from "os";
 import fs from "fs";
 import Database from "better-sqlite3";
+import matter from "gray-matter";
 
 // When bundled and running from inside app.asar.unpacked, the native .node
 // binary must be loaded explicitly — `bindings` can't walk the asar boundary.
@@ -37,7 +38,12 @@ export const MCP_PORT = 3123;
 
 // ── DB path resolution ────────────────────────
 
-function findDbPath(): string | null {
+/**
+ * Try to read the workspace config file written by the Electron app.
+ * Returns the path to cairn.db inside the user-chosen workspace folder,
+ * or null if the config doesn't exist yet.
+ */
+function findDbPathFromWorkspaceConfig(): string | null {
   const home = os.homedir();
   const platform = process.platform;
 
@@ -50,7 +56,40 @@ function findDbPath(): string | null {
     base = process.env.XDG_CONFIG_HOME ?? path.join(home, ".config");
   }
 
-  // Search all candidate app-name folders, prefer the one with most data
+  const names = ["Cairn", "cairn", "Electron"];
+  for (const name of names) {
+    const configPath = path.join(base, name, "workspace-config.json");
+    if (!fs.existsSync(configPath)) continue;
+    try {
+      const raw = fs.readFileSync(configPath, "utf-8");
+      const config = JSON.parse(raw) as { workspacePath?: string };
+      if (typeof config.workspacePath === "string" && config.workspacePath.length > 0) {
+        const dbPath = path.join(config.workspacePath, "cairn.db");
+        if (fs.existsSync(dbPath)) return dbPath;
+      }
+    } catch { /* ignore */ }
+  }
+  return null;
+}
+
+function findDbPath(): string | null {
+  // First: check the workspace config (user-chosen folder)
+  const fromConfig = findDbPathFromWorkspaceConfig();
+  if (fromConfig) return fromConfig;
+
+  const home = os.homedir();
+  const platform = process.platform;
+
+  let base: string;
+  if (platform === "win32") {
+    base = process.env.APPDATA ?? path.join(home, "AppData", "Roaming");
+  } else if (platform === "darwin") {
+    base = path.join(home, "Library", "Application Support");
+  } else {
+    base = process.env.XDG_CONFIG_HOME ?? path.join(home, ".config");
+  }
+
+  // Fallback: search legacy app-data locations, prefer the one with most data
   const names = ["Cairn", "cairn", "Electron"];
   let best: string | null = null;
   let bestCount = -1;
@@ -100,6 +139,99 @@ function stripMarkdown(md: string): string {
     .trim();
 }
 
+// ── Note file helpers ─────────────────────────
+// The workspace folder path is resolved once at startup (see findWorkspacePath).
+
+function toSlug(str: string): string {
+  return str.trim().replace(/[/\\:*?"<>|]/g, "").replace(/\s+/g, " ").slice(0, 100).trim() || "Untitled";
+}
+
+function projectNotesDir(workspacePath: string, projectName: string): string {
+  return path.join(workspacePath, "notes", toSlug(projectName));
+}
+
+function findNoteFilePath(workspacePath: string, projectName: string, noteId: string): string | null {
+  const dir = projectNotesDir(workspacePath, projectName);
+  if (!fs.existsSync(dir)) return null;
+  for (const entry of fs.readdirSync(dir)) {
+    if (!entry.endsWith(".md")) continue;
+    const fp = path.join(dir, entry);
+    try {
+      const { data } = matter(fs.readFileSync(fp, "utf-8"));
+      if (data.id === noteId) return fp;
+    } catch { /* skip */ }
+  }
+  return null;
+}
+
+function resolveNoteFilePath(workspacePath: string, projectName: string, title: string, noteId: string): string {
+  const dir = projectNotesDir(workspacePath, projectName);
+  const slug = toSlug(title);
+  const candidate = path.join(dir, `${slug}.md`);
+  if (!fs.existsSync(candidate)) return candidate;
+  try {
+    const { data } = matter(fs.readFileSync(candidate, "utf-8"));
+    if (data.id === noteId) return candidate;
+  } catch { /* collision */ }
+  return path.join(dir, `${slug}-${noteId.slice(0, 6)}.md`);
+}
+
+interface NoteFileData {
+  id: string; projectId: string; workspaceId: string; title: string; content: string;
+  tagIds: string[]; linkedNoteIds: string[]; linkedCardIds: string[];
+  isPinned: boolean; createdAt: string; updatedAt: string; archivedAt?: string;
+  projectName: string;
+}
+
+function writeNoteFile(workspacePath: string, note: NoteFileData): void {
+  const dir = projectNotesDir(workspacePath, note.projectName);
+  fs.mkdirSync(dir, { recursive: true });
+  const existingPath = findNoteFilePath(workspacePath, note.projectName, note.id);
+  const newPath = resolveNoteFilePath(workspacePath, note.projectName, note.title, note.id);
+  if (existingPath && existingPath !== newPath) {
+    try { fs.unlinkSync(existingPath); } catch { /* ignore */ }
+  }
+  const frontmatter: Record<string, unknown> = {
+    id: note.id, projectId: note.projectId, workspaceId: note.workspaceId,
+    title: note.title, tagIds: note.tagIds, linkedNoteIds: note.linkedNoteIds,
+    linkedCardIds: note.linkedCardIds, isPinned: note.isPinned,
+    createdAt: note.createdAt, updatedAt: note.updatedAt,
+  };
+  if (note.archivedAt) frontmatter.archivedAt = note.archivedAt;
+  fs.writeFileSync(newPath, matter.stringify(note.content ?? "", frontmatter), "utf-8");
+}
+
+function deleteNoteFile(workspacePath: string, projectName: string, noteId: string): void {
+  const fp = findNoteFilePath(workspacePath, projectName, noteId);
+  if (fp) { try { fs.unlinkSync(fp); } catch { /* ignore */ } }
+}
+
+/** Resolve the workspace folder from the config file, falling back to the DB's parent dir. */
+function findWorkspacePath(dbPath: string): string {
+  const home = os.homedir();
+  const platform = process.platform;
+  let base: string;
+  if (platform === "win32") {
+    base = process.env.APPDATA ?? path.join(home, "AppData", "Roaming");
+  } else if (platform === "darwin") {
+    base = path.join(home, "Library", "Application Support");
+  } else {
+    base = process.env.XDG_CONFIG_HOME ?? path.join(home, ".config");
+  }
+  for (const name of ["Cairn", "cairn", "Electron"]) {
+    const configPath = path.join(base, name, "workspace-config.json");
+    if (!fs.existsSync(configPath)) continue;
+    try {
+      const cfg = JSON.parse(fs.readFileSync(configPath, "utf-8")) as { workspacePath?: string };
+      if (typeof cfg.workspacePath === "string" && cfg.workspacePath.length > 0) {
+        return cfg.workspacePath;
+      }
+    } catch { /* ignore */ }
+  }
+  // Fallback: the DB's parent directory is the workspace folder
+  return path.dirname(dbPath);
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function toWorkspace(r: any) {
   return { id: r.id, name: r.name, description: r.description, icon: r.icon,
@@ -145,7 +277,7 @@ function getSnapshot(db: Database.Database) {
 // ── Tool executor ─────────────────────────────
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function executeTool(db: Database.Database, toolName: string, args: Record<string, any>) {
+function executeTool(db: Database.Database, workspacePath: string, toolName: string, args: Record<string, any>) {
   const snap = getSnapshot(db);
 
   switch (toolName) {
@@ -272,6 +404,11 @@ function executeTool(db: Database.Database, toolName: string, args: Record<strin
           tag_ids, linked_note_ids, linked_card_ids, is_pinned, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, '[]', '[]', '[]', 0, ?, ?)
       `).run(noteId, projectId, project.workspaceId, title, markdown, stripMarkdown(markdown), now, now);
+      writeNoteFile(workspacePath, {
+        id: noteId, projectId, workspaceId: project.workspaceId, title, content: markdown,
+        tagIds: [], linkedNoteIds: [], linkedCardIds: [], isPinned: false,
+        createdAt: now, updatedAt: now, projectName: project.name,
+      });
       return { id: noteId, title, createdAt: now };
     }
 
@@ -283,6 +420,17 @@ function executeTool(db: Database.Database, toolName: string, args: Record<strin
       const markdown = content !== undefined ? content : null;
       db.prepare(`UPDATE notes SET title = COALESCE(?, title), content = COALESCE(?, content), content_text = COALESCE(?, content_text), updated_at = ? WHERE id = ?`)
         .run(title ?? null, markdown, markdown !== null ? stripMarkdown(markdown) : null, now, noteId);
+      const updateProj = snap.projects.find((pr) => pr.id === note.projectId);
+      writeNoteFile(workspacePath, {
+        id: noteId, projectId: note.projectId as string, workspaceId: note.workspaceId as string,
+        title: title ?? note.title as string,
+        content: markdown !== null ? markdown : note.content as string,
+        tagIds: note.tagIds as string[], linkedNoteIds: note.linkedNoteIds as string[],
+        linkedCardIds: note.linkedCardIds as string[], isPinned: note.isPinned as boolean,
+        createdAt: note.createdAt as string, updatedAt: now,
+        archivedAt: note.archivedAt as string | undefined,
+        projectName: updateProj?.name ?? note.projectId as string,
+      });
       return { id: noteId, title: title ?? note.title, updatedAt: now };
     }
 
@@ -375,7 +523,9 @@ function executeTool(db: Database.Database, toolName: string, args: Record<strin
     case "delete_note": {
       const note = snap.notes.find((n) => n.id === args.noteId);
       if (!note) return { error: "Note not found" };
+      const delProj = snap.projects.find((pr) => pr.id === note.projectId);
       db.prepare("DELETE FROM notes WHERE id = ?").run(args.noteId);
+      deleteNoteFile(workspacePath, delProj?.name ?? note.projectId as string, args.noteId as string);
       return { deleted: true, id: args.noteId, title: note.title };
     }
 
@@ -447,14 +597,14 @@ const TOOL_DEFINITIONS = [
 
 // ── MCP server factory ────────────────────────
 
-function buildMcpServer(db: Database.Database): McpServer {
+function buildMcpServer(db: Database.Database, workspacePath: string): McpServer {
   const server = new McpServer({ name: "cairn", version: "1.0.0" });
 
   for (const def of TOOL_DEFINITIONS) {
     server.tool(def.name, def.description, buildZodShape(def.inputSchema),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       async (args: Record<string, any>) => {
-        const result = executeTool(db, def.name, args);
+        const result = executeTool(db, workspacePath, def.name, args);
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }],
           ...("error" in result ? { isError: true } : {}) };
       }
@@ -475,7 +625,7 @@ function buildMcpServer(db: Database.Database): McpServer {
 
 // ── HTTP server ───────────────────────────────
 
-export function startMcpServer(db: Database.Database): http.Server {
+export function startMcpServer(db: Database.Database, workspacePath: string): http.Server {
   const server = http.createServer(async (req, res) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
@@ -505,7 +655,7 @@ export function startMcpServer(db: Database.Database): http.Server {
         body: body.length > 0 ? body : undefined,
       });
 
-      const mcpServer = buildMcpServer(db);
+      const mcpServer = buildMcpServer(db, workspacePath);
       const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined });
       await mcpServer.connect(transport);
       const webRes = await transport.handleRequest(webReq);
@@ -538,7 +688,9 @@ if (require.main === module) {
   }
   process.stderr.write(`[cairn:mcp] Using database: ${dbPath}\n`);
   const db = new Database(dbPath, ...(MCP_NATIVE_BINDING ? [{ nativeBinding: MCP_NATIVE_BINDING }] : []));
-  const server = buildMcpServer(db);
+  const workspacePath = findWorkspacePath(dbPath);
+  process.stderr.write(`[cairn:mcp] Workspace folder: ${workspacePath}\n`);
+  const server = buildMcpServer(db, workspacePath);
   const transport = new StdioServerTransport();
   server.connect(transport).catch((err) => {
     process.stderr.write(`[cairn:mcp] Fatal: ${err}\n`);

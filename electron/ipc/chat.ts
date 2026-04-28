@@ -10,6 +10,7 @@
 import { ipcMain } from "electron";
 import type Database from "better-sqlite3";
 import * as q from "../db/queries";
+import { writeNoteFile, deleteNoteFile, stripMarkdown } from "../notes-files";
 
 interface ChatRequest {
   message: string;
@@ -283,7 +284,7 @@ const TOOLS = [
 ];
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function executeTool(db: Database.Database, req: ChatRequest, name: string, args: Record<string, any>): unknown {
+function executeTool(db: Database.Database, req: ChatRequest, workspacePath: string, name: string, args: Record<string, any>): unknown {
   const snap = q.getFullSnapshot(db);
   const now = new Date().toISOString();
   const newId = () => Math.random().toString(36).slice(2, 14);
@@ -416,18 +417,24 @@ function executeTool(db: Database.Database, req: ChatRequest, name: string, args
       if (!project) return { error: "Project not found" };
       const noteId = newId();
       const markdown = (args.content as string) ?? "";
-      const contentText = markdown.replace(/[#*`|]/g, "").trim();
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      return q.createNote(db, { id: noteId, projectId: args.projectId, workspaceId: project.workspaceId, title: args.title, content: markdown, contentText });
+      const note = q.createNote(db, {
+        id: noteId, projectId: args.projectId, workspaceId: project.workspaceId,
+        title: args.title, content: markdown, contentText: stripMarkdown(markdown),
+      });
+      writeNoteFile(workspacePath, { ...note, projectName: project.name });
+      return note;
     }
     case "update_note": {
       const patch: { title?: string; content?: string; contentText?: string } = {};
       if (args.title) patch.title = args.title;
       if (args.content !== undefined) {
         patch.content = args.content;
-        patch.contentText = (args.content as string).replace(/[#*`|]/g, "").trim();
+        patch.contentText = stripMarkdown(args.content as string);
       }
-      return q.updateNote(db, args.noteId, patch);
+      const note = q.updateNote(db, args.noteId, patch);
+      const proj = snap.projects.find((p) => p.id === note.projectId);
+      writeNoteFile(workspacePath, { ...note, projectName: proj?.name ?? note.projectId });
+      return note;
     }
     case "create_task": {
       const col = snap.columns.find((c) => c.id === args.columnId);
@@ -479,7 +486,9 @@ function executeTool(db: Database.Database, req: ChatRequest, name: string, args
     case "delete_note": {
       const note = snap.notes.find((n) => n.id === args.noteId);
       if (!note) return { error: "Note not found" };
+      const proj = snap.projects.find((p) => p.id === note.projectId);
       q.deleteNote(db, args.noteId as string);
+      deleteNoteFile(workspacePath, proj?.name ?? note.projectId, args.noteId as string);
       return { deleted: true, id: args.noteId, title: note.title };
     }
     case "delete_task": {
@@ -493,7 +502,7 @@ function executeTool(db: Database.Database, req: ChatRequest, name: string, args
   }
 }
 
-export function registerChatHandler(db: Database.Database): void {
+export function registerChatHandler(db: Database.Database, workspacePath: string): void {
   ipcMain.handle("chat:send", async (_event, req: ChatRequest) => {
     const baseUrl = (req.config?.baseUrl ?? "https://api.openai.com").replace(/\/$/, "");
     const model = req.config?.model ?? "gpt-4o-mini";
@@ -548,7 +557,7 @@ export function registerChatHandler(db: Database.Database): void {
       for (const call of assistantMsg.tool_calls) {
         let args: Record<string, unknown> = {};
         try { args = JSON.parse(call.function.arguments); } catch { args = {}; }
-        const result = executeTool(db, req, call.function.name, args);
+        const result = executeTool(db, req, workspacePath, call.function.name, args);
         messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
       }
     }

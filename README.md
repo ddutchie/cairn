@@ -8,7 +8,7 @@
 
 ## Overview
 
-Cairn is a desktop app (Electron + Next.js) that combines markdown notes with a kanban board. All data lives in a local SQLite database — no accounts, no cloud, no backend. An embedded AI assistant and a standalone MCP server let AI agents read and write your workspace directly.
+Cairn is a desktop app (Electron + Next.js) that combines markdown notes with a kanban board. Notes are saved as plain `.md` files in a folder you choose; project and task data lives in a local SQLite database alongside them. No accounts, no cloud, no backend. An embedded AI assistant and a standalone MCP server let AI agents read and write your workspace directly.
 
 ## Features
 
@@ -20,7 +20,7 @@ Cairn is a desktop app (Electron + Next.js) that combines markdown notes with a 
 - **Global search** — Instant full-text search across all notes and tasks (`⌘K`)
 - **AI chat** — Integrated assistant with live project context; reads and writes your data (`⌘/`)
 - **MCP server** — Exposes your workspace to external AI agents (OpenCode, Claude Desktop, etc.) via the Model Context Protocol
-- **Local-first** — SQLite on disk; no network required
+- **Local-first** — Notes as `.md` files, project data in SQLite; no network required
 - **Dark mode** — Calm, focused aesthetics
 
 ## Getting started
@@ -139,15 +139,61 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ## Architecture
 
+### Workspace folder
+
+On first launch Cairn asks the user to choose a **workspace folder** — any directory they control (Documents, iCloud Drive, a git repo, etc.). Everything Cairn owns lives inside it:
+
+```
+<workspace>/
+  cairn.db          ← SQLite: projects, tasks, columns, chat (WAL mode)
+  notes/
+    <Project Name>/
+      <Note Title>.md   ← one file per note, YAML frontmatter + markdown body
+```
+
+The workspace path is stored in `<userData>/workspace-config.json` so it survives app updates.
+
+### Storage split
+
+| What | Where | Why |
+|------|-------|-----|
+| Notes content | `.md` files | Human-readable, portable, editable in any editor |
+| Note metadata | YAML frontmatter in the same `.md` file | Keeps content and metadata together |
+| Projects, tasks, columns, chat | `cairn.db` (SQLite) | Relational structure, fast queries, drag-and-drop ordering |
+| SQLite search index for notes | `content_text` column in `notes` table | Keeps full-text search fast without parsing files |
+
+Every note write (from the UI, AI chat, or MCP server) writes to **both** the `.md` file and SQLite simultaneously. The SQLite `notes` table is the read cache; the `.md` file is the source of truth for content.
+
+### Note file format
+
+```markdown
+---
+id: abc123def456
+projectId: xyz789
+workspaceId: ws001
+title: My Note
+tagIds: []
+linkedNoteIds: []
+linkedCardIds: []
+isPinned: false
+createdAt: 2025-01-01T00:00:00.000Z
+updatedAt: 2025-01-01T00:00:00.000Z
+---
+
+Note body in plain markdown.
+```
+
+The `id` in the frontmatter is the stable identifier — **filenames are derived from the title** and can change when a note is renamed. The file watcher uses frontmatter `id` to match files to SQLite rows.
+
 ### Data model
 
 ```
 Workspace
   └── Project
-        ├── Note[]          (raw markdown in SQLite)
-        ├── BoardColumn[]
-        │     └── TaskCard[]
-        └── ChatThread
+        ├── Note[]          (.md file + SQLite row)
+        ├── BoardColumn[]   (SQLite only)
+        │     └── TaskCard[] (SQLite only)
+        └── ChatThread      (SQLite only)
               └── ChatMessage[]
 ```
 
@@ -155,24 +201,43 @@ Notes and task cards link bidirectionally via `linkedNoteIds` / `linkedCardIds`.
 
 ### Process model
 
-Two processes share the same SQLite database (`~/Library/Application Support/Cairn/cairn/cairn.db`, WAL mode):
+Two processes share the same `cairn.db` (SQLite WAL mode):
 
-1. **Electron app** — Next.js rendered in a BrowserWindow. AI chat runs in the main process via IPC (`electron/ipc/chat.ts`) — works fully offline in the packaged app.
-2. **MCP server** — Standalone Node.js stdio process (`dist-mcp/mcp-server.bundle.js`), launched by external agents. Writes to SQLite directly; the Electron UI refreshes automatically via `-wal` mtime polling.
+1. **Electron app** — Next.js rendered in a BrowserWindow. All DB access goes through IPC to the main process. AI chat runs in the main process (`electron/ipc/chat.ts`) — fully offline in the packaged app.
+2. **MCP server** — Standalone Node.js stdio process (`dist-mcp/mcp-server.bundle.js`), launched by external agents. Reads/writes `cairn.db` directly and writes `.md` files; the Electron UI refreshes automatically via WAL mtime polling.
+
+External `.md` edits (e.g. the user editing a note in another editor) are picked up by a **chokidar file watcher** in the main process, which parses the frontmatter and upserts the SQLite row, then fires `db:changed` to the renderer.
+
+### Write path for notes
+
+```
+Any write (UI / chat / MCP)
+  │
+  ├── writeNoteFile()  → <workspace>/notes/<Project>/<Title>.md
+  └── SQLite upsert   → notes table (content_text re-derived from markdown)
+
+External .md edit
+  │
+  └── chokidar watcher → parseNoteFile() → upsertNoteFromFile() → SQLite
+                                                                 → db:changed → renderer refresh
+```
 
 ### Key files
 
 | File | Purpose |
 |------|---------|
-| `electron/main.ts` | BrowserWindow, IPC, `app://` protocol, WAL polling |
-| `electron/ipc/chat.ts` | AI chat loop in main process; all chat tools |
-| `electron/ipc/handlers.ts` | All `db:*` IPC channels |
-| `electron/db/queries.ts` | SQLite query helpers |
-| `electron/mcp-server.ts` | Standalone MCP server source |
-| `src/store/index.ts` | Zustand store; `hydrateFromElectron()` |
+| `electron/main.ts` | BrowserWindow, workspace resolution, IPC registration, file watcher, WAL polling |
+| `electron/workspace-config.ts` | Read/write `workspace-config.json`; resolve `cairn.db` path |
+| `electron/notes-files.ts` | Note file I/O: slug helpers, `writeNoteFile`, `deleteNoteFile`, `parseNoteFile`, `upsertNoteFromFile` |
+| `electron/file-watcher.ts` | chokidar watcher on `notes/`; syncs external `.md` edits to SQLite |
+| `electron/ipc/handlers.ts` | All `db:*` IPC channels; note handlers write `.md` files after each SQLite mutation |
+| `electron/ipc/chat.ts` | AI chat loop in main process; note tools write `.md` files |
+| `electron/db/queries.ts` | SQLite query helpers (CRUD for all entities) |
+| `electron/db/schema.ts` | SQLite DDL (`SCHEMA_SQL`) |
+| `electron/mcp-server.ts` | Standalone MCP server; resolves workspace path from `workspace-config.json` |
+| `src/store/index.ts` | Zustand store; `hydrateFromElectron()` pulls a full snapshot via IPC |
+| `src/components/onboarding/create-workspace.tsx` | First-launch folder picker + workspace creation |
 | `src/components/notes/note-editor.tsx` | Split-pane markdown editor + AI text toolbar |
-| `src/components/layout/project-overview.tsx` | Overview with stats and recent activity feed |
-| `scripts/electron-build.js` | Full build pipeline (Next.js static export + Electron) |
 
 ## Tech stack
 
@@ -184,6 +249,8 @@ Two processes share the same SQLite database (`~/Library/Application Support/Cai
 | Tailwind CSS v4 | Styling |
 | Zustand | State management |
 | better-sqlite3 | SQLite (dual ABI: Electron + system Node) |
+| gray-matter | YAML frontmatter parsing for note files |
+| chokidar | File watcher for external `.md` edits |
 | dnd-kit | Drag and drop |
 | react-markdown | Markdown preview |
 | Radix UI | Accessible UI primitives |

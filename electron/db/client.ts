@@ -1,7 +1,8 @@
 /**
  * Cairn — SQLite client singleton (Electron main process)
  *
- * Opens (or creates) the database at the Electron userData path.
+ * Opens (or creates) the database at the given absolute path.
+ * The path is now resolved in main.ts based on the user-chosen workspace folder.
  * Call initDb() once from main.ts before any IPC handlers are registered.
  *
  * Passes the Electron-ABI binary via the `nativeBinding` option so the
@@ -25,11 +26,10 @@ const ELECTRON_BINDING = app.isPackaged
 
 let _db: Database.Database | null = null;
 
-export function initDb(userDataPath: string): Database.Database {
-  const dbDir = path.join(userDataPath, "cairn");
-  fs.mkdirSync(dbDir, { recursive: true });
+export function initDb(dbPath: string): Database.Database {
+  // Ensure the parent directory exists
+  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 
-  const dbPath = path.join(dbDir, "cairn.db");
   // nativeBinding tells better-sqlite3 to use our Electron-ABI .node file
   // instead of the one it would find via `bindings` (the system-Node build).
   const db = new Database(dbPath, { nativeBinding: ELECTRON_BINDING } as ConstructorParameters<typeof Database>[1]);

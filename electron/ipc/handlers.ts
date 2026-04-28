@@ -5,6 +5,9 @@
  * Each handler receives validated args from the renderer and
  * delegates to the SQLite query layer.
  *
+ * Note handlers additionally write/delete .md files in the workspace folder
+ * so the file system stays in sync with SQLite.
+ *
  * Channel naming: "db:<entity>:<action>"
  */
 
@@ -13,8 +16,14 @@ import path from "path";
 import type Database from "better-sqlite3";
 import * as q from "../db/queries";
 import { registerChatHandler } from "./chat";
+import { writeNoteFile, deleteNoteFile, stripMarkdown } from "../notes-files";
 
-export function registerIpcHandlers(db: Database.Database): void {
+function getProjectName(db: Database.Database, projectId: string): string {
+  const row = db.prepare("SELECT name FROM projects WHERE id = ?").get(projectId) as { name: string } | undefined;
+  return row?.name ?? projectId;
+}
+
+export function registerIpcHandlers(db: Database.Database, workspacePath: string): void {
 
   // ── Full snapshot (hydrate store on app launch) ───
   ipcMain.handle("db:snapshot", () => q.getFullSnapshot(db));
@@ -22,11 +31,8 @@ export function registerIpcHandlers(db: Database.Database): void {
 
   // ── App paths (for MCP config generation) ────────
   ipcMain.handle("app:mcpServerPath", () => {
-    // In dev: app.asar doesn't exist — appPath is the project root, dist-mcp is right there.
-    // In prod: dist-mcp is asarUnpacked, so it lives in app.asar.unpacked/, not app.asar/.
-    const appPath = app.getAppPath(); // e.g. /.../Cairn.app/Contents/Resources/app.asar
+    const appPath = app.getAppPath();
     const unpackedPath = appPath.replace(/\.asar$/, ".asar.unpacked");
-    // In dev appPath has no .asar suffix, so unpackedPath === appPath — works either way.
     return path.join(unpackedPath, "dist-mcp", "mcp-server.bundle.js");
   });
 
@@ -41,10 +47,45 @@ export function registerIpcHandlers(db: Database.Database): void {
   ipcMain.handle("db:project:update", (_e, { id, patch }) => q.updateProject(db, id, patch));
 
   // ── Notes ─────────────────────────────────────────
-  ipcMain.handle("db:note:list",   (_e, { projectId }) => q.getNotes(db, projectId));
-  ipcMain.handle("db:note:create", (_e, args) => q.createNote(db, args));
-  ipcMain.handle("db:note:update", (_e, { id, patch }) => q.updateNote(db, id, patch));
-  ipcMain.handle("db:note:delete", (_e, { id }) => q.deleteNote(db, id));
+  // All note mutations also write/update/delete the corresponding .md file.
+
+  ipcMain.handle("db:note:list", (_e, { projectId }) => q.getNotes(db, projectId));
+
+  ipcMain.handle("db:note:create", (_e, args) => {
+    const note = q.createNote(db, {
+      ...args,
+      contentText: stripMarkdown(args.content ?? ""),
+    });
+    writeNoteFile(workspacePath, {
+      ...note,
+      projectName: getProjectName(db, note.projectId),
+    });
+    return note;
+  });
+
+  ipcMain.handle("db:note:update", (_e, { id, patch }) => {
+    const enrichedPatch = { ...patch };
+    if (patch.content !== undefined && patch.contentText === undefined) {
+      enrichedPatch.contentText = stripMarkdown(patch.content);
+    }
+    const note = q.updateNote(db, id, enrichedPatch);
+    writeNoteFile(workspacePath, {
+      ...note,
+      projectName: getProjectName(db, note.projectId),
+    });
+    return note;
+  });
+
+  ipcMain.handle("db:note:delete", (_e, { id }) => {
+    const row = db.prepare("SELECT project_id FROM notes WHERE id = ?").get(id) as { project_id: string } | undefined;
+    if (row) {
+      const projectName = getProjectName(db, row.project_id);
+      q.deleteNote(db, id);
+      deleteNoteFile(workspacePath, projectName, id);
+    } else {
+      q.deleteNote(db, id);
+    }
+  });
 
   // ── Board columns ─────────────────────────────────
   ipcMain.handle("db:column:list",   (_e, { projectId }) => q.getColumns(db, projectId));
@@ -68,5 +109,5 @@ export function registerIpcHandlers(db: Database.Database): void {
   ipcMain.handle("db:chat:addMessage",   (_e, args) => q.addChatMessage(db, args));
 
   // ── AI Chat completions ────────────────────────────
-  registerChatHandler(db);
+  registerChatHandler(db, workspacePath);
 }

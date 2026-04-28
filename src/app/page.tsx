@@ -25,26 +25,37 @@ export default function Home() {
     toggleChat,
   } = useCairnStore();
 
-  // null = still loading, false = loaded with data, true = needs onboarding
-  const [needsOnboarding, setNeedsOnboarding] = useState<boolean | null>(null);
+  // null = still loading
+  // "workspace" = needs workspace folder setup (existing or new user)
+  // "create" = has workspace folder but no workspace record yet
+  // false = fully set up
+  const [onboardingState, setOnboardingState] = useState<"workspace" | "create" | false | null>(null);
 
   useEffect(() => {
     if (typeof window !== "undefined" && window.electron) {
-      // Kick off initial hydration
-      hydrateFromElectron().then(() => {
-        const ws = useCairnStore.getState().workspaces;
-        setNeedsOnboarding(ws.length === 0);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const e = window.electron as any;
+
+      Promise.all([
+        e.needsWorkspaceSetup?.() as Promise<boolean>,
+        hydrateFromElectron(),
+      ]).then(([needsSetup]) => {
+        if (needsSetup) {
+          setOnboardingState("workspace");
+        } else {
+          const ws = useCairnStore.getState().workspaces;
+          setOnboardingState(ws.length === 0 ? "create" : false);
+        }
       });
 
       // Register db:changed listener synchronously so React gets the cleanup fn
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const unsub = (window.electron as any).onDbChanged(() => {
+      const unsub = e.onDbChanged(() => {
         hydrateFromElectron(true);
       });
       return unsub;
     } else {
       hydrate();
-      setNeedsOnboarding(false);
+      setOnboardingState(false);
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -61,7 +72,7 @@ export default function Home() {
   }, [toggleSearch, toggleChat]);
 
   // Still loading
-  if (needsOnboarding === null) {
+  if (onboardingState === null) {
     return (
       <main className="flex flex-col h-dvh w-screen overflow-hidden bg-[var(--background)]">
         <TitleBar />
@@ -72,13 +83,17 @@ export default function Home() {
     );
   }
 
-  // First run — no workspace yet
-  if (needsOnboarding) {
+  // Needs workspace folder setup (migration prompt or new user folder pick)
+  // OR needs workspace record created after folder is chosen
+  if (onboardingState === "workspace" || onboardingState === "create") {
     return (
       <main className="flex flex-col h-dvh w-screen overflow-hidden bg-[var(--background)]">
         <TitleBar />
         <div className="flex flex-1 min-h-0">
-          <CreateWorkspace onComplete={() => setNeedsOnboarding(false)} />
+          <CreateWorkspace
+            initialStep={onboardingState === "workspace" ? "choose-folder" : "workspace-details"}
+            onComplete={() => setOnboardingState(false)}
+          />
         </div>
       </main>
     );
