@@ -1,65 +1,116 @@
-import Image from "next/image";
+"use client";
+
+import { useEffect, useState } from "react";
+import { useCairnStore } from "@/store";
+import { TitleBar } from "@/components/layout/title-bar";
+import { Sidebar } from "@/components/layout/sidebar";
+import { Topbar } from "@/components/layout/topbar";
+import { ProjectOverview } from "@/components/layout/project-overview";
+import { NotesView } from "@/components/notes/notes-view";
+import { KanbanBoard } from "@/components/kanban/board";
+import { ChatPanel } from "@/components/chat/chat-panel";
+import { SearchPanel } from "@/components/search/search-panel";
+import { SettingsView } from "@/components/settings/settings-view";
+import { CreateWorkspace } from "@/components/onboarding/create-workspace";
 
 export default function Home() {
-  return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+  const {
+    hydrate,
+    hydrateFromElectron,
+    workspaces,
+    activeView,
+    chatOpen,
+    searchOpen,
+    toggleSearch,
+    toggleChat,
+  } = useCairnStore();
+
+  // null = still loading, false = loaded with data, true = needs onboarding
+  const [needsOnboarding, setNeedsOnboarding] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.electron) {
+      // Kick off initial hydration
+      hydrateFromElectron().then(() => {
+        const ws = useCairnStore.getState().workspaces;
+        setNeedsOnboarding(ws.length === 0);
+      });
+
+      // Register db:changed listener synchronously so React gets the cleanup fn
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const unsub = (window.electron as any).onDbChanged(() => {
+        hydrateFromElectron(true);
+      });
+      return unsub;
+    } else {
+      hydrate();
+      setNeedsOnboarding(false);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Global keyboard shortcuts
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      const { key, metaKey, ctrlKey } = e;
+      const mod = metaKey || ctrlKey;
+      if (mod && key === "k") { e.preventDefault(); toggleSearch(); }
+      else if (mod && key === "/") { e.preventDefault(); toggleChat(); }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [toggleSearch, toggleChat]);
+
+  // Still loading
+  if (needsOnboarding === null) {
+    return (
+      <main className="flex flex-col h-dvh w-screen overflow-hidden bg-[var(--background)]">
+        <TitleBar />
+        <div className="flex flex-1 items-center justify-center">
+          <span className="text-xs text-[var(--text-tertiary)]">Loading…</span>
         </div>
       </main>
-    </div>
+    );
+  }
+
+  // First run — no workspace yet
+  if (needsOnboarding) {
+    return (
+      <main className="flex flex-col h-dvh w-screen overflow-hidden bg-[var(--background)]">
+        <TitleBar />
+        <div className="flex flex-1 min-h-0">
+          <CreateWorkspace onComplete={() => setNeedsOnboarding(false)} />
+        </div>
+      </main>
+    );
+  }
+
+  // Main app
+  return (
+    <main className="flex flex-col h-dvh w-screen overflow-hidden bg-[var(--background)]">
+      {/* Electron title bar — draggable, clears macOS traffic lights */}
+      <TitleBar />
+
+      <div className="flex flex-1 min-h-0 overflow-hidden">
+        {/* Left sidebar */}
+        <Sidebar />
+
+        {/* Main content area */}
+        <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
+          <Topbar />
+          <div className="flex flex-1 min-h-0 overflow-hidden">
+            {activeView === "overview"  && <ProjectOverview />}
+            {activeView === "notes"     && <NotesView />}
+            {activeView === "board"     && <KanbanBoard />}
+            {activeView === "settings"  && <SettingsView />}
+          </div>
+        </div>
+
+        {/* AI Chat panel */}
+        {chatOpen && <ChatPanel />}
+
+        {/* Global search overlay */}
+        {searchOpen && <SearchPanel />}
+      </div>
+    </main>
   );
 }

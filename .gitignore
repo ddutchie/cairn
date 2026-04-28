@@ -15,7 +15,6 @@
 
 # next.js
 /.next/
-/out/
 
 # production
 /build
@@ -39,3 +38,19 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# electron build outputs
+/dist-electron
+/dist-app
+/dist-mcp
+/out
+
+# native binaries (compiled artifacts — run electron:rebuild to regenerate)
+/electron-native
+/mcp-native
+
+# build-time temp folder (created by scripts/electron-build.js during static export)
+/src/app/_api_hidden
+
+# local MCP config — machine-specific paths, not for version control
+opencode.json

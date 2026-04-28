@@ -1,0 +1,448 @@
+/**
+ * Cairn — SQLite query helpers
+ *
+ * All reads return TypeScript domain types (from src/types/index.ts).
+ * JSON columns are parsed on read and serialised on write.
+ *
+ * Naming: snake_case columns → camelCase fields in returned objects.
+ */
+
+import type Database from "better-sqlite3";
+
+// ── tiny helpers ──────────────────────────────
+
+function j(v: unknown): string {
+  return JSON.stringify(v ?? []);
+}
+function p(v: string | null | undefined): unknown[] {
+  if (!v) return [];
+  try { return JSON.parse(v); } catch { return []; }
+}
+function b(v: number | null | undefined): boolean {
+  return v === 1;
+}
+function ts(): string {
+  return new Date().toISOString();
+}
+
+// ── Row → domain type mappers ─────────────────
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function toWorkspace(row: any) {
+  return {
+    id: row.id as string,
+    name: row.name as string,
+    description: row.description as string | undefined,
+    icon: row.icon as string | undefined,
+    createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string,
+    archivedAt: row.archived_at as string | undefined,
+  };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function toProject(row: any) {
+  return {
+    id: row.id as string,
+    workspaceId: row.workspace_id as string,
+    name: row.name as string,
+    description: row.description as string | undefined,
+    icon: row.icon as string | undefined,
+    status: row.status as string,
+    priority: row.priority as string,
+    dueDate: row.due_date as string | undefined,
+    tagIds: p(row.tag_ids) as string[],
+    createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string,
+    archivedAt: row.archived_at as string | undefined,
+  };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function toNote(row: any) {
+  return {
+    id: row.id as string,
+    projectId: row.project_id as string,
+    workspaceId: row.workspace_id as string,
+    title: row.title as string,
+    // content is stored as raw markdown string
+    content: (row.content ?? "") as string,
+    contentText: (row.content_text ?? "") as string,
+    tagIds: p(row.tag_ids) as string[],
+    linkedNoteIds: p(row.linked_note_ids) as string[],
+    linkedCardIds: p(row.linked_card_ids) as string[],
+    isPinned: b(row.is_pinned),
+    createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string,
+    archivedAt: row.archived_at as string | undefined,
+  };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function toColumn(row: any) {
+  return {
+    id: row.id as string,
+    projectId: row.project_id as string,
+    workspaceId: row.workspace_id as string,
+    name: row.name as string,
+    type: row.type as string,
+    order: row.order as number,
+    cardLimit: row.card_limit as number | undefined,
+    createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string,
+  };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function toCard(row: any) {
+  return {
+    id: row.id as string,
+    columnId: row.column_id as string,
+    projectId: row.project_id as string,
+    workspaceId: row.workspace_id as string,
+    title: row.title as string,
+    description: row.description as string | undefined,
+    tagIds: p(row.tag_ids) as string[],
+    priority: row.priority as string,
+    dueDate: row.due_date as string | undefined,
+    linkedNoteIds: p(row.linked_note_ids) as string[],
+    order: row.order as number,
+    assignee: row.assignee as string | undefined,
+    createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string,
+    archivedAt: row.archived_at as string | undefined,
+  };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function toTag(row: any) {
+  return {
+    id: row.id as string,
+    workspaceId: row.workspace_id as string,
+    name: row.name as string,
+    color: row.color as string,
+  };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function toChatThread(row: any) {
+  return {
+    id: row.id as string,
+    scope: row.scope as string,
+    workspaceId: row.workspace_id as string,
+    projectId: row.project_id as string | undefined,
+    title: row.title as string | undefined,
+    createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string,
+  };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function toChatMessage(row: any) {
+  return {
+    id: row.id as string,
+    threadId: row.thread_id as string,
+    role: row.role as string,
+    content: row.content as string,
+    contextRefs: row.context_refs ? JSON.parse(row.context_refs) : undefined,
+    createdAt: row.created_at as string,
+  };
+}
+
+// ── Workspace ─────────────────────────────────
+
+export function getAllWorkspaces(db: Database.Database) {
+  return db.prepare("SELECT * FROM workspaces ORDER BY created_at").all().map(toWorkspace);
+}
+
+export function createWorkspace(db: Database.Database, ws: { id: string; name: string; description?: string; icon?: string }) {
+  const now = ts();
+  db.prepare(`
+    INSERT INTO workspaces (id, name, description, icon, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(ws.id, ws.name, ws.description ?? null, ws.icon ?? null, now, now);
+  return toWorkspace(db.prepare("SELECT * FROM workspaces WHERE id = ?").get(ws.id));
+}
+
+export function updateWorkspace(db: Database.Database, id: string, patch: { name?: string; description?: string; icon?: string }) {
+  const now = ts();
+  db.prepare(`
+    UPDATE workspaces SET name = COALESCE(?, name), description = COALESCE(?, description),
+    icon = COALESCE(?, icon), updated_at = ? WHERE id = ?
+  `).run(patch.name ?? null, patch.description ?? null, patch.icon ?? null, now, id);
+  return toWorkspace(db.prepare("SELECT * FROM workspaces WHERE id = ?").get(id));
+}
+
+// ── Projects ──────────────────────────────────
+
+export function getProjects(db: Database.Database, workspaceId?: string) {
+  const rows = workspaceId
+    ? db.prepare("SELECT * FROM projects WHERE workspace_id = ? ORDER BY created_at").all(workspaceId)
+    : db.prepare("SELECT * FROM projects ORDER BY created_at").all();
+  return rows.map(toProject);
+}
+
+export function createProject(db: Database.Database, p: {
+  id: string; workspaceId: string; name: string;
+  description?: string; icon?: string; status?: string; priority?: string;
+}) {
+  const now = ts();
+  db.prepare(`
+    INSERT INTO projects (id, workspace_id, name, description, icon, status, priority, tag_ids, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, '[]', ?, ?)
+  `).run(p.id, p.workspaceId, p.name, p.description ?? null, p.icon ?? null,
+         p.status ?? "active", p.priority ?? "medium", now, now);
+  return toProject(db.prepare("SELECT * FROM projects WHERE id = ?").get(p.id));
+}
+
+export function updateProject(db: Database.Database, id: string, patch: Partial<{
+  name: string; description: string; icon: string; status: string;
+  priority: string; dueDate: string; tagIds: string[]; archivedAt: string;
+}>) {
+  const now = ts();
+  db.prepare(`
+    UPDATE projects SET
+      name        = COALESCE(?, name),
+      description = COALESCE(?, description),
+      icon        = COALESCE(?, icon),
+      status      = COALESCE(?, status),
+      priority    = COALESCE(?, priority),
+      due_date    = COALESCE(?, due_date),
+      tag_ids     = COALESCE(?, tag_ids),
+      archived_at = COALESCE(?, archived_at),
+      updated_at  = ?
+    WHERE id = ?
+  `).run(
+    patch.name ?? null, patch.description ?? null, patch.icon ?? null,
+    patch.status ?? null, patch.priority ?? null, patch.dueDate ?? null,
+    patch.tagIds ? j(patch.tagIds) : null,
+    patch.archivedAt ?? null, now, id,
+  );
+  return toProject(db.prepare("SELECT * FROM projects WHERE id = ?").get(id));
+}
+
+// ── Notes ─────────────────────────────────────
+
+export function getNotes(db: Database.Database, projectId?: string) {
+  const rows = projectId
+    ? db.prepare("SELECT * FROM notes WHERE project_id = ? ORDER BY updated_at DESC").all(projectId)
+    : db.prepare("SELECT * FROM notes ORDER BY updated_at DESC").all();
+  return rows.map(toNote);
+}
+
+export function createNote(db: Database.Database, n: {
+  id: string; projectId: string; workspaceId: string; title: string;
+  content?: string; contentText?: string;
+}) {
+  const now = ts();
+  const content = n.content ?? "";
+  const contentText = n.contentText ?? content;
+  db.prepare(`
+    INSERT INTO notes (id, project_id, workspace_id, title, content, content_text,
+      tag_ids, linked_note_ids, linked_card_ids, is_pinned, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, '[]', '[]', '[]', 0, ?, ?)
+  `).run(n.id, n.projectId, n.workspaceId, n.title, content, contentText, now, now);
+  return toNote(db.prepare("SELECT * FROM notes WHERE id = ?").get(n.id));
+}
+
+export function updateNote(db: Database.Database, id: string, patch: Partial<{
+  title: string; content: string; contentText: string;
+  tagIds: string[]; linkedNoteIds: string[]; linkedCardIds: string[];
+  isPinned: boolean; archivedAt: string;
+}>) {
+  const now = ts();
+  db.prepare(`
+    UPDATE notes SET
+      title           = COALESCE(?, title),
+      content         = COALESCE(?, content),
+      content_text    = COALESCE(?, content_text),
+      tag_ids         = COALESCE(?, tag_ids),
+      linked_note_ids = COALESCE(?, linked_note_ids),
+      linked_card_ids = COALESCE(?, linked_card_ids),
+      is_pinned       = COALESCE(?, is_pinned),
+      archived_at     = COALESCE(?, archived_at),
+      updated_at      = ?
+    WHERE id = ?
+  `).run(
+    patch.title ?? null,
+    patch.content !== undefined ? patch.content : null,
+    patch.contentText !== undefined ? patch.contentText : null,
+    patch.tagIds ? j(patch.tagIds) : null,
+    patch.linkedNoteIds ? j(patch.linkedNoteIds) : null,
+    patch.linkedCardIds ? j(patch.linkedCardIds) : null,
+    patch.isPinned !== undefined ? (patch.isPinned ? 1 : 0) : null,
+    patch.archivedAt ?? null,
+    now, id,
+  );
+  return toNote(db.prepare("SELECT * FROM notes WHERE id = ?").get(id));
+}
+
+export function deleteNote(db: Database.Database, id: string) {
+  db.prepare("DELETE FROM notes WHERE id = ?").run(id);
+}
+
+// ── Board Columns ─────────────────────────────
+
+export function getColumns(db: Database.Database, projectId?: string) {
+  const rows = projectId
+    ? db.prepare(`SELECT * FROM board_columns WHERE project_id = ? ORDER BY "order"`).all(projectId)
+    : db.prepare(`SELECT * FROM board_columns ORDER BY "order"`).all();
+  return rows.map(toColumn);
+}
+
+export function createColumn(db: Database.Database, c: {
+  id: string; projectId: string; workspaceId: string;
+  name: string; type?: string; order?: number;
+}) {
+  const now = ts();
+  db.prepare(`
+    INSERT INTO board_columns (id, project_id, workspace_id, name, type, "order", created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(c.id, c.projectId, c.workspaceId, c.name, c.type ?? "custom", c.order ?? 0, now, now);
+  return toColumn(db.prepare("SELECT * FROM board_columns WHERE id = ?").get(c.id));
+}
+
+export function updateColumn(db: Database.Database, id: string, patch: Partial<{ name: string; order: number; cardLimit: number }>) {
+  const now = ts();
+  db.prepare(`
+    UPDATE board_columns SET
+      name       = COALESCE(?, name),
+      "order"    = COALESCE(?, "order"),
+      card_limit = COALESCE(?, card_limit),
+      updated_at = ?
+    WHERE id = ?
+  `).run(patch.name ?? null, patch.order ?? null, patch.cardLimit ?? null, now, id);
+  return toColumn(db.prepare("SELECT * FROM board_columns WHERE id = ?").get(id));
+}
+
+// ── Task Cards ────────────────────────────────
+
+export function getCards(db: Database.Database, opts?: { projectId?: string; columnId?: string }) {
+  let rows;
+  if (opts?.columnId) {
+    rows = db.prepare(`SELECT * FROM task_cards WHERE column_id = ? ORDER BY "order"`).all(opts.columnId);
+  } else if (opts?.projectId) {
+    rows = db.prepare(`SELECT * FROM task_cards WHERE project_id = ? ORDER BY "order"`).all(opts.projectId);
+  } else {
+    rows = db.prepare(`SELECT * FROM task_cards ORDER BY "order"`).all();
+  }
+  return rows.map(toCard);
+}
+
+export function createCard(db: Database.Database, c: {
+  id: string; columnId: string; projectId: string; workspaceId: string;
+  title: string; description?: string; priority?: string; dueDate?: string; order?: number;
+}) {
+  const now = ts();
+  db.prepare(`
+    INSERT INTO task_cards
+      (id, column_id, project_id, workspace_id, title, description, tag_ids,
+       priority, due_date, linked_note_ids, "order", created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, '[]', ?, ?, '[]', ?, ?, ?)
+  `).run(c.id, c.columnId, c.projectId, c.workspaceId, c.title,
+         c.description ?? null, c.priority ?? "medium", c.dueDate ?? null,
+         c.order ?? 0, now, now);
+  return toCard(db.prepare("SELECT * FROM task_cards WHERE id = ?").get(c.id));
+}
+
+export function updateCard(db: Database.Database, id: string, patch: Partial<{
+  columnId: string; title: string; description: string; priority: string;
+  dueDate: string; tagIds: string[]; linkedNoteIds: string[];
+  order: number; assignee: string; archivedAt: string;
+}>) {
+  const now = ts();
+  db.prepare(`
+    UPDATE task_cards SET
+      column_id       = COALESCE(?, column_id),
+      title           = COALESCE(?, title),
+      description     = COALESCE(?, description),
+      priority        = COALESCE(?, priority),
+      due_date        = COALESCE(?, due_date),
+      tag_ids         = COALESCE(?, tag_ids),
+      linked_note_ids = COALESCE(?, linked_note_ids),
+      "order"         = COALESCE(?, "order"),
+      assignee        = COALESCE(?, assignee),
+      archived_at     = COALESCE(?, archived_at),
+      updated_at      = ?
+    WHERE id = ?
+  `).run(
+    patch.columnId ?? null, patch.title ?? null, patch.description ?? null,
+    patch.priority ?? null, patch.dueDate ?? null,
+    patch.tagIds ? j(patch.tagIds) : null,
+    patch.linkedNoteIds ? j(patch.linkedNoteIds) : null,
+    patch.order ?? null, patch.assignee ?? null, patch.archivedAt ?? null,
+    now, id,
+  );
+  return toCard(db.prepare("SELECT * FROM task_cards WHERE id = ?").get(id));
+}
+
+export function deleteCard(db: Database.Database, id: string) {
+  db.prepare("DELETE FROM task_cards WHERE id = ?").run(id);
+}
+
+// ── Tags ──────────────────────────────────────
+
+export function getTags(db: Database.Database, workspaceId?: string) {
+  const rows = workspaceId
+    ? db.prepare("SELECT * FROM tags WHERE workspace_id = ?").all(workspaceId)
+    : db.prepare("SELECT * FROM tags").all();
+  return rows.map(toTag);
+}
+
+export function createTag(db: Database.Database, t: { id: string; workspaceId: string; name: string; color: string }) {
+  db.prepare("INSERT INTO tags (id, workspace_id, name, color) VALUES (?, ?, ?, ?)").run(t.id, t.workspaceId, t.name, t.color);
+  return toTag(db.prepare("SELECT * FROM tags WHERE id = ?").get(t.id));
+}
+
+// ── Chat ──────────────────────────────────────
+
+export function getChatThreads(db: Database.Database, workspaceId: string) {
+  return db.prepare("SELECT * FROM chat_threads WHERE workspace_id = ? ORDER BY updated_at DESC").all(workspaceId).map(toChatThread);
+}
+
+export function upsertChatThread(db: Database.Database, t: {
+  id: string; scope: string; workspaceId: string; projectId?: string; title?: string;
+}) {
+  const now = ts();
+  db.prepare(`
+    INSERT INTO chat_threads (id, scope, workspace_id, project_id, title, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET title = excluded.title, updated_at = excluded.updated_at
+  `).run(t.id, t.scope, t.workspaceId, t.projectId ?? null, t.title ?? null, now, now);
+  return toChatThread(db.prepare("SELECT * FROM chat_threads WHERE id = ?").get(t.id));
+}
+
+export function getChatMessages(db: Database.Database, threadId: string) {
+  return db.prepare("SELECT * FROM chat_messages WHERE thread_id = ? ORDER BY created_at").all(threadId).map(toChatMessage);
+}
+
+export function addChatMessage(db: Database.Database, m: {
+  id: string; threadId: string; role: string; content: string; contextRefs?: unknown;
+}) {
+  const now = ts();
+  db.prepare(`
+    INSERT INTO chat_messages (id, thread_id, role, content, context_refs, created_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(m.id, m.threadId, m.role, m.content, m.contextRefs ? JSON.stringify(m.contextRefs) : null, now);
+  return toChatMessage(db.prepare("SELECT * FROM chat_messages WHERE id = ?").get(m.id));
+}
+
+// ── Full snapshot (for MCP / AI chat) ────────
+
+export function getFullSnapshot(db: Database.Database) {
+  return {
+    workspaces: getAllWorkspaces(db),
+    projects: getProjects(db),
+    notes: getNotes(db),
+    columns: getColumns(db),
+    cards: getCards(db),
+    tags: getTags(db),
+  };
+}
+
+// ── Seed guard ────────────────────────────────
+
+export function hasData(db: Database.Database): boolean {
+  const row = db.prepare("SELECT COUNT(*) as cnt FROM workspaces").get() as { cnt: number };
+  return row.cnt > 0;
+}

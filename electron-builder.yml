@@ -1,0 +1,52 @@
+appId: com.cairn.app
+productName: Cairn
+copyright: Copyright © 2026
+
+directories:
+  output: dist-app
+  buildResources: build-resources
+
+files:
+  # Electron main process compiled output
+  - dist-electron/**/*
+  # MCP server — single esbuild bundle (all JS deps inlined, only better-sqlite3 is external)
+  - dist-mcp/mcp-server.bundle.js
+  # Next.js static export
+  - out/**/*
+  # Electron-ABI native binary for better-sqlite3
+  - electron-native/**/*
+  # System-Node-ABI better-sqlite3 binary for the MCP server
+  - mcp-native/**/*
+
+# Unpack from asar so plain `node` can load them at runtime
+asarUnpack:
+  - dist-mcp/mcp-server.bundle.js
+  - mcp-native/**/*
+
+# Rebuild native modules against Electron's Node version
+npmRebuild: true
+
+mac:
+  category: public.app-category.productivity
+  target:
+    - target: dmg
+      arch: [arm64]
+  icon: build-resources/icon.icns
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build-resources/entitlements.mac.plist
+  entitlementsInherit: build-resources/entitlements.mac.plist
+
+dmg:
+  sign: false
+
+win:
+  target: nsis
+  icon: build-resources/icon.ico
+
+linux:
+  target: AppImage
+  icon: build-resources/icon.png
+
+# Don't publish automatically
+publish: null
