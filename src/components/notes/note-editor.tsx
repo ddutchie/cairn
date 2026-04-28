@@ -3,7 +3,7 @@
 import React, { useRef, useCallback, useState, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Pin, PinOff, Calendar, Eye, Pencil, Wand2, Loader2, CheckCircle2, Tag, Plus, X } from "lucide-react";
+import { Pin, PinOff, Calendar, Eye, Pencil, Wand2, Loader2, CheckCircle2, Tag, Plus, X, Link2, Kanban, ChevronDown } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { cn, formatRelative } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -19,7 +19,7 @@ interface NoteEditorProps {
 type EditorMode = "write" | "read";
 
 export function NoteEditor({ note }: NoteEditorProps) {
-  const { updateNote, aiConfig, activeProjectId, getProjectColumns, tags, createTag, getTagById, activeWorkspaceId } = useCairnStore();
+  const { updateNote, aiConfig, activeProjectId, getProjectColumns, tags, createTag, getTagById, activeWorkspaceId, notes, cards, columns, setView } = useCairnStore();
   const editorRef = useRef<MarkdownEditorHandle>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -305,6 +305,9 @@ export function NoteEditor({ note }: NoteEditorProps) {
         )}
       </div>
 
+      {/* ── Backlinks panel ─────────────────────────────────────────────────── */}
+      <BacklinksPanel note={note} notes={notes} cards={cards} columns={columns} onOpenCard={() => setView("board")} />
+
       {/* ── AI floating toolbar ─────────────────────────────────────────────── */}
       {toolbarPos && (
         <AITextToolbar
@@ -316,6 +319,68 @@ export function NoteEditor({ note }: NoteEditorProps) {
             selectionRef.current = null;
           }}
         />
+      )}
+    </div>
+  );
+}
+
+// ── Backlinks Panel ───────────────────────────────────────────────────────────
+
+interface BacklinksPanelProps {
+  note: Note;
+  notes: import("@/types").Note[];
+  cards: import("@/types").TaskCard[];
+  columns: import("@/types").BoardColumn[];
+  onOpenCard: () => void;
+}
+
+function BacklinksPanel({ note, notes, cards, columns, onOpenCard }: BacklinksPanelProps) {
+  const [open, setOpen] = useState(false);
+
+  const linkedNotes = (note.linkedNoteIds ?? [])
+    .map((id) => notes.find((n) => n.id === id))
+    .filter(Boolean) as import("@/types").Note[];
+  const linkedCards = (note.linkedCardIds ?? [])
+    .map((id) => cards.find((c) => c.id === id))
+    .filter(Boolean) as import("@/types").TaskCard[];
+
+  const total = linkedNotes.length + linkedCards.length;
+  if (total === 0) return null;
+
+  return (
+    <div className="flex-shrink-0 border-t border-[var(--border)]">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center gap-2 px-6 py-2.5 text-xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)] transition-colors"
+      >
+        <Link2 size={11} />
+        <span className="flex-1 text-left">{total} backlink{total !== 1 ? "s" : ""}</span>
+        <ChevronDown size={11} className={cn("transition-transform", open && "rotate-180")} />
+      </button>
+      {open && (
+        <div className="px-6 pb-3 space-y-1">
+          {linkedNotes.map((n) => (
+            <div key={n.id} className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-[var(--surface-2)] text-xs text-[var(--text-secondary)] transition-colors">
+              <span className="w-3 h-3 flex items-center justify-center text-[var(--text-tertiary)]">📄</span>
+              <span className="truncate flex-1">{n.title}</span>
+              <span className="text-[10px] text-[var(--text-tertiary)]">note</span>
+            </div>
+          ))}
+          {linkedCards.map((c) => {
+            const col = columns.find((col) => col.id === c.columnId);
+            return (
+              <button
+                key={c.id}
+                onClick={onOpenCard}
+                className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-[var(--surface-2)] text-xs text-[var(--text-secondary)] transition-colors text-left"
+              >
+                <Kanban size={11} className="text-[var(--text-tertiary)] flex-shrink-0" />
+                <span className="truncate flex-1">{c.title}</span>
+                <span className="text-[10px] text-[var(--text-tertiary)]">{col?.name ?? "card"}</span>
+              </button>
+            );
+          })}
+        </div>
       )}
     </div>
   );

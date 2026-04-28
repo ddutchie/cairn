@@ -8,9 +8,12 @@ import {
   Link,
   Trash2,
   Flag,
-  CheckCircle,
-  Circle,
   ExternalLink,
+  User,
+  Archive,
+  Copy,
+  X,
+  ArrowRight,
 } from "lucide-react";
 import {
   Dialog,
@@ -22,7 +25,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useCairnStore } from "@/store";
-import { cn, formatDate, formatRelative, PRIORITY_COLORS } from "@/lib/utils";
+import { cn, formatRelative, PRIORITY_COLORS } from "@/lib/utils";
 import type { Priority } from "@/types";
 
 interface CardDetailModalProps {
@@ -40,6 +43,9 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
     notes,
     updateCard,
     deleteCard,
+    archiveCard,
+    duplicateCard,
+    unlinkNoteFromCard,
     getTagById,
     tags,
     getProjectNotes,
@@ -47,18 +53,33 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
     setView,
   } = useCairnStore();
 
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
   const card = cards.find((c) => c.id === cardId);
   if (!card) return null;
 
   const column = columns.find((c) => c.id === card.columnId);
   const project = projects.find((p) => p.id === card.projectId);
+  // All columns for this project — for moving the card to another column
+  const projectColumns = columns
+    .filter((c) => c.projectId === card.projectId)
+    .sort((a, b) => a.order - b.order);
   const linkedNotes = card.linkedNoteIds.map((nId) => notes.find((n) => n.id === nId)).filter(Boolean);
   const projectNotes = getProjectNotes(card.projectId);
-  const cardTags = card.tagIds.map((id) => getTagById(id)).filter(Boolean);
   const projectTags = tags.filter((t) => t.workspaceId === card.workspaceId);
 
   function handleDelete() {
     deleteCard(cardId);
+    onClose();
+  }
+
+  function handleArchive() {
+    archiveCard(cardId);
+    onClose();
+  }
+
+  function handleDuplicate() {
+    duplicateCard(cardId);
     onClose();
   }
 
@@ -103,7 +124,7 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
             {/* Tags */}
             <div>
               <label className="block text-xs font-medium text-[var(--text-tertiary)] mb-2 uppercase tracking-wide">
-                Tags
+                <Tag size={10} className="inline mr-1" />Tags
               </label>
               <div className="flex flex-wrap gap-1.5">
                 {projectTags.map((tag) => (
@@ -131,7 +152,7 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
             {/* Linked notes */}
             <div>
               <label className="block text-xs font-medium text-[var(--text-tertiary)] mb-2 uppercase tracking-wide">
-                Linked Notes
+                <FileText size={10} className="inline mr-1" />Linked Notes
               </label>
               <div className="space-y-2">
                 {linkedNotes.map(
@@ -141,15 +162,23 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
                         key={note.id}
                         className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--surface-2)] border border-[var(--border)] group"
                       >
-                        <FileText size={12} className="text-[var(--text-tertiary)]" />
+                        <FileText size={12} className="text-[var(--text-tertiary)] flex-shrink-0" />
                         <span className="text-xs text-[var(--text-secondary)] flex-1 truncate">
                           {note.title}
                         </span>
                         <button
                           onClick={() => setView("notes")}
                           className="opacity-0 group-hover:opacity-100 text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-all"
+                          title="Open note"
                         >
                           <ExternalLink size={11} />
+                        </button>
+                        <button
+                          onClick={() => unlinkNoteFromCard(note.id, cardId)}
+                          className="opacity-0 group-hover:opacity-100 text-[var(--text-tertiary)] hover:text-red-400 transition-all"
+                          title="Unlink note"
+                        >
+                          <X size={11} />
                         </button>
                       </div>
                     )
@@ -213,10 +242,40 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
               </div>
             </div>
 
+            {/* Move to column */}
+            <div>
+              <label className="block text-[10px] font-semibold text-[var(--text-tertiary)] mb-2 uppercase tracking-wider">
+                <ArrowRight size={9} className="inline mr-0.5" />Column
+              </label>
+              <select
+                value={card.columnId}
+                onChange={(e) => updateCard(cardId, { columnId: e.target.value })}
+                className="w-full px-2 py-1.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-xs text-[var(--text-secondary)] focus:outline-none focus:border-[var(--accent)]"
+              >
+                {projectColumns.map((col) => (
+                  <option key={col.id} value={col.id}>{col.name}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Assignee */}
+            <div>
+              <label className="block text-[10px] font-semibold text-[var(--text-tertiary)] mb-2 uppercase tracking-wider">
+                <User size={9} className="inline mr-0.5" />Assignee
+              </label>
+              <input
+                type="text"
+                defaultValue={card.assignee ?? ""}
+                onBlur={(e) => updateCard(cardId, { assignee: e.target.value || undefined })}
+                placeholder="Unassigned"
+                className="w-full px-2 py-1.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-xs text-[var(--text-secondary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)]"
+              />
+            </div>
+
             {/* Due date */}
             <div>
               <label className="block text-[10px] font-semibold text-[var(--text-tertiary)] mb-2 uppercase tracking-wider">
-                Due Date
+                <Calendar size={9} className="inline mr-0.5" />Due Date
               </label>
               <input
                 type="date"
@@ -236,17 +295,47 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
               </div>
             </div>
 
-            {/* Delete */}
-            <div className="pt-2">
+            {/* Actions */}
+            <div className="pt-2 space-y-1.5">
               <Button
-                variant="danger"
+                variant="ghost"
                 size="xs"
-                className="w-full"
-                onClick={handleDelete}
+                className="w-full justify-start text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
+                onClick={handleDuplicate}
               >
-                <Trash2 size={10} />
-                Delete card
+                <Copy size={10} />
+                Duplicate
               </Button>
+              <Button
+                variant="ghost"
+                size="xs"
+                className="w-full justify-start text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
+                onClick={handleArchive}
+              >
+                <Archive size={10} />
+                Archive
+              </Button>
+              <div className="border-t border-[var(--border)] pt-1.5">
+                {confirmDelete ? (
+                  <div className="space-y-1">
+                    <p className="text-[10px] text-[var(--text-tertiary)]">Are you sure?</p>
+                    <div className="flex gap-1">
+                      <Button variant="danger" size="xs" onClick={handleDelete}>Delete</Button>
+                      <Button variant="ghost" size="xs" onClick={() => setConfirmDelete(false)}>Cancel</Button>
+                    </div>
+                  </div>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    className="w-full justify-start text-[var(--danger)] hover:bg-[var(--danger)]/10"
+                    onClick={() => setConfirmDelete(true)}
+                  >
+                    <Trash2 size={10} />
+                    Delete
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
         </div>

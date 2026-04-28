@@ -13,6 +13,8 @@ import {
   Loader2,
   X,
   FolderOpen,
+  Archive,
+  FolderInput,
 } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { cn, formatRelative } from "@/lib/utils";
@@ -36,18 +38,23 @@ export function NotesView() {
     createNote,
     updateNote,
     deleteNote,
+    archiveNote,
+    moveNoteToProject,
     aiConfig,
     getProjectColumns,
     tags,
     getTagById,
+    getWorkspaceProjects,
   } = useCairnStore();
 
   const [activeNoteId, setActiveNoteId] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
   const [activeTagId, setActiveTagId] = useState<string | null>(null);
   const [prdModalOpen, setPrdModalOpen] = useState(false);
+  const [moveNoteId, setMoveNoteId] = useState<string | null>(null);
 
   const notes = activeProjectId ? getProjectNotes(activeProjectId) : [];
+  const workspaceProjects = activeWorkspaceId ? getWorkspaceProjects(activeWorkspaceId) : [];
   const workspaceTags = tags.filter((t) => t.workspaceId === activeWorkspaceId);
   // Tags that appear on at least one note in this project
   const projectTagIds = [...new Set(notes.flatMap((n) => n.tagIds))];
@@ -110,6 +117,23 @@ export function NotesView() {
       const remaining = notes.filter((n) => n.id !== noteId);
       setActiveNoteId(remaining[0]?.id ?? null);
     }
+  }
+
+  function handleArchive(noteId: string) {
+    archiveNote(noteId);
+    if (activeNoteId === noteId) {
+      const remaining = notes.filter((n) => n.id !== noteId);
+      setActiveNoteId(remaining[0]?.id ?? null);
+    }
+  }
+
+  function handleMoveToProject(noteId: string, targetProjectId: string) {
+    moveNoteToProject(noteId, targetProjectId);
+    if (activeNoteId === noteId) {
+      const remaining = notes.filter((n) => n.id !== noteId);
+      setActiveNoteId(remaining[0]?.id ?? null);
+    }
+    setMoveNoteId(null);
   }
 
   return (
@@ -195,9 +219,10 @@ export function NotesView() {
                 onClick={() => setActiveNoteId(note.id)}
                 onPin={() => updateNote(note.id, { isPinned: !note.isPinned })}
                 onDelete={() => handleDelete(note.id)}
+                onArchive={() => handleArchive(note.id)}
+                onMove={() => setMoveNoteId(note.id)}
                 onReveal={() => {
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  (window as any).electron?.revealNote?.(note.id, note.projectId);
+                  window.electron?.revealNote?.(note.id, note.projectId);
                 }}
               />
             ))
@@ -246,6 +271,40 @@ export function NotesView() {
           aiConfig={aiConfig}
           onClose={() => setPrdModalOpen(false)}
         />
+      )}
+
+      {/* Move note to project dialog */}
+      {moveNoteId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-2xl w-72 p-5 flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <FolderInput size={14} className="text-[var(--accent)]" />
+                <span className="text-sm font-semibold text-[var(--text-primary)]">Move to project</span>
+              </div>
+              <button onClick={() => setMoveNoteId(null)} className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]">
+                <X size={13} />
+              </button>
+            </div>
+            <div className="space-y-1">
+              {workspaceProjects
+                .filter((p) => p.id !== activeProjectId)
+                .map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => handleMoveToProject(moveNoteId, p.id)}
+                    className="w-full text-left px-3 py-2 rounded-lg text-sm text-[var(--text-secondary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)] transition-colors flex items-center gap-2"
+                  >
+                    <FolderInput size={12} className="text-[var(--text-tertiary)]" />
+                    {p.name}
+                  </button>
+                ))}
+              {workspaceProjects.filter((p) => p.id !== activeProjectId).length === 0 && (
+                <p className="text-xs text-[var(--text-tertiary)] text-center py-3">No other projects</p>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -389,10 +448,12 @@ interface NoteListItemProps {
   onClick: () => void;
   onPin: () => void;
   onDelete: () => void;
+  onArchive: () => void;
+  onMove: () => void;
   onReveal: () => void;
 }
 
-function NoteListItem({ note, isActive, onClick, onPin, onDelete, onReveal }: NoteListItemProps) {
+function NoteListItem({ note, isActive, onClick, onPin, onDelete, onArchive, onMove, onReveal }: NoteListItemProps) {
   return (
     <div
       onClick={onClick}
@@ -443,6 +504,25 @@ function NoteListItem({ note, isActive, onClick, onPin, onDelete, onReveal }: No
             >
               <FolderOpen size={12} />
               Reveal in Finder
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={(e) => {
+                e.stopPropagation();
+                onArchive();
+              }}
+            >
+              <Archive size={12} />
+              Archive
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={(e) => {
+                e.stopPropagation();
+                onMove();
+              }}
+            >
+              <FolderInput size={12} />
+              Move to project
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem

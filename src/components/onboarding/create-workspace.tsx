@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useCairnStore } from "@/store";
 import { WORKSPACE_ICONS, DEFAULT_WORKSPACE_ICON, WorkspaceIcon } from "@/lib/workspace-icons";
-import { FolderOpen } from "lucide-react";
+import { FolderOpen, ArrowLeft } from "lucide-react";
 
 interface Props {
   onComplete: () => void;
@@ -141,9 +141,20 @@ export function CreateWorkspace({ onComplete, initialStep = "choose-folder" }: P
         className="w-full max-w-sm bg-[var(--surface)] border border-[var(--border)] rounded-xl p-6 flex flex-col gap-5"
       >
         <div>
-          <h2 className="text-sm font-medium text-[var(--text-primary)] mb-1">
-            Name your workspace
-          </h2>
+          <div className="flex items-center gap-2 mb-1">
+            {initialStep === "choose-folder" && (
+              <button
+                type="button"
+                onClick={() => setStep("choose-folder")}
+                className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
+              >
+                <ArrowLeft size={13} />
+              </button>
+            )}
+            <h2 className="text-sm font-medium text-[var(--text-primary)]">
+              Name your workspace
+            </h2>
+          </div>
           {chosenFolder && (
             <p className="text-xs text-[var(--text-tertiary)] font-mono truncate">{chosenFolder}</p>
           )}

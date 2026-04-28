@@ -26,6 +26,7 @@ import {
   Monitor,
   Tag,
   X,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -174,7 +175,7 @@ function Toggle({
 // ── General settings ──────────────────────────
 
 function GeneralSettings() {
-  const { workspaces, theme, setTheme, updateWorkspace } = useCairnStore();
+  const { workspaces, theme, setTheme, updateWorkspace, aiConfig, setAIConfig } = useCairnStore();
   const workspace = workspaces[0];
 
   const themeOptions: { value: Theme; label: string; icon: React.ReactNode }[] = [
@@ -198,6 +199,22 @@ function GeneralSettings() {
           onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
         />
       </SettingsRow>
+      <SettingsRow label="MCP server" description="Enable the local MCP server for AI tools (Claude Desktop, Cursor, etc.)">
+        <button
+          onClick={() => setAIConfig({ mcpEnabled: !aiConfig.mcpEnabled })}
+          className={cn(
+            "relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none",
+            aiConfig.mcpEnabled ? "bg-[var(--accent)]" : "bg-[var(--surface-3)] border border-[var(--border)]"
+          )}
+        >
+          <span
+            className={cn(
+              "inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform",
+              aiConfig.mcpEnabled ? "translate-x-4" : "translate-x-0.5"
+            )}
+          />
+        </button>
+      </SettingsRow>
       <SettingsRow label="Theme" description="Choose light, dark, or follow your system setting">
         <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-[var(--surface-2)] border border-[var(--border)]">
           {themeOptions.map((opt) => (
@@ -217,7 +234,43 @@ function GeneralSettings() {
           ))}
         </div>
       </SettingsRow>
+      <ChangeWorkspaceRow />
     </SettingsGroup>
+  );
+}
+
+function ChangeWorkspaceRow() {
+  const [changing, setChanging] = useState(false);
+  const [done, setDone] = useState(false);
+
+  async function handleChange() {
+    if (!window.electron) return;
+    setChanging(true);
+    try {
+      const folder = await window.electron.selectWorkspaceFolder();
+      if (!folder) return;
+      const result = await window.electron.initWorkspace(folder);
+      setDone(true);
+      if (result?.requiresRestart) {
+        setTimeout(() => window.location.reload(), 1000);
+      }
+    } finally {
+      setChanging(false);
+    }
+  }
+
+  return (
+    <SettingsRow label="Workspace folder" description="Move your workspace to a different folder">
+      <Button variant="default" size="sm" onClick={handleChange} disabled={changing}>
+        {done ? (
+          <><CheckCircle size={12} className="text-[var(--success)]" /> Changed</>
+        ) : changing ? (
+          <><Loader2 size={12} className="animate-spin" /> Selecting…</>
+        ) : (
+          <>Change folder</>
+        )}
+      </Button>
+    </SettingsRow>
   );
 }
 
@@ -931,17 +984,18 @@ function DataSettings({
 }: {
   stats: { workspaces: number; projects: number; notes: number; cards: number };
 }) {
+  const { workspaces, projects, notes, columns, cards, tags } = useCairnStore();
   const [exportDone, setExportDone] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
 
   function handleExport() {
-    const saved = localStorage.getItem("cairn:v1:state");
-    if (!saved) return;
-    const blob = new Blob([saved], { type: "application/json" });
+    // Export from the live store (source of truth from SQLite), not localStorage cache
+    const data = { workspaces, projects, notes, columns, cards, tags, exportedAt: new Date().toISOString() };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "cairn-data.json";
+    a.download = `cairn-export-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
     setExportDone(true);
@@ -1014,7 +1068,7 @@ function DataSettings({
 // ── Tags settings ─────────────────────────────
 
 function TagsSettings() {
-  const { tags, activeWorkspaceId, updateTag, deleteTag } = useCairnStore();
+  const { tags, notes, cards, activeWorkspaceId, updateTag, deleteTag } = useCairnStore();
   const workspaceTags = tags.filter((t) => t.workspaceId === activeWorkspaceId);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
@@ -1025,41 +1079,48 @@ function TagsSettings() {
         <p className="text-sm text-[var(--text-tertiary)]">No tags yet. Create tags from the note editor or card detail.</p>
       )}
       <div className="space-y-1">
-        {workspaceTags.map((tag) => (
-          <div key={tag.id} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-[var(--surface-2)] border border-[var(--border)]">
-            <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: tag.color }} />
-            {editingId === tag.id ? (
-              <input
-                autoFocus
-                value={editValue}
-                onChange={(e) => setEditValue(e.target.value)}
-                onBlur={() => {
-                  const trimmed = editValue.trim();
-                  if (trimmed && trimmed !== tag.name) updateTag(tag.id, { name: trimmed });
-                  setEditingId(null);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") e.currentTarget.blur();
-                  if (e.key === "Escape") setEditingId(null);
-                }}
-                className="flex-1 bg-transparent text-sm text-[var(--text-primary)] outline-none border-b border-[var(--accent)]"
-              />
-            ) : (
-              <span
-                className="flex-1 text-sm text-[var(--text-secondary)] cursor-pointer hover:text-[var(--text-primary)]"
-                onClick={() => { setEditingId(tag.id); setEditValue(tag.name); }}
-              >
-                {tag.name}
+        {workspaceTags.map((tag) => {
+          const noteCount = notes.filter((n) => n.tagIds.includes(tag.id) && !n.archivedAt).length;
+          const cardCount = cards.filter((c) => c.tagIds.includes(tag.id) && !c.archivedAt).length;
+          return (
+            <div key={tag.id} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-[var(--surface-2)] border border-[var(--border)]">
+              <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: tag.color }} />
+              {editingId === tag.id ? (
+                <input
+                  autoFocus
+                  value={editValue}
+                  onChange={(e) => setEditValue(e.target.value)}
+                  onBlur={() => {
+                    const trimmed = editValue.trim();
+                    if (trimmed && trimmed !== tag.name) updateTag(tag.id, { name: trimmed });
+                    setEditingId(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") e.currentTarget.blur();
+                    if (e.key === "Escape") setEditingId(null);
+                  }}
+                  className="flex-1 bg-transparent text-sm text-[var(--text-primary)] outline-none border-b border-[var(--accent)]"
+                />
+              ) : (
+                <span
+                  className="flex-1 text-sm text-[var(--text-secondary)] cursor-pointer hover:text-[var(--text-primary)]"
+                  onClick={() => { setEditingId(tag.id); setEditValue(tag.name); }}
+                >
+                  {tag.name}
+                </span>
+              )}
+              <span className="text-[11px] text-[var(--text-tertiary)] tabular-nums">
+                {noteCount}n · {cardCount}c
               </span>
-            )}
-            <button
-              onClick={() => deleteTag(tag.id)}
-              className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--danger)] transition-colors"
-            >
-              <X size={12} />
-            </button>
-          </div>
-        ))}
+              <button
+                onClick={() => deleteTag(tag.id)}
+                className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--danger)] transition-colors"
+              >
+                <X size={12} />
+              </button>
+            </div>
+          );
+        })}
       </div>
     </SettingsGroup>
   );

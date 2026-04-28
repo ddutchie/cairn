@@ -117,11 +117,19 @@ interface CairnStore extends PersistedState, AppUIState {
   createColumn: (projectId: ID, name: string) => BoardColumn;
   updateColumn: (id: ID, patch: Partial<Pick<BoardColumn, "name" | "order">>) => void;
   deleteColumn: (id: ID) => void;
+  reorderColumns: (projectId: ID, columnIds: ID[]) => void;
   createCard: (columnId: ID, projectId: ID, title: string) => TaskCard;
   updateCard: (id: ID, patch: Partial<TaskCard>) => void;
   moveCard: (cardId: ID, targetColumnId: ID, targetIndex: number) => void;
   deleteCard: (id: ID) => void;
   reorderCards: (columnId: ID, cardIds: ID[]) => void;
+  archiveCard: (id: ID) => void;
+  duplicateCard: (id: ID) => TaskCard | null;
+  unlinkNoteFromCard: (noteId: ID, cardId: ID) => void;
+
+  // ── Notes extras ─────────────────────────
+  archiveNote: (id: ID) => void;
+  moveNoteToProject: (noteId: ID, targetProjectId: ID) => void;
 
   // ── Chat ──────────────────────────────────
   getOrCreateThread: (workspaceId: ID, projectId?: ID) => ChatThread;
@@ -686,6 +694,91 @@ export const useCairnStore = create<CairnStore>()(
       }));
       get().persist();
       ipc((e) => (e.column as { delete: (id: string) => Promise<unknown> }).delete(colId));
+    },
+
+    reorderColumns(projectId, columnIds) {
+      set((s) => ({
+        columns: s.columns.map((c) => {
+          if (c.projectId !== projectId) return c;
+          const newOrder = columnIds.indexOf(c.id);
+          return newOrder >= 0 ? { ...c, order: newOrder, updatedAt: now() } : c;
+        }),
+      }));
+      get().persist();
+      columnIds.forEach((colId, order) => {
+        ipc((e) => e.column.update(colId, { order }));
+      });
+    },
+
+    archiveCard(cardId) {
+      const archivedAt = now();
+      set((s) => ({
+        cards: s.cards.map((c) => c.id === cardId ? { ...c, archivedAt, updatedAt: now() } : c),
+      }));
+      get().persist();
+      ipc((e) => e.card.update(cardId, { archivedAt }));
+    },
+
+    duplicateCard(cardId) {
+      const card = get().cards.find((c) => c.id === cardId);
+      if (!card) return null;
+      const colCards = get().cards.filter((c) => c.columnId === card.columnId && !c.archivedAt);
+      const newCard: TaskCard = {
+        ...card,
+        id: id(),
+        title: `${card.title} (copy)`,
+        order: colCards.length,
+        createdAt: now(),
+        updatedAt: now(),
+        linkedNoteIds: [],
+      };
+      set((s) => ({ cards: [...s.cards, newCard] }));
+      get().persist();
+      ipc((e) => e.card.create(newCard));
+      return newCard;
+    },
+
+    unlinkNoteFromCard(noteId, cardId) {
+      set((s) => ({
+        cards: s.cards.map((c) =>
+          c.id === cardId
+            ? { ...c, linkedNoteIds: c.linkedNoteIds.filter((id) => id !== noteId), updatedAt: now() }
+            : c
+        ),
+        notes: s.notes.map((n) =>
+          n.id === noteId
+            ? { ...n, linkedCardIds: n.linkedCardIds.filter((id) => id !== cardId), updatedAt: now() }
+            : n
+        ),
+      }));
+      get().persist();
+      const card = get().cards.find((c) => c.id === cardId);
+      const note = get().notes.find((n) => n.id === noteId);
+      if (card) ipc((e) => e.card.update(cardId, { linkedNoteIds: card.linkedNoteIds }));
+      if (note) ipc((e) => e.note.update(noteId, { linkedCardIds: note.linkedCardIds }));
+    },
+
+    archiveNote(noteId) {
+      const archivedAt = now();
+      set((s) => ({
+        notes: s.notes.map((n) => n.id === noteId ? { ...n, archivedAt, updatedAt: now() } : n),
+      }));
+      get().persist();
+      ipc((e) => e.note.update(noteId, { archivedAt }));
+    },
+
+    moveNoteToProject(noteId, targetProjectId) {
+      const targetProject = get().projects.find((p) => p.id === targetProjectId);
+      if (!targetProject) return;
+      set((s) => ({
+        notes: s.notes.map((n) =>
+          n.id === noteId
+            ? { ...n, projectId: targetProjectId, workspaceId: targetProject.workspaceId, updatedAt: now() }
+            : n
+        ),
+      }));
+      get().persist();
+      ipc((e) => e.note.update(noteId, { projectId: targetProjectId }));
     },
 
     // ── Chat ──────────────────────────────────────

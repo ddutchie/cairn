@@ -12,6 +12,11 @@ import {
   type DragOverEvent,
   closestCorners,
 } from "@dnd-kit/core";
+import {
+  SortableContext,
+  horizontalListSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable";
 import { Plus, Kanban } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { Button } from "@/components/ui/button";
@@ -19,7 +24,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@
 import { KanbanColumn } from "./column";
 import { KanbanCard } from "./card";
 import { CardDetailModal } from "./card-detail";
-import type { TaskCard } from "@/types";
+import type { TaskCard, BoardColumn } from "@/types";
 
 export function KanbanBoard() {
   const {
@@ -31,9 +36,12 @@ export function KanbanBoard() {
     createCard,
     updateColumn,
     deleteColumn,
+    reorderColumns,
   } = useCairnStore();
 
+  // The active dragged item — either a card or a column
   const [activeCard, setActiveCard] = useState<TaskCard | null>(null);
+  const [activeColumn, setActiveColumn] = useState<BoardColumn | null>(null);
   const [detailCardId, setDetailCardId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
 
@@ -46,8 +54,13 @@ export function KanbanBoard() {
   );
 
   function handleDragStart(event: DragStartEvent) {
-    const card = event.active.data.current?.card as TaskCard;
-    setActiveCard(card ?? null);
+    const col = event.active.data.current?.column as BoardColumn | undefined;
+    const card = event.active.data.current?.card as TaskCard | undefined;
+    if (col) {
+      setActiveColumn(col);
+    } else if (card) {
+      setActiveCard(card);
+    }
   }
 
   function handleDragOver(event: DragOverEvent) {
@@ -57,17 +70,28 @@ export function KanbanBoard() {
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     setActiveCard(null);
+    setActiveColumn(null);
     setOverId(null);
 
-    if (!over) return;
+    if (!over || active.id === over.id) return;
 
+    // ── Column reorder ─────────────────────────────────────────────────
+    if (active.data.current?.column) {
+      if (!activeProjectId) return;
+      const oldIndex = columns.findIndex((c) => c.id === active.id);
+      const newIndex = columns.findIndex((c) => c.id === over.id);
+      if (oldIndex === -1 || newIndex === -1) return;
+      const reordered = arrayMove(columns, oldIndex, newIndex);
+      reorderColumns(activeProjectId, reordered.map((c) => c.id));
+      return;
+    }
+
+    // ── Card move / reorder ────────────────────────────────────────────
     const draggedCard = active.data.current?.card as TaskCard;
     if (!draggedCard) return;
 
     const overId = over.id as string;
 
-    // Determine target column
-    // over can be a column ID or a card ID
     let targetColumnId: string;
     let targetIndex: number;
 
@@ -77,7 +101,6 @@ export function KanbanBoard() {
       const colCards = getColumnCards(overId);
       targetIndex = colCards.length;
     } else {
-      // over is a card — find its column
       const allCards = columns.flatMap((c) =>
         getColumnCards(c.id).map((card) => ({ ...card, _colId: c.id }))
       );
@@ -142,42 +165,46 @@ export function KanbanBoard() {
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
       >
-        <div className="flex-1 flex gap-3 overflow-x-auto p-5 min-h-0">
-          {columns.map((column) => (
-            <KanbanColumn
-              key={column.id}
-              column={column}
-              cards={getColumnCards(column.id)}
-              onCardClick={(cardId) => setDetailCardId(cardId)}
-              onAddCard={(title) => createCard(column.id, activeProjectId, title)}
-              onRename={(name) => updateColumn(column.id, { name })}
-              onDelete={() => deleteColumn(column.id)}
-              isDragOver={overId === column.id}
-            />
-          ))}
+        {/* Outer SortableContext for column reordering */}
+        <SortableContext items={columns.map((c) => c.id)} strategy={horizontalListSortingStrategy}>
+          <div className="flex-1 flex gap-3 overflow-x-auto p-5 min-h-0">
+            {columns.map((column) => (
+              <KanbanColumn
+                key={column.id}
+                column={column}
+                cards={getColumnCards(column.id)}
+                onCardClick={(cardId) => setDetailCardId(cardId)}
+                onAddCard={(title) => createCard(column.id, activeProjectId, title)}
+                onRename={(name) => updateColumn(column.id, { name })}
+                onDelete={() => deleteColumn(column.id)}
+                isDragOver={overId === column.id}
+                isColumnDragging={activeColumn?.id === column.id}
+              />
+            ))}
 
-          {/* Add column */}
-          <div className="flex-shrink-0 w-56">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleAddColumn}
-              className="w-full border border-dashed border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--accent)] hover:text-[var(--accent)] h-auto py-3"
-            >
-              <Plus size={13} />
-              Add column
-            </Button>
-          </div>
-
-          {columns.length === 0 && (
-            <div className="flex-1 flex items-center justify-center">
-              <div className="text-center">
-                <Kanban size={32} className="mx-auto mb-3 text-[var(--text-tertiary)] opacity-30" />
-                <p className="text-sm text-[var(--text-tertiary)]">No columns yet</p>
-              </div>
+            {/* Add column */}
+            <div className="flex-shrink-0 w-56">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleAddColumn}
+                className="w-full border border-dashed border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--accent)] hover:text-[var(--accent)] h-auto py-3"
+              >
+                <Plus size={13} />
+                Add column
+              </Button>
             </div>
-          )}
-        </div>
+
+            {columns.length === 0 && (
+              <div className="flex-1 flex items-center justify-center">
+                <div className="text-center">
+                  <Kanban size={32} className="mx-auto mb-3 text-[var(--text-tertiary)] opacity-30" />
+                  <p className="text-sm text-[var(--text-tertiary)]">No columns yet</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </SortableContext>
 
         <DragOverlay>
           {activeCard && (
@@ -186,6 +213,20 @@ export function KanbanBoard() {
                 card={activeCard}
                 isDragging
                 onClick={() => {}}
+              />
+            </div>
+          )}
+          {activeColumn && (
+            <div className="rotate-1 opacity-80">
+              <KanbanColumn
+                column={activeColumn}
+                cards={getColumnCards(activeColumn.id)}
+                onCardClick={() => {}}
+                onAddCard={() => {}}
+                onRename={() => {}}
+                onDelete={() => {}}
+                isDragOver={false}
+                isColumnDragging={true}
               />
             </div>
           )}

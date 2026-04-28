@@ -2,8 +2,9 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { useDroppable } from "@dnd-kit/core";
-import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
-import { Plus, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { SortableContext, verticalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { Plus, MoreHorizontal, Pencil, Trash2, GripVertical } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -34,10 +35,11 @@ interface KanbanColumnProps {
   onRename: (name: string) => void;
   onDelete: () => void;
   isDragOver: boolean;
+  isColumnDragging?: boolean;
 }
 
 export function KanbanColumn({
-  column, cards, onCardClick, onAddCard, onRename, onDelete, isDragOver,
+  column, cards, onCardClick, onAddCard, onRename, onDelete, isDragOver, isColumnDragging,
 }: KanbanColumnProps) {
   const [isAddingCard, setIsAddingCard] = useState(false);
   const [newCardTitle, setNewCardTitle] = useState("");
@@ -46,8 +48,23 @@ export function KanbanColumn({
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const renameInputRef = useRef<HTMLInputElement>(null);
 
-  const { setNodeRef } = useDroppable({ id: column.id });
+  const { setNodeRef: setDropRef } = useDroppable({ id: column.id });
+  const {
+    setNodeRef: setSortableRef,
+    attributes,
+    listeners,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: column.id, data: { column } });
+
   const accent = COLUMN_ACCENT[column.type] ?? COLUMN_ACCENT.custom;
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+  };
 
   useEffect(() => {
     if (renaming) {
@@ -100,14 +117,28 @@ export function KanbanColumn({
         </DialogContent>
       </Dialog>
 
-      <div className={cn(
-        "flex flex-col w-56 rounded-xl border flex-shrink-0 transition-colors duration-150",
-        isDragOver
-          ? "border-[var(--accent)]/50 bg-[var(--accent-dim)]"
-          : "border-[var(--border)] bg-[var(--surface)]"
-      )}>
+      <div
+        ref={setSortableRef}
+        style={style}
+        className={cn(
+          "flex flex-col w-56 rounded-xl border flex-shrink-0 transition-colors duration-150",
+          isDragOver
+            ? "border-[var(--accent)]/50 bg-[var(--accent-dim)]"
+            : "border-[var(--border)] bg-[var(--surface)]",
+          isColumnDragging && "shadow-xl"
+        )}
+      >
         {/* Column header */}
         <div className="group flex items-center gap-2 px-3 py-2.5 border-b border-[var(--border)]">
+          {/* Drag handle */}
+          <button
+            {...attributes}
+            {...listeners}
+            className="opacity-0 group-hover:opacity-100 cursor-grab active:cursor-grabbing text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-opacity flex-shrink-0 -ml-1 touch-none"
+            tabIndex={-1}
+          >
+            <GripVertical size={12} />
+          </button>
           <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: accent }} />
           {renaming ? (
             <input
@@ -167,7 +198,7 @@ export function KanbanColumn({
 
         {/* Cards */}
         <SortableContext items={cards.map((c) => c.id)} strategy={verticalListSortingStrategy}>
-          <div ref={setNodeRef} className="flex-1 overflow-y-auto p-2 space-y-2 min-h-[48px]">
+          <div ref={setDropRef} className="flex-1 overflow-y-auto p-2 space-y-2 min-h-[48px]">
             {cards.map((card) => (
               <KanbanCard key={card.id} card={card} onClick={() => onCardClick(card.id)} />
             ))}
