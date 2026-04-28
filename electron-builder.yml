@@ -7,9 +7,9 @@ directories:
   buildResources: build-resources
 
 files:
-  # Electron main process compiled output
+  # Electron main + preload — esbuild bundles (all JS deps inlined)
   - dist-electron/**/*
-  # MCP server — single esbuild bundle (all JS deps inlined, only better-sqlite3 is external)
+  # MCP server — esbuild bundle (all JS deps inlined)
   - dist-mcp/mcp-server.bundle.js
   # Next.js static export
   - out/**/*
@@ -17,11 +17,20 @@ files:
   - electron-native/**/*
   # System-Node-ABI better-sqlite3 binary for the MCP server
   - mcp-native/**/*
+  # better-sqlite3 native addon (cannot be bundled by esbuild)
+  - node_modules/better-sqlite3/**/*
+  - node_modules/bindings/**/*
+  - node_modules/file-uri-to-path/**/*
+  # Exclude all other node_modules — everything else is inlined by esbuild
+  - "!node_modules/!(better-sqlite3|bindings|file-uri-to-path)/**"
 
-# Unpack from asar so plain `node` can load them at runtime
+# Unpack from asar so native addons and the MCP bundle can load at runtime
 asarUnpack:
   - dist-mcp/mcp-server.bundle.js
   - mcp-native/**/*
+  - node_modules/better-sqlite3/**/*
+  - node_modules/bindings/**/*
+  - node_modules/file-uri-to-path/**/*
 
 # Rebuild native modules against Electron's Node version
 npmRebuild: true

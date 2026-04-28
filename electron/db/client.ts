@@ -12,12 +12,17 @@
 import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
+import { app } from "electron";
+import { applySchema } from "./schema";
 
-// Path to the Electron-ABI native binary (built with electron-rebuild)
-const ELECTRON_BINDING = path.join(
-  __dirname,
-  "../../electron-native/better_sqlite3_electron.node"
-);
+// Path to the Electron-ABI native binary (built with electron-rebuild).
+// In dev:  dist-electron/main.js → __dirname = <project>/dist-electron
+//          → ../electron-native/better_sqlite3_electron.node
+// In prod: packaged asar → use process.resourcesPath which points at
+//          Contents/Resources where electron-native/ is unpacked.
+const ELECTRON_BINDING = app.isPackaged
+  ? path.join(process.resourcesPath, "electron-native", "better_sqlite3_electron.node")
+  : path.join(__dirname, "..", "electron-native", "better_sqlite3_electron.node");
 
 let _db: Database.Database | null = null;
 
@@ -31,7 +36,6 @@ export function initDb(userDataPath: string): Database.Database {
   const db = new Database(dbPath, { nativeBinding: ELECTRON_BINDING } as ConstructorParameters<typeof Database>[1]);
 
   // Apply schema (idempotent — uses CREATE IF NOT EXISTS)
-  const { applySchema } = require("./schema");
   applySchema(db);
 
   _db = db;

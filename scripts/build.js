@@ -50,12 +50,11 @@ console.log(`\nBuilding Cairn for: ${platformFlags}`);
 // 1. Next.js static export
 run("cross-env ELECTRON_BUILD=true next build");
 
-// 2. Compile Electron main process
-run("tsc -p tsconfig.electron.json");
+// 2. Bundle Electron main + preload with esbuild (inlines all deps except better-sqlite3 and electron)
+run("esbuild electron/main.ts electron/preload.ts --bundle --platform=node --target=node20 --external:electron --external:better-sqlite3 --outdir=dist-electron --format=cjs");
 
-// 3. Compile + bundle MCP server
-run("tsc -p tsconfig.mcp.json");
-run("esbuild dist-mcp/mcp-server.js --bundle --platform=node --external:better-sqlite3 --outfile=dist-mcp/mcp-server.bundle.js");
+// 3. Bundle MCP server with esbuild (inlines all deps except better-sqlite3)
+run("esbuild electron/mcp-server.ts --bundle --platform=node --target=node20 --external:better-sqlite3 --outfile=dist-mcp/mcp-server.bundle.js --format=cjs");
 
 // 4. Package with electron-builder
 run(`electron-builder ${platformFlags}`);
