@@ -32,8 +32,9 @@ export default function Home() {
   // false = fully set up
   const [onboardingState, setOnboardingState] = useState<"workspace" | "create" | false | null>(null);
 
-  // Auto-updater state
-  const [updateInfo, setUpdateInfo] = useState<{ version: string; downloaded: boolean } | null>(null);
+  // Auto-updater state — tracked separately so event order doesn't matter
+  const [updateVersion, setUpdateVersion] = useState<string | null>(null);
+  const [updateDownloaded, setUpdateDownloaded] = useState(false);
 
   useEffect(() => {
     if (typeof window !== "undefined" && window.electron) {
@@ -57,12 +58,12 @@ export default function Home() {
         hydrateFromElectron(true);
       });
 
-      // Auto-updater listeners
+      // Auto-updater listeners — events may arrive in any order
       const unsubAvailable = e.updater?.onUpdateAvailable?.((info: { version: string }) => {
-        setUpdateInfo({ version: info.version, downloaded: false });
+        setUpdateVersion(info.version);
       });
       const unsubDownloaded = e.updater?.onUpdateDownloaded?.(() => {
-        setUpdateInfo((prev) => prev ? { ...prev, downloaded: true } : prev);
+        setUpdateDownloaded(true);
       });
 
       return () => {
@@ -122,17 +123,17 @@ export default function Home() {
       {/* Electron title bar — draggable, clears macOS traffic lights */}
       <TitleBar />
 
-      {/* Auto-update banner */}
-      {updateInfo && (
+      {/* Auto-update banner — shown as soon as we know a version is available or downloaded */}
+      {(updateVersion || updateDownloaded) && (
         <div className="flex items-center gap-3 px-4 py-2 bg-[var(--accent-dim)] border-b border-[var(--accent)]/30 flex-shrink-0">
           <Download size={13} className="text-[var(--accent)] shrink-0" />
           <span className="text-xs text-[var(--text-secondary)] flex-1">
-            {updateInfo.downloaded
-              ? <>Cairn <strong className="text-[var(--text-primary)]">v{updateInfo.version}</strong> is ready to install.</>
-              : <>Downloading Cairn <strong className="text-[var(--text-primary)]">v{updateInfo.version}</strong>…</>
+            {updateDownloaded
+              ? <>Cairn <strong className="text-[var(--text-primary)]">v{updateVersion}</strong> is ready to install.</>
+              : <>Downloading Cairn <strong className="text-[var(--text-primary)]">v{updateVersion}</strong>…</>
             }
           </span>
-          {updateInfo.downloaded && (
+          {updateDownloaded && (
             <button
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               onClick={() => (window as any).electron?.updater?.install()}
@@ -142,7 +143,7 @@ export default function Home() {
             </button>
           )}
           <button
-            onClick={() => setUpdateInfo(null)}
+            onClick={() => { setUpdateVersion(null); setUpdateDownloaded(false); }}
             className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
           >
             <X size={12} />
