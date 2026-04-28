@@ -12,6 +12,7 @@
 import { app, BrowserWindow, shell, session, protocol, net } from "electron";
 import path from "path";
 import fs from "fs";
+import { pathToFileURL } from "url";
 import { initDb } from "./db/client";
 import { registerIpcHandlers } from "./ipc/handlers";
 
@@ -79,7 +80,7 @@ app.whenReady().then(() => {
       let filePath = url.pathname.replace(/^\/\.\/|^\//, "");
       if (!filePath || filePath === "") filePath = "index.html";
       const fullPath = path.join(outDir, filePath);
-      return net.fetch(`file://${fullPath}`);
+      return net.fetch(pathToFileURL(fullPath).href);
     });
   }
 

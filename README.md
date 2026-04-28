@@ -1,4 +1,8 @@
-# 🪨 Cairn
+# Cairn
+
+<p align="center">
+  <img src="public/Cairn_No_BG.png" alt="Cairn" width="180" />
+</p>
 
 > A calm, local-first workspace for notes and project tracking — with an AI assistant and MCP server built in.
 
@@ -40,9 +44,13 @@ npm run dev       # start Cairn (Next.js + Electron)
 ### Build the packaged app
 
 ```bash
-npm run build
-# Output: dist-app/Cairn-0.1.0-arm64.dmg
+npm run build:mac      # macOS DMG (arm64 + x64)
+npm run build:win      # Windows NSIS installer (x64 + arm64)
+npm run build:linux    # Linux AppImage (x64 + arm64)
+npm run build:all      # All three platforms
 ```
+
+Output goes to `dist-app/`.
 
 > **Note:** `npm run rebuild` must be re-run after updating the Electron version. It saves two native binaries: one for the Electron ABI (`electron-native/`) and one for the system Node ABI used by the MCP server (`mcp-native/`).
 

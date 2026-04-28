@@ -6,9 +6,12 @@
   "private": true,
   "scripts": {
     "dev": "concurrently -n next,electron -c cyan,yellow \"next dev\" \"wait-on http://localhost:3000 && cross-env NODE_ENV=development electron dist-electron/main.js\"",
-    "build": "node scripts/electron-build.js",
+    "build:mac": "node scripts/build.js --mac",
+    "build:win": "node scripts/build.js --win",
+    "build:linux": "node scripts/build.js --linux",
+    "build:all": "node scripts/build.js --mac --win --linux",
     "compile": "tsc -p tsconfig.electron.json && tsc -p tsconfig.mcp.json && esbuild dist-mcp/mcp-server.js --bundle --platform=node --external:better-sqlite3 --outfile=dist-mcp/mcp-server.bundle.js",
-    "rebuild": "npm rebuild better-sqlite3 && mkdir -p mcp-native && cp node_modules/better-sqlite3/build/Release/better_sqlite3.node mcp-native/better_sqlite3_node.node && npx @electron/rebuild -f better-sqlite3 && mkdir -p electron-native && cp node_modules/better-sqlite3/build/Release/better_sqlite3.node electron-native/better_sqlite3_electron.node",
+    "rebuild": "node scripts/rebuild-native.js",
     "lint": "eslint",
     "type-check": "tsc --noEmit",
     "mcp": "node dist-mcp/mcp-server.bundle.js"
