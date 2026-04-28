@@ -54,8 +54,13 @@ export function ChatPanel() {
   const [isLoading, setIsLoading] = useState(false);
   const [threadId, setThreadId] = useState<string | null>(null);
   const [toolCalls, setToolCalls] = useState<Array<{ tool: string; label: string }>>([]);
+  // Live token buffer — shown as a streaming bubble while the model is typing
+  const [streamingContent, setStreamingContent] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  // Keep a stable ref to the current threadId so event handlers don't go stale
+  const threadIdRef = useRef<string | null>(null);
+  useEffect(() => { threadIdRef.current = threadId; }, [threadId]);
 
   const project = projects.find((p) => p.id === activeProjectId);
   const workspace = workspaces.find((w) => w.id === activeWorkspaceId);
@@ -67,15 +72,38 @@ export function ChatPanel() {
     setThreadId(t.id);
   }, [activeWorkspaceId, activeProjectId, getOrCreateThread]);
 
-  // Subscribe to live tool call events from the main process
+  // Subscribe to streaming events from the main process
   useEffect(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const electron = (window as any).electron;
-    if (!electron?.onToolCall) return;
-    const unsub = electron.onToolCall((e: { tool: string; label: string }) => {
+    if (!electron) return;
+
+    const unsubTool = electron.onToolCall?.((e: { tool: string; label: string }) => {
       setToolCalls((prev) => [...prev, e]);
     });
-    return unsub;
+
+    const unsubToken = electron.onChatToken?.((e: { delta: string }) => {
+      setStreamingContent((prev) => prev + e.delta);
+    });
+
+    const unsubDone = electron.onChatDone?.((e: { content: string; contextRefs: unknown[] }) => {
+      const tid = threadIdRef.current;
+      if (tid) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        addMessage(tid, "assistant", e.content, e.contextRefs as any);
+      }
+      setStreamingContent("");
+      setIsLoading(false);
+      setToolCalls([]);
+    });
+
+    return () => {
+      unsubTool?.();
+      unsubToken?.();
+      unsubDone?.();
+    };
+  // addMessage is stable (from zustand), intentionally omitted from deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const messages = threadId
@@ -113,23 +141,10 @@ export function ChatPanel() {
       },
     };
 
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const data = await (window as any).electron.chatSend(chatReq);
-      addMessage(threadId, "assistant", data.content, data.contextRefs);
-      // UI updates happen automatically via the db:changed watcher → hydrateFromElectron(true)
-    } catch (err) {
-      addMessage(
-        threadId,
-        "assistant",
-        err instanceof Error && err.message.includes("fetch")
-          ? "Could not reach the server. Is the app running?"
-          : "Something went wrong. Check your AI settings or try again."
-      );
-    } finally {
-      setIsLoading(false);
-      setToolCalls([]);
-    }
+    // Fire-and-forget — response arrives via chat:token / chat:done events
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).electron.chatStream(chatReq);
+    // isLoading / toolCalls / streamingContent are cleared by the onChatDone handler
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -221,19 +236,29 @@ export function ChatPanel() {
             <div className="w-6 h-6 rounded-full bg-[var(--accent-dim)] flex items-center justify-center flex-shrink-0 mt-0.5 shrink-0">
               <Bot size={11} className="text-[var(--accent)]" />
             </div>
-            <div className="flex flex-col gap-1 min-w-0">
+            <div className="flex flex-col gap-1 min-w-0 flex-1">
+              {/* Tool call badges */}
               {toolCalls.map((tc, i) => (
                 <div key={i} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--surface-2)] border border-[var(--border)] w-fit">
                   <CheckCircle size={10} className="text-[var(--accent)] shrink-0" />
                   <span className="text-[11px] text-[var(--text-secondary)]">{tc.label}</span>
                 </div>
               ))}
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--surface-2)] border border-[var(--border)] w-fit">
-                <Loader2 size={10} className="text-[var(--accent)] animate-spin shrink-0" />
-                <span className="text-[11px] text-[var(--text-tertiary)]">
-                  {toolCalls.length === 0 ? "Thinking…" : "Working…"}
-                </span>
-              </div>
+
+              {/* Live streaming bubble — shown once tokens arrive */}
+              {streamingContent ? (
+                <div className="px-3 py-2.5 rounded-xl rounded-tl-sm text-xs leading-relaxed bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-secondary)] max-w-full">
+                  <MarkdownContent content={streamingContent} />
+                  <span className="inline-block w-0.5 h-3 bg-[var(--accent)] animate-pulse ml-0.5 align-middle" />
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--surface-2)] border border-[var(--border)] w-fit">
+                  <Loader2 size={10} className="text-[var(--accent)] animate-spin shrink-0" />
+                  <span className="text-[11px] text-[var(--text-tertiary)]">
+                    {toolCalls.length === 0 ? "Thinking…" : "Working…"}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         )}

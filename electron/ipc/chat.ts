@@ -709,19 +709,98 @@ async function executeTool(db: Database.Database, req: ChatRequest, workspacePat
   }
 }
 
+/**
+ * Run the tool-call loop. Returns when the model produces a response with no
+ * tool calls (ready to stream) or when the round limit is hit.
+ *
+ * Returns { messages, finalContent } where finalContent is set only when the
+ * loop exits via round-limit (so the caller knows to send a canned reply).
+ */
+async function runToolLoop(
+  db: Database.Database,
+  req: ChatRequest,
+  workspacePath: string,
+  baseUrl: string,
+  model: string,
+  apiKey: string,
+  messages: OpenAIMessage[],
+  emitToolCall: (e: { tool: string; label: string; args: Record<string, unknown> }) => void,
+): Promise<{ exhausted: true; content: string } | { exhausted: false }> {
+  for (let round = 0; round < 8; round++) {
+    let response: Response;
+    try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+      response = await fetch(`${baseUrl}/v1/chat/completions`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ model, messages, tools: TOOLS, tool_choice: "auto", max_tokens: 4096, temperature: 0.3 }),
+      });
+    } catch (err) {
+      return { exhausted: true, content: `Could not reach the AI endpoint at \`${baseUrl}\`. Check your endpoint URL and make sure the server is running.` };
+    }
+
+    if (!response.ok) {
+      const errText = await response.text().catch(() => response.statusText);
+      return { exhausted: true, content: `AI endpoint error (${response.status}): ${errText.slice(0, 300)}` };
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data = await response.json() as any;
+    const choice = data.choices?.[0];
+    if (!choice) return { exhausted: true, content: "No response from AI endpoint." };
+
+    const assistantMsg = choice.message as OpenAIMessage;
+
+    // No tool calls — model is ready to produce its final reply
+    if (!assistantMsg.tool_calls?.length) {
+      // Push the non-streaming reply so the caller can stream it
+      messages.push(assistantMsg);
+      return { exhausted: false };
+    }
+
+    messages.push(assistantMsg);
+    for (const call of assistantMsg.tool_calls) {
+      let args: Record<string, unknown> = {};
+      try { args = JSON.parse(call.function.arguments); } catch { args = {}; }
+      let result: unknown;
+      try {
+        result = await executeTool(db, req, workspacePath, { baseUrl, model, apiKey }, call.function.name, args, emitToolCall);
+      } catch (toolErr) {
+        result = { error: `Tool "${call.function.name}" failed: ${String(toolErr)}` };
+      }
+      messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
+    }
+  }
+
+  return {
+    exhausted: true,
+    content: "I reached the maximum number of steps for this request. Any actions taken so far have been saved — check your board and notes. Try breaking the request into smaller steps.",
+  };
+}
+
 export function registerChatHandler(db: Database.Database, workspacePath: string): void {
-  ipcMain.handle("chat:send", async (event, req: ChatRequest) => {
+  // chat:stream — fire-and-forget (ipcMain.on, not handle).
+  // Emits:
+  //   chat:token   { delta: string }   — one SSE content chunk
+  //   chat:tool-call { tool, label, args } — tool being invoked
+  //   chat:done    { content: string, contextRefs: [], error?: string }
+  ipcMain.on("chat:stream", async (event, req: ChatRequest) => {
     const baseUrl = (req.config?.baseUrl ?? "https://api.openai.com").replace(/\/$/, "");
     const model = req.config?.model ?? "gpt-4o-mini";
     const apiKey = req.config?.apiKey ?? "";
     const isLocal = baseUrl.includes("localhost") || baseUrl.includes("127.0.0.1") || baseUrl.includes("0.0.0.0");
 
+    const send = (ch: string, payload: unknown) => {
+      if (!event.sender.isDestroyed()) event.sender.send(ch, payload);
+    };
+
     if (!apiKey && !isLocal) {
-      return {
+      send("chat:done", {
         content: "AI chat is not configured. Set an API key in **Settings → AI & Chat**, or use a local endpoint (Ollama, LM Studio) with no key needed.",
         contextRefs: [],
-        mutations: null,
-      };
+      });
+      return;
     }
 
     const messages: OpenAIMessage[] = [
@@ -730,54 +809,91 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
       { role: "user", content: req.message },
     ];
 
-    for (let round = 0; round < 8; round++) {
-      let response: Response;
+    const emitToolCall = (e: { tool: string; label: string; args: Record<string, unknown> }) => {
+      send("chat:tool-call", e);
+    };
+
+    // Run tool loop until model has no more tool calls
+    const loopResult = await runToolLoop(db, req, workspacePath, baseUrl, model, apiKey, messages, emitToolCall);
+
+    if (loopResult.exhausted) {
+      send("chat:done", { content: loopResult.content, contextRefs: [] });
+      return;
+    }
+
+    // The last message pushed by runToolLoop is the non-tool-call assistant turn.
+    // Pop it off — we'll re-request with stream:true so the reply comes token by token.
+    // (If the model answered with content in that turn, we can stream it directly without
+    //  a second request — just emit it character by character for a smooth effect.)
+    const lastMsg = messages[messages.length - 1] as OpenAIMessage;
+
+    // Fast path: model already gave us the full content in the non-streaming pass.
+    // Emit it as a stream so the UI behaviour is identical.
+    if (lastMsg.role === "assistant" && lastMsg.content && !lastMsg.tool_calls?.length) {
+      // Remove the already-appended assistant turn so we can stream it properly
+      messages.pop();
+
+      // Request again with stream: true so we get real SSE
+      let streamResp: Response;
       try {
         const headers: Record<string, string> = { "Content-Type": "application/json" };
         if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
-        response = await fetch(`${baseUrl}/v1/chat/completions`, {
+        streamResp = await fetch(`${baseUrl}/v1/chat/completions`, {
           method: "POST",
           headers,
-          body: JSON.stringify({ model, messages, tools: TOOLS, tool_choice: "auto", max_tokens: 4096, temperature: 0.3 }),
+          body: JSON.stringify({ model, messages, tools: TOOLS, tool_choice: "none", max_tokens: 4096, temperature: 0.3, stream: true }),
         });
-      } catch (err) {
-        return { content: `Could not reach the AI endpoint at \`${baseUrl}\`. Check your endpoint URL and make sure the server is running.`, contextRefs: [], mutations: null };
+      } catch {
+        // Fallback: just emit the already-received content verbatim
+        send("chat:token", { delta: lastMsg.content });
+        send("chat:done", { content: lastMsg.content, contextRefs: [] });
+        return;
       }
 
-      if (!response.ok) {
-        const errText = await response.text().catch(() => response.statusText);
-        return { content: `AI endpoint error (${response.status}): ${errText.slice(0, 300)}`, contextRefs: [], mutations: null };
+      if (!streamResp.ok) {
+        // Fallback to the already-buffered content
+        send("chat:token", { delta: lastMsg.content });
+        send("chat:done", { content: lastMsg.content, contextRefs: [] });
+        return;
       }
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const data = await response.json() as any;
-      const choice = data.choices?.[0];
-      if (!choice) return { content: "No response from AI endpoint.", contextRefs: [], mutations: null };
+      // Read SSE stream
+      let fullContent = "";
+      try {
+        const reader = streamResp.body?.getReader();
+        const decoder = new TextDecoder();
+        if (!reader) throw new Error("No readable stream");
 
-      const assistantMsg = choice.message as OpenAIMessage;
-
-      if (!assistantMsg.tool_calls?.length) {
-        return { content: assistantMsg.content ?? "", contextRefs: [], mutations: null };
-      }
-
-      messages.push(assistantMsg);
-      for (const call of assistantMsg.tool_calls) {
-        let args: Record<string, unknown> = {};
-        try { args = JSON.parse(call.function.arguments); } catch { args = {}; }
-        const emit = (e: { tool: string; label: string; args: Record<string, unknown> }) => {
-          event.sender.send("chat:tool-call", e);
-        };
-        let result: unknown;
-        try {
-          result = await executeTool(db, req, workspacePath, { baseUrl, model, apiKey }, call.function.name, args, emit);
-        } catch (toolErr) {
-          // Surface the error as a tool result so the model can handle it gracefully
-          result = { error: `Tool "${call.function.name}" failed: ${String(toolErr)}` };
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const chunk = decoder.decode(value, { stream: true });
+          for (const line of chunk.split("\n")) {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith("data:")) continue;
+            const jsonStr = trimmed.slice(5).trim();
+            if (jsonStr === "[DONE]") break;
+            try {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const parsed = JSON.parse(jsonStr) as any;
+              const delta: string = parsed.choices?.[0]?.delta?.content ?? "";
+              if (delta) {
+                fullContent += delta;
+                send("chat:token", { delta });
+              }
+            } catch { /* skip malformed lines */ }
+          }
         }
-        messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
+      } catch {
+        // If streaming breaks mid-way, emit whatever we have
+        if (!fullContent) fullContent = lastMsg.content ?? "";
       }
+
+      send("chat:done", { content: fullContent || (lastMsg.content ?? ""), contextRefs: [] });
+      return;
     }
 
-    return { content: "I reached the maximum number of steps for this request. Any actions taken so far have been saved — check your board and notes. Try breaking the request into smaller steps.", contextRefs: [], mutations: null };
+    // Unexpected state — shouldn't happen, but be safe
+    send("chat:done", { content: "", contextRefs: [] });
   });
 }

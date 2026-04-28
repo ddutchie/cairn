@@ -73,7 +73,20 @@ const api = {
     addMessage:    (args: unknown) => invoke("db:chat:addMessage", args),
   },
   // ── AI Chat completions ────────────────────────
-  chatSend: (req: unknown) => invoke<unknown>("chat:send", req),
+  // Streaming: fire-and-forget. Listen with onChatToken / onChatDone.
+  chatStream: (req: unknown) => ipcRenderer.send("chat:stream", req),
+  onChatToken: (cb: (e: { delta: string }) => void) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const handler = (_: any, e: { delta: string }) => cb(e);
+    ipcRenderer.on("chat:token", handler);
+    return () => ipcRenderer.off("chat:token", handler);
+  },
+  onChatDone: (cb: (e: { content: string; contextRefs: unknown[]; error?: string }) => void) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const handler = (_: any, e: { content: string; contextRefs: unknown[]; error?: string }) => cb(e);
+    ipcRenderer.on("chat:done", handler);
+    return () => ipcRenderer.off("chat:done", handler);
+  },
   generatePrd: (args: unknown) => invoke<{ id: string; title: string; projectId: string } | { error: string }>("ai:generatePrd", args),
 
   // ── App paths ─────────────────────────────────
