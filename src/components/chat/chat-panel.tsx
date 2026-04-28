@@ -142,9 +142,7 @@ export function ChatPanel() {
     };
 
     // Fire-and-forget — response arrives via chat:token / chat:done events.
-    // window.electron is typed via ElectronAPI but not imported here; use optional chaining.
-    const electron = (window as Window & { electron?: { chatStream: (req: unknown) => void } }).electron;
-    electron?.chatStream(chatReq);
+    window.electron?.chatStream(chatReq);
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
