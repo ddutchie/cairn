@@ -34,15 +34,12 @@ export interface AIConfig {
   model: string;
   /** API key. Empty string means "use server-side OPENAI_API_KEY env var" */
   apiKey: string;
-  /** Whether the in-app MCP HTTP server is enabled for external clients */
-  mcpEnabled: boolean;
 }
 
 export const DEFAULT_AI_CONFIG: AIConfig = {
   baseUrl: "https://api.openai.com",
   model: "gpt-4o-mini",
   apiKey: "",
-  mcpEnabled: false,
 };
 
 const AI_CONFIG_KEY = "ai-config";

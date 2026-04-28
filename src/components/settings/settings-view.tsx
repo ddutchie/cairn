@@ -275,7 +275,7 @@ function AISettings() {
   const [modelsFetched, setModelsFetched] = useState(false); // track whether we've tried
 
   // Always read directly from the store — no local shadow copy
-  const { baseUrl, model, apiKey, mcpEnabled } = aiConfig;
+  const { baseUrl, model, apiKey } = aiConfig;
   const isLocal =
     baseUrl.includes("localhost") ||
     baseUrl.includes("127.0.0.1") ||
