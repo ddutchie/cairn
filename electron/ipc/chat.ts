@@ -437,6 +437,17 @@ async function executeTool(db: Database.Database, req: ChatRequest, workspacePat
         .slice(0, 10)
         .map((n) => ({ noteId: n.id, title: n.title, updatedAt: n.updatedAt }));
 
+      // Include recent tasks per column so task-related queries don't need a separate list_tasks call
+      const recentTasks = columns.map((col) => ({
+        columnId: col.columnId,
+        columnName: col.name,
+        tasks: snap.cards
+          .filter((c) => c.columnId === col.columnId && !c.archivedAt)
+          .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+          .slice(0, 5)
+          .map((c) => ({ taskId: c.id, title: c.title, priority: c.priority, dueDate: c.dueDate ?? null })),
+      }));
+
       const allProjects = snap.projects
         .filter((p) => !p.archivedAt)
         .map((p) => ({ projectId: p.id, name: p.name, status: p.status }));
@@ -447,6 +458,7 @@ async function executeTool(db: Database.Database, req: ChatRequest, workspacePat
         allProjects,
         columns,
         recentNotes,
+        recentTasks,
       };
     }
     case "get_note": {
@@ -519,13 +531,15 @@ async function executeTool(db: Database.Database, req: ChatRequest, workspacePat
       return note;
     }
     case "update_note": {
+      const existing = snap.notes.find((n) => n.id === args.noteId);
+      if (!existing) return { error: "Note not found" };
       const patch: { title?: string; content?: string; contentText?: string } = {};
-      if (args.title) patch.title = args.title;
+      if (args.title !== undefined && args.title !== "") patch.title = args.title as string;
       if (args.content !== undefined) {
-        patch.content = args.content;
+        patch.content = args.content as string;
         patch.contentText = stripMarkdown(args.content as string);
       }
-      const note = q.updateNote(db, args.noteId, patch);
+      const note = q.updateNote(db, args.noteId as string, patch);
       const proj = snap.projects.find((p) => p.id === note.projectId);
       writeNoteFile(workspacePath, { ...note, projectName: proj?.name ?? note.projectId });
       return note;
@@ -534,7 +548,8 @@ async function executeTool(db: Database.Database, req: ChatRequest, workspacePat
       const col = snap.columns.find((c) => c.id === args.columnId);
       if (!col) return { error: "Column not found" };
       const cardId = newId();
-      const order = snap.cards.filter((c) => c.columnId === args.columnId).length;
+      // Query live count so concurrent creates in the same round get unique order values
+      const order = q.getCards(db, { columnId: args.columnId as string }).length;
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       return q.createCard(db, {
         id: cardId, columnId: args.columnId, projectId: args.projectId,
@@ -544,7 +559,11 @@ async function executeTool(db: Database.Database, req: ChatRequest, workspacePat
       });
     }
     case "update_task_status": {
-      return q.updateCard(db, args.cardId, { columnId: args.targetColumnId });
+      const card = snap.cards.find((c) => c.id === args.cardId);
+      if (!card) return { error: "Task not found" };
+      const col = snap.columns.find((c) => c.id === args.targetColumnId);
+      if (!col) return { error: "Column not found" };
+      return q.updateCard(db, args.cardId as string, { columnId: args.targetColumnId as string });
     }
     case "create_project": {
       const projectId = newId();
@@ -748,11 +767,17 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
         const emit = (e: { tool: string; label: string; args: Record<string, unknown> }) => {
           event.sender.send("chat:tool-call", e);
         };
-        const result = await executeTool(db, req, workspacePath, { baseUrl, model, apiKey }, call.function.name, args, emit);
+        let result: unknown;
+        try {
+          result = await executeTool(db, req, workspacePath, { baseUrl, model, apiKey }, call.function.name, args, emit);
+        } catch (toolErr) {
+          // Surface the error as a tool result so the model can handle it gracefully
+          result = { error: `Tool "${call.function.name}" failed: ${String(toolErr)}` };
+        }
         messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
       }
     }
 
-    return { content: "I ran out of steps trying to complete that. Please try rephrasing.", contextRefs: [], mutations: null };
+    return { content: "I reached the maximum number of steps for this request. Any actions taken so far have been saved — check your board and notes. Try breaking the request into smaller steps.", contextRefs: [], mutations: null };
   });
 }

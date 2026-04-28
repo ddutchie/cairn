@@ -41,17 +41,8 @@ export function ChatPanel() {
     activeWorkspaceId,
     projects,
     workspaces,
-    notes,
-    columns,
-    cards,
-    tags,
     getOrCreateThread,
     addMessage,
-    updateNote,
-    updateCard,
-    moveCard,
-    createNote,
-    createCard,
     chatMessages,
     confirmAction,
     aiConfig,
@@ -108,23 +99,13 @@ export function ChatPanel() {
     setIsLoading(true);
     setToolCalls([]);
 
-    // Build a store snapshot to send to the API so tools have real data
-    const snapshot = {
-      workspaces,
-      projects,
-      notes,
-      columns,
-      cards,
-      tags,
-    };
-
     const chatReq = {
       message: content,
       threadId,
       projectId: activeProjectId,
       workspaceId: activeWorkspaceId,
-      history: messages.slice(-10).map((m) => ({ role: m.role, content: m.content })),
-      snapshot,
+      // slice(-9) leaves room for the new user message the backend appends from req.message
+      history: messages.slice(-9).map((m) => ({ role: m.role, content: m.content })),
       config: {
         baseUrl: aiConfig.baseUrl || undefined,
         model: aiConfig.model || undefined,
@@ -215,7 +196,8 @@ export function ChatPanel() {
                 <button
                   key={prompt}
                   onClick={() => handleSend(prompt)}
-                  className="w-full text-left px-3 py-2.5 rounded-lg border border-[var(--border)] text-xs text-[var(--text-secondary)] hover:border-[var(--accent)]/40 hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-all"
+                  disabled={isLoading || !threadId}
+                  className="w-full text-left px-3 py-2.5 rounded-lg border border-[var(--border)] text-xs text-[var(--text-secondary)] hover:border-[var(--accent)]/40 hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-all disabled:opacity-40 disabled:pointer-events-none"
                 >
                   {prompt}
                 </button>
@@ -447,17 +429,12 @@ function MarkdownContent({ content }: { content: string }) {
         p: ({ children }) => <p className="mb-1.5 last:mb-0 leading-relaxed">{children}</p>,
         strong: ({ children }) => <strong className="font-semibold text-[var(--text-primary)]">{children}</strong>,
         em: ({ children }) => <em className="italic opacity-80">{children}</em>,
-        ul: ({ children }) => <ul className="my-1.5 space-y-0.5 pl-3">{children}</ul>,
-        ol: ({ children }) => <ol className="my-1.5 space-y-0.5 pl-3 list-decimal">{children}</ol>,
-        li: ({ children }) => (
-          <li className="flex gap-1.5 text-[var(--text-secondary)]">
-            <span className="opacity-40 flex-shrink-0 mt-0.5">•</span>
-            <span>{children}</span>
-          </li>
-        ),
-        h1: ({ children }) => <p className="font-semibold text-[var(--text-primary)] mt-2 mb-1">{children}</p>,
-        h2: ({ children }) => <p className="font-semibold text-[var(--text-primary)] mt-2 mb-1">{children}</p>,
-        h3: ({ children }) => <p className="font-medium text-[var(--text-primary)] mt-1.5 mb-0.5">{children}</p>,
+        ul: ({ children }) => <ul className="my-1.5 pl-4 list-disc space-y-0.5 text-[var(--text-secondary)]">{children}</ul>,
+        ol: ({ children }) => <ol className="my-1.5 pl-4 list-decimal space-y-0.5 text-[var(--text-secondary)]">{children}</ol>,
+        li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+        h1: ({ children }) => <h1 className="font-semibold text-[var(--text-primary)] text-sm mt-2 mb-1">{children}</h1>,
+        h2: ({ children }) => <h2 className="font-semibold text-[var(--text-primary)] text-sm mt-2 mb-1">{children}</h2>,
+        h3: ({ children }) => <h3 className="font-medium text-[var(--text-primary)] mt-1.5 mb-0.5">{children}</h3>,
         code: ({ children, className }) => {
           const isBlock = className?.includes("language-");
           return isBlock ? (
