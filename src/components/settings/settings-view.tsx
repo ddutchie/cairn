@@ -175,7 +175,7 @@ function Toggle({
 // ── General settings ──────────────────────────
 
 function GeneralSettings() {
-  const { workspaces, theme, setTheme, updateWorkspace, aiConfig, setAIConfig } = useCairnStore();
+  const { workspaces, theme, setTheme, updateWorkspace } = useCairnStore();
   const workspace = workspaces[0];
 
   const themeOptions: { value: Theme; label: string; icon: React.ReactNode }[] = [
@@ -198,22 +198,6 @@ function GeneralSettings() {
           }}
           onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
         />
-      </SettingsRow>
-      <SettingsRow label="MCP server" description="Enable the local MCP server for AI tools (Claude Desktop, Cursor, etc.)">
-        <button
-          onClick={() => setAIConfig({ mcpEnabled: !aiConfig.mcpEnabled })}
-          className={cn(
-            "relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none",
-            aiConfig.mcpEnabled ? "bg-[var(--accent)]" : "bg-[var(--surface-3)] border border-[var(--border)]"
-          )}
-        >
-          <span
-            className={cn(
-              "inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform",
-              aiConfig.mcpEnabled ? "translate-x-4" : "translate-x-0.5"
-            )}
-          />
-        </button>
       </SettingsRow>
       <SettingsRow label="Theme" description="Choose light, dark, or follow your system setting">
         <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-[var(--surface-2)] border border-[var(--border)]">
