@@ -32,20 +32,19 @@ Cairn is a desktop app (Electron + Next.js) that combines markdown notes with a 
 git clone https://github.com/YOUR_ORG/cairn
 cd cairn
 npm install
-npm run electron:rebuild   # build better-sqlite3 native binaries
-npm run electron:compile   # compile Electron main process
-npm run mcp:compile        # compile + bundle MCP server
-npm run electron:dev       # start Next.js + Electron
+npm run rebuild   # build better-sqlite3 native binaries for Electron + system Node
+npm run compile   # compile Electron main process + bundle MCP server
+npm run dev       # start Cairn (Next.js + Electron)
 ```
 
 ### Build the packaged app
 
 ```bash
-npm run electron:build
+npm run build
 # Output: dist-app/Cairn-0.1.0-arm64.dmg
 ```
 
-> **Note:** `npm run electron:rebuild` must be re-run after updating the Electron version. It saves two native binaries: one for the Electron ABI (`electron-native/`) and one for the system Node ABI used by the MCP server (`mcp-native/`).
+> **Note:** `npm run rebuild` must be re-run after updating the Electron version. It saves two native binaries: one for the Electron ABI (`electron-native/`) and one for the system Node ABI used by the MCP server (`mcp-native/`).
 
 ## AI chat setup
 
