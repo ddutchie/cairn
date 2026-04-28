@@ -277,7 +277,7 @@ function getSnapshot(db: Database.Database) {
 // ── Tool executor ─────────────────────────────
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function executeTool(db: Database.Database, workspacePath: string, toolName: string, args: Record<string, any>) {
+function executeTool(db: Database.Database, workspacePath: string, toolName: string, args: Record<string, any>): unknown {
   const snap = getSnapshot(db);
 
   switch (toolName) {
@@ -536,6 +536,84 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
       return { deleted: true, id: args.cardId, title: card.title };
     }
 
+    case "update_task": {
+      const { taskId, title, description, priority, dueDate, columnId, tagIds } = args;
+      const card = snap.cards.find((c) => c.id === taskId);
+      if (!card) return { error: "Task not found" };
+      const now = ts();
+      db.prepare(`
+        UPDATE task_cards SET
+          column_id   = COALESCE(?, column_id),
+          title       = COALESCE(?, title),
+          description = COALESCE(?, description),
+          priority    = COALESCE(?, priority),
+          due_date    = COALESCE(?, due_date),
+          tag_ids     = COALESCE(?, tag_ids),
+          updated_at  = ?
+        WHERE id = ?
+      `).run(
+        columnId ?? null, title ?? null, description ?? null,
+        priority ?? null, dueDate ?? null,
+        tagIds ? j(tagIds) : null,
+        now, taskId
+      );
+      const updated = db.prepare("SELECT * FROM task_cards WHERE id = ?").get(taskId) as Record<string, unknown> | undefined;
+      return updated ?? { error: "Task not found after update" };
+    }
+
+    case "update_project": {
+      const { projectId, name, description, status, priority } = args;
+      const project = snap.projects.find((p) => p.id === projectId);
+      if (!project) return { error: "Project not found" };
+      const now = ts();
+      db.prepare(`
+        UPDATE projects SET
+          name        = COALESCE(?, name),
+          description = COALESCE(?, description),
+          status      = COALESCE(?, status),
+          priority    = COALESCE(?, priority),
+          updated_at  = ?
+        WHERE id = ?
+      `).run(name ?? null, description ?? null, status ?? null, priority ?? null, now, projectId);
+      const updated = db.prepare("SELECT * FROM projects WHERE id = ?").get(projectId) as Record<string, unknown> | undefined;
+      return updated ?? { error: "Project not found after update" };
+    }
+
+    case "delete_project": {
+      const project = snap.projects.find((p) => p.id === args.projectId);
+      if (!project) return { error: "Project not found" };
+      // Delete notes dir
+      const notesDir = path.join(workspacePath, "notes", project.name.trim().replace(/[/\\:*?"<>|]/g, "").slice(0, 100).trim() || "Untitled");
+      if (fs.existsSync(notesDir)) {
+        try { fs.rmSync(notesDir, { recursive: true, force: true }); } catch { /* ignore */ }
+      }
+      db.prepare("DELETE FROM task_cards WHERE project_id = ?").run(args.projectId);
+      db.prepare("DELETE FROM board_columns WHERE project_id = ?").run(args.projectId);
+      db.prepare("DELETE FROM notes WHERE project_id = ?").run(args.projectId);
+      db.prepare("DELETE FROM projects WHERE id = ?").run(args.projectId);
+      return { deleted: true, id: args.projectId, name: project.name };
+    }
+
+    case "list_notes": {
+      return snap.notes
+        .filter((n) => !n.archivedAt && (!args.projectId || n.projectId === args.projectId))
+        .map((n) => ({ id: n.id, title: n.title, projectId: n.projectId, isPinned: n.isPinned, updatedAt: n.updatedAt }));
+    }
+
+    case "list_tasks": {
+      const cols = snap.columns.filter((c) => !args.projectId || c.projectId === args.projectId);
+      return cols
+        .sort((a, b) => a.order - b.order)
+        .map((col) => ({
+          columnName: col.name,
+          columnType: col.type,
+          columnId: col.id,
+          tasks: snap.cards
+            .filter((c) => c.columnId === col.id && !c.archivedAt)
+            .map((c) => ({ id: c.id, title: c.title, priority: c.priority, description: c.description })),
+        }));
+    }
+
     default:
       return { error: `Unknown tool: ${toolName}` };
   }
@@ -593,6 +671,16 @@ const TOOL_DEFINITIONS = [
     inputSchema: { type: "object", properties: { noteId: { type: "string" } }, required: ["noteId"] } },
   { name: "delete_task",         description: "Permanently delete a task card by its ID.",
     inputSchema: { type: "object", properties: { cardId: { type: "string" } }, required: ["cardId"] } },
+  { name: "update_task",         description: "Update a task card's fields (title, description, priority, dueDate, columnId, tagIds).",
+    inputSchema: { type: "object", properties: { taskId: { type: "string" }, title: { type: "string" }, description: { type: "string" }, priority: { type: "string", enum: ["low","medium","high","urgent"] }, dueDate: { type: "string" }, columnId: { type: "string" }, tagIds: { type: "string" } }, required: ["taskId"] } },
+  { name: "update_project",      description: "Update a project's name, description, status, or priority.",
+    inputSchema: { type: "object", properties: { projectId: { type: "string" }, name: { type: "string" }, description: { type: "string" }, status: { type: "string", enum: ["active","on_hold","completed","archived"] }, priority: { type: "string", enum: ["low","medium","high","urgent"] } }, required: ["projectId"] } },
+  { name: "delete_project",      description: "Permanently delete a project and all its notes, tasks, and columns.",
+    inputSchema: { type: "object", properties: { projectId: { type: "string" } }, required: ["projectId"] } },
+  { name: "list_notes",          description: "List all notes in a project.",
+    inputSchema: { type: "object", properties: { projectId: { type: "string" } }, required: [] } },
+  { name: "list_tasks",          description: "List all tasks in a project, grouped by column.",
+    inputSchema: { type: "object", properties: { projectId: { type: "string" } }, required: [] } },
 ] as const;
 
 // ── MCP server factory ────────────────────────
@@ -605,8 +693,9 @@ function buildMcpServer(db: Database.Database, workspacePath: string): McpServer
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       async (args: Record<string, any>) => {
         const result = executeTool(db, workspacePath, def.name, args);
+        const hasError = typeof result === "object" && result !== null && !Array.isArray(result) && "error" in result;
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }],
-          ...("error" in result ? { isError: true } : {}) };
+          ...(hasError ? { isError: true } : {}) };
       }
     );
   }

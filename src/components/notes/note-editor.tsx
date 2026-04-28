@@ -50,9 +50,14 @@ export function NoteEditor({ note }: NoteEditorProps) {
     [note.id, updateNote]
   );
 
+  const titleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleTitleChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      updateNote(note.id, { title: e.target.value });
+      const value = e.target.value;
+      if (titleTimer.current) clearTimeout(titleTimer.current);
+      titleTimer.current = setTimeout(() => {
+        updateNote(note.id, { title: value });
+      }, 300);
     },
     [note.id, updateNote]
   );

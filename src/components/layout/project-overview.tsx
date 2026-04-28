@@ -69,14 +69,20 @@ export function ProjectOverview() {
     ...notes.map((n) => ({
       id: n.id, type: "note" as const, title: n.title,
       subtitle: null as string | null,
-      updatedAt: n.updatedAt, onClick: () => setView("notes"),
+      updatedAt: n.updatedAt, onClick: () => {
+        setView("notes");
+        window.dispatchEvent(new CustomEvent("cairn:select-note", { detail: { noteId: n.id } }));
+      },
     })),
     ...allCards.map((c) => {
       const col = columns.find((col) => col.id === c.columnId);
       return {
         id: c.id, type: "task" as const, title: c.title,
         subtitle: col?.name ?? null,
-        updatedAt: c.updatedAt, onClick: () => setView("board"),
+        updatedAt: c.updatedAt, onClick: () => {
+          setView("board");
+          window.dispatchEvent(new CustomEvent("cairn:open-card", { detail: { cardId: c.id } }));
+        },
       };
     }),
   ]
@@ -209,7 +215,10 @@ export function ProjectOverview() {
             />
             <div className="space-y-2">
               {inProgressCards.map((card) => (
-                <MiniCard key={card.id} card={card} />
+                <MiniCard key={card.id} card={card} onClick={() => {
+                  setView("board");
+                  window.dispatchEvent(new CustomEvent("cairn:open-card", { detail: { cardId: card.id } }));
+                }} />
               ))}
             </div>
           </section>
@@ -225,7 +234,10 @@ export function ProjectOverview() {
             />
             <div className="grid grid-cols-2 gap-3">
               {pinnedNotes.map((note) => (
-                <MiniNote key={note.id} note={note} onClick={() => setView("notes")} />
+                <MiniNote key={note.id} note={note} onClick={() => {
+                  setView("notes");
+                  window.dispatchEvent(new CustomEvent("cairn:select-note", { detail: { noteId: note.id } }));
+                }} />
               ))}
             </div>
           </section>
@@ -245,7 +257,10 @@ export function ProjectOverview() {
                 .map((note) => (
                   <div
                     key={note.id}
-                    onClick={() => setView("notes")}
+                    onClick={() => {
+                      setView("notes");
+                      window.dispatchEvent(new CustomEvent("cairn:select-note", { detail: { noteId: note.id } }));
+                    }}
                     className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-transparent hover:border-[var(--border)] hover:bg-[var(--surface)] transition-all cursor-pointer group"
                   >
                     <FileText size={13} className="text-[var(--text-tertiary)] flex-shrink-0" />
@@ -357,12 +372,12 @@ function SectionHeader({
   );
 }
 
-function MiniCard({ card }: { card: TaskCard }) {
+function MiniCard({ card, onClick }: { card: TaskCard; onClick?: () => void }) {
   const { getTagById } = useCairnStore();
   const cardTags = card.tagIds.slice(0, 2).map((id) => getTagById(id)).filter(Boolean);
 
   return (
-    <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] group hover:border-[var(--accent)]/30 transition-all">
+    <div onClick={onClick} className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] group hover:border-[var(--accent)]/30 transition-all cursor-pointer">
       <Circle
         size={13}
         className="text-[var(--warning)] flex-shrink-0"

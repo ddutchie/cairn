@@ -15,6 +15,7 @@ import {
   AlertCircle,
   Sparkles,
   ChevronDown,
+  PenSquare,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -55,6 +56,7 @@ export function ChatPanel() {
     confirmAction,
     aiConfig,
     setView,
+    createNewThread,
   } = useCairnStore();
 
   const [input, setInput] = useState("");
@@ -169,6 +171,18 @@ export function ChatPanel() {
         <span className="text-xs text-[var(--text-tertiary)] truncate max-w-24">
           {project?.name ?? workspace?.name}
         </span>
+        <Tooltip content="New chat" side="left">
+          <button
+            onClick={() => {
+              if (!activeWorkspaceId) return;
+              const t = createNewThread(activeWorkspaceId, activeProjectId ?? undefined);
+              setThreadId(t.id);
+            }}
+            className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
+          >
+            <PenSquare size={13} />
+          </button>
+        </Tooltip>
         <Tooltip content="Close chat" side="left">
           <button
             onClick={toggleChat}

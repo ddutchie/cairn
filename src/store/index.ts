@@ -99,6 +99,7 @@ interface CairnStore extends PersistedState, AppUIState {
 
   // ── Workspaces ────────────────────────────
   createWorkspace: (name: string, icon?: string) => Promise<Workspace>;
+  updateWorkspace: (id: ID, patch: Partial<Pick<Workspace, "name" | "description" | "icon">>) => void;
 
   // ── Projects ──────────────────────────────
   createProject: (workspaceId: ID, name: string) => Promise<Project>;
@@ -114,6 +115,8 @@ interface CairnStore extends PersistedState, AppUIState {
 
   // ── Board ─────────────────────────────────
   createColumn: (projectId: ID, name: string) => BoardColumn;
+  updateColumn: (id: ID, patch: Partial<Pick<BoardColumn, "name" | "order">>) => void;
+  deleteColumn: (id: ID) => void;
   createCard: (columnId: ID, projectId: ID, title: string) => TaskCard;
   updateCard: (id: ID, patch: Partial<TaskCard>) => void;
   moveCard: (cardId: ID, targetColumnId: ID, targetIndex: number) => void;
@@ -127,6 +130,13 @@ interface CairnStore extends PersistedState, AppUIState {
 
   // ── Server snapshot merge (MCP → browser sync) ───
   applyServerSnapshot: (snap: Pick<PersistedState, "workspaces" | "projects" | "notes" | "columns" | "cards" | "tags">) => void;
+
+  // ── Tags ──────────────────────────────────
+  updateTag: (id: ID, patch: Partial<Pick<Tag, "name" | "color">>) => void;
+  deleteTag: (id: ID) => void;
+
+  // ── Chat ──────────────────────────────────
+  createNewThread: (workspaceId: ID, projectId?: ID) => ChatThread;
 
   // ── Derived helpers ───────────────────────
   getProjectNotes: (projectId: ID) => Note[];
@@ -149,6 +159,7 @@ export interface SearchResult {
 }
 
 const STORAGE_KEY = "state";
+const ACTIVE_PROJECT_KEY = "active-project";
 
 /** True when running inside Electron (window.electron is exposed by preload) */
 function isElectron(): boolean {
@@ -180,19 +191,24 @@ function loadPersisted(): PersistedState | null {
   return storage.get<PersistedState>(STORAGE_KEY);
 }
 
+let saveDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
 function savePersisted(state: PersistedState): void {
   // In Electron, SQLite is the source of truth — mutations go via IPC.
   // localStorage is still written as a fast cache / fallback.
-  storage.set<PersistedState>(STORAGE_KEY, {
-    workspaces: state.workspaces,
-    projects: state.projects,
-    notes: state.notes,
-    columns: state.columns,
-    cards: state.cards,
-    tags: state.tags,
-    chatThreads: state.chatThreads,
-    chatMessages: state.chatMessages,
-  });
+  if (saveDebounceTimer) clearTimeout(saveDebounceTimer);
+  saveDebounceTimer = setTimeout(() => {
+    storage.set<PersistedState>(STORAGE_KEY, {
+      workspaces: state.workspaces,
+      projects: state.projects,
+      notes: state.notes,
+      columns: state.columns,
+      cards: state.cards,
+      tags: state.tags,
+      chatThreads: state.chatThreads,
+      chatMessages: state.chatMessages,
+    });
+  }, 200);
 }
 
 export const useCairnStore = create<CairnStore>()(
@@ -309,13 +325,17 @@ export const useCairnStore = create<CairnStore>()(
           chatThreads: snap.chatThreads ?? [],
           chatMessages: snap.chatMessages ?? [],
         }),
-        // Active selections — preserve existing on refresh, set on first load
+        // Active selections — preserve existing on refresh, restore last session on first load
         activeWorkspaceId: isRefresh
           ? (current.activeWorkspaceId ?? snap.workspaces?.[0]?.id ?? null)
           : (snap.workspaces?.[0]?.id ?? null),
         activeProjectId: isRefresh
           ? (current.activeProjectId ?? snap.projects?.[0]?.id ?? null)
-          : (snap.projects?.[0]?.id ?? null),
+          : (() => {
+              const saved = storage.get<string>(ACTIVE_PROJECT_KEY);
+              const valid = saved && snap.projects?.find((p: { id: string }) => p.id === saved);
+              return valid ? saved : (snap.projects?.[0]?.id ?? null);
+            })(),
       });
     },
 
@@ -362,6 +382,7 @@ export const useCairnStore = create<CairnStore>()(
 
     setActiveProject(projId) {
       set({ activeProjectId: projId, activeView: "overview" });
+      if (projId) storage.set(ACTIVE_PROJECT_KEY, projId);
     },
 
     setView(view) {
@@ -393,6 +414,16 @@ export const useCairnStore = create<CairnStore>()(
       get().persist();
       await ipcAwait((e) => e.workspace.create(ws));
       return ws;
+    },
+
+    updateWorkspace(wsId, patch) {
+      set((s) => ({
+        workspaces: s.workspaces.map((w) =>
+          w.id === wsId ? { ...w, ...patch, updatedAt: now() } : w
+        ),
+      }));
+      get().persist();
+      ipc((e) => e.workspace.update(wsId, patch));
     },
 
     // ── Projects ──────────────────────────────────
@@ -640,6 +671,23 @@ export const useCairnStore = create<CairnStore>()(
       get().persist();
     },
 
+    updateColumn(colId, patch) {
+      set((s) => ({
+        columns: s.columns.map((c) => c.id === colId ? { ...c, ...patch, updatedAt: now() } : c),
+      }));
+      get().persist();
+      ipc((e) => e.column.update(colId, patch));
+    },
+
+    deleteColumn(colId) {
+      set((s) => ({
+        columns: s.columns.filter((c) => c.id !== colId),
+        cards: s.cards.filter((c) => c.columnId !== colId),
+      }));
+      get().persist();
+      ipc((e) => (e.column as { delete: (id: string) => Promise<unknown> }).delete(colId));
+    },
+
     // ── Chat ──────────────────────────────────────
     getOrCreateThread(workspaceId, projectId) {
       const existing = get().chatThreads.find(
@@ -744,6 +792,40 @@ export const useCairnStore = create<CairnStore>()(
       get().persist();
       ipc((e) => e.tag.create(tag));
       return tag;
+    },
+
+    updateTag(tagId, patch) {
+      set((s) => ({
+        tags: s.tags.map((t) => t.id === tagId ? { ...t, ...patch } : t),
+      }));
+      get().persist();
+      ipc((e) => (e.tag as { update: (id: string, patch: unknown) => Promise<unknown> }).update(tagId, patch));
+    },
+
+    deleteTag(tagId) {
+      set((s) => ({
+        tags: s.tags.filter((t) => t.id !== tagId),
+        notes: s.notes.map((n) => n.tagIds.includes(tagId) ? { ...n, tagIds: n.tagIds.filter((tid) => tid !== tagId) } : n),
+        cards: s.cards.map((c) => c.tagIds.includes(tagId) ? { ...c, tagIds: c.tagIds.filter((tid) => tid !== tagId) } : c),
+      }));
+      get().persist();
+      ipc((e) => (e.tag as { delete: (id: string) => Promise<unknown> }).delete(tagId));
+    },
+
+    // ── Chat (new thread) ─────────────────────────
+    createNewThread(workspaceId, projectId) {
+      const thread: ChatThread = {
+        id: id(),
+        scope: projectId ? "project" : "workspace",
+        workspaceId,
+        projectId,
+        createdAt: now(),
+        updatedAt: now(),
+      };
+      set((s) => ({ chatThreads: [...s.chatThreads, thread] }));
+      get().persist();
+      ipc((e) => e.chat.upsertThread(thread));
+      return thread;
     },
 
     getWorkspaceProjects(workspaceId) {

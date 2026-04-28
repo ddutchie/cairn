@@ -46,6 +46,7 @@ const api = {
     list:   (projectId?: string) => invoke("db:column:list", { projectId }),
     create: (args: unknown) => invoke("db:column:create", args),
     update: (id: string, patch: unknown) => invoke("db:column:update", { id, patch }),
+    delete: (id: string) => invoke("db:column:delete", { id }),
   },
 
   // ── Task cards ────────────────────────────────
@@ -60,6 +61,8 @@ const api = {
   tag: {
     list:   (workspaceId?: string) => invoke("db:tag:list", { workspaceId }),
     create: (args: unknown) => invoke("db:tag:create", args),
+    update: (id: string, patch: unknown) => invoke("db:tag:update", { id, patch }),
+    delete: (id: string) => invoke("db:tag:delete", { id }),
   },
 
   // ── Chat ─────────────────────────────────────

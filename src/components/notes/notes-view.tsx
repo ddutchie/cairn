@@ -86,6 +86,24 @@ export function NotesView() {
     setActiveNoteId(note.id);
   }
 
+  // ⌘N global shortcut
+  useEffect(() => {
+    const handler = () => handleCreateNote();
+    window.addEventListener("cairn:new-note", handler);
+    return () => window.removeEventListener("cairn:new-note", handler);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeProjectId]);
+
+  // Deep-link from search/overview
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { noteId } = (e as CustomEvent).detail;
+      setActiveNoteId(noteId);
+    };
+    window.addEventListener("cairn:select-note", handler);
+    return () => window.removeEventListener("cairn:select-note", handler);
+  }, []);
+
   function handleDelete(noteId: string) {
     deleteNote(noteId);
     if (activeNoteId === noteId) {

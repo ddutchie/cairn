@@ -32,6 +32,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogClose,
+} from "@/components/ui/dialog";
 import type { Project, Note } from "@/types";
 
 export function Sidebar() {
@@ -318,6 +325,7 @@ function ProjectItem({
 }: ProjectItemProps) {
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(project.name);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const renameInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -336,13 +344,33 @@ function ProjectItem({
     setRenaming(false);
   }
 
-  function handleDeleteConfirm() {
-    if (window.confirm(`Delete "${project.name}"? This will permanently delete all notes and tasks in this project.`)) {
-      onDelete();
-    }
-  }
-
   return (
+    <>
+    {/* Delete confirmation dialog */}
+    <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+      <DialogContent size="sm">
+        <DialogHeader>
+          <DialogTitle>Delete project?</DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-[var(--text-secondary)] mt-1">
+          <strong className="text-[var(--text-primary)]">{project.name}</strong> and all its notes, tasks, and columns will be permanently deleted. This cannot be undone.
+        </p>
+        <div className="flex justify-end gap-2 mt-5">
+          <DialogClose asChild>
+            <Button variant="ghost" size="sm">Cancel</Button>
+          </DialogClose>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-[var(--danger)] hover:bg-[var(--danger)]/10"
+            onClick={() => { setDeleteDialogOpen(false); onDelete(); }}
+          >
+            <Trash2 size={13} />
+            Delete project
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
     <div>
       <div
         className={cn(
@@ -399,7 +427,7 @@ function ProjectItem({
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              onClick={(e: React.MouseEvent) => { e.stopPropagation(); handleDeleteConfirm(); }}
+              onClick={(e: React.MouseEvent) => { e.stopPropagation(); setDeleteDialogOpen(true); }}
               className="flex items-center gap-2 text-xs text-[var(--danger)] focus:text-[var(--danger)]"
             >
               <Trash2 size={11} />
@@ -450,6 +478,7 @@ function ProjectItem({
         </div>
       )}
     </div>
+    </>
   );
 }
 

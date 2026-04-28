@@ -1,9 +1,61 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import { Search, FileText, Kanban, X, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore, type SearchResult } from "@/store";
+
+interface ResultRowProps {
+  result: SearchResult;
+  focused: boolean;
+  onSelect: (result: SearchResult) => void;
+  globalIndex: number;
+  focusedIndex: number;
+}
+
+function ResultRow({ result, focused, onSelect }: ResultRowProps) {
+  return (
+    <button
+      onClick={() => onSelect(result)}
+      className={cn(
+        "flex items-start gap-3 w-full px-4 py-3 text-left transition-colors",
+        focused
+          ? "bg-[var(--surface-2)]"
+          : "hover:bg-[var(--surface-2)]"
+      )}
+    >
+      <div className="flex-shrink-0 mt-0.5">
+        {result.type === "note" ? (
+          <FileText size={14} className="text-[var(--info)]" />
+        ) : (
+          <Kanban size={14} className="text-[var(--accent)]" />
+        )}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium text-[var(--text-primary)] truncate">
+            {result.title}
+          </span>
+          <span className="text-[11px] text-[var(--text-tertiary)] flex-shrink-0">
+            in {result.projectName}
+          </span>
+        </div>
+        {result.snippet && (
+          <p className="text-xs text-[var(--text-tertiary)] mt-0.5 truncate">
+            {result.snippet}
+          </p>
+        )}
+      </div>
+      <ArrowRight
+        size={12}
+        className={cn(
+          "flex-shrink-0 mt-1 transition-opacity",
+          focused ? "opacity-100 text-[var(--accent)]" : "opacity-0"
+        )}
+      />
+    </button>
+  );
+}
 
 export function SearchPanel() {
   const { searchOpen, toggleSearch, searchAll, setView, setActiveProject } = useCairnStore();
@@ -21,19 +73,26 @@ export function SearchPanel() {
     }
   }, [searchOpen]);
 
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    if (query.trim().length < 1) {
-      setResults([]);
-      return;
-    }
-    const r = searchAll(query);
-    setResults(r);
-    setFocused(0);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    if (query.trim().length < 1) { setResults([]); return; }
+    searchTimer.current = setTimeout(() => {
+      setResults(searchAll(query));
+      setFocused(0);
+    }, 150);
+    return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
   }, [query, searchAll]);
 
   function handleSelect(result: SearchResult) {
     setActiveProject(result.projectId);
-    setView(result.type === "note" ? "notes" : "board");
+    if (result.type === "note") {
+      setView("notes");
+      window.dispatchEvent(new CustomEvent("cairn:select-note", { detail: { noteId: result.id } }));
+    } else {
+      setView("board");
+      window.dispatchEvent(new CustomEvent("cairn:open-card", { detail: { cardId: result.id } }));
+    }
     toggleSearch();
   }
 
@@ -52,6 +111,9 @@ export function SearchPanel() {
   }
 
   if (!searchOpen) return null;
+
+  const notes = results.filter((r) => r.type === "note");
+  const tasks = results.filter((r) => r.type === "card");
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 px-4">
@@ -98,48 +160,36 @@ export function SearchPanel() {
 
           {results.length > 0 && (
             <div className="py-1">
-              {results.map((result, i) => (
-                <button
-                  key={`${result.type}-${result.id}`}
-                  onClick={() => handleSelect(result)}
-                  className={cn(
-                    "flex items-start gap-3 w-full px-4 py-3 text-left transition-colors",
-                    i === focused
-                      ? "bg-[var(--surface-2)]"
-                      : "hover:bg-[var(--surface-2)]"
-                  )}
-                >
-                  <div className="flex-shrink-0 mt-0.5">
-                    {result.type === "note" ? (
-                      <FileText size={14} className="text-[var(--info)]" />
-                    ) : (
-                      <Kanban size={14} className="text-[var(--accent)]" />
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-[var(--text-primary)] truncate">
-                        {result.title}
-                      </span>
-                      <span className="text-[11px] text-[var(--text-tertiary)] flex-shrink-0">
-                        in {result.projectName}
-                      </span>
-                    </div>
-                    {result.snippet && (
-                      <p className="text-xs text-[var(--text-tertiary)] mt-0.5 truncate">
-                        {result.snippet}
-                      </p>
-                    )}
-                  </div>
-                  <ArrowRight
-                    size={12}
-                    className={cn(
-                      "flex-shrink-0 mt-1 transition-opacity",
-                      i === focused ? "opacity-100 text-[var(--accent)]" : "opacity-0"
-                    )}
-                  />
-                </button>
-              ))}
+              {notes.length > 0 && (
+                <>
+                  <div className="px-4 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">Notes</div>
+                  {notes.map((result, i) => (
+                    <ResultRow
+                      key={result.id}
+                      result={result}
+                      focused={i === focused}
+                      onSelect={handleSelect}
+                      globalIndex={i}
+                      focusedIndex={focused}
+                    />
+                  ))}
+                </>
+              )}
+              {tasks.length > 0 && (
+                <>
+                  <div className="px-4 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">Tasks</div>
+                  {tasks.map((result, i) => (
+                    <ResultRow
+                      key={result.id}
+                      result={result}
+                      focused={notes.length + i === focused}
+                      onSelect={handleSelect}
+                      globalIndex={notes.length + i}
+                      focusedIndex={focused}
+                    />
+                  ))}
+                </>
+              )}
             </div>
           )}
 

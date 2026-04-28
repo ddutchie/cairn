@@ -323,6 +323,11 @@ export function updateColumn(db: Database.Database, id: string, patch: Partial<{
   return toColumn(db.prepare("SELECT * FROM board_columns WHERE id = ?").get(id));
 }
 
+export function deleteColumn(db: Database.Database, id: string) {
+  db.prepare("DELETE FROM task_cards WHERE column_id = ?").run(id);
+  db.prepare("DELETE FROM board_columns WHERE id = ?").run(id);
+}
+
 // ── Task Cards ────────────────────────────────
 
 export function getCards(db: Database.Database, opts?: { projectId?: string; columnId?: string }) {
@@ -400,6 +405,16 @@ export function getTags(db: Database.Database, workspaceId?: string) {
 export function createTag(db: Database.Database, t: { id: string; workspaceId: string; name: string; color: string }) {
   db.prepare("INSERT INTO tags (id, workspace_id, name, color) VALUES (?, ?, ?, ?)").run(t.id, t.workspaceId, t.name, t.color);
   return toTag(db.prepare("SELECT * FROM tags WHERE id = ?").get(t.id));
+}
+
+export function updateTag(db: Database.Database, id: string, patch: { name?: string; color?: string }) {
+  db.prepare("UPDATE tags SET name = COALESCE(?, name), color = COALESCE(?, color) WHERE id = ?")
+    .run(patch.name ?? null, patch.color ?? null, id);
+  return db.prepare("SELECT * FROM tags WHERE id = ?").get(id);
+}
+
+export function deleteTag(db: Database.Database, id: string) {
+  db.prepare("DELETE FROM tags WHERE id = ?").run(id);
 }
 
 // ── Chat ──────────────────────────────────────

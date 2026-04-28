@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -29,6 +29,8 @@ export function KanbanBoard() {
     moveCard,
     createColumn,
     createCard,
+    updateColumn,
+    deleteColumn,
   } = useCairnStore();
 
   const [activeCard, setActiveCard] = useState<TaskCard | null>(null);
@@ -97,6 +99,16 @@ export function KanbanBoard() {
     moveCard(draggedCard.id, targetColumnId, targetIndex);
   }
 
+  // Listen for deep-link events from search/overview
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { cardId } = (e as CustomEvent).detail;
+      setDetailCardId(cardId);
+    };
+    window.addEventListener("cairn:open-card", handler);
+    return () => window.removeEventListener("cairn:open-card", handler);
+  }, []);
+
   const [addColumnOpen, setAddColumnOpen] = useState(false);
   const [newColumnName, setNewColumnName] = useState("");
 
@@ -138,6 +150,8 @@ export function KanbanBoard() {
               cards={getColumnCards(column.id)}
               onCardClick={(cardId) => setDetailCardId(cardId)}
               onAddCard={(title) => createCard(column.id, activeProjectId, title)}
+              onRename={(name) => updateColumn(column.id, { name })}
+              onDelete={() => deleteColumn(column.id)}
               isDragOver={overId === column.id}
             />
           ))}

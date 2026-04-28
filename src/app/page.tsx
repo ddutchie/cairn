@@ -24,6 +24,10 @@ export default function Home() {
     searchOpen,
     toggleSearch,
     toggleChat,
+    toggleSidebar,
+    setView,
+    createNote,
+    activeProjectId,
   } = useCairnStore();
 
   // null = still loading
@@ -82,12 +86,28 @@ export default function Home() {
     function handleKeyDown(e: KeyboardEvent) {
       const { key, metaKey, ctrlKey } = e;
       const mod = metaKey || ctrlKey;
+      // Skip if focus is inside an input/textarea/contenteditable
+      const tag = (e.target as HTMLElement)?.tagName;
+      const inInput = tag === "INPUT" || tag === "TEXTAREA" || (e.target as HTMLElement)?.isContentEditable;
+
       if (mod && key === "k") { e.preventDefault(); toggleSearch(); }
       else if (mod && key === "/") { e.preventDefault(); toggleChat(); }
+      else if (mod && key === "\\") { e.preventDefault(); toggleSidebar(); }
+      else if (mod && key === "1") { e.preventDefault(); setView("overview"); }
+      else if (mod && key === "2") { e.preventDefault(); setView("notes"); }
+      else if (mod && key === "3") { e.preventDefault(); setView("board"); }
+      else if (mod && key === "n" && !inInput) {
+        e.preventDefault();
+        if (activeProjectId) {
+          setView("notes");
+          // Dispatch a custom event that NotesView listens for to create a note
+          window.dispatchEvent(new CustomEvent("cairn:new-note"));
+        }
+      }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [toggleSearch, toggleChat]);
+  }, [toggleSearch, toggleChat, toggleSidebar, setView, activeProjectId, createNote]);
 
   // Still loading
   if (onboardingState === null) {

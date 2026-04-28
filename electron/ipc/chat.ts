@@ -711,7 +711,7 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
       { role: "user", content: req.message },
     ];
 
-    for (let round = 0; round < 5; round++) {
+    for (let round = 0; round < 8; round++) {
       let response: Response;
       try {
         const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -719,7 +719,7 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
         response = await fetch(`${baseUrl}/v1/chat/completions`, {
           method: "POST",
           headers,
-          body: JSON.stringify({ model, messages, tools: TOOLS, tool_choice: "auto", max_tokens: 1024, temperature: 0.3 }),
+          body: JSON.stringify({ model, messages, tools: TOOLS, tool_choice: "auto", max_tokens: 4096, temperature: 0.3 }),
         });
       } catch (err) {
         return { content: `Could not reach the AI endpoint at \`${baseUrl}\`. Check your endpoint URL and make sure the server is running.`, contextRefs: [], mutations: null };

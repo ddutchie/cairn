@@ -24,6 +24,8 @@ import {
   Sun,
   Moon,
   Monitor,
+  Tag,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,7 +36,7 @@ import { storage } from "@/lib/storage";
 import { cn } from "@/lib/utils";
 
 
-type SettingsSection = "general" | "ai" | "data" | "about" | "shortcuts";
+type SettingsSection = "general" | "ai" | "data" | "about" | "shortcuts" | "tags";
 
 export function SettingsView() {
   const [section, setSection] = useState<SettingsSection>("ai");
@@ -47,6 +49,7 @@ export function SettingsView() {
         {[
           { id: "general" as const, label: "General", icon: Settings },
           { id: "ai" as const, label: "AI & Chat", icon: Bot },
+          { id: "tags" as const, label: "Tags", icon: Tag },
           { id: "shortcuts" as const, label: "Shortcuts", icon: Keyboard },
           { id: "data" as const, label: "Data", icon: Database },
           { id: "about" as const, label: "About", icon: Info },
@@ -72,6 +75,7 @@ export function SettingsView() {
         <div className="max-w-2xl mx-auto px-8 py-8 space-y-8 animate-fade-in">
           {section === "general" && <GeneralSettings />}
           {section === "ai" && <AISettings />}
+          {section === "tags" && <TagsSettings />}
           {section === "shortcuts" && <ShortcutsSettings />}
           {section === "data" && (
             <DataSettings
@@ -170,7 +174,7 @@ function Toggle({
 // ── General settings ──────────────────────────
 
 function GeneralSettings() {
-  const { workspaces, theme, setTheme } = useCairnStore();
+  const { workspaces, theme, setTheme, updateWorkspace } = useCairnStore();
   const workspace = workspaces[0];
 
   const themeOptions: { value: Theme; label: string; icon: React.ReactNode }[] = [
@@ -182,7 +186,17 @@ function GeneralSettings() {
   return (
     <SettingsGroup title="General" description="Basic app preferences">
       <SettingsRow label="Workspace name" description="Name shown in the sidebar">
-        <Input defaultValue={workspace?.name ?? "Personal"} className="w-48 text-xs" />
+        <Input
+          defaultValue={workspace?.name ?? "Personal"}
+          className="w-48 text-xs"
+          onBlur={(e) => {
+            const name = e.target.value.trim();
+            if (workspace && name && name !== workspace.name) {
+              updateWorkspace(workspace.id, { name });
+            }
+          }}
+          onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+        />
       </SettingsRow>
       <SettingsRow label="Theme" description="Choose light, dark, or follow your system setting">
         <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-[var(--surface-2)] border border-[var(--border)]">
@@ -579,6 +593,12 @@ function MCPServerSettings() {
           <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-400 mr-1" />delete
         </p>
       </div>
+
+      {/* Project-scoped context snippets */}
+      <div>
+        <div className="text-xs font-semibold text-[var(--text-secondary)] mb-2">Project context</div>
+        <MCPProjectConfig />
+      </div>
     </SettingsGroup>
   );
 }
@@ -662,7 +682,8 @@ function MCPSyncStatus() {
 
 // ── MCP Project Config ────────────────────────
 
-function MCPProjectConfig({ origin }: { origin: string }) {
+function MCPProjectConfig() {
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
   const { projects, workspaces, activeProjectId } = useCairnStore();
   const [selectedId, setSelectedId] = useState<string>(activeProjectId ?? projects[0]?.id ?? "");
   const [copied, setCopied] = useState<string | null>(null);
@@ -986,6 +1007,60 @@ function DataSettings({
           </div>
         </DialogContent>
       </Dialog>
+    </SettingsGroup>
+  );
+}
+
+// ── Tags settings ─────────────────────────────
+
+function TagsSettings() {
+  const { tags, activeWorkspaceId, updateTag, deleteTag } = useCairnStore();
+  const workspaceTags = tags.filter((t) => t.workspaceId === activeWorkspaceId);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
+
+  return (
+    <SettingsGroup title="Tags" description="Manage workspace tags used on notes and tasks">
+      {workspaceTags.length === 0 && (
+        <p className="text-sm text-[var(--text-tertiary)]">No tags yet. Create tags from the note editor or card detail.</p>
+      )}
+      <div className="space-y-1">
+        {workspaceTags.map((tag) => (
+          <div key={tag.id} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-[var(--surface-2)] border border-[var(--border)]">
+            <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: tag.color }} />
+            {editingId === tag.id ? (
+              <input
+                autoFocus
+                value={editValue}
+                onChange={(e) => setEditValue(e.target.value)}
+                onBlur={() => {
+                  const trimmed = editValue.trim();
+                  if (trimmed && trimmed !== tag.name) updateTag(tag.id, { name: trimmed });
+                  setEditingId(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") e.currentTarget.blur();
+                  if (e.key === "Escape") setEditingId(null);
+                }}
+                className="flex-1 bg-transparent text-sm text-[var(--text-primary)] outline-none border-b border-[var(--accent)]"
+              />
+            ) : (
+              <span
+                className="flex-1 text-sm text-[var(--text-secondary)] cursor-pointer hover:text-[var(--text-primary)]"
+                onClick={() => { setEditingId(tag.id); setEditValue(tag.name); }}
+              >
+                {tag.name}
+              </span>
+            )}
+            <button
+              onClick={() => deleteTag(tag.id)}
+              className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--danger)] transition-colors"
+            >
+              <X size={12} />
+            </button>
+          </div>
+        ))}
+      </div>
     </SettingsGroup>
   );
 }

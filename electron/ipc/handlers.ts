@@ -108,6 +108,7 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
   ipcMain.handle("db:column:list",   (_e, { projectId }) => q.getColumns(db, projectId));
   ipcMain.handle("db:column:create", (_e, args) => q.createColumn(db, args));
   ipcMain.handle("db:column:update", (_e, { id, patch }) => q.updateColumn(db, id, patch));
+  ipcMain.handle("db:column:delete", (_e, { id }) => q.deleteColumn(db, id));
 
   // ── Task cards ────────────────────────────────────
   ipcMain.handle("db:card:list",   (_e, opts) => q.getCards(db, opts));
@@ -118,6 +119,8 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
   // ── Tags ──────────────────────────────────────────
   ipcMain.handle("db:tag:list",   (_e, { workspaceId }) => q.getTags(db, workspaceId));
   ipcMain.handle("db:tag:create", (_e, args) => q.createTag(db, args));
+  ipcMain.handle("db:tag:update", (_e, { id, patch }) => q.updateTag(db, id, patch));
+  ipcMain.handle("db:tag:delete", (_e, { id }) => q.deleteTag(db, id));
 
   // ── Chat ──────────────────────────────────────────
   ipcMain.handle("db:chat:threads",    (_e, { workspaceId }) => q.getChatThreads(db, workspaceId));
