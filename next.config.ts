@@ -1,8 +1,14 @@
 import type { NextConfig } from "next";
+import { createRequire } from "module";
+const require = createRequire(import.meta.url);
+const { version } = require("./package.json") as { version: string };
 
 const isElectronBuild = process.env.ELECTRON_BUILD === "true";
 
 const nextConfig: NextConfig = {
+  env: {
+    NEXT_PUBLIC_APP_VERSION: version,
+  },
   // Static export for Electron — the main process loads index.html directly.
   // Only applied when building for Electron; web dev mode stays as-is.
   ...(isElectronBuild && {

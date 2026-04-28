@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
+import { WorkspaceIcon, ProjectIcon } from "@/lib/workspace-icons";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { STATUS_COLORS, PRIORITY_COLORS } from "@/lib/utils";
@@ -49,12 +50,12 @@ export function Topbar() {
     <header className="flex items-center h-11 px-4 border-b border-[var(--border)] flex-shrink-0 bg-[var(--surface)] gap-3">
       {/* Breadcrumb */}
       <nav className="flex items-center gap-1 text-xs text-[var(--text-tertiary)] flex-shrink-0">
-        <span>{workspace?.icon ?? "🗂"}</span>
+        <WorkspaceIcon name={workspace?.icon} size={13} className="text-[var(--text-tertiary)]" />
         <span>{workspace?.name}</span>
         {project && (
           <>
             <ChevronRight size={11} />
-            <span className="text-[var(--text-secondary)]">{project.icon ?? "📁"}</span>
+            <ProjectIcon name={project.icon} size={13} className="text-[var(--text-secondary)]" />
             <span className="text-[var(--text-secondary)] font-medium">{project.name}</span>
           </>
         )}

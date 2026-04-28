@@ -977,10 +977,10 @@ function AboutSection() {
       <div className="space-y-4 text-sm text-[var(--text-secondary)]">
         <div className="p-4 rounded-xl border border-[var(--border)] bg-[var(--surface)] space-y-2">
           <div className="flex items-center gap-2 mb-3">
-            <span className="text-2xl">🪨</span>
+            <img src="/Cairn_No_BG.png" alt="Cairn" className="w-8 h-8 object-contain" />
             <div>
               <div className="font-semibold text-[var(--text-primary)]">Cairn</div>
-              <div className="text-xs text-[var(--text-tertiary)]">MVP v1.0.0</div>
+              <div className="text-xs text-[var(--text-tertiary)]">v{process.env.NEXT_PUBLIC_APP_VERSION ?? "0.1.0"}</div>
             </div>
           </div>
           <p className="text-xs leading-relaxed">

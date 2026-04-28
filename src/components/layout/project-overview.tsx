@@ -14,6 +14,7 @@ import {
   Activity,
 } from "lucide-react";
 import { useCairnStore } from "@/store";
+import { ProjectIcon } from "@/lib/workspace-icons";
 import { cn, formatDate, formatRelative, STATUS_COLORS, PRIORITY_COLORS } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -92,7 +93,7 @@ export function ProjectOverview() {
           <div className="flex items-start justify-between gap-4">
             <div>
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-3xl">{project.icon ?? "📁"}</span>
+                <ProjectIcon name={project.icon} size={28} className="text-[var(--text-secondary)]" />
                 <h1 className="text-2xl font-bold text-[var(--text-primary)] tracking-tight">
                   {project.name}
                 </h1>
@@ -304,7 +305,9 @@ export function ProjectOverview() {
         {/* Empty state */}
         {notes.length === 0 && allCards.length === 0 && (
           <div className="py-16 text-center animate-fade-in">
-            <div className="text-5xl mb-4">🪨</div>
+            <div className="mb-4 flex justify-center text-[var(--text-tertiary)]">
+              <Kanban size={40} strokeWidth={1.5} />
+            </div>
             <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-2">
               Start building
             </h3>

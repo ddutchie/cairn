@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { cn, formatRelative } from "@/lib/utils";
 import { useCairnStore } from "@/store";
+import { WorkspaceIcon, ProjectIcon } from "@/lib/workspace-icons";
 import { Tooltip } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import type { Project, Note } from "@/types";
@@ -132,7 +133,7 @@ export function Sidebar() {
     <aside className="flex flex-col w-56 border-r border-[var(--border)] bg-[var(--surface)] flex-shrink-0 overflow-hidden">
       {/* Workspace header */}
       <div className="flex items-center gap-2 px-3 h-11 border-b border-[var(--border)] flex-shrink-0">
-        <span className="text-base leading-none">{workspace?.icon ?? "🗂"}</span>
+        <WorkspaceIcon name={workspace?.icon} size={15} className="text-[var(--text-secondary)] flex-shrink-0" />
         <span className="text-sm font-semibold text-[var(--text-primary)] truncate flex-1">
           {workspace?.name ?? "Workspace"}
         </span>
@@ -216,7 +217,7 @@ export function Sidebar() {
           {/* Inline new project input */}
           {creatingProject && (
             <div className="flex items-center gap-1 px-2 py-1 rounded-md bg-[var(--surface-2)]">
-              <span className="text-sm flex-shrink-0">📁</span>
+              <ProjectIcon name={undefined} size={13} className="text-[var(--text-tertiary)] flex-shrink-0" />
               <input
                 ref={newProjectInputRef}
                 value={newProjectName}
@@ -312,7 +313,7 @@ function ProjectItem({
           onClick={onSelectProject}
           className="flex items-center gap-1.5 flex-1 min-w-0 text-left"
         >
-          <span className="text-sm flex-shrink-0">{project.icon ?? "📁"}</span>
+          <ProjectIcon name={project.icon} size={13} className="text-[var(--text-tertiary)] flex-shrink-0" />
           <span className="text-xs font-medium truncate">{project.name}</span>
         </button>
       </div>

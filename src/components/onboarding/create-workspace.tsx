@@ -2,8 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useCairnStore } from "@/store";
-
-const EMOJI_OPTIONS = ["🪨", "🏔", "🌲", "🌊", "⚡", "🔥", "🌙", "✦", "◆", "▲"];
+import { WORKSPACE_ICONS, DEFAULT_WORKSPACE_ICON, WorkspaceIcon } from "@/lib/workspace-icons";
 
 interface Props {
   onComplete: () => void;
@@ -12,7 +11,7 @@ interface Props {
 export function CreateWorkspace({ onComplete }: Props) {
   const { createWorkspace, setActiveProject } = useCairnStore();
   const [name, setName] = useState("");
-  const [icon, setIcon] = useState("🪨");
+  const [icon, setIcon] = useState(DEFAULT_WORKSPACE_ICON);
   const [submitting, setSubmitting] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -63,26 +62,28 @@ export function CreateWorkspace({ onComplete }: Props) {
 
         {/* Icon picker */}
         <div className="flex flex-wrap gap-2">
-          {EMOJI_OPTIONS.map((e) => (
+          {WORKSPACE_ICONS.map(({ name: iconName }) => (
             <button
-              key={e}
+              key={iconName}
               type="button"
-              onClick={() => setIcon(e)}
+              onClick={() => setIcon(iconName)}
               className={[
-                "w-8 h-8 rounded-lg text-base flex items-center justify-center transition-colors",
-                icon === e
-                  ? "bg-[var(--accent-dim)] ring-1 ring-[var(--accent)]"
+                "w-8 h-8 rounded-lg flex items-center justify-center transition-colors text-[var(--text-secondary)]",
+                icon === iconName
+                  ? "bg-[var(--accent-dim)] ring-1 ring-[var(--accent)] text-[var(--accent)]"
                   : "bg-[var(--surface-2)] hover:bg-[var(--surface-3)]",
               ].join(" ")}
             >
-              {e}
+              <WorkspaceIcon name={iconName} size={14} />
             </button>
           ))}
         </div>
 
         {/* Name input */}
         <div className="flex items-center gap-2 bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-3 py-2 focus-within:ring-1 focus-within:ring-[var(--accent)]">
-          <span className="text-base select-none">{icon}</span>
+          <span className="select-none text-[var(--text-tertiary)]">
+            <WorkspaceIcon name={icon} size={14} />
+          </span>
           <input
             ref={inputRef}
             value={name}
