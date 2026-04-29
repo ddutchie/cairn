@@ -17,7 +17,7 @@ jobs:
       upload_url: ${{ steps.create_release.outputs.upload_url }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6.0.2
 
       - name: Read changelog for this version
         id: changelog
@@ -51,15 +51,15 @@ jobs:
     needs: prepare-release
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6.0.2
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6.4.0
         with:
           node-version: 25
           cache: npm
 
       - name: Cache Next.js build
-        uses: actions/cache@v4
+        uses: actions/cache@v5.0.5
         with:
           path: .next/cache
           key: nextjs-mac-${{ hashFiles('package-lock.json') }}
@@ -94,15 +94,15 @@ jobs:
     needs: prepare-release
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6.0.2
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6.4.0
         with:
           node-version: 25
           cache: npm
 
       - name: Cache Next.js build
-        uses: actions/cache@v4
+        uses: actions/cache@v5.0.5
         with:
           path: .next/cache
           key: nextjs-win-${{ hashFiles('package-lock.json') }}
@@ -131,15 +131,15 @@ jobs:
     needs: prepare-release
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6.0.2
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6.4.0
         with:
           node-version: 25
           cache: npm
 
       - name: Cache Next.js build
-        uses: actions/cache@v4
+        uses: actions/cache@v5.0.5
         with:
           path: .next/cache
           key: nextjs-linux-${{ hashFiles('package-lock.json') }}
