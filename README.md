@@ -259,21 +259,51 @@ External .md edit
 
 ### Key files
 
+**Electron main process**
+
 | File | Purpose |
 |------|---------|
 | `electron/main.ts` | BrowserWindow, workspace resolution, IPC registration, file watcher, WAL polling |
 | `electron/workspace-config.ts` | Read/write `workspace-config.json`; resolve `cairn.db` path |
-| `electron/notes-files.ts` | Note file I/O: slug helpers, `writeNoteFile`, `deleteNoteFile`, `parseNoteFile`, `upsertNoteFromFile` |
+| `electron/notes-files.ts` | Note file I/O: `writeNoteFile`, `deleteNoteFile`, `parseNoteFile`, `upsertNoteFromFile` |
 | `electron/file-watcher.ts` | chokidar watcher on `notes/`; syncs external `.md` edits to SQLite |
-| `electron/ipc/handlers.ts` | All `db:*` IPC channels; `db:mcpQuery` read-only tool bridge for dashboards |
-| `electron/ipc/chat.ts` | AI chat loop in main process; `create_dashboard` / `update_dashboard` tools |
-| `electron/db/queries.ts` | SQLite query helpers (CRUD for all entities) |
+| `electron/ipc/handlers.ts` | All `db:*` and `app:*` IPC channels; `db:mcpQuery` bridge for dashboards |
+| `electron/ipc/chat.ts` | AI chat loop — `runToolLoop` + IPC handler registration |
+| `electron/ipc/chat-executor.ts` | `executeTool` — all AI tool implementations |
+| `electron/lib/llm.ts` | `LLMConfig`, `callLLM`, `streamCompletion`, `isLocalEndpoint` |
+| `electron/lib/tools.ts` | `TOOLS` (OpenAI function definitions), `TOOL_LABELS`, `buildSystemPrompt` |
+| `electron/lib/context.ts` | `buildContextResponse` — canonical `get_cairn_context` response |
+| `electron/lib/prd.ts` | `generatePrd` — shared PRD generation logic |
+| `electron/db/queries.ts` | SQLite query helpers (CRUD, search, snapshot) |
 | `electron/db/schema.ts` | SQLite DDL; `notes.type` column; `mcp_notifications` table |
-| `electron/mcp-server.ts` | Standalone MCP binary entry; all tools including `create_dashboard` / `update_dashboard` |
-| `src/store/index.ts` | Zustand store; `hydrateFromElectron()` pulls a full snapshot via IPC |
+| `electron/db/utils.ts` | `newId()`, `ts()` — shared ID and timestamp helpers |
+| `electron/db/defaults.ts` | `DEFAULT_COLUMNS` — canonical 5-column board layout |
+| `electron/mcp-server.ts` | Standalone MCP binary; all MCP tools; `getConfigBasePath()` |
+
+**Renderer**
+
+| File | Purpose |
+|------|---------|
+| `src/store/index.ts` | Zustand store composition + hydration; delegates to domain slices |
+| `src/store/slices/` | Domain slices: `ui`, `workspace`, `board`, `notes`, `tags`, `chat`, `selectors` |
+| `src/lib/constants.ts` | Shared constants: `COLUMN_COLORS`, `PRIORITY_OPTIONS`, `DEFAULT_AI_CONFIG`, etc. |
+| `src/lib/events.ts` | Typed `CairnEvents` helpers for internal custom event dispatch |
 | `src/components/onboarding/create-workspace.tsx` | First-launch folder picker + workspace creation |
 | `src/components/notes/note-editor.tsx` | Split-pane markdown editor + AI text toolbar |
-| `src/components/notes/dashboard-view.tsx` | Sandboxed iframe renderer; `window.cairn.query()` postMessage bridge |
+| `src/components/notes/dashboard-view.tsx` | Sandboxed iframe renderer; `window.cairn` postMessage bridge |
+| `src/components/settings/settings-view.tsx` | Settings shell; section components in `settings/` directory |
+
+## Testing
+
+```bash
+npm test              # run all tests (vitest)
+npm run test:watch    # watch mode
+npm run test:coverage # coverage report
+```
+
+Tests live alongside the code they cover:
+- `electron/db/queries.test.ts` — SQLite query helpers (in-memory DB)
+- `electron/notes-files.test.ts` — file I/O, slug generation, frontmatter round-trip (tmp directories)
 
 ## Tech stack
 
@@ -283,8 +313,8 @@ External .md edit
 | Next.js 16 | UI framework (App Router, static export) |
 | TypeScript | Language |
 | Tailwind CSS v4 | Styling |
-| Zustand | State management |
-| better-sqlite3 | SQLite (dual ABI: Electron + system Node) |
+| Zustand | State management (domain slices) |
+| better-sqlite3 | SQLite (dual ABI: Electron + pkg/Node 22) |
 | gray-matter | YAML frontmatter parsing for note files |
 | chokidar | File watcher for external `.md` edits |
 | dnd-kit | Drag and drop |
@@ -298,6 +328,7 @@ External .md edit
 | Lucide React | Icons |
 | Zod | Schema validation |
 | nanoid | ID generation |
+| vitest | Unit test runner |
 
 > The **Settings → About** screen in the app shows real installed versions and all open source licenses. These are generated automatically at build time — see below.
 
