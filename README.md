@@ -19,6 +19,7 @@ Cairn is a desktop app (Electron + Next.js) that combines markdown notes with a 
 - **Linked context** — Notes and cards reference each other bidirectionally
 - **Global search** — Instant full-text search across all notes and tasks (`⌘K`)
 - **AI chat** — Integrated assistant with live project context; reads and writes your data (`⌘/`)
+- **Live dashboards** — Ask the AI to generate an interactive HTML dashboard for any project; dashboards fetch live data on every load via a sandboxed `window.cairn.query()` bridge
 - **MCP server** — Exposes your workspace to external AI agents (OpenCode, Claude Desktop, etc.) via the Model Context Protocol
 - **Local-first** — Notes as `.md` files, project data in SQLite; no network required
 - **Dark mode** — Calm, focused aesthetics
@@ -52,7 +53,7 @@ npm run build:all      # All three platforms
 
 Output goes to `dist-app/`.
 
-> **Note:** `npm run rebuild` must be re-run after updating the Electron version. It saves two native binaries: one for the Electron ABI (`electron-native/`) and one for the system Node ABI used by the MCP server (`mcp-native/`).
+> **Note:** `npm run rebuild` must be re-run after updating the Electron version. It builds two native binaries: one for the Electron ABI (`electron-native/`) and one for the Node 22 ABI used by the MCP binary (`pkg-native/`). The MCP server is then bundled into a self-contained binary by `scripts/build-mcp-binary.js` — no separate Node installation needed to run it.
 
 ## AI chat setup
 
@@ -68,7 +69,7 @@ Configure the AI endpoint in **Settings → AI & Chat** (no restart needed):
 
 ## MCP server
 
-Cairn runs a standalone stdio MCP server (`dist-mcp/mcp-server.bundle.js`). It connects directly to the same SQLite database as the app — writes are reflected in the UI in real time.
+Cairn ships a standalone stdio MCP server as a self-contained binary (`dist-mcp/cairn-mcp`), built with `@yao-pkg/pkg`. It connects directly to the same SQLite database as the app — writes are reflected in the UI in real time via WAL polling.
 
 ### Connect from OpenCode
 
@@ -79,7 +80,7 @@ Add to `opencode.json` in your project root:
   "mcp": {
     "cairn": {
       "type": "local",
-      "command": ["node", "/Applications/Cairn.app/Contents/Resources/app.asar.unpacked/dist-mcp/mcp-server.bundle.js"],
+      "command": ["/Applications/Cairn.app/Contents/Resources/app.asar.unpacked/dist-mcp/cairn-mcp"],
       "enabled": true
     }
   }
@@ -94,8 +95,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 {
   "mcpServers": {
     "cairn": {
-      "command": "node",
-      "args": ["/Applications/Cairn.app/Contents/Resources/app.asar.unpacked/dist-mcp/mcp-server.bundle.js"]
+      "command": "/Applications/Cairn.app/Contents/Resources/app.asar.unpacked/dist-mcp/cairn-mcp"
     }
   }
 }
@@ -121,6 +121,8 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 | `update_task` | write | Update a task's title, description, priority, due date, column, or assignee |
 | `update_task_status` | write | Move a task to a different column |
 | `link_note_to_task` | write | Bidirectionally link a note and task |
+| `create_dashboard` | write | Create a live HTML dashboard in a project |
+| `update_dashboard` | write | Update an existing dashboard's title or HTML |
 | `delete_note` | delete | Permanently delete a note |
 | `delete_task` | delete | Permanently delete a task card |
 
@@ -191,36 +193,68 @@ The `id` in the frontmatter is the stable identifier — **filenames are derived
 ```
 Workspace
   └── Project
-        ├── Note[]          (.md file + SQLite row)
-        ├── BoardColumn[]   (SQLite only)
+        ├── Note[]           (.md file + SQLite row, type = "note")
+        ├── Dashboard[]      (SQLite row only, type = "dashboard" — HTML stored in content field)
+        ├── BoardColumn[]    (SQLite only)
         │     └── TaskCard[] (SQLite only)
-        └── ChatThread      (SQLite only)
+        └── ChatThread       (SQLite only)
               └── ChatMessage[]
 ```
 
 Notes and task cards link bidirectionally via `linkedNoteIds` / `linkedCardIds`.
+
+Dashboards are a specialisation of the `notes` table (`type = 'dashboard'`). Their `content` field holds a complete HTML document rather than markdown, so they are never written to `.md` files.
 
 ### Process model
 
 Two processes share the same `cairn.db` (SQLite WAL mode):
 
 1. **Electron app** — Next.js rendered in a BrowserWindow. All DB access goes through IPC to the main process. AI chat runs in the main process (`electron/ipc/chat.ts`) — fully offline in the packaged app.
-2. **MCP server** — Standalone Node.js stdio process (`dist-mcp/mcp-server.bundle.js`), launched by external agents. Reads/writes `cairn.db` directly and writes `.md` files; the Electron UI refreshes automatically via WAL mtime polling.
+2. **MCP server** — Self-contained binary (`dist-mcp/cairn-mcp`, built with `@yao-pkg/pkg`), launched by external agents. Reads/writes `cairn.db` directly and writes `.md` files; the Electron UI refreshes automatically via WAL mtime polling.
 
 External `.md` edits (e.g. the user editing a note in another editor) are picked up by a **chokidar file watcher** in the main process, which parses the frontmatter and upserts the SQLite row, then fires `db:changed` to the renderer.
 
-### Write path for notes
+### Dashboard rendering
+
+Dashboards render in a sandboxed `<iframe srcdoc>` inside the Notes panel. The iframe has no network access and no `allow-same-origin` (preventing privilege escalation). A lightweight postMessage bridge — `window.cairn.query(tool, args)` — lets dashboard JavaScript request live data from the main process:
 
 ```
-Any write (UI / chat / MCP)
+Dashboard JS (iframe)
+  │  window.cairn.query('list_tasks', { projectId })
+  │  postMessage → cairn:query
+  ▼
+DashboardView (renderer)
+  │  window.addEventListener('message') → electron.mcpQuery(tool, args)
+  ▼
+db:mcpQuery IPC (main process)
+  │  runs read-only DB query via queries.ts helpers
+  ▼
+DashboardView
+  │  postMessage → cairn:response { result }
+  ▼
+Dashboard JS
+  └─ receives live data, updates DOM
+```
+
+Available query tools inside a dashboard: `get_cairn_context`, `get_project_summary`, `list_tasks`, `list_notes`, `list_recent_activity`, `search_tasks`, `search_notes`.
+
+### Write path for notes and dashboards
+
+```
+Note write (UI / chat / MCP)
   │
   ├── writeNoteFile()  → <workspace>/notes/<Project>/<Title>.md
-  └── SQLite upsert   → notes table (content_text re-derived from markdown)
+  └── SQLite upsert   → notes table (type='note', content_text re-derived from markdown)
+
+Dashboard write (chat / MCP — create_dashboard / update_dashboard)
+  │
+  └── SQLite upsert   → notes table (type='dashboard', content = raw HTML)
+                        (no .md file written — HTML is not markdown)
 
 External .md edit
   │
   └── chokidar watcher → parseNoteFile() → upsertNoteFromFile() → SQLite
-                                                                 → db:changed → renderer refresh
+                                                               → db:changed → renderer refresh
 ```
 
 ### Key files
@@ -231,14 +265,15 @@ External .md edit
 | `electron/workspace-config.ts` | Read/write `workspace-config.json`; resolve `cairn.db` path |
 | `electron/notes-files.ts` | Note file I/O: slug helpers, `writeNoteFile`, `deleteNoteFile`, `parseNoteFile`, `upsertNoteFromFile` |
 | `electron/file-watcher.ts` | chokidar watcher on `notes/`; syncs external `.md` edits to SQLite |
-| `electron/ipc/handlers.ts` | All `db:*` IPC channels; note handlers write `.md` files after each SQLite mutation |
-| `electron/ipc/chat.ts` | AI chat loop in main process; note tools write `.md` files |
+| `electron/ipc/handlers.ts` | All `db:*` IPC channels; `db:mcpQuery` read-only tool bridge for dashboards |
+| `electron/ipc/chat.ts` | AI chat loop in main process; `create_dashboard` / `update_dashboard` tools |
 | `electron/db/queries.ts` | SQLite query helpers (CRUD for all entities) |
-| `electron/db/schema.ts` | SQLite DDL (`SCHEMA_SQL`) |
-| `electron/mcp-server.ts` | Standalone MCP server; resolves workspace path from `workspace-config.json` |
+| `electron/db/schema.ts` | SQLite DDL; `notes.type` column; `mcp_notifications` table |
+| `electron/mcp-server.ts` | Standalone MCP binary entry; all tools including `create_dashboard` / `update_dashboard` |
 | `src/store/index.ts` | Zustand store; `hydrateFromElectron()` pulls a full snapshot via IPC |
 | `src/components/onboarding/create-workspace.tsx` | First-launch folder picker + workspace creation |
 | `src/components/notes/note-editor.tsx` | Split-pane markdown editor + AI text toolbar |
+| `src/components/notes/dashboard-view.tsx` | Sandboxed iframe renderer; `window.cairn.query()` postMessage bridge |
 
 ## Tech stack
 

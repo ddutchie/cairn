@@ -622,6 +622,8 @@ function MCPServerSettings() {
             ["update_task", "write"],
             ["update_task_status", "write"],
             ["link_note_to_task", "write"],
+            ["create_dashboard", "write"],
+            ["update_dashboard", "write"],
             ["delete_note", "delete"],
             ["delete_task", "delete"],
           ].map(([tool, cat]) => (

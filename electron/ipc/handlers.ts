@@ -48,24 +48,29 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
         const project = snap.projects.find((p) => p.id === args.projectId);
         if (!project) return { error: "Project not found" };
         const cols = snap.columns.filter((c) => c.projectId === args.projectId).sort((a, b) => a.order - b.order);
+        const columns = cols.map((col) => {
+          const cards = snap.cards.filter((c) => c.columnId === col.id && !c.archivedAt);
+          return { id: col.id, name: col.name, type: col.type, taskCount: cards.length,
+            tasks: cards.map((c) => ({ id: c.id, title: c.title, priority: c.priority, dueDate: c.dueDate })) };
+        });
         return {
           project: { id: project.id, name: project.name, status: project.status, priority: project.priority, dueDate: project.dueDate },
           noteCount: snap.notes.filter((n) => n.projectId === args.projectId && !n.archivedAt).length,
           totalCards: snap.cards.filter((c) => c.projectId === args.projectId && !c.archivedAt).length,
-          cardsByColumn: cols.map((col) => {
-            const cards = snap.cards.filter((c) => c.columnId === col.id && !c.archivedAt);
-            return { columnName: col.name, columnType: col.type, count: cards.length,
-              cards: cards.map((c) => ({ id: c.id, title: c.title, priority: c.priority, dueDate: c.dueDate })) };
-          }),
+          columns,
         };
       }
       case "list_tasks": {
         const cols = snap.columns.filter((c) => !args.projectId || c.projectId === args.projectId);
-        return cols.sort((a, b) => a.order - b.order).map((col) => ({
-          columnName: col.name, columnType: col.type, columnId: col.id,
-          tasks: snap.cards.filter((c) => c.columnId === col.id && !c.archivedAt)
-            .map((c) => ({ id: c.id, title: c.title, priority: c.priority, description: c.description, dueDate: c.dueDate })),
-        }));
+        const tasksByColumn: Record<string, unknown[]> = {};
+        cols.sort((a, b) => a.order - b.order).forEach((col) => {
+          tasksByColumn[col.id] = snap.cards
+            .filter((c) => c.columnId === col.id && !c.archivedAt)
+            .map((c) => ({ id: c.id, title: c.title, priority: c.priority, description: c.description,
+              dueDate: c.dueDate, columnId: col.id, columnName: col.name, columnType: col.type,
+              updatedAt: c.updatedAt, archivedAt: c.archivedAt ?? null }));
+        });
+        return { tasksByColumn };
       }
       case "list_notes": {
         return snap.notes.filter((n) => !n.archivedAt && (!args.projectId || n.projectId === args.projectId))
@@ -73,12 +78,17 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
       }
       case "list_recent_activity": {
         const limit = args.limit ?? 20;
-        return [
-          ...snap.notes.filter((n) => !n.archivedAt && n.workspaceId === args.workspaceId && (!args.projectId || n.projectId === args.projectId))
-            .map((n) => ({ type: "note", id: n.id, title: n.title, projectId: n.projectId, at: n.updatedAt })),
-          ...snap.cards.filter((c) => !c.archivedAt && c.workspaceId === args.workspaceId && (!args.projectId || c.projectId === args.projectId))
-            .map((c) => ({ type: "card", id: c.id, title: c.title, projectId: c.projectId, at: c.updatedAt })),
-        ].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime()).slice(0, limit);
+        const recentNotes = snap.notes
+          .filter((n) => !n.archivedAt && (!args.workspaceId || n.workspaceId === args.workspaceId) && (!args.projectId || n.projectId === args.projectId))
+          .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+          .slice(0, limit)
+          .map((n) => ({ id: n.id, title: n.title, projectId: n.projectId, updatedAt: n.updatedAt }));
+        const recentTasks = snap.cards
+          .filter((c) => !c.archivedAt && (!args.workspaceId || c.workspaceId === args.workspaceId) && (!args.projectId || c.projectId === args.projectId))
+          .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+          .slice(0, limit)
+          .map((c) => ({ id: c.id, title: c.title, projectId: c.projectId, updatedAt: c.updatedAt }));
+        return { recentNotes, recentTasks };
       }
       case "search_tasks": {
         const qr = String(args.query).toLowerCase();

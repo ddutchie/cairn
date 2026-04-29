@@ -7,12 +7,11 @@ import {
   Calendar,
   Pin,
   ArrowRight,
-  CheckCircle,
   Clock,
   AlertCircle,
-  ChevronRight,
   Activity,
   Circle,
+  BarChart2,
 } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { ProjectIcon } from "@/lib/workspace-icons";
@@ -90,6 +89,15 @@ export function ProjectOverview() {
     .sort((a, b) => new Date(a.dueDate!).getTime() - new Date(b.dueDate!).getTime());
 
   const overdueCount = dueCards.filter((c) => new Date(c.dueDate!) < today).length;
+
+  // Priority breakdown across all open tasks
+  const priorityCounts = {
+    urgent: openCards.filter((c) => c.priority === "urgent").length,
+    high:   openCards.filter((c) => c.priority === "high").length,
+    medium: openCards.filter((c) => c.priority === "medium").length,
+    low:    openCards.filter((c) => c.priority === "low").length,
+  };
+  const hasAnyCategorised = Object.values(priorityCounts).some((n) => n > 0);
 
   const pinnedNotes  = notes.filter((n) => n.isPinned);
   const recentNotes  = notes.filter((n) => !n.isPinned).slice(0, 5);
@@ -217,6 +225,80 @@ export function ProjectOverview() {
             onClick={() => setView("board")}
           />
         </div>
+
+        {/* ── Health strip ───────────────────────────────────────── */}
+        {(hasAnyCategorised || columns.length > 0) && (
+          <section>
+            <SectionHeader title="Health" icon={<BarChart2 size={12} />} />
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 space-y-4">
+
+              {/* Column bar chart */}
+              {columns.length > 0 && (
+                <div>
+                  <div className="text-[10px] font-medium text-[var(--text-tertiary)] uppercase tracking-wider mb-2.5">
+                    By column
+                  </div>
+                  <div className="space-y-1.5">
+                    {columns.map((col) => {
+                      const count = getColumnCards(col.id).length;
+                      const pct   = allCards.length > 0 ? (count / allCards.length) * 100 : 0;
+                      const color = COLUMN_COLORS[col.type] ?? COLUMN_COLORS.custom;
+                      return (
+                        <button
+                          key={col.id}
+                          onClick={() => { setView("board"); setTimeout(() => window.dispatchEvent(new CustomEvent("cairn:scroll-to-column", { detail: { columnId: col.id } })), 50); }}
+                          className="flex items-center gap-2.5 w-full group"
+                        >
+                          <span className="text-[11px] text-[var(--text-tertiary)] w-20 text-right flex-shrink-0 group-hover:text-[var(--text-secondary)] transition-colors truncate">
+                            {col.name}
+                          </span>
+                          <div className="flex-1 h-2 rounded-full bg-[var(--surface-2)] overflow-hidden">
+                            <div
+                              className="h-full rounded-full transition-all duration-500"
+                              style={{ width: `${pct}%`, backgroundColor: color }}
+                            />
+                          </div>
+                          <span className="text-[11px] tabular-nums text-[var(--text-tertiary)] w-5 text-right flex-shrink-0">
+                            {count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Priority breakdown */}
+              {hasAnyCategorised && (
+                <div>
+                  <div className="text-[10px] font-medium text-[var(--text-tertiary)] uppercase tracking-wider mb-2.5">
+                    Open tasks by priority
+                  </div>
+                  <div className="grid grid-cols-4 gap-2">
+                    {([ 
+                      { key: "urgent", label: "Urgent", color: "var(--danger)",        bg: "rgba(244,63,94,0.08)"     },
+                      { key: "high",   label: "High",   color: "var(--warning)",       bg: "rgba(245,158,11,0.08)"   },
+                      { key: "medium", label: "Medium", color: "var(--info)",          bg: "rgba(96,165,250,0.08)"   },
+                      { key: "low",    label: "Low",    color: "var(--text-tertiary)", bg: "var(--surface-2)"        },
+                    ] as const).map(({ key, label, color, bg }) => (
+                      <button
+                        key={key}
+                        onClick={() => setView("board")}
+                        className="rounded-lg p-2.5 text-center border border-[var(--border)] hover:border-[var(--accent)]/30 hover:bg-[var(--surface-2)] transition-all"
+                        style={{ background: priorityCounts[key] > 0 ? bg : undefined }}
+                      >
+                        <div className="text-lg font-bold leading-none mb-1" style={{ color: priorityCounts[key] > 0 ? color : "var(--text-tertiary)" }}>
+                          {priorityCounts[key]}
+                        </div>
+                        <div className="text-[10px] text-[var(--text-tertiary)]">{label}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </section>
+        )}
 
         {/* ── Board snapshot ─────────────────────────────────────── */}
         {columns.length > 0 && (
