@@ -55,7 +55,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 25
           cache: npm
 
       - name: Cache Next.js build
@@ -83,6 +83,8 @@ jobs:
           node scripts/generate-licenses.js
           npx cross-env ELECTRON_BUILD=true npx next build
           npm run compile
+          node scripts/build-mcp-binary.js --mac
+          chmod +x dist-mcp/cairn-mcp dist-mcp/cairn-mcp-x64
           npx electron-builder --mac --publish always
 
   # ── Windows ───────────────────────────────────────────────────────────────
@@ -96,7 +98,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 25
           cache: npm
 
       - name: Cache Next.js build
@@ -119,6 +121,7 @@ jobs:
           node scripts/generate-licenses.js
           npx cross-env ELECTRON_BUILD=true npx next build
           npm run compile
+          node scripts/build-mcp-binary.js --win
           npx electron-builder --win --publish always
 
   # ── Linux ─────────────────────────────────────────────────────────────────
@@ -132,7 +135,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 25
           cache: npm
 
       - name: Cache Next.js build
@@ -155,4 +158,6 @@ jobs:
           node scripts/generate-licenses.js
           npx cross-env ELECTRON_BUILD=true npx next build
           npm run compile
+          node scripts/build-mcp-binary.js --linux
+          chmod +x dist-mcp/cairn-mcp-linux
           npx electron-builder --linux --publish always

@@ -16,15 +16,23 @@ import fs from "fs";
 import Database from "better-sqlite3";
 import matter from "gray-matter";
 
-// When bundled and running from inside app.asar.unpacked, the native .node
-// binary must be loaded explicitly — `bindings` can't walk the asar boundary.
-// We ship a system-Node-ABI copy in mcp-native/ alongside dist-mcp/.
+// Resolve the better-sqlite3 native binding.
+//
+// Three environments:
+//   1. pkg binary  — __dirname is a virtual snapshot path; the .node file is
+//                    a pkg asset extracted to a temp dir next to the binary.
+//                    We look for it relative to the real executable path.
+//   2. Packaged app (asar.unpacked) — pkg-native/ is unpacked alongside dist-mcp/
+//   3. Dev — pkg-native/ at the project root
 function resolveMcpNativeBinding(): string | undefined {
+  const execDir = path.dirname(process.execPath);
   const candidates = [
-    // Packaged: app.asar.unpacked/mcp-native/ (sibling of dist-mcp/)
-    path.join(__dirname, "..", "mcp-native", "better_sqlite3_node.node"),
-    // Dev: project root mcp-native/
-    path.join(__dirname, "..", "..", "mcp-native", "better_sqlite3_node.node"),
+    // pkg binary: .node asset extracted next to the executable
+    path.join(execDir, "better_sqlite3.node"),
+    // Packaged app: pkg-native/ unpacked alongside dist-mcp/
+    path.join(__dirname, "..", "pkg-native", "better_sqlite3.node"),
+    // Dev: project root pkg-native/
+    path.join(__dirname, "..", "..", "pkg-native", "better_sqlite3.node"),
   ];
   return candidates.find((p) => fs.existsSync(p));
 }

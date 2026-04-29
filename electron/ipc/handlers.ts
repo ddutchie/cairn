@@ -33,7 +33,10 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
   ipcMain.handle("app:mcpServerPath", () => {
     const appPath = app.getAppPath();
     const unpackedPath = appPath.replace(/\.asar$/, ".asar.unpacked");
-    return path.join(unpackedPath, "dist-mcp", "mcp-server.bundle.js");
+    const binaryName = process.platform === "win32" ? "cairn-mcp.exe"
+      : process.platform === "linux" ? "cairn-mcp-linux"
+      : "cairn-mcp";
+    return path.join(unpackedPath, "dist-mcp", binaryName);
   });
 
   // ── Workspaces ────────────────────────────────────

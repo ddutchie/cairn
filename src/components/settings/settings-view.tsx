@@ -554,11 +554,11 @@ function MCPServerSettings() {
   }, []);
 
   const opencodeConfig = mcpServerPath
-    ? JSON.stringify({ mcp: { cairn: { type: "local", command: ["node", mcpServerPath], enabled: true } } }, null, 2)
+    ? JSON.stringify({ mcp: { cairn: { type: "local", command: [mcpServerPath], enabled: true } } }, null, 2)
     : null;
 
   const claudeConfig = mcpServerPath
-    ? JSON.stringify({ cairn: { command: "node", args: [mcpServerPath] } }, null, 2)
+    ? JSON.stringify({ cairn: { command: mcpServerPath, args: [] } }, null, 2)
     : null;
 
   function copy(text: string, key: string) {

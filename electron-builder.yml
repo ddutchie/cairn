@@ -9,14 +9,15 @@ directories:
 files:
   # Electron main + preload — esbuild bundles (all JS deps inlined)
   - dist-electron/**/*
-  # MCP server — esbuild bundle (all JS deps inlined)
-  - dist-mcp/mcp-server.bundle.js
+  # MCP server — self-contained binary (bundles Node 22 + better-sqlite3)
+  - dist-mcp/cairn-mcp
+  - dist-mcp/cairn-mcp.exe
+  - dist-mcp/cairn-mcp-linux
+  - dist-mcp/cairn-mcp-x64
   # Next.js static export
   - out/**/*
   # Electron-ABI native binary for better-sqlite3
   - electron-native/**/*
-  # System-Node-ABI better-sqlite3 binary for the MCP server
-  - mcp-native/**/*
   # better-sqlite3 and its helpers — needed at runtime (native, can't be inlined)
   - node_modules/better-sqlite3/**/*
   - node_modules/bindings/**/*
@@ -27,8 +28,10 @@ files:
 # Unpack from asar — native .node files and anything that needs real filesystem paths
 asarUnpack:
   - electron-native/**/*
-  - dist-mcp/mcp-server.bundle.js
-  - mcp-native/**/*
+  - dist-mcp/cairn-mcp
+  - dist-mcp/cairn-mcp.exe
+  - dist-mcp/cairn-mcp-linux
+  - dist-mcp/cairn-mcp-x64
   - node_modules/better-sqlite3/**/*
   - node_modules/bindings/**/*
   - node_modules/file-uri-to-path/**/*

@@ -57,9 +57,12 @@ run("cross-env ELECTRON_BUILD=true next build");
 run("esbuild electron/main.ts electron/preload.ts --bundle --platform=node --target=node20 --external:electron --external:better-sqlite3 --outdir=dist-electron --format=cjs");
 
 // 4. Bundle MCP server with esbuild (inlines all deps except better-sqlite3)
-run("esbuild electron/mcp-server.ts --bundle --platform=node --target=node20 --external:better-sqlite3 --outfile=dist-mcp/mcp-server.bundle.js --format=cjs");
+run("esbuild electron/mcp-server.ts --bundle --platform=node --target=node22 --external:better-sqlite3 --outfile=dist-mcp/mcp-server.bundle.js --format=cjs");
 
-// 5. Package with electron-builder
+// 5. Build self-contained cairn-mcp binary (bundles Node 22 + better-sqlite3)
+run(`node scripts/build-mcp-binary.js ${platformFlags}`);
+
+// 6. Package with electron-builder
 run(`electron-builder ${platformFlags}`);
 
 console.log("\nBuild complete. Output in dist-app/");
