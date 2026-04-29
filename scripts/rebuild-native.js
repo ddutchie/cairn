@@ -36,10 +36,14 @@ function copyBinary(dest, label) {
 // Step 1: Build/download better-sqlite3 for pkg-bundled Node 22 ABI.
 // Must run from the better-sqlite3 directory so prebuild-install reads its
 // own package.json (not ours) when resolving the GitHub release URL.
+// On Windows, .bin/ contains a bash shebang script — use the .cmd wrapper instead.
 const bsqliteDir = path.join(root, "node_modules", "better-sqlite3");
+const prebuildBin = process.platform === "win32"
+  ? path.join(root, "node_modules", ".bin", "prebuild-install.cmd")
+  : path.join(root, "node_modules", ".bin", "prebuild-install");
 console.log(`\n> prebuild-install --target ${PKG_NODE_VERSION}.0.0 (from ${bsqliteDir})`);
 execSync(
-  `node "${path.join(root, "node_modules", ".bin", "prebuild-install")}" --target ${PKG_NODE_VERSION}.0.0 --runtime node --verbose`,
+  `"${prebuildBin}" --target ${PKG_NODE_VERSION}.0.0 --runtime node --verbose`,
   { stdio: "inherit", cwd: bsqliteDir }
 );
 copyBinary(path.join(root, "pkg-native", "better_sqlite3.node"), `pkg Node ${PKG_NODE_VERSION}`);
