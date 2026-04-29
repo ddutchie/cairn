@@ -437,41 +437,44 @@ function ProjectItem({
         </DropdownMenu>
       </div>
 
-      {isExpanded && isActive && (
+      {isExpanded && (
         <div className="ml-4 mt-0.5 space-y-0.5 border-l border-[var(--border)] pl-2">
           {/* Overview */}
           <NavItem
             icon={<Hash size={11} />}
             label="Overview"
-            isActive={activeView === "overview"}
+            isActive={isActive && activeView === "overview"}
             onClick={() => onSelectView("overview")}
           />
           {/* Notes */}
           <NavItem
             icon={<FileText size={11} />}
             label="Notes"
-            isActive={activeView === "notes"}
+            isActive={isActive && activeView === "notes"}
             onClick={() => onSelectView("notes")}
           />
           {/* Board */}
           <NavItem
             icon={<Kanban size={11} />}
             label="Board"
-            isActive={activeView === "board"}
+            isActive={isActive && activeView === "board"}
             onClick={() => onSelectView("board")}
           />
 
-          {/* Recent notes */}
-          {activeView === "notes" && notes.length > 0 && (
+          {/* Recent notes — clickable, deep-link into notes view */}
+          {isActive && activeView === "notes" && notes.length > 0 && (
             <div className="mt-1 space-y-0.5">
               {notes.map((note) => (
-                <div
+                <button
                   key={note.id}
-                  className="flex items-center gap-1.5 px-1.5 py-1 rounded text-[11px] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] cursor-pointer hover:bg-[var(--surface-2)] transition-colors"
+                  onClick={() => {
+                    window.dispatchEvent(new CustomEvent("cairn:select-note", { detail: { noteId: note.id } }));
+                  }}
+                  className="flex items-center gap-1.5 w-full px-1.5 py-1 rounded text-[11px] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)] transition-colors text-left"
                 >
                   {note.isPinned && <Pin size={9} className="text-[var(--accent)] flex-shrink-0" />}
                   <span className="truncate">{note.title}</span>
-                </div>
+                </button>
               ))}
             </div>
           )}
