@@ -11,6 +11,8 @@ import {
   Clock,
   AlertCircle,
   ChevronRight,
+  Activity,
+  Circle,
 } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { ProjectIcon } from "@/lib/workspace-icons";
@@ -93,6 +95,59 @@ export function ProjectOverview() {
   const recentNotes  = notes.filter((n) => !n.isPinned).slice(0, 5);
 
   const projectTags  = project.tagIds.map((tid) => getTagById(tid)).filter(Boolean);
+
+  // Recent activity — notes + cards sorted by updatedAt, grouped by day
+  type ActivityItem = {
+    id: string;
+    type: "note" | "card";
+    title: string;
+    subtitle: string | null;
+    updatedAt: string;
+    onClick: () => void;
+  };
+  const activityItems: ActivityItem[] = [
+    ...notes.map((n) => ({
+      id: n.id, type: "note" as const,
+      title: n.title, subtitle: null,
+      updatedAt: n.updatedAt,
+      onClick: () => {
+        setView("notes");
+        window.dispatchEvent(new CustomEvent("cairn:select-note", { detail: { noteId: n.id } }));
+      },
+    })),
+    ...allCards.map((c) => {
+      const col = columns.find((col) => col.id === c.columnId);
+      return {
+        id: c.id, type: "card" as const,
+        title: c.title, subtitle: col?.name ?? null,
+        updatedAt: c.updatedAt,
+        onClick: () => {
+          setView("board");
+          window.dispatchEvent(new CustomEvent("cairn:open-card", { detail: { cardId: c.id } }));
+        },
+      };
+    }),
+  ].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+   .slice(0, 20);
+
+  // Group by day label
+  function dayLabel(iso: string): string {
+    const d = new Date(iso);
+    d.setHours(0, 0, 0, 0);
+    const now = new Date(); now.setHours(0, 0, 0, 0);
+    const diff = Math.round((now.getTime() - d.getTime()) / 86_400_000);
+    if (diff === 0) return "Today";
+    if (diff === 1) return "Yesterday";
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
+
+  const activityByDay: { label: string; items: ActivityItem[] }[] = [];
+  for (const item of activityItems) {
+    const label = dayLabel(item.updatedAt);
+    const group = activityByDay.find((g) => g.label === label);
+    if (group) group.items.push(item);
+    else activityByDay.push({ label, items: [item] });
+  }
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -250,6 +305,51 @@ export function ProjectOverview() {
                     window.dispatchEvent(new CustomEvent("cairn:select-note", { detail: { noteId: note.id } }));
                   }}
                 />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* ── Recent activity ────────────────────────────────────── */}
+        {activityByDay.length > 0 && (
+          <section>
+            <SectionHeader
+              title="Recent activity"
+              icon={<Activity size={12} />}
+            />
+            <div className="space-y-4">
+              {activityByDay.map(({ label, items }) => (
+                <div key={label}>
+                  <div className="text-[10px] font-semibold text-[var(--text-tertiary)] uppercase tracking-wider mb-1.5 px-2">
+                    {label}
+                  </div>
+                  <div className="space-y-0.5">
+                    {items.map((item) => (
+                      <button
+                        key={item.id}
+                        onClick={item.onClick}
+                        className="flex items-center gap-3 w-full px-2 py-1.5 rounded-lg hover:bg-[var(--surface-2)] transition-colors group text-left"
+                      >
+                        {item.type === "note" ? (
+                          <FileText size={12} className="text-[var(--info)] flex-shrink-0" />
+                        ) : (
+                          <Circle size={12} className="text-[var(--accent)] flex-shrink-0" />
+                        )}
+                        <span className="flex-1 text-sm text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] transition-colors truncate">
+                          {item.title}
+                        </span>
+                        {item.subtitle && (
+                          <span className="text-[11px] text-[var(--text-tertiary)] flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                            {item.subtitle}
+                          </span>
+                        )}
+                        <span className="text-[11px] text-[var(--text-tertiary)] flex-shrink-0 tabular-nums">
+                          {formatRelative(item.updatedAt)}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
           </section>
