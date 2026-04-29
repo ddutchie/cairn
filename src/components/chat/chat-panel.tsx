@@ -11,10 +11,7 @@ import {
   FolderOpen,
   Loader2,
   CheckCircle,
-  XCircle,
-  AlertCircle,
   Sparkles,
-  ChevronDown,
   PenSquare,
   History,
 } from "lucide-react";
@@ -24,7 +21,7 @@ import { cn, formatRelative } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
-import type { ChatMessage, LinkedContextReference, PendingAction } from "@/types";
+import type { ChatMessage, LinkedContextReference } from "@/types";
 
 const SUGGESTED_PROMPTS = [
   "Summarize this project",
@@ -312,9 +309,6 @@ export function ChatPanel() {
             <ChatMessageItem
               key={message.id}
               message={message}
-              onConfirmAction={(action) => {
-                confirmAction(action);
-              }}
             />
           ))
         )}
@@ -386,10 +380,8 @@ export function ChatPanel() {
 
 function ChatMessageItem({
   message,
-  onConfirmAction,
 }: {
   message: ChatMessage;
-  onConfirmAction: (action: PendingAction) => void;
 }) {
   const isUser = message.role === "user";
 
@@ -436,14 +428,6 @@ function ChatMessageItem({
           </div>
         )}
 
-        {/* Pending action */}
-        {message.pendingAction && (
-          <PendingActionCard
-            action={message.pendingAction}
-            onConfirm={() => onConfirmAction(message.pendingAction!)}
-          />
-        )}
-
         <span className="text-[10px] text-[var(--text-tertiary)]">
           {formatRelative(message.createdAt)}
         </span>
@@ -465,71 +449,6 @@ function ContextRefChip({ ref_ }: { ref_: LinkedContextReference }) {
       {icons[ref_.type]}
       {ref_.title}
     </span>
-  );
-}
-
-function PendingActionCard({
-  action,
-  onConfirm,
-}: {
-  action: PendingAction;
-  onConfirm: () => void;
-}) {
-  const [status, setStatus] = useState<"pending" | "confirmed" | "rejected">("pending");
-
-  const actionLabels: Record<string, string> = {
-    create_note: "Create note",
-    create_task: "Create task",
-    update_task_status: "Move task",
-    update_note: "Update note",
-    link_note_to_task: "Link note to task",
-    move_task: "Move task",
-  };
-
-  return (
-    <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5 space-y-2 w-full">
-      <div className="flex items-center gap-1.5">
-        <AlertCircle size={11} className="text-[var(--warning)]" />
-        <span className="text-xs font-medium text-[var(--text-secondary)]">
-          Action requested: {actionLabels[action.type] ?? action.type}
-        </span>
-      </div>
-
-      {status === "pending" && (
-        <div className="flex gap-1.5">
-          <Button
-            variant="accent"
-            size="xs"
-            onClick={() => {
-              onConfirm();
-              setStatus("confirmed");
-            }}
-          >
-            <CheckCircle size={10} />
-            Confirm
-          </Button>
-          <Button
-            variant="ghost"
-            size="xs"
-            onClick={() => setStatus("rejected")}
-          >
-            <XCircle size={10} />
-            Reject
-          </Button>
-        </div>
-      )}
-
-      {status === "confirmed" && (
-        <span className="text-[11px] text-[var(--success)] flex items-center gap-1">
-          <CheckCircle size={10} /> Done
-        </span>
-      )}
-      {status === "rejected" && (
-        <span className="text-[11px] text-red-400 flex items-center gap-1">
-          <XCircle size={10} /> Rejected
-        </span>
-      )}
-    </div>
   );
 }
 

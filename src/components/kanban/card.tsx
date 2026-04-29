@@ -3,7 +3,7 @@
 import React from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Calendar, FileText, Paperclip } from "lucide-react";
+import { Calendar, FileText } from "lucide-react";
 import { cn, formatDate, getDueDateStatus, PRIORITY_COLORS } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { useCairnStore } from "@/store";

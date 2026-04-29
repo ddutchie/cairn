@@ -35,17 +35,6 @@ export function formatRelative(iso: string): string {
   return formatDate(iso);
 }
 
-/** Strip HTML/TipTap content to plain text for search indexing. */
-export function contentToText(content: object | null): string {
-  if (!content) return "";
-  try {
-    const str = JSON.stringify(content);
-    return str.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-  } catch {
-    return "";
-  }
-}
-
 export const PRIORITY_COLORS: Record<string, string> = {
   low: "text-stone-400",
   medium: "text-amber-400",

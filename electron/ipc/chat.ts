@@ -11,6 +11,11 @@ import { ipcMain } from "electron";
 import type Database from "better-sqlite3";
 import * as q from "../db/queries";
 import { writeNoteFile, deleteNoteFile, stripMarkdown } from "../notes-files";
+import { buildContextResponse } from "../lib/context";
+import { generatePrd } from "../lib/prd";
+import { DEFAULT_COLUMNS } from "../db/defaults";
+import { newId, ts } from "../db/utils";
+import { isLocalEndpoint } from "../lib/llm";
 
 interface ChatRequest {
   message: string;
@@ -464,40 +469,11 @@ const TOOL_LABELS: Record<string, (args: Record<string, unknown>) => string> = {
 async function executeTool(db: Database.Database, req: ChatRequest, workspacePath: string, llmConfig: LLMConfig, name: string, args: Record<string, any>, emit?: (event: { tool: string; label: string; args: Record<string, unknown> }) => void): Promise<unknown> {
   emit?.({ tool: name, label: TOOL_LABELS[name]?.(args) ?? name, args });
   const snap = q.getFullSnapshot(db);
-  const now = new Date().toISOString();
-  const newId = () => Math.random().toString(36).slice(2, 14);
+  const now = ts();
 
   switch (name) {
     case "get_cairn_context": {
-      const workspaces = snap.workspaces.map((w) => ({ id: w.id, name: w.name }));
-      const projects = snap.projects
-        .filter((p) => !p.archivedAt)
-        .map((p) => ({
-          id: p.id, name: p.name, status: p.status, priority: p.priority,
-          workspaceId: p.workspaceId,
-          columns: snap.columns
-            .filter((c) => c.projectId === p.id)
-            .sort((a, b) => a.order - b.order)
-            .map((c) => ({ id: c.id, name: c.name, type: c.type })),
-        }));
-      return {
-        workspaces,
-        projects,
-        tools: {
-          read:   ["get_cairn_context", "get_active_context", "get_note", "get_task", "list_notes", "list_tasks", "search_notes", "search_tasks", "get_project_summary"],
-          write:  ["create_project", "create_note", "update_note", "create_task", "update_task", "update_task_status", "link_note_to_task", "create_dashboard", "update_dashboard"],
-          delete: ["delete_note", "delete_task"],
-        },
-        conventions: {
-          notes: "Raw markdown in 'content'. 'content_text' is auto-derived — do not set manually.",
-          dashboards: "Use create_dashboard to create a live HTML dashboard rendered in a sandboxed iframe. Always fetch data via window.cairn.query(tool, args) — never bake in static data. Available query tools: get_cairn_context, get_project_summary, list_tasks, list_notes, list_recent_activity, search_tasks, search_notes.",
-          tasks: "Always provide columnId (not just projectId) when creating a task.",
-          priority: ["low", "medium", "high", "urgent"],
-          projectStatus: ["active", "on_hold", "completed", "archived"],
-          columnTypes: ["backlog", "todo", "in_progress", "review", "done", "custom"],
-          createProject: "create_project auto-creates 5 default columns — no need to create them separately.",
-        },
-      };
+      return buildContextResponse(db);
     }
     case "get_active_context": {
       const workspace = snap.workspaces.find((w) => w.id === req.workspaceId) ?? snap.workspaces[0];
@@ -571,21 +547,11 @@ async function executeTool(db: Database.Database, req: ChatRequest, workspacePat
         }));
     }
     case "search_notes": {
-      const qr = (args.query as string).toLowerCase();
-      return snap.notes
-        .filter((n) => !n.archivedAt &&
-          (!args.projectId || n.projectId === args.projectId) &&
-          (n.title.toLowerCase().includes(qr) || n.contentText.toLowerCase().includes(qr)))
-        .slice(0, args.limit ?? 10)
+      return q.searchNotes(db, { query: args.query as string, projectId: args.projectId as string | undefined, limit: args.limit as number | undefined })
         .map((n) => ({ id: n.id, title: n.title, snippet: n.contentText.slice(0, 200), projectId: n.projectId }));
     }
     case "search_tasks": {
-      const qr = (args.query as string).toLowerCase();
-      return snap.cards
-        .filter((c) => !c.archivedAt &&
-          (!args.projectId || c.projectId === args.projectId) &&
-          c.title.toLowerCase().includes(qr))
-        .slice(0, args.limit ?? 10)
+      return q.searchTasks(db, { query: args.query as string, projectId: args.projectId as string | undefined, limit: args.limit as number | undefined })
         .map((c) => ({ id: c.id, title: c.title, columnId: c.columnId, priority: c.priority, projectId: c.projectId }));
     }
     case "get_project_summary": {
@@ -676,14 +642,7 @@ async function executeTool(db: Database.Database, req: ChatRequest, workspacePat
         description: args.description ?? undefined, icon: args.icon ?? undefined,
         status: args.status ?? "active", priority: args.priority ?? "medium",
       });
-      const defaultColumns = [
-        { name: "Backlog",     type: "backlog",      order: 0 },
-        { name: "Todo",        type: "todo",         order: 1 },
-        { name: "In Progress", type: "in_progress",  order: 2 },
-        { name: "Review",      type: "review",       order: 3 },
-        { name: "Done",        type: "done",         order: 4 },
-      ];
-      const columns = defaultColumns.map((col) =>
+      const columns = DEFAULT_COLUMNS.map((col) =>
         q.createColumn(db, { id: newId(), projectId, workspaceId: args.workspaceId, ...col })
       );
       return { project, columns: columns.map((c) => ({ id: c.id, name: c.name, type: c.type })) };
@@ -715,26 +674,11 @@ async function executeTool(db: Database.Database, req: ChatRequest, workspacePat
       return { deleted: true, id: args.cardId, title: card.title };
     }
     case "generate_prd": {
-      const project = snap.projects.find((p) => p.id === args.projectId);
-      if (!project) return { error: "Project not found" };
-
-      const systemPrompt = `You are an expert product manager. Generate a thorough, well-structured Product Requirements Document (PRD) in markdown format. Include all standard sections. Be specific and actionable.`;
-      const userPrompt = `Generate a complete PRD for the following:\n\n${args.requirements as string}\n\nInclude these sections:\n# ${args.title as string}\n\n## Overview\n## Problem Statement\n## Goals & Non-Goals\n## User Stories\n## Functional Requirements\n## Non-Functional Requirements\n## Acceptance Criteria\n## Open Questions\n\nReturn only the markdown document, no commentary.`;
-
-      let prdMarkdown: string;
-      try {
-        prdMarkdown = await callLLM(llmConfig, systemPrompt, userPrompt);
-      } catch (err) {
-        return { error: `Failed to generate PRD: ${(err as Error).message}` };
-      }
-
-      const noteId = newId();
-      const note = q.createNote(db, {
-        id: noteId, projectId: args.projectId as string, workspaceId: project.workspaceId,
-        title: args.title as string, content: prdMarkdown, contentText: stripMarkdown(prdMarkdown),
-      });
-      writeNoteFile(workspacePath, { ...note, projectName: project.name });
-      return { id: note.id, title: note.title, projectId: note.projectId, content: prdMarkdown };
+      return generatePrd(db, workspacePath, {
+        projectId: args.projectId as string,
+        title: args.title as string,
+        requirements: args.requirements as string,
+      }, llmConfig);
     }
     case "spawn_tasks_from_note": {
       const note = snap.notes.find((n) => n.id === args.noteId);
@@ -906,7 +850,7 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
     const baseUrl = (req.config?.baseUrl ?? "https://api.openai.com").replace(/\/$/, "");
     const model = req.config?.model ?? "gpt-4o-mini";
     const apiKey = req.config?.apiKey ?? "";
-    const isLocal = baseUrl.includes("localhost") || baseUrl.includes("127.0.0.1") || baseUrl.includes("0.0.0.0");
+    const isLocal = isLocalEndpoint(baseUrl);
 
     const send = (ch: string, payload: unknown) => {
       if (!event.sender.isDestroyed()) event.sender.send(ch, payload);

@@ -16,27 +16,11 @@ import {
 import { useCairnStore } from "@/store";
 import { ProjectIcon } from "@/lib/workspace-icons";
 import { cn, formatDate, formatRelative, STATUS_COLORS, getDueDateStatus } from "@/lib/utils";
+import { COLUMN_COLORS, COLUMN_TYPE_ORDER, PRIORITY_CSS_COLORS } from "@/lib/constants";
+import { CairnEvents } from "@/lib/events";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { TaskCard, Note, BoardColumn } from "@/types";
-
-const COLUMN_TYPE_ORDER = ["backlog", "todo", "in_progress", "review", "done"];
-
-const COLUMN_COLORS: Record<string, string> = {
-  backlog:     "#666360",
-  todo:        "#60a5fa",
-  in_progress: "#f59e0b",
-  review:      "#a78bfa",
-  done:        "#3ecf8e",
-  custom:      "#9ca3af",
-};
-
-const PRIORITY_STRIPE: Record<string, string> = {
-  urgent: "var(--danger)",
-  high:   "var(--danger)",
-  medium: "var(--accent)",
-  low:    "var(--text-tertiary)",
-};
 
 export function ProjectOverview() {
   const {
@@ -120,7 +104,7 @@ export function ProjectOverview() {
       updatedAt: n.updatedAt,
       onClick: () => {
         setView("notes");
-        window.dispatchEvent(new CustomEvent("cairn:select-note", { detail: { noteId: n.id } }));
+        window.dispatchEvent(CairnEvents.selectNote(n.id));
       },
     })),
     ...allCards.map((c) => {
@@ -131,7 +115,7 @@ export function ProjectOverview() {
         updatedAt: c.updatedAt,
         onClick: () => {
           setView("board");
-          window.dispatchEvent(new CustomEvent("cairn:open-card", { detail: { cardId: c.id } }));
+          window.dispatchEvent(CairnEvents.openCard(c.id));
         },
       };
     }),
@@ -246,7 +230,7 @@ export function ProjectOverview() {
                       return (
                         <button
                           key={col.id}
-                          onClick={() => { setView("board"); setTimeout(() => window.dispatchEvent(new CustomEvent("cairn:scroll-to-column", { detail: { columnId: col.id } })), 50); }}
+                          onClick={() => { setView("board"); setTimeout(() => window.dispatchEvent(CairnEvents.scrollToColumn(col.id)), 50); }}
                           className="flex items-center gap-2.5 w-full group"
                         >
                           <span className="text-[11px] text-[var(--text-tertiary)] w-20 text-right flex-shrink-0 group-hover:text-[var(--text-secondary)] transition-colors truncate">
@@ -318,7 +302,7 @@ export function ProjectOverview() {
                     setView("board");
                     // Small delay so the board has mounted before we dispatch
                     setTimeout(() => {
-                      window.dispatchEvent(new CustomEvent("cairn:scroll-to-column", { detail: { columnId: col.id } }));
+                      window.dispatchEvent(CairnEvents.scrollToColumn(col.id));
                     }, 50);
                   }}
                 />
@@ -343,7 +327,7 @@ export function ProjectOverview() {
                   today={today}
                   onClick={() => {
                     setView("board");
-                    window.dispatchEvent(new CustomEvent("cairn:open-card", { detail: { cardId: card.id } }));
+                    window.dispatchEvent(CairnEvents.openCard(card.id));
                   }}
                 />
               ))}
@@ -367,7 +351,7 @@ export function ProjectOverview() {
                   getTagById={getTagById}
                   onClick={() => {
                     setView("notes");
-                    window.dispatchEvent(new CustomEvent("cairn:select-note", { detail: { noteId: note.id } }));
+                    window.dispatchEvent(CairnEvents.selectNote(note.id));
                   }}
                 />
               ))}
@@ -390,7 +374,7 @@ export function ProjectOverview() {
                   note={note}
                   onClick={() => {
                     setView("notes");
-                    window.dispatchEvent(new CustomEvent("cairn:select-note", { detail: { noteId: note.id } }));
+                    window.dispatchEvent(CairnEvents.selectNote(note.id));
                   }}
                 />
               ))}
@@ -607,7 +591,7 @@ function DueCard({
       {/* Priority stripe */}
       <div
         className="w-0.5 h-7 rounded-full flex-shrink-0"
-        style={{ background: PRIORITY_STRIPE[card.priority] ?? "var(--text-tertiary)" }}
+        style={{ background: PRIORITY_CSS_COLORS[card.priority] ?? "var(--text-tertiary)" }}
       />
       <span className="flex-1 text-sm text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] transition-colors truncate">
         {card.title}

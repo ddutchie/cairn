@@ -139,7 +139,4 @@ export function applySchema(db: Database.Database): void {
   if (!noteColNames.includes("type")) {
     db.exec("ALTER TABLE notes ADD COLUMN type TEXT NOT NULL DEFAULT 'note'");
   }
-  if (!noteColNames.includes("mcp_notifications")) {
-    // mcp_notifications is a table, not a column — handled by CREATE TABLE IF NOT EXISTS above
-  }
 }

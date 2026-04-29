@@ -37,6 +37,8 @@ function resolveMcpNativeBinding(): string | undefined {
   return candidates.find((p) => fs.existsSync(p));
 }
 const MCP_NATIVE_BINDING = resolveMcpNativeBinding();
+import { newId, ts } from "./db/utils";
+import { DEFAULT_COLUMNS } from "./db/defaults";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -46,23 +48,26 @@ export const MCP_PORT = 3123;
 
 // ── DB path resolution ────────────────────────
 
+/** Returns the OS-specific app-config base directory. */
+function getConfigBasePath(): string {
+  const home = os.homedir();
+  const platform = process.platform;
+  if (platform === "win32") {
+    return process.env.APPDATA ?? path.join(home, "AppData", "Roaming");
+  } else if (platform === "darwin") {
+    return path.join(home, "Library", "Application Support");
+  } else {
+    return process.env.XDG_CONFIG_HOME ?? path.join(home, ".config");
+  }
+}
+
 /**
  * Try to read the workspace config file written by the Electron app.
  * Returns the path to cairn.db inside the user-chosen workspace folder,
  * or null if the config doesn't exist yet.
  */
 function findDbPathFromWorkspaceConfig(): string | null {
-  const home = os.homedir();
-  const platform = process.platform;
-
-  let base: string;
-  if (platform === "win32") {
-    base = process.env.APPDATA ?? path.join(home, "AppData", "Roaming");
-  } else if (platform === "darwin") {
-    base = path.join(home, "Library", "Application Support");
-  } else {
-    base = process.env.XDG_CONFIG_HOME ?? path.join(home, ".config");
-  }
+  const base = getConfigBasePath();
 
   const names = ["Cairn", "cairn", "Electron"];
   for (const name of names) {
@@ -85,17 +90,7 @@ function findDbPath(): string | null {
   const fromConfig = findDbPathFromWorkspaceConfig();
   if (fromConfig) return fromConfig;
 
-  const home = os.homedir();
-  const platform = process.platform;
-
-  let base: string;
-  if (platform === "win32") {
-    base = process.env.APPDATA ?? path.join(home, "AppData", "Roaming");
-  } else if (platform === "darwin") {
-    base = path.join(home, "Library", "Application Support");
-  } else {
-    base = process.env.XDG_CONFIG_HOME ?? path.join(home, ".config");
-  }
+  const base = getConfigBasePath();
 
   // Fallback: search legacy app-data locations, prefer the one with most data
   const names = ["Cairn", "cairn", "Electron"];
@@ -127,8 +122,6 @@ function p(v: string | null | undefined): unknown[] {
   try { return JSON.parse(v); } catch { return []; }
 }
 function b(v: number | null): boolean { return v === 1; }
-function ts(): string { return new Date().toISOString(); }
-function newId(): string { return Math.random().toString(36).slice(2, 14); }
 
 /** Strip markdown syntax to plain text for the content_text search column */
 function stripMarkdown(md: string): string {
@@ -216,16 +209,7 @@ function deleteNoteFile(workspacePath: string, projectName: string, noteId: stri
 
 /** Resolve the workspace folder from the config file, falling back to the DB's parent dir. */
 function findWorkspacePath(dbPath: string): string {
-  const home = os.homedir();
-  const platform = process.platform;
-  let base: string;
-  if (platform === "win32") {
-    base = process.env.APPDATA ?? path.join(home, "AppData", "Roaming");
-  } else if (platform === "darwin") {
-    base = path.join(home, "Library", "Application Support");
-  } else {
-    base = process.env.XDG_CONFIG_HOME ?? path.join(home, ".config");
-  }
+  const base = getConfigBasePath();
   for (const name of ["Cairn", "cairn", "Electron"]) {
     const configPath = path.join(base, name, "workspace-config.json");
     if (!fs.existsSync(configPath)) continue;
@@ -544,14 +528,7 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
         VALUES (?, ?, ?, ?, ?, ?, ?, '[]', ?, ?)`)
         .run(projectId, args.workspaceId, args.name, args.description ?? null, args.icon ?? null,
           args.status ?? "active", args.priority ?? "medium", now, now);
-      const defaultColumns = [
-        { name: "Backlog",     type: "backlog",     order: 0 },
-        { name: "Todo",        type: "todo",        order: 1 },
-        { name: "In Progress", type: "in_progress", order: 2 },
-        { name: "Review",      type: "review",      order: 3 },
-        { name: "Done",        type: "done",        order: 4 },
-      ];
-      const columns = defaultColumns.map((col) => {
+      const columns = DEFAULT_COLUMNS.map((col) => {
         const colId = newId();
         db.prepare(`INSERT INTO board_columns (id, project_id, workspace_id, name, type, "order", created_at, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)

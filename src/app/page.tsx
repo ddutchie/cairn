@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Download, X } from "lucide-react";
 import { useCairnStore } from "@/store";
+import { CairnEvents } from "@/lib/events";
 import { TitleBar } from "@/components/layout/title-bar";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
@@ -101,7 +102,7 @@ export default function Home() {
         if (activeProjectId) {
           setView("notes");
           // Dispatch a custom event that NotesView listens for to create a note
-          window.dispatchEvent(new CustomEvent("cairn:new-note"));
+          window.dispatchEvent(CairnEvents.newNote());
         }
       }
     }

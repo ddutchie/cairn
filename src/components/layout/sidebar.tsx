@@ -21,6 +21,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { cn, formatRelative } from "@/lib/utils";
+import { CairnEvents } from "@/lib/events";
 import { useCairnStore } from "@/store";
 import { WorkspaceIcon, ProjectIcon } from "@/lib/workspace-icons";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -469,7 +470,7 @@ function ProjectItem({
                 <button
                   key={note.id}
                   onClick={() => {
-                    window.dispatchEvent(new CustomEvent("cairn:select-note", { detail: { noteId: note.id } }));
+                    window.dispatchEvent(CairnEvents.selectNote(note.id));
                   }}
                   className="flex items-center gap-1.5 w-full px-1.5 py-1 rounded text-[11px] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)] transition-colors text-left"
                 >

@@ -15,8 +15,12 @@ import { ipcMain, app, shell } from "electron";
 import path from "path";
 import type Database from "better-sqlite3";
 import * as q from "../db/queries";
-import { registerChatHandler, callLLM } from "./chat";
+import { registerChatHandler } from "./chat";
 import { writeNoteFile, deleteNoteFile, deleteProjectNotesDir, stripMarkdown, findNoteFilePath } from "../notes-files";
+import { buildContextResponse } from "../lib/context";
+import { generatePrd } from "../lib/prd";
+import { newId, ts } from "../db/utils";
+import { isLocalEndpoint } from "../lib/llm";
 
 function getProjectName(db: Database.Database, projectId: string): string {
   const row = db.prepare("SELECT name FROM projects WHERE id = ?").get(projectId) as { name: string } | undefined;
@@ -36,14 +40,7 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
     const snap = q.getFullSnapshot(db);
     switch (tool) {
       case "get_cairn_context":
-        return {
-          workspaces: snap.workspaces.map((w) => ({ id: w.id, name: w.name })),
-          projects: snap.projects.filter((p) => !p.archivedAt).map((p) => ({
-            id: p.id, name: p.name, status: p.status, priority: p.priority,
-            columns: snap.columns.filter((c) => c.projectId === p.id).sort((a, b) => a.order - b.order)
-              .map((c) => ({ id: c.id, name: c.name, type: c.type })),
-          })),
-        };
+        return buildContextResponse(db);
       case "get_project_summary": {
         const project = snap.projects.find((p) => p.id === args.projectId);
         if (!project) return { error: "Project not found" };
@@ -91,19 +88,11 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
         return { recentNotes, recentTasks };
       }
       case "search_tasks": {
-        const qr = String(args.query).toLowerCase();
-        return snap.cards.filter((c) => !c.archivedAt &&
-          (!args.projectId || c.projectId === args.projectId) &&
-          (c.title.toLowerCase().includes(qr) || (c.description ?? "").toLowerCase().includes(qr)))
-          .slice(0, args.limit ?? 10)
+        return q.searchTasks(db, { query: String(args.query), projectId: args.projectId as string | undefined, limit: args.limit as number | undefined })
           .map((c) => ({ id: c.id, title: c.title, priority: c.priority, columnId: c.columnId }));
       }
       case "search_notes": {
-        const qr = String(args.query).toLowerCase();
-        return snap.notes.filter((n) => !n.archivedAt &&
-          (!args.projectId || n.projectId === args.projectId) &&
-          (n.title.toLowerCase().includes(qr) || n.contentText.toLowerCase().includes(qr)))
-          .slice(0, args.limit ?? 10)
+        return q.searchNotes(db, { query: String(args.query), projectId: args.projectId as string | undefined, limit: args.limit as number | undefined })
           .map((n) => ({ id: n.id, title: n.title, snippet: n.contentText.slice(0, 200), projectId: n.projectId }));
       }
       default:
@@ -224,9 +213,6 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
     requirements: string;
     config: { baseUrl: string; model: string; apiKey: string };
   }) => {
-    const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(args.projectId) as { id: string; name: string; workspace_id: string } | undefined;
-    if (!project) return { error: "Project not found" };
-
     const baseUrl = (args.config.baseUrl || "https://api.openai.com").replace(/\/$/, "");
     const model = args.config.model || "gpt-4o-mini";
     const apiKey = args.config.apiKey || "";
@@ -235,42 +221,10 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
       return { error: "AI is not configured. Add an API key in Settings → AI & Chat, or use a local endpoint." };
     }
     const llmConfig = { baseUrl, model, apiKey };
-
-    const systemPrompt = `You are an expert product manager. Generate a thorough, well-structured Product Requirements Document (PRD) in markdown format. Be specific and actionable.`;
-    const userPrompt = `Generate a complete PRD titled "${args.title}" for the following:\n\n${args.requirements}\n\nInclude these sections:\n## Overview\n## Problem Statement\n## Goals & Non-Goals\n## User Stories\n## Functional Requirements\n## Non-Functional Requirements\n## Acceptance Criteria\n## Open Questions\n\nStart directly with the markdown. No preamble.`;
-
-    let prdMarkdown: string;
-    try {
-      prdMarkdown = await callLLM(llmConfig, systemPrompt, userPrompt);
-    } catch (err) {
-      return { error: `LLM call failed (endpoint: ${baseUrl}, model: ${model}): ${(err as Error).message}` };
-    }
-
-    const noteId = Math.random().toString(36).slice(2, 14);
-    const now = new Date().toISOString();
-    db.prepare(`
-      INSERT INTO notes (id, project_id, workspace_id, title, content, content_text,
-        tag_ids, linked_note_ids, linked_card_ids, is_pinned, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, '[]', '[]', '[]', 0, ?, ?)
-    `).run(noteId, args.projectId, project.workspace_id, args.title, prdMarkdown, stripMarkdown(prdMarkdown), now, now);
-
-    const note = db.prepare("SELECT * FROM notes WHERE id = ?").get(noteId) as { id: string; title: string; project_id: string };
-    writeNoteFile(workspacePath, {
-      id: note.id,
-      projectId: note.project_id,
-      workspaceId: project.workspace_id,
+    return generatePrd(db, workspacePath, {
+      projectId: args.projectId,
       title: args.title,
-      content: prdMarkdown,
-      contentText: stripMarkdown(prdMarkdown),
-      tagIds: [],
-      linkedNoteIds: [],
-      linkedCardIds: [],
-      isPinned: false,
-      createdAt: now,
-      updatedAt: now,
-      projectName: project.name,
-    });
-
-    return { id: noteId, title: args.title, projectId: args.projectId };
+      requirements: args.requirements,
+    }, llmConfig);
   });
 }

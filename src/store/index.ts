@@ -23,6 +23,8 @@ import type {
 } from "@/types";
 import { storage } from "@/lib/storage";
 import { id, now } from "@/lib/utils";
+import { DEFAULT_AI_CONFIG, DEFAULT_COLUMNS } from "@/lib/constants";
+export { DEFAULT_AI_CONFIG } from "@/lib/constants";
 
 
 // ── AI / MCP config (persisted separately so it survives seed resets) ──
@@ -35,12 +37,6 @@ export interface AIConfig {
   /** API key. Empty string means "use server-side OPENAI_API_KEY env var" */
   apiKey: string;
 }
-
-export const DEFAULT_AI_CONFIG: AIConfig = {
-  baseUrl: "https://api.openai.com",
-  model: "gpt-4o-mini",
-  apiKey: "",
-};
 
 const AI_CONFIG_KEY = "ai-config";
 

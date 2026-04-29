@@ -18,15 +18,7 @@ import {
 } from "@/components/ui/dialog";
 import { KanbanCard } from "./card";
 import type { BoardColumn, TaskCard } from "@/types";
-
-const COLUMN_ACCENT: Record<string, string> = {
-  backlog: "#666360",
-  todo: "#60a5fa",
-  in_progress: "#f59e0b",
-  review: "#a78bfa",
-  done: "#3ecf8e",
-  custom: "#9ca3af",
-};
+import { COLUMN_COLORS } from "@/lib/constants";
 
 interface NewCardData {
   title: string;
@@ -71,7 +63,7 @@ export function KanbanColumn({
     isDragging,
   } = useSortable({ id: column.id, data: { column } });
 
-  const accent = COLUMN_ACCENT[column.type] ?? COLUMN_ACCENT.custom;
+  const accent = COLUMN_COLORS[column.type] ?? COLUMN_COLORS.custom;
 
   const style = {
     transform: CSS.Transform.toString(transform),

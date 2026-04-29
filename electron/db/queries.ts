@@ -8,6 +8,7 @@
  */
 
 import type Database from "better-sqlite3";
+import { ts } from "./utils";
 
 // ── tiny helpers ──────────────────────────────
 
@@ -20,9 +21,6 @@ function p(v: string | null | undefined): unknown[] {
 }
 function b(v: number | null | undefined): boolean {
   return v === 1;
-}
-function ts(): string {
-  return new Date().toISOString();
 }
 
 // ── Row → domain type mappers ─────────────────
@@ -511,4 +509,52 @@ export function getFullSnapshot(db: Database.Database) {
 export function hasData(db: Database.Database): boolean {
   const row = db.prepare("SELECT COUNT(*) as cnt FROM workspaces").get() as { cnt: number };
   return row.cnt > 0;
+}
+
+// ── Search ────────────────────────────────────
+
+export interface SearchNotesOpts {
+  query: string;
+  projectId?: string;
+  workspaceId?: string;
+  limit?: number;
+}
+
+export interface SearchTasksOpts {
+  query: string;
+  projectId?: string;
+  workspaceId?: string;
+  limit?: number;
+}
+
+export function searchNotes(db: Database.Database, opts: SearchNotesOpts) {
+  const q = opts.query.toLowerCase();
+  const limit = opts.limit ?? 10;
+  return db
+    .prepare(
+      `SELECT * FROM notes
+       WHERE archived_at IS NULL
+         AND (? IS NULL OR project_id = ?)
+         AND (lower(title) LIKE ? OR lower(content_text) LIKE ?)
+       LIMIT ?`
+    )
+    .all(opts.projectId ?? null, opts.projectId ?? null, `%${q}%`, `%${q}%`, limit)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .map((row) => toNote(row as any));
+}
+
+export function searchTasks(db: Database.Database, opts: SearchTasksOpts) {
+  const q = opts.query.toLowerCase();
+  const limit = opts.limit ?? 10;
+  return db
+    .prepare(
+      `SELECT * FROM task_cards
+       WHERE archived_at IS NULL
+         AND (? IS NULL OR project_id = ?)
+         AND (lower(title) LIKE ? OR lower(description) LIKE ?)
+       LIMIT ?`
+    )
+    .all(opts.projectId ?? null, opts.projectId ?? null, `%${q}%`, `%${q}%`, limit)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .map((row) => toCard(row as any));
 }

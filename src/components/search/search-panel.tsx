@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { Search, FileText, Kanban, X, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { CairnEvents } from "@/lib/events";
 import { useCairnStore, type SearchResult } from "@/store";
 
 interface ResultRowProps {
@@ -88,10 +89,10 @@ export function SearchPanel() {
     setActiveProject(result.projectId);
     if (result.type === "note") {
       setView("notes");
-      window.dispatchEvent(new CustomEvent("cairn:select-note", { detail: { noteId: result.id } }));
+      window.dispatchEvent(CairnEvents.selectNote(result.id));
     } else {
       setView("board");
-      window.dispatchEvent(new CustomEvent("cairn:open-card", { detail: { cardId: result.id } }));
+      window.dispatchEvent(CairnEvents.openCard(result.id));
     }
     toggleSearch();
   }
