@@ -80,6 +80,7 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
+          node scripts/generate-licenses.js
           npx cross-env ELECTRON_BUILD=true npx next build
           npm run compile
           npx electron-builder --mac --publish always
@@ -115,6 +116,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          node scripts/generate-licenses.js
           npx cross-env ELECTRON_BUILD=true npx next build
           npm run compile
           npx electron-builder --win --publish always
@@ -150,6 +152,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          node scripts/generate-licenses.js
           npx cross-env ELECTRON_BUILD=true npx next build
           npm run compile
           npx electron-builder --linux --publish always
