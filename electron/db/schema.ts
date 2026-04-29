@@ -45,12 +45,13 @@ CREATE TABLE IF NOT EXISTS notes (
   project_id       TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   workspace_id     TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   title            TEXT NOT NULL,
-  content          TEXT,          -- TipTap JSON, stored as text
+  content          TEXT,          -- Raw markdown (type=note) or HTML (type=dashboard)
   content_text     TEXT NOT NULL DEFAULT '',
   tag_ids          TEXT NOT NULL DEFAULT '[]',
   linked_note_ids  TEXT NOT NULL DEFAULT '[]',
   linked_card_ids  TEXT NOT NULL DEFAULT '[]',
   is_pinned        INTEGER NOT NULL DEFAULT 0,
+  type             TEXT NOT NULL DEFAULT 'note', -- 'note' | 'dashboard'
   created_at       TEXT NOT NULL,
   updated_at       TEXT NOT NULL,
   archived_at      TEXT
@@ -131,4 +132,14 @@ CREATE INDEX IF NOT EXISTS idx_projects_workspace ON projects(workspace_id);
 
 export function applySchema(db: Database.Database): void {
   db.exec(SCHEMA_SQL);
+  // ── Migrations ────────────────────────────────────────────────────────────
+  // Add columns that were added after the initial schema — safe to run repeatedly.
+  const notesCols = db.prepare("PRAGMA table_info(notes)").all() as { name: string }[];
+  const noteColNames = notesCols.map((c) => c.name);
+  if (!noteColNames.includes("type")) {
+    db.exec("ALTER TABLE notes ADD COLUMN type TEXT NOT NULL DEFAULT 'note'");
+  }
+  if (!noteColNames.includes("mcp_notifications")) {
+    // mcp_notifications is a table, not a column — handled by CREATE TABLE IF NOT EXISTS above
+  }
 }

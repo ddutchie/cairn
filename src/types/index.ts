@@ -43,12 +43,14 @@ export interface Project {
 }
 
 // ── Note ─────────────────────────────────────
+export type NoteType = "note" | "dashboard";
+
 export interface Note {
   id: ID;
   projectId: ID;
   workspaceId: ID;
   title: string;
-  /** Raw markdown content */
+  /** Raw markdown (type=note) or HTML string (type=dashboard) */
   content: string;
   /** Plain-text representation for search (markdown stripped) */
   contentText: string;
@@ -58,6 +60,7 @@ export interface Note {
   /** Task cards this note is linked to */
   linkedCardIds: ID[];
   isPinned: boolean;
+  type: NoteType;
   createdAt: string;
   updatedAt: string;
   archivedAt?: string;

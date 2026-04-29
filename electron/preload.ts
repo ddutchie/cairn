@@ -126,6 +126,9 @@ const api = {
     return () => ipcRenderer.off("db:changed", handler);
   },
 
+  // ── Dashboard live query bridge ───────────────
+  mcpQuery: (tool: string, args: Record<string, unknown>) => invoke<unknown>("db:mcpQuery", { tool, args }),
+
   // ── MCP notification badge ─────────────────────
   onMcpUnreadCount: (cb: (count: number) => void) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -18,12 +18,14 @@ import {
   FolderInput,
   ChevronDown,
   ChevronRight,
+  LayoutDashboard,
 } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { cn, formatRelative } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { NoteEditor } from "./note-editor";
+import { DashboardView } from "./dashboard-view";
 import type { Note } from "@/types";
 import {
   DropdownMenu,
@@ -96,7 +98,13 @@ export function NotesView() {
 
   function handleCreateNote() {
     if (!activeProjectId) return;
-    const note = createNote(activeProjectId, "Untitled Note");
+    const note = createNote(activeProjectId, "Untitled Note", "note");
+    setActiveNoteId(note.id);
+  }
+
+  function handleCreateDashboard() {
+    if (!activeProjectId) return;
+    const note = createNote(activeProjectId, "Untitled Dashboard", "dashboard");
     setActiveNoteId(note.id);
   }
 
@@ -161,6 +169,11 @@ export function NotesView() {
             <Tooltip content="New note">
               <Button variant="ghost" size="icon" onClick={handleCreateNote}>
                 <Plus size={14} />
+              </Button>
+            </Tooltip>
+            <Tooltip content="New dashboard">
+              <Button variant="ghost" size="icon" onClick={handleCreateDashboard}>
+                <LayoutDashboard size={13} />
               </Button>
             </Tooltip>
           </div>
@@ -271,10 +284,12 @@ export function NotesView() {
         </div>
       </div>
 
-      {/* Note editor */}
+      {/* Note / Dashboard editor */}
       <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
         {activeNote ? (
-          <NoteEditor note={activeNote} />
+          activeNote.type === "dashboard"
+            ? <DashboardView note={activeNote} />
+            : <NoteEditor note={activeNote} />
         ) : (
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center">
@@ -283,6 +298,9 @@ export function NotesView() {
               <div className="flex items-center gap-2 mt-4 justify-center">
                 <Button variant="accent" size="sm" onClick={handleCreateNote}>
                   <Plus size={13} /> New Note
+                </Button>
+                <Button variant="ghost" size="sm" onClick={handleCreateDashboard}>
+                  <LayoutDashboard size={13} /> New Dashboard
                 </Button>
                 <Button variant="ghost" size="sm" onClick={() => setPrdModalOpen(true)}>
                   <Wand2 size={13} /> Generate PRD
@@ -495,6 +513,9 @@ function NoteListItem({ note, isActive, onClick, onPin, onDelete, onArchive, onM
       <div className="flex items-center gap-1.5">
         {note.isPinned && (
           <Pin size={9} className="text-[var(--accent)] flex-shrink-0" />
+        )}
+        {note.type === "dashboard" && (
+          <LayoutDashboard size={9} className="text-[var(--text-tertiary)] flex-shrink-0" />
         )}
         <span
           className={cn(

@@ -65,13 +65,13 @@ function toNote(row: any) {
     projectId: row.project_id as string,
     workspaceId: row.workspace_id as string,
     title: row.title as string,
-    // content is stored as raw markdown string
     content: (row.content ?? "") as string,
     contentText: (row.content_text ?? "") as string,
     tagIds: p(row.tag_ids) as string[],
     linkedNoteIds: p(row.linked_note_ids) as string[],
     linkedCardIds: p(row.linked_card_ids) as string[],
     isPinned: b(row.is_pinned),
+    type: (row.type ?? "note") as "note" | "dashboard",
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
     archivedAt: row.archived_at as string | undefined,
@@ -240,23 +240,24 @@ export function getNotes(db: Database.Database, projectId?: string) {
 
 export function createNote(db: Database.Database, n: {
   id: string; projectId: string; workspaceId: string; title: string;
-  content?: string; contentText?: string;
+  content?: string; contentText?: string; type?: "note" | "dashboard";
 }) {
   const now = ts();
   const content = n.content ?? "";
   const contentText = n.contentText ?? content;
+  const type = n.type ?? "note";
   db.prepare(`
     INSERT INTO notes (id, project_id, workspace_id, title, content, content_text,
-      tag_ids, linked_note_ids, linked_card_ids, is_pinned, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, '[]', '[]', '[]', 0, ?, ?)
-  `).run(n.id, n.projectId, n.workspaceId, n.title, content, contentText, now, now);
+      tag_ids, linked_note_ids, linked_card_ids, is_pinned, type, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, '[]', '[]', '[]', 0, ?, ?, ?)
+  `).run(n.id, n.projectId, n.workspaceId, n.title, content, contentText, type, now, now);
   return toNote(db.prepare("SELECT * FROM notes WHERE id = ?").get(n.id));
 }
 
 export function updateNote(db: Database.Database, id: string, patch: Partial<{
   title: string; content: string; contentText: string;
   tagIds: string[]; linkedNoteIds: string[]; linkedCardIds: string[];
-  isPinned: boolean; archivedAt: string;
+  isPinned: boolean; archivedAt: string; type: "note" | "dashboard";
 }>) {
   const now = ts();
   db.prepare(`
@@ -269,6 +270,7 @@ export function updateNote(db: Database.Database, id: string, patch: Partial<{
       linked_card_ids = COALESCE(?, linked_card_ids),
       is_pinned       = COALESCE(?, is_pinned),
       archived_at     = COALESCE(?, archived_at),
+      type            = COALESCE(?, type),
       updated_at      = ?
     WHERE id = ?
   `).run(
@@ -280,6 +282,7 @@ export function updateNote(db: Database.Database, id: string, patch: Partial<{
     patch.linkedCardIds ? j(patch.linkedCardIds) : null,
     patch.isPinned !== undefined ? (patch.isPinned ? 1 : 0) : null,
     patch.archivedAt ?? null,
+    patch.type ?? null,
     now, id,
   );
   return toNote(db.prepare("SELECT * FROM notes WHERE id = ?").get(id));

@@ -46,7 +46,20 @@ If you are unfamiliar with this workspace or need a full tool/convention referen
 - Use **bold** for key items, bullet lists for multiple items
 - Keep responses concise and actionable
 
-Tone: calm, focused, like a thoughtful co-worker.`;
+## Dashboards
+You can create interactive HTML dashboards that render live inside Cairn using \`create_dashboard\`.
+- The \`html\` field must be a complete, self-contained HTML document with inline CSS and JS only — no external URLs
+- Dashboards have access to \`window.cairn.query(tool, args)\` which returns a Promise with live data from the DB
+- Available query tools: get_cairn_context, get_project_summary, list_tasks, list_notes, list_recent_activity, search_tasks, search_notes
+- Always fetch data dynamically via \`window.cairn.query()\` rather than baking in static data — this keeps dashboards live
+- Call \`update_dashboard\` to update an existing dashboard's HTML (pass the noteId)
+- Dashboards appear in the Notes panel with a grid icon
+
+Example usage in dashboard JS:
+  const summary = await window.cairn.query('get_project_summary', { projectId: 'abc' });
+  const tasks = await window.cairn.query('list_tasks', { projectId: 'abc' });
+
+Tone: calm, focused, like a thoughtful co-worker.\`;
 }
 
 // Tool definitions for the AI (OpenAI function calling format)
@@ -284,6 +297,38 @@ const TOOLS = [
   {
     type: "function",
     function: {
+      name: "create_dashboard",
+      description: "Create a live HTML dashboard in a project. The dashboard renders in a sandboxed iframe inside Cairn. The html must be a complete self-contained HTML document using inline CSS/JS only. Use window.cairn.query(tool, args) in JS to fetch live data — never bake in static values.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          title: { type: "string" },
+          html: { type: "string", description: "Complete self-contained HTML document with inline CSS/JS. Use window.cairn.query() for live data." },
+        },
+        required: ["projectId", "title", "html"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "update_dashboard",
+      description: "Update an existing dashboard's title or HTML. Pass the noteId of the dashboard note.",
+      parameters: {
+        type: "object",
+        properties: {
+          noteId: { type: "string", description: "The dashboard note ID" },
+          title: { type: "string" },
+          html: { type: "string", description: "Updated complete self-contained HTML document" },
+        },
+        required: ["noteId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "generate_prd",
       description: "Generate a structured Product Requirements Document (PRD) from a plain-language description and save it as a note in the project. Returns the created note with its ID.",
       parameters: {
@@ -422,11 +467,12 @@ async function executeTool(db: Database.Database, req: ChatRequest, workspacePat
         projects,
         tools: {
           read:   ["get_cairn_context", "get_active_context", "get_note", "get_task", "list_notes", "list_tasks", "search_notes", "search_tasks", "get_project_summary"],
-          write:  ["create_project", "create_note", "update_note", "create_task", "update_task", "update_task_status", "link_note_to_task"],
+          write:  ["create_project", "create_note", "update_note", "create_task", "update_task", "update_task_status", "link_note_to_task", "create_dashboard", "update_dashboard"],
           delete: ["delete_note", "delete_task"],
         },
         conventions: {
           notes: "Raw markdown in 'content'. 'content_text' is auto-derived — do not set manually.",
+          dashboards: "Use create_dashboard to create a live HTML dashboard rendered in a sandboxed iframe. Always fetch data via window.cairn.query(tool, args) — never bake in static data. Available query tools: get_cairn_context, get_project_summary, list_tasks, list_notes, list_recent_activity, search_tasks, search_notes.",
           tasks: "Always provide columnId (not just projectId) when creating a task.",
           priority: ["low", "medium", "high", "urgent"],
           projectStatus: ["active", "on_hold", "completed", "archived"],
@@ -538,6 +584,25 @@ async function executeTool(db: Database.Database, req: ChatRequest, workspacePat
           cards: snap.cards.filter((c) => c.columnId === col.id && !c.archivedAt).map((c) => ({ id: c.id, title: c.title, priority: c.priority })),
         })),
       };
+    }
+    case "create_dashboard": {
+      const project = snap.projects.find((p) => p.id === args.projectId);
+      if (!project) return { error: "Project not found" };
+      const noteId = newId();
+      const html = (args.html as string) ?? "";
+      const note = q.createNote(db, {
+        id: noteId, projectId: args.projectId, workspaceId: project.workspaceId,
+        title: args.title, content: html, contentText: "", type: "dashboard",
+      });
+      return { id: note.id, title: note.title, type: "dashboard" };
+    }
+    case "update_dashboard": {
+      const existing = snap.notes.find((n) => n.id === args.noteId);
+      if (!existing) return { error: "Dashboard not found" };
+      const patch: { title?: string; content?: string; contentText?: string } = {};
+      if (args.title) patch.title = args.title as string;
+      if (args.html !== undefined) { patch.content = args.html as string; patch.contentText = ""; }
+      return q.updateNote(db, args.noteId as string, patch);
     }
     case "create_note": {
       const project = snap.projects.find((p) => p.id === args.projectId);

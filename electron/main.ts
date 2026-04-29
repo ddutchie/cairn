@@ -123,6 +123,7 @@ app.whenReady().then(async () => {
           "font-src 'self' data: https://fonts.gstatic.com",
           "connect-src 'self' http://localhost:* ws://localhost:*",
           "worker-src blob: 'self'",
+          "frame-src blob:",
         ].join("; ")
       : [
           "default-src 'self' app:",
@@ -133,6 +134,7 @@ app.whenReady().then(async () => {
           "font-src 'self' data: app:",
           "connect-src 'self' app: http://localhost:* https:",
           "worker-src blob: 'self' app:",
+          "frame-src blob:",
         ].join("; ");
 
     callback({

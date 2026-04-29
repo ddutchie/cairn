@@ -29,6 +29,78 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
   ipcMain.handle("db:snapshot", () => q.getFullSnapshot(db));
   ipcMain.handle("db:hasData",  () => q.hasData(db));
 
+  // ── Dashboard live query bridge ───────────────────
+  // Executes read-only MCP-style tool calls from dashboard iframes.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ipcMain.handle("db:mcpQuery", (_e, { tool, args }: { tool: string; args: Record<string, any> }) => {
+    const snap = q.getFullSnapshot(db);
+    switch (tool) {
+      case "get_cairn_context":
+        return {
+          workspaces: snap.workspaces.map((w) => ({ id: w.id, name: w.name })),
+          projects: snap.projects.filter((p) => !p.archivedAt).map((p) => ({
+            id: p.id, name: p.name, status: p.status, priority: p.priority,
+            columns: snap.columns.filter((c) => c.projectId === p.id).sort((a, b) => a.order - b.order)
+              .map((c) => ({ id: c.id, name: c.name, type: c.type })),
+          })),
+        };
+      case "get_project_summary": {
+        const project = snap.projects.find((p) => p.id === args.projectId);
+        if (!project) return { error: "Project not found" };
+        const cols = snap.columns.filter((c) => c.projectId === args.projectId).sort((a, b) => a.order - b.order);
+        return {
+          project: { id: project.id, name: project.name, status: project.status, priority: project.priority, dueDate: project.dueDate },
+          noteCount: snap.notes.filter((n) => n.projectId === args.projectId && !n.archivedAt).length,
+          totalCards: snap.cards.filter((c) => c.projectId === args.projectId && !c.archivedAt).length,
+          cardsByColumn: cols.map((col) => {
+            const cards = snap.cards.filter((c) => c.columnId === col.id && !c.archivedAt);
+            return { columnName: col.name, columnType: col.type, count: cards.length,
+              cards: cards.map((c) => ({ id: c.id, title: c.title, priority: c.priority, dueDate: c.dueDate })) };
+          }),
+        };
+      }
+      case "list_tasks": {
+        const cols = snap.columns.filter((c) => !args.projectId || c.projectId === args.projectId);
+        return cols.sort((a, b) => a.order - b.order).map((col) => ({
+          columnName: col.name, columnType: col.type, columnId: col.id,
+          tasks: snap.cards.filter((c) => c.columnId === col.id && !c.archivedAt)
+            .map((c) => ({ id: c.id, title: c.title, priority: c.priority, description: c.description, dueDate: c.dueDate })),
+        }));
+      }
+      case "list_notes": {
+        return snap.notes.filter((n) => !n.archivedAt && (!args.projectId || n.projectId === args.projectId))
+          .map((n) => ({ id: n.id, title: n.title, projectId: n.projectId, isPinned: n.isPinned, updatedAt: n.updatedAt }));
+      }
+      case "list_recent_activity": {
+        const limit = args.limit ?? 20;
+        return [
+          ...snap.notes.filter((n) => !n.archivedAt && n.workspaceId === args.workspaceId && (!args.projectId || n.projectId === args.projectId))
+            .map((n) => ({ type: "note", id: n.id, title: n.title, projectId: n.projectId, at: n.updatedAt })),
+          ...snap.cards.filter((c) => !c.archivedAt && c.workspaceId === args.workspaceId && (!args.projectId || c.projectId === args.projectId))
+            .map((c) => ({ type: "card", id: c.id, title: c.title, projectId: c.projectId, at: c.updatedAt })),
+        ].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime()).slice(0, limit);
+      }
+      case "search_tasks": {
+        const qr = String(args.query).toLowerCase();
+        return snap.cards.filter((c) => !c.archivedAt &&
+          (!args.projectId || c.projectId === args.projectId) &&
+          (c.title.toLowerCase().includes(qr) || (c.description ?? "").toLowerCase().includes(qr)))
+          .slice(0, args.limit ?? 10)
+          .map((c) => ({ id: c.id, title: c.title, priority: c.priority, columnId: c.columnId }));
+      }
+      case "search_notes": {
+        const qr = String(args.query).toLowerCase();
+        return snap.notes.filter((n) => !n.archivedAt &&
+          (!args.projectId || n.projectId === args.projectId) &&
+          (n.title.toLowerCase().includes(qr) || n.contentText.toLowerCase().includes(qr)))
+          .slice(0, args.limit ?? 10)
+          .map((n) => ({ id: n.id, title: n.title, snippet: n.contentText.slice(0, 200), projectId: n.projectId }));
+      }
+      default:
+        return { error: `Unknown or disallowed tool: ${tool}` };
+    }
+  });
+
   // ── App paths (for MCP config generation) ────────
   ipcMain.handle("app:mcpServerPath", () => {
     const appPath = app.getAppPath();

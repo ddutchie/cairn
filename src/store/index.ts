@@ -105,7 +105,7 @@ interface CairnStore extends PersistedState, AppUIState {
   deleteProject: (id: ID) => void;
 
   // ── Notes ─────────────────────────────────
-  createNote: (projectId: ID, title: string) => Note;
+  createNote: (projectId: ID, title: string, type?: import("@/types").NoteType) => Note;
   updateNote: (id: ID, patch: Partial<Note>) => void;
   deleteNote: (id: ID) => void;
   linkNoteToCard: (noteId: ID, cardId: ID) => void;
@@ -503,7 +503,7 @@ export const useCairnStore = create<CairnStore>()(
     },
 
     // ── Notes ─────────────────────────────────────
-    createNote(projectId, title) {
+    createNote(projectId, title, type = "note") {
       const proj = get().projects.find((p) => p.id === projectId);
       const note: Note = {
         id: id(),
@@ -516,6 +516,7 @@ export const useCairnStore = create<CairnStore>()(
         linkedNoteIds: [],
         linkedCardIds: [],
         isPinned: false,
+        type,
         createdAt: now(),
         updatedAt: now(),
       };

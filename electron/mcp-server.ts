@@ -319,11 +319,12 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
         projects,
         tools: {
           read:   ["get_cairn_context", "search_notes", "search_tasks", "get_note", "get_task", "get_project_summary", "list_recent_activity"],
-          write:  ["create_project", "create_note", "update_note", "create_task", "update_task", "update_task_status", "link_note_to_task"],
+          write:  ["create_project", "create_note", "update_note", "create_task", "update_task", "update_task_status", "link_note_to_task", "create_dashboard", "update_dashboard"],
           delete: ["delete_note", "delete_task"],
         },
         conventions: {
           notes: "Raw markdown in 'content'. 'content_text' is auto-derived — do not set manually.",
+          dashboards: "Use create_dashboard to create an HTML dashboard rendered in a sandboxed iframe inside Cairn. The 'html' field must be a complete, self-contained HTML document. Use inline CSS and JS only — no external URLs. The window.cairn.query(tool, args) API is available for live data from read-only tools.",
           tasks: "Always provide columnId (not just projectId) when creating a task.",
           priority: ["low", "medium", "high", "urgent"],
           projectStatus: ["active", "on_hold", "completed", "archived"],
@@ -413,6 +414,32 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
       ].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime()).slice(0, limit);
     }
 
+    case "create_dashboard": {
+      const { projectId, title, html } = args;
+      const project = snap.projects.find((pr) => pr.id === projectId);
+      if (!project) return { error: "Project not found" };
+      const now = ts();
+      const noteId = newId();
+      db.prepare(`
+        INSERT INTO notes (id, project_id, workspace_id, title, content, content_text,
+          tag_ids, linked_note_ids, linked_card_ids, is_pinned, type, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, '[]', '[]', '[]', 0, 'dashboard', ?, ?)
+      `).run(noteId, projectId, project.workspaceId, title, html ?? "", "", now, now);
+      insertNotification(db, "create_dashboard", "Dashboard created", `"${title}" added to ${project.name}`);
+      return { id: noteId, title, createdAt: now };
+    }
+
+    case "update_dashboard": {
+      const { noteId, title, html } = args;
+      const note = snap.notes.find((n) => n.id === noteId);
+      if (!note) return { error: "Dashboard not found" };
+      const now = ts();
+      db.prepare(`UPDATE notes SET title = COALESCE(?, title), content = COALESCE(?, content), updated_at = ? WHERE id = ?`)
+        .run(title ?? null, html ?? null, now, noteId);
+      insertNotification(db, "update_dashboard", "Dashboard updated", `"${title ?? note.title}" was updated`);
+      return { id: noteId, title: title ?? note.title, updatedAt: now };
+    }
+
     case "create_note": {
       const { projectId, title, content } = args;
       const project = snap.projects.find((pr) => pr.id === projectId);
@@ -422,8 +449,8 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
       const markdown = content ?? "";
       db.prepare(`
         INSERT INTO notes (id, project_id, workspace_id, title, content, content_text,
-          tag_ids, linked_note_ids, linked_card_ids, is_pinned, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, '[]', '[]', '[]', 0, ?, ?)
+          tag_ids, linked_note_ids, linked_card_ids, is_pinned, type, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, '[]', '[]', '[]', 0, 'note', ?, ?)
       `).run(noteId, projectId, project.workspaceId, title, markdown, stripMarkdown(markdown), now, now);
       writeNoteFile(workspacePath, {
         id: noteId, projectId, workspaceId: project.workspaceId, title, content: markdown,
@@ -714,6 +741,10 @@ const TOOL_DEFINITIONS = [
     inputSchema: { type: "object", properties: { projectId: { type: "string" } }, required: [] } },
   { name: "list_tasks",          description: "List all tasks in a project, grouped by column.",
     inputSchema: { type: "object", properties: { projectId: { type: "string" } }, required: [] } },
+  { name: "create_dashboard",    description: "Create a dashboard in a project. The html field must be a complete self-contained HTML document with inline CSS/JS only. Use window.cairn.query(tool, args) for live data from read-only tools. The dashboard is rendered in a sandboxed iframe inside Cairn.",
+    inputSchema: { type: "object", properties: { projectId: { type: "string" }, title: { type: "string" }, html: { type: "string", description: "Complete self-contained HTML document" } }, required: ["projectId", "title", "html"] } },
+  { name: "update_dashboard",    description: "Update an existing dashboard's title or HTML content.",
+    inputSchema: { type: "object", properties: { noteId: { type: "string", description: "The dashboard note ID" }, title: { type: "string" }, html: { type: "string", description: "Complete self-contained HTML document" } }, required: ["noteId"] } },
 ] as const;
 
 // ── MCP server factory ────────────────────────
