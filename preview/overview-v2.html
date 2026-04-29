@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cairn — Overview v2 Preview</title>
+  <style>
+    /* ── Cairn dark tokens (exact match to globals.css) ── */
+    :root, [data-theme="dark"] {
+      --background: #0a0a0a;
+      --surface: #111111;
+      --surface-2: #1a1a1a;
+      --surface-3: #222222;
+      --border: #2a2a2a;
+      --border-subtle: #1f1f1f;
+      --text-primary: #f0f0f0;
+      --text-secondary: #a0a0a0;
+      --text-tertiary: #555555;
+      --accent: #7c6afc;
+      --accent-hover: #6b59eb;
+      --accent-dim: rgba(124,106,252,0.12);
+      --success: #3ecf8e;
+      --warning: #f59e0b;
+      --danger: #f43f5e;
+      --info: #60a5fa;
+    }
+
+    [data-theme="light"] {
+      --background: #f5f5f3;
+      --surface: #ffffff;
+      --surface-2: #f0f0ee;
+      --surface-3: #e8e8e6;
+      --border: #e0e0dc;
+      --border-subtle: #ebebea;
+      --text-primary: #1a1a1a;
+      --text-secondary: #555555;
+      --text-tertiary: #aaaaaa;
+      --accent: #7c6afc;
+      --accent-hover: #6b59eb;
+      --accent-dim: rgba(124,106,252,0.10);
+      --success: #2da870;
+      --warning: #d97706;
+      --danger: #e11d48;
+      --info: #3b82f6;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--background);
+      color: var(--text-primary);
+      min-height: 100vh;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    /* ── Layout shell ── */
+    .shell {
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+    .sidebar {
+      width: 200px;
+      flex-shrink: 0;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      padding: 12px 0;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .sidebar-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      font-size: 12px;
+      color: var(--text-secondary);
+      cursor: pointer;
+      border-radius: 0;
+    }
+    .sidebar-item.active {
+      background: var(--surface-2);
+      color: var(--text-primary);
+    }
+    .sidebar-label {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-tertiary);
+      padding: 12px 14px 4px;
+    }
+    .sidebar-project {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      font-size: 12px;
+      color: var(--text-secondary);
+      cursor: pointer;
+    }
+    .sidebar-project.active { color: var(--text-primary); }
+    .dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+
+    .main { flex: 1; overflow-y: auto; }
+
+    /* ── Theme toggle (top right) ── */
+    .theme-toggle {
+      position: fixed;
+      top: 12px;
+      right: 16px;
+      z-index: 100;
+      display: flex;
+      gap: 6px;
+    }
+    .theme-btn {
+      padding: 5px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text-secondary);
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .theme-btn:hover { color: var(--text-primary); }
+
+    /* ── Overview content ── */
+    .overview {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 32px;
+    }
+
+    /* Header */
+    .header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 28px;
+    }
+    .header-left { flex: 1; min-width: 0; }
+    .project-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 6px;
+    }
+    .project-icon {
+      width: 32px;
+      height: 32px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      flex-shrink: 0;
+    }
+    h1 {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text-primary);
+      letter-spacing: -0.02em;
+    }
+    .project-desc {
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-bottom: 10px;
+      max-width: 480px;
+    }
+    .badges { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .badge {
+      font-size: 11px;
+      font-weight: 500;
+      padding: 2px 8px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+    }
+    .badge-active { color: var(--success); }
+    .badge-date { color: var(--text-tertiary); display: flex; align-items: center; gap: 4px; }
+
+    /* Progress ring area */
+    .progress-area {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+    .progress-label { font-size: 11px; color: var(--text-tertiary); }
+
+    /* ── NEW: Board snapshot strip ── */
+    .board-strip {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 28px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+    }
+    .board-strip::-webkit-scrollbar { display: none; }
+    .col-pill {
+      flex: 1;
+      min-width: 120px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .col-pill:hover { border-color: var(--accent); background: var(--surface-2); }
+    .col-pill-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 6px;
+    }
+    .col-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .col-name { font-size: 11px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.06em; }
+    .col-count { font-size: 18px; font-weight: 700; color: var(--text-primary); margin-bottom: 4px; }
+    .col-tasks { display: flex; flex-direction: column; gap: 2px; }
+    .col-task-item {
+      font-size: 10.5px;
+      color: var(--text-tertiary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* ── Stats row (condensed, 3 stats) ── */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 28px;
+    }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .stat-card:hover { background: var(--surface-2); }
+    .stat-card.danger { border-color: rgba(244,63,94,0.3); }
+    .stat-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      font-size: 14px;
+    }
+    .stat-body { min-width: 0; }
+    .stat-value { font-size: 20px; font-weight: 700; color: var(--text-primary); line-height: 1; }
+    .stat-label { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
+
+    /* ── Due soon ── */
+    .due-list { display: flex; flex-direction: column; gap: 6px; }
+    .due-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .due-item:hover { background: var(--surface-2); border-color: rgba(124,106,252,0.3); }
+    .due-item.overdue { border-color: rgba(244,63,94,0.25); background: rgba(244,63,94,0.04); }
+    .due-item.overdue:hover { background: rgba(244,63,94,0.08); }
+    .due-item.today { border-color: rgba(245,158,11,0.3); background: rgba(245,158,11,0.04); }
+    .priority-stripe {
+      width: 3px;
+      height: 28px;
+      border-radius: 2px;
+      flex-shrink: 0;
+    }
+    .due-title { flex: 1; font-size: 13px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .due-col { font-size: 11px; color: var(--text-tertiary); flex-shrink: 0; }
+    .due-chip {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 7px;
+      border-radius: 20px;
+      flex-shrink: 0;
+    }
+    .due-chip.overdue { background: rgba(244,63,94,0.15); color: var(--danger); }
+    .due-chip.today { background: rgba(245,158,11,0.15); color: var(--warning); }
+    .due-chip.soon { background: rgba(124,106,252,0.12); color: var(--accent); }
+
+    /* ── Sections ── */
+    .section { margin-bottom: 28px; }
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .section-title {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-secondary);
+    }
+    .section-action {
+      font-size: 11px;
+      color: var(--text-tertiary);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      text-decoration: none;
+    }
+    .section-action:hover { color: var(--accent); }
+
+    /* Notes grid */
+    .notes-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .note-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .note-card:hover { background: var(--surface-2); border-color: rgba(124,106,252,0.3); }
+    .note-card.pinned { border-color: rgba(124,106,252,0.2); }
+    .note-pin { display: flex; align-items: center; gap: 4px; font-size: 10px; color: var(--accent); font-weight: 500; margin-bottom: 5px; }
+    .note-title { font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .note-snippet { font-size: 11.5px; color: var(--text-tertiary); line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .note-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
+    .note-time { font-size: 10px; color: var(--text-tertiary); }
+    .note-tags { display: flex; gap: 4px; }
+    .tag-chip {
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: 20px;
+      font-weight: 500;
+    }
+
+    /* Note list rows */
+    .note-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .note-row:hover { background: var(--surface-2); }
+    .note-row-icon { color: var(--text-tertiary); flex-shrink: 0; font-size: 13px; }
+    .note-row-body { flex: 1; min-width: 0; }
+    .note-row-title { font-size: 13px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .note-row:hover .note-row-title { color: var(--text-primary); }
+    .note-row-snippet { font-size: 11px; color: var(--text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .note-row-time { font-size: 10px; color: var(--text-tertiary); flex-shrink: 0; }
+
+    /* SVG icons inline */
+    svg { display: inline-block; vertical-align: middle; }
+  </style>
+</head>
+<body>
+
+<div class="theme-toggle">
+  <button class="theme-btn" onclick="document.documentElement.setAttribute('data-theme','dark')">Dark</button>
+  <button class="theme-btn" onclick="document.documentElement.setAttribute('data-theme','light')">Light</button>
+</div>
+
+<div class="shell">
+
+  <!-- Fake sidebar -->
+  <div class="sidebar">
+    <div style="padding:10px 14px 6px; display:flex; align-items:center; gap:8px;">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--text-tertiary)"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>
+      <span style="font-size:12px;font-weight:600;color:var(--text-secondary)">Personal</span>
+    </div>
+
+    <div class="sidebar-label">Projects</div>
+    <div class="sidebar-project active">
+      <span class="dot" style="background:var(--accent)"></span>
+      Cairn App
+    </div>
+    <div class="sidebar-project">
+      <span class="dot" style="background:#3ecf8e"></span>
+      Website Redesign
+    </div>
+    <div class="sidebar-project">
+      <span class="dot" style="background:#f59e0b"></span>
+      Q3 Planning
+    </div>
+
+    <div style="flex:1"></div>
+
+    <div class="sidebar-label">Views</div>
+    <div class="sidebar-item active">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+      Overview
+    </div>
+    <div class="sidebar-item">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/></svg>
+      Notes
+    </div>
+    <div class="sidebar-item">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+      Board
+    </div>
+  </div>
+
+  <!-- Main content -->
+  <div class="main">
+    <div class="overview">
+
+      <!-- Header -->
+      <div class="header">
+        <div class="header-left">
+          <div class="project-title">
+            <div class="project-icon">🗂️</div>
+            <h1>Cairn App</h1>
+          </div>
+          <p class="project-desc">Local-first project management with AI chat and MCP server.</p>
+          <div class="badges">
+            <span class="badge badge-active">● active</span>
+            <span class="badge badge-date">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+              Due May 30
+            </span>
+          </div>
+        </div>
+
+        <!-- Progress ring -->
+        <div class="progress-area">
+          <svg width="72" height="72" style="transform:rotate(-90deg)">
+            <circle cx="36" cy="36" r="28" stroke="var(--border)" stroke-width="5" fill="none"/>
+            <circle cx="36" cy="36" r="28" stroke="var(--accent)" stroke-width="5" fill="none"
+              stroke-dasharray="175.9" stroke-dashoffset="44" stroke-linecap="round"
+              style="transition:stroke-dashoffset 0.6s ease"/>
+            <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle"
+              style="transform:rotate(90deg);transform-origin:50% 50%;font-size:12px;font-weight:700;fill:var(--text-primary)">75%</text>
+          </svg>
+          <span class="progress-label">9 / 12 done</span>
+        </div>
+      </div>
+
+      <!-- Stats row — 3 meaningful stats -->
+      <div class="stats-row">
+        <div class="stat-card" onclick="">
+          <div class="stat-icon" style="background:rgba(96,165,250,0.12)">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          </div>
+          <div class="stat-body">
+            <div class="stat-value">6</div>
+            <div class="stat-label">Notes</div>
+          </div>
+        </div>
+        <div class="stat-card" onclick="">
+          <div class="stat-icon" style="background:rgba(124,106,252,0.12)">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+          </div>
+          <div class="stat-body">
+            <div class="stat-value">3</div>
+            <div class="stat-label">Open tasks</div>
+          </div>
+        </div>
+        <div class="stat-card danger" onclick="">
+          <div class="stat-icon" style="background:rgba(244,63,94,0.12)">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          </div>
+          <div class="stat-body">
+            <div class="stat-value" style="color:var(--danger)">2</div>
+            <div class="stat-label">Overdue</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Board snapshot strip -->
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+            Board
+          </div>
+          <a class="section-action" href="#">View board →</a>
+        </div>
+        <div class="board-strip">
+          <div class="col-pill">
+            <div class="col-pill-header">
+              <span class="col-dot" style="background:#666360"></span>
+              <span class="col-name">Backlog</span>
+            </div>
+            <div class="col-count">0</div>
+            <div class="col-tasks">
+              <span class="col-task-item" style="color:var(--border)">—</span>
+            </div>
+          </div>
+          <div class="col-pill">
+            <div class="col-pill-header">
+              <span class="col-dot" style="background:#60a5fa"></span>
+              <span class="col-name">Todo</span>
+            </div>
+            <div class="col-count">2</div>
+            <div class="col-tasks">
+              <span class="col-task-item">Note backlinks panel</span>
+              <span class="col-task-item">Column reorder</span>
+            </div>
+          </div>
+          <div class="col-pill" style="border-color:rgba(245,158,11,0.3)">
+            <div class="col-pill-header">
+              <span class="col-dot" style="background:#f59e0b"></span>
+              <span class="col-name">In Progress</span>
+            </div>
+            <div class="col-count" style="color:var(--warning)">3</div>
+            <div class="col-tasks">
+              <span class="col-task-item">Chat streaming</span>
+              <span class="col-task-item">Card archive</span>
+              <span class="col-task-item">Overview redesign</span>
+            </div>
+          </div>
+          <div class="col-pill" style="border-color:rgba(167,139,250,0.2)">
+            <div class="col-pill-header">
+              <span class="col-dot" style="background:#a78bfa"></span>
+              <span class="col-name">Review</span>
+            </div>
+            <div class="col-count">1</div>
+            <div class="col-tasks">
+              <span class="col-task-item">MCP tool parity</span>
+            </div>
+          </div>
+          <div class="col-pill" style="border-color:rgba(62,207,142,0.2)">
+            <div class="col-pill-header">
+              <span class="col-dot" style="background:#3ecf8e"></span>
+              <span class="col-name">Done</span>
+            </div>
+            <div class="col-count" style="color:var(--success)">9</div>
+            <div class="col-tasks">
+              <span class="col-task-item">Light mode theming</span>
+              <span class="col-task-item">Search deep-links</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Due soon -->
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            Due soon
+          </div>
+        </div>
+        <div class="due-list">
+          <div class="due-item overdue">
+            <div class="priority-stripe" style="background:var(--danger)"></div>
+            <span class="due-title">Set up CI/CD signing certificates</span>
+            <span class="due-col">Todo</span>
+            <span class="due-chip overdue">3d overdue</span>
+          </div>
+          <div class="due-item overdue">
+            <div class="priority-stripe" style="background:var(--danger)"></div>
+            <span class="due-title">Write v0.3.3 release notes</span>
+            <span class="due-col">In Progress</span>
+            <span class="due-chip overdue">1d overdue</span>
+          </div>
+          <div class="due-item today">
+            <div class="priority-stripe" style="background:var(--warning)"></div>
+            <span class="due-title">Overview page redesign — ship preview</span>
+            <span class="due-col">In Progress</span>
+            <span class="due-chip today">Today</span>
+          </div>
+          <div class="due-item">
+            <div class="priority-stripe" style="background:var(--accent)"></div>
+            <span class="due-title">MCP tool parity audit</span>
+            <span class="due-col">Review</span>
+            <span class="due-chip soon">in 3d</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pinned notes as cards -->
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 00-1.11-1.79l-1.78-.9A2 2 0 0115 10.76V6h1a2 2 0 000-4H8a2 2 0 000 4h1v4.76a2 2 0 01-1.11 1.79l-1.78.9A2 2 0 005 15.24V17z"/></svg>
+            Pinned
+          </div>
+          <a class="section-action" href="#">All notes →</a>
+        </div>
+        <div class="notes-grid">
+          <div class="note-card pinned">
+            <div class="note-pin">📌 Pinned</div>
+            <div class="note-title">Architecture Overview</div>
+            <div class="note-snippet">Cairn is a local-first desktop app built with Electron + Next.js. All data lives in SQLite at the workspace path. The MCP server runs as a standalone…</div>
+            <div class="note-footer">
+              <span class="note-time">5h ago</span>
+              <div class="note-tags">
+                <span class="tag-chip" style="background:rgba(96,165,250,0.15);color:#60a5fa">arch</span>
+              </div>
+            </div>
+          </div>
+          <div class="note-card pinned">
+            <div class="note-pin">📌 Pinned</div>
+            <div class="note-title">💡 Ideas for Cairn</div>
+            <div class="note-snippet">A living document for feature ideas, improvements, and future direction. Version history diff view. Collaborative editing via CRDTs…</div>
+            <div class="note-footer">
+              <span class="note-time">5h ago</span>
+              <div class="note-tags">
+                <span class="tag-chip" style="background:rgba(124,106,252,0.15);color:var(--accent)">ideas</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Recent notes list -->
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            Recent notes
+          </div>
+          <a class="section-action" href="#">All notes →</a>
+        </div>
+        <div>
+          <div class="note-row">
+            <svg class="note-row-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            <div class="note-row-body">
+              <div class="note-row-title">v0.3.2 Planning</div>
+              <div class="note-row-snippet">Goal: Ship the remaining CRUD and UX features that were deferred from v0.3.x.</div>
+            </div>
+            <span class="note-row-time">33m ago</span>
+          </div>
+          <div class="note-row">
+            <svg class="note-row-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            <div class="note-row-body">
+              <div class="note-row-title">v0.2.0 Planning</div>
+              <div class="note-row-snippet">Theme Polish & completeness. Everything in 0.1.0 works but several rough edges remain.</div>
+            </div>
+            <span class="note-row-time">2h ago</span>
+          </div>
+          <div class="note-row">
+            <svg class="note-row-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            <div class="note-row-body">
+              <div class="note-row-title">MCP Server Guide</div>
+              <div class="note-row-snippet">How to connect Cairn's MCP server to Claude Desktop, Cursor, and OpenCode.</div>
+            </div>
+            <span class="note-row-time">yesterday</span>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /overview -->
+  </div><!-- /main -->
+</div><!-- /shell -->
+
+</body>
+</html>
