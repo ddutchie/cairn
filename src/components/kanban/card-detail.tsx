@@ -14,6 +14,7 @@ import {
   Copy,
   X,
   ArrowRight,
+  FolderInput,
 } from "lucide-react";
 import {
   Dialog,
@@ -46,14 +47,18 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
     archiveCard,
     duplicateCard,
     unlinkNoteFromCard,
+    moveCardToProject,
     getTagById,
     tags,
     getProjectNotes,
     linkNoteToCard,
     setView,
+    activeWorkspaceId,
+    getWorkspaceProjects,
   } = useCairnStore();
 
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [moveToProjectOpen, setMoveToProjectOpen] = useState(false);
 
   const card = cards.find((c) => c.id === cardId);
   if (!card) return null;
@@ -67,6 +72,8 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
   const linkedNotes = card.linkedNoteIds.map((nId) => notes.find((n) => n.id === nId)).filter(Boolean);
   const projectNotes = getProjectNotes(card.projectId);
   const projectTags = tags.filter((t) => t.workspaceId === card.workspaceId);
+  const otherProjects = (activeWorkspaceId ? getWorkspaceProjects(activeWorkspaceId) : projects)
+    .filter((p) => p.id !== card.projectId && !p.archivedAt);
 
   function handleDelete() {
     deleteCard(cardId);
@@ -315,6 +322,32 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
                 <Archive size={10} />
                 Archive
               </Button>
+              {otherProjects.length > 0 && (
+                <div>
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    className="w-full justify-start text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
+                    onClick={() => setMoveToProjectOpen((o) => !o)}
+                  >
+                    <FolderInput size={10} />
+                    Move to project
+                  </Button>
+                  {moveToProjectOpen && (
+                    <div className="mt-1 space-y-0.5 pl-1 border-l border-[var(--border)]">
+                      {otherProjects.map((p) => (
+                        <button
+                          key={p.id}
+                          onClick={() => { moveCardToProject(cardId, p.id); onClose(); }}
+                          className="w-full text-left px-2 py-1 rounded text-[10px] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors truncate"
+                        >
+                          {p.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="border-t border-[var(--border)] pt-1.5">
                 {confirmDelete ? (
                   <div className="space-y-1">

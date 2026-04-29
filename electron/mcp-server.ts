@@ -298,7 +298,7 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
         projects,
         tools: {
           read:   ["get_cairn_context", "search_notes", "search_tasks", "get_note", "get_task", "get_project_summary", "list_recent_activity"],
-          write:  ["create_project", "create_note", "update_note", "create_task", "update_task_status", "link_note_to_task"],
+          write:  ["create_project", "create_note", "update_note", "create_task", "update_task", "update_task_status", "link_note_to_task"],
           delete: ["delete_note", "delete_task"],
         },
         conventions: {

@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Plus, MoreHorizontal, Pencil, Trash2, GripVertical } from "lucide-react";
+import { Plus, MoreHorizontal, Pencil, Trash2, GripVertical, ArchiveRestore, ChevronDown, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -27,25 +27,37 @@ const COLUMN_ACCENT: Record<string, string> = {
   custom: "#9ca3af",
 };
 
+interface NewCardData {
+  title: string;
+  dueDate?: string;
+  assignee?: string;
+}
+
 interface KanbanColumnProps {
   column: BoardColumn;
   cards: TaskCard[];
+  archivedCards: TaskCard[];
   onCardClick: (cardId: string) => void;
-  onAddCard: (title: string) => void;
+  onAddCard: (data: NewCardData) => void;
   onRename: (name: string) => void;
   onDelete: () => void;
+  onRestoreCard: (cardId: string) => void;
   isDragOver: boolean;
   isColumnDragging?: boolean;
+  isHighlighted?: boolean;
 }
 
 export function KanbanColumn({
-  column, cards, onCardClick, onAddCard, onRename, onDelete, isDragOver, isColumnDragging,
+  column, cards, archivedCards, onCardClick, onAddCard, onRename, onDelete, onRestoreCard, isDragOver, isColumnDragging, isHighlighted,
 }: KanbanColumnProps) {
   const [isAddingCard, setIsAddingCard] = useState(false);
   const [newCardTitle, setNewCardTitle] = useState("");
+  const [newCardDueDate, setNewCardDueDate] = useState("");
+  const [newCardAssignee, setNewCardAssignee] = useState("");
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(column.name);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
   const renameInputRef = useRef<HTMLInputElement>(null);
 
   const { setNodeRef: setDropRef } = useDroppable({ id: column.id });
@@ -82,15 +94,21 @@ export function KanbanColumn({
 
   function handleAddCard() {
     if (newCardTitle.trim()) {
-      onAddCard(newCardTitle.trim());
+      onAddCard({
+        title: newCardTitle.trim(),
+        dueDate: newCardDueDate || undefined,
+        assignee: newCardAssignee.trim() || undefined,
+      });
       setNewCardTitle("");
+      setNewCardDueDate("");
+      setNewCardAssignee("");
       setIsAddingCard(false);
     }
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === "Enter") handleAddCard();
-    if (e.key === "Escape") { setIsAddingCard(false); setNewCardTitle(""); }
+    if (e.key === "Escape") { setIsAddingCard(false); setNewCardTitle(""); setNewCardDueDate(""); setNewCardAssignee(""); }
   }
 
   return (
@@ -124,6 +142,8 @@ export function KanbanColumn({
           "flex flex-col w-56 rounded-xl border flex-shrink-0 transition-colors duration-150",
           isDragOver
             ? "border-[var(--accent)]/50 bg-[var(--accent-dim)]"
+            : isHighlighted
+            ? "border-[var(--accent)] bg-[var(--accent-dim)]"
             : "border-[var(--border)] bg-[var(--surface)]",
           isColumnDragging && "shadow-xl"
         )}
@@ -210,12 +230,45 @@ export function KanbanColumn({
                 Drop here or add card
               </div>
             )}
+
+            {/* Archived cards section */}
+            {archivedCards.length > 0 && (
+              <div className="pt-1">
+                <button
+                  onClick={() => setShowArchived((v) => !v)}
+                  className="flex items-center gap-1.5 w-full px-1 py-1 text-[10.5px] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
+                >
+                  {showArchived ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+                  {archivedCards.length} archived
+                </button>
+                {showArchived && (
+                  <div className="space-y-1.5 mt-1">
+                    {archivedCards.map((card) => (
+                      <div
+                        key={card.id}
+                        className="flex items-center gap-2 px-2 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] opacity-60"
+                      >
+                        <span className="flex-1 text-[11px] text-[var(--text-secondary)] truncate">{card.title}</span>
+                        <Tooltip content="Restore card">
+                          <button
+                            onClick={() => onRestoreCard(card.id)}
+                            className="flex-shrink-0 p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--accent-dim)] transition-colors"
+                          >
+                            <ArchiveRestore size={11} />
+                          </button>
+                        </Tooltip>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </SortableContext>
 
         {/* Add card */}
         {isAddingCard ? (
-          <div className="p-2 border-t border-[var(--border)] space-y-2">
+          <div className="p-2 border-t border-[var(--border)] space-y-1.5">
             <textarea
               autoFocus
               value={newCardTitle}
@@ -226,8 +279,23 @@ export function KanbanColumn({
               className="w-full px-2.5 py-2 text-xs rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] resize-none"
             />
             <div className="flex gap-1.5">
+              <input
+                type="text"
+                value={newCardAssignee}
+                onChange={(e) => setNewCardAssignee(e.target.value)}
+                placeholder="Assignee"
+                className="flex-1 px-2 py-1.5 text-xs rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)]"
+              />
+              <input
+                type="date"
+                value={newCardDueDate}
+                onChange={(e) => setNewCardDueDate(e.target.value)}
+                className="flex-1 px-2 py-1.5 text-xs rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-secondary)] focus:outline-none focus:border-[var(--accent)]"
+              />
+            </div>
+            <div className="flex gap-1.5">
               <Button variant="accent" size="xs" onClick={handleAddCard}>Add</Button>
-              <Button variant="ghost" size="xs" onClick={() => { setIsAddingCard(false); setNewCardTitle(""); }}>Cancel</Button>
+              <Button variant="ghost" size="xs" onClick={() => { setIsAddingCard(false); setNewCardTitle(""); setNewCardDueDate(""); setNewCardAssignee(""); }}>Cancel</Button>
             </div>
           </div>
         ) : (

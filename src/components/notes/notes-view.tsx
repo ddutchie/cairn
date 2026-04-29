@@ -14,7 +14,10 @@ import {
   X,
   FolderOpen,
   Archive,
+  ArchiveRestore,
   FolderInput,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { cn, formatRelative } from "@/lib/utils";
@@ -35,10 +38,12 @@ export function NotesView() {
     activeProjectId,
     activeWorkspaceId,
     getProjectNotes,
+    getArchivedProjectNotes,
     createNote,
     updateNote,
     deleteNote,
     archiveNote,
+    restoreNote,
     moveNoteToProject,
     aiConfig,
     getProjectColumns,
@@ -52,8 +57,10 @@ export function NotesView() {
   const [activeTagId, setActiveTagId] = useState<string | null>(null);
   const [prdModalOpen, setPrdModalOpen] = useState(false);
   const [moveNoteId, setMoveNoteId] = useState<string | null>(null);
+  const [showArchivedNotes, setShowArchivedNotes] = useState(false);
 
   const notes = activeProjectId ? getProjectNotes(activeProjectId) : [];
+  const archivedNotes = activeProjectId ? getArchivedProjectNotes(activeProjectId) : [];
   const workspaceProjects = activeWorkspaceId ? getWorkspaceProjects(activeWorkspaceId) : [];
   const workspaceTags = tags.filter((t) => t.workspaceId === activeWorkspaceId);
   // Tags that appear on at least one note in this project
@@ -226,6 +233,27 @@ export function NotesView() {
                 }}
               />
             ))
+          )}
+
+          {/* Archived notes section */}
+          {archivedNotes.length > 0 && (
+            <div className="mt-1 border-t border-[var(--border-subtle)]">
+              <button
+                onClick={() => setShowArchivedNotes((v) => !v)}
+                className="flex items-center gap-1.5 w-full px-3 py-2 text-[10.5px] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
+              >
+                {showArchivedNotes ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+                {archivedNotes.length} archived
+              </button>
+              {showArchivedNotes && archivedNotes.map((note) => (
+                <ArchivedNoteListItem
+                  key={note.id}
+                  note={note}
+                  onRestore={() => restoreNote(note.id)}
+                  onDelete={() => handleDelete(note.id)}
+                />
+              ))}
+            </div>
           )}
         </div>
 
@@ -544,6 +572,54 @@ function NoteListItem({ note, isActive, onClick, onPin, onDelete, onArchive, onM
       <span className="text-[10px] text-[var(--text-tertiary)] opacity-60">
         {formatRelative(note.updatedAt)}
       </span>
+    </div>
+  );
+}
+
+// ── Archived note row ────────────────────────────────────────────────────────
+
+interface ArchivedNoteListItemProps {
+  note: Note;
+  onRestore: () => void;
+  onDelete: () => void;
+}
+
+function ArchivedNoteListItem({ note, onRestore, onDelete }: ArchivedNoteListItemProps) {
+  return (
+    <div className="group flex items-center gap-1.5 px-3 py-2 opacity-50 hover:opacity-80 transition-opacity">
+      <span className="flex-1 text-[11px] text-[var(--text-secondary)] truncate">{note.title}</span>
+      <Tooltip content="Restore note">
+        <button
+          onClick={(e) => { e.stopPropagation(); onRestore(); }}
+          className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--accent-dim)] transition-all"
+        >
+          <ArchiveRestore size={11} />
+        </button>
+      </Tooltip>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            onClick={(e) => e.stopPropagation()}
+            className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-all"
+          >
+            <MoreHorizontal size={11} />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onRestore(); }}>
+            <ArchiveRestore size={12} />
+            Restore
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onClick={(e) => { e.stopPropagation(); onDelete(); }}
+            className="text-red-400 hover:text-red-300"
+          >
+            <Trash2 size={12} />
+            Delete permanently
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }

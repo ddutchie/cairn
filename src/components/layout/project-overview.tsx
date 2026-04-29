@@ -232,7 +232,13 @@ export function ProjectOverview() {
                   key={col.id}
                   column={col}
                   cards={getColumnCards(col.id)}
-                  onClick={() => setView("board")}
+                  onClick={() => {
+                    setView("board");
+                    // Small delay so the board has mounted before we dispatch
+                    setTimeout(() => {
+                      window.dispatchEvent(new CustomEvent("cairn:scroll-to-column", { detail: { columnId: col.id } }));
+                    }, 50);
+                  }}
                 />
               ))}
             </div>

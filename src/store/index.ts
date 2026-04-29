@@ -115,17 +115,20 @@ interface CairnStore extends PersistedState, AppUIState {
   updateColumn: (id: ID, patch: Partial<Pick<BoardColumn, "name" | "order">>) => void;
   deleteColumn: (id: ID) => void;
   reorderColumns: (projectId: ID, columnIds: ID[]) => void;
-  createCard: (columnId: ID, projectId: ID, title: string) => TaskCard;
+  createCard: (columnId: ID, projectId: ID, title: string, extras?: { dueDate?: string; assignee?: string }) => TaskCard;
   updateCard: (id: ID, patch: Partial<TaskCard>) => void;
   moveCard: (cardId: ID, targetColumnId: ID, targetIndex: number) => void;
   deleteCard: (id: ID) => void;
   reorderCards: (columnId: ID, cardIds: ID[]) => void;
   archiveCard: (id: ID) => void;
+  restoreCard: (id: ID) => void;
+  moveCardToProject: (cardId: ID, targetProjectId: ID) => void;
   duplicateCard: (id: ID) => TaskCard | null;
   unlinkNoteFromCard: (noteId: ID, cardId: ID) => void;
 
   // ── Notes extras ─────────────────────────
   archiveNote: (id: ID) => void;
+  restoreNote: (id: ID) => void;
   moveNoteToProject: (noteId: ID, targetProjectId: ID) => void;
 
   // ── Chat ──────────────────────────────────
@@ -145,8 +148,10 @@ interface CairnStore extends PersistedState, AppUIState {
 
   // ── Derived helpers ───────────────────────
   getProjectNotes: (projectId: ID) => Note[];
+  getArchivedProjectNotes: (projectId: ID) => Note[];
   getProjectColumns: (projectId: ID) => BoardColumn[];
   getColumnCards: (columnId: ID) => TaskCard[];
+  getArchivedColumnCards: (columnId: ID) => TaskCard[];
   getProjectCards: (projectId: ID) => TaskCard[];
   getTagById: (id: ID) => Tag | undefined;
   createTag: (workspaceId: ID, name: string, color?: string) => Tag;
@@ -581,7 +586,7 @@ export const useCairnStore = create<CairnStore>()(
       return col;
     },
 
-    createCard(columnId, projectId, title) {
+    createCard(columnId, projectId, title, extras) {
       const col = get().columns.find((c) => c.id === columnId);
       const cards = get().cards.filter((c) => c.columnId === columnId);
       const card: TaskCard = {
@@ -596,6 +601,8 @@ export const useCairnStore = create<CairnStore>()(
         order: cards.length,
         createdAt: now(),
         updatedAt: now(),
+        ...(extras?.dueDate ? { dueDate: extras.dueDate } : {}),
+        ...(extras?.assignee ? { assignee: extras.assignee } : {}),
       };
       set((s) => ({ cards: [...s.cards, card] }));
       get().persist();
@@ -651,6 +658,29 @@ export const useCairnStore = create<CairnStore>()(
       get().persist();
       // Persist column change and reordering to SQLite
       ipc((e) => e.card.update(cardId, { columnId: targetColumnId, order: targetIndex }));
+    },
+
+    moveCardToProject(cardId, targetProjectId) {
+      const state = get();
+      const card = state.cards.find((c) => c.id === cardId);
+      const targetProject = state.projects.find((p) => p.id === targetProjectId);
+      if (!card || !targetProject) return;
+      // Land in the target project's backlog (or first column)
+      const targetColumns = state.columns
+        .filter((c) => c.projectId === targetProjectId)
+        .sort((a, b) => a.order - b.order);
+      const targetColumn = targetColumns.find((c) => c.type === "backlog") ?? targetColumns[0];
+      if (!targetColumn) return;
+      const order = state.cards.filter((c) => c.columnId === targetColumn.id && !c.archivedAt).length;
+      set((s) => ({
+        cards: s.cards.map((c) =>
+          c.id === cardId
+            ? { ...c, projectId: targetProjectId, workspaceId: targetProject.workspaceId, columnId: targetColumn.id, order, updatedAt: now() }
+            : c
+        ),
+      }));
+      get().persist();
+      ipc((e) => e.card.update(cardId, { projectId: targetProjectId, workspaceId: targetProject.workspaceId, columnId: targetColumn.id, order }));
     },
 
     deleteCard(cardId) {
@@ -716,6 +746,16 @@ export const useCairnStore = create<CairnStore>()(
       ipc((e) => e.card.update(cardId, { archivedAt }));
     },
 
+    restoreCard(cardId) {
+      set((s) => ({
+        cards: s.cards.map((c) =>
+          c.id === cardId ? { ...c, archivedAt: undefined, updatedAt: now() } : c
+        ),
+      }));
+      get().persist();
+      ipc((e) => e.card.update(cardId, { archivedAt: null }));
+    },
+
     duplicateCard(cardId) {
       const card = get().cards.find((c) => c.id === cardId);
       if (!card) return null;
@@ -762,6 +802,16 @@ export const useCairnStore = create<CairnStore>()(
       }));
       get().persist();
       ipc((e) => e.note.update(noteId, { archivedAt }));
+    },
+
+    restoreNote(noteId) {
+      set((s) => ({
+        notes: s.notes.map((n) =>
+          n.id === noteId ? { ...n, archivedAt: undefined, updatedAt: now() } : n
+        ),
+      }));
+      get().persist();
+      ipc((e) => e.note.update(noteId, { archivedAt: null }));
     },
 
     moveNoteToProject(noteId, targetProjectId) {
@@ -856,6 +906,12 @@ export const useCairnStore = create<CairnStore>()(
         });
     },
 
+    getArchivedProjectNotes(projectId) {
+      return get()
+        .notes.filter((n) => n.projectId === projectId && !!n.archivedAt)
+        .sort((a, b) => new Date(b.archivedAt!).getTime() - new Date(a.archivedAt!).getTime());
+    },
+
     getProjectColumns(projectId) {
       return get()
         .columns.filter((c) => c.projectId === projectId)
@@ -866,6 +922,12 @@ export const useCairnStore = create<CairnStore>()(
       return get()
         .cards.filter((c) => c.columnId === columnId && !c.archivedAt)
         .sort((a, b) => a.order - b.order);
+    },
+
+    getArchivedColumnCards(columnId) {
+      return get()
+        .cards.filter((c) => c.columnId === columnId && !!c.archivedAt)
+        .sort((a, b) => new Date(b.archivedAt!).getTime() - new Date(a.archivedAt!).getTime());
     },
 
     getProjectCards(projectId) {

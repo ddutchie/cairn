@@ -25,6 +25,12 @@ export function NoteEditor({ note }: NoteEditorProps) {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [mode, setMode] = useState<EditorMode>("write");
+  const [wordCount, setWordCount] = useState(() => countWords(note.content ?? ""));
+  // Reset when switching notes
+  useEffect(() => {
+    setWordCount(countWords(note.content ?? ""));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [note.id]);
 
   // Spawn tasks state
   const [spawnLoading, setSpawnLoading] = useState(false);
@@ -39,6 +45,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
   // ── Save ──────────────────────────────────────────────────────────────────
   const handleContentChange = useCallback(
     (markdown: string) => {
+      setWordCount(countWords(markdown));
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(() => {
         updateNote(note.id, {
@@ -240,6 +247,9 @@ export function NoteEditor({ note }: NoteEditorProps) {
               {note.isPinned ? <PinOff size={13} /> : <Pin size={13} />}
             </button>
           </Tooltip>
+          <span className="text-[11px] text-[var(--text-tertiary)]">
+            {wordCount.toLocaleString()} {wordCount === 1 ? "word" : "words"} · {Math.max(1, Math.ceil(wordCount / 200))} min read
+          </span>
           <span className="text-[11px] text-[var(--text-tertiary)] flex items-center gap-1">
             <Calendar size={10} />
             {formatRelative(note.updatedAt)}
@@ -503,6 +513,21 @@ function NoteTagBar({ note, workspaceTags, onToggleTag, onCreateTag, getTagById 
       </div>
     </div>
   );
+}
+
+/** Count words in markdown content (strips syntax first) */
+function countWords(md: string): number {
+  const text = md
+    .replace(/```[\s\S]*?```/g, "")
+    .replace(/`[^`]*`/g, "")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/[*_~]/g, "")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/!\[[^\]]*\]\([^)]+\)/g, "")
+    .replace(/https?:\/\/\S+/g, "")
+    .trim();
+  if (!text) return 0;
+  return text.split(/\s+/).filter(Boolean).length;
 }
 
 /** Strip markdown syntax to get plain text for search indexing */

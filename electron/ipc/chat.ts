@@ -315,6 +315,26 @@ const TOOLS = [
   {
     type: "function",
     function: {
+      name: "update_task",
+      description: "Update a task card's fields. All fields except taskId are optional — only provided fields are changed.",
+      parameters: {
+        type: "object",
+        properties: {
+          taskId:      { type: "string", description: "ID of the task card to update" },
+          title:       { type: "string" },
+          description: { type: "string" },
+          priority:    { type: "string", enum: ["low", "medium", "high", "urgent"] },
+          dueDate:     { type: "string", description: "ISO date string e.g. 2026-05-01, or empty string to clear" },
+          columnId:    { type: "string", description: "Move to this column ID" },
+          assignee:    { type: "string", description: "Assignee name, or empty string to clear" },
+        },
+        required: ["taskId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "link_note_to_task",
       description: "Bidirectionally link a note and a task card. The note gains the card in linkedCardIds, the card gains the note in linkedNoteIds.",
       parameters: {
@@ -368,6 +388,7 @@ const TOOL_LABELS: Record<string, (args: Record<string, unknown>) => string> = {
   update_note:            () => "Updating note",
   create_task:            (a) => `Creating task "${a.title}"`,
   update_task_status:     () => "Moving task",
+  update_task:            () => "Updating task",
   create_project:         (a) => `Creating project "${a.name}"`,
   delete_note:            () => "Deleting note",
   delete_task:            () => "Deleting task",
@@ -401,7 +422,7 @@ async function executeTool(db: Database.Database, req: ChatRequest, workspacePat
         projects,
         tools: {
           read:   ["get_cairn_context", "get_active_context", "get_note", "get_task", "list_notes", "list_tasks", "search_notes", "search_tasks", "get_project_summary"],
-          write:  ["create_project", "create_note", "update_note", "create_task", "update_task_status", "link_note_to_task"],
+          write:  ["create_project", "create_note", "update_note", "create_task", "update_task", "update_task_status", "link_note_to_task"],
           delete: ["delete_note", "delete_task"],
         },
         conventions: {
@@ -685,6 +706,19 @@ async function executeTool(db: Database.Database, req: ChatRequest, workspacePat
       writeNoteFile(workspacePath, { ...updatedNote, projectName: project?.name ?? col.projectId });
 
       return { tasksCreated: createdCards.length, tasks: createdCards, noteId: args.noteId };
+    }
+    case "update_task": {
+      const card = snap.cards.find((c) => c.id === args.taskId);
+      if (!card) return { error: "Task not found" };
+      const patch: Record<string, unknown> = {};
+      if (args.title !== undefined)       patch.title       = args.title;
+      if (args.description !== undefined) patch.description = args.description;
+      if (args.priority !== undefined)    patch.priority    = args.priority;
+      if (args.dueDate !== undefined)     patch.dueDate     = args.dueDate || undefined;
+      if (args.columnId !== undefined)    patch.columnId    = args.columnId;
+      if (args.assignee !== undefined)    patch.assignee    = args.assignee || undefined;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return q.updateCard(db, args.taskId as string, patch as any);
     }
     case "link_note_to_task": {
       const note = snap.notes.find((n) => n.id === args.noteId);

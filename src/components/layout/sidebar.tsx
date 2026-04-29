@@ -405,7 +405,8 @@ function ProjectItem({
             className="flex items-center gap-1.5 flex-1 min-w-0 text-left"
           >
             <ProjectIcon name={project.icon} size={13} className="text-[var(--text-tertiary)] flex-shrink-0" />
-            <span className="text-xs font-medium truncate">{project.name}</span>
+            <span className="text-xs font-medium truncate flex-1">{project.name}</span>
+            {project.dueDate && <DueDateDot dueDate={project.dueDate} />}
           </button>
         )}
         <DropdownMenu>
@@ -483,6 +484,28 @@ function ProjectItem({
     </div>
     </>
   );
+}
+
+function DueDateDot({ dueDate }: { dueDate: string }) {
+  const now = new Date();
+  const due = new Date(dueDate);
+  const diffDays = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
+  if (diffDays < 0) {
+    return (
+      <Tooltip content={`Overdue — due ${due.toLocaleDateString()}`} side="right">
+        <span className="w-1.5 h-1.5 rounded-full bg-[var(--danger)] flex-shrink-0" />
+      </Tooltip>
+    );
+  }
+  if (diffDays <= 7) {
+    return (
+      <Tooltip content={`Due in ${diffDays} day${diffDays !== 1 ? "s" : ""}`} side="right">
+        <span className="w-1.5 h-1.5 rounded-full bg-[var(--warning)] flex-shrink-0" />
+      </Tooltip>
+    );
+  }
+  return null;
 }
 
 function NavItem({

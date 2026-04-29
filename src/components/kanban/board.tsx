@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -31,12 +31,14 @@ export function KanbanBoard() {
     activeProjectId,
     getProjectColumns,
     getColumnCards,
+    getArchivedColumnCards,
     moveCard,
     createColumn,
     createCard,
     updateColumn,
     deleteColumn,
     reorderColumns,
+    restoreCard,
   } = useCairnStore();
 
   // The active dragged item — either a card or a column
@@ -132,6 +134,28 @@ export function KanbanBoard() {
     return () => window.removeEventListener("cairn:open-card", handler);
   }, []);
 
+  // Column element refs for scroll-to-column deep-links
+  const columnRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const boardScrollRef = useRef<HTMLDivElement | null>(null);
+  const [highlightedColumnId, setHighlightedColumnId] = useState<string | null>(null);
+
+  const scrollToColumn = useCallback((columnId: string) => {
+    const el = columnRefs.current[columnId];
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+    setHighlightedColumnId(columnId);
+    setTimeout(() => setHighlightedColumnId(null), 1200);
+  }, []);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { columnId } = (e as CustomEvent).detail;
+      scrollToColumn(columnId);
+    };
+    window.addEventListener("cairn:scroll-to-column", handler);
+    return () => window.removeEventListener("cairn:scroll-to-column", handler);
+  }, [scrollToColumn]);
+
   const [addColumnOpen, setAddColumnOpen] = useState(false);
   const [newColumnName, setNewColumnName] = useState("");
 
@@ -167,19 +191,23 @@ export function KanbanBoard() {
       >
         {/* Outer SortableContext for column reordering */}
         <SortableContext items={columns.map((c) => c.id)} strategy={horizontalListSortingStrategy}>
-          <div className="flex-1 flex gap-3 overflow-x-auto p-5 min-h-0">
+          <div ref={boardScrollRef} className="flex-1 flex gap-3 overflow-x-auto p-5 min-h-0">
             {columns.map((column) => (
-              <KanbanColumn
-                key={column.id}
-                column={column}
-                cards={getColumnCards(column.id)}
-                onCardClick={(cardId) => setDetailCardId(cardId)}
-                onAddCard={(title) => createCard(column.id, activeProjectId, title)}
-                onRename={(name) => updateColumn(column.id, { name })}
-                onDelete={() => deleteColumn(column.id)}
-                isDragOver={overId === column.id}
-                isColumnDragging={activeColumn?.id === column.id}
-              />
+              <div key={column.id} ref={(el) => { columnRefs.current[column.id] = el; }} className="flex-shrink-0">
+                <KanbanColumn
+                  column={column}
+                  cards={getColumnCards(column.id)}
+                  archivedCards={getArchivedColumnCards(column.id)}
+                  onCardClick={(cardId) => setDetailCardId(cardId)}
+                  onAddCard={(data) => createCard(column.id, activeProjectId, data.title, { dueDate: data.dueDate, assignee: data.assignee })}
+                  onRename={(name) => updateColumn(column.id, { name })}
+                  onDelete={() => deleteColumn(column.id)}
+                  onRestoreCard={(cardId) => restoreCard(cardId)}
+                  isDragOver={overId === column.id}
+                  isColumnDragging={activeColumn?.id === column.id}
+                  isHighlighted={highlightedColumnId === column.id}
+                />
+              </div>
             ))}
 
             {/* Add column */}
@@ -221,10 +249,12 @@ export function KanbanBoard() {
               <KanbanColumn
                 column={activeColumn}
                 cards={getColumnCards(activeColumn.id)}
+                archivedCards={[]}
                 onCardClick={() => {}}
-                onAddCard={() => {}}
+                onAddCard={(_data) => {}}
                 onRename={() => {}}
                 onDelete={() => {}}
+                onRestoreCard={() => {}}
                 isDragOver={false}
                 isColumnDragging={true}
               />
