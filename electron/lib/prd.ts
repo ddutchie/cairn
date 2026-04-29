@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import * as q from "../db/queries";
 import { writeNoteFile, stripMarkdown } from "../notes-files";
-import { callLLM, type LLMConfig } from "../ipc/chat";
+import { callLLM, type LLMConfig } from "./llm";
 
 export interface GeneratePrdArgs {
   projectId: string;
