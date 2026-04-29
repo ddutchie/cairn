@@ -33,6 +33,7 @@ import { Input } from "@/components/ui/input";
 import { Tooltip } from "@/components/ui/tooltip";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { useCairnStore, DEFAULT_AI_CONFIG, type Theme } from "@/store";
+import licensesData from "@/generated/licenses.json";
 import { storage } from "@/lib/storage";
 import { cn } from "@/lib/utils";
 
@@ -40,7 +41,7 @@ import { cn } from "@/lib/utils";
 type SettingsSection = "general" | "ai" | "data" | "about" | "shortcuts" | "tags";
 
 export function SettingsView() {
-  const [section, setSection] = useState<SettingsSection>("ai");
+  const [section, setSection] = useState<SettingsSection>("general");
   const { workspaces, projects, notes, cards } = useCairnStore();
 
   return (
@@ -73,6 +74,14 @@ export function SettingsView() {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
+        {/* Shared header */}
+        <div className="flex items-center gap-4 px-8 pt-8 pb-6 border-b border-[var(--border-subtle)]">
+          <img src="/Cairn_No_BG.png" alt="Cairn" className="w-9 h-9 object-contain flex-shrink-0" />
+          <div>
+            <div className="text-sm font-semibold text-[var(--text-primary)]">Cairn</div>
+            <div className="text-xs text-[var(--text-tertiary)]">v{process.env.NEXT_PUBLIC_APP_VERSION ?? "0.1.0"}</div>
+          </div>
+        </div>
         <div className="max-w-2xl mx-auto px-8 py-8 space-y-8 animate-fade-in">
           {section === "general" && <GeneralSettings />}
           {section === "ai" && <AISettings />}
@@ -1113,47 +1122,57 @@ function TagsSettings() {
 // ── About ─────────────────────────────────────
 
 function AboutSection() {
+  const [licensesOpen, setLicensesOpen] = useState(false);
+  const { stack, allLicenses } = licensesData;
+
   return (
     <SettingsGroup title="About Cairn">
       <div className="space-y-4 text-sm text-[var(--text-secondary)]">
-        <div className="p-6 rounded-xl border border-[var(--border)] bg-[var(--surface)] flex flex-col items-center text-center gap-3">
-          <img src="/Cairn_No_BG.png" alt="Cairn" className="w-20 h-20 object-contain" />
-          <div>
-            <div className="text-base font-semibold text-[var(--text-primary)]">Cairn</div>
-            <div className="text-xs text-[var(--text-tertiary)] mt-0.5">v{process.env.NEXT_PUBLIC_APP_VERSION ?? "0.1.0"}</div>
-          </div>
-          <p className="text-xs leading-relaxed max-w-xs">
-            Local-first notes and kanban in one place. Notes are saved as Markdown files in a folder you choose; project and task data lives in SQLite alongside them. No accounts, no cloud. An embedded MCP server lets AI agents read and write your workspace directly.
-          </p>
-        </div>
+        <p className="text-xs leading-relaxed text-[var(--text-tertiary)]">
+          Local-first notes and kanban in one place. Notes are saved as Markdown files in a folder you choose; project and task data lives in SQLite alongside them. No accounts, no cloud. An embedded MCP server lets AI agents read and write your workspace directly.
+        </p>
 
+        {/* Stack */}
         <div className="space-y-2">
           <div className="text-xs font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">Stack</div>
           <div className="grid grid-cols-2 gap-2">
-            {[
-              ["Electron 41", "Desktop shell"],
-              ["Next.js 16", "UI framework"],
-              ["React 19", "Renderer"],
-              ["TypeScript", "Language"],
-              ["Tailwind CSS v4", "Styling"],
-              ["better-sqlite3", "Local database"],
-              ["gray-matter", "Note frontmatter"],
-              ["chokidar", "File watcher"],
-              ["Zustand", "State"],
-              ["dnd-kit", "Drag & drop"],
-              ["Lucide", "Icons"],
-              ["MCP SDK", "Agent protocol"],
-              ["esbuild", "Bundler"],
-            ].map(([tech, role]) => (
+            {stack.map((entry) => (
               <div
-                key={tech}
+                key={entry.name}
                 className="flex items-center justify-between px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--surface)]"
               >
-                <span className="text-xs font-medium text-[var(--text-primary)]">{tech}</span>
-                <span className="text-[11px] text-[var(--text-tertiary)]">{role}</span>
+                <div>
+                  <span className="text-xs font-medium text-[var(--text-primary)]">{entry.label}</span>
+                  <span className="text-[10px] text-[var(--text-tertiary)] ml-1.5">{entry.version}</span>
+                </div>
+                <span className="text-[11px] text-[var(--text-tertiary)]">{entry.role}</span>
               </div>
             ))}
           </div>
+        </div>
+
+        {/* Licenses */}
+        <div className="rounded-lg border border-[var(--border)] overflow-hidden">
+          <button
+            onClick={() => setLicensesOpen((o) => !o)}
+            className="w-full flex items-center justify-between px-4 py-3 text-xs font-semibold text-[var(--text-secondary)] hover:bg-[var(--surface-2)] transition-colors"
+          >
+            <span>Open Source Licenses ({allLicenses.length})</span>
+            <span className="text-[var(--text-tertiary)]">{licensesOpen ? "▲" : "▼"}</span>
+          </button>
+          {licensesOpen && (
+            <div className="border-t border-[var(--border)] divide-y divide-[var(--border-subtle)] max-h-72 overflow-y-auto">
+              {allLicenses.map((entry) => (
+                <div key={entry.name} className="flex items-center justify-between px-4 py-2">
+                  <div>
+                    <span className="text-[11px] text-[var(--text-secondary)]">{entry.name}</span>
+                    <span className="text-[10px] text-[var(--text-tertiary)] ml-1.5">{entry.version}</span>
+                  </div>
+                  <span className="text-[10px] font-mono text-[var(--text-tertiary)] bg-[var(--surface-2)] px-1.5 py-0.5 rounded">{entry.license}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </SettingsGroup>

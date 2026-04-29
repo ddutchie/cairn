@@ -47,16 +47,19 @@ const platformFlags = [
 
 console.log(`\nBuilding Cairn for: ${platformFlags}`);
 
-// 1. Next.js static export
+// 1. Generate licenses + stack metadata (baked into the Next.js static export)
+run("node scripts/generate-licenses.js");
+
+// 2. Next.js static export
 run("cross-env ELECTRON_BUILD=true next build");
 
-// 2. Bundle Electron main + preload with esbuild (inlines all deps except better-sqlite3 and electron)
+// 3. Bundle Electron main + preload with esbuild (inlines all deps except better-sqlite3 and electron)
 run("esbuild electron/main.ts electron/preload.ts --bundle --platform=node --target=node20 --external:electron --external:better-sqlite3 --outdir=dist-electron --format=cjs");
 
-// 3. Bundle MCP server with esbuild (inlines all deps except better-sqlite3)
+// 4. Bundle MCP server with esbuild (inlines all deps except better-sqlite3)
 run("esbuild electron/mcp-server.ts --bundle --platform=node --target=node20 --external:better-sqlite3 --outfile=dist-mcp/mcp-server.bundle.js --format=cjs");
 
-// 4. Package with electron-builder
+// 5. Package with electron-builder
 run(`electron-builder ${platformFlags}`);
 
 console.log("\nBuild complete. Output in dist-app/");
