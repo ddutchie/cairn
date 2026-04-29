@@ -123,8 +123,8 @@ export function NoteEditor({ note }: NoteEditorProps) {
     if (!spawnLoading) return;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const electron = (window as any).electron;
-    if (!electron?.onToolCall) return;
-    const unsub = electron.onToolCall((e: { tool: string; label: string }) => {
+    if (!electron?.chat?.onToolCall) return;
+    const unsub = electron.chat.onToolCall((e: { tool: string; label: string }) => {
       if (e.tool === "create_task") {
         setSpawnToolCalls((prev) => [...prev, e.label]);
       }

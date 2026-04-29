@@ -571,8 +571,8 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
     }
 
     case "update_task": {
-      const { taskId, title, description, priority, dueDate, columnId, tagIds } = args;
-      const card = snap.cards.find((c) => c.id === taskId);
+      const { cardId, title, description, priority, dueDate, columnId, tagIds } = args;
+      const card = snap.cards.find((c) => c.id === cardId);
       if (!card) return { error: "Task not found" };
       const now = ts();
       db.prepare(`
@@ -589,9 +589,9 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
         columnId ?? null, title ?? null, description ?? null,
         priority ?? null, dueDate ?? null,
         tagIds ? j(tagIds) : null,
-        now, taskId
+        now, cardId
       );
-      const updated = db.prepare("SELECT * FROM task_cards WHERE id = ?").get(taskId) as Record<string, unknown> | undefined;
+      const updated = db.prepare("SELECT * FROM task_cards WHERE id = ?").get(cardId) as Record<string, unknown> | undefined;
       insertNotification(db, "update_task", "Task updated", `"${title ?? card.title}" was updated`);
       return updated ?? { error: "Task not found after update" };
     }
@@ -708,8 +708,8 @@ const TOOL_DEFINITIONS = [
     inputSchema: { type: "object", properties: { noteId: { type: "string" } }, required: ["noteId"] } },
   { name: "delete_task",         description: "Permanently delete a task card by its ID.",
     inputSchema: { type: "object", properties: { cardId: { type: "string" } }, required: ["cardId"] } },
-  { name: "update_task",         description: "Update a task card's fields (title, description, priority, dueDate, columnId, tagIds).",
-    inputSchema: { type: "object", properties: { taskId: { type: "string" }, title: { type: "string" }, description: { type: "string" }, priority: { type: "string", enum: ["low","medium","high","urgent"] }, dueDate: { type: "string" }, columnId: { type: "string" }, tagIds: { type: "string" } }, required: ["taskId"] } },
+  { name: "update_task",         description: "Update a task card's fields (title, description, priority, dueDate, columnId, tagIds). Parameter is cardId (previously taskId).",
+    inputSchema: { type: "object", properties: { cardId: { type: "string" }, title: { type: "string" }, description: { type: "string" }, priority: { type: "string", enum: ["low","medium","high","urgent"] }, dueDate: { type: "string" }, columnId: { type: "string" }, tagIds: { type: "string" } }, required: ["cardId"] } },
   { name: "update_project",      description: "Update a project's name, description, status, or priority.",
     inputSchema: { type: "object", properties: { projectId: { type: "string" }, name: { type: "string" }, description: { type: "string" }, status: { type: "string", enum: ["active","on_hold","completed","archived"] }, priority: { type: "string", enum: ["low","medium","high","urgent"] } }, required: ["projectId"] } },
   { name: "delete_project",      description: "Permanently delete a project and all its notes, tasks, and columns.",

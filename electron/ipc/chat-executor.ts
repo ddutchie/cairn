@@ -292,7 +292,7 @@ export async function executeTool(
       return { tasksCreated: createdCards.length, tasks: createdCards, noteId: args.noteId };
     }
     case "update_task": {
-      const card = snap.cards.find((c) => c.id === args.taskId);
+      const card = snap.cards.find((c) => c.id === args.cardId);
       if (!card) return { error: "Task not found" };
       const patch: Record<string, unknown> = {};
       if (args.title !== undefined)       patch.title       = args.title;
@@ -302,7 +302,7 @@ export async function executeTool(
       if (args.columnId !== undefined)    patch.columnId    = args.columnId;
       if (args.assignee !== undefined)    patch.assignee    = args.assignee || undefined;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return q.updateCard(db, args.taskId as string, patch as any);
+      return q.updateCard(db, args.cardId as string, patch as any);
     }
     case "link_note_to_task": {
       const note = snap.notes.find((n) => n.id === args.noteId);

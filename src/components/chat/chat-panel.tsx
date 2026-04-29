@@ -98,15 +98,15 @@ export function ChatPanel() {
     const electron = (window as any).electron;
     if (!electron) return;
 
-    const unsubTool = electron.onToolCall?.((e: { tool: string; label: string }) => {
+    const unsubTool = electron.chat?.onToolCall?.((e: { tool: string; label: string }) => {
       setToolCalls((prev) => [...prev, e]);
     });
 
-    const unsubToken = electron.onChatToken?.((e: { delta: string }) => {
+    const unsubToken = electron.chat?.onToken?.((e: { delta: string }) => {
       setStreamingContent((prev) => prev + e.delta);
     });
 
-    const unsubDone = electron.onChatDone?.((e: { content: string; contextRefs: unknown[] }) => {
+    const unsubDone = electron.chat?.onDone?.((e: { content: string; contextRefs: unknown[] }) => {
       const tid = threadIdRef.current;
       if (tid) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -162,7 +162,7 @@ export function ChatPanel() {
     };
 
     // Fire-and-forget — response arrives via chat:token / chat:done events.
-    window.electron?.chatStream(chatReq);
+    window.electron?.chat?.stream(chatReq);
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {

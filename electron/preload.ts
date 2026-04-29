@@ -72,23 +72,33 @@ const api = {
     upsertThread:  (args: unknown) => invoke("db:chat:upsertThread", args),
     addMessage:    (args: unknown) => invoke("db:chat:addMessage", args),
     deleteThread:  (threadId: string) => invoke("db:chat:deleteThread", { threadId }),
+    // ── AI Chat streaming ──────────────────────
+    // Fire-and-forget. Listen with onToken / onDone / onToolCall.
+    stream: (req: unknown) => ipcRenderer.send("chat:stream", req),
+    onToken: (cb: (e: { delta: string }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { delta: string }) => cb(e);
+      ipcRenderer.on("chat:token", handler);
+      return () => ipcRenderer.off("chat:token", handler);
+    },
+    onDone: (cb: (e: { content: string; contextRefs: unknown[]; error?: string }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { content: string; contextRefs: unknown[]; error?: string }) => cb(e);
+      ipcRenderer.on("chat:done", handler);
+      return () => ipcRenderer.off("chat:done", handler);
+    },
+    onToolCall: (cb: (e: { tool: string; label: string; args: Record<string, unknown> }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { tool: string; label: string; args: Record<string, unknown> }) => cb(e);
+      ipcRenderer.on("chat:tool-call", handler);
+      return () => ipcRenderer.off("chat:tool-call", handler);
+    },
   },
-  // ── AI Chat completions ────────────────────────
-  // Streaming: fire-and-forget. Listen with onChatToken / onChatDone.
-  chatStream: (req: unknown) => ipcRenderer.send("chat:stream", req),
-  onChatToken: (cb: (e: { delta: string }) => void) => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const handler = (_: any, e: { delta: string }) => cb(e);
-    ipcRenderer.on("chat:token", handler);
-    return () => ipcRenderer.off("chat:token", handler);
+
+  // ── AI helpers ────────────────────────────────
+  ai: {
+    generatePrd: (args: unknown) => invoke<{ id: string; title: string; projectId: string } | { error: string }>("ai:generatePrd", args),
   },
-  onChatDone: (cb: (e: { content: string; contextRefs: unknown[]; error?: string }) => void) => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const handler = (_: any, e: { content: string; contextRefs: unknown[]; error?: string }) => cb(e);
-    ipcRenderer.on("chat:done", handler);
-    return () => ipcRenderer.off("chat:done", handler);
-  },
-  generatePrd: (args: unknown) => invoke<{ id: string; title: string; projectId: string } | { error: string }>("ai:generatePrd", args),
 
   // ── App paths ─────────────────────────────────
   mcpServerPath: () => invoke<string>("app:mcpServerPath"),
@@ -138,13 +148,6 @@ const api = {
   },
   markMcpNotificationsRead: () => ipcRenderer.invoke("mcp:markNotificationsRead"),
 
-  // ── Live tool call events during chat:send ────
-  onToolCall: (cb: (e: { tool: string; label: string; args: Record<string, unknown> }) => void) => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const handler = (_: any, e: { tool: string; label: string; args: Record<string, unknown> }) => cb(e);
-    ipcRenderer.on("chat:tool-call", handler);
-    return () => ipcRenderer.off("chat:tool-call", handler);
-  },
 } as const;
 
 contextBridge.exposeInMainWorld("electron", api);

@@ -9,24 +9,13 @@
 
 import { ipcMain } from "electron";
 import type Database from "better-sqlite3";
-import { isLocalEndpoint } from "../lib/llm";
+import { isLocalEndpoint, streamCompletion, type OpenAIMessage } from "../lib/llm";
 import { TOOLS, buildSystemPrompt, type ChatRequest } from "../lib/tools";
 import { executeTool } from "./chat-executor";
 
 // Re-export for backward compatibility (prd.ts and others import LLMConfig from here)
 export type { LLMConfig } from "../lib/llm";
 export { callLLM } from "../lib/llm";
-
-type OpenAIMessage = {
-  role: "system" | "user" | "assistant" | "tool";
-  content: string | null;
-  tool_call_id?: string;
-  tool_calls?: Array<{
-    id: string;
-    type: "function";
-    function: { name: string; arguments: string };
-  }>;
-};
 
 /**
  * Run the tool-call loop. Returns when the model produces a response with no
@@ -141,51 +130,19 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
       messages.pop();
 
       // Re-request with stream: true for real SSE tokens
-      let streamResp: Response;
-      try {
-        const headers: Record<string, string> = { "Content-Type": "application/json" };
-        if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
-        streamResp = await fetch(`${baseUrl}/v1/chat/completions`, {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ model, messages, tools: TOOLS, tool_choice: "none", max_tokens: 4096, temperature: 0.3, stream: true }),
-        });
-      } catch {
-        // Fallback: just emit the already-received content verbatim
-        send("chat:token", { delta: lastMsg.content });
-        send("chat:done", { content: lastMsg.content, contextRefs: [] });
-        return;
-      }
-
-      if (!streamResp.ok) {
-        send("chat:token", { delta: lastMsg.content });
-        send("chat:done", { content: lastMsg.content, contextRefs: [] });
-        return;
-      }
-
-      // Read SSE stream
       let fullContent = "";
       try {
-        const reader = streamResp.body?.getReader();
-        const decoder = new TextDecoder();
-        if (!reader) throw new Error("No readable stream");
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          for (const line of decoder.decode(value, { stream: true }).split("\n")) {
-            const trimmed = line.trim();
-            if (!trimmed.startsWith("data:")) continue;
-            const jsonStr = trimmed.slice(5).trim();
-            if (jsonStr === "[DONE]") break;
-            try {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const delta: string = (JSON.parse(jsonStr) as any).choices?.[0]?.delta?.content ?? "";
-              if (delta) { fullContent += delta; send("chat:token", { delta }); }
-            } catch { /* skip malformed lines */ }
-          }
+        for await (const delta of streamCompletion({ baseUrl, model, apiKey }, messages, TOOLS)) {
+          fullContent += delta;
+          send("chat:token", { delta });
         }
       } catch {
-        if (!fullContent) fullContent = lastMsg.content ?? "";
+        // Fallback: just emit the already-received content verbatim
+        if (!fullContent) {
+          send("chat:token", { delta: lastMsg.content });
+          send("chat:done", { content: lastMsg.content, contextRefs: [] });
+          return;
+        }
       }
 
       send("chat:done", { content: fullContent || (lastMsg.content ?? ""), contextRefs: [] });

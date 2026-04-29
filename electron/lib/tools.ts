@@ -331,11 +331,11 @@ export const TOOLS = [
     type: "function",
     function: {
       name: "update_task",
-      description: "Update a task card's fields. All fields except taskId are optional — only provided fields are changed.",
+      description: "Update a task card's fields. All fields except cardId are optional — only provided fields are changed. (Parameter was previously named taskId.)",
       parameters: {
         type: "object",
         properties: {
-          taskId:      { type: "string", description: "ID of the task card to update" },
+          cardId:      { type: "string", description: "ID of the task card to update" },
           title:       { type: "string" },
           description: { type: "string" },
           priority:    { type: "string", enum: ["low", "medium", "high", "urgent"] },
@@ -343,7 +343,7 @@ export const TOOLS = [
           columnId:    { type: "string", description: "Move to this column ID" },
           assignee:    { type: "string", description: "Assignee name, or empty string to clear" },
         },
-        required: ["taskId"],
+        required: ["cardId"],
       },
     },
   },

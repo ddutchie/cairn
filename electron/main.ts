@@ -17,10 +17,9 @@ import fs from "fs";
 import { pathToFileURL } from "url";
 import { autoUpdater } from "electron-updater";
 import { initDb } from "./db/client";
-import { registerIpcHandlers } from "./ipc/handlers";
+import { registerIpcHandlers, registerAppHandlers } from "./ipc/handlers";
 import {
   readWorkspaceConfig,
-  writeWorkspaceConfig,
   getDbPathForWorkspace,
 } from "./workspace-config";
 import { startFileWatcher } from "./file-watcher";
@@ -146,35 +145,6 @@ app.whenReady().then(async () => {
   });
 
   const userDataPath = app.getPath("userData");
-
-  // ── Workspace folder IPC ──────────────────────────────────────────────
-  ipcMain.handle("app:selectWorkspaceFolder", async () => {
-    const chosen = await promptWorkspaceFolder();
-    if (!chosen) return null;
-    writeWorkspaceConfig(userDataPath, chosen);
-    return chosen;
-  });
-
-  ipcMain.handle("app:getWorkspacePath", () => {
-    return readWorkspaceConfig(userDataPath)?.workspacePath ?? null;
-  });
-
-  ipcMain.handle("app:needsWorkspaceSetup", () => {
-    return readWorkspaceConfig(userDataPath) === null;
-  });
-
-  // Persist theme choice so the main process can read it for backgroundColor
-  ipcMain.handle("app:setTheme", (_e, theme: string) => {
-    const themeFile = path.join(userDataPath, "theme.json");
-    fs.writeFileSync(themeFile, JSON.stringify({ theme }), "utf8");
-  });
-
-  // Write config and create the folder; no migration needed for new users.
-  ipcMain.handle("app:initWorkspace", (_e, { workspacePath: newPath }: { workspacePath: string }) => {
-    writeWorkspaceConfig(userDataPath, newPath);
-    fs.mkdirSync(newPath, { recursive: true });
-    return { requiresRestart: false };
-  });
 
   // ── Resolve workspace path ────────────────────────────────────────────
   const config = readWorkspaceConfig(userDataPath);
@@ -303,11 +273,8 @@ app.whenReady().then(async () => {
     }
   });
 
-  // IPC: renderer can also request a clear (e.g. on first load)
-  ipcMain.handle("mcp:markNotificationsRead", () => {
-    markMcpNotificationsRead(db);
-    updateTrayBadge(0);
-  });
+  // Register app:* and mcp:* IPC handlers (now that updateTrayBadge is available)
+  registerAppHandlers(db, userDataPath, updateTrayBadge);
 
   // ── Poll DB mtime for external writes (MCP server) ───────────────────
   const walPath = dbPath + "-wal";

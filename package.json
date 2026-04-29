@@ -5,7 +5,10 @@
   "author": "Cairn",
   "private": true,
   "scripts": {
-    "dev": "node scripts/generate-licenses.js && concurrently -n next,esbuild,electron -c cyan,magenta,yellow \"next dev\" \"npm run compile:watch\" \"wait-on http://localhost:3000 dist-electron/main.js && node scripts/electron-dev.js\"",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "dev": "node scripts/generate-licenses.js && concurrently -n next,esbuild,electron -c cyan,magenta,yellow \\\"next dev\\\" \\\"npm run compile:watch\\\" \\\"wait-on http://localhost:3000 dist-electron/main.js && node scripts/electron-dev.js\\\"",
     "compile:watch": "esbuild electron/main.ts electron/preload.ts --bundle --platform=node --target=node20 --external:electron --external:better-sqlite3 --outdir=dist-electron --format=cjs --watch",
     "build:mac": "node scripts/build.js --mac",
     "build:win": "node scripts/build.js --win",
@@ -51,6 +54,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@vitest/coverage-v8": "^4.1.5",
     "@yao-pkg/pkg": "^6.19.0",
     "ai": "^6.0.168",
     "chokidar": "^5.0.0",
@@ -77,6 +81,7 @@
     "tailwind-merge": "^3.5.0",
     "tailwindcss": "^4",
     "typescript": "^5",
+    "vitest": "^4.1.5",
     "wait-on": "^9.0.5",
     "zod": "^4.3.6",
     "zustand": "^5.0.12"

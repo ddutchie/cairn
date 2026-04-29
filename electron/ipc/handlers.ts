@@ -11,8 +11,9 @@
  * Channel naming: "db:<entity>:<action>"
  */
 
-import { ipcMain, app, shell } from "electron";
+import { ipcMain, app, shell, dialog } from "electron";
 import path from "path";
+import fs from "fs";
 import type Database from "better-sqlite3";
 import * as q from "../db/queries";
 import { registerChatHandler } from "./chat";
@@ -21,6 +22,8 @@ import { buildContextResponse } from "../lib/context";
 import { generatePrd } from "../lib/prd";
 import { newId, ts } from "../db/utils";
 import { isLocalEndpoint } from "../lib/llm";
+import { readWorkspaceConfig, writeWorkspaceConfig } from "../workspace-config";
+import { markMcpNotificationsRead } from "../db/queries";
 
 function getProjectName(db: Database.Database, projectId: string): string {
   const row = db.prepare("SELECT name FROM projects WHERE id = ?").get(projectId) as { name: string } | undefined;
@@ -98,16 +101,6 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
       default:
         return { error: `Unknown or disallowed tool: ${tool}` };
     }
-  });
-
-  // ── App paths (for MCP config generation) ────────
-  ipcMain.handle("app:mcpServerPath", () => {
-    const appPath = app.getAppPath();
-    const unpackedPath = appPath.replace(/\.asar$/, ".asar.unpacked");
-    const binaryName = process.platform === "win32" ? "cairn-mcp.exe"
-      : process.platform === "linux" ? "cairn-mcp-linux"
-      : "cairn-mcp";
-    return path.join(unpackedPath, "dist-mcp", binaryName);
   });
 
   // ── Workspaces ────────────────────────────────────
@@ -226,5 +219,69 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
       title: args.title,
       requirements: args.requirements,
     }, llmConfig);
+  });
+}
+
+/**
+ * Register app-level IPC handlers that were previously inlined in main.ts.
+ *
+ * @param db              - the SQLite database instance
+ * @param userDataPath    - result of app.getPath("userData")
+ * @param updateTrayBadge - callback to update the tray badge count
+ */
+export function registerAppHandlers(
+  db: Database.Database,
+  userDataPath: string,
+  updateTrayBadge: (count: number) => void,
+): void {
+  // ── Workspace folder selection / setup ────────────
+  ipcMain.handle("app:selectWorkspaceFolder", async () => {
+    const result = await dialog.showOpenDialog({
+      title: "Choose your Cairn workspace folder",
+      message: "Select a folder where Cairn will store your notes and database.",
+      buttonLabel: "Use This Folder",
+      properties: ["openDirectory", "createDirectory"],
+    });
+    if (result.canceled || result.filePaths.length === 0) return null;
+    const chosen = result.filePaths[0];
+    writeWorkspaceConfig(userDataPath, chosen);
+    return chosen;
+  });
+
+  ipcMain.handle("app:getWorkspacePath", () => {
+    return readWorkspaceConfig(userDataPath)?.workspacePath ?? null;
+  });
+
+  ipcMain.handle("app:needsWorkspaceSetup", () => {
+    return readWorkspaceConfig(userDataPath) === null;
+  });
+
+  // Persist theme choice so the main process can read it for backgroundColor
+  ipcMain.handle("app:setTheme", (_e, theme: string) => {
+    const themeFile = path.join(userDataPath, "theme.json");
+    fs.writeFileSync(themeFile, JSON.stringify({ theme }), "utf8");
+  });
+
+  // Write config and create the folder; no migration needed for new users.
+  ipcMain.handle("app:initWorkspace", (_e, { workspacePath: newPath }: { workspacePath: string }) => {
+    writeWorkspaceConfig(userDataPath, newPath);
+    fs.mkdirSync(newPath, { recursive: true });
+    return { requiresRestart: false };
+  });
+
+  // ── App paths (for MCP config generation) ─────────
+  ipcMain.handle("app:mcpServerPath", () => {
+    const appPath = app.getAppPath();
+    const unpackedPath = appPath.replace(/\.asar$/, ".asar.unpacked");
+    const binaryName = process.platform === "win32" ? "cairn-mcp.exe"
+      : process.platform === "linux" ? "cairn-mcp-linux"
+      : "cairn-mcp";
+    return path.join(unpackedPath, "dist-mcp", binaryName);
+  });
+
+  // ── MCP notification handler ───────────────────────
+  ipcMain.handle("mcp:markNotificationsRead", () => {
+    markMcpNotificationsRead(db);
+    updateTrayBadge(0);
   });
 }

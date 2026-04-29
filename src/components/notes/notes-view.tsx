@@ -384,7 +384,7 @@ function PrdModal({ projectId, aiConfig, onClose }: PrdModalProps) {
     setLoading(true);
     setError(null);
     try {
-      const result = await electron.generatePrd({
+      const result = await electron.ai.generatePrd({
         projectId,
         title: title.trim(),
         requirements: requirements.trim(),
