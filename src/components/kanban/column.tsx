@@ -5,6 +5,7 @@ import { useDroppable } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Plus, MoreHorizontal, Pencil, Trash2, GripVertical, ArchiveRestore, ChevronDown, ChevronRight } from "lucide-react";
+import { DatePicker } from "@/components/ui/date-picker";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -278,21 +279,18 @@ export function KanbanColumn({
               rows={2}
               className="w-full px-2.5 py-2 text-xs rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] resize-none"
             />
-            <div className="flex gap-1.5">
-              <input
-                type="text"
-                value={newCardAssignee}
-                onChange={(e) => setNewCardAssignee(e.target.value)}
-                placeholder="Assignee"
-                className="flex-1 px-2 py-1.5 text-xs rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)]"
-              />
-              <input
-                type="date"
-                value={newCardDueDate}
-                onChange={(e) => setNewCardDueDate(e.target.value)}
-                className="flex-1 px-2 py-1.5 text-xs rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-secondary)] focus:outline-none focus:border-[var(--accent)]"
-              />
-            </div>
+            <input
+              type="text"
+              value={newCardAssignee}
+              onChange={(e) => setNewCardAssignee(e.target.value)}
+              placeholder="Assignee"
+              className="w-full px-2 py-1.5 text-xs rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)]"
+            />
+            <DatePicker
+              value={newCardDueDate || undefined}
+              onChange={(v) => setNewCardDueDate(v ?? "")}
+              placeholder="Due date"
+            />
             <div className="flex gap-1.5">
               <Button variant="accent" size="xs" onClick={handleAddCard}>Add</Button>
               <Button variant="ghost" size="xs" onClick={() => { setIsAddingCard(false); setNewCardTitle(""); setNewCardDueDate(""); setNewCardAssignee(""); }}>Cancel</Button>

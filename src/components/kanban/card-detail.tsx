@@ -26,6 +26,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useCairnStore } from "@/store";
+import { DatePicker } from "@/components/ui/date-picker";
 import { cn, formatRelative, PRIORITY_COLORS } from "@/lib/utils";
 import type { Priority } from "@/types";
 
@@ -284,11 +285,9 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
               <label className="block text-[10px] font-semibold text-[var(--text-tertiary)] mb-2 uppercase tracking-wider">
                 <Calendar size={9} className="inline mr-0.5" />Due Date
               </label>
-              <input
-                type="date"
-                defaultValue={card.dueDate ?? ""}
-                onChange={(e) => updateCard(cardId, { dueDate: e.target.value || undefined })}
-                className="w-full px-2 py-1.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-xs text-[var(--text-secondary)] focus:outline-none focus:border-[var(--accent)]"
+              <DatePicker
+                value={card.dueDate}
+                onChange={(v) => updateCard(cardId, { dueDate: v })}
               />
             </div>
 
