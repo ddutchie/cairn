@@ -619,6 +619,7 @@ function MCPServerSettings() {
             ["create_note", "write"],
             ["update_note", "write"],
             ["create_task", "write"],
+            ["update_task", "write"],
             ["update_task_status", "write"],
             ["link_note_to_task", "write"],
             ["delete_note", "delete"],
