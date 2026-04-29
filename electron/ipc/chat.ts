@@ -59,25 +59,25 @@ Always use the typed helpers — never call window.cairn.query() directly:
 
   window.cairn.projectId      - active project ID (already set, do not hardcode)
   window.cairn.workspaceId    - active workspace ID (already set, do not hardcode)
-  window.cairn.getProjectSummary(projectId?)
+  window.cairn.getProjectSummary(projectId)   -- projectId optional, defaults to active
     returns: { project, noteCount, totalCards, columns: [{ id, name, type, taskCount, tasks: [{ id, title, priority, dueDate }] }] }
-  window.cairn.listTasks(projectId?)
+  window.cairn.listTasks(projectId)           -- projectId optional, defaults to active
     returns: { tasksByColumn: { COLUMN_ID: [{ id, title, priority, description, dueDate, columnId, columnName, columnType, updatedAt }] } }
     usage:   const allCards = Object.values(result.tasksByColumn).flat();
-  window.cairn.listNotes(projectId?)
+  window.cairn.listNotes(projectId)           -- projectId optional, defaults to active
     returns: [{ id, title, projectId, isPinned, updatedAt }]
-  window.cairn.listRecentActivity(opts?)
+  window.cairn.listRecentActivity(opts)       -- opts optional, defaults to active workspace+project
     returns: { recentNotes: [{ id, title, projectId, updatedAt }], recentTasks: [{ id, title, projectId, updatedAt }] }
-  window.cairn.searchTasks(query, projectId?)
+  window.cairn.searchTasks(query, projectId)  -- projectId optional
     returns: [{ id, title, priority, columnId }]
-  window.cairn.searchNotes(query, projectId?)
+  window.cairn.searchNotes(query, projectId)  -- projectId optional
     returns: [{ id, title, snippet, projectId }]
   window.cairn.getContext()
     returns: { workspaces, projects: [{ id, name, status, priority, columns: [{ id, name, type }] }] }
 
 Never hardcode projectId or workspaceId — always use window.cairn.projectId and window.cairn.workspaceId.
 
-Tone: calm, focused, like a thoughtful co-worker.\`;
+Tone: calm, focused, like a thoughtful co-worker.`;
 }
 
 // Tool definitions for the AI (OpenAI function calling format)
