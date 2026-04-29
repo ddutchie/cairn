@@ -126,6 +126,15 @@ const api = {
     return () => ipcRenderer.off("db:changed", handler);
   },
 
+  // ── MCP notification badge ─────────────────────
+  onMcpUnreadCount: (cb: (count: number) => void) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const handler = (_: any, count: number) => cb(count);
+    ipcRenderer.on("mcp:unread-count", handler);
+    return () => ipcRenderer.off("mcp:unread-count", handler);
+  },
+  markMcpNotificationsRead: () => ipcRenderer.invoke("mcp:markNotificationsRead"),
+
   // ── Live tool call events during chat:send ────
   onToolCall: (cb: (e: { tool: string; label: string; args: Record<string, unknown> }) => void) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

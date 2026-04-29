@@ -12,6 +12,7 @@
     "build:linux": "node scripts/build.js --linux",
     "build:all": "node scripts/build.js --mac --win --linux",
     "compile": "esbuild electron/main.ts electron/preload.ts --bundle --platform=node --target=node20 --external:electron --external:better-sqlite3 --outdir=dist-electron --format=cjs && esbuild electron/mcp-server.ts --bundle --platform=node --target=node20 --external:better-sqlite3 --outfile=dist-mcp/mcp-server.bundle.js --format=cjs",
+    "generate-tray-icon": "node scripts/generate-tray-icon.js",
     "rebuild": "node scripts/rebuild-native.js",
     "lint": "eslint",
     "type-check": "tsc --noEmit",

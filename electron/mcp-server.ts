@@ -274,6 +274,19 @@ function getSnapshot(db: Database.Database) {
   };
 }
 
+// ── MCP notification helper ───────────────────
+
+function insertNotification(db: Database.Database, tool: string, title: string, body: string): void {
+  try {
+    const id = newId();
+    db.prepare(
+      "INSERT INTO mcp_notifications (id, tool, title, body, read, created_at) VALUES (?, ?, ?, ?, 0, ?)"
+    ).run(id, tool, title, body, ts());
+  } catch {
+    // Table may not exist in very old DBs — best-effort only
+  }
+}
+
 // ── Tool executor ─────────────────────────────
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -409,6 +422,7 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
         tagIds: [], linkedNoteIds: [], linkedCardIds: [], isPinned: false,
         createdAt: now, updatedAt: now, projectName: project.name,
       });
+      insertNotification(db, "create_note", "Note created", `"${title}" added to ${project.name}`);
       return { id: noteId, title, createdAt: now };
     }
 
@@ -431,6 +445,7 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
         archivedAt: note.archivedAt as string | undefined,
         projectName: updateProj?.name ?? note.projectId as string,
       });
+      insertNotification(db, "update_note", "Note updated", `"${title ?? note.title}" was updated`);
       return { id: noteId, title: title ?? note.title, updatedAt: now };
     }
 
@@ -446,6 +461,8 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
           tag_ids, priority, due_date, linked_note_ids, "order", created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, '[]', ?, ?, '[]', ?, ?, ?)
       `).run(cardId, columnId, projectId, col.workspaceId, title, description ?? null, priority, dueDate ?? null, order, now, now);
+      const taskProject = snap.projects.find((pr) => pr.id === projectId);
+      insertNotification(db, "create_task", "Task created", `"${title}" added to ${taskProject?.name ?? projectId}`);
       return { id: cardId, title, columnId, createdAt: now };
     }
 
@@ -457,6 +474,7 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
       if (!col) return { error: "Column not found" };
       const now = ts();
       db.prepare(`UPDATE task_cards SET column_id = ?, updated_at = ? WHERE id = ?`).run(targetColumnId, now, cardId);
+      insertNotification(db, "update_task_status", "Task moved", `"${card.title}" → ${col.name}`);
       return { id: cardId, title: card.title, previousColumn: card.columnId,
         newColumn: targetColumnId, newColumnName: col.name, updatedAt: now };
     }
@@ -472,6 +490,7 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
       const now = ts();
       db.prepare(`UPDATE notes SET linked_card_ids = ?, updated_at = ? WHERE id = ?`).run(newCardIds, now, noteId);
       db.prepare(`UPDATE task_cards SET linked_note_ids = ?, updated_at = ? WHERE id = ?`).run(newNoteIds, now, cardId);
+      insertNotification(db, "link_note_to_task", "Note linked to task", `"${note.title}" linked to "${card.title}"`);
       return { noteId, cardId, linked: true };
     }
 
@@ -504,6 +523,7 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
           .run(colId, projectId, args.workspaceId, col.name, col.type, col.order, now, now);
         return { id: colId, name: col.name, type: col.type };
       });
+      insertNotification(db, "create_project", "Project created", `"${args.name}" was created`);
       return { projectId, name: args.name, columns };
     }
 
@@ -526,6 +546,7 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
       const delProj = snap.projects.find((pr) => pr.id === note.projectId);
       db.prepare("DELETE FROM notes WHERE id = ?").run(args.noteId);
       deleteNoteFile(workspacePath, delProj?.name ?? note.projectId as string, args.noteId as string);
+      insertNotification(db, "delete_note", "Note deleted", `"${note.title}" was deleted`);
       return { deleted: true, id: args.noteId, title: note.title };
     }
 
@@ -533,6 +554,7 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
       const card = snap.cards.find((c) => c.id === args.cardId);
       if (!card) return { error: "Task not found" };
       db.prepare("DELETE FROM task_cards WHERE id = ?").run(args.cardId);
+      insertNotification(db, "delete_task", "Task deleted", `"${card.title}" was deleted`);
       return { deleted: true, id: args.cardId, title: card.title };
     }
 
@@ -558,6 +580,7 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
         now, taskId
       );
       const updated = db.prepare("SELECT * FROM task_cards WHERE id = ?").get(taskId) as Record<string, unknown> | undefined;
+      insertNotification(db, "update_task", "Task updated", `"${title ?? card.title}" was updated`);
       return updated ?? { error: "Task not found after update" };
     }
 
@@ -576,6 +599,7 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
         WHERE id = ?
       `).run(name ?? null, description ?? null, status ?? null, priority ?? null, now, projectId);
       const updated = db.prepare("SELECT * FROM projects WHERE id = ?").get(projectId) as Record<string, unknown> | undefined;
+      insertNotification(db, "update_project", "Project updated", `"${name ?? project.name}" was updated`);
       return updated ?? { error: "Project not found after update" };
     }
 
@@ -591,6 +615,7 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
       db.prepare("DELETE FROM board_columns WHERE project_id = ?").run(args.projectId);
       db.prepare("DELETE FROM notes WHERE project_id = ?").run(args.projectId);
       db.prepare("DELETE FROM projects WHERE id = ?").run(args.projectId);
+      insertNotification(db, "delete_project", "Project deleted", `"${project.name}" was deleted`);
       return { deleted: true, id: args.projectId, name: project.name };
     }
 

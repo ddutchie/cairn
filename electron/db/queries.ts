@@ -455,6 +455,41 @@ export function addChatMessage(db: Database.Database, m: {
   return toChatMessage(db.prepare("SELECT * FROM chat_messages WHERE id = ?").get(m.id));
 }
 
+// ── MCP Notifications ─────────────────────────
+
+export interface McpNotification {
+  id: string;
+  tool: string;
+  title: string;
+  body: string;
+  read: boolean;
+  createdAt: string;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function toMcpNotification(row: any): McpNotification {
+  return {
+    id: row.id as string,
+    tool: row.tool as string,
+    title: row.title as string,
+    body: row.body as string,
+    read: b(row.read),
+    createdAt: row.created_at as string,
+  };
+}
+
+export function getUnreadMcpNotifications(db: Database.Database): McpNotification[] {
+  return db.prepare("SELECT * FROM mcp_notifications WHERE read = 0 ORDER BY created_at ASC").all().map(toMcpNotification);
+}
+
+export function markMcpNotificationsRead(db: Database.Database): void {
+  db.prepare("UPDATE mcp_notifications SET read = 1 WHERE read = 0").run();
+}
+
+export function insertMcpNotification(db: Database.Database, n: { id: string; tool: string; title: string; body: string }): void {
+  db.prepare("INSERT INTO mcp_notifications (id, tool, title, body, read, created_at) VALUES (?, ?, ?, ?, 0, ?)").run(n.id, n.tool, n.title, n.body, ts());
+}
+
 // ── Full snapshot (for MCP / AI chat) ────────
 
 export function getFullSnapshot(db: Database.Database) {

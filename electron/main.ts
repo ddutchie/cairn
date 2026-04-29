@@ -11,7 +11,7 @@
  * - In prod: load from the exported static files
  */
 
-import { app, BrowserWindow, shell, session, protocol, net, dialog, ipcMain } from "electron";
+import { app, BrowserWindow, shell, session, protocol, net, dialog, ipcMain, Tray, Menu, Notification, nativeImage } from "electron";
 import path from "path";
 import fs from "fs";
 import { pathToFileURL } from "url";
@@ -24,6 +24,7 @@ import {
   getDbPathForWorkspace,
 } from "./workspace-config";
 import { startFileWatcher } from "./file-watcher";
+import { getUnreadMcpNotifications, markMcpNotificationsRead } from "./db/queries";
 
 const isDev = !app.isPackaged;
 
@@ -231,6 +232,81 @@ app.whenReady().then(async () => {
 
   startFileWatcher(workspacePath, db, notifyDbChanged);
 
+  // ── System tray ───────────────────────────────────────────────────────
+  // On macOS: use trayTemplate.png (black + transparent, 22×22).
+  // Electron auto-picks trayTemplate@2x.png on retina when loaded by base name.
+  // On Windows/Linux: fall back to icon.png.
+  const trayIconDir = isDev
+    ? path.join(__dirname, "..", "public")
+    : path.join(process.resourcesPath, "app.asar", "public");
+
+  let trayImage: ReturnType<typeof nativeImage.createFromPath>;
+  if (process.platform === "darwin") {
+    const templatePath = path.join(trayIconDir, "trayTemplate.png");
+    trayImage = nativeImage.createFromPath(templatePath);
+    trayImage.setTemplateImage(true);
+  } else {
+    const iconPath = path.join(trayIconDir, "icon.png");
+    trayImage = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
+  }
+
+  const tray = new Tray(trayImage);
+  tray.setToolTip("Cairn");
+
+  function buildTrayMenu(unreadCount: number) {
+    return Menu.buildFromTemplate([
+      {
+        label: unreadCount > 0 ? `${unreadCount} unread MCP update${unreadCount > 1 ? "s" : ""}` : "No new MCP updates",
+        enabled: false,
+      },
+      { type: "separator" },
+      {
+        label: "Open Cairn",
+        click: () => {
+          win.show();
+          win.focus();
+        },
+      },
+      { type: "separator" },
+      { label: "Quit", click: () => app.quit() },
+    ]);
+  }
+
+  tray.setContextMenu(buildTrayMenu(0));
+
+  tray.on("click", () => {
+    win.show();
+    win.focus();
+  });
+
+  // ── MCP notification badge state ─────────────────────────────────────
+  let unreadCount = 0;
+
+  function updateTrayBadge(count: number) {
+    unreadCount = count;
+    tray.setContextMenu(buildTrayMenu(count));
+    if (process.platform === "darwin") {
+      app.setBadgeCount(count);
+    }
+    if (!win.isDestroyed()) {
+      win.webContents.send("mcp:unread-count", count);
+    }
+  }
+
+  // Clear badge when the window gains focus
+  win.on("focus", () => {
+    if (unreadCount > 0) {
+      markMcpNotificationsRead(db);
+      updateTrayBadge(0);
+    }
+  });
+
+  // IPC: renderer can also request a clear (e.g. on first load)
+  ipcMain.handle("mcp:markNotificationsRead", () => {
+    markMcpNotificationsRead(db);
+    updateTrayBadge(0);
+  });
+
   // ── Poll DB mtime for external writes (MCP server) ───────────────────
   const walPath = dbPath + "-wal";
   let lastMtime = 0;
@@ -242,6 +318,18 @@ app.whenReady().then(async () => {
       if (mtime > lastMtime) {
         lastMtime = mtime;
         notifyDbChanged();
+
+        // Check for new MCP notifications and fire OS toasts
+        const unread = getUnreadMcpNotifications(db);
+        for (const n of unread) {
+          if (Notification.isSupported()) {
+            new Notification({ title: n.title, body: n.body, silent: false }).show();
+          }
+        }
+        if (unread.length > 0) {
+          updateTrayBadge(unreadCount + unread.length);
+          markMcpNotificationsRead(db);
+        }
       }
     } catch { /* db file not yet created */ }
   }

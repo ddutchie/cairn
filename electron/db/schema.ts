@@ -112,6 +112,15 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   created_at   TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS mcp_notifications (
+  id         TEXT PRIMARY KEY,
+  tool       TEXT NOT NULL,
+  title      TEXT NOT NULL,
+  body       TEXT NOT NULL,
+  read       INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_notes_project      ON notes(project_id);
 CREATE INDEX IF NOT EXISTS idx_notes_workspace    ON notes(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_cards_column       ON task_cards(column_id);
