@@ -141,6 +141,11 @@ function stripMarkdown(md: string): string {
 }
 
 // ── Note file helpers ─────────────────────────
+// NOTE: These helpers intentionally duplicate electron/notes-files.ts.
+// mcp-server.ts is bundled as a self-contained binary (pkg) running under system
+// Node, while notes-files.ts is compiled for Electron's embedded Node ABI.
+// The two ABIs are incompatible at runtime, so we cannot share a single module.
+// If you update the logic in notes-files.ts, keep these in sync manually.
 // The workspace folder path is resolved once at startup (see findWorkspacePath).
 
 function toSlug(str: string): string {

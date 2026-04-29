@@ -2,6 +2,7 @@ import type Database from "better-sqlite3";
 import * as q from "../db/queries";
 import { writeNoteFile, stripMarkdown } from "../notes-files";
 import { callLLM, type LLMConfig } from "./llm";
+import { newId } from "../db/utils";
 
 export interface GeneratePrdArgs {
   projectId: string;
@@ -30,7 +31,7 @@ export async function generatePrd(
     return { error: `Failed to generate PRD: ${(err as Error).message}` };
   }
 
-  const noteId = Math.random().toString(36).slice(2, 14);
+  const noteId = newId();
   const note = q.createNote(db, {
     id: noteId,
     projectId: args.projectId,

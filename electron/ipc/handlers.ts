@@ -209,7 +209,7 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
     const baseUrl = (args.config.baseUrl || "https://api.openai.com").replace(/\/$/, "");
     const model = args.config.model || "gpt-4o-mini";
     const apiKey = args.config.apiKey || "";
-    const isLocal = baseUrl.includes("localhost") || baseUrl.includes("127.0.0.1") || baseUrl.includes("0.0.0.0");
+    const isLocal = isLocalEndpoint(baseUrl);
     if (!apiKey && !isLocal) {
       return { error: "AI is not configured. Add an API key in Settings → AI & Chat, or use a local endpoint." };
     }

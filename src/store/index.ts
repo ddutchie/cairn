@@ -102,14 +102,7 @@ function isElectron(): boolean {
   return typeof window !== "undefined" && !!window.electron;
 }
 
-function ipc(
-  fn: (e: NonNullable<Window["electron"]>) => Promise<unknown> | undefined
-): void {
-  if (!isElectron() || !window.electron) return;
-  fn(window.electron)?.catch?.((err: unknown) => {
-    console.error("[cairn:ipc]", err);
-  });
-}
+
 
 function ipcAwait(
   fn: (e: NonNullable<Window["electron"]>) => Promise<unknown> | undefined
