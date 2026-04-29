@@ -29,7 +29,7 @@ git pull origin $CURRENT_BRANCH
 
 # 4. Check that a changelog exists for the next version before touching anything
 CURRENT_VERSION=$(node -p "require('./package.json').version")
-NEXT_VERSION=$(node -p "
+NEXT_VERSION=$(node -e "
   const [maj, min, pat] = '$CURRENT_VERSION'.split('.').map(Number);
   if ('$VERSION_TYPE' === 'major') process.stdout.write((maj+1)+'.0.0');
   else if ('$VERSION_TYPE' === 'minor') process.stdout.write(maj+'.'+(min+1)+'.0');
