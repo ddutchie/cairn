@@ -16,6 +16,7 @@ import {
   Sparkles,
   ChevronDown,
   PenSquare,
+  History,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -44,16 +45,20 @@ export function ChatPanel() {
     getOrCreateThread,
     addMessage,
     chatMessages,
+    chatThreads,
     confirmAction,
     aiConfig,
     setView,
     createNewThread,
+    deleteThread,
   } = useCairnStore();
 
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [threadId, setThreadId] = useState<string | null>(null);
   const [toolCalls, setToolCalls] = useState<Array<{ tool: string; label: string }>>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const historyRef = useRef<HTMLDivElement>(null);
   // Live token buffer — shown as a streaming bubble while the model is typing
   const [streamingContent, setStreamingContent] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -61,6 +66,24 @@ export function ChatPanel() {
   // Keep a stable ref to the current threadId so event handlers don't go stale
   const threadIdRef = useRef<string | null>(null);
   useEffect(() => { threadIdRef.current = threadId; }, [threadId]);
+
+  // Close history dropdown on outside click
+  useEffect(() => {
+    if (!historyOpen) return;
+    function handle(e: MouseEvent) {
+      if (historyRef.current && !historyRef.current.contains(e.target as Node)) {
+        setHistoryOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, [historyOpen]);
+
+  // Threads for the current project, most recent first
+  const projectThreads = chatThreads
+    .filter((t) => t.projectId === activeProjectId)
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+    .slice(0, 15);
 
   const project = projects.find((p) => p.id === activeProjectId);
   const workspace = workspaces.find((w) => w.id === activeWorkspaceId);
@@ -165,6 +188,75 @@ export function ChatPanel() {
         <span className="text-xs text-[var(--text-tertiary)] truncate max-w-24">
           {project?.name ?? workspace?.name}
         </span>
+        {/* Thread history */}
+        {projectThreads.length > 1 && (
+          <div ref={historyRef} className="relative">
+            <Tooltip content="Thread history" side="left">
+              <button
+                onClick={() => setHistoryOpen((o) => !o)}
+                className={cn(
+                  "p-1 rounded transition-colors",
+                  historyOpen
+                    ? "text-[var(--accent)] bg-[var(--accent-dim)]"
+                    : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]"
+                )}
+              >
+                <History size={13} />
+              </button>
+            </Tooltip>
+            {historyOpen && (
+              <div className="absolute right-0 top-full mt-1 w-64 z-50 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-2xl overflow-hidden">
+                <div className="px-3 py-2 border-b border-[var(--border)]">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">Recent threads</span>
+                </div>
+                <div className="max-h-72 overflow-y-auto">
+                  {projectThreads.map((t) => {
+                    const firstMsg = chatMessages.find((m) => m.threadId === t.id && m.role === "user");
+                    const isActive = t.id === threadId;
+                    return (
+                      <div
+                        key={t.id}
+                        className={cn(
+                          "group flex items-center border-b border-[var(--border-subtle)] last:border-0 transition-colors",
+                          isActive ? "bg-[var(--accent-dim)]" : "hover:bg-[var(--surface-2)]"
+                        )}
+                      >
+                        <button
+                          onClick={() => { setThreadId(t.id); setHistoryOpen(false); }}
+                          className="flex-1 text-left px-3 py-2.5 flex flex-col gap-0.5 min-w-0"
+                        >
+                          <span className={cn("text-[11px] truncate font-medium", isActive ? "text-[var(--accent)]" : "text-[var(--text-secondary)]")}>
+                            {firstMsg?.content.slice(0, 50) ?? "New thread"}
+                            {(firstMsg?.content.length ?? 0) > 50 ? "…" : ""}
+                          </span>
+                          <span className="text-[10px] text-[var(--text-tertiary)]">
+                            {formatRelative(t.updatedAt)}
+                          </span>
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteThread(t.id);
+                            // If deleting the active thread, create a fresh one
+                            if (isActive && activeWorkspaceId) {
+                              const next = createNewThread(activeWorkspaceId, activeProjectId ?? undefined);
+                              setThreadId(next.id);
+                              setHistoryOpen(false);
+                            }
+                          }}
+                          className="opacity-0 group-hover:opacity-100 flex-shrink-0 p-2 mr-1 rounded text-[var(--text-tertiary)] hover:text-[var(--danger)] transition-all"
+                          title="Delete thread"
+                        >
+                          <X size={11} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
         <Tooltip content="New chat" side="left">
           <button
             onClick={() => {
@@ -192,9 +284,7 @@ export function ChatPanel() {
         {messages.length === 0 ? (
           <div className="space-y-4">
             <div className="text-center pt-4">
-              <div className="w-10 h-10 rounded-xl bg-[var(--accent-dim)] flex items-center justify-center mx-auto mb-3">
-                <Sparkles size={18} className="text-[var(--accent)]" />
-              </div>
+              <img src="/favicon.svg" alt="Cairn" className="w-10 h-10 mx-auto mb-3 opacity-80" />
               <p className="text-sm font-medium text-[var(--text-primary)]">
                 Cairn AI
               </p>

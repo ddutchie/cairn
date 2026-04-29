@@ -144,6 +144,7 @@ interface CairnStore extends PersistedState, AppUIState {
   deleteTag: (id: ID) => void;
 
   // ── Chat ──────────────────────────────────
+  deleteThread: (threadId: ID) => void;
   createNewThread: (workspaceId: ID, projectId?: ID) => ChatThread;
 
   // ── Derived helpers ───────────────────────
@@ -965,6 +966,15 @@ export const useCairnStore = create<CairnStore>()(
     },
 
     // ── Chat (new thread) ─────────────────────────
+    deleteThread(threadId) {
+      set((s) => ({
+        chatThreads: s.chatThreads.filter((t) => t.id !== threadId),
+        chatMessages: s.chatMessages.filter((m) => m.threadId !== threadId),
+      }));
+      get().persist();
+      ipc((e) => e.chat.deleteThread(threadId));
+    },
+
     createNewThread(workspaceId, projectId) {
       const thread: ChatThread = {
         id: id(),

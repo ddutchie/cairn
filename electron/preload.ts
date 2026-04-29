@@ -71,6 +71,7 @@ const api = {
     messages:      (threadId: string) => invoke("db:chat:messages", { threadId }),
     upsertThread:  (args: unknown) => invoke("db:chat:upsertThread", args),
     addMessage:    (args: unknown) => invoke("db:chat:addMessage", args),
+    deleteThread:  (threadId: string) => invoke("db:chat:deleteThread", { threadId }),
   },
   // ── AI Chat completions ────────────────────────
   // Streaming: fire-and-forget. Listen with onChatToken / onChatDone.

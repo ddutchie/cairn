@@ -125,8 +125,9 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
   // ── Chat ──────────────────────────────────────────
   ipcMain.handle("db:chat:threads",    (_e, { workspaceId }) => q.getChatThreads(db, workspaceId));
   ipcMain.handle("db:chat:messages",   (_e, { threadId }) => q.getChatMessages(db, threadId));
-  ipcMain.handle("db:chat:upsertThread", (_e, args) => q.upsertChatThread(db, args));
-  ipcMain.handle("db:chat:addMessage",   (_e, args) => q.addChatMessage(db, args));
+  ipcMain.handle("db:chat:upsertThread",  (_e, args) => q.upsertChatThread(db, args));
+  ipcMain.handle("db:chat:addMessage",    (_e, args) => q.addChatMessage(db, args));
+  ipcMain.handle("db:chat:deleteThread",  (_e, { threadId }) => q.deleteChatThread(db, threadId));
 
   // ── AI Chat completions ────────────────────────────
   registerChatHandler(db, workspacePath);

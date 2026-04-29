@@ -1,7 +1,7 @@
 # Cairn
 
 <p align="center">
-  <img src="public/Cairn_No_BG.png" alt="Cairn" width="180" />
+  <img src="public/icon.png" alt="Cairn" width="180" />
 </p>
 
 > A calm, local-first workspace for notes and project tracking — with an AI assistant and MCP server built in.

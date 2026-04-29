@@ -76,7 +76,7 @@ export function SettingsView() {
       <div className="flex-1 overflow-y-auto">
         {/* Shared header */}
         <div className="flex items-center gap-4 px-8 pt-8 pb-6 border-b border-[var(--border-subtle)]">
-          <img src="/Cairn_No_BG.png" alt="Cairn" className="w-9 h-9 object-contain flex-shrink-0" />
+          <img src="/icon.png" alt="Cairn" className="w-9 h-9 object-contain flex-shrink-0" />
           <div>
             <div className="text-sm font-semibold text-[var(--text-primary)]">Cairn</div>
             <div className="text-xs text-[var(--text-tertiary)]">v{process.env.NEXT_PUBLIC_APP_VERSION ?? "0.1.0"}</div>

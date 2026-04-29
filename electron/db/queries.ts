@@ -435,6 +435,11 @@ export function upsertChatThread(db: Database.Database, t: {
   return toChatThread(db.prepare("SELECT * FROM chat_threads WHERE id = ?").get(t.id));
 }
 
+export function deleteChatThread(db: Database.Database, threadId: string) {
+  db.prepare("DELETE FROM chat_messages WHERE thread_id = ?").run(threadId);
+  db.prepare("DELETE FROM chat_threads WHERE id = ?").run(threadId);
+}
+
 export function getChatMessages(db: Database.Database, threadId: string) {
   return db.prepare("SELECT * FROM chat_messages WHERE thread_id = ? ORDER BY created_at").all(threadId).map(toChatMessage);
 }
