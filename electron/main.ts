@@ -238,7 +238,7 @@ app.whenReady().then(async () => {
   // On Windows/Linux: fall back to icon.png.
   const trayIconDir = isDev
     ? path.join(__dirname, "..", "public")
-    : path.join(process.resourcesPath, "app.asar", "public");
+    : path.join(process.resourcesPath, "app.asar", "out");
 
   let trayImage: ReturnType<typeof nativeImage.createFromPath>;
   if (process.platform === "darwin") {
