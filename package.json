@@ -1,6 +1,6 @@
 {
   "name": "cairn",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "description": "Local-first project management with AI and MCP",
   "author": "Cairn",
   "private": true,
@@ -28,6 +28,7 @@
   },
   "dependencies": {
     "better-sqlite3": "^12.9.0",
+    "mermaid": "^11.14.0",
     "react-day-picker": "^9.14.0"
   },
   "devDependencies": {

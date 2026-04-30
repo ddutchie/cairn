@@ -295,10 +295,12 @@ export function registerAppHandlers(
   ipcMain.handle("app:setTheme", (_e, theme: string) => handle(() => {
     const themeFile = path.join(userDataPath, "theme.json");
     fs.writeFileSync(themeFile, JSON.stringify({ theme }), "utf8");
-    // On Windows, update the native title bar overlay colour to match the theme
+    // On Windows, update the native title bar overlay to match the new theme.
+    // Use --surface values (not backgroundColor) to match TitleBar's bg-[var(--surface)].
+    // height:39 not 40 — Windows 1px window border makes 40 clip the border-b below the bar.
     if (process.platform === "win32" && win && !win.isDestroyed()) {
-      const bg = theme === "light" ? "#f5f4f1" : "#0d0d0d";
-      win.setTitleBarOverlay({ color: bg, symbolColor: "#888888", height: 40 });
+      const surface = theme === "light" ? "#ffffff" : "#141414";
+      win.setTitleBarOverlay({ color: surface, symbolColor: "#888888", height: 39 });
     }
   }));
 

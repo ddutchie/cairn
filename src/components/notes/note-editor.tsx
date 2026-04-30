@@ -3,6 +3,8 @@
 import React, { useRef, useCallback, useState, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { MermaidDiagram } from "./MermaidDiagram";
+import { TableOfContents, headingSlug } from "./TableOfContents";
 import { Pin, PinOff, Calendar, Eye, Pencil, Wand2, Loader2, CheckCircle2, Tag, Plus, X, Link2, Kanban, ChevronDown } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { cn, formatRelative } from "@/lib/utils";
@@ -41,6 +43,9 @@ export function NoteEditor({ note }: NoteEditorProps) {
   const [toolbarPos, setToolbarPos] = useState<{ top: number; left: number } | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const selectionRef = useRef<{ text: string } | null>(null);
+
+  // Scroll container ref — used by TableOfContents to scroll to headings
+  const previewScrollRef = useRef<HTMLDivElement>(null);
 
   // ── Save ──────────────────────────────────────────────────────────────────
   const handleContentChange = useCallback(
@@ -302,11 +307,66 @@ export function NoteEditor({ note }: NoteEditorProps) {
 
         {/* Read / preview pane */}
         {mode === "read" && (
-          <div className="absolute inset-0 overflow-y-auto">
+          <div ref={previewScrollRef} className="absolute inset-0 overflow-y-auto">
+            {/* TOC — floats to the right of the content column on wide viewports */}
+            {note.content && (
+              <TableOfContents
+                markdown={note.content}
+                scrollContainerRef={previewScrollRef}
+              />
+            )}
             <div className="px-6 py-5 max-w-[680px] mx-auto">
               {note.content ? (
                 <div className="prose-cairn">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      code({ className, children }) {
+                        if (className === "language-mermaid") {
+                          return <MermaidDiagram chart={String(children)} />;
+                        }
+                        return <code className={className}>{children}</code>;
+                      },
+                      // Headings get id + data-heading-id for TOC anchor scrolling
+                      h1({ children }) {
+                        const text = String(children);
+                        const id = headingSlug(text);
+                        return <h1 id={id} data-heading-id={id}>{children}</h1>;
+                      },
+                      h2({ children }) {
+                        const text = String(children);
+                        const id = headingSlug(text);
+                        return <h2 id={id} data-heading-id={id}>{children}</h2>;
+                      },
+                      h3({ children }) {
+                        const text = String(children);
+                        const id = headingSlug(text);
+                        return <h3 id={id} data-heading-id={id}>{children}</h3>;
+                      },
+                      // Intercept anchor clicks so #hash links scroll within
+                      // the overflow container instead of the page
+                      a({ href, children, ...props }) {
+                        if (href?.startsWith("#")) {
+                          return (
+                            <a
+                              {...props}
+                              href={href}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                const id = href.slice(1);
+                                const container = previewScrollRef.current;
+                                const target = container?.querySelector(`[data-heading-id="${id}"]`);
+                                target?.scrollIntoView({ behavior: "smooth", block: "start" });
+                              }}
+                            >
+                              {children}
+                            </a>
+                          );
+                        }
+                        return <a href={href} {...props}>{children}</a>;
+                      },
+                    }}
+                  >
                     {note.content}
                   </ReactMarkdown>
                 </div>

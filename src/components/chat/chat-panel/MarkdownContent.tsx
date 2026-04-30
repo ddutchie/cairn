@@ -3,6 +3,7 @@
 import React from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { MermaidDiagram } from "@/components/notes/MermaidDiagram";
 
 /** Markdown renderer for assistant chat messages */
 export function MarkdownContent({ content }: { content: string }) {
@@ -20,6 +21,9 @@ export function MarkdownContent({ content }: { content: string }) {
         h2: ({ children }) => <h2 className="font-semibold text-[var(--text-primary)] text-sm mt-2 mb-1">{children}</h2>,
         h3: ({ children }) => <h3 className="font-medium text-[var(--text-primary)] mt-1.5 mb-0.5">{children}</h3>,
         code: ({ children, className }) => {
+          if (className === "language-mermaid") {
+            return <MermaidDiagram chart={String(children)} />;
+          }
           const isBlock = className?.includes("language-");
           return isBlock ? (
             <code className="block my-1.5 px-3 py-2 rounded-md bg-[var(--surface-3)] border border-[var(--border)] font-mono text-[11px] text-[var(--text-primary)] overflow-x-auto whitespace-pre">
