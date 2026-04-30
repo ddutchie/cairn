@@ -118,10 +118,47 @@ export function buildBootstrap(projectId: string, workspaceId: string): string {
 <\/script>`;
 }
 
-export function buildSrcdoc(html: string, projectId: string, workspaceId: string): string {
+// CSS custom-property names to forward from the parent document into the iframe.
+export const CAIRN_CSS_VARS = [
+  "--background", "--foreground",
+  "--surface", "--surface-2", "--surface-3",
+  "--border", "--border-subtle",
+  "--accent", "--accent-hover", "--accent-dim",
+  "--muted", "--muted-fg",
+  "--text-primary", "--text-secondary", "--text-tertiary",
+  "--success", "--warning", "--danger", "--info",
+  "--font-sans", "--font-mono",
+] as const;
+
+/**
+ * Read the current computed values of all Cairn CSS vars from the parent
+ * document and return a <style> block that re-declares them on :root inside
+ * the sandboxed iframe. Also forwards data-theme so dashboards can use
+ * [data-theme="light"] selectors.
+ */
+export function buildThemeStyle(theme: string, vars: Record<string, string>): string {
+  const declarations = Object.entries(vars)
+    .map(([k, v]) => `  ${k}: ${v};`)
+    .join("\n");
+  return (
+    `<style id="cairn-theme">` +
+    `:root {\n${declarations}\n}` +
+    `html, body { background-color: var(--background) !important; color: var(--text-primary); }` +
+    `</style>` +
+    `<script>document.documentElement.setAttribute('data-theme',${JSON.stringify(theme)});<\/script>`
+  );
+}
+
+export function buildSrcdoc(
+  html: string,
+  projectId: string,
+  workspaceId: string,
+  themeInjection = "",
+): string {
   if (!html.trim()) return "";
   const bootstrap = buildBootstrap(projectId, workspaceId);
-  if (html.includes("<head>")) return html.replace("<head>", "<head>" + bootstrap);
-  if (html.includes("<html>")) return html.replace("<html>", "<html><head>" + bootstrap + "</head>");
-  return bootstrap + html;
+  const head = themeInjection + bootstrap;
+  if (html.includes("<head>")) return html.replace("<head>", "<head>" + head);
+  if (html.includes("<html>")) return html.replace("<html>", "<html><head>" + head + "</head>");
+  return head + html;
 }

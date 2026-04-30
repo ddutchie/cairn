@@ -1,12 +1,13 @@
 "use client";
 
 import React, { useEffect, useRef, useCallback, useState } from "react";
-import { RefreshCw, Calendar, LayoutDashboard, AlertTriangle, X, Zap, Code2, Wand2, Save } from "lucide-react";
+import { RefreshCw, Calendar, LayoutDashboard, AlertTriangle, X, Zap, Code2, Wand2, Save, HelpCircle } from "lucide-react";
 import type { Note, DashboardQueryMessage } from "@/types";
 import { cn, formatRelative } from "@/lib/utils";
-import { buildSrcdoc } from "./dashboard-bootstrap";
+import { buildSrcdoc, buildThemeStyle, CAIRN_CSS_VARS } from "./dashboard-bootstrap";
 import { CairnEvents } from "@/lib/events";
 import { useCairnStore } from "@/store";
+import { DashboardApiModal } from "./DashboardApiModal";
 
 interface DashboardViewProps {
   note: Note;
@@ -18,6 +19,19 @@ interface DashboardError {
   line?: number;
   col?: number;
   stack?: string;
+}
+
+// Read current Cairn CSS vars + theme from the DOM
+function readThemeInjection(): string {
+  if (typeof window === "undefined") return "";
+  const style = getComputedStyle(document.documentElement);
+  const vars: Record<string, string> = {};
+  for (const name of CAIRN_CSS_VARS) {
+    const val = style.getPropertyValue(name).trim();
+    if (val) vars[name] = val;
+  }
+  const theme = document.documentElement.getAttribute("data-theme") ?? "dark";
+  return buildThemeStyle(theme, vars);
 }
 
 // Read-only tools the dashboard is allowed to call
@@ -43,26 +57,37 @@ export function DashboardView({ note }: DashboardViewProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const editorRef = useRef<HTMLDivElement>(null);
   const cmViewRef = useRef<import("@codemirror/view").EditorView | null>(null);
-  const [rev, setRev]         = useState(0);
-  const [srcdoc, setSrcdoc]   = useState(() => buildSrcdoc(note.content ?? "", projectId, workspaceId));
-  const [errors, setErrors]   = useState<DashboardError[]>([]);
-  const [autoRefreshed, setAutoRefreshed] = useState(false);
-  const [editOpen, setEditOpen] = useState(false);
+  const [rev, setRev]                       = useState(0);
+  const [themeInjection, setThemeInjection] = useState(() => readThemeInjection());
+  const [srcdoc, setSrcdoc]                 = useState(() => buildSrcdoc(note.content ?? "", projectId, workspaceId, readThemeInjection()));
+  const [errors, setErrors]                 = useState<DashboardError[]>([]);
+  const [autoRefreshed, setAutoRefreshed]   = useState(false);
+  const [editOpen, setEditOpen]             = useState(false);
+  const [apiModalOpen, setApiModalOpen]     = useState(false);
 
-  // Rebuild srcdoc when note content changes
+  // Watch for theme changes (data-theme on <html>) and re-read CSS vars
   useEffect(() => {
-    setSrcdoc(buildSrcdoc(note.content ?? "", projectId, workspaceId));
+    const observer = new MutationObserver(() => {
+      setThemeInjection(readThemeInjection());
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => observer.disconnect();
+  }, []);
+
+  // Rebuild srcdoc when note content or theme changes
+  useEffect(() => {
+    setSrcdoc(buildSrcdoc(note.content ?? "", projectId, workspaceId, themeInjection));
     setErrors([]);
-  }, [note.id, note.content, projectId, workspaceId]);
+  }, [note.id, note.content, projectId, workspaceId, themeInjection]);
 
   const reload = useCallback(() => {
-    setSrcdoc(buildSrcdoc(note.content ?? "", projectId, workspaceId));
+    const injection = readThemeInjection();
+    setSrcdoc(buildSrcdoc(note.content ?? "", projectId, workspaceId, injection));
     setErrors([]);
     setRev((r) => r + 1);
   }, [note.content, projectId, workspaceId]);
 
-  // Auto-refresh when DB changes (db:changed event from Electron).
-  // Send cairn:refresh to the iframe instead of remounting (no visible flash).
+  // Auto-refresh when DB changes — send cairn:refresh to iframe instead of remounting
   useEffect(() => {
     if (!electron?.onDbChanged) return;
     const unsub = electron.onDbChanged(() => {
@@ -79,16 +104,14 @@ export function DashboardView({ note }: DashboardViewProps) {
       const data = event.data;
       if (!data?.type) return;
 
-      // ── error bridge ──
       if (data.type === "cairn:error") {
         setErrors((prev) => [
           { message: data.message, source: data.source, line: data.line, col: data.col, stack: data.stack },
-          ...prev.slice(0, 4), // cap at 5
+          ...prev.slice(0, 4),
         ]);
         return;
       }
 
-      // ── query bridge ──
       if (data.type !== "cairn:query") return;
 
       const reply = (result: unknown, error?: string) => {
@@ -127,8 +150,37 @@ export function DashboardView({ note }: DashboardViewProps) {
       const { EditorState } = await import("@codemirror/state");
       const { defaultKeymap, history, historyKeymap, indentWithTab } = await import("@codemirror/commands");
       const { html } = await import("@codemirror/lang-html");
+      const { syntaxHighlighting, HighlightStyle } = await import("@codemirror/language");
+      const { tags } = await import("@lezer/highlight");
 
       const isDark = document.documentElement.getAttribute("data-theme") !== "light";
+
+      // Palette matched to CodeBlock.tsx dark/light palettes
+      const highlightStyle = HighlightStyle.define(isDark ? [
+        { tag: [tags.tagName, tags.angleBracket],        color: "#e06c75" },
+        { tag: tags.attributeName,                        color: "#e06c75" },
+        { tag: tags.attributeValue,                       color: "#98c379" },
+        { tag: [tags.string, tags.special(tags.string)],  color: "#98c379" },
+        { tag: tags.comment,                              color: "#5c6370", fontStyle: "italic" },
+        { tag: tags.docComment,                            color: "#c678dd" },
+        { tag: [tags.keyword, tags.operator],             color: "#56b6c2" },
+        { tag: tags.number,                               color: "#d19a66" },
+        { tag: tags.url,                                  color: "#98c379" },
+        { tag: tags.punctuation,                          color: "#abb2bf" },
+        { tag: tags.meta,                                 color: "#61afef" },
+      ] : [
+        { tag: [tags.tagName, tags.angleBracket],        color: "#dc2626" },
+        { tag: tags.attributeName,                        color: "#1d4ed8" },
+        { tag: tags.attributeValue,                       color: "#16a34a" },
+        { tag: [tags.string, tags.special(tags.string)],  color: "#16a34a" },
+        { tag: tags.comment,                              color: "#9ca3af", fontStyle: "italic" },
+        { tag: tags.docComment,                            color: "#7c3aed" },
+        { tag: [tags.keyword, tags.operator],             color: "#0891b2" },
+        { tag: tags.number,                               color: "#c2410c" },
+        { tag: tags.url,                                  color: "#16a34a" },
+        { tag: tags.punctuation,                          color: "#374151" },
+        { tag: tags.meta,                                 color: "#1d4ed8" },
+      ]);
 
       const theme = EditorView.theme({
         "&": { height: "100%", fontSize: "12.5px", fontFamily: "ui-monospace, monospace" },
@@ -148,6 +200,7 @@ export function DashboardView({ note }: DashboardViewProps) {
             history(),
             cmKeymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
             html(),
+            syntaxHighlighting(highlightStyle),
             theme,
             EditorView.lineWrapping,
           ],
@@ -166,7 +219,6 @@ export function DashboardView({ note }: DashboardViewProps) {
     const html = cmViewRef.current?.state.doc.toString() ?? "";
     updateNote(note.id, { content: html, contentText: "" });
     setEditOpen(false);
-    // reload will fire via note.content change in the srcdoc effect above
   }
 
   if (!note.content?.trim()) {
@@ -282,14 +334,24 @@ export function DashboardView({ note }: DashboardViewProps) {
           title={note.title}
         />
 
-        {/* Edit HTML drawer — slides up from the bottom over the iframe */}
+        {/* Edit HTML drawer */}
         {editOpen && (
           <div className="absolute inset-0 flex flex-col bg-[var(--background)] z-10">
             {/* Drawer header */}
             <div className="flex items-center justify-between px-4 py-2 border-b border-[var(--border)] flex-shrink-0">
-              <div className="flex items-center gap-2 text-xs font-medium text-[var(--text-secondary)]">
-                <Code2 size={12} />
-                Edit HTML
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 text-xs font-medium text-[var(--text-secondary)]">
+                  <Code2 size={12} />
+                  Edit HTML
+                </div>
+                <button
+                  onClick={() => setApiModalOpen(true)}
+                  className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
+                  title="window.cairn API reference"
+                >
+                  <HelpCircle size={11} />
+                  API ref
+                </button>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -313,6 +375,9 @@ export function DashboardView({ note }: DashboardViewProps) {
           </div>
         )}
       </div>
+
+      {/* API reference modal */}
+      {apiModalOpen && <DashboardApiModal onClose={() => setApiModalOpen(false)} />}
     </div>
   );
 }

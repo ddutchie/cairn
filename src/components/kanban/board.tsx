@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import {
   DndContext,
   DragOverlay,
@@ -10,6 +11,7 @@ import {
   type DragStartEvent,
   type DragEndEvent,
   type DragOverEvent,
+  type DragMoveEvent,
   closestCorners,
 } from "@dnd-kit/core";
 import {
@@ -17,7 +19,7 @@ import {
   horizontalListSortingStrategy,
   arrayMove,
 } from "@dnd-kit/sortable";
-import { Plus, Kanban } from "lucide-react";
+import { Plus, Kanban, Archive, Trash2 } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
@@ -26,6 +28,8 @@ import { KanbanCard } from "./card";
 import { CardDetailModal } from "./card-detail";
 import type { TaskCard, BoardColumn } from "@/types";
 
+const ZONE_H = 56;
+
 export function KanbanBoard() {
   const {
     activeProjectId,
@@ -33,6 +37,8 @@ export function KanbanBoard() {
     getColumnCards,
     getArchivedColumnCards,
     moveCard,
+    archiveCard,
+    deleteCard,
     createColumn,
     createCard,
     updateColumn,
@@ -41,28 +47,56 @@ export function KanbanBoard() {
     restoreCard,
   } = useCairnStore();
 
-  // The active dragged item — either a card or a column
-  const [activeCard, setActiveCard] = useState<TaskCard | null>(null);
-  const [activeColumn, setActiveColumn] = useState<BoardColumn | null>(null);
-  const [detailCardId, setDetailCardId] = useState<string | null>(null);
-  const [overId, setOverId] = useState<string | null>(null);
+  const [activeCard, setActiveCard]         = useState<TaskCard | null>(null);
+  const [activeColumn, setActiveColumn]     = useState<BoardColumn | null>(null);
+  const [detailCardId, setDetailCardId]     = useState<string | null>(null);
+  const [overId, setOverId]                 = useState<string | null>(null);
+  const [deleteFlashing, setDeleteFlashing] = useState(false);
+  const [hoverZone, setHoverZone]           = useState<"archive" | "delete" | null>(null);
+
+  // Portal zone rects — computed from the board container when drag starts
+  const boardRef    = useRef<HTMLDivElement>(null);
+  const [zoneRect, setZoneRect] = useState<{ top: number; left: number; width: number } | null>(null);
 
   const columns = activeProjectId ? getProjectColumns(activeProjectId) : [];
 
   const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: { distance: 5 },
-    })
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   );
 
+  // Compute portal zone position from board container
+  function computeZoneRect() {
+    const r = boardRef.current?.getBoundingClientRect();
+    if (!r) return null;
+    return { top: r.top, left: r.left, width: r.width };
+  }
+
+  // Hit-test a pointer position against the two zones
+  function getZoneHit(clientX: number, clientY: number, rect: { top: number; left: number; width: number }): "archive" | "delete" | null {
+    const { top, left, width } = rect;
+    const bottom = top + ZONE_H;
+    const mid    = left + width / 2;
+    if (clientY < top || clientY > bottom) return null;
+    if (clientX < left || clientX > left + width) return null;
+    return clientX < mid ? "archive" : "delete";
+  }
+
   function handleDragStart(event: DragStartEvent) {
-    const col = event.active.data.current?.column as BoardColumn | undefined;
-    const card = event.active.data.current?.card as TaskCard | undefined;
-    if (col) {
-      setActiveColumn(col);
-    } else if (card) {
-      setActiveCard(card);
-    }
+    const col  = event.active.data.current?.column as BoardColumn | undefined;
+    const card = event.active.data.current?.card   as TaskCard    | undefined;
+    if (col)       { setActiveColumn(col); setZoneRect(null); }
+    else if (card) { setActiveCard(card);  setZoneRect(computeZoneRect()); }
+  }
+
+  function handleDragMove(event: DragMoveEvent) {
+    if (!activeCard || !zoneRect) { setHoverZone(null); return; }
+    const init = event.activatorEvent as PointerEvent;
+    const x = init.clientX + event.delta.x;
+    const y = init.clientY + event.delta.y;
+    const zone = getZoneHit(x, y, zoneRect);
+    setHoverZone(zone);
+    // Clear column/card drop highlight while hovering an action zone
+    if (zone) setOverId(null);
   }
 
   function handleDragOver(event: DragOverEvent) {
@@ -71,71 +105,88 @@ export function KanbanBoard() {
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
+    const draggedCard = active.data.current?.card as TaskCard | undefined;
+
+    // Compute final pointer position before clearing state
+    const init  = event.activatorEvent as PointerEvent;
+    const dropX = init.clientX + event.delta.x;
+    const dropY = init.clientY + event.delta.y;
+    const rect  = zoneRect;
+
     setActiveCard(null);
     setActiveColumn(null);
     setOverId(null);
+    setHoverZone(null);
+    setZoneRect(null);
+
+    // ── Action zones ──────────────────────────────────────────────────────
+    if (draggedCard && rect) {
+      const zone = getZoneHit(dropX, dropY, rect);
+      if (zone === "archive") {
+        archiveCard(draggedCard.id);
+        return;
+      }
+      if (zone === "delete") {
+        setDeleteFlashing(true);
+        setTimeout(() => {
+          setDeleteFlashing(false);
+          deleteCard(draggedCard.id);
+        }, 300);
+        return;
+      }
+    }
 
     if (!over || active.id === over.id) return;
 
-    // ── Column reorder ─────────────────────────────────────────────────
+    // ── Column reorder ────────────────────────────────────────────────────
     if (active.data.current?.column) {
       if (!activeProjectId) return;
       const oldIndex = columns.findIndex((c) => c.id === active.id);
       const newIndex = columns.findIndex((c) => c.id === over.id);
       if (oldIndex === -1 || newIndex === -1) return;
-      const reordered = arrayMove(columns, oldIndex, newIndex);
-      reorderColumns(activeProjectId, reordered.map((c) => c.id));
+      reorderColumns(activeProjectId, arrayMove(columns, oldIndex, newIndex).map((c) => c.id));
       return;
     }
 
-    // ── Card move / reorder ────────────────────────────────────────────
-    const draggedCard = active.data.current?.card as TaskCard;
+    // ── Card move / reorder ───────────────────────────────────────────────
     if (!draggedCard) return;
-
-    const overId = over.id as string;
-
+    const overIdStr = over.id as string;
     let targetColumnId: string;
     let targetIndex: number;
 
-    const isOverColumn = columns.some((c) => c.id === overId);
+    const isOverColumn = columns.some((c) => c.id === overIdStr);
     if (isOverColumn) {
-      targetColumnId = overId;
-      const colCards = getColumnCards(overId);
-      targetIndex = colCards.length;
+      targetColumnId = overIdStr;
+      targetIndex = getColumnCards(overIdStr).length;
     } else {
       const allCards = columns.flatMap((c) =>
         getColumnCards(c.id).map((card) => ({ ...card, _colId: c.id }))
       );
-      const overCard = allCards.find((c) => c.id === overId);
+      const overCard = allCards.find((c) => c.id === overIdStr);
       if (!overCard) return;
       targetColumnId = overCard._colId;
       const colCards = getColumnCards(targetColumnId).filter((c) => c.id !== draggedCard.id);
-      const overIdx = colCards.findIndex((c) => c.id === overId);
+      const overIdx  = colCards.findIndex((c) => c.id === overIdStr);
       targetIndex = overIdx >= 0 ? overIdx : colCards.length;
     }
 
     if (
       draggedCard.columnId === targetColumnId &&
       getColumnCards(targetColumnId)[targetIndex]?.id === draggedCard.id
-    ) {
-      return;
-    }
+    ) return;
 
     moveCard(draggedCard.id, targetColumnId, targetIndex);
   }
 
-  // Listen for deep-link events from search/overview
+  // Deep-link: open card detail
   useEffect(() => {
-    const handler = (e: Event) => {
-      const { cardId } = (e as CustomEvent).detail;
-      setDetailCardId(cardId);
-    };
+    const handler = (e: Event) => setDetailCardId((e as CustomEvent).detail.cardId);
     window.addEventListener("cairn:open-card", handler);
     return () => window.removeEventListener("cairn:open-card", handler);
   }, []);
 
-  // Column element refs for scroll-to-column deep-links
-  const columnRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  // Deep-link: scroll to column
+  const columnRefs     = useRef<Record<string, HTMLDivElement | null>>({});
   const boardScrollRef = useRef<HTMLDivElement | null>(null);
   const [highlightedColumnId, setHighlightedColumnId] = useState<string | null>(null);
 
@@ -148,10 +199,7 @@ export function KanbanBoard() {
   }, []);
 
   useEffect(() => {
-    const handler = (e: Event) => {
-      const { columnId } = (e as CustomEvent).detail;
-      scrollToColumn(columnId);
-    };
+    const handler = (e: Event) => scrollToColumn((e as CustomEvent).detail.columnId);
     window.addEventListener("cairn:scroll-to-column", handler);
     return () => window.removeEventListener("cairn:scroll-to-column", handler);
   }, [scrollToColumn]);
@@ -159,16 +207,8 @@ export function KanbanBoard() {
   const [addColumnOpen, setAddColumnOpen] = useState(false);
   const [newColumnName, setNewColumnName] = useState("");
 
-  function handleAddColumn() {
-    if (!activeProjectId) return;
-    setNewColumnName("");
-    setAddColumnOpen(true);
-  }
-
   function handleAddColumnConfirm() {
-    if (newColumnName.trim() && activeProjectId) {
-      createColumn(activeProjectId, newColumnName.trim());
-    }
+    if (newColumnName.trim() && activeProjectId) createColumn(activeProjectId, newColumnName.trim());
     setAddColumnOpen(false);
   }
 
@@ -180,68 +220,134 @@ export function KanbanBoard() {
     );
   }
 
+  // Portal action zones — rendered into document.body, positioned over the board top edge
+  const actionZonesPortal = activeCard && zoneRect && typeof document !== "undefined"
+    ? createPortal(
+        <div
+          style={{
+            position: "fixed",
+            top: zoneRect.top,
+            left: zoneRect.left,
+            width: zoneRect.width,
+            height: ZONE_H,
+            display: "flex",
+            zIndex: 9999,
+            pointerEvents: "none", // visual only — drop detected via hit-test in handleDragEnd
+          }}
+        >
+          {/* Archive half */}
+          <div
+            style={{
+              width: "50%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 8,
+              fontSize: 13,
+              fontWeight: 500,
+              background: hoverZone === "archive" ? "rgba(245,158,11,0.22)" : "rgba(245,158,11,0.08)",
+              color: hoverZone === "archive" ? "#f59e0b" : "rgba(245,158,11,0.5)",
+              borderBottom: `1px solid rgba(245,158,11,${hoverZone === "archive" ? "0.45" : "0.2"})`,
+              transition: "background 0.15s, color 0.15s, border-color 0.15s",
+            }}
+          >
+            <Archive size={14} />
+            Archive
+          </div>
+          {/* Delete half */}
+          <div
+            style={{
+              width: "50%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 8,
+              fontSize: 13,
+              fontWeight: 500,
+              background: deleteFlashing
+                ? "rgba(239,68,68,0.4)"
+                : hoverZone === "delete"
+                ? "rgba(239,68,68,0.22)"
+                : "rgba(239,68,68,0.08)",
+              color: hoverZone === "delete" || deleteFlashing ? "#ef4444" : "rgba(239,68,68,0.5)",
+              borderBottom: `1px solid rgba(239,68,68,${hoverZone === "delete" ? "0.45" : "0.2"})`,
+              borderLeft: "1px solid rgba(239,68,68,0.15)",
+              transition: "background 0.15s, color 0.15s, border-color 0.15s",
+            }}
+          >
+            <Trash2 size={14} />
+            Delete
+          </div>
+        </div>,
+        document.body
+      )
+    : null;
+
   return (
     <>
       <DndContext
         sensors={sensors}
         collisionDetection={closestCorners}
         onDragStart={handleDragStart}
+        onDragMove={handleDragMove}
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
       >
-        {/* Outer SortableContext for column reordering */}
-        <SortableContext items={columns.map((c) => c.id)} strategy={horizontalListSortingStrategy}>
-          <div ref={boardScrollRef} className="flex-1 flex gap-3 overflow-x-auto p-5 min-h-0">
-            {columns.map((column) => (
-              <div key={column.id} ref={(el) => { columnRefs.current[column.id] = el; }} className="flex-shrink-0">
-                <KanbanColumn
-                  column={column}
-                  cards={getColumnCards(column.id)}
-                  archivedCards={getArchivedColumnCards(column.id)}
-                  onCardClick={(cardId) => setDetailCardId(cardId)}
-                  onAddCard={(data) => createCard(column.id, activeProjectId, data.title, { dueDate: data.dueDate, assignee: data.assignee })}
-                  onRename={(name) => updateColumn(column.id, { name })}
-                  onDelete={() => deleteColumn(column.id)}
-                  onRestoreCard={(cardId) => restoreCard(cardId)}
-                  isDragOver={overId === column.id}
-                  isColumnDragging={activeColumn?.id === column.id}
-                  isHighlighted={highlightedColumnId === column.id}
-                />
-              </div>
-            ))}
-
-            {/* Add column */}
-            <div className="flex-shrink-0 w-56">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleAddColumn}
-                className="w-full border border-dashed border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--accent)] hover:text-[var(--accent)] h-auto py-3"
-              >
-                <Plus size={13} />
-                Add column
-              </Button>
-            </div>
-
-            {columns.length === 0 && (
-              <div className="flex-1 flex items-center justify-center">
-                <div className="text-center">
-                  <Kanban size={32} className="mx-auto mb-3 text-[var(--text-tertiary)] opacity-30" />
-                  <p className="text-sm text-[var(--text-tertiary)]">No columns yet</p>
+        <div ref={boardRef} className="flex-1 flex flex-col min-h-0 w-full overflow-hidden">
+          <SortableContext items={columns.map((c) => c.id)} strategy={horizontalListSortingStrategy}>
+            <div
+              ref={boardScrollRef}
+              className="flex-1 flex gap-3 overflow-x-auto p-5 min-h-0 transition-all duration-200"
+              style={{ paddingTop: activeCard ? ZONE_H + 20 : 20 }}
+            >
+              {columns.map((column) => (
+                <div key={column.id} ref={(el) => { columnRefs.current[column.id] = el; }} className="flex-shrink-0">
+                  <KanbanColumn
+                    column={column}
+                    cards={getColumnCards(column.id)}
+                    archivedCards={getArchivedColumnCards(column.id)}
+                    onCardClick={(cardId) => setDetailCardId(cardId)}
+                    onAddCard={(data) => createCard(column.id, activeProjectId, data.title, { dueDate: data.dueDate, assignee: data.assignee })}
+                    onRename={(name) => updateColumn(column.id, { name })}
+                    onDelete={() => deleteColumn(column.id)}
+                    onRestoreCard={(cardId) => restoreCard(cardId)}
+                    isDragOver={overId === column.id}
+                    isColumnDragging={activeColumn?.id === column.id}
+                    isHighlighted={highlightedColumnId === column.id}
+                  />
                 </div>
+              ))}
+
+              <div className="flex-shrink-0 w-56">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => { if (activeProjectId) { setNewColumnName(""); setAddColumnOpen(true); } }}
+                  className="w-full border border-dashed border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--accent)] hover:text-[var(--accent)] h-auto py-3"
+                >
+                  <Plus size={13} />
+                  Add column
+                </Button>
               </div>
-            )}
-          </div>
-        </SortableContext>
+
+              {columns.length === 0 && (
+                <div className="flex-1 flex items-center justify-center">
+                  <div className="text-center">
+                    <Kanban size={32} className="mx-auto mb-3 text-[var(--text-tertiary)] opacity-30" />
+                    <p className="text-sm text-[var(--text-tertiary)]">No columns yet</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </SortableContext>
+        </div>
+
+        {actionZonesPortal}
 
         <DragOverlay>
           {activeCard && (
             <div className="rotate-2 opacity-90">
-              <KanbanCard
-                card={activeCard}
-                isDragging
-                onClick={() => {}}
-              />
+              <KanbanCard card={activeCard} isDragging onClick={() => {}} />
             </div>
           )}
           {activeColumn && (
@@ -263,15 +369,10 @@ export function KanbanBoard() {
         </DragOverlay>
       </DndContext>
 
-      {/* Card detail modal */}
       {detailCardId && (
-        <CardDetailModal
-          cardId={detailCardId}
-          onClose={() => setDetailCardId(null)}
-        />
+        <CardDetailModal cardId={detailCardId} onClose={() => setDetailCardId(null)} />
       )}
 
-      {/* Add column dialog */}
       <Dialog open={addColumnOpen} onOpenChange={setAddColumnOpen}>
         <DialogContent size="sm">
           <DialogHeader>

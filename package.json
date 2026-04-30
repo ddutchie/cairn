@@ -16,6 +16,7 @@
     "build:all": "node scripts/build.js --mac --win --linux",
     "compile": "esbuild electron/main.ts electron/preload.ts --bundle --platform=node --target=node20 --external:electron --external:better-sqlite3 --outdir=dist-electron --format=cjs && esbuild electron/mcp-server.ts --bundle --platform=node --target=node20 --external:better-sqlite3 --outfile=dist-mcp/mcp-server.bundle.js --format=cjs",
     "generate-tray-icon": "node scripts/generate-tray-icon.js",
+    "postinstall": "electron-builder install-app-deps",
     "rebuild": "node scripts/rebuild-native.js",
     "build:mcp-binary": "node scripts/build-mcp-binary.js",
     "lint": "eslint",
@@ -42,7 +43,7 @@
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
-    "@electron/rebuild": "^4.0.4",
+
     "@lezer/highlight": "^1.2.3",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@radix-ui/react-dialog": "^1.1.15",
