@@ -53,7 +53,7 @@ npm run build:all      # All three platforms
 
 Output goes to `dist-app/`.
 
-> **Note:** `npm run rebuild` must be re-run after updating the Electron version. It builds two native binaries: one for the Electron ABI (`electron-native/`) and one for the Node 22 ABI used by the MCP binary (`pkg-native/`). The MCP server is then bundled into a self-contained binary by `scripts/build-mcp-binary.js` — no separate Node installation needed to run it.
+> **Note:** `npm run rebuild` must be re-run after updating the Electron version. It builds three native binaries: one for the Electron ABI (`electron-native/`), one for the Node 22 ABI used by the MCP binary (`pkg-native/`), and one for the current system Node ABI used by vitest (`vitest-native/`). The MCP server is then bundled into a self-contained binary by `scripts/build-mcp-binary.js` — no separate Node installation needed to run it.
 
 ## AI chat setup
 
@@ -113,8 +113,11 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 | `get_note` | read | Full markdown content of a note by ID |
 | `get_task` | read | Full detail of a task card by ID |
 | `get_project_summary` | read | Column breakdown, card counts, recent activity |
+| `list_notes` | read | List all notes in a project |
+| `list_tasks` | read | List all tasks grouped by column |
 | `list_recent_activity` | read | Recently created/updated notes and tasks |
 | `create_project` | write | Create a project with default board columns |
+| `update_project` | write | Update a project's name, status, priority, or due date |
 | `create_note` | write | Create a markdown note |
 | `update_note` | write | Update a note's title or content |
 | `create_task` | write | Create a task card in a column |
@@ -125,6 +128,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 | `update_dashboard` | write | Update an existing dashboard's title or HTML |
 | `delete_note` | delete | Permanently delete a note |
 | `delete_task` | delete | Permanently delete a task card |
+| `delete_project` | delete | Permanently delete a project and all its contents |
 
 > Call `get_cairn_context` at the start of a session — it returns all workspace/project/column IDs and conventions in one call.
 
@@ -275,8 +279,9 @@ External .md edit
 | `electron/lib/context.ts` | `buildContextResponse` — canonical `get_cairn_context` response |
 | `electron/lib/prd.ts` | `generatePrd` — shared PRD generation logic |
 | `electron/db/queries.ts` | SQLite query helpers (CRUD, search, snapshot) |
-| `electron/db/schema.ts` | SQLite DDL; `notes.type` column; `mcp_notifications` table |
-| `electron/db/utils.ts` | `newId()`, `ts()` — shared ID and timestamp helpers |
+| `electron/shared/text-utils.ts` | Pure text helpers shared across the process boundary: `toSlug`, `stripMarkdown` |
+| `electron/db/schema.ts` | SQLite DDL + versioned migration runner (`PRAGMA user_version`) |
+| `electron/db/utils.ts` | `newId()` (nanoid), `ts()` — shared ID and timestamp helpers |
 | `electron/db/defaults.ts` | `DEFAULT_COLUMNS` — canonical 5-column board layout |
 | `electron/mcp-server.ts` | Standalone MCP binary; all MCP tools; `getConfigBasePath()` |
 
@@ -286,6 +291,7 @@ External .md edit
 |------|---------|
 | `src/store/index.ts` | Zustand store composition + hydration; delegates to domain slices |
 | `src/store/slices/` | Domain slices: `ui`, `workspace`, `board`, `notes`, `tags`, `chat`, `selectors` |
+| `src/store/ipc.ts` | Shared `isElectron`, `ipc`, `ipcAwait` helpers used by all slices |
 | `src/lib/constants.ts` | Shared constants: `COLUMN_COLORS`, `PRIORITY_OPTIONS`, `DEFAULT_AI_CONFIG`, etc. |
 | `src/lib/events.ts` | Typed `CairnEvents` helpers for internal custom event dispatch |
 | `src/components/onboarding/create-workspace.tsx` | First-launch folder picker + workspace creation |
