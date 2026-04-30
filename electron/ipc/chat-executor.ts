@@ -90,7 +90,12 @@ export async function executeTool(
     case "get_note": {
       const note = snap.notes.find((n) => n.id === args.noteId);
       if (!note) return { error: "Note not found" };
-      return { id: note.id, title: note.title, content: note.content, projectId: note.projectId, updatedAt: note.updatedAt };
+      return {
+        id: note.id, title: note.title, content: note.content,
+        projectId: note.projectId, isPinned: note.isPinned,
+        linkedNoteIds: note.linkedNoteIds, linkedCardIds: note.linkedCardIds,
+        updatedAt: note.updatedAt,
+      };
     }
     case "create_dashboard": {
       const project = snap.projects.find((p) => p.id === args.projectId);
@@ -126,16 +131,34 @@ export async function executeTool(
     case "update_note": {
       const existing = snap.notes.find((n) => n.id === args.noteId);
       if (!existing) return { error: "Note not found" };
-      const patch: { title?: string; content?: string; contentText?: string } = {};
+      const patch: { title?: string; content?: string; contentText?: string; isPinned?: boolean } = {};
       if (args.title !== undefined && args.title !== "") patch.title = args.title as string;
       if (args.content !== undefined) {
         patch.content = args.content as string;
         patch.contentText = stripMarkdown(args.content as string);
       }
+      if (args.isPinned !== undefined) patch.isPinned = args.isPinned as boolean;
       const note = q.updateNote(db, args.noteId as string, patch);
       const proj = snap.projects.find((p) => p.id === note.projectId);
       writeNoteFile(workspacePath, { ...note, projectName: proj?.name ?? note.projectId });
       return note;
+    }
+    case "move_note": {
+      const note = snap.notes.find((n) => n.id === args.noteId);
+      if (!note) return { error: "Note not found" };
+      const targetProject = snap.projects.find((p) => p.id === args.targetProjectId);
+      if (!targetProject) return { error: "Target project not found" };
+      if (note.projectId === args.targetProjectId) return { error: "Note is already in that project" };
+      const sourceProject = snap.projects.find((p) => p.id === note.projectId);
+      // Delete .md from source project folder
+      deleteNoteFile(workspacePath, sourceProject?.name ?? note.projectId, note.id);
+      // updateNote doesn't accept projectId — use a targeted SQL update
+      db.prepare(`UPDATE notes SET project_id = ?, workspace_id = ?, updated_at = ? WHERE id = ?`)
+        .run(targetProject.id, targetProject.workspaceId, ts(), note.id);
+      const moved = q.getNoteById(db, note.id)!;
+      // Write .md to target project folder
+      writeNoteFile(workspacePath, { ...moved, projectName: targetProject.name });
+      return { id: moved.id, title: moved.title, previousProjectId: note.projectId, newProjectId: targetProject.id };
     }
     case "create_task": {
       const col = snap.columns.find((c) => c.id === args.columnId);

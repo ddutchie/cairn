@@ -222,10 +222,73 @@ describe("update_note", () => {
     expect(result.title).toBe("Updated");
   });
 
+  it("pins a note via isPinned", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "update_note", { noteId: "note1", isPinned: true }) as Record<string, unknown>;
+    expect(result).not.toHaveProperty("error");
+    const note = getCardById(db, "note1"); // use getNoteById via queries directly
+    const noteRow = db.prepare("SELECT is_pinned FROM notes WHERE id = ?").get("note1") as { is_pinned: number };
+    expect(noteRow.is_pinned).toBe(1);
+  });
+
   it("returns { error } for missing note", async () => {
     const db = makeDb();
     seed(db);
     const result = await exec(db, "update_note", { noteId: "nope", title: "X" }) as Record<string, unknown>;
+    expect(result).toHaveProperty("error");
+  });
+});
+
+// ── get_note ──────────────────────────────────────────────────────────────────
+
+describe("get_note linked fields", () => {
+  it("returns linkedNoteIds and linkedCardIds", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "get_note", { noteId: "note1" }) as Record<string, unknown>;
+    expect(result).not.toHaveProperty("error");
+    expect(result).toHaveProperty("linkedNoteIds");
+    expect(result).toHaveProperty("linkedCardIds");
+    expect(result).toHaveProperty("isPinned");
+  });
+});
+
+// ── move_note ─────────────────────────────────────────────────────────────────
+
+describe("move_note", () => {
+  it("moves note to a different project", async () => {
+    const db = makeDb();
+    seed(db);
+    // Create a second project to move into
+    createProject(db, { id: "proj2", workspaceId: "ws1", name: "Proj2" });
+    const result = await exec(db, "move_note", { noteId: "note1", targetProjectId: "proj2" }) as Record<string, unknown>;
+    expect(result).not.toHaveProperty("error");
+    expect(result.previousProjectId).toBe("proj1");
+    expect(result.newProjectId).toBe("proj2");
+    // Verify DB updated
+    const row = db.prepare("SELECT project_id FROM notes WHERE id = ?").get("note1") as { project_id: string };
+    expect(row.project_id).toBe("proj2");
+  });
+
+  it("returns { error } when note not found", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "move_note", { noteId: "nope", targetProjectId: "proj1" }) as Record<string, unknown>;
+    expect(result).toHaveProperty("error");
+  });
+
+  it("returns { error } when target project not found", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "move_note", { noteId: "note1", targetProjectId: "nope" }) as Record<string, unknown>;
+    expect(result).toHaveProperty("error");
+  });
+
+  it("returns { error } when note already in target project", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "move_note", { noteId: "note1", targetProjectId: "proj1" }) as Record<string, unknown>;
     expect(result).toHaveProperty("error");
   });
 });

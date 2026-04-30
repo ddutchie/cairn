@@ -292,7 +292,7 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
         projects,
         tools: {
           read:   ["get_cairn_context", "search_notes", "search_tasks", "get_note", "get_task", "get_project_summary", "list_recent_activity"],
-          write:  ["create_project", "create_note", "update_note", "create_task", "update_task", "update_task_status", "bulk_update_task_status", "link_note_to_task", "create_dashboard", "update_dashboard"],
+          write:  ["create_project", "create_note", "update_note", "move_note", "create_task", "update_task", "update_task_status", "bulk_update_task_status", "link_note_to_task", "create_dashboard", "update_dashboard"],
           delete: ["delete_note", "delete_task"],
         },
         conventions: {
@@ -435,26 +435,56 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
     }
 
     case "update_note": {
-      const { noteId, title, content } = args;
+      const { noteId, title, content, isPinned } = args;
       const note = snap.notes.find((n) => n.id === noteId);
       if (!note) return { error: "Note not found" };
       const now = ts();
       const markdown = content !== undefined ? content : null;
-      db.prepare(`UPDATE notes SET title = COALESCE(?, title), content = COALESCE(?, content), content_text = COALESCE(?, content_text), updated_at = ? WHERE id = ?`)
-        .run(title ?? null, markdown, markdown !== null ? stripMarkdown(markdown) : null, now, noteId);
+      const pinnedVal = isPinned !== undefined ? (isPinned ? 1 : 0) : null;
+      db.prepare(`UPDATE notes SET title = COALESCE(?, title), content = COALESCE(?, content), content_text = COALESCE(?, content_text), is_pinned = COALESCE(?, is_pinned), updated_at = ? WHERE id = ?`)
+        .run(title ?? null, markdown, markdown !== null ? stripMarkdown(markdown) : null, pinnedVal, now, noteId);
+      const resolvedIsPinned = isPinned !== undefined ? (isPinned as boolean) : note.isPinned as boolean;
       const updateProj = snap.projects.find((pr) => pr.id === note.projectId);
       writeNoteFile(workspacePath, {
         id: noteId, projectId: note.projectId as string, workspaceId: note.workspaceId as string,
         title: title ?? note.title as string,
         content: markdown !== null ? markdown : note.content as string,
         tagIds: note.tagIds as string[], linkedNoteIds: note.linkedNoteIds as string[],
-        linkedCardIds: note.linkedCardIds as string[], isPinned: note.isPinned as boolean,
+        linkedCardIds: note.linkedCardIds as string[], isPinned: resolvedIsPinned,
         createdAt: note.createdAt as string, updatedAt: now,
         archivedAt: note.archivedAt as string | undefined,
         projectName: updateProj?.name ?? note.projectId as string,
       });
       insertNotification(db, "update_note", "Note updated", `"${title ?? note.title}" was updated`);
-      return { id: noteId, title: title ?? note.title, updatedAt: now };
+      return { id: noteId, title: title ?? note.title, isPinned: resolvedIsPinned, updatedAt: now };
+    }
+
+    case "move_note": {
+      const { noteId, targetProjectId } = args;
+      const note = snap.notes.find((n) => n.id === noteId);
+      if (!note) return { error: "Note not found" };
+      const targetProject = snap.projects.find((p) => p.id === targetProjectId);
+      if (!targetProject) return { error: "Target project not found" };
+      if (note.projectId === targetProjectId) return { error: "Note is already in that project" };
+      const sourceProject = snap.projects.find((p) => p.id === note.projectId);
+      const now = ts();
+      // Remove .md from source folder
+      deleteNoteFile(workspacePath, sourceProject?.name ?? note.projectId as string, noteId as string);
+      // Update DB
+      db.prepare(`UPDATE notes SET project_id = ?, workspace_id = ?, updated_at = ? WHERE id = ?`)
+        .run(targetProject.id, targetProject.workspaceId, now, noteId);
+      // Write .md to target folder
+      writeNoteFile(workspacePath, {
+        id: noteId as string, projectId: targetProject.id, workspaceId: targetProject.workspaceId,
+        title: note.title as string, content: note.content as string,
+        tagIds: note.tagIds as string[], linkedNoteIds: note.linkedNoteIds as string[],
+        linkedCardIds: note.linkedCardIds as string[], isPinned: note.isPinned as boolean,
+        createdAt: note.createdAt as string, updatedAt: now,
+        archivedAt: note.archivedAt as string | undefined,
+        projectName: targetProject.name,
+      });
+      insertNotification(db, "move_note", "Note moved", `"${note.title}" → ${targetProject.name}`);
+      return { id: noteId, title: note.title, previousProjectId: note.projectId, newProjectId: targetProject.id };
     }
 
     case "create_task": {
@@ -527,7 +557,12 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
     case "get_note": {
       const note = snap.notes.find((n) => n.id === args.noteId);
       if (!note) return { error: "Note not found" };
-      return { id: note.id, title: note.title, content: note.content, projectId: note.projectId, updatedAt: note.updatedAt };
+      return {
+        id: note.id, title: note.title, content: note.content,
+        projectId: note.projectId, isPinned: note.isPinned,
+        linkedNoteIds: note.linkedNoteIds, linkedCardIds: note.linkedCardIds,
+        updatedAt: note.updatedAt,
+      };
     }
 
     case "create_project": {
@@ -701,8 +736,10 @@ const TOOL_DEFINITIONS = [
     inputSchema: { type: "object", properties: { workspaceId: { type: "string" }, projectId: { type: "string" }, limit: { type: "number", default: 20 } }, required: ["workspaceId"] } },
   { name: "create_note",         description: "Create a new note in a project.",
     inputSchema: { type: "object", properties: { projectId: { type: "string" }, title: { type: "string" }, content: { type: "string" } }, required: ["projectId", "title"] } },
-  { name: "update_note",         description: "Update a note's title or content (markdown string).",
-    inputSchema: { type: "object", properties: { noteId: { type: "string" }, title: { type: "string" }, content: { type: "string" } }, required: ["noteId"] } },
+  { name: "update_note",         description: "Update a note's title, content, or pinned state. All fields except noteId are optional.",
+    inputSchema: { type: "object", properties: { noteId: { type: "string" }, title: { type: "string" }, content: { type: "string" }, isPinned: { type: "boolean", description: "Pin or unpin the note in the project overview" } }, required: ["noteId"] } },
+  { name: "move_note",           description: "Move a note to a different project. Moves the .md file and updates the note's projectId.",
+    inputSchema: { type: "object", properties: { noteId: { type: "string" }, targetProjectId: { type: "string" } }, required: ["noteId", "targetProjectId"] } },
   { name: "create_task",         description: "Create a task card in a board column.",
     inputSchema: { type: "object", properties: { columnId: { type: "string" }, projectId: { type: "string" }, title: { type: "string" }, description: { type: "string" }, priority: { type: "string", enum: ["low","medium","high","urgent"] }, dueDate: { type: "string" } }, required: ["columnId", "projectId", "title"] } },
   { name: "update_task_status",  description: "Move a single task card to a different column.",
@@ -711,7 +748,7 @@ const TOOL_DEFINITIONS = [
     inputSchema: { type: "object", properties: { cardIds: { type: "array", items: { type: "string" }, description: "IDs of the task cards to move." }, targetColumnId: { type: "string" } }, required: ["cardIds", "targetColumnId"] } },
   { name: "link_note_to_task",   description: "Bidirectionally link a note and a task card.",
     inputSchema: { type: "object", properties: { noteId: { type: "string" }, cardId: { type: "string" } }, required: ["noteId", "cardId"] } },
-  { name: "get_note",            description: "Get the full content of a note by its ID.",
+  { name: "get_note",            description: "Get the full content, linked IDs, and metadata of a note by its ID.",
     inputSchema: { type: "object", properties: { noteId: { type: "string" } }, required: ["noteId"] } },
   { name: "get_task",            description: "Get full detail of a task card by its ID — title, description, priority, dueDate, column, linked notes.",
     inputSchema: { type: "object", properties: { cardId: { type: "string" } }, required: ["cardId"] } },

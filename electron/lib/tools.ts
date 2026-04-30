@@ -34,6 +34,7 @@ export const TOOL_LABELS: Record<string, (args: ToolArgs) => string> = {
   generate_prd:           (a) => `Generating PRD "${a.title}"`,
   spawn_tasks_from_note:  () => "Spawning tasks from note",
   link_note_to_task:      () => "Linking note to task",
+  move_note:              (a) => `Moving note to project`,
 };
 
 // Tool definitions for the AI (OpenAI function calling format)
@@ -162,13 +163,14 @@ export const TOOLS = [
     type: "function",
     function: {
       name: "update_note",
-      description: "Update a note's title or content (markdown).",
+      description: "Update a note's title, content, or pinned state. All fields except noteId are optional.",
       parameters: {
         type: "object",
         properties: {
-          noteId: { type: "string" },
-          title: { type: "string" },
-          content: { type: "string" },
+          noteId:   { type: "string" },
+          title:    { type: "string" },
+          content:  { type: "string", description: "Full markdown content" },
+          isPinned: { type: "boolean", description: "Pin or unpin the note in the project overview" },
         },
         required: ["noteId"],
       },
@@ -417,6 +419,21 @@ export const TOOLS = [
           assignee:    { type: "string", description: "Assignee name, or empty string to clear" },
         },
         required: ["cardId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "move_note",
+      description: "Move a note to a different project. Updates the note's projectId, moves its .md file to the new project folder, and re-links any linked tasks.",
+      parameters: {
+        type: "object",
+        properties: {
+          noteId:           { type: "string" },
+          targetProjectId:  { type: "string", description: "ID of the destination project" },
+        },
+        required: ["noteId", "targetProjectId"],
       },
     },
   },
