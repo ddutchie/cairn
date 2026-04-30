@@ -54,7 +54,7 @@ async function main() {
     }
   }
 
-  const chatToolNames = new Set(TOOLS.map((t) => t.name));
+  const chatToolNames = new Set(TOOLS.map((t) => t.function.name));
 
   // Shared tools = chat tools that are NOT chat-only
   const sharedChatTools = [...chatToolNames].filter((n) => !CHAT_ONLY.has(n));

@@ -99,11 +99,14 @@ export function NoteEditor({ note }: NoteEditorProps) {
       setAiLoading(true);
       try {
         const prompt = buildAIActionPrompt(action, sel.text, customPrompt);
-        const result = (await electron.chatSend({
-          message: prompt,
-          threadId: "ai-text-action",
-          config: { baseUrl: aiConfig.baseUrl, model: aiConfig.model, apiKey: aiConfig.apiKey },
-        })) as { content: string };
+        const result = await new Promise<{ content: string }>((resolve) => {
+          const unsub = electron.chat.onDone((e) => { unsub(); resolve(e); });
+          electron.chat.stream({
+            message: prompt,
+            threadId: "ai-text-action",
+            config: { baseUrl: aiConfig.baseUrl, model: aiConfig.model, apiKey: aiConfig.apiKey },
+          });
+        });
 
         const replacement = result.content?.trim();
         if (!replacement) return;
@@ -127,7 +130,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
         setSpawnToolCalls((prev) => [...prev, e.label]);
       }
     });
-    return unsub;
+    return () => { unsub(); };
   }, [spawnLoading]);
 
   const handleSpawnTasks = useCallback(async () => {
@@ -142,12 +145,15 @@ export function NoteEditor({ note }: NoteEditorProps) {
     setSpawnResult(null);
     setSpawnToolCalls([]);
     try {
-      const result = await electron.chatSend({
-        message: `Spawn tasks from the note with id="${note.id}" into column "${backlogCol.id}". Use the spawn_tasks_from_note tool.`,
-        threadId: "spawn-tasks",
-        projectId: activeProjectId,
-        config: { baseUrl: aiConfig.baseUrl, model: aiConfig.model, apiKey: aiConfig.apiKey },
-      }) as { content: string };
+      const result = await new Promise<{ content: string }>((resolve) => {
+        const unsub = electron.chat.onDone((e) => { unsub(); resolve(e); });
+        electron.chat.stream({
+          message: `Spawn tasks from the note with id="${note.id}" into column "${backlogCol.id}". Use the spawn_tasks_from_note tool.`,
+          threadId: "spawn-tasks",
+          projectId: activeProjectId,
+          config: { baseUrl: aiConfig.baseUrl, model: aiConfig.model, apiKey: aiConfig.apiKey },
+        });
+      });
 
       // Try to parse task count from the tool result embedded in the response
       const match = result.content?.match(/(\d+)\s+task/i);

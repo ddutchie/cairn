@@ -64,7 +64,7 @@ export function DashboardView({ note }: DashboardViewProps) {
       setAutoRefreshed(true);
       setTimeout(() => setAutoRefreshed(false), 1500);
     });
-    return () => unsub();
+    return () => { unsub(); };
   }, [electron]);
 
   // postMessage bridge — forward cairn:query and cairn:error from iframe
