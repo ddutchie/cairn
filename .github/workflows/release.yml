@@ -13,36 +13,29 @@ jobs:
   prepare-release:
     name: Create Release
     runs-on: ubuntu-latest
-    outputs:
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
 
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v4
 
-      - name: Read changelog for this version
-        id: changelog
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${GITHUB_REF_NAME}"
           FILE="changelogs/${TAG}.md"
+          PRERELEASE=""
+          if [[ "$TAG" == *"-"* ]]; then PRERELEASE="--prerelease"; fi
           if [ -f "$FILE" ]; then
-            echo "BODY<<EOF" >> $GITHUB_OUTPUT
-            cat "$FILE" >> $GITHUB_OUTPUT
-            echo "EOF" >> $GITHUB_OUTPUT
+            gh release create "$TAG" \
+              --title "Cairn ${TAG}" \
+              --notes-file "$FILE" \
+              $PRERELEASE
           else
-            echo "BODY=No changelog found for ${TAG}." >> $GITHUB_OUTPUT
+            gh release create "$TAG" \
+              --title "Cairn ${TAG}" \
+              --notes "No changelog found for ${TAG}." \
+              $PRERELEASE
           fi
-
-      - name: Create GitHub Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ github.ref_name }}
-          release_name: Cairn ${{ github.ref_name }}
-          body: ${{ steps.changelog.outputs.BODY }}
-          draft: false
-          prerelease: ${{ contains(github.ref_name, '-') }}
 
   # ── macOS ─────────────────────────────────────────────────────────────────
   build-mac:
@@ -51,15 +44,15 @@ jobs:
     needs: prepare-release
 
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v6.4.0
+      - uses: actions/setup-node@v4
         with:
-          node-version: 25
+          node-version: 22
           cache: npm
 
       - name: Cache Next.js build
-        uses: actions/cache@v5.0.5
+        uses: actions/cache@v4
         with:
           path: .next/cache
           key: nextjs-mac-${{ hashFiles('package-lock.json') }}
@@ -94,15 +87,15 @@ jobs:
     needs: prepare-release
 
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v6.4.0
+      - uses: actions/setup-node@v4
         with:
-          node-version: 25
+          node-version: 22
           cache: npm
 
       - name: Cache Next.js build
-        uses: actions/cache@v5.0.5
+        uses: actions/cache@v4
         with:
           path: .next/cache
           key: nextjs-win-${{ hashFiles('package-lock.json') }}
@@ -131,15 +124,15 @@ jobs:
     needs: prepare-release
 
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v6.4.0
+      - uses: actions/setup-node@v4
         with:
-          node-version: 25
+          node-version: 22
           cache: npm
 
       - name: Cache Next.js build
-        uses: actions/cache@v5.0.5
+        uses: actions/cache@v4
         with:
           path: .next/cache
           key: nextjs-linux-${{ hashFiles('package-lock.json') }}
