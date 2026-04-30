@@ -11,7 +11,7 @@
  * produce matching `id` attributes.
  */
 
-import { useMemo } from "react";
+import { useMemo, useEffect, useState, useRef } from "react";
 import { cn } from "@/lib/utils";
 
 // ── Slug ─────────────────────────────────────────────────────────────────────
@@ -62,8 +62,43 @@ interface Props {
   scrollContainerRef: React.RefObject<HTMLDivElement | null>;
 }
 
+// Minimum gap (px) to maintain between the content column right edge and the TOC left edge
+const MIN_GAP = 24;
+
 export function TableOfContents({ markdown, scrollContainerRef }: Props) {
   const headings = useMemo(() => extractHeadings(markdown), [markdown]);
+  const [visible, setVisible] = useState(false);
+  const tocRef = useRef<HTMLDivElement>(null);
+
+  // Measure actual DOM positions rather than guessing a fixed pixel threshold.
+  // Hides whenever the TOC left edge would be within MIN_GAP of the content column right edge.
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    function check() {
+      const toc = tocRef.current;
+      if (!toc) return;
+      // Content column: the first child div inside the scroll container
+      // (the px-6 py-5 max-w-4xl mx-auto wrapper)
+      const contentCol = container!.querySelector<HTMLElement>(":scope > div:not([class*='absolute'])");
+      if (!contentCol) return;
+      const contentRight = contentCol.getBoundingClientRect().right;
+      const tocLeft = toc.getBoundingClientRect().left;
+      setVisible(tocLeft - contentRight >= MIN_GAP);
+    }
+
+    const ro = new ResizeObserver(check);
+    ro.observe(container);
+    // Also re-check when the window resizes (sidebar open/close changes container width)
+    window.addEventListener("resize", check);
+    // Initial check after paint so TOC ref is available
+    requestAnimationFrame(check);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", check);
+    };
+  }, [scrollContainerRef]);
 
   if (headings.length < 2) return null;
 
@@ -78,8 +113,14 @@ export function TableOfContents({ markdown, scrollContainerRef }: Props) {
   }
 
   return (
-    // Hidden below xl (when there's not enough room beside the 680px column)
-    <div className="hidden xl:block absolute top-5 right-4 w-52 flex-shrink-0">
+    // Always rendered so tocRef is in the DOM for measurement.
+    // Visibility controlled by the `visible` state — using opacity+pointer-events
+    // rather than conditional render so the ResizeObserver can measure positions.
+    <div
+      ref={tocRef}
+      className="absolute top-5 right-4 w-52 flex-shrink-0 transition-opacity duration-150"
+      style={{ opacity: visible ? 1 : 0, pointerEvents: visible ? "auto" : "none" }}
+    >
       <div className="sticky top-5">
         <p className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-tertiary)] mb-2 px-1">
           On this page

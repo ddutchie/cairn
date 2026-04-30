@@ -5,6 +5,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { MermaidDiagram } from "./MermaidDiagram";
 import { TableOfContents, headingSlug } from "./TableOfContents";
+import { CodeBlock } from "./CodeBlock";
 import { Pin, PinOff, Calendar, Eye, Pencil, Wand2, Loader2, CheckCircle2, Tag, Plus, X, Link2, Kanban, ChevronDown } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { cn, formatRelative } from "@/lib/utils";
@@ -272,7 +273,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
           value={note.title}
           onChange={handleTitleChange}
           placeholder="Note title"
-          className="w-full bg-transparent text-2xl font-bold text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none tracking-tight max-w-[680px] mx-auto block"
+          className="w-full bg-transparent text-2xl font-bold text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none tracking-tight max-w-4xl mx-auto block"
         />
         {/* Tag bar */}
         <NoteTagBar
@@ -315,17 +316,31 @@ export function NoteEditor({ note }: NoteEditorProps) {
                 scrollContainerRef={previewScrollRef}
               />
             )}
-            <div className="px-6 py-5 max-w-[680px] mx-auto">
+            <div className="px-6 py-5 max-w-4xl mx-auto">
               {note.content ? (
                 <div className="prose-cairn">
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm]}
                     components={{
-                      code({ className, children }) {
-                        if (className === "language-mermaid") {
-                          return <MermaidDiagram chart={String(children)} />;
+                      // Override `pre` (not `code`) for fenced blocks — pre is a true
+                      // block element so ReactMarkdown won't wrap it in a <p>, avoiding
+                      // the double-margin/padding from .prose-cairn p + .prose-cairn pre.
+                      pre({ children }) {
+                        // ReactMarkdown renders <pre><code class="language-x">…</code></pre>
+                        const child = Array.isArray(children) ? children[0] : children;
+                        const code = child as React.ReactElement<{ className?: string; children?: React.ReactNode }>;
+                        const className = code?.props?.className ?? "";
+                        const lang = className.replace("language-", "") || undefined;
+                        const content = String(code?.props?.children ?? "").replace(/\n$/, "");
+                        if (lang === "mermaid") {
+                          return <MermaidDiagram chart={content} />;
                         }
-                        return <code className={className}>{children}</code>;
+                        return <CodeBlock code={content} language={lang} />;
+                      },
+                      // Inline code only — fenced blocks are handled by `pre` above
+                      code({ className, children }) {
+                        if (className?.startsWith("language-")) return <>{children}</>;
+                        return <code className="px-1 py-0.5 rounded bg-[var(--surface-3)] font-mono text-[11px] text-[var(--text-primary)]">{children}</code>;
                       },
                       // Headings get id + data-heading-id for TOC anchor scrolling
                       h1({ children }) {
@@ -507,7 +522,7 @@ function NoteTagBar({ note, workspaceTags, onToggleTag, onCreateTag, getTagById 
   }
 
   return (
-    <div className="flex items-center gap-1.5 mt-2.5 max-w-[680px] mx-auto flex-wrap relative">
+    <div className="flex items-center gap-1.5 mt-2.5 max-w-4xl mx-auto flex-wrap relative">
       {/* Assigned tags */}
       {assignedTags.map((tag) => (
         <button

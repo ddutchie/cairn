@@ -320,12 +320,13 @@ body {
   padding: 0.1em 0.35em;
 }
 .prose-cairn pre {
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 0.75rem 1rem;
-  overflow-x: auto;
-  margin: 0.75rem 0;
+  /* Fenced code blocks are replaced by <CodeBlock> via the `pre` component
+     override in ReactMarkdown — this rule only catches any bare <pre> that
+     slips through and resets margin/padding so it doesn't double-space. */
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: none;
 }
 .prose-cairn pre code {
   background: none;
