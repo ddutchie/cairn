@@ -11,7 +11,7 @@ import type Database from "better-sqlite3";
 import { applySchema } from "../db/schema";
 import {
   createWorkspace, createProject, createNote,
-  createColumn, createCard, updateNote,
+  createColumn, createCard, updateNote, getCardById,
 } from "../db/queries";
 import { executeTool } from "./chat-executor";
 import type { LLMConfig } from "../lib/llm";
@@ -288,6 +288,49 @@ describe("update_task_status", () => {
     const db = makeDb();
     seed(db);
     const result = await exec(db, "update_task_status", { cardId: "card1", targetColumnId: "nope" }) as Record<string, unknown>;
+    expect(result).toHaveProperty("error");
+  });
+});
+
+// ── bulk_update_task_status ───────────────────────────────────────────────────
+
+describe("bulk_update_task_status", () => {
+  it("moves multiple tasks to target column", async () => {
+    const db = makeDb();
+    seed(db);
+    // Add a second card to move
+    createCard(db, { id: "card2", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Task 2", order: 1 });
+    const result = await exec(db, "bulk_update_task_status", { cardIds: ["card1", "card2"], targetColumnId: "col2" }) as Record<string, unknown>;
+    expect(result.moved).toBe(2);
+    expect((result.failed as unknown[]).length).toBe(0);
+    expect(result.targetColumnId).toBe("col2");
+    // Verify DB state
+    const card1 = getCardById(db, "card1");
+    expect(card1?.columnId).toBe("col2");
+  });
+
+  it("reports missing cards without aborting the rest", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "bulk_update_task_status", { cardIds: ["card1", "does-not-exist"], targetColumnId: "col2" }) as Record<string, unknown>;
+    expect(result.moved).toBe(1);
+    const failed = result.failed as Array<Record<string, unknown>>;
+    expect(failed.length).toBe(1);
+    expect(failed[0].id).toBe("does-not-exist");
+    expect(failed[0]).toHaveProperty("error");
+  });
+
+  it("returns { error } for missing target column", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "bulk_update_task_status", { cardIds: ["card1"], targetColumnId: "nope" }) as Record<string, unknown>;
+    expect(result).toHaveProperty("error");
+  });
+
+  it("returns { error } for empty cardIds array", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "bulk_update_task_status", { cardIds: [], targetColumnId: "col2" }) as Record<string, unknown>;
     expect(result).toHaveProperty("error");
   });
 });

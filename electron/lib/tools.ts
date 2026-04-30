@@ -22,7 +22,8 @@ export const TOOL_LABELS: Record<string, (args: ToolArgs) => string> = {
   create_note:            (a) => `Creating note "${a.title}"`,
   update_note:            () => "Updating note",
   create_task:            (a) => `Creating task "${a.title}"`,
-  update_task_status:     () => "Moving task",
+  update_task_status:        () => "Moving task",
+  bulk_update_task_status:   (a) => `Moving ${(a.cardIds as string[])?.length ?? 0} tasks`,
   update_task:            () => "Updating task",
   create_project:         (a) => `Creating project "${a.name}"`,
   update_project:         (a) => `Updating project "${a.projectId}"`,
@@ -195,7 +196,7 @@ export const TOOLS = [
     type: "function",
     function: {
       name: "update_task_status",
-      description: "Move a task card to a different column.",
+      description: "Move a single task card to a different column.",
       parameters: {
         type: "object",
         properties: {
@@ -203,6 +204,25 @@ export const TOOLS = [
           targetColumnId: { type: "string" },
         },
         required: ["cardId", "targetColumnId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "bulk_update_task_status",
+      description: "Move multiple task cards to the same target column in a single call. Use this instead of calling update_task_status repeatedly when moving more than one task.",
+      parameters: {
+        type: "object",
+        properties: {
+          cardIds: {
+            type: "array",
+            items: { type: "string" },
+            description: "IDs of the task cards to move.",
+          },
+          targetColumnId: { type: "string", description: "The column to move all cards to." },
+        },
+        required: ["cardIds", "targetColumnId"],
       },
     },
   },

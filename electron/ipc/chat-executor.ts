@@ -157,6 +157,25 @@ export async function executeTool(
       if (!col) return { error: "Column not found" };
       return q.updateCard(db, args.cardId as string, { columnId: args.targetColumnId as string });
     }
+    case "bulk_update_task_status": {
+      const col = snap.columns.find((c) => c.id === args.targetColumnId);
+      if (!col) return { error: "Column not found" };
+      const cardIds = args.cardIds as string[];
+      if (!Array.isArray(cardIds) || cardIds.length === 0) return { error: "cardIds must be a non-empty array" };
+      const results: Array<{ id: string; ok: boolean; error?: string }> = [];
+      for (const cardId of cardIds) {
+        const exists = snap.cards.find((c) => c.id === cardId);
+        if (!exists) {
+          results.push({ id: cardId, ok: false, error: "Task not found" });
+        } else {
+          q.updateCard(db, cardId, { columnId: args.targetColumnId as string });
+          results.push({ id: cardId, ok: true });
+        }
+      }
+      const moved = results.filter((r) => r.ok).length;
+      const failed = results.filter((r) => !r.ok);
+      return { moved, failed, targetColumnId: args.targetColumnId, targetColumnName: col.name };
+    }
     case "create_project": {
       const projectId = newId();
       const project = q.createProject(db, {

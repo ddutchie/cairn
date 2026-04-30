@@ -292,7 +292,7 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
         projects,
         tools: {
           read:   ["get_cairn_context", "search_notes", "search_tasks", "get_note", "get_task", "get_project_summary", "list_recent_activity"],
-          write:  ["create_project", "create_note", "update_note", "create_task", "update_task", "update_task_status", "link_note_to_task", "create_dashboard", "update_dashboard"],
+          write:  ["create_project", "create_note", "update_note", "create_task", "update_task", "update_task_status", "bulk_update_task_status", "link_note_to_task", "create_dashboard", "update_dashboard"],
           delete: ["delete_note", "delete_task"],
         },
         conventions: {
@@ -485,6 +485,28 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
       insertNotification(db, "update_task_status", "Task moved", `"${card.title}" → ${col.name}`);
       return { id: cardId, title: card.title, previousColumn: card.columnId,
         newColumn: targetColumnId, newColumnName: col.name, updatedAt: now };
+    }
+
+    case "bulk_update_task_status": {
+      const { cardIds, targetColumnId } = args as { cardIds: string[]; targetColumnId: string };
+      const col = snap.columns.find((c) => c.id === targetColumnId);
+      if (!col) return { error: "Column not found" };
+      if (!Array.isArray(cardIds) || cardIds.length === 0) return { error: "cardIds must be a non-empty array" };
+      const results: Array<{ id: string; ok: boolean; error?: string }> = [];
+      const now = ts();
+      for (const id of cardIds) {
+        const card = snap.cards.find((c) => c.id === id);
+        if (!card) {
+          results.push({ id, ok: false, error: "Task not found" });
+        } else {
+          db.prepare(`UPDATE task_cards SET column_id = ?, updated_at = ? WHERE id = ?`).run(targetColumnId, now, id);
+          results.push({ id, ok: true });
+        }
+      }
+      const moved = results.filter((r) => r.ok).length;
+      const failed = results.filter((r) => !r.ok);
+      if (moved > 0) insertNotification(db, "bulk_update_task_status", "Tasks moved", `${moved} task${moved === 1 ? "" : "s"} → ${col.name}`);
+      return { moved, failed, targetColumnId, targetColumnName: col.name };
     }
 
     case "link_note_to_task": {
@@ -683,8 +705,10 @@ const TOOL_DEFINITIONS = [
     inputSchema: { type: "object", properties: { noteId: { type: "string" }, title: { type: "string" }, content: { type: "string" } }, required: ["noteId"] } },
   { name: "create_task",         description: "Create a task card in a board column.",
     inputSchema: { type: "object", properties: { columnId: { type: "string" }, projectId: { type: "string" }, title: { type: "string" }, description: { type: "string" }, priority: { type: "string", enum: ["low","medium","high","urgent"] }, dueDate: { type: "string" } }, required: ["columnId", "projectId", "title"] } },
-  { name: "update_task_status",  description: "Move a task card to a different column.",
+  { name: "update_task_status",  description: "Move a single task card to a different column.",
     inputSchema: { type: "object", properties: { cardId: { type: "string" }, targetColumnId: { type: "string" } }, required: ["cardId", "targetColumnId"] } },
+  { name: "bulk_update_task_status", description: "Move multiple task cards to the same target column in a single call. Use instead of calling update_task_status repeatedly.",
+    inputSchema: { type: "object", properties: { cardIds: { type: "array", items: { type: "string" }, description: "IDs of the task cards to move." }, targetColumnId: { type: "string" } }, required: ["cardIds", "targetColumnId"] } },
   { name: "link_note_to_task",   description: "Bidirectionally link a note and a task card.",
     inputSchema: { type: "object", properties: { noteId: { type: "string" }, cardId: { type: "string" } }, required: ["noteId", "cardId"] } },
   { name: "get_note",            description: "Get the full content of a note by its ID.",
