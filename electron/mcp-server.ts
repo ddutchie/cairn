@@ -292,7 +292,7 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
         projects,
         tools: {
           read:   ["get_cairn_context", "search_notes", "search_tasks", "get_note", "get_task", "get_project_summary", "list_recent_activity"],
-          write:  ["create_project", "create_note", "update_note", "move_note", "create_task", "update_task", "update_task_status", "bulk_update_task_status", "link_note_to_task", "create_dashboard", "update_dashboard"],
+          write:  ["create_project", "create_note", "import_note_from_file", "update_note", "move_note", "create_task", "update_task", "update_task_status", "bulk_update_task_status", "link_note_to_task", "create_dashboard", "update_dashboard"],
           delete: ["delete_note", "delete_task"],
         },
         conventions: {
@@ -432,6 +432,39 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
       });
       insertNotification(db, "create_note", "Note created", `"${title}" added to ${project.name}`);
       return { id: noteId, title, createdAt: now };
+    }
+
+    case "import_note_from_file": {
+      // Reads a file from the local filesystem (server-side) so agents never need to
+      // inline large payloads (e.g. a full README) as tool arguments.
+      const { projectId, filePath: srcPath, title: explicitTitle } = args;
+      const project = snap.projects.find((pr) => pr.id === projectId);
+      if (!project) return { error: "Project not found" };
+      const resolvedPath = path.resolve(srcPath as string);
+      if (!fs.existsSync(resolvedPath)) return { error: `File not found: ${resolvedPath}` };
+      let markdown: string;
+      try {
+        markdown = fs.readFileSync(resolvedPath, "utf8");
+      } catch (e) {
+        return { error: `Cannot read file: ${(e as Error).message}` };
+      }
+      // Use explicit title, or strip extension from filename as fallback
+      const title = (explicitTitle as string | undefined)
+        ?? path.basename(resolvedPath).replace(/\.[^/.]+$/, "");
+      const now = ts();
+      const noteId = newId();
+      db.prepare(`
+        INSERT INTO notes (id, project_id, workspace_id, title, content, content_text,
+          tag_ids, linked_note_ids, linked_card_ids, is_pinned, type, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, '[]', '[]', '[]', 0, 'note', ?, ?)
+      `).run(noteId, projectId, project.workspaceId, title, markdown, stripMarkdown(markdown), now, now);
+      writeNoteFile(workspacePath, {
+        id: noteId, projectId, workspaceId: project.workspaceId, title, content: markdown,
+        tagIds: [], linkedNoteIds: [], linkedCardIds: [], isPinned: false,
+        createdAt: now, updatedAt: now, projectName: project.name,
+      });
+      insertNotification(db, "create_note", "Note imported", `"${title}" imported into ${project.name}`);
+      return { id: noteId, title, createdAt: now, importedFrom: resolvedPath };
     }
 
     case "update_note": {
@@ -736,6 +769,8 @@ const TOOL_DEFINITIONS = [
     inputSchema: { type: "object", properties: { workspaceId: { type: "string" }, projectId: { type: "string" }, limit: { type: "number", default: 20 } }, required: ["workspaceId"] } },
   { name: "create_note",         description: "Create a new note in a project.",
     inputSchema: { type: "object", properties: { projectId: { type: "string" }, title: { type: "string" }, content: { type: "string" } }, required: ["projectId", "title"] } },
+  { name: "import_note_from_file", description: "Import a local file (e.g. README.md) as a note. The MCP server reads the file from disk — no need to inline content as an argument. title defaults to the filename without extension.",
+    inputSchema: { type: "object", properties: { projectId: { type: "string" }, filePath: { type: "string", description: "Absolute path to the file to import" }, title: { type: "string", description: "Override the note title (defaults to filename without extension)" } }, required: ["projectId", "filePath"] } },
   { name: "update_note",         description: "Update a note's title, content, or pinned state. All fields except noteId are optional.",
     inputSchema: { type: "object", properties: { noteId: { type: "string" }, title: { type: "string" }, content: { type: "string" }, isPinned: { type: "boolean", description: "Pin or unpin the note in the project overview" } }, required: ["noteId"] } },
   { name: "move_note",           description: "Move a note to a different project. Moves the .md file and updates the note's projectId.",

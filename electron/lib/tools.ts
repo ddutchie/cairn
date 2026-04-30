@@ -5,6 +5,8 @@
  * and the buildSystemPrompt function. Shared by the chat IPC handler.
  */
 
+import path from "path";
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type ToolArgs = Record<string, any>;
 
@@ -20,6 +22,7 @@ export const TOOL_LABELS: Record<string, (args: ToolArgs) => string> = {
   get_project_summary:    () => "Reading project summary",
   get_task:               () => "Reading task",
   create_note:            (a) => `Creating note "${a.title}"`,
+  import_note_from_file:  (a) => `Importing ${path.basename(a.filePath as string)} as note`,
   update_note:            () => "Updating note",
   create_task:            (a) => `Creating task "${a.title}"`,
   update_task_status:        () => "Moving task",
@@ -156,6 +159,22 @@ export const TOOLS = [
           content: { type: "string" },
         },
         required: ["projectId", "title"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "import_note_from_file",
+      description: "Import a local file (e.g. README.md) as a note by reading it from disk. Use this instead of create_note when the content already exists as a file — no need to inline large text in the tool call. title defaults to the filename without extension.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          filePath: { type: "string", description: "Absolute path to the file to import" },
+          title: { type: "string", description: "Override the note title (defaults to filename without extension)" },
+        },
+        required: ["projectId", "filePath"],
       },
     },
   },

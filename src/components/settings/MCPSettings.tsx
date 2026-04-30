@@ -85,6 +85,7 @@ export function MCPServerSettings() {
             ["create_project",         "write"],
             ["update_project",         "write"],
             ["create_note",            "write"],
+            ["import_note_from_file",  "write"],
             ["update_note",            "write"],
             ["move_note",              "write"],
             ["create_task",            "write"],

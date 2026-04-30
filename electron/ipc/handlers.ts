@@ -272,8 +272,8 @@ export function registerAppHandlers(
   ipcMain.handle("app:selectWorkspaceFolder", async () => {
     return handle(async () => {
       const result = await dialog.showOpenDialog({
-        title: "Choose your Cairn workspace folder",
-        message: "Select a folder where Cairn will store your notes and database.",
+        // title renders on all platforms; message is macOS-only and silently ignored on Windows
+        title: "Select a folder where Cairn will store your notes and database.",
         buttonLabel: "Use This Folder",
         properties: ["openDirectory", "createDirectory"],
       });

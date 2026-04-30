@@ -6,6 +6,8 @@
  */
 
 import type Database from "better-sqlite3";
+import path from "path";
+import fs from "fs";
 import * as q from "../db/queries";
 import { writeNoteFile, deleteNoteFile, stripMarkdown } from "../notes-files";
 import { buildContextResponse } from "../lib/context";
@@ -127,6 +129,27 @@ export async function executeTool(
       });
       writeNoteFile(workspacePath, { ...note, projectName: project.name });
       return note;
+    }
+    case "import_note_from_file": {
+      const project = snap.projects.find((p) => p.id === args.projectId);
+      if (!project) return { error: "Project not found" };
+      const resolvedPath = path.resolve(args.filePath as string);
+      if (!fs.existsSync(resolvedPath)) return { error: `File not found: ${resolvedPath}` };
+      let markdown: string;
+      try {
+        markdown = fs.readFileSync(resolvedPath, "utf8");
+      } catch (e) {
+        return { error: `Cannot read file: ${(e as Error).message}` };
+      }
+      const title = (args.title as string | undefined)
+        ?? path.basename(resolvedPath).replace(/\.[^/.]+$/, "");
+      const noteId = newId();
+      const note = q.createNote(db, {
+        id: noteId, projectId: args.projectId as string, workspaceId: project.workspaceId,
+        title, content: markdown, contentText: stripMarkdown(markdown),
+      });
+      writeNoteFile(workspacePath, { ...note, projectName: project.name });
+      return { ...note, importedFrom: resolvedPath };
     }
     case "update_note": {
       const existing = snap.notes.find((n) => n.id === args.noteId);

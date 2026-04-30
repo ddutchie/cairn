@@ -70,6 +70,8 @@ nsis:
   perMachine: true                     # installs to Program Files, requires UAC elevation
   allowElevation: true                 # prompt for elevation if not already admin
   allowToChangeInstallationDirectory: true
+  installerIcon: build-resources/icon.ico
+  uninstallerIcon: build-resources/icon.ico
   createDesktopShortcut: true
   createStartMenuShortcut: true
 

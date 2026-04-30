@@ -30,6 +30,12 @@ const isDev = !app.isPackaged;
 
 app.setName("Cairn");
 
+// Windows: required for Toast notifications to show with the correct app identity.
+// Must be called before app.whenReady() and must match the appId in electron-builder.yml.
+if (process.platform === "win32") {
+  app.setAppUserModelId("com.cairn.app");
+}
+
 protocol.registerSchemesAsPrivileged([
   {
     scheme: "app",

@@ -70,7 +70,7 @@ describe("Tool name parity", () => {
       // Shared write/delete tools also in MCP:
       "get_cairn_context", "get_note", "get_task",
       "create_project", "update_project", "delete_project",
-      "create_note", "update_note", "move_note", "delete_note",
+      "create_note", "import_note_from_file", "update_note", "move_note", "delete_note",
       "create_task", "update_task", "update_task_status", "bulk_update_task_status",
       "link_note_to_task", "create_dashboard", "update_dashboard", "delete_task",
     ]);

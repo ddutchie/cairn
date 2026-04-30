@@ -119,6 +119,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 | `create_project` | write | Create a project with default board columns |
 | `update_project` | write | Update a project's name, description, status, priority, or due date |
 | `create_note` | write | Create a markdown note |
+| `import_note_from_file` | write | Import a local file as a note — server reads from disk, no need to inline content |
 | `update_note` | write | Update a note's title, content, or pinned state |
 | `move_note` | write | Move a note to a different project |
 | `create_task` | write | Create a task card in a column |

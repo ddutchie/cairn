@@ -63,7 +63,7 @@
   --color-muted-fg: var(--muted-fg);
   --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "Geist Mono", ui-monospace, monospace;
-  --font-display: "New York", "Iowan Old Style", Georgia, serif;
+  --font-display: "New York", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
 }
 
 *, *::before, *::after {

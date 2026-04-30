@@ -25,6 +25,11 @@ export function createTray(win: BrowserWindow): TrayHandle {
     const templatePath = path.join(trayIconDir, "trayTemplate.png");
     trayImage = nativeImage.createFromPath(templatePath);
     trayImage.setTemplateImage(true);
+  } else if (process.platform === "win32") {
+    // Use .ico on Windows — it embeds 16/32/48 px sizes so the tray icon stays
+    // sharp at 100%, 125%, and 150% DPI scaling (common on laptop displays).
+    const iconPath = path.join(trayIconDir, "tray.ico");
+    trayImage = nativeImage.createFromPath(iconPath);
   } else {
     const iconPath = path.join(trayIconDir, "icon.png");
     trayImage = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });

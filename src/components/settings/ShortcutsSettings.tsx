@@ -1,18 +1,26 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { SettingsGroup } from "./shared";
 
 export function ShortcutsSettings() {
+  const [mod, setMod] = useState("⌘");
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.electron?.platform === "win32") {
+      setMod("Ctrl");
+    }
+  }, []);
+
   const shortcuts = [
-    { key: "⌘K", action: "Open search" },
-    { key: "⌘/", action: "Toggle AI chat" },
-    { key: "⌘N", action: "New note" },
-    { key: "⌘\\", action: "Toggle sidebar" },
-    { key: "⌘1", action: "Project overview" },
-    { key: "⌘2", action: "Notes view" },
-    { key: "⌘3", action: "Board view" },
+    { key: `${mod}+K`, action: "Open search" },
+    { key: `${mod}+/`, action: "Toggle AI chat" },
+    { key: `${mod}+N`, action: "New note" },
+    { key: `${mod}+\\`, action: "Toggle sidebar" },
+    { key: `${mod}+1`, action: "Project overview" },
+    { key: `${mod}+2`, action: "Notes view" },
+    { key: `${mod}+3`, action: "Board view" },
     { key: "Esc", action: "Close modal / search" },
     { key: "↑↓", action: "Navigate search results" },
     { key: "↵", action: "Open selected result" },
