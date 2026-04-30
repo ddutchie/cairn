@@ -1,6 +1,6 @@
 {
   "name": "cairn",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Local-first project management with AI and MCP",
   "author": "Cairn",
   "private": true,
