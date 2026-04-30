@@ -87,8 +87,7 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
     storage.set(THEME_KEY, theme);
     applyTheme(theme);
     if (typeof window !== "undefined" && window.electron) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (window.electron as any).setTheme?.(theme);
+      window.electron.setTheme(theme);
     }
     if (theme === "system") {
       const mq = window.matchMedia("(prefers-color-scheme: light)");

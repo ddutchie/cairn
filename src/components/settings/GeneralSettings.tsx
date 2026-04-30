@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 import { SettingsGroup, SettingsRow } from "./shared";
 
 export function GeneralSettings() {
-  const { workspaces, theme, setTheme, updateWorkspace } = useCairnStore();
+  const { workspaces, theme, setTheme, updateWorkspace, selectAndInitWorkspace } = useCairnStore();
   const workspace = workspaces[0];
 
   const themeOptions: { value: Theme; label: string; icon: React.ReactNode }[] = [
@@ -58,20 +58,17 @@ export function GeneralSettings() {
 }
 
 function ChangeWorkspaceRow() {
+  const { selectAndInitWorkspace } = useCairnStore();
   const [changing, setChanging] = useState(false);
   const [done, setDone] = useState(false);
 
   async function handleChange() {
-    if (!window.electron) return;
     setChanging(true);
     try {
-      const folder = await window.electron.selectWorkspaceFolder();
+      const folder = await selectAndInitWorkspace();
       if (!folder) return;
-      const result = await window.electron.initWorkspace(folder);
       setDone(true);
-      if (result?.requiresRestart) {
-        setTimeout(() => window.location.reload(), 1000);
-      }
+      setTimeout(() => window.location.reload(), 1000);
     } finally {
       setChanging(false);
     }

@@ -6,7 +6,7 @@ import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
 import type { Workspace, Project, BoardColumn, ID } from "@/types";
 import { id, now } from "@/lib/utils";
-import { ipc, ipcAwait } from "../ipc";
+import { ipc, ipcAwait, isElectron } from "../ipc";
 
 // ── Slice interface ───────────────────────────────────────────────────────────
 
@@ -27,6 +27,20 @@ export interface WorkspaceSlice {
   updateProject: (id: ID, patch: Partial<Project>) => void;
   archiveProject: (id: ID) => void;
   deleteProject: (id: ID) => void;
+
+  /**
+   * Open the OS folder picker, persist the chosen path to workspace-config.json,
+   * and reload the workspace. Returns the chosen path or null if cancelled.
+   * No-op outside Electron.
+   */
+  selectAndInitWorkspace: () => Promise<string | null>;
+  /**
+   * Persist a workspace path (already known) to workspace-config.json.
+   * Used by create-workspace.tsx when the folder was chosen in the same session.
+   */
+  initWorkspacePath: (workspacePath: string) => Promise<void>;
+  /** Read the current workspace path from the Electron config. */
+  getWorkspacePath: () => Promise<string | null>;
 }
 
 // ── Slice creator ─────────────────────────────────────────────────────────────
@@ -154,5 +168,23 @@ export const createWorkspaceSlice: StateCreator<
           projId
         )
     );
+  },
+
+  async selectAndInitWorkspace() {
+    if (!isElectron() || !window.electron) return null;
+    const folder = await window.electron.selectWorkspaceFolder();
+    if (!folder) return null;
+    await window.electron.initWorkspace(folder);
+    return folder;
+  },
+
+  async initWorkspacePath(workspacePath) {
+    if (!isElectron() || !window.electron) return;
+    await window.electron.initWorkspace(workspacePath);
+  },
+
+  async getWorkspacePath() {
+    if (!isElectron() || !window.electron) return null;
+    return window.electron.getWorkspacePath();
   },
 });

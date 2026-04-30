@@ -13,7 +13,7 @@ interface Props {
 type Step = "choose-folder" | "workspace-details";
 
 export function CreateWorkspace({ onComplete, initialStep = "choose-folder" }: Props) {
-  const { createWorkspace } = useCairnStore();
+  const { createWorkspace, selectAndInitWorkspace, initWorkspacePath, getWorkspacePath } = useCairnStore();
   const [step, setStep] = useState<Step>(initialStep);
   const [chosenFolder, setChosenFolder] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -24,12 +24,12 @@ export function CreateWorkspace({ onComplete, initialStep = "choose-folder" }: P
   useEffect(() => {
     // If landing directly on workspace-details (folder already configured),
     // pre-populate chosenFolder so the path display and submit work correctly.
-    if (initialStep === "workspace-details" && typeof window !== "undefined" && window.electron) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (window.electron as any).getWorkspacePath?.().then((p: string | null) => {
+    if (initialStep === "workspace-details") {
+      getWorkspacePath().then((p) => {
         if (p) setChosenFolder(p);
       });
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialStep]);
 
   useEffect(() => {
@@ -39,11 +39,9 @@ export function CreateWorkspace({ onComplete, initialStep = "choose-folder" }: P
   }, [step]);
 
   async function handleChooseFolder() {
-    if (!window.electron) return;
     setSubmitting(true);
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const folder = await (window.electron as any).selectWorkspaceFolder?.();
+      const folder = await selectAndInitWorkspace();
       if (!folder) return;
       setChosenFolder(folder);
       setStep("workspace-details");
@@ -61,9 +59,8 @@ export function CreateWorkspace({ onComplete, initialStep = "choose-folder" }: P
     try {
       // If the folder was just chosen in this session, write the config now.
       // If initialStep was "workspace-details", config is already written.
-      if (window.electron && chosenFolder && initialStep === "choose-folder") {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (window.electron as any).initWorkspace?.(chosenFolder);
+      if (chosenFolder && initialStep === "choose-folder") {
+        await initWorkspacePath(chosenFolder);
       }
       await createWorkspace(trimmed, icon);
       onComplete();

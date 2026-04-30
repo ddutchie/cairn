@@ -78,12 +78,10 @@ export default function Home() {
   const { toasts, dismiss } = useIpcErrorToasts();
 
   useEffect(() => {
-    if (typeof window !== "undefined" && window.electron) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const e = window.electron as any;
-
+    const electron = window.electron;
+    if (typeof window !== "undefined" && electron) {
       Promise.all([
-        e.needsWorkspaceSetup?.() as Promise<boolean>,
+        electron.needsWorkspaceSetup(),
         hydrateFromElectron(),
       ]).then(([needsSetup]) => {
         if (needsSetup) {
@@ -95,22 +93,22 @@ export default function Home() {
       });
 
       // Register db:changed listener synchronously so React gets the cleanup fn
-      const unsubDb = e.onDbChanged(() => {
+      const unsubDb = electron.onDbChanged(() => {
         hydrateFromElectron(true);
       });
 
       // Auto-updater listeners — events may arrive in any order
-      const unsubAvailable = e.updater?.onUpdateAvailable?.((info: { version: string }) => {
+      const unsubAvailable = electron.updater.onUpdateAvailable((info) => {
         setUpdateVersion(info.version);
       });
-      const unsubDownloaded = e.updater?.onUpdateDownloaded?.(() => {
+      const unsubDownloaded = electron.updater.onUpdateDownloaded(() => {
         setUpdateDownloaded(true);
       });
 
       return () => {
-        unsubDb?.();
-        unsubAvailable?.();
-        unsubDownloaded?.();
+        unsubDb();
+        unsubAvailable();
+        unsubDownloaded();
       };
     } else {
       hydrate();
@@ -192,8 +190,7 @@ export default function Home() {
           </span>
           {updateDownloaded && (
             <button
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              onClick={() => (window as any).electron?.updater?.install()}
+              onClick={() => window.electron?.updater.install()}
               className="px-3 py-1 rounded-md text-xs font-medium bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors"
             >
               Restart &amp; install

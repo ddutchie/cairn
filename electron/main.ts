@@ -1,29 +1,30 @@
 /**
  * Cairn — Electron main process
  *
- * Responsibilities:
- * - Create the BrowserWindow
- * - Resolve the workspace folder (prompt user if first launch)
- * - Initialise SQLite at <workspacePath>/cairn.db
- * - Register all IPC handlers
- * - Start the file watcher for external .md edits
- * - In dev: load from Next.js dev server (localhost:3000)
- * - In prod: load from the exported static files
+ * Orchestrates startup:
+ * 1. Register the app:// protocol + CSP
+ * 2. Resolve workspace folder
+ * 3. Initialise SQLite
+ * 4. Register IPC handlers
+ * 5. Create BrowserWindow
+ * 6. Set up auto-updater (prod only)
+ * 7. Start file watcher for external .md edits
+ * 8. Create system tray
+ * 9. Start MCP notification poller
  */
 
-import { app, BrowserWindow, shell, session, protocol, net, dialog, ipcMain, Tray, Menu, Notification, nativeImage } from "electron";
+import { app, BrowserWindow, shell, protocol } from "electron";
 import path from "path";
 import fs from "fs";
-import { pathToFileURL } from "url";
 import { autoUpdater } from "electron-updater";
 import { initDb } from "./db/client";
 import { registerIpcHandlers, registerAppHandlers } from "./ipc/handlers";
-import {
-  readWorkspaceConfig,
-  getDbPathForWorkspace,
-} from "./workspace-config";
+import { readWorkspaceConfig, getDbPathForWorkspace } from "./workspace-config";
 import { startFileWatcher } from "./file-watcher";
-import { getUnreadMcpNotifications, markMcpNotificationsRead } from "./db/queries";
+import { markMcpNotificationsRead } from "./db/queries";
+import { setupProtocol } from "./lib/protocol";
+import { createTray } from "./lib/tray";
+import { startMcpNotificationPoller } from "./lib/mcp-poller";
 
 const isDev = !app.isPackaged;
 
@@ -32,21 +33,13 @@ app.setName("Cairn");
 protocol.registerSchemesAsPrivileged([
   {
     scheme: "app",
-    privileges: {
-      standard: true,
-      secure: true,
-      supportFetchAPI: true,
-      corsEnabled: false,
-    },
+    privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: false },
   },
 ]);
 
 function getStoredThemeBackground(): string {
   try {
     const userDataPath = app.getPath("userData");
-    const lsPath = path.join(userDataPath, "Local Storage", "leveldb");
-    // Can't easily read leveldb from main — use a simple fallback:
-    // write theme to a plain JSON sidecar file whenever it changes (see IPC below)
     const themeFile = path.join(userDataPath, "theme.json");
     if (fs.existsSync(themeFile)) {
       const t = JSON.parse(fs.readFileSync(themeFile, "utf8")).theme;
@@ -87,62 +80,9 @@ function createWindow(): BrowserWindow {
   return win;
 }
 
-async function promptWorkspaceFolder(): Promise<string | null> {
-  const result = await dialog.showOpenDialog({
-    title: "Choose your Cairn workspace folder",
-    message: "Select a folder where Cairn will store your notes and database.",
-    buttonLabel: "Use This Folder",
-    properties: ["openDirectory", "createDirectory"],
-  });
-
-  if (result.canceled || result.filePaths.length === 0) return null;
-  return result.filePaths[0];
-}
-
 app.whenReady().then(async () => {
-  if (!isDev) {
-    const outDir = path.join(__dirname, "../out");
-    session.defaultSession.protocol.handle("app", (request) => {
-      const url = new URL(request.url);
-      let filePath = url.pathname.replace(/^\/\.\//, "").replace(/^\//, "");
-      if (!filePath || filePath === "") filePath = "index.html";
-      const fullPath = path.join(outDir, filePath);
-      return net.fetch(pathToFileURL(fullPath).href);
-    });
-  }
-
-  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-    const csp = isDev
-      ? [
-          "default-src 'self' http://localhost:* ws://localhost:*",
-          "script-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:*",
-          "style-src 'self' 'unsafe-inline'",
-          "style-src-elem 'self' 'unsafe-inline'",
-          "img-src 'self' data: blob:",
-          "font-src 'self' data: https://fonts.gstatic.com",
-          "connect-src 'self' http://localhost:* ws://localhost:*",
-          "worker-src blob: 'self'",
-          "frame-src blob:",
-        ].join("; ")
-      : [
-          "default-src 'self' app:",
-          "script-src 'self' 'unsafe-inline' app:",
-          "style-src 'self' 'unsafe-inline' app:",
-          "style-src-elem 'self' 'unsafe-inline' app:",
-          "img-src 'self' data: blob: app:",
-          "font-src 'self' data: app:",
-          "connect-src 'self' app: http://localhost:* https:",
-          "worker-src blob: 'self' app:",
-          "frame-src blob:",
-        ].join("; ");
-
-    callback({
-      responseHeaders: {
-        ...details.responseHeaders,
-        "Content-Security-Policy": [csp],
-      },
-    });
-  });
+  const outDir = path.join(__dirname, "../out");
+  setupProtocol(outDir);
 
   const userDataPath = app.getPath("userData");
 
@@ -161,7 +101,7 @@ app.whenReady().then(async () => {
 
   const win = createWindow();
 
-  // ── Auto-updater ──────────────────────────────────────────────────────
+  // ── Auto-updater (prod only) ──────────────────────────────────────────
   if (!isDev) {
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
@@ -178,16 +118,9 @@ app.whenReady().then(async () => {
     });
 
     autoUpdater.on("error", (err) => {
-      // Log silently — don't surface network errors to the user
       console.error("[updater]", err.message);
     });
 
-    // IPC: renderer asks to install now and restart
-    ipcMain.handle("updater:install", () => {
-      autoUpdater.quitAndInstall();
-    });
-
-    // Check on launch, then every 4 hours
     autoUpdater.checkForUpdates().catch(() => {});
     setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), 4 * 60 * 60 * 1000);
   }
@@ -205,107 +138,32 @@ app.whenReady().then(async () => {
   startFileWatcher(workspacePath, db, notifyDbChanged);
 
   // ── System tray ───────────────────────────────────────────────────────
-  // On macOS: use trayTemplate.png (black + transparent, 22×22).
-  // Electron auto-picks trayTemplate@2x.png on retina when loaded by base name.
-  // On Windows/Linux: fall back to icon.png.
-  const trayIconDir = isDev
-    ? path.join(__dirname, "..", "public")
-    : path.join(process.resourcesPath, "app.asar", "out");
+  const { updateBadge } = createTray(win);
 
-  let trayImage: ReturnType<typeof nativeImage.createFromPath>;
-  if (process.platform === "darwin") {
-    const templatePath = path.join(trayIconDir, "trayTemplate.png");
-    trayImage = nativeImage.createFromPath(templatePath);
-    trayImage.setTemplateImage(true);
-  } else {
-    const iconPath = path.join(trayIconDir, "icon.png");
-    trayImage = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
-  }
-
-  const tray = new Tray(trayImage);
-  tray.setToolTip("Cairn");
-
-  function buildTrayMenu(unreadCount: number) {
-    return Menu.buildFromTemplate([
-      {
-        label: unreadCount > 0 ? `${unreadCount} unread MCP update${unreadCount > 1 ? "s" : ""}` : "No new MCP updates",
-        enabled: false,
-      },
-      { type: "separator" },
-      {
-        label: "Open Cairn",
-        click: () => {
-          win.show();
-          win.focus();
-        },
-      },
-      { type: "separator" },
-      { label: "Quit", click: () => app.quit() },
-    ]);
-  }
-
-  tray.setContextMenu(buildTrayMenu(0));
-
-  tray.on("click", () => {
-    win.show();
-    win.focus();
-  });
-
-  // ── MCP notification badge state ─────────────────────────────────────
+  // Clear badge when window gains focus
   let unreadCount = 0;
-
-  function updateTrayBadge(count: number) {
-    unreadCount = count;
-    tray.setContextMenu(buildTrayMenu(count));
-    if (process.platform === "darwin") {
-      app.setBadgeCount(count);
-    }
-    if (!win.isDestroyed()) {
-      win.webContents.send("mcp:unread-count", count);
-    }
-  }
-
-  // Clear badge when the window gains focus
   win.on("focus", () => {
     if (unreadCount > 0) {
       markMcpNotificationsRead(db);
-      updateTrayBadge(0);
+      updateBadge(0);
+      unreadCount = 0;
     }
   });
 
-  // Register app:* and mcp:* IPC handlers (now that updateTrayBadge is available)
-  registerAppHandlers(db, userDataPath, updateTrayBadge);
+  // Register app:* and mcp:* IPC handlers (now that updateBadge is available)
+  registerAppHandlers(db, userDataPath, updateBadge);
 
-  // ── Poll DB mtime for external writes (MCP server) ───────────────────
-  const walPath = dbPath + "-wal";
-  let lastMtime = 0;
-
-  function checkDbChanged() {
-    try {
-      const target = fs.existsSync(walPath) ? walPath : dbPath;
-      const mtime = fs.statSync(target).mtimeMs;
-      if (mtime > lastMtime) {
-        lastMtime = mtime;
-        notifyDbChanged();
-
-        // Check for new MCP notifications and fire OS toasts
-        const unread = getUnreadMcpNotifications(db);
-        for (const n of unread) {
-          if (Notification.isSupported()) {
-            new Notification({ title: n.title, body: n.body, silent: false }).show();
-          }
-        }
-        if (unread.length > 0) {
-          updateTrayBadge(unreadCount + unread.length);
-          markMcpNotificationsRead(db);
-        }
-      }
-    } catch { /* db file not yet created */ }
-  }
-
-  try { lastMtime = fs.statSync(fs.existsSync(walPath) ? walPath : dbPath).mtimeMs; } catch { /* ok */ }
-
-  setInterval(checkDbChanged, 1000);
+  // ── MCP notification poller ───────────────────────────────────────────
+  startMcpNotificationPoller({
+    db,
+    dbPath,
+    win,
+    updateBadge: (count) => {
+      unreadCount = count;
+      updateBadge(count);
+    },
+    onDbChanged: notifyDbChanged,
+  });
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

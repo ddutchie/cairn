@@ -2,8 +2,9 @@
 
 import React, { useEffect, useRef, useCallback, useState } from "react";
 import { RefreshCw, Calendar, LayoutDashboard, AlertTriangle, X, Zap } from "lucide-react";
-import type { Note } from "@/types";
+import type { Note, DashboardQueryMessage } from "@/types";
 import { cn, formatRelative } from "@/lib/utils";
+import { buildSrcdoc } from "./dashboard-bootstrap";
 
 interface DashboardViewProps {
   note: Note;
@@ -30,34 +31,7 @@ const ALLOWED_TOOLS = new Set([
   "list_tasks",
 ]);
 
-// Build the bootstrap script with context constants injected.
-// Provides:
-//   window.cairn.projectId        — active project ID
-//   window.cairn.workspaceId      — active workspace ID
-//   window.cairn.query(tool,args) — raw Promise-based bridge
-//   window.cairn.getProjectSummary(projectId?)
-//   window.cairn.listTasks(projectId?)
-//   window.cairn.listNotes(projectId?)
-//   window.cairn.listRecentActivity(opts?)
-//   window.cairn.searchTasks(query, projectId?)
-//   window.cairn.searchNotes(query, projectId?)
-//   window.cairn.getContext()
-function buildBootstrap(projectId: string, workspaceId: string): string {
-  return `<script>
-(function() {
-  var _seq = 0;
-  var _pending = {};
 
-  // ── message bus ──────────────────────────────────────────
-  window.addEventListener('message', function(e) {
-    var d = e.data;
-    if (!d) return;
-    if (d.type === 'cairn:response' && _pending[d.id]) {
-      var cb = _pending[d.id];
-      delete _pending[d.id];
-      if (d.error) cb.reject(new Error(d.error));
-      else cb.resolve(d.result);
-    }
   });
 
   // ── error bridge — send JS errors to parent ───────────────
@@ -144,8 +118,7 @@ function buildSrcdoc(html: string, projectId: string, workspaceId: string): stri
 }
 
 export function DashboardView({ note }: DashboardViewProps) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const electron = typeof window !== "undefined" ? (window as any).electron : null;
+  const electron = typeof window !== "undefined" ? window.electron : null;
 
   const projectId   = note.projectId   ?? "";
   const workspaceId = note.workspaceId ?? "";
@@ -168,24 +141,23 @@ export function DashboardView({ note }: DashboardViewProps) {
     setRev((r) => r + 1);
   }, [note.content, projectId, workspaceId]);
 
-  // Auto-refresh when DB changes (db:changed event from Electron)
+  // Auto-refresh when DB changes (db:changed event from Electron).
+  // Send cairn:refresh to the iframe instead of remounting (no visible flash).
   useEffect(() => {
     if (!electron?.onDbChanged) return;
     const unsub = electron.onDbChanged(() => {
-      // Bump rev to reload the iframe with fresh data — srcdoc stays the same,
-      // the dashboard JS will re-run its cairn.query() calls on mount.
-      setRev((r) => r + 1);
+      iframeRef.current?.contentWindow?.postMessage({ type: "cairn:refresh" }, "*");
       setAutoRefreshed(true);
       setTimeout(() => setAutoRefreshed(false), 1500);
     });
-    return () => unsub?.();
+    return () => unsub();
   }, [electron]);
 
   // postMessage bridge — forward cairn:query and cairn:error from iframe
   useEffect(() => {
-    async function handleMessage(event: MessageEvent) {
+    async function handleMessage(event: MessageEvent<DashboardQueryMessage>) {
       const data = event.data;
-      if (!data) return;
+      if (!data?.type) return;
 
       // ── error bridge ──
       if (data.type === "cairn:error") {

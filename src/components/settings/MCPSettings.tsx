@@ -13,10 +13,8 @@ export function MCPServerSettings() {
   const [copied, setCopied] = useState<string | null>(null);
 
   useEffect(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    if (typeof window !== "undefined" && (window as any).electron?.mcpServerPath) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (window as any).electron.mcpServerPath().then((p: string) => setMcpServerPath(p));
+    if (typeof window !== "undefined" && window.electron?.mcpServerPath) {
+      window.electron.mcpServerPath().then((p) => setMcpServerPath(p));
     }
   }, []);
 

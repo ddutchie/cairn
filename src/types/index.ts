@@ -165,6 +165,42 @@ export interface AppUIState {
   searchOpen: boolean;
 }
 
+// ── MCP / Chat Tool Shared Return Types ──────────
+
+// ── Dashboard postMessage Bridge Types ───────────
+
+/** Message sent from the dashboard iframe to the parent window. */
+export type DashboardQueryMessage =
+  | { type: "cairn:query"; id: string; tool: string; args: Record<string, unknown> }
+  | { type: "cairn:error"; message: string; source?: string; line?: number; col?: number; stack?: string }
+  | { type: "cairn:ready" }
+  | { type: "cairn:refresh" };
+
+/** Message sent from the parent window to the dashboard iframe. */
+export interface DashboardResponseMessage {
+  type: "cairn:response";
+  id: string;
+  result?: unknown;
+  error?: string;
+}
+
+/** Canonical shape returned by get_project_summary across all call sites. */
+export interface ProjectSummaryColumn {
+  columnName: string;
+  columnType: string;
+  count: number;
+  cards: Array<{ id: string; title: string; priority: string; dueDate?: string | null }>;
+}
+
+export interface ProjectSummaryResult {
+  project: { id: string; name: string; description?: string; status: string; priority: string; dueDate?: string | null };
+  noteCount: number;
+  totalCards: number;
+  cardsByColumn: ProjectSummaryColumn[];
+  pinnedNotes: Array<{ id: string; title: string }>;
+  recentActivity: Array<{ type: "note" | "card"; id: string; title: string; updatedAt: string }>;
+}
+
 /** Wrapper for IPC handler return values — either a result or an error. */
 export type IpcResult<T> = T | { error: string };
 

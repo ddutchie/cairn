@@ -24,6 +24,7 @@ import { writeNoteFile, deleteNoteFile, deleteProjectNotesDir, stripMarkdown, fi
 import { buildContextResponse } from "../lib/context";
 import { generatePrd } from "../lib/prd";
 import { isLocalEndpoint } from "../lib/llm";
+import { executeReadTool } from "../lib/read-tools";
 import { readWorkspaceConfig, writeWorkspaceConfig } from "../workspace-config";
 import { markMcpNotificationsRead } from "../db/queries";
 import { DEFAULT_COLUMNS } from "../db/defaults";
@@ -69,67 +70,13 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ipcMain.handle("db:mcpQuery", (_e, { tool, args }: { tool: string; args: Record<string, any> }) => {
     return handle(() => {
-      const snap = q.getFullSnapshot(db);
-      switch (tool) {
-        case "get_cairn_context":
-          return buildContextResponse(db);
-        case "get_project_summary": {
-          const project = snap.projects.find((p) => p.id === args.projectId);
-          if (!project) throw new Error("Project not found");
-          const cols = snap.columns.filter((c) => c.projectId === args.projectId).sort((a, b) => a.order - b.order);
-          const columns = cols.map((col) => {
-            const cards = snap.cards.filter((c) => c.columnId === col.id && !c.archivedAt);
-            return { id: col.id, name: col.name, type: col.type, taskCount: cards.length,
-              tasks: cards.map((c) => ({ id: c.id, title: c.title, priority: c.priority, dueDate: c.dueDate })) };
-          });
-          return {
-            project: { id: project.id, name: project.name, status: project.status, priority: project.priority, dueDate: project.dueDate },
-            noteCount: snap.notes.filter((n) => n.projectId === args.projectId && !n.archivedAt).length,
-            totalCards: snap.cards.filter((c) => c.projectId === args.projectId && !c.archivedAt).length,
-            columns,
-          };
-        }
-        case "list_tasks": {
-          const cols = snap.columns.filter((c) => !args.projectId || c.projectId === args.projectId);
-          const tasksByColumn: Record<string, unknown[]> = {};
-          cols.sort((a, b) => a.order - b.order).forEach((col) => {
-            tasksByColumn[col.id] = snap.cards
-              .filter((c) => c.columnId === col.id && !c.archivedAt)
-              .map((c) => ({ id: c.id, title: c.title, priority: c.priority, description: c.description,
-                dueDate: c.dueDate, columnId: col.id, columnName: col.name, columnType: col.type,
-                updatedAt: c.updatedAt, archivedAt: c.archivedAt ?? null }));
-          });
-          return { tasksByColumn };
-        }
-        case "list_notes": {
-          return snap.notes.filter((n) => !n.archivedAt && (!args.projectId || n.projectId === args.projectId))
-            .map((n) => ({ id: n.id, title: n.title, projectId: n.projectId, isPinned: n.isPinned, updatedAt: n.updatedAt }));
-        }
-        case "list_recent_activity": {
-          const limit = args.limit ?? 20;
-          const recentNotes = snap.notes
-            .filter((n) => !n.archivedAt && (!args.workspaceId || n.workspaceId === args.workspaceId) && (!args.projectId || n.projectId === args.projectId))
-            .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-            .slice(0, limit)
-            .map((n) => ({ id: n.id, title: n.title, projectId: n.projectId, updatedAt: n.updatedAt }));
-          const recentTasks = snap.cards
-            .filter((c) => !c.archivedAt && (!args.workspaceId || c.workspaceId === args.workspaceId) && (!args.projectId || c.projectId === args.projectId))
-            .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-            .slice(0, limit)
-            .map((c) => ({ id: c.id, title: c.title, projectId: c.projectId, updatedAt: c.updatedAt }));
-          return { recentNotes, recentTasks };
-        }
-        case "search_tasks": {
-          return q.searchTasks(db, { query: String(args.query), projectId: args.projectId as string | undefined, limit: args.limit as number | undefined })
-            .map((c) => ({ id: c.id, title: c.title, priority: c.priority, columnId: c.columnId }));
-        }
-        case "search_notes": {
-          return q.searchNotes(db, { query: String(args.query), projectId: args.projectId as string | undefined, limit: args.limit as number | undefined })
-            .map((n) => ({ id: n.id, title: n.title, snippet: n.contentText.slice(0, 200), projectId: n.projectId }));
-        }
-        default:
-          throw new Error(`Unknown or disallowed tool: ${tool}`);
+      if (tool === "get_cairn_context") {
+        return buildContextResponse(db);
       }
+      const snap = q.getFullSnapshot(db);
+      const res = executeReadTool(db, snap, tool, args);
+      if (res.handled) return res.result;
+      throw new Error(`Unknown or disallowed tool: ${tool}`);
     });
   });
 

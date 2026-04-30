@@ -6,7 +6,7 @@ import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
 import type { Note, ID, NoteType } from "@/types";
 import { id, now } from "@/lib/utils";
-import { ipc } from "../ipc";
+import { ipc, isElectron } from "../ipc";
 
 // ── Slice interface ───────────────────────────────────────────────────────────
 
@@ -20,6 +20,10 @@ export interface NotesSlice {
   restoreNote: (id: ID) => void;
   moveNoteToProject: (noteId: ID, targetProjectId: ID) => void;
   linkNoteToCard: (noteId: ID, cardId: ID) => void;
+  /** Reveal the note's .md file in the OS file explorer. No-op outside Electron. */
+  revealNote: (noteId: ID, projectId: ID) => void;
+  /** Generate a PRD note via the AI. Returns { error } on failure. */
+  generatePrd: (projectId: ID, title: string, requirements: string) => Promise<{ error: string } | void>;
 }
 
 // ── Slice creator ─────────────────────────────────────────────────────────────
@@ -141,5 +145,26 @@ export const createNotesSlice: StateCreator<CairnStore, [], [], NotesSlice> = (
     const card = get().cards.find((c) => c.id === cardId);
     if (note) ipc((e) => e.note.update(noteId, { linkedCardIds: note.linkedCardIds }));
     if (card) ipc((e) => e.card.update(cardId, { linkedNoteIds: card.linkedNoteIds }));
+  },
+
+  revealNote(noteId, projectId) {
+    if (!isElectron()) return;
+    window.electron?.revealNote(noteId, projectId);
+  },
+
+  async generatePrd(projectId, title, requirements) {
+    if (!isElectron() || !window.electron) return { error: "Not in Electron" };
+    const { aiConfig } = get();
+    const result = await window.electron.ai.generatePrd({
+      projectId,
+      title,
+      requirements,
+      config: {
+        baseUrl: aiConfig.baseUrl || "https://api.openai.com",
+        model: aiConfig.model || "gpt-4o-mini",
+        apiKey: aiConfig.apiKey || "",
+      },
+    });
+    if (result && "error" in result) return { error: result.error };
   },
 });

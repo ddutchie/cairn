@@ -196,8 +196,7 @@ export const useCairnStore = create<CairnStore>()(
         set({ aiConfig: { ...DEFAULT_AI_CONFIG, ...savedConfig } });
       }
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const snap = (await (window.electron as any).snapshot()) as PersistedState & {
+      const snap = (await window.electron!.snapshot()) as PersistedState & {
         chatThreads?: PersistedState["chatThreads"];
         chatMessages?: PersistedState["chatMessages"];
       };

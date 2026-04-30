@@ -93,8 +93,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
     async (action: AITextAction, customPrompt?: string) => {
       const sel = selectionRef.current;
       if (!sel) return;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const electron = (window as any).electron;
+      const electron = window.electron;
       if (!electron) return;
 
       setAiLoading(true);
@@ -121,10 +120,9 @@ export function NoteEditor({ note }: NoteEditorProps) {
 
   useEffect(() => {
     if (!spawnLoading) return;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const electron = (window as any).electron;
-    if (!electron?.chat?.onToolCall) return;
-    const unsub = electron.chat.onToolCall((e: { tool: string; label: string }) => {
+    const electron = window.electron;
+    if (!electron) return;
+    const unsub = electron.chat.onToolCall((e) => {
       if (e.tool === "create_task") {
         setSpawnToolCalls((prev) => [...prev, e.label]);
       }
@@ -133,8 +131,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
   }, [spawnLoading]);
 
   const handleSpawnTasks = useCallback(async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const electron = (window as any).electron;
+    const electron = window.electron;
     if (!electron || !activeProjectId) return;
 
     const columns = getProjectColumns(activeProjectId);

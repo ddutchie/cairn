@@ -10,6 +10,7 @@ import * as q from "../db/queries";
 import { writeNoteFile, deleteNoteFile, stripMarkdown } from "../notes-files";
 import { buildContextResponse } from "../lib/context";
 import { generatePrd } from "../lib/prd";
+import { executeReadTool, type CairnSnapshot } from "../lib/read-tools";
 import { DEFAULT_COLUMNS } from "../db/defaults";
 import { newId, ts } from "../db/utils";
 import { callLLM, type LLMConfig } from "../lib/llm";
@@ -26,8 +27,14 @@ export async function executeTool(
   emit?: (event: { tool: string; label: string; args: Record<string, unknown> }) => void,
 ): Promise<unknown> {
   emit?.({ tool: name, label: TOOL_LABELS[name]?.(args) ?? name, args });
-  const snap = q.getFullSnapshot(db);
+  const snap = q.getFullSnapshot(db) as CairnSnapshot;
   const now = ts();
+
+  // ── Shared read tools (also used by db:mcpQuery and MCP server) ──────────
+  {
+    const res = executeReadTool(db, snap, name, args);
+    if (res.handled) return res.result;
+  }
 
   switch (name) {
     case "get_cairn_context": {
@@ -84,48 +91,6 @@ export async function executeTool(
       const note = snap.notes.find((n) => n.id === args.noteId);
       if (!note) return { error: "Note not found" };
       return { id: note.id, title: note.title, content: note.content, projectId: note.projectId, updatedAt: note.updatedAt };
-    }
-    case "list_notes": {
-      return snap.notes
-        .filter((n) => !n.archivedAt && (!args.projectId || n.projectId === args.projectId))
-        .map((n) => ({ id: n.id, title: n.title, projectId: n.projectId, isPinned: n.isPinned, updatedAt: n.updatedAt }));
-    }
-    case "list_tasks": {
-      const cols = snap.columns.filter((c) => !args.projectId || c.projectId === args.projectId);
-      return cols
-        .filter((c) => !args.columnType || c.type === args.columnType)
-        .sort((a, b) => a.order - b.order)
-        .map((col) => ({
-          columnName: col.name,
-          columnType: col.type,
-          columnId: col.id,
-          tasks: snap.cards
-            .filter((c) => c.columnId === col.id && !c.archivedAt)
-            .map((c) => ({ id: c.id, title: c.title, priority: c.priority, description: c.description })),
-        }));
-    }
-    case "search_notes": {
-      return q.searchNotes(db, { query: args.query as string, projectId: args.projectId as string | undefined, limit: args.limit as number | undefined })
-        .map((n) => ({ id: n.id, title: n.title, snippet: n.contentText.slice(0, 200), projectId: n.projectId }));
-    }
-    case "search_tasks": {
-      return q.searchTasks(db, { query: args.query as string, projectId: args.projectId as string | undefined, limit: args.limit as number | undefined })
-        .map((c) => ({ id: c.id, title: c.title, columnId: c.columnId, priority: c.priority, projectId: c.projectId }));
-    }
-    case "get_project_summary": {
-      const project = snap.projects.find((p) => p.id === args.projectId);
-      if (!project) return { error: "Project not found" };
-      const columns = snap.columns.filter((c) => c.projectId === args.projectId).sort((a, b) => a.order - b.order);
-      return {
-        project: { id: project.id, name: project.name, status: project.status, priority: project.priority },
-        noteCount: snap.notes.filter((n) => n.projectId === args.projectId && !n.archivedAt).length,
-        cardsByColumn: columns.map((col) => ({
-          columnName: col.name,
-          columnType: col.type,
-          count: snap.cards.filter((c) => c.columnId === col.id && !c.archivedAt).length,
-          cards: snap.cards.filter((c) => c.columnId === col.id && !c.archivedAt).map((c) => ({ id: c.id, title: c.title, priority: c.priority })),
-        })),
-      };
     }
     case "create_dashboard": {
       const project = snap.projects.find((p) => p.id === args.projectId);
@@ -342,20 +307,6 @@ export async function executeTool(
       deleteProjectNotesDir(workspacePath, project.name);
       q.deleteProject(db, args.projectId as string);
       return { deleted: true, id: args.projectId, name: project.name };
-    }
-    case "list_recent_activity": {
-      const limit = (args.limit as number) ?? 20;
-      const recentNotes = snap.notes
-        .filter((n) => !n.archivedAt && (!args.workspaceId || n.workspaceId === args.workspaceId) && (!args.projectId || n.projectId === args.projectId))
-        .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-        .slice(0, limit)
-        .map((n) => ({ id: n.id, title: n.title, projectId: n.projectId, updatedAt: n.updatedAt }));
-      const recentTasks = snap.cards
-        .filter((c) => !c.archivedAt && (!args.workspaceId || c.workspaceId === args.workspaceId) && (!args.projectId || c.projectId === args.projectId))
-        .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-        .slice(0, limit)
-        .map((c) => ({ id: c.id, title: c.title, projectId: c.projectId, updatedAt: c.updatedAt }));
-      return { recentNotes, recentTasks };
     }
     default:
       return { error: `Unknown tool: ${name}` };
