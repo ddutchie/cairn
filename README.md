@@ -108,6 +108,8 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 | Tool | Category | Description |
 |------|----------|-------------|
 | `get_cairn_context` | read | Full orientation: workspaces, projects, column IDs, tool list, conventions |
+| `get_project_context_pack` | read | Single-call bundle: project metadata + pinned notes + open tasks + recent activity |
+| `resolve_project` | read | Find a project by name (fuzzy) and return its projectId and column IDs |
 | `get_note` | read | Full markdown content, linked IDs, and metadata of a note by ID |
 | `get_task` | read | Full detail of a task card by ID |
 | `get_project_summary` | read | Column breakdown, card counts, pinned notes, recent activity |
@@ -120,6 +122,8 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 | `update_project` | write | Update a project's name, description, status, priority, or due date |
 | `create_note` | write | Create a markdown note |
 | `import_note_from_file` | write | Import a local file as a note — server reads from disk, no need to inline content |
+| `ensure_note` | write | Idempotent create-or-update by title — prevents duplicate notes on re-run |
+| `append_to_note` | write | Append content to a note without re-sending the full body |
 | `update_note` | write | Update a note's title, content, or pinned state |
 | `move_note` | write | Move a note to a different project |
 | `create_task` | write | Create a task card in a column |

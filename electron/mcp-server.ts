@@ -291,9 +291,9 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
         workspaces,
         projects,
         tools: {
-          read:   ["get_cairn_context", "search_notes", "search_tasks", "get_note", "get_task", "get_project_summary", "list_recent_activity"],
-          write:  ["create_project", "create_note", "import_note_from_file", "update_note", "move_note", "create_task", "update_task", "update_task_status", "bulk_update_task_status", "link_note_to_task", "create_dashboard", "update_dashboard"],
-          delete: ["delete_note", "delete_task"],
+          read:   ["get_cairn_context", "get_project_context_pack", "resolve_project", "search_notes", "search_tasks", "get_note", "get_task", "get_project_summary", "list_notes", "list_tasks", "list_recent_activity"],
+          write:  ["create_project", "update_project", "create_note", "import_note_from_file", "ensure_note", "append_to_note", "update_note", "move_note", "create_task", "update_task", "update_task_status", "bulk_update_task_status", "link_note_to_task", "create_dashboard", "update_dashboard"],
+          delete: ["delete_note", "delete_task", "delete_project"],
         },
         conventions: {
           notes: "Raw markdown in 'content'. 'content_text' is auto-derived — do not set manually.",
@@ -304,6 +304,49 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
           columnTypes: ["backlog", "todo", "in_progress", "review", "done", "custom"],
           createProject: "create_project auto-creates 5 default columns — no need to create them separately.",
         },
+      };
+    }
+
+    case "get_project_context_pack": {
+      // Single call that bundles: project metadata + columns + pinned note content
+      // + open tasks + recent activity. Replaces 4-5 separate tool calls for agents
+      // that need a full picture of a project before taking action.
+      const project = snap.projects.find((p) => p.id === args.projectId);
+      if (!project) return { error: "Project not found" };
+      const columns = snap.columns
+        .filter((c) => c.projectId === project.id)
+        .sort((a, b) => a.order - b.order);
+      const notes = snap.notes.filter((n) => n.projectId === project.id && !n.archivedAt);
+      const pinnedNotes = notes
+        .filter((n) => n.isPinned)
+        .map((n) => ({ id: n.id, title: n.title, content: n.content }));
+      const openCards = columns
+        .filter((col) => col.type !== "done")
+        .map((col) => ({
+          columnName: col.name, columnType: col.type, columnId: col.id,
+          tasks: snap.cards
+            .filter((c) => c.columnId === col.id && !c.archivedAt)
+            .map((c) => ({ id: c.id, title: c.title, priority: c.priority, description: c.description ?? null })),
+        }))
+        .filter((col) => col.tasks.length > 0);
+      const recentActivity = [
+        ...notes.map((n) => ({ type: "note" as const, id: n.id, title: n.title, updatedAt: n.updatedAt })),
+        ...snap.cards
+          .filter((c) => c.projectId === project.id && !c.archivedAt)
+          .map((c) => ({ type: "card" as const, id: c.id, title: c.title, updatedAt: c.updatedAt })),
+      ]
+        .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+        .slice(0, 10);
+      return {
+        project: {
+          id: project.id, name: project.name, description: project.description ?? null,
+          status: project.status, priority: project.priority,
+          columns: columns.map((c) => ({ id: c.id, name: c.name, type: c.type })),
+        },
+        noteCount: notes.length,
+        pinnedNotes,
+        openTasks: openCards,
+        recentActivity,
       };
     }
 
@@ -730,6 +773,97 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
         }));
     }
 
+    case "resolve_project": {
+      // Find a project by exact or fuzzy name match — returns projectId so agents
+      // don't need to call get_cairn_context just to look up an ID.
+      const { workspaceId, name: query } = args;
+      const candidates = snap.projects.filter((p) =>
+        !p.archivedAt && (!workspaceId || p.workspaceId === workspaceId)
+      );
+      const needle = (query as string).toLowerCase().trim();
+      // 1. exact match (case-insensitive)
+      let match = candidates.find((p) => p.name.toLowerCase() === needle);
+      // 2. starts-with
+      if (!match) match = candidates.find((p) => p.name.toLowerCase().startsWith(needle));
+      // 3. contains
+      if (!match) match = candidates.find((p) => p.name.toLowerCase().includes(needle));
+      if (!match) return { error: `No project found matching "${query}"`, candidates: candidates.map((p) => ({ id: p.id, name: p.name })) };
+      const columns = snap.columns
+        .filter((c) => c.projectId === match!.id)
+        .sort((a, b) => a.order - b.order)
+        .map((c) => ({ id: c.id, name: c.name, type: c.type }));
+      return { id: match.id, name: match.name, workspaceId: match.workspaceId, status: match.status, columns };
+    }
+
+    case "ensure_note": {
+      // Idempotent: finds a note by title+projectId and updates it, or creates it.
+      // Prevents duplicate notes when agents re-run (e.g. syncing a README).
+      const { projectId, title, content } = args;
+      const project = snap.projects.find((p) => p.id === projectId);
+      if (!project) return { error: "Project not found" };
+      const existing = snap.notes.find(
+        (n) => !n.archivedAt && n.projectId === projectId && n.title === title
+      );
+      const now = ts();
+      const markdown = (content as string | undefined) ?? "";
+      if (existing) {
+        db.prepare(`UPDATE notes SET content = ?, content_text = ?, updated_at = ? WHERE id = ?`)
+          .run(markdown, stripMarkdown(markdown), now, existing.id);
+        writeNoteFile(workspacePath, {
+          id: existing.id, projectId, workspaceId: existing.workspaceId as string,
+          title: existing.title as string, content: markdown,
+          tagIds: existing.tagIds as string[], linkedNoteIds: existing.linkedNoteIds as string[],
+          linkedCardIds: existing.linkedCardIds as string[], isPinned: existing.isPinned as boolean,
+          createdAt: existing.createdAt as string, updatedAt: now,
+          archivedAt: existing.archivedAt as string | undefined,
+          projectName: project.name,
+        });
+        insertNotification(db, "update_note", "Note updated", `"${title}" was updated (ensure_note)`);
+        return { id: existing.id, title, action: "updated", updatedAt: now };
+      } else {
+        const noteId = newId();
+        db.prepare(`
+          INSERT INTO notes (id, project_id, workspace_id, title, content, content_text,
+            tag_ids, linked_note_ids, linked_card_ids, is_pinned, type, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, '[]', '[]', '[]', 0, 'note', ?, ?)
+        `).run(noteId, projectId, project.workspaceId, title, markdown, stripMarkdown(markdown), now, now);
+        writeNoteFile(workspacePath, {
+          id: noteId, projectId, workspaceId: project.workspaceId, title, content: markdown,
+          tagIds: [], linkedNoteIds: [], linkedCardIds: [], isPinned: false,
+          createdAt: now, updatedAt: now, projectName: project.name,
+        });
+        insertNotification(db, "create_note", "Note created", `"${title}" added to ${project.name} (ensure_note)`);
+        return { id: noteId, title, action: "created", createdAt: now };
+      }
+    }
+
+    case "append_to_note": {
+      // Appends content to the end of a note without requiring the agent to
+      // fetch and re-send the full body.
+      const { noteId, content: appendContent, separator = "\n\n" } = args;
+      const note = snap.notes.find((n) => n.id === noteId);
+      if (!note) return { error: "Note not found" };
+      const now = ts();
+      const existingContent = (note.content as string) ?? "";
+      const newContent = existingContent
+        ? existingContent + (separator as string) + (appendContent as string)
+        : (appendContent as string);
+      db.prepare(`UPDATE notes SET content = ?, content_text = ?, updated_at = ? WHERE id = ?`)
+        .run(newContent, stripMarkdown(newContent), now, noteId);
+      const proj = snap.projects.find((p) => p.id === note.projectId);
+      writeNoteFile(workspacePath, {
+        id: noteId, projectId: note.projectId as string, workspaceId: note.workspaceId as string,
+        title: note.title as string, content: newContent,
+        tagIds: note.tagIds as string[], linkedNoteIds: note.linkedNoteIds as string[],
+        linkedCardIds: note.linkedCardIds as string[], isPinned: note.isPinned as boolean,
+        createdAt: note.createdAt as string, updatedAt: now,
+        archivedAt: note.archivedAt as string | undefined,
+        projectName: proj?.name ?? note.projectId as string,
+      });
+      insertNotification(db, "update_note", "Note updated", `Content appended to "${note.title}"`);
+      return { id: noteId, title: note.title, updatedAt: now, newLength: newContent.length };
+    }
+
     default:
       return { error: `Unknown tool: ${toolName}` };
   }
@@ -759,6 +893,8 @@ function buildZodShape(schema: any): Record<string, z.ZodTypeAny> {
 const TOOL_DEFINITIONS = [
   { name: "get_cairn_context",   description: "Returns a full orientation guide for this Cairn instance: workspaces, projects, board columns with IDs, available tools, and data conventions. Call this first if unfamiliar with the workspace.",
     inputSchema: { type: "object", properties: {}, required: [] } },
+  { name: "get_project_context_pack", description: "Single-call context bundle for a project: metadata, column IDs, pinned note content, open tasks (non-done), and recent activity. Use this instead of calling get_project_summary + list_tasks + list_notes separately when you need a full picture before acting.",
+    inputSchema: { type: "object", properties: { projectId: { type: "string" } }, required: ["projectId"] } },
   { name: "search_notes",        description: "Search notes by query string. Returns title, snippet, projectId.",
     inputSchema: { type: "object", properties: { query: { type: "string", description: "Search query" }, projectId: { type: "string", description: "Filter by project ID" }, limit: { type: "number", default: 10 } }, required: ["query"] } },
   { name: "search_tasks",        description: "Search task cards by query string.",
@@ -803,6 +939,12 @@ const TOOL_DEFINITIONS = [
     inputSchema: { type: "object", properties: { projectId: { type: "string" } }, required: [] } },
   { name: "list_tasks",          description: "List all tasks in a project, grouped by column.",
     inputSchema: { type: "object", properties: { projectId: { type: "string" } }, required: [] } },
+  { name: "resolve_project",     description: "Find a project by name (exact or fuzzy) and return its projectId and column IDs. Use this instead of hardcoding IDs or calling get_cairn_context just to look up a project.",
+    inputSchema: { type: "object", properties: { name: { type: "string", description: "Project name to search for (case-insensitive, fuzzy)" }, workspaceId: { type: "string", description: "Optionally scope to a specific workspace" } }, required: ["name"] } },
+  { name: "ensure_note",         description: "Idempotent create-or-update: finds an existing note by title+projectId and updates its content, or creates it if not found. Use instead of create_note when re-running (e.g. syncing a README) to prevent duplicate notes.",
+    inputSchema: { type: "object", properties: { projectId: { type: "string" }, title: { type: "string" }, content: { type: "string" } }, required: ["projectId", "title"] } },
+  { name: "append_to_note",      description: "Append content to the end of an existing note without fetching or re-sending the full body. Optional separator defaults to a blank line.",
+    inputSchema: { type: "object", properties: { noteId: { type: "string" }, content: { type: "string", description: "Text to append" }, separator: { type: "string", description: "String inserted between existing content and appended content (default: '\\n\\n')" } }, required: ["noteId", "content"] } },
   { name: "create_dashboard",    description: "Create a dashboard in a project. The html field must be a complete self-contained HTML document with inline CSS/JS only. Use window.cairn.query(tool, args) for live data from read-only tools. The dashboard is rendered in a sandboxed iframe inside Cairn.",
     inputSchema: { type: "object", properties: { projectId: { type: "string" }, title: { type: "string" }, html: { type: "string", description: "Complete self-contained HTML document" } }, required: ["projectId", "title", "html"] } },
   { name: "update_dashboard",    description: "Update an existing dashboard's title or HTML content.",

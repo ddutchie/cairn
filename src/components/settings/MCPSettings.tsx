@@ -73,8 +73,10 @@ export function MCPServerSettings() {
         <div className="text-xs font-medium text-[var(--text-secondary)] mb-2">Available tools</div>
         <div className="grid grid-cols-2 gap-1.5">
           {[
-            ["get_cairn_context",       "read"],
-            ["get_note",               "read"],
+            ["get_cairn_context",           "read"],
+            ["get_project_context_pack",   "read"],
+            ["resolve_project",            "read"],
+            ["get_note",                   "read"],
             ["get_task",               "read"],
             ["get_project_summary",    "read"],
             ["list_notes",             "read"],
@@ -86,6 +88,8 @@ export function MCPServerSettings() {
             ["update_project",         "write"],
             ["create_note",            "write"],
             ["import_note_from_file",  "write"],
+            ["ensure_note",            "write"],
+            ["append_to_note",         "write"],
             ["update_note",            "write"],
             ["move_note",              "write"],
             ["create_task",            "write"],

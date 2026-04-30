@@ -12,8 +12,10 @@ export type ToolArgs = Record<string, any>;
 
 // Human-readable labels for each tool call, shown in the UI
 export const TOOL_LABELS: Record<string, (args: ToolArgs) => string> = {
-  get_cairn_context:      () => "Reading workspace context",
-  get_active_context:     () => "Reading active context",
+  get_cairn_context:          () => "Reading workspace context",
+  get_project_context_pack:   () => "Reading project context pack",
+  resolve_project:            (a) => `Resolving project "${a.name}"`,
+  get_active_context:         () => "Reading active context",
   get_note:               () => `Reading note`,
   list_notes:             () => "Listing notes",
   list_tasks:             () => "Listing tasks",
@@ -23,6 +25,8 @@ export const TOOL_LABELS: Record<string, (args: ToolArgs) => string> = {
   get_task:               () => "Reading task",
   create_note:            (a) => `Creating note "${a.title}"`,
   import_note_from_file:  (a) => `Importing ${path.basename(a.filePath as string)} as note`,
+  ensure_note:            (a) => `Ensuring note "${a.title}"`,
+  append_to_note:         () => "Appending to note",
   update_note:            () => "Updating note",
   create_task:            (a) => `Creating task "${a.title}"`,
   update_task_status:        () => "Moving task",
@@ -48,6 +52,33 @@ export const TOOLS = [
       name: "get_cairn_context",
       description: "Returns a full orientation guide for working with this Cairn instance: all workspaces, projects, board columns with IDs, available tools, and data conventions. Call this once at the start of any session if you are unfamiliar with the workspace.",
       parameters: { type: "object", properties: {}, required: [] },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_project_context_pack",
+      description: "Single-call context bundle for a project: metadata, column IDs, pinned note content, open tasks (non-done only), and recent activity. Use instead of calling get_project_summary + list_tasks + list_notes separately when you need a full picture before acting.",
+      parameters: {
+        type: "object",
+        properties: { projectId: { type: "string" } },
+        required: ["projectId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "resolve_project",
+      description: "Find a project by name (exact or fuzzy, case-insensitive) and return its projectId and column IDs. Use this instead of hardcoding IDs or calling get_cairn_context just to look up a project.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Project name to search for" },
+          workspaceId: { type: "string", description: "Optionally scope to a specific workspace" },
+        },
+        required: ["name"],
+      },
     },
   },
   {
@@ -175,6 +206,38 @@ export const TOOLS = [
           title: { type: "string", description: "Override the note title (defaults to filename without extension)" },
         },
         required: ["projectId", "filePath"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "ensure_note",
+      description: "Idempotent create-or-update: finds an existing note by title+projectId and updates its content, or creates it if not found. Use instead of create_note when re-running (e.g. syncing a README) to prevent duplicates. Returns { id, title, action: 'created'|'updated' }.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          title: { type: "string" },
+          content: { type: "string" },
+        },
+        required: ["projectId", "title"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "append_to_note",
+      description: "Append content to the end of an existing note without fetching or re-sending the full body. Useful for adding sections incrementally.",
+      parameters: {
+        type: "object",
+        properties: {
+          noteId: { type: "string" },
+          content: { type: "string", description: "Text to append" },
+          separator: { type: "string", description: "Inserted between existing and new content (default: blank line)" },
+        },
+        required: ["noteId", "content"],
       },
     },
   },

@@ -151,6 +151,53 @@ export async function executeTool(
       writeNoteFile(workspacePath, { ...note, projectName: project.name });
       return { ...note, importedFrom: resolvedPath };
     }
+    case "resolve_project": {
+      const candidates = snap.projects.filter((p) =>
+        !p.archivedAt && (!args.workspaceId || p.workspaceId === args.workspaceId)
+      );
+      const needle = (args.name as string).toLowerCase().trim();
+      let match = candidates.find((p) => p.name.toLowerCase() === needle);
+      if (!match) match = candidates.find((p) => p.name.toLowerCase().startsWith(needle));
+      if (!match) match = candidates.find((p) => p.name.toLowerCase().includes(needle));
+      if (!match) return { error: `No project found matching "${args.name}"`, candidates: candidates.map((p) => ({ id: p.id, name: p.name })) };
+      const columns = snap.columns
+        .filter((c) => c.projectId === match!.id)
+        .sort((a, b) => a.order - b.order)
+        .map((c) => ({ id: c.id, name: c.name, type: c.type }));
+      return { id: match.id, name: match.name, workspaceId: match.workspaceId, status: match.status, columns };
+    }
+    case "ensure_note": {
+      const project = snap.projects.find((p) => p.id === args.projectId);
+      if (!project) return { error: "Project not found" };
+      const existing = snap.notes.find(
+        (n) => !n.archivedAt && n.projectId === args.projectId && n.title === args.title
+      );
+      const markdown = (args.content as string | undefined) ?? "";
+      if (existing) {
+        const note = q.updateNote(db, existing.id, { content: markdown, contentText: stripMarkdown(markdown) });
+        writeNoteFile(workspacePath, { ...note, projectName: project.name });
+        return { id: existing.id, title: existing.title, action: "updated", updatedAt: note.updatedAt };
+      } else {
+        const noteId = newId();
+        const note = q.createNote(db, {
+          id: noteId, projectId: args.projectId as string, workspaceId: project.workspaceId,
+          title: args.title as string, content: markdown, contentText: stripMarkdown(markdown),
+        });
+        writeNoteFile(workspacePath, { ...note, projectName: project.name });
+        return { id: noteId, title: args.title, action: "created", createdAt: note.createdAt };
+      }
+    }
+    case "append_to_note": {
+      const note = snap.notes.find((n) => n.id === args.noteId);
+      if (!note) return { error: "Note not found" };
+      const separator = (args.separator as string | undefined) ?? "\n\n";
+      const existing = note.content ?? "";
+      const newContent = existing ? existing + separator + (args.content as string) : (args.content as string);
+      const updated = q.updateNote(db, args.noteId as string, { content: newContent, contentText: stripMarkdown(newContent) });
+      const proj = snap.projects.find((p) => p.id === note.projectId);
+      writeNoteFile(workspacePath, { ...updated, projectName: proj?.name ?? note.projectId });
+      return { id: note.id, title: note.title, updatedAt: updated.updatedAt, newLength: newContent.length };
+    }
     case "update_note": {
       const existing = snap.notes.find((n) => n.id === args.noteId);
       if (!existing) return { error: "Note not found" };

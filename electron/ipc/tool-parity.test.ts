@@ -46,6 +46,7 @@ const CHAT_ONLY_TOOLS = new Set(["get_active_context", "generate_prd", "spawn_ta
 // Shared read tools handled by executeReadTool (and also in mcp-server.ts)
 const SHARED_READ_TOOLS = [
   "get_project_summary",
+  "get_project_context_pack",
   "list_tasks",
   "list_notes",
   "list_recent_activity",
@@ -70,7 +71,9 @@ describe("Tool name parity", () => {
       // Shared write/delete tools also in MCP:
       "get_cairn_context", "get_note", "get_task",
       "create_project", "update_project", "delete_project",
-      "create_note", "import_note_from_file", "update_note", "move_note", "delete_note",
+      "resolve_project",
+      "create_note", "import_note_from_file", "ensure_note", "append_to_note",
+      "update_note", "move_note", "delete_note",
       "create_task", "update_task", "update_task_status", "bulk_update_task_status",
       "link_note_to_task", "create_dashboard", "update_dashboard", "delete_task",
     ]);

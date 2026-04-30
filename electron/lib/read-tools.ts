@@ -148,6 +148,51 @@ export function executeSearchTasks(db: Database.Database, args: Args): unknown {
   }).map((c) => ({ id: c.id, title: c.title, columnId: c.columnId, priority: c.priority, projectId: c.projectId }));
 }
 
+export function executeGetProjectContextPack(snap: CairnSnapshot, args: Args): unknown {
+  const project = snap.projects.find((p) => p.id === args.projectId);
+  if (!project) return { error: "Project not found" };
+  const columns = snap.columns
+    .filter((c) => c.projectId === project.id)
+    .sort((a, b) => a.order - b.order);
+  const notes = snap.notes.filter((n) => n.projectId === project.id && !n.archivedAt);
+  // Pinned notes with full content — useful for context-setting docs
+  const pinnedNotes = notes
+    .filter((n) => n.isPinned)
+    .map((n) => ({ id: n.id, title: n.title, content: n.content }));
+  // Open (non-done) tasks only — done tasks are noise for an agent planning work
+  const openCards = columns
+    .filter((col) => col.type !== "done")
+    .map((col) => ({
+      columnName: col.name,
+      columnType: col.type,
+      columnId: col.id,
+      tasks: snap.cards
+        .filter((c) => c.columnId === col.id && !c.archivedAt)
+        .map((c) => ({ id: c.id, title: c.title, priority: c.priority, description: c.description ?? null })),
+    }))
+    .filter((col) => col.tasks.length > 0);
+  // Recent activity — last 10 across notes + tasks
+  const recentActivity = [
+    ...notes.map((n) => ({ type: "note" as const, id: n.id, title: n.title, updatedAt: n.updatedAt })),
+    ...snap.cards
+      .filter((c) => c.projectId === project.id && !c.archivedAt)
+      .map((c) => ({ type: "card" as const, id: c.id, title: c.title, updatedAt: c.updatedAt })),
+  ]
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+    .slice(0, 10);
+  return {
+    project: {
+      id: project.id, name: project.name, description: project.description ?? null,
+      status: project.status, priority: project.priority,
+      columns: columns.map((c) => ({ id: c.id, name: c.name, type: c.type })),
+    },
+    noteCount: notes.length,
+    pinnedNotes,
+    openTasks: openCards,
+    recentActivity,
+  };
+}
+
 /**
  * Dispatch a read-only tool by name. Used by db:mcpQuery in handlers.ts and
  * can be used by chat-executor.ts for the shared read-only subset.
@@ -164,6 +209,8 @@ export function executeReadTool(
   switch (tool) {
     case "get_project_summary":
       return { handled: true, result: executeGetProjectSummary(snap, args) };
+    case "get_project_context_pack":
+      return { handled: true, result: executeGetProjectContextPack(snap, args) };
     case "list_tasks":
       return { handled: true, result: executeListTasks(snap, args) };
     case "list_notes":
