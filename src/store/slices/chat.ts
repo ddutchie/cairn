@@ -23,6 +23,7 @@ export interface ChatSlice {
   ) => ChatMessage;
   confirmAction: (action: PendingAction) => void;
   deleteThread: (threadId: ID) => void;
+  renameThread: (threadId: ID, title: string) => void;
   createNewThread: (workspaceId: ID, projectId?: ID) => ChatThread;
 }
 
@@ -110,6 +111,17 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
     }));
     get().persist();
     ipc((e) => e.chat.deleteThread(threadId));
+  },
+
+  renameThread(threadId, title) {
+    set((s) => ({
+      chatThreads: s.chatThreads.map((t) =>
+        t.id === threadId ? { ...t, title: title.trim() || undefined, updatedAt: now() } : t
+      ),
+    }));
+    get().persist();
+    const thread = get().chatThreads.find((t) => t.id === threadId);
+    if (thread) ipc((e) => e.chat.upsertThread(thread));
   },
 
   createNewThread(workspaceId, projectId) {

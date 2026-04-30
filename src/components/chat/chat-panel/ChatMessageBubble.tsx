@@ -1,15 +1,29 @@
 "use client";
 
-import React from "react";
-import { Bot, User, FileText, Kanban, FolderOpen } from "lucide-react";
+import React, { useState } from "react";
+import { Bot, User, FileText, Kanban, FolderOpen, Copy, Check, RotateCcw } from "lucide-react";
 import { cn, formatRelative } from "@/lib/utils";
 import { MarkdownContent } from "./MarkdownContent";
 import type { ChatMessage, LinkedContextReference } from "@/types";
 
-export function ChatMessageBubble({ message }: { message: ChatMessage }) {
+interface ChatMessageBubbleProps {
+  message: ChatMessage;
+  onRetry?: (content: string) => void;
+}
+
+export function ChatMessageBubble({ message, onRetry }: ChatMessageBubbleProps) {
   const isUser = message.role === "user";
+  const [copied, setCopied] = useState(false);
+
+  function handleCopy() {
+    navigator.clipboard.writeText(message.content).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
   return (
-    <div className={cn("flex gap-2 items-start", isUser && "flex-row-reverse")}>
+    <div className={cn("group flex gap-2 items-start", isUser && "flex-row-reverse")}>
       <div className={cn("w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5",
         isUser ? "bg-[var(--surface-3)] border border-[var(--border)]" : "bg-[var(--accent-dim)] border border-[var(--accent)]/20")}>
         {isUser ? <User size={11} className="text-[var(--text-tertiary)]" /> : <Bot size={11} className="text-[var(--accent)]" />}
@@ -24,7 +38,27 @@ export function ChatMessageBubble({ message }: { message: ChatMessage }) {
             {message.contextRefs.map((ref, i) => <ContextRefChip key={i} ref_={ref} />)}
           </div>
         )}
-        <span className="text-[10px] text-[var(--text-tertiary)]">{formatRelative(message.createdAt)}</span>
+        <div className={cn("flex items-center gap-1.5", isUser ? "flex-row-reverse" : "")}>
+          <span className="text-[10px] text-[var(--text-tertiary)]">{formatRelative(message.createdAt)}</span>
+          <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 transition-opacity">
+            <button
+              onClick={handleCopy}
+              title="Copy"
+              className="p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors"
+            >
+              {copied ? <Check size={10} className="text-green-400" /> : <Copy size={10} />}
+            </button>
+            {isUser && onRetry && (
+              <button
+                onClick={() => onRetry(message.content)}
+                title="Retry"
+                className="p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors"
+              >
+                <RotateCcw size={10} />
+              </button>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

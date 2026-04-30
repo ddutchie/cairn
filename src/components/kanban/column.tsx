@@ -64,6 +64,7 @@ export function KanbanColumn({
   } = useSortable({ id: column.id, data: { column } });
 
   const accent = COLUMN_COLORS[column.type] ?? COLUMN_COLORS.custom;
+  const atLimit = column.cardLimit != null && column.cardLimit > 0 && cards.length >= column.cardLimit;
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -110,7 +111,7 @@ export function KanbanColumn({
         <DialogContent size="sm">
           <DialogHeader><DialogTitle>Delete column?</DialogTitle></DialogHeader>
           <p className="text-sm text-[var(--text-secondary)] mt-1">
-            <strong className="text-[var(--text-primary)]">{column.name}</strong> and all {cards.length} card{cards.length !== 1 ? "s" : ""} inside will be permanently deleted.
+            <strong className="text-[var(--text-primary)]">{column.name}</strong> and all {cards.length + archivedCards.length} card{(cards.length + archivedCards.length) !== 1 ? "s" : ""} inside (including {archivedCards.length} archived) will be permanently deleted.
           </p>
           <div className="flex justify-end gap-2 mt-5">
             <DialogClose asChild>
@@ -173,12 +174,18 @@ export function KanbanColumn({
               {column.name}
             </span>
           )}
-          <span className="text-[11px] text-[var(--text-tertiary)] flex-shrink-0 font-mono">{cards.length}</span>
-          <Tooltip content="Add card">
+          <span className={cn(
+            "text-[11px] flex-shrink-0 font-mono",
+            atLimit ? "text-amber-400" : "text-[var(--text-tertiary)]"
+          )}>
+            {column.cardLimit ? `${cards.length}/${column.cardLimit}` : cards.length}
+          </span>
+          <Tooltip content={atLimit ? "WIP limit reached" : "Add card"}>
             <Button
               variant="ghost" size="icon"
               className="opacity-0 group-hover:opacity-100 w-5 h-5"
-              onClick={() => setIsAddingCard(true)}
+              onClick={() => { if (!atLimit) setIsAddingCard(true); }}
+              disabled={atLimit}
             >
               <Plus size={11} />
             </Button>
@@ -290,14 +297,20 @@ export function KanbanColumn({
           </div>
         ) : (
           <div className="p-2 border-t border-[var(--border)]">
-            <Button
-              variant="ghost" size="sm"
-              className="w-full justify-start text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
-              onClick={() => setIsAddingCard(true)}
-            >
-              <Plus size={12} />
-              <span className="text-xs">Add card</span>
-            </Button>
+            {atLimit ? (
+              <p className="w-full text-center text-[10px] text-amber-400 py-1">
+                WIP limit reached ({column.cardLimit})
+              </p>
+            ) : (
+              <Button
+                variant="ghost" size="sm"
+                className="w-full justify-start text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
+                onClick={() => setIsAddingCard(true)}
+              >
+                <Plus size={12} />
+                <span className="text-xs">Add card</span>
+              </Button>
+            )}
           </div>
         )}
       </div>

@@ -21,6 +21,7 @@ import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
   DropdownMenuItem, DropdownMenuSeparator,
 } from "@/components/ui/dropdown";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 
 export function NotesView() {
   const {
@@ -40,6 +41,7 @@ export function NotesView() {
   const [moveNoteId, setMoveNoteId]             = useState<string | null>(null);
   const [showArchivedNotes, setShowArchivedNotes] = useState(false);
   const [dashboardTemplateOpen, setDashboardTemplateOpen] = useState(false);
+  const [deleteNoteId, setDeleteNoteId] = useState<string | null>(null);
 
   const notes           = activeProjectId ? getProjectNotes(activeProjectId) : [];
   const archivedNotes   = activeProjectId ? getArchivedProjectNotes(activeProjectId) : [];
@@ -98,6 +100,7 @@ export function NotesView() {
 
   function handleDelete(noteId: string) {
     deleteNote(noteId);
+    setDeleteNoteId(null);
     if (activeNoteId === noteId) setActiveNoteId(notes.filter((n) => n.id !== noteId)[0]?.id ?? null);
   }
 
@@ -180,7 +183,7 @@ export function NotesView() {
                 isActive={note.id === activeNote?.id}
                 onClick={() => setActiveNoteId(note.id)}
                 onPin={() => updateNote(note.id, { isPinned: !note.isPinned })}
-                onDelete={() => handleDelete(note.id)}
+                onDelete={() => setDeleteNoteId(note.id)}
                 onArchive={() => handleArchive(note.id)}
                 onMove={() => setMoveNoteId(note.id)}
                 onReveal={() => revealNote(note.id, note.projectId)}
@@ -199,7 +202,7 @@ export function NotesView() {
               {showArchivedNotes && archivedNotes.map((note) => (
                 <ArchivedNoteListItem key={note.id} note={note}
                   onRestore={() => restoreNote(note.id)}
-                  onDelete={() => handleDelete(note.id)} />
+                  onDelete={() => setDeleteNoteId(note.id)} />
               ))}
             </div>
           )}
@@ -253,6 +256,34 @@ export function NotesView() {
           onClose={() => setMoveNoteId(null)}
         />
       )}
+
+      <Dialog open={!!deleteNoteId} onOpenChange={(o) => { if (!o) setDeleteNoteId(null); }}>
+        <DialogContent size="sm">
+          <DialogHeader>
+            <DialogTitle>Delete note?</DialogTitle>
+          </DialogHeader>
+          <div className="px-5 py-4 space-y-4">
+            <p className="text-sm text-[var(--text-secondary)]">
+              <strong className="text-[var(--text-primary)]">
+                {notes.find((n) => n.id === deleteNoteId)?.title ?? "This note"}
+              </strong>{" "}
+              will be permanently deleted. This cannot be undone.
+            </p>
+            <div className="flex justify-end gap-2">
+              <DialogClose asChild>
+                <Button variant="ghost" size="sm">Cancel</Button>
+              </DialogClose>
+              <Button
+                variant="ghost" size="sm"
+                className="text-[var(--danger)] hover:bg-[var(--danger)]/10"
+                onClick={() => deleteNoteId && handleDelete(deleteNoteId)}
+              >
+                <Trash2 size={13} /> Delete
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

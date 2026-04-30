@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Search, FileText, Kanban, X, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CairnEvents } from "@/lib/events";
@@ -58,12 +58,18 @@ function ResultRow({ result, focused, onSelect }: ResultRowProps) {
   );
 }
 
+type FilterType = "all" | "notes" | "tasks";
+
 export function SearchPanel() {
-  const { searchOpen, toggleSearch, searchAll, setView, setActiveProject } = useCairnStore();
+  const { searchOpen, toggleSearch, searchAll, setView, setActiveProject, projects, activeWorkspaceId } = useCairnStore();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [focused, setFocused] = useState(0);
+  const [filterType, setFilterType] = useState<FilterType>("all");
+  const [filterProject, setFilterProject] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const workspaceProjects = projects.filter((p) => p.workspaceId === activeWorkspaceId && !p.archivedAt);
 
   useEffect(() => {
     if (searchOpen) {
@@ -71,6 +77,8 @@ export function SearchPanel() {
       setQuery("");
       setResults([]);
       setFocused(0);
+      setFilterType("all");
+      setFilterProject(null);
     }
   }, [searchOpen]);
 
@@ -100,12 +108,12 @@ export function SearchPanel() {
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setFocused((f) => Math.min(f + 1, results.length - 1));
+      setFocused((f) => Math.min(f + 1, filtered.length - 1));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setFocused((f) => Math.max(f - 1, 0));
-    } else if (e.key === "Enter" && results[focused]) {
-      handleSelect(results[focused]);
+    } else if (e.key === "Enter" && filtered[focused]) {
+      handleSelect(filtered[focused]);
     } else if (e.key === "Escape") {
       toggleSearch();
     }
@@ -113,8 +121,12 @@ export function SearchPanel() {
 
   if (!searchOpen) return null;
 
-  const notes = results.filter((r) => r.type === "note");
-  const tasks = results.filter((r) => r.type === "card");
+  const filtered = results
+    .filter((r) => filterType === "all" || (filterType === "notes" ? r.type === "note" : r.type === "card"))
+    .filter((r) => !filterProject || r.projectId === filterProject);
+
+  const notes = filtered.filter((r) => r.type === "note");
+  const tasks = filtered.filter((r) => r.type === "card");
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 px-4">
@@ -151,15 +163,46 @@ export function SearchPanel() {
           </kbd>
         </div>
 
+        {/* Filter bar */}
+        <div className="flex items-center gap-2 px-4 py-2 border-b border-[var(--border)] flex-wrap">
+          {(["all", "notes", "tasks"] as FilterType[]).map((t) => (
+            <button key={t} onClick={() => { setFilterType(t); setFocused(0); }}
+              className={cn("px-2.5 py-0.5 rounded-full text-[11px] font-medium border transition-colors",
+                filterType === t
+                  ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
+                  : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
+              )}>
+              {t === "all" ? "All" : t === "notes" ? "Notes" : "Tasks"}
+            </button>
+          ))}
+          {workspaceProjects.length > 1 && (
+            <div className="flex items-center gap-1 ml-auto flex-wrap">
+              {filterProject && (
+                <button onClick={() => setFilterProject(null)}
+                  className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] border border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]">
+                  <X size={9} />
+                  {workspaceProjects.find((p) => p.id === filterProject)?.name ?? "Project"}
+                </button>
+              )}
+              {!filterProject && workspaceProjects.map((p) => (
+                <button key={p.id} onClick={() => { setFilterProject(p.id); setFocused(0); }}
+                  className="px-2 py-0.5 rounded-full text-[11px] border border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:border-[var(--border)] transition-colors truncate max-w-[100px]">
+                  {p.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
         {/* Results */}
-        <div className="max-h-96 overflow-y-auto">
-          {query && results.length === 0 && (
+        <div className="max-h-80 overflow-y-auto">
+          {query && filtered.length === 0 && (
             <div className="px-4 py-8 text-center text-sm text-[var(--text-tertiary)]">
               No results for &ldquo;{query}&rdquo;
             </div>
           )}
 
-          {results.length > 0 && (
+          {filtered.length > 0 && (
             <div className="py-1">
               {notes.length > 0 && (
                 <>

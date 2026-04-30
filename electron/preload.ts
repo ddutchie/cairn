@@ -82,6 +82,7 @@ const api = {
     // ── AI Chat streaming ──────────────────────
     // Fire-and-forget. Listen with onToken / onDone / onToolCall.
     stream: (req: unknown) => ipcRenderer.send("chat:stream", req),
+    abort: () => ipcRenderer.send("chat:abort"),
     onToken: (cb: (e: { delta: string }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const handler = (_: any, e: { delta: string }) => cb(e);
@@ -121,6 +122,7 @@ const api = {
   setTheme: (theme: string) => invoke("app:setTheme", theme),
   initWorkspace: (workspacePath: string) => invoke<{ requiresRestart: boolean }>("app:initWorkspace", { workspacePath }),
   relaunch: () => invoke("app:relaunch"),
+  resetAllData: () => invoke("app:reset"),
   platform: process.platform as "darwin" | "win32" | "linux",
 
   // ── Auto-updater ──────────────────────────────

@@ -30,8 +30,10 @@ export function DataSettings({
     setTimeout(() => setExportDone(false), 3000);
   }
 
-  function handleReset() {
+  async function handleReset() {
     storage.clear();
+    await window.electron?.resetAllData();
+    // relaunch is called inside the IPC handler; if running in browser dev, fallback
     window.location.reload();
   }
 

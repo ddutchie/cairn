@@ -36,6 +36,7 @@ export interface UseChatStreamResult {
   toolCalls: ChatToolCall[];
   streamingContent: string;
   sendStream: (req: ChatStreamRequest) => void;
+  stopStream: () => void;
 }
 
 export function useChatStream(threadId: string | null): UseChatStreamResult {
@@ -87,5 +88,12 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
     window.electron?.chat.stream(req);
   }
 
-  return { isLoading, toolCalls, streamingContent, sendStream };
+  function stopStream() {
+    window.electron?.chat.abort();
+    setIsLoading(false);
+    setToolCalls([]);
+    setStreamingContent("");
+  }
+
+  return { isLoading, toolCalls, streamingContent, sendStream, stopStream };
 }

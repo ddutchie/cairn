@@ -24,15 +24,32 @@ export interface AIConfig {
 export type Theme = "light" | "dark" | "system";
 export const THEME_KEY = "theme";
 
+// Single MQ listener — stored so we can remove it before re-adding
+let _systemMqHandler: ((e: MediaQueryListEvent) => void) | null = null;
+let _systemMq: MediaQueryList | null = null;
+
 export function applyTheme(theme: Theme): void {
   if (typeof document === "undefined") return;
-  const resolved =
-    theme === "system"
-      ? window.matchMedia("(prefers-color-scheme: light)").matches
-        ? "light"
-        : "dark"
-      : theme;
-  document.documentElement.setAttribute("data-theme", resolved);
+
+  // Always tear down the previous system listener first
+  if (_systemMq && _systemMqHandler) {
+    _systemMq.removeEventListener("change", _systemMqHandler);
+    _systemMqHandler = null;
+    _systemMq = null;
+  }
+
+  if (theme === "system") {
+    const mq = window.matchMedia("(prefers-color-scheme: light)");
+    const handler = (e: MediaQueryListEvent) => {
+      document.documentElement.setAttribute("data-theme", e.matches ? "light" : "dark");
+    };
+    mq.addEventListener("change", handler);
+    _systemMq = mq;
+    _systemMqHandler = handler;
+    document.documentElement.setAttribute("data-theme", mq.matches ? "light" : "dark");
+  } else {
+    document.documentElement.setAttribute("data-theme", theme);
+  }
 }
 
 // ── Slice interface ───────────────────────────────────────────────────────────
@@ -88,16 +105,6 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
     applyTheme(theme);
     if (typeof window !== "undefined" && window.electron) {
       window.electron.setTheme(theme);
-    }
-    if (theme === "system") {
-      const mq = window.matchMedia("(prefers-color-scheme: light)");
-      const handler = (e: MediaQueryListEvent) => {
-        document.documentElement.setAttribute(
-          "data-theme",
-          e.matches ? "light" : "dark"
-        );
-      };
-      mq.addEventListener("change", handler);
     }
   },
 

@@ -3,9 +3,16 @@
 import React from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Calendar, FileText } from "lucide-react";
-import { cn, formatDate, getDueDateStatus, PRIORITY_COLORS } from "@/lib/utils";
+import { Archive, Calendar, FileText, Pencil, Trash2 } from "lucide-react";
+import { cn, formatDate, getDueDateStatus } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { useCairnStore } from "@/store";
 import type { TaskCard } from "@/types";
 
@@ -16,7 +23,7 @@ interface KanbanCardProps {
 }
 
 export function KanbanCard({ card, onClick, isDragging = false }: KanbanCardProps) {
-  const { getTagById } = useCairnStore();
+  const { getTagById, archiveCard, deleteCard } = useCairnStore();
 
   const {
     attributes,
@@ -38,24 +45,26 @@ export function KanbanCard({ card, onClick, isDragging = false }: KanbanCardProp
   const tags = card.tagIds.slice(0, 2).map((id) => getTagById(id)).filter(Boolean);
 
   return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      {...attributes}
-      {...listeners}
-      onClick={onClick}
-      className={cn(
-        "group relative rounded-lg border bg-[var(--surface-2)] p-3 cursor-pointer",
-        "border-[var(--border)] hover:border-[var(--accent)]/40",
-        "transition-all duration-150 select-none",
-        "hover:shadow-md hover:shadow-black/20",
-        (isDragging || isSortableDragging) && "opacity-40 rotate-1"
-      )}
-    >
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div
+          ref={setNodeRef}
+          style={style}
+          {...attributes}
+          {...listeners}
+          onClick={onClick}
+          className={cn(
+            "group relative rounded-lg border bg-[var(--surface-2)] p-3 cursor-pointer overflow-hidden",
+            "border-[var(--border)] hover:border-[var(--accent)]/40",
+            "transition-all duration-150 select-none",
+            "hover:shadow-md hover:shadow-black/20",
+            (isDragging || isSortableDragging) && "opacity-40 rotate-1"
+          )}
+        >
       {/* Priority indicator */}
       <div
         className={cn(
-          "absolute top-0 left-0 w-0.5 h-full rounded-l-lg opacity-60",
+          "absolute top-0 left-0 w-1 h-full opacity-60",
           card.priority === "urgent" && "bg-red-500",
           card.priority === "high" && "bg-orange-400",
           card.priority === "medium" && "bg-amber-400",
@@ -63,7 +72,7 @@ export function KanbanCard({ card, onClick, isDragging = false }: KanbanCardProp
         )}
       />
 
-      <div className="pl-1.5">
+      <div className="pl-2">
         {/* Tags */}
         {tags.length > 0 && (
           <div className="flex flex-wrap gap-1 mb-2">
@@ -117,7 +126,28 @@ export function KanbanCard({ card, onClick, isDragging = false }: KanbanCardProp
             )}
           </div>
         )}
-      </div>
-    </div>
+          </div>
+        </div>
+      </ContextMenuTrigger>
+
+      <ContextMenuContent>
+        <ContextMenuItem onSelect={onClick}>
+          <Pencil size={13} />
+          Open card
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem onSelect={() => archiveCard(card.id)}>
+          <Archive size={13} />
+          Archive
+        </ContextMenuItem>
+        <ContextMenuItem
+          onSelect={() => deleteCard(card.id)}
+          className="text-red-400 hover:text-red-300"
+        >
+          <Trash2 size={13} />
+          Delete
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }

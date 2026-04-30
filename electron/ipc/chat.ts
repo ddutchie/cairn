@@ -13,6 +13,9 @@ import { isLocalEndpoint, streamCompletion, type OpenAIMessage } from "../lib/ll
 import { TOOLS, buildSystemPrompt, type ChatRequest } from "../lib/tools";
 import { executeTool } from "./chat-executor";
 
+// Track one AbortController per renderer webContents ID
+const abortControllers = new Map<number, AbortController>();
+
 // Re-export for backward compatibility (prd.ts and others import LLMConfig from here)
 export type { LLMConfig } from "../lib/llm";
 export { callLLM } from "../lib/llm";
@@ -30,8 +33,10 @@ async function runToolLoop(
   apiKey: string,
   messages: OpenAIMessage[],
   emitToolCall: (e: { tool: string; label: string; args: Record<string, unknown> }) => void,
+  signal?: AbortSignal,
 ): Promise<{ exhausted: true; content: string } | { exhausted: false }> {
   for (let round = 0; round < 8; round++) {
+    if (signal?.aborted) return { exhausted: true, content: "" };
     let response: Response;
     try {
       const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -84,12 +89,25 @@ async function runToolLoop(
 }
 
 export function registerChatHandler(db: Database.Database, workspacePath: string): void {
+  // chat:abort — cancel the in-flight stream for this renderer
+  ipcMain.on("chat:abort", (event) => {
+    const ctrl = abortControllers.get(event.sender.id);
+    if (ctrl) {
+      ctrl.abort();
+      abortControllers.delete(event.sender.id);
+    }
+  });
+
   // chat:stream — fire-and-forget (ipcMain.on, not handle).
   // Emits:
   //   chat:token   { delta: string }   — one SSE content chunk
   //   chat:tool-call { tool, label, args } — tool being invoked
   //   chat:done    { content: string, contextRefs: [], error?: string }
   ipcMain.on("chat:stream", async (event, req: ChatRequest) => {
+    // Cancel any previous in-flight request from this renderer
+    abortControllers.get(event.sender.id)?.abort();
+    const abortCtrl = new AbortController();
+    abortControllers.set(event.sender.id, abortCtrl);
     const baseUrl = (req.config?.baseUrl ?? "https://api.openai.com").replace(/\/$/, "");
     const model = req.config?.model ?? "gpt-4o-mini";
     const apiKey = req.config?.apiKey ?? "";
@@ -117,7 +135,14 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
       send("chat:tool-call", e);
     };
 
-    const loopResult = await runToolLoop(db, req, workspacePath, baseUrl, model, apiKey, messages, emitToolCall);
+    const loopResult = await runToolLoop(db, req, workspacePath, baseUrl, model, apiKey, messages, emitToolCall, abortCtrl.signal);
+
+    abortControllers.delete(event.sender.id);
+
+    if (abortCtrl.signal.aborted) {
+      send("chat:done", { content: "", contextRefs: [] });
+      return;
+    }
 
     if (loopResult.exhausted) {
       send("chat:done", { content: loopResult.content, contextRefs: [] });
@@ -133,6 +158,7 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
       let fullContent = "";
       try {
         for await (const delta of streamCompletion({ baseUrl, model, apiKey }, messages, TOOLS)) {
+          if (abortCtrl.signal.aborted) break;
           fullContent += delta;
           send("chat:token", { delta });
         }

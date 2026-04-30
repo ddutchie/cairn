@@ -343,6 +343,16 @@ export function registerAppHandlers(
     return fs.readFileSync(path.join(changelogsDir, files[0]), "utf8");
   }));
 
+  // ── Reset all data — wipe every table then relaunch ──────────────────────
+  ipcMain.handle("app:reset", () => handle(() => {
+    const tables = ["chat_messages", "chat_threads", "mcp_notifications", "task_cards", "board_columns", "notes", "tags", "projects", "workspaces"];
+    for (const t of tables) {
+      db.prepare(`DELETE FROM ${t}`).run();
+    }
+    app.relaunch();
+    app.quit();
+  }));
+
   // ── Relaunch (used after workspace init to re-open DB at correct path) ──
   ipcMain.handle("app:relaunch", () => handle(() => {
     app.relaunch();

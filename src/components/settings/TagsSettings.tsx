@@ -1,15 +1,32 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { X } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { SettingsGroup } from "./shared";
+
+const PALETTE = [
+  "#6366f1", "#8b5cf6", "#a855f7", "#ec4899", "#f43f5e",
+  "#ef4444", "#f97316", "#eab308", "#22c55e", "#14b8a6",
+  "#06b6d4", "#3b82f6", "#64748b", "#78716c",
+];
 
 export function TagsSettings() {
   const { tags, notes, cards, activeWorkspaceId, updateTag, deleteTag } = useCairnStore();
   const workspaceTags = tags.filter((t) => t.workspaceId === activeWorkspaceId);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
+  const [colorPickerId, setColorPickerId] = useState<string | null>(null);
+  const pickerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!colorPickerId) return;
+    function handle(e: MouseEvent) {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) setColorPickerId(null);
+    }
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, [colorPickerId]);
 
   return (
     <SettingsGroup title="Tags" description="Manage workspace tags used on notes and tasks">
@@ -21,8 +38,35 @@ export function TagsSettings() {
           const noteCount = notes.filter((n) => n.tagIds.includes(tag.id) && !n.archivedAt).length;
           const cardCount = cards.filter((c) => c.tagIds.includes(tag.id) && !c.archivedAt).length;
           return (
-            <div key={tag.id} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-[var(--surface-2)] border border-[var(--border)]">
-              <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: tag.color }} />
+            <div key={tag.id} className="relative flex items-center gap-3 px-3 py-2 rounded-lg bg-[var(--surface-2)] border border-[var(--border)]">
+              {/* Color swatch — click to open palette */}
+              <button
+                onClick={() => setColorPickerId(colorPickerId === tag.id ? null : tag.id)}
+                className="w-3.5 h-3.5 rounded-full flex-shrink-0 ring-1 ring-black/20 hover:ring-2 hover:ring-[var(--accent)] transition-all"
+                style={{ backgroundColor: tag.color }}
+                title="Change color"
+              />
+
+              {/* Color palette popover */}
+              {colorPickerId === tag.id && (
+                <div
+                  ref={pickerRef}
+                  className="absolute left-0 top-full mt-1 z-50 p-2 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] shadow-2xl"
+                >
+                  <div className="grid grid-cols-7 gap-1.5">
+                    {PALETTE.map((color) => (
+                      <button
+                        key={color}
+                        onClick={() => { updateTag(tag.id, { color }); setColorPickerId(null); }}
+                        className="w-5 h-5 rounded-full ring-1 ring-black/20 hover:scale-110 transition-transform"
+                        style={{ backgroundColor: color }}
+                        title={color}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {editingId === tag.id ? (
                 <input
                   autoFocus

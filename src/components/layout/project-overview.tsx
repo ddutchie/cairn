@@ -1,9 +1,9 @@
 "use client";
 
-import React from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   FileText, Kanban, Calendar, Pin, ArrowRight, Clock,
-  AlertCircle, Activity, Circle, BarChart2,
+  AlertCircle, Activity, Circle, BarChart2, Pencil, Check,
 } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { ProjectIcon } from "@/lib/workspace-icons";
@@ -16,9 +16,36 @@ import type { TaskCard, Note, BoardColumn } from "@/types";
 import { useProjectMetrics, type ActivityGroup } from "./project-overview/useProjectMetrics";
 
 export function ProjectOverview() {
-  const { activeProjectId, projects, setView } = useCairnStore();
+  const { activeProjectId, projects, setView, updateProject } = useCairnStore();
   const project = projects.find((p) => p.id === activeProjectId);
   const metrics = useProjectMetrics(activeProjectId);
+
+  const [editOpen, setEditOpen] = useState(false);
+  const [editIcon, setEditIcon] = useState("");
+  const [editDesc, setEditDesc] = useState("");
+  const popoverRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (editOpen && project) {
+      setEditIcon(project.icon ?? "");
+      setEditDesc(project.description ?? "");
+    }
+  }, [editOpen, project]);
+
+  useEffect(() => {
+    if (!editOpen) return;
+    function handle(e: MouseEvent) {
+      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) setEditOpen(false);
+    }
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, [editOpen]);
+
+  function handleSaveEdit() {
+    if (!project) return;
+    updateProject(project.id, { icon: editIcon.trim() || undefined, description: editDesc.trim() || undefined });
+    setEditOpen(false);
+  }
 
   if (!project || !metrics) {
     return (
@@ -44,11 +71,56 @@ export function ProjectOverview() {
         {/* ── Header ─────────────────────────────────────────── */}
         <div className="flex items-start justify-between gap-6">
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2.5 mb-1.5">
+            <div className="group flex items-center gap-2.5 mb-1.5">
               <ProjectIcon name={project.icon} size={26} className="text-[var(--text-secondary)]" />
               <h1 className="text-2xl font-bold text-[var(--text-primary)] tracking-tight truncate">
                 {project.name}
               </h1>
+              {/* Edit icon/description popover */}
+              <div className="relative flex-shrink-0">
+                <button
+                  onClick={() => setEditOpen((o) => !o)}
+                  className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors opacity-0 group-hover:opacity-100"
+                  title="Edit icon & description"
+                >
+                  <Pencil size={13} />
+                </button>
+                {editOpen && (
+                  <div
+                    ref={popoverRef}
+                    className="absolute left-0 top-full mt-2 z-50 w-72 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] shadow-2xl p-4 space-y-3"
+                  >
+                    <p className="text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wide">Edit project</p>
+                    <div className="flex gap-2">
+                      <div className="flex flex-col gap-1 w-16">
+                        <label className="text-[11px] text-[var(--text-tertiary)]">Icon</label>
+                        <input
+                          value={editIcon}
+                          onChange={(e) => setEditIcon(e.target.value)}
+                          placeholder="🗂️"
+                          maxLength={4}
+                          className="w-full text-center text-xl px-1 py-1.5 rounded-md bg-[var(--surface)] border border-[var(--border)] focus:outline-none focus:border-[var(--accent)]"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1 flex-1">
+                        <label className="text-[11px] text-[var(--text-tertiary)]">Description</label>
+                        <textarea
+                          value={editDesc}
+                          onChange={(e) => setEditDesc(e.target.value)}
+                          placeholder="What is this project about?"
+                          rows={3}
+                          className="w-full px-2 py-1.5 text-xs rounded-md bg-[var(--surface)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] resize-none"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex justify-end">
+                      <Button variant="accent" size="xs" onClick={handleSaveEdit}>
+                        <Check size={11} /> Save
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
             {project.description && (
               <p className="text-sm text-[var(--text-secondary)] mb-3 max-w-lg">{project.description}</p>

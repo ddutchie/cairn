@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { X, Send, Sparkles, PenSquare, History } from "lucide-react";
+import { X, Send, Square, Sparkles, PenSquare, History, Check, Pencil } from "lucide-react";
 import { cn, formatRelative } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { useChatStream } from "@/hooks/useChatStream";
@@ -23,17 +23,19 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
     projects, workspaces,
     getOrCreateThread, addMessage,
     chatMessages, chatThreads, aiConfig,
-    setView, createNewThread, deleteThread,
+    setView, createNewThread, deleteThread, renameThread,
   } = useCairnStore();
 
-  const [input, setInput]           = useState("");
-  const [threadId, setThreadId]     = useState<string | null>(null);
+  const [input, setInput]             = useState("");
+  const [threadId, setThreadId]       = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [renamingThreadId, setRenamingThreadId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
   const historyRef     = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef       = useRef<HTMLTextAreaElement>(null);
 
-  const { isLoading, toolCalls, streamingContent, sendStream } = useChatStream(threadId);
+  const { isLoading, toolCalls, streamingContent, sendStream, stopStream } = useChatStream(threadId);
 
   const project   = projects.find((p) => p.id === activeProjectId);
   const workspace = workspaces.find((w) => w.id === activeWorkspaceId);
@@ -128,24 +130,47 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
                           isActive ? "bg-[var(--accent-dim)]" : "hover:bg-[var(--surface-2)]")}>
                         <button onClick={() => { setThreadId(t.id); setHistoryOpen(false); }}
                           className="flex-1 text-left px-3 py-2.5 flex flex-col gap-0.5 min-w-0">
-                          <span className={cn("text-[11px] truncate font-medium", isActive ? "text-[var(--accent)]" : "text-[var(--text-secondary)]")}>
-                            {firstMsg?.content.slice(0, 50) ?? "New thread"}{(firstMsg?.content.length ?? 0) > 50 ? "…" : ""}
-                          </span>
+                          {renamingThreadId === t.id ? (
+                            <input
+                              autoFocus
+                              value={renameValue}
+                              onChange={(e) => setRenameValue(e.target.value)}
+                              onClick={(e) => e.stopPropagation()}
+                              onBlur={() => { renameThread(t.id, renameValue); setRenamingThreadId(null); }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") { renameThread(t.id, renameValue); setRenamingThreadId(null); }
+                                if (e.key === "Escape") setRenamingThreadId(null);
+                                e.stopPropagation();
+                              }}
+                              className="w-full bg-transparent text-[11px] font-medium text-[var(--accent)] outline-none border-b border-[var(--accent)]"
+                            />
+                          ) : (
+                            <span className={cn("text-[11px] truncate font-medium", isActive ? "text-[var(--accent)]" : "text-[var(--text-secondary)]")}>
+                              {t.title ?? (firstMsg?.content.slice(0, 50) ?? "New thread")}{(!t.title && (firstMsg?.content.length ?? 0) > 50) ? "…" : ""}
+                            </span>
+                          )}
                           <span className="text-[10px] text-[var(--text-tertiary)]">{formatRelative(t.updatedAt)}</span>
                         </button>
-                        <button onClick={(e) => {
-                            e.stopPropagation();
-                            deleteThread(t.id);
-                            if (isActive && activeWorkspaceId) {
-                              const next = createNewThread(activeWorkspaceId, activeProjectId ?? undefined);
-                              setThreadId(next.id);
-                              setHistoryOpen(false);
-                            }
-                          }}
-                          className="opacity-0 group-hover:opacity-100 flex-shrink-0 p-2 mr-1 rounded text-[var(--text-tertiary)] hover:text-[var(--danger)] transition-all"
-                          title="Delete thread">
-                          <X size={11} />
-                        </button>
+                        <div className="opacity-0 group-hover:opacity-100 flex items-center flex-shrink-0 mr-1 transition-all">
+                          <button onClick={(e) => { e.stopPropagation(); setRenamingThreadId(t.id); setRenameValue(t.title ?? firstMsg?.content.slice(0, 50) ?? ""); }}
+                            className="p-1.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+                            title="Rename thread">
+                            <Pencil size={10} />
+                          </button>
+                          <button onClick={(e) => {
+                              e.stopPropagation();
+                              deleteThread(t.id);
+                              if (isActive && activeWorkspaceId) {
+                                const next = createNewThread(activeWorkspaceId, activeProjectId ?? undefined);
+                                setThreadId(next.id);
+                                setHistoryOpen(false);
+                              }
+                            }}
+                            className="p-1.5 rounded text-[var(--text-tertiary)] hover:text-[var(--danger)] transition-colors"
+                            title="Delete thread">
+                            <X size={10} />
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
@@ -175,7 +200,13 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
       <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3 min-h-0">
         {messages.length === 0
           ? <SuggestedPrompts onSend={handleSend} disabled={isLoading || !threadId} />
-          : messages.map((message) => <ChatMessageBubble key={message.id} message={message} />)
+          : messages.map((message) => (
+              <ChatMessageBubble
+                key={message.id}
+                message={message}
+                onRetry={!isLoading ? (content) => handleSend(content) : undefined}
+              />
+            ))
         }
         {isLoading && <ToolCallIndicator toolCalls={toolCalls} streamingContent={streamingContent} />}
         <div ref={messagesEndRef} />
@@ -188,14 +219,25 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
             placeholder="Ask about your project…" rows={2}
             className="w-full resize-none rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5 pr-10 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] transition-colors leading-relaxed" />
-          <Tooltip content="Send (Enter)" side="left">
-            <button onClick={() => handleSend()} disabled={!input.trim() || isLoading}
-              className="absolute right-2 bottom-2 p-1.5 rounded-md text-[var(--accent)] hover:bg-[var(--accent-dim)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-              <Send size={13} />
-            </button>
-          </Tooltip>
+          {isLoading ? (
+            <Tooltip content="Stop generation" side="left">
+              <button onClick={stopStream}
+                className="absolute right-2 bottom-2 p-1.5 rounded-md text-[var(--danger)] hover:bg-[var(--danger)]/10 transition-colors">
+                <Square size={13} />
+              </button>
+            </Tooltip>
+          ) : (
+            <Tooltip content="Send (Enter)" side="left">
+              <button onClick={() => handleSend()} disabled={!input.trim()}
+                className="absolute right-2 bottom-2 p-1.5 rounded-md text-[var(--accent)] hover:bg-[var(--accent-dim)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                <Send size={13} />
+              </button>
+            </Tooltip>
+          )}
         </div>
-        <p className="text-[10px] text-[var(--text-tertiary)] mt-1.5 text-center">Shift+Enter for new line · Enter to send</p>
+        <p className="text-[10px] text-[var(--text-tertiary)] mt-1.5 text-center">
+          {isLoading ? "Generating… click ◼ to stop" : "Shift+Enter for new line · Enter to send"}
+        </p>
       </div>
     </aside>
   );
