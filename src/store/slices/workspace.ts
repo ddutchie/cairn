@@ -175,12 +175,16 @@ export const createWorkspaceSlice: StateCreator<
     const folder = await window.electron.selectWorkspaceFolder();
     if (!folder) return null;
     await window.electron.initWorkspace(folder);
+    // Relaunch so main.ts re-reads workspace-config.json and opens the correct DB.
+    // (The DB was opened against the fallback path before workspace was chosen.)
+    await window.electron.relaunch();
     return folder;
   },
 
   async initWorkspacePath(workspacePath) {
     if (!isElectron() || !window.electron) return;
     await window.electron.initWorkspace(workspacePath);
+    await window.electron.relaunch();
   },
 
   async getWorkspacePath() {

@@ -299,7 +299,9 @@ export function registerAppHandlers(
   ipcMain.handle("app:initWorkspace", (_e, { workspacePath: newPath }: { workspacePath: string }) => handle(() => {
     writeWorkspaceConfig(userDataPath, newPath);
     fs.mkdirSync(newPath, { recursive: true });
-    return { requiresRestart: false };
+    // The DB was opened against the fallback path at startup — a relaunch is
+    // required so main.ts re-reads the config and opens the correct cairn.db.
+    return { requiresRestart: true };
   }));
 
   // ── App paths (for MCP config generation) ─────────
@@ -310,6 +312,12 @@ export function registerAppHandlers(
       : process.platform === "linux" ? "cairn-mcp-linux"
       : "cairn-mcp";
     return path.join(unpackedPath, "dist-mcp", binaryName);
+  }));
+
+  // ── Relaunch (used after workspace init to re-open DB at correct path) ──
+  ipcMain.handle("app:relaunch", () => handle(() => {
+    app.relaunch();
+    app.quit();
   }));
 
   // ── Auto-updater install ───────────────────────────

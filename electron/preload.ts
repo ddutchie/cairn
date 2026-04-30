@@ -112,6 +112,7 @@ const api = {
   needsWorkspaceSetup: () => invoke<boolean>("app:needsWorkspaceSetup"),
   setTheme: (theme: string) => invoke("app:setTheme", theme),
   initWorkspace: (workspacePath: string) => invoke<{ requiresRestart: boolean }>("app:initWorkspace", { workspacePath }),
+  relaunch: () => invoke("app:relaunch"),
 
   // ── Auto-updater ──────────────────────────────
   updater: {

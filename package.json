@@ -8,7 +8,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "dev": "node scripts/generate-licenses.js && concurrently -n next,esbuild,electron -c cyan,magenta,yellow \\\"next dev\\\" \\\"npm run compile:watch\\\" \\\"wait-on http://localhost:3000 dist-electron/main.js && node scripts/electron-dev.js\\\"",
+    "dev": "node scripts/generate-licenses.js && concurrently -n next,esbuild,electron -c cyan,magenta,yellow \"next dev\" \"npm run compile:watch\" \"wait-on http://localhost:3000 dist-electron/main.js && node scripts/electron-dev.js\"",
     "compile:watch": "esbuild electron/main.ts electron/preload.ts --bundle --platform=node --target=node20 --external:electron --external:better-sqlite3 --outdir=dist-electron --format=cjs --watch",
     "build:mac": "node scripts/build.js --mac",
     "build:win": "node scripts/build.js --win",

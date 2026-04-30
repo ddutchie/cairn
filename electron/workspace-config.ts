@@ -27,10 +27,22 @@ export function readWorkspaceConfig(userDataPath: string): WorkspaceConfig | nul
   if (!fs.existsSync(configPath)) return null;
   try {
     const raw = fs.readFileSync(configPath, "utf-8");
-    const parsed = JSON.parse(raw) as WorkspaceConfig;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const parsed = JSON.parse(raw) as any;
+
+    // Normal shape: { workspacePath: "/path/to/workspace" }
     if (typeof parsed.workspacePath === "string" && parsed.workspacePath.length > 0) {
-      return parsed;
+      return parsed as WorkspaceConfig;
     }
+
+    // Corrupted shape written by older builds: { workspacePath: { data: "/path" } }
+    // Heal it automatically by re-writing the correct format.
+    if (parsed.workspacePath && typeof parsed.workspacePath === "object" && typeof parsed.workspacePath.data === "string" && parsed.workspacePath.data.length > 0) {
+      const healed: WorkspaceConfig = { workspacePath: parsed.workspacePath.data };
+      fs.writeFileSync(configPath, JSON.stringify(healed, null, 2), "utf-8");
+      return healed;
+    }
+
     return null;
   } catch {
     return null;
