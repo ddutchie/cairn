@@ -46,13 +46,13 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
 
       - name: Cache Next.js build
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: .next/cache
           key: nextjs-mac-${{ hashFiles('package-lock.json') }}
@@ -89,13 +89,13 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
 
       - name: Cache Next.js build
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: .next/cache
           key: nextjs-win-${{ hashFiles('package-lock.json') }}
@@ -126,13 +126,13 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
 
       - name: Cache Next.js build
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: .next/cache
           key: nextjs-linux-${{ hashFiles('package-lock.json') }}
