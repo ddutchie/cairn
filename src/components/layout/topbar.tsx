@@ -66,25 +66,17 @@ export function Topbar() {
         <div className="flex items-center gap-1.5 flex-shrink-0">
           <span
             className={cn(
-              "text-[10px] font-medium px-1.5 py-0.5 rounded-full border",
+              "text-[10px] font-medium px-1.5 py-0.5 rounded-full border border-[var(--border)]",
               STATUS_COLORS[project.status]
             )}
-            style={{
-              backgroundColor: "transparent",
-              borderColor: "var(--border)",
-            }}
           >
             {project.status.replace("_", " ")}
           </span>
           <span
             className={cn(
-              "text-[10px] font-medium px-1.5 py-0.5 rounded-full border",
+              "text-[10px] font-medium px-1.5 py-0.5 rounded-full border border-[var(--border)]",
               PRIORITY_COLORS[project.priority]
             )}
-            style={{
-              backgroundColor: "transparent",
-              borderColor: "var(--border)",
-            }}
           >
             {project.priority}
           </span>
@@ -100,8 +92,10 @@ export function Topbar() {
               <button
                 key={tab.id}
                 onClick={() => setView(tab.id)}
+                aria-current={activeView === tab.id ? "page" : undefined}
                 className={cn(
                   "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors",
+                  "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]",
                   activeView === tab.id
                     ? "text-[var(--text-primary)] bg-[var(--surface-2)]"
                     : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"

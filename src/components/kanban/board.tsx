@@ -245,9 +245,9 @@ export function KanbanBoard() {
               gap: 8,
               fontSize: 13,
               fontWeight: 500,
-              background: hoverZone === "archive" ? "rgba(245,158,11,0.22)" : "rgba(245,158,11,0.08)",
-              color: hoverZone === "archive" ? "#f59e0b" : "rgba(245,158,11,0.5)",
-              borderBottom: `1px solid rgba(245,158,11,${hoverZone === "archive" ? "0.45" : "0.2"})`,
+              background: hoverZone === "archive" ? "color-mix(in srgb, var(--warning) 22%, transparent)" : "color-mix(in srgb, var(--warning) 8%, transparent)",
+              color: hoverZone === "archive" ? "var(--warning)" : "color-mix(in srgb, var(--warning) 50%, transparent)",
+              borderBottom: `1px solid color-mix(in srgb, var(--warning) ${hoverZone === "archive" ? "45%" : "20%"}, transparent)`,
               transition: "background 0.15s, color 0.15s, border-color 0.15s",
             }}
           >
@@ -265,13 +265,13 @@ export function KanbanBoard() {
               fontSize: 13,
               fontWeight: 500,
               background: deleteFlashing
-                ? "rgba(239,68,68,0.4)"
+                ? "color-mix(in srgb, var(--danger) 40%, transparent)"
                 : hoverZone === "delete"
-                ? "rgba(239,68,68,0.22)"
-                : "rgba(239,68,68,0.08)",
-              color: hoverZone === "delete" || deleteFlashing ? "#ef4444" : "rgba(239,68,68,0.5)",
-              borderBottom: `1px solid rgba(239,68,68,${hoverZone === "delete" ? "0.45" : "0.2"})`,
-              borderLeft: "1px solid rgba(239,68,68,0.15)",
+                ? "color-mix(in srgb, var(--danger) 22%, transparent)"
+                : "color-mix(in srgb, var(--danger) 8%, transparent)",
+              color: hoverZone === "delete" || deleteFlashing ? "var(--danger)" : "color-mix(in srgb, var(--danger) 50%, transparent)",
+              borderBottom: `1px solid color-mix(in srgb, var(--danger) ${hoverZone === "delete" ? "45%" : "20%"}, transparent)`,
+              borderLeft: "1px solid color-mix(in srgb, var(--danger) 15%, transparent)",
               transition: "background 0.15s, color 0.15s, border-color 0.15s",
             }}
           >

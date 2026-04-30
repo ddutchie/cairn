@@ -147,13 +147,13 @@ export function ProjectOverview() {
 
         {/* ── Stats ─────────────────────────────────────────── */}
         <div className="grid grid-cols-3 gap-3">
-          <StatCard icon={<FileText size={14} />} iconColor="var(--info)" iconBg="rgba(96,165,250,0.12)"
+          <StatCard icon={<FileText size={14} />} iconColor="var(--info)" iconBg="color-mix(in srgb, var(--info) 12%, transparent)"
             value={notes.length} label="Notes" onClick={() => setView("notes")} />
-          <StatCard icon={<Kanban size={14} />} iconColor="var(--accent)" iconBg="rgba(124,106,252,0.12)"
+          <StatCard icon={<Kanban size={14} />} iconColor="var(--accent)" iconBg="var(--accent-dim)"
             value={openCards.length} label="Open tasks" onClick={() => setView("board")} />
           <StatCard icon={<AlertCircle size={14} />}
             iconColor={overdueCount > 0 ? "var(--danger)" : "var(--text-tertiary)"}
-            iconBg={overdueCount > 0 ? "rgba(244,63,94,0.12)" : "var(--surface-2)"}
+            iconBg={overdueCount > 0 ? "color-mix(in srgb, var(--danger) 12%, transparent)" : "var(--surface-2)"}
             value={overdueCount} label="Overdue"
             valueColor={overdueCount > 0 ? "var(--danger)" : undefined}
             danger={overdueCount > 0} onClick={() => setView("board")} />
@@ -347,9 +347,9 @@ function PriorityBreakdownCard({
       <div className="text-[10px] font-medium text-[var(--text-tertiary)] uppercase tracking-wider mb-2.5">Open tasks by priority</div>
       <div className="grid grid-cols-4 gap-2">
         {([
-          { key: "urgent", label: "Urgent", color: "var(--danger)",        bg: "rgba(244,63,94,0.08)" },
-          { key: "high",   label: "High",   color: "var(--warning)",       bg: "rgba(245,158,11,0.08)" },
-          { key: "medium", label: "Medium", color: "var(--info)",          bg: "rgba(96,165,250,0.08)" },
+          { key: "urgent", label: "Urgent", color: "var(--danger)",        bg: "color-mix(in srgb, var(--danger) 8%, transparent)" },
+          { key: "high",   label: "High",   color: "var(--warning)",       bg: "color-mix(in srgb, var(--warning) 8%, transparent)" },
+          { key: "medium", label: "Medium", color: "var(--info)",          bg: "color-mix(in srgb, var(--info) 8%, transparent)" },
           { key: "low",    label: "Low",    color: "var(--text-tertiary)", bg: "var(--surface-2)" },
         ] as const).map(({ key, label, color, bg }) => (
           <button key={key} onClick={() => setView("board")}
@@ -386,7 +386,7 @@ function ColumnPill({ column, cards, onClick }: { column: BoardColumn; cards: Ta
         {cards.slice(0, 2).map((c) => (
           <div key={c.id} className="text-[10.5px] text-[var(--text-tertiary)] truncate leading-snug">{c.title}</div>
         ))}
-        {cards.length === 0 && <div className="text-[10.5px] text-[var(--border)]">—</div>}
+        {cards.length === 0 && <div className="text-[10.5px] text-[var(--text-tertiary)]">—</div>}
       </div>
     </button>
   );
@@ -402,8 +402,8 @@ function DueCard({ card, columns, today, onClick }: { card: TaskCard; columns: B
   return (
     <button onClick={onClick}
       className={cn("w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border text-left transition-all group",
-        isOverdue ? "border-[var(--danger)]/25 bg-[var(--danger)]/[0.03] hover:bg-[var(--danger)]/[0.07]"
-        : isToday  ? "border-[var(--warning)]/30 bg-[var(--warning)]/[0.03] hover:bg-[var(--warning)]/[0.07]"
+        isOverdue ? "border-[var(--danger)]/25 bg-[var(--surface)] hover:bg-[var(--surface-2)]"
+        : isToday  ? "border-[var(--warning)]/30 bg-[var(--surface)] hover:bg-[var(--surface-2)]"
         : "border-[var(--border)] bg-[var(--surface)] hover:border-[var(--accent)]/30 hover:bg-[var(--surface-2)]")}>
       <div className="w-0.5 h-7 rounded-full flex-shrink-0" style={{ background: PRIORITY_CSS_COLORS[card.priority] ?? "var(--text-tertiary)" }} />
       <span className="flex-1 text-sm text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] transition-colors truncate">{card.title}</span>
@@ -428,7 +428,7 @@ function PinnedNoteCard({ note, onClick }: { note: Note; onClick: () => void }) 
         <Pin size={9} className="text-[var(--accent)]" />
         <span className="text-[10px] text-[var(--accent)] font-medium">Pinned</span>
       </div>
-      <div className="text-sm font-semibold text-[var(--text-primary)] mb-1.5 truncate group-hover:text-white transition-colors">{note.title}</div>
+      <div className="text-sm font-semibold text-[var(--text-primary)] mb-1.5 truncate group-hover:text-[var(--accent)] transition-colors">{note.title}</div>
       <div className="text-[11.5px] text-[var(--text-tertiary)] line-clamp-2 leading-relaxed mb-3">
         {note.contentText.slice(0, 120) || "Empty note"}
       </div>

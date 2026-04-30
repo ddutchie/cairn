@@ -88,13 +88,13 @@ export function KanbanCard({ card, onClick, isDragging = false }: KanbanCardProp
         )}
 
         {/* Title */}
-        <p className="text-xs font-medium text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] leading-relaxed transition-colors">
+        <p className="text-[13px] font-medium text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] leading-snug transition-colors">
           {card.title}
         </p>
 
         {/* Description */}
         {card.description && (
-          <p className="text-[11px] text-[var(--text-tertiary)] mt-1 line-clamp-2 leading-relaxed">
+          <p className="text-[11px] text-[var(--text-tertiary)] mt-1.5 line-clamp-2 leading-relaxed">
             {card.description}
           </p>
         )}
@@ -107,11 +107,11 @@ export function KanbanCard({ card, onClick, isDragging = false }: KanbanCardProp
               return (
                 <span className={cn(
                   "flex items-center gap-1 text-[10px] font-medium rounded px-1 py-0.5",
-                  status === "overdue" && "text-red-400 bg-red-400/10",
+                  status === "overdue" && "text-[var(--danger)] bg-[var(--danger)]/10",
                   status === "today" && "text-amber-400 bg-amber-400/10",
                   status === "upcoming" && "text-[var(--text-tertiary)]",
                 )}>
-                  <Calendar size={9} />
+                  <Calendar size={11} />
                   {status === "overdue" ? `Overdue · ${formatDate(card.dueDate)}` :
                    status === "today" ? "Due today" :
                    formatDate(card.dueDate)}
@@ -120,7 +120,7 @@ export function KanbanCard({ card, onClick, isDragging = false }: KanbanCardProp
             })()}
             {card.linkedNoteIds.length > 0 && (
               <span className="flex items-center gap-1 text-[10px] text-[var(--text-tertiary)] ml-auto">
-                <FileText size={9} />
+                <FileText size={11} />
                 {card.linkedNoteIds.length}
               </span>
             )}
@@ -142,7 +142,7 @@ export function KanbanCard({ card, onClick, isDragging = false }: KanbanCardProp
         </ContextMenuItem>
         <ContextMenuItem
           onSelect={() => deleteCard(card.id)}
-          className="text-red-400 hover:text-red-300"
+          className="text-[var(--danger)] hover:text-[var(--danger)]"
         >
           <Trash2 size={13} />
           Delete

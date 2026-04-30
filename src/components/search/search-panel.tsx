@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { Search, FileText, Kanban, X, ArrowRight } from "lucide-react";
+import { Search, SearchX, FileText, Kanban, X, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CairnEvents } from "@/lib/events";
 import { useCairnStore, type SearchResult } from "@/store";
@@ -197,8 +197,9 @@ export function SearchPanel() {
         {/* Results */}
         <div className="max-h-80 overflow-y-auto">
           {query && filtered.length === 0 && (
-            <div className="px-4 py-8 text-center text-sm text-[var(--text-tertiary)]">
-              No results for &ldquo;{query}&rdquo;
+            <div className="px-4 py-8 text-center flex flex-col items-center gap-2">
+              <SearchX size={20} className="text-[var(--text-tertiary)] opacity-40" />
+              <p className="text-sm text-[var(--text-tertiary)]">No results for &ldquo;{query}&rdquo;</p>
             </div>
           )}
 

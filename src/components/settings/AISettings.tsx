@@ -2,15 +2,8 @@
 
 import React, { useState } from "react";
 import {
-  CheckCircle,
-  RefreshCw,
-  Key,
-  Globe,
-  Cpu,
-  Wifi,
-  WifiOff,
+  CheckCircle, RefreshCw, Key, Globe, Cpu, Wifi, WifiOff, Eye, EyeOff,
 } from "lucide-react";
-import { Eye, EyeOff } from "lucide-react";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useCairnStore } from "@/store";
 import { cn } from "@/lib/utils";
@@ -72,7 +65,7 @@ export function AISettings() {
       setAvailableModels([]);
     } finally {
       setModelsLoading(false);
-      setTimeout(() => setTestState((s) => (s !== "idle" ? "idle" : "idle")), 5000);
+      setTimeout(() => setTestState("idle"), 5000);
     }
   }
 
@@ -149,6 +142,7 @@ export function AISettings() {
             <Tooltip content={showKey ? "Hide API key" : "Show API key"} side="top">
               <button
                 onClick={() => setShowKey((s) => !s)}
+                aria-label={showKey ? "Hide API key" : "Show API key"}
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
               >
                 {showKey ? <EyeOff size={11} /> : <Eye size={11} />}
@@ -182,21 +176,21 @@ export function AISettings() {
               <button
                 onClick={fetchModels}
                 disabled={modelsLoading}
-                title="Fetch models from endpoint"
+                aria-label="Fetch models from endpoint"
                 className={cn(
-                  "px-2 py-1.5 text-[10px] rounded-md border transition-colors flex items-center gap-1",
+                  "px-2 py-1.5 text-[10px] rounded-md border transition-colors flex items-center gap-1 min-w-[52px] justify-center",
                   "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]",
                   modelsLoading && "opacity-50 cursor-wait"
                 )}
               >
                 <RefreshCw size={11} className={modelsLoading ? "animate-spin" : ""} />
-                {modelsLoading ? "" : "Fetch"}
+                {modelsLoading ? "…" : "Fetch"}
               </button>
             </div>
 
             {/* Status line */}
             {testState === "error" && (
-              <p className="text-[11px] text-red-400 self-start" title={testError}>
+              <p className="text-[11px] text-[var(--danger)] self-start" title={testError}>
                 {testError.slice(0, 60)}
               </p>
             )}
@@ -233,7 +227,7 @@ export function AISettings() {
         <div className="flex items-center gap-3 pt-1 text-xs">
           <span className={cn(
             "flex items-center gap-1",
-            testState === "ok" ? "text-[var(--success)]" : testState === "error" ? "text-red-400" : "text-[var(--text-tertiary)]"
+            testState === "ok" ? "text-[var(--success)]" : testState === "error" ? "text-[var(--danger)]" : "text-[var(--text-tertiary)]"
           )}>
             {testState === "ok" && <><CheckCircle size={11} /> Connected</>}
             {testState === "error" && <><WifiOff size={11} /> Error</>}

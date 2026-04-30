@@ -148,7 +148,7 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
                     }}
                     className={cn(
                       "transition-all rounded-md",
-                      card.tagIds.includes(tag.id) ? "ring-1 ring-white/20" : "opacity-50 hover:opacity-80"
+                      card.tagIds.includes(tag.id) ? "ring-1 ring-[var(--accent)]/40" : "opacity-50 hover:opacity-80 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]"
                     )}
                   >
                     <Badge color={tag.color}>{tag.name}</Badge>
@@ -176,17 +176,17 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
                         </span>
                         <button
                           onClick={() => setView("notes")}
-                          className="opacity-0 group-hover:opacity-100 text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-all"
-                          title="Open note"
+                          className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-all"
+                          aria-label="Open note"
                         >
-                          <ExternalLink size={11} />
+                          <ExternalLink size={11} aria-hidden="true" />
                         </button>
                         <button
                           onClick={() => unlinkNoteFromCard(note.id, cardId)}
-                          className="opacity-0 group-hover:opacity-100 text-[var(--text-tertiary)] hover:text-red-400 transition-all"
-                          title="Unlink note"
+                          className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-[var(--text-tertiary)] hover:text-[var(--danger)] transition-all"
+                          aria-label="Unlink note"
                         >
-                          <X size={11} />
+                          <X size={11} aria-hidden="true" />
                         </button>
                       </div>
                     )
@@ -252,10 +252,11 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
 
             {/* Move to column */}
             <div>
-              <label className="block text-[10px] font-semibold text-[var(--text-tertiary)] mb-2 uppercase tracking-wider">
-                <ArrowRight size={9} className="inline mr-0.5" />Column
+              <label htmlFor="card-detail-column" className="block text-[10px] font-semibold text-[var(--text-tertiary)] mb-2 uppercase tracking-wider">
+                <ArrowRight size={10} className="inline mr-0.5" aria-hidden="true" />Column
               </label>
               <select
+                id="card-detail-column"
                 value={card.columnId}
                 onChange={(e) => updateCard(cardId, { columnId: e.target.value })}
                 className="w-full px-2 py-1.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-xs text-[var(--text-secondary)] focus:outline-none focus:border-[var(--accent)]"
@@ -269,7 +270,7 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
             {/* Assignee */}
             <div>
               <label className="block text-[10px] font-semibold text-[var(--text-tertiary)] mb-2 uppercase tracking-wider">
-                <User size={9} className="inline mr-0.5" />Assignee
+                <User size={10} className="inline mr-0.5" aria-hidden="true" />Assignee
               </label>
               <input
                 type="text"
@@ -283,7 +284,7 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
             {/* Due date */}
             <div>
               <label className="block text-[10px] font-semibold text-[var(--text-tertiary)] mb-2 uppercase tracking-wider">
-                <Calendar size={9} className="inline mr-0.5" />Due Date
+                <Calendar size={10} className="inline mr-0.5" aria-hidden="true" />Due Date
               </label>
               <DatePicker
                 value={card.dueDate}

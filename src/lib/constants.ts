@@ -50,10 +50,10 @@ export const PROJECT_STATUS_OPTIONS: ProjectStatus[] = [
  * Use for badges, icons, and text labels.
  */
 export const PRIORITY_COLORS: Record<string, string> = {
-  low:    "text-stone-400",
-  medium: "text-amber-400",
-  high:   "text-orange-400",
-  urgent: "text-red-400",
+  low:    "text-[var(--text-tertiary)]",
+  medium: "text-[var(--warning)]",
+  high:   "text-[var(--warning)]",
+  urgent: "text-[var(--danger)]",
 };
 
 /**

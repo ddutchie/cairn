@@ -14,8 +14,8 @@ export function Badge({ className, color, children, style, ...props }: BadgeProp
         className
       )}
       style={{
-        backgroundColor: color ? `${color}18` : "var(--surface-3)",
-        borderColor: color ? `${color}40` : "var(--border)",
+        backgroundColor: color ? `color-mix(in srgb, ${color} 10%, transparent)` : "var(--surface-3)",
+        borderColor: color ? `color-mix(in srgb, ${color} 25%, transparent)` : "var(--border)",
         color: color ?? "var(--text-secondary)",
         ...style,
       }}

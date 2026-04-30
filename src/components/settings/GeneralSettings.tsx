@@ -43,7 +43,7 @@ export function GeneralSettings() {
                 "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
                 theme === opt.value
                   ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm border border-[var(--border)]"
-                  : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
+                  : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-3)]"
               )}
             >
               {opt.icon}

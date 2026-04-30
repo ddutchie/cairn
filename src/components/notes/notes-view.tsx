@@ -330,14 +330,14 @@ function NoteListItem({ note, isActive, onClick, onPin, onDelete, onArchive, onM
               <FolderInput size={12} />Move to project
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onDelete(); }} className="text-red-400 hover:text-red-300">
+            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onDelete(); }} className="text-[var(--danger)] hover:text-[var(--danger)]">
               <Trash2 size={12} />Delete
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
       <span className="text-[11px] text-[var(--text-tertiary)] truncate">{note.contentText.slice(0, 60) || "Empty note"}</span>
-      <span className="text-[10px] text-[var(--text-tertiary)] opacity-60">{formatRelative(note.updatedAt)}</span>
+      <span className="text-[10px] text-[var(--text-tertiary)]">{formatRelative(note.updatedAt)}</span>
     </div>
   );
 }
@@ -346,8 +346,8 @@ function NoteListItem({ note, isActive, onClick, onPin, onDelete, onArchive, onM
 
 function ArchivedNoteListItem({ note, onRestore, onDelete }: { note: Note; onRestore: () => void; onDelete: () => void }) {
   return (
-    <div className="group flex items-center gap-1.5 px-3 py-2 opacity-50 hover:opacity-80 transition-opacity">
-      <span className="flex-1 text-[11px] text-[var(--text-secondary)] truncate">{note.title}</span>
+    <div className="group flex items-center gap-1.5 px-3 py-2">
+      <span className="flex-1 text-[11px] text-[var(--text-tertiary)] truncate">{note.title}</span>
       <Tooltip content="Restore note">
         <button onClick={(e) => { e.stopPropagation(); onRestore(); }}
           className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--accent-dim)] transition-all">
@@ -366,7 +366,7 @@ function ArchivedNoteListItem({ note, onRestore, onDelete }: { note: Note; onRes
             <ArchiveRestore size={12} />Restore
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onDelete(); }} className="text-red-400 hover:text-red-300">
+          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onDelete(); }} className="text-[var(--danger)] hover:text-[var(--danger)]">
             <Trash2 size={12} />Delete permanently
           </DropdownMenuItem>
         </DropdownMenuContent>

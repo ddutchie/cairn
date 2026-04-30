@@ -246,9 +246,9 @@ export default function Home() {
           {toasts.map((toast) => (
             <div
               key={toast.id}
-              className="flex items-start gap-2 px-3 py-2.5 rounded-lg border border-red-500/30 bg-[var(--background)] shadow-lg max-w-xs pointer-events-auto"
+              className="flex items-start gap-2 px-3 py-2.5 rounded-lg border border-[var(--danger)]/30 bg-[var(--background)] shadow-lg max-w-xs pointer-events-auto"
             >
-              <AlertCircle size={13} className="text-red-400 shrink-0 mt-0.5" />
+              <AlertCircle size={13} className="text-[var(--danger)] shrink-0 mt-0.5" />
               <span className="text-xs text-[var(--text-secondary)] flex-1 leading-relaxed">{toast.message}</span>
               <button
                 onClick={() => dismiss(toast.id)}

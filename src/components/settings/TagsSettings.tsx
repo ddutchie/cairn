@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { X } from "lucide-react";
+import { X, Tag } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { SettingsGroup } from "./shared";
 
@@ -31,7 +31,11 @@ export function TagsSettings() {
   return (
     <SettingsGroup title="Tags" description="Manage workspace tags used on notes and tasks">
       {workspaceTags.length === 0 && (
-        <p className="text-sm text-[var(--text-tertiary)]">No tags yet. Create tags from the note editor or card detail.</p>
+        <div className="flex flex-col items-center gap-2 py-6 text-center">
+          <Tag size={20} className="text-[var(--text-tertiary)] opacity-40" />
+          <p className="text-sm text-[var(--text-tertiary)]">No tags yet.</p>
+          <p className="text-xs text-[var(--text-tertiary)]">Create tags from the note editor or card detail.</p>
+        </div>
       )}
       <div className="space-y-1">
         {workspaceTags.map((tag) => {
@@ -91,8 +95,8 @@ export function TagsSettings() {
                   {tag.name}
                 </span>
               )}
-              <span className="text-[11px] text-[var(--text-tertiary)] tabular-nums">
-                {noteCount}n · {cardCount}c
+              <span className="text-[11px] text-[var(--text-tertiary)] tabular-nums whitespace-nowrap">
+                {noteCount} note{noteCount !== 1 ? "s" : ""} · {cardCount} card{cardCount !== 1 ? "s" : ""}
               </span>
               <button
                 onClick={() => deleteTag(tag.id)}

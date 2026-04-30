@@ -107,7 +107,7 @@ export function MCPServerSettings() {
             <div key={tool} className="flex items-center gap-1.5">
               <span className={cn(
                 "w-1.5 h-1.5 rounded-full flex-shrink-0",
-                cat === "write" ? "bg-[var(--warning)]" : cat === "delete" ? "bg-red-400" : "bg-[var(--accent)]"
+                cat === "write" ? "bg-[var(--warning)]" : cat === "delete" ? "bg-[var(--danger)]" : "bg-[var(--accent)]"
               )} />
               <span className="text-[11px] font-mono text-[var(--text-tertiary)]">{tool}</span>
             </div>
@@ -116,7 +116,7 @@ export function MCPServerSettings() {
         <p className="text-[10px] text-[var(--text-tertiary)] mt-2">
           <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--accent)] mr-1" />read &nbsp;
           <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--warning)] mr-1" />write &nbsp;
-          <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-400 mr-1" />delete
+          <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--danger)] mr-1" />delete
         </p>
       </div>
 
@@ -185,13 +185,13 @@ export function MCPSyncStatus() {
   return (
     <div className={cn(
       "flex items-center gap-2 px-3 py-2 rounded-lg text-xs border",
-      hasData
-        ? "bg-emerald-500/5 border-emerald-500/20 text-[var(--success)]"
-        : "bg-amber-500/5 border-amber-500/20 text-amber-400"
+        hasData
+        ? "bg-[var(--success)]/5 border-[var(--success)]/20 text-[var(--success)]"
+        : "bg-[var(--warning)]/5 border-[var(--warning)]/20 text-[var(--warning)]"
     )}>
       <span className={cn(
         "w-1.5 h-1.5 rounded-full flex-shrink-0",
-        hasData ? "bg-[var(--success)] animate-pulse" : "bg-amber-400"
+        hasData ? "bg-[var(--success)] animate-pulse" : "bg-[var(--warning)]"
       )} />
       {hasData ? (
         <span>

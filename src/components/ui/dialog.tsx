@@ -38,6 +38,7 @@ export function DialogContent({
       >
         {children}
         <RadixDialog.Close
+          aria-label="Close"
           className={cn(
             "absolute right-3 top-3 rounded-md p-1",
             "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]",

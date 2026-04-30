@@ -6,7 +6,7 @@ import remarkGfm from "remark-gfm";
 import { MermaidDiagram } from "./MermaidDiagram";
 import { TableOfContents, headingSlug } from "./TableOfContents";
 import { CodeBlock } from "./CodeBlock";
-import { Pin, PinOff, Calendar, Eye, Pencil, Wand2, Loader2, CheckCircle2, Tag, Plus, X, Link2, Kanban, ChevronDown } from "lucide-react";
+import { Pin, PinOff, Calendar, Eye, Pencil, Wand2, Loader2, CheckCircle2, Tag, Plus, X, Link2, Kanban, ChevronDown, FileText } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { cn, formatRelative } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -386,7 +386,10 @@ export function NoteEditor({ note }: NoteEditorProps) {
                   </ReactMarkdown>
                 </div>
               ) : (
-                <p className="text-sm text-[var(--text-tertiary)] italic">Nothing to preview yet.</p>
+                <div className="flex flex-col items-center gap-2 py-8 text-center">
+                  <Eye size={20} className="text-[var(--text-tertiary)] opacity-40" />
+                  <p className="text-sm text-[var(--text-tertiary)]">Nothing to preview yet.</p>
+                </div>
               )}
             </div>
           </div>
@@ -448,11 +451,15 @@ function BacklinksPanel({ note, notes, cards, columns, onOpenCard }: BacklinksPa
       {open && (
         <div className="px-6 pb-3 space-y-1">
           {linkedNotes.map((n) => (
-            <div key={n.id} className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-[var(--surface-2)] text-xs text-[var(--text-secondary)] transition-colors">
-              <span className="w-3 h-3 flex items-center justify-center text-[var(--text-tertiary)]">📄</span>
+            <button
+              key={n.id}
+              onClick={() => window.dispatchEvent(new CustomEvent("cairn:select-note", { detail: { noteId: n.id } }))}
+              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-[var(--surface-2)] text-xs text-[var(--text-secondary)] transition-colors text-left"
+            >
+              <FileText size={11} className="text-[var(--text-tertiary)] flex-shrink-0" />
               <span className="truncate flex-1">{n.title}</span>
               <span className="text-[10px] text-[var(--text-tertiary)]">note</span>
-            </div>
+            </button>
           ))}
           {linkedCards.map((c) => {
             const col = columns.find((col) => col.id === c.columnId);
@@ -542,7 +549,7 @@ function NoteTagBar({ note, workspaceTags, onToggleTag, onCreateTag, getTagById 
           onClick={() => setPickerOpen((o) => !o)}
           className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)] border border-dashed border-[var(--border)] transition-colors"
         >
-          <Tag size={9} />
+          <Tag size={11} />
           Add tag
         </button>
 

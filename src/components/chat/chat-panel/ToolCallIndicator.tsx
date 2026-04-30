@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Loader2, CheckCircle } from "lucide-react";
+import { Loader2, CheckCircle, Bot } from "lucide-react";
 import { MarkdownContent } from "./MarkdownContent";
 import type { ChatToolCall } from "@/hooks/useChatStream";
 
@@ -13,9 +13,8 @@ interface ToolCallIndicatorProps {
 export function ToolCallIndicator({ toolCalls, streamingContent }: ToolCallIndicatorProps) {
   return (
     <div className="flex gap-2 items-start">
-      <div className="w-6 h-6 rounded-full bg-[var(--accent-dim)] flex items-center justify-center flex-shrink-0 mt-0.5 shrink-0">
-        {/* Bot icon intentionally left out — same as ChatMessageBubble assistant avatar */}
-        <span className="text-[var(--accent)] text-[10px] font-bold">AI</span>
+      <div className="w-6 h-6 rounded-full bg-[var(--accent-dim)] border border-[var(--accent)]/20 flex items-center justify-center flex-shrink-0 mt-0.5 shrink-0">
+        <Bot size={11} className="text-[var(--accent)]" />
       </div>
       <div className="flex flex-col gap-1 min-w-0 flex-1">
         {toolCalls.map((tc, i) => (

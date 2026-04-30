@@ -20,8 +20,8 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
           variant === "default" && "bg-[var(--surface-3)] text-[var(--text-primary)] hover:bg-[var(--border)] border border-[var(--border)]",
           variant === "ghost" && "text-[var(--text-secondary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)]",
           variant === "outline" && "border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--muted)] hover:text-[var(--text-primary)]",
-          variant === "danger" && "bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20",
-          variant === "accent" && "bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] shadow-sm",
+          variant === "danger" && "bg-[var(--danger)]/10 text-[var(--danger)] border border-[var(--danger)]/20 hover:bg-[var(--danger)]/20",
+          variant === "accent" && "bg-[var(--accent)] text-[var(--accent-fg,#fff)] hover:bg-[var(--accent-hover)] shadow-sm",
           // sizes
           size === "xs" && "h-6 px-2 text-xs gap-1",
           size === "sm" && "h-7 px-2.5 text-xs",

@@ -40,10 +40,10 @@ export function SettingsView() {
             key={id}
             onClick={() => setSection(id)}
             className={cn(
-              "flex items-center gap-2.5 w-full px-4 py-2 text-xs transition-colors text-left",
+              "flex items-center gap-2.5 w-full px-4 py-2 text-xs transition-colors text-left border-l-2",
               section === id
-                ? "text-[var(--text-primary)] bg-[var(--surface-2)]"
-                : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]"
+                ? "text-[var(--text-primary)] bg-[var(--surface-2)] border-[var(--accent)]"
+                : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] border-transparent"
             )}
           >
             <Icon size={13} />
@@ -62,7 +62,7 @@ export function SettingsView() {
             <div className="text-xs text-[var(--text-tertiary)]">v{process.env.NEXT_PUBLIC_APP_VERSION ?? "0.1.0"}</div>
           </div>
         </div>
-        <div className="max-w-2xl mx-auto px-8 py-8 space-y-8 animate-fade-in">
+        <div key={section} className="max-w-2xl mx-auto px-8 py-8 space-y-8 animate-fade-in">
           {section === "general" && <GeneralSettings />}
           {section === "ai" && <AISettings />}
           {section === "tags" && <TagsSettings />}

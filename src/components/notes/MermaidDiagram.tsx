@@ -81,10 +81,10 @@ function DiagramModal({ chart, onClose }: { chart: string; onClose: () => void }
           if (svgEl) {
             svgEl.removeAttribute("width");
             svgEl.removeAttribute("height");
+            // Let Tailwind classes on the container drive sizing;
+            // just ensure the SVG doesn't impose its own fixed dimensions.
             svgEl.style.width = "100%";
             svgEl.style.height = "100%";
-            svgEl.style.maxWidth = "100%";
-            svgEl.style.maxHeight = "85vh";
           }
         }
       } catch { /* errors shown in inline view already */ }
@@ -101,9 +101,9 @@ function DiagramModal({ chart, onClose }: { chart: string; onClose: () => void }
       {/* Backdrop */}
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
 
-      {/* Panel */}
+      {/* Panel — fills 90% of the viewport in both dimensions */}
       <div
-        className="relative z-10 w-full max-w-5xl max-h-[90vh] overflow-auto rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl p-6"
+        className="relative z-10 flex flex-col w-[90vw] h-[88vh] rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl p-6"
         onClick={(e) => e.stopPropagation()}
       >
         <button
@@ -113,9 +113,10 @@ function DiagramModal({ chart, onClose }: { chart: string; onClose: () => void }
         >
           <X size={15} />
         </button>
+        {/* Container fills all remaining space; SVG is told to fill it */}
         <div
           ref={containerRef}
-          className="flex justify-center items-center min-h-[200px] [&_svg]:max-w-full"
+          className="flex-1 flex justify-center items-center min-h-0 [&_svg]:w-full [&_svg]:h-full [&_svg]:max-w-full [&_svg]:max-h-full"
         />
       </div>
     </div>,
@@ -154,8 +155,8 @@ export function MermaidDiagram({ chart }: Props) {
 
   if (error) {
     return (
-      <div className="rounded-md border border-red-400/40 bg-red-400/10 px-3 py-2 my-3">
-        <p className="text-xs font-mono text-red-400 font-medium mb-1">Mermaid error</p>
+      <div className="rounded-md border border-[var(--danger)]/40 bg-[var(--danger)]/10 px-3 py-2 my-3">
+        <p className="text-xs font-mono text-[var(--danger)] font-medium mb-1">Mermaid error</p>
         <p className="text-xs text-[var(--text-secondary)] font-mono whitespace-pre-wrap">{error}</p>
       </div>
     );

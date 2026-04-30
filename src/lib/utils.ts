@@ -54,8 +54,8 @@ export function getDueDateStatus(dueDate: string | null | undefined): "overdue" 
 }
 
 export const STATUS_COLORS: Record<string, string> = {
-  active: "text-emerald-400",
-  on_hold: "text-amber-400",
-  completed: "text-sky-400",
-  archived: "text-stone-500",
+  active:    "text-[var(--success)]",
+  on_hold:   "text-[var(--warning)]",
+  completed: "text-[var(--info)]",
+  archived:  "text-[var(--text-tertiary)]",
 };

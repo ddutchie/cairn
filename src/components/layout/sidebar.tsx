@@ -146,7 +146,7 @@ export function Sidebar() {
           <div className="px-3 py-6 text-center">
             <FolderOpen size={20} className="mx-auto mb-2 text-[var(--text-tertiary)]" />
             <p className="text-xs text-[var(--text-tertiary)]">No projects yet</p>
-            <button onClick={() => setCreatingProject(true)} className="mt-2 text-xs text-[var(--accent)] hover:underline">
+            <button onClick={() => setCreatingProject(true)} className="mt-2 text-xs text-[var(--accent)] hover:text-[var(--accent)] hover:bg-[var(--accent-dim)] px-2 py-0.5 rounded transition-colors">
               Create one
             </button>
           </div>
@@ -200,15 +200,17 @@ function ProjectItem({ project, isActive, isExpanded, onToggleExpand, onSelectPr
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <DialogContent size="sm">
           <DialogHeader><DialogTitle>Delete project?</DialogTitle></DialogHeader>
-          <p className="text-sm text-[var(--text-secondary)] mt-1">
-            <strong className="text-[var(--text-primary)]">{project.name}</strong> and all its notes, tasks, and columns will be permanently deleted. This cannot be undone.
-          </p>
-          <div className="flex justify-end gap-2 mt-5">
-            <DialogClose asChild><Button variant="ghost" size="sm">Cancel</Button></DialogClose>
-            <Button variant="ghost" size="sm" className="text-[var(--danger)] hover:bg-[var(--danger)]/10"
-              onClick={() => { setDeleteDialogOpen(false); onDelete(); }}>
-              <Trash2 size={13} />Delete project
-            </Button>
+          <div className="px-5 py-4 space-y-4">
+            <p className="text-sm text-[var(--text-secondary)]">
+              <strong className="text-[var(--text-primary)]">{project.name}</strong> and all its notes, tasks, and columns will be permanently deleted. This cannot be undone.
+            </p>
+            <div className="flex justify-end gap-2">
+              <DialogClose asChild><Button variant="ghost" size="sm">Cancel</Button></DialogClose>
+              <Button variant="ghost" size="sm" className="text-[var(--danger)] hover:bg-[var(--danger)]/10"
+                onClick={() => { setDeleteDialogOpen(false); onDelete(); }}>
+                <Trash2 size={13} />Delete project
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -233,7 +235,7 @@ function ProjectItem({ project, isActive, isExpanded, onToggleExpand, onSelectPr
           )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="opacity-0 group-hover:opacity-100 flex-shrink-0 p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface)] transition-all"
+              <button className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 flex-shrink-0 p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface)] transition-all"
                 onClick={(e) => e.stopPropagation()}>
                 <MoreHorizontal size={12} />
               </button>
@@ -284,7 +286,7 @@ function DueDateDot({ dueDate }: { dueDate: string }) {
     </Tooltip>
   );
   if (diffDays <= 7) return (
-    <Tooltip content={`Due in ${diffDays} day${diffDays !== 1 ? "s" : ""}`} side="right">
+    <Tooltip content={diffDays === 0 ? "Due today" : `Due in ${diffDays} day${diffDays !== 1 ? "s" : ""}`} side="right">
       <span className="w-1.5 h-1.5 rounded-full bg-[var(--warning)] flex-shrink-0" />
     </Tooltip>
   );

@@ -110,21 +110,34 @@ export function KanbanColumn({
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <DialogContent size="sm">
           <DialogHeader><DialogTitle>Delete column?</DialogTitle></DialogHeader>
-          <p className="text-sm text-[var(--text-secondary)] mt-1">
-            <strong className="text-[var(--text-primary)]">{column.name}</strong> and all {cards.length + archivedCards.length} card{(cards.length + archivedCards.length) !== 1 ? "s" : ""} inside (including {archivedCards.length} archived) will be permanently deleted.
-          </p>
-          <div className="flex justify-end gap-2 mt-5">
-            <DialogClose asChild>
-              <Button variant="ghost" size="sm">Cancel</Button>
-            </DialogClose>
-            <Button
-              variant="ghost" size="sm"
-              className="text-[var(--danger)] hover:bg-[var(--danger)]/10"
-              onClick={() => { setDeleteDialogOpen(false); onDelete(); }}
-            >
-              <Trash2 size={13} />
-              Delete column
-            </Button>
+          <div className="px-5 py-4 space-y-4">
+            <p className="text-sm text-[var(--text-secondary)]">
+              {(() => {
+                const total = cards.length + archivedCards.length;
+                if (total === 0) {
+                  return <><strong className="text-[var(--text-primary)]">{column.name}</strong> is empty and will be permanently deleted.</>;
+                }
+                return <>
+                  <strong className="text-[var(--text-primary)]">{column.name}</strong> and{" "}
+                  <strong className="text-[var(--text-primary)]">{total} card{total !== 1 ? "s" : ""}</strong>
+                  {archivedCards.length > 0 ? ` (${archivedCards.length} archived)` : ""}{" "}
+                  will be permanently deleted.
+                </>;
+              })()}
+            </p>
+            <div className="flex justify-end gap-2">
+              <DialogClose asChild>
+                <Button variant="ghost" size="sm">Cancel</Button>
+              </DialogClose>
+              <Button
+                variant="ghost" size="sm"
+                className="text-[var(--danger)] hover:bg-[var(--danger)]/10"
+                onClick={() => { setDeleteDialogOpen(false); onDelete(); }}
+              >
+                <Trash2 size={13} />
+                Delete column
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
