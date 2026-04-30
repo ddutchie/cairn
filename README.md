@@ -267,18 +267,22 @@ External .md edit
 
 | File | Purpose |
 |------|---------|
-| `electron/main.ts` | BrowserWindow, workspace resolution, IPC registration, file watcher, WAL polling |
+| `electron/main.ts` | Startup orchestrator — BrowserWindow, IPC registration, file watcher |
+| `electron/lib/protocol.ts` | `app://` scheme registration + CSP headers |
+| `electron/lib/tray.ts` | System tray icon, menu, and badge update logic |
+| `electron/lib/mcp-poller.ts` | WAL mtime polling → `db:changed` IPC + MCP notification dispatch |
+| `electron/lib/read-tools.ts` | `executeReadTool(db, snap, tool, args)` — shared read dispatch used by chat and dashboard bridge |
 | `electron/workspace-config.ts` | Read/write `workspace-config.json`; resolve `cairn.db` path |
 | `electron/notes-files.ts` | Note file I/O: `writeNoteFile`, `deleteNoteFile`, `parseNoteFile`, `upsertNoteFromFile` |
 | `electron/file-watcher.ts` | chokidar watcher on `notes/`; syncs external `.md` edits to SQLite |
-| `electron/ipc/handlers.ts` | All `db:*` and `app:*` IPC channels; `db:mcpQuery` bridge for dashboards |
+| `electron/ipc/handlers.ts` | All `db:*` and `app:*` IPC channels; wrapped in `handle()` returning `IpcResult<T>` |
 | `electron/ipc/chat.ts` | AI chat loop — `runToolLoop` + IPC handler registration |
 | `electron/ipc/chat-executor.ts` | `executeTool` — all AI tool implementations |
 | `electron/lib/llm.ts` | `LLMConfig`, `callLLM`, `streamCompletion`, `isLocalEndpoint` |
 | `electron/lib/tools.ts` | `TOOLS` (OpenAI function definitions), `TOOL_LABELS`, `buildSystemPrompt` |
 | `electron/lib/context.ts` | `buildContextResponse` — canonical `get_cairn_context` response |
 | `electron/lib/prd.ts` | `generatePrd` — shared PRD generation logic |
-| `electron/db/queries.ts` | SQLite query helpers (CRUD, search, snapshot) |
+| `electron/db/queries.ts` | SQLite query helpers (CRUD, search, snapshot, `getProjectById`, `getNoteById`, `getCardById`) |
 | `electron/shared/text-utils.ts` | Pure text helpers shared across the process boundary: `toSlug`, `stripMarkdown` |
 | `electron/db/schema.ts` | SQLite DDL + versioned migration runner (`PRAGMA user_version`) |
 | `electron/db/utils.ts` | `newId()` (nanoid), `ts()` — shared ID and timestamp helpers |
@@ -292,11 +296,15 @@ External .md edit
 | `src/store/index.ts` | Zustand store composition + hydration; delegates to domain slices |
 | `src/store/slices/` | Domain slices: `ui`, `workspace`, `board`, `notes`, `tags`, `chat`, `selectors` |
 | `src/store/ipc.ts` | Shared `isElectron`, `ipc`, `ipcAwait` helpers used by all slices |
+| `src/hooks/useChatStream.ts` | AI stream lifecycle hook — subscriptions, loading state, `sendStream` |
 | `src/lib/constants.ts` | Shared constants: `COLUMN_COLORS`, `PRIORITY_OPTIONS`, `DEFAULT_AI_CONFIG`, etc. |
 | `src/lib/events.ts` | Typed `CairnEvents` helpers for internal custom event dispatch |
+| `src/types/index.ts` | All shared types: `IpcResult<T>`, `ProjectSummaryResult`, `DashboardQueryMessage`, etc. |
 | `src/components/onboarding/create-workspace.tsx` | First-launch folder picker + workspace creation |
 | `src/components/notes/note-editor.tsx` | Split-pane markdown editor + AI text toolbar |
 | `src/components/notes/dashboard-view.tsx` | Sandboxed iframe renderer; `window.cairn` postMessage bridge |
+| `src/components/notes/dashboard-bootstrap.ts` | Dashboard bootstrap JS builder (`buildBootstrap`, `buildSrcdoc`) |
+| `src/components/layout/project-overview/useProjectMetrics.ts` | Derived metrics hook (due dates, priority counts, activity grouping) |
 | `src/components/settings/settings-view.tsx` | Settings shell; section components in `settings/` directory |
 
 ## Testing
@@ -308,8 +316,14 @@ npm run test:coverage # coverage report
 ```
 
 Tests live alongside the code they cover:
-- `electron/db/queries.test.ts` — SQLite query helpers (in-memory DB)
-- `electron/notes-files.test.ts` — file I/O, slug generation, frontmatter round-trip (tmp directories)
+
+| File | Tests | What's covered |
+|------|-------|---------------|
+| `electron/db/queries.test.ts` | 22 | SQLite query helpers — CRUD, search, soft-delete, snapshot |
+| `electron/notes-files.test.ts` | 29 | File I/O, slug generation, frontmatter round-trip (tmp dirs) |
+| `electron/ipc/chat-executor.test.ts` | 21 | Every tool case in `executeTool` — happy path, missing entities, error returns |
+| `electron/ipc/handlers.test.ts` | 14 | IPC data layer — `executeReadTool`, `buildContextResponse`, `getBy*` queries |
+| `electron/ipc/tool-parity.test.ts` | 7 | Chat/MCP tool name alignment; `get_project_summary` canonical shape |
 
 ## Tech stack
 
