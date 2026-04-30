@@ -67,6 +67,8 @@ win:
 
 nsis:
   oneClick: false
+  perMachine: true                     # installs to Program Files, requires UAC elevation
+  allowElevation: true                 # prompt for elevation if not already admin
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true

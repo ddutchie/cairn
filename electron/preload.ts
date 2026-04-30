@@ -120,6 +120,7 @@ const api = {
   setTheme: (theme: string) => invoke("app:setTheme", theme),
   initWorkspace: (workspacePath: string) => invoke<{ requiresRestart: boolean }>("app:initWorkspace", { workspacePath }),
   relaunch: () => invoke("app:relaunch"),
+  platform: process.platform as "darwin" | "win32" | "linux",
 
   // ── Auto-updater ──────────────────────────────
   updater: {

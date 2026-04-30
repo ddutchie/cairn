@@ -50,13 +50,26 @@ function getStoredThemeBackground(): string {
 }
 
 function createWindow(): BrowserWindow {
+  const isWin = process.platform === "win32";
+  const bg = getStoredThemeBackground();
+
+  // On macOS: hiddenInset keeps the traffic lights in the title bar area.
+  // On Windows: hidden removes the native title text; titleBarOverlay places
+  // the native min/max/close buttons at the top-right inside our custom bar.
   const win = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 900,
     minHeight: 600,
-    titleBarStyle: "hiddenInset",
-    backgroundColor: getStoredThemeBackground(),
+    titleBarStyle: isWin ? "hidden" : "hiddenInset",
+    ...(isWin && {
+      titleBarOverlay: {
+        color: bg,          // matches window background so buttons blend in
+        symbolColor: "#888888",
+        height: 40,         // matches TitleBar height in the renderer
+      },
+    }),
+    backgroundColor: bg,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -151,7 +164,7 @@ app.whenReady().then(async () => {
   });
 
   // Register app:* and mcp:* IPC handlers (now that updateBadge is available)
-  registerAppHandlers(db, userDataPath, updateBadge);
+  registerAppHandlers(db, userDataPath, updateBadge, win);
 
   // ── MCP notification poller ───────────────────────────────────────────
   startMcpNotificationPoller({

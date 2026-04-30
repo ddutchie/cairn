@@ -108,21 +108,23 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 | Tool | Category | Description |
 |------|----------|-------------|
 | `get_cairn_context` | read | Full orientation: workspaces, projects, column IDs, tool list, conventions |
-| `search_notes` | read | Full-text search across notes |
-| `search_tasks` | read | Full-text search across task cards |
-| `get_note` | read | Full markdown content of a note by ID |
+| `get_note` | read | Full markdown content, linked IDs, and metadata of a note by ID |
 | `get_task` | read | Full detail of a task card by ID |
-| `get_project_summary` | read | Column breakdown, card counts, recent activity |
+| `get_project_summary` | read | Column breakdown, card counts, pinned notes, recent activity |
 | `list_notes` | read | List all notes in a project |
 | `list_tasks` | read | List all tasks grouped by column |
 | `list_recent_activity` | read | Recently created/updated notes and tasks |
+| `search_notes` | read | Full-text search across notes |
+| `search_tasks` | read | Full-text search across task cards |
 | `create_project` | write | Create a project with default board columns |
-| `update_project` | write | Update a project's name, status, priority, or due date |
+| `update_project` | write | Update a project's name, description, status, priority, or due date |
 | `create_note` | write | Create a markdown note |
-| `update_note` | write | Update a note's title or content |
+| `update_note` | write | Update a note's title, content, or pinned state |
+| `move_note` | write | Move a note to a different project |
 | `create_task` | write | Create a task card in a column |
 | `update_task` | write | Update a task's title, description, priority, due date, column, or assignee |
-| `update_task_status` | write | Move a task to a different column |
+| `update_task_status` | write | Move a single task to a different column |
+| `bulk_update_task_status` | write | Move multiple tasks to the same column in one call |
 | `link_note_to_task` | write | Bidirectionally link a note and task |
 | `create_dashboard` | write | Create a live HTML dashboard in a project |
 | `update_dashboard` | write | Update an existing dashboard's title or HTML |

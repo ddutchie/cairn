@@ -10,20 +10,29 @@ import { SettingsGroup } from "./shared";
 
 export function MCPServerSettings() {
   const [mcpServerPath, setMcpServerPath] = useState<string | null>(null);
+  const [platform, setPlatform] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
 
   useEffect(() => {
-    if (typeof window !== "undefined" && window.electron?.mcpServerPath) {
+    if (typeof window !== "undefined" && window.electron) {
       window.electron.mcpServerPath().then((p) => setMcpServerPath(p));
+      setPlatform(window.electron.platform ?? null);
     }
   }, []);
 
+  const isWin = platform === "win32";
+
+  // OpenCode: command is an array — passed directly without shell, safe on all platforms.
   const opencodeConfig = mcpServerPath
     ? JSON.stringify({ mcp: { cairn: { type: "local", command: [mcpServerPath], enabled: true } } }, null, 2)
     : null;
 
+  // Claude Desktop: on Windows, paths with spaces break if passed as a bare command string
+  // because Claude spawns via cmd.exe which splits on spaces. Use cmd /c to avoid this.
   const claudeConfig = mcpServerPath
-    ? JSON.stringify({ cairn: { command: mcpServerPath, args: [] } }, null, 2)
+    ? isWin
+      ? JSON.stringify({ cairn: { command: "cmd", args: ["/c", mcpServerPath] } }, null, 2)
+      : JSON.stringify({ cairn: { command: mcpServerPath, args: [] } }, null, 2)
     : null;
 
   function copy(text: string, key: string) {
@@ -64,24 +73,30 @@ export function MCPServerSettings() {
         <div className="text-xs font-medium text-[var(--text-secondary)] mb-2">Available tools</div>
         <div className="grid grid-cols-2 gap-1.5">
           {[
-            ["get_cairn_context", "read"],
-            ["search_notes", "read"],
-            ["search_tasks", "read"],
-            ["get_note", "read"],
-            ["get_task", "read"],
-            ["get_project_summary", "read"],
-            ["list_recent_activity", "read"],
-            ["create_project", "write"],
-            ["create_note", "write"],
-            ["update_note", "write"],
-            ["create_task", "write"],
-            ["update_task", "write"],
-            ["update_task_status", "write"],
-            ["link_note_to_task", "write"],
-            ["create_dashboard", "write"],
-            ["update_dashboard", "write"],
-            ["delete_note", "delete"],
-            ["delete_task", "delete"],
+            ["get_cairn_context",       "read"],
+            ["get_note",               "read"],
+            ["get_task",               "read"],
+            ["get_project_summary",    "read"],
+            ["list_notes",             "read"],
+            ["list_tasks",             "read"],
+            ["list_recent_activity",   "read"],
+            ["search_notes",           "read"],
+            ["search_tasks",           "read"],
+            ["create_project",         "write"],
+            ["update_project",         "write"],
+            ["create_note",            "write"],
+            ["update_note",            "write"],
+            ["move_note",              "write"],
+            ["create_task",            "write"],
+            ["update_task",            "write"],
+            ["update_task_status",     "write"],
+            ["bulk_update_task_status","write"],
+            ["link_note_to_task",      "write"],
+            ["create_dashboard",       "write"],
+            ["update_dashboard",       "write"],
+            ["delete_note",            "delete"],
+            ["delete_task",            "delete"],
+            ["delete_project",         "delete"],
           ].map(([tool, cat]) => (
             <div key={tool} className="flex items-center gap-1.5">
               <span className={cn(

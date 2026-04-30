@@ -14,7 +14,7 @@
  * Channel naming: "db:<entity>:<action>"
  */
 
-import { ipcMain, app, shell, dialog } from "electron";
+import { ipcMain, app, shell, dialog, BrowserWindow } from "electron";
 import path from "path";
 import fs from "fs";
 import type Database from "better-sqlite3";
@@ -266,6 +266,7 @@ export function registerAppHandlers(
   db: Database.Database,
   userDataPath: string,
   updateTrayBadge: (count: number) => void,
+  win?: BrowserWindow,
 ): void {
   // ── Workspace folder selection / setup ────────────
   ipcMain.handle("app:selectWorkspaceFolder", async () => {
@@ -294,6 +295,11 @@ export function registerAppHandlers(
   ipcMain.handle("app:setTheme", (_e, theme: string) => handle(() => {
     const themeFile = path.join(userDataPath, "theme.json");
     fs.writeFileSync(themeFile, JSON.stringify({ theme }), "utf8");
+    // On Windows, update the native title bar overlay colour to match the theme
+    if (process.platform === "win32" && win && !win.isDestroyed()) {
+      const bg = theme === "light" ? "#f5f4f1" : "#0d0d0d";
+      win.setTitleBarOverlay({ color: bg, symbolColor: "#888888", height: 40 });
+    }
   }));
 
   ipcMain.handle("app:initWorkspace", (_e, { workspacePath: newPath }: { workspacePath: string }) => handle(() => {
