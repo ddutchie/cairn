@@ -8,9 +8,16 @@
 
 import { contextBridge, ipcRenderer } from "electron";
 
-// Helper: invoke an IPC channel with typed args and return value
+// Helper: invoke an IPC channel and unwrap the IpcResult<T> wrapper.
+// All handlers return { data: T } | { error: string } via the handle() helper.
+// We unwrap here so callers receive T directly (or a rejected promise on error).
 function invoke<T>(channel: string, args?: unknown): Promise<T> {
-  return ipcRenderer.invoke(channel, args) as Promise<T>;
+  return ipcRenderer.invoke(channel, args).then((result: { data: T } | { error: string }) => {
+    if (result && typeof result === "object" && "error" in result) {
+      throw new Error((result as { error: string }).error);
+    }
+    return (result as { data: T }).data;
+  });
 }
 
 const api = {
