@@ -9,6 +9,8 @@ directories:
 files:
   # Electron main + preload — esbuild bundles (all JS deps inlined)
   - dist-electron/**/*
+  # Changelogs — displayed in Settings > About
+  - changelogs/**/*
   # MCP server — self-contained binary (bundles Node 22 + better-sqlite3)
   - dist-mcp/cairn-mcp
   - dist-mcp/cairn-mcp.exe

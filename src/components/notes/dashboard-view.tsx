@@ -1,10 +1,12 @@
 "use client";
 
 import React, { useEffect, useRef, useCallback, useState } from "react";
-import { RefreshCw, Calendar, LayoutDashboard, AlertTriangle, X, Zap } from "lucide-react";
+import { RefreshCw, Calendar, LayoutDashboard, AlertTriangle, X, Zap, Code2, Wand2, Save } from "lucide-react";
 import type { Note, DashboardQueryMessage } from "@/types";
 import { cn, formatRelative } from "@/lib/utils";
 import { buildSrcdoc } from "./dashboard-bootstrap";
+import { CairnEvents } from "@/lib/events";
+import { useCairnStore } from "@/store";
 
 interface DashboardViewProps {
   note: Note;
@@ -33,15 +35,19 @@ const ALLOWED_TOOLS = new Set([
 
 export function DashboardView({ note }: DashboardViewProps) {
   const electron = typeof window !== "undefined" ? window.electron : null;
+  const { updateNote } = useCairnStore();
 
   const projectId   = note.projectId   ?? "";
   const workspaceId = note.workspaceId ?? "";
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const editorRef = useRef<HTMLDivElement>(null);
+  const cmViewRef = useRef<import("@codemirror/view").EditorView | null>(null);
   const [rev, setRev]         = useState(0);
   const [srcdoc, setSrcdoc]   = useState(() => buildSrcdoc(note.content ?? "", projectId, workspaceId));
   const [errors, setErrors]   = useState<DashboardError[]>([]);
   const [autoRefreshed, setAutoRefreshed] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
 
   // Rebuild srcdoc when note content changes
   useEffect(() => {
@@ -111,6 +117,58 @@ export function DashboardView({ note }: DashboardViewProps) {
     return () => window.removeEventListener("message", handleMessage);
   }, [electron]);
 
+  // ── HTML editor (CodeMirror) ──────────────────────────────────────────────
+  useEffect(() => {
+    if (!editOpen || !editorRef.current) return;
+    let view: import("@codemirror/view").EditorView;
+
+    async function init() {
+      const { EditorView, keymap: cmKeymap } = await import("@codemirror/view");
+      const { EditorState } = await import("@codemirror/state");
+      const { defaultKeymap, history, historyKeymap, indentWithTab } = await import("@codemirror/commands");
+      const { html } = await import("@codemirror/lang-html");
+
+      const isDark = document.documentElement.getAttribute("data-theme") !== "light";
+
+      const theme = EditorView.theme({
+        "&": { height: "100%", fontSize: "12.5px", fontFamily: "ui-monospace, monospace" },
+        ".cm-scroller": { overflow: "auto" },
+        ".cm-content": { padding: "12px 16px", caretColor: isDark ? "#e8e4dc" : "#1a1917" },
+        ".cm-line": { lineHeight: "1.6" },
+        "&.cm-focused .cm-cursor": { borderLeftColor: isDark ? "#7c6af7" : "#6457e8" },
+        ".cm-gutters": { display: "none" },
+        "&, .cm-gutters": { backgroundColor: isDark ? "#161616" : "#f8f7f5", color: isDark ? "#abb2bf" : "#374151", border: "none" },
+        ".cm-selectionBackground, ::selection": { backgroundColor: isDark ? "rgba(124,106,247,0.25)" : "rgba(100,87,232,0.15)" },
+      }, { dark: isDark });
+
+      view = new EditorView({
+        state: EditorState.create({
+          doc: note.content ?? "",
+          extensions: [
+            history(),
+            cmKeymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+            html(),
+            theme,
+            EditorView.lineWrapping,
+          ],
+        }),
+        parent: editorRef.current!,
+      });
+      cmViewRef.current = view;
+    }
+
+    init();
+    return () => { view?.destroy(); cmViewRef.current = null; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editOpen]);
+
+  function handleSaveHtml() {
+    const html = cmViewRef.current?.state.doc.toString() ?? "";
+    updateNote(note.id, { content: html, contentText: "" });
+    setEditOpen(false);
+    // reload will fire via note.content change in the srcdoc effect above
+  }
+
   if (!note.content?.trim()) {
     return (
       <div className="flex flex-col h-full items-center justify-center gap-3 text-[var(--text-tertiary)]">
@@ -140,6 +198,16 @@ export function DashboardView({ note }: DashboardViewProps) {
             {formatRelative(note.updatedAt)}
           </span>
           <button
+            onClick={() => setEditOpen(true)}
+            className={cn(
+              "flex items-center gap-1.5 px-2 py-1 rounded-md text-xs transition-colors",
+              "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]"
+            )}
+          >
+            <Code2 size={11} />
+            Edit HTML
+          </button>
+          <button
             onClick={reload}
             className={cn(
               "flex items-center gap-1.5 px-2 py-1 rounded-md text-xs transition-colors",
@@ -167,12 +235,28 @@ export function DashboardView({ note }: DashboardViewProps) {
               <AlertTriangle size={11} />
               Dashboard error{errors.length > 1 ? `s (${errors.length})` : ""}
             </div>
-            <button
-              onClick={() => setErrors([])}
-              className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-            >
-              <X size={13} />
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => {
+                  const errorSummary = errors.map((e) =>
+                    `- ${e.message}${e.source ? ` (${e.source.split("/").pop()}:${e.line}:${e.col})` : ""}`
+                  ).join("\n");
+                  const prefill = `My dashboard has the following error${errors.length > 1 ? "s" : ""}:\n\n${errorSummary}\n\nHere is the current dashboard HTML:\n\n\`\`\`html\n${note.content ?? ""}\n\`\`\`\n\nPlease fix it.`;
+                  window.dispatchEvent(CairnEvents.openChat(prefill));
+                  setErrors([]);
+                }}
+                className="flex items-center gap-1 px-2 py-0.5 rounded text-[11px] text-[var(--danger)] hover:bg-[var(--danger)]/10 transition-colors"
+              >
+                <Wand2 size={11} />
+                Fix with AI
+              </button>
+              <button
+                onClick={() => setErrors([])}
+                className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors p-0.5"
+              >
+                <X size={13} />
+              </button>
+            </div>
           </div>
           {errors.map((err, i) => (
             <div key={i} className="text-[11px] font-mono text-[var(--danger)]/80 leading-relaxed">
@@ -188,7 +272,7 @@ export function DashboardView({ note }: DashboardViewProps) {
       )}
 
       {/* Sandboxed iframe */}
-      <div className="flex-1 min-h-0 overflow-hidden">
+      <div className="flex-1 min-h-0 overflow-hidden relative">
         <iframe
           key={rev}
           ref={iframeRef}
@@ -197,6 +281,37 @@ export function DashboardView({ note }: DashboardViewProps) {
           srcDoc={srcdoc}
           title={note.title}
         />
+
+        {/* Edit HTML drawer — slides up from the bottom over the iframe */}
+        {editOpen && (
+          <div className="absolute inset-0 flex flex-col bg-[var(--background)] z-10">
+            {/* Drawer header */}
+            <div className="flex items-center justify-between px-4 py-2 border-b border-[var(--border)] flex-shrink-0">
+              <div className="flex items-center gap-2 text-xs font-medium text-[var(--text-secondary)]">
+                <Code2 size={12} />
+                Edit HTML
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setEditOpen(false)}
+                  className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
+                >
+                  <X size={11} />
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveHtml}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors"
+                >
+                  <Save size={11} />
+                  Save & reload
+                </button>
+              </div>
+            </div>
+            {/* CodeMirror HTML editor */}
+            <div ref={editorRef} className="flex-1 min-h-0 overflow-hidden" />
+          </div>
+        )}
       </div>
     </div>
   );

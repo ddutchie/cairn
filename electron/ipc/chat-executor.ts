@@ -198,6 +198,22 @@ export async function executeTool(
       writeNoteFile(workspacePath, { ...updated, projectName: proj?.name ?? note.projectId });
       return { id: note.id, title: note.title, updatedAt: updated.updatedAt, newLength: newContent.length };
     }
+    case "patch_note": {
+      const existing = snap.notes.find((n) => n.id === args.noteId);
+      if (!existing) return { error: "Note not found" };
+      const oldStr = args.oldString as string;
+      const newStr = args.newString as string;
+      const all = (args.replaceAll as boolean | undefined) ?? false;
+      const currentContent = existing.content ?? "";
+      const count = currentContent.split(oldStr).length - 1;
+      if (count === 0) return { error: "oldString not found in note content" };
+      if (count > 1 && !all) return { error: `oldString matches ${count} times — set replaceAll: true to replace all, or provide more surrounding context to make it unique` };
+      const newContent = all ? currentContent.split(oldStr).join(newStr) : currentContent.replace(oldStr, newStr);
+      const note = q.updateNote(db, args.noteId as string, { content: newContent, contentText: stripMarkdown(newContent) });
+      const proj = snap.projects.find((p) => p.id === existing.projectId);
+      writeNoteFile(workspacePath, { ...note, projectName: proj?.name ?? existing.projectId });
+      return { id: existing.id, title: existing.title, updatedAt: note.updatedAt, replacements: all ? count : 1 };
+    }
     case "update_note": {
       const existing = snap.notes.find((n) => n.id === args.noteId);
       if (!existing) return { error: "Note not found" };

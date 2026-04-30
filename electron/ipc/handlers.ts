@@ -322,6 +322,27 @@ export function registerAppHandlers(
     return path.join(unpackedPath, "dist-mcp", binaryName);
   }));
 
+  // ── Latest changelog ───────────────────────────────
+  ipcMain.handle("app:latestChangelog", () => handle(() => {
+    // In dev, app.getAppPath() points to dist-electron/ — walk up to repo root instead.
+    // In packaged builds, changelogs/ is bundled inside the asar alongside dist-electron/.
+    const changelogsDir = app.isPackaged
+      ? path.join(app.getAppPath(), "changelogs")
+      : path.join(__dirname, "..", "changelogs");
+    if (!fs.existsSync(changelogsDir)) return null;
+    const files = fs.readdirSync(changelogsDir)
+      .filter((f) => /^v\d+\.\d+\.\d+\.md$/.test(f));
+    if (files.length === 0) return null;
+    // Sort by semver descending and pick the highest
+    files.sort((a, b) => {
+      const parse = (f: string) => f.replace(/^v/, "").replace(/\.md$/, "").split(".").map(Number);
+      const [aMaj, aMin, aPatch] = parse(a);
+      const [bMaj, bMin, bPatch] = parse(b);
+      return bMaj - aMaj || bMin - aMin || bPatch - aPatch;
+    });
+    return fs.readFileSync(path.join(changelogsDir, files[0]), "utf8");
+  }));
+
   // ── Relaunch (used after workspace init to re-open DB at correct path) ──
   ipcMain.handle("app:relaunch", () => handle(() => {
     app.relaunch();

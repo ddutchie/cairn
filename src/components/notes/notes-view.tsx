@@ -14,6 +14,7 @@ import { NoteEditor } from "./note-editor";
 import { DashboardView } from "./dashboard-view";
 import { PrdModal } from "./notes-view/PrdModal";
 import { MoveNoteModal } from "./notes-view/MoveNoteModal";
+import { DashboardTemplateModal } from "./DashboardTemplateModal";
 import { useNoteFilter } from "./notes-view/useNoteFilter";
 import type { Note } from "@/types";
 import {
@@ -38,6 +39,7 @@ export function NotesView() {
   const [prdModalOpen, setPrdModalOpen]         = useState(false);
   const [moveNoteId, setMoveNoteId]             = useState<string | null>(null);
   const [showArchivedNotes, setShowArchivedNotes] = useState(false);
+  const [dashboardTemplateOpen, setDashboardTemplateOpen] = useState(false);
 
   const notes           = activeProjectId ? getProjectNotes(activeProjectId) : [];
   const archivedNotes   = activeProjectId ? getArchivedProjectNotes(activeProjectId) : [];
@@ -68,8 +70,15 @@ export function NotesView() {
 
   function handleCreateDashboard() {
     if (!activeProjectId) return;
-    const note = createNote(activeProjectId, "Untitled Dashboard", "dashboard");
+    setDashboardTemplateOpen(true);
+  }
+
+  function handleTemplateSelect(html: string, title: string) {
+    if (!activeProjectId) return;
+    const note = createNote(activeProjectId, title, "dashboard");
+    if (html) updateNote(note.id, { content: html, contentText: "" });
     setActiveNoteId(note.id);
+    setDashboardTemplateOpen(false);
   }
 
   // ⌘N global shortcut
@@ -227,6 +236,13 @@ export function NotesView() {
 
       {prdModalOpen && activeProjectId && (
         <PrdModal projectId={activeProjectId} generatePrd={generatePrd} onClose={() => setPrdModalOpen(false)} />
+      )}
+
+      {dashboardTemplateOpen && (
+        <DashboardTemplateModal
+          onSelect={handleTemplateSelect}
+          onClose={() => setDashboardTemplateOpen(false)}
+        />
       )}
 
       {moveNoteId && (

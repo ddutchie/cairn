@@ -74,6 +74,9 @@ export default function Home() {
   const [updateVersion, setUpdateVersion] = useState<string | null>(null);
   const [updateDownloaded, setUpdateDownloaded] = useState(false);
 
+  // Chat pre-fill — set by cairn:open-chat event (e.g. from "Fix with AI" button)
+  const [chatPrefill, setChatPrefill] = useState<string | null>(null);
+
   // IPC error toasts
   const { toasts, dismiss } = useIpcErrorToasts();
 
@@ -140,8 +143,18 @@ export default function Home() {
         }
       }
     }
+    function handleOpenChat(e: Event) {
+      const { prefill } = (e as CustomEvent<{ prefill: string }>).detail;
+      setChatPrefill(prefill);
+      if (!chatOpen) toggleChat();
+    }
+
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener("cairn:open-chat", handleOpenChat);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("cairn:open-chat", handleOpenChat);
+    };
   }, [toggleSearch, toggleChat, toggleSidebar, setView, activeProjectId, createNote]);
 
   // Still loading
@@ -221,7 +234,7 @@ export default function Home() {
         </div>
 
         {/* AI Chat panel */}
-        {chatOpen && <ChatPanel />}
+        {chatOpen && <ChatPanel prefill={chatPrefill} onPrefillConsumed={() => setChatPrefill(null)} />}
 
         {/* Global search overlay */}
         {searchOpen && <SearchPanel />}

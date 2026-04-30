@@ -11,7 +11,12 @@ import { ChatMessageBubble } from "./chat-panel/ChatMessageBubble";
 import { SuggestedPrompts } from "./chat-panel/SuggestedPrompts";
 import { ToolCallIndicator } from "./chat-panel/ToolCallIndicator";
 
-export function ChatPanel() {
+interface ChatPanelProps {
+  prefill?: string | null;
+  onPrefillConsumed?: () => void;
+}
+
+export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
   const {
     chatOpen, toggleChat,
     activeProjectId, activeWorkspaceId,
@@ -59,6 +64,16 @@ export function ChatPanel() {
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, isLoading]);
   useEffect(() => { if (chatOpen) inputRef.current?.focus(); }, [chatOpen]);
+
+  // Pre-fill input when opened via cairn:open-chat event
+  useEffect(() => {
+    if (prefill) {
+      setInput(prefill);
+      onPrefillConsumed?.();
+      setTimeout(() => inputRef.current?.focus(), 50);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefill]);
 
   function handleSend(text?: string) {
     const content = text ?? input.trim();

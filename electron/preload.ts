@@ -109,6 +109,7 @@ const api = {
 
   // ── App paths ─────────────────────────────────
   mcpServerPath: () => invoke<string>("app:mcpServerPath"),
+  latestChangelog: () => invoke<string | null>("app:latestChangelog"),
 
   // ── Reveal note in Finder / Explorer ─────────
   revealNote: (noteId: string, projectId: string) => invoke("app:revealNote", { noteId, projectId }),

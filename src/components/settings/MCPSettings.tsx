@@ -90,6 +90,7 @@ export function MCPServerSettings() {
             ["import_note_from_file",  "write"],
             ["ensure_note",            "write"],
             ["append_to_note",         "write"],
+            ["patch_note",             "write"],
             ["update_note",            "write"],
             ["move_note",              "write"],
             ["create_task",            "write"],

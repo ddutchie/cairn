@@ -15,4 +15,7 @@ export const CairnEvents = {
   /** Fired by the ipc() helper when a write operation returns { error }. */
   ipcError: (message: string) =>
     new CustomEvent("cairn:ipc-error", { detail: { message } }),
+  /** Opens the chat panel and pre-fills the input with the given text. */
+  openChat: (prefill: string) =>
+    new CustomEvent("cairn:open-chat", { detail: { prefill } }),
 };

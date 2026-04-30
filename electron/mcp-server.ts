@@ -292,7 +292,7 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
         projects,
         tools: {
           read:   ["get_cairn_context", "get_project_context_pack", "resolve_project", "search_notes", "search_tasks", "get_note", "get_task", "get_project_summary", "list_notes", "list_tasks", "list_recent_activity"],
-          write:  ["create_project", "update_project", "create_note", "import_note_from_file", "ensure_note", "append_to_note", "update_note", "move_note", "create_task", "update_task", "update_task_status", "bulk_update_task_status", "link_note_to_task", "create_dashboard", "update_dashboard"],
+          write:  ["create_project", "update_project", "create_note", "import_note_from_file", "ensure_note", "append_to_note", "patch_note", "update_note", "move_note", "create_task", "update_task", "update_task_status", "bulk_update_task_status", "link_note_to_task", "create_dashboard", "update_dashboard"],
           delete: ["delete_note", "delete_task", "delete_project"],
         },
         conventions: {
@@ -864,6 +864,36 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
       return { id: noteId, title: note.title, updatedAt: now, newLength: newContent.length };
     }
 
+    case "patch_note": {
+      // Surgical in-place replacement — agent sends oldString + newString,
+      // server does the substitution. Avoids re-sending full note content.
+      const { noteId, oldString, newString: replacement, replaceAll: all = false } = args as {
+        noteId: string; oldString: string; newString: string; replaceAll?: boolean;
+      };
+      const note = snap.notes.find((n) => n.id === noteId);
+      if (!note) return { error: "Note not found" };
+      const existing = (note.content as string) ?? "";
+      const count = existing.split(oldString).length - 1;
+      if (count === 0) return { error: "oldString not found in note content" };
+      if (count > 1 && !all) return { error: `oldString matches ${count} times — set replaceAll: true to replace all, or provide more surrounding context to make it unique` };
+      const now = ts();
+      const newContent = all ? existing.split(oldString).join(replacement) : existing.replace(oldString, replacement);
+      db.prepare(`UPDATE notes SET content = ?, content_text = ?, updated_at = ? WHERE id = ?`)
+        .run(newContent, stripMarkdown(newContent), now, noteId);
+      const proj = snap.projects.find((p) => p.id === note.projectId);
+      writeNoteFile(workspacePath, {
+        id: noteId, projectId: note.projectId as string, workspaceId: note.workspaceId as string,
+        title: note.title as string, content: newContent,
+        tagIds: note.tagIds as string[], linkedNoteIds: note.linkedNoteIds as string[],
+        linkedCardIds: note.linkedCardIds as string[], isPinned: note.isPinned as boolean,
+        createdAt: note.createdAt as string, updatedAt: now,
+        archivedAt: note.archivedAt as string | undefined,
+        projectName: proj?.name ?? note.projectId as string,
+      });
+      insertNotification(db, "update_note", "Note updated", `Patch applied to "${note.title}"`);
+      return { id: noteId, title: note.title, updatedAt: now, replacements: all ? count : 1 };
+    }
+
     default:
       return { error: `Unknown tool: ${toolName}` };
   }
@@ -945,6 +975,8 @@ const TOOL_DEFINITIONS = [
     inputSchema: { type: "object", properties: { projectId: { type: "string" }, title: { type: "string" }, content: { type: "string" } }, required: ["projectId", "title"] } },
   { name: "append_to_note",      description: "Append content to the end of an existing note without fetching or re-sending the full body. Optional separator defaults to a blank line.",
     inputSchema: { type: "object", properties: { noteId: { type: "string" }, content: { type: "string", description: "Text to append" }, separator: { type: "string", description: "String inserted between existing content and appended content (default: '\\n\\n')" } }, required: ["noteId", "content"] } },
+  { name: "patch_note",          description: "Surgically replace a specific string inside a note without re-sending the full content. Provide enough surrounding context in oldString to make it unique. Returns an error if oldString is not found or matches multiple times (use replaceAll: true to replace all occurrences).",
+    inputSchema: { type: "object", properties: { noteId: { type: "string" }, oldString: { type: "string", description: "Exact string to find in the note (include enough context to be unique)" }, newString: { type: "string", description: "Replacement string" }, replaceAll: { type: "boolean", description: "Replace all occurrences instead of requiring uniqueness (default: false)" } }, required: ["noteId", "oldString", "newString"] } },
   { name: "create_dashboard",    description: "Create a dashboard in a project. The html field must be a complete self-contained HTML document with inline CSS/JS only. Use window.cairn.query(tool, args) for live data from read-only tools. The dashboard is rendered in a sandboxed iframe inside Cairn.",
     inputSchema: { type: "object", properties: { projectId: { type: "string" }, title: { type: "string" }, html: { type: "string", description: "Complete self-contained HTML document" } }, required: ["projectId", "title", "html"] } },
   { name: "update_dashboard",    description: "Update an existing dashboard's title or HTML content.",

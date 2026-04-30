@@ -38,6 +38,8 @@ const ROLE_MAP = {
   "date-fns":                    ["date-fns",           "Date utilities"],
   "react-markdown":              ["react-markdown",     "Markdown render"],
   "remark-gfm":                  ["remark-gfm",         "GFM support"],
+  "mermaid":                     ["Mermaid",            "Diagram render"],
+  "lowlight":                    ["lowlight",           "Syntax highlighting"],
   "@codemirror/view":            ["CodeMirror 6",       "Note editor"],
   "electron-updater":            ["electron-updater",   "Auto-updater"],
   "zod":                         ["Zod",                "Schema validation"],

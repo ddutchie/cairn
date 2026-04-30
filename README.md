@@ -19,7 +19,7 @@ Cairn is a desktop app (Electron + Next.js) that combines markdown notes with a 
 - **Linked context** — Notes and cards reference each other bidirectionally
 - **Global search** — Instant full-text search across all notes and tasks (`⌘K`)
 - **AI chat** — Integrated assistant with live project context; reads and writes your data (`⌘/`)
-- **Live dashboards** — Ask the AI to generate an interactive HTML dashboard for any project; dashboards fetch live data on every load via a sandboxed `window.cairn.query()` bridge
+- **Live dashboards** — Ask the AI to generate an interactive HTML dashboard for any project; choose from a template gallery or start blank; dashboards fetch live data on every load via a sandboxed `window.cairn.query()` bridge; runtime errors surface an inline "Fix with AI" button; HTML editable directly via a built-in CodeMirror overlay
 - **MCP server** — Exposes your workspace to external AI agents (OpenCode, Claude Desktop, etc.) via the Model Context Protocol
 - **Local-first** — Notes as `.md` files, project data in SQLite; no network required
 - **Dark mode** — Calm, focused aesthetics
@@ -124,6 +124,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 | `import_note_from_file` | write | Import a local file as a note — server reads from disk, no need to inline content |
 | `ensure_note` | write | Idempotent create-or-update by title — prevents duplicate notes on re-run |
 | `append_to_note` | write | Append content to a note without re-sending the full body |
+| `patch_note` | write | Surgically replace a string inside a note — no need to re-send the full content |
 | `update_note` | write | Update a note's title, content, or pinned state |
 | `move_note` | write | Move a note to a different project |
 | `create_task` | write | Create a task card in a column |

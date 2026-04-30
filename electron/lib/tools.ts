@@ -27,6 +27,7 @@ export const TOOL_LABELS: Record<string, (args: ToolArgs) => string> = {
   import_note_from_file:  (a) => `Importing ${path.basename(a.filePath as string)} as note`,
   ensure_note:            (a) => `Ensuring note "${a.title}"`,
   append_to_note:         () => "Appending to note",
+  patch_note:             () => "Patching note",
   update_note:            () => "Updating note",
   create_task:            (a) => `Creating task "${a.title}"`,
   update_task_status:        () => "Moving task",
@@ -238,6 +239,23 @@ export const TOOLS = [
           separator: { type: "string", description: "Inserted between existing and new content (default: blank line)" },
         },
         required: ["noteId", "content"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "patch_note",
+      description: "Surgically replace a specific string inside a note without re-sending the full content. Include enough surrounding context in oldString to make it unique. Returns an error if oldString is not found or matches multiple times (use replaceAll: true to replace all occurrences). Prefer this over update_note when editing part of a large note.",
+      parameters: {
+        type: "object",
+        properties: {
+          noteId: { type: "string" },
+          oldString: { type: "string", description: "Exact string to find in the note — include enough context to be unique" },
+          newString: { type: "string", description: "Replacement string" },
+          replaceAll: { type: "boolean", description: "Replace all occurrences instead of requiring uniqueness (default: false)" },
+        },
+        required: ["noteId", "oldString", "newString"],
       },
     },
   },

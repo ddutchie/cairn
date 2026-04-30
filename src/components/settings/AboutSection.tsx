@@ -1,12 +1,22 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import licensesData from "@/generated/licenses.json";
 import { SettingsGroup } from "./shared";
 
 export function AboutSection() {
   const [licensesOpen, setLicensesOpen] = useState(false);
+  const [changelogOpen, setChangelogOpen] = useState(true);
+  const [changelog, setChangelog] = useState<string | null>(null);
   const { stack, allLicenses } = licensesData;
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.electron?.latestChangelog) {
+      window.electron.latestChangelog().then((md) => setChangelog(md ?? null));
+    }
+  }, []);
 
   return (
     <SettingsGroup title="About Cairn">
@@ -14,6 +24,26 @@ export function AboutSection() {
         <p className="text-xs leading-relaxed text-[var(--text-tertiary)]">
           Local-first notes and kanban in one place. Notes are saved as Markdown files in a folder you choose; project and task data lives in SQLite alongside them. No accounts, no cloud. An embedded MCP server lets AI agents read and write your workspace directly.
         </p>
+
+        {/* Latest changelog */}
+        {changelog && (
+          <div className="rounded-lg border border-[var(--border)] overflow-hidden">
+            <button
+              onClick={() => setChangelogOpen((o) => !o)}
+              className="w-full flex items-center justify-between px-4 py-3 text-xs font-semibold text-[var(--text-secondary)] hover:bg-[var(--surface-2)] transition-colors"
+            >
+              <span>What&apos;s new</span>
+              <span className="text-[var(--text-tertiary)]">{changelogOpen ? "▲" : "▼"}</span>
+            </button>
+            {changelogOpen && (
+              <div className="border-t border-[var(--border)] px-4 py-3 prose-cairn max-h-96 overflow-y-auto">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {changelog}
+                </ReactMarkdown>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Stack */}
         <div className="space-y-2">
