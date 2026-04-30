@@ -45,9 +45,11 @@ next-env.d.ts
 /dist-mcp
 /out
 
-# native binaries (compiled artifacts — run electron:rebuild to regenerate)
+# native binaries (compiled artifacts — run npm run rebuild to regenerate)
 /electron-native
 /mcp-native
+/pkg-native
+/vitest-native
 
 # build-time temp folder (created by scripts/electron-build.js during static export)
 /src/app/_api_hidden

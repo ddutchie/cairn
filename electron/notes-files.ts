@@ -24,22 +24,9 @@ import fs from "fs";
 import matter from "gray-matter";
 import type Database from "better-sqlite3";
 import * as q from "./db/queries";
+import { toSlug, stripMarkdown } from "./shared/text-utils";
 
-// ── Slug helpers ──────────────────────────────
-
-/**
- * Convert a string to a filesystem-safe slug.
- * Preserves spaces as hyphens, strips characters illegal on any major OS.
- */
-export function toSlug(str: string): string {
-  return str
-    .trim()
-    .replace(/[/\\:*?"<>|]/g, "")   // strip filesystem-illegal chars
-    .replace(/\s+/g, " ")           // normalise whitespace
-    .slice(0, 100)                  // cap length
-    .trim()
-    || "Untitled";
-}
+export { toSlug, stripMarkdown };
 
 // ── Path helpers ──────────────────────────────
 
@@ -250,18 +237,4 @@ export function upsertNoteFromFile(db: Database.Database, note: NoteData): void 
   }
 }
 
-// ── Markdown → plain text (for SQLite content_text) ──
 
-export function stripMarkdown(md: string): string {
-  return md
-    .replace(/^#{1,6}\s+/gm, "")      // headings
-    .replace(/\*\*(.+?)\*\*/g, "$1")   // bold
-    .replace(/\*(.+?)\*/g, "$1")       // italic
-    .replace(/`{1,3}[^`]*`{1,3}/g, "") // inline + fenced code
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1") // links
-    .replace(/^[-*+]\s+/gm, "")        // list bullets
-    .replace(/^\d+\.\s+/gm, "")        // ordered lists
-    .replace(/^>\s+/gm, "")            // blockquotes
-    .replace(/\n{2,}/g, "\n")
-    .trim();
-}

@@ -15,6 +15,7 @@ import os from "os";
 import fs from "fs";
 import Database from "better-sqlite3";
 import matter from "gray-matter";
+import { toSlug, stripMarkdown } from "./shared/text-utils";
 
 // Resolve the better-sqlite3 native binding.
 //
@@ -123,34 +124,17 @@ function p(v: string | null | undefined): unknown[] {
 }
 function b(v: number | null): boolean { return v === 1; }
 
-/** Strip markdown syntax to plain text for the content_text search column */
-function stripMarkdown(md: string): string {
-  return md
-    .replace(/^#{1,6}\s+/gm, "")
-    .replace(/\*\*(.+?)\*\*/g, "$1")
-    .replace(/\*(.+?)\*/g, "$1")
-    .replace(/`{1,3}[^`]*`{1,3}/g, "")
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-    .replace(/^[-*+]\s+/gm, "")
-    .replace(/^\d+\.\s+/gm, "")
-    .replace(/^>\s+/gm, "")
-    .replace(/^---+$/gm, "")
-    .replace(/\|/g, " ")
-    .replace(/\n{2,}/g, "\n")
-    .trim();
-}
-
 // ── Note file helpers ─────────────────────────
-// NOTE: These helpers intentionally duplicate electron/notes-files.ts.
-// mcp-server.ts is bundled as a self-contained binary (pkg) running under system
-// Node, while notes-files.ts is compiled for Electron's embedded Node ABI.
-// The two ABIs are incompatible at runtime, so we cannot share a single module.
-// If you update the logic in notes-files.ts, keep these in sync manually.
+// NOTE: The note-file helpers (writeNoteFile, deleteNoteFile, etc.) intentionally
+// duplicate electron/notes-files.ts because mcp-server.ts is bundled as a
+// self-contained binary (pkg) running under system Node (ABI 127), while
+// notes-files.ts is compiled for Electron's Node ABI (145). The two ABIs are
+// incompatible at runtime for the better-sqlite3 binding.
+//
+// toSlug and stripMarkdown have NO native dependency and are now shared via
+// electron/shared/text-utils.ts (imported above). If you update the note-file
+// helper logic, keep these helpers in sync with notes-files.ts manually.
 // The workspace folder path is resolved once at startup (see findWorkspacePath).
-
-function toSlug(str: string): string {
-  return str.trim().replace(/[/\\:*?"<>|]/g, "").replace(/\s+/g, " ").slice(0, 100).trim() || "Untitled";
-}
 
 function projectNotesDir(workspacePath: string, projectName: string): string {
   return path.join(workspacePath, "notes", toSlug(projectName));
@@ -823,6 +807,9 @@ if (require.main === module) {
   }
   process.stderr.write(`[cairn:mcp] Using database: ${dbPath}\n`);
   const db = new Database(dbPath, ...(MCP_NATIVE_BINDING ? [{ nativeBinding: MCP_NATIVE_BINDING }] : []));
+  // PRAGMA foreign_keys must be set per-connection; applySchema is not called in the MCP process.
+  db.pragma("foreign_keys = ON");
+  db.pragma("journal_mode = WAL");
   const workspacePath = findWorkspacePath(dbPath);
   process.stderr.write(`[cairn:mcp] Workspace folder: ${workspacePath}\n`);
   const server = buildMcpServer(db, workspacePath);

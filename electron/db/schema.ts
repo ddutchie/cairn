@@ -7,6 +7,9 @@
  *
  * All timestamps are ISO-8601 strings (TEXT). SQLite has no native
  * datetime type — TEXT sorts correctly for ISO-8601.
+ *
+ * Migrations are tracked via PRAGMA user_version.
+ * Add new migrations to the MIGRATIONS array — never edit existing ones.
  */
 
 import type Database from "better-sqlite3";
@@ -122,6 +125,7 @@ CREATE TABLE IF NOT EXISTS mcp_notifications (
   created_at TEXT NOT NULL
 );
 
+-- Base indexes (created with the schema for new DBs)
 CREATE INDEX IF NOT EXISTS idx_notes_project      ON notes(project_id);
 CREATE INDEX IF NOT EXISTS idx_notes_workspace    ON notes(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_cards_column       ON task_cards(column_id);
@@ -130,13 +134,59 @@ CREATE INDEX IF NOT EXISTS idx_columns_project    ON board_columns(project_id);
 CREATE INDEX IF NOT EXISTS idx_projects_workspace ON projects(workspace_id);
 `;
 
+// ── Versioned migrations ──────────────────────────────────────────────────────
+//
+// Each migration is a function that receives the open DB connection.
+// Migrations run in order, exactly once, tracked by PRAGMA user_version.
+//
+// Rules:
+//   - NEVER edit an existing migration.
+//   - NEVER reorder migrations.
+//   - Only append new migrations to the array.
+//   - Each migration runs inside an implicit transaction via SQLite's
+//     BEGIN IMMEDIATE / COMMIT wrapping.
+
+type Migration = (db: Database.Database) => void;
+
+const MIGRATIONS: Migration[] = [
+  // v1: Add notes.type column (was ALTER TABLE in the old ad-hoc approach)
+  (db) => {
+    const cols = db.prepare("PRAGMA table_info(notes)").all() as { name: string }[];
+    if (!cols.some((c) => c.name === "type")) {
+      db.exec("ALTER TABLE notes ADD COLUMN type TEXT NOT NULL DEFAULT 'note'");
+    }
+  },
+
+  // v2: Performance indexes for sort/filter hot paths
+  (db) => {
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_notes_updated_at      ON notes(updated_at);
+      CREATE INDEX IF NOT EXISTS idx_notes_archived_at     ON notes(archived_at);
+      CREATE INDEX IF NOT EXISTS idx_cards_updated_at      ON task_cards(updated_at);
+      CREATE INDEX IF NOT EXISTS idx_cards_archived_at     ON task_cards(archived_at);
+      CREATE INDEX IF NOT EXISTS idx_mcp_notifs_read       ON mcp_notifications(read);
+      CREATE INDEX IF NOT EXISTS idx_chat_messages_thread  ON chat_messages(thread_id);
+    `);
+  },
+];
+
 export function applySchema(db: Database.Database): void {
+  // PRAGMA foreign_keys must be set per connection — do it first, before exec.
+  db.pragma("foreign_keys = ON");
   db.exec(SCHEMA_SQL);
-  // ── Migrations ────────────────────────────────────────────────────────────
-  // Add columns that were added after the initial schema — safe to run repeatedly.
-  const notesCols = db.prepare("PRAGMA table_info(notes)").all() as { name: string }[];
-  const noteColNames = notesCols.map((c) => c.name);
-  if (!noteColNames.includes("type")) {
-    db.exec("ALTER TABLE notes ADD COLUMN type TEXT NOT NULL DEFAULT 'note'");
+  runMigrations(db);
+}
+
+function runMigrations(db: Database.Database): void {
+  const currentVersion = (db.pragma("user_version", { simple: true }) as number) ?? 0;
+
+  for (let i = currentVersion; i < MIGRATIONS.length; i++) {
+    const migrate = MIGRATIONS[i];
+    const nextVersion = i + 1;
+    const runMigration = db.transaction(() => {
+      migrate(db);
+      db.pragma(`user_version = ${nextVersion}`);
+    });
+    runMigration();
   }
 }

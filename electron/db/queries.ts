@@ -8,7 +8,10 @@
  */
 
 import type Database from "better-sqlite3";
-import { ts } from "./utils";
+import { ts, newId } from "./utils";
+
+/** Re-export for callers that only need a new ID without importing utils directly. */
+export { newId as generateId };
 
 // ── tiny helpers ──────────────────────────────
 
@@ -227,6 +230,11 @@ export function deleteProject(db: Database.Database, id: string) {
   db.prepare("DELETE FROM projects WHERE id = ?").run(id);
 }
 
+export function getProjectById(db: Database.Database, id: string) {
+  const row = db.prepare("SELECT * FROM projects WHERE id = ?").get(id);
+  return row ? toProject(row) : null;
+}
+
 // ── Notes ─────────────────────────────────────
 
 export function getNotes(db: Database.Database, projectId?: string) {
@@ -288,6 +296,20 @@ export function updateNote(db: Database.Database, id: string, patch: Partial<{
 
 export function deleteNote(db: Database.Database, id: string) {
   db.prepare("DELETE FROM notes WHERE id = ?").run(id);
+}
+
+export function getNoteById(db: Database.Database, id: string) {
+  const row = db.prepare("SELECT * FROM notes WHERE id = ?").get(id);
+  return row ? toNote(row) : null;
+}
+
+/**
+ * Explicitly clear archived_at for a note (cannot use COALESCE for NULL clears).
+ */
+export function restoreNote(db: Database.Database, id: string) {
+  const now = ts();
+  db.prepare("UPDATE notes SET archived_at = NULL, updated_at = ? WHERE id = ?").run(now, id);
+  return toNote(db.prepare("SELECT * FROM notes WHERE id = ?").get(id));
 }
 
 // ── Board Columns ─────────────────────────────
@@ -394,6 +416,29 @@ export function deleteCard(db: Database.Database, id: string) {
   db.prepare("DELETE FROM task_cards WHERE id = ?").run(id);
 }
 
+export function getCardById(db: Database.Database, id: string) {
+  const row = db.prepare("SELECT * FROM task_cards WHERE id = ?").get(id);
+  return row ? toCard(row) : null;
+}
+
+/**
+ * Explicitly clear archived_at for a card (cannot use COALESCE for NULL clears).
+ */
+export function restoreCard(db: Database.Database, id: string) {
+  const now = ts();
+  db.prepare("UPDATE task_cards SET archived_at = NULL, updated_at = ? WHERE id = ?").run(now, id);
+  return toCard(db.prepare("SELECT * FROM task_cards WHERE id = ?").get(id));
+}
+
+/**
+ * Explicitly clear due_date for a card.
+ */
+export function clearCardDueDate(db: Database.Database, id: string) {
+  const now = ts();
+  db.prepare("UPDATE task_cards SET due_date = NULL, updated_at = ? WHERE id = ?").run(now, id);
+  return toCard(db.prepare("SELECT * FROM task_cards WHERE id = ?").get(id));
+}
+
 // ── Tags ──────────────────────────────────────
 
 export function getTags(db: Database.Database, workspaceId?: string) {
@@ -411,7 +456,7 @@ export function createTag(db: Database.Database, t: { id: string; workspaceId: s
 export function updateTag(db: Database.Database, id: string, patch: { name?: string; color?: string }) {
   db.prepare("UPDATE tags SET name = COALESCE(?, name), color = COALESCE(?, color) WHERE id = ?")
     .run(patch.name ?? null, patch.color ?? null, id);
-  return db.prepare("SELECT * FROM tags WHERE id = ?").get(id);
+  return toTag(db.prepare("SELECT * FROM tags WHERE id = ?").get(id));
 }
 
 export function deleteTag(db: Database.Database, id: string) {

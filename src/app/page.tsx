@@ -1,9 +1,42 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Download, X } from "lucide-react";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { Download, X, AlertCircle } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { CairnEvents } from "@/lib/events";
+
+// ── IPC error toast ───────────────────────────────────────────────────────────
+
+interface ErrorToast {
+  id: number;
+  message: string;
+}
+
+let _toastSeq = 0;
+
+function useIpcErrorToasts() {
+  const [toasts, setToasts] = useState<ErrorToast[]>([]);
+  const timers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+
+  const dismiss = useCallback((id: number) => {
+    clearTimeout(timers.current.get(id));
+    timers.current.delete(id);
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  useEffect(() => {
+    function onIpcError(e: Event) {
+      const message = (e as CustomEvent<{ message: string }>).detail.message;
+      const id = ++_toastSeq;
+      setToasts((prev) => [...prev.slice(-4), { id, message }]); // keep at most 5
+      timers.current.set(id, setTimeout(() => dismiss(id), 5000));
+    }
+    window.addEventListener("cairn:ipc-error", onIpcError);
+    return () => window.removeEventListener("cairn:ipc-error", onIpcError);
+  }, [dismiss]);
+
+  return { toasts, dismiss };
+}
 import { TitleBar } from "@/components/layout/title-bar";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
@@ -40,6 +73,9 @@ export default function Home() {
   // Auto-updater state — tracked separately so event order doesn't matter
   const [updateVersion, setUpdateVersion] = useState<string | null>(null);
   const [updateDownloaded, setUpdateDownloaded] = useState(false);
+
+  // IPC error toasts
+  const { toasts, dismiss } = useIpcErrorToasts();
 
   useEffect(() => {
     if (typeof window !== "undefined" && window.electron) {
@@ -193,6 +229,27 @@ export default function Home() {
         {/* Global search overlay */}
         {searchOpen && <SearchPanel />}
       </div>
+
+      {/* IPC error toasts — bottom-right, auto-dismiss after 5s */}
+      {toasts.length > 0 && (
+        <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
+          {toasts.map((toast) => (
+            <div
+              key={toast.id}
+              className="flex items-start gap-2 px-3 py-2.5 rounded-lg border border-red-500/30 bg-[var(--background)] shadow-lg max-w-xs pointer-events-auto"
+            >
+              <AlertCircle size={13} className="text-red-400 shrink-0 mt-0.5" />
+              <span className="text-xs text-[var(--text-secondary)] flex-1 leading-relaxed">{toast.message}</span>
+              <button
+                onClick={() => dismiss(toast.id)}
+                className="p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors shrink-0"
+              >
+                <X size={11} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </main>
   );
 }

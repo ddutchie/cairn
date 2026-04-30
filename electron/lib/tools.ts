@@ -25,6 +25,9 @@ export const TOOL_LABELS: Record<string, (args: ToolArgs) => string> = {
   update_task_status:     () => "Moving task",
   update_task:            () => "Updating task",
   create_project:         (a) => `Creating project "${a.name}"`,
+  update_project:         (a) => `Updating project "${a.projectId}"`,
+  delete_project:         (a) => `Deleting project "${a.projectId}"`,
+  list_recent_activity:   () => "Listing recent activity",
   delete_note:            () => "Deleting note",
   delete_task:            () => "Deleting task",
   generate_prd:           (a) => `Generating PRD "${a.title}"`,
@@ -219,6 +222,56 @@ export const TOOLS = [
           priority: { type: "string", enum: ["low", "medium", "high", "urgent"] },
         },
         required: ["workspaceId", "name"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "update_project",
+      description: "Update a project's name, description, icon, status, priority, or due date.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId:   { type: "string" },
+          name:        { type: "string" },
+          description: { type: "string" },
+          icon:        { type: "string", description: "A single emoji" },
+          status:      { type: "string", enum: ["active", "on_hold", "completed", "archived"] },
+          priority:    { type: "string", enum: ["low", "medium", "high", "urgent"] },
+          dueDate:     { type: "string", description: "ISO 8601 date string, or empty string to clear" },
+        },
+        required: ["projectId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "delete_project",
+      description: "Permanently delete a project and all its notes, tasks, and columns. Use with caution — this cannot be undone.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+        },
+        required: ["projectId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_recent_activity",
+      description: "List recently created or updated notes and tasks in a workspace, sorted by updated_at descending.",
+      parameters: {
+        type: "object",
+        properties: {
+          workspaceId: { type: "string" },
+          projectId:   { type: "string", description: "Optional — filter to a specific project" },
+          limit:       { type: "number", description: "Max items to return (default 20)" },
+        },
+        required: [],
       },
     },
   },

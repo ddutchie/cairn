@@ -322,6 +322,41 @@ export async function executeTool(
 
       return { linked: true, noteId: args.noteId, cardId: args.cardId };
     }
+    case "update_project": {
+      const project = snap.projects.find((p) => p.id === args.projectId);
+      if (!project) return { error: "Project not found" };
+      const patch: Record<string, unknown> = {};
+      if (args.name !== undefined)        patch.name        = args.name;
+      if (args.description !== undefined) patch.description = args.description;
+      if (args.icon !== undefined)        patch.icon        = args.icon;
+      if (args.status !== undefined)      patch.status      = args.status;
+      if (args.priority !== undefined)    patch.priority    = args.priority;
+      if (args.dueDate !== undefined)     patch.dueDate     = args.dueDate || undefined;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return q.updateProject(db, args.projectId as string, patch as any);
+    }
+    case "delete_project": {
+      const project = snap.projects.find((p) => p.id === args.projectId);
+      if (!project) return { error: "Project not found" };
+      const { deleteProjectNotesDir } = await import("../notes-files");
+      deleteProjectNotesDir(workspacePath, project.name);
+      q.deleteProject(db, args.projectId as string);
+      return { deleted: true, id: args.projectId, name: project.name };
+    }
+    case "list_recent_activity": {
+      const limit = (args.limit as number) ?? 20;
+      const recentNotes = snap.notes
+        .filter((n) => !n.archivedAt && (!args.workspaceId || n.workspaceId === args.workspaceId) && (!args.projectId || n.projectId === args.projectId))
+        .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+        .slice(0, limit)
+        .map((n) => ({ id: n.id, title: n.title, projectId: n.projectId, updatedAt: n.updatedAt }));
+      const recentTasks = snap.cards
+        .filter((c) => !c.archivedAt && (!args.workspaceId || c.workspaceId === args.workspaceId) && (!args.projectId || c.projectId === args.projectId))
+        .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+        .slice(0, limit)
+        .map((c) => ({ id: c.id, title: c.title, projectId: c.projectId, updatedAt: c.updatedAt }));
+      return { recentNotes, recentTasks };
+    }
     default:
       return { error: `Unknown tool: ${name}` };
   }

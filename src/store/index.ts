@@ -17,7 +17,7 @@ import type {
   ChatMessage,
 } from "@/types";
 import { storage } from "@/lib/storage";
-import { DEFAULT_AI_CONFIG } from "@/lib/constants";
+import { DEFAULT_AI_CONFIG, AI_CONFIG_KEY, ACTIVE_PROJECT_KEY } from "@/lib/constants";
 
 // ── Slice imports ─────────────────────────────────────────────────────────────
 import { createUISlice } from "./slices/ui";
@@ -95,8 +95,7 @@ export interface CairnStore
 // ── Storage helpers ───────────────────────────────────────────────────────────
 
 const STORAGE_KEY = "state";
-const ACTIVE_PROJECT_KEY = "active-project";
-const AI_CONFIG_KEY = "ai-config";
+// AI_CONFIG_KEY and ACTIVE_PROJECT_KEY imported from @/lib/constants
 
 function isElectron(): boolean {
   return typeof window !== "undefined" && !!window.electron;

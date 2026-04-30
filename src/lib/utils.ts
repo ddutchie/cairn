@@ -1,6 +1,7 @@
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 import { nanoid } from "nanoid";
+export { PRIORITY_COLORS } from "./constants";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -34,13 +35,6 @@ export function formatRelative(iso: string): string {
   if (days < 7) return `${days}d ago`;
   return formatDate(iso);
 }
-
-export const PRIORITY_COLORS: Record<string, string> = {
-  low: "text-stone-400",
-  medium: "text-amber-400",
-  high: "text-orange-400",
-  urgent: "text-red-400",
-};
 
 /**
  * Returns "overdue" | "today" | "upcoming" | "none" for a due date string.

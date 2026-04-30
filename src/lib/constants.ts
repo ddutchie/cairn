@@ -46,8 +46,19 @@ export const PROJECT_STATUS_OPTIONS: ProjectStatus[] = [
 ];
 
 /**
- * CSS variable strings for priority stripe / indicators.
- * Sourced from PRIORITY_STRIPE in project-overview.tsx.
+ * Tailwind text-colour classes per priority level.
+ * Use for badges, icons, and text labels.
+ */
+export const PRIORITY_COLORS: Record<string, string> = {
+  low:    "text-stone-400",
+  medium: "text-amber-400",
+  high:   "text-orange-400",
+  urgent: "text-red-400",
+};
+
+/**
+ * CSS variable strings for priority stripe / inline indicators.
+ * Use for inline `style` props where Tailwind isn't suitable.
  */
 export const PRIORITY_CSS_COLORS: Record<Priority | string, string> = {
   urgent: "var(--danger)",
@@ -62,3 +73,11 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
   model:   "gpt-4o-mini",
   apiKey:  "",
 };
+
+// ── localStorage keys ─────────────────────────────────────────────────────────
+
+/** localStorage key for the persisted AI/LLM configuration. */
+export const AI_CONFIG_KEY = "ai-config";
+
+/** localStorage key for the last active project ID. */
+export const ACTIVE_PROJECT_KEY = "active-project";

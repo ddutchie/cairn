@@ -6,7 +6,7 @@ import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
 import type { ID, AppUIState } from "@/types";
 import { storage } from "@/lib/storage";
-import { DEFAULT_AI_CONFIG } from "@/lib/constants";
+import { DEFAULT_AI_CONFIG, AI_CONFIG_KEY, ACTIVE_PROJECT_KEY } from "@/lib/constants";
 
 // ── AI / MCP config ───────────────────────────────────────────────────────────
 
@@ -18,8 +18,6 @@ export interface AIConfig {
   /** API key. Empty string means "use server-side OPENAI_API_KEY env var" */
   apiKey: string;
 }
-
-const AI_CONFIG_KEY = "ai-config";
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
 
@@ -58,8 +56,6 @@ export interface UISlice extends AppUIState {
 }
 
 // ── Slice creator ─────────────────────────────────────────────────────────────
-
-const ACTIVE_PROJECT_KEY = "active-project";
 
 export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
   set,

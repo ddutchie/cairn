@@ -6,19 +6,7 @@ import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
 import type { ChatThread, ChatMessage, PendingAction, ID } from "@/types";
 import { id, now } from "@/lib/utils";
-
-function isElectron(): boolean {
-  return typeof window !== "undefined" && !!window.electron;
-}
-
-function ipc(
-  fn: (e: NonNullable<Window["electron"]>) => Promise<unknown> | undefined
-): void {
-  if (!isElectron() || !window.electron) return;
-  fn(window.electron)?.catch?.((err: unknown) => {
-    console.error("[cairn:ipc]", err);
-  });
-}
+import { ipc } from "../ipc";
 
 // ── Slice interface ───────────────────────────────────────────────────────────
 

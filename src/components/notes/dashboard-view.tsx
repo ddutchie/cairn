@@ -102,28 +102,30 @@ function buildBootstrap(projectId: string, workspaceId: string): string {
   }
 
   // ── typed helpers ─────────────────────────────────────────
+  var _pid = ${JSON.stringify(projectId)};
+  var _wid = ${JSON.stringify(workspaceId)};
   window.cairn = {
-    projectId:   '${projectId}',
-    workspaceId: '${workspaceId}',
+    projectId:   _pid,
+    workspaceId: _wid,
     query: query,
 
     getProjectSummary: function(projectId) {
-      return query('get_project_summary', { projectId: projectId || '${projectId}' });
+      return query('get_project_summary', { projectId: projectId || _pid });
     },
     listTasks: function(projectId) {
-      return query('list_tasks', { projectId: projectId || '${projectId}' });
+      return query('list_tasks', { projectId: projectId || _pid });
     },
     listNotes: function(projectId) {
-      return query('list_notes', { projectId: projectId || '${projectId}' });
+      return query('list_notes', { projectId: projectId || _pid });
     },
     listRecentActivity: function(opts) {
-      return query('list_recent_activity', Object.assign({ workspaceId: '${workspaceId}', projectId: '${projectId}' }, opts || {}));
+      return query('list_recent_activity', Object.assign({ workspaceId: _wid, projectId: _pid }, opts || {}));
     },
     searchTasks: function(q, projectId) {
-      return query('search_tasks', { query: q, projectId: projectId || '${projectId}' });
+      return query('search_tasks', { query: q, projectId: projectId || _pid });
     },
     searchNotes: function(q, projectId) {
-      return query('search_notes', { query: q, projectId: projectId || '${projectId}' });
+      return query('search_notes', { query: q, projectId: projectId || _pid });
     },
     getContext: function() {
       return query('get_cairn_context', {});

@@ -12,4 +12,7 @@ export const CairnEvents = {
     new CustomEvent("cairn:scroll-to-column", { detail: { columnId } }),
   newNote: () =>
     new CustomEvent("cairn:new-note"),
+  /** Fired by the ipc() helper when a write operation returns { error }. */
+  ipcError: (message: string) =>
+    new CustomEvent("cairn:ipc-error", { detail: { message } }),
 };

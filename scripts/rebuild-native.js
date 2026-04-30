@@ -48,6 +48,15 @@ execSync(
 );
 copyBinary(path.join(root, "pkg-native", "better_sqlite3.node"), `pkg Node ${PKG_NODE_VERSION}`);
 
+// Step 1b: Save a copy for vitest (current system Node ABI) before Electron rebuild overwrites it.
+// NOTE: At this point node_modules/ has the Node 22 prebuild from step 1, NOT the current Node.
+// We need to rebuild for the current system Node first.
+const currentNodeVersion = process.versions.modules;
+run(`node -e "const d = new (require('better-sqlite3/lib/database.js'))(':memory:', { nativeBinding: require.resolve('better-sqlite3/build/Release/better_sqlite3.node') }); d.close()" || true`);
+// Rebuild specifically for the running Node version
+execSync(`npm rebuild better-sqlite3`, { stdio: "inherit", cwd: root });
+copyBinary(path.join(root, "vitest-native", "better_sqlite3.node"), `vitest Node ${process.version} (ABI ${currentNodeVersion})`);
+
 // Step 2: Build for Electron ABI
 run("npx @electron/rebuild -f better-sqlite3");
 copyBinary(path.join(root, "electron-native", "better_sqlite3_electron.node"), "Electron");

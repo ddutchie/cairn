@@ -6,35 +6,7 @@ import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
 import type { Workspace, Project, BoardColumn, ID } from "@/types";
 import { id, now } from "@/lib/utils";
-
-// ── IPC helpers (local re-export so slices don't import from index) ───────────
-// The actual helpers live in index.ts; slices receive them via get() calling
-// get().persist() and via the ipc/ipcAwait closures passed from the store.
-// Instead, slices import the ipc utilities directly from the shared module.
-
-function isElectron(): boolean {
-  return typeof window !== "undefined" && !!window.electron;
-}
-
-function ipc(
-  fn: (e: NonNullable<Window["electron"]>) => Promise<unknown> | undefined
-): void {
-  if (!isElectron() || !window.electron) return;
-  fn(window.electron)?.catch?.((err: unknown) => {
-    console.error("[cairn:ipc]", err);
-  });
-}
-
-function ipcAwait(
-  fn: (e: NonNullable<Window["electron"]>) => Promise<unknown> | undefined
-): Promise<void> {
-  if (!isElectron() || !window.electron) return Promise.resolve();
-  return (fn(window.electron) ?? Promise.resolve())
-    .then(() => undefined)
-    .catch((err: unknown) => {
-      console.error("[cairn:ipc]", err);
-    });
-}
+import { ipc, ipcAwait } from "../ipc";
 
 // ── Slice interface ───────────────────────────────────────────────────────────
 
@@ -105,22 +77,43 @@ export const createWorkspaceSlice: StateCreator<
       createdAt: now(),
       updatedAt: now(),
     };
-    const defaultColumns: BoardColumn[] = [
-      { id: id(), projectId: proj.id, workspaceId, name: "Backlog", type: "backlog", order: 0, createdAt: now(), updatedAt: now() },
-      { id: id(), projectId: proj.id, workspaceId, name: "Todo", type: "todo", order: 1, createdAt: now(), updatedAt: now() },
+    // Optimistic placeholders — server will return authoritative columns
+    const placeholderColumns: BoardColumn[] = [
+      { id: id(), projectId: proj.id, workspaceId, name: "Backlog",     type: "backlog",     order: 0, createdAt: now(), updatedAt: now() },
+      { id: id(), projectId: proj.id, workspaceId, name: "Todo",        type: "todo",        order: 1, createdAt: now(), updatedAt: now() },
       { id: id(), projectId: proj.id, workspaceId, name: "In Progress", type: "in_progress", order: 2, createdAt: now(), updatedAt: now() },
-      { id: id(), projectId: proj.id, workspaceId, name: "Review", type: "review", order: 3, createdAt: now(), updatedAt: now() },
-      { id: id(), projectId: proj.id, workspaceId, name: "Done", type: "done", order: 4, createdAt: now(), updatedAt: now() },
+      { id: id(), projectId: proj.id, workspaceId, name: "Review",      type: "review",      order: 3, createdAt: now(), updatedAt: now() },
+      { id: id(), projectId: proj.id, workspaceId, name: "Done",        type: "done",        order: 4, createdAt: now(), updatedAt: now() },
     ];
     set((s) => ({
       projects: [...s.projects, proj],
-      columns: [...s.columns, ...defaultColumns],
+      columns: [...s.columns, ...placeholderColumns],
     }));
     get().persist();
-    await ipcAwait((e) => e.project.create({ ...proj, workspaceId }));
-    for (const col of defaultColumns) {
-      await ipcAwait((e) => e.column.create(col));
+
+    // Single atomic IPC call — server creates project + 5 default columns together.
+    // On success, replace optimistic columns with authoritative server rows.
+    if (typeof window !== "undefined" && window.electron) {
+      try {
+        const result = await window.electron.project.create({
+          ...proj, workspaceId, withDefaultColumns: true,
+        }) as unknown as { data?: { project: Project; columns: BoardColumn[] }; error?: string } | undefined;
+        const payload = result && "data" in result ? result.data : undefined;
+        if (payload?.columns?.length) {
+          set((s) => ({
+            // Replace placeholder columns for this project with server columns
+            columns: [
+              ...s.columns.filter((c) => c.projectId !== proj.id),
+              ...payload.columns,
+            ],
+          }));
+          get().persist();
+        }
+      } catch (e) {
+        console.error("[cairn:ipc] createProject failed", e);
+      }
     }
+
     return proj;
   },
 

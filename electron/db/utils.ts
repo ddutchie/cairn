@@ -3,9 +3,11 @@
  * Imported by chat.ts, handlers.ts, and mcp-server.ts to avoid duplication.
  */
 
-/** Generate a 12-character base-36 random ID. */
+import { nanoid } from "nanoid";
+
+/** Generate a 12-character random ID (nanoid, ~71 bits of entropy). */
 export function newId(): string {
-  return Math.random().toString(36).slice(2, 14);
+  return nanoid(12);
 }
 
 /** Current timestamp as ISO 8601 string. */
