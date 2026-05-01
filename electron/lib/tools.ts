@@ -49,6 +49,7 @@ export const TOOL_LABELS: Record<string, (args: ToolArgs) => string> = {
   delete_idea_flow_node:  () => "Removing node from Idea Flow",
   create_idea_flow_edge:  () => "Connecting nodes in Idea Flow",
   delete_idea_flow_edge:  () => "Removing connection from Idea Flow",
+  layout_idea_flow:       () => "Auto-arranging Idea Flow",
 };
 
 // Tool definitions for the AI (OpenAI function calling format)
@@ -563,7 +564,7 @@ export const TOOLS = [
     type: "function",
     function: {
       name: "get_idea_flow",
-      description: "Get the full Idea Flow graph for a project: all nodes (with resolved note/task content) and edges. Call this before making changes to understand the current canvas state.",
+      description: "Get the full Idea Flow graph for a project: all nodes (with resolved note/task content), edges, and a spatial object with bounds (canvas bounding box) and nextPosition (suggested {x,y} for placing the next node, clear of existing content). Call this before making changes.",
       parameters: {
         type: "object",
         properties: {
@@ -577,7 +578,7 @@ export const TOOLS = [
     type: "function",
     function: {
       name: "create_idea_flow_node",
-      description: "Add a new node to a project's Idea Flow canvas. Node types: idea (title+body), note_ref (noteId), task_ref (cardId), group (label+color), url (url+title+description), ai_summary (content).",
+      description: "Add a new node to a project's Idea Flow canvas. Node types: idea (title+body), note_ref (noteId), task_ref (cardId), url (url+title+description), ai_summary (content), group (label+color — visual container only, do not wire edges to/from groups). Use the optional edges array to wire connections in the same call — avoids a separate create_idea_flow_edge call.",
       parameters: {
         type: "object",
         properties: {
@@ -589,6 +590,7 @@ export const TOOLS = [
           height:    { type: "number", description: "Optional node height" },
           parentId:  { type: "string", description: "Optional parent group node ID" },
           data:      { type: "object", description: "Node data: idea={title,body}, note_ref={noteId}, task_ref={cardId}, group={label,color}, url={url,title,description}, ai_summary={content}" },
+          edges:     { type: "array", description: "Optional edges to create immediately. Each item: { targetNodeId, label? } for an edge FROM this node TO an existing node, or { sourceNodeId, label? } for an edge FROM an existing node TO this node.", items: { type: "object" } },
         },
         required: ["projectId", "type"],
       },
@@ -657,6 +659,21 @@ export const TOOLS = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "layout_idea_flow",
+      description: "Auto-arrange all nodes in the Idea Flow using a Dagre graph layout. Useful after bulk-creating nodes to avoid overlaps. direction LR = left-to-right (default), TB = top-to-bottom.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          direction:  { type: "string", enum: ["LR", "TB"], description: "Layout direction: LR (left-to-right) or TB (top-to-bottom). Defaults to LR." },
+        },
+        required: ["projectId"],
+      },
+    },
+  },
 ];
 
 export interface ChatRequest {
@@ -715,11 +732,26 @@ Never hardcode projectId or workspaceId — always use window.cairn.projectId an
 
 ## Idea Flow
 Each project has a node-based canvas (Idea Flow) for visually structuring ideas.
-- Call \`get_idea_flow\` to read the current canvas — returns nodes (with resolved note/task content) and edges
-- Use \`create_idea_flow_node\` to add nodes: idea, note_ref, task_ref, group, url, or ai_summary
+- Call \`get_idea_flow\` to read the current canvas — returns nodes (with resolved note/task content), edges, and a \`spatial\` object with \`bounds\` (bounding box of all content nodes) and \`nextPosition\` (suggested {x,y} for the next node, clear of existing content). Always use \`spatial.nextPosition\` as the base position when adding nodes, incrementing y by ~120px per row.
+- Use \`create_idea_flow_node\` to add nodes: idea, note_ref, task_ref, url, ai_summary, or group
 - Use \`create_idea_flow_edge\` to connect nodes (sourceNodeId → targetNodeId, optional label)
 - Use \`update_idea_flow_node\` / \`delete_idea_flow_node\` / \`delete_idea_flow_edge\` to modify the graph
+- After bulk-creating nodes, call \`layout_idea_flow\` to auto-arrange them so they don't overlap
 - When creating an ai_summary node, set data.content to your synthesised text — the UI shows it as read-only
+
+### Node type rules
+- **idea**: free-form thought — data: { title, body }
+- **note_ref**: links to an existing note — data: { noteId }
+- **task_ref**: links to an existing task card — data: { cardId }
+- **url**: external reference — data: { url, title?, description? }
+- **ai_summary**: generated summary of connected nodes — data: { content }; do not connect edges TO this node from other ai_summary nodes
+- **group**: named spatial cluster — data: { label?, color? }; **do not connect edges to/from group nodes**
+
+### Working with groups
+- Create a group first, then create child nodes with parentId set to the group's id
+- Child node coordinates are **relative to the group's top-left corner** — use spatial.groupSlots[groupId] as the starting position for the first child, incrementing y by ~100px per row
+- get_idea_flow returns absoluteX/absoluteY on every node so you can reason about the full canvas layout regardless of parentId
+- layout_idea_flow runs a two-phase layout: children are arranged inside each group first (group auto-resizes to fit), then groups and ungrouped nodes are arranged together — always call this after bulk-creating grouped nodes
 
 Tone: calm, focused, like a thoughtful co-worker.`;
 }

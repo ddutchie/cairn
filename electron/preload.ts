@@ -77,6 +77,9 @@ const api = {
       create: (args: unknown) => invoke("db:flow:edge:create", args),
       delete: (id: string) => invoke("db:flow:edge:delete", { id }),
     },
+    url: {
+      fetch: (url: string) => invoke<{ title: string; description: string }>("db:flow:url:fetch", { url }),
+    },
   },
 
   // ── Tags ─────────────────────────────────────

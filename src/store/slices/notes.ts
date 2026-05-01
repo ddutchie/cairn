@@ -14,6 +14,8 @@ import {
   makeDeleteNoteCmd,
   makeArchiveNoteCmd,
   makeMoveNoteCmd,
+  makeRestoreNoteCmd,
+  makeLinkNoteToCardCmd,
 } from "@/lib/commands/note-commands";
 
 // ── Slice interface ───────────────────────────────────────────────────────────
@@ -115,6 +117,7 @@ export const createNotesSlice: StateCreator<CairnStore, [], [], NotesSlice> = (
     }));
     get().persist();
     ipc((e) => e.note.update(noteId, { archivedAt: null }));
+    historyManager.push(makeRestoreNoteCmd(noteId, set));
   },
 
   moveNoteToProject(noteId, targetProjectId) {
@@ -145,6 +148,10 @@ export const createNotesSlice: StateCreator<CairnStore, [], [], NotesSlice> = (
   },
 
   linkNoteToCard(noteId, cardId) {
+    const prevNote = get().notes.find((n) => n.id === noteId);
+    const prevCard = get().cards.find((c) => c.id === cardId);
+    const prevNoteLinkedCardIds = prevNote?.linkedCardIds ?? [];
+    const prevCardLinkedNoteIds = prevCard?.linkedNoteIds ?? [];
     set((s) => ({
       notes: s.notes.map((n) =>
         n.id === noteId
@@ -170,6 +177,7 @@ export const createNotesSlice: StateCreator<CairnStore, [], [], NotesSlice> = (
     const card = get().cards.find((c) => c.id === cardId);
     if (note) ipc((e) => e.note.update(noteId, { linkedCardIds: note.linkedCardIds }));
     if (card) ipc((e) => e.card.update(cardId, { linkedNoteIds: card.linkedNoteIds }));
+    historyManager.push(makeLinkNoteToCardCmd(noteId, cardId, prevNoteLinkedCardIds, prevCardLinkedNoteIds, set));
   },
 
   revealNote(noteId, projectId) {

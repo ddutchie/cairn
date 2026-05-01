@@ -33,16 +33,37 @@ export interface Command {
 // Populated by IdeaFlowCanvas on mount; cleared on unmount.
 // Flow commands call these to patch local React Flow state without a full reload.
 
+// Touched by ipc() and flow-view on every own DB write so that page.tsx's
+// db:changed listener knows not to clear history for those events.
+export const ownWriteGuard = {
+  /** Millisecond timestamp of the last own write. */
+  lastWriteAt: 0,
+  /** Returns true if a db:changed event is likely from our own write. */
+  isOwnWrite(): boolean {
+    return Date.now() - this.lastWriteAt < 3000;
+  },
+  touch() {
+    this.lastWriteAt = Date.now();
+  },
+};
+
+/** @deprecated use ownWriteGuard */
+export const flowWriteGuard = ownWriteGuard;
+
 export const flowHandlers: {
   addNode:    ((node: Node) => void) | null;
   removeNode: ((id: string) => void) | null;
   updateNode: ((id: string, data: Record<string, unknown>) => void) | null;
+  moveNode:   ((id: string, position: { x: number; y: number }, parentId?: string) => void) | null;
+  resizeNode: ((id: string, width: number, height: number) => void) | null;
   addEdge:    ((edge: Edge) => void) | null;
   removeEdge: ((id: string) => void) | null;
 } = {
   addNode:    null,
   removeNode: null,
   updateNode: null,
+  moveNode:   null,
+  resizeNode: null,
   addEdge:    null,
   removeEdge: null,
 };
@@ -86,6 +107,7 @@ class HistoryManager {
   /** Clear both stacks — called when an external (MCP/AI) write is detected. */
   clear(): void {
     if (this.past.length === 0 && this.future.length === 0) return;
+
     this.past = [];
     this.future = [];
     this.notify();

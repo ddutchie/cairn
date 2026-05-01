@@ -38,6 +38,7 @@ function resolveMcpNativeBinding(): string | undefined {
   return candidates.find((p) => fs.existsSync(p));
 }
 const MCP_NATIVE_BINDING = resolveMcpNativeBinding();
+import dagre from "@dagrejs/dagre";
 import { newId, ts } from "./db/utils";
 import { DEFAULT_COLUMNS } from "./db/defaults";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -294,7 +295,7 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
           read:   ["get_cairn_context", "get_project_context_pack", "resolve_project", "search_notes", "search_tasks", "get_note", "get_task", "get_project_summary", "list_notes", "list_tasks", "list_recent_activity"],
           write:  ["create_project", "update_project", "create_note", "import_note_from_file", "ensure_note", "append_to_note", "patch_note", "update_note", "move_note", "create_task", "update_task", "update_task_status", "bulk_update_task_status", "link_note_to_task", "create_dashboard", "update_dashboard", "create_idea_flow_node", "update_idea_flow_node", "create_idea_flow_edge"],
           delete: ["delete_note", "delete_task", "delete_project", "delete_idea_flow_node", "delete_idea_flow_edge"],
-          ideaFlow: ["get_idea_flow", "create_idea_flow_node", "update_idea_flow_node", "delete_idea_flow_node", "create_idea_flow_edge", "delete_idea_flow_edge"],
+          ideaFlow: ["get_idea_flow", "create_idea_flow_node", "update_idea_flow_node", "delete_idea_flow_node", "create_idea_flow_edge", "delete_idea_flow_edge", "layout_idea_flow"],
         },
         conventions: {
           notes: "Raw markdown in 'content'. 'content_text' is auto-derived — do not set manually.",
@@ -955,7 +956,54 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
         target: row.target_node_id as string,
         label: row.label as string | null,
       }));
-      return { flowId, projectId: args.projectId, nodes, edges };
+      // Build group position map for absolute coord computation
+      const groupPos = new Map<string, { x: number; y: number }>();
+      for (const n of nodes) {
+        if (n.type === "group") groupPos.set(n.id, { x: n.position.x, y: n.position.y });
+      }
+
+      // Enrich nodes with absoluteX/absoluteY (children use relative coords in DB)
+      const enriched = nodes.map((n) => {
+        const parent = n.parentId ? groupPos.get(n.parentId) : undefined;
+        return {
+          ...n,
+          absoluteX: parent ? parent.x + n.position.x : n.position.x,
+          absoluteY: parent ? parent.y + n.position.y : n.position.y,
+        };
+      });
+
+      // Spatial summary uses absolute coordinates
+      const contentNodes = enriched.filter((n) => n.type !== "group");
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const n of contentNodes) {
+        const w = n.width ?? 220;
+        const h = n.height ?? 80;
+        minX = Math.min(minX, n.absoluteX);
+        minY = Math.min(minY, n.absoluteY);
+        maxX = Math.max(maxX, n.absoluteX + w);
+        maxY = Math.max(maxY, n.absoluteY + h);
+      }
+      const hasNodes = contentNodes.length > 0;
+
+      // Per-group free slots (relative to group top-left)
+      const groupSlots: Record<string, { x: number; y: number }> = {};
+      for (const g of enriched.filter((n) => n.type === "group")) {
+        const children = enriched.filter((n) => n.parentId === g.id);
+        if (children.length === 0) {
+          groupSlots[g.id] = { x: 40, y: 40 };
+        } else {
+          let childMaxY = -Infinity;
+          for (const c of children) childMaxY = Math.max(childMaxY, c.position.y + (c.height ?? 80));
+          groupSlots[g.id] = { x: 40, y: Math.round(childMaxY + 20) };
+        }
+      }
+
+      const spatial = {
+        bounds: hasNodes ? { x: minX, y: minY, width: maxX - minX, height: maxY - minY } : null,
+        nextPosition: hasNodes ? { x: Math.round(minX), y: Math.round(maxY + 120) } : { x: 40, y: 40 },
+        groupSlots,
+      };
+      return { flowId, projectId: args.projectId, nodes: enriched, edges, spatial };
     }
 
     case "create_idea_flow_node": {
@@ -982,7 +1030,26 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(nodeId, flowId, args.type, args.x ?? 0, args.y ?? 0, args.width ?? null, args.height ?? null, args.parentId ?? null, dataJson, now, now);
       insertNotification(db, "create_idea_flow_node", "Idea Flow updated", `Added ${args.type} node to flow`);
-      return { id: nodeId, flowId, type: args.type, position: { x: args.x ?? 0, y: args.y ?? 0 }, data: args.data ?? {}, createdAt: now };
+
+      // Optionally create edges inline
+      const createdEdges: { id: string; source: string; target: string; label: string | null }[] = [];
+      if (Array.isArray(args.edges)) {
+        for (const edgeDef of args.edges as Array<{ targetNodeId?: string; sourceNodeId?: string; label?: string }>) {
+          const edgeId = newId();
+          const edgeNow = ts();
+          const src = edgeDef.sourceNodeId ?? nodeId;
+          const tgt = edgeDef.targetNodeId ?? nodeId;
+          db.prepare(`
+            INSERT OR IGNORE INTO idea_flow_edges (id, flow_id, source_node_id, target_node_id, label, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+          `).run(edgeId, flowId, src, tgt, edgeDef.label ?? null, edgeNow);
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const created = db.prepare("SELECT * FROM idea_flow_edges WHERE id = ?").get(edgeId) as any;
+          if (created) createdEdges.push({ id: edgeId, source: src, target: tgt, label: edgeDef.label ?? null });
+        }
+      }
+
+      return { id: nodeId, flowId, type: args.type, position: { x: args.x ?? 0, y: args.y ?? 0 }, data: args.data ?? {}, createdAt: now, edges: createdEdges };
     }
 
     case "update_idea_flow_node": {
@@ -1057,6 +1124,99 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
       db.prepare("DELETE FROM idea_flow_edges WHERE id = ?").run(args.edgeId);
       insertNotification(db, "delete_idea_flow_edge", "Idea Flow updated", `Connection removed`);
       return { deleted: true, id: args.edgeId };
+    }
+
+    case "layout_idea_flow": {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const flowRow = db.prepare("SELECT id FROM idea_flows WHERE project_id = ?").get(args.projectId) as any;
+      if (!flowRow) return { arranged: 0 };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const rawNodes = db.prepare("SELECT * FROM idea_flow_nodes WHERE flow_id = ?").all(flowRow.id) as any[];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const rawEdges = db.prepare("SELECT * FROM idea_flow_edges WHERE flow_id = ?").all(flowRow.id) as any[];
+      if (rawNodes.length === 0) return { arranged: 0 };
+
+      const dir = (args.direction as string) === "TB" ? "TB" : "LR";
+      const NODE_W = 220, NODE_H = 80, GROUP_PADDING = 48, GROUP_PADDING_TOP = 56, GROUP_GAP = 80;
+
+      function makeG(rankdir: string, nodesep: number, ranksep: number) {
+        const g = new dagre.graphlib.Graph();
+        g.setDefaultEdgeLabel(() => ({}));
+        g.setGraph({ rankdir, nodesep, ranksep, marginx: 40, marginy: 40 });
+        return g;
+      }
+
+      const groups    = rawNodes.filter((n: { type: string }) => n.type === "group");
+      const ungrouped = rawNodes.filter((n: { type: string; parent_id: string | null }) => n.type !== "group" && !n.parent_id);
+      const grouped   = rawNodes.filter((n: { type: string; parent_id: string | null }) => n.type !== "group" && !!n.parent_id);
+
+      const now = ts();
+      const posStmt  = db.prepare("UPDATE idea_flow_nodes SET x = ?, y = ?, updated_at = ? WHERE id = ?");
+      const sizeStmt = db.prepare("UPDATE idea_flow_nodes SET x = ?, y = ?, width = ?, height = ?, updated_at = ? WHERE id = ?");
+      const groupSizes = new Map<string, { width: number; height: number }>();
+
+      // Phase 1: layout children inside each group
+      for (const group of groups) {
+        const children = grouped.filter((n: { parent_id: string }) => n.parent_id === group.id);
+        if (children.length === 0) {
+          groupSizes.set(group.id, { width: group.width ?? 320, height: group.height ?? 200 });
+          continue;
+        }
+        const childIds = new Set(children.map((n: { id: string }) => n.id));
+        const g = makeG(dir, 60, 120);
+        for (const c of children) g.setNode(c.id, { width: NODE_W, height: NODE_H });
+        for (const e of rawEdges) {
+          if (e.source_node_id !== e.target_node_id && childIds.has(e.source_node_id) && childIds.has(e.target_node_id)) {
+            g.setEdge(e.source_node_id, e.target_node_id);
+          }
+        }
+        dagre.layout(g);
+        let innerMaxX = 0, innerMaxY = 0;
+        for (const c of children) {
+          const pos = g.node(c.id);
+          if (!pos) continue;
+          const rx = pos.x - pos.width / 2 + GROUP_PADDING;
+          const ry = pos.y - pos.height / 2 + GROUP_PADDING_TOP;
+          innerMaxX = Math.max(innerMaxX, rx + pos.width);
+          innerMaxY = Math.max(innerMaxY, ry + pos.height);
+          posStmt.run(rx, ry, now, c.id);
+        }
+        const gw = innerMaxX + GROUP_PADDING;
+        const gh = innerMaxY + GROUP_PADDING;
+        groupSizes.set(group.id, { width: gw, height: gh });
+      }
+
+      // Phase 2: layout groups + ungrouped together
+      const topLevel = [...groups, ...ungrouped];
+      if (topLevel.length > 0) {
+        const g = makeG(dir, GROUP_GAP, GROUP_GAP + 40);
+        for (const n of topLevel) {
+          const size = groupSizes.get(n.id);
+          g.setNode(n.id, { width: size?.width ?? NODE_W, height: size?.height ?? NODE_H });
+        }
+        const topIds = new Set(topLevel.map((n: { id: string }) => n.id));
+        for (const e of rawEdges) {
+          if (e.source_node_id !== e.target_node_id && topIds.has(e.source_node_id) && topIds.has(e.target_node_id)) {
+            g.setEdge(e.source_node_id, e.target_node_id);
+          }
+        }
+        dagre.layout(g);
+        for (const n of topLevel) {
+          const pos = g.node(n.id);
+          if (!pos) continue;
+          const x = pos.x - pos.width / 2;
+          const y = pos.y - pos.height / 2;
+          if (n.type === "group") {
+            const size = groupSizes.get(n.id)!;
+            sizeStmt.run(x, y, size.width, size.height, now, n.id);
+          } else {
+            posStmt.run(x, y, now, n.id);
+          }
+        }
+      }
+
+      insertNotification(db, "layout_idea_flow", "Idea Flow updated", `Auto-arranged ${rawNodes.length} nodes`);
+      return { arranged: rawNodes.length, direction: dir };
     }
 
     default:
@@ -1147,9 +1307,9 @@ const TOOL_DEFINITIONS = [
   { name: "update_dashboard",    description: "Update an existing dashboard's title or HTML content.",
     inputSchema: { type: "object", properties: { noteId: { type: "string", description: "The dashboard note ID" }, title: { type: "string" }, html: { type: "string", description: "Complete self-contained HTML document" } }, required: ["noteId"] } },
   // ── Idea Flow ───────────────────────────────────────────────────────────────
-  { name: "get_idea_flow",       description: "Get the full Idea Flow graph for a project: all nodes (with resolved note/task content) and edges. Use this to read the current canvas state before making changes.",
+  { name: "get_idea_flow",       description: "Get the full Idea Flow graph for a project: all nodes (with resolved note/task content), edges, and a spatial object with bounds (canvas bounding box) and nextPosition (suggested {x,y} for the next node, clear of existing content). Call this before making changes.",
     inputSchema: { type: "object", properties: { projectId: { type: "string" } }, required: ["projectId"] } },
-  { name: "create_idea_flow_node", description: "Add a new node to a project's Idea Flow canvas. Node types: idea (title+body), note_ref (noteId), task_ref (cardId), group (label+color), url (url+title+description), ai_summary (content).",
+  { name: "create_idea_flow_node", description: "Add a new node to a project's Idea Flow canvas. Node types: idea (title+body), note_ref (noteId), task_ref (cardId), url (url+title+description), ai_summary (content), group (label+color — visual container only, do not wire edges to/from groups). Optionally wire edges to existing nodes in the same call via the edges array — avoids a separate create_idea_flow_edge call.",
     inputSchema: { type: "object", properties: {
       projectId: { type: "string" },
       type:      { type: "string", enum: ["idea", "note_ref", "task_ref", "group", "url", "ai_summary"] },
@@ -1159,6 +1319,7 @@ const TOOL_DEFINITIONS = [
       height:    { type: "number", description: "Optional node height" },
       parentId:  { type: "string", description: "Optional parent group node ID" },
       data:      { type: "object", description: "Node data matching the type's shape: idea={title,body}, note_ref={noteId}, task_ref={cardId}, group={label,color}, url={url,title,description}, ai_summary={content}" },
+      edges:     { type: "array", description: "Optional edges to create immediately. Each item: { targetNodeId, label? } to draw an edge FROM this new node TO an existing node, or { sourceNodeId, label? } to draw an edge FROM an existing node TO this new node.", items: { type: "object" } },
     }, required: ["projectId", "type"] } },
   { name: "update_idea_flow_node", description: "Update a node's data and/or position in the Idea Flow. Only provided fields are changed; data fields are merged (not replaced).",
     inputSchema: { type: "object", properties: {
@@ -1179,6 +1340,11 @@ const TOOL_DEFINITIONS = [
     }, required: ["sourceNodeId", "targetNodeId"] } },
   { name: "delete_idea_flow_edge", description: "Remove a connection between two nodes in the Idea Flow.",
     inputSchema: { type: "object", properties: { edgeId: { type: "string" } }, required: ["edgeId"] } },
+  { name: "layout_idea_flow", description: "Auto-arrange all nodes in the Idea Flow using a Dagre graph layout. Call after bulk-creating nodes to avoid overlaps. direction LR = left-to-right (default), TB = top-to-bottom.",
+    inputSchema: { type: "object", properties: {
+      projectId: { type: "string" },
+      direction:  { type: "string", enum: ["LR", "TB"] },
+    }, required: ["projectId"] } },
 ] as const;
 
 // ── MCP server factory ────────────────────────

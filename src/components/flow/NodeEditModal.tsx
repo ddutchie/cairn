@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { X, Search, FileText, CheckSquare } from "lucide-react";
+import { X, Search, FileText, CheckSquare, Layers, Loader2, DownloadCloud } from "lucide-react";
 import type { IdeaNodeType } from "@/types";
 import { useCairnStore } from "@/store";
 import { cn } from "@/lib/utils";
@@ -38,6 +38,7 @@ export function NodeEditModal({ nodeId, type, data, onSave, onClose }: NodeEditM
     task_ref: "Link a task",
     url: "Edit URL",
     ai_summary: "Edit summary",
+    group: "Edit group",
   }[type];
 
   return (
@@ -80,15 +81,27 @@ export function NodeEditModal({ nodeId, type, data, onSave, onClose }: NodeEditM
           )}
 
           {type === "url" && (
-            <>
-              <Field label="URL" value={fields.url ?? ""} onChange={(v) => set("url", v)} placeholder="https://..." autoFocus />
-              <Field label="Title" value={fields.title ?? ""} onChange={(v) => set("title", v)} />
-              <Field label="Description" value={fields.description ?? ""} onChange={(v) => set("description", v)} multiline />
-            </>
+            <UrlEditor
+              url={fields.url ?? ""}
+              title={fields.title ?? ""}
+              description={fields.description ?? ""}
+              onUrlChange={(v) => set("url", v)}
+              onTitleChange={(v) => set("title", v)}
+              onDescriptionChange={(v) => set("description", v)}
+            />
           )}
 
           {type === "ai_summary" && (
             <Field label="Content" value={fields.content ?? ""} onChange={(v) => set("content", v)} multiline autoFocus />
+          )}
+
+          {type === "group" && (
+            <GroupEditor
+              label={fields.label ?? ""}
+              color={fields.color ?? "accent"}
+              onLabelChange={(v) => set("label", v)}
+              onColorChange={(v) => set("color", v)}
+            />
           )}
         </div>
 
@@ -239,6 +252,122 @@ function TaskPicker({ selectedId, onSelect }: { selectedId: string; onSelect: (i
             </button>
           ))
         )}
+      </div>
+    </div>
+  );
+}
+
+// ── URL editor ────────────────────────────────────────────────────────────────
+
+function UrlEditor({
+  url, title, description, onUrlChange, onTitleChange, onDescriptionChange,
+}: {
+  url: string; title: string; description: string;
+  onUrlChange: (v: string) => void;
+  onTitleChange: (v: string) => void;
+  onDescriptionChange: (v: string) => void;
+}) {
+  const [fetching, setFetching] = useState(false);
+  const [fetchError, setFetchError] = useState("");
+
+  async function fetchMeta() {
+    if (!url || !window.electron?.flow?.url) return;
+    setFetching(true);
+    setFetchError("");
+    try {
+      const meta = await window.electron.flow.url.fetch(url);
+      if (meta.title)       onTitleChange(meta.title);
+      if (meta.description) onDescriptionChange(meta.description);
+    } catch (e) {
+      setFetchError((e as Error).message ?? "Failed to fetch");
+    } finally {
+      setFetching(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      {/* URL row with Fetch button */}
+      <div className="flex flex-col gap-1">
+        <label className="text-[11px] font-medium text-[var(--text-tertiary)] uppercase tracking-wide">URL</label>
+        <div className="flex gap-1.5">
+          <input
+            type="text"
+            value={url}
+            onChange={(e) => onUrlChange(e.target.value)}
+            placeholder="https://..."
+            autoFocus
+            className="flex-1 text-xs bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-2.5 py-1.5 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)] min-w-0"
+          />
+          <button
+            type="button"
+            onClick={fetchMeta}
+            disabled={fetching || !url}
+            title="Fetch title & description from URL"
+            className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--border-hover)] disabled:opacity-40 transition-colors shrink-0"
+          >
+            {fetching ? <Loader2 size={12} className="animate-spin" /> : <DownloadCloud size={12} />}
+            {fetching ? "" : "Fetch"}
+          </button>
+        </div>
+        {fetchError && (
+          <p className="text-[10px] text-[var(--danger)]">{fetchError}</p>
+        )}
+      </div>
+      <Field label="Title" value={title} onChange={onTitleChange} />
+      <Field label="Description" value={description} onChange={onDescriptionChange} multiline />
+    </div>
+  );
+}
+
+// ── Group editor ──────────────────────────────────────────────────────────────
+
+const GROUP_COLORS: Array<{ value: string; label: string; swatch: string }> = [
+  { value: "accent",  label: "Blue",   swatch: "var(--accent)" },
+  { value: "purple",  label: "Purple", swatch: "rgb(139,92,246)" },
+  { value: "green",   label: "Green",  swatch: "rgb(34,197,94)" },
+  { value: "orange",  label: "Orange", swatch: "rgb(249,115,22)" },
+  { value: "red",     label: "Red",    swatch: "rgb(239,68,68)" },
+];
+
+function GroupEditor({
+  label, color, onLabelChange, onColorChange,
+}: {
+  label: string; color: string;
+  onLabelChange: (v: string) => void;
+  onColorChange: (v: string) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-1">
+        <label className="text-[11px] font-medium text-[var(--text-tertiary)] uppercase tracking-wide flex items-center gap-1.5">
+          <Layers size={10} /> Label
+        </label>
+        <input
+          type="text"
+          value={label}
+          onChange={(e) => onLabelChange(e.target.value)}
+          autoFocus
+          placeholder="Group name…"
+          className="w-full text-xs bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-2.5 py-1.5 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
+        />
+      </div>
+      <div className="flex flex-col gap-1">
+        <label className="text-[11px] font-medium text-[var(--text-tertiary)] uppercase tracking-wide">Colour</label>
+        <div className="flex items-center gap-2">
+          {GROUP_COLORS.map((c) => (
+            <button
+              key={c.value}
+              title={c.label}
+              onClick={() => onColorChange(c.value)}
+              className={cn(
+                "w-6 h-6 rounded-full border-2 transition-transform hover:scale-110",
+                color === c.value ? "border-[var(--text-primary)] scale-110" : "border-transparent"
+              )}
+              style={{ background: c.swatch }}
+            />
+          ))}
+        </div>
       </div>
     </div>
   );

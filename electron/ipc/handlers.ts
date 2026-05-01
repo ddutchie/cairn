@@ -14,7 +14,7 @@
  * Channel naming: "db:<entity>:<action>"
  */
 
-import { ipcMain, app, shell, dialog, BrowserWindow } from "electron";
+import { ipcMain, app, shell, dialog, BrowserWindow, net } from "electron";
 import path from "path";
 import fs from "fs";
 import type Database from "better-sqlite3";
@@ -229,7 +229,10 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
   }));
   ipcMain.handle("db:flow:edge:delete", (_e, { id }) => handle(() => q.deleteFlowEdge(db, id)));
 
-  // Generate an AI summary for an ai_summary node from its connected neighbours
+  // Generate an AI summary for an ai_summary node.
+  // Recursively walks the entire connected subgraph (BFS in both edge directions),
+  // collecting all ancestor/peer content nodes transitively — not just direct neighbours.
+  // Other ai_summary nodes in the graph are skipped to avoid circular self-reference.
   ipcMain.handle("db:flow:node:summarize", async (_e, args: {
     nodeId: string;
     config: { baseUrl: string; model: string; apiKey: string };
@@ -242,30 +245,63 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
       return err("AI is not configured. Add an API key in Settings → AI & Chat, or use a local endpoint.");
     }
 
-    // Collect all directly connected nodes (both directions)
-    const nodeRow = db.prepare("SELECT * FROM idea_flow_nodes WHERE id = ?").get(args.nodeId) as
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      any | undefined;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const nodeRow = db.prepare("SELECT * FROM idea_flow_nodes WHERE id = ?").get(args.nodeId) as any | undefined;
     if (!nodeRow) return err("Node not found");
 
     const flowId = nodeRow.flow_id as string;
-    const edges = db.prepare(
-      "SELECT * FROM idea_flow_edges WHERE flow_id = ? AND (source_node_id = ? OR target_node_id = ?)"
-    ).all(flowId, args.nodeId, args.nodeId) as
+
+    // Load all edges for this flow once
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const allEdges = db.prepare("SELECT * FROM idea_flow_edges WHERE flow_id = ?").all(flowId) as any[];
+
+    // BFS: traverse all nodes reachable from the summary node (both edge directions),
+    // excluding the summary node itself and other ai_summary nodes.
+    const visited = new Set<string>([args.nodeId]);
+    const queue: string[] = [];
+
+    // Seed queue with direct neighbours
+    for (const e of allEdges) {
+      if (e.source_node_id === args.nodeId && !visited.has(e.target_node_id)) {
+        queue.push(e.target_node_id);
+        visited.add(e.target_node_id);
+      }
+      if (e.target_node_id === args.nodeId && !visited.has(e.source_node_id)) {
+        queue.push(e.source_node_id);
+        visited.add(e.source_node_id);
+      }
+    }
+
+    // BFS expansion
+    while (queue.length > 0) {
+      const current = queue.shift()!;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      any[];
+      const currentRow = db.prepare("SELECT type FROM idea_flow_nodes WHERE id = ?").get(current) as any;
+      // Don't recurse through other ai_summary nodes — they're peers, not content
+      if (currentRow?.type === "ai_summary") continue;
 
-    const neighbourIds = [...new Set(edges.flatMap((e) => [e.source_node_id, e.target_node_id]))].filter(
-      (id) => id !== args.nodeId
-    );
+      for (const e of allEdges) {
+        if (e.source_node_id === current && !visited.has(e.target_node_id)) {
+          queue.push(e.target_node_id);
+          visited.add(e.target_node_id);
+        }
+        if (e.target_node_id === current && !visited.has(e.source_node_id)) {
+          queue.push(e.source_node_id);
+          visited.add(e.source_node_id);
+        }
+      }
+    }
 
-    if (neighbourIds.length === 0) {
+    // Remove the summary node itself from the set
+    visited.delete(args.nodeId);
+
+    if (visited.size === 0) {
       return err("Connect this node to other nodes first — nothing to summarise yet.");
     }
 
-    // Build a text description of each neighbour
+    // Build a text description of each collected node
     const parts: string[] = [];
-    for (const nid of neighbourIds) {
+    for (const nid of visited) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const nrow = db.prepare("SELECT * FROM idea_flow_nodes WHERE id = ?").get(nid) as any;
       if (!nrow) continue;
@@ -280,7 +316,7 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
       } else if (type === "note_ref" && data.noteId) {
         const noteRow = db.prepare("SELECT title, content_text FROM notes WHERE id = ?").get(data.noteId) as
           { title: string; content_text: string } | undefined;
-        if (noteRow) parts.push(`[Note] ${noteRow.title}: ${noteRow.content_text?.slice(0, 400) ?? ""}`);
+        if (noteRow) parts.push(`[Note] ${noteRow.title}: ${noteRow.content_text?.slice(0, 600) ?? ""}`);
       } else if (type === "task_ref" && data.cardId) {
         const cardRow = db.prepare(
           "SELECT tc.title, tc.description, tc.priority, bc.name as col FROM task_cards tc LEFT JOIN board_columns bc ON tc.column_id = bc.id WHERE tc.id = ?"
@@ -291,10 +327,12 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
         const url = data.url as string | undefined;
         const desc = data.description as string | undefined;
         parts.push(`[URL] ${title ?? url ?? "Link"}${desc ? `: ${desc}` : ""}`);
-      } else if (type === "ai_summary") {
-        const content = data.content as string | undefined;
-        if (content) parts.push(`[Summary] ${content}`);
       }
+      // ai_summary nodes are excluded from content collection (skipped in BFS above)
+    }
+
+    if (parts.length === 0) {
+      return err("No content found in the connected nodes — add text to the idea, note, or task nodes first.");
     }
 
     const userPrompt = `Summarise the following connected items into a concise paragraph (3–5 sentences). Focus on themes, relationships, and key points. Reply with plain prose only — no bullet points, no headers, no XML, no tool calls, no markdown formatting of any kind.\n\n${parts.join("\n\n")}`;
@@ -468,4 +506,55 @@ export function registerAppHandlers(
     markMcpNotificationsRead(db);
     updateTrayBadge(0);
   }));
+
+  // ── URL metadata fetch (OG tags + <title>) ─────────
+  // Runs in the main process so there are no CORS restrictions.
+  ipcMain.handle("db:flow:url:fetch", (_e, { url }: { url: string }) =>
+    handle(async () => {
+      // Basic URL validation
+      let parsed: URL;
+      try { parsed = new URL(url); } catch { throw new Error("Invalid URL"); }
+      if (!["http:", "https:"].includes(parsed.protocol)) throw new Error("Only http/https URLs are supported");
+
+      const response = await net.fetch(url, {
+        method: "GET",
+        headers: { "User-Agent": "Mozilla/5.0 (compatible; Cairn/1.0)" },
+        // Limit response size — we only need the <head>
+        signal: AbortSignal.timeout(8000),
+      });
+
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+      // Only read up to ~50 KB — enough to capture the <head>
+      const reader = response.body?.getReader();
+      let html = "";
+      let bytesRead = 0;
+      const limit = 50_000;
+      if (reader) {
+        while (bytesRead < limit) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          html += new TextDecoder().decode(value);
+          bytesRead += value.byteLength;
+          // Stop once we have the closing </head> or enough bytes
+          if (html.includes("</head>") || html.includes("</title>")) break;
+        }
+        reader.cancel();
+      }
+
+      // Extract OG title → plain title → hostname fallback
+      const ogTitle    = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1]
+                      ?? html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:title["']/i)?.[1];
+      const ogDesc     = html.match(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i)?.[1]
+                      ?? html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:description["']/i)?.[1]
+                      ?? html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i)?.[1]
+                      ?? html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']description["']/i)?.[1];
+      const htmlTitle  = html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1];
+
+      const title       = (ogTitle ?? htmlTitle ?? "").trim().slice(0, 200);
+      const description = (ogDesc ?? "").trim().slice(0, 500);
+
+      return { title, description };
+    })
+  );
 }

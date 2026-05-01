@@ -28,6 +28,7 @@
     "postcss": "^8.5.10"
   },
   "dependencies": {
+    "@dagrejs/dagre": "^3.0.0",
     "@radix-ui/react-context-menu": "^2.2.16",
     "@xyflow/react": "^12.10.2",
     "better-sqlite3": "^12.9.0",

@@ -8,6 +8,7 @@
 import type Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
+import dagre from "@dagrejs/dagre";
 import * as q from "../db/queries";
 import { writeNoteFile, deleteNoteFile, stripMarkdown } from "../notes-files";
 import { buildContextResponse } from "../lib/context";
@@ -451,7 +452,7 @@ export async function executeTool(
       if (!validTypes.includes(args.type as string)) return { error: `Invalid node type. Must be one of: ${validTypes.join(", ")}` };
       const flow = q.getOrCreateFlow(db, args.projectId as string);
       const nodeId = newId();
-      return q.createFlowNode(db, {
+      const node = q.createFlowNode(db, {
         id: nodeId,
         flowId: flow.id,
         type: args.type as string,
@@ -462,6 +463,18 @@ export async function executeTool(
         parentId: args.parentId as string | undefined,
         data: (args.data as Record<string, unknown>) ?? {},
       });
+      // Optionally create edges inline
+      const createdEdges: { id: string; source: string; target: string; label: string | null }[] = [];
+      if (Array.isArray(args.edges)) {
+        for (const edgeDef of args.edges as Array<{ targetNodeId?: string; sourceNodeId?: string; label?: string }>) {
+          const edgeId = newId();
+          const src = edgeDef.sourceNodeId ?? nodeId;
+          const tgt = edgeDef.targetNodeId ?? nodeId;
+          const edge = q.createFlowEdge(db, { id: edgeId, flowId: flow.id, sourceNodeId: src, targetNodeId: tgt, label: edgeDef.label });
+          if (edge) createdEdges.push({ id: edge.id, source: src, target: tgt, label: edgeDef.label ?? null });
+        }
+      }
+      return { ...node, edges: createdEdges };
     }
 
     case "update_idea_flow_node": {
@@ -510,6 +523,109 @@ export async function executeTool(
       if (!edgeRow) return { error: "Edge not found" };
       q.deleteFlowEdge(db, args.edgeId as string);
       return { deleted: true, id: args.edgeId };
+    }
+
+    case "layout_idea_flow": {
+      const project = snap.projects.find((p) => p.id === args.projectId);
+      if (!project) return { error: "Project not found" };
+      const flow = q.getOrCreateFlow(db, args.projectId as string);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const rawNodes = db.prepare("SELECT * FROM idea_flow_nodes WHERE flow_id = ?").all(flow.id) as any[];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const rawEdges = db.prepare("SELECT * FROM idea_flow_edges WHERE flow_id = ?").all(flow.id) as any[];
+      if (rawNodes.length === 0) return { arranged: 0 };
+
+      const dir = (args.direction as string) === "TB" ? "TB" : "LR";
+      const NODE_W = 220, NODE_H = 80, GROUP_PADDING = 48, GROUP_PADDING_TOP = 56, GROUP_GAP = 80;
+
+      function makeG(rankdir: string, nodesep: number, ranksep: number) {
+        const g = new dagre.graphlib.Graph();
+        g.setDefaultEdgeLabel(() => ({}));
+        g.setGraph({ rankdir, nodesep, ranksep, marginx: 40, marginy: 40 });
+        return g;
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const groups    = rawNodes.filter((n: any) => n.type === "group");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const ungrouped = rawNodes.filter((n: any) => n.type !== "group" && !n.parent_id);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const grouped   = rawNodes.filter((n: any) => n.type !== "group" && !!n.parent_id);
+
+      const now = ts();
+      const posStmt  = db.prepare("UPDATE idea_flow_nodes SET x = ?, y = ?, updated_at = ? WHERE id = ?");
+      const sizeStmt = db.prepare("UPDATE idea_flow_nodes SET x = ?, y = ?, width = ?, height = ?, updated_at = ? WHERE id = ?");
+      const groupSizes = new Map<string, { width: number; height: number }>();
+
+      // Phase 1: layout children inside each group
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const group of groups as any[]) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const children = (grouped as any[]).filter((n: any) => n.parent_id === group.id);
+        if (children.length === 0) {
+          groupSizes.set(group.id, { width: group.width ?? 320, height: group.height ?? 200 });
+          continue;
+        }
+        const childIds = new Set(children.map((n: { id: string }) => n.id));
+        const g = makeG(dir, 60, 120);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        for (const c of children as any[]) g.setNode(c.id, { width: NODE_W, height: NODE_H });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        for (const e of rawEdges as any[]) {
+          if (e.source_node_id !== e.target_node_id && childIds.has(e.source_node_id) && childIds.has(e.target_node_id)) {
+            g.setEdge(e.source_node_id, e.target_node_id);
+          }
+        }
+        dagre.layout(g);
+        let innerMaxX = 0, innerMaxY = 0;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        for (const c of children as any[]) {
+          const pos = g.node(c.id);
+          if (!pos) continue;
+          const rx = pos.x - pos.width / 2 + GROUP_PADDING;
+          const ry = pos.y - pos.height / 2 + GROUP_PADDING_TOP;
+          innerMaxX = Math.max(innerMaxX, rx + pos.width);
+          innerMaxY = Math.max(innerMaxY, ry + pos.height);
+          posStmt.run(rx, ry, now, c.id);
+        }
+        const gw = innerMaxX + GROUP_PADDING;
+        const gh = innerMaxY + GROUP_PADDING;
+        groupSizes.set(group.id, { width: gw, height: gh });
+      }
+
+      // Phase 2: layout groups + ungrouped together
+      const topLevel = [...groups, ...ungrouped];
+      if (topLevel.length > 0) {
+        const g = makeG(dir, GROUP_GAP, GROUP_GAP + 40);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        for (const n of topLevel as any[]) {
+          const size = groupSizes.get(n.id);
+          g.setNode(n.id, { width: size?.width ?? NODE_W, height: size?.height ?? NODE_H });
+        }
+        const topIds = new Set(topLevel.map((n: { id: string }) => n.id));
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        for (const e of rawEdges as any[]) {
+          if (e.source_node_id !== e.target_node_id && topIds.has(e.source_node_id) && topIds.has(e.target_node_id)) {
+            g.setEdge(e.source_node_id, e.target_node_id);
+          }
+        }
+        dagre.layout(g);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        for (const n of topLevel as any[]) {
+          const pos = g.node(n.id);
+          if (!pos) continue;
+          const x = pos.x - pos.width / 2;
+          const y = pos.y - pos.height / 2;
+          if (n.type === "group") {
+            const size = groupSizes.get(n.id)!;
+            sizeStmt.run(x, y, size.width, size.height, now, n.id);
+          } else {
+            posStmt.run(x, y, now, n.id);
+          }
+        }
+      }
+
+      return { arranged: rawNodes.length, direction: dir };
     }
 
     default:

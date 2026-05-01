@@ -156,7 +156,7 @@ export interface PendingAction {
 }
 
 // ── Idea Flow ────────────────────────────────
-export type IdeaNodeType = "idea" | "note_ref" | "task_ref" | "url" | "ai_summary";
+export type IdeaNodeType = "idea" | "note_ref" | "task_ref" | "url" | "ai_summary" | "group";
 
 export interface IdeaNodeDataMap {
   idea:       { title: string; body?: string };
@@ -164,6 +164,7 @@ export interface IdeaNodeDataMap {
   task_ref:   { cardId: string };
   url:        { url: string; title?: string; description?: string };
   ai_summary: { content: string };
+  group:      { label?: string; color?: string };
 }
 
 /** Raw node as stored in / returned from the DB (data is opaque JSON). */
@@ -203,6 +204,9 @@ export interface IdeaFlow {
  * note_ref and task_ref nodes have their linked entity's data merged in.
  */
 export interface ResolvedIdeaFlowNode extends IdeaFlowNode {
+  // Absolute canvas position (group children store relative x/y in DB)
+  absoluteX: number;
+  absoluteY: number;
   // For note_ref: title + snippet from the linked note
   resolvedTitle?: string;
   resolvedSnippet?: string;
@@ -216,6 +220,11 @@ export interface ResolvedIdeaFlow {
   projectId: ID;
   nodes: ResolvedIdeaFlowNode[];
   edges: IdeaFlowEdge[];
+  spatial: {
+    bounds: { x: number; y: number; width: number; height: number } | null;
+    nextPosition: { x: number; y: number };
+    groupSlots: Record<string, { x: number; y: number }>;
+  };
 }
 
 // ── App UI State (not persisted) ──────────────

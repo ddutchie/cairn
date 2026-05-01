@@ -185,3 +185,69 @@ export function makeMoveNoteCmd(
     },
   };
 }
+
+export function makeRestoreNoteCmd(
+  noteId: ID,
+  set: StoreSet,
+): Command {
+  return {
+    label: `Restore note`,
+    async undo() {
+      const archivedAt = now();
+      set((s) => ({
+        notes: s.notes.map((n) =>
+          n.id === noteId ? { ...n, archivedAt, updatedAt: now() } : n
+        ),
+      }));
+      ipc((e) => e.note.update(noteId, { archivedAt }));
+    },
+    async redo() {
+      set((s) => ({
+        notes: s.notes.map((n) =>
+          n.id === noteId ? { ...n, archivedAt: undefined, updatedAt: now() } : n
+        ),
+      }));
+      ipc((e) => e.note.update(noteId, { archivedAt: null }));
+    },
+  };
+}
+
+export function makeLinkNoteToCardCmd(
+  noteId: ID,
+  cardId: ID,
+  prevNoteLinkedCardIds: ID[],
+  prevCardLinkedNoteIds: ID[],
+  set: StoreSet,
+): Command {
+  return {
+    label: `Link note to task`,
+    async undo() {
+      set((s) => ({
+        notes: s.notes.map((n) =>
+          n.id === noteId ? { ...n, linkedCardIds: prevNoteLinkedCardIds, updatedAt: now() } : n
+        ),
+        cards: s.cards.map((c) =>
+          c.id === cardId ? { ...c, linkedNoteIds: prevCardLinkedNoteIds, updatedAt: now() } : c
+        ),
+      }));
+      ipc((e) => e.note.update(noteId, { linkedCardIds: prevNoteLinkedCardIds }));
+      ipc((e) => e.card.update(cardId, { linkedNoteIds: prevCardLinkedNoteIds }));
+    },
+    async redo() {
+      const newNoteLinkedCardIds = Array.from(new Set([...prevNoteLinkedCardIds, cardId]));
+      const newCardLinkedNoteIds = Array.from(new Set([...prevCardLinkedNoteIds, noteId]));
+      set((s) => ({
+        notes: s.notes.map((n) =>
+          n.id === noteId ? { ...n, linkedCardIds: newNoteLinkedCardIds, updatedAt: now() } : n
+        ),
+        cards: s.cards.map((c) =>
+          c.id === cardId ? { ...c, linkedNoteIds: newCardLinkedNoteIds, updatedAt: now() } : c
+        ),
+      }));
+      ipc((e) => e.note.update(noteId, { linkedCardIds: newNoteLinkedCardIds }));
+      ipc((e) => e.card.update(cardId, { linkedNoteIds: newCardLinkedNoteIds }));
+    },
+  };
+}
+
+

@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { Download, X, AlertCircle } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { CairnEvents } from "@/lib/events";
-import { historyManager } from "@/lib/history";
+import { historyManager, ownWriteGuard } from "@/lib/history";
 
 // ── IPC error toast ───────────────────────────────────────────────────────────
 
@@ -99,7 +99,12 @@ export default function Home() {
 
       // Register db:changed listener synchronously so React gets the cleanup fn
       const unsubDb = electron.onDbChanged(() => {
-        hydrateFromElectron(true);
+        // Don't clear history if the change came from our own write (store ipc or flow canvas).
+        if (ownWriteGuard.isOwnWrite()) {
+          void hydrateFromElectron(false);
+        } else {
+          hydrateFromElectron(true);
+        }
       });
 
       // Auto-updater listeners — events may arrive in any order

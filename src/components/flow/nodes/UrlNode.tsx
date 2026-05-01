@@ -58,8 +58,11 @@ export const UrlNode = memo(function UrlNode({ data, selected, isConnectable }: 
             {d.description}
           </p>
         )}
-        {!d.title && (
+        {!d.title && d.url && (
           <p className="mt-1 text-[11px] text-[var(--accent)] break-all line-clamp-2">{d.url}</p>
+        )}
+        {!d.title && !d.url && (
+          <p className="mt-1 text-[11px] text-[var(--text-tertiary)] italic">Double-click to add URL</p>
         )}
       </div>
       <Handle type="source" position={Position.Right} isConnectable={isConnectable} className="!bg-[var(--accent)] !border-[var(--surface)] !w-2.5 !h-2.5" />

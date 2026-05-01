@@ -16,6 +16,13 @@ import {
   makeArchiveCardCmd,
   makeDuplicateCardCmd,
   makeUnlinkNoteFromCardCmd,
+  makeCreateColumnCmd,
+  makeUpdateColumnCmd,
+  makeDeleteColumnCmd,
+  makeReorderColumnsCmd,
+  makeReorderCardsCmd,
+  makeRestoreCardCmd,
+  makeMoveCardToProjectCmd,
 } from "@/lib/commands/card-commands";
 
 // ── Slice interface ───────────────────────────────────────────────────────────
@@ -74,10 +81,16 @@ export const createBoardSlice: StateCreator<CairnStore, [], [], BoardSlice> = (
     };
     set((s) => ({ columns: [...s.columns, col] }));
     get().persist();
+    ipc((e) => e.column.create(col));
+    historyManager.push(makeCreateColumnCmd(col, set));
     return col;
   },
 
   updateColumn(colId, patch) {
+    const prev = get().columns.find((c) => c.id === colId);
+    const prevPatch = prev
+      ? Object.fromEntries(Object.keys(patch).map((k) => [k, (prev as unknown as Record<string, unknown>)[k]])) as Partial<BoardColumn>
+      : {} as Partial<BoardColumn>;
     set((s) => ({
       columns: s.columns.map((c) =>
         c.id === colId ? { ...c, ...patch, updatedAt: now() } : c
@@ -85,21 +98,26 @@ export const createBoardSlice: StateCreator<CairnStore, [], [], BoardSlice> = (
     }));
     get().persist();
     ipc((e) => e.column.update(colId, patch));
+    historyManager.push(makeUpdateColumnCmd(colId, prevPatch, patch, set));
   },
 
   deleteColumn(colId) {
+    const col = get().columns.find((c) => c.id === colId);
+    const deletedCards = get().cards.filter((c) => c.columnId === colId);
     set((s) => ({
       columns: s.columns.filter((c) => c.id !== colId),
       cards: s.cards.filter((c) => c.columnId !== colId),
     }));
     get().persist();
-    ipc(
-      (e) =>
-        (e.column as { delete: (id: string) => Promise<unknown> }).delete(colId)
-    );
+    ipc((e) => (e.column as { delete: (id: string) => Promise<unknown> }).delete(colId));
+    if (col) historyManager.push(makeDeleteColumnCmd(col, deletedCards, set));
   },
 
   reorderColumns(projectId, columnIds) {
+    const prevColumnIds = get().columns
+      .filter((c) => c.projectId === projectId)
+      .sort((a, b) => a.order - b.order)
+      .map((c) => c.id);
     set((s) => ({
       columns: s.columns.map((c) => {
         if (c.projectId !== projectId) return c;
@@ -111,6 +129,7 @@ export const createBoardSlice: StateCreator<CairnStore, [], [], BoardSlice> = (
     columnIds.forEach((colId, order) => {
       ipc((e) => e.column.update(colId, { order }));
     });
+    historyManager.push(makeReorderColumnsCmd(projectId, prevColumnIds, columnIds, set));
   },
 
   // ── Cards ──────────────────────────────────────
@@ -217,6 +236,10 @@ export const createBoardSlice: StateCreator<CairnStore, [], [], BoardSlice> = (
   },
 
   reorderCards(columnId, cardIds) {
+    const prevCardIds = get().cards
+      .filter((c) => c.columnId === columnId)
+      .sort((a, b) => a.order - b.order)
+      .map((c) => c.id);
     set((s) => ({
       cards: s.cards.map((c) => {
         if (c.columnId !== columnId) return c;
@@ -225,6 +248,10 @@ export const createBoardSlice: StateCreator<CairnStore, [], [], BoardSlice> = (
       }),
     }));
     get().persist();
+    cardIds.forEach((cardId, order) => {
+      ipc((e) => e.card.update(cardId, { order }));
+    });
+    historyManager.push(makeReorderCardsCmd(columnId, prevCardIds, cardIds, set));
   },
 
   archiveCard(cardId) {
@@ -249,6 +276,7 @@ export const createBoardSlice: StateCreator<CairnStore, [], [], BoardSlice> = (
     }));
     get().persist();
     ipc((e) => e.card.update(cardId, { archivedAt: null }));
+    historyManager.push(makeRestoreCardCmd(cardId, set));
   },
 
   moveCardToProject(cardId, targetProjectId) {
@@ -262,9 +290,12 @@ export const createBoardSlice: StateCreator<CairnStore, [], [], BoardSlice> = (
     const targetColumn =
       targetColumns.find((c) => c.type === "backlog") ?? targetColumns[0];
     if (!targetColumn) return;
-    const order = state.cards.filter(
+    const newOrder = state.cards.filter(
       (c) => c.columnId === targetColumn.id && !c.archivedAt
     ).length;
+    const prevProjectId = card.projectId;
+    const prevColumnId = card.columnId;
+    const prevOrder = card.order;
     set((s) => ({
       cards: s.cards.map((c) =>
         c.id === cardId
@@ -273,7 +304,7 @@ export const createBoardSlice: StateCreator<CairnStore, [], [], BoardSlice> = (
               projectId: targetProjectId,
               workspaceId: targetProject.workspaceId,
               columnId: targetColumn.id,
-              order,
+              order: newOrder,
               updatedAt: now(),
             }
           : c
@@ -285,9 +316,14 @@ export const createBoardSlice: StateCreator<CairnStore, [], [], BoardSlice> = (
         projectId: targetProjectId,
         workspaceId: targetProject.workspaceId,
         columnId: targetColumn.id,
-        order,
+        order: newOrder,
       })
     );
+    historyManager.push(makeMoveCardToProjectCmd(
+      cardId, prevProjectId, prevColumnId, prevOrder,
+      targetProjectId, targetColumn.id, newOrder, targetProject.workspaceId,
+      set,
+    ));
   },
 
   duplicateCard(cardId) {

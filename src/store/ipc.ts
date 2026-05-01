@@ -9,6 +9,7 @@
  */
 
 import { CairnEvents } from "@/lib/events";
+import { ownWriteGuard } from "@/lib/history";
 
 export function isElectron(): boolean {
   return typeof window !== "undefined" && !!window.electron;
@@ -30,6 +31,7 @@ export function ipc(
   fn: (e: NonNullable<Window["electron"]>) => Promise<unknown> | undefined
 ): void {
   if (!isElectron() || !window.electron) return;
+  ownWriteGuard.touch();
   fn(window.electron)
     ?.then(handleResult)
     ?.catch?.((err: unknown) => {
@@ -44,6 +46,7 @@ export function ipc(
 export function ipcAwait(
   fn: (e: NonNullable<Window["electron"]>) => Promise<unknown> | undefined
 ): Promise<void> {
+  ownWriteGuard.touch();
   if (!isElectron() || !window.electron) return Promise.resolve();
   return (fn(window.electron) ?? Promise.resolve())
     .then((result) => { handleResult(result); })
