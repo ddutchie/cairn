@@ -309,6 +309,7 @@ export function KanbanBoard() {
                     onCardClick={(cardId) => setDetailCardId(cardId)}
                     onAddCard={(data) => createCard(column.id, activeProjectId, data.title, { dueDate: data.dueDate, assignee: data.assignee })}
                     onRename={(name) => updateColumn(column.id, { name })}
+                    onSetLimit={(limit) => updateColumn(column.id, { cardLimit: limit ?? undefined })}
                     onDelete={() => deleteColumn(column.id)}
                     onRestoreCard={(cardId) => restoreCard(cardId)}
                     isDragOver={overId === column.id}
@@ -359,6 +360,7 @@ export function KanbanBoard() {
                 onCardClick={() => {}}
                 onAddCard={(_data) => {}}
                 onRename={() => {}}
+                onSetLimit={() => {}}
                 onDelete={() => {}}
                 onRestoreCard={() => {}}
                 isDragOver={false}

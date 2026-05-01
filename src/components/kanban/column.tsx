@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Plus, MoreHorizontal, Pencil, Trash2, GripVertical, ArchiveRestore, ChevronDown, ChevronRight } from "lucide-react";
+import { Plus, MoreHorizontal, Pencil, Trash2, GripVertical, ArchiveRestore, ChevronDown, ChevronRight, Gauge } from "lucide-react";
 import { DatePicker } from "@/components/ui/date-picker";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -33,6 +33,7 @@ interface KanbanColumnProps {
   onCardClick: (cardId: string) => void;
   onAddCard: (data: NewCardData) => void;
   onRename: (name: string) => void;
+  onSetLimit: (limit: number | null) => void;
   onDelete: () => void;
   onRestoreCard: (cardId: string) => void;
   isDragOver: boolean;
@@ -41,7 +42,7 @@ interface KanbanColumnProps {
 }
 
 export function KanbanColumn({
-  column, cards, archivedCards, onCardClick, onAddCard, onRename, onDelete, onRestoreCard, isDragOver, isColumnDragging, isHighlighted,
+  column, cards, archivedCards, onCardClick, onAddCard, onRename, onSetLimit, onDelete, onRestoreCard, isDragOver, isColumnDragging, isHighlighted,
 }: KanbanColumnProps) {
   const [isAddingCard, setIsAddingCard] = useState(false);
   const [newCardTitle, setNewCardTitle] = useState("");
@@ -50,6 +51,8 @@ export function KanbanColumn({
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(column.name);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [limitDialogOpen, setLimitDialogOpen] = useState(false);
+  const [limitValue, setLimitValue] = useState(String(column.cardLimit ?? ""));
   const [showArchived, setShowArchived] = useState(false);
   const renameInputRef = useRef<HTMLInputElement>(null);
 
@@ -142,6 +145,49 @@ export function KanbanColumn({
         </DialogContent>
       </Dialog>
 
+      <Dialog open={limitDialogOpen} onOpenChange={setLimitDialogOpen}>
+        <DialogContent size="sm">
+          <DialogHeader><DialogTitle>WIP limit — {column.name}</DialogTitle></DialogHeader>
+          <div className="px-5 py-4 space-y-4">
+            <p className="text-sm text-[var(--text-secondary)]">
+              Set a maximum number of cards for this column. Leave blank to remove the limit.
+            </p>
+            <input
+              type="number"
+              min={1}
+              value={limitValue}
+              onChange={(e) => setLimitValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  const n = parseInt(limitValue, 10);
+                  onSetLimit(limitValue.trim() === "" ? null : (isNaN(n) || n < 1 ? null : n));
+                  setLimitDialogOpen(false);
+                }
+                if (e.key === "Escape") setLimitDialogOpen(false);
+              }}
+              placeholder="No limit"
+              autoFocus
+              className="w-full px-3 py-2 text-sm rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)]"
+            />
+            <div className="flex justify-end gap-2">
+              <DialogClose asChild>
+                <Button variant="ghost" size="sm">Cancel</Button>
+              </DialogClose>
+              <Button
+                variant="accent" size="sm"
+                onClick={() => {
+                  const n = parseInt(limitValue, 10);
+                  onSetLimit(limitValue.trim() === "" ? null : (isNaN(n) || n < 1 ? null : n));
+                  setLimitDialogOpen(false);
+                }}
+              >
+                Save
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <div
         ref={setSortableRef}
         style={style}
@@ -216,6 +262,13 @@ export function KanbanColumn({
               >
                 <Pencil size={11} />
                 Rename
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => { setLimitValue(String(column.cardLimit ?? "")); setLimitDialogOpen(true); }}
+                className="flex items-center gap-2 text-xs"
+              >
+                <Gauge size={11} />
+                {column.cardLimit ? `WIP limit (${column.cardLimit})` : "Set WIP limit"}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem

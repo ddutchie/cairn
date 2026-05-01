@@ -1,13 +1,13 @@
 "use client";
 
-import React, { useEffect, useCallback, useState } from "react";
+import React, { useEffect, useCallback, useState, useMemo } from "react";
 import {
   GitBranch, Circle, RefreshCw, ChevronDown, LayoutGrid,
-  Clock, Grid3x3, Table2,
+  Clock, Grid3x3, Table2, Search,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
-import { filterGraphNodes, filterGraphEdges, nodeTypeColor, DEFAULT_GRAPH_FILTERS } from "@/store/slices/graph";
+import { filterGraphNodes, filterGraphEdges, nodeTypeColor } from "@/store/slices/graph";
 import type { GraphNode, GraphNodeType, GraphEdgeType, GraphLayoutMode } from "@/types";
 import { GraphDetailPanel } from "./GraphDetailPanel";
 import { ForceGraphCanvas } from "./ForceGraphCanvas";
@@ -36,6 +36,11 @@ export function KnowledgeGraphView() {
 
   const [projectDropdownOpen, setProjectDropdownOpen] = useState(false);
   const [recomputing, setRecomputing] = useState(false);
+  // Table view state — lifted here so toolbar can host it
+  const [tableSearch, setTableSearch] = useState("");
+  const [tableTypeFilter, setTableTypeFilter] = useState<GraphNodeType[]>([]);
+  // Force/radial search
+  const [graphSearch, setGraphSearch] = useState("");
 
   // Load graph on mount + when workspace changes
   useEffect(() => {
@@ -43,15 +48,58 @@ export function KnowledgeGraphView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeWorkspaceId]);
 
+  // Clear graph search when leaving force/radial
+  useEffect(() => {
+    if (graphLayout !== "force" && graphLayout !== "radial") setGraphSearch("");
+  }, [graphLayout]);
+
   const selectedNode = selectedGraphNodeId
     ? graphData.nodes.find((n) => n.id === selectedGraphNodeId) ?? null
     : null;
 
-  // Apply filters
-  const filteredNodes = filterGraphNodes(graphData.nodes, graphFilters);
-  const nodeIdSet = new Set(filteredNodes.map((n) => n.id));
-  const filteredEdges = filterGraphEdges(graphData.edges, graphFilters, nodeIdSet);
-  const filteredGraph = { nodes: filteredNodes, edges: filteredEdges };
+  // Memoised — only recomputes when the raw graph data or filters change,
+  // not when selectedGraphNodeId or other unrelated store state changes.
+  const filteredGraph = useMemo(() => {
+    const nodes = filterGraphNodes(graphData.nodes, graphFilters);
+    const nodeIdSet = new Set(nodes.map((n) => n.id));
+    const edges = filterGraphEdges(graphData.edges, graphFilters, nodeIdSet);
+    return { nodes, edges };
+  }, [graphData.nodes, graphData.edges, graphFilters]);
+
+  // For force/radial: further filter by search query
+  const searchedGraph = useMemo(() => {
+    const q = graphSearch.trim().toLowerCase();
+    if (!q || (graphLayout !== "force" && graphLayout !== "radial")) return filteredGraph;
+
+    // First pass: nodes whose title matches
+    const matchingIds = new Set(
+      filteredGraph.nodes
+        .filter((n) => n.title.toLowerCase().includes(q))
+        .map((n) => n.id)
+    );
+
+    // Second pass: also include parent projects of any matching node,
+    // so radial hierarchy builder always has a bucket for matched children,
+    // and force graph keeps clusters anchored.
+    const projectIdsToKeep = new Set<string>();
+    for (const n of filteredGraph.nodes) {
+      if (matchingIds.has(n.id) && n.projectId) {
+        projectIdsToKeep.add(n.projectId);
+      }
+    }
+
+    const nodes = filteredGraph.nodes.filter(
+      (n) => matchingIds.has(n.id) || (n.type === "project" && projectIdsToKeep.has(n.id))
+    );
+    const nodeIdSet = new Set(nodes.map((n) => n.id));
+    const edges = filteredGraph.edges.filter(
+      (e) => nodeIdSet.has(e.source) && nodeIdSet.has(e.target)
+    );
+    return { nodes, edges };
+  }, [filteredGraph, graphSearch, graphLayout]);
+
+  const filteredNodes = searchedGraph.nodes;
+  const filteredEdges = searchedGraph.edges;
 
   const handleNodeClick = useCallback(
     (node: GraphNode) => setSelectedGraphNode(node.id),
@@ -112,25 +160,35 @@ export function KnowledgeGraphView() {
               { key: "matrix"   as GraphLayoutMode, icon: <Grid3x3 size={12} />,  label: "Matrix",   tip: "Tag co-occurrence heatmap" },
               { key: "table"    as GraphLayoutMode, icon: <Table2 size={12} />,   label: "Table",    tip: "Flat sortable table" },
             ] as { key: GraphLayoutMode; icon: React.ReactNode; label: string; tip: string }[]
-          ).map(({ key, icon, label, tip }, idx, arr) => (
-            <React.Fragment key={key}>
-              {idx > 0 && <div className="w-px h-5 bg-[var(--border)]" />}
-              <Tooltip content={tip}>
-                <button
-                  onClick={() => setGraphLayout(key)}
+          ).map(({ key, icon, label, tip }, idx) => {
+            const isActive = graphLayout === key;
+            return (
+              <React.Fragment key={key}>
+                {idx > 0 && <div className="w-px h-5 bg-[var(--border)]" />}
+                <Tooltip content={tip}>
+                  <button
+                    onClick={() => setGraphLayout(key)}
                   className={cn(
-                    "flex items-center gap-1.5 px-2.5 py-1.5 text-xs transition-colors",
-                    graphLayout === key
-                      ? "bg-[var(--accent-dim)] text-[var(--accent)]"
-                      : "text-[var(--text-tertiary)] hover:bg-[var(--surface-2)]"
+                    "flex items-center px-2.5 py-1.5 text-xs transition-colors",
+                    isActive
+                      ? "gap-1.5 bg-[var(--accent-dim)] text-[var(--accent)]"
+                      : "gap-0 text-[var(--text-tertiary)] hover:bg-[var(--surface-2)]"
                   )}
-                >
-                  {icon}
-                  {label}
-                </button>
-              </Tooltip>
-            </React.Fragment>
-          ))}
+                  >
+                    {icon}
+                    <span
+                      className={cn(
+                        "overflow-hidden transition-all duration-200",
+                        isActive ? "max-w-16 opacity-100" : "max-w-0 opacity-0"
+                      )}
+                    >
+                      {label}
+                    </span>
+                  </button>
+                </Tooltip>
+              </React.Fragment>
+            );
+          })}
         </div>
 
         {/* Project filter */}
@@ -178,77 +236,100 @@ export function KnowledgeGraphView() {
           )}
         </div>
 
-        {/* Node type toggles — only relevant for graph modes */}
-        {(graphLayout === "force" || graphLayout === "radial") && <div className="flex items-center gap-1">
-          {ALL_NODE_TYPES.map((t) => (
-            <Tooltip key={t} content={`Toggle ${t} nodes`}>
-              <button
-                onClick={() => toggleNodeType(t)}
-                className={cn(
-                  "flex items-center gap-1 px-2 py-1 rounded text-[11px] capitalize transition-colors border",
-                  graphFilters.nodeTypes.includes(t)
-                    ? "border-transparent"
-                    : "border-[var(--border)] text-[var(--text-tertiary)] opacity-50"
-                )}
-                style={
-                  graphFilters.nodeTypes.includes(t)
-                    ? {
+        {/* Search + type toggles — shown for force, radial, and table */}
+        {(graphLayout === "force" || graphLayout === "radial" || graphLayout === "table") && (
+          <>
+            {/* Search input */}
+            <div className="relative flex items-center">
+              <Search size={11} className="absolute left-2.5 text-[var(--text-tertiary)] pointer-events-none" />
+              <input
+                type="text"
+                value={graphLayout === "table" ? tableSearch : graphSearch}
+                onChange={(e) =>
+                  graphLayout === "table"
+                    ? setTableSearch(e.target.value)
+                    : setGraphSearch(e.target.value)
+                }
+                placeholder="Search…"
+                className="pl-7 pr-3 py-1.5 rounded-md border border-[var(--border)] bg-[var(--surface-2)] text-xs text-[var(--text-primary)] placeholder-[var(--text-tertiary)] outline-none focus:border-[var(--accent)] transition-colors w-40"
+              />
+            </div>
+
+            {/* Type toggles — identical behaviour for all layouts */}
+            <div className="flex items-center gap-1">
+              {ALL_NODE_TYPES.map((t) => {
+                const isActive = graphLayout === "table"
+                  ? tableTypeFilter.includes(t)
+                  : graphFilters.nodeTypes.includes(t);
+                return (
+                  <Tooltip key={t} content={`Toggle ${t}`}>
+                    <button
+                      onClick={() => {
+                        if (graphLayout === "table") {
+                          setTableTypeFilter((prev) =>
+                            prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]
+                          );
+                        } else {
+                          toggleNodeType(t);
+                        }
+                      }}
+                      className={cn(
+                        "flex items-center gap-1 px-2 py-1 rounded text-[11px] capitalize transition-colors border",
+                        isActive ? "border-transparent" : "border-[var(--border)] text-[var(--text-tertiary)] opacity-50"
+                      )}
+                      style={isActive ? {
                         background: `color-mix(in srgb, ${nodeTypeColor(t)} 12%, transparent)`,
                         color: nodeTypeColor(t),
                         borderColor: `color-mix(in srgb, ${nodeTypeColor(t)} 30%, transparent)`,
-                      }
-                    : undefined
-                }
-              >
-                <span
-                  className="w-2 h-2 rounded-full"
-                  style={{ background: nodeTypeColor(t) }}
-                />
-                {t}
-              </button>
-            </Tooltip>
-          ))}
-        </div>}
+                      } : undefined}
+                    >
+                      <span className="w-2 h-2 rounded-full" style={{ background: nodeTypeColor(t) }} />
+                      {t}
+                    </button>
+                  </Tooltip>
+                );
+              })}
+            </div>
 
-        {/* Separator */}
-        {(graphLayout === "force" || graphLayout === "radial") && <div className="w-px h-5 bg-[var(--border)]" />}
+            <div className="w-px h-5 bg-[var(--border)]" />
+          </>
+        )}
 
-        {/* Auto-relationship toggle */}
-        <Tooltip content="Toggle auto-discovered relationships (co-mention, keyword, assignee)">
-          <button
-            onClick={() => {
-              setGraphFilters({ includeAuto: !graphFilters.includeAuto });
-              if (activeWorkspaceId) loadGraph(activeWorkspaceId);
-            }}
-            className={cn(
-              "flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-xs transition-colors",
-              graphFilters.includeAuto
-                ? "border-transparent bg-[var(--accent-dim)] text-[var(--accent)]"
-                : "border-[var(--border)] text-[var(--text-tertiary)]"
-            )}
-          >
-            <GitBranch size={12} />
-            Auto-links
-          </button>
-        </Tooltip>
+        {/* Auto-relationship toggle — graph modes only */}
+        {(graphLayout === "force" || graphLayout === "radial") && (
+          <Tooltip content="Toggle auto-discovered relationships (co-mention, keyword, assignee)">
+            <button
+              onClick={() => {
+                setGraphFilters({ includeAuto: !graphFilters.includeAuto });
+                if (activeWorkspaceId) loadGraph(activeWorkspaceId);
+              }}
+              className={cn(
+                "flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-xs transition-colors",
+                graphFilters.includeAuto
+                  ? "border-transparent bg-[var(--accent-dim)] text-[var(--accent)]"
+                  : "border-[var(--border)] text-[var(--text-tertiary)]"
+              )}
+            >
+              <GitBranch size={12} />
+              Auto-links
+            </button>
+          </Tooltip>
+        )}
 
-        {/* Recompute */}
-        <Tooltip content="Recompute auto-relationships">
-          <button
-            onClick={handleRecompute}
-            disabled={recomputing}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-[var(--border)] text-xs text-[var(--text-tertiary)] hover:bg-[var(--surface-2)] transition-colors disabled:opacity-50"
-          >
-            <RefreshCw size={12} className={recomputing ? "animate-spin" : ""} />
-            Refresh
-          </button>
-        </Tooltip>
-
-        {/* Stats */}
-        <span className="ml-auto text-[11px] text-[var(--text-tertiary)]">
+        {/* Stats + Recompute — pinned to right */}
+        <span className="ml-auto flex items-center gap-2 text-[11px] text-[var(--text-tertiary)]">
           {graphLayout === "force" || graphLayout === "radial"
             ? `${filteredNodes.length} nodes · ${filteredEdges.length} edges`
             : `${filteredNodes.length} items`}
+          <Tooltip content="Recompute auto-relationships">
+            <button
+              onClick={handleRecompute}
+              disabled={recomputing}
+              className="flex items-center gap-1 px-1.5 py-1 rounded border border-[var(--border)] text-[var(--text-tertiary)] hover:bg-[var(--surface-2)] transition-colors disabled:opacity-50"
+            >
+              <RefreshCw size={11} className={recomputing ? "animate-spin" : ""} />
+            </button>
+          </Tooltip>
         </span>
       </div>
 
@@ -274,7 +355,7 @@ export function KnowledgeGraphView() {
 
           {!graphError && filteredNodes.length > 0 && graphLayout === "force" && (
             <ForceGraphCanvas
-              graph={filteredGraph}
+              graph={searchedGraph}
               selectedNodeId={selectedGraphNodeId}
               onNodeClick={handleNodeClick}
               onBackgroundClick={handleBackgroundClick}
@@ -283,7 +364,7 @@ export function KnowledgeGraphView() {
 
           {!graphError && filteredNodes.length > 0 && graphLayout === "radial" && (
             <RadialTreeCanvas
-              graph={filteredGraph}
+              graph={searchedGraph}
               selectedNodeId={selectedGraphNodeId}
               onNodeClick={handleNodeClick}
               onBackgroundClick={handleBackgroundClick}
@@ -311,6 +392,8 @@ export function KnowledgeGraphView() {
               nodes={filteredNodes}
               selectedNodeId={selectedGraphNodeId}
               onNodeClick={handleNodeClick}
+              search={tableSearch}
+              typeFilter={tableTypeFilter}
             />
           )}
 

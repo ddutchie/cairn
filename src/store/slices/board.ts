@@ -34,7 +34,7 @@ export interface BoardSlice {
   createColumn: (projectId: ID, name: string) => BoardColumn;
   updateColumn: (
     id: ID,
-    patch: Partial<Pick<BoardColumn, "name" | "order">>
+    patch: Partial<Pick<BoardColumn, "name" | "order" | "cardLimit">>
   ) => void;
   deleteColumn: (id: ID) => void;
   reorderColumns: (projectId: ID, columnIds: ID[]) => void;
