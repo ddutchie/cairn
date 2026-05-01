@@ -21,6 +21,50 @@ import { TOOL_LABELS, type ChatRequest, type ToolArgs } from "../lib/tools";
 import { getKnowledgeGraph, getNeighbours } from "../db/graph-queries";
 import type { GraphFilters, EdgeType } from "../db/graph-queries";
 
+// ── Static reference constants (returned by get_dashboard_constants / get_idea_flow_rules) ──
+
+const DASHBOARD_CONSTANTS = {
+  description: "window.cairn API for Cairn dashboards (rendered in a sandboxed iframe).",
+  rules: [
+    "html must be a complete self-contained document with inline CSS/JS only — no external URLs",
+    "Never hardcode projectId or workspaceId — always use window.cairn.projectId and window.cairn.workspaceId",
+    "Always fetch data dynamically via helpers — never bake in static data",
+  ],
+  helpers: {
+    "window.cairn.projectId": "Active project ID (string)",
+    "window.cairn.workspaceId": "Active workspace ID (string)",
+    "window.cairn.getProjectSummary(projectId?)": "Returns { project, noteCount, totalCards, columns: [{ id, name, type, taskCount, tasks: [{ id, title, priority, dueDate }] }] }",
+    "window.cairn.listTasks(projectId?)": "Returns { tasksByColumn: { COLUMN_ID: [{ id, title, priority, description, dueDate, columnId, columnName, columnType, updatedAt }] } }. Usage: Object.values(result.tasksByColumn).flat()",
+    "window.cairn.listNotes(projectId?)": "Returns [{ id, title, projectId, isPinned, updatedAt }]",
+    "window.cairn.listRecentActivity(opts?)": "Returns { recentNotes: [{ id, title, projectId, updatedAt }], recentTasks: [{ id, title, projectId, updatedAt }] }",
+    "window.cairn.searchTasks(query, projectId?)": "Returns [{ id, title, priority, columnId }]",
+    "window.cairn.searchNotes(query, projectId?)": "Returns [{ id, title, snippet, projectId }]",
+    "window.cairn.getContext()": "Returns { workspaces, projects: [{ id, name, status, priority, columns: [{ id, name, type }] }] }",
+  },
+};
+
+const IDEA_FLOW_RULES = {
+  description: "Idea Flow node types, data shapes, and group conventions.",
+  nodeTypes: {
+    idea:        "Free-form thought. data: { title, body }",
+    note_ref:    "Links to an existing note. data: { noteId }",
+    task_ref:    "Links to an existing task card. data: { cardId }",
+    url:         "External reference. data: { url, title?, description? }",
+    ai_summary:  "AI-generated summary. data: { content }. Do not connect edges TO this from other ai_summary nodes.",
+    group:       "Spatial container. data: { label?, color? }. Do NOT connect edges to/from group nodes.",
+  },
+  positioning: [
+    "Always call get_idea_flow first — use spatial.nextPosition as the base {x,y} for new nodes, incrementing y by ~120px per row",
+    "get_idea_flow returns absoluteX/absoluteY on every node for full canvas reasoning",
+  ],
+  groups: [
+    "Create the group node first, then create child nodes with parentId set to the group's ID",
+    "Child coordinates are relative to the group's top-left corner — use spatial.groupSlots[groupId] as starting position, increment y ~100px per row",
+    "layout_idea_flow runs two-phase: children arranged inside groups first, then groups + ungrouped nodes arranged together",
+    "Always call layout_idea_flow after bulk-creating grouped nodes",
+  ],
+};
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function executeTool(
   db: Database.Database,
@@ -83,6 +127,8 @@ export async function executeTool(
         .filter((p) => !p.archivedAt)
         .map((p) => ({ projectId: p.id, name: p.name, status: p.status }));
 
+      const tags = snap.tags.map((t) => ({ id: t.id, name: t.name, color: t.color }));
+
       return {
         workspace: workspace ? { workspaceId: workspace.id, name: workspace.name } : null,
         activeProject: project ? { projectId: project.id, name: project.name, status: project.status } : null,
@@ -90,6 +136,7 @@ export async function executeTool(
         columns,
         recentNotes,
         recentTasks,
+        tags,
       };
     }
     case "get_note": {
@@ -121,6 +168,10 @@ export async function executeTool(
       if (args.html !== undefined) { patch.content = args.html as string; patch.contentText = ""; }
       return q.updateNote(db, args.noteId as string, patch);
     }
+    case "get_dashboard_constants":
+      return DASHBOARD_CONSTANTS;
+    case "get_idea_flow_rules":
+      return IDEA_FLOW_RULES;
     case "create_note": {
       const project = snap.projects.find((p) => p.id === args.projectId);
       if (!project) return { error: "Project not found" };
@@ -129,6 +180,7 @@ export async function executeTool(
       const note = q.createNote(db, {
         id: noteId, projectId: args.projectId, workspaceId: project.workspaceId,
         title: args.title, content: markdown, contentText: stripMarkdown(markdown),
+        tagIds: Array.isArray(args.tagIds) ? args.tagIds as string[] : undefined,
       });
       writeNoteFile(workspacePath, { ...note, projectName: project.name });
       return note;
@@ -150,6 +202,7 @@ export async function executeTool(
       const note = q.createNote(db, {
         id: noteId, projectId: args.projectId as string, workspaceId: project.workspaceId,
         title, content: markdown, contentText: stripMarkdown(markdown),
+        tagIds: Array.isArray(args.tagIds) ? args.tagIds as string[] : undefined,
       });
       writeNoteFile(workspacePath, { ...note, projectName: project.name });
       return { ...note, importedFrom: resolvedPath };
@@ -176,8 +229,14 @@ export async function executeTool(
         (n) => !n.archivedAt && n.projectId === args.projectId && n.title === args.title
       );
       const markdown = (args.content as string | undefined) ?? "";
+      const ensureTagIds = Array.isArray(args.tagIds) ? args.tagIds as string[] : undefined;
+      const ensureIsPinned = typeof args.isPinned === "boolean" ? args.isPinned : undefined;
       if (existing) {
-        const note = q.updateNote(db, existing.id, { content: markdown, contentText: stripMarkdown(markdown) });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const patch: Record<string, any> = { content: markdown, contentText: stripMarkdown(markdown) };
+        if (ensureTagIds !== undefined) patch.tagIds = ensureTagIds;
+        if (ensureIsPinned !== undefined) patch.isPinned = ensureIsPinned;
+        const note = q.updateNote(db, existing.id, patch);
         writeNoteFile(workspacePath, { ...note, projectName: project.name });
         return { id: existing.id, title: existing.title, action: "updated", updatedAt: note.updatedAt };
       } else {
@@ -185,6 +244,8 @@ export async function executeTool(
         const note = q.createNote(db, {
           id: noteId, projectId: args.projectId as string, workspaceId: project.workspaceId,
           title: args.title as string, content: markdown, contentText: stripMarkdown(markdown),
+          tagIds: ensureTagIds,
+          isPinned: ensureIsPinned,
         });
         writeNoteFile(workspacePath, { ...note, projectName: project.name });
         return { id: noteId, title: args.title, action: "created", createdAt: note.createdAt };
@@ -220,13 +281,15 @@ export async function executeTool(
     case "update_note": {
       const existing = snap.notes.find((n) => n.id === args.noteId);
       if (!existing) return { error: "Note not found" };
-      const patch: { title?: string; content?: string; contentText?: string; isPinned?: boolean } = {};
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const patch: Record<string, any> = {};
       if (args.title !== undefined && args.title !== "") patch.title = args.title as string;
       if (args.content !== undefined) {
         patch.content = args.content as string;
         patch.contentText = stripMarkdown(args.content as string);
       }
       if (args.isPinned !== undefined) patch.isPinned = args.isPinned as boolean;
+      if (Array.isArray(args.tagIds)) patch.tagIds = args.tagIds as string[];
       const note = q.updateNote(db, args.noteId as string, patch);
       const proj = snap.projects.find((p) => p.id === note.projectId);
       writeNoteFile(workspacePath, { ...note, projectName: proj?.name ?? note.projectId });
@@ -260,6 +323,7 @@ export async function executeTool(
         workspaceId: col.workspaceId, title: args.title,
         description: args.description ?? null, priority: args.priority ?? "medium",
         dueDate: undefined, order,
+        tagIds: Array.isArray(args.tagIds) ? args.tagIds as string[] : undefined,
       });
     }
     case "update_task_status": {
@@ -628,6 +692,14 @@ export async function executeTool(
       }
 
       return { arranged: rawNodes.length, direction: dir };
+    }
+
+    case "create_tag": {
+      const { workspaceId, name, color } = args;
+      if (!workspaceId || !name) return { error: "workspaceId and name are required" };
+      const tagId = newId();
+      const tag = q.createTag(db, { id: tagId, workspaceId: workspaceId as string, name: name as string, color: (color as string) ?? "#6366f1" });
+      return { id: tag.id, workspaceId: tag.workspaceId, name: tag.name, color: tag.color };
     }
 
     case "get_knowledge_graph": {

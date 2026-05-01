@@ -322,6 +322,38 @@ export function NoteEditor({ note }: NoteEditorProps) {
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm]}
                     components={{
+                      // Clickable checkboxes — toggle [ ] ↔ [x] in the raw source
+                      input({ type, checked }) {
+                        if (type !== "checkbox") return <input type={type} />;
+                        return (
+                          <input
+                            type="checkbox"
+                            defaultChecked={checked}
+                            className="cursor-pointer accent-[var(--accent)] w-3.5 h-3.5 relative top-[1px]"
+                            onChange={(e) => {
+                              const checkboxes = Array.from(
+                                e.currentTarget.closest(".prose-cairn")!
+                                  .querySelectorAll<HTMLInputElement>("input[type='checkbox']")
+                              );
+                              const idx = checkboxes.indexOf(e.currentTarget);
+                              if (idx === -1) return;
+                              const lines = (note.content ?? "").split("\n");
+                              let found = 0;
+                              const next = lines.map((line) => {
+                                if (/^(\s*[-*+]\s+)\[([ xX])\]/.test(line)) {
+                                  if (found === idx) {
+                                    found++;
+                                    return line.replace(/\[([ xX])\]/, e.currentTarget.checked ? "[x]" : "[ ]");
+                                  }
+                                  found++;
+                                }
+                                return line;
+                              }).join("\n");
+                              updateNote(note.id, { content: next });
+                            }}
+                          />
+                        );
+                      },
                       // Override `pre` (not `code`) for fenced blocks — pre is a true
                       // block element so ReactMarkdown won't wrap it in a <p>, avoiding
                       // the double-margin/padding from .prose-cairn p + .prose-cairn pre.

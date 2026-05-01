@@ -76,6 +76,10 @@ describe("Tool name parity", () => {
       "update_note", "move_note", "delete_note",
       "create_task", "update_task", "update_task_status", "bulk_update_task_status",
       "link_note_to_task", "create_dashboard", "update_dashboard", "delete_task",
+      "get_idea_flow", "create_idea_flow_node", "update_idea_flow_node", "delete_idea_flow_node",
+      "create_idea_flow_edge", "delete_idea_flow_edge", "layout_idea_flow", "get_idea_flow_rules",
+      "get_knowledge_graph", "get_neighbors", "create_tag",
+      "get_dashboard_constants",
     ]);
     for (const name of chatToolNames) {
       expect(documented.has(name), `Undocumented chat tool: ${name} — add to CHAT_ONLY_TOOLS or shared list`).toBe(true);

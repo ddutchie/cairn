@@ -247,16 +247,19 @@ export function getNotes(db: Database.Database, projectId?: string) {
 export function createNote(db: Database.Database, n: {
   id: string; projectId: string; workspaceId: string; title: string;
   content?: string; contentText?: string; type?: "note" | "dashboard";
+  tagIds?: string[]; isPinned?: boolean;
 }) {
   const now = ts();
   const content = n.content ?? "";
   const contentText = n.contentText ?? content;
   const type = n.type ?? "note";
+  const tagIds = JSON.stringify(n.tagIds ?? []);
+  const isPinned = n.isPinned ? 1 : 0;
   db.prepare(`
     INSERT INTO notes (id, project_id, workspace_id, title, content, content_text,
       tag_ids, linked_note_ids, linked_card_ids, is_pinned, type, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, '[]', '[]', '[]', 0, ?, ?, ?)
-  `).run(n.id, n.projectId, n.workspaceId, n.title, content, contentText, type, now, now);
+    VALUES (?, ?, ?, ?, ?, ?, ?, '[]', '[]', ?, ?, ?, ?)
+  `).run(n.id, n.projectId, n.workspaceId, n.title, content, contentText, tagIds, isPinned, type, now, now);
   return toNote(db.prepare("SELECT * FROM notes WHERE id = ?").get(n.id));
 }
 
@@ -367,16 +370,18 @@ export function getCards(db: Database.Database, opts?: { projectId?: string; col
 
 export function createCard(db: Database.Database, c: {
   id: string; columnId: string; projectId: string; workspaceId: string;
-  title: string; description?: string; priority?: string; dueDate?: string; order?: number;
+  title: string; description?: string; priority?: string; dueDate?: string;
+  order?: number; tagIds?: string[];
 }) {
   const now = ts();
+  const tagIds = JSON.stringify(c.tagIds ?? []);
   db.prepare(`
     INSERT INTO task_cards
       (id, column_id, project_id, workspace_id, title, description, tag_ids,
        priority, due_date, linked_note_ids, "order", created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, '[]', ?, ?, '[]', ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', ?, ?, ?)
   `).run(c.id, c.columnId, c.projectId, c.workspaceId, c.title,
-         c.description ?? null, c.priority ?? "medium", c.dueDate ?? null,
+         c.description ?? null, tagIds, c.priority ?? "medium", c.dueDate ?? null,
          c.order ?? 0, now, now);
   return toCard(db.prepare("SELECT * FROM task_cards WHERE id = ?").get(c.id));
 }

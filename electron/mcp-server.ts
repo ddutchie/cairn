@@ -44,9 +44,54 @@ import { DEFAULT_COLUMNS } from "./db/defaults";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { z } from "zod";
+import * as z from "zod";
+import { TOOL_SCHEMAS, CHAT_ONLY_TOOLS } from "./lib/tool-schemas";
 
 export const MCP_PORT = 3123;
+
+// ── Static reference constants ─────────────────
+
+const DASHBOARD_CONSTANTS = {
+  description: "window.cairn API for Cairn dashboards (rendered in a sandboxed iframe).",
+  rules: [
+    "html must be a complete self-contained document with inline CSS/JS only — no external URLs",
+    "Never hardcode projectId or workspaceId — always use window.cairn.projectId and window.cairn.workspaceId",
+    "Always fetch data dynamically via helpers — never bake in static data",
+  ],
+  helpers: {
+    "window.cairn.projectId": "Active project ID (string)",
+    "window.cairn.workspaceId": "Active workspace ID (string)",
+    "window.cairn.getProjectSummary(projectId?)": "Returns { project, noteCount, totalCards, columns: [{ id, name, type, taskCount, tasks: [{ id, title, priority, dueDate }] }] }",
+    "window.cairn.listTasks(projectId?)": "Returns { tasksByColumn: { COLUMN_ID: [{ id, title, priority, description, dueDate, columnId, columnName, columnType, updatedAt }] } }. Usage: Object.values(result.tasksByColumn).flat()",
+    "window.cairn.listNotes(projectId?)": "Returns [{ id, title, projectId, isPinned, updatedAt }]",
+    "window.cairn.listRecentActivity(opts?)": "Returns { recentNotes: [{ id, title, projectId, updatedAt }], recentTasks: [{ id, title, projectId, updatedAt }] }",
+    "window.cairn.searchTasks(query, projectId?)": "Returns [{ id, title, priority, columnId }]",
+    "window.cairn.searchNotes(query, projectId?)": "Returns [{ id, title, snippet, projectId }]",
+    "window.cairn.getContext()": "Returns { workspaces, projects: [{ id, name, status, priority, columns: [{ id, name, type }] }] }",
+  },
+};
+
+const IDEA_FLOW_RULES = {
+  description: "Idea Flow node types, data shapes, and group conventions.",
+  nodeTypes: {
+    idea:        "Free-form thought. data: { title, body }",
+    note_ref:    "Links to an existing note. data: { noteId }",
+    task_ref:    "Links to an existing task card. data: { cardId }",
+    url:         "External reference. data: { url, title?, description? }",
+    ai_summary:  "AI-generated summary. data: { content }. Do not connect edges TO this from other ai_summary nodes.",
+    group:       "Spatial container. data: { label?, color? }. Do NOT connect edges to/from group nodes.",
+  },
+  positioning: [
+    "Always call get_idea_flow first — use spatial.nextPosition as the base {x,y} for new nodes, incrementing y by ~120px per row",
+    "get_idea_flow returns absoluteX/absoluteY on every node for full canvas reasoning",
+  ],
+  groups: [
+    "Create the group node first, then create child nodes with parentId set to the group's ID",
+    "Child coordinates are relative to the group's top-left corner — use spatial.groupSlots[groupId] as starting position, increment y ~100px per row",
+    "layout_idea_flow runs two-phase: children arranged inside groups first, then groups + ungrouped nodes arranged together",
+    "Always call layout_idea_flow after bulk-creating grouped nodes",
+  ],
+};
 
 // ── DB path resolution ────────────────────────
 
@@ -291,9 +336,10 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
       return {
         workspaces,
         projects,
+        tags: snap.tags.map((t) => ({ id: t.id, name: t.name, color: t.color, workspaceId: t.workspaceId })),
         tools: {
           read:   ["get_cairn_context", "get_project_context_pack", "resolve_project", "search_notes", "search_tasks", "get_note", "get_task", "get_project_summary", "list_notes", "list_tasks", "list_recent_activity"],
-          write:  ["create_project", "update_project", "create_note", "import_note_from_file", "ensure_note", "append_to_note", "patch_note", "update_note", "move_note", "create_task", "update_task", "update_task_status", "bulk_update_task_status", "link_note_to_task", "create_dashboard", "update_dashboard", "create_idea_flow_node", "update_idea_flow_node", "create_idea_flow_edge"],
+          write:  ["create_project", "update_project", "create_note", "import_note_from_file", "ensure_note", "append_to_note", "patch_note", "update_note", "move_note", "create_task", "update_task", "update_task_status", "bulk_update_task_status", "link_note_to_task", "create_dashboard", "update_dashboard", "create_idea_flow_node", "update_idea_flow_node", "create_idea_flow_edge", "create_tag"],
           delete: ["delete_note", "delete_task", "delete_project", "delete_idea_flow_node", "delete_idea_flow_edge"],
           ideaFlow: ["get_idea_flow", "create_idea_flow_node", "update_idea_flow_node", "delete_idea_flow_node", "create_idea_flow_edge", "delete_idea_flow_edge", "layout_idea_flow"],
         },
@@ -458,21 +504,28 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
       return { id: noteId, title: title ?? note.title, updatedAt: now };
     }
 
+    case "get_dashboard_constants":
+      return DASHBOARD_CONSTANTS;
+
+    case "get_idea_flow_rules":
+      return IDEA_FLOW_RULES;
+
     case "create_note": {
-      const { projectId, title, content } = args;
+      const { projectId, title, content, tagIds } = args;
       const project = snap.projects.find((pr) => pr.id === projectId);
       if (!project) return { error: "Project not found" };
       const now = ts();
       const noteId = newId();
       const markdown = content ?? "";
+      const resolvedTagIds = Array.isArray(tagIds) ? tagIds as string[] : [];
       db.prepare(`
         INSERT INTO notes (id, project_id, workspace_id, title, content, content_text,
           tag_ids, linked_note_ids, linked_card_ids, is_pinned, type, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, '[]', '[]', '[]', 0, 'note', ?, ?)
-      `).run(noteId, projectId, project.workspaceId, title, markdown, stripMarkdown(markdown), now, now);
+        VALUES (?, ?, ?, ?, ?, ?, ?, '[]', '[]', 0, 'note', ?, ?)
+      `).run(noteId, projectId, project.workspaceId, title, markdown, stripMarkdown(markdown), j(resolvedTagIds), now, now);
       writeNoteFile(workspacePath, {
         id: noteId, projectId, workspaceId: project.workspaceId, title, content: markdown,
-        tagIds: [], linkedNoteIds: [], linkedCardIds: [], isPinned: false,
+        tagIds: resolvedTagIds, linkedNoteIds: [], linkedCardIds: [], isPinned: false,
         createdAt: now, updatedAt: now, projectName: project.name,
       });
       insertNotification(db, "create_note", "Note created", `"${title}" added to ${project.name}`);
@@ -482,7 +535,7 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
     case "import_note_from_file": {
       // Reads a file from the local filesystem (server-side) so agents never need to
       // inline large payloads (e.g. a full README) as tool arguments.
-      const { projectId, filePath: srcPath, title: explicitTitle } = args;
+      const { projectId, filePath: srcPath, title: explicitTitle, tagIds: importTagIds } = args;
       const project = snap.projects.find((pr) => pr.id === projectId);
       if (!project) return { error: "Project not found" };
       const resolvedPath = path.resolve(srcPath as string);
@@ -498,14 +551,15 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
         ?? path.basename(resolvedPath).replace(/\.[^/.]+$/, "");
       const now = ts();
       const noteId = newId();
+      const importResolvedTagIds = Array.isArray(importTagIds) ? importTagIds as string[] : [];
       db.prepare(`
         INSERT INTO notes (id, project_id, workspace_id, title, content, content_text,
           tag_ids, linked_note_ids, linked_card_ids, is_pinned, type, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, '[]', '[]', '[]', 0, 'note', ?, ?)
-      `).run(noteId, projectId, project.workspaceId, title, markdown, stripMarkdown(markdown), now, now);
+        VALUES (?, ?, ?, ?, ?, ?, ?, '[]', '[]', 0, 'note', ?, ?)
+      `).run(noteId, projectId, project.workspaceId, title, markdown, stripMarkdown(markdown), j(importResolvedTagIds), now, now);
       writeNoteFile(workspacePath, {
         id: noteId, projectId, workspaceId: project.workspaceId, title, content: markdown,
-        tagIds: [], linkedNoteIds: [], linkedCardIds: [], isPinned: false,
+        tagIds: importResolvedTagIds, linkedNoteIds: [], linkedCardIds: [], isPinned: false,
         createdAt: now, updatedAt: now, projectName: project.name,
       });
       insertNotification(db, "create_note", "Note imported", `"${title}" imported into ${project.name}`);
@@ -513,21 +567,22 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
     }
 
     case "update_note": {
-      const { noteId, title, content, isPinned } = args;
+      const { noteId, title, content, isPinned, tagIds } = args;
       const note = snap.notes.find((n) => n.id === noteId);
       if (!note) return { error: "Note not found" };
       const now = ts();
       const markdown = content !== undefined ? content : null;
       const pinnedVal = isPinned !== undefined ? (isPinned ? 1 : 0) : null;
-      db.prepare(`UPDATE notes SET title = COALESCE(?, title), content = COALESCE(?, content), content_text = COALESCE(?, content_text), is_pinned = COALESCE(?, is_pinned), updated_at = ? WHERE id = ?`)
-        .run(title ?? null, markdown, markdown !== null ? stripMarkdown(markdown) : null, pinnedVal, now, noteId);
+      const tagIdsJson = Array.isArray(tagIds) ? j(tagIds) : null;
+      db.prepare(`UPDATE notes SET title = COALESCE(?, title), content = COALESCE(?, content), content_text = COALESCE(?, content_text), is_pinned = COALESCE(?, is_pinned), tag_ids = COALESCE(?, tag_ids), updated_at = ? WHERE id = ?`)
+        .run(title ?? null, markdown, markdown !== null ? stripMarkdown(markdown) : null, pinnedVal, tagIdsJson, now, noteId);
       const resolvedIsPinned = isPinned !== undefined ? (isPinned as boolean) : note.isPinned as boolean;
       const updateProj = snap.projects.find((pr) => pr.id === note.projectId);
       writeNoteFile(workspacePath, {
         id: noteId, projectId: note.projectId as string, workspaceId: note.workspaceId as string,
         title: title ?? note.title as string,
         content: markdown !== null ? markdown : note.content as string,
-        tagIds: note.tagIds as string[], linkedNoteIds: note.linkedNoteIds as string[],
+        tagIds: Array.isArray(tagIds) ? tagIds as string[] : note.tagIds as string[], linkedNoteIds: note.linkedNoteIds as string[],
         linkedCardIds: note.linkedCardIds as string[], isPinned: resolvedIsPinned,
         createdAt: note.createdAt as string, updatedAt: now,
         archivedAt: note.archivedAt as string | undefined,
@@ -566,17 +621,18 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
     }
 
     case "create_task": {
-      const { columnId, projectId, title, description, priority = "medium", dueDate } = args;
+      const { columnId, projectId, title, description, priority = "medium", dueDate, tagIds } = args;
       const col = snap.columns.find((c) => c.id === columnId);
       if (!col) return { error: "Column not found" };
       const now = ts();
       const cardId = newId();
       const order = snap.cards.filter((c) => c.columnId === columnId).length;
+      const resolvedTagIds = Array.isArray(tagIds) ? tagIds as string[] : [];
       db.prepare(`
         INSERT INTO task_cards (id, column_id, project_id, workspace_id, title, description,
           tag_ids, priority, due_date, linked_note_ids, "order", created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, '[]', ?, ?, '[]', ?, ?, ?)
-      `).run(cardId, columnId, projectId, col.workspaceId, title, description ?? null, priority, dueDate ?? null, order, now, now);
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', ?, ?, ?)
+      `).run(cardId, columnId, projectId, col.workspaceId, title, description ?? null, j(resolvedTagIds), priority, dueDate ?? null, order, now, now);
       const taskProject = snap.projects.find((pr) => pr.id === projectId);
       insertNotification(db, "create_task", "Task created", `"${title}" added to ${taskProject?.name ?? projectId}`);
       return { id: cardId, title, columnId, createdAt: now };
@@ -712,7 +768,7 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
       `).run(
         columnId ?? null, title ?? null, description ?? null,
         priority ?? null, dueDate ?? null,
-        tagIds ? j(tagIds) : null,
+        tagIds != null ? (Array.isArray(tagIds) ? j(tagIds) : tagIds) : null,
         now, cardId
       );
       const updated = db.prepare("SELECT * FROM task_cards WHERE id = ?").get(cardId) as Record<string, unknown> | undefined;
@@ -721,7 +777,7 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
     }
 
     case "update_project": {
-      const { projectId, name, description, status, priority } = args;
+      const { projectId, name, description, status, priority, icon } = args;
       const project = snap.projects.find((p) => p.id === projectId);
       if (!project) return { error: "Project not found" };
       const now = ts();
@@ -731,12 +787,23 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
           description = COALESCE(?, description),
           status      = COALESCE(?, status),
           priority    = COALESCE(?, priority),
+          icon        = COALESCE(?, icon),
           updated_at  = ?
         WHERE id = ?
-      `).run(name ?? null, description ?? null, status ?? null, priority ?? null, now, projectId);
+      `).run(name ?? null, description ?? null, status ?? null, priority ?? null, icon ?? null, now, projectId);
       const updated = db.prepare("SELECT * FROM projects WHERE id = ?").get(projectId) as Record<string, unknown> | undefined;
       insertNotification(db, "update_project", "Project updated", `"${name ?? project.name}" was updated`);
       return updated ?? { error: "Project not found after update" };
+    }
+
+    case "create_tag": {
+      const { workspaceId, name, color } = args;
+      if (!workspaceId || !name) return { error: "workspaceId and name are required" };
+      const tagId = newId();
+      const tag = { id: tagId, workspaceId: workspaceId as string, name: name as string, color: (color as string) ?? "#6366f1" };
+      db.prepare("INSERT INTO tags (id, workspace_id, name, color) VALUES (?, ?, ?, ?)").run(tag.id, tag.workspaceId, tag.name, tag.color);
+      insertNotification(db, "create_tag", "Tag created", `"${tag.name}" tag created`);
+      return { id: tagId, workspaceId: tag.workspaceId, name: tag.name, color: tag.color };
     }
 
     case "delete_project": {
@@ -800,7 +867,7 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
     case "ensure_note": {
       // Idempotent: finds a note by title+projectId and updates it, or creates it.
       // Prevents duplicate notes when agents re-run (e.g. syncing a README).
-      const { projectId, title, content } = args;
+      const { projectId, title, content, tagIds: ensureTagIds, isPinned: ensureIsPinned } = args;
       const project = snap.projects.find((p) => p.id === projectId);
       if (!project) return { error: "Project not found" };
       const existing = snap.notes.find(
@@ -808,14 +875,18 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
       );
       const now = ts();
       const markdown = (content as string | undefined) ?? "";
+      const ensureResolvedTagIds = Array.isArray(ensureTagIds) ? ensureTagIds as string[] : undefined;
+      const ensureResolvedIsPinned = typeof ensureIsPinned === "boolean" ? ensureIsPinned : undefined;
       if (existing) {
-        db.prepare(`UPDATE notes SET content = ?, content_text = ?, updated_at = ? WHERE id = ?`)
-          .run(markdown, stripMarkdown(markdown), now, existing.id);
+        const tagIdsJson = ensureResolvedTagIds ? j(ensureResolvedTagIds) : null;
+        const pinnedVal = ensureResolvedIsPinned !== undefined ? (ensureResolvedIsPinned ? 1 : 0) : null;
+        db.prepare(`UPDATE notes SET content = ?, content_text = ?, tag_ids = COALESCE(?, tag_ids), is_pinned = COALESCE(?, is_pinned), updated_at = ? WHERE id = ?`)
+          .run(markdown, stripMarkdown(markdown), tagIdsJson, pinnedVal, now, existing.id);
         writeNoteFile(workspacePath, {
           id: existing.id, projectId, workspaceId: existing.workspaceId as string,
           title: existing.title as string, content: markdown,
-          tagIds: existing.tagIds as string[], linkedNoteIds: existing.linkedNoteIds as string[],
-          linkedCardIds: existing.linkedCardIds as string[], isPinned: existing.isPinned as boolean,
+          tagIds: ensureResolvedTagIds ?? existing.tagIds as string[], linkedNoteIds: existing.linkedNoteIds as string[],
+          linkedCardIds: existing.linkedCardIds as string[], isPinned: ensureResolvedIsPinned ?? existing.isPinned as boolean,
           createdAt: existing.createdAt as string, updatedAt: now,
           archivedAt: existing.archivedAt as string | undefined,
           projectName: project.name,
@@ -824,14 +895,16 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
         return { id: existing.id, title, action: "updated", updatedAt: now };
       } else {
         const noteId = newId();
+        const newTagIds = ensureResolvedTagIds ?? [];
+        const newIsPinned = ensureResolvedIsPinned ?? false;
         db.prepare(`
           INSERT INTO notes (id, project_id, workspace_id, title, content, content_text,
             tag_ids, linked_note_ids, linked_card_ids, is_pinned, type, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, '[]', '[]', '[]', 0, 'note', ?, ?)
-        `).run(noteId, projectId, project.workspaceId, title, markdown, stripMarkdown(markdown), now, now);
+          VALUES (?, ?, ?, ?, ?, ?, ?, '[]', '[]', ?, 'note', ?, ?)
+        `).run(noteId, projectId, project.workspaceId, title, markdown, stripMarkdown(markdown), j(newTagIds), newIsPinned ? 1 : 0, now, now);
         writeNoteFile(workspacePath, {
           id: noteId, projectId, workspaceId: project.workspaceId, title, content: markdown,
-          tagIds: [], linkedNoteIds: [], linkedCardIds: [], isPinned: false,
+          tagIds: newTagIds, linkedNoteIds: [], linkedCardIds: [], isPinned: newIsPinned,
           createdAt: now, updatedAt: now, projectName: project.name,
         });
         insertNotification(db, "create_note", "Note created", `"${title}" added to ${project.name} (ensure_note)`);
@@ -1375,156 +1448,19 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
   }
 }
 
-// ── Zod shape builder ─────────────────────────
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function buildZodShape(schema: any): Record<string, z.ZodTypeAny> {
-  if (!schema?.properties) return {};
-  const shape: Record<string, z.ZodTypeAny> = {};
-  const required: string[] = schema.required ?? [];
-  for (const [key, prop] of Object.entries(schema.properties as Record<string, any>)) {
-    let zodType: z.ZodTypeAny;
-    if (prop.enum) { const [first, ...rest] = prop.enum as [string, ...string[]]; zodType = z.enum([first, ...rest]); }
-    else if (prop.type === "string") zodType = z.string();
-    else if (prop.type === "number") zodType = z.number();
-    else zodType = z.unknown();
-    if (prop.description) zodType = (zodType as z.ZodString).describe(prop.description);
-    if (!required.includes(key)) zodType = zodType.optional();
-    if (prop.default !== undefined && !required.includes(key)) zodType = (zodType as z.ZodOptional<z.ZodTypeAny>).default(prop.default);
-    shape[key] = zodType;
-  }
-  return shape;
-}
-
-const TOOL_DEFINITIONS = [
-  { name: "get_cairn_context",   description: "Returns a full orientation guide for this Cairn instance: workspaces, projects, board columns with IDs, available tools, and data conventions. Call this first if unfamiliar with the workspace.",
-    inputSchema: { type: "object", properties: {}, required: [] } },
-  { name: "get_project_context_pack", description: "Single-call context bundle for a project: metadata, column IDs, pinned note content, open tasks (non-done), and recent activity. Use this instead of calling get_project_summary + list_tasks + list_notes separately when you need a full picture before acting.",
-    inputSchema: { type: "object", properties: { projectId: { type: "string" } }, required: ["projectId"] } },
-  { name: "search_notes",        description: "Search notes by query string. Returns title, snippet, projectId.",
-    inputSchema: { type: "object", properties: { query: { type: "string", description: "Search query" }, projectId: { type: "string", description: "Filter by project ID" }, limit: { type: "number", default: 10 } }, required: ["query"] } },
-  { name: "search_tasks",        description: "Search task cards by query string.",
-    inputSchema: { type: "object", properties: { query: { type: "string" }, projectId: { type: "string" }, columnType: { type: "string", enum: ["backlog","todo","in_progress","review","done"] }, limit: { type: "number", default: 10 } }, required: ["query"] } },
-  { name: "get_project_summary", description: "Get a full summary of a project: card counts by column, notes, recent activity.",
-    inputSchema: { type: "object", properties: { projectId: { type: "string", description: "Project ID" } }, required: ["projectId"] } },
-  { name: "list_recent_activity",description: "List recently created/updated notes and tasks in a workspace.",
-    inputSchema: { type: "object", properties: { workspaceId: { type: "string" }, projectId: { type: "string" }, limit: { type: "number", default: 20 } }, required: ["workspaceId"] } },
-  { name: "create_note",         description: "Create a new note in a project.",
-    inputSchema: { type: "object", properties: { projectId: { type: "string" }, title: { type: "string" }, content: { type: "string" } }, required: ["projectId", "title"] } },
-  { name: "import_note_from_file", description: "Import a local file (e.g. README.md) as a note. The MCP server reads the file from disk — no need to inline content as an argument. title defaults to the filename without extension.",
-    inputSchema: { type: "object", properties: { projectId: { type: "string" }, filePath: { type: "string", description: "Absolute path to the file to import" }, title: { type: "string", description: "Override the note title (defaults to filename without extension)" } }, required: ["projectId", "filePath"] } },
-  { name: "update_note",         description: "Update a note's title, content, or pinned state. All fields except noteId are optional.",
-    inputSchema: { type: "object", properties: { noteId: { type: "string" }, title: { type: "string" }, content: { type: "string" }, isPinned: { type: "boolean", description: "Pin or unpin the note in the project overview" } }, required: ["noteId"] } },
-  { name: "move_note",           description: "Move a note to a different project. Moves the .md file and updates the note's projectId.",
-    inputSchema: { type: "object", properties: { noteId: { type: "string" }, targetProjectId: { type: "string" } }, required: ["noteId", "targetProjectId"] } },
-  { name: "create_task",         description: "Create a task card in a board column.",
-    inputSchema: { type: "object", properties: { columnId: { type: "string" }, projectId: { type: "string" }, title: { type: "string" }, description: { type: "string" }, priority: { type: "string", enum: ["low","medium","high","urgent"] }, dueDate: { type: "string" } }, required: ["columnId", "projectId", "title"] } },
-  { name: "update_task_status",  description: "Move a single task card to a different column.",
-    inputSchema: { type: "object", properties: { cardId: { type: "string" }, targetColumnId: { type: "string" } }, required: ["cardId", "targetColumnId"] } },
-  { name: "bulk_update_task_status", description: "Move multiple task cards to the same target column in a single call. Use instead of calling update_task_status repeatedly.",
-    inputSchema: { type: "object", properties: { cardIds: { type: "array", items: { type: "string" }, description: "IDs of the task cards to move." }, targetColumnId: { type: "string" } }, required: ["cardIds", "targetColumnId"] } },
-  { name: "link_note_to_task",   description: "Bidirectionally link a note and a task card.",
-    inputSchema: { type: "object", properties: { noteId: { type: "string" }, cardId: { type: "string" } }, required: ["noteId", "cardId"] } },
-  { name: "get_note",            description: "Get the full content, linked IDs, and metadata of a note by its ID.",
-    inputSchema: { type: "object", properties: { noteId: { type: "string" } }, required: ["noteId"] } },
-  { name: "get_task",            description: "Get full detail of a task card by its ID — title, description, priority, dueDate, column, linked notes.",
-    inputSchema: { type: "object", properties: { cardId: { type: "string" } }, required: ["cardId"] } },
-  { name: "create_project",      description: "Create a new project in a workspace with default board columns (Backlog, Todo, In Progress, Review, Done).",
-    inputSchema: { type: "object", properties: { workspaceId: { type: "string" }, name: { type: "string" }, description: { type: "string" }, icon: { type: "string", description: "A single emoji" }, status: { type: "string", enum: ["active","on_hold","completed","archived"] }, priority: { type: "string", enum: ["low","medium","high","urgent"] } }, required: ["workspaceId", "name"] } },
-  { name: "delete_note",         description: "Permanently delete a note by its ID.",
-    inputSchema: { type: "object", properties: { noteId: { type: "string" } }, required: ["noteId"] } },
-  { name: "delete_task",         description: "Permanently delete a task card by its ID.",
-    inputSchema: { type: "object", properties: { cardId: { type: "string" } }, required: ["cardId"] } },
-  { name: "update_task",         description: "Update a task card's fields (title, description, priority, dueDate, columnId, tagIds). Parameter is cardId (previously taskId).",
-    inputSchema: { type: "object", properties: { cardId: { type: "string" }, title: { type: "string" }, description: { type: "string" }, priority: { type: "string", enum: ["low","medium","high","urgent"] }, dueDate: { type: "string" }, columnId: { type: "string" }, tagIds: { type: "string" } }, required: ["cardId"] } },
-  { name: "update_project",      description: "Update a project's name, description, status, or priority.",
-    inputSchema: { type: "object", properties: { projectId: { type: "string" }, name: { type: "string" }, description: { type: "string" }, status: { type: "string", enum: ["active","on_hold","completed","archived"] }, priority: { type: "string", enum: ["low","medium","high","urgent"] } }, required: ["projectId"] } },
-  { name: "delete_project",      description: "Permanently delete a project and all its notes, tasks, and columns.",
-    inputSchema: { type: "object", properties: { projectId: { type: "string" } }, required: ["projectId"] } },
-  { name: "list_notes",          description: "List all notes in a project.",
-    inputSchema: { type: "object", properties: { projectId: { type: "string" } }, required: [] } },
-  { name: "list_tasks",          description: "List all tasks in a project, grouped by column.",
-    inputSchema: { type: "object", properties: { projectId: { type: "string" } }, required: [] } },
-  { name: "resolve_project",     description: "Find a project by name (exact or fuzzy) and return its projectId and column IDs. Use this instead of hardcoding IDs or calling get_cairn_context just to look up a project.",
-    inputSchema: { type: "object", properties: { name: { type: "string", description: "Project name to search for (case-insensitive, fuzzy)" }, workspaceId: { type: "string", description: "Optionally scope to a specific workspace" } }, required: ["name"] } },
-  { name: "ensure_note",         description: "Idempotent create-or-update: finds an existing note by title+projectId and updates its content, or creates it if not found. Use instead of create_note when re-running (e.g. syncing a README) to prevent duplicate notes.",
-    inputSchema: { type: "object", properties: { projectId: { type: "string" }, title: { type: "string" }, content: { type: "string" } }, required: ["projectId", "title"] } },
-  { name: "append_to_note",      description: "Append content to the end of an existing note without fetching or re-sending the full body. Optional separator defaults to a blank line.",
-    inputSchema: { type: "object", properties: { noteId: { type: "string" }, content: { type: "string", description: "Text to append" }, separator: { type: "string", description: "String inserted between existing content and appended content (default: '\\n\\n')" } }, required: ["noteId", "content"] } },
-  { name: "patch_note",          description: "Surgically replace a specific string inside a note without re-sending the full content. Provide enough surrounding context in oldString to make it unique. Returns an error if oldString is not found or matches multiple times (use replaceAll: true to replace all occurrences).",
-    inputSchema: { type: "object", properties: { noteId: { type: "string" }, oldString: { type: "string", description: "Exact string to find in the note (include enough context to be unique)" }, newString: { type: "string", description: "Replacement string" }, replaceAll: { type: "boolean", description: "Replace all occurrences instead of requiring uniqueness (default: false)" } }, required: ["noteId", "oldString", "newString"] } },
-  { name: "create_dashboard",    description: "Create a dashboard in a project. The html field must be a complete self-contained HTML document with inline CSS/JS only. Use window.cairn.query(tool, args) for live data from read-only tools. The dashboard is rendered in a sandboxed iframe inside Cairn.",
-    inputSchema: { type: "object", properties: { projectId: { type: "string" }, title: { type: "string" }, html: { type: "string", description: "Complete self-contained HTML document" } }, required: ["projectId", "title", "html"] } },
-  { name: "update_dashboard",    description: "Update an existing dashboard's title or HTML content.",
-    inputSchema: { type: "object", properties: { noteId: { type: "string", description: "The dashboard note ID" }, title: { type: "string" }, html: { type: "string", description: "Complete self-contained HTML document" } }, required: ["noteId"] } },
-  // ── Idea Flow ───────────────────────────────────────────────────────────────
-  { name: "get_idea_flow",       description: "Get the full Idea Flow graph for a project: all nodes (with resolved note/task content), edges, and a spatial object with bounds (canvas bounding box) and nextPosition (suggested {x,y} for the next node, clear of existing content). Call this before making changes.",
-    inputSchema: { type: "object", properties: { projectId: { type: "string" } }, required: ["projectId"] } },
-  { name: "create_idea_flow_node", description: "Add a new node to a project's Idea Flow canvas. Node types: idea (title+body), note_ref (noteId), task_ref (cardId), url (url+title+description), ai_summary (content), group (label+color — visual container only, do not wire edges to/from groups). Optionally wire edges to existing nodes in the same call via the edges array — avoids a separate create_idea_flow_edge call.",
-    inputSchema: { type: "object", properties: {
-      projectId: { type: "string" },
-      type:      { type: "string", enum: ["idea", "note_ref", "task_ref", "group", "url", "ai_summary"] },
-      x:         { type: "number", description: "Canvas X position" },
-      y:         { type: "number", description: "Canvas Y position" },
-      width:     { type: "number", description: "Optional node width" },
-      height:    { type: "number", description: "Optional node height" },
-      parentId:  { type: "string", description: "Optional parent group node ID" },
-      data:      { type: "object", description: "Node data matching the type's shape: idea={title,body}, note_ref={noteId}, task_ref={cardId}, group={label,color}, url={url,title,description}, ai_summary={content}" },
-      edges:     { type: "array", description: "Optional edges to create immediately. Each item: { targetNodeId, label? } to draw an edge FROM this new node TO an existing node, or { sourceNodeId, label? } to draw an edge FROM an existing node TO this new node.", items: { type: "object" } },
-    }, required: ["projectId", "type"] } },
-  { name: "update_idea_flow_node", description: "Update a node's data and/or position in the Idea Flow. Only provided fields are changed; data fields are merged (not replaced).",
-    inputSchema: { type: "object", properties: {
-      nodeId: { type: "string" },
-      x:      { type: "number", description: "New X position" },
-      y:      { type: "number", description: "New Y position" },
-      width:  { type: "number" },
-      height: { type: "number" },
-      data:   { type: "object", description: "Partial data to merge into the node's existing data" },
-    }, required: ["nodeId"] } },
-  { name: "delete_idea_flow_node", description: "Remove a node from the Idea Flow. Also removes all edges connected to that node.",
-    inputSchema: { type: "object", properties: { nodeId: { type: "string" } }, required: ["nodeId"] } },
-  { name: "create_idea_flow_edge", description: "Connect two nodes in the Idea Flow with an optional label.",
-    inputSchema: { type: "object", properties: {
-      sourceNodeId: { type: "string", description: "ID of the source node" },
-      targetNodeId: { type: "string", description: "ID of the target node" },
-      label:        { type: "string", description: "Optional label for the connection" },
-    }, required: ["sourceNodeId", "targetNodeId"] } },
-  { name: "delete_idea_flow_edge", description: "Remove a connection between two nodes in the Idea Flow.",
-    inputSchema: { type: "object", properties: { edgeId: { type: "string" } }, required: ["edgeId"] } },
-  { name: "layout_idea_flow", description: "Auto-arrange all nodes in the Idea Flow using a Dagre graph layout. Call after bulk-creating nodes to avoid overlaps. direction LR = left-to-right (default), TB = top-to-bottom.",
-    inputSchema: { type: "object", properties: {
-      projectId: { type: "string" },
-      direction:  { type: "string", enum: ["LR", "TB"] },
-    }, required: ["projectId"] } },
-
-  // ── Knowledge Graph ───────────────────────────
-  { name: "get_knowledge_graph",
-    description: "Get the full workspace knowledge graph: all projects, notes, cards, and tags as nodes, with all relationships (links, tags, project membership, IdeaFlow edges, and auto-discovered co-mentions / keyword similarity / shared assignees) as edges. Use for in-context traversal and research. Filter to specific projects via projectIds array.",
-    inputSchema: { type: "object", properties: {
-      workspaceId:  { type: "string", description: "Workspace ID (required)" },
-      projectIds:   { type: "string", description: "Optional comma-separated project IDs to scope the graph (omit for all)" },
-      includeAuto:  { type: "string", description: "Include auto-discovered relationships from the cache (default: true)" },
-    }, required: ["workspaceId"] } },
-
-  { name: "get_neighbors",
-    description: "Get the N-hop neighbourhood around a specific node in the knowledge graph. Returns the centre node and all directly or indirectly connected nodes up to `depth` hops. Ideal for incremental AI research — start at a note or card and explore outward without loading the full graph.",
-    inputSchema: { type: "object", properties: {
-      workspaceId: { type: "string", description: "Workspace ID" },
-      nodeId:      { type: "string", description: "ID of the node to centre on (note, card, project, or tag ID)" },
-      depth:       { type: "number", description: "Number of hops to traverse (1–3, default 1)" },
-    }, required: ["workspaceId", "nodeId"] } },
-] as const;
-
-// ── MCP server factory ────────────────────────
 
 function buildMcpServer(db: Database.Database, workspacePath: string): McpServer {
   const server = new McpServer({ name: "cairn", version: "1.0.0" });
 
-  for (const def of TOOL_DEFINITIONS) {
-    server.tool(def.name, def.description, buildZodShape(def.inputSchema),
+  // Register all tools from TOOL_SCHEMAS, excluding chat-only tools
+  const chatOnlySet = new Set<string>(CHAT_ONLY_TOOLS);
+  for (const [name, { description, schema }] of Object.entries(TOOL_SCHEMAS)) {
+    if (chatOnlySet.has(name)) continue;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    server.tool(name, description, schema.shape as Record<string, z.ZodTypeAny>,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       async (args: Record<string, any>) => {
-        const result = executeTool(db, workspacePath, def.name, args);
+        const result = executeTool(db, workspacePath, name, args);
         const hasError = typeof result === "object" && result !== null && !Array.isArray(result) && "error" in result;
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }],
           ...(hasError ? { isError: true } : {}) };

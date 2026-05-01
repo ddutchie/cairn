@@ -5,6 +5,7 @@ import { CheckCircle, Copy } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { cn } from "@/lib/utils";
 import { SettingsGroup } from "./shared";
+import { MCP_TOOLS } from "../../../electron/lib/tool-schemas";
 
 // ── MCP Server Settings ───────────────────────
 
@@ -68,57 +69,17 @@ export function MCPServerSettings() {
         />
       </div>
 
-      {/* Tools list */}
+      {/* Tools list — derived from MCP_TOOLS, no manual maintenance needed */}
       <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3.5">
         <div className="text-xs font-medium text-[var(--text-secondary)] mb-2">Available tools</div>
         <div className="grid grid-cols-2 gap-1.5">
-          {[
-            ["get_cairn_context",           "read"],
-            ["get_project_context_pack",   "read"],
-            ["resolve_project",            "read"],
-            ["get_note",                   "read"],
-            ["get_task",               "read"],
-            ["get_project_summary",    "read"],
-            ["list_notes",             "read"],
-            ["list_tasks",             "read"],
-            ["list_recent_activity",   "read"],
-            ["search_notes",           "read"],
-            ["search_tasks",           "read"],
-            ["create_project",         "write"],
-            ["update_project",         "write"],
-            ["create_note",            "write"],
-            ["import_note_from_file",  "write"],
-            ["ensure_note",            "write"],
-            ["append_to_note",         "write"],
-            ["patch_note",             "write"],
-            ["update_note",            "write"],
-            ["move_note",              "write"],
-            ["create_task",            "write"],
-            ["update_task",            "write"],
-            ["update_task_status",     "write"],
-            ["bulk_update_task_status","write"],
-            ["link_note_to_task",      "write"],
-            ["create_dashboard",       "write"],
-            ["update_dashboard",       "write"],
-            ["delete_note",            "delete"],
-            ["delete_task",            "delete"],
-            ["delete_project",         "delete"],
-            ["get_idea_flow",          "read"],
-            ["create_idea_flow_node",  "write"],
-            ["update_idea_flow_node",  "write"],
-            ["create_idea_flow_edge",  "write"],
-             ["delete_idea_flow_node",  "delete"],
-             ["delete_idea_flow_edge",  "delete"],
-             ["layout_idea_flow",       "write"],
-             ["get_knowledge_graph",    "read"],
-             ["get_neighbors",          "read"],
-          ].map(([tool, cat]) => (
-            <div key={tool} className="flex items-center gap-1.5">
+          {MCP_TOOLS.map(({ name, category }) => (
+            <div key={name} className="flex items-center gap-1.5">
               <span className={cn(
                 "w-1.5 h-1.5 rounded-full flex-shrink-0",
-                cat === "write" ? "bg-[var(--warning)]" : cat === "delete" ? "bg-[var(--danger)]" : "bg-[var(--accent)]"
+                category === "write" ? "bg-[var(--warning)]" : category === "delete" ? "bg-[var(--danger)]" : "bg-[var(--accent)]"
               )} />
-              <span className="text-[11px] font-mono text-[var(--text-tertiary)]">{tool}</span>
+              <span className="text-[11px] font-mono text-[var(--text-tertiary)]">{name}</span>
             </div>
           ))}
         </div>
