@@ -12,11 +12,11 @@ export interface GroupNodeData {
 
 // Map semantic color names to CSS variable pairs (background tint + border)
 const COLOR_MAP: Record<string, { bg: string; border: string; text: string }> = {
-  accent:  { bg: "var(--accent-dim)",    border: "var(--accent)",   text: "var(--accent)" },
-  purple:  { bg: "rgba(139,92,246,0.08)", border: "rgba(139,92,246,0.4)", text: "rgb(139,92,246)" },
-  green:   { bg: "rgba(34,197,94,0.08)",  border: "rgba(34,197,94,0.4)",  text: "rgb(34,197,94)" },
-  orange:  { bg: "rgba(249,115,22,0.08)", border: "rgba(249,115,22,0.4)", text: "rgb(249,115,22)" },
-  red:     { bg: "rgba(239,68,68,0.08)",  border: "rgba(239,68,68,0.4)",  text: "rgb(239,68,68)" },
+  accent:  { bg: "var(--accent-dim)",                    border: "var(--accent)",   text: "var(--accent)" },
+  purple:  { bg: "color-mix(in srgb, var(--accent) 8%, transparent)",   border: "color-mix(in srgb, var(--accent) 40%, transparent)",   text: "var(--accent)" },
+  green:   { bg: "color-mix(in srgb, var(--success) 8%, transparent)",  border: "color-mix(in srgb, var(--success) 40%, transparent)",  text: "var(--success)" },
+  orange:  { bg: "color-mix(in srgb, var(--warning) 8%, transparent)",  border: "color-mix(in srgb, var(--warning) 40%, transparent)",  text: "var(--warning)" },
+  red:     { bg: "color-mix(in srgb, var(--danger) 8%, transparent)",   border: "color-mix(in srgb, var(--danger) 40%, transparent)",   text: "var(--danger)" },
 };
 
 const DEFAULT_COLOR = COLOR_MAP.accent;
@@ -36,12 +36,12 @@ export const GroupNode = memo(function GroupNode({ data, selected }: NodeProps) 
       />
       <div
         className={cn(
-          "w-full h-full rounded-2xl border-2 transition-colors",
-          selected ? "border-dashed" : "border-dashed"
+          "w-full h-full rounded-2xl border transition-colors",
+          selected ? "border-dashed" : "border-solid"
         )}
         style={{
           background: colors.bg,
-          borderColor: selected ? colors.border : colors.border.replace("0.4", "0.25"),
+          borderColor: selected ? colors.border : colors.border.replace("0.4", "0.2"),
         }}
       >
         {/* Header label — top-left, inside the group */}

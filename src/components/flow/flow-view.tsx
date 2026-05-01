@@ -844,9 +844,26 @@ function IdeaFlowCanvas() {
         <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="var(--border)" />
         <Controls style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10 }} />
         <MiniMap
-          style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10 }}
-          nodeColor="var(--surface-2)"
-          maskColor="var(--background)"
+          style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}
+          nodeColor={(node) => {
+            switch (node.type) {
+              case "group": {
+                const c = (node.data as Record<string, unknown>).color;
+                if (c === "green")  return "color-mix(in srgb, var(--success) 35%, transparent)";
+                if (c === "orange") return "color-mix(in srgb, var(--warning) 35%, transparent)";
+                if (c === "red")    return "color-mix(in srgb, var(--danger) 35%, transparent)";
+                return "var(--accent-dim)"; // accent + purple both use accent
+              }
+              case "idea":       return "var(--surface-2)";
+              case "note_ref":   return "color-mix(in srgb, var(--info) 40%, transparent)";
+              case "task_ref":   return "color-mix(in srgb, var(--success) 40%, transparent)";
+              case "url":        return "color-mix(in srgb, var(--warning) 40%, transparent)";
+              case "ai_summary": return "color-mix(in srgb, var(--accent) 35%, transparent)";
+              default:           return "var(--surface-2)";
+            }
+          }}
+          nodeStrokeWidth={0}
+          maskColor="rgba(0,0,0,0.06)"
         />
 
         <Panel position="top-right">
