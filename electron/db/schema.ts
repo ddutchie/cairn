@@ -229,6 +229,22 @@ const MIGRATIONS: Migration[] = [
       db.exec("ALTER TABLE idea_flow_nodes ADD COLUMN parent_id TEXT REFERENCES idea_flow_nodes(id) ON DELETE SET NULL");
     }
   },
+
+  // v6: Knowledge graph — relationship cache table
+  (db) => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS relationship_cache (
+        source_id   TEXT NOT NULL,
+        target_id   TEXT NOT NULL,
+        type        TEXT NOT NULL,
+        weight      REAL NOT NULL DEFAULT 1.0,
+        computed_at INTEGER NOT NULL,
+        PRIMARY KEY (source_id, target_id, type)
+      );
+      CREATE INDEX IF NOT EXISTS idx_rel_cache_source ON relationship_cache(source_id);
+      CREATE INDEX IF NOT EXISTS idx_rel_cache_target ON relationship_cache(target_id);
+    `);
+  },
 ];
 
 export function applySchema(db: Database.Database): void {

@@ -36,6 +36,8 @@ import { createChatSlice } from "./slices/chat";
 import type { ChatSlice } from "./slices/chat";
 import { createSelectorsSlice } from "./slices/selectors";
 import type { SelectorsSlice } from "./slices/selectors";
+import { createGraphSlice } from "./slices/graph";
+import type { GraphSlice } from "./slices/graph";
 
 // Re-export types used by consumers and constants.ts
 export type { AIConfig, Theme };
@@ -91,6 +93,7 @@ export interface CairnStore
     TagsSlice,
     ChatSlice,
     SelectorsSlice,
+    GraphSlice,
     HydrationSlice {}
 
 // ── Storage helpers ───────────────────────────────────────────────────────────
@@ -149,6 +152,7 @@ export const useCairnStore = create<CairnStore>()(
     ...createTagsSlice(...a),
     ...createChatSlice(...a),
     ...createSelectorsSlice(...a),
+    ...createGraphSlice(...a),
 
     // ── Hydration (cross-slice; stays in index.ts) ──
     hydrate() {

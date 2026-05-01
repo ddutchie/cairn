@@ -30,10 +30,17 @@
   "dependencies": {
     "@dagrejs/dagre": "^3.0.0",
     "@radix-ui/react-context-menu": "^2.2.16",
+    "@types/d3-hierarchy": "^3.1.7",
+    "@types/d3-selection": "^3.0.11",
+    "@types/d3-zoom": "^3.0.8",
     "@xyflow/react": "^12.10.2",
     "better-sqlite3": "^12.9.0",
+    "d3-hierarchy": "^3.1.2",
+    "d3-selection": "^3.0.0",
+    "d3-zoom": "^3.0.0",
     "mermaid": "^11.14.0",
-    "react-day-picker": "^9.14.0"
+    "react-day-picker": "^9.14.0",
+    "react-force-graph-2d": "^1.29.1"
   },
   "devDependencies": {
     "@codemirror/commands": "^6.10.3",

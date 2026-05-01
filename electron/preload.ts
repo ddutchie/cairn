@@ -121,6 +121,14 @@ const api = {
     },
   },
 
+  // ── Knowledge Graph ───────────────────────────
+  graph: {
+    get:       (workspaceId: string, filters?: unknown) => invoke("db:graph:get", { workspaceId, filters }),
+    neighbors: (workspaceId: string, nodeId: string, depth?: number, edgeTypes?: string[]) =>
+                 invoke("db:graph:neighbors", { workspaceId, nodeId, depth, edgeTypes }),
+    recompute: (workspaceId: string) => invoke("db:graph:recompute", { workspaceId }),
+  },
+
   // ── AI helpers ────────────────────────────────
   ai: {
     generatePrd: (args: unknown) => invoke<{ id: string; title: string; projectId: string } | { error: string }>("ai:generatePrd", args),

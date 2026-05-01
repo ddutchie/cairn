@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect } from "react";
 import {
   FileText, Kanban, Settings, Search, MessageSquare,
   ChevronDown, ChevronRight, Plus, Pin, MoreHorizontal,
-  FolderOpen, Hash, Layers, Pencil, Trash2,
+  FolderOpen, Hash, Layers, Pencil, Trash2, GitBranch,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CairnEvents } from "@/lib/events";
@@ -75,6 +75,12 @@ export function Sidebar() {
           <button onClick={toggleChat}
             className={cn("p-2 rounded-md transition-colors", chatOpen ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
             <MessageSquare size={15} />
+          </button>
+        </Tooltip>
+        <Tooltip content="Knowledge Graph (⌘5)" side="right">
+          <button onClick={() => setView("graph")}
+            className={cn("p-2 rounded-md transition-colors", activeView === "graph" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
+            <GitBranch size={15} />
           </button>
         </Tooltip>
       </aside>
@@ -153,8 +159,14 @@ export function Sidebar() {
         )}
       </nav>
 
-      {/* Settings */}
-      <div className="border-t border-[var(--border)] p-2">
+      {/* Graph + Settings */}
+      <div className="border-t border-[var(--border)] p-2 space-y-0.5">
+        <button onClick={() => setView("graph")}
+          className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors",
+            activeView === "graph" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
+          <GitBranch size={13} /><span>Knowledge Graph</span>
+          <span className="ml-auto text-[10px] font-mono text-[var(--text-tertiary)]">⌘5</span>
+        </button>
         <button onClick={() => setView("settings")}
           className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors",
             activeView === "settings" ? "text-[var(--text-primary)] bg-[var(--surface-2)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
@@ -171,7 +183,7 @@ interface ProjectItemProps {
   project: Project; isActive: boolean; isExpanded: boolean;
   onToggleExpand: () => void; onSelectProject: () => void;
   activeView: string;
-  onSelectView: (view: "overview" | "notes" | "board" | "chat") => void;
+  onSelectView: (view: "overview" | "notes" | "board" | "flow" | "graph" | "chat") => void;
   notes: Note[]; onRename: (name: string) => void; onDelete: () => void;
 }
 

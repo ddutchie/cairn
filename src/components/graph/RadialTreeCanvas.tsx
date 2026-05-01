@@ -1,0 +1,297 @@
+"use client";
+
+import React, { useRef, useEffect, useCallback } from "react";
+import * as d3Hierarchy from "d3-hierarchy";
+import * as d3Zoom from "d3-zoom";
+import * as d3Selection from "d3-selection";
+// linkRadial lives in d3-shape but we construct it manually below to avoid adding another dep
+import type { GraphNode, KnowledgeGraph } from "@/types";
+import { nodeTypeColor } from "@/store/slices/graph";
+
+interface Props {
+  graph: KnowledgeGraph;
+  selectedNodeId: string | null;
+  onNodeClick: (node: GraphNode) => void;
+  onBackgroundClick: () => void;
+}
+
+// Shared hierarchy node type
+type HNode = { id: string; title: string; type: string; children?: HNode[] };
+
+// Build a hierarchical tree from the flat graph.
+// Root = virtual workspace node → projects → notes/cards → tags
+function buildHierarchy(graph: KnowledgeGraph) {
+
+  const projects = graph.nodes.filter((n) => n.type === "project");
+  const byProject = new Map<string, HNode>();
+
+  for (const p of projects) {
+    byProject.set(p.id, { id: p.id, title: p.title, type: "project", children: [] });
+  }
+
+  // Attach notes and cards to their project
+  for (const n of graph.nodes) {
+    if (n.type !== "note" && n.type !== "card") continue;
+    const parent = n.projectId ? byProject.get(n.projectId) : null;
+    const child: HNode = { id: n.id, title: n.title, type: n.type };
+    if (parent) parent.children!.push(child);
+    else {
+      // orphan — attach to a synthetic "other" bucket if needed
+      const other = byProject.get("__other__");
+      if (other) other.children!.push(child);
+    }
+  }
+
+  // Attach tags as leaves under each project that uses them
+  const tagNodes = graph.nodes.filter((n) => n.type === "tag");
+  const tagEdges = graph.edges.filter((e) => e.type === "tag-member");
+  for (const tag of tagNodes) {
+    // Find which project-children use this tag
+    const memberIds = new Set(
+      tagEdges.filter((e) => e.target === tag.id).map((e) => e.source)
+    );
+    // Determine which project(s) these members belong to
+    const projectsUsingTag = new Set<string>();
+    for (const node of graph.nodes) {
+      if (memberIds.has(node.id) && node.projectId) projectsUsingTag.add(node.projectId);
+    }
+    for (const pid of projectsUsingTag) {
+      const proj = byProject.get(pid);
+      if (proj) proj.children!.push({ id: `${tag.id}:${pid}`, title: tag.title, type: "tag" });
+    }
+  }
+
+  const root: HNode = {
+    id: "__workspace__",
+    title: "Workspace",
+    type: "workspace",
+    children: [...byProject.values()],
+  };
+
+  return root;
+}
+
+function resolveVar(v: string) {
+  if (typeof document === "undefined") return "#888";
+  return getComputedStyle(document.documentElement)
+    .getPropertyValue(v.replace(/^var\((.+)\)$/, "$1"))
+    .trim();
+}
+
+function colorForType(type: string): string {
+  switch (type) {
+    case "project":   return resolveVar("--accent");
+    case "note":      return resolveVar("--info");
+    case "card":      return resolveVar("--success");
+    case "tag":       return resolveVar("--warning");
+    case "workspace": return resolveVar("--text-tertiary");
+    default:          return resolveVar("--muted");
+  }
+}
+
+export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgroundClick }: Props) {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const gRef = useRef<SVGGElement>(null);
+
+  const renderTree = useCallback(() => {
+    const svg = svgRef.current;
+    const g = gRef.current;
+    if (!svg || !g) return;
+
+    const width = svg.clientWidth || 800;
+    const height = svg.clientHeight || 600;
+    const radius = Math.min(width, height) / 2 - 80;
+
+    // Clear previous render
+    d3Selection.select(g).selectAll("*").remove();
+
+    const hierarchyData = buildHierarchy(graph);
+    const root = d3Hierarchy.hierarchy(hierarchyData);
+
+    const tree = d3Hierarchy.tree<typeof hierarchyData>()
+      .size([2 * Math.PI, radius])
+      .separation((a, b) => (a.parent === b.parent ? 1 : 2) / a.depth);
+
+    tree(root);
+
+    const gSel = d3Selection.select(g);
+
+    // Cross-project chord lines (non-tree edges)
+    const treeNodeMap = new Map<string, d3Hierarchy.HierarchyPointNode<typeof hierarchyData>>();
+    root.each((d) => {
+      const id = (d.data as { id: string }).id;
+      // strip the :projectId suffix added to tag duplicates
+      const baseId = id.includes(":") ? id.split(":")[0] : id;
+      treeNodeMap.set(baseId, d as d3Hierarchy.HierarchyPointNode<typeof hierarchyData>);
+    });
+
+    // Polar → cartesian helper
+    function polar2cart(angle: number, r: number): [number, number] {
+      return [r * Math.cos(angle - Math.PI / 2), r * Math.sin(angle - Math.PI / 2)];
+    }
+
+    // Draw chord overlays for cross-edges
+    const crossEdges = graph.edges.filter(
+      (e) => !["project-member", "tag-member"].includes(e.type)
+    );
+    for (const edge of crossEdges.slice(0, 100)) {
+      const sn = treeNodeMap.get(edge.source) as d3Hierarchy.HierarchyPointNode<HNode> | undefined;
+      const tn = treeNodeMap.get(edge.target) as d3Hierarchy.HierarchyPointNode<HNode> | undefined;
+      if (!sn || !tn) continue;
+      const [x1, y1] = polar2cart(sn.x, sn.y);
+      const [x2, y2] = polar2cart(tn.x, tn.y);
+
+      gSel.append("line")
+        .attr("x1", x1).attr("y1", y1)
+        .attr("x2", x2).attr("y2", y2)
+        .attr("stroke", resolveVar("--accent"))
+        .attr("stroke-width", 0.5)
+        .attr("stroke-opacity", 0.25)
+        .attr("stroke-dasharray", "3,3");
+    }
+
+    // Radial link path generator (replaces d3-shape linkRadial to avoid extra dep)
+    function radialLinkPath(link: d3Hierarchy.HierarchyPointLink<HNode>): string {
+      const s = link.source as d3Hierarchy.HierarchyPointNode<HNode>;
+      const t = link.target as d3Hierarchy.HierarchyPointNode<HNode>;
+      const [sx, sy] = polar2cart(s.x, s.y);
+      const [tx, ty] = polar2cart(t.x, t.y);
+      // Cubic bezier curving through origin for aesthetic
+      return `M${sx},${sy}C${sx * 0.5},${sy * 0.5} ${tx * 0.5},${ty * 0.5} ${tx},${ty}`;
+    }
+
+    // Draw tree links
+    gSel.selectAll(".link")
+      .data(root.links())
+      .join("path")
+      .attr("class", "link")
+      .attr("fill", "none")
+      .attr("stroke", resolveVar("--border"))
+      .attr("stroke-opacity", 0.6)
+      .attr("stroke-width", 1)
+      .attr("d", (d) => radialLinkPath(d as d3Hierarchy.HierarchyPointLink<HNode>));
+
+    // Draw nodes
+    const nodeGroups = gSel.selectAll(".node")
+      .data(root.descendants())
+      .join("g")
+      .attr("class", "node")
+      .attr("transform", (d) => {
+        const pd = d as d3Hierarchy.HierarchyPointNode<HNode>;
+        const [x, y] = polar2cart(pd.x, pd.y);
+        return `translate(${x},${y})`;
+      })
+      .style("cursor", "pointer")
+      .on("click", (event: MouseEvent, d) => {
+        event.stopPropagation();
+        const nodeId = (d.data as { id: string }).id;
+        const baseId = nodeId.includes(":") ? nodeId.split(":")[0] : nodeId;
+        const found = graph.nodes.find((n) => n.id === baseId);
+        if (found) onNodeClick(found);
+      });
+
+    nodeGroups.append("circle")
+      .attr("r", (d) => {
+        const type = (d.data as { type: string }).type;
+        if (type === "workspace") return 8;
+        if (type === "project") return 6;
+        if (type === "tag") return 3;
+        return 4;
+      })
+      .attr("fill", (d) => {
+        const nodeId = (d.data as { id: string }).id;
+        const baseId = nodeId.includes(":") ? nodeId.split(":")[0] : nodeId;
+        const type = (d.data as { type: string }).type;
+        const isSelected = baseId === selectedNodeId;
+        const color = colorForType(type);
+        return isSelected ? color : color + "aa";
+      })
+      .attr("stroke", (d) => colorForType((d.data as { type: string }).type))
+      .attr("stroke-width", (d) => {
+        const nodeId = (d.data as { id: string }).id;
+        const baseId = nodeId.includes(":") ? nodeId.split(":")[0] : nodeId;
+        return baseId === selectedNodeId ? 2 : 0;
+      });
+
+    // Labels
+    nodeGroups.append("text")
+      .attr("dy", "0.31em")
+      .attr("x", (d) => {
+        const pd = d as d3Hierarchy.HierarchyPointNode<HNode>;
+        // Right half: label to the right of node; left half: label to the left
+        return pd.x < Math.PI ? 8 : -8;
+      })
+      .attr("text-anchor", (d) => {
+        const pd = d as d3Hierarchy.HierarchyPointNode<HNode>;
+        return pd.x < Math.PI ? "start" : "end";
+      })
+      .style("font-size", (d) => {
+        const type = (d.data as { type: string }).type;
+        return type === "workspace" ? "11px" : type === "project" ? "10px" : "9px";
+      })
+      .style("fill", resolveVar("--text-secondary"))
+      .style("font-family", "sans-serif")
+      .style("pointer-events", "none")
+      .text((d) => {
+        const title = (d.data as { title: string }).title;
+        return title.length > 22 ? title.slice(0, 20) + "…" : title;
+      });
+
+  }, [graph, selectedNodeId, onNodeClick]);
+
+  useEffect(() => {
+    renderTree();
+  }, [renderTree]);
+
+  // Set up zoom + re-centre on mount
+  useEffect(() => {
+    const svg = svgRef.current;
+    const g = gRef.current;
+    if (!svg || !g) return;
+
+    const width = svg.clientWidth || 800;
+    const height = svg.clientHeight || 600;
+
+    const zoom = d3Zoom.zoom<SVGSVGElement, unknown>()
+      .scaleExtent([0.2, 4])
+      .on("zoom", (event) => {
+        d3Selection.select(g).attr("transform", event.transform);
+      });
+
+    const svgSel = d3Selection.select(svg);
+    svgSel.call(zoom);
+
+    // Centre the tree
+    svgSel.call(
+      zoom.transform,
+      d3Zoom.zoomIdentity.translate(width / 2, height / 2)
+    );
+
+    // Background click
+    svgSel.on("click.bg", onBackgroundClick);
+
+    return () => {
+      svgSel.on(".zoom", null);
+      svgSel.on("click.bg", null);
+    };
+  }, [onBackgroundClick]);
+
+  // Re-render on resize
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const ro = new ResizeObserver(() => renderTree());
+    ro.observe(svg);
+    return () => ro.disconnect();
+  }, [renderTree]);
+
+  return (
+    <svg
+      ref={svgRef}
+      className="flex-1 w-full h-full"
+      style={{ background: "transparent" }}
+    >
+      <g ref={gRef} />
+    </svg>
+  );
+}

@@ -227,11 +227,59 @@ export interface ResolvedIdeaFlow {
   };
 }
 
+// ── Knowledge Graph ───────────────────────────
+
+export type GraphNodeType = "project" | "note" | "card" | "tag";
+
+export type GraphEdgeType =
+  | "note-note" | "note-card" | "tag-member" | "project-member"
+  | "flow-ref" | "flow-edge" | "co-mention" | "keyword" | "assignee";
+
+export interface GraphNode {
+  id: ID;
+  type: GraphNodeType;
+  title: string;
+  projectId?: ID;
+  workspaceId: string;
+  meta?: {
+    status?: string;
+    priority?: string;
+    assignee?: string;
+    tagIds?: string[];
+    isPinned?: boolean;
+    snippet?: string;
+    color?: string;
+  };
+}
+
+export interface GraphEdge {
+  id: ID;
+  source: ID;
+  target: ID;
+  type: GraphEdgeType;
+  label?: string;
+  weight?: number;
+}
+
+export interface KnowledgeGraph {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
+
+export type GraphLayoutMode = "force" | "radial" | "timeline" | "matrix" | "table";
+
+export interface GraphFilters {
+  projectIds: string[];
+  nodeTypes: GraphNodeType[];
+  edgeTypes: GraphEdgeType[];
+  includeAuto: boolean;
+}
+
 // ── App UI State (not persisted) ──────────────
 export interface AppUIState {
   activeWorkspaceId: ID | null;
   activeProjectId: ID | null;
-  activeView: "overview" | "notes" | "board" | "flow" | "chat" | "search" | "settings";
+  activeView: "overview" | "notes" | "board" | "flow" | "graph" | "chat" | "search" | "settings";
   sidebarCollapsed: boolean;
   chatOpen: boolean;
   searchOpen: boolean;

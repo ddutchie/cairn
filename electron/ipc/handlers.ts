@@ -28,6 +28,8 @@ import { executeReadTool } from "../lib/read-tools";
 import { readWorkspaceConfig, writeWorkspaceConfig } from "../workspace-config";
 import { markMcpNotificationsRead } from "../db/queries";
 import { DEFAULT_COLUMNS } from "../db/defaults";
+import { getKnowledgeGraph, getNeighbours, computeAutoRelationships, invalidateRelationshipCache } from "../db/graph-queries";
+import type { GraphFilters, EdgeType } from "../db/graph-queries";
 
 // ── Result helpers ────────────────────────────────────────────────────────────
 
@@ -162,6 +164,7 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
         projectName: getProjectName(db, note.projectId),
       });
     }
+    invalidateRelationshipCache(db, id);
     return note;
   }));
 
@@ -211,7 +214,9 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
       if (Object.keys(rest).length > 0) q.updateCard(db, id, rest);
       return q.clearCardDueDate(db, id);
     }
-    return q.updateCard(db, id, patch);
+    const card = q.updateCard(db, id, patch);
+    invalidateRelationshipCache(db, id);
+    return card;
   }));
   ipcMain.handle("db:card:delete", (_e, { id }) => handle(() => q.deleteCard(db, id)));
 
@@ -388,6 +393,26 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
       requirements: args.requirements,
     }, llmConfig));
   });
+
+  // ── Knowledge Graph ────────────────────────────────
+  ipcMain.handle("db:graph:get", (_e, args: {
+    workspaceId: string;
+    filters?: GraphFilters;
+  }) => handle(() => getKnowledgeGraph(db, args.workspaceId, args.filters ?? {})));
+
+  ipcMain.handle("db:graph:neighbors", (_e, args: {
+    workspaceId: string;
+    nodeId: string;
+    depth?: number;
+    edgeTypes?: EdgeType[];
+  }) => handle(() => getNeighbours(db, args.workspaceId, args.nodeId, args.depth ?? 1, args.edgeTypes)));
+
+  ipcMain.handle("db:graph:recompute", (_e, args: {
+    workspaceId: string;
+  }) => handle(() => {
+    computeAutoRelationships(db, args.workspaceId);
+    return { ok: true };
+  }));
 }
 
 /**
