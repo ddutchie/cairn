@@ -23,6 +23,14 @@ import {
 import { Lightbulb, FileText, CheckSquare, Link2, Sparkles, Plus } from "lucide-react";
 import { useCairnStore } from "@/store";
 import type { IdeaNodeType, ResolvedIdeaFlow } from "@/types";
+import { historyManager, flowHandlers } from "@/lib/history";
+import {
+  makeAddNodeCmd,
+  makeUpdateNodeCmd,
+  makeDeleteNodeCmd,
+  makeAddEdgeCmd,
+  makeDeleteEdgeCmd,
+} from "@/lib/commands/flow-commands";
 import { IdeaNode }      from "./nodes/IdeaNode";
 import { NoteRefNode }   from "./nodes/NoteRefNode";
 import { TaskRefNode }   from "./nodes/TaskRefNode";
@@ -177,11 +185,33 @@ function IdeaFlowCanvas() {
 
   useEffect(() => { loadFlow(true); }, [loadFlow]);
 
+  // Register flowHandlers so undo/redo commands can patch local React Flow
+  // state without a full DB reload (no flicker).
+  useEffect(() => {
+    flowHandlers.addNode    = (node) => setNodes((ns) => [...ns.filter((n) => n.id !== node.id), node]);
+    flowHandlers.removeNode = (id)   => setNodes((ns) => ns.filter((n) => n.id !== id));
+    flowHandlers.updateNode = (id, data) =>
+      setNodes((ns) => ns.map((n) => n.id === id ? { ...n, data: { ...n.data, ...data } } : n));
+    flowHandlers.addEdge    = (edge) => setEdges((es) => [...es.filter((e) => e.id !== edge.id), edge]);
+    flowHandlers.removeEdge = (id)   => setEdges((es) => es.filter((e) => e.id !== id));
+    return () => {
+      flowHandlers.addNode    = null;
+      flowHandlers.removeNode = null;
+      flowHandlers.updateNode = null;
+      flowHandlers.addEdge    = null;
+      flowHandlers.removeEdge = null;
+    };
+  }, [setNodes, setEdges]);
+
   // Re-hydrate on external (MCP/AI) DB writes — but NOT on our own writes.
+  // External writes also clear the undo stack since history is now stale.
   useEffect(() => {
     if (!window.electron) return;
     const unsub = window.electron.onDbChanged(() => {
-      if (!suppressReloadRef.current) loadFlow(false);
+      if (!suppressReloadRef.current) {
+        loadFlow(false);
+        historyManager.clear();
+      }
     });
     return () => { unsub(); };
   }, [loadFlow]);
@@ -201,14 +231,17 @@ function IdeaFlowCanvas() {
   // ── Connect ───────────────────────────────────────────────────
 
   const onConnect = useCallback(
-    (params: Connection) => {
-      setEdges((eds) => addEdge({ ...params, type: "flow" }, eds));
+    async (params: Connection) => {
       suppressReload();
-      window.electron?.flow.edge.create({
+      const created = await window.electron?.flow.edge.create({
         projectId: activeProjectId,
         sourceNodeId: params.source,
         targetNodeId: params.target,
-      });
+      }) as { id: string } | undefined;
+      const edgeId = created?.id ?? `${params.source}-${params.target}`;
+      const rfEdge: Edge = { id: edgeId, source: params.source!, target: params.target!, type: "flow" };
+      setEdges((eds) => addEdge({ ...rfEdge }, eds));
+      historyManager.push(makeAddEdgeCmd(rfEdge, activeProjectId ?? ""));
     },
     [setEdges, activeProjectId],
   );
@@ -224,13 +257,19 @@ function IdeaFlowCanvas() {
 
   const onEdgesDelete = useCallback((deleted: Edge[]) => {
     suppressReload();
-    deleted.forEach((e) => window.electron?.flow.edge.delete(e.id));
-  }, []);
+    deleted.forEach((e) => {
+      window.electron?.flow.edge.delete(e.id);
+      historyManager.push(makeDeleteEdgeCmd(e, activeProjectId ?? ""));
+    });
+  }, [activeProjectId]);
 
   const onNodesDelete = useCallback((deleted: Node[]) => {
     suppressReload();
-    deleted.forEach((n) => window.electron?.flow.node.delete(n.id));
-  }, []);
+    deleted.forEach((n) => {
+      window.electron?.flow.node.delete(n.id);
+      historyManager.push(makeDeleteNodeCmd(n, activeProjectId ?? ""));
+    });
+  }, [activeProjectId]);
 
   // ── Double-click node → edit ──────────────────────────────────
 
@@ -255,19 +294,23 @@ function IdeaFlowCanvas() {
     suppressReload();
     const created = await window.electron.flow.node.create({ projectId: activeProjectId, type, x, y, data }) as { id: string };
     nodeCountRef.current += 1;
-    setNodes((ns) => [...ns, { id: created.id, type, position: { x, y }, data }]);
+    const rfNode: Node = { id: created.id, type, position: { x, y }, data };
+    setNodes((ns) => [...ns, rfNode]);
     setEditTarget({ nodeId: created.id, type, data: data as Record<string, unknown> });
     setShowAddMenu(false);
+    historyManager.push(makeAddNodeCmd(rfNode, activeProjectId));
   }
 
   // ── Save from edit modal ──────────────────────────────────────
 
   const handleEditSave = useCallback((nodeId: string, data: Record<string, unknown>) => {
+    const node = nodes.find((n) => n.id === nodeId);
+    const prevData = (node?.data ?? {}) as Record<string, unknown>;
     setNodes((ns) => ns.map((n) => n.id === nodeId ? { ...n, data } : n));
     suppressReload();
     window.electron?.flow.node.update(nodeId, { data });
+    historyManager.push(makeUpdateNodeCmd(nodeId, prevData, data));
     // For ref nodes, reload after save to get resolved title/snippet
-    const node = nodes.find((n) => n.id === nodeId);
     if (node?.type === "note_ref" || node?.type === "task_ref") {
       suppressReloadRef.current = false;
       loadFlow(false);

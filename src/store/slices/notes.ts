@@ -7,6 +7,14 @@ import type { CairnStore } from "../index";
 import type { Note, ID, NoteType } from "@/types";
 import { id, now } from "@/lib/utils";
 import { ipc, isElectron } from "../ipc";
+import { historyManager } from "@/lib/history";
+import {
+  makeCreateNoteCmd,
+  pushUpdateNoteCmd,
+  makeDeleteNoteCmd,
+  makeArchiveNoteCmd,
+  makeMoveNoteCmd,
+} from "@/lib/commands/note-commands";
 
 // ── Slice interface ───────────────────────────────────────────────────────────
 
@@ -54,10 +62,15 @@ export const createNotesSlice: StateCreator<CairnStore, [], [], NotesSlice> = (
     set((s) => ({ notes: [...s.notes, note] }));
     get().persist();
     ipc((e) => e.note.create(note));
+    historyManager.push(makeCreateNoteCmd(note, set));
     return note;
   },
 
   updateNote(noteId, patch) {
+    const prev = get().notes.find((n) => n.id === noteId);
+    const prevPatch = prev
+      ? Object.fromEntries(Object.keys(patch).map((k) => [k, (prev as unknown as Record<string, unknown>)[k]])) as Partial<Note>
+      : {} as Partial<Note>;
     set((s) => ({
       notes: s.notes.map((n) =>
         n.id === noteId ? { ...n, ...patch, updatedAt: now() } : n
@@ -65,9 +78,11 @@ export const createNotesSlice: StateCreator<CairnStore, [], [], NotesSlice> = (
     }));
     get().persist();
     ipc((e) => e.note.update(noteId, patch));
+    pushUpdateNoteCmd(noteId, prevPatch, patch, set);
   },
 
   deleteNote(noteId) {
+    const savedNote = get().notes.find((n) => n.id === noteId);
     set((s) => ({
       notes: s.notes.filter((n) => n.id !== noteId),
       cards: s.cards.map((c) => ({
@@ -77,6 +92,7 @@ export const createNotesSlice: StateCreator<CairnStore, [], [], NotesSlice> = (
     }));
     get().persist();
     ipc((e) => e.note.delete(noteId));
+    if (savedNote) historyManager.push(makeDeleteNoteCmd(savedNote, set));
   },
 
   archiveNote(noteId) {
@@ -88,6 +104,7 @@ export const createNotesSlice: StateCreator<CairnStore, [], [], NotesSlice> = (
     }));
     get().persist();
     ipc((e) => e.note.update(noteId, { archivedAt }));
+    historyManager.push(makeArchiveNoteCmd(noteId, archivedAt, set));
   },
 
   restoreNote(noteId) {
@@ -103,6 +120,9 @@ export const createNotesSlice: StateCreator<CairnStore, [], [], NotesSlice> = (
   moveNoteToProject(noteId, targetProjectId) {
     const targetProject = get().projects.find((p) => p.id === targetProjectId);
     if (!targetProject) return;
+    const note = get().notes.find((n) => n.id === noteId);
+    const prevProjectId = note?.projectId ?? "";
+    const prevWorkspaceId = note?.workspaceId ?? "";
     set((s) => ({
       notes: s.notes.map((n) =>
         n.id === noteId
@@ -117,6 +137,11 @@ export const createNotesSlice: StateCreator<CairnStore, [], [], NotesSlice> = (
     }));
     get().persist();
     ipc((e) => e.note.update(noteId, { projectId: targetProjectId }));
+    historyManager.push(makeMoveNoteCmd(
+      noteId, prevProjectId, prevWorkspaceId,
+      targetProjectId, targetProject.workspaceId,
+      targetProject.name, set,
+    ));
   },
 
   linkNoteToCard(noteId, cardId) {

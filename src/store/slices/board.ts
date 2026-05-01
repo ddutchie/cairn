@@ -7,6 +7,16 @@ import type { CairnStore } from "../index";
 import type { BoardColumn, TaskCard, ID } from "@/types";
 import { id, now } from "@/lib/utils";
 import { ipc } from "../ipc";
+import { historyManager } from "@/lib/history";
+import {
+  makeCreateCardCmd,
+  makeUpdateCardCmd,
+  makeMoveCardCmd,
+  makeDeleteCardCmd,
+  makeArchiveCardCmd,
+  makeDuplicateCardCmd,
+  makeUnlinkNoteFromCardCmd,
+} from "@/lib/commands/card-commands";
 
 // ── Slice interface ───────────────────────────────────────────────────────────
 
@@ -125,10 +135,15 @@ export const createBoardSlice: StateCreator<CairnStore, [], [], BoardSlice> = (
     set((s) => ({ cards: [...s.cards, card] }));
     get().persist();
     ipc((e) => e.card.create(card));
+    historyManager.push(makeCreateCardCmd(card, set));
     return card;
   },
 
   updateCard(cardId, patch) {
+    const prev = get().cards.find((c) => c.id === cardId);
+    const prevPatch = prev
+      ? Object.fromEntries(Object.keys(patch).map((k) => [k, (prev as unknown as Record<string, unknown>)[k]])) as Partial<TaskCard>
+      : {} as Partial<TaskCard>;
     set((s) => ({
       cards: s.cards.map((c) =>
         c.id === cardId ? { ...c, ...patch, updatedAt: now() } : c
@@ -136,12 +151,15 @@ export const createBoardSlice: StateCreator<CairnStore, [], [], BoardSlice> = (
     }));
     get().persist();
     ipc((e) => e.card.update(cardId, patch));
+    historyManager.push(makeUpdateCardCmd(cardId, prevPatch, patch, set));
   },
 
   moveCard(cardId, targetColumnId, targetIndex) {
     const cards = get().cards;
     const card = cards.find((c) => c.id === cardId);
     if (!card) return;
+    const prevColumnId = card.columnId;
+    const prevOrder = card.order;
 
     const oldColCards = cards
       .filter((c) => c.columnId === card.columnId && c.id !== cardId)
@@ -175,9 +193,17 @@ export const createBoardSlice: StateCreator<CairnStore, [], [], BoardSlice> = (
     ipc((e) =>
       e.card.update(cardId, { columnId: targetColumnId, order: targetIndex })
     );
+    const targetCol = get().columns.find((c) => c.id === targetColumnId);
+    historyManager.push(makeMoveCardCmd(
+      cardId, prevColumnId, prevOrder,
+      targetColumnId, targetIndex,
+      targetCol?.name ?? "column",
+      get, set,
+    ));
   },
 
   deleteCard(cardId) {
+    const savedCard = get().cards.find((c) => c.id === cardId);
     set((s) => ({
       cards: s.cards.filter((c) => c.id !== cardId),
       notes: s.notes.map((n) => ({
@@ -187,6 +213,7 @@ export const createBoardSlice: StateCreator<CairnStore, [], [], BoardSlice> = (
     }));
     get().persist();
     ipc((e) => e.card.delete(cardId));
+    if (savedCard) historyManager.push(makeDeleteCardCmd(savedCard, set));
   },
 
   reorderCards(columnId, cardIds) {
@@ -209,6 +236,7 @@ export const createBoardSlice: StateCreator<CairnStore, [], [], BoardSlice> = (
     }));
     get().persist();
     ipc((e) => e.card.update(cardId, { archivedAt }));
+    historyManager.push(makeArchiveCardCmd(cardId, archivedAt, set));
   },
 
   restoreCard(cardId) {
@@ -280,10 +308,15 @@ export const createBoardSlice: StateCreator<CairnStore, [], [], BoardSlice> = (
     set((s) => ({ cards: [...s.cards, newCard] }));
     get().persist();
     ipc((e) => e.card.create(newCard));
+    historyManager.push(makeDuplicateCardCmd(newCard, set));
     return newCard;
   },
 
   unlinkNoteFromCard(noteId, cardId) {
+    const prevCard = get().cards.find((c) => c.id === cardId);
+    const prevNote = get().notes.find((n) => n.id === noteId);
+    const prevCardLinkedNoteIds = prevCard?.linkedNoteIds ?? [];
+    const prevNoteLinkedCardIds = prevNote?.linkedCardIds ?? [];
     set((s) => ({
       cards: s.cards.map((c) =>
         c.id === cardId
@@ -311,5 +344,8 @@ export const createBoardSlice: StateCreator<CairnStore, [], [], BoardSlice> = (
       ipc((e) => e.card.update(cardId, { linkedNoteIds: card.linkedNoteIds }));
     if (note)
       ipc((e) => e.note.update(noteId, { linkedCardIds: note.linkedCardIds }));
+    historyManager.push(makeUnlinkNoteFromCardCmd(
+      noteId, cardId, prevCardLinkedNoteIds, prevNoteLinkedCardIds, set,
+    ));
   },
 });

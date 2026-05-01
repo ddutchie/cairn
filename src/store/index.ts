@@ -17,6 +17,7 @@ import type {
   ChatMessage,
 } from "@/types";
 import { storage } from "@/lib/storage";
+import { historyManager } from "@/lib/history";
 import { DEFAULT_AI_CONFIG, AI_CONFIG_KEY, ACTIVE_PROJECT_KEY } from "@/lib/constants";
 
 // ── Slice imports ─────────────────────────────────────────────────────────────
@@ -202,6 +203,9 @@ export const useCairnStore = create<CairnStore>()(
       };
 
       const current = get();
+
+      // External (MCP/AI) write refreshes invalidate the undo stack.
+      if (isRefresh) historyManager.clear();
 
       set({
         workspaces: snap.workspaces ?? [],

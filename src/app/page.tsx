@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { Download, X, AlertCircle } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { CairnEvents } from "@/lib/events";
+import { historyManager } from "@/lib/history";
 
 // ── IPC error toast ───────────────────────────────────────────────────────────
 
@@ -143,6 +144,16 @@ export default function Home() {
           // Dispatch a custom event that NotesView listens for to create a note
           window.dispatchEvent(CairnEvents.newNote());
         }
+      }
+      // Undo / Redo — only when focus is NOT inside a text input or editor
+      // (those surfaces handle ⌘Z natively via the browser / CodeMirror)
+      else if (mod && key === "z" && !e.shiftKey && !inInput) {
+        e.preventDefault();
+        void historyManager.undo();
+      }
+      else if (mod && (key === "y" || (key === "z" && e.shiftKey)) && !inInput) {
+        e.preventDefault();
+        void historyManager.redo();
       }
     }
     function handleOpenChat(e: Event) {

@@ -158,6 +158,8 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 | `⌘2` | Notes view |
 | `⌘3` | Board view |
 | `⌘4` | Idea Flow canvas |
+| `⌘Z` | Undo |
+| `⌘⇧Z` / `⌘Y` | Redo |
 | `Esc` | Close modal / search |
 
 ## Architecture
