@@ -21,7 +21,7 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
     chatOpen, toggleChat,
     activeProjectId, activeWorkspaceId,
     projects, workspaces,
-    getOrCreateThread, addMessage,
+    addMessage,
     chatMessages, chatThreads, aiConfig,
     setView, createNewThread, deleteThread, renameThread,
   } = useCairnStore();
@@ -37,6 +37,12 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
 
   const { isLoading, toolCalls, streamingContent, sendStream, stopStream } = useChatStream(threadId);
 
+  // Track isLoading in a ref so the thread-init effect can read it without
+  // being listed as a dependency (we never want a loading-state change to
+  // re-trigger thread selection).
+  const isLoadingRef = useRef(isLoading);
+  useEffect(() => { isLoadingRef.current = isLoading; }, [isLoading]);
+
   const project   = projects.find((p) => p.id === activeProjectId);
   const workspace = workspaces.find((w) => w.id === activeWorkspaceId);
 
@@ -45,12 +51,16 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
     .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
     .slice(0, 15);
 
-  // Initialise thread
+  // Initialise / switch thread.
+  // Reads getOrCreateThread directly from the store snapshot (stable, no ref
+  // needed) so the effect only re-runs when the workspace/project identity
+  // changes. Never switches while a stream is in-flight.
   useEffect(() => {
     if (!activeWorkspaceId) return;
-    const t = getOrCreateThread(activeWorkspaceId, activeProjectId ?? undefined);
+    if (isLoadingRef.current) return;
+    const t = useCairnStore.getState().getOrCreateThread(activeWorkspaceId, activeProjectId ?? undefined);
     setThreadId(t.id);
-  }, [activeWorkspaceId, activeProjectId, getOrCreateThread]);
+  }, [activeWorkspaceId, activeProjectId]);
 
   // Close history on outside click
   useEffect(() => {

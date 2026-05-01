@@ -201,10 +201,7 @@ export const useCairnStore = create<CairnStore>()(
         set({ aiConfig: { ...DEFAULT_AI_CONFIG, ...savedConfig } });
       }
 
-      const snap = (await window.electron!.snapshot()) as PersistedState & {
-        chatThreads?: PersistedState["chatThreads"];
-        chatMessages?: PersistedState["chatMessages"];
-      };
+      const snap = (await window.electron!.snapshot()) as PersistedState;
 
       const current = get();
 
@@ -218,10 +215,9 @@ export const useCairnStore = create<CairnStore>()(
         columns: snap.columns ?? [],
         cards: snap.cards ?? [],
         tags: snap.tags ?? [],
-        ...(!isRefresh && {
-          chatThreads: snap.chatThreads ?? [],
-          chatMessages: snap.chatMessages ?? [],
-        }),
+        // Chat (threads + messages) lives in localStorage and is managed by the
+        // store directly — never overwrite it from the SQLite snapshot, which
+        // doesn't include chat data. Doing so would zero out in-flight messages.
         activeWorkspaceId: isRefresh
           ? (current.activeWorkspaceId ?? snap.workspaces?.[0]?.id ?? null)
           : (snap.workspaces?.[0]?.id ?? null),
