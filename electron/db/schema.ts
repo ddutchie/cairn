@@ -168,6 +168,67 @@ const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_chat_messages_thread  ON chat_messages(thread_id);
     `);
   },
+
+  // v3: Idea Flow — node-based canvas per project
+  (db) => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS idea_flows (
+        id          TEXT PRIMARY KEY,
+        project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        created_at  TEXT NOT NULL,
+        updated_at  TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS idea_flow_nodes (
+        id         TEXT PRIMARY KEY,
+        flow_id    TEXT NOT NULL REFERENCES idea_flows(id) ON DELETE CASCADE,
+        type       TEXT NOT NULL,
+        x          REAL NOT NULL DEFAULT 0,
+        y          REAL NOT NULL DEFAULT 0,
+        width      REAL,
+        height     REAL,
+        data       TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS idea_flow_edges (
+        id             TEXT PRIMARY KEY,
+        flow_id        TEXT NOT NULL REFERENCES idea_flows(id) ON DELETE CASCADE,
+        source_node_id TEXT NOT NULL REFERENCES idea_flow_nodes(id) ON DELETE CASCADE,
+        target_node_id TEXT NOT NULL REFERENCES idea_flow_nodes(id) ON DELETE CASCADE,
+        label          TEXT,
+        created_at     TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_idea_flows_project   ON idea_flows(project_id);
+      CREATE INDEX IF NOT EXISTS idx_flow_nodes_flow      ON idea_flow_nodes(flow_id);
+      CREATE INDEX IF NOT EXISTS idx_flow_edges_flow      ON idea_flow_edges(flow_id);
+      CREATE INDEX IF NOT EXISTS idx_flow_edges_source    ON idea_flow_edges(source_node_id);
+      CREATE INDEX IF NOT EXISTS idx_flow_edges_target    ON idea_flow_edges(target_node_id);
+    `);
+  },
+
+  // v4: Unique constraint on idea_flow_edges to prevent duplicate connections
+  (db) => {
+    db.exec(`
+      DELETE FROM idea_flow_edges
+      WHERE id NOT IN (
+        SELECT MIN(id) FROM idea_flow_edges
+        GROUP BY flow_id, source_node_id, target_node_id
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_flow_edges_unique
+        ON idea_flow_edges(flow_id, source_node_id, target_node_id);
+    `);
+  },
+
+  // v5: Add parent_id to idea_flow_nodes for group sub-flow support
+  (db) => {
+    const cols = db.prepare("PRAGMA table_info(idea_flow_nodes)").all() as { name: string }[];
+    if (!cols.some((c) => c.name === "parent_id")) {
+      db.exec("ALTER TABLE idea_flow_nodes ADD COLUMN parent_id TEXT REFERENCES idea_flow_nodes(id) ON DELETE SET NULL");
+    }
+  },
 ];
 
 export function applySchema(db: Database.Database): void {

@@ -292,8 +292,9 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
         projects,
         tools: {
           read:   ["get_cairn_context", "get_project_context_pack", "resolve_project", "search_notes", "search_tasks", "get_note", "get_task", "get_project_summary", "list_notes", "list_tasks", "list_recent_activity"],
-          write:  ["create_project", "update_project", "create_note", "import_note_from_file", "ensure_note", "append_to_note", "patch_note", "update_note", "move_note", "create_task", "update_task", "update_task_status", "bulk_update_task_status", "link_note_to_task", "create_dashboard", "update_dashboard"],
-          delete: ["delete_note", "delete_task", "delete_project"],
+          write:  ["create_project", "update_project", "create_note", "import_note_from_file", "ensure_note", "append_to_note", "patch_note", "update_note", "move_note", "create_task", "update_task", "update_task_status", "bulk_update_task_status", "link_note_to_task", "create_dashboard", "update_dashboard", "create_idea_flow_node", "update_idea_flow_node", "create_idea_flow_edge"],
+          delete: ["delete_note", "delete_task", "delete_project", "delete_idea_flow_node", "delete_idea_flow_edge"],
+          ideaFlow: ["get_idea_flow", "create_idea_flow_node", "update_idea_flow_node", "delete_idea_flow_node", "create_idea_flow_edge", "delete_idea_flow_edge"],
         },
         conventions: {
           notes: "Raw markdown in 'content'. 'content_text' is auto-derived — do not set manually.",
@@ -894,6 +895,170 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
       return { id: noteId, title: note.title, updatedAt: now, replacements: all ? count : 1 };
     }
 
+    // ── Idea Flow tools ───────────────────────────────────────────────────────
+
+    case "get_idea_flow": {
+      const project = snap.projects.find((p) => p.id === args.projectId);
+      if (!project) return { error: "Project not found" };
+      // Get or create the flow
+      const existingFlow = db.prepare("SELECT * FROM idea_flows WHERE project_id = ?").get(args.projectId) as
+        | { id: string; project_id: string; created_at: string; updated_at: string } | undefined;
+      let flowId: string;
+      if (existingFlow) {
+        flowId = existingFlow.id;
+      } else {
+        flowId = newId();
+        const now = ts();
+        db.prepare("INSERT INTO idea_flows (id, project_id, created_at, updated_at) VALUES (?, ?, ?, ?)")
+          .run(flowId, args.projectId, now, now);
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const rawNodes = db.prepare("SELECT * FROM idea_flow_nodes WHERE flow_id = ? ORDER BY created_at").all(flowId) as any[];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const rawEdges = db.prepare("SELECT * FROM idea_flow_edges WHERE flow_id = ? ORDER BY created_at").all(flowId) as any[];
+      const nodes = rawNodes.map((row) => {
+        let data: Record<string, unknown> = {};
+        try { data = JSON.parse(row.data); } catch { /* empty */ }
+        const node = {
+          id: row.id as string,
+          type: row.type as string,
+          position: { x: row.x as number, y: row.y as number },
+          width: row.width as number | null,
+          height: row.height as number | null,
+          parentId: row.parent_id as string | null,
+          data,
+        };
+        // Resolve note_ref
+        if (node.type === "note_ref" && data.noteId) {
+          const noteRow = db.prepare("SELECT id, title, content_text FROM notes WHERE id = ?").get(data.noteId) as
+            | { id: string; title: string; content_text: string } | undefined;
+          if (noteRow) {
+            return { ...node, data: { ...data, resolvedTitle: noteRow.title, resolvedSnippet: noteRow.content_text?.slice(0, 200) ?? "" } };
+          }
+        }
+        // Resolve task_ref
+        if (node.type === "task_ref" && data.cardId) {
+          const cardRow = db.prepare(`
+            SELECT tc.id, tc.title, tc.priority, bc.name as column_name
+            FROM task_cards tc LEFT JOIN board_columns bc ON tc.column_id = bc.id
+            WHERE tc.id = ?
+          `).get(data.cardId) as { id: string; title: string; priority: string; column_name: string } | undefined;
+          if (cardRow) {
+            return { ...node, data: { ...data, resolvedTitle: cardRow.title, resolvedPriority: cardRow.priority, resolvedColumnName: cardRow.column_name } };
+          }
+        }
+        return node;
+      });
+      const edges = rawEdges.map((row) => ({
+        id: row.id as string,
+        source: row.source_node_id as string,
+        target: row.target_node_id as string,
+        label: row.label as string | null,
+      }));
+      return { flowId, projectId: args.projectId, nodes, edges };
+    }
+
+    case "create_idea_flow_node": {
+      const project = snap.projects.find((p) => p.id === args.projectId);
+      if (!project) return { error: "Project not found" };
+      const validTypes = ["idea", "note_ref", "task_ref", "group", "url", "ai_summary"];
+      if (!validTypes.includes(args.type as string)) return { error: `Invalid node type. Must be one of: ${validTypes.join(", ")}` };
+      // Get or create flow
+      const existingFlow = db.prepare("SELECT id FROM idea_flows WHERE project_id = ?").get(args.projectId) as { id: string } | undefined;
+      let flowId: string;
+      if (existingFlow) {
+        flowId = existingFlow.id;
+      } else {
+        flowId = newId();
+        const fnow = ts();
+        db.prepare("INSERT INTO idea_flows (id, project_id, created_at, updated_at) VALUES (?, ?, ?, ?)")
+          .run(flowId, args.projectId, fnow, fnow);
+      }
+      const nodeId = newId();
+      const now = ts();
+      const dataJson = JSON.stringify(args.data ?? {});
+      db.prepare(`
+        INSERT INTO idea_flow_nodes (id, flow_id, type, x, y, width, height, parent_id, data, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(nodeId, flowId, args.type, args.x ?? 0, args.y ?? 0, args.width ?? null, args.height ?? null, args.parentId ?? null, dataJson, now, now);
+      insertNotification(db, "create_idea_flow_node", "Idea Flow updated", `Added ${args.type} node to flow`);
+      return { id: nodeId, flowId, type: args.type, position: { x: args.x ?? 0, y: args.y ?? 0 }, data: args.data ?? {}, createdAt: now };
+    }
+
+    case "update_idea_flow_node": {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const existingRow = db.prepare("SELECT * FROM idea_flow_nodes WHERE id = ?").get(args.nodeId) as any;
+      if (!existingRow) return { error: "Node not found" };
+      let existingData: Record<string, unknown> = {};
+      try { existingData = JSON.parse(existingRow.data); } catch { /* empty */ }
+      const mergedData = args.data !== undefined ? { ...existingData, ...(args.data as Record<string, unknown>) } : existingData;
+      const now = ts();
+      db.prepare(`
+        UPDATE idea_flow_nodes SET
+          x          = COALESCE(?, x),
+          y          = COALESCE(?, y),
+          width      = COALESCE(?, width),
+          height     = COALESCE(?, height),
+          data       = ?,
+          updated_at = ?
+        WHERE id = ?
+      `).run(
+        args.x !== undefined ? args.x : null,
+        args.y !== undefined ? args.y : null,
+        args.width !== undefined ? args.width : null,
+        args.height !== undefined ? args.height : null,
+        JSON.stringify(mergedData),
+        now,
+        args.nodeId,
+      );
+      insertNotification(db, "update_idea_flow_node", "Idea Flow updated", `Node updated`);
+      return { id: args.nodeId, data: mergedData, updatedAt: now };
+    }
+
+    case "delete_idea_flow_node": {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const existingNode = db.prepare("SELECT * FROM idea_flow_nodes WHERE id = ?").get(args.nodeId) as any;
+      if (!existingNode) return { error: "Node not found" };
+      db.prepare("DELETE FROM idea_flow_nodes WHERE id = ?").run(args.nodeId);
+      insertNotification(db, "delete_idea_flow_node", "Idea Flow updated", `Node removed from flow`);
+      return { deleted: true, id: args.nodeId };
+    }
+
+    case "create_idea_flow_edge": {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const srcNode = db.prepare("SELECT id, flow_id FROM idea_flow_nodes WHERE id = ?").get(args.sourceNodeId) as any;
+      if (!srcNode) return { error: "Source node not found" };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const tgtNode = db.prepare("SELECT id FROM idea_flow_nodes WHERE id = ?").get(args.targetNodeId) as any;
+      if (!tgtNode) return { error: "Target node not found" };
+      const edgeId = newId();
+      const now = ts();
+      db.prepare(`
+        INSERT OR IGNORE INTO idea_flow_edges (id, flow_id, source_node_id, target_node_id, label, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(edgeId, srcNode.flow_id, args.sourceNodeId, args.targetNodeId, args.label ?? null, now);
+      // Check if INSERT OR IGNORE silently skipped (duplicate edge)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const created = db.prepare("SELECT * FROM idea_flow_edges WHERE id = ?").get(edgeId) as any;
+      if (!created) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const existing = db.prepare("SELECT id FROM idea_flow_edges WHERE flow_id = ? AND source_node_id = ? AND target_node_id = ?")
+          .get(srcNode.flow_id, args.sourceNodeId, args.targetNodeId) as any;
+        return { id: existing?.id ?? null, source: args.sourceNodeId, target: args.targetNodeId, label: args.label ?? null, note: "Edge already exists" };
+      }
+      insertNotification(db, "create_idea_flow_edge", "Idea Flow updated", `Nodes connected`);
+      return { id: edgeId, source: args.sourceNodeId, target: args.targetNodeId, label: args.label ?? null, createdAt: now };
+    }
+
+    case "delete_idea_flow_edge": {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const existingEdge = db.prepare("SELECT * FROM idea_flow_edges WHERE id = ?").get(args.edgeId) as any;
+      if (!existingEdge) return { error: "Edge not found" };
+      db.prepare("DELETE FROM idea_flow_edges WHERE id = ?").run(args.edgeId);
+      insertNotification(db, "delete_idea_flow_edge", "Idea Flow updated", `Connection removed`);
+      return { deleted: true, id: args.edgeId };
+    }
+
     default:
       return { error: `Unknown tool: ${toolName}` };
   }
@@ -981,6 +1146,39 @@ const TOOL_DEFINITIONS = [
     inputSchema: { type: "object", properties: { projectId: { type: "string" }, title: { type: "string" }, html: { type: "string", description: "Complete self-contained HTML document" } }, required: ["projectId", "title", "html"] } },
   { name: "update_dashboard",    description: "Update an existing dashboard's title or HTML content.",
     inputSchema: { type: "object", properties: { noteId: { type: "string", description: "The dashboard note ID" }, title: { type: "string" }, html: { type: "string", description: "Complete self-contained HTML document" } }, required: ["noteId"] } },
+  // ── Idea Flow ───────────────────────────────────────────────────────────────
+  { name: "get_idea_flow",       description: "Get the full Idea Flow graph for a project: all nodes (with resolved note/task content) and edges. Use this to read the current canvas state before making changes.",
+    inputSchema: { type: "object", properties: { projectId: { type: "string" } }, required: ["projectId"] } },
+  { name: "create_idea_flow_node", description: "Add a new node to a project's Idea Flow canvas. Node types: idea (title+body), note_ref (noteId), task_ref (cardId), group (label+color), url (url+title+description), ai_summary (content).",
+    inputSchema: { type: "object", properties: {
+      projectId: { type: "string" },
+      type:      { type: "string", enum: ["idea", "note_ref", "task_ref", "group", "url", "ai_summary"] },
+      x:         { type: "number", description: "Canvas X position" },
+      y:         { type: "number", description: "Canvas Y position" },
+      width:     { type: "number", description: "Optional node width" },
+      height:    { type: "number", description: "Optional node height" },
+      parentId:  { type: "string", description: "Optional parent group node ID" },
+      data:      { type: "object", description: "Node data matching the type's shape: idea={title,body}, note_ref={noteId}, task_ref={cardId}, group={label,color}, url={url,title,description}, ai_summary={content}" },
+    }, required: ["projectId", "type"] } },
+  { name: "update_idea_flow_node", description: "Update a node's data and/or position in the Idea Flow. Only provided fields are changed; data fields are merged (not replaced).",
+    inputSchema: { type: "object", properties: {
+      nodeId: { type: "string" },
+      x:      { type: "number", description: "New X position" },
+      y:      { type: "number", description: "New Y position" },
+      width:  { type: "number" },
+      height: { type: "number" },
+      data:   { type: "object", description: "Partial data to merge into the node's existing data" },
+    }, required: ["nodeId"] } },
+  { name: "delete_idea_flow_node", description: "Remove a node from the Idea Flow. Also removes all edges connected to that node.",
+    inputSchema: { type: "object", properties: { nodeId: { type: "string" } }, required: ["nodeId"] } },
+  { name: "create_idea_flow_edge", description: "Connect two nodes in the Idea Flow with an optional label.",
+    inputSchema: { type: "object", properties: {
+      sourceNodeId: { type: "string", description: "ID of the source node" },
+      targetNodeId: { type: "string", description: "ID of the target node" },
+      label:        { type: "string", description: "Optional label for the connection" },
+    }, required: ["sourceNodeId", "targetNodeId"] } },
+  { name: "delete_idea_flow_edge", description: "Remove a connection between two nodes in the Idea Flow.",
+    inputSchema: { type: "object", properties: { edgeId: { type: "string" } }, required: ["edgeId"] } },
 ] as const;
 
 // ── MCP server factory ────────────────────────

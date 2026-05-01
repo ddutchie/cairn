@@ -23,7 +23,7 @@ import { registerChatHandler } from "./chat";
 import { writeNoteFile, deleteNoteFile, deleteProjectNotesDir, stripMarkdown, findNoteFilePath } from "../notes-files";
 import { buildContextResponse } from "../lib/context";
 import { generatePrd } from "../lib/prd";
-import { isLocalEndpoint } from "../lib/llm";
+import { isLocalEndpoint, callLLM } from "../lib/llm";
 import { executeReadTool } from "../lib/read-tools";
 import { readWorkspaceConfig, writeWorkspaceConfig } from "../workspace-config";
 import { markMcpNotificationsRead } from "../db/queries";
@@ -214,6 +214,103 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
     return q.updateCard(db, id, patch);
   }));
   ipcMain.handle("db:card:delete", (_e, { id }) => handle(() => q.deleteCard(db, id)));
+
+  // ── Idea Flow ─────────────────────────────────────
+  ipcMain.handle("db:flow:get",         (_e, { projectId }) => handle(() => q.getResolvedFlow(db, projectId)));
+  ipcMain.handle("db:flow:node:create", (_e, args) => handle(() => {
+    const flow = q.getOrCreateFlow(db, args.projectId);
+    return q.createFlowNode(db, { ...args, flowId: flow.id, id: q.generateId() });
+  }));
+  ipcMain.handle("db:flow:node:update", (_e, { id, patch }) => handle(() => q.updateFlowNode(db, id, patch)));
+  ipcMain.handle("db:flow:node:delete", (_e, { id }) => handle(() => q.deleteFlowNode(db, id)));
+  ipcMain.handle("db:flow:edge:create", (_e, args) => handle(() => {
+    const flow = q.getOrCreateFlow(db, args.projectId);
+    return q.createFlowEdge(db, { ...args, flowId: flow.id, id: q.generateId() });
+  }));
+  ipcMain.handle("db:flow:edge:delete", (_e, { id }) => handle(() => q.deleteFlowEdge(db, id)));
+
+  // Generate an AI summary for an ai_summary node from its connected neighbours
+  ipcMain.handle("db:flow:node:summarize", async (_e, args: {
+    nodeId: string;
+    config: { baseUrl: string; model: string; apiKey: string };
+  }) => {
+    const baseUrl = (args.config.baseUrl || "https://api.openai.com").replace(/\/$/, "");
+    const model = args.config.model || "gpt-4o-mini";
+    const apiKey = args.config.apiKey || "";
+    const isLocal = isLocalEndpoint(baseUrl);
+    if (!apiKey && !isLocal) {
+      return err("AI is not configured. Add an API key in Settings → AI & Chat, or use a local endpoint.");
+    }
+
+    // Collect all directly connected nodes (both directions)
+    const nodeRow = db.prepare("SELECT * FROM idea_flow_nodes WHERE id = ?").get(args.nodeId) as
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      any | undefined;
+    if (!nodeRow) return err("Node not found");
+
+    const flowId = nodeRow.flow_id as string;
+    const edges = db.prepare(
+      "SELECT * FROM idea_flow_edges WHERE flow_id = ? AND (source_node_id = ? OR target_node_id = ?)"
+    ).all(flowId, args.nodeId, args.nodeId) as
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      any[];
+
+    const neighbourIds = [...new Set(edges.flatMap((e) => [e.source_node_id, e.target_node_id]))].filter(
+      (id) => id !== args.nodeId
+    );
+
+    if (neighbourIds.length === 0) {
+      return err("Connect this node to other nodes first — nothing to summarise yet.");
+    }
+
+    // Build a text description of each neighbour
+    const parts: string[] = [];
+    for (const nid of neighbourIds) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const nrow = db.prepare("SELECT * FROM idea_flow_nodes WHERE id = ?").get(nid) as any;
+      if (!nrow) continue;
+      let data: Record<string, unknown> = {};
+      try { data = JSON.parse(nrow.data); } catch { /* empty */ }
+
+      const type = nrow.type as string;
+      if (type === "idea") {
+        const title = data.title as string | undefined;
+        const body = data.body as string | undefined;
+        parts.push(`[Idea] ${title ?? "Untitled"}${body ? `: ${body}` : ""}`);
+      } else if (type === "note_ref" && data.noteId) {
+        const noteRow = db.prepare("SELECT title, content_text FROM notes WHERE id = ?").get(data.noteId) as
+          { title: string; content_text: string } | undefined;
+        if (noteRow) parts.push(`[Note] ${noteRow.title}: ${noteRow.content_text?.slice(0, 400) ?? ""}`);
+      } else if (type === "task_ref" && data.cardId) {
+        const cardRow = db.prepare(
+          "SELECT tc.title, tc.description, tc.priority, bc.name as col FROM task_cards tc LEFT JOIN board_columns bc ON tc.column_id = bc.id WHERE tc.id = ?"
+        ).get(data.cardId) as { title: string; description: string; priority: string; col: string } | undefined;
+        if (cardRow) parts.push(`[Task] ${cardRow.title} (${cardRow.priority}, ${cardRow.col})${cardRow.description ? `: ${cardRow.description}` : ""}`);
+      } else if (type === "url") {
+        const title = data.title as string | undefined;
+        const url = data.url as string | undefined;
+        const desc = data.description as string | undefined;
+        parts.push(`[URL] ${title ?? url ?? "Link"}${desc ? `: ${desc}` : ""}`);
+      } else if (type === "ai_summary") {
+        const content = data.content as string | undefined;
+        if (content) parts.push(`[Summary] ${content}`);
+      }
+    }
+
+    const userPrompt = `Summarise the following connected items into a concise paragraph (3–5 sentences). Focus on themes, relationships, and key points. Reply with plain prose only — no bullet points, no headers, no XML, no tool calls, no markdown formatting of any kind.\n\n${parts.join("\n\n")}`;
+    const systemPrompt = "You are a concise synthesis assistant. Your only job is to write a short prose paragraph summarising the provided content. Output plain text only — no XML, no tool calls, no function invocations, no markdown, no bullet points, no headings. Just the summary text.";
+
+    let summary: string;
+    try {
+      summary = await callLLM({ baseUrl, model, apiKey }, systemPrompt, userPrompt);
+    } catch (e) {
+      return err(`AI call failed: ${(e as Error).message}`);
+    }
+
+    // Write summary back into the node's data
+    q.updateFlowNode(db, args.nodeId, { data: { content: summary.trim() } });
+    return ok({ nodeId: args.nodeId, content: summary.trim() });
+  });
 
   // ── Tags ──────────────────────────────────────────
   ipcMain.handle("db:tag:list",   (_e, { workspaceId }) => handle(() => q.getTags(db, workspaceId)));

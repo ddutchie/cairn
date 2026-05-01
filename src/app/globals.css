@@ -1,5 +1,6 @@
 /* Playfair Display removed — using system serif stack to avoid external requests in packaged app */
 @import "tailwindcss";
+@import "@xyflow/react/dist/base.css";
 
 /* ── Cairn Design Tokens ──────────────────────────────── */
 
@@ -353,3 +354,4 @@ body {
 .prose-cairn th { background: var(--surface-2); font-weight: 600; text-align: left; padding: 0.4rem 0.6rem; border: 1px solid var(--border); }
 .prose-cairn td { padding: 0.35rem 0.6rem; border: 1px solid var(--border); }
 .prose-cairn tr:nth-child(even) td { background: var(--surface-2); }
+

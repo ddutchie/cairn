@@ -436,6 +436,82 @@ export async function executeTool(
       q.deleteProject(db, args.projectId as string);
       return { deleted: true, id: args.projectId, name: project.name };
     }
+    // ── Idea Flow tools ──────────────────────────────────────────────────────
+
+    case "get_idea_flow": {
+      const project = snap.projects.find((p) => p.id === args.projectId);
+      if (!project) return { error: "Project not found" };
+      return q.getResolvedFlow(db, args.projectId as string);
+    }
+
+    case "create_idea_flow_node": {
+      const project = snap.projects.find((p) => p.id === args.projectId);
+      if (!project) return { error: "Project not found" };
+      const validTypes = ["idea", "note_ref", "task_ref", "group", "url", "ai_summary"];
+      if (!validTypes.includes(args.type as string)) return { error: `Invalid node type. Must be one of: ${validTypes.join(", ")}` };
+      const flow = q.getOrCreateFlow(db, args.projectId as string);
+      const nodeId = newId();
+      return q.createFlowNode(db, {
+        id: nodeId,
+        flowId: flow.id,
+        type: args.type as string,
+        x: (args.x as number) ?? 0,
+        y: (args.y as number) ?? 0,
+        width: args.width as number | undefined,
+        height: args.height as number | undefined,
+        parentId: args.parentId as string | undefined,
+        data: (args.data as Record<string, unknown>) ?? {},
+      });
+    }
+
+    case "update_idea_flow_node": {
+      try {
+        return q.updateFlowNode(db, args.nodeId as string, {
+          x: args.x as number | undefined,
+          y: args.y as number | undefined,
+          width: args.width as number | undefined,
+          height: args.height as number | undefined,
+          data: args.data as Record<string, unknown> | undefined,
+        });
+      } catch (err) {
+        return { error: (err as Error).message };
+      }
+    }
+
+    case "delete_idea_flow_node": {
+      const nodes = db.prepare("SELECT id FROM idea_flow_nodes WHERE id = ?").get(args.nodeId as string);
+      if (!nodes) return { error: "Node not found" };
+      q.deleteFlowNode(db, args.nodeId as string);
+      return { deleted: true, id: args.nodeId };
+    }
+
+    case "create_idea_flow_edge": {
+      const srcNodeRow = db.prepare("SELECT id, flow_id FROM idea_flow_nodes WHERE id = ?")
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .get(args.sourceNodeId as string) as any;
+      if (!srcNodeRow) return { error: "Source node not found" };
+      const tgtNodeRow = db.prepare("SELECT id FROM idea_flow_nodes WHERE id = ?")
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .get(args.targetNodeId as string) as any;
+      if (!tgtNodeRow) return { error: "Target node not found" };
+      const edgeId = newId();
+      return q.createFlowEdge(db, {
+        id: edgeId,
+        flowId: srcNodeRow.flow_id as string,
+        sourceNodeId: args.sourceNodeId as string,
+        targetNodeId: args.targetNodeId as string,
+        label: args.label as string | undefined,
+      });
+    }
+
+    case "delete_idea_flow_edge": {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const edgeRow = db.prepare("SELECT id FROM idea_flow_edges WHERE id = ?").get(args.edgeId as string) as any;
+      if (!edgeRow) return { error: "Edge not found" };
+      q.deleteFlowEdge(db, args.edgeId as string);
+      return { deleted: true, id: args.edgeId };
+    }
+
     default:
       return { error: `Unknown tool: ${name}` };
   }

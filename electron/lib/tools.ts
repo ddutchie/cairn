@@ -43,6 +43,12 @@ export const TOOL_LABELS: Record<string, (args: ToolArgs) => string> = {
   spawn_tasks_from_note:  () => "Spawning tasks from note",
   link_note_to_task:      () => "Linking note to task",
   move_note:              (a) => `Moving note to project`,
+  get_idea_flow:          (a) => `Reading Idea Flow`,
+  create_idea_flow_node:  (a) => `Adding ${(a.type as string) ?? "node"} to Idea Flow`,
+  update_idea_flow_node:  () => "Updating Idea Flow node",
+  delete_idea_flow_node:  () => "Removing node from Idea Flow",
+  create_idea_flow_edge:  () => "Connecting nodes in Idea Flow",
+  delete_idea_flow_edge:  () => "Removing connection from Idea Flow",
 };
 
 // Tool definitions for the AI (OpenAI function calling format)
@@ -552,6 +558,105 @@ export const TOOLS = [
       },
     },
   },
+  // ── Idea Flow ──────────────────────────────────────────────────────────────
+  {
+    type: "function",
+    function: {
+      name: "get_idea_flow",
+      description: "Get the full Idea Flow graph for a project: all nodes (with resolved note/task content) and edges. Call this before making changes to understand the current canvas state.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+        },
+        required: ["projectId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "create_idea_flow_node",
+      description: "Add a new node to a project's Idea Flow canvas. Node types: idea (title+body), note_ref (noteId), task_ref (cardId), group (label+color), url (url+title+description), ai_summary (content).",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          type:      { type: "string", enum: ["idea", "note_ref", "task_ref", "group", "url", "ai_summary"] },
+          x:         { type: "number", description: "Canvas X position" },
+          y:         { type: "number", description: "Canvas Y position" },
+          width:     { type: "number", description: "Optional node width" },
+          height:    { type: "number", description: "Optional node height" },
+          parentId:  { type: "string", description: "Optional parent group node ID" },
+          data:      { type: "object", description: "Node data: idea={title,body}, note_ref={noteId}, task_ref={cardId}, group={label,color}, url={url,title,description}, ai_summary={content}" },
+        },
+        required: ["projectId", "type"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "update_idea_flow_node",
+      description: "Update a node's data and/or position in the Idea Flow. Only provided fields are changed; data fields are merged (not replaced).",
+      parameters: {
+        type: "object",
+        properties: {
+          nodeId: { type: "string" },
+          x:      { type: "number", description: "New X position" },
+          y:      { type: "number", description: "New Y position" },
+          width:  { type: "number" },
+          height: { type: "number" },
+          data:   { type: "object", description: "Partial data to merge into the node's existing data" },
+        },
+        required: ["nodeId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "delete_idea_flow_node",
+      description: "Remove a node from the Idea Flow. Also removes all edges connected to that node.",
+      parameters: {
+        type: "object",
+        properties: {
+          nodeId: { type: "string" },
+        },
+        required: ["nodeId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "create_idea_flow_edge",
+      description: "Connect two nodes in the Idea Flow with an optional label.",
+      parameters: {
+        type: "object",
+        properties: {
+          sourceNodeId: { type: "string", description: "ID of the source node" },
+          targetNodeId: { type: "string", description: "ID of the target node" },
+          label:        { type: "string", description: "Optional label for the connection" },
+        },
+        required: ["sourceNodeId", "targetNodeId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "delete_idea_flow_edge",
+      description: "Remove a connection between two nodes in the Idea Flow.",
+      parameters: {
+        type: "object",
+        properties: {
+          edgeId: { type: "string" },
+        },
+        required: ["edgeId"],
+      },
+    },
+  },
 ];
 
 export interface ChatRequest {
@@ -607,6 +712,14 @@ Always use the typed helpers — never call window.cairn.query() directly:
     returns: { workspaces, projects: [{ id, name, status, priority, columns: [{ id, name, type }] }] }
 
 Never hardcode projectId or workspaceId — always use window.cairn.projectId and window.cairn.workspaceId.
+
+## Idea Flow
+Each project has a node-based canvas (Idea Flow) for visually structuring ideas.
+- Call \`get_idea_flow\` to read the current canvas — returns nodes (with resolved note/task content) and edges
+- Use \`create_idea_flow_node\` to add nodes: idea, note_ref, task_ref, group, url, or ai_summary
+- Use \`create_idea_flow_edge\` to connect nodes (sourceNodeId → targetNodeId, optional label)
+- Use \`update_idea_flow_node\` / \`delete_idea_flow_node\` / \`delete_idea_flow_edge\` to modify the graph
+- When creating an ai_summary node, set data.content to your synthesised text — the UI shows it as read-only
 
 Tone: calm, focused, like a thoughtful co-worker.`;
 }

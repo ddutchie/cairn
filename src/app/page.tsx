@@ -43,6 +43,7 @@ import { Topbar } from "@/components/layout/topbar";
 import { ProjectOverview } from "@/components/layout/project-overview";
 import { NotesView } from "@/components/notes/notes-view";
 import { KanbanBoard } from "@/components/kanban/board";
+import { IdeaFlowView } from "@/components/flow/flow-view";
 import { ChatPanel } from "@/components/chat/chat-panel";
 import { SearchPanel } from "@/components/search/search-panel";
 import { SettingsView } from "@/components/settings/settings-view";
@@ -134,6 +135,7 @@ export default function Home() {
       else if (mod && key === "1") { e.preventDefault(); setView("overview"); }
       else if (mod && key === "2") { e.preventDefault(); setView("notes"); }
       else if (mod && key === "3") { e.preventDefault(); setView("board"); }
+      else if (mod && key === "4") { e.preventDefault(); setView("flow"); }
       else if (mod && key === "n" && !inInput) {
         e.preventDefault();
         if (activeProjectId) {
@@ -229,6 +231,7 @@ export default function Home() {
             {activeView === "overview"  && <ProjectOverview />}
             {activeView === "notes"     && <NotesView />}
             {activeView === "board"     && <KanbanBoard />}
+            {activeView === "flow"      && <IdeaFlowView />}
             {activeView === "settings"  && <SettingsView />}
           </div>
         </div>

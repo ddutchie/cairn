@@ -29,6 +29,7 @@
   },
   "dependencies": {
     "@radix-ui/react-context-menu": "^2.2.16",
+    "@xyflow/react": "^12.10.2",
     "better-sqlite3": "^12.9.0",
     "mermaid": "^11.14.0",
     "react-day-picker": "^9.14.0"

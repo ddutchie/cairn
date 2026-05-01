@@ -4,7 +4,7 @@
   <img src="public/icon.png" alt="Cairn" width="180" />
 </p>
 
-> A calm, local-first workspace for notes and project tracking — with an AI assistant and MCP server built in.
+> A calm, local-first workspace for notes, project tracking, and visual idea mapping — with an AI assistant and MCP server built in.
 
 ## Overview
 
@@ -19,6 +19,7 @@ Cairn is a desktop app (Electron + Next.js) that combines markdown notes with a 
 - **Linked context** — Notes and cards reference each other bidirectionally
 - **Global search** — Instant full-text search across all notes and tasks (`⌘K`)
 - **AI chat** — Integrated assistant with live project context; reads and writes your data (`⌘/`)
+- **Idea Flow** — A freeform node canvas per project (`⌘4`): add idea, note reference, task reference, group, URL, and AI summary nodes; connect them with labelled edges; the AI and MCP can read and write the canvas as first-class authors
 - **Live dashboards** — Ask the AI to generate an interactive HTML dashboard for any project; choose from a template gallery or start blank; dashboards fetch live data on every load via a sandboxed `window.cairn.query()` bridge; runtime errors surface an inline "Fix with AI" button; HTML editable directly via a built-in CodeMirror overlay
 - **MCP server** — Exposes your workspace to external AI agents (OpenCode, Claude Desktop, etc.) via the Model Context Protocol
 - **Local-first** — Notes as `.md` files, project data in SQLite; no network required
@@ -137,6 +138,12 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 | `delete_note` | delete | Permanently delete a note |
 | `delete_task` | delete | Permanently delete a task card |
 | `delete_project` | delete | Permanently delete a project and all its contents |
+| `get_idea_flow` | read | Full Idea Flow graph: nodes (with resolved note/task content) + edges |
+| `create_idea_flow_node` | write | Add a node to the canvas (idea, note_ref, task_ref, group, url, ai_summary) |
+| `update_idea_flow_node` | write | Update a node's data and/or position (data fields are merged) |
+| `create_idea_flow_edge` | write | Connect two nodes with an optional label |
+| `delete_idea_flow_node` | delete | Remove a node and its connected edges |
+| `delete_idea_flow_edge` | delete | Remove a connection |
 
 > Call `get_cairn_context` at the start of a session — it returns all workspace/project/column IDs and conventions in one call.
 
@@ -150,6 +157,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 | `⌘1` | Project overview |
 | `⌘2` | Notes view |
 | `⌘3` | Board view |
+| `⌘4` | Idea Flow canvas |
 | `Esc` | Close modal / search |
 
 ## Architecture
@@ -209,6 +217,9 @@ Workspace
         ├── Dashboard[]      (SQLite row only, type = "dashboard" — HTML stored in content field)
         ├── BoardColumn[]    (SQLite only)
         │     └── TaskCard[] (SQLite only)
+        ├── IdeaFlow         (SQLite only — one per project, auto-created)
+        │     ├── IdeaFlowNode[]  (type: idea | note_ref | task_ref | group | url | ai_summary)
+        │     └── IdeaFlowEdge[]
         └── ChatThread       (SQLite only)
               └── ChatMessage[]
 ```
@@ -292,7 +303,7 @@ External .md edit
 | `electron/lib/prd.ts` | `generatePrd` — shared PRD generation logic |
 | `electron/db/queries.ts` | SQLite query helpers (CRUD, search, snapshot, `getProjectById`, `getNoteById`, `getCardById`) |
 | `electron/shared/text-utils.ts` | Pure text helpers shared across the process boundary: `toSlug`, `stripMarkdown` |
-| `electron/db/schema.ts` | SQLite DDL + versioned migration runner (`PRAGMA user_version`) |
+| `electron/db/schema.ts` | SQLite DDL + versioned migration runner (`PRAGMA user_version`); includes Idea Flow migrations v3–v5 |
 | `electron/db/utils.ts` | `newId()` (nanoid), `ts()` — shared ID and timestamp helpers |
 | `electron/db/defaults.ts` | `DEFAULT_COLUMNS` — canonical 5-column board layout |
 | `electron/mcp-server.ts` | Standalone MCP binary; all MCP tools; `getConfigBasePath()` |
@@ -314,6 +325,10 @@ External .md edit
 | `src/components/notes/dashboard-bootstrap.ts` | Dashboard bootstrap JS builder (`buildBootstrap`, `buildSrcdoc`) |
 | `src/components/layout/project-overview/useProjectMetrics.ts` | Derived metrics hook (due dates, priority counts, activity grouping) |
 | `src/components/settings/settings-view.tsx` | Settings shell; section components in `settings/` directory |
+| `src/components/flow/flow-view.tsx` | Idea Flow canvas — `@xyflow/react` v12, DB sync, suppress-reload mechanism |
+| `src/components/flow/NodeEditModal.tsx` | Type-aware node edit form with live note/task search pickers |
+| `src/components/flow/nodes/` | Six custom node components (IdeaNode, NoteRefNode, TaskRefNode, GroupNode, UrlNode, AiSummaryNode) |
+| `src/components/flow/edges/FlowEdge.tsx` | Custom bezier edge with hover-delete button via EdgeLabelRenderer |
 
 ## Testing
 
@@ -345,7 +360,8 @@ Tests live alongside the code they cover:
 | better-sqlite3 | SQLite (dual ABI: Electron + pkg/Node 22) |
 | gray-matter | YAML frontmatter parsing for note files |
 | chokidar | File watcher for external `.md` edits |
-| dnd-kit | Drag and drop |
+| @xyflow/react | Node-based canvas (Idea Flow) |
+| dnd-kit | Drag and drop (Kanban) |
 | CodeMirror 6 | Note editor |
 | react-markdown | Markdown preview |
 | react-day-picker | Date picker |

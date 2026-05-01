@@ -64,6 +64,21 @@ const api = {
     delete: (id: string) => invoke("db:card:delete", { id }),
   },
 
+  // ── Idea Flow ────────────────────────────────
+  flow: {
+    get:         (projectId: string) => invoke("db:flow:get", { projectId }),
+    node: {
+      create:    (args: unknown) => invoke("db:flow:node:create", args),
+      update:    (id: string, patch: unknown) => invoke("db:flow:node:update", { id, patch }),
+      delete:    (id: string) => invoke("db:flow:node:delete", { id }),
+      summarize: (nodeId: string, config: unknown) => invoke("db:flow:node:summarize", { nodeId, config }),
+    },
+    edge: {
+      create: (args: unknown) => invoke("db:flow:edge:create", args),
+      delete: (id: string) => invoke("db:flow:edge:delete", { id }),
+    },
+  },
+
   // ── Tags ─────────────────────────────────────
   tag: {
     list:   (workspaceId?: string) => invoke("db:tag:list", { workspaceId }),

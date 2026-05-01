@@ -155,11 +155,74 @@ export interface PendingAction {
   createdAt: string;
 }
 
+// ── Idea Flow ────────────────────────────────
+export type IdeaNodeType = "idea" | "note_ref" | "task_ref" | "url" | "ai_summary";
+
+export interface IdeaNodeDataMap {
+  idea:       { title: string; body?: string };
+  note_ref:   { noteId: string };
+  task_ref:   { cardId: string };
+  url:        { url: string; title?: string; description?: string };
+  ai_summary: { content: string };
+}
+
+/** Raw node as stored in / returned from the DB (data is opaque JSON). */
+export interface IdeaFlowNode {
+  id: ID;
+  flowId: ID;
+  type: IdeaNodeType;
+  x: number;
+  y: number;
+  width?: number;
+  height?: number;
+  parentId?: ID;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  data: Record<string, any>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface IdeaFlowEdge {
+  id: ID;
+  flowId: ID;
+  sourceNodeId: ID;
+  targetNodeId: ID;
+  label?: string;
+  createdAt: string;
+}
+
+export interface IdeaFlow {
+  id: ID;
+  projectId: ID;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Resolved graph returned to the renderer and AI/MCP.
+ * note_ref and task_ref nodes have their linked entity's data merged in.
+ */
+export interface ResolvedIdeaFlowNode extends IdeaFlowNode {
+  // For note_ref: title + snippet from the linked note
+  resolvedTitle?: string;
+  resolvedSnippet?: string;
+  // For task_ref: title + priority + column name from the linked card
+  resolvedPriority?: string;
+  resolvedColumnName?: string;
+}
+
+export interface ResolvedIdeaFlow {
+  flowId: ID;
+  projectId: ID;
+  nodes: ResolvedIdeaFlowNode[];
+  edges: IdeaFlowEdge[];
+}
+
 // ── App UI State (not persisted) ──────────────
 export interface AppUIState {
   activeWorkspaceId: ID | null;
   activeProjectId: ID | null;
-  activeView: "overview" | "notes" | "board" | "chat" | "search" | "settings";
+  activeView: "overview" | "notes" | "board" | "flow" | "chat" | "search" | "settings";
   sidebarCollapsed: boolean;
   chatOpen: boolean;
   searchOpen: boolean;

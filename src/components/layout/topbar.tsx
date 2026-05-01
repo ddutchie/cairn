@@ -5,6 +5,7 @@ import {
   Hash,
   FileText,
   Kanban,
+  Workflow,
   MessageSquare,
   ChevronRight,
   MoreHorizontal,
@@ -21,6 +22,7 @@ const VIEW_TABS = [
   { id: "overview" as const, label: "Overview", icon: Hash },
   { id: "notes" as const, label: "Notes", icon: FileText },
   { id: "board" as const, label: "Board", icon: Kanban },
+  { id: "flow" as const, label: "Flow", icon: Workflow },
 ] as const;
 
 export function Topbar() {

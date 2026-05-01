@@ -536,6 +536,185 @@ export function insertMcpNotification(db: Database.Database, n: { id: string; to
   db.prepare("INSERT INTO mcp_notifications (id, tool, title, body, read, created_at) VALUES (?, ?, ?, ?, 0, ?)").run(n.id, n.tool, n.title, n.body, ts());
 }
 
+// ── Idea Flow ─────────────────────────────────
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function toIdeaFlow(row: any) {
+  return {
+    id: row.id as string,
+    projectId: row.project_id as string,
+    createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string,
+  };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function toIdeaFlowNode(row: any) {
+  return {
+    id: row.id as string,
+    flowId: row.flow_id as string,
+    type: row.type as string,
+    x: row.x as number,
+    y: row.y as number,
+    width: row.width as number | undefined,
+    height: row.height as number | undefined,
+    parentId: row.parent_id as string | undefined,
+    data: (() => { try { return JSON.parse(row.data); } catch { return {}; } })(),
+    createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string,
+  };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function toIdeaFlowEdge(row: any) {
+  return {
+    id: row.id as string,
+    flowId: row.flow_id as string,
+    sourceNodeId: row.source_node_id as string,
+    targetNodeId: row.target_node_id as string,
+    label: row.label as string | undefined,
+    createdAt: row.created_at as string,
+  };
+}
+
+/** Get or lazily create the single IdeaFlow for a project. */
+export function getOrCreateFlow(db: Database.Database, projectId: string) {
+  const existing = db.prepare("SELECT * FROM idea_flows WHERE project_id = ?").get(projectId);
+  if (existing) return toIdeaFlow(existing);
+  const now = ts();
+  const id = newId();
+  db.prepare("INSERT INTO idea_flows (id, project_id, created_at, updated_at) VALUES (?, ?, ?, ?)")
+    .run(id, projectId, now, now);
+  return toIdeaFlow(db.prepare("SELECT * FROM idea_flows WHERE id = ?").get(id));
+}
+
+export function getFlowNodes(db: Database.Database, flowId: string) {
+  return db.prepare("SELECT * FROM idea_flow_nodes WHERE flow_id = ? ORDER BY created_at")
+    .all(flowId).map(toIdeaFlowNode);
+}
+
+export function getFlowEdges(db: Database.Database, flowId: string) {
+  return db.prepare("SELECT * FROM idea_flow_edges WHERE flow_id = ? ORDER BY created_at")
+    .all(flowId).map(toIdeaFlowEdge);
+}
+
+export function createFlowNode(db: Database.Database, n: {
+  id: string; flowId: string; type: string;
+  x: number; y: number; width?: number; height?: number;
+  parentId?: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  data: Record<string, any>;
+}) {
+  const now = ts();
+  db.prepare(`
+    INSERT INTO idea_flow_nodes (id, flow_id, type, x, y, width, height, parent_id, data, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(n.id, n.flowId, n.type, n.x, n.y, n.width ?? null, n.height ?? null, n.parentId ?? null, JSON.stringify(n.data), now, now);
+  return toIdeaFlowNode(db.prepare("SELECT * FROM idea_flow_nodes WHERE id = ?").get(n.id));
+}
+
+export function updateFlowNode(db: Database.Database, id: string, patch: Partial<{
+  x: number; y: number; width: number; height: number;
+  parentId: string | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  data: Record<string, any>;
+}>) {
+  const now = ts();
+  const existing = db.prepare("SELECT * FROM idea_flow_nodes WHERE id = ?").get(id);
+  if (!existing) throw new Error(`Flow node not found: ${id}`);
+  const node = toIdeaFlowNode(existing);
+  const newData = patch.data !== undefined
+    ? JSON.stringify({ ...node.data, ...patch.data })
+    : JSON.stringify(node.data);
+
+  // parentId: null means explicitly clear it; undefined means don't touch it
+  const parentIdValue = patch.parentId === null ? null
+    : patch.parentId !== undefined ? patch.parentId
+    : node.parentId ?? null;
+
+  db.prepare(`
+    UPDATE idea_flow_nodes SET
+      x          = COALESCE(?, x),
+      y          = COALESCE(?, y),
+      width      = COALESCE(?, width),
+      height     = COALESCE(?, height),
+      parent_id  = ?,
+      data       = ?,
+      updated_at = ?
+    WHERE id = ?
+  `).run(patch.x ?? null, patch.y ?? null, patch.width ?? null, patch.height ?? null, parentIdValue, newData, now, id);
+  return toIdeaFlowNode(db.prepare("SELECT * FROM idea_flow_nodes WHERE id = ?").get(id));
+}
+
+export function deleteFlowNode(db: Database.Database, id: string) {
+  // Edges referencing this node are cascade-deleted via FK
+  db.prepare("DELETE FROM idea_flow_nodes WHERE id = ?").run(id);
+}
+
+export function createFlowEdge(db: Database.Database, e: {
+  id: string; flowId: string; sourceNodeId: string; targetNodeId: string; label?: string;
+}) {
+  const now = ts();
+  db.prepare(`
+    INSERT OR IGNORE INTO idea_flow_edges (id, flow_id, source_node_id, target_node_id, label, created_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(e.id, e.flowId, e.sourceNodeId, e.targetNodeId, e.label ?? null, now);
+  return toIdeaFlowEdge(db.prepare("SELECT * FROM idea_flow_edges WHERE id = ?").get(e.id));
+}
+
+export function deleteFlowEdge(db: Database.Database, id: string) {
+  db.prepare("DELETE FROM idea_flow_edges WHERE id = ?").run(id);
+}
+
+/**
+ * Returns the full resolved graph for a project — ready for the renderer and AI/MCP.
+ * note_ref and task_ref nodes have their linked entity's data merged in as resolved* fields.
+ */
+export function getResolvedFlow(db: Database.Database, projectId: string) {
+  const flow = getOrCreateFlow(db, projectId);
+  const nodes = getFlowNodes(db, flow.id);
+  const edges = getFlowEdges(db, flow.id);
+
+  const resolved = nodes.map((node) => {
+    if (node.type === "note_ref" && node.data.noteId) {
+      const noteRow = db.prepare("SELECT id, title, content_text FROM notes WHERE id = ?").get(node.data.noteId) as
+        | { id: string; title: string; content_text: string } | undefined;
+      if (noteRow) {
+        return {
+          ...node,
+          resolvedTitle: noteRow.title,
+          resolvedSnippet: noteRow.content_text?.slice(0, 200) ?? "",
+        };
+      }
+    }
+    if (node.type === "task_ref" && node.data.cardId) {
+      const cardRow = db.prepare(`
+        SELECT tc.id, tc.title, tc.priority, bc.name as column_name
+        FROM task_cards tc
+        LEFT JOIN board_columns bc ON tc.column_id = bc.id
+        WHERE tc.id = ?
+      `).get(node.data.cardId) as
+        | { id: string; title: string; priority: string; column_name: string } | undefined;
+      if (cardRow) {
+        return {
+          ...node,
+          resolvedTitle: cardRow.title,
+          resolvedPriority: cardRow.priority,
+          resolvedColumnName: cardRow.column_name,
+        };
+      }
+    }
+    return node;
+  });
+
+  return {
+    flowId: flow.id,
+    projectId,
+    nodes: resolved,
+    edges,
+  };
+}
+
 // ── Full snapshot (for MCP / AI chat) ────────
 
 export function getFullSnapshot(db: Database.Database) {
