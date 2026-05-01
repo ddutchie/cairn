@@ -110,6 +110,8 @@ export function MCPServerSettings() {
              ["delete_idea_flow_node",  "delete"],
              ["delete_idea_flow_edge",  "delete"],
              ["layout_idea_flow",       "write"],
+             ["get_knowledge_graph",    "read"],
+             ["get_neighbors",          "read"],
           ].map(([tool, cat]) => (
             <div key={tool} className="flex items-center gap-1.5">
               <span className={cn(

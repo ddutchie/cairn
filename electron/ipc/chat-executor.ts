@@ -18,6 +18,8 @@ import { DEFAULT_COLUMNS } from "../db/defaults";
 import { newId, ts } from "../db/utils";
 import { callLLM, type LLMConfig } from "../lib/llm";
 import { TOOL_LABELS, type ChatRequest, type ToolArgs } from "../lib/tools";
+import { getKnowledgeGraph, getNeighbours } from "../db/graph-queries";
+import type { GraphFilters, EdgeType } from "../db/graph-queries";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function executeTool(
@@ -626,6 +628,27 @@ export async function executeTool(
       }
 
       return { arranged: rawNodes.length, direction: dir };
+    }
+
+    case "get_knowledge_graph": {
+      const workspaceId = args.workspaceId as string;
+      if (!workspaceId) return { error: "workspaceId is required" };
+      const filters: GraphFilters = {
+        projectIds: Array.isArray(args.projectIds) ? args.projectIds as string[] : [],
+        includeAuto: args.includeAuto !== false,
+        nodeTypes: Array.isArray(args.nodeTypes) ? args.nodeTypes as GraphFilters["nodeTypes"] : undefined as unknown as GraphFilters["nodeTypes"],
+        edgeTypes: Array.isArray(args.edgeTypes) ? args.edgeTypes as EdgeType[] : undefined as unknown as EdgeType[],
+      };
+      return getKnowledgeGraph(db, workspaceId, filters);
+    }
+
+    case "get_neighbors": {
+      const workspaceId = args.workspaceId as string;
+      const nodeId = args.nodeId as string;
+      if (!workspaceId || !nodeId) return { error: "workspaceId and nodeId are required" };
+      const depth = typeof args.depth === "number" ? Math.min(3, Math.max(1, args.depth)) : 1;
+      const edgeTypes = Array.isArray(args.edgeTypes) ? args.edgeTypes as EdgeType[] : undefined;
+      return getNeighbours(db, workspaceId, nodeId, depth, edgeTypes);
     }
 
     default:

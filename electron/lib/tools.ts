@@ -50,6 +50,8 @@ export const TOOL_LABELS: Record<string, (args: ToolArgs) => string> = {
   create_idea_flow_edge:  () => "Connecting nodes in Idea Flow",
   delete_idea_flow_edge:  () => "Removing connection from Idea Flow",
   layout_idea_flow:       () => "Auto-arranging Idea Flow",
+  get_knowledge_graph:    () => "Reading knowledge graph",
+  get_neighbors:          (a) => `Getting neighbours of ${(a.nodeId as string) ?? "node"}`,
 };
 
 // Tool definitions for the AI (OpenAI function calling format)
@@ -674,6 +676,41 @@ export const TOOLS = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "get_knowledge_graph",
+      description: "Get the full workspace knowledge graph: all projects, notes, cards, and tags as nodes, with all relationships as edges (note links, task links, tag membership, project membership, Idea Flow edges, and auto-discovered co-mentions/keyword similarity/shared assignees). Use for research and cross-entity traversal. Filter to specific projects with projectIds.",
+      parameters: {
+        type: "object",
+        properties: {
+          workspaceId:  { type: "string", description: "Workspace ID (required). Get from get_active_context." },
+          projectIds:   { type: "array", items: { type: "string" }, description: "Optional list of project IDs to scope the graph. Omit for all projects." },
+          includeAuto:  { type: "boolean", description: "Include auto-discovered relationships (co-mention, keyword similarity, shared assignee). Default true." },
+          nodeTypes:    { type: "array", items: { type: "string", enum: ["project", "note", "card", "tag"] }, description: "Node types to include. Omit for all." },
+          edgeTypes:    { type: "array", items: { type: "string" }, description: "Edge types to include. Omit for all." },
+        },
+        required: ["workspaceId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_neighbors",
+      description: "Get the N-hop neighbourhood around a specific node in the knowledge graph. Returns the centre node and all directly or indirectly connected nodes up to `depth` hops. Ideal for incremental research — start at a note or card and explore outward without loading the full graph.",
+      parameters: {
+        type: "object",
+        properties: {
+          workspaceId: { type: "string", description: "Workspace ID. Get from get_active_context." },
+          nodeId:      { type: "string", description: "ID of the node to centre on — a note ID, card ID, project ID, or tag ID." },
+          depth:       { type: "number", description: "Number of hops to traverse. 1 = direct neighbours only. Max 3. Default 1." },
+          edgeTypes:   { type: "array", items: { type: "string" }, description: "Optionally restrict which edge types to follow." },
+        },
+        required: ["workspaceId", "nodeId"],
+      },
+    },
+  },
 ];
 
 export interface ChatRequest {
@@ -752,6 +789,12 @@ Each project has a node-based canvas (Idea Flow) for visually structuring ideas.
 - Child node coordinates are **relative to the group's top-left corner** — use spatial.groupSlots[groupId] as the starting position for the first child, incrementing y by ~100px per row
 - get_idea_flow returns absoluteX/absoluteY on every node so you can reason about the full canvas layout regardless of parentId
 - layout_idea_flow runs a two-phase layout: children are arranged inside each group first (group auto-resizes to fit), then groups and ungrouped nodes are arranged together — always call this after bulk-creating grouped nodes
+
+## Knowledge Graph
+The workspace has a relationship graph connecting all projects, notes, cards, and tags.
+- Call \`get_knowledge_graph\` to retrieve the full graph for research, cross-entity analysis, or discovering connections. Pass workspaceId (from get_active_context). Optionally scope to specific projectIds.
+- Call \`get_neighbors\` to hop outward from a specific note, card, project, or tag — returns all connected nodes within \`depth\` hops. More efficient than loading the full graph for focused research.
+- Edge types: note-note (linked notes), note-card (linked tasks), tag-member, project-member, flow-edge (Idea Flow connections), co-mention (auto), keyword (auto), assignee (auto).
 
 Tone: calm, focused, like a thoughtful co-worker.`;
 }
