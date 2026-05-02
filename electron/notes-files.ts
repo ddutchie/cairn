@@ -6,14 +6,19 @@
  *
  *   <workspacePath>/
  *     notes/
- *       <Project Name>/
- *         <Note Title>.md          (or <Note Title>-<shortId>.md on collision)
+ *       <project-slug>/
+ *         <Note Title>.md                    (root — no folder)
+ *         <folder-segment>/
+ *           <sub-segment>/
+ *             <Note Title>.md               (in subfolder)
  *
  * The note `id` lives in the YAML frontmatter as the stable identifier.
  * Filenames are human-readable slugs derived from the title.
+ * The `folder` frontmatter field stores the original (unslugged) path, e.g.
+ * "Design/Typography", so the tree view can restore it exactly.
  *
  * Frontmatter fields:
- *   id, projectId, workspaceId, title, tagIds, linkedNoteIds,
+ *   id, projectId, workspaceId, title, folder, tagIds, linkedNoteIds,
  *   linkedCardIds, isPinned, createdAt, updatedAt, archivedAt
  *
  * The markdown body (below the frontmatter) is the note content.
@@ -39,7 +44,19 @@ export function projectNotesDir(workspacePath: string, projectName: string): str
 }
 
 /**
- * Resolve the file path for a note, given its title and project name.
+ * Returns the directory where a note with the given folder lives.
+ * folder = ""           → <project-slug>/
+ * folder = "A/B"        → <project-slug>/a/b/
+ */
+export function noteDir(workspacePath: string, projectName: string, folder: string): string {
+  const base = projectNotesDir(workspacePath, projectName);
+  if (!folder) return base;
+  const segments = folder.split("/").filter(Boolean).map(toSlug);
+  return path.join(base, ...segments);
+}
+
+/**
+ * Resolve the file path for a note, given its title, project name, and folder.
  * If a file at <title>.md already exists with a *different* note ID in its
  * frontmatter, appends a short suffix to avoid collision:
  *   <title>-<shortId>.md
@@ -49,8 +66,9 @@ export function resolveNoteFilePath(
   projectName: string,
   title: string,
   noteId: string,
+  folder = "",
 ): string {
-  const dir = projectNotesDir(workspacePath, projectName);
+  const dir = noteDir(workspacePath, projectName, folder);
   const slug = toSlug(title);
   const candidate = path.join(dir, `${slug}.md`);
 
@@ -68,23 +86,33 @@ export function resolveNoteFilePath(
 
 /**
  * Find the current file path for a note by scanning the project folder
- * for a file whose frontmatter `id` matches. Returns null if not found.
+ * recursively for a file whose frontmatter `id` matches.
+ * Returns null if not found.
  */
 export function findNoteFilePath(
   workspacePath: string,
   projectName: string,
   noteId: string,
 ): string | null {
-  const dir = projectNotesDir(workspacePath, projectName);
+  const root = projectNotesDir(workspacePath, projectName);
+  return findInDir(root, noteId);
+}
+
+function findInDir(dir: string, noteId: string): string | null {
   if (!fs.existsSync(dir)) return null;
 
   for (const entry of fs.readdirSync(dir)) {
-    if (!entry.endsWith(".md")) continue;
     const fp = path.join(dir, entry);
-    try {
-      const { data } = matter(fs.readFileSync(fp, "utf-8"));
-      if (data.id === noteId) return fp;
-    } catch { /* skip unreadable */ }
+    const stat = fs.statSync(fp);
+    if (stat.isDirectory()) {
+      const found = findInDir(fp, noteId);
+      if (found) return found;
+    } else if (entry.endsWith(".md")) {
+      try {
+        const { data } = matter(fs.readFileSync(fp, "utf-8"));
+        if (data.id === noteId) return fp;
+      } catch { /* skip unreadable */ }
+    }
   }
   return null;
 }
@@ -102,6 +130,7 @@ export interface NoteData {
   linkedNoteIds: string[];
   linkedCardIds: string[];
   isPinned: boolean;
+  folder: string;
   createdAt: string;
   updatedAt: string;
   archivedAt?: string;
@@ -111,16 +140,17 @@ export interface NoteData {
 
 export function writeNoteFile(workspacePath: string, note: NoteData): void {
   const projectName = note.projectName ?? note.projectId;
-  const dir = projectNotesDir(workspacePath, projectName);
+  const folder = note.folder ?? "";
+  const dir = noteDir(workspacePath, projectName, folder);
   fs.mkdirSync(dir, { recursive: true });
 
-  // If the note already has a file on disk (possibly with an old title),
+  // If the note already has a file on disk (possibly with an old title or folder),
   // remove it before writing the new one so we don't leave stale files.
   const existingPath = findNoteFilePath(workspacePath, projectName, note.id);
-  const newPath = resolveNoteFilePath(workspacePath, projectName, note.title, note.id);
+  const newPath = resolveNoteFilePath(workspacePath, projectName, note.title, note.id, folder);
 
   if (existingPath && existingPath !== newPath) {
-    // Title changed — delete old file, write new one
+    // Title or folder changed — delete old file, write new one
     try { fs.unlinkSync(existingPath); } catch { /* ignore */ }
   }
 
@@ -129,6 +159,7 @@ export function writeNoteFile(workspacePath: string, note: NoteData): void {
     projectId: note.projectId,
     workspaceId: note.workspaceId,
     title: note.title,
+    folder,
     tagIds: note.tagIds,
     linkedNoteIds: note.linkedNoteIds,
     linkedCardIds: note.linkedCardIds,
@@ -188,6 +219,7 @@ export function parseNoteFile(filePath: string): NoteData | null {
       linkedNoteIds: Array.isArray(data.linkedNoteIds) ? (data.linkedNoteIds as string[]) : [],
       linkedCardIds: Array.isArray(data.linkedCardIds) ? (data.linkedCardIds as string[]) : [],
       isPinned: data.isPinned === true,
+      folder: typeof data.folder === "string" ? data.folder : "",
       createdAt: (data.createdAt as string) ?? new Date().toISOString(),
       updatedAt: (data.updatedAt as string) ?? new Date().toISOString(),
       archivedAt: data.archivedAt as string | undefined,
@@ -211,6 +243,7 @@ export function upsertNoteFromFile(db: Database.Database, note: NoteData): void 
       linkedNoteIds: note.linkedNoteIds,
       linkedCardIds: note.linkedCardIds,
       isPinned: note.isPinned,
+      folder: note.folder,
       archivedAt: note.archivedAt,
     });
   } else {
@@ -225,6 +258,7 @@ export function upsertNoteFromFile(db: Database.Database, note: NoteData): void 
       title: note.title,
       content: note.content,
       contentText: stripMarkdown(note.content),
+      folder: note.folder,
     });
 
     q.updateNote(db, note.id, {
@@ -232,6 +266,7 @@ export function upsertNoteFromFile(db: Database.Database, note: NoteData): void 
       linkedNoteIds: note.linkedNoteIds,
       linkedCardIds: note.linkedCardIds,
       isPinned: note.isPinned,
+      folder: note.folder,
       archivedAt: note.archivedAt,
     });
   }

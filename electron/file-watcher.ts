@@ -44,6 +44,7 @@ export function startFileWatcher(
     ignored: /(^|[/\\])\./, // ignore dotfiles
     persistent: true,
     ignoreInitial: true,    // don't fire for files already on disk at startup
+    depth: 10,              // recurse into subfolders
     awaitWriteFinish: {
       stabilityThreshold: 200,
       pollInterval: 100,

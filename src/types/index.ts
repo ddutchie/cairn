@@ -61,6 +61,12 @@ export interface Note {
   linkedCardIds: ID[];
   isPinned: boolean;
   type: NoteType;
+  /**
+   * Slash-separated subfolder path within the project notes directory.
+   * Empty string means the note is in the project root.
+   * e.g. "Design/Typography" → notes/<project-slug>/design/typography/<note>.md
+   */
+  folder: string;
   createdAt: string;
   updatedAt: string;
   archivedAt?: string;

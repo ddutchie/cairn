@@ -175,6 +175,50 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(
         }
       });
 
+      // Paste handler — intercepts image files from clipboard and uploads them
+      // via the Electron IPC bridge, then inserts an asset:// markdown image.
+      const pasteHandler = EditorView.domEventHandlers({
+        paste(event, view) {
+          const items = event.clipboardData?.items;
+          if (!items) return false;
+
+          const imageItems = Array.from(items).filter((item) => item.type.startsWith("image/"));
+          if (imageItems.length === 0) return false;
+
+          // Prevent the default paste (which would insert raw data)
+          event.preventDefault();
+
+          imageItems.forEach((item) => {
+            const file = item.getAsFile();
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = async () => {
+              const buffer = reader.result as ArrayBuffer;
+              const electron = (window as { electron?: { uploadAsset?: (filename: string, data: number[]) => Promise<{ assetUrl: string }> } }).electron;
+              if (!electron?.uploadAsset) return;
+
+              try {
+                const ext = file.type.split("/")[1]?.split("+")[0] ?? "png";
+                const filename = file.name || `pasted-image.${ext}`;
+                const result = await electron.uploadAsset(filename, Array.from(new Uint8Array(buffer)));
+                const markdown = `![](${result.assetUrl})`;
+                const { from, to } = view.state.selection.main;
+                view.dispatch({
+                  changes: { from, to, insert: markdown },
+                  selection: { anchor: from + markdown.length },
+                });
+              } catch (err) {
+                console.error("[cairn] Failed to upload pasted image:", err);
+              }
+            };
+            reader.readAsArrayBuffer(file);
+          });
+
+          return true;
+        },
+      });
+
       const state = EditorState.create({
         doc: initialValue,
         extensions: [
@@ -187,6 +231,7 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(
           buildTheme(),
           cmPlaceholder(placeholder),
           updateListener,
+          pasteHandler,
           EditorView.lineWrapping,
         ],
       });

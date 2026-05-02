@@ -253,6 +253,14 @@ const MIGRATIONS: Migration[] = [
       db.exec("ALTER TABLE task_cards ADD COLUMN blocked_by_ids TEXT NOT NULL DEFAULT '[]'");
     }
   },
+
+  // v8: Note subfolders — folder stores a slash-separated path within the project notes dir
+  (db) => {
+    const cols = db.prepare("PRAGMA table_info(notes)").all() as { name: string }[];
+    if (!cols.some((c) => c.name === "folder")) {
+      db.exec("ALTER TABLE notes ADD COLUMN folder TEXT NOT NULL DEFAULT ''");
+    }
+  },
 ];
 
 export function applySchema(db: Database.Database): void {

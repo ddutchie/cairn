@@ -17,6 +17,7 @@
 import { ipcMain, app, shell, dialog, BrowserWindow, net } from "electron";
 import path from "path";
 import fs from "fs";
+import crypto from "crypto";
 import type Database from "better-sqlite3";
 import * as q from "../db/queries";
 import { registerChatHandler } from "./chat";
@@ -168,6 +169,14 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
     return note;
   }));
 
+  ipcMain.handle("db:note:moveToFolder", (_e, { id, folder }: { id: string; folder: string }) => handle(() => {
+    const note = q.updateNote(db, id, { folder });
+    if (note.type !== "dashboard") {
+      writeNoteFile(workspacePath, { ...note, projectName: getProjectName(db, note.projectId) });
+    }
+    return note;
+  }));
+
   ipcMain.handle("db:note:delete", (_e, { id }) => handle(() => {
     const note = q.getNoteById(db, id);
     if (note) {
@@ -188,6 +197,32 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
     if (fp) {
       shell.showItemInFolder(fp);
     }
+  }));
+
+  // ── Asset upload (paste images into notes) ────────
+  // Receives raw image bytes, writes content-addressed to
+  // <workspacePath>/assets/<sha256[0..15]>.<ext>, returns asset:// URL.
+  ipcMain.handle("app:uploadAsset", (_e, { filename, data }: { filename: string; data: number[] }) =>
+    handle(() => {
+      const assetDir = path.join(workspacePath, "assets");
+      fs.mkdirSync(assetDir, { recursive: true });
+      const ext = path.extname(filename).toLowerCase() || ".bin";
+      const buf = Buffer.from(data);
+      const hash = crypto.createHash("sha256").update(buf).digest("hex").slice(0, 16);
+      const destName = `${hash}${ext}`;
+      const destPath = path.join(assetDir, destName);
+      if (!fs.existsSync(destPath)) {
+        fs.writeFileSync(destPath, buf);
+      }
+      return { assetUrl: `asset://${destName}` };
+    })
+  );
+
+  // ── Reveal assets folder in Finder / Explorer ─────
+  ipcMain.handle("app:revealAssets", () => handle(() => {
+    const assetDir = path.join(workspacePath, "assets");
+    fs.mkdirSync(assetDir, { recursive: true });
+    shell.openPath(assetDir);
   }));
 
   // ── Board columns ─────────────────────────────────

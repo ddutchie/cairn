@@ -22,7 +22,7 @@ import { registerIpcHandlers, registerAppHandlers } from "./ipc/handlers";
 import { readWorkspaceConfig, getDbPathForWorkspace } from "./workspace-config";
 import { startFileWatcher } from "./file-watcher";
 import { markMcpNotificationsRead } from "./db/queries";
-import { setupProtocol } from "./lib/protocol";
+import { setupProtocol, registerAssetProtocol } from "./lib/protocol";
 import { createTray } from "./lib/tray";
 import { startMcpNotificationPoller } from "./lib/mcp-poller";
 
@@ -39,6 +39,10 @@ if (process.platform === "win32") {
 protocol.registerSchemesAsPrivileged([
   {
     scheme: "app",
+    privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: false },
+  },
+  {
+    scheme: "asset",
     privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: false },
   },
 ]);
@@ -135,6 +139,9 @@ app.whenReady().then(async () => {
     : path.join(userDataPath, "cairn"); // fallback while onboarding
 
   if (config) fs.mkdirSync(workspacePath, { recursive: true });
+
+  // Register asset:// protocol handler so the renderer can display pasted images
+  registerAssetProtocol(workspacePath);
 
   const dbPath = getDbPathForWorkspace(workspacePath);
   const db = initDb(dbPath);

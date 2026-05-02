@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Trash2, Download, CheckCircle } from "lucide-react";
+import { Trash2, Download, CheckCircle, FolderOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { useCairnStore } from "@/store";
@@ -53,6 +53,12 @@ export function DataSettings({
 
       <SettingsRow label="Storage" description="All data is stored locally in SQLite">
         <span className="text-xs text-[var(--text-tertiary)]">SQLite</span>
+      </SettingsRow>
+
+      <SettingsRow label="Assets folder" description="Open the folder containing all pasted images">
+        <Button variant="default" size="sm" onClick={() => window.electron?.revealAssets()}>
+          <FolderOpen size={12} /> Show in Finder
+        </Button>
       </SettingsRow>
 
       <SettingsRow label="Export data" description="Download your data as cairn-data.json">

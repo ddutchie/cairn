@@ -3,9 +3,14 @@
 import React, { useRef, useCallback, useState, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import remarkMark from "remark-mark";
+import "katex/dist/katex.min.css";
 import { MermaidDiagram } from "./MermaidDiagram";
 import { TableOfContents, headingSlug } from "./TableOfContents";
 import { CodeBlock } from "./CodeBlock";
+import { Callout, parseCalloutDirective } from "./Callout";
 import { Pin, PinOff, Calendar, Eye, Pencil, Wand2, Loader2, CheckCircle2, Tag, Plus, X, Link2, Kanban, ChevronDown, FileText } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { cn, formatRelative } from "@/lib/utils";
@@ -320,8 +325,76 @@ export function NoteEditor({ note }: NoteEditorProps) {
               {note.content ? (
                 <div className="prose-cairn">
                   <ReactMarkdown
-                    remarkPlugins={[remarkGfm]}
+                    remarkPlugins={[remarkGfm, remarkMath, remarkMark]}
+                    rehypePlugins={[rehypeKatex]}
                     components={{
+                      // Images — renders asset:// and https:// URLs
+                      img({ src, alt }) {
+                        return (
+                          <img
+                            src={src}
+                            alt={alt ?? ""}
+                            className="max-w-full rounded-md my-2 border border-[var(--border)]"
+                          />
+                        );
+                      },
+                      // Highlights ==text== rendered as <mark> by remark-mark
+                      mark({ children }) {
+                        return (
+                          <mark className="rounded px-0.5" style={{ background: "color-mix(in srgb, var(--accent) 22%, transparent)", color: "var(--text-primary)" }}>
+                            {children}
+                          </mark>
+                        );
+                      },
+                      // Callouts — intercept blockquotes starting with [!type]
+                      blockquote({ children }) {
+                        // Find the first text node to check for [!type] syntax
+                        const childArray = React.Children.toArray(children);
+                        const firstPara = childArray.find(
+                          (c): c is React.ReactElement => React.isValidElement(c) && (c as React.ReactElement<{ children?: React.ReactNode }>).type === "p"
+                        ) as React.ReactElement<{ children?: React.ReactNode }> | undefined;
+
+                        if (firstPara) {
+                          const paraChildren = React.Children.toArray(firstPara.props.children);
+                          const firstText = paraChildren.find((c) => typeof c === "string") as string | undefined;
+                          if (firstText) {
+                            const directive = parseCalloutDirective(firstText.trim());
+                            if (directive) {
+                              // Rebuild the first paragraph's children without the [!type] token
+                              const remainingParaChildren = paraChildren.map((c) =>
+                                c === firstText ? firstText.replace(/^\[![^\]]+\][\+\-]?\s*/, "") : c
+                              ).filter((c) => typeof c !== "string" || (c as string).length > 0);
+
+                              // All children after the first paragraph form the body
+                              const bodyChildren = childArray.map((c, i) => {
+                                if (i === 0 && React.isValidElement(c) && (c as React.ReactElement<{ children?: React.ReactNode }>).type === "p") {
+                                  if (remainingParaChildren.length === 0) return null;
+                                  return React.cloneElement(c as React.ReactElement<{ children?: React.ReactNode }>, {}, ...remainingParaChildren);
+                                }
+                                return c;
+                              }).filter(Boolean);
+
+                              return (
+                                <Callout
+                                  type={directive.type}
+                                  title={directive.title || undefined}
+                                  collapsible={directive.collapsible}
+                                  defaultOpen={directive.defaultOpen}
+                                >
+                                  {bodyChildren}
+                                </Callout>
+                              );
+                            }
+                          }
+                        }
+
+                        // Standard blockquote
+                        return (
+                          <blockquote className="border-l-2 border-[var(--border)] pl-4 text-[var(--text-secondary)] my-3">
+                            {children}
+                          </blockquote>
+                        );
+                      },
                       // Clickable checkboxes — toggle [ ] ↔ [x] in the raw source
                       input({ type, checked }) {
                         if (type !== "checkbox") return <input type={type} />;
