@@ -23,7 +23,8 @@ import { DEFAULT_AI_CONFIG, AI_CONFIG_KEY, ACTIVE_PROJECT_KEY } from "@/lib/cons
 // ── Slice imports ─────────────────────────────────────────────────────────────
 import { createUISlice } from "./slices/ui";
 import type { UISlice, AIConfig, Theme } from "./slices/ui";
-import { applyTheme, THEME_KEY } from "./slices/ui";
+import { applyTheme, THEME_KEY, applyFontScale, FONT_SCALE_KEY, DEFAULT_FONT_SCALE } from "./slices/ui";
+import type { FontScale } from "./slices/ui";
 import { createWorkspaceSlice } from "./slices/workspace";
 import type { WorkspaceSlice } from "./slices/workspace";
 import { createNotesSlice } from "./slices/notes";
@@ -40,7 +41,7 @@ import { createGraphSlice } from "./slices/graph";
 import type { GraphSlice } from "./slices/graph";
 
 // Re-export types used by consumers and constants.ts
-export type { AIConfig, Theme };
+export type { AIConfig, Theme, FontScale };
 export { DEFAULT_AI_CONFIG } from "@/lib/constants";
 
 // ── SearchResult (used by SelectorsSlice and components) ─────────────────────
@@ -166,6 +167,14 @@ export const useCairnStore = create<CairnStore>()(
         applyTheme("dark");
       }
 
+      const savedFontScale = storage.get<FontScale>(FONT_SCALE_KEY);
+      if (savedFontScale) {
+        a[0]({ fontScale: savedFontScale });
+        applyFontScale(savedFontScale);
+      } else {
+        applyFontScale(DEFAULT_FONT_SCALE);
+      }
+
       const savedConfig = storage.get<AIConfig>(AI_CONFIG_KEY);
       if (savedConfig) {
         a[0]({ aiConfig: { ...DEFAULT_AI_CONFIG, ...savedConfig } });
@@ -193,6 +202,14 @@ export const useCairnStore = create<CairnStore>()(
           applyTheme(savedTheme);
         } else {
           applyTheme("dark");
+        }
+
+        const savedFontScale = storage.get<FontScale>(FONT_SCALE_KEY);
+        if (savedFontScale) {
+          set({ fontScale: savedFontScale });
+          applyFontScale(savedFontScale);
+        } else {
+          applyFontScale(DEFAULT_FONT_SCALE);
         }
       }
 

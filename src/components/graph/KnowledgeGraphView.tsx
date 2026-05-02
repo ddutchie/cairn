@@ -2,19 +2,15 @@
 
 import React, { useEffect, useCallback, useState, useMemo } from "react";
 import {
-  GitBranch, Circle, RefreshCw, ChevronDown, LayoutGrid,
-  Clock, Grid3x3, Table2, Search,
+  GitBranch, Circle, RefreshCw, ChevronDown, LayoutGrid, Search,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { filterGraphNodes, filterGraphEdges, nodeTypeColor } from "@/store/slices/graph";
-import type { GraphNode, GraphNodeType, GraphEdgeType, GraphLayoutMode } from "@/types";
+import type { GraphNode, GraphNodeType } from "@/types";
 import { GraphDetailPanel } from "./GraphDetailPanel";
 import { ForceGraphCanvas } from "./ForceGraphCanvas";
 import { RadialTreeCanvas } from "./RadialTreeCanvas";
-import { TimelineCanvas } from "./TimelineCanvas";
-import { MatrixCanvas } from "./MatrixCanvas";
-import { TableCanvas } from "./TableCanvas";
 import { Tooltip } from "@/components/ui/tooltip";
 
 export function KnowledgeGraphView() {
@@ -36,10 +32,6 @@ export function KnowledgeGraphView() {
 
   const [projectDropdownOpen, setProjectDropdownOpen] = useState(false);
   const [recomputing, setRecomputing] = useState(false);
-  // Table view state — lifted here so toolbar can host it
-  const [tableSearch, setTableSearch] = useState("");
-  const [tableTypeFilter, setTableTypeFilter] = useState<GraphNodeType[]>([]);
-  // Force/radial search
   const [graphSearch, setGraphSearch] = useState("");
 
   // Load graph on mount + when workspace changes
@@ -118,21 +110,11 @@ export function KnowledgeGraphView() {
   }
 
   const ALL_NODE_TYPES: GraphNodeType[] = ["project", "note", "card", "tag"];
-  const ALL_EDGE_TYPES: GraphEdgeType[] = [
-    "note-note", "note-card", "tag-member", "project-member",
-    "flow-ref", "flow-edge", "co-mention", "keyword", "assignee",
-  ];
 
   function toggleNodeType(t: GraphNodeType) {
     const current = graphFilters.nodeTypes;
     const next = current.includes(t) ? current.filter((x) => x !== t) : [...current, t];
     setGraphFilters({ nodeTypes: next.length > 0 ? next : current });
-  }
-
-  function toggleEdgeType(t: GraphEdgeType) {
-    const current = graphFilters.edgeTypes;
-    const next = current.includes(t) ? current.filter((x) => x !== t) : [...current, t];
-    setGraphFilters({ edgeTypes: next.length > 0 ? next : current });
   }
 
   function toggleProject(pid: string) {
@@ -154,12 +136,9 @@ export function KnowledgeGraphView() {
         <div className="flex items-center rounded-md border border-[var(--border)] overflow-hidden">
           {(
             [
-              { key: "force"    as GraphLayoutMode, icon: <Circle size={12} />,   label: "Force",    tip: "Force-directed graph" },
-              { key: "radial"   as GraphLayoutMode, icon: <GitBranch size={12} />, label: "Radial",   tip: "Radial hierarchy tree" },
-              { key: "timeline" as GraphLayoutMode, icon: <Clock size={12} />,    label: "Timeline", tip: "Cards by due date" },
-              { key: "matrix"   as GraphLayoutMode, icon: <Grid3x3 size={12} />,  label: "Matrix",   tip: "Tag co-occurrence heatmap" },
-              { key: "table"    as GraphLayoutMode, icon: <Table2 size={12} />,   label: "Table",    tip: "Flat sortable table" },
-            ] as { key: GraphLayoutMode; icon: React.ReactNode; label: string; tip: string }[]
+              { key: "force"  as const, icon: <Circle size={12} />,    label: "Force",  tip: "Force-directed graph" },
+              { key: "radial" as const, icon: <GitBranch size={12} />, label: "Radial", tip: "Radial hierarchy tree"  },
+            ] as { key: "force" | "radial"; icon: React.ReactNode; label: string; tip: string }[]
           ).map(({ key, icon, label, tip }, idx) => {
             const isActive = graphLayout === key;
             return (
@@ -167,7 +146,7 @@ export function KnowledgeGraphView() {
                 {idx > 0 && <div className="w-px h-5 bg-[var(--border)]" />}
                 <Tooltip content={tip}>
                   <button
-                    onClick={() => setGraphLayout(key)}
+                    onClick={() => setGraphLayout(key as "force" | "radial")}
                   className={cn(
                     "flex items-center px-2.5 py-1.5 text-xs transition-colors",
                     isActive
@@ -236,45 +215,31 @@ export function KnowledgeGraphView() {
           )}
         </div>
 
-        {/* Search + type toggles — shown for force, radial, and table */}
-        {(graphLayout === "force" || graphLayout === "radial" || graphLayout === "table") && (
+        {/* Search + type toggles — shown for force and radial */}
+        {(graphLayout === "force" || graphLayout === "radial") && (
           <>
             {/* Search input */}
             <div className="relative flex items-center">
               <Search size={11} className="absolute left-2.5 text-[var(--text-tertiary)] pointer-events-none" />
               <input
                 type="text"
-                value={graphLayout === "table" ? tableSearch : graphSearch}
-                onChange={(e) =>
-                  graphLayout === "table"
-                    ? setTableSearch(e.target.value)
-                    : setGraphSearch(e.target.value)
-                }
+                value={graphSearch}
+                onChange={(e) => setGraphSearch(e.target.value)}
                 placeholder="Search…"
                 className="pl-7 pr-3 py-1.5 rounded-md border border-[var(--border)] bg-[var(--surface-2)] text-xs text-[var(--text-primary)] placeholder-[var(--text-tertiary)] outline-none focus:border-[var(--accent)] transition-colors w-40"
               />
             </div>
 
-            {/* Type toggles — identical behaviour for all layouts */}
+            {/* Type toggles */}
             <div className="flex items-center gap-1">
               {ALL_NODE_TYPES.map((t) => {
-                const isActive = graphLayout === "table"
-                  ? tableTypeFilter.includes(t)
-                  : graphFilters.nodeTypes.includes(t);
+                const isActive = graphFilters.nodeTypes.includes(t);
                 return (
                   <Tooltip key={t} content={`Toggle ${t}`}>
                     <button
-                      onClick={() => {
-                        if (graphLayout === "table") {
-                          setTableTypeFilter((prev) =>
-                            prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]
-                          );
-                        } else {
-                          toggleNodeType(t);
-                        }
-                      }}
+                      onClick={() => toggleNodeType(t)}
                       className={cn(
-                        "flex items-center gap-1 px-2 py-1 rounded text-[11px] capitalize transition-colors border",
+                        "flex items-center gap-1 px-2 py-1 rounded text-[0.786rem] capitalize transition-colors border",
                         isActive ? "border-transparent" : "border-[var(--border)] text-[var(--text-tertiary)] opacity-50"
                       )}
                       style={isActive ? {
@@ -317,10 +282,8 @@ export function KnowledgeGraphView() {
         )}
 
         {/* Stats + Recompute — pinned to right */}
-        <span className="ml-auto flex items-center gap-2 text-[11px] text-[var(--text-tertiary)]">
-          {graphLayout === "force" || graphLayout === "radial"
-            ? `${filteredNodes.length} nodes · ${filteredEdges.length} edges`
-            : `${filteredNodes.length} items`}
+        <span className="ml-auto flex items-center gap-2 text-[0.786rem] text-[var(--text-tertiary)]">
+          {`${filteredNodes.length} nodes · ${filteredEdges.length} edges`}
           <Tooltip content="Recompute auto-relationships">
             <button
               onClick={handleRecompute}
@@ -371,31 +334,6 @@ export function KnowledgeGraphView() {
             />
           )}
 
-          {!graphError && graphLayout === "timeline" && (
-            <TimelineCanvas
-              nodes={filteredNodes}
-              selectedNodeId={selectedGraphNodeId}
-              onNodeClick={handleNodeClick}
-            />
-          )}
-
-          {!graphError && graphLayout === "matrix" && (
-            <MatrixCanvas
-              nodes={filteredNodes}
-              selectedNodeId={selectedGraphNodeId}
-              onNodeClick={handleNodeClick}
-            />
-          )}
-
-          {!graphError && graphLayout === "table" && (
-            <TableCanvas
-              nodes={filteredNodes}
-              selectedNodeId={selectedGraphNodeId}
-              onNodeClick={handleNodeClick}
-              search={tableSearch}
-              typeFilter={tableTypeFilter}
-            />
-          )}
 
           {/* Node type legend — only shown in graph modes */}
           {filteredNodes.length > 0 && (graphLayout === "force" || graphLayout === "radial") && (
@@ -406,7 +344,7 @@ export function KnowledgeGraphView() {
                     className="w-2.5 h-2.5 rounded-full"
                     style={{ background: nodeTypeColor(t) }}
                   />
-                  <span className="text-[11px] capitalize text-[var(--text-tertiary)]">{t}</span>
+                  <span className="text-[0.786rem] capitalize text-[var(--text-tertiary)]">{t}</span>
                 </div>
               ))}
             </div>

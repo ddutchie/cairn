@@ -67,13 +67,13 @@ export const AiSummaryNode = memo(function AiSummaryNode({ id, data, selected, i
         <div className="flex items-center justify-between mb-1.5">
           <div className="flex items-center gap-1.5">
             <Sparkles size={12} className="text-[var(--accent)]" />
-            <span className="text-[10px] font-semibold text-[var(--accent)] uppercase tracking-wide">
+            <span className="text-[0.714rem] font-semibold text-[var(--accent)] uppercase tracking-wide">
               AI Summary
             </span>
           </div>
           <button
             className={cn(
-              "nodrag flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors",
+              "nodrag flex items-center gap-1 px-1.5 py-0.5 rounded text-[0.714rem] font-medium transition-colors",
               status === "loading"
                 ? "text-[var(--text-tertiary)] cursor-not-allowed"
                 : "text-[var(--accent)] hover:bg-[var(--accent)]/10 cursor-pointer"
@@ -93,15 +93,15 @@ export const AiSummaryNode = memo(function AiSummaryNode({ id, data, selected, i
 
         {/* Content */}
         {status === "error" && errorMsg ? (
-          <p className="text-[11px] text-[var(--danger)] leading-relaxed break-words">
+          <p className="text-[0.786rem] text-[var(--danger)] leading-relaxed break-words">
             {errorMsg}
           </p>
         ) : hasContent ? (
-          <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed break-words whitespace-pre-wrap">
+          <p className="text-[0.786rem] text-[var(--text-secondary)] leading-relaxed break-words whitespace-pre-wrap">
             {d.content}
           </p>
         ) : (
-          <p className="text-[11px] text-[var(--text-tertiary)] leading-relaxed italic">
+          <p className="text-[0.786rem] text-[var(--text-tertiary)] leading-relaxed italic">
             Connect to nodes, then hit Generate.
           </p>
         )}

@@ -114,7 +114,7 @@ export function DashboardApiModal({ onClose }: Props) {
             <span className="text-sm font-semibold text-[var(--text-primary)]">
               window.cairn API
             </span>
-            <span className="text-[11px] text-[var(--text-tertiary)] ml-1">
+            <span className="text-[0.786rem] text-[var(--text-tertiary)] ml-1">
               available inside every dashboard
             </span>
           </div>
@@ -131,15 +131,15 @@ export function DashboardApiModal({ onClose }: Props) {
           {API_ENTRIES.map((entry) => (
             <div key={entry.signature} className="px-5 py-3.5 group">
               <div className="flex items-start justify-between gap-3">
-                <code className="text-[12px] font-mono text-[var(--accent)] leading-snug flex-1">
+                <code className="text-[0.857rem] font-mono text-[var(--accent)] leading-snug flex-1">
                   {entry.signature}
                 </code>
                 <CopyButton text={entry.signature} />
               </div>
-              <p className="text-[12px] text-[var(--text-secondary)] mt-1 leading-relaxed">
+              <p className="text-[0.857rem] text-[var(--text-secondary)] mt-1 leading-relaxed">
                 {entry.description}
               </p>
-              <p className="text-[11px] text-[var(--text-tertiary)] mt-1 font-mono">
+              <p className="text-[0.786rem] text-[var(--text-tertiary)] mt-1 font-mono">
                 → {entry.returns}
               </p>
             </div>
@@ -147,7 +147,7 @@ export function DashboardApiModal({ onClose }: Props) {
 
           {/* Theme vars note */}
           <div className="px-5 py-3.5 bg-[var(--surface-2)]">
-            <p className="text-[11px] text-[var(--text-tertiary)] leading-relaxed">
+            <p className="text-[0.786rem] text-[var(--text-tertiary)] leading-relaxed">
               <span className="font-semibold text-[var(--text-secondary)]">CSS variables</span>
               {" "}— all Cairn design tokens are available on{" "}
               <code className="font-mono text-[var(--accent)]">:root</code> inside the dashboard:{" "}

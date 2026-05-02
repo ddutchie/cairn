@@ -218,13 +218,13 @@ export function NoteEditor({ note }: NoteEditorProps) {
           {spawnLoading ? (
             <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-[var(--surface-2)] border border-[var(--border)]">
               <Loader2 size={11} className="animate-spin text-[var(--accent)] shrink-0" />
-              <span className="text-[11px] text-[var(--text-tertiary)]">
+              <span className="text-[0.786rem] text-[var(--text-tertiary)]">
                 {spawnToolCalls.length === 0
                   ? "Analysing…"
                   : spawnToolCalls[spawnToolCalls.length - 1].replace("Creating task ", "").replace(/^"|"$/g, "")}
               </span>
               {spawnToolCalls.length > 0 && (
-                <span className="text-[10px] text-[var(--accent)] font-medium">{spawnToolCalls.length}</span>
+                <span className="text-[0.714rem] text-[var(--accent)] font-medium">{spawnToolCalls.length}</span>
               )}
             </div>
           ) : (
@@ -256,10 +256,10 @@ export function NoteEditor({ note }: NoteEditorProps) {
               {note.isPinned ? <PinOff size={13} /> : <Pin size={13} />}
             </button>
           </Tooltip>
-          <span className="text-[11px] text-[var(--text-tertiary)]">
+          <span className="text-[0.786rem] text-[var(--text-tertiary)]">
             {wordCount.toLocaleString()} {wordCount === 1 ? "word" : "words"} · {Math.max(1, Math.ceil(wordCount / 200))} min read
           </span>
-          <span className="text-[11px] text-[var(--text-tertiary)] flex items-center gap-1">
+          <span className="text-[0.786rem] text-[var(--text-tertiary)] flex items-center gap-1">
             <Calendar size={10} />
             {formatRelative(note.updatedAt)}
           </span>
@@ -372,7 +372,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
                       // Inline code only — fenced blocks are handled by `pre` above
                       code({ className, children }) {
                         if (className?.startsWith("language-")) return <>{children}</>;
-                        return <code className="px-1 py-0.5 rounded bg-[var(--surface-3)] font-mono text-[11px] text-[var(--text-primary)]">{children}</code>;
+                        return <code className="px-1 py-0.5 rounded bg-[var(--surface-3)] font-mono text-[0.786rem] text-[var(--text-primary)]">{children}</code>;
                       },
                       // Headings get id + data-heading-id for TOC anchor scrolling
                       h1({ children }) {
@@ -490,7 +490,7 @@ function BacklinksPanel({ note, notes, cards, columns, onOpenCard }: BacklinksPa
             >
               <FileText size={11} className="text-[var(--text-tertiary)] flex-shrink-0" />
               <span className="truncate flex-1">{n.title}</span>
-              <span className="text-[10px] text-[var(--text-tertiary)]">note</span>
+              <span className="text-[0.714rem] text-[var(--text-tertiary)]">note</span>
             </button>
           ))}
           {linkedCards.map((c) => {
@@ -503,7 +503,7 @@ function BacklinksPanel({ note, notes, cards, columns, onOpenCard }: BacklinksPa
               >
                 <Kanban size={11} className="text-[var(--text-tertiary)] flex-shrink-0" />
                 <span className="truncate flex-1">{c.title}</span>
-                <span className="text-[10px] text-[var(--text-tertiary)]">{col?.name ?? "card"}</span>
+                <span className="text-[0.714rem] text-[var(--text-tertiary)]">{col?.name ?? "card"}</span>
               </button>
             );
           })}
@@ -579,7 +579,7 @@ function NoteTagBar({ note, workspaceTags, onToggleTag, onCreateTag, getTagById 
       <div className="relative" ref={pickerRef}>
         <button
           onClick={() => setPickerOpen((o) => !o)}
-          className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)] border border-dashed border-[var(--border)] transition-colors"
+          className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[0.714rem] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)] border border-dashed border-[var(--border)] transition-colors"
         >
           <Tag size={11} />
           Add tag
@@ -599,7 +599,7 @@ function NoteTagBar({ note, workspaceTags, onToggleTag, onCreateTag, getTagById 
                 if (e.key === "Escape") { setPickerOpen(false); setNewTagName(""); }
               }}
               placeholder="Search or create…"
-              className="w-full px-2 py-1 text-xs rounded bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] mb-2"
+              className="w-full px-2 py-1 text-xs rounded bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20 mb-2"
             />
             <div className="max-h-36 overflow-y-auto space-y-0.5">
               {filteredUnassigned.map((tag) => (
@@ -622,7 +622,7 @@ function NoteTagBar({ note, workspaceTags, onToggleTag, onCreateTag, getTagById 
                 </button>
               )}
               {filteredUnassigned.length === 0 && !newTagName.trim() && (
-                <p className="text-[11px] text-[var(--text-tertiary)] px-2 py-1">No tags yet</p>
+                <p className="text-[0.786rem] text-[var(--text-tertiary)] px-2 py-1">No tags yet</p>
               )}
             </div>
           </div>

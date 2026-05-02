@@ -41,7 +41,7 @@ export function ShortcutsSettings() {
             )}
           >
             <span className="text-xs text-[var(--text-secondary)]">{action}</span>
-            <kbd className="text-[11px] font-mono bg-[var(--surface-2)] border border-[var(--border)] rounded px-2 py-0.5 text-[var(--text-tertiary)]">
+            <kbd className="text-[0.786rem] font-mono bg-[var(--surface-2)] border border-[var(--border)] rounded px-2 py-0.5 text-[var(--text-tertiary)]">
               {key}
             </kbd>
           </div>

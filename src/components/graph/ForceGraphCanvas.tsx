@@ -3,6 +3,8 @@
 import React, { useRef, useEffect, useCallback, useState, useMemo } from "react";
 import { ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 import type { GraphNode, GraphEdge, KnowledgeGraph } from "@/types";
+import { resolveCssVar } from "./graphUtils";
+import { useFontScale } from "./analyticsHooks";
 
 // react-force-graph-2d is a CommonJS module with no TS types bundled.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -13,13 +15,6 @@ interface Props {
   selectedNodeId: string | null;
   onNodeClick: (node: GraphNode) => void;
   onBackgroundClick: () => void;
-}
-
-function resolveCssVar(varName: string): string {
-  if (typeof document === "undefined") return "#888";
-  return getComputedStyle(document.documentElement)
-    .getPropertyValue(varName.replace(/^var\((.+)\)$/, "$1"))
-    .trim();
 }
 
 function hexForType(type: GraphNode["type"]): string {
@@ -57,6 +52,7 @@ export function ForceGraphCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
   const containerRef = useRef<HTMLDivElement>(null);
   const fgRef = useRef<ForceGraph2DInstance>(null);
   const [ForceGraph2D, setForceGraph2D] = useState<ForceGraph2DInstance>(null);
+  const fs = useFontScale();
   const [dims, setDims] = useState({ width: 800, height: 600 });
 
   useEffect(() => {
@@ -190,7 +186,7 @@ export function ForceGraphCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
           // — divide by globalScale so canvas scaling doesn't affect perceived size
           const showLabel = isProject || globalScale >= 1.2;
           if (showLabel) {
-            const screenPx = isProject ? 11 : 10;
+            const screenPx = (isProject ? 11 : 10) * fs;
             const fontSize = screenPx / globalScale;
             ctx.font = `${isProject ? "600 " : ""}${fontSize}px ui-sans-serif, system-ui, sans-serif`;
             ctx.fillStyle = resolveCssVar(isProject ? "--text-primary" : "--text-secondary");

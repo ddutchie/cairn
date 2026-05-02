@@ -79,11 +79,11 @@ export function MCPServerSettings() {
                 "w-1.5 h-1.5 rounded-full flex-shrink-0",
                 category === "write" ? "bg-[var(--warning)]" : category === "delete" ? "bg-[var(--danger)]" : "bg-[var(--accent)]"
               )} />
-              <span className="text-[11px] font-mono text-[var(--text-tertiary)]">{name}</span>
+              <span className="text-[0.786rem] font-mono text-[var(--text-tertiary)]">{name}</span>
             </div>
           ))}
         </div>
-        <p className="text-[10px] text-[var(--text-tertiary)] mt-2">
+        <p className="text-[0.714rem] text-[var(--text-tertiary)] mt-2">
           <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--accent)] mr-1" />read &nbsp;
           <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--warning)] mr-1" />write &nbsp;
           <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--danger)] mr-1" />delete
@@ -117,12 +117,12 @@ export function MCPConfigBlock({
       <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border)] bg-[var(--surface-2)]">
         <div className="flex items-center gap-2">
           <span className="text-xs font-semibold text-[var(--text-primary)]">{label}</span>
-          <span className="text-[10px] text-[var(--text-tertiary)]">{hint}</span>
+          <span className="text-[0.714rem] text-[var(--text-tertiary)]">{hint}</span>
         </div>
         {code && (
           <button
             onClick={() => onCopy(code, copyId)}
-            className="flex items-center gap-1.5 px-2 py-1 rounded text-[11px] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface)] transition-colors"
+            className="flex items-center gap-1.5 px-2 py-1 rounded text-[0.786rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface)] transition-colors"
           >
             {copied === copyId
               ? <><CheckCircle size={11} className="text-[var(--success)]" /> Copied</>
@@ -132,7 +132,7 @@ export function MCPConfigBlock({
         )}
       </div>
       {/* Code */}
-      <pre className="text-[11px] font-mono text-[var(--text-secondary)] leading-relaxed px-4 py-3 overflow-x-auto">
+      <pre className="text-[0.786rem] font-mono text-[var(--text-secondary)] leading-relaxed px-4 py-3 overflow-x-auto">
         {code ?? "Launch Cairn to resolve path…"}
       </pre>
     </div>
@@ -219,7 +219,7 @@ export function MCPProjectConfig() {
       <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)]">
         <div>
           <div className="text-xs font-semibold text-[var(--text-primary)]">Project context</div>
-          <div className="text-[11px] text-[var(--text-tertiary)] mt-0.5">
+          <div className="text-[0.786rem] text-[var(--text-tertiary)] mt-0.5">
             Config snippets scoped to a specific project
           </div>
         </div>
@@ -227,7 +227,7 @@ export function MCPProjectConfig() {
         <select
           value={selectedId}
           onChange={(e) => setSelectedId(e.target.value)}
-          className="text-xs rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-secondary)] px-2 py-1.5 focus:outline-none focus:border-[var(--accent)] max-w-40 truncate"
+          className="text-xs rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-secondary)] px-2 py-1.5 focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20 max-w-40 truncate"
         >
           {projects
             .filter((p) => !p.archivedAt)
@@ -303,11 +303,11 @@ function SnippetRow({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-0.5">
             <span className="text-xs font-medium text-[var(--text-secondary)]">{label}</span>
-            <span className="text-[10px] text-[var(--text-tertiary)]">— {description}</span>
+            <span className="text-[0.714rem] text-[var(--text-tertiary)]">— {description}</span>
           </div>
           <pre
             className={cn(
-              "text-[10px] rounded-md bg-[var(--surface-2)] border border-[var(--border)] px-2.5 py-2 overflow-x-auto whitespace-pre-wrap break-words leading-relaxed",
+              "text-[0.714rem] rounded-md bg-[var(--surface-2)] border border-[var(--border)] px-2.5 py-2 overflow-x-auto whitespace-pre-wrap break-words leading-relaxed",
               mono ? "font-mono" : "font-sans",
               "text-[var(--text-tertiary)]",
               !expanded && "max-h-14 overflow-hidden"
@@ -318,7 +318,7 @@ function SnippetRow({
           {lines.length > 2 && (
             <button
               onClick={() => setExpanded((e) => !e)}
-              className="text-[10px] text-[var(--accent)] hover:underline mt-1"
+              className="text-[0.714rem] text-[var(--accent)] hover:underline mt-1"
             >
               {expanded ? "Show less" : `Show all (${lines.length} lines)`}
             </button>

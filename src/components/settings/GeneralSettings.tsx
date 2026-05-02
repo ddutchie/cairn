@@ -4,12 +4,20 @@ import React, { useState } from "react";
 import { Sun, Moon, Monitor, CheckCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useCairnStore, type Theme } from "@/store";
+import { useCairnStore, type Theme, type FontScale } from "@/store";
 import { cn } from "@/lib/utils";
 import { SettingsGroup, SettingsRow } from "./shared";
 
+const FONT_SCALE_OPTIONS: { value: FontScale; label: string; description: string }[] = [
+  { value: 1,   label: "XS", description: "100%" },
+  { value: 1.1, label: "S",  description: "110%" },
+  { value: 1.2, label: "M",  description: "120%" },
+  { value: 1.3, label: "L",  description: "130%" },
+  { value: 1.4, label: "XL", description: "140%" },
+];
+
 export function GeneralSettings() {
-  const { workspaces, theme, setTheme, updateWorkspace, selectAndInitWorkspace } = useCairnStore();
+  const { workspaces, theme, setTheme, fontScale, setFontScale, updateWorkspace } = useCairnStore();
   const workspace = workspaces[0];
 
   const themeOptions: { value: Theme; label: string; icon: React.ReactNode }[] = [
@@ -47,6 +55,25 @@ export function GeneralSettings() {
               )}
             >
               {opt.icon}
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </SettingsRow>
+      <SettingsRow label="Font size" description="Scale the UI text up or down">
+        <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-[var(--surface-2)] border border-[var(--border)]">
+          {FONT_SCALE_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => setFontScale(opt.value)}
+              title={opt.description}
+              className={cn(
+                "flex items-center justify-center w-8 py-1.5 rounded-md text-xs font-medium transition-colors",
+                fontScale === opt.value
+                  ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm border border-[var(--border)]"
+                  : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-3)]"
+              )}
+            >
               {opt.label}
             </button>
           ))}

@@ -920,7 +920,7 @@ function IdeaFlowCanvas() {
           onMouseLeave={() => setContextMenu(null)}
         >
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-xl py-1 min-w-[160px]">
-            <p className="px-3 pt-1 pb-1.5 text-[10px] font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">
+            <p className="px-3 pt-1 pb-1.5 text-[0.714rem] font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">
               Add node
             </p>
             {ADD_NODE_MENU.map(({ type, label, icon: Icon }) => (

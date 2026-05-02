@@ -39,7 +39,7 @@ export const TaskRefNode = memo(function TaskRefNode({ data, selected, isConnect
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 min-w-0">
             <CheckSquare size={12} className="text-[var(--text-tertiary)] shrink-0" />
-            <span className="text-[10px] font-medium text-[var(--text-tertiary)] uppercase tracking-wide">Task</span>
+            <span className="text-[0.714rem] font-medium text-[var(--text-tertiary)] uppercase tracking-wide">Task</span>
           </div>
           {hasCard && (
             <button
@@ -59,21 +59,21 @@ export const TaskRefNode = memo(function TaskRefNode({ data, selected, isConnect
             <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
               {d.resolvedPriority && (
                 <span className={cn(
-                  "text-[10px] font-medium px-1.5 py-0.5 rounded-full border border-[var(--border)]",
+                  "text-[0.714rem] font-medium px-1.5 py-0.5 rounded-full border border-[var(--border)]",
                   PRIORITY_COLORS[d.resolvedPriority as keyof typeof PRIORITY_COLORS]
                 )}>
                   {d.resolvedPriority}
                 </span>
               )}
               {d.resolvedColumnName && (
-                <span className="text-[10px] text-[var(--text-tertiary)] px-1.5 py-0.5 rounded-full border border-[var(--border)]">
+                <span className="text-[0.714rem] text-[var(--text-tertiary)] px-1.5 py-0.5 rounded-full border border-[var(--border)]">
                   {d.resolvedColumnName}
                 </span>
               )}
             </div>
           </>
         ) : (
-          <p className="mt-1 text-[11px] text-[var(--text-tertiary)] italic">No task linked</p>
+          <p className="mt-1 text-[0.786rem] text-[var(--text-tertiary)] italic">No task linked</p>
         )}
       </div>
       <Handle type="source" position={Position.Right} isConnectable={isConnectable} className="!bg-[var(--accent)] !border-[var(--surface)] !w-2.5 !h-2.5" />

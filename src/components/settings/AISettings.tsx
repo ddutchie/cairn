@@ -95,7 +95,7 @@ export function AISettings() {
                 value={baseUrl}
                 onChange={(e) => update({ baseUrl: e.target.value })}
                 placeholder="https://api.openai.com"
-                className="pl-7 pr-3 py-1.5 text-xs w-64 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)]"
+                className="pl-7 pr-3 py-1.5 text-xs w-64 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20"
               />
             </div>
             <div className="flex gap-1.5">
@@ -108,7 +108,7 @@ export function AISettings() {
                   key={label}
                   onClick={() => update({ baseUrl: url })}
                   className={cn(
-                    "px-2 py-1 text-[10px] rounded border transition-colors",
+                    "px-2 py-1 text-[0.714rem] rounded border transition-colors",
                     baseUrl === url
                       ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
                       : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]"
@@ -137,7 +137,7 @@ export function AISettings() {
               value={apiKey}
               onChange={(e) => update({ apiKey: e.target.value })}
               placeholder={isLocal ? "optional" : "sk-…"}
-              className="pl-7 pr-8 py-1.5 text-xs w-52 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)]"
+              className="pl-7 pr-8 py-1.5 text-xs w-52 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20"
             />
             <Tooltip content={showKey ? "Hide API key" : "Show API key"} side="top">
               <button
@@ -170,7 +170,7 @@ export function AISettings() {
                   value={model}
                   onChange={(e) => update({ model: e.target.value })}
                   placeholder="gpt-4o-mini"
-                  className="pl-7 pr-3 py-1.5 text-xs w-full rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)]"
+                  className="pl-7 pr-3 py-1.5 text-xs w-full rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20"
                 />
               </div>
               <button
@@ -178,7 +178,7 @@ export function AISettings() {
                 disabled={modelsLoading}
                 aria-label="Fetch models from endpoint"
                 className={cn(
-                  "px-2 py-1.5 text-[10px] rounded-md border transition-colors flex items-center gap-1 min-w-[52px] justify-center",
+                  "px-2 py-1.5 text-[0.714rem] rounded-md border transition-colors flex items-center gap-1 min-w-[52px] justify-center",
                   "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]",
                   modelsLoading && "opacity-50 cursor-wait"
                 )}
@@ -190,12 +190,12 @@ export function AISettings() {
 
             {/* Status line */}
             {testState === "error" && (
-              <p className="text-[11px] text-[var(--danger)] self-start" title={testError}>
+              <p className="text-[0.786rem] text-[var(--danger)] self-start" title={testError}>
                 {testError.slice(0, 60)}
               </p>
             )}
             {testState === "ok" && availableModels.length > 0 && (
-              <p className="text-[11px] text-[var(--success)] self-start flex items-center gap-1">
+              <p className="text-[0.786rem] text-[var(--success)] self-start flex items-center gap-1">
                 <CheckCircle size={10} /> {availableModels.length} models available
               </p>
             )}
@@ -207,7 +207,7 @@ export function AISettings() {
                   key={m}
                   onClick={() => update({ model: m })}
                   className={cn(
-                    "px-2 py-0.5 text-[10px] rounded border transition-colors font-mono whitespace-nowrap",
+                    "px-2 py-0.5 text-[0.714rem] rounded border transition-colors font-mono whitespace-nowrap",
                     model === m
                       ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
                       : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]"
@@ -217,7 +217,7 @@ export function AISettings() {
                 </button>
               ))}
               {modelsFetched && availableModels.length === 0 && !modelsLoading && testState !== "error" && (
-                <span className="text-[11px] text-[var(--text-tertiary)]">No models returned</span>
+                <span className="text-[0.786rem] text-[var(--text-tertiary)]">No models returned</span>
               )}
             </div>
           </div>

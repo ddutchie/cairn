@@ -20,7 +20,7 @@ export function ToolCallIndicator({ toolCalls, streamingContent }: ToolCallIndic
         {toolCalls.map((tc, i) => (
           <div key={i} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--surface-2)] border border-[var(--border)] w-fit">
             <CheckCircle size={10} className="text-[var(--accent)] shrink-0" />
-            <span className="text-[11px] text-[var(--text-secondary)]">{tc.label}</span>
+            <span className="text-[0.786rem] text-[var(--text-secondary)]">{tc.label}</span>
           </div>
         ))}
         {streamingContent ? (
@@ -31,7 +31,7 @@ export function ToolCallIndicator({ toolCalls, streamingContent }: ToolCallIndic
         ) : (
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--surface-2)] border border-[var(--border)] w-fit">
             <Loader2 size={10} className="text-[var(--accent)] animate-spin shrink-0" />
-            <span className="text-[11px] text-[var(--text-tertiary)]">
+            <span className="text-[0.786rem] text-[var(--text-tertiary)]">
               {toolCalls.length === 0 ? "Thinking…" : "Working…"}
             </span>
           </div>

@@ -266,7 +266,7 @@ export interface KnowledgeGraph {
   edges: GraphEdge[];
 }
 
-export type GraphLayoutMode = "force" | "radial" | "timeline" | "matrix" | "table";
+export type GraphLayoutMode = "force" | "radial";
 
 export interface GraphFilters {
   projectIds: string[];
@@ -279,7 +279,7 @@ export interface GraphFilters {
 export interface AppUIState {
   activeWorkspaceId: ID | null;
   activeProjectId: ID | null;
-  activeView: "overview" | "notes" | "board" | "flow" | "graph" | "chat" | "search" | "settings";
+  activeView: "overview" | "notes" | "board" | "flow" | "graph" | "insights" | "chat" | "search" | "settings";
   sidebarCollapsed: boolean;
   chatOpen: boolean;
   searchOpen: boolean;

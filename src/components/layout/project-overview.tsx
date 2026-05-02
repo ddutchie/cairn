@@ -93,23 +93,23 @@ export function ProjectOverview() {
                     <p className="text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wide">Edit project</p>
                     <div className="flex gap-2">
                       <div className="flex flex-col gap-1 w-16">
-                        <label className="text-[11px] text-[var(--text-tertiary)]">Icon</label>
+                        <label className="text-[0.786rem] text-[var(--text-tertiary)]">Icon</label>
                         <input
                           value={editIcon}
                           onChange={(e) => setEditIcon(e.target.value)}
                           placeholder="🗂️"
                           maxLength={4}
-                          className="w-full text-center text-xl px-1 py-1.5 rounded-md bg-[var(--surface)] border border-[var(--border)] focus:outline-none focus:border-[var(--accent)]"
+                          className="w-full text-center text-xl px-1 py-1.5 rounded-md bg-[var(--surface)] border border-[var(--border)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20"
                         />
                       </div>
                       <div className="flex flex-col gap-1 flex-1">
-                        <label className="text-[11px] text-[var(--text-tertiary)]">Description</label>
+                        <label className="text-[0.786rem] text-[var(--text-tertiary)]">Description</label>
                         <textarea
                           value={editDesc}
                           onChange={(e) => setEditDesc(e.target.value)}
                           placeholder="What is this project about?"
                           rows={3}
-                          className="w-full px-2 py-1.5 text-xs rounded-md bg-[var(--surface)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] resize-none"
+                          className="w-full px-2 py-1.5 text-xs rounded-md bg-[var(--surface)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20 resize-none"
                         />
                       </div>
                     </div>
@@ -139,7 +139,7 @@ export function ProjectOverview() {
           </div>
           <div className="flex-shrink-0 flex flex-col items-center gap-1.5">
             <ProgressRing percent={completionRate} size={68} />
-            <span className="text-[11px] text-[var(--text-tertiary)]">
+            <span className="text-[0.786rem] text-[var(--text-tertiary)]">
               {doneCards.length}/{allCards.length} done
             </span>
           </div>
@@ -265,12 +265,12 @@ function SectionHeader({
 }) {
   return (
     <div className="flex items-center justify-between mb-3">
-      <div className="flex items-center gap-1.5 text-[11px] font-semibold text-[var(--text-secondary)] uppercase tracking-wider">
+      <div className="flex items-center gap-1.5 text-[0.786rem] font-semibold text-[var(--text-secondary)] uppercase tracking-wider">
         {icon}{title}
       </div>
       {action && (
         <button onClick={action.onClick}
-          className="text-[11px] text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors flex items-center gap-1">
+          className="text-[0.786rem] text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors flex items-center gap-1">
           {action.label}<ArrowRight size={10} />
         </button>
       )}
@@ -293,7 +293,7 @@ function StatCard({
       </div>
       <div className="min-w-0">
         <div className="text-xl font-bold leading-none" style={{ color: valueColor ?? "var(--text-primary)" }}>{value}</div>
-        <div className="text-[11px] text-[var(--text-tertiary)] mt-1">{label}</div>
+        <div className="text-[0.786rem] text-[var(--text-tertiary)] mt-1">{label}</div>
       </div>
       <ArrowRight size={11} className="ml-auto text-[var(--text-tertiary)] opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
     </button>
@@ -311,7 +311,7 @@ function ColumnBreakdownCard({
   if (columns.length === 0) return null;
   return (
     <div>
-      <div className="text-[10px] font-medium text-[var(--text-tertiary)] uppercase tracking-wider mb-2.5">By column</div>
+      <div className="text-[0.714rem] font-medium text-[var(--text-tertiary)] uppercase tracking-wider mb-2.5">By column</div>
       <div className="space-y-1.5">
         {columns.map((col) => {
           const count = getColumnCards(col.id).length;
@@ -321,11 +321,11 @@ function ColumnBreakdownCard({
             <button key={col.id}
               onClick={() => { setView("board"); setTimeout(() => window.dispatchEvent(CairnEvents.scrollToColumn(col.id)), 50); }}
               className="flex items-center gap-2.5 w-full group">
-              <span className="text-[11px] text-[var(--text-tertiary)] w-20 text-right flex-shrink-0 group-hover:text-[var(--text-secondary)] transition-colors truncate">{col.name}</span>
+              <span className="text-[0.786rem] text-[var(--text-tertiary)] w-20 text-right flex-shrink-0 group-hover:text-[var(--text-secondary)] transition-colors truncate">{col.name}</span>
               <div className="flex-1 h-2 rounded-full bg-[var(--surface-2)] overflow-hidden">
                 <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: color }} />
               </div>
-              <span className="text-[11px] tabular-nums text-[var(--text-tertiary)] w-5 text-right flex-shrink-0">{count}</span>
+              <span className="text-[0.786rem] tabular-nums text-[var(--text-tertiary)] w-5 text-right flex-shrink-0">{count}</span>
             </button>
           );
         })}
@@ -344,7 +344,7 @@ function PriorityBreakdownCard({
   if (!hasAnyCategorised) return null;
   return (
     <div>
-      <div className="text-[10px] font-medium text-[var(--text-tertiary)] uppercase tracking-wider mb-2.5">Open tasks by priority</div>
+      <div className="text-[0.714rem] font-medium text-[var(--text-tertiary)] uppercase tracking-wider mb-2.5">Open tasks by priority</div>
       <div className="grid grid-cols-4 gap-2">
         {([
           { key: "urgent", label: "Urgent", color: "var(--danger)",        bg: "color-mix(in srgb, var(--danger) 8%, transparent)" },
@@ -358,7 +358,7 @@ function PriorityBreakdownCard({
             <div className="text-lg font-bold leading-none mb-1" style={{ color: priorityCounts[key] > 0 ? color : "var(--text-tertiary)" }}>
               {priorityCounts[key]}
             </div>
-            <div className="text-[10px] text-[var(--text-tertiary)]">{label}</div>
+            <div className="text-[0.714rem] text-[var(--text-tertiary)]">{label}</div>
           </button>
         ))}
       </div>
@@ -376,7 +376,7 @@ function ColumnPill({ column, cards, onClick }: { column: BoardColumn; cards: Ta
         isInProgress ? "border-[var(--warning)]/30 bg-[var(--surface)]" : "border-[var(--border)] bg-[var(--surface)]")}>
       <div className="flex items-center gap-1.5 mb-2">
         <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
-        <span className="text-[10px] font-semibold text-[var(--text-tertiary)] uppercase tracking-wider truncate">{column.name}</span>
+        <span className="text-[0.714rem] font-semibold text-[var(--text-tertiary)] uppercase tracking-wider truncate">{column.name}</span>
       </div>
       <div className="text-xl font-bold mb-1.5 leading-none"
         style={{ color: isDone ? "var(--success)" : isInProgress ? "var(--warning)" : "var(--text-primary)" }}>
@@ -407,8 +407,8 @@ function DueCard({ card, columns, today, onClick }: { card: TaskCard; columns: B
         : "border-[var(--border)] bg-[var(--surface)] hover:border-[var(--accent)]/30 hover:bg-[var(--surface-2)]")}>
       <div className="w-0.5 h-7 rounded-full flex-shrink-0" style={{ background: PRIORITY_CSS_COLORS[card.priority] ?? "var(--text-tertiary)" }} />
       <span className="flex-1 text-sm text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] transition-colors truncate">{card.title}</span>
-      {col && <span className="text-[11px] text-[var(--text-tertiary)] flex-shrink-0">{col.name}</span>}
-      <span className={cn("text-[10px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0",
+      {col && <span className="text-[0.786rem] text-[var(--text-tertiary)] flex-shrink-0">{col.name}</span>}
+      <span className={cn("text-[0.714rem] font-semibold px-2 py-0.5 rounded-full flex-shrink-0",
         isOverdue ? "bg-[var(--danger)]/15 text-[var(--danger)]"
         : isToday  ? "bg-[var(--warning)]/15 text-[var(--warning)]"
         : "bg-[var(--accent-dim)] text-[var(--accent)]")}>
@@ -426,14 +426,14 @@ function PinnedNoteCard({ note, onClick }: { note: Note; onClick: () => void }) 
       className="p-4 rounded-xl border border-[var(--accent)]/20 bg-[var(--surface)] hover:bg-[var(--surface-2)] text-left transition-all w-full group">
       <div className="flex items-center gap-1 mb-2">
         <Pin size={9} className="text-[var(--accent)]" />
-        <span className="text-[10px] text-[var(--accent)] font-medium">Pinned</span>
+        <span className="text-[0.714rem] text-[var(--accent)] font-medium">Pinned</span>
       </div>
       <div className="text-sm font-semibold text-[var(--text-primary)] mb-1.5 truncate group-hover:text-[var(--accent)] transition-colors">{note.title}</div>
       <div className="text-[11.5px] text-[var(--text-tertiary)] line-clamp-2 leading-relaxed mb-3">
         {note.contentText.slice(0, 120) || "Empty note"}
       </div>
       <div className="flex items-center justify-between">
-        <span className="text-[10px] text-[var(--text-tertiary)]">{formatRelative(note.updatedAt)}</span>
+        <span className="text-[0.714rem] text-[var(--text-tertiary)]">{formatRelative(note.updatedAt)}</span>
         <div className="flex gap-1">
           {noteTags.map((tag) => <Badge key={tag.id} color={tag.color}>{tag.name}</Badge>)}
         </div>
@@ -449,9 +449,9 @@ function NoteRow({ note, onClick }: { note: Note; onClick: () => void }) {
       <FileText size={13} className="text-[var(--text-tertiary)] flex-shrink-0" />
       <div className="flex-1 min-w-0">
         <div className="text-sm text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] transition-colors truncate">{note.title}</div>
-        <div className="text-[11px] text-[var(--text-tertiary)] truncate">{note.contentText.slice(0, 80) || "Empty note"}</div>
+        <div className="text-[0.786rem] text-[var(--text-tertiary)] truncate">{note.contentText.slice(0, 80) || "Empty note"}</div>
       </div>
-      <span className="text-[11px] text-[var(--text-tertiary)] flex-shrink-0 tabular-nums">{formatRelative(note.updatedAt)}</span>
+      <span className="text-[0.786rem] text-[var(--text-tertiary)] flex-shrink-0 tabular-nums">{formatRelative(note.updatedAt)}</span>
     </button>
   );
 }
@@ -461,7 +461,7 @@ function RecentActivityFeed({ activityByDay }: { activityByDay: ActivityGroup[] 
     <div className="space-y-4">
       {activityByDay.map(({ label, items }) => (
         <div key={label}>
-          <div className="text-[10px] font-semibold text-[var(--text-tertiary)] uppercase tracking-wider mb-1.5 px-2">{label}</div>
+          <div className="text-[0.714rem] font-semibold text-[var(--text-tertiary)] uppercase tracking-wider mb-1.5 px-2">{label}</div>
           <div className="space-y-0.5">
             {items.map((item) => (
               <button key={item.id} onClick={item.onClick}
@@ -472,9 +472,9 @@ function RecentActivityFeed({ activityByDay }: { activityByDay: ActivityGroup[] 
                 }
                 <span className="flex-1 text-sm text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] transition-colors truncate">{item.title}</span>
                 {item.subtitle && (
-                  <span className="text-[11px] text-[var(--text-tertiary)] flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">{item.subtitle}</span>
+                  <span className="text-[0.786rem] text-[var(--text-tertiary)] flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">{item.subtitle}</span>
                 )}
-                <span className="text-[11px] text-[var(--text-tertiary)] flex-shrink-0 tabular-nums">{formatRelative(item.updatedAt)}</span>
+                <span className="text-[0.786rem] text-[var(--text-tertiary)] flex-shrink-0 tabular-nums">{formatRelative(item.updatedAt)}</span>
               </button>
             ))}
           </div>

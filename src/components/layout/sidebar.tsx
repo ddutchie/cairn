@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect } from "react";
 import {
   FileText, Kanban, Settings, Search, MessageSquare,
   ChevronDown, ChevronRight, Plus, Pin, MoreHorizontal,
-  FolderOpen, Hash, Layers, Pencil, Trash2, GitBranch,
+  FolderOpen, Hash, Layers, Pencil, Trash2, GitBranch, BarChart2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CairnEvents } from "@/lib/events";
@@ -83,6 +83,12 @@ export function Sidebar() {
             <GitBranch size={15} />
           </button>
         </Tooltip>
+        <Tooltip content="Insights (⌘6)" side="right">
+          <button onClick={() => setView("insights")}
+            className={cn("p-2 rounded-md transition-colors", activeView === "insights" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
+            <BarChart2 size={15} />
+          </button>
+        </Tooltip>
       </aside>
     );
   }
@@ -98,7 +104,7 @@ export function Sidebar() {
             className={cn("flex items-center gap-1.5 flex-1 rounded-md px-2 py-1.5 text-xs transition-colors",
               searchOpen ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
             <Search size={12} /><span>Search</span>
-            <span className="ml-auto text-[10px] text-[var(--text-tertiary)] font-mono">⌘K</span>
+            <span className="ml-auto text-[0.714rem] text-[var(--text-tertiary)] font-mono">⌘K</span>
           </button>
         </Tooltip>
         <Tooltip content="AI Chat (⌘/)">
@@ -112,7 +118,7 @@ export function Sidebar() {
       {/* Projects list */}
       <nav className="flex-1 overflow-y-auto py-2 min-h-0">
         <div className="flex items-center justify-between px-3 mb-1">
-          <span className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-tertiary)]">Projects</span>
+          <span className="text-[0.714rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)]">Projects</span>
           <Tooltip content="New project">
             <button onClick={() => { setCreatingProject(true); setNewProjectName(""); }}
               className="p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors">
@@ -165,7 +171,13 @@ export function Sidebar() {
           className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors",
             activeView === "graph" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
           <GitBranch size={13} /><span>Knowledge Graph</span>
-          <span className="ml-auto text-[10px] font-mono text-[var(--text-tertiary)]">⌘5</span>
+          <span className="ml-auto text-[0.714rem] font-mono text-[var(--text-tertiary)]">⌘5</span>
+        </button>
+        <button onClick={() => setView("insights")}
+          className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors",
+            activeView === "insights" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
+          <BarChart2 size={13} /><span>Insights</span>
+          <span className="ml-auto text-[0.714rem] font-mono text-[var(--text-tertiary)]">⌘6</span>
         </button>
         <button onClick={() => setView("settings")}
           className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors",
@@ -274,7 +286,7 @@ function ProjectItem({ project, isActive, isExpanded, onToggleExpand, onSelectPr
               <div className="mt-1 space-y-0.5">
                 {notes.map((note) => (
                   <button key={note.id} onClick={() => window.dispatchEvent(CairnEvents.selectNote(note.id))}
-                    className="flex items-center gap-1.5 w-full px-1.5 py-1 rounded text-[11px] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)] transition-colors text-left">
+                    className="flex items-center gap-1.5 w-full px-1.5 py-1 rounded text-[0.786rem] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)] transition-colors text-left">
                     {note.isPinned && <Pin size={9} className="text-[var(--accent)] flex-shrink-0" />}
                     <span className="truncate">{note.title}</span>
                   </button>
@@ -308,7 +320,7 @@ function DueDateDot({ dueDate }: { dueDate: string }) {
 function NavItem({ icon, label, isActive, onClick }: { icon: React.ReactNode; label: string; isActive: boolean; onClick: () => void }) {
   return (
     <button onClick={onClick}
-      className={cn("flex items-center gap-1.5 w-full px-1.5 py-1 rounded text-[11px] transition-colors text-left",
+      className={cn("flex items-center gap-1.5 w-full px-1.5 py-1 rounded text-[0.786rem] transition-colors text-left",
         isActive ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)]")}>
       {icon}{label}
     </button>

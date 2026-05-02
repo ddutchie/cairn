@@ -122,7 +122,7 @@ export function TableOfContents({ markdown, scrollContainerRef }: Props) {
       style={{ opacity: visible ? 1 : 0, pointerEvents: visible ? "auto" : "none" }}
     >
       <div className="sticky top-5">
-        <p className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-tertiary)] mb-2 px-1">
+        <p className="text-[0.714rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)] mb-2 px-1">
           On this page
         </p>
         <nav className="flex flex-col gap-0.5">
@@ -132,11 +132,11 @@ export function TableOfContents({ markdown, scrollContainerRef }: Props) {
               href={`#${h.id}`}
               onClick={(e) => handleClick(e, h.id)}
               className={cn(
-                "text-[11px] leading-snug truncate rounded px-1 py-0.5 transition-colors",
+                "text-[0.786rem] leading-snug truncate rounded px-1 py-0.5 transition-colors",
                 "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]",
                 h.level === 1 && "font-medium",
                 h.level === 2 && "pl-3",
-                h.level === 3 && "pl-5 text-[10px]",
+                h.level === 3 && "pl-5 text-[0.714rem]",
               )}
               title={h.text}
             >

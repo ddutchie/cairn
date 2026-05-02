@@ -128,7 +128,7 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
             {historyOpen && (
               <div className="absolute right-0 top-full mt-1 w-64 z-50 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-2xl overflow-hidden">
                 <div className="px-3 py-2 border-b border-[var(--border)]">
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">Recent threads</span>
+                  <span className="text-[0.714rem] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">Recent threads</span>
                 </div>
                 <div className="max-h-72 overflow-y-auto">
                   {projectThreads.map((t) => {
@@ -152,14 +152,14 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
                                 if (e.key === "Escape") setRenamingThreadId(null);
                                 e.stopPropagation();
                               }}
-                              className="w-full bg-transparent text-[11px] font-medium text-[var(--accent)] outline-none border-b border-[var(--accent)]"
+                              className="w-full bg-transparent text-[0.786rem] font-medium text-[var(--accent)] outline-none border-b border-[var(--accent)]"
                             />
                           ) : (
-                            <span className={cn("text-[11px] truncate font-medium", isActive ? "text-[var(--accent)]" : "text-[var(--text-secondary)]")}>
+                            <span className={cn("text-[0.786rem] truncate font-medium", isActive ? "text-[var(--accent)]" : "text-[var(--text-secondary)]")}>
                               {t.title ?? (firstMsg?.content.slice(0, 50) ?? "New thread")}{(!t.title && (firstMsg?.content.length ?? 0) > 50) ? "…" : ""}
                             </span>
                           )}
-                          <span className="text-[10px] text-[var(--text-tertiary)]">{formatRelative(t.updatedAt)}</span>
+                          <span className="text-[0.714rem] text-[var(--text-tertiary)]">{formatRelative(t.updatedAt)}</span>
                         </button>
                         <div className="opacity-0 group-hover:opacity-100 flex items-center flex-shrink-0 mr-1 transition-all">
                           <button onClick={(e) => { e.stopPropagation(); setRenamingThreadId(t.id); setRenameValue(t.title ?? firstMsg?.content.slice(0, 50) ?? ""); }}
@@ -228,7 +228,7 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
           <textarea ref={inputRef} value={input} onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
             placeholder="Ask about your project…" rows={2}
-            className="w-full resize-none rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5 pr-10 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] transition-colors leading-relaxed" />
+            className="w-full resize-none rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5 pr-10 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20 transition-colors leading-relaxed" />
           {isLoading ? (
             <Tooltip content="Stop generation" side="left">
               <button onClick={stopStream}
@@ -245,7 +245,7 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
             </Tooltip>
           )}
         </div>
-        <p className="text-[10px] text-[var(--text-tertiary)] mt-1.5 text-center">
+        <p className="text-[0.714rem] text-[var(--text-tertiary)] mt-1.5 text-center">
           {isLoading ? "Generating… click ◼ to stop" : "Shift+Enter for new line · Enter to send"}
         </p>
       </div>

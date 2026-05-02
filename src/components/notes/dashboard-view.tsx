@@ -245,7 +245,7 @@ export function DashboardView({ note }: DashboardViewProps) {
           )}
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-[11px] text-[var(--text-tertiary)] flex items-center gap-1">
+          <span className="text-[0.786rem] text-[var(--text-tertiary)] flex items-center gap-1">
             <Calendar size={10} />
             {formatRelative(note.updatedAt)}
           </span>
@@ -283,7 +283,7 @@ export function DashboardView({ note }: DashboardViewProps) {
       {errors.length > 0 && (
         <div className="flex-shrink-0 border-b border-[var(--danger)]/30 bg-[var(--danger)]/[0.06] px-4 py-3 space-y-1.5">
           <div className="flex items-center justify-between mb-1">
-            <div className="flex items-center gap-1.5 text-[11px] font-semibold text-[var(--danger)] uppercase tracking-wider">
+            <div className="flex items-center gap-1.5 text-[0.786rem] font-semibold text-[var(--danger)] uppercase tracking-wider">
               <AlertTriangle size={11} />
               Dashboard error{errors.length > 1 ? `s (${errors.length})` : ""}
             </div>
@@ -297,7 +297,7 @@ export function DashboardView({ note }: DashboardViewProps) {
                   window.dispatchEvent(CairnEvents.openChat(prefill));
                   setErrors([]);
                 }}
-                className="flex items-center gap-1 px-2 py-0.5 rounded text-[11px] text-[var(--danger)] hover:bg-[var(--danger)]/10 transition-colors"
+                className="flex items-center gap-1 px-2 py-0.5 rounded text-[0.786rem] text-[var(--danger)] hover:bg-[var(--danger)]/10 transition-colors"
               >
                 <Wand2 size={11} />
                 Fix with AI
@@ -311,7 +311,7 @@ export function DashboardView({ note }: DashboardViewProps) {
             </div>
           </div>
           {errors.map((err, i) => (
-            <div key={i} className="text-[11px] font-mono text-[var(--danger)]/80 leading-relaxed">
+            <div key={i} className="text-[0.786rem] font-mono text-[var(--danger)]/80 leading-relaxed">
               <span className="text-[var(--danger)]">{err.message}</span>
               {err.source && (
                 <span className="text-[var(--text-tertiary)] ml-2">
@@ -346,7 +346,7 @@ export function DashboardView({ note }: DashboardViewProps) {
                 </div>
                 <button
                   onClick={() => setApiModalOpen(true)}
-                  className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
+                  className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[0.786rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
                   title="window.cairn API reference"
                 >
                   <HelpCircle size={11} />

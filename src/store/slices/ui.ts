@@ -24,6 +24,17 @@ export interface AIConfig {
 export type Theme = "light" | "dark" | "system";
 export const THEME_KEY = "theme";
 
+// ── Font scale ────────────────────────────────────────────────────────────────
+
+export type FontScale = 1 | 1.1 | 1.2 | 1.3 | 1.4;
+export const FONT_SCALE_KEY = "fontScale";
+export const DEFAULT_FONT_SCALE: FontScale = 1.2;
+
+export function applyFontScale(scale: FontScale): void {
+  if (typeof document === "undefined") return;
+  document.documentElement.style.setProperty("--font-scale", String(scale));
+}
+
 // Single MQ listener — stored so we can remove it before re-adding
 let _systemMqHandler: ((e: MediaQueryListEvent) => void) | null = null;
 let _systemMq: MediaQueryList | null = null;
@@ -63,6 +74,10 @@ export interface UISlice extends AppUIState {
   theme: Theme;
   setTheme: (theme: Theme) => void;
 
+  // Font scale
+  fontScale: FontScale;
+  setFontScale: (scale: FontScale) => void;
+
   // Navigation / selections
   setActiveWorkspace: (id: ID) => void;
   setActiveProject: (id: ID | null) => void;
@@ -88,6 +103,7 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
 
   aiConfig: DEFAULT_AI_CONFIG,
   theme: "dark" as Theme,
+  fontScale: DEFAULT_FONT_SCALE, // 1.2 = M (~16.8px)
 
   // ── AI config ──────────────────────────────────
   setAIConfig(patch) {
@@ -106,6 +122,13 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
     if (typeof window !== "undefined" && window.electron) {
       window.electron.setTheme(theme);
     }
+  },
+
+  // ── Font scale ─────────────────────────────────
+  setFontScale(scale: FontScale) {
+    set({ fontScale: scale });
+    storage.set(FONT_SCALE_KEY, scale);
+    applyFontScale(scale);
   },
 
   // ── Selections ─────────────────────────────────

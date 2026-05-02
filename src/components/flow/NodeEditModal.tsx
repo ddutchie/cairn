@@ -143,7 +143,7 @@ function NotePicker({ selectedId, onSelect }: { selectedId: string; onSelect: (i
 
   return (
     <div className="flex flex-col gap-2">
-      <label className="text-[11px] font-medium text-[var(--text-tertiary)] uppercase tracking-wide">Search notes</label>
+      <label className="text-[0.786rem] font-medium text-[var(--text-tertiary)] uppercase tracking-wide">Search notes</label>
       <div className="relative">
         <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]" />
         <input
@@ -157,7 +157,7 @@ function NotePicker({ selectedId, onSelect }: { selectedId: string; onSelect: (i
       </div>
       <div className="flex flex-col max-h-48 overflow-y-auto rounded-lg border border-[var(--border)] divide-y divide-[var(--border)]">
         {filtered.length === 0 ? (
-          <p className="px-3 py-3 text-[11px] text-[var(--text-tertiary)] text-center">No notes found</p>
+          <p className="px-3 py-3 text-[0.786rem] text-[var(--text-tertiary)] text-center">No notes found</p>
         ) : (
           filtered.map((n) => (
             <button
@@ -173,7 +173,7 @@ function NotePicker({ selectedId, onSelect }: { selectedId: string; onSelect: (i
               <FileText size={11} className="shrink-0 text-[var(--text-tertiary)]" />
               <span className="text-xs truncate">{n.title}</span>
               {selectedId === n.id && (
-                <span className="ml-auto text-[10px] text-[var(--accent)] font-medium shrink-0">Selected</span>
+                <span className="ml-auto text-[0.714rem] text-[var(--accent)] font-medium shrink-0">Selected</span>
               )}
             </button>
           ))
@@ -206,7 +206,7 @@ function TaskPicker({ selectedId, onSelect }: { selectedId: string; onSelect: (i
 
   return (
     <div className="flex flex-col gap-2">
-      <label className="text-[11px] font-medium text-[var(--text-tertiary)] uppercase tracking-wide">Search tasks</label>
+      <label className="text-[0.786rem] font-medium text-[var(--text-tertiary)] uppercase tracking-wide">Search tasks</label>
       <div className="relative">
         <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]" />
         <input
@@ -220,7 +220,7 @@ function TaskPicker({ selectedId, onSelect }: { selectedId: string; onSelect: (i
       </div>
       <div className="flex flex-col max-h-48 overflow-y-auto rounded-lg border border-[var(--border)] divide-y divide-[var(--border)]">
         {filtered.length === 0 ? (
-          <p className="px-3 py-3 text-[11px] text-[var(--text-tertiary)] text-center">No tasks found</p>
+          <p className="px-3 py-3 text-[0.786rem] text-[var(--text-tertiary)] text-center">No tasks found</p>
         ) : (
           filtered.map((c) => (
             <button
@@ -238,16 +238,16 @@ function TaskPicker({ selectedId, onSelect }: { selectedId: string; onSelect: (i
               <div className="flex items-center gap-1 shrink-0 ml-auto">
                 {c.priority && (
                   <span className={cn(
-                    "text-[10px] px-1 py-0.5 rounded border border-[var(--border)]",
+                    "text-[0.714rem] px-1 py-0.5 rounded border border-[var(--border)]",
                     PRIORITY_COLORS[c.priority as keyof typeof PRIORITY_COLORS]
                   )}>
                     {c.priority}
                   </span>
                 )}
-                <span className="text-[10px] text-[var(--text-tertiary)]">{columnName(c.columnId)}</span>
+                <span className="text-[0.714rem] text-[var(--text-tertiary)]">{columnName(c.columnId)}</span>
               </div>
               {selectedId === c.id && (
-                <span className="text-[10px] text-[var(--accent)] font-medium shrink-0">✓</span>
+                <span className="text-[0.714rem] text-[var(--accent)] font-medium shrink-0">✓</span>
               )}
             </button>
           ))
@@ -289,7 +289,7 @@ function UrlEditor({
     <div className="flex flex-col gap-3">
       {/* URL row with Fetch button */}
       <div className="flex flex-col gap-1">
-        <label className="text-[11px] font-medium text-[var(--text-tertiary)] uppercase tracking-wide">URL</label>
+        <label className="text-[0.786rem] font-medium text-[var(--text-tertiary)] uppercase tracking-wide">URL</label>
         <div className="flex gap-1.5">
           <input
             type="text"
@@ -311,7 +311,7 @@ function UrlEditor({
           </button>
         </div>
         {fetchError && (
-          <p className="text-[10px] text-[var(--danger)]">{fetchError}</p>
+          <p className="text-[0.714rem] text-[var(--danger)]">{fetchError}</p>
         )}
       </div>
       <Field label="Title" value={title} onChange={onTitleChange} />
@@ -340,7 +340,7 @@ function GroupEditor({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-1">
-        <label className="text-[11px] font-medium text-[var(--text-tertiary)] uppercase tracking-wide flex items-center gap-1.5">
+        <label className="text-[0.786rem] font-medium text-[var(--text-tertiary)] uppercase tracking-wide flex items-center gap-1.5">
           <Layers size={10} /> Label
         </label>
         <input
@@ -353,7 +353,7 @@ function GroupEditor({
         />
       </div>
       <div className="flex flex-col gap-1">
-        <label className="text-[11px] font-medium text-[var(--text-tertiary)] uppercase tracking-wide">Colour</label>
+        <label className="text-[0.786rem] font-medium text-[var(--text-tertiary)] uppercase tracking-wide">Colour</label>
         <div className="flex items-center gap-2">
           {GROUP_COLORS.map((c) => (
             <button
@@ -385,7 +385,7 @@ function Field({
   const base = "w-full text-xs bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-2.5 py-1.5 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)] resize-none";
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-[11px] font-medium text-[var(--text-tertiary)] uppercase tracking-wide">{label}</label>
+      <label className="text-[0.786rem] font-medium text-[var(--text-tertiary)] uppercase tracking-wide">{label}</label>
       {multiline ? (
         <textarea
           rows={3}
