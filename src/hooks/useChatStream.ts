@@ -28,6 +28,7 @@ export interface ChatStreamRequest {
     baseUrl?: string;
     model?: string;
     apiKey?: string;
+    maxSteps?: number;
   };
 }
 

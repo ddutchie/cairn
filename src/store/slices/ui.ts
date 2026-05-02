@@ -17,6 +17,8 @@ export interface AIConfig {
   model: string;
   /** API key. Empty string means "use server-side OPENAI_API_KEY env var" */
   apiKey: string;
+  /** Maximum tool-call rounds per chat message. Lower = fewer API calls = lower cost. */
+  maxSteps: number;
 }
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
