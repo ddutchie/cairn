@@ -7,10 +7,10 @@
 > A calm, local-first workspace for notes, project tracking, and visual idea mapping — with an AI assistant and MCP server built in.
 
 <p align="center">
-  [![Website](https://img.shields.io/badge/Website-Live-blue)](https://ddutchie.github.io/cairn-site/index.html)
-  [![Docs](https://img.shields.io/badge/Docs-Read-green)](https://ddutchie.github.io/cairn-site/docs)
-  [![Releases](https://img.shields.io/github/v/release/ddutchie/cairn?label=Releases)](https://github.com/ddutchie/cairn/releases)
-  [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/ddutchie/cairn/)
+  <a href="https://ddutchie.github.io/cairn-site/index.html"><img src="https://img.shields.io/badge/Website-Live-blue" alt="Website"></a>
+  <a href="https://ddutchie.github.io/cairn-site/docs"><img src="https://img.shields.io/badge/Docs-Read-green" alt="Docs"></a>
+  <a href="https://github.com/ddutchie/cairn/releases"><img src="https://img.shields.io/github/v/release/ddutchie/cairn?label=Releases" alt="Releases"></a>
+  <a href="https://deepwiki.com/ddutchie/cairn/"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki"></a>
 </p>
 
 <p align="center">
