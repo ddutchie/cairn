@@ -3,7 +3,7 @@
 import React from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Archive, Calendar, FileText, Pencil, Trash2 } from "lucide-react";
+import { Archive, Calendar, FileText, Lock, Pencil, Trash2 } from "lucide-react";
 import { cn, formatDate, getDueDateStatus } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -24,6 +24,9 @@ interface KanbanCardProps {
 
 export function KanbanCard({ card, onClick, isDragging = false }: KanbanCardProps) {
   const { getTagById, archiveCard, deleteCard } = useCairnStore();
+
+  // A card is "actively blocked" if it has at least one blocker that isn't done/archived
+  const isBlocked = (card.blockedByIds ?? []).length > 0;
 
   const {
     attributes,
@@ -100,8 +103,14 @@ export function KanbanCard({ card, onClick, isDragging = false }: KanbanCardProp
         )}
 
         {/* Footer */}
-        {(card.dueDate || card.linkedNoteIds.length > 0) && (
+        {(card.dueDate || card.linkedNoteIds.length > 0 || isBlocked) && (
           <div className="flex items-center gap-2 mt-2.5 pt-2 border-t border-[var(--border-subtle)]">
+            {isBlocked && (
+              <span className="flex items-center gap-1 text-[0.714rem] text-[var(--warning)] font-medium">
+                <Lock size={10} />
+                {(card.blockedByIds ?? []).length} blocker{(card.blockedByIds ?? []).length !== 1 ? "s" : ""}
+              </span>
+            )}
             {card.dueDate && (() => {
               const status = getDueDateStatus(card.dueDate);
               return (

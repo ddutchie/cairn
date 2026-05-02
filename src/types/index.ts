@@ -94,6 +94,8 @@ export interface TaskCard {
   dueDate?: string;
   /** Note IDs this card is linked to */
   linkedNoteIds: ID[];
+  /** Card IDs (same project) that block this card from being started */
+  blockedByIds: ID[];
   order: number;
   assignee?: string;
   createdAt: string;

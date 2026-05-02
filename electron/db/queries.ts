@@ -107,6 +107,7 @@ function toCard(row: any) {
     priority: row.priority as string,
     dueDate: row.due_date as string | undefined,
     linkedNoteIds: p(row.linked_note_ids) as string[],
+    blockedByIds: p(row.blocked_by_ids) as string[],
     order: row.order as number,
     assignee: row.assignee as string | undefined,
     createdAt: row.created_at as string,
@@ -371,24 +372,24 @@ export function getCards(db: Database.Database, opts?: { projectId?: string; col
 export function createCard(db: Database.Database, c: {
   id: string; columnId: string; projectId: string; workspaceId: string;
   title: string; description?: string; priority?: string; dueDate?: string;
-  order?: number; tagIds?: string[];
+  order?: number; tagIds?: string[]; assignee?: string;
 }) {
   const now = ts();
   const tagIds = JSON.stringify(c.tagIds ?? []);
   db.prepare(`
     INSERT INTO task_cards
       (id, column_id, project_id, workspace_id, title, description, tag_ids,
-       priority, due_date, linked_note_ids, "order", created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', ?, ?, ?)
+       priority, due_date, linked_note_ids, blocked_by_ids, "order", assignee, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', '[]', ?, ?, ?, ?)
   `).run(c.id, c.columnId, c.projectId, c.workspaceId, c.title,
          c.description ?? null, tagIds, c.priority ?? "medium", c.dueDate ?? null,
-         c.order ?? 0, now, now);
+         c.order ?? 0, c.assignee ?? null, now, now);
   return toCard(db.prepare("SELECT * FROM task_cards WHERE id = ?").get(c.id));
 }
 
 export function updateCard(db: Database.Database, id: string, patch: Partial<{
   columnId: string; title: string; description: string; priority: string;
-  dueDate: string; tagIds: string[]; linkedNoteIds: string[];
+  dueDate: string; tagIds: string[]; linkedNoteIds: string[]; blockedByIds: string[];
   order: number; assignee: string; archivedAt: string;
 }>) {
   const now = ts();
@@ -401,6 +402,7 @@ export function updateCard(db: Database.Database, id: string, patch: Partial<{
       due_date        = COALESCE(?, due_date),
       tag_ids         = COALESCE(?, tag_ids),
       linked_note_ids = COALESCE(?, linked_note_ids),
+      blocked_by_ids  = COALESCE(?, blocked_by_ids),
       "order"         = COALESCE(?, "order"),
       assignee        = COALESCE(?, assignee),
       archived_at     = COALESCE(?, archived_at),
@@ -411,6 +413,7 @@ export function updateCard(db: Database.Database, id: string, patch: Partial<{
     patch.priority ?? null, patch.dueDate ?? null,
     patch.tagIds ? j(patch.tagIds) : null,
     patch.linkedNoteIds ? j(patch.linkedNoteIds) : null,
+    patch.blockedByIds ? j(patch.blockedByIds) : null,
     patch.order ?? null, patch.assignee ?? null, patch.archivedAt ?? null,
     now, id,
   );
@@ -418,6 +421,19 @@ export function updateCard(db: Database.Database, id: string, patch: Partial<{
 }
 
 export function deleteCard(db: Database.Database, id: string) {
+  // Remove this card from any other card's blocked_by_ids before deleting
+  const affected = db.prepare(
+    "SELECT id, blocked_by_ids FROM task_cards WHERE blocked_by_ids != '[]' AND id != ?"
+  ).all(id) as { id: string; blocked_by_ids: string }[];
+  const now = ts();
+  for (const row of affected) {
+    const ids = p(row.blocked_by_ids) as string[];
+    if (ids.includes(id)) {
+      const updated = ids.filter((bid) => bid !== id);
+      db.prepare("UPDATE task_cards SET blocked_by_ids = ?, updated_at = ? WHERE id = ?")
+        .run(j(updated), now, row.id);
+    }
+  }
   db.prepare("DELETE FROM task_cards WHERE id = ?").run(id);
 }
 
@@ -442,6 +458,78 @@ export function clearCardDueDate(db: Database.Database, id: string) {
   const now = ts();
   db.prepare("UPDATE task_cards SET due_date = NULL, updated_at = ? WHERE id = ?").run(now, id);
   return toCard(db.prepare("SELECT * FROM task_cards WHERE id = ?").get(id));
+}
+
+/**
+ * Add a blocker to a card's blocked_by_ids. Caller must verify no circular dep first.
+ */
+export function addCardBlocker(db: Database.Database, cardId: string, blockerCardId: string) {
+  const now = ts();
+  const row = db.prepare("SELECT blocked_by_ids FROM task_cards WHERE id = ?").get(cardId) as { blocked_by_ids: string } | undefined;
+  if (!row) throw new Error(`Card ${cardId} not found`);
+  const ids = p(row.blocked_by_ids) as string[];
+  if (!ids.includes(blockerCardId)) {
+    ids.push(blockerCardId);
+    db.prepare("UPDATE task_cards SET blocked_by_ids = ?, updated_at = ? WHERE id = ?").run(j(ids), now, cardId);
+  }
+  return toCard(db.prepare("SELECT * FROM task_cards WHERE id = ?").get(cardId));
+}
+
+/**
+ * Remove a blocker from a card's blocked_by_ids.
+ */
+export function removeCardBlocker(db: Database.Database, cardId: string, blockerCardId: string) {
+  const now = ts();
+  const row = db.prepare("SELECT blocked_by_ids FROM task_cards WHERE id = ?").get(cardId) as { blocked_by_ids: string } | undefined;
+  if (!row) throw new Error(`Card ${cardId} not found`);
+  const ids = (p(row.blocked_by_ids) as string[]).filter((id) => id !== blockerCardId);
+  db.prepare("UPDATE task_cards SET blocked_by_ids = ?, updated_at = ? WHERE id = ?").run(j(ids), now, cardId);
+  return toCard(db.prepare("SELECT * FROM task_cards WHERE id = ?").get(cardId));
+}
+
+/**
+ * Return active, non-done cards that have no pending blockers.
+ * A card is "ready" when:
+ *   - Not archived
+ *   - Not in a column with type = 'done'
+ *   - Every entry in blocked_by_ids refers to a card that is archived OR in a done column
+ */
+export function getReadyCards(db: Database.Database, projectId?: string) {
+  const whereProject = projectId ? "AND tc.project_id = ?" : "";
+  const params: string[] = projectId ? [projectId] : [];
+
+  // All active non-done cards
+  const candidates = db.prepare(`
+    SELECT tc.* FROM task_cards tc
+    JOIN board_columns bc ON tc.column_id = bc.id
+    WHERE tc.archived_at IS NULL
+      AND bc.type != 'done'
+      ${whereProject}
+    ORDER BY tc."order"
+  `).all(...params).map(toCard);
+
+  if (candidates.length === 0) return [];
+
+  // Build a lookup of all project cards for blocker resolution
+  const allProjectIds = [...new Set(candidates.map((c) => c.projectId))];
+  const allCards = allProjectIds.flatMap((pid) =>
+    (db.prepare(`
+      SELECT tc.*, bc.type as col_type FROM task_cards tc
+      JOIN board_columns bc ON tc.column_id = bc.id
+      WHERE tc.project_id = ?
+    `).all(pid) as Array<{ id: string; archived_at: string | null; col_type: string }>)
+  );
+  const cardMap = new Map(allCards.map((c) => [c.id, c]));
+
+  function isResolved(blockerId: string): boolean {
+    const blocker = cardMap.get(blockerId);
+    if (!blocker) return true; // orphaned blocker → treat as resolved
+    return blocker.archived_at !== null || blocker.col_type === "done";
+  }
+
+  return candidates.filter((card) =>
+    card.blockedByIds.length === 0 || card.blockedByIds.every(isResolved)
+  );
 }
 
 // ── Tags ──────────────────────────────────────

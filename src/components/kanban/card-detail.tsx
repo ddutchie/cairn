@@ -6,6 +6,7 @@ import {
   Tag,
   FileText,
   Link,
+  Lock,
   Trash2,
   Flag,
   ExternalLink,
@@ -50,6 +51,8 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
     duplicateCard,
     unlinkNoteFromCard,
     moveCardToProject,
+    addCardBlocker,
+    removeCardBlocker,
     getTagById,
     tags,
     getProjectNotes,
@@ -61,6 +64,7 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
 
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [moveToProjectOpen, setMoveToProjectOpen] = useState(false);
+  const [blockerError, setBlockerError] = useState<string | null>(null);
 
   const card = cards.find((c) => c.id === cardId);
   if (!card) return null;
@@ -76,6 +80,20 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
   const projectTags = tags.filter((t) => t.workspaceId === card.workspaceId);
   const otherProjects = (activeWorkspaceId ? getWorkspaceProjects(activeWorkspaceId) : projects)
     .filter((p) => p.id !== card.projectId && !p.archivedAt);
+
+  // Dependency data
+  const doneColumnIds = new Set(columns.filter((c) => c.projectId === card.projectId && c.type === "done").map((c) => c.id));
+  const blockerCards = (card.blockedByIds ?? [])
+    .map((id) => cards.find((c) => c.id === id))
+    .filter(Boolean) as typeof cards;
+  // Candidate blockers: same project, not archived, not done, not self, not already a blocker
+  const candidateBlockers = cards.filter(
+    (c) => c.projectId === card.projectId
+      && c.id !== cardId
+      && !c.archivedAt
+      && !doneColumnIds.has(c.columnId)
+      && !(card.blockedByIds ?? []).includes(c.id)
+  );
 
   function handleDelete() {
     deleteCard(cardId);
@@ -289,6 +307,83 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
                 placeholder="Unassigned"
                 className="w-full px-2 py-1.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-xs text-[var(--text-secondary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20"
               />
+            </div>
+
+            {/* Blocked by */}
+            <div>
+              <label className="block text-[0.714rem] font-semibold text-[var(--text-tertiary)] mb-2 uppercase tracking-wider">
+                <Lock size={10} className="inline mr-0.5" aria-hidden="true" />Blocked By
+              </label>
+
+              {/* Existing blocker chips */}
+              {blockerCards.length > 0 && (
+                <div className="space-y-1 mb-2">
+                  {blockerCards.map((blocker) => {
+                    const blockerCol = columns.find((c) => c.id === blocker.columnId);
+                    const isResolved = !!blocker.archivedAt || doneColumnIds.has(blocker.columnId);
+                    return (
+                      <div
+                        key={blocker.id}
+                        className={cn(
+                          "flex items-center gap-1.5 px-2 py-1.5 rounded-md border text-[0.714rem]",
+                          isResolved
+                            ? "border-[var(--border)] bg-[var(--surface-2)] opacity-50"
+                            : "border-[var(--warning)]/30 bg-[var(--warning)]/5"
+                        )}
+                      >
+                        <Lock size={9} className={isResolved ? "text-[var(--text-tertiary)]" : "text-[var(--warning)]"} />
+                        <span className="flex-1 truncate text-[var(--text-secondary)]" title={blocker.title}>
+                          {blocker.title}
+                        </span>
+                        {blockerCol && (
+                          <span className="text-[var(--text-tertiary)] shrink-0">{blockerCol.name}</span>
+                        )}
+                        <button
+                          onClick={() => removeCardBlocker(cardId, blocker.id)}
+                          className="ml-0.5 text-[var(--text-tertiary)] hover:text-[var(--danger)] transition-colors shrink-0"
+                          title="Remove blocker"
+                        >
+                          <X size={9} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Add blocker picker */}
+              {candidateBlockers.length > 0 && (
+                <select
+                  value=""
+                  onChange={async (e) => {
+                    const blockerCardId = e.target.value;
+                    if (!blockerCardId) return;
+                    setBlockerError(null);
+                    const result = await addCardBlocker(cardId, blockerCardId);
+                    if (result.error) setBlockerError(result.error);
+                    e.target.value = "";
+                  }}
+                  className="w-full px-2 py-1.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[0.714rem] text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20"
+                >
+                  <option value="">+ Add blocker…</option>
+                  {candidateBlockers.map((c) => {
+                    const col = columns.find((col) => col.id === c.columnId);
+                    return (
+                      <option key={c.id} value={c.id}>
+                        {c.title}{col ? ` (${col.name})` : ""}
+                      </option>
+                    );
+                  })}
+                </select>
+              )}
+
+              {blockerError && (
+                <p className="text-[0.714rem] text-[var(--danger)] mt-1">{blockerError}</p>
+              )}
+
+              {blockerCards.length === 0 && candidateBlockers.length === 0 && (
+                <p className="text-[0.714rem] text-[var(--text-tertiary)]">No other tasks in this project</p>
+              )}
             </div>
 
             {/* Due date */}

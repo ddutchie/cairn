@@ -164,6 +164,10 @@ function findDbPath(): string | null {
 // ── Query helpers (inlined to avoid ABI mismatch with Electron build) ──
 
 function j(v: unknown): string { return JSON.stringify(v ?? []); }
+function j2(v: string | null | undefined): string[] {
+  if (!v) return [];
+  try { return JSON.parse(v) as string[]; } catch { return []; }
+}
 function p(v: string | null | undefined): unknown[] {
   if (!v) return [];
   try { return JSON.parse(v); } catch { return []; }
@@ -287,8 +291,8 @@ function toColumn(r: any) {
 function toCard(r: any) {
   return { id: r.id, columnId: r.column_id, projectId: r.project_id, workspaceId: r.workspace_id,
     title: r.title, description: r.description, tagIds: p(r.tag_ids), priority: r.priority,
-    dueDate: r.due_date, linkedNoteIds: p(r.linked_note_ids), order: r.order,
-    assignee: r.assignee, createdAt: r.created_at, updatedAt: r.updated_at, archivedAt: r.archived_at };
+    dueDate: r.due_date, linkedNoteIds: p(r.linked_note_ids), blockedByIds: j2(r.blocked_by_ids),
+    order: r.order, assignee: r.assignee, createdAt: r.created_at, updatedAt: r.updated_at, archivedAt: r.archived_at };
 }
 
 function getSnapshot(db: Database.Database) {
@@ -338,15 +342,16 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
         projects,
         tags: snap.tags.map((t) => ({ id: t.id, name: t.name, color: t.color, workspaceId: t.workspaceId })),
         tools: {
-          read:   ["get_cairn_context", "get_project_context_pack", "resolve_project", "search_notes", "search_tasks", "get_note", "get_task", "get_project_summary", "list_notes", "list_tasks", "list_recent_activity"],
-          write:  ["create_project", "update_project", "create_note", "import_note_from_file", "ensure_note", "append_to_note", "patch_note", "update_note", "move_note", "create_task", "update_task", "update_task_status", "bulk_update_task_status", "link_note_to_task", "create_dashboard", "update_dashboard", "create_idea_flow_node", "update_idea_flow_node", "create_idea_flow_edge", "create_tag"],
+          read:   ["get_cairn_context", "get_project_context_pack", "resolve_project", "search_notes", "search_tasks", "get_note", "get_task", "get_project_summary", "list_notes", "list_tasks", "list_ready_tasks", "list_recent_activity"],
+          write:  ["create_project", "update_project", "create_note", "import_note_from_file", "ensure_note", "append_to_note", "patch_note", "update_note", "move_note", "create_task", "update_task", "update_task_status", "bulk_update_task_status", "link_note_to_task", "block_task", "unblock_task", "create_dashboard", "update_dashboard", "create_idea_flow_node", "update_idea_flow_node", "create_idea_flow_edge", "create_tag"],
           delete: ["delete_note", "delete_task", "delete_project", "delete_idea_flow_node", "delete_idea_flow_edge"],
           ideaFlow: ["get_idea_flow", "create_idea_flow_node", "update_idea_flow_node", "delete_idea_flow_node", "create_idea_flow_edge", "delete_idea_flow_edge", "layout_idea_flow"],
         },
         conventions: {
           notes: "Raw markdown in 'content'. 'content_text' is auto-derived — do not set manually.",
           dashboards: "Use create_dashboard to create an HTML dashboard rendered in a sandboxed iframe inside Cairn. The 'html' field must be a complete, self-contained HTML document. Use inline CSS and JS only — no external URLs. The window.cairn.query(tool, args) API is available for live data from read-only tools.",
-          tasks: "Always provide columnId (not just projectId) when creating a task.",
+          tasks: "Always provide columnId (not just projectId) when creating a task. Use list_ready_tasks instead of list_tasks when you want to know what work can start now — it filters out tasks blocked by unresolved dependencies.",
+          dependencies: "Use block_task to mark a task as blocked by another (same project only). Circular dependencies are rejected. When a blocker is moved to a done column or archived it is automatically treated as resolved. Use unblock_task to remove a dependency explicitly.",
           priority: ["low", "medium", "high", "urgent"],
           projectStatus: ["active", "on_hold", "completed", "archived"],
           columnTypes: ["backlog", "todo", "in_progress", "review", "done", "custom"],
@@ -727,8 +732,8 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
         id: card.id, title: card.title, description: card.description,
         priority: card.priority, dueDate: card.dueDate,
         columnId: card.columnId, columnName: col?.name ?? "Unknown", columnType: col?.type ?? "custom",
-        linkedNoteIds: card.linkedNoteIds, projectId: card.projectId,
-        createdAt: card.createdAt, updatedAt: card.updatedAt,
+        linkedNoteIds: card.linkedNoteIds, blockedByIds: card.blockedByIds ?? [],
+        projectId: card.projectId, createdAt: card.createdAt, updatedAt: card.updatedAt,
       };
     }
 
@@ -745,9 +750,106 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
     case "delete_task": {
       const card = snap.cards.find((c) => c.id === args.cardId);
       if (!card) return { error: "Task not found" };
+      // Clean up this card's ID from any other card's blocked_by_ids
+      const now = ts();
+      const affected = db.prepare(
+        "SELECT id, blocked_by_ids FROM task_cards WHERE blocked_by_ids != '[]' AND id != ?"
+      ).all(args.cardId) as { id: string; blocked_by_ids: string }[];
+      for (const row of affected) {
+        const ids: string[] = j2(row.blocked_by_ids);
+        if (ids.includes(args.cardId as string)) {
+          const updated = ids.filter((bid) => bid !== args.cardId);
+          db.prepare("UPDATE task_cards SET blocked_by_ids = ?, updated_at = ? WHERE id = ?")
+            .run(j(updated), now, row.id);
+        }
+      }
       db.prepare("DELETE FROM task_cards WHERE id = ?").run(args.cardId);
       insertNotification(db, "delete_task", "Task deleted", `"${card.title}" was deleted`);
       return { deleted: true, id: args.cardId, title: card.title };
+    }
+
+    case "block_task": {
+      const card    = snap.cards.find((c) => c.id === args.cardId);
+      const blocker = snap.cards.find((c) => c.id === args.blockerCardId);
+      if (!card)    return { error: "Task not found" };
+      if (!blocker) return { error: "Blocker task not found" };
+      if (card.projectId !== blocker.projectId) return { error: "Cards must be in the same project" };
+      if (args.cardId === args.blockerCardId)   return { error: "A card cannot block itself" };
+      // Circular dep check
+      const projectCards = snap.cards.filter((c) => c.projectId === card.projectId);
+      const cardMap = new Map(projectCards.map((c) => [c.id, c]));
+      function canReachMcp(from: string, target: string, visited = new Set<string>()): boolean {
+        if (from === target) return true;
+        if (visited.has(from)) return false;
+        visited.add(from);
+        const node = cardMap.get(from);
+        if (!node) return false;
+        return (node.blockedByIds ?? []).some((bid: string) => canReachMcp(bid, target, visited));
+      }
+      if (canReachMcp(args.blockerCardId as string, args.cardId as string, new Set())) {
+        return { error: "Circular dependency detected" };
+      }
+      const nowB = ts();
+      const row = db.prepare("SELECT blocked_by_ids FROM task_cards WHERE id = ?").get(args.cardId) as { blocked_by_ids: string } | undefined;
+      if (!row) return { error: "Task not found in DB" };
+      const ids: string[] = j2(row.blocked_by_ids);
+      if (!ids.includes(args.blockerCardId as string)) {
+        ids.push(args.blockerCardId as string);
+        db.prepare("UPDATE task_cards SET blocked_by_ids = ?, updated_at = ? WHERE id = ?").run(j(ids), nowB, args.cardId);
+      }
+      insertNotification(db, "block_task", "Task blocked", `"${card.title}" is now blocked by "${blocker.title}"`);
+      return { cardId: args.cardId, blockerCardId: args.blockerCardId, blocked: true };
+    }
+
+    case "unblock_task": {
+      const card = snap.cards.find((c) => c.id === args.cardId);
+      if (!card) return { error: "Task not found" };
+      const nowU = ts();
+      const rowU = db.prepare("SELECT blocked_by_ids FROM task_cards WHERE id = ?").get(args.cardId) as { blocked_by_ids: string } | undefined;
+      if (!rowU) return { error: "Task not found in DB" };
+      const idsU: string[] = j2(rowU.blocked_by_ids);
+      const updated = idsU.filter((id) => id !== args.blockerCardId);
+      db.prepare("UPDATE task_cards SET blocked_by_ids = ?, updated_at = ? WHERE id = ?").run(j(updated), nowU, args.cardId);
+      return { cardId: args.cardId, blockerCardId: args.blockerCardId, unblocked: true };
+    }
+
+    case "list_ready_tasks": {
+      // Cards that are active, not in a done column, and all blockers are resolved
+      const projectFilter = args.projectId ? "AND tc.project_id = ?" : "";
+      const params = args.projectId ? [args.projectId] : [];
+      const candidates = db.prepare(`
+        SELECT tc.*, bc.type as col_type, bc.name as col_name
+        FROM task_cards tc
+        JOIN board_columns bc ON tc.column_id = bc.id
+        WHERE tc.archived_at IS NULL AND bc.type != 'done' ${projectFilter}
+        ORDER BY tc."order"
+      `).all(...params) as Array<{
+        id: string; title: string; description: string; priority: string;
+        due_date: string; column_id: string; project_id: string;
+        blocked_by_ids: string; col_type: string; col_name: string;
+      }>;
+      // Build a lookup for blocker resolution
+      const allProjectIds = [...new Set(candidates.map((c) => c.project_id))];
+      const allCards = allProjectIds.flatMap((pid) =>
+        db.prepare(`SELECT tc.id, tc.archived_at, tc.blocked_by_ids, bc.type as col_type
+          FROM task_cards tc JOIN board_columns bc ON tc.column_id = bc.id WHERE tc.project_id = ?`
+        ).all(pid) as Array<{ id: string; archived_at: string | null; col_type: string }>
+      );
+      const cardLookup = new Map(allCards.map((c) => [c.id, c]));
+      function isResolvedMcp(blockerId: string): boolean {
+        const b = cardLookup.get(blockerId);
+        if (!b) return true;
+        return b.archived_at !== null || b.col_type === "done";
+      }
+      const ready = candidates.filter((c) => {
+        const ids: string[] = j2(c.blocked_by_ids);
+        return ids.length === 0 || ids.every(isResolvedMcp);
+      });
+      return ready.map((c) => ({
+        id: c.id, title: c.title, priority: c.priority, dueDate: c.due_date,
+        columnId: c.column_id, columnName: c.col_name, projectId: c.project_id,
+        blockedByIds: j2(c.blocked_by_ids),
+      }));
     }
 
     case "update_task": {
