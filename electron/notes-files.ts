@@ -230,46 +230,46 @@ export function parseNoteFile(filePath: string): NoteData | null {
 }
 
 // ── Upsert a parsed note into SQLite ──────────
+//
+// Uses INSERT OR IGNORE + UPDATE to avoid UNIQUE constraint errors when the
+// file watcher fires on a file that was just written by the app itself.
+// The SELECT+INSERT pattern had a race window; this is fully atomic.
 
 export function upsertNoteFromFile(db: Database.Database, note: NoteData): void {
-  const existing = db.prepare("SELECT id FROM notes WHERE id = ?").get(note.id);
+  // Only upsert if the referenced project exists
+  const project = db.prepare("SELECT id FROM projects WHERE id = ?").get(note.projectId);
+  if (!project) return;
 
-  if (existing) {
-    q.updateNote(db, note.id, {
-      title: note.title,
-      content: note.content,
-      contentText: stripMarkdown(note.content),
-      tagIds: note.tagIds,
-      linkedNoteIds: note.linkedNoteIds,
-      linkedCardIds: note.linkedCardIds,
-      isPinned: note.isPinned,
-      folder: note.folder,
-      archivedAt: note.archivedAt,
-    });
-  } else {
-    // Only insert if the referenced project exists
-    const project = db.prepare("SELECT id FROM projects WHERE id = ?").get(note.projectId);
-    if (!project) return;
+  const now = note.updatedAt ?? new Date().toISOString();
+  const contentText = stripMarkdown(note.content);
 
-    q.createNote(db, {
-      id: note.id,
-      projectId: note.projectId,
-      workspaceId: note.workspaceId,
-      title: note.title,
-      content: note.content,
-      contentText: stripMarkdown(note.content),
-      folder: note.folder,
-    });
+  // INSERT OR IGNORE — no-op if the row already exists (avoids UNIQUE error)
+  db.prepare(`
+    INSERT OR IGNORE INTO notes
+      (id, project_id, workspace_id, title, content, content_text,
+       tag_ids, linked_note_ids, linked_card_ids, is_pinned, type,
+       folder, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, '[]', '[]', 0, 'note', ?, ?, ?)
+  `).run(
+    note.id, note.projectId, note.workspaceId,
+    note.title, note.content, contentText,
+    JSON.stringify(note.tagIds ?? []),
+    note.folder ?? "",
+    note.createdAt ?? now, now,
+  );
 
-    q.updateNote(db, note.id, {
-      tagIds: note.tagIds,
-      linkedNoteIds: note.linkedNoteIds,
-      linkedCardIds: note.linkedCardIds,
-      isPinned: note.isPinned,
-      folder: note.folder,
-      archivedAt: note.archivedAt,
-    });
-  }
+  // Always UPDATE — brings both new and existing rows up to date
+  q.updateNote(db, note.id, {
+    title: note.title,
+    content: note.content,
+    contentText,
+    tagIds: note.tagIds,
+    linkedNoteIds: note.linkedNoteIds,
+    linkedCardIds: note.linkedCardIds,
+    isPinned: note.isPinned,
+    folder: note.folder,
+    archivedAt: note.archivedAt,
+  });
 }
 
 

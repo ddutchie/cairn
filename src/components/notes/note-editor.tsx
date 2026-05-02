@@ -364,13 +364,29 @@ export function NoteEditor({ note }: NoteEditorProps) {
                     components={{
                       // Images — renders asset:// and https:// URLs
                       img({ src, alt }) {
-                        return (
+                        const srcStr = typeof src === "string" ? src : undefined;
+                        const isExternal = srcStr?.startsWith("http://") || srcStr?.startsWith("https://");
+                        const imgEl = (
                           <img
-                            src={src}
+                            src={srcStr}
                             alt={alt ?? ""}
+                            referrerPolicy="no-referrer"
                             className="max-w-full rounded-md my-2 border border-[var(--border)]"
                           />
                         );
+                        // Wrap external images in a link that opens in the system browser
+                        if (isExternal && srcStr) {
+                          return (
+                            <a
+                              href={srcStr}
+                              onClick={(e) => { e.preventDefault(); window.open(srcStr, "_blank"); }}
+                              className="block"
+                            >
+                              {imgEl}
+                            </a>
+                          );
+                        }
+                        return imgEl;
                       },
                       // Highlights ==text== rendered as <mark> by rehypeHighlight
                       mark({ children }) {
