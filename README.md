@@ -417,8 +417,13 @@ Tests live alongside the code they cover:
 | chokidar | File watcher for external `.md` edits |
 | @xyflow/react | Node-based canvas (Idea Flow) |
 | dnd-kit | Drag and drop (Kanban) |
+| D3 v7 | Analytics & graph visualisation (Insights canvases, Radial tree) |
+| react-force-graph-2d | Force-directed graph canvas (Knowledge Graph) |
+| d3-sankey | Sankey pipeline diagram (Insights) |
+| @dagrejs/dagre | Graph auto-layout (Idea Flow) |
 | CodeMirror 6 | Note editor |
 | react-markdown | Markdown preview |
+| Mermaid | Diagram rendering in notes |
 | react-day-picker | Date picker |
 | date-fns | Date utilities |
 | Radix UI | Accessible UI primitives |
