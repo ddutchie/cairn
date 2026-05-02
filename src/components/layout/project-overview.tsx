@@ -99,7 +99,7 @@ export function ProjectOverview() {
                           onChange={(e) => setEditIcon(e.target.value)}
                           placeholder="🗂️"
                           maxLength={4}
-                          className="w-full text-center text-xl px-1 py-1.5 rounded-md bg-[var(--surface)] border border-[var(--border)] focus:outline-none focus:border-[var(--accent)]"
+                          className="w-full text-center text-xl px-1 py-1.5 rounded-md bg-[var(--surface)] border border-[var(--border)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20"
                         />
                       </div>
                       <div className="flex flex-col gap-1 flex-1">
@@ -109,7 +109,7 @@ export function ProjectOverview() {
                           onChange={(e) => setEditDesc(e.target.value)}
                           placeholder="What is this project about?"
                           rows={3}
-                          className="w-full px-2 py-1.5 text-xs rounded-md bg-[var(--surface)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] resize-none"
+                          className="w-full px-2 py-1.5 text-xs rounded-md bg-[var(--surface)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20 resize-none"
                         />
                       </div>
                     </div>

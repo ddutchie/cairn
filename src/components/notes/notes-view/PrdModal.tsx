@@ -54,7 +54,7 @@ export function PrdModal({ projectId, generatePrd, onClose }: PrdModalProps) {
               onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) e.currentTarget.blur(); }}
               placeholder="e.g. PRD — User Authentication"
               disabled={loading}
-              className="w-full px-3 py-2 text-sm rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] disabled:opacity-50"
+              className="w-full px-3 py-2 text-sm rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20 disabled:opacity-50"
             />
           </div>
           <div className="flex flex-col gap-1.5">
@@ -65,7 +65,7 @@ export function PrdModal({ projectId, generatePrd, onClose }: PrdModalProps) {
               placeholder="e.g. I want to build a login system with email/password and Google OAuth…"
               disabled={loading}
               rows={5}
-              className="w-full px-3 py-2 text-sm rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] resize-none disabled:opacity-50"
+              className="w-full px-3 py-2 text-sm rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20 resize-none disabled:opacity-50"
             />
           </div>
           {error && (

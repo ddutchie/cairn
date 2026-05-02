@@ -390,7 +390,7 @@ export function KanbanBoard() {
               value={newColumnName}
               onChange={(e) => setNewColumnName(e.target.value)}
               placeholder="Column name"
-              className="w-full bg-[var(--surface-2)] border border-[var(--border)] rounded-md px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)]"
+              className="w-full bg-[var(--surface-2)] border border-[var(--border)] rounded-md px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20"
             />
             <div className="flex justify-end gap-2">
               <DialogClose asChild>

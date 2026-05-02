@@ -16,6 +16,7 @@ import {
   ArrowRight,
   FolderInput,
 } from "lucide-react";
+import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
 import {
   Dialog,
   DialogContent,
@@ -95,6 +96,9 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent size="lg" className="flex flex-col max-h-[80vh]">
         <DialogHeader>
+          <VisuallyHidden.Root>
+            <DialogTitle>{card.title}</DialogTitle>
+          </VisuallyHidden.Root>
           <div className="flex items-center gap-2">
             <span className="text-xs text-[var(--text-tertiary)]">
               {project?.name} / {column?.name}
@@ -111,7 +115,7 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
                 type="text"
                 defaultValue={card.title}
                 onBlur={(e) => updateCard(cardId, { title: e.target.value })}
-                className="w-full bg-transparent text-lg font-semibold text-[var(--text-primary)] focus:outline-none border-b border-transparent focus:border-[var(--border)] pb-1 transition-colors"
+                className="w-full bg-transparent text-lg font-semibold text-[var(--text-primary)] focus:outline-none border-b border-[var(--border-subtle)] hover:border-[var(--border)] focus:border-[var(--accent)] pb-1 transition-colors"
               />
             </div>
 
@@ -125,7 +129,7 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
                 onBlur={(e) => updateCard(cardId, { description: e.target.value })}
                 placeholder="Add a description…"
                 rows={4}
-                className="w-full bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-3 py-2.5 text-sm text-[var(--text-secondary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] resize-none leading-relaxed"
+                className="w-full bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-3 py-2.5 text-sm text-[var(--text-secondary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20 resize-none leading-relaxed"
               />
             </div>
 
@@ -147,11 +151,17 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
                       });
                     }}
                     className={cn(
-                      "transition-all rounded-md",
-                      card.tagIds.includes(tag.id) ? "ring-1 ring-[var(--accent)]/40" : "opacity-50 hover:opacity-80 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]"
+                      "transition-all rounded focus-visible:outline-none",
+                      !card.tagIds.includes(tag.id) && "opacity-50 hover:opacity-80"
                     )}
                   >
-                    <Badge color={tag.color}>{tag.name}</Badge>
+                    <Badge
+                      color={tag.color}
+                      className={card.tagIds.includes(tag.id) ? "opacity-100" : undefined}
+                      style={card.tagIds.includes(tag.id) ? {
+                        borderColor: tag.color ? `color-mix(in srgb, ${tag.color} 60%, transparent)` : "var(--accent)",
+                      } : undefined}
+                    >{tag.name}</Badge>
                   </button>
                 ))}
               </div>
@@ -259,7 +269,7 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
                 id="card-detail-column"
                 value={card.columnId}
                 onChange={(e) => updateCard(cardId, { columnId: e.target.value })}
-                className="w-full px-2 py-1.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-xs text-[var(--text-secondary)] focus:outline-none focus:border-[var(--accent)]"
+                className="w-full px-2 py-1.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-xs text-[var(--text-secondary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20"
               >
                 {projectColumns.map((col) => (
                   <option key={col.id} value={col.id}>{col.name}</option>
@@ -277,7 +287,7 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
                 defaultValue={card.assignee ?? ""}
                 onBlur={(e) => updateCard(cardId, { assignee: e.target.value || undefined })}
                 placeholder="Unassigned"
-                className="w-full px-2 py-1.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-xs text-[var(--text-secondary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)]"
+                className="w-full px-2 py-1.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-xs text-[var(--text-secondary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20"
               />
             </div>
 

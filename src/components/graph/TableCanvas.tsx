@@ -163,12 +163,16 @@ export function TableCanvas({ nodes, onNodeClick, selectedNodeId, search, typeFi
                 {/* Type */}
                 <td className="px-3 py-2">
                   <span
-                    className="inline-flex items-center px-1.5 py-0.5 rounded text-[0.714rem] font-medium capitalize"
+                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[0.714rem] font-medium capitalize"
                     style={{
                       color: nodeTypeColor(node.type),
                       background: `color-mix(in srgb, ${nodeTypeColor(node.type)} 12%, transparent)`,
                     }}
                   >
+                    <span
+                      className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                      style={{ background: nodeTypeColor(node.type) }}
+                    />
                     {node.type}
                   </span>
                 </td>

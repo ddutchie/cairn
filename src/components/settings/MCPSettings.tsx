@@ -227,7 +227,7 @@ export function MCPProjectConfig() {
         <select
           value={selectedId}
           onChange={(e) => setSelectedId(e.target.value)}
-          className="text-xs rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-secondary)] px-2 py-1.5 focus:outline-none focus:border-[var(--accent)] max-w-40 truncate"
+          className="text-xs rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-secondary)] px-2 py-1.5 focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20 max-w-40 truncate"
         >
           {projects
             .filter((p) => !p.archivedAt)
