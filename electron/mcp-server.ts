@@ -279,7 +279,8 @@ function toNote(r: any) {
   return { id: r.id, projectId: r.project_id, workspaceId: r.workspace_id, title: r.title,
     content: r.content ?? "", contentText: r.content_text ?? "",
     tagIds: p(r.tag_ids), linkedNoteIds: p(r.linked_note_ids), linkedCardIds: p(r.linked_card_ids),
-    isPinned: b(r.is_pinned), createdAt: r.created_at, updatedAt: r.updated_at, archivedAt: r.archived_at };
+    isPinned: b(r.is_pinned), folder: (r.folder ?? "") as string,
+    createdAt: r.created_at, updatedAt: r.updated_at, archivedAt: r.archived_at };
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function toColumn(r: any) {
@@ -523,18 +524,19 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
       const noteId = newId();
       const markdown = content ?? "";
       const resolvedTagIds = Array.isArray(tagIds) ? tagIds as string[] : [];
+      const folder = typeof args.folder === "string" ? args.folder : "";
       db.prepare(`
         INSERT INTO notes (id, project_id, workspace_id, title, content, content_text,
-          tag_ids, linked_note_ids, linked_card_ids, is_pinned, type, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, '[]', '[]', 0, 'note', ?, ?)
-      `).run(noteId, projectId, project.workspaceId, title, markdown, stripMarkdown(markdown), j(resolvedTagIds), now, now);
+          tag_ids, linked_note_ids, linked_card_ids, is_pinned, type, folder, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, '[]', '[]', 0, 'note', ?, ?, ?)
+      `).run(noteId, projectId, project.workspaceId, title, markdown, stripMarkdown(markdown), j(resolvedTagIds), folder, now, now);
       writeNoteFile(workspacePath, {
         id: noteId, projectId, workspaceId: project.workspaceId, title, content: markdown,
         tagIds: resolvedTagIds, linkedNoteIds: [], linkedCardIds: [], isPinned: false,
-        createdAt: now, updatedAt: now, projectName: project.name,
+        folder, createdAt: now, updatedAt: now, projectName: project.name,
       });
-      insertNotification(db, "create_note", "Note created", `"${title}" added to ${project.name}`);
-      return { id: noteId, title, createdAt: now };
+      insertNotification(db, "create_note", "Note created", `"${title}" added to ${project.name}${folder ? ` (${folder})` : ""}`);
+      return { id: noteId, title, folder, createdAt: now };
     }
 
     case "import_note_from_file": {
@@ -927,7 +929,7 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
     case "list_notes": {
       return snap.notes
         .filter((n) => !n.archivedAt && (!args.projectId || n.projectId === args.projectId))
-        .map((n) => ({ id: n.id, title: n.title, projectId: n.projectId, isPinned: n.isPinned, updatedAt: n.updatedAt }));
+        .map((n) => ({ id: n.id, title: n.title, projectId: n.projectId, folder: n.folder ?? "", isPinned: n.isPinned, updatedAt: n.updatedAt }));
     }
 
     case "list_tasks": {
@@ -979,16 +981,20 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
       const markdown = (content as string | undefined) ?? "";
       const ensureResolvedTagIds = Array.isArray(ensureTagIds) ? ensureTagIds as string[] : undefined;
       const ensureResolvedIsPinned = typeof ensureIsPinned === "boolean" ? ensureIsPinned : undefined;
+      const ensureFolder = typeof args.folder === "string" ? args.folder : undefined;
       if (existing) {
         const tagIdsJson = ensureResolvedTagIds ? j(ensureResolvedTagIds) : null;
         const pinnedVal = ensureResolvedIsPinned !== undefined ? (ensureResolvedIsPinned ? 1 : 0) : null;
-        db.prepare(`UPDATE notes SET content = ?, content_text = ?, tag_ids = COALESCE(?, tag_ids), is_pinned = COALESCE(?, is_pinned), updated_at = ? WHERE id = ?`)
-          .run(markdown, stripMarkdown(markdown), tagIdsJson, pinnedVal, now, existing.id);
+        const folderVal = ensureFolder !== undefined ? ensureFolder : null;
+        db.prepare(`UPDATE notes SET content = ?, content_text = ?, tag_ids = COALESCE(?, tag_ids), is_pinned = COALESCE(?, is_pinned), folder = COALESCE(?, folder), updated_at = ? WHERE id = ?`)
+          .run(markdown, stripMarkdown(markdown), tagIdsJson, pinnedVal, folderVal, now, existing.id);
+        const updatedFolder = ensureFolder ?? (existing.folder as string) ?? "";
         writeNoteFile(workspacePath, {
           id: existing.id, projectId, workspaceId: existing.workspaceId as string,
           title: existing.title as string, content: markdown,
           tagIds: ensureResolvedTagIds ?? existing.tagIds as string[], linkedNoteIds: existing.linkedNoteIds as string[],
           linkedCardIds: existing.linkedCardIds as string[], isPinned: ensureResolvedIsPinned ?? existing.isPinned as boolean,
+          folder: updatedFolder,
           createdAt: existing.createdAt as string, updatedAt: now,
           archivedAt: existing.archivedAt as string | undefined,
           projectName: project.name,
@@ -999,18 +1005,19 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
         const noteId = newId();
         const newTagIds = ensureResolvedTagIds ?? [];
         const newIsPinned = ensureResolvedIsPinned ?? false;
+        const newFolder = ensureFolder ?? "";
         db.prepare(`
           INSERT INTO notes (id, project_id, workspace_id, title, content, content_text,
-            tag_ids, linked_note_ids, linked_card_ids, is_pinned, type, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, '[]', '[]', ?, 'note', ?, ?)
-        `).run(noteId, projectId, project.workspaceId, title, markdown, stripMarkdown(markdown), j(newTagIds), newIsPinned ? 1 : 0, now, now);
+            tag_ids, linked_note_ids, linked_card_ids, is_pinned, type, folder, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, '[]', '[]', ?, 'note', ?, ?, ?)
+        `).run(noteId, projectId, project.workspaceId, title, markdown, stripMarkdown(markdown), j(newTagIds), newIsPinned ? 1 : 0, newFolder, now, now);
         writeNoteFile(workspacePath, {
           id: noteId, projectId, workspaceId: project.workspaceId, title, content: markdown,
           tagIds: newTagIds, linkedNoteIds: [], linkedCardIds: [], isPinned: newIsPinned,
-          createdAt: now, updatedAt: now, projectName: project.name,
+          folder: newFolder, createdAt: now, updatedAt: now, projectName: project.name,
         });
-        insertNotification(db, "create_note", "Note created", `"${title}" added to ${project.name} (ensure_note)`);
-        return { id: noteId, title, action: "created", createdAt: now };
+        insertNotification(db, "create_note", "Note created", `"${title}" added to ${project.name}${newFolder ? ` (${newFolder})` : ""} (ensure_note)`);
+        return { id: noteId, title, folder: newFolder, action: "created", createdAt: now };
       }
     }
 

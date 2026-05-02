@@ -112,6 +112,12 @@ Call get_cairn_context once if you need a full tool/convention reference.
 - Use **bold** for key items, bullet lists for multiple items
 - Keep responses concise and actionable
 
+## Notes
+- Notes live in a project. Use create_note or ensure_note to create them.
+- Use the optional \`folder\` parameter to place a note in a subfolder, e.g. \`folder="Research/Papers"\`. Nested paths are supported.
+- list_notes returns a \`folder\` field on each note so you can inspect the current folder structure before deciding where to place a new note.
+- Omit \`folder\` or pass \`folder=""\` to place the note in the project root.
+
 ## Tasks and dependencies
 - Use list_ready_tasks instead of list_tasks when sequencing work — it returns only tasks with no pending blockers
 - Use block_task to mark a task as blocked by another in the same project. Circular dependencies are rejected automatically

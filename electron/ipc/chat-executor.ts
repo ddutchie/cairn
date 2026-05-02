@@ -177,10 +177,12 @@ export async function executeTool(
       if (!project) return { error: "Project not found" };
       const noteId = newId();
       const markdown = (args.content as string) ?? "";
+      const folder = typeof args.folder === "string" ? args.folder : "";
       const note = q.createNote(db, {
         id: noteId, projectId: args.projectId, workspaceId: project.workspaceId,
         title: args.title, content: markdown, contentText: stripMarkdown(markdown),
         tagIds: Array.isArray(args.tagIds) ? args.tagIds as string[] : undefined,
+        folder,
       });
       writeNoteFile(workspacePath, { ...note, projectName: project.name });
       return note;
@@ -231,11 +233,13 @@ export async function executeTool(
       const markdown = (args.content as string | undefined) ?? "";
       const ensureTagIds = Array.isArray(args.tagIds) ? args.tagIds as string[] : undefined;
       const ensureIsPinned = typeof args.isPinned === "boolean" ? args.isPinned : undefined;
+      const ensureFolder = typeof args.folder === "string" ? args.folder : undefined;
       if (existing) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const patch: Record<string, any> = { content: markdown, contentText: stripMarkdown(markdown) };
         if (ensureTagIds !== undefined) patch.tagIds = ensureTagIds;
         if (ensureIsPinned !== undefined) patch.isPinned = ensureIsPinned;
+        if (ensureFolder !== undefined) patch.folder = ensureFolder;
         const note = q.updateNote(db, existing.id, patch);
         writeNoteFile(workspacePath, { ...note, projectName: project.name });
         return { id: existing.id, title: existing.title, action: "updated", updatedAt: note.updatedAt };
@@ -246,6 +250,7 @@ export async function executeTool(
           title: args.title as string, content: markdown, contentText: stripMarkdown(markdown),
           tagIds: ensureTagIds,
           isPinned: ensureIsPinned,
+          folder: ensureFolder ?? "",
         });
         writeNoteFile(workspacePath, { ...note, projectName: project.name });
         return { id: noteId, title: args.title, action: "created", createdAt: note.createdAt };
