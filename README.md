@@ -32,6 +32,22 @@ Cairn is a desktop app (Electron + Next.js) that combines markdown notes with a 
 - **Local-first** — Notes as `.md` files, project data in SQLite; no network required
 - **Dark mode** — Calm, focused aesthetics
 
+## Screenshots
+
+<table>
+  <tr>
+    <td><img src="public/screenshots/notes.png" alt="Notes" /></td>
+    <td><img src="public/screenshots/kanban.png" alt="Kanban board" /></td>
+  </tr>
+  <tr>
+    <td><img src="public/screenshots/ai-chat.png" alt="AI chat" /></td>
+    <td><img src="public/screenshots/knowledge-graph.png" alt="Knowledge graph" /></td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="public/screenshots/idea-flow.png" alt="Idea Flow" /></td>
+  </tr>
+</table>
+
 ## Getting started
 
 ### Prerequisites
