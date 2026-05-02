@@ -398,43 +398,77 @@ export function NoteEditor({ note }: NoteEditorProps) {
                       },
                       // Callouts — intercept blockquotes starting with [!type]
                       blockquote({ children }) {
-                        // Find the first text node to check for [!type] syntax
                         const childArray = React.Children.toArray(children);
+
+                        // Recursively extract plain text from a React node tree
+                        function extractText(node: React.ReactNode): string {
+                          if (typeof node === "string") return node;
+                          if (typeof node === "number") return String(node);
+                          if (Array.isArray(node)) return node.map(extractText).join("");
+                          if (React.isValidElement(node)) {
+                            const el = node as React.ReactElement<{ children?: React.ReactNode }>;
+                            return extractText(el.props.children);
+                          }
+                          return "";
+                        }
+
+                        // Find first <p> and extract its full text to detect [!type]
                         const firstPara = childArray.find(
-                          (c): c is React.ReactElement => React.isValidElement(c) && (c as React.ReactElement<{ children?: React.ReactNode }>).type === "p"
-                        ) as React.ReactElement<{ children?: React.ReactNode }> | undefined;
+                          (c): c is React.ReactElement<{ children?: React.ReactNode }> =>
+                            React.isValidElement(c) &&
+                            (c as React.ReactElement<{ children?: React.ReactNode }>).type === "p"
+                        );
 
                         if (firstPara) {
-                          const paraChildren = React.Children.toArray(firstPara.props.children);
-                          const firstText = paraChildren.find((c) => typeof c === "string") as string | undefined;
-                          if (firstText) {
-                            const directive = parseCalloutDirective(firstText.trim());
-                            if (directive) {
-                              // Rebuild the first paragraph's children without the [!type] token
-                              const remainingParaChildren = paraChildren.map((c) =>
-                                c === firstText ? firstText.replace(/^\[![^\]]+\][\+\-]?\s*/, "") : c
-                              ).filter((c) => typeof c !== "string" || (c as string).length > 0);
+                          const fullText = extractText(firstPara.props.children).trim();
+                          const directive = parseCalloutDirective(fullText);
 
-                              // All children after the first paragraph form the body
-                              const bodyChildren = childArray.map((c, i) => {
-                                if (i === 0 && React.isValidElement(c) && (c as React.ReactElement<{ children?: React.ReactNode }>).type === "p") {
-                                  if (remainingParaChildren.length === 0) return null;
-                                  return React.cloneElement(c as React.ReactElement<{ children?: React.ReactNode }>, {}, ...remainingParaChildren);
-                                }
-                                return c;
-                              }).filter(Boolean);
+                          if (directive) {
+                            // Strip the [!type] prefix from the first paragraph's text
+                            const prefixRegex = /^\[![^\]]+\][\+\-]?\s*/;
 
-                              return (
-                                <Callout
-                                  type={directive.type}
-                                  title={directive.title || undefined}
-                                  collapsible={directive.collapsible}
-                                  defaultOpen={directive.defaultOpen}
-                                >
-                                  {bodyChildren}
-                                </Callout>
-                              );
+                            function stripPrefix(node: React.ReactNode, done = { v: false }): React.ReactNode {
+                              if (done.v) return node;
+                              if (typeof node === "string") {
+                                const stripped = node.replace(prefixRegex, "");
+                                done.v = true;
+                                return stripped;
+                              }
+                              if (Array.isArray(node)) {
+                                return node.map((n) => stripPrefix(n, done));
+                              }
+                              if (React.isValidElement(node)) {
+                                const el = node as React.ReactElement<{ children?: React.ReactNode }>;
+                                return React.cloneElement(el, {}, stripPrefix(el.props.children, done));
+                              }
+                              return node;
                             }
+
+                            const strippedFirstPara = React.cloneElement(
+                              firstPara,
+                              {},
+                              stripPrefix(firstPara.props.children)
+                            );
+
+                            // Check if first para is now empty (only had the directive token)
+                            const strippedText = extractText(
+                              (strippedFirstPara as React.ReactElement<{ children?: React.ReactNode }>).props.children
+                            ).trim();
+                            const bodyChildren = childArray.map((c, i) => {
+                              if (i === 0) return strippedText ? strippedFirstPara : null;
+                              return c;
+                            }).filter(Boolean);
+
+                            return (
+                              <Callout
+                                type={directive.type}
+                                title={directive.title || undefined}
+                                collapsible={directive.collapsible}
+                                defaultOpen={directive.defaultOpen}
+                              >
+                                {bodyChildren}
+                              </Callout>
+                            );
                           }
                         }
 
