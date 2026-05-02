@@ -5,7 +5,41 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
-import remarkMark from "remark-mark";
+// Custom rehype plugin: transforms ==text== into <mark> nodes in the hast.
+// remark-mark targets the old remark v12 API and is incompatible with remark v14+.
+// This rehype approach works at the HTML AST level after markdown parsing.
+import type { Plugin } from "unified";
+import type { Root, Element, Text, ElementContent, Parent } from "hast";
+import { visit } from "unist-util-visit";
+
+const rehypeHighlight: Plugin<[], Root> = () => (tree) => {
+  visit(tree, "text", (node: Text, index: number | undefined, parent: Parent | undefined) => {
+    if (!parent || index === undefined) return;
+    const text = node.value;
+    if (!text.includes("==")) return;
+
+    const parts = text.split(/(==.+?==)/g);
+    if (parts.length === 1) return; // no matches
+
+    const nodes: ElementContent[] = parts
+      .map((part): ElementContent | null => {
+        if (part.startsWith("==") && part.endsWith("==") && part.length > 4) {
+          const mark: Element = {
+            type: "element",
+            tagName: "mark",
+            properties: {},
+            children: [{ type: "text", value: part.slice(2, -2) }],
+          };
+          return mark;
+        }
+        if (part === "") return null;
+        return { type: "text", value: part } as Text;
+      })
+      .filter((n): n is ElementContent => n !== null);
+
+    parent.children.splice(index, 1, ...nodes);
+  });
+};
 import "katex/dist/katex.min.css";
 import { MermaidDiagram } from "./MermaidDiagram";
 import { TableOfContents, headingSlug } from "./TableOfContents";
@@ -325,8 +359,8 @@ export function NoteEditor({ note }: NoteEditorProps) {
               {note.content ? (
                 <div className="prose-cairn">
                   <ReactMarkdown
-                    remarkPlugins={[remarkGfm, remarkMath, remarkMark]}
-                    rehypePlugins={[rehypeKatex]}
+                    remarkPlugins={[remarkGfm, remarkMath]}
+                    rehypePlugins={[rehypeKatex, rehypeHighlight]}
                     components={{
                       // Images — renders asset:// and https:// URLs
                       img({ src, alt }) {
@@ -338,7 +372,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
                           />
                         );
                       },
-                      // Highlights ==text== rendered as <mark> by remark-mark
+                      // Highlights ==text== rendered as <mark> by rehypeHighlight
                       mark({ children }) {
                         return (
                           <mark className="rounded px-0.5" style={{ background: "color-mix(in srgb, var(--accent) 22%, transparent)", color: "var(--text-primary)" }}>
@@ -606,7 +640,7 @@ function NoteTagBar({ note, workspaceTags, onToggleTag, onCreateTag, getTagById 
   useEffect(() => {
     if (!pickerOpen) return;
     function handleClick(e: MouseEvent) {
-      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as globalThis.Node)) {
         setPickerOpen(false);
         setNewTagName("");
       }

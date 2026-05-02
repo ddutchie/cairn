@@ -45,7 +45,6 @@
     "react-day-picker": "^9.14.0",
     "react-force-graph-2d": "^1.29.1",
     "rehype-katex": "^7.0.1",
-    "remark-mark": "^0.0.0",
     "remark-math": "^6.0.0"
   },
   "devDependencies": {
