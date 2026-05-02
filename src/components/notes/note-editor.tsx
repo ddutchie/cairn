@@ -506,16 +506,12 @@ export function NoteEditor({ note }: NoteEditorProps) {
                        // Display math — katex-display spans tagged with data-latex by rehypeTagLatex.
                       // We forward the rendered HTML into MathBlock which adds the toggle button.
                       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                      span({ className, children, ...props }: any) {
+                      // Display math — katex-display spans tagged with data-latex by rehypeTagLatex.
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      span({ className, children, node: _node, ...props }: any) {
                         const cls: string = className ?? "";
                         if (cls.includes("katex-display")) {
                           const latex: string = props["data-latex"] ?? "";
-                          // Reconstruct the inner HTML from the React children tree.
-                          // rehype-katex already emitted safe HTML; we need it as a string
-                          // so MathBlock can dangerouslySetInnerHTML it when toggled back.
-                          // The simplest approach: render children normally when showing math,
-                          // and show the source string when toggled. We use a key on MathBlock
-                          // so it resets toggle state when latex changes.
                           return <MathBlock key={latex} latex={latex} renderedChildren={children} />;
                         }
                         return <span className={className} {...props}>{children}</span>;
