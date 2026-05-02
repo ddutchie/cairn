@@ -6,29 +6,18 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 // ── Remark plugin: callout blockquotes ────────────────────────────────────────
-// Transforms > [!type] blockquotes in the mdast into a custom `callout` node
-// before ReactMarkdown renders. This is the correct level to intercept —
-// the blockquote's first paragraph's first text node is always "[!type]\n..."
-// (directive and body separated by \n, in one text value).
+// Transforms > [!type] blockquotes in the mdast by tagging the blockquote node
+// with data.hName = "callout" and data.hProperties = { data-* }, so that
+// remark-rehype renders it as <callout data-callout-type="note" ...>.
+// ReactMarkdown's components map picks up "callout" and renders <Callout>.
 import type { Plugin as RemarkPlugin } from "unified";
-import type { Root as MdastRoot, Blockquote, Paragraph, Text as MdastText, Node as MdastNode, Parent as MdastParent } from "mdast";
+import type { Root as MdastRoot, Blockquote, Paragraph, Text as MdastText } from "mdast";
 import { visit as mdastVisit } from "unist-util-visit";
-
-// Custom mdast node type for callouts
-interface CalloutNode extends MdastParent {
-  type: "callout";
-  calloutType: string;
-  title: string;
-  collapsible: boolean;
-  defaultOpen: boolean;
-}
 
 const CALLOUT_RE = /^\[!([^\]]+)\]([\+\-]?)([\s\S]*)/;
 
 const remarkCallout: RemarkPlugin<[], MdastRoot> = () => (tree) => {
-  mdastVisit(tree, "blockquote", (node: Blockquote, index, parent) => {
-    if (index === undefined || !parent) return;
-
+  mdastVisit(tree, "blockquote", (node: Blockquote) => {
     const firstPara = node.children[0];
     if (!firstPara || firstPara.type !== "paragraph") return;
 
@@ -45,35 +34,23 @@ const remarkCallout: RemarkPlugin<[], MdastRoot> = () => (tree) => {
     const defaultOpen = modifier !== "-";
     const title = restOfFirstLine.trim();
 
-    // Rebuild the first paragraph without the directive prefix.
-    // The first text node was "[!type]\nBody..." — split on first \n,
-    // rest after \n becomes the remaining text in the first paragraph.
+    // Strip the "[!type]\n" prefix from the first text node so the body renders cleanly.
     const afterDirective = firstValue.slice(firstValue.indexOf("\n") + 1);
-    const newFirstParaChildren: MdastNode[] = [];
-    if (afterDirective) {
-      newFirstParaChildren.push({ type: "text", value: afterDirective } as MdastText);
-    }
-    // Add remaining siblings of the first paragraph's first child
-    newFirstParaChildren.push(...(firstPara as Paragraph).children.slice(1));
+    (firstChild as MdastText).value = afterDirective;
 
-    // Build body: first para (possibly empty) + rest of blockquote children
-    const bodyChildren: MdastNode[] = [];
-    if (newFirstParaChildren.length > 0) {
-      bodyChildren.push({ type: "paragraph", children: newFirstParaChildren } as Paragraph);
-    }
-    bodyChildren.push(...node.children.slice(1));
-
-    const callout: CalloutNode = {
-      type: "callout",
-      calloutType,
-      title,
-      collapsible,
-      defaultOpen,
-      children: bodyChildren as MdastParent["children"],
-    };
-
+    // Tag the blockquote node with hast properties so remark-rehype renders it
+    // as <callout data-type="note" data-title="..." ...> which ReactMarkdown
+    // maps to the callout() component via the components prop.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (parent as any).children.splice(index, 1, callout);
+    (node as any).data = {
+      hName: "callout",
+      hProperties: {
+        "data-callout-type": calloutType,
+        "data-title": title,
+        "data-collapsible": collapsible ? "true" : "false",
+        "data-default-open": defaultOpen ? "true" : "false",
+      },
+    };
   });
 };
 
@@ -469,16 +446,17 @@ export function NoteEditor({ note }: NoteEditorProps) {
                           </mark>
                         );
                       },
-                      // Callouts — rendered from custom mdast nodes produced by remarkCallout.
-                      // ReactMarkdown passes custom node props via the node object.
+                      // Callouts — blockquotes tagged with hName="callout" by remarkCallout.
+                      // remark-rehype passes data-* attributes as props to this component.
                       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                      callout({ node, children }: any) {
+                      callout({ children, ...props }: any) {
+                        const p = props as Record<string, string>;
                         return (
                           <Callout
-                            type={node.calloutType}
-                            title={node.title || undefined}
-                            collapsible={node.collapsible}
-                            defaultOpen={node.defaultOpen}
+                            type={p["data-callout-type"] ?? "note"}
+                            title={p["data-title"] || undefined}
+                            collapsible={p["data-collapsible"] === "true"}
+                            defaultOpen={p["data-default-open"] !== "false"}
                           >
                             {children}
                           </Callout>
