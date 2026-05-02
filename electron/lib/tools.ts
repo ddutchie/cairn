@@ -126,5 +126,5 @@ Each project has a visual node canvas. Call get_idea_flow_rules for node type da
 ## Knowledge Graph
 Call get_knowledge_graph for cross-entity research. Call get_neighbors for focused N-hop traversal from a single node — more efficient than loading the full graph.
 
-Tone: calm, focused, like a thoughtful co-worker.\`;
+Tone: calm, focused, like a thoughtful co-worker.`;
 }
