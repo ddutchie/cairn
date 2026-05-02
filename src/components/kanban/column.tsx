@@ -234,7 +234,7 @@ export function KanbanColumn({
             </span>
           )}
           <span className={cn(
-            "text-[11px] flex-shrink-0 font-mono",
+            "text-[0.786rem] flex-shrink-0 font-mono",
             atLimit ? "text-amber-400" : "text-[var(--text-tertiary)]"
           )}>
             {column.cardLimit ? `${cards.length}/${column.cardLimit}` : cards.length}
@@ -290,7 +290,7 @@ export function KanbanColumn({
             ))}
             {cards.length === 0 && !isAddingCard && (
               <div
-                className="flex items-center justify-center h-12 rounded-lg border border-dashed border-[var(--border)] text-[11px] text-[var(--text-tertiary)] cursor-pointer hover:border-[var(--accent)]/40 hover:text-[var(--accent)]/60 transition-colors"
+                className="flex items-center justify-center h-12 rounded-lg border border-dashed border-[var(--border)] text-[0.786rem] text-[var(--text-tertiary)] cursor-pointer hover:border-[var(--accent)]/40 hover:text-[var(--accent)]/60 transition-colors"
                 onClick={() => setIsAddingCard(true)}
               >
                 Drop here or add card
@@ -314,7 +314,7 @@ export function KanbanColumn({
                         key={card.id}
                         className="flex items-center gap-2 px-2 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] opacity-60"
                       >
-                        <span className="flex-1 text-[11px] text-[var(--text-secondary)] truncate">{card.title}</span>
+                        <span className="flex-1 text-[0.786rem] text-[var(--text-secondary)] truncate">{card.title}</span>
                         <Tooltip content="Restore card">
                           <button
                             onClick={() => onRestoreCard(card.id)}
@@ -364,7 +364,7 @@ export function KanbanColumn({
         ) : (
           <div className="p-2 border-t border-[var(--border)]">
             {atLimit ? (
-              <p className="w-full text-center text-[10px] text-amber-400 py-1">
+              <p className="w-full text-center text-[0.714rem] text-amber-400 py-1">
                 WIP limit reached ({column.cardLimit})
               </p>
             ) : (

@@ -3,7 +3,7 @@
 import React, { useMemo, useRef, useState } from "react";
 import type { GraphNode } from "@/types";
 import { PRIORITY_COLOR, truncateName } from "./analyticsUtils";
-import { useContainerDims, useScopedData } from "./analyticsHooks";
+import { useContainerDims, useScopedData, useFontScale } from "./analyticsHooks";
 import { CanvasEmptyState } from "./AnalyticsShared";
 
 interface Props {
@@ -24,6 +24,7 @@ const BAR_H = 16;
 
 export function BulletCanvas({ nodes, onNodeClick }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const fs = useFontScale();
   const dims = useContainerDims(containerRef);
   const { activeProjects, scopedCardIds, cards, columns } = useScopedData(nodes);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
@@ -77,7 +78,7 @@ export function BulletCanvas({ nodes, onNodeClick }: Props) {
               <text x={PAD.left - 14} y={barY + BAR_H / 2}
                 textAnchor="end" dominantBaseline="middle"
                 fill={lineColor} fillOpacity={isHov ? 0.9 : 0.6}
-                fontSize={11} fontFamily="var(--font-sans)" fontWeight={isHov ? "600" : "400"}>
+                fontSize={11 * fs} fontFamily="var(--font-sans)" fontWeight={isHov ? "600" : "400"}>
                 {truncateName(proj.name, 22)}
               </text>
               <circle cx={PAD.left - 6} cy={barY + BAR_H / 2} r={3} fill={priColor} fillOpacity={0.8} />
@@ -105,10 +106,10 @@ export function BulletCanvas({ nodes, onNodeClick }: Props) {
               )}
 
               <text x={PAD.left + plotW + 10} y={barY + BAR_H / 2} dominantBaseline="middle"
-                fill={lineColor} fillOpacity={0.4} fontSize={9} fontFamily="var(--font-mono)">
+                fill={lineColor} fillOpacity={0.4} fontSize={9 * fs} fontFamily="var(--font-mono)">
                 {Math.round(pct * 100)}%
               </text>
-              <text x={PAD.left} y={barY + BAR_H + 10} fill={lineColor} fillOpacity={0.3} fontSize={8} fontFamily="var(--font-mono)">
+              <text x={PAD.left} y={barY + BAR_H + 10} fill={lineColor} fillOpacity={0.3} fontSize={8 * fs} fontFamily="var(--font-mono)">
                 {doneCount}/{total} done
                 {hasDue && ` · ${isOverdue ? "overdue" : `${Math.round(timeLeft * 100)}% time left`}`}
                 {` · ${STATUS_LABEL[proj.status] ?? proj.status}`}
@@ -120,18 +121,18 @@ export function BulletCanvas({ nodes, onNodeClick }: Props) {
         {/* X axis */}
         {[0, 0.25, 0.5, 0.75, 1].map((t) => (
           <text key={t} x={PAD.left + plotW * t} y={PAD.top + projectStats.length * ROW_H + 16}
-            textAnchor="middle" fill={lineColor} fillOpacity={0.2} fontSize={8} fontFamily="var(--font-mono)">
+            textAnchor="middle" fill={lineColor} fillOpacity={0.2} fontSize={8 * fs} fontFamily="var(--font-mono)">
             {Math.round(t * 100)}%
           </text>
         ))}
         <text x={PAD.left + plotW / 2} y={PAD.top + projectStats.length * ROW_H + 28}
-          textAnchor="middle" fill={lineColor} fillOpacity={0.15} fontSize={7} fontFamily="var(--font-mono)">
+          textAnchor="middle" fill={lineColor} fillOpacity={0.15} fontSize={7 * fs} fontFamily="var(--font-mono)">
           % tasks complete
         </text>
       </svg>
 
       {/* Legend */}
-      <div className="absolute top-3 right-4 flex items-center gap-3 text-[9px] font-mono text-[var(--text-tertiary)]">
+      <div className="absolute top-3 right-4 flex items-center gap-3 text-[0.643rem] font-mono text-[var(--text-tertiary)]">
         <span className="flex items-center gap-1">
           <span className="inline-block w-6 h-2 rounded" style={{ background: "var(--text-primary)", opacity: 0.35 }} /> done
         </span>

@@ -84,7 +84,7 @@ export function AITextToolbar({ position, onAction, loading, onDismiss }: AIText
                   key={action.id}
                   onClick={() => handleAction(action.id)}
                   className={cn(
-                    "flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] transition-colors whitespace-nowrap",
+                    "flex items-center gap-1.5 px-2 py-1 rounded-md text-[0.786rem] transition-colors whitespace-nowrap",
                     "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]",
                     showCustom && action.id === "custom" && "bg-[var(--surface-2)] text-[var(--text-primary)]"
                   )}
@@ -124,7 +124,7 @@ export function AITextToolbar({ position, onAction, loading, onDismiss }: AIText
             <button
               type="submit"
               disabled={!customPrompt.trim()}
-              className="px-2 py-0.5 rounded text-[11px] bg-[var(--accent)] text-white disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90 transition-opacity"
+              className="px-2 py-0.5 rounded text-[0.786rem] bg-[var(--accent)] text-white disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90 transition-opacity"
             >
               Apply
             </button>

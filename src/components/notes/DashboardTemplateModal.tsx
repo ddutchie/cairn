@@ -292,7 +292,7 @@ export function DashboardTemplateModal({ onSelect, onClose }: Props) {
               </div>
               <div>
                 <div className="text-xs font-semibold text-[var(--text-primary)]">{t.label}</div>
-                <div className="text-[11px] text-[var(--text-tertiary)] mt-0.5 leading-snug">{t.description}</div>
+                <div className="text-[0.786rem] text-[var(--text-tertiary)] mt-0.5 leading-snug">{t.description}</div>
               </div>
             </button>
           ))}

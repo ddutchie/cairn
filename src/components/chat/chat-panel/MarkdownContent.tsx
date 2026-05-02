@@ -34,7 +34,7 @@ export function MarkdownContent({ content }: { content: string }) {
           // Fenced blocks handled by `pre` above — this only runs for inline code
           if (className?.startsWith("language-")) return <>{children}</>;
           return (
-            <code className="px-1 py-0.5 rounded bg-[var(--surface-3)] font-mono text-[11px] text-[var(--text-primary)]">
+            <code className="px-1 py-0.5 rounded bg-[var(--surface-3)] font-mono text-[0.786rem] text-[var(--text-primary)]">
               {children}
             </code>
           );

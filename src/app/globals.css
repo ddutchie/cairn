@@ -7,6 +7,7 @@
 /* Dark theme — applied via data-theme="dark" on <html> */
 :root, [data-theme="dark"] {
   color-scheme: dark;
+  --font-scale: 1;
   --background: #0d0d0d;
   --foreground: #e8e4dc;
   --surface: #141414;
@@ -74,13 +75,16 @@
 html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* Root font-size drives all rem-based Tailwind classes (text-xs, text-sm, etc.)
+     and the body baseline. --font-scale is set inline by applyFontScale(). */
+  font-size: calc(14px * var(--font-scale));
 }
 
 body {
   background: var(--background);
   color: var(--text-primary);
   font-family: var(--font-sans);
-  font-size: 14px;
+  font-size: 1rem;
   line-height: 1.6;
   overflow: hidden;
   height: 100dvh;
@@ -119,7 +123,7 @@ body {
   min-height: 200px;
   outline: none;
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: 1rem;
   line-height: 1.75;
 }
 

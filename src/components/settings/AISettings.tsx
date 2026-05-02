@@ -108,7 +108,7 @@ export function AISettings() {
                   key={label}
                   onClick={() => update({ baseUrl: url })}
                   className={cn(
-                    "px-2 py-1 text-[10px] rounded border transition-colors",
+                    "px-2 py-1 text-[0.714rem] rounded border transition-colors",
                     baseUrl === url
                       ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
                       : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]"
@@ -178,7 +178,7 @@ export function AISettings() {
                 disabled={modelsLoading}
                 aria-label="Fetch models from endpoint"
                 className={cn(
-                  "px-2 py-1.5 text-[10px] rounded-md border transition-colors flex items-center gap-1 min-w-[52px] justify-center",
+                  "px-2 py-1.5 text-[0.714rem] rounded-md border transition-colors flex items-center gap-1 min-w-[52px] justify-center",
                   "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]",
                   modelsLoading && "opacity-50 cursor-wait"
                 )}
@@ -190,12 +190,12 @@ export function AISettings() {
 
             {/* Status line */}
             {testState === "error" && (
-              <p className="text-[11px] text-[var(--danger)] self-start" title={testError}>
+              <p className="text-[0.786rem] text-[var(--danger)] self-start" title={testError}>
                 {testError.slice(0, 60)}
               </p>
             )}
             {testState === "ok" && availableModels.length > 0 && (
-              <p className="text-[11px] text-[var(--success)] self-start flex items-center gap-1">
+              <p className="text-[0.786rem] text-[var(--success)] self-start flex items-center gap-1">
                 <CheckCircle size={10} /> {availableModels.length} models available
               </p>
             )}
@@ -207,7 +207,7 @@ export function AISettings() {
                   key={m}
                   onClick={() => update({ model: m })}
                   className={cn(
-                    "px-2 py-0.5 text-[10px] rounded border transition-colors font-mono whitespace-nowrap",
+                    "px-2 py-0.5 text-[0.714rem] rounded border transition-colors font-mono whitespace-nowrap",
                     model === m
                       ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
                       : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]"
@@ -217,7 +217,7 @@ export function AISettings() {
                 </button>
               ))}
               {modelsFetched && availableModels.length === 0 && !modelsLoading && testState !== "error" && (
-                <span className="text-[11px] text-[var(--text-tertiary)]">No models returned</span>
+                <span className="text-[0.786rem] text-[var(--text-tertiary)]">No models returned</span>
               )}
             </div>
           </div>

@@ -201,7 +201,7 @@ export function InsightsView() {
                 return (
                   <button key={t}
                     onClick={() => setTableTypeFilter((prev) => prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t])}
-                    className={cn("px-2 py-1 rounded text-[11px] capitalize transition-colors border",
+                    className={cn("px-2 py-1 rounded text-[0.786rem] capitalize transition-colors border",
                       isActive ? "border-transparent bg-[var(--accent-dim)] text-[var(--accent)]" : "border-[var(--border)] text-[var(--text-tertiary)] opacity-50")}
                   >
                     {t}
@@ -243,7 +243,7 @@ export function InsightsView() {
         )}
 
         {/* Right: item count + reset/refresh */}
-        <span className="ml-auto flex items-center gap-2 text-[11px] text-[var(--text-tertiary)]">
+        <span className="ml-auto flex items-center gap-2 text-[0.786rem] text-[var(--text-tertiary)]">
           {allNodes.length} items
           <Tooltip content={layout === "ridgeline" ? "Reset view to data range" : "Reload data"}>
             <button

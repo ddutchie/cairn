@@ -239,7 +239,7 @@ export function KnowledgeGraphView() {
                     <button
                       onClick={() => toggleNodeType(t)}
                       className={cn(
-                        "flex items-center gap-1 px-2 py-1 rounded text-[11px] capitalize transition-colors border",
+                        "flex items-center gap-1 px-2 py-1 rounded text-[0.786rem] capitalize transition-colors border",
                         isActive ? "border-transparent" : "border-[var(--border)] text-[var(--text-tertiary)] opacity-50"
                       )}
                       style={isActive ? {
@@ -282,7 +282,7 @@ export function KnowledgeGraphView() {
         )}
 
         {/* Stats + Recompute — pinned to right */}
-        <span className="ml-auto flex items-center gap-2 text-[11px] text-[var(--text-tertiary)]">
+        <span className="ml-auto flex items-center gap-2 text-[0.786rem] text-[var(--text-tertiary)]">
           {`${filteredNodes.length} nodes · ${filteredEdges.length} edges`}
           <Tooltip content="Recompute auto-relationships">
             <button
@@ -344,7 +344,7 @@ export function KnowledgeGraphView() {
                     className="w-2.5 h-2.5 rounded-full"
                     style={{ background: nodeTypeColor(t) }}
                   />
-                  <span className="text-[11px] capitalize text-[var(--text-tertiary)]">{t}</span>
+                  <span className="text-[0.786rem] capitalize text-[var(--text-tertiary)]">{t}</span>
                 </div>
               ))}
             </div>

@@ -149,7 +149,7 @@ export function NotesView() {
             <div className="flex flex-wrap gap-1 mt-1.5">
               {projectTags.map((tag) => (
                 <button key={tag.id} onClick={() => setActiveTagId(activeTagId === tag.id ? null : tag.id)}
-                  className={cn("flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] border transition-colors",
+                  className={cn("flex items-center gap-1 px-1.5 py-0.5 rounded text-[0.714rem] border transition-colors",
                     activeTagId === tag.id
                       ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
                       : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]")}>
@@ -336,8 +336,8 @@ function NoteListItem({ note, isActive, onClick, onPin, onDelete, onArchive, onM
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-      <span className="text-[11px] text-[var(--text-tertiary)] truncate">{note.contentText.slice(0, 60) || "Empty note"}</span>
-      <span className="text-[10px] text-[var(--text-tertiary)]">{formatRelative(note.updatedAt)}</span>
+      <span className="text-[0.786rem] text-[var(--text-tertiary)] truncate">{note.contentText.slice(0, 60) || "Empty note"}</span>
+      <span className="text-[0.714rem] text-[var(--text-tertiary)]">{formatRelative(note.updatedAt)}</span>
     </div>
   );
 }
@@ -347,7 +347,7 @@ function NoteListItem({ note, isActive, onClick, onPin, onDelete, onArchive, onM
 function ArchivedNoteListItem({ note, onRestore, onDelete }: { note: Note; onRestore: () => void; onDelete: () => void }) {
   return (
     <div className="group flex items-center gap-1.5 px-3 py-2">
-      <span className="flex-1 text-[11px] text-[var(--text-tertiary)] truncate">{note.title}</span>
+      <span className="flex-1 text-[0.786rem] text-[var(--text-tertiary)] truncate">{note.title}</span>
       <Tooltip content="Restore note">
         <button onClick={(e) => { e.stopPropagation(); onRestore(); }}
           className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--accent-dim)] transition-all">

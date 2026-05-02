@@ -56,9 +56,9 @@ export function AboutSection() {
               >
                 <div>
                   <span className="text-xs font-medium text-[var(--text-primary)]">{entry.label}</span>
-                  <span className="text-[10px] text-[var(--text-tertiary)] ml-1.5">{entry.version}</span>
+                  <span className="text-[0.714rem] text-[var(--text-tertiary)] ml-1.5">{entry.version}</span>
                 </div>
-                <span className="text-[11px] text-[var(--text-tertiary)]">{entry.role}</span>
+                <span className="text-[0.786rem] text-[var(--text-tertiary)]">{entry.role}</span>
               </div>
             ))}
           </div>
@@ -78,10 +78,10 @@ export function AboutSection() {
               {allLicenses.map((entry) => (
                 <div key={entry.name} className="flex items-center justify-between px-4 py-2">
                   <div>
-                    <span className="text-[11px] text-[var(--text-secondary)]">{entry.name}</span>
-                    <span className="text-[10px] text-[var(--text-tertiary)] ml-1.5">{entry.version}</span>
+                    <span className="text-[0.786rem] text-[var(--text-secondary)]">{entry.name}</span>
+                    <span className="text-[0.714rem] text-[var(--text-tertiary)] ml-1.5">{entry.version}</span>
                   </div>
-                  <span className="text-[10px] font-mono text-[var(--text-tertiary)] bg-[var(--surface-2)] px-1.5 py-0.5 rounded">{entry.license}</span>
+                  <span className="text-[0.714rem] font-mono text-[var(--text-tertiary)] bg-[var(--surface-2)] px-1.5 py-0.5 rounded">{entry.license}</span>
                 </div>
               ))}
             </div>

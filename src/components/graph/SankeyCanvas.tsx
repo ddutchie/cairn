@@ -6,7 +6,7 @@ import { sankey, sankeyLinkHorizontal, SankeyNode, SankeyLink } from "d3-sankey"
 import { X } from "lucide-react";
 import type { GraphNode } from "@/types";
 import { PRIORITY_COLOR, truncateName } from "./analyticsUtils";
-import { useContainerDims, useScopedData } from "./analyticsHooks";
+import { useContainerDims, useScopedData, useFontScale } from "./analyticsHooks";
 import { CanvasEmptyState } from "./AnalyticsShared";
 
 interface Props {
@@ -31,6 +31,7 @@ type SLink = SankeyLink<{ id: string; label: string; group: "column" | "project"
 
 export function SankeyCanvas({ nodes, onNodeClick }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const fs = useFontScale();
   const dims = useContainerDims(containerRef);
   const { activeProjects, scopedProjectIds, scopedCardIds, cards, columns } = useScopedData(nodes);
 
@@ -148,7 +149,7 @@ export function SankeyCanvas({ nodes, onNodeClick }: Props) {
                   <text x={isProject ? x0 - 8 : x1 + 8} y={y0 + h / 2}
                     textAnchor={isProject ? "end" : "start"} dominantBaseline="middle"
                     fill={lineColor} fillOpacity={isSel ? 1 : isHov ? 0.9 : 0.45}
-                    fontSize={9} fontFamily="var(--font-sans)" fontWeight={isSel ? "600" : "400"}>
+                    fontSize={9 * fs} fontFamily="var(--font-sans)" fontWeight={isSel ? "600" : "400"}>
                     {truncateName(n.label, 22)}
                   </text>
                 )}
@@ -165,7 +166,7 @@ export function SankeyCanvas({ nodes, onNodeClick }: Props) {
           <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)]">
             <div>
               <p className="text-xs font-semibold text-[var(--text-primary)]">{panelLabel}</p>
-              <p className="text-[10px] text-[var(--text-tertiary)] mt-0.5">
+              <p className="text-[0.714rem] text-[var(--text-tertiary)] mt-0.5">
                 {panelTasks.length} task{panelTasks.length !== 1 ? "s" : ""}
               </p>
             </div>
@@ -176,7 +177,7 @@ export function SankeyCanvas({ nodes, onNodeClick }: Props) {
           </div>
           <div className="flex-1 overflow-y-auto py-2">
             {panelTasks.length === 0
-              ? <p className="text-[11px] text-[var(--text-tertiary)] px-4 py-6 text-center">No tasks here.</p>
+              ? <p className="text-[0.786rem] text-[var(--text-tertiary)] px-4 py-6 text-center">No tasks here.</p>
               : panelTasks.map((card) => {
                   const proj = activeProjects.find((p) => p.id === card.projectId);
                   const gn   = nodes.find((n) => n.id === card.id);
@@ -188,10 +189,10 @@ export function SankeyCanvas({ nodes, onNodeClick }: Props) {
                         <span className="mt-1 w-1.5 h-1.5 rounded-full flex-shrink-0"
                           style={{ background: PRIORITY_COLOR[card.priority] }} />
                         <div className="min-w-0">
-                          <p className="text-[11px] text-[var(--text-primary)] truncate leading-snug group-hover:text-[var(--accent)]">
+                          <p className="text-[0.786rem] text-[var(--text-primary)] truncate leading-snug group-hover:text-[var(--accent)]">
                             {card.title}
                           </p>
-                          <p className="text-[10px] text-[var(--text-tertiary)] mt-0.5 truncate">
+                          <p className="text-[0.714rem] text-[var(--text-tertiary)] mt-0.5 truncate">
                             {proj?.name ?? "—"}
                             {card.dueDate && <> · due {d3.timeFormat("%b %d")(new Date(card.dueDate))}</>}
                           </p>

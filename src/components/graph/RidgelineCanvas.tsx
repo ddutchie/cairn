@@ -4,7 +4,7 @@ import React, { useMemo, useRef, useEffect, useState, useCallback } from "react"
 import * as d3 from "d3";
 import type { GraphNode } from "@/types";
 import { HOUR_MS, DAY_MS, floorHour, floorDay, truncateName, CANVAS_PAD } from "./analyticsUtils";
-import { useContainerDims, useScopedData } from "./analyticsHooks";
+import { useContainerDims, useScopedData, useFontScale } from "./analyticsHooks";
 import { CanvasTooltip, CanvasEmptyState } from "./AnalyticsShared";
 
 export type RidgelineMode = "ridgeline" | "overlay" | "iso";
@@ -38,6 +38,7 @@ const PAD_BOTTOM = CANVAS_PAD.bottom;
 
 export function RidgelineCanvas({ nodes, onNodeClick, mode, view, onViewChange, applyZoom, onDefaultView }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const fs = useFontScale();
   const svgRef       = useRef<SVGSVGElement>(null);
   const dims = useContainerDims(containerRef);
   const { activeProjects, scopedCardIds, cards } = useScopedData(nodes);
@@ -295,7 +296,7 @@ export function RidgelineCanvas({ nodes, onNodeClick, mode, view, onViewChange, 
             <line x1={x} y1={PAD_TOP - 6} x2={x} y2={dims.height - PAD_BOTTOM}
               stroke={tickColor} strokeOpacity={0.06} strokeWidth={1} />
             <text x={x} y={PAD_TOP - 10} textAnchor="middle"
-              fill={tickColor} fillOpacity={0.3} fontSize={8}
+              fill={tickColor} fillOpacity={0.3} fontSize={8 * fs}
               fontFamily="var(--font-mono)">
               {label}
             </text>
@@ -308,7 +309,7 @@ export function RidgelineCanvas({ nodes, onNodeClick, mode, view, onViewChange, 
             <line x1={todayX} y1={PAD_TOP - 4} x2={todayX} y2={dims.height - PAD_BOTTOM}
               stroke={tickColor} strokeOpacity={0.18} strokeWidth={1} strokeDasharray="3,3" />
             <text x={todayX} y={PAD_TOP - 10} textAnchor="middle"
-              fill={tickColor} fillOpacity={0.35} fontSize={8}
+              fill={tickColor} fillOpacity={0.35} fontSize={8 * fs}
               fontFamily="var(--font-mono)">TODAY</text>
           </>
         )}
@@ -345,7 +346,7 @@ export function RidgelineCanvas({ nodes, onNodeClick, mode, view, onViewChange, 
                   x={PAD_LEFT - 10} y={by + 1}
                   textAnchor="end" dominantBaseline="middle"
                   fill={lineColor} fillOpacity={isHov ? 0.9 : 0.35}
-                  fontSize={9} fontFamily="var(--font-sans)"
+                  fontSize={9 * fs} fontFamily="var(--font-sans)"
                   fontWeight={isHov ? "600" : "400"}
                   pointerEvents="none"
                 >
@@ -366,7 +367,7 @@ export function RidgelineCanvas({ nodes, onNodeClick, mode, view, onViewChange, 
       {/* Tooltip */}
       {hoveredBucket && hoveredBucket.tasks.length > 0 && (
         <CanvasTooltip x={tooltipPos.x} y={tooltipPos.y} containerW={dims.width}>
-          <p className="text-[10px] font-mono text-[var(--text-tertiary)] mb-1.5">
+          <p className="text-[0.714rem] font-mono text-[var(--text-tertiary)] mb-1.5">
             {d3.timeFormat(bucketMs < DAY_MS ? "%b %d %H:%M" : "%b %d")(new Date(hoveredBucket.bucketMs))}
           </p>
           <div className="space-y-1">
@@ -382,7 +383,7 @@ export function RidgelineCanvas({ nodes, onNodeClick, mode, view, onViewChange, 
               );
             })}
             {hoveredBucket.tasks.length > 6 && (
-              <p className="text-[var(--text-tertiary)] text-[10px]">+{hoveredBucket.tasks.length - 6} more</p>
+              <p className="text-[var(--text-tertiary)] text-[0.714rem]">+{hoveredBucket.tasks.length - 6} more</p>
             )}
           </div>
         </CanvasTooltip>

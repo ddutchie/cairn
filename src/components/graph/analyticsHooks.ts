@@ -5,6 +5,19 @@ import { useEffect, useRef, useState, useMemo } from "react";
 import { useCairnStore } from "@/store";
 import type { GraphNode } from "@/types";
 
+// ── useFontScale ──────────────────────────────────────────────────────────────
+
+/**
+ * Returns the current --font-scale value from the document root.
+ * Re-renders the caller when the store's fontScale changes.
+ */
+export function useFontScale(): number {
+  const fontScale = useCairnStore((s) => s.fontScale);
+  // fontScale in the store is the source of truth; the CSS var is a side-effect.
+  // Reading the store directly avoids a DOM read on every render.
+  return fontScale;
+}
+
 // ── useContainerDims ──────────────────────────────────────────────────────────
 
 /**

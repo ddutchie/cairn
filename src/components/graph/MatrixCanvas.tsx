@@ -154,7 +154,7 @@ export function MatrixCanvas({ nodes, onNodeClick, selectedNodeId }: Props) {
                   className="absolute bottom-6 left-1/2 origin-bottom-left"
                   style={{ transform: "rotate(-45deg) translateX(-50%)" }}
                 >
-                  <span className="text-[9px] font-medium text-[var(--text-secondary)] uppercase tracking-wide whitespace-nowrap">
+                  <span className="text-[0.643rem] font-medium text-[var(--text-secondary)] uppercase tracking-wide whitespace-nowrap">
                     {tag.name.length > 14 ? tag.name.slice(0, 13) + "…" : tag.name}
                   </span>
                 </div>
@@ -182,7 +182,7 @@ export function MatrixCanvas({ nodes, onNodeClick, selectedNodeId }: Props) {
                   )}
                 >
                   <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 mr-2" style={{ background: tagColors[r] }} />
-                  <span className="text-[10px] font-medium text-[var(--text-secondary)] truncate" title={rowTag.name}>
+                  <span className="text-[0.714rem] font-medium text-[var(--text-secondary)] truncate" title={rowTag.name}>
                     {rowTag.name}
                   </span>
                 </div>
@@ -229,13 +229,13 @@ export function MatrixCanvas({ nodes, onNodeClick, selectedNodeId }: Props) {
                       {isDiag ? (
                         <div className="flex flex-col items-center gap-0.5">
                           <div className="w-3 rounded-full" style={{ height: 2, background: tagColors[r], opacity: 0.8 }} />
-                          <span className="text-[9px] font-semibold tabular-nums" style={{ color: tagColors[r], opacity: 0.9 }}>
+                          <span className="text-[0.643rem] font-semibold tabular-nums" style={{ color: tagColors[r], opacity: 0.9 }}>
                             {val}
                           </span>
                         </div>
                       ) : (
                         <span className={cn(
-                          "text-[10px] font-mono tabular-nums select-none",
+                          "text-[0.714rem] font-mono tabular-nums select-none",
                           val > 0 ? "text-[var(--text-primary)] font-semibold" : "text-[var(--text-tertiary)] opacity-20"
                         )}>
                           {val > 0 ? val : "·"}
@@ -252,13 +252,13 @@ export function MatrixCanvas({ nodes, onNodeClick, selectedNodeId }: Props) {
           <div className="flex items-center gap-4 mt-3 px-1">
             <div className="flex items-center gap-1.5">
               <div className="w-3 h-3 rounded-sm opacity-50" style={{ background: tagColors[0] ?? "#6366f1" }} />
-              <span className="text-[10px] text-[var(--text-tertiary)]">co-occurrence</span>
+              <span className="text-[0.714rem] text-[var(--text-tertiary)]">co-occurrence</span>
             </div>
             <div className="flex items-center gap-1.5">
               <div className="w-3 h-1.5 rounded-full" style={{ background: tagColors[0] ?? "#6366f1" }} />
-              <span className="text-[10px] text-[var(--text-tertiary)]">diagonal = total per tag</span>
+              <span className="text-[0.714rem] text-[var(--text-tertiary)]">diagonal = total per tag</span>
             </div>
-            <span className="text-[10px] text-[var(--text-tertiary)] opacity-50 ml-2">click a cell to inspect</span>
+            <span className="text-[0.714rem] text-[var(--text-tertiary)] opacity-50 ml-2">click a cell to inspect</span>
           </div>
         </div>
       </div>
@@ -271,9 +271,9 @@ export function MatrixCanvas({ nodes, onNodeClick, selectedNodeId }: Props) {
               <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
                 {[panelCell.r, panelCell.c].map((idx, i) => (
                   <React.Fragment key={idx}>
-                    {i === 1 && <span className="text-[10px] text-[var(--text-tertiary)]">×</span>}
+                    {i === 1 && <span className="text-[0.714rem] text-[var(--text-tertiary)]">×</span>}
                     <span
-                      className="inline-flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded"
+                      className="inline-flex items-center gap-1 text-[0.786rem] font-semibold px-1.5 py-0.5 rounded"
                       style={{ background: tagColors[idx] + "22", color: tagColors[idx] }}
                     >
                       <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: tagColors[idx] }} />
@@ -291,7 +291,7 @@ export function MatrixCanvas({ nodes, onNodeClick, selectedNodeId }: Props) {
                 </button>
               )}
             </div>
-            <p className="px-4 py-2 text-[10px] text-[var(--text-tertiary)] border-b border-[var(--border)]">
+            <p className="px-4 py-2 text-[0.714rem] text-[var(--text-tertiary)] border-b border-[var(--border)]">
               {panelItems.length} shared item{panelItems.length !== 1 ? "s" : ""}
             </p>
             <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
@@ -303,7 +303,7 @@ export function MatrixCanvas({ nodes, onNodeClick, selectedNodeId }: Props) {
                     key={node.id}
                     onClick={() => onNodeClick(node)}
                     className={cn(
-                      "flex items-center gap-2.5 w-full px-2.5 py-2 rounded-lg text-left text-[11px] transition-colors",
+                      "flex items-center gap-2.5 w-full px-2.5 py-2 rounded-lg text-left text-[0.786rem] transition-colors",
                       isSelected
                         ? "bg-[var(--accent-dim)] text-[var(--accent)]"
                         : "hover:bg-[var(--surface-2)] text-[var(--text-secondary)]"
@@ -312,7 +312,7 @@ export function MatrixCanvas({ nodes, onNodeClick, selectedNodeId }: Props) {
                     <span className="w-1.5 h-1.5 rounded-full flex-shrink-0"
                       style={{ background: isNote ? "var(--info)" : "var(--success)" }} />
                     <span className="truncate flex-1">{node.title}</span>
-                    <span className="ml-auto text-[9px] text-[var(--text-tertiary)] font-mono flex-shrink-0">
+                    <span className="ml-auto text-[0.643rem] text-[var(--text-tertiary)] font-mono flex-shrink-0">
                       {isNote ? "note" : "task"}
                     </span>
                   </button>
@@ -323,7 +323,7 @@ export function MatrixCanvas({ nodes, onNodeClick, selectedNodeId }: Props) {
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center gap-2 p-6 text-center">
             <p className="text-xs text-[var(--text-tertiary)]">Hover a cell to preview shared items.</p>
-            <p className="text-[11px] text-[var(--text-tertiary)] opacity-50 leading-relaxed">Click a cell to pin the panel.</p>
+            <p className="text-[0.786rem] text-[var(--text-tertiary)] opacity-50 leading-relaxed">Click a cell to pin the panel.</p>
           </div>
         )}
       </div>

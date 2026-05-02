@@ -39,7 +39,7 @@ export function ChatMessageBubble({ message, onRetry }: ChatMessageBubbleProps) 
           </div>
         )}
         <div className={cn("flex items-center gap-1.5", isUser ? "flex-row-reverse" : "")}>
-          <span className="text-[10px] text-[var(--text-tertiary)]">{formatRelative(message.createdAt)}</span>
+          <span className="text-[0.714rem] text-[var(--text-tertiary)]">{formatRelative(message.createdAt)}</span>
           <div className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 flex items-center gap-0.5 transition-opacity">
             <button
               onClick={handleCopy}
@@ -67,7 +67,7 @@ export function ChatMessageBubble({ message, onRetry }: ChatMessageBubbleProps) 
 function ContextRefChip({ ref_ }: { ref_: LinkedContextReference }) {
   const icons = { note: <FileText size={9} />, task: <Kanban size={9} />, project: <FolderOpen size={9} />, search_result: <Search size={9} /> };
   return (
-    <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-[var(--surface-3)] border border-[var(--border)] text-[10px] text-[var(--text-tertiary)]">
+    <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-[var(--surface-3)] border border-[var(--border)] text-[0.714rem] text-[var(--text-tertiary)]">
       {icons[ref_.type]}{ref_.title}
     </span>
   );

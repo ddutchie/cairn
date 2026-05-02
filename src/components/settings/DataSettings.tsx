@@ -46,7 +46,7 @@ export function DataSettings({
             className="p-3 rounded-lg border border-[var(--border)] bg-[var(--surface)] text-center"
           >
             <div className="text-xl font-bold text-[var(--text-primary)]">{count}</div>
-            <div className="text-[11px] text-[var(--text-tertiary)] mt-0.5">{label}</div>
+            <div className="text-[0.786rem] text-[var(--text-tertiary)] mt-0.5">{label}</div>
           </div>
         ))}
       </div>

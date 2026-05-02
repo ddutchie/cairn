@@ -48,7 +48,7 @@ export const GroupNode = memo(function GroupNode({ data, selected }: NodeProps) 
         <div className="absolute top-2 left-3 flex items-center gap-1.5 pointer-events-none select-none">
           <Layers size={11} style={{ color: colors.text }} className="shrink-0" />
           <span
-            className="text-[11px] font-semibold leading-none"
+            className="text-[0.786rem] font-semibold leading-none"
             style={{ color: colors.text }}
           >
             {d.label || "Group"}

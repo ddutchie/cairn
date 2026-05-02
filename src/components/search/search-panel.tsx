@@ -37,7 +37,7 @@ function ResultRow({ result, focused, onSelect }: ResultRowProps) {
           <span className="text-sm font-medium text-[var(--text-primary)] truncate">
             {result.title}
           </span>
-          <span className="text-[11px] text-[var(--text-tertiary)] flex-shrink-0">
+          <span className="text-[0.786rem] text-[var(--text-tertiary)] flex-shrink-0">
             in {result.projectName}
           </span>
         </div>
@@ -158,7 +158,7 @@ export function SearchPanel() {
               <X size={14} />
             </button>
           )}
-          <kbd className="text-[10px] text-[var(--text-tertiary)] bg-[var(--surface-2)] border border-[var(--border)] rounded px-1.5 py-0.5 font-mono">
+          <kbd className="text-[0.714rem] text-[var(--text-tertiary)] bg-[var(--surface-2)] border border-[var(--border)] rounded px-1.5 py-0.5 font-mono">
             ESC
           </kbd>
         </div>
@@ -167,7 +167,7 @@ export function SearchPanel() {
         <div className="flex items-center gap-2 px-4 py-2 border-b border-[var(--border)] flex-wrap">
           {(["all", "notes", "tasks"] as FilterType[]).map((t) => (
             <button key={t} onClick={() => { setFilterType(t); setFocused(0); }}
-              className={cn("px-2.5 py-0.5 rounded-full text-[11px] font-medium border transition-colors",
+              className={cn("px-2.5 py-0.5 rounded-full text-[0.786rem] font-medium border transition-colors",
                 filterType === t
                   ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
                   : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
@@ -179,14 +179,14 @@ export function SearchPanel() {
             <div className="flex items-center gap-1 ml-auto flex-wrap">
               {filterProject && (
                 <button onClick={() => setFilterProject(null)}
-                  className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] border border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]">
+                  className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[0.786rem] border border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]">
                   <X size={9} />
                   {workspaceProjects.find((p) => p.id === filterProject)?.name ?? "Project"}
                 </button>
               )}
               {!filterProject && workspaceProjects.map((p) => (
                 <button key={p.id} onClick={() => { setFilterProject(p.id); setFocused(0); }}
-                  className="px-2 py-0.5 rounded-full text-[11px] border border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:border-[var(--border)] transition-colors truncate max-w-[100px]">
+                  className="px-2 py-0.5 rounded-full text-[0.786rem] border border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:border-[var(--border)] transition-colors truncate max-w-[100px]">
                   {p.name}
                 </button>
               ))}
@@ -207,7 +207,7 @@ export function SearchPanel() {
             <div className="py-1">
               {notes.length > 0 && (
                 <>
-                  <div className="px-4 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">Notes</div>
+                  <div className="px-4 py-1.5 text-[0.714rem] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">Notes</div>
                   {notes.map((result, i) => (
                     <ResultRow
                       key={result.id}
@@ -222,7 +222,7 @@ export function SearchPanel() {
               )}
               {tasks.length > 0 && (
                 <>
-                  <div className="px-4 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">Tasks</div>
+                  <div className="px-4 py-1.5 text-[0.714rem] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">Tasks</div>
                   {tasks.map((result, i) => (
                     <ResultRow
                       key={result.id}
@@ -245,15 +245,15 @@ export function SearchPanel() {
               </p>
               <div className="flex items-center justify-center gap-4 mt-4 text-xs text-[var(--text-tertiary)]">
                 <span className="flex items-center gap-1">
-                  <kbd className="bg-[var(--surface-2)] border border-[var(--border)] rounded px-1.5 py-0.5 font-mono text-[10px]">↑↓</kbd>
+                  <kbd className="bg-[var(--surface-2)] border border-[var(--border)] rounded px-1.5 py-0.5 font-mono text-[0.714rem]">↑↓</kbd>
                   navigate
                 </span>
                 <span className="flex items-center gap-1">
-                  <kbd className="bg-[var(--surface-2)] border border-[var(--border)] rounded px-1.5 py-0.5 font-mono text-[10px]">↵</kbd>
+                  <kbd className="bg-[var(--surface-2)] border border-[var(--border)] rounded px-1.5 py-0.5 font-mono text-[0.714rem]">↵</kbd>
                   open
                 </span>
                 <span className="flex items-center gap-1">
-                  <kbd className="bg-[var(--surface-2)] border border-[var(--border)] rounded px-1.5 py-0.5 font-mono text-[10px]">ESC</kbd>
+                  <kbd className="bg-[var(--surface-2)] border border-[var(--border)] rounded px-1.5 py-0.5 font-mono text-[0.714rem]">ESC</kbd>
                   close
                 </span>
               </div>

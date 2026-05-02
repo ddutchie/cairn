@@ -40,7 +40,7 @@ export const NoteRefNode = memo(function NoteRefNode({ data, selected, isConnect
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 min-w-0">
             <FileText size={12} className="text-[var(--text-tertiary)] shrink-0" />
-            <span className="text-[10px] font-medium text-[var(--text-tertiary)] uppercase tracking-wide">Note</span>
+            <span className="text-[0.714rem] font-medium text-[var(--text-tertiary)] uppercase tracking-wide">Note</span>
           </div>
           {hasNote && (
             <button
@@ -58,13 +58,13 @@ export const NoteRefNode = memo(function NoteRefNode({ data, selected, isConnect
               {d.resolvedTitle}
             </p>
             {d.resolvedSnippet && (
-              <p className="mt-1 text-[11px] text-[var(--text-tertiary)] line-clamp-2 break-words">
+              <p className="mt-1 text-[0.786rem] text-[var(--text-tertiary)] line-clamp-2 break-words">
                 {d.resolvedSnippet}
               </p>
             )}
           </>
         ) : (
-          <p className="mt-1 text-[11px] text-[var(--text-tertiary)] italic">No note linked</p>
+          <p className="mt-1 text-[0.786rem] text-[var(--text-tertiary)] italic">No note linked</p>
         )}
       </div>
       <Handle type="source" position={Position.Right} isConnectable={isConnectable} className="!bg-[var(--accent)] !border-[var(--surface)] !w-2.5 !h-2.5" />

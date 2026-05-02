@@ -95,7 +95,7 @@ export function TagsSettings() {
                   {tag.name}
                 </span>
               )}
-              <span className="text-[11px] text-[var(--text-tertiary)] tabular-nums whitespace-nowrap">
+              <span className="text-[0.786rem] text-[var(--text-tertiary)] tabular-nums whitespace-nowrap">
                 {noteCount} note{noteCount !== 1 ? "s" : ""} · {cardCount} card{cardCount !== 1 ? "s" : ""}
               </span>
               <button

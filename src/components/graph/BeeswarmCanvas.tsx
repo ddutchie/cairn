@@ -5,7 +5,7 @@ import * as d3 from "d3";
 import type { SimulationNodeDatum } from "d3";
 import type { GraphNode } from "@/types";
 import { PRIORITY_COLOR, truncateName, CANVAS_PAD } from "./analyticsUtils";
-import { useContainerDims, useScopedData } from "./analyticsHooks";
+import { useContainerDims, useScopedData, useFontScale } from "./analyticsHooks";
 import { CanvasEmptyState, CanvasTooltip, SvgTimeAxis } from "./AnalyticsShared";
 import { DAY_MS } from "./analyticsUtils";
 
@@ -21,6 +21,7 @@ const LANE_PAD = 12;
 
 export function BeeswarmCanvas({ nodes, onNodeClick }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const fs = useFontScale();
   const dims = useContainerDims(containerRef);
   const { activeProjects, scopedCardIds, cards } = useScopedData(nodes);
 
@@ -108,7 +109,7 @@ export function BeeswarmCanvas({ nodes, onNodeClick }: Props) {
           <text key={proj.id}
             x={PAD.left - 10} y={PAD.top + laneH * li + laneH / 2}
             textAnchor="end" dominantBaseline="middle"
-            fill={lineColor} fillOpacity={0.4} fontSize={9} fontFamily="var(--font-sans)">
+            fill={lineColor} fillOpacity={0.4} fontSize={9 * fs} fontFamily="var(--font-sans)">
             {truncateName(proj.name)}
           </text>
         ))}
@@ -159,10 +160,10 @@ export function BeeswarmCanvas({ nodes, onNodeClick }: Props) {
         {Object.entries(PRIORITY_COLOR).map(([p, color]) => (
           <div key={p} className="flex items-center gap-1">
             <span className="w-2 h-2 rounded-full" style={{ background: color }} />
-            <span className="text-[9px] font-mono capitalize text-[var(--text-tertiary)]">{p}</span>
+            <span className="text-[0.643rem] font-mono capitalize text-[var(--text-tertiary)]">{p}</span>
           </div>
         ))}
-        <span className="text-[9px] font-mono text-[var(--text-tertiary)] ml-1 opacity-50">
+        <span className="text-[0.643rem] font-mono text-[var(--text-tertiary)] ml-1 opacity-50">
           size = priority · solid = due date set
         </span>
       </div>

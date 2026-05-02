@@ -36,7 +36,7 @@ export const UrlNode = memo(function UrlNode({ data, selected, isConnectable }: 
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 min-w-0">
             <Link2 size={12} className="text-[var(--text-tertiary)] shrink-0" />
-            <span className="text-[10px] text-[var(--text-tertiary)] truncate">{hostname || "URL"}</span>
+            <span className="text-[0.714rem] text-[var(--text-tertiary)] truncate">{hostname || "URL"}</span>
           </div>
           {d.url && (
             <button
@@ -54,15 +54,15 @@ export const UrlNode = memo(function UrlNode({ data, selected, isConnectable }: 
           </p>
         )}
         {d.description && (
-          <p className="mt-1 text-[11px] text-[var(--text-tertiary)] line-clamp-2 break-words">
+          <p className="mt-1 text-[0.786rem] text-[var(--text-tertiary)] line-clamp-2 break-words">
             {d.description}
           </p>
         )}
         {!d.title && d.url && (
-          <p className="mt-1 text-[11px] text-[var(--accent)] break-all line-clamp-2">{d.url}</p>
+          <p className="mt-1 text-[0.786rem] text-[var(--accent)] break-all line-clamp-2">{d.url}</p>
         )}
         {!d.title && !d.url && (
-          <p className="mt-1 text-[11px] text-[var(--text-tertiary)] italic">Double-click to add URL</p>
+          <p className="mt-1 text-[0.786rem] text-[var(--text-tertiary)] italic">Double-click to add URL</p>
         )}
       </div>
       <Handle type="source" position={Position.Right} isConnectable={isConnectable} className="!bg-[var(--accent)] !border-[var(--surface)] !w-2.5 !h-2.5" />

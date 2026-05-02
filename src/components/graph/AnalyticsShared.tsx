@@ -35,7 +35,7 @@ interface TooltipProps {
 export function CanvasTooltip({ x, y, containerW, maxW = 220, children }: TooltipProps) {
   return (
     <div
-      className="absolute pointer-events-none z-10 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-lg p-2.5 text-[11px]"
+      className="absolute pointer-events-none z-10 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-lg p-2.5 text-[0.786rem]"
       style={{
         maxWidth: maxW,
         left: Math.min(x + 14, containerW - maxW - 8),

@@ -68,7 +68,7 @@ export function Topbar() {
         <div className="flex items-center gap-1.5 flex-shrink-0">
           <span
             className={cn(
-              "text-[10px] font-medium px-1.5 py-0.5 rounded-full border border-[var(--border)]",
+              "text-[0.714rem] font-medium px-1.5 py-0.5 rounded-full border border-[var(--border)]",
               STATUS_COLORS[project.status]
             )}
           >
@@ -76,7 +76,7 @@ export function Topbar() {
           </span>
           <span
             className={cn(
-              "text-[10px] font-medium px-1.5 py-0.5 rounded-full border border-[var(--border)]",
+              "text-[0.714rem] font-medium px-1.5 py-0.5 rounded-full border border-[var(--border)]",
               PRIORITY_COLORS[project.priority]
             )}
           >
