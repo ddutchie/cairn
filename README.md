@@ -521,3 +521,22 @@ The key must exactly match the package name in `package.json`. The display name 
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+<p align="center">
+  <a href="https://star-history.com/#OWNER/REPO&Date">
+    <picture>
+      <source
+        media="(prefers-color-scheme: dark)"
+        srcset="https://api.star-history.com/svg?repos=ddutchie/cairn&type=Date&theme=dark"
+      />
+      <source
+        media="(prefers-color-scheme: light)"
+        srcset="https://api.star-history.com/svg?repos=ddutchie/cairn&type=Date"
+      />
+      <img
+        alt="Star history chart for ddutchie/cairn"
+        src="https://api.star-history.com/svg?repos=ddutchie/cairn&type=Date"
+      />
+    </picture>
+  </a>
+</p>
