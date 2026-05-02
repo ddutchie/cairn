@@ -58,10 +58,13 @@ const api = {
 
   // ── Task cards ────────────────────────────────
   card: {
-    list:   (opts?: unknown) => invoke("db:card:list", opts),
-    create: (args: unknown) => invoke("db:card:create", args),
-    update: (id: string, patch: unknown) => invoke("db:card:update", { id, patch }),
-    delete: (id: string) => invoke("db:card:delete", { id }),
+    list:         (opts?: unknown) => invoke("db:card:list", opts),
+    create:       (args: unknown) => invoke("db:card:create", args),
+    update:       (id: string, patch: unknown) => invoke("db:card:update", { id, patch }),
+    delete:       (id: string) => invoke("db:card:delete", { id }),
+    addBlocker:   (cardId: string, blockerCardId: string) => invoke("db:card:addBlocker", { cardId, blockerCardId }),
+    removeBlocker:(cardId: string, blockerCardId: string) => invoke("db:card:removeBlocker", { cardId, blockerCardId }),
+    ready:        (projectId?: string) => invoke("db:card:ready", { projectId }),
   },
 
   // ── Idea Flow ────────────────────────────────

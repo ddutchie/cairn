@@ -165,24 +165,34 @@ export function KanbanColumn({
                 }
                 if (e.key === "Escape") setLimitDialogOpen(false);
               }}
-              placeholder="No limit"
+              placeholder="Leave blank to clear"
               autoFocus
               className="w-full px-3 py-2 text-sm rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20"
             />
-            <div className="flex justify-end gap-2">
-              <DialogClose asChild>
-                <Button variant="ghost" size="sm">Cancel</Button>
-              </DialogClose>
-              <Button
-                variant="accent" size="sm"
-                onClick={() => {
-                  const n = parseInt(limitValue, 10);
-                  onSetLimit(limitValue.trim() === "" ? null : (isNaN(n) || n < 1 ? null : n));
-                  setLimitDialogOpen(false);
-                }}
-              >
-                Save
-              </Button>
+            <div className="flex justify-between gap-2">
+              {column.cardLimit != null && (
+                <Button
+                  variant="ghost" size="sm"
+                  onClick={() => { onSetLimit(null); setLimitDialogOpen(false); }}
+                >
+                  Clear limit
+                </Button>
+              )}
+              <div className="flex gap-2 ml-auto">
+                <DialogClose asChild>
+                  <Button variant="ghost" size="sm">Cancel</Button>
+                </DialogClose>
+                <Button
+                  variant="accent" size="sm"
+                  onClick={() => {
+                    const n = parseInt(limitValue, 10);
+                    onSetLimit(limitValue.trim() === "" ? null : (isNaN(n) || n < 1 ? null : n));
+                    setLimitDialogOpen(false);
+                  }}
+                >
+                  Save
+                </Button>
+              </div>
             </div>
           </div>
         </DialogContent>
@@ -270,6 +280,15 @@ export function KanbanColumn({
                 <Gauge size={11} />
                 {column.cardLimit ? `WIP limit (${column.cardLimit})` : "Set WIP limit"}
               </DropdownMenuItem>
+              {column.cardLimit != null && (
+                <DropdownMenuItem
+                  onClick={() => onSetLimit(null)}
+                  className="flex items-center gap-2 text-xs"
+                >
+                  <Gauge size={11} className="opacity-40" />
+                  Clear WIP limit
+                </DropdownMenuItem>
+              )}
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 onClick={() => setDeleteDialogOpen(true)}

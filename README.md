@@ -136,21 +136,23 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ### Available MCP tools
 
+**Context**
+
 | Tool | Category | Description |
 |------|----------|-------------|
 | `get_cairn_context` | read | Full orientation: workspaces, projects, column IDs, tool list, conventions |
 | `get_project_context_pack` | read | Single-call bundle: project metadata + pinned notes + open tasks + recent activity |
 | `resolve_project` | read | Find a project by name (fuzzy) and return its projectId and column IDs |
-| `get_note` | read | Full markdown content, linked IDs, and metadata of a note by ID |
-| `get_task` | read | Full detail of a task card by ID |
 | `get_project_summary` | read | Column breakdown, card counts, pinned notes, recent activity |
-| `list_notes` | read | List all notes in a project |
-| `list_tasks` | read | List all tasks grouped by column |
 | `list_recent_activity` | read | Recently created/updated notes and tasks |
+
+**Notes**
+
+| Tool | Category | Description |
+|------|----------|-------------|
+| `get_note` | read | Full markdown content, linked IDs, and metadata of a note by ID |
+| `list_notes` | read | List all notes in a project |
 | `search_notes` | read | Full-text search across notes |
-| `search_tasks` | read | Full-text search across task cards |
-| `create_project` | write | Create a project with default board columns |
-| `update_project` | write | Update a project's name, description, status, priority, or due date |
 | `create_note` | write | Create a markdown note |
 | `import_note_from_file` | write | Import a local file as a note — server reads from disk, no need to inline content |
 | `ensure_note` | write | Idempotent create-or-update by title — prevents duplicate notes on re-run |
@@ -158,16 +160,44 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 | `patch_note` | write | Surgically replace a string inside a note — no need to re-send the full content |
 | `update_note` | write | Update a note's title, content, or pinned state |
 | `move_note` | write | Move a note to a different project |
+| `delete_note` | delete | Permanently delete a note |
+
+**Tasks**
+
+| Tool | Category | Description |
+|------|----------|-------------|
+| `get_task` | read | Full task detail by ID — includes `blockedByIds` |
+| `list_tasks` | read | All tasks in a project grouped by column |
+| `list_ready_tasks` | read | Only unblocked, active tasks — use this to find work that can start now |
+| `search_tasks` | read | Full-text search across task cards |
 | `create_task` | write | Create a task card in a column |
 | `update_task` | write | Update a task's title, description, priority, due date, column, or assignee |
 | `update_task_status` | write | Move a single task to a different column |
 | `bulk_update_task_status` | write | Move multiple tasks to the same column in one call |
-| `link_note_to_task` | write | Bidirectionally link a note and task |
+| `link_note_to_task` | write | Bidirectionally link a note and a task |
+| `block_task` | write | Mark a task as blocked by another task in the same project |
+| `unblock_task` | write | Remove a blocking dependency between two tasks |
+| `delete_task` | delete | Permanently delete a task card |
+
+**Projects**
+
+| Tool | Category | Description |
+|------|----------|-------------|
+| `create_project` | write | Create a project with default board columns |
+| `update_project` | write | Update a project's name, description, status, priority, or due date |
+| `delete_project` | delete | Permanently delete a project and all its contents |
+
+**Dashboards**
+
+| Tool | Category | Description |
+|------|----------|-------------|
 | `create_dashboard` | write | Create a live HTML dashboard in a project |
 | `update_dashboard` | write | Update an existing dashboard's title or HTML |
-| `delete_note` | delete | Permanently delete a note |
-| `delete_task` | delete | Permanently delete a task card |
-| `delete_project` | delete | Permanently delete a project and all its contents |
+
+**Idea Flow**
+
+| Tool | Category | Description |
+|------|----------|-------------|
 | `get_idea_flow` | read | Full Idea Flow graph: nodes (with resolved note/task content) + edges |
 | `create_idea_flow_node` | write | Add a node to the canvas (idea, note_ref, task_ref, group, url, ai_summary) |
 | `update_idea_flow_node` | write | Update a node's data and/or position (data fields are merged) |
@@ -175,7 +205,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 | `delete_idea_flow_node` | delete | Remove a node and its connected edges |
 | `delete_idea_flow_edge` | delete | Remove a connection |
 
-> Call `get_cairn_context` at the start of a session — it returns all workspace/project/column IDs and conventions in one call.
+> **Agent tip:** call `get_cairn_context` at the start of a session for all workspace/project/column IDs. Use `list_ready_tasks` instead of `list_tasks` when you want to know what work can actually start — it filters out anything blocked by an unresolved dependency.
 
 ## Keyboard shortcuts
 

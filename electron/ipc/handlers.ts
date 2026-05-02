@@ -220,6 +220,40 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
   }));
   ipcMain.handle("db:card:delete", (_e, { id }) => handle(() => q.deleteCard(db, id)));
 
+  // ── Card dependencies ─────────────────────────────
+  ipcMain.handle("db:card:addBlocker", (_e, { cardId, blockerCardId }) => handle(() => {
+    const card    = q.getCardById(db, cardId);
+    const blocker = q.getCardById(db, blockerCardId);
+    if (!card)    return { error: "Card not found" };
+    if (!blocker) return { error: "Blocker card not found" };
+    if (card.projectId !== blocker.projectId) return { error: "Cards must be in the same project" };
+    if (cardId === blockerCardId) return { error: "A card cannot block itself" };
+    // Circular dependency check: would blockerCardId become reachable from cardId?
+    // i.e. if cardId already blocks blockerCardId (directly or transitively), reject.
+    const projectCards = q.getCards(db, { projectId: card.projectId });
+    const cardLookup = new Map(projectCards.map((c) => [c.id, c]));
+    function canReach(from: string, target: string, visited = new Set<string>()): boolean {
+      if (from === target) return true;
+      if (visited.has(from)) return false;
+      visited.add(from);
+      const node = cardLookup.get(from);
+      if (!node) return false;
+      return node.blockedByIds.some((bid) => canReach(bid, target, visited));
+    }
+    if (canReach(blockerCardId, cardId, new Set())) {
+      return { error: "Circular dependency detected" };
+    }
+    return q.addCardBlocker(db, cardId, blockerCardId);
+  }));
+
+  ipcMain.handle("db:card:removeBlocker", (_e, { cardId, blockerCardId }) => handle(() =>
+    q.removeCardBlocker(db, cardId, blockerCardId)
+  ));
+
+  ipcMain.handle("db:card:ready", (_e, { projectId }) => handle(() =>
+    q.getReadyCards(db, projectId)
+  ));
+
   // ── Idea Flow ─────────────────────────────────────
   ipcMain.handle("db:flow:get",         (_e, { projectId }) => handle(() => q.getResolvedFlow(db, projectId)));
   ipcMain.handle("db:flow:node:create", (_e, args) => handle(() => {

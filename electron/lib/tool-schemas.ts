@@ -250,6 +250,29 @@ export const TOOL_SCHEMAS = {
     }),
   },
 
+  block_task: {
+    description: "Mark a task as blocked by another task in the same project. The blocked task will not appear in list_ready_tasks until the blocker is resolved (moved to done or archived). Circular dependencies are rejected.",
+    schema: z.object({
+      cardId:        sId.describe("The task to mark as blocked"),
+      blockerCardId: sId.describe("The task that is blocking it"),
+    }),
+  },
+
+  unblock_task: {
+    description: "Remove a blocking dependency between two tasks.",
+    schema: z.object({
+      cardId:        sId.describe("The blocked task"),
+      blockerCardId: sId.describe("The blocker to remove"),
+    }),
+  },
+
+  list_ready_tasks: {
+    description: "Return only unblocked, active tasks — tasks with no pending blockers and not in a done column. Use this instead of list_tasks when you want to know what work can start right now.",
+    schema: z.object({
+      projectId: sId.optional(),
+    }),
+  },
+
   // ── Projects ──────────────────────────────────────────────────────────────────
 
   create_project: {

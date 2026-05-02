@@ -54,3 +54,20 @@ export function ipcAwait(
       console.error("[cairn:ipc]", err);
     });
 }
+
+/**
+ * Awaitable IPC call that returns the raw IpcResult<T>.
+ * Use when the caller needs to inspect { error } (e.g. circular dep check).
+ */
+export async function ipcAwaitResult<T>(
+  fn: (e: NonNullable<Window["electron"]>) => Promise<{ data: T } | { error: string } | undefined>
+): Promise<{ data: T } | { error: string }> {
+  ownWriteGuard.touch();
+  if (!isElectron() || !window.electron) return { error: "Not in Electron" };
+  try {
+    const result = await (fn(window.electron) ?? Promise.resolve(undefined));
+    return result ?? { error: "No response" };
+  } catch (err) {
+    return { error: String(err) };
+  }
+}

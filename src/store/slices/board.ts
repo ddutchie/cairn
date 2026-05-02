@@ -6,7 +6,7 @@ import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
 import type { BoardColumn, TaskCard, ID } from "@/types";
 import { id, now } from "@/lib/utils";
-import { ipc } from "../ipc";
+import { ipc, ipcAwaitResult } from "../ipc";
 import { historyManager } from "@/lib/history";
 import {
   makeCreateCardCmd,
@@ -54,6 +54,17 @@ export interface BoardSlice {
   moveCardToProject: (cardId: ID, targetProjectId: ID) => void;
   duplicateCard: (id: ID) => TaskCard | null;
   unlinkNoteFromCard: (noteId: ID, cardId: ID) => void;
+
+  // ── Dependencies ───────────────────────────
+  /** Add a blocker. Returns { error } if circular or cross-project. */
+  addCardBlocker: (cardId: ID, blockerCardId: ID) => Promise<{ error?: string }>;
+  /** Remove a blocker. */
+  removeCardBlocker: (cardId: ID, blockerCardId: ID) => void;
+  /**
+   * Derived selector — cards in the given project that are ready to start:
+   * not archived, not in a done column, and all blockers are resolved.
+   */
+  getReadyCards: (projectId: ID) => TaskCard[];
 }
 
 // ── Slice creator ─────────────────────────────────────────────────────────────
@@ -145,6 +156,7 @@ export const createBoardSlice: StateCreator<CairnStore, [], [], BoardSlice> = (
       tagIds: [],
       priority: "medium",
       linkedNoteIds: [],
+      blockedByIds: [],
       order: cards.length,
       createdAt: now(),
       updatedAt: now(),
@@ -224,7 +236,14 @@ export const createBoardSlice: StateCreator<CairnStore, [], [], BoardSlice> = (
   deleteCard(cardId) {
     const savedCard = get().cards.find((c) => c.id === cardId);
     set((s) => ({
-      cards: s.cards.filter((c) => c.id !== cardId),
+      // Remove the card + clean up its ID from any other card's blockedByIds
+      cards: s.cards
+        .filter((c) => c.id !== cardId)
+        .map((c) =>
+          c.blockedByIds.includes(cardId)
+            ? { ...c, blockedByIds: c.blockedByIds.filter((id) => id !== cardId), updatedAt: now() }
+            : c
+        ),
       notes: s.notes.map((n) => ({
         ...n,
         linkedCardIds: n.linkedCardIds.filter((cId) => cId !== cardId),
@@ -340,6 +359,7 @@ export const createBoardSlice: StateCreator<CairnStore, [], [], BoardSlice> = (
       createdAt: now(),
       updatedAt: now(),
       linkedNoteIds: [],
+      blockedByIds: [],  // don't copy dependencies — start fresh
     };
     set((s) => ({ cards: [...s.cards, newCard] }));
     get().persist();
@@ -383,5 +403,55 @@ export const createBoardSlice: StateCreator<CairnStore, [], [], BoardSlice> = (
     historyManager.push(makeUnlinkNoteFromCardCmd(
       noteId, cardId, prevCardLinkedNoteIds, prevNoteLinkedCardIds, set,
     ));
+  },
+
+  // ── Dependencies ───────────────────────────────────────────────────────────
+
+  async addCardBlocker(cardId, blockerCardId) {
+    const result = await ipcAwaitResult<unknown>(
+      (e) => e.card.addBlocker(cardId, blockerCardId) as Promise<{ data: unknown } | { error: string }>
+    );
+    if ("error" in result) return { error: result.error };
+    // Optimistic local update
+    set((s) => ({
+      cards: s.cards.map((c) =>
+        c.id === cardId && !c.blockedByIds.includes(blockerCardId)
+          ? { ...c, blockedByIds: [...c.blockedByIds, blockerCardId], updatedAt: now() }
+          : c
+      ),
+    }));
+    get().persist();
+    return {};
+  },
+
+  removeCardBlocker(cardId, blockerCardId) {
+    set((s) => ({
+      cards: s.cards.map((c) =>
+        c.id === cardId
+          ? { ...c, blockedByIds: c.blockedByIds.filter((id) => id !== blockerCardId), updatedAt: now() }
+          : c
+      ),
+    }));
+    get().persist();
+    ipc((e) => e.card.removeBlocker(cardId, blockerCardId));
+  },
+
+  getReadyCards(projectId) {
+    const s = get();
+    const projectColumns = s.columns.filter((col) => col.projectId === projectId);
+    const doneColumnIds = new Set(projectColumns.filter((col) => col.type === "done").map((col) => col.id));
+    const activeCards = s.cards.filter(
+      (c) => c.projectId === projectId && !c.archivedAt && !doneColumnIds.has(c.columnId)
+    );
+    // Build a map for fast blocker resolution
+    const cardMap = new Map(s.cards.map((c) => [c.id, c]));
+    function isResolved(blockerId: string): boolean {
+      const blocker = cardMap.get(blockerId);
+      if (!blocker) return true; // orphan → treat as resolved
+      return !!blocker.archivedAt || doneColumnIds.has(blocker.columnId);
+    }
+    return activeCards.filter(
+      (c) => c.blockedByIds.length === 0 || c.blockedByIds.every(isResolved)
+    );
   },
 });

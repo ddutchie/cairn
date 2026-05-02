@@ -245,6 +245,14 @@ const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_rel_cache_target ON relationship_cache(target_id);
     `);
   },
+
+  // v7: Card dependency system — blocked_by_ids stores JSON array of blocking card IDs
+  (db) => {
+    const cols = db.prepare("PRAGMA table_info(task_cards)").all() as { name: string }[];
+    if (!cols.some((c) => c.name === "blocked_by_ids")) {
+      db.exec("ALTER TABLE task_cards ADD COLUMN blocked_by_ids TEXT NOT NULL DEFAULT '[]'");
+    }
+  },
 ];
 
 export function applySchema(db: Database.Database): void {

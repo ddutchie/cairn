@@ -482,6 +482,41 @@ export async function executeTool(
 
       return { linked: true, noteId: args.noteId, cardId: args.cardId };
     }
+
+    case "block_task": {
+      const card    = snap.cards.find((c) => c.id === args.cardId);
+      const blocker = snap.cards.find((c) => c.id === args.blockerCardId);
+      if (!card)    return { error: "Task not found" };
+      if (!blocker) return { error: "Blocker task not found" };
+      if (card.projectId !== blocker.projectId) return { error: "Cards must be in the same project" };
+      if (args.cardId === args.blockerCardId)   return { error: "A card cannot block itself" };
+      // Circular dep check using live snap data
+      const projectCards = snap.cards.filter((c) => c.projectId === card.projectId);
+      const cardMap = new Map(projectCards.map((c) => [c.id, c]));
+      function canReach(from: string, target: string, visited = new Set<string>()): boolean {
+        if (from === target) return true;
+        if (visited.has(from)) return false;
+        visited.add(from);
+        const node = cardMap.get(from);
+        if (!node) return false;
+        return node.blockedByIds.some((bid) => canReach(bid, target, visited));
+      }
+      if (canReach(args.blockerCardId as string, args.cardId as string, new Set())) {
+        return { error: "Circular dependency detected" };
+      }
+      return q.addCardBlocker(db, args.cardId as string, args.blockerCardId as string);
+    }
+
+    case "unblock_task": {
+      const card = snap.cards.find((c) => c.id === args.cardId);
+      if (!card) return { error: "Task not found" };
+      return q.removeCardBlocker(db, args.cardId as string, args.blockerCardId as string);
+    }
+
+    case "list_ready_tasks": {
+      return q.getReadyCards(db, args.projectId as string | undefined);
+    }
+
     case "update_project": {
       const project = snap.projects.find((p) => p.id === args.projectId);
       if (!project) return { error: "Project not found" };

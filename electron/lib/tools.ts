@@ -35,6 +35,9 @@ export const TOOL_LABELS: Record<string, (args: ToolArgs) => string> = {
   update_task_status:        () => "Moving task",
   bulk_update_task_status:   (a) => `Moving ${(a.cardIds as string[])?.length ?? 0} tasks`,
   update_task:            () => "Updating task",
+  block_task:             (a) => `Blocking task`,
+  unblock_task:           (a) => `Unblocking task`,
+  list_ready_tasks:       () => "Listing ready tasks",
   create_project:         (a) => `Creating project "${a.name}"`,
   update_project:         (a) => `Updating project "${a.projectId}"`,
   delete_project:         (a) => `Deleting project "${a.projectId}"`,
@@ -109,6 +112,11 @@ Call get_cairn_context once if you need a full tool/convention reference.
 - Use **bold** for key items, bullet lists for multiple items
 - Keep responses concise and actionable
 
+## Tasks and dependencies
+- Use list_ready_tasks instead of list_tasks when sequencing work — it returns only tasks with no pending blockers
+- Use block_task to mark a task as blocked by another in the same project. Circular dependencies are rejected automatically
+- Use unblock_task to remove a dependency. Blockers are also auto-resolved when the blocker card is moved to a done column or archived
+
 ## Dashboards
 Create interactive HTML dashboards with create_dashboard. Call get_dashboard_constants for the window.cairn API reference before writing dashboard HTML.
 
@@ -118,5 +126,5 @@ Each project has a visual node canvas. Call get_idea_flow_rules for node type da
 ## Knowledge Graph
 Call get_knowledge_graph for cross-entity research. Call get_neighbors for focused N-hop traversal from a single node — more efficient than loading the full graph.
 
-Tone: calm, focused, like a thoughtful co-worker.`;
+Tone: calm, focused, like a thoughtful co-worker.\`;
 }

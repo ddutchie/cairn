@@ -770,6 +770,7 @@ function IdeaFlowCanvas() {
       priority: "medium",
       tagIds: [],
       linkedNoteIds: [],
+      blockedByIds: [],
       order: 0,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
