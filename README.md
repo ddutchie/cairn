@@ -22,6 +22,9 @@ Cairn is a desktop app (Electron + Next.js) that combines markdown notes with a 
 - **Idea Flow** — A freeform node canvas per project (`⌘4`): add idea, note reference, task reference, group, URL, and AI summary nodes; connect them with labelled edges; the AI and MCP can read and write the canvas as first-class authors
 - **Live dashboards** — Ask the AI to generate an interactive HTML dashboard for any project; choose from a template gallery or start blank; dashboards fetch live data on every load via a sandboxed `window.cairn.query()` bridge; runtime errors surface an inline "Fix with AI" button; HTML editable directly via a built-in CodeMirror overlay
 - **MCP server** — Exposes your workspace to external AI agents (OpenCode, Claude Desktop, etc.) via the Model Context Protocol
+- **Knowledge Graph** — Workspace-wide graph of every note, card, project, and tag; Force-directed and Radial tree layouts; auto-discovered relationships (`⌘5`)
+- **Insights** — Analytics view: Ridgeline joy plot, Beeswarm, Bullet health bars, Sankey pipeline flow, Timeline, Matrix heatmap, Table (`⌘6`)
+- **Font scaling** — Five-step UI font size preference (XS–XL, default M) in Settings → General
 - **Local-first** — Notes as `.md` files, project data in SQLite; no network required
 - **Dark mode** — Calm, focused aesthetics
 
@@ -158,11 +161,46 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 | `⌘2` | Notes view |
 | `⌘3` | Board view |
 | `⌘4` | Idea Flow canvas |
+| `⌘5` | Knowledge Graph |
+| `⌘6` | Insights |
 | `⌘Z` | Undo |
 | `⌘⇧Z` / `⌘Y` | Redo |
 | `Esc` | Close modal / search |
 
 ## Architecture
+
+### Views
+
+| View | Key | Description |
+|------|-----|-------------|
+| Overview | `⌘1` | Project summary — metrics, pinned notes, recent activity |
+| Notes | `⌘2` | Split-pane markdown editor + dashboard renderer |
+| Board | `⌘3` | Kanban with drag-and-drop |
+| Idea Flow | `⌘4` | Freeform node canvas |
+| Knowledge Graph | `⌘5` | Force-directed and Radial tree of notes/cards/tags (`GraphLayoutMode = "force" \| "radial"`) |
+| Insights | `⌘6` | Analytics canvases: Ridgeline, Beeswarm, Bullet, Sankey, Timeline, Matrix, Table |
+| Settings | — | General, AI & Chat, Tags, Shortcuts, Data, About |
+
+### Font scaling
+
+`--font-scale` is a CSS custom property set inline on `<html>` by `applyFontScale()`. Root `font-size: calc(14px * var(--font-scale))` drives all `rem`-based Tailwind classes proportionally. The preference is persisted to `localStorage` under the key `fontScale`. SVG canvas `fontSize` attributes must be multiplied by `useFontScale()` from `src/components/graph/analyticsHooks.ts`.
+
+**Rule:** never use `text-[Npx]` Tailwind classes — use `rem` equivalents (`text-[0.714rem]`, `text-[0.786rem]`, etc.) so text scales with the font size setting.
+
+### Analytics canvas architecture
+
+All analytics canvases share a common pattern:
+
+```
+InsightsView
+  └── <XxxCanvas nodes={allNodes} />
+        ├── useContainerDims(ref)   — ResizeObserver → { width, height }
+        ├── useScopedData(nodes)    — derives activeProjects, scopedCards from store
+        ├── useFontScale()          — returns fontScale multiplier for SVG fontSize
+        └── D3 / SVG rendering
+```
+
+Shared modules live in `src/components/graph/`: `analyticsUtils.ts`, `analyticsHooks.ts`, `AnalyticsShared.tsx`, `graphUtils.ts`.
 
 ### Workspace folder
 
@@ -315,7 +353,7 @@ External .md edit
 | File | Purpose |
 |------|---------|
 | `src/store/index.ts` | Zustand store composition + hydration; delegates to domain slices |
-| `src/store/slices/` | Domain slices: `ui`, `workspace`, `board`, `notes`, `tags`, `chat`, `selectors` |
+| `src/store/slices/` | Domain slices: `ui` (theme, fontScale, activeView), `workspace`, `board`, `notes`, `tags`, `chat`, `graph`, `selectors` |
 | `src/store/ipc.ts` | Shared `isElectron`, `ipc`, `ipcAwait` helpers used by all slices |
 | `src/hooks/useChatStream.ts` | AI stream lifecycle hook — subscriptions, loading state, `sendStream` |
 | `src/lib/constants.ts` | Shared constants: `COLUMN_COLORS`, `PRIORITY_OPTIONS`, `DEFAULT_AI_CONFIG`, etc. |
@@ -331,6 +369,21 @@ External .md edit
 | `src/components/flow/NodeEditModal.tsx` | Type-aware node edit form with live note/task search pickers |
 | `src/components/flow/nodes/` | Six custom node components (IdeaNode, NoteRefNode, TaskRefNode, GroupNode, UrlNode, AiSummaryNode) |
 | `src/components/flow/edges/FlowEdge.tsx` | Custom bezier edge with hover-delete button via EdgeLabelRenderer |
+| `src/components/graph/KnowledgeGraphView.tsx` | Graph view — Force-directed and Radial layouts only |
+| `src/components/graph/ForceGraphCanvas.tsx` | Force-directed canvas via `react-force-graph-2d` |
+| `src/components/graph/RadialTreeCanvas.tsx` | Radial hierarchy tree via D3 |
+| `src/components/graph/graphUtils.ts` | `resolveCssVar()` shared by graph canvases |
+| `src/components/insights/InsightsView.tsx` | Insights view — hosts all analytics canvases with shared toolbar |
+| `src/components/graph/analyticsUtils.ts` | Shared constants + pure helpers for analytics canvases |
+| `src/components/graph/analyticsHooks.ts` | `useContainerDims`, `useScopedData`, `useFontScale` |
+| `src/components/graph/AnalyticsShared.tsx` | `<CanvasEmptyState>`, `<CanvasTooltip>`, `<SvgTimeAxis>` |
+| `src/components/graph/RidgelineCanvas.tsx` | Ridgeline (joy plot) activity canvas |
+| `src/components/graph/BeeswarmCanvas.tsx` | Beeswarm time-axis canvas |
+| `src/components/graph/BulletCanvas.tsx` | Bullet chart project health canvas |
+| `src/components/graph/SankeyCanvas.tsx` | Sankey pipeline flow canvas |
+| `src/components/graph/TimelineCanvas.tsx` | Timeline (cards by due date) canvas |
+| `src/components/graph/MatrixCanvas.tsx` | Tag co-occurrence matrix canvas |
+| `src/components/graph/TableCanvas.tsx` | Flat sortable table canvas |
 
 ## Testing
 
