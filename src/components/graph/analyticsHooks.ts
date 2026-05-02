@@ -1,0 +1,58 @@
+/**
+ * Shared React hooks for analytics canvas components.
+ */
+import { useEffect, useRef, useState, useMemo } from "react";
+import { useCairnStore } from "@/store";
+import type { GraphNode } from "@/types";
+
+// ── useContainerDims ──────────────────────────────────────────────────────────
+
+/**
+ * Observes a container element and returns its pixel dimensions,
+ * updating whenever it resizes.
+ */
+export function useContainerDims(ref: React.RefObject<HTMLElement | null>) {
+  const [dims, setDims] = useState({ width: 800, height: 500 });
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() =>
+      setDims({ width: el.clientWidth, height: el.clientHeight }));
+    ro.observe(el);
+    setDims({ width: el.clientWidth, height: el.clientHeight });
+    return () => ro.disconnect();
+  }, [ref]);
+
+  return dims;
+}
+
+// ── useScopedData ─────────────────────────────────────────────────────────────
+
+/**
+ * Derives the sets of project/card IDs that are in scope for the current
+ * graph node selection, plus the sorted active project list.
+ */
+export function useScopedData(nodes: GraphNode[]) {
+  const { projects, cards, columns } = useCairnStore();
+
+  const scopedProjectIds = useMemo(
+    () => new Set(nodes.filter((n) => n.type === "project").map((n) => n.id)),
+    [nodes]);
+
+  const scopedCardIds = useMemo(
+    () => new Set(nodes.filter((n) => n.type === "card").map((n) => n.id)),
+    [nodes]);
+
+  const activeProjects = useMemo(
+    () => projects
+      .filter((p) => !p.archivedAt && scopedProjectIds.has(p.id))
+      .sort((a, b) => a.name.localeCompare(b.name)),
+    [projects, scopedProjectIds]);
+
+  const scopedCards = useMemo(
+    () => cards.filter((c) => scopedCardIds.has(c.id) && !c.archivedAt),
+    [cards, scopedCardIds]);
+
+  return { scopedProjectIds, scopedCardIds, activeProjects, scopedCards, projects, cards, columns };
+}

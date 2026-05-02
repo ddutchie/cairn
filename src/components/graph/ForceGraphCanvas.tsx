@@ -3,6 +3,7 @@
 import React, { useRef, useEffect, useCallback, useState, useMemo } from "react";
 import { ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 import type { GraphNode, GraphEdge, KnowledgeGraph } from "@/types";
+import { resolveCssVar } from "./graphUtils";
 
 // react-force-graph-2d is a CommonJS module with no TS types bundled.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -13,13 +14,6 @@ interface Props {
   selectedNodeId: string | null;
   onNodeClick: (node: GraphNode) => void;
   onBackgroundClick: () => void;
-}
-
-function resolveCssVar(varName: string): string {
-  if (typeof document === "undefined") return "#888";
-  return getComputedStyle(document.documentElement)
-    .getPropertyValue(varName.replace(/^var\((.+)\)$/, "$1"))
-    .trim();
 }
 
 function hexForType(type: GraphNode["type"]): string {

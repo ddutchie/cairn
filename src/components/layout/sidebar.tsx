@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect } from "react";
 import {
   FileText, Kanban, Settings, Search, MessageSquare,
   ChevronDown, ChevronRight, Plus, Pin, MoreHorizontal,
-  FolderOpen, Hash, Layers, Pencil, Trash2, GitBranch,
+  FolderOpen, Hash, Layers, Pencil, Trash2, GitBranch, BarChart2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CairnEvents } from "@/lib/events";
@@ -81,6 +81,12 @@ export function Sidebar() {
           <button onClick={() => setView("graph")}
             className={cn("p-2 rounded-md transition-colors", activeView === "graph" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
             <GitBranch size={15} />
+          </button>
+        </Tooltip>
+        <Tooltip content="Insights (⌘6)" side="right">
+          <button onClick={() => setView("insights")}
+            className={cn("p-2 rounded-md transition-colors", activeView === "insights" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
+            <BarChart2 size={15} />
           </button>
         </Tooltip>
       </aside>
@@ -166,6 +172,12 @@ export function Sidebar() {
             activeView === "graph" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
           <GitBranch size={13} /><span>Knowledge Graph</span>
           <span className="ml-auto text-[10px] font-mono text-[var(--text-tertiary)]">⌘5</span>
+        </button>
+        <button onClick={() => setView("insights")}
+          className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors",
+            activeView === "insights" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
+          <BarChart2 size={13} /><span>Insights</span>
+          <span className="ml-auto text-[10px] font-mono text-[var(--text-tertiary)]">⌘6</span>
         </button>
         <button onClick={() => setView("settings")}
           className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors",
