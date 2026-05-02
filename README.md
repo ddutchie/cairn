@@ -6,6 +6,10 @@
 
 > A calm, local-first workspace for notes, project tracking, and visual idea mapping — with an AI assistant and MCP server built in.
 
+<p align="center">
+  <img src="public/hero.png" alt="Cairn screenshot" width="100%" />
+</p>
+
 ## Overview
 
 Cairn is a desktop app (Electron + Next.js) that combines markdown notes with a kanban board. Notes are saved as plain `.md` files in a folder you choose; project and task data lives in a local SQLite database alongside them. No accounts, no cloud, no backend. An embedded AI assistant and a standalone MCP server let AI agents read and write your workspace directly.
