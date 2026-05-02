@@ -1,0 +1,296 @@
+# Contributing to Cairn
+
+Thanks for your interest in contributing. Cairn is a local-first desktop app built with Electron + Next.js, and contributions of all kinds are welcome — bug fixes, new features, docs improvements, and test coverage.
+
+This guide covers everything you need to go from zero to a working dev environment, understand the codebase, and submit a pull request.
+
+---
+
+## Table of contents
+
+- [Getting started](#getting-started)
+- [Project structure](#project-structure)
+- [Architecture in brief](#architecture-in-brief)
+- [Coding conventions](#coding-conventions)
+- [Working on specific areas](#working-on-specific-areas)
+- [Tests](#tests)
+- [Submitting a pull request](#submitting-a-pull-request)
+- [Good first issues](#good-first-issues)
+
+---
+
+## Getting started
+
+### Prerequisites
+
+- **Node.js 20+** — check with `node --version`
+- **macOS** — the dev workflow is macOS-first. Windows and Linux are untested but may work.
+- **Python 3** — required by some native build tooling (usually pre-installed on macOS)
+- **Xcode Command Line Tools** — `xcode-select --install` if you haven't already
+
+### First-time setup
+
+```bash
+git clone https://github.com/ddutchie/cairn
+cd cairn
+npm install
+npm run rebuild   # compiles better-sqlite3 native binaries for all three ABI targets
+npm run compile   # bundles the Electron main process + MCP server
+npm run dev       # starts Next.js + Electron together
+```
+
+> **Why `npm run rebuild`?** Cairn uses `better-sqlite3`, a native Node addon. It needs to be compiled separately for three runtime contexts: the Electron ABI, the Node 22 ABI used by the self-contained MCP binary, and the system Node ABI used by vitest. `npm run rebuild` handles all three in the correct order. You need to re-run it if you update the Electron version.
+
+The app opens automatically once Next.js is ready (usually ~10s on first run).
+
+### Subsequent dev sessions
+
+```bash
+npm run dev
+```
+
+That's it — `compile:watch` runs in parallel and rebuilds the Electron main process on every `.ts` change. The renderer (Next.js) hot-reloads automatically.
+
+### Useful commands
+
+```bash
+npm run type-check        # tsc --noEmit — run this before every commit
+npm test                  # run all unit tests (vitest)
+npm run test:watch        # watch mode
+npm run compile           # one-shot rebuild of dist-electron/ + dist-mcp/
+npm run lint              # eslint
+```
+
+---
+
+## Project structure
+
+```
+cairn/
+├── electron/               # Electron main process (Node.js, runs in Electron)
+│   ├── main.ts             # Startup: BrowserWindow, IPC registration, file watcher
+│   ├── preload.ts          # contextBridge: window.electron API exposed to renderer
+│   ├── mcp-server.ts       # Standalone MCP binary entry point (inlined SQL only)
+│   ├── notes-files.ts      # Note file I/O: read/write/parse .md files
+│   ├── file-watcher.ts     # chokidar watcher → SQLite sync on external .md edits
+│   ├── workspace-config.ts # Read/write workspace-config.json
+│   ├── db/
+│   │   ├── schema.ts       # SQLite DDL + versioned migration runner
+│   │   ├── queries.ts      # All typed SQLite query helpers
+│   │   ├── graph-queries.ts# Knowledge Graph relationship queries
+│   │   ├── defaults.ts     # DEFAULT_COLUMNS
+│   │   └── utils.ts        # newId(), ts()
+│   ├── ipc/
+│   │   ├── handlers.ts     # All db:* and app:* IPC channels
+│   │   ├── chat.ts         # AI chat: runToolLoop + IPC handler
+│   │   └── chat-executor.ts# executeTool — all AI tool implementations
+│   ├── lib/
+│   │   ├── llm.ts          # callLLM, streamCompletion
+│   │   ├── tools.ts        # TOOLS definitions, buildSystemPrompt
+│   │   ├── context.ts      # buildContextResponse (get_cairn_context)
+│   │   ├── read-tools.ts   # executeReadTool — shared by chat + dashboard bridge
+│   │   └── ...
+│   └── shared/
+│       └── text-utils.ts   # toSlug, stripMarkdown (no native deps — shared safely)
+│
+├── src/                    # Next.js renderer (React, runs in BrowserWindow)
+│   ├── app/
+│   │   ├── page.tsx        # Root shell: hydration, keyboard shortcuts, view switcher
+│   │   └── globals.css     # Design tokens, base styles, font scaling
+│   ├── store/
+│   │   ├── index.ts        # Zustand store composition + hydration
+│   │   └── slices/         # ui, workspace, board, notes, tags, chat, graph, selectors
+│   ├── components/
+│   │   ├── layout/         # Sidebar, topbar, project overview
+│   │   ├── kanban/         # Board, columns, cards, card detail
+│   │   ├── notes/          # Note editor, dashboard view, markdown components
+│   │   ├── flow/           # Idea Flow canvas + node components
+│   │   ├── graph/          # Knowledge Graph + all analytics canvases
+│   │   ├── insights/       # InsightsView (analytics hub)
+│   │   ├── chat/           # AI chat panel
+│   │   ├── search/         # Global search panel
+│   │   ├── settings/       # Settings sections
+│   │   └── ui/             # Shared primitives: Button, Input, Dialog, Badge, etc.
+│   ├── hooks/              # useChatStream
+│   ├── lib/                # constants, events, utils, storage
+│   └── types/              # All shared TypeScript types
+│
+├── scripts/                # Build utilities (not bundled)
+│   ├── rebuild-native.js   # Rebuilds better-sqlite3 for all three ABIs
+│   ├── build.js            # electron-builder orchestration
+│   ├── generate-licenses.js# Generates src/generated/licenses.json
+│   └── ...
+│
+├── changelogs/             # One .md file per release
+├── AGENTS.md               # Architecture guide for AI coding agents
+└── README.md
+```
+
+---
+
+## Architecture in brief
+
+Cairn has two processes that communicate via Electron IPC:
+
+**Renderer** (Next.js + React) — everything in `src/`. Never touches the filesystem or database directly. All data operations go through `window.electron.*` calls, which are defined in `electron/preload.ts` and handled in `electron/ipc/handlers.ts`.
+
+**Main process** (Node.js) — everything in `electron/`. Owns the SQLite database, the file system, and the AI chat loop. Returns `{ data: T } | { error: string }` from every IPC handler.
+
+**MCP server** (`electron/mcp-server.ts`) — a separate compiled binary that external AI agents connect to. Shares the same SQLite database. Has one important constraint: it cannot import from `electron/db/queries.ts` due to the Node ABI boundary — it uses inlined SQL only.
+
+For a full architecture reference, see [AGENTS.md](./AGENTS.md).
+
+---
+
+## Coding conventions
+
+### TypeScript
+
+- Run `npm run type-check` before every commit. PRs with type errors will not be merged.
+- Avoid `any` — use specific types or `unknown` with a type guard.
+- All IPC handlers return `IpcResult<T>` (`{ data: T } | { error: string }`). Check `isIpcError()` on the receiving end.
+
+### Styling
+
+- **All colours must use CSS variables** — `var(--background)`, `var(--accent)`, `var(--text-primary)`, etc. Never use raw Tailwind colour names (`text-gray-500`, `bg-blue-600`).
+- **Alpha variants** — use `color-mix(in srgb, var(--token) X%, transparent)`. Never hardcode `rgba()`.
+- **Font sizes** — use `rem`-based Tailwind classes (`text-xs`, `text-sm`, `text-[0.714rem]`). **Never use `text-[Npx]`** — pixel classes don't scale with the user's font size preference.
+- **SVG font sizes** — multiply by `useFontScale()` from `analyticsHooks.ts`. Never hardcode a number directly as a `fontSize` SVG attribute.
+- When in doubt, check `src/app/globals.css` for the full token list.
+
+### State management
+
+- All state lives in Zustand slices under `src/store/slices/`. Add new domain state there.
+- Components read from the store via `useCairnStore()`. Never call `window.electron.*` directly from a component — go through a store action.
+- The `graph` slice is lazy — `graphData` is only populated when `loadGraph()` is called. Both `KnowledgeGraphView` and `InsightsView` call it on mount.
+
+### IPC boundary
+
+- Renderer → main: use `ipc()` (fire-and-forget) or `ipcAwait()` (returns `IpcResult<T>`) from `src/store/ipc.ts`.
+- New IPC channels go in `electron/ipc/handlers.ts`, wrapped in the `handle()` helper.
+- `mcp-server.ts` uses **inlined SQL only** — do not import from `queries.ts` there.
+- Use `import * as z from "zod"` (not `import { z }`) in all Electron/MCP files — esbuild quirk.
+
+### Database migrations
+
+- Schema changes go in `electron/db/schema.ts` as a new numbered entry in the `MIGRATIONS` array.
+- **Never edit existing migrations** — they've already run on users' databases. Only append.
+- Track the version with `PRAGMA user_version`.
+
+### Analytics canvases
+
+All canvases in `src/components/graph/` follow a shared pattern:
+
+```
+export function XxxCanvas({ nodes, onNodeClick }: Props) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const fs           = useFontScale();           // for SVG fontSize
+  const dims         = useContainerDims(containerRef);
+  const { activeProjects, scopedCards, ... } = useScopedData(nodes);
+  // D3 / SVG rendering ...
+}
+```
+
+Use `CanvasEmptyState`, `CanvasTooltip`, and `SvgTimeAxis` from `AnalyticsShared.tsx` rather than reinventing them.
+
+---
+
+## Working on specific areas
+
+### Adding a new view
+
+1. Add the view key to the `activeView` union in `src/types/index.ts`
+2. Add a keyboard shortcut in `src/app/page.tsx`
+3. Add a sidebar button in `src/components/layout/sidebar.tsx` (both collapsed and expanded variants)
+4. Wire the component render in `src/app/page.tsx`
+
+### Adding a new analytics canvas
+
+1. Create `src/components/graph/XxxCanvas.tsx` following the pattern above
+2. Add it to `InsightsView.tsx` — toolbar entry in `LAYOUTS` and a canvas render block
+3. If it has unique toolbar controls (zoom, mode toggle etc.), lift that state into `InsightsView`
+
+### Adding a new MCP / AI chat tool
+
+1. Add the Zod schema to `electron/lib/tool-schemas.ts`
+2. Add the tool definition to `TOOLS` in `electron/lib/tools.ts`
+3. Add the executor case to `electron/ipc/chat-executor.ts`
+4. Add the MCP implementation to `electron/mcp-server.ts` (inlined SQL — no `queries.ts` import)
+5. Add a corresponding query helper to `electron/db/queries.ts` if needed
+6. Update `electron/ipc/tool-parity.test.ts` to include the new tool name
+
+### Adding a new database table
+
+1. Add a migration to `electron/db/schema.ts` (new entry in `MIGRATIONS`, increment `SCHEMA_VERSION`)
+2. Add typed query helpers to `electron/db/queries.ts`
+3. Add IPC handlers to `electron/ipc/handlers.ts`
+4. Expose via `window.electron.*` in `electron/preload.ts`
+5. Add corresponding store slice actions in `src/store/slices/`
+
+---
+
+## Tests
+
+Tests live next to the code they cover under `electron/`:
+
+```bash
+npm test                  # run all tests
+npm run test:watch        # watch mode — great for TDD
+npm run test:coverage     # coverage report
+```
+
+| Test file | What it covers |
+|-----------|---------------|
+| `electron/db/queries.test.ts` | SQLite query helpers — CRUD, search, soft-delete |
+| `electron/notes-files.test.ts` | File I/O, slug generation, frontmatter round-trip |
+| `electron/ipc/chat-executor.test.ts` | Every tool case in `executeTool` |
+| `electron/ipc/handlers.test.ts` | IPC data layer, `executeReadTool`, `buildContextResponse` |
+| `electron/ipc/tool-parity.test.ts` | Ensures chat and MCP tool names stay in sync |
+
+**Please add or update tests when:**
+- Adding a new query helper to `queries.ts`
+- Adding a new tool to `chat-executor.ts`
+- Fixing a bug — a test that would have caught it prevents regression
+
+vitest uses a SQLite shim (`vitest-sqlite-shim.cjs`) to ensure the system Node ABI binary is used instead of the Electron-compiled one. This is handled automatically — you don't need to think about it.
+
+---
+
+## Submitting a pull request
+
+1. **Fork** the repo and create a branch from `main`: `git checkout -b your-name/feature-description`
+2. **Make your changes** — follow the conventions above
+3. **Type-check**: `npm run type-check` — must pass with zero errors
+4. **Tests**: `npm test` — must pass
+5. **Commit** with a clear message describing *what* and *why*
+6. **Open a PR** against `main` with:
+   - A short description of what changed and why
+   - Screenshots or a short screen recording for any UI changes
+   - A note on anything you're unsure about or would like feedback on
+
+### PR checklist
+
+- [ ] `npm run type-check` passes
+- [ ] `npm test` passes
+- [ ] No raw colour values (use CSS variables)
+- [ ] No `text-[Npx]` pixel font classes (use rem equivalents)
+- [ ] New IPC handlers wrapped in `handle()` and return `IpcResult<T>`
+- [ ] New DB migrations appended (not edited) in `schema.ts`
+- [ ] Screenshots included for UI changes
+
+---
+
+## Good first issues
+
+If you're new to the codebase, these are good places to start:
+
+- **No `404.html`** — GitHub Pages serves a default 404 for the docs site. A styled page would be a clean, self-contained contribution.
+- **Test coverage** — `chat-executor.ts` and `mcp-server.ts` have limited test coverage. Adding test cases for specific tool implementations is well-scoped and doesn't require understanding the full codebase.
+- **Accessibility** — checking components for missing ARIA labels, keyboard navigation gaps, or colour contrast issues.
+- **Docs** — the `docs/` site at `cairn-site` always needs keeping up to date with new features. Pure HTML/CSS — no build step required.
+
+---
+
+## Questions
+
+Open a [GitHub Discussion](https://github.com/ddutchie/cairn/discussions) or file an issue with the `question` label. We're happy to help orient you.
