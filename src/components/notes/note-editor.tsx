@@ -5,7 +5,79 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
-// Custom rehype plugin: transforms ==text== into <mark> nodes in the hast.
+// ── Remark plugin: callout blockquotes ────────────────────────────────────────
+// Transforms > [!type] blockquotes in the mdast into a custom `callout` node
+// before ReactMarkdown renders. This is the correct level to intercept —
+// the blockquote's first paragraph's first text node is always "[!type]\n..."
+// (directive and body separated by \n, in one text value).
+import type { Plugin as RemarkPlugin } from "unified";
+import type { Root as MdastRoot, Blockquote, Paragraph, Text as MdastText, Node as MdastNode, Parent as MdastParent } from "mdast";
+import { visit as mdastVisit } from "unist-util-visit";
+
+// Custom mdast node type for callouts
+interface CalloutNode extends MdastParent {
+  type: "callout";
+  calloutType: string;
+  title: string;
+  collapsible: boolean;
+  defaultOpen: boolean;
+}
+
+const CALLOUT_RE = /^\[!([^\]]+)\]([\+\-]?)([\s\S]*)/;
+
+const remarkCallout: RemarkPlugin<[], MdastRoot> = () => (tree) => {
+  mdastVisit(tree, "blockquote", (node: Blockquote, index, parent) => {
+    if (index === undefined || !parent) return;
+
+    const firstPara = node.children[0];
+    if (!firstPara || firstPara.type !== "paragraph") return;
+
+    const firstChild = (firstPara as Paragraph).children[0];
+    if (!firstChild || firstChild.type !== "text") return;
+
+    const firstValue = (firstChild as MdastText).value;
+    const match = firstValue.match(CALLOUT_RE);
+    if (!match) return;
+
+    const [, rawType, modifier, restOfFirstLine] = match;
+    const calloutType = rawType.trim().toLowerCase();
+    const collapsible = modifier === "+" || modifier === "-";
+    const defaultOpen = modifier !== "-";
+    const title = restOfFirstLine.trim();
+
+    // Rebuild the first paragraph without the directive prefix.
+    // The first text node was "[!type]\nBody..." — split on first \n,
+    // rest after \n becomes the remaining text in the first paragraph.
+    const afterDirective = firstValue.slice(firstValue.indexOf("\n") + 1);
+    const newFirstParaChildren: MdastNode[] = [];
+    if (afterDirective) {
+      newFirstParaChildren.push({ type: "text", value: afterDirective } as MdastText);
+    }
+    // Add remaining siblings of the first paragraph's first child
+    newFirstParaChildren.push(...(firstPara as Paragraph).children.slice(1));
+
+    // Build body: first para (possibly empty) + rest of blockquote children
+    const bodyChildren: MdastNode[] = [];
+    if (newFirstParaChildren.length > 0) {
+      bodyChildren.push({ type: "paragraph", children: newFirstParaChildren } as Paragraph);
+    }
+    bodyChildren.push(...node.children.slice(1));
+
+    const callout: CalloutNode = {
+      type: "callout",
+      calloutType,
+      title,
+      collapsible,
+      defaultOpen,
+      children: bodyChildren as MdastParent["children"],
+    };
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (parent as any).children.splice(index, 1, callout);
+  });
+};
+
+// ── Rehype plugin: ==highlight== marks ────────────────────────────────────────
 // remark-mark targets the old remark v12 API and is incompatible with remark v14+.
 // This rehype approach works at the HTML AST level after markdown parsing.
 import type { Plugin } from "unified";
@@ -359,9 +431,10 @@ export function NoteEditor({ note }: NoteEditorProps) {
               {note.content ? (
                 <div className="prose-cairn">
                   <ReactMarkdown
-                    remarkPlugins={[remarkGfm, remarkMath]}
+                    remarkPlugins={[remarkGfm, remarkMath, remarkCallout]}
                     rehypePlugins={[rehypeKatex, rehypeHighlight]}
-                    components={{
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    components={({
                       // Images — renders asset:// and https:// URLs
                       img({ src, alt }) {
                         const srcStr = typeof src === "string" ? src : undefined;
@@ -396,83 +469,23 @@ export function NoteEditor({ note }: NoteEditorProps) {
                           </mark>
                         );
                       },
-                      // Callouts — intercept blockquotes starting with [!type]
-                      blockquote({ children }) {
-                        const childArray = React.Children.toArray(children);
-
-                        // Recursively extract plain text from a React node tree
-                        function extractText(node: React.ReactNode): string {
-                          if (typeof node === "string") return node;
-                          if (typeof node === "number") return String(node);
-                          if (Array.isArray(node)) return node.map(extractText).join("");
-                          if (React.isValidElement(node)) {
-                            const el = node as React.ReactElement<{ children?: React.ReactNode }>;
-                            return extractText(el.props.children);
-                          }
-                          return "";
-                        }
-
-                        // Find first <p> and extract its full text to detect [!type]
-                        const firstPara = childArray.find(
-                          (c): c is React.ReactElement<{ children?: React.ReactNode }> =>
-                            React.isValidElement(c) &&
-                            (c as React.ReactElement<{ children?: React.ReactNode }>).type === "p"
+                      // Callouts — rendered from custom mdast nodes produced by remarkCallout.
+                      // ReactMarkdown passes custom node props via the node object.
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      callout({ node, children }: any) {
+                        return (
+                          <Callout
+                            type={node.calloutType}
+                            title={node.title || undefined}
+                            collapsible={node.collapsible}
+                            defaultOpen={node.defaultOpen}
+                          >
+                            {children}
+                          </Callout>
                         );
-
-                        if (firstPara) {
-                          const fullText = extractText(firstPara.props.children).trim();
-                          const directive = parseCalloutDirective(fullText);
-
-                          if (directive) {
-                            // Strip the [!type] prefix from the first paragraph's text
-                            const prefixRegex = /^\[![^\]]+\][\+\-]?\s*/;
-
-                            function stripPrefix(node: React.ReactNode, done = { v: false }): React.ReactNode {
-                              if (done.v) return node;
-                              if (typeof node === "string") {
-                                const stripped = node.replace(prefixRegex, "");
-                                done.v = true;
-                                return stripped;
-                              }
-                              if (Array.isArray(node)) {
-                                return node.map((n) => stripPrefix(n, done));
-                              }
-                              if (React.isValidElement(node)) {
-                                const el = node as React.ReactElement<{ children?: React.ReactNode }>;
-                                return React.cloneElement(el, {}, stripPrefix(el.props.children, done));
-                              }
-                              return node;
-                            }
-
-                            const strippedFirstPara = React.cloneElement(
-                              firstPara,
-                              {},
-                              stripPrefix(firstPara.props.children)
-                            );
-
-                            // Check if first para is now empty (only had the directive token)
-                            const strippedText = extractText(
-                              (strippedFirstPara as React.ReactElement<{ children?: React.ReactNode }>).props.children
-                            ).trim();
-                            const bodyChildren = childArray.map((c, i) => {
-                              if (i === 0) return strippedText ? strippedFirstPara : null;
-                              return c;
-                            }).filter(Boolean);
-
-                            return (
-                              <Callout
-                                type={directive.type}
-                                title={directive.title || undefined}
-                                collapsible={directive.collapsible}
-                                defaultOpen={directive.defaultOpen}
-                              >
-                                {bodyChildren}
-                              </Callout>
-                            );
-                          }
-                        }
-
-                        // Standard blockquote
+                      },
+                      // Standard blockquote (non-callout)
+                      blockquote({ children }) {
                         return (
                           <blockquote className="border-l-2 border-[var(--border)] pl-4 text-[var(--text-secondary)] my-3">
                             {children}
@@ -568,9 +581,9 @@ export function NoteEditor({ note }: NoteEditorProps) {
                           );
                         }
                         return <a href={href} {...props}>{children}</a>;
-                      },
-                    }}
-                  >
+                       },
+                     }) as import("react-markdown").Components}
+                   >
                     {note.content}
                   </ReactMarkdown>
                 </div>
