@@ -7,6 +7,12 @@
 > A calm, local-first workspace for notes, project tracking, and visual idea mapping — with an AI assistant and MCP server built in.
 
 <p align="center">
+  <a href="https://ddutchie.github.io/cairn-site/index.html">Website</a> ·
+  <a href="https://ddutchie.github.io/cairn-site/docs">Docs</a> ·
+  <a href="https://github.com/ddutchie/cairn/releases">Releases</a>
+</p>
+
+<p align="center">
   <img src="public/hero.png" alt="Cairn screenshot" width="100%" />
 </p>
 
