@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import {
-  CheckCircle, RefreshCw, Key, Globe, Cpu, Wifi, WifiOff, Eye, EyeOff,
+  CheckCircle, RefreshCw, Key, Globe, Cpu, Wifi, WifiOff, Eye, EyeOff, Footprints,
 } from "lucide-react";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useCairnStore } from "@/store";
@@ -24,7 +24,7 @@ export function AISettings() {
   const [modelsFetched, setModelsFetched] = useState(false);
 
   // Always read directly from the store — no local shadow copy
-  const { baseUrl, model, apiKey } = aiConfig;
+  const { baseUrl, model, apiKey, maxSteps } = aiConfig;
   const isLocal =
     baseUrl.includes("localhost") ||
     baseUrl.includes("127.0.0.1") ||
@@ -219,6 +219,45 @@ export function AISettings() {
               {modelsFetched && availableModels.length === 0 && !modelsLoading && testState !== "error" && (
                 <span className="text-[0.786rem] text-[var(--text-tertiary)]">No models returned</span>
               )}
+            </div>
+          </div>
+        </SettingsRow>
+
+        {/* Max steps */}
+        <SettingsRow
+          label="Max steps"
+          description="Tool-call rounds the agent can take per message. Lower values reduce API costs."
+        >
+          <div className="flex flex-col gap-1.5 items-end">
+            <div className="relative">
+              <Footprints size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]" />
+              <input
+                type="number"
+                min={1}
+                max={50}
+                value={maxSteps ?? 20}
+                onChange={(e) => {
+                  const v = parseInt(e.target.value, 10);
+                  if (!isNaN(v) && v >= 1 && v <= 50) update({ maxSteps: v });
+                }}
+                className="pl-7 pr-3 py-1.5 text-xs w-24 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20"
+              />
+            </div>
+            <div className="flex gap-1.5">
+              {[5, 10, 20].map((n) => (
+                <button
+                  key={n}
+                  onClick={() => update({ maxSteps: n })}
+                  className={cn(
+                    "px-2 py-1 text-[0.714rem] rounded border transition-colors",
+                    (maxSteps ?? 20) === n
+                      ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
+                      : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]"
+                  )}
+                >
+                  {n}
+                </button>
+              ))}
             </div>
           </div>
         </SettingsRow>

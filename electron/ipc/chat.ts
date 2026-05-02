@@ -35,7 +35,8 @@ async function runToolLoop(
   emitToolCall: (e: { tool: string; label: string; args: Record<string, unknown> }) => void,
   signal?: AbortSignal,
 ): Promise<{ exhausted: true; content: string } | { exhausted: false }> {
-  for (let round = 0; round < 8; round++) {
+  const maxSteps = req.config?.maxSteps ?? 20;
+  for (let round = 0; round < maxSteps; round++) {
     if (signal?.aborted) return { exhausted: true, content: "" };
     let response: Response;
     try {
