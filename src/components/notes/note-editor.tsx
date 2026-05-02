@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useCallback, useState, useEffect } from "react";
+import React, { useRef, useCallback, useState, useEffect, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -12,6 +12,7 @@ import rehypeKatex from "rehype-katex";
 // ReactMarkdown's components map picks up "callout" and renders <Callout>.
 import type { Plugin as RemarkPlugin } from "unified";
 import type { Root as MdastRoot, Blockquote, Paragraph, Text as MdastText } from "mdast";
+import type { Math as MdastMath } from "mdast-util-math";
 import { visit as mdastVisit } from "unist-util-visit";
 
 const CALLOUT_RE = /^\[!([^\]]+)\]([\+\-]?)([\s\S]*)/;
@@ -89,11 +90,44 @@ const rehypeHighlight: Plugin<[], Root> = () => (tree) => {
     parent.children.splice(index, 1, ...nodes);
   });
 };
+
+// ── Math plugins: preserve raw LaTeX source through rehype-katex ──────────────
+// remarkCollectLatex runs at the mdast level and pushes each display-math block's
+// raw source into a shared mutable array (one per ReactMarkdown render).
+// rehypeTagLatex runs after rehype-katex and stamps the nth katex-display <span>
+// with data-latex so the span renderer can offer a "show source" toggle.
+// Inline math ($…$) is excluded — the toggle button doesn't fit in a line.
+
+function makeLatexPlugins() {
+  const latexBlocks: string[] = [];
+
+  const remarkCollectLatex: RemarkPlugin<[], MdastRoot> = () => (tree) => {
+    latexBlocks.length = 0; // reset on each render
+    mdastVisit(tree, "math", (node: MdastMath) => {
+      latexBlocks.push(node.value);
+    });
+  };
+
+  const rehypeTagLatex: Plugin<[], Root> = () => (tree) => {
+    let i = 0;
+    visit(tree, "element", (node: Element) => {
+      const cls = (node.properties?.className as string[] | undefined) ?? [];
+      if (cls.includes("katex-display") && latexBlocks[i] !== undefined) {
+        node.properties = { ...node.properties, "data-latex": latexBlocks[i] };
+        i++;
+      }
+    });
+  };
+
+  return { remarkCollectLatex, rehypeTagLatex };
+}
+
 import "katex/dist/katex.min.css";
 import { MermaidDiagram } from "./MermaidDiagram";
 import { TableOfContents, headingSlug } from "./TableOfContents";
 import { CodeBlock } from "./CodeBlock";
 import { Callout, parseCalloutDirective } from "./Callout";
+import { MathBlock } from "./MathBlock";
 import { Pin, PinOff, Calendar, Eye, Pencil, Wand2, Loader2, CheckCircle2, Tag, Plus, X, Link2, Kanban, ChevronDown, FileText } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { cn, formatRelative } from "@/lib/utils";
@@ -135,6 +169,13 @@ export function NoteEditor({ note }: NoteEditorProps) {
 
   // Scroll container ref — used by TableOfContents to scroll to headings
   const previewScrollRef = useRef<HTMLDivElement>(null);
+
+  // ── Math plugins (stable per note) ────────────────────────────────────────
+  // makeLatexPlugins() creates a shared mutable array that is written by the
+  // remark plugin (mdast pass) and read by the rehype plugin (hast pass).
+  // We recreate the pair when the note changes so the array resets cleanly.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const { remarkCollectLatex, rehypeTagLatex } = useMemo(makeLatexPlugins, [note.id]);
 
   // ── Save ──────────────────────────────────────────────────────────────────
   const handleContentChange = useCallback(
@@ -408,8 +449,8 @@ export function NoteEditor({ note }: NoteEditorProps) {
               {note.content ? (
                 <div className="prose-cairn">
                   <ReactMarkdown
-                    remarkPlugins={[remarkGfm, remarkMath, remarkCallout]}
-                    rehypePlugins={[rehypeKatex, rehypeHighlight]}
+                    remarkPlugins={[remarkGfm, remarkMath, remarkCollectLatex, remarkCallout]}
+                    rehypePlugins={[rehypeKatex, rehypeTagLatex, rehypeHighlight]}
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     components={({
                       // Images — renders asset:// and https:// URLs
@@ -462,7 +503,24 @@ export function NoteEditor({ note }: NoteEditorProps) {
                           </Callout>
                         );
                       },
-                      // Standard blockquote (non-callout)
+                       // Display math — katex-display spans tagged with data-latex by rehypeTagLatex.
+                      // We forward the rendered HTML into MathBlock which adds the toggle button.
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      span({ className, children, ...props }: any) {
+                        const cls: string = className ?? "";
+                        if (cls.includes("katex-display")) {
+                          const latex: string = props["data-latex"] ?? "";
+                          // Reconstruct the inner HTML from the React children tree.
+                          // rehype-katex already emitted safe HTML; we need it as a string
+                          // so MathBlock can dangerouslySetInnerHTML it when toggled back.
+                          // The simplest approach: render children normally when showing math,
+                          // and show the source string when toggled. We use a key on MathBlock
+                          // so it resets toggle state when latex changes.
+                          return <MathBlock key={latex} latex={latex} renderedChildren={children} />;
+                        }
+                        return <span className={className} {...props}>{children}</span>;
+                      },
+                       // Standard blockquote (non-callout)
                       blockquote({ children }) {
                         return (
                           <blockquote className="border-l-2 border-[var(--border)] pl-4 text-[var(--text-secondary)] my-3">
