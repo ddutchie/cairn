@@ -12,7 +12,9 @@
   <a href="https://github.com/ddutchie/cairn/releases">Releases</a>
 </p>
 
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/ddutchie/cairn/)
+<p align="center">
+  [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/ddutchie/cairn/)
+</p>
 
 <p align="center">
   <img src="public/hero.png" alt="Cairn screenshot" width="100%" />
