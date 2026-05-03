@@ -16,25 +16,43 @@ import { pathToFileURL } from "url";
 
 const isDev = !app.isPackaged;
 
-// workspacePath is set once registerAssetProtocol() is called from main.ts
+// Active workspace path — updated by setAssetWorkspacePath() without
+// re-registering the handler (protocol.handle may only be called once per scheme).
 let _workspacePath: string | null = null;
 
-export function registerAssetProtocol(workspacePath: string): void {
+/**
+ * Update the workspace path used by the asset:// handler.
+ * Call this whenever the active workspace changes (initial setup + reinitialise).
+ */
+export function setAssetWorkspacePath(workspacePath: string): void {
   _workspacePath = workspacePath;
+}
+
+/**
+ * Register the asset:// protocol handler exactly once on app startup.
+ * Uses _workspacePath at request time so setAssetWorkspacePath() updates
+ * take effect immediately without re-registering.
+ */
+export function registerAssetProtocol(): void {
   session.defaultSession.protocol.handle("asset", (request) => {
     const url = new URL(request.url);
-    // url.hostname is the filename, e.g. asset://abc123.png → hostname="abc123.png"
-    // url.pathname may be "/" — the actual filename is in hostname for asset:// URLs
     const filename = decodeURIComponent(url.hostname + url.pathname.replace(/^\//, ""));
     if (!_workspacePath) return new Response("No workspace", { status: 503 });
     const assetDir = path.resolve(_workspacePath, "assets");
-    // path.resolve normalises any `../` sequences before the traversal check.
     const filePath = path.resolve(assetDir, filename);
     if (!filePath.startsWith(assetDir + path.sep) && filePath !== assetDir) {
       return new Response("Forbidden", { status: 403 });
     }
     if (!fs.existsSync(filePath)) return new Response("Not found", { status: 404 });
-    return net.fetch(pathToFileURL(filePath).href);
+    const ext = path.extname(filePath).toLowerCase().slice(1);
+    const mimeTypes: Record<string, string> = {
+      png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
+      gif: "image/gif", webp: "image/webp", svg: "image/svg+xml",
+      avif: "image/avif",
+    };
+    const mime = mimeTypes[ext] ?? "application/octet-stream";
+    const data = fs.readFileSync(filePath);
+    return new Response(data, { headers: { "Content-Type": mime } });
   });
 }
 

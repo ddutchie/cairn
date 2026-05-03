@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useRef, useCallback, useState, useEffect, useMemo } from "react";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
@@ -675,12 +675,13 @@ export function NoteEditor({ note }: NoteEditorProps) {
               {note.content ? (
                 <div className="prose-cairn">
                   <ReactMarkdown
-                    remarkPlugins={[remarkGfm, remarkMath, remarkPromoteDisplayMath, remarkCallout]}
-                    rehypePlugins={[rehypeCaptureLatex, rehypeKatex, rehypeMergedPass]}
-                    components={({
+                     remarkPlugins={[remarkGfm, remarkMath, remarkPromoteDisplayMath, remarkCallout]}
+                     rehypePlugins={[rehypeCaptureLatex, rehypeKatex, rehypeMergedPass]}
+                     urlTransform={(url) => url.startsWith("asset://") ? url : defaultUrlTransform(url)}
+                     components={({
                       // Images — renders asset:// and https:// URLs
                       img({ src, alt }) {
-                        const srcStr = typeof src === "string" ? src : undefined;
+                        const srcStr = typeof src === "string" && src !== "" ? src : undefined;
                         const isExternal = srcStr?.startsWith("http://") || srcStr?.startsWith("https://");
                         const imgEl = (
                           <img
