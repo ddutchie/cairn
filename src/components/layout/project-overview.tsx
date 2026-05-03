@@ -307,14 +307,13 @@ function ColumnBreakdownCard({
   allCards: TaskCard[];
   setView: (v: "board") => void;
 }) {
-  const getColumnCards = useCairnStore((s) => s.getColumnCards);
   if (columns.length === 0) return null;
   return (
     <div>
       <div className="text-[0.714rem] font-medium text-[var(--text-tertiary)] uppercase tracking-wider mb-2.5">By column</div>
       <div className="space-y-1.5">
         {columns.map((col) => {
-          const count = getColumnCards(col.id).length;
+          const count = allCards.filter((c) => c.columnId === col.id).length;
           const pct   = allCards.length > 0 ? (count / allCards.length) * 100 : 0;
           const color = COLUMN_COLORS[col.type] ?? COLUMN_COLORS.custom;
           return (

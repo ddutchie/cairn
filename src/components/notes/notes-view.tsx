@@ -85,6 +85,7 @@ export function NotesView() {
     revealNote, generatePrd,
     getTagById,
     getWorkspaceProjects,
+    notes: allNotes,
   } = useCairnStore();
 
   const [activeNoteId, setActiveNoteId]         = useState<string | null>(null);
@@ -104,13 +105,18 @@ export function NotesView() {
   const [folderMoveNoteId, setFolderMoveNoteId]  = useState<string | null>(null);
   const [folderMoveDest, setFolderMoveDest]       = useState("");
 
+  // Subscribe to allNotes directly so this component re-renders when note
+  // content changes (e.g. while typing). The selector functions are stable
+  // references and don't trigger re-renders on content updates.
   const notes         = useMemo(
     () => activeProjectId ? getProjectNotes(activeProjectId) : [],
-    [activeProjectId, getProjectNotes],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activeProjectId, allNotes],
   );
   const archivedNotes = useMemo(
     () => activeProjectId ? getArchivedProjectNotes(activeProjectId) : [],
-    [activeProjectId, getArchivedProjectNotes],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activeProjectId, allNotes],
   );
   const workspaceProjects = activeWorkspaceId ? getWorkspaceProjects(activeWorkspaceId) : [];
   const projectTagIds   = [...new Set(notes.flatMap((n) => n.tagIds))];

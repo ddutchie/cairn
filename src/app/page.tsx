@@ -100,12 +100,11 @@ export default function Home() {
 
       // Register db:changed listener synchronously so React gets the cleanup fn
       const unsubDb = electron.onDbChanged(() => {
-        // Don't clear history if the change came from our own write (store ipc or flow canvas).
-        if (ownWriteGuard.isOwnWrite()) {
-          void hydrateFromElectron(false);
-        } else {
-          hydrateFromElectron(true);
-        }
+        // Own writes are already reflected in Zustand via optimistic updates —
+        // re-hydrating from SQLite would race against in-flight IPC and overwrite
+        // the optimistic state with stale content. Skip hydration entirely.
+        if (ownWriteGuard.isOwnWrite()) return;
+        hydrateFromElectron(true);
       });
 
       // Auto-updater listeners — events may arrive in any order

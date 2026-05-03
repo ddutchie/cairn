@@ -25,6 +25,23 @@ let watcher: FSWatcher | null = null;
 // filePath → noteId, populated on add/change so delete can find the record
 const pathToNoteId = new Map<string, string>();
 
+// Note IDs that the app itself just wrote — suppress the chokidar round-trip
+// that would otherwise overwrite SQLite with the file we just saved from SQLite.
+const suppressedNoteIds = new Map<string, ReturnType<typeof setTimeout>>();
+
+/**
+ * Call this immediately before writing a note file from the app (IPC handler).
+ * Any chokidar change/add event for that note within the next 2 s is ignored.
+ */
+export function suppressNextChange(noteId: string): void {
+  const existing = suppressedNoteIds.get(noteId);
+  if (existing) clearTimeout(existing);
+  suppressedNoteIds.set(
+    noteId,
+    setTimeout(() => suppressedNoteIds.delete(noteId), 2000),
+  );
+}
+
 /**
  * Starts watching the notes/ subdirectory of the workspace folder.
  * The `onChanged` callback is called after every SQLite mutation so the
@@ -72,6 +89,7 @@ function handleFileAdd(filePath: string, db: Database.Database, onChanged: () =>
   const note = parseNoteFile(filePath);
   if (!note) return;
   pathToNoteId.set(filePath, note.id);
+  if (suppressedNoteIds.has(note.id)) return;
   upsertNoteFromFile(db, note);
   onChanged();
 }
@@ -81,6 +99,7 @@ function handleFileChange(filePath: string, db: Database.Database, onChanged: ()
   const note = parseNoteFile(filePath);
   if (!note) return;
   pathToNoteId.set(filePath, note.id);
+  if (suppressedNoteIds.has(note.id)) return;
   upsertNoteFromFile(db, note);
   onChanged();
 }

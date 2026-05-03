@@ -17,7 +17,7 @@ import { TableOfContents, headingSlug } from "./TableOfContents";
 import { CodeBlock } from "./CodeBlock";
 import { Callout } from "./Callout";
 import { MathBlock } from "./MathBlock";
-import { AITextToolbar, buildAIActionPrompt, type AITextAction } from "./ai-text-toolbar";
+import { AITextToolbar, buildAIActionPrompt, applyFormat, type AITextAction, type FormatAction } from "./ai-text-toolbar";
 import { MarkdownEditor, type MarkdownEditorHandle } from "./markdown-editor";
 // ── Remark plugin: callout blockquotes ────────────────────────────────────────
 // Transforms > [!type] blockquotes in the mdast by tagging the blockquote node
@@ -180,6 +180,134 @@ function makeLatexPlugins() {
 
 
 
+// ── Color swatch inline code renderer ────────────────────────────────────────
+// Detects hex / rgb / rgba / hsl / hsla values inside inline code spans and
+// renders a small color swatch dot next to the code text.
+
+const COLOR_RE = /^(#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|(rgba?|hsla?)\s*\([^)]+\))$/i;
+
+function InlineCode({ className, children }: { className?: string; children?: React.ReactNode }) {
+  if (className?.startsWith("language-")) return <>{children}</>;
+  const text = String(children ?? "").trim();
+  const isColor = COLOR_RE.test(text);
+  return (
+    <code className="px-1 py-0.5 rounded bg-[var(--surface-3)] font-mono text-[0.786rem] text-[var(--text-primary)]">
+      {isColor && (
+        <span
+          style={{
+            display: "inline-block",
+            width: "0.7em",
+            height: "0.7em",
+            borderRadius: "50%",
+            background: text,
+            border: "1px solid color-mix(in srgb, var(--text-primary) 20%, transparent)",
+            marginRight: "0.35em",
+            verticalAlign: "middle",
+            flexShrink: 0,
+          }}
+        />
+      )}
+      {children}
+    </code>
+  );
+}
+
+// ── MD Preview Panel ──────────────────────────────────────────────────────────
+// Docked to the bottom of the editor. Renders selected raw markdown through
+// the full pipeline and displays it as a collapsible bottom panel.
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const PREVIEW_REMARK_PLUGINS: any[] = [remarkGfm, remarkMath, remarkPromoteDisplayMath, remarkCallout];
+
+interface MDPreviewPanelProps {
+  text: string;
+  onDismiss: () => void;
+}
+
+function MDPreviewPanel({ text, onDismiss }: MDPreviewPanelProps) {
+  // Each panel instance gets its own latex plugin pair so the mutable capture
+  // array is isolated — safe because the panel remounts when text changes.
+  const { rehypeCaptureLatex: previewCapture, rehypeMergedPass: previewMerge } = useMemo(makeLatexPlugins, []);
+
+  // Dismiss on Escape
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onDismiss(); }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onDismiss]);
+
+  return (
+    <div
+      data-md-preview-portal
+      className="flex-shrink-0 border-t border-[var(--border)] animate-fade-in"
+      style={{ background: "var(--surface)" }}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      {/* Header bar */}
+      <div className="flex items-center justify-between px-4 py-1.5 border-b border-[var(--border)]" style={{ background: "var(--surface-2)" }}>
+        <span className="text-[0.714rem] font-medium text-[var(--text-tertiary)] uppercase tracking-wide">Preview</span>
+        <button
+          onClick={onDismiss}
+          className="p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface)] transition-colors"
+        >
+          <X size={11} />
+        </button>
+      </div>
+      {/* Rendered markdown — capped at ~30vh so it never swamps the editor */}
+      <div className="prose-cairn px-6 py-4 overflow-y-auto" style={{ maxHeight: "30vh" }}>
+        <ReactMarkdown
+          remarkPlugins={PREVIEW_REMARK_PLUGINS}
+          rehypePlugins={[previewCapture, rehypeKatex, previewMerge]}
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          components={({
+            mark({ children }: any) {
+              return (
+                <mark className="rounded px-0.5" style={{ background: "color-mix(in srgb, var(--accent) 22%, transparent)", color: "var(--text-primary)" }}>
+                  {children}
+                </mark>
+              );
+            },
+            callout({ children, ...props }: any) {
+              const p = props as Record<string, string>;
+              return (
+                <Callout
+                  type={p["data-callout-type"] ?? "note"}
+                  title={p["data-title"] || undefined}
+                  collapsible={p["data-collapsible"] === "true"}
+                  defaultOpen={p["data-default-open"] !== "false"}
+                >
+                  {children}
+                </Callout>
+              );
+            },
+            mathblock({ children, ...props }: any) {
+              const p = props as Record<string, string>;
+              return <MathBlock renderedChildren={children} latex={p["data-latex"] ?? ""} />;
+            },
+            pre({ children }: any) {
+              const child = Array.isArray(children) ? children[0] : children;
+              const code = child as React.ReactElement<{ className?: string; children?: React.ReactNode }>;
+              const className = code?.props?.className ?? "";
+              const lang = className.replace("language-", "") || undefined;
+              const content = String(code?.props?.children ?? "").replace(/\n$/, "");
+              return <CodeBlock code={content} language={lang} />;
+            },
+            code({ children, className }: any) {
+              return <InlineCode className={className}>{children}</InlineCode>;
+            },
+          } as any)}
+        >
+          {text}
+        </ReactMarkdown>
+      </div>
+    </div>
+  );
+}
+
+
+
+
+
 interface NoteEditorProps {
   note: Note;
 }
@@ -206,9 +334,12 @@ export function NoteEditor({ note }: NoteEditorProps) {
   const [spawnToolCalls, setSpawnToolCalls] = useState<string[]>([]);
 
   // AI toolbar state
-  const [toolbarPos, setToolbarPos] = useState<{ top: number; left: number } | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
+  const [hasSelection, setHasSelection] = useState(false);
   const selectionRef = useRef<{ text: string } | null>(null);
+
+  // MD preview panel state — selected text to render in the bottom panel
+  const [previewText, setPreviewText] = useState<string | null>(null);
 
   // Scroll container ref — used by TableOfContents to scroll to headings
   const previewScrollRef = useRef<HTMLDivElement>(null);
@@ -221,11 +352,35 @@ export function NoteEditor({ note }: NoteEditorProps) {
   const { rehypeCaptureLatex, rehypeMergedPass } = useMemo(() => makeLatexPlugins(), [note.id]);
 
   // ── Save ──────────────────────────────────────────────────────────────────
+  // pendingContent tracks the latest unsaved markdown so the flush can write
+  // it without a stale closure value.
+  const pendingContent = useRef<{ noteId: string; markdown: string } | null>(null);
+  const updateNoteRef = useRef(updateNote);
+  updateNoteRef.current = updateNote;
+
+  // Flush any pending debounced save immediately. Safe to call at any time.
+  const flushPending = useCallback(() => {
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+    if (pendingContent.current) {
+      const { noteId, markdown } = pendingContent.current;
+      pendingContent.current = null;
+      updateNoteRef.current(noteId, {
+        content: markdown,
+        contentText: stripMarkdown(markdown),
+      });
+    }
+  }, []);
+
   const handleContentChange = useCallback(
     (markdown: string) => {
       setWordCount(countWords(markdown));
+      pendingContent.current = { noteId: note.id, markdown };
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(() => {
+        pendingContent.current = null;
         updateNote(note.id, {
           content: markdown,
           contentText: stripMarkdown(markdown),
@@ -234,6 +389,12 @@ export function NoteEditor({ note }: NoteEditorProps) {
     },
     [note.id, updateNote]
   );
+
+  // Flush on note change or unmount so switching notes never drops edits.
+  useEffect(() => {
+    return () => flushPending();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [note.id]);
 
   const titleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleTitleChange = useCallback(
@@ -251,18 +412,14 @@ export function NoteEditor({ note }: NoteEditorProps) {
   const handleSelectionChange = useCallback(
     (sel: { text: string; coords: { top: number; left: number } } | null) => {
       if (!sel) {
-        setToolbarPos(null);
+        setHasSelection(false);
+        setPreviewText(null);
         selectionRef.current = null;
         return;
       }
       selectionRef.current = { text: sel.text };
-      const rect = containerRef.current?.getBoundingClientRect();
-      const centerX = rect ? rect.left + rect.width / 2 : window.innerWidth / 2;
-      const OFFSET = 10;
-      setToolbarPos({
-        top: sel.coords.top - OFFSET,
-        left: centerX,
-      });
+      setHasSelection(true);
+      setPreviewText(sel.text);
     },
     []
   );
@@ -292,12 +449,22 @@ export function NoteEditor({ note }: NoteEditorProps) {
         editorRef.current?.replaceSelection(replacement);
       } finally {
         setAiLoading(false);
-        setToolbarPos(null);
+        setPreviewText(null);
         selectionRef.current = null;
       }
     },
     [aiConfig]
   );
+
+  const handleFormat = useCallback((action: FormatAction) => {
+    const view = editorRef.current?.getView();
+    if (!view) return;
+    const range = applyFormat(view, action);
+    if (range) {
+      const newText = view.state.sliceDoc(range.from, range.to).trim();
+      if (newText.length >= 3) setPreviewText(newText);
+    }
+  }, []);
 
   useEffect(() => {
     if (!spawnLoading) return;
@@ -348,10 +515,10 @@ export function NoteEditor({ note }: NoteEditorProps) {
       ref={containerRef}
       className="flex flex-col h-full overflow-hidden"
       onMouseDown={(e) => {
-        // Dismiss toolbar when clicking outside the editor content
+        // Dismiss preview when clicking outside the editor or docked panels
         const target = e.target as HTMLElement;
-        if (!target.closest(".cm-editor") && !target.closest("[data-ai-toolbar]")) {
-          setToolbarPos(null);
+        if (!target.closest(".cm-editor") && !target.closest("[data-ai-toolbar]") && !target.closest("[data-md-preview-portal]")) {
+          setPreviewText(null);
         }
       }}
     >
@@ -372,7 +539,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
             Write
           </button>
           <button
-            onClick={() => setMode("read")}
+            onClick={() => { flushPending(); setMode("read"); }}
             className={cn(
               "flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors",
               mode === "read"
@@ -464,6 +631,20 @@ export function NoteEditor({ note }: NoteEditorProps) {
         />
       </div>
 
+      {/* ── AI + Format toolbar — write mode only ───────────────────────────── */}
+      {mode === "write" && (
+        <AITextToolbar
+          onAction={handleAIAction}
+          onFormat={handleFormat}
+          loading={aiLoading}
+          hasSelection={hasSelection}
+          onDismiss={() => {
+            setPreviewText(null);
+            selectionRef.current = null;
+          }}
+        />
+      )}
+
       {/* ── Editor / Preview ────────────────────────────────────────────────── */}
       <div className="flex-1 min-h-0 overflow-hidden relative">
         {/* CodeMirror — always mounted so state is preserved when toggling */}
@@ -480,7 +661,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
 
         {/* Read / preview pane */}
         {mode === "read" && (
-          <div ref={previewScrollRef} className="absolute inset-0 overflow-y-auto">
+          <div ref={previewScrollRef} className="absolute inset-0 overflow-y-auto overflow-x-hidden">
             {/* TOC — floats to the right of the content column on wide viewports */}
             {note.content && (
               <TableOfContents
@@ -622,8 +803,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
                       },
                       // Inline code only — fenced blocks are handled by `pre` above
                       code({ className, children }) {
-                        if (className?.startsWith("language-")) return <>{children}</>;
-                        return <code className="px-1 py-0.5 rounded bg-[var(--surface-3)] font-mono text-[0.786rem] text-[var(--text-primary)]">{children}</code>;
+                        return <InlineCode className={className}>{children}</InlineCode>;
                       },
                       // Headings get id + data-heading-id for TOC anchor scrolling
                       h1({ children }) {
@@ -735,16 +915,13 @@ export function NoteEditor({ note }: NoteEditorProps) {
       {/* ── Backlinks panel ─────────────────────────────────────────────────── */}
       <BacklinksPanel note={note} notes={notes} cards={cards} columns={columns} onOpenCard={() => setView("board")} />
 
-      {/* ── AI floating toolbar ─────────────────────────────────────────────── */}
-      {toolbarPos && (
-        <AITextToolbar
-          position={toolbarPos}
-          onAction={handleAIAction}
-          loading={aiLoading}
-          onDismiss={() => {
-            setToolbarPos(null);
-            selectionRef.current = null;
-          }}
+
+
+      {/* ── MD preview panel — docked to bottom of editor ───────────────────── */}
+      {previewText && (
+        <MDPreviewPanel
+          text={previewText}
+          onDismiss={() => setPreviewText(null)}
         />
       )}
     </div>

@@ -22,6 +22,7 @@ import type Database from "better-sqlite3";
 import * as q from "../db/queries";
 import { registerChatHandler } from "./chat";
 import { writeNoteFile, deleteNoteFile, deleteProjectNotesDir, stripMarkdown, findNoteFilePath } from "../notes-files";
+import { suppressNextChange } from "../file-watcher";
 import { buildContextResponse } from "../lib/context";
 import { generatePrd } from "../lib/prd";
 import { isLocalEndpoint, callLLM } from "../lib/llm";
@@ -128,6 +129,7 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
       contentText: stripMarkdown(args.content ?? ""),
     });
     if (note.type !== "dashboard") {
+      suppressNextChange(note.id);
       writeNoteFile(workspacePath, {
         ...note,
         projectName: getProjectName(db, note.projectId),
@@ -150,6 +152,7 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
       }
       const note = q.restoreNote(db, id);
       if (note.type !== "dashboard") {
+        suppressNextChange(note.id);
         writeNoteFile(workspacePath, { ...note, projectName: getProjectName(db, note.projectId) });
       }
       return note;
@@ -160,6 +163,7 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
     }
     const note = q.updateNote(db, id, enrichedPatch);
     if (note.type !== "dashboard") {
+      suppressNextChange(note.id);
       writeNoteFile(workspacePath, {
         ...note,
         projectName: getProjectName(db, note.projectId),
@@ -174,6 +178,7 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
     // moving a note to root (folder="") is never silently ignored.
     const note = q.moveNoteFolder(db, id, folder ?? "");
     if (note.type !== "dashboard") {
+      suppressNextChange(note.id);
       writeNoteFile(workspacePath, { ...note, projectName: getProjectName(db, note.projectId) });
     }
     return note;
