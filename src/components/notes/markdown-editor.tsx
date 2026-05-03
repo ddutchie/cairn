@@ -195,13 +195,15 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(
             const reader = new FileReader();
             reader.onload = async () => {
               const buffer = reader.result as ArrayBuffer;
-              const electron = (window as { electron?: { uploadAsset?: (filename: string, data: number[]) => Promise<{ assetUrl: string }> } }).electron;
+              const electron = (window as { electron?: { uploadAsset?: (filename: string, data: ArrayBuffer) => Promise<{ assetUrl: string }> } }).electron;
               if (!electron?.uploadAsset) return;
 
               try {
                 const ext = file.type.split("/")[1]?.split("+")[0] ?? "png";
                 const filename = file.name || `pasted-image.${ext}`;
-                const result = await electron.uploadAsset(filename, Array.from(new Uint8Array(buffer)));
+                // Pass the ArrayBuffer directly — Electron structured-clone transfers
+                // it natively, avoiding the overhead of a JSON number array.
+                const result = await electron.uploadAsset(filename, buffer);
                 const markdown = `![](${result.assetUrl})`;
                 const { from, to } = view.state.selection.main;
                 view.dispatch({

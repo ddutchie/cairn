@@ -5,6 +5,20 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
+import { Pin, PinOff, Calendar, Eye, Pencil, Wand2, Loader2, CheckCircle2, Tag, Plus, X, Link2, Kanban, ChevronDown, FileText } from "lucide-react";
+import { useCairnStore } from "@/store";
+import { cn, formatRelative } from "@/lib/utils";
+import { Tooltip } from "@/components/ui/tooltip";
+import { Badge } from "@/components/ui/badge";
+import type { Note } from "@/types";
+import { MermaidDiagram } from "./MermaidDiagram";
+import { TableOfContents, headingSlug } from "./TableOfContents";
+import { CodeBlock } from "./CodeBlock";
+import { Callout } from "./Callout";
+import { MathBlock } from "./MathBlock";
+import { AITextToolbar, buildAIActionPrompt, type AITextAction } from "./ai-text-toolbar";
+import { MarkdownEditor, type MarkdownEditorHandle } from "./markdown-editor";
 // ── Remark plugin: callout blockquotes ────────────────────────────────────────
 // Transforms > [!type] blockquotes in the mdast by tagging the blockquote node
 // with data.hName = "callout" and data.hProperties = { data-* }, so that
@@ -164,20 +178,7 @@ function makeLatexPlugins() {
   return { rehypeCaptureLatex, rehypeMergedPass };
 }
 
-import "katex/dist/katex.min.css";
-import { MermaidDiagram } from "./MermaidDiagram";
-import { TableOfContents, headingSlug } from "./TableOfContents";
-import { CodeBlock } from "./CodeBlock";
-import { Callout, parseCalloutDirective } from "./Callout";
-import { MathBlock } from "./MathBlock";
-import { Pin, PinOff, Calendar, Eye, Pencil, Wand2, Loader2, CheckCircle2, Tag, Plus, X, Link2, Kanban, ChevronDown, FileText } from "lucide-react";
-import { useCairnStore } from "@/store";
-import { cn, formatRelative } from "@/lib/utils";
-import { Tooltip } from "@/components/ui/tooltip";
-import { Badge } from "@/components/ui/badge";
-import type { Note } from "@/types";
-import { AITextToolbar, buildAIActionPrompt, type AITextAction } from "./ai-text-toolbar";
-import { MarkdownEditor, type MarkdownEditorHandle } from "./markdown-editor";
+
 
 interface NoteEditorProps {
   note: Note;
@@ -507,12 +508,24 @@ export function NoteEditor({ note }: NoteEditorProps) {
                             className="max-w-full rounded-md my-2 border border-[var(--border)]"
                           />
                         );
-                        // Wrap external images in a link that opens in the system browser
+                        // Wrap external images in a link that opens in the system browser.
+                        // Prefer window.electron.openExternal (Electron shell) over
+                        // window.open, which requires setWindowOpenHandler to forward
+                        // the request and may be blocked by the sandbox.
                         if (isExternal && srcStr) {
+                          const url = srcStr;
                           return (
                             <a
-                              href={srcStr}
-                              onClick={(e) => { e.preventDefault(); window.open(srcStr, "_blank"); }}
+                              href={url}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                const el = (window as { electron?: { openExternal?: (u: string) => void } }).electron;
+                                if (el?.openExternal) {
+                                  el.openExternal(url);
+                                } else {
+                                  window.open(url, "_blank");
+                                }
+                              }}
                               className="block"
                             >
                               {imgEl}
@@ -629,10 +642,12 @@ export function NoteEditor({ note }: NoteEditorProps) {
                         const id = headingSlug(text);
                         return <h3 id={id} data-heading-id={id}>{children}</h3>;
                       },
-                       // Inline footnote superscript — remark-gfm wraps the ref
-                       // anchor in a <sup>. Style it to use accent colour and
-                       // prevent the default browser superscript sizing clash.
-                       sup({ children }) {
+                       // Footnote superscript — remark-gfm wraps footnote refs in
+                       // a <sup>. Only style <sup data-footnote-ref> so that regular
+                       // superscript text (e.g. X^2) is not accidentally coloured.
+                       sup({ children, ...props }) {
+                        const isFootnoteRef = (props as Record<string, unknown>)["data-footnote-ref"] === true;
+                        if (!isFootnoteRef) return <sup>{children}</sup>;
                         return (
                           <sup
                             className="text-[0.714rem] leading-none"
@@ -654,7 +669,11 @@ export function NoteEditor({ note }: NoteEditorProps) {
                        a({ href, children, ...props }) {
                         if (href?.startsWith("#")) {
                           const isFootnoteRef = (props as any)["data-footnote-ref"] === true;
-                          const isBackref = (props as any).className === "data-footnote-backref";
+                           // remark-gfm sets className="data-footnote-backref" (a string, not an array)
+                           const rawClassName: unknown = (props as any).className;
+                           const isBackref = typeof rawClassName === "string"
+                             ? rawClassName.includes("data-footnote-backref")
+                             : Array.isArray(rawClassName) && rawClassName.includes("data-footnote-backref");
                           return (
                             <a
                               {...props}
@@ -885,7 +904,7 @@ function NoteTagBar({ note, workspaceTags, onToggleTag, onCreateTag, getTagById 
                 if (e.key === "Escape") { setPickerOpen(false); setNewTagName(""); }
               }}
               placeholder="Search or create…"
-              className="w-full px-2 py-1 text-xs rounded bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20 mb-2"
+              className="w-full px-2 py-1 text-xs rounded bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)] mb-2"
             />
             <div className="max-h-36 overflow-y-auto space-y-0.5">
               {filteredUnassigned.map((tag) => (

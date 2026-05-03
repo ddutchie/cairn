@@ -23,7 +23,7 @@ import {
 export interface NotesSlice {
   notes: Note[];
 
-  createNote: (projectId: ID, title: string, type?: NoteType) => Note;
+  createNote: (projectId: ID, title: string, type?: NoteType, folder?: string) => Note;
   updateNote: (id: ID, patch: Partial<Note>) => void;
   deleteNote: (id: ID) => void;
   archiveNote: (id: ID) => void;
@@ -46,7 +46,7 @@ export const createNotesSlice: StateCreator<CairnStore, [], [], NotesSlice> = (
 ) => ({
   notes: [],
 
-  createNote(projectId, title, type = "note") {
+  createNote(projectId, title, type = "note", folder = "") {
     const proj = get().projects.find((p) => p.id === projectId);
     const note: Note = {
       id: id(),
@@ -60,7 +60,7 @@ export const createNotesSlice: StateCreator<CairnStore, [], [], NotesSlice> = (
       linkedCardIds: [],
       isPinned: false,
       type,
-      folder: "",
+      folder,
       createdAt: now(),
       updatedAt: now(),
     };

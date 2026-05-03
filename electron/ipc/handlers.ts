@@ -170,7 +170,9 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
   }));
 
   ipcMain.handle("db:note:moveToFolder", (_e, { id, folder }: { id: string; folder: string }) => handle(() => {
-    const note = q.updateNote(db, id, { folder });
+    // Use moveNoteFolder (direct SET) rather than updateNote (COALESCE) so that
+    // moving a note to root (folder="") is never silently ignored.
+    const note = q.moveNoteFolder(db, id, folder ?? "");
     if (note.type !== "dashboard") {
       writeNoteFile(workspacePath, { ...note, projectName: getProjectName(db, note.projectId) });
     }
@@ -190,6 +192,13 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
     }
   }));
 
+  // ── Open URL in default system browser ───────────
+  ipcMain.on("app:openExternal", (_e, url: string) => {
+    if (typeof url === "string" && (url.startsWith("https://") || url.startsWith("http://"))) {
+      shell.openExternal(url);
+    }
+  });
+
   // ── Reveal in Finder / Explorer ───────────────────
   ipcMain.handle("app:revealNote", (_e, { noteId, projectId }) => handle(() => {
     const projectName = getProjectName(db, projectId);
@@ -202,11 +211,12 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
   // ── Asset upload (paste images into notes) ────────
   // Receives raw image bytes, writes content-addressed to
   // <workspacePath>/assets/<sha256[0..15]>.<ext>, returns asset:// URL.
-  ipcMain.handle("app:uploadAsset", (_e, { filename, data }: { filename: string; data: number[] }) =>
+  ipcMain.handle("app:uploadAsset", (_e, { filename, data }: { filename: string; data: ArrayBuffer }) =>
     handle(() => {
       const assetDir = path.join(workspacePath, "assets");
       fs.mkdirSync(assetDir, { recursive: true });
       const ext = path.extname(filename).toLowerCase() || ".bin";
+      // data arrives as an ArrayBuffer via Electron structured-clone (no JSON serialisation overhead)
       const buf = Buffer.from(data);
       const hash = crypto.createHash("sha256").update(buf).digest("hex").slice(0, 16);
       const destName = `${hash}${ext}`;
@@ -219,10 +229,12 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
   );
 
   // ── Reveal assets folder in Finder / Explorer ─────
-  ipcMain.handle("app:revealAssets", () => handle(() => {
+  ipcMain.handle("app:revealAssets", () => handle(async () => {
     const assetDir = path.join(workspacePath, "assets");
     fs.mkdirSync(assetDir, { recursive: true });
-    shell.openPath(assetDir);
+    // shell.openPath returns a Promise<string>; non-empty = error message.
+    const errMsg = await shell.openPath(assetDir);
+    if (errMsg) console.error("[cairn:revealAssets]", errMsg);
   }));
 
   // ── Board columns ─────────────────────────────────

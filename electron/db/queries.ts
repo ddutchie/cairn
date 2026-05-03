@@ -312,6 +312,17 @@ export function getNoteById(db: Database.Database, id: string) {
 }
 
 /**
+ * Move a note to a different folder (or root when folder="").
+ * Uses a direct SET rather than COALESCE so an empty string is not silently
+ * ignored the way a NULL patch.folder would be in updateNote().
+ */
+export function moveNoteFolder(db: Database.Database, id: string, folder: string) {
+  const now = ts();
+  db.prepare("UPDATE notes SET folder = ?, updated_at = ? WHERE id = ?").run(folder, now, id);
+  return toNote(db.prepare("SELECT * FROM notes WHERE id = ?").get(id));
+}
+
+/**
  * Explicitly clear archived_at for a note (cannot use COALESCE for NULL clears).
  */
 export function restoreNote(db: Database.Database, id: string) {

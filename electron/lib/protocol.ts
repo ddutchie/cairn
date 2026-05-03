@@ -27,9 +27,9 @@ export function registerAssetProtocol(workspacePath: string): void {
     // url.pathname may be "/" — the actual filename is in hostname for asset:// URLs
     const filename = decodeURIComponent(url.hostname + url.pathname.replace(/^\//, ""));
     if (!_workspacePath) return new Response("No workspace", { status: 503 });
-    const assetDir = path.join(_workspacePath, "assets");
-    const filePath = path.join(assetDir, filename);
-    // Prevent path traversal
+    const assetDir = path.resolve(_workspacePath, "assets");
+    // path.resolve normalises any `../` sequences before the traversal check.
+    const filePath = path.resolve(assetDir, filename);
     if (!filePath.startsWith(assetDir + path.sep) && filePath !== assetDir) {
       return new Response("Forbidden", { status: 403 });
     }

@@ -103,7 +103,9 @@ function findInDir(dir: string, noteId: string): string | null {
 
   for (const entry of fs.readdirSync(dir)) {
     const fp = path.join(dir, entry);
-    const stat = fs.statSync(fp);
+    // Use lstatSync so symlinks are never followed — prevents infinite
+    // recursion when a symlink inside the project folder points to an ancestor.
+    const stat = fs.lstatSync(fp);
     if (stat.isDirectory()) {
       const found = findInDir(fp, noteId);
       if (found) return found;

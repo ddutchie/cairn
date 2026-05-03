@@ -145,8 +145,13 @@ const api = {
   // ── Reveal note in Finder / Explorer ─────────
   revealNote: (noteId: string, projectId: string) => invoke("app:revealNote", { noteId, projectId }),
 
+  // ── Open a URL in the system default browser ──
+  openExternal: (url: string) => ipcRenderer.send("app:openExternal", url),
+
   // ── Asset upload (pasted images) ──────────────
-  uploadAsset: (filename: string, data: number[]) =>
+  // data is an ArrayBuffer — Electron's structured-clone transfers it
+  // natively without serialising to a JSON number array.
+  uploadAsset: (filename: string, data: ArrayBuffer) =>
     invoke<{ assetUrl: string }>("app:uploadAsset", { filename, data }),
   revealAssets: () => invoke("app:revealAssets"),
 

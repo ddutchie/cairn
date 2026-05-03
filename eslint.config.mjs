@@ -12,6 +12,13 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Compiled Electron + MCP bundles — not source
+    "dist-electron/**",
+    "dist-mcp/**",
+    // Plain Node.js CJS build/helper scripts
+    "scripts/**",
+    // Vitest SQLite shim — CJS, require() is intentional
+    "vitest-sqlite-shim.cjs",
   ]),
 ]);
 

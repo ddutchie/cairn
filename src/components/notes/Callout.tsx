@@ -61,10 +61,10 @@ function getCalloutConfig(type: CalloutType): {
     return { icon: <Lightbulb size={14} />, colorVar: "var(--success)" };
   }
   if (t === "warning") {
-    return { icon: <AlertTriangle size={14} />, colorVar: "var(--warning, #f59e0b)" };
+    return { icon: <AlertTriangle size={14} />, colorVar: "var(--warning)" };
   }
   if (t === "danger" || t === "caution") {
-    return { icon: <AlertCircle size={14} />, colorVar: "var(--danger, #ef4444)" };
+    return { icon: <AlertCircle size={14} />, colorVar: "var(--danger)" };
   }
   if (t === "success" || t === "check" || t === "done") {
     return { icon: <CheckCircle2 size={14} />, colorVar: "var(--success)" };

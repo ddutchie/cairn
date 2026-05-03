@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback, memo } from "react";
 import {
   FileText, Plus, Pin, PinOff, Trash2, MoreHorizontal, Search,
   Wand2, Archive, ArchiveRestore, FolderInput,
@@ -38,33 +38,35 @@ function buildFolderTree(notes: Note[]): { rootNotes: Note[]; folders: FolderNod
   const rootNotes: Note[] = [];
   const folderMap = new Map<string, FolderNode>();
 
-  // Collect all unique folder paths and create nodes
+  // Pass 1 — create every folder node (including all ancestors) and
+  // assign notes to their leaf folder. Do NOT wire parent→child here
+  // because the parent node may not exist yet when we encounter a deep path.
   for (const note of notes) {
     const folder = note.folder ?? "";
     if (!folder) {
       rootNotes.push(note);
       continue;
     }
-    // Ensure all ancestor paths exist
     const segments = folder.split("/").filter(Boolean);
     let built = "";
-    for (let i = 0; i < segments.length; i++) {
-      const seg = segments[i];
-      const parentPath = built;
+    for (const seg of segments) {
       built = built ? `${built}/${seg}` : seg;
       if (!folderMap.has(built)) {
-        const node: FolderNode = { name: seg, path: built, notes: [], children: [] };
-        folderMap.set(built, node);
-        // Wire into parent
-        if (parentPath && folderMap.has(parentPath)) {
-          folderMap.get(parentPath)!.children.push(node);
-        }
+        folderMap.set(built, { name: seg, path: built, notes: [], children: [] });
       }
     }
     folderMap.get(folder)!.notes.push(note);
   }
 
-  // Collect top-level folders (those whose path has no "/")
+  // Pass 2 — wire every node into its parent now that all nodes exist.
+  for (const node of folderMap.values()) {
+    const lastSlash = node.path.lastIndexOf("/");
+    if (lastSlash === -1) continue; // top-level — no parent to wire
+    const parentPath = node.path.slice(0, lastSlash);
+    folderMap.get(parentPath)?.children.push(node);
+  }
+
+  // Collect top-level folders and sort them alphabetically.
   const topLevel: FolderNode[] = [];
   for (const node of folderMap.values()) {
     if (!node.path.includes("/")) topLevel.push(node);
@@ -135,8 +137,10 @@ export function NotesView() {
 
   function handleCreateNote(inFolder = "") {
     if (!activeProjectId) return;
-    const note = createNote(activeProjectId, "Untitled Note", "note");
-    if (inFolder) moveNoteToFolder(note.id, inFolder);
+    // Pass folder directly to createNote so the IPC create call already
+    // carries the folder — avoids a separate moveToFolder IPC round-trip
+    // and the race window it creates.
+    const note = createNote(activeProjectId, "Untitled Note", "note", inFolder);
     setActiveNoteId(note.id);
   }
 
@@ -157,9 +161,9 @@ export function NotesView() {
     setFolderMoveDest("");
   }
 
-  function toggleFolder(folderPath: string) {
+  const toggleFolder = useCallback((folderPath: string) => {
     setCollapsedFolders((prev) => ({ ...prev, [folderPath]: !prev[folderPath] }));
-  }
+  }, []);
 
   function handleCreateDashboard() {
     if (!activeProjectId) return;
@@ -237,7 +241,7 @@ export function NotesView() {
             <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]" />
             <input type="text" value={filter} onChange={(e) => setFilter(e.target.value)}
               placeholder="Filter notes..."
-              className="w-full pl-7 pr-2 py-1.5 text-xs rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20" />
+              className="w-full pl-7 pr-2 py-1.5 text-xs rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)]" />
           </div>
           {projectTags.length > 0 && (
             <div className="flex flex-wrap gap-1 mt-1.5">
@@ -257,7 +261,7 @@ export function NotesView() {
 
         {/* List */}
         <div className="flex-1 overflow-y-auto py-1">
-          {notes.length === 0 ? (
+          {notes.length === 0 && archivedNotes.length === 0 ? (
             <div className="px-3 py-8 text-center">
               <FileText size={20} className="mx-auto mb-2 text-[var(--text-tertiary)] opacity-40" />
               <p className="text-xs text-[var(--text-tertiary)]">No notes yet</p>
@@ -405,7 +409,7 @@ export function NotesView() {
               onChange={(e) => setNewFolderName(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") handleCreateFolder(); if (e.key === "Escape") { setNewFolderOpen(false); setNewFolderName(""); } }}
               placeholder="Folder name (e.g. Design/Typography)"
-              className="w-full px-3 py-2 text-sm rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20"
+              className="w-full px-3 py-2 text-sm rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)]"
             />
             <p className="text-[0.786rem] text-[var(--text-tertiary)]">
               Use / to create nested folders, e.g. <span className="font-mono">Research/Papers</span>
@@ -435,7 +439,7 @@ export function NotesView() {
               onChange={(e) => setFolderMoveDest(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && folderMoveNoteId) { handleMoveNoteToFolder(folderMoveNoteId, folderMoveDest); } if (e.key === "Escape") { setFolderMoveNoteId(null); setFolderMoveDest(""); } }}
               placeholder="Folder path (leave blank for root)"
-              className="w-full px-3 py-2 text-sm rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20"
+              className="w-full px-3 py-2 text-sm rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)]"
             />
             {allFolderPaths.length > 0 && (
               <div className="space-y-0.5">
@@ -521,7 +525,7 @@ interface FolderTreeNodeProps {
   onCreateInFolder: (folder: string) => void;
 }
 
-function FolderTreeNode({
+const FolderTreeNode = memo(function FolderTreeNode({
   node, activeNoteId, collapsed, depth = 0,
   onToggle, onNoteClick, onNotePin, onNoteDelete,
   onNoteArchive, onNoteMove, onNoteMoveToFolder, onNoteReveal, onCreateInFolder,
@@ -595,7 +599,7 @@ function FolderTreeNode({
       )}
     </div>
   );
-}
+});
 
 // ── NoteListItem ──────────────────────────────────────────────────────────────
 
