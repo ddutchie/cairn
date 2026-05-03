@@ -629,20 +629,49 @@ export function NoteEditor({ note }: NoteEditorProps) {
                         const id = headingSlug(text);
                         return <h3 id={id} data-heading-id={id}>{children}</h3>;
                       },
-                      // Intercept anchor clicks so #hash links scroll within
-                      // the overflow container instead of the page
-                      a({ href, children, ...props }) {
+                       // Inline footnote superscript — remark-gfm wraps the ref
+                       // anchor in a <sup>. Style it to use accent colour and
+                       // prevent the default browser superscript sizing clash.
+                       sup({ children }) {
+                        return (
+                          <sup
+                            className="text-[0.714rem] leading-none"
+                            style={{ color: "var(--accent)", fontFeatureSettings: "'sups' 0" }}
+                          >
+                            {children}
+                          </sup>
+                        );
+                       },
+                        // Intercept all #hash link clicks so they scroll within
+                       // the overflow container rather than the browser page.
+                       // Covers three cases:
+                       //   1. Heading anchors   → [data-heading-id="slug"]
+                       //   2. Footnote targets  → [id="user-content-fn-*"]
+                       //   3. Footnote backrefs → [id="user-content-fnref-*"]
+                       // remark-gfm prefixes footnote IDs with "user-content-"
+                       // in the DOM but the href also carries that prefix, so
+                       // href.slice(1) matches the id attribute directly.
+                       a({ href, children, ...props }) {
                         if (href?.startsWith("#")) {
+                          const isFootnoteRef = (props as any)["data-footnote-ref"] === true;
+                          const isBackref = (props as any).className === "data-footnote-backref";
                           return (
                             <a
                               {...props}
                               href={href}
+                              // Footnote ref superscript: subtle accent colour
+                              style={isFootnoteRef ? { color: "var(--accent)", textDecoration: "none" } : undefined}
+                              aria-label={isBackref ? "Back to reference" : undefined}
                               onClick={(e) => {
                                 e.preventDefault();
-                                const id = href.slice(1);
+                                const rawId = href.slice(1);
                                 const container = previewScrollRef.current;
-                                const target = container?.querySelector(`[data-heading-id="${id}"]`);
-                                target?.scrollIntoView({ behavior: "smooth", block: "start" });
+                                if (!container) return;
+                                // Try heading anchor first, then any element with matching id
+                                const target =
+                                  container.querySelector(`[data-heading-id="${rawId}"]`) ??
+                                  container.querySelector(`[id="${CSS.escape(rawId)}"]`);
+                                target?.scrollIntoView({ behavior: "smooth", block: isBackref ? "center" : "start" });
                               }}
                             >
                               {children}
@@ -650,6 +679,24 @@ export function NoteEditor({ note }: NoteEditorProps) {
                           );
                         }
                         return <a href={href} {...props}>{children}</a>;
+                       },
+                       // Footnotes section — rendered by remark-gfm as
+                       // <section class="footnotes"> with a sr-only <h2> heading.
+                       // We replace it with a styled version that shows a visible divider.
+                       // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                       section({ children, ...props }: any) {
+                        if ((props.className ?? "").includes("footnotes")) {
+                          return (
+                            <section
+                              {...props}
+                              className="footnotes mt-8 pt-4 text-[0.786rem] text-[var(--text-secondary)]"
+                              style={{ borderTop: "1px solid var(--border)" }}
+                            >
+                              {children}
+                            </section>
+                          );
+                        }
+                        return <section {...props}>{children}</section>;
                        },
                      }) as import("react-markdown").Components}
                    >
