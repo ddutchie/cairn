@@ -231,6 +231,38 @@ export function parseNoteFile(filePath: string): NoteData | null {
   }
 }
 
+// ── Startup sync ──────────────────────────────
+//
+// Walks the entire notes directory and upserts every .md file whose id is not
+// already present in SQLite. Runs once on startup (and after reinitialise) so
+// that notes written to disk but not committed to SQLite (e.g. due to a
+// fire-and-forget IPC race or an unexpected shutdown) are recovered.
+
+export function syncNotesFromDisk(db: Database.Database, workspacePath: string): void {
+  const root = notesDir(workspacePath);
+  if (!fs.existsSync(root)) return;
+  syncDir(db, root);
+}
+
+function syncDir(db: Database.Database, dir: string): void {
+  for (const entry of fs.readdirSync(dir)) {
+    const fp = path.join(dir, entry);
+    const stat = fs.lstatSync(fp);
+    if (stat.isDirectory()) {
+      syncDir(db, fp);
+    } else if (entry.endsWith(".md")) {
+      const note = parseNoteFile(fp);
+      if (!note) continue;
+      // Only upsert if the note is missing from SQLite — avoids overwriting
+      // in-memory state that is ahead of the file (e.g. unsaved edits).
+      const exists = db.prepare("SELECT id FROM notes WHERE id = ?").get(note.id);
+      if (!exists) {
+        upsertNoteFromFile(db, note);
+      }
+    }
+  }
+}
+
 // ── Upsert a parsed note into SQLite ──────────
 //
 // Uses INSERT OR IGNORE + UPDATE to avoid UNIQUE constraint errors when the

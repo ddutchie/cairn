@@ -134,7 +134,18 @@ export function NotesView() {
     : buildFolderTree(notes);
 
   // All unique folder paths for the "move to folder" picker
-  const allFolderPaths = [...new Set(notes.map((n) => n.folder).filter(Boolean))].sort();
+  // Collect all folder paths from the tree (includes empty folders)
+  const allFolderPaths = useMemo(() => {
+    const paths: string[] = [];
+    function collect(nodes: typeof folderTree) {
+      for (const node of nodes) {
+        paths.push(node.path);
+        collect(node.children);
+      }
+    }
+    collect(folderTree);
+    return paths.sort();
+  }, [folderTree]);
 
   // Auto-select first note
   useEffect(() => {
@@ -412,84 +423,29 @@ export function NotesView() {
       )}
 
       {/* New folder dialog */}
-      <Dialog open={newFolderOpen} onOpenChange={(o) => { if (!o) { setNewFolderOpen(false); setNewFolderName(""); } }}>
-        <DialogContent size="sm">
-          <DialogHeader>
-            <DialogTitle>New folder</DialogTitle>
-          </DialogHeader>
-          <div className="px-5 py-4 space-y-3">
-            <input
-              autoFocus
-              value={newFolderName}
-              onChange={(e) => setNewFolderName(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") handleCreateFolder(); if (e.key === "Escape") { setNewFolderOpen(false); setNewFolderName(""); } }}
-              placeholder="Folder name (e.g. Design/Typography)"
-              className="w-full px-3 py-2 text-sm rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)]"
-            />
-            <p className="text-[0.786rem] text-[var(--text-tertiary)]">
-              Use / to create nested folders, e.g. <span className="font-mono">Research/Papers</span>
-            </p>
-            <div className="flex justify-end gap-2">
-              <DialogClose asChild>
-                <Button variant="ghost" size="sm">Cancel</Button>
-              </DialogClose>
-              <Button variant="accent" size="sm" onClick={handleCreateFolder} disabled={!newFolderName.trim()}>
-                <FolderPlus size={12} /> Create folder
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {newFolderOpen && (
+        <FolderPickerDialog
+          folderTree={folderTree}
+          mode="create"
+          onSelect={(path) => {
+            handleCreateNote(path);
+            setCollapsedFolders((prev) => ({ ...prev, [path]: false }));
+            setNewFolderOpen(false);
+          }}
+          onClose={() => setNewFolderOpen(false)}
+        />
+      )}
 
       {/* Move note to folder dialog */}
-      <Dialog open={!!folderMoveNoteId} onOpenChange={(o) => { if (!o) { setFolderMoveNoteId(null); setFolderMoveDest(""); } }}>
-        <DialogContent size="sm">
-          <DialogHeader>
-            <DialogTitle>Move to folder</DialogTitle>
-          </DialogHeader>
-          <div className="px-5 py-4 space-y-3">
-            <input
-              autoFocus
-              value={folderMoveDest}
-              onChange={(e) => setFolderMoveDest(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && folderMoveNoteId) { handleMoveNoteToFolder(folderMoveNoteId, folderMoveDest); } if (e.key === "Escape") { setFolderMoveNoteId(null); setFolderMoveDest(""); } }}
-              placeholder="Folder path (leave blank for root)"
-              className="w-full px-3 py-2 text-sm rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)]"
-            />
-            {allFolderPaths.length > 0 && (
-              <div className="space-y-0.5">
-                <p className="text-[0.714rem] text-[var(--text-tertiary)] uppercase tracking-wider">Existing folders</p>
-                <button
-                  onClick={() => { if (folderMoveNoteId) handleMoveNoteToFolder(folderMoveNoteId, ""); }}
-                  className="w-full text-left px-2 py-1 rounded text-xs text-[var(--text-secondary)] hover:bg-[var(--surface-2)] transition-colors"
-                >
-                  / (root)
-                </button>
-                {allFolderPaths.map((fp) => (
-                  <button
-                    key={fp}
-                    onClick={() => { if (folderMoveNoteId) handleMoveNoteToFolder(folderMoveNoteId, fp); }}
-                    className="w-full text-left px-2 py-1 rounded text-xs text-[var(--text-secondary)] hover:bg-[var(--surface-2)] transition-colors"
-                  >
-                    {fp}
-                  </button>
-                ))}
-              </div>
-            )}
-            <div className="flex justify-end gap-2">
-              <DialogClose asChild>
-                <Button variant="ghost" size="sm">Cancel</Button>
-              </DialogClose>
-              <Button
-                variant="accent" size="sm"
-                onClick={() => { if (folderMoveNoteId) handleMoveNoteToFolder(folderMoveNoteId, folderMoveDest); }}
-              >
-                <FolderSymlink size={12} /> Move
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {folderMoveNoteId && (
+        <FolderPickerDialog
+          folderTree={folderTree}
+          mode="move"
+          currentFolder={notes.find((n) => n.id === folderMoveNoteId)?.folder ?? ""}
+          onSelect={(fp) => { handleMoveNoteToFolder(folderMoveNoteId, fp); }}
+          onClose={() => { setFolderMoveNoteId(null); setFolderMoveDest(""); }}
+        />
+      )}
 
       <Dialog open={!!deleteNoteId} onOpenChange={(o) => { if (!o) setDeleteNoteId(null); }}>
         <DialogContent size="sm">
@@ -610,6 +566,17 @@ const FolderTreeNode = memo(function FolderTreeNode({
               onReveal={() => onNoteReveal(note)}
             />
           ))}
+          {/* Empty folder state */}
+          {node.notes.length === 0 && node.children.length === 0 && (
+            <button
+              onClick={() => onCreateInFolder(node.path)}
+              className="w-full flex items-center gap-1.5 px-2 py-1.5 text-[0.714rem] text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--surface-2)] transition-colors"
+              style={{ paddingLeft: `${indent + 24}px` }}
+            >
+              <Plus size={10} />
+              New note
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -704,6 +671,232 @@ function ArchivedNoteListItem({ note, onRestore, onDelete }: { note: Note; onRes
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+    </div>
+  );
+}
+
+// ── FolderPickerDialog ────────────────────────────────────────────────────────
+
+interface FolderPickerDialogProps {
+  folderTree: FolderNode[];
+  /** "move" — clicking a row moves immediately. "create" — picking a row sets parent, inline input creates child. */
+  mode: "move" | "create";
+  currentFolder?: string;
+  onSelect: (folder: string) => void;
+  onClose: () => void;
+}
+
+function FolderPickerDialog({ folderTree, mode, currentFolder = "", onSelect, onClose }: FolderPickerDialogProps) {
+  // parentPath="" means creating at root; "Design" means child of Design
+  const [addingUnder, setAddingUnder] = useState<string | null>(null);
+  const [newFolderName, setNewFolderName] = useState("");
+  const newInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (addingUnder !== null) newInputRef.current?.focus();
+  }, [addingUnder]);
+
+  function handleCreate() {
+    const name = newFolderName.trim();
+    if (!name) return;
+    const full = addingUnder ? `${addingUnder}/${name}` : name;
+    onSelect(full);
+  }
+
+  function openAdd(parentPath: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    setAddingUnder(parentPath);
+    setNewFolderName("");
+  }
+
+  function cancelAdd() {
+    setAddingUnder(null);
+    setNewFolderName("");
+  }
+
+  const inlineInput = (
+    <div className="flex items-center gap-2 px-3 py-2 border-t border-[var(--border)] bg-[var(--surface-2)]">
+      <FolderPlus size={12} className="text-[var(--accent)] shrink-0" />
+      <input
+        ref={newInputRef}
+        value={newFolderName}
+        onChange={(e) => setNewFolderName(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") handleCreate();
+          if (e.key === "Escape") cancelAdd();
+        }}
+        placeholder="Folder name…"
+        className="flex-1 bg-transparent text-xs text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none"
+      />
+      <button
+        onClick={handleCreate}
+        disabled={!newFolderName.trim()}
+        className="text-[0.714rem] text-[var(--accent)] disabled:opacity-30 hover:underline shrink-0"
+      >
+        Create & move
+      </button>
+      <button onClick={cancelAdd} className="text-[0.714rem] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]">
+        ✕
+      </button>
+    </div>
+  );
+
+  return (
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent size="sm">
+        <DialogHeader>
+          <DialogTitle>{mode === "create" ? "New folder" : "Move to folder"}</DialogTitle>
+        </DialogHeader>
+        <div className="px-5 pb-5 pt-1">
+          <div className="rounded-lg border border-[var(--border)] overflow-hidden mb-3">
+
+            {/* Root row */}
+            <div className={cn(
+              "group flex items-center gap-2 px-3 py-2 text-xs transition-colors border-b border-[var(--border)]",
+              currentFolder === "" && mode === "move" ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"
+            )}>
+              <button
+                className="flex items-center gap-2 flex-1 min-w-0 text-left"
+                onClick={() => mode === "move" ? onSelect("") : openAdd("", { stopPropagation: () => {} } as React.MouseEvent)}
+              >
+                <Folder size={12} className="shrink-0" />
+                <span className="font-medium">Root</span>
+              </button>
+              <button
+                onClick={(e) => openAdd("", e)}
+                className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-all"
+                title="New folder in root"
+              >
+                <FolderPlus size={11} />
+              </button>
+            </div>
+
+            {/* Inline input under root */}
+            {addingUnder === "" && inlineInput}
+
+            {folderTree.length === 0 && addingUnder === null && (
+              <p className="px-3 py-3 text-[0.714rem] text-[var(--text-tertiary)]">No folders yet</p>
+            )}
+
+            {/* Recursive tree */}
+            {folderTree.map((node) => (
+              <FolderPickerNode
+                key={node.path}
+                node={node}
+                currentFolder={currentFolder}
+                depth={0}
+                mode={mode}
+                addingUnder={addingUnder}
+                newFolderName={newFolderName}
+                newInputRef={newInputRef}
+                onSelect={onSelect}
+                onOpenAdd={openAdd}
+                onNameChange={setNewFolderName}
+                onCreate={handleCreate}
+                onCancel={cancelAdd}
+                inlineInput={inlineInput}
+              />
+            ))}
+          </div>
+
+          <div className="flex justify-end">
+            <DialogClose asChild>
+              <Button variant="ghost" size="sm">Cancel</Button>
+            </DialogClose>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+interface FolderPickerNodeProps {
+  node: FolderNode;
+  currentFolder: string;
+  depth: number;
+  mode: "move" | "create";
+  addingUnder: string | null;
+  newFolderName: string;
+  newInputRef: React.RefObject<HTMLInputElement | null>;
+  onSelect: (folder: string) => void;
+  onOpenAdd: (parentPath: string, e: React.MouseEvent) => void;
+  onNameChange: (v: string) => void;
+  onCreate: () => void;
+  onCancel: () => void;
+  inlineInput: React.ReactNode;
+}
+
+function FolderPickerNode({
+  node, currentFolder, depth, mode, addingUnder, onSelect, onOpenAdd, inlineInput,
+}: FolderPickerNodeProps) {
+  const [open, setOpen] = useState(true);
+  const isSelected = mode === "move" && currentFolder === node.path;
+  const indent = depth * 12;
+
+  return (
+    <div className="border-t border-[var(--border)]">
+      <div
+        className={cn(
+          "group flex items-center gap-2 text-xs transition-colors",
+          isSelected
+            ? "bg-[var(--accent-dim)] text-[var(--accent)]"
+            : "text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"
+        )}
+        style={{ paddingLeft: `${12 + indent}px`, paddingRight: "12px", paddingTop: "7px", paddingBottom: "7px" }}
+      >
+        {/* Chevron */}
+        {node.children.length > 0 ? (
+          <button
+            onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}
+            className="shrink-0 text-[var(--text-tertiary)]"
+          >
+            {open ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+          </button>
+        ) : (
+          <span className="w-[10px] shrink-0" />
+        )}
+        {/* Folder name */}
+        <button
+          className="flex items-center gap-2 flex-1 min-w-0 text-left"
+          onClick={(e) => mode === "move" ? onSelect(node.path) : onOpenAdd(node.path, e)}
+        >
+          {open && node.children.length > 0
+            ? <FolderOpen size={12} className="shrink-0" />
+            : <Folder size={12} className="shrink-0" />}
+          <span className="truncate">{node.name}</span>
+        </button>
+        {/* Add child folder button */}
+        <button
+          onClick={(e) => onOpenAdd(node.path, e)}
+          className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-all shrink-0"
+          title={`New folder in ${node.name}`}
+        >
+          <FolderPlus size={11} />
+        </button>
+      </div>
+
+      {/* Inline input for this node */}
+      {addingUnder === node.path && inlineInput}
+
+      {/* Children */}
+      {open && node.children.map((child) => (
+        <FolderPickerNode
+          key={child.path}
+          node={child}
+          currentFolder={currentFolder}
+          depth={depth + 1}
+          mode={mode}
+          addingUnder={addingUnder}
+          newFolderName=""
+          newInputRef={{ current: null }}
+          onSelect={onSelect}
+          onOpenAdd={onOpenAdd}
+          onNameChange={() => {}}
+          onCreate={() => {}}
+          onCancel={() => {}}
+          inlineInput={inlineInput}
+        />
+      ))}
     </div>
   );
 }

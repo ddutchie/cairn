@@ -113,6 +113,11 @@ function handleFileDelete(filePath: string, db: Database.Database, onChanged: ()
 
   if (!noteId) return; // file was never tracked (e.g. not a Cairn note)
 
+  // If the note is suppressed, the file was deleted by the app itself as part
+  // of a rename/move (writeNoteFile deletes the old path before writing the new
+  // one). The note still exists in SQLite under the new path — do not delete it.
+  if (suppressedNoteIds.has(noteId)) return;
+
   try {
     q.deleteNote(db, noteId);
     onChanged();
