@@ -79,56 +79,24 @@ const remarkPromoteDisplayMath: RemarkPlugin<[], MdastRoot> = () => (tree) => {
   });
 };
 
-// ── Rehype plugin: ==highlight== marks ────────────────────────────────────────
-// remark-mark targets the old remark v12 API and is incompatible with remark v14+.
-// This rehype approach works at the HTML AST level after markdown parsing.
-import type { Plugin } from "unified";
-import type { Root, Element, Text, ElementContent, Parent } from "hast";
-import { visit } from "unist-util-visit";
-
-const rehypeHighlight: Plugin<[], Root> = () => (tree) => {
-  visit(tree, "text", (node: Text, index: number | undefined, parent: Parent | undefined) => {
-    if (!parent || index === undefined) return;
-    const text = node.value;
-    if (!text.includes("==")) return;
-
-    const parts = text.split(/(==.+?==)/g);
-    if (parts.length === 1) return; // no matches
-
-    const nodes: ElementContent[] = parts
-      .map((part): ElementContent | null => {
-        if (part.startsWith("==") && part.endsWith("==") && part.length > 4) {
-          const mark: Element = {
-            type: "element",
-            tagName: "mark",
-            properties: {},
-            children: [{ type: "text", value: part.slice(2, -2) }],
-          };
-          return mark;
-        }
-        if (part === "") return null;
-        return { type: "text", value: part } as Text;
-      })
-      .filter((n): n is ElementContent => n !== null);
-
-    parent.children.splice(index, 1, ...nodes);
-  });
-};
-
-// ── Math plugins: preserve raw LaTeX through rehype-katex ────────────────────
-// Two rehype plugins that bracket rehype-katex:
+// ── Rehype plugins: math tagging + ==highlight== marks ───────────────────────
+// All post-katex hast work is done in two plugins to minimise full-tree traversals.
 //
 // rehypeCaptureLatex  (runs BEFORE rehype-katex)
-//   Reads raw LaTeX from <code class="math-display"> nodes in the hast
-//   (emitted by remark-rehype for both single-line and multi-line $$ blocks)
-//   and stores them in a shared array.
+//   Reads raw LaTeX from <code class="math-display"> nodes (emitted by remark-rehype
+//   for both single-line and multi-line $$ blocks) into a shared array before
+//   rehype-katex replaces them with rendered <span class="katex-display"> output.
 //
-// rehypeTagLatex  (runs AFTER rehype-katex)
-//   Renames each <span class="katex-display"> → <mathblock data-latex="...">
-//   so ReactMarkdown routes it to components.mathblock (same trick as callouts).
+// rehypeMergedPass  (runs AFTER rehype-katex) — single traversal for two jobs:
+//   1. Rename <span class="katex-display"> → <mathblock data-latex="..."> so
+//      ReactMarkdown routes it to components.mathblock (same hName trick as callouts).
+//      Uses SKIP to avoid descending into the ~80-node KaTeX subtrees.
+//   2. Convert ==text== marks → <mark> elements (previously a separate pass).
 //
-// This avoids depending on mdast math/inlineMath node types, which differ
-// depending on whether $$ is written on one line or across multiple lines.
+// Merging into one post-katex traversal saves a full walk of the ~5000-node hast.
+import type { Plugin } from "unified";
+import type { Root, Element, Text, ElementContent, Parent } from "hast";
+import { visit, SKIP } from "unist-util-visit";
 
 function makeLatexPlugins() {
   const latexBlocks: string[] = [];
@@ -138,25 +106,62 @@ function makeLatexPlugins() {
     visit(tree, "element", (node: Element) => {
       const cls = (node.properties?.className as string[] | undefined) ?? [];
       if (cls.includes("math-display")) {
-        // The text content of the <code> node is the raw LaTeX
         const text = (node.children[0] as Text | undefined)?.value ?? "";
         latexBlocks.push(text);
       }
     });
   };
 
-  const rehypeTagLatex: Plugin<[], Root> = () => (tree) => {
+  const rehypeMergedPass: Plugin<[], Root> = () => (tree) => {
     let i = 0;
-    visit(tree, "element", (node: Element) => {
-      const cls = (node.properties?.className as string[] | undefined) ?? [];
-      if (cls.includes("katex-display") && latexBlocks[i] !== undefined) {
-        node.tagName = "mathblock";
-        node.properties = { "data-latex": latexBlocks[i++] };
+    visit(tree, (node, index, parent) => {
+      // ── Job 1: rename katex-display spans to <mathblock> ──────────────────
+      if (node.type === "element") {
+        const cls = ((node as Element).properties?.className as string[] | undefined) ?? [];
+        if (cls.includes("katex-display")) {
+          if (latexBlocks[i] !== undefined) {
+            (node as Element).tagName = "mathblock";
+            (node as Element).properties = { "data-latex": latexBlocks[i++] };
+          }
+          // Skip the entire KaTeX subtree — it contains no ==marks== and
+          // we've already handled this katex-display node.
+          return SKIP;
+        }
+      }
+
+      // ── Job 2: ==highlight== marks → <mark> elements ──────────────────────
+      if (
+        node.type === "text" &&
+        (node as Text).value.includes("==") &&
+        parent &&
+        index !== undefined
+      ) {
+        const text = (node as Text).value;
+        const parts = text.split(/(==.+?==)/g);
+        if (parts.length > 1) {
+          const nodes: ElementContent[] = parts
+            .map((part): ElementContent | null => {
+              if (part.startsWith("==") && part.endsWith("==") && part.length > 4) {
+                const mark: Element = {
+                  type: "element",
+                  tagName: "mark",
+                  properties: {},
+                  children: [{ type: "text", value: part.slice(2, -2) }],
+                };
+                return mark;
+              }
+              if (part === "") return null;
+              return { type: "text", value: part } as Text;
+            })
+            .filter((n): n is ElementContent => n !== null);
+          (parent as Parent).children.splice(index, 1, ...nodes);
+          return index; // revisit from same position after splice
+        }
       }
     });
   };
 
-  return { rehypeCaptureLatex, rehypeTagLatex };
+  return { rehypeCaptureLatex, rehypeMergedPass };
 }
 
 import "katex/dist/katex.min.css";
@@ -212,7 +217,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
   // remark plugin (mdast pass) and read by the rehype plugin (hast pass).
   // We recreate the pair when the note changes so the array resets cleanly.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const { rehypeCaptureLatex, rehypeTagLatex } = useMemo(makeLatexPlugins, [note.id]);
+  const { rehypeCaptureLatex, rehypeMergedPass } = useMemo(makeLatexPlugins, [note.id]);
 
   // ── Save ──────────────────────────────────────────────────────────────────
   const handleContentChange = useCallback(
@@ -487,7 +492,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
                 <div className="prose-cairn">
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm, remarkMath, remarkPromoteDisplayMath, remarkCallout]}
-                    rehypePlugins={[rehypeCaptureLatex, rehypeKatex, rehypeTagLatex, rehypeHighlight]}
+                    rehypePlugins={[rehypeCaptureLatex, rehypeKatex, rehypeMergedPass]}
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     components={({
                       // Images — renders asset:// and https:// URLs
