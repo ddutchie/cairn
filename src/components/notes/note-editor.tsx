@@ -12,7 +12,7 @@ import rehypeKatex from "rehype-katex";
 // ReactMarkdown's components map picks up "callout" and renders <Callout>.
 import type { Plugin as RemarkPlugin } from "unified";
 import type { Root as MdastRoot, Blockquote, Paragraph, Text as MdastText } from "mdast";
-import type { Math as MdastMath } from "mdast-util-math";
+import type { InlineMath } from "mdast-util-math";
 import { visit as mdastVisit } from "unist-util-visit";
 
 const CALLOUT_RE = /^\[!([^\]]+)\]([\+\-]?)([\s\S]*)/;
@@ -55,6 +55,30 @@ const remarkCallout: RemarkPlugin<[], MdastRoot> = () => (tree) => {
   });
 };
 
+// ── Remark plugin: promote standalone inlineMath to display math ──────────────
+// remark-math parses $$...$$ on a single line as inlineMath (inside a paragraph).
+// When an inlineMath node is the sole child of a paragraph we want it rendered
+// as a display block (katex-display), not inline. Override hName/hProperties so
+// remark-rehype emits <pre><code class="math-display"> which rehype-katex then
+// renders as <span class="katex-display">.
+const remarkPromoteDisplayMath: RemarkPlugin<[], MdastRoot> = () => (tree) => {
+  mdastVisit(tree, "paragraph", (node: Paragraph, index, parent) => {
+    if (
+      node.children.length === 1 &&
+      node.children[0].type === "inlineMath"
+    ) {
+      const inlineMath = node.children[0] as InlineMath;
+      inlineMath.data = {
+        ...inlineMath.data,
+        hName: "code",
+        hProperties: { className: ["language-math", "math-display"] },
+      };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (node as any).data = { hName: "pre", hProperties: {} };
+    }
+  });
+};
+
 // ── Rehype plugin: ==highlight== marks ────────────────────────────────────────
 // remark-mark targets the old remark v12 API and is incompatible with remark v14+.
 // This rehype approach works at the HTML AST level after markdown parsing.
@@ -91,19 +115,33 @@ const rehypeHighlight: Plugin<[], Root> = () => (tree) => {
   });
 };
 
-// ── Math plugins: preserve raw LaTeX source through rehype-katex ──────────────
-// remarkCollectLatex gathers raw LaTeX from mdast math nodes into a shared array.
-// rehypeTagLatex runs after rehype-katex and renames each <span class="katex-display">
-// to <mathblock data-latex="..."> so ReactMarkdown routes it to components.mathblock
-// (the same hName trick used for callouts). Inline math ($…$) is untouched.
+// ── Math plugins: preserve raw LaTeX through rehype-katex ────────────────────
+// Two rehype plugins that bracket rehype-katex:
+//
+// rehypeCaptureLatex  (runs BEFORE rehype-katex)
+//   Reads raw LaTeX from <code class="math-display"> nodes in the hast
+//   (emitted by remark-rehype for both single-line and multi-line $$ blocks)
+//   and stores them in a shared array.
+//
+// rehypeTagLatex  (runs AFTER rehype-katex)
+//   Renames each <span class="katex-display"> → <mathblock data-latex="...">
+//   so ReactMarkdown routes it to components.mathblock (same trick as callouts).
+//
+// This avoids depending on mdast math/inlineMath node types, which differ
+// depending on whether $$ is written on one line or across multiple lines.
 
 function makeLatexPlugins() {
   const latexBlocks: string[] = [];
 
-  const remarkCollectLatex: RemarkPlugin<[], MdastRoot> = () => (tree) => {
-    latexBlocks.length = 0; // reset on each render
-    mdastVisit(tree, "math", (node: MdastMath) => {
-      latexBlocks.push(node.value);
+  const rehypeCaptureLatex: Plugin<[], Root> = () => (tree) => {
+    latexBlocks.length = 0;
+    visit(tree, "element", (node: Element) => {
+      const cls = (node.properties?.className as string[] | undefined) ?? [];
+      if (cls.includes("math-display")) {
+        // The text content of the <code> node is the raw LaTeX
+        const text = (node.children[0] as Text | undefined)?.value ?? "";
+        latexBlocks.push(text);
+      }
     });
   };
 
@@ -112,17 +150,13 @@ function makeLatexPlugins() {
     visit(tree, "element", (node: Element) => {
       const cls = (node.properties?.className as string[] | undefined) ?? [];
       if (cls.includes("katex-display") && latexBlocks[i] !== undefined) {
-        // Rename to a custom element so ReactMarkdown routes it to components.mathblock.
-        // This is the same hName trick as callouts — renaming in the hast ensures
-        // the components map is consulted, unlike intercepting generic "span" elements.
         node.tagName = "mathblock";
-        node.properties = { "data-latex": latexBlocks[i] };
-        i++;
+        node.properties = { "data-latex": latexBlocks[i++] };
       }
     });
   };
 
-  return { remarkCollectLatex, rehypeTagLatex };
+  return { rehypeCaptureLatex, rehypeTagLatex };
 }
 
 import "katex/dist/katex.min.css";
@@ -178,7 +212,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
   // remark plugin (mdast pass) and read by the rehype plugin (hast pass).
   // We recreate the pair when the note changes so the array resets cleanly.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const { remarkCollectLatex, rehypeTagLatex } = useMemo(makeLatexPlugins, [note.id]);
+  const { rehypeCaptureLatex, rehypeTagLatex } = useMemo(makeLatexPlugins, [note.id]);
 
   // ── Save ──────────────────────────────────────────────────────────────────
   const handleContentChange = useCallback(
@@ -452,8 +486,8 @@ export function NoteEditor({ note }: NoteEditorProps) {
               {note.content ? (
                 <div className="prose-cairn">
                   <ReactMarkdown
-                    remarkPlugins={[remarkGfm, remarkMath, remarkCollectLatex, remarkCallout]}
-                    rehypePlugins={[rehypeKatex, rehypeTagLatex, rehypeHighlight]}
+                    remarkPlugins={[remarkGfm, remarkMath, remarkPromoteDisplayMath, remarkCallout]}
+                    rehypePlugins={[rehypeCaptureLatex, rehypeKatex, rehypeTagLatex, rehypeHighlight]}
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     components={({
                       // Images — renders asset:// and https:// URLs
@@ -506,14 +540,11 @@ export function NoteEditor({ note }: NoteEditorProps) {
                           </Callout>
                         );
                       },
-                       // Display math — katex-display spans tagged with data-latex by rehypeTagLatex.
-                      // We forward the rendered HTML into MathBlock which adds the toggle button.
-                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                       // Display math — rehypeTagLatex renames <span.katex-display> to <mathblock>
+                        // Display math — rehypeTagLatex renames <span.katex-display> to <mathblock>
                       // and stores the raw LaTeX in data-latex. ReactMarkdown routes custom
                       // element names through the components map (same mechanism as callouts).
                       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                      mathblock({ children, ...props }: any) {
+                       mathblock({ children, ...props }: any) {
                         const latex: string = props["data-latex"] ?? "";
                         return <MathBlock key={latex} latex={latex} renderedChildren={children} />;
                       },
