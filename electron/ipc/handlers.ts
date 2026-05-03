@@ -602,7 +602,8 @@ export function registerAppHandlers(
 
   // ── Auto-updater install ───────────────────────────
   ipcMain.handle("updater:install", () => handle(() => {
-    // Dynamically import to avoid issues in dev where autoUpdater isn't active
+    // Dynamically require to avoid issues in dev where autoUpdater isn't active.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { autoUpdater } = require("electron-updater");
     autoUpdater.quitAndInstall();
   }));

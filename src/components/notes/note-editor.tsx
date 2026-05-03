@@ -76,7 +76,7 @@ const remarkCallout: RemarkPlugin<[], MdastRoot> = () => (tree) => {
 // remark-rehype emits <pre><code class="math-display"> which rehype-katex then
 // renders as <span class="katex-display">.
 const remarkPromoteDisplayMath: RemarkPlugin<[], MdastRoot> = () => (tree) => {
-  mdastVisit(tree, "paragraph", (node: Paragraph, index, parent) => {
+  mdastVisit(tree, "paragraph", (node: Paragraph) => {
     if (
       node.children.length === 1 &&
       node.children[0].type === "inlineMath"
@@ -214,11 +214,11 @@ export function NoteEditor({ note }: NoteEditorProps) {
   const previewScrollRef = useRef<HTMLDivElement>(null);
 
   // ── Math plugins (stable per note) ────────────────────────────────────────
-  // makeLatexPlugins() creates a shared mutable array that is written by the
-  // remark plugin (mdast pass) and read by the rehype plugin (hast pass).
-  // We recreate the pair when the note changes so the array resets cleanly.
+  // makeLatexPlugins() creates a shared mutable latexBlocks array coupled
+  // across the capture and merge passes. Re-create the pair on note change
+  // so the array resets cleanly. The inline wrapper satisfies react-hooks/use-memo.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const { rehypeCaptureLatex, rehypeMergedPass } = useMemo(makeLatexPlugins, [note.id]);
+  const { rehypeCaptureLatex, rehypeMergedPass } = useMemo(() => makeLatexPlugins(), [note.id]);
 
   // ── Save ──────────────────────────────────────────────────────────────────
   const handleContentChange = useCallback(
@@ -494,7 +494,6 @@ export function NoteEditor({ note }: NoteEditorProps) {
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm, remarkMath, remarkPromoteDisplayMath, remarkCallout]}
                     rehypePlugins={[rehypeCaptureLatex, rehypeKatex, rehypeMergedPass]}
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     components={({
                       // Images — renders asset:// and https:// URLs
                       img({ src, alt }) {
@@ -668,9 +667,9 @@ export function NoteEditor({ note }: NoteEditorProps) {
                        // href.slice(1) matches the id attribute directly.
                        a({ href, children, ...props }) {
                         if (href?.startsWith("#")) {
-                          const isFootnoteRef = (props as any)["data-footnote-ref"] === true;
+                          const isFootnoteRef = (props as Record<string, unknown>)["data-footnote-ref"] === true;
                            // remark-gfm sets className="data-footnote-backref" (a string, not an array)
-                           const rawClassName: unknown = (props as any).className;
+                           const rawClassName: unknown = (props as Record<string, unknown>).className;
                            const isBackref = typeof rawClassName === "string"
                              ? rawClassName.includes("data-footnote-backref")
                              : Array.isArray(rawClassName) && rawClassName.includes("data-footnote-backref");

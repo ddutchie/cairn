@@ -23,6 +23,8 @@
  * This measures the transformer cost, not the clone cost.
  */
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "fs";
 import { resolve } from "path";

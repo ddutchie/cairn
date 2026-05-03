@@ -46,7 +46,7 @@ import { UrlNode }       from "./nodes/UrlNode";
 import { AiSummaryNode } from "./nodes/AiSummaryNode";
 import { FlowEdge }      from "./edges/FlowEdge";
 import { NodeEditModal } from "./NodeEditModal";
-import { cn } from "@/lib/utils";
+
 import { applyDagreLayout } from "@/lib/flow-layout";
 
 // ── Group membership helpers ──────────────────────────────────────────────────
@@ -213,7 +213,7 @@ export function IdeaFlowView() {
 }
 
 function IdeaFlowCanvas() {
-  const { activeProjectId, columns, cards, projects, activeWorkspaceId } = useCairnStore();
+  const { activeProjectId, columns, activeWorkspaceId } = useCairnStore();
   const { fitView, screenToFlowPosition, getInternalNode } = useReactFlow();
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
@@ -397,7 +397,7 @@ function IdeaFlowCanvas() {
     // nodesRef is up-to-date before any subsequent drag handler fires.
     flushSync(() => setNodes((ns) => {
       const changeMap = new Map(changes.map((c) => [c.nodeId, c]));
-      let updated = ns.map((n) => {
+      const updated = ns.map((n) => {
         const c = changeMap.get(n.id);
         if (c) {
           return {

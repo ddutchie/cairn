@@ -64,7 +64,7 @@ interface TimeAxisProps {
 export function SvgTimeAxis({
   xScale,
   plotW,
-  plotH,
+  plotH: _plotH,
   padLeft,
   padTop,
   padBottom,

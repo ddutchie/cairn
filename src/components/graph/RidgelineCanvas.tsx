@@ -60,6 +60,7 @@ export function RidgelineCanvas({ nodes, onNodeClick, mode, view, onViewChange, 
       if (s) ts.push(new Date(s).getTime());
     }
     if (ts.length === 0) {
+      // eslint-disable-next-line react-hooks/purity
       const now = Date.now();
       return { start: now - 7 * DAY_MS, end: now + DAY_MS };
     }
@@ -191,6 +192,7 @@ export function RidgelineCanvas({ nodes, onNodeClick, mode, view, onViewChange, 
     }));
   }, [view, plotW, xScale, bucketMs]);
 
+  // eslint-disable-next-line react-hooks/purity
   const todayX    = xScale(new Date(floorDay(Date.now())));
   const showToday = todayX >= PAD_LEFT && todayX <= PAD_LEFT + plotW;
 
@@ -284,6 +286,7 @@ export function RidgelineCanvas({ nodes, onNodeClick, mode, view, onViewChange, 
         ref={svgRef}
         width={dims.width}
         height={dims.height}
+        // eslint-disable-next-line react-hooks/refs
         style={{ display: "block", cursor: dragRef.current ? "grabbing" : "grab" }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}

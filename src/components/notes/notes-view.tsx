@@ -83,7 +83,7 @@ export function NotesView() {
     createNote, updateNote, deleteNote,
     archiveNote, restoreNote, moveNoteToProject, moveNoteToFolder,
     revealNote, generatePrd,
-    getProjectColumns, tags, getTagById,
+    getTagById,
     getWorkspaceProjects,
   } = useCairnStore();
 
@@ -97,8 +97,7 @@ export function NotesView() {
   const [deleteNoteId, setDeleteNoteId]         = useState<string | null>(null);
   const [newFolderOpen, setNewFolderOpen]        = useState(false);
   const [newFolderName, setNewFolderName]        = useState("");
-  // Tracks which folder path to create the note in when clicking + in a folder
-  const [createInFolder, setCreateInFolder]      = useState("");
+
   // folder → collapsed state; true = collapsed, undefined/false = open
   const [collapsedFolders, setCollapsedFolders]  = useState<Record<string, boolean>>({});
   // "Move to folder" for a specific note

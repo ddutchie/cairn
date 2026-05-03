@@ -41,7 +41,7 @@ export function Sidebar() {
   function toggleProjectExpand(projectId: string) {
     setExpandedProjects((prev) => {
       const next = new Set(prev);
-      next.has(projectId) ? next.delete(projectId) : next.add(projectId);
+      if (next.has(projectId)) { next.delete(projectId); } else { next.add(projectId); }
       return next;
     });
   }

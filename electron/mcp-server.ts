@@ -1290,8 +1290,8 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const created = db.prepare("SELECT * FROM idea_flow_edges WHERE id = ?").get(edgeId) as any;
       if (!created) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const existing = db.prepare("SELECT id FROM idea_flow_edges WHERE flow_id = ? AND source_node_id = ? AND target_node_id = ?")
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           .get(srcNode.flow_id, args.sourceNodeId, args.targetNodeId) as any;
         return { id: existing?.id ?? null, source: args.sourceNodeId, target: args.targetNodeId, label: args.label ?? null, note: "Edge already exists" };
       }

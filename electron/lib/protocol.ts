@@ -9,12 +9,12 @@
  * without bypassing Electron's sandbox.
  */
 
-import { session, net } from "electron";
+import { session, net, app } from "electron";
 import path from "path";
 import fs from "fs";
 import { pathToFileURL } from "url";
 
-const isDev = !require("electron").app.isPackaged;
+const isDev = !app.isPackaged;
 
 // workspacePath is set once registerAssetProtocol() is called from main.ts
 let _workspacePath: string | null = null;

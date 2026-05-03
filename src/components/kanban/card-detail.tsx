@@ -23,7 +23,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogClose,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -53,7 +52,6 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
     moveCardToProject,
     addCardBlocker,
     removeCardBlocker,
-    getTagById,
     tags,
     getProjectNotes,
     linkNoteToCard,

@@ -108,16 +108,6 @@ function isElectron(): boolean {
 
 
 
-function ipcAwait(
-  fn: (e: NonNullable<Window["electron"]>) => Promise<unknown> | undefined
-): Promise<void> {
-  if (!isElectron() || !window.electron) return Promise.resolve();
-  return (fn(window.electron) ?? Promise.resolve())
-    .then(() => undefined)
-    .catch((err: unknown) => {
-      console.error("[cairn:ipc]", err);
-    });
-}
 
 function loadPersisted(): PersistedState | null {
   return storage.get<PersistedState>(STORAGE_KEY);
