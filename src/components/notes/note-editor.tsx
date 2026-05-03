@@ -416,11 +416,25 @@ export function NoteEditor({ note }: NoteEditorProps) {
       titleRef.current = value;
       if (titleTimer.current) clearTimeout(titleTimer.current);
       titleTimer.current = setTimeout(() => {
-        updateNote(note.id, { title: titleRef.current });
+        const t = titleRef.current.trim();
+        if (!t) return; // never save an empty title
+        updateNote(note.id, { title: t });
       }, 500);
     },
     [note.id, updateNote]
   );
+
+  const handleTitleBlur = useCallback(() => {
+    if (titleTimer.current) clearTimeout(titleTimer.current);
+    const t = titleRef.current.trim();
+    if (!t) {
+      // Revert to last saved title if field is left empty
+      setLocalTitle(note.title);
+      titleRef.current = note.title;
+      return;
+    }
+    updateNote(note.id, { title: t });
+  }, [note.id, note.title, updateNote]);
 
   // ── AI toolbar — driven by CodeMirror selection events ────────────────────
   const handleSelectionChange = useCallback(
@@ -625,6 +639,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
           type="text"
           value={localTitle}
           onChange={handleTitleChange}
+          onBlur={handleTitleBlur}
           placeholder="Note title"
           className="w-full bg-transparent text-2xl font-bold text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none tracking-tight max-w-4xl mx-auto block"
         />

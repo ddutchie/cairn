@@ -156,9 +156,9 @@ export function registerIpcHandlers(ctx: DbContext): void {
         }
         q.updateNote(ctx.db, id, enrichedRest);
       }
+      suppressNextChange(id);
       const note = q.restoreNote(ctx.db, id);
       if (note.type !== "dashboard") {
-        suppressNextChange(note.id);
         writeNoteFile(ctx.workspacePath, { ...note, projectName: getProjectName(ctx.db, note.projectId) });
       }
       return note;
@@ -167,9 +167,11 @@ export function registerIpcHandlers(ctx: DbContext): void {
     if (patch.content !== undefined && patch.contentText === undefined) {
       enrichedPatch.contentText = stripMarkdown(patch.content);
     }
+    // Suppress before the update so the watcher's unlink event (fired when
+    // writeNoteFile renames the file) is ignored before it can delete the row.
+    suppressNextChange(id);
     const note = q.updateNote(ctx.db, id, enrichedPatch);
     if (note.type !== "dashboard") {
-      suppressNextChange(note.id);
       writeNoteFile(ctx.workspacePath, {
         ...note,
         projectName: getProjectName(ctx.db, note.projectId),
@@ -182,9 +184,9 @@ export function registerIpcHandlers(ctx: DbContext): void {
   ipcMain.handle("db:note:moveToFolder", (_e, { id, folder }: { id: string; folder: string }) => handle(() => {
     // Use moveNoteFolder (direct SET) rather than updateNote (COALESCE) so that
     // moving a note to root (folder="") is never silently ignored.
+    suppressNextChange(id);
     const note = q.moveNoteFolder(ctx.db, id, folder ?? "");
     if (note.type !== "dashboard") {
-      suppressNextChange(note.id);
       writeNoteFile(ctx.workspacePath, { ...note, projectName: getProjectName(ctx.db, note.projectId) });
     }
     return note;

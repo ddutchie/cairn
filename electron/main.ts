@@ -21,6 +21,7 @@ import { initDb } from "./db/client";
 import { registerIpcHandlers, registerAppHandlers } from "./ipc/handlers";
 import { readWorkspaceConfig, getDbPathForWorkspace } from "./workspace-config";
 import { startFileWatcher } from "./file-watcher";
+import { syncNotesFromDisk } from "./notes-files";
 import { markMcpNotificationsRead } from "./db/queries";
 import { setupProtocol, registerAssetProtocol, setAssetWorkspacePath } from "./lib/protocol";
 import { createTray } from "./lib/tray";
@@ -148,6 +149,10 @@ app.whenReady().then(async () => {
   const initialDbPath = getDbPathForWorkspace(initialWorkspacePath);
   const initialDb = initDb(initialDbPath);
 
+  // Recover any notes written to disk but missing from SQLite (e.g. due to
+  // a fire-and-forget IPC race or unexpected shutdown).
+  syncNotesFromDisk(initialDb, initialWorkspacePath);
+
   // ── Mutable context — swapped in reinitialise() without relaunching ──
   const ctx: import("./ipc/handlers").DbContext = {
     db: initialDb,
@@ -180,6 +185,9 @@ app.whenReady().then(async () => {
     // Open the new DB
     const newDbPath = getDbPathForWorkspace(newWorkspacePath);
     const newDb = initDb(newDbPath);
+
+    // Recover any notes on disk not yet in SQLite before swapping context
+    syncNotesFromDisk(newDb, newWorkspacePath);
 
     // Swap context — all handlers read from ctx at call time
     ctx.db = newDb;
