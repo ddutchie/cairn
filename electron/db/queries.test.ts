@@ -15,7 +15,6 @@ import {
   createProject,
   createNote,
   updateNote,
-  getNotes,
   createColumn,
   createCard,
   updateCard,

@@ -512,7 +512,7 @@ function IdeaFlowCanvas() {
       }
       dragStartStateRef.current = null;
     }
-  }, [applyGroupMembership]);
+  }, [applyGroupMembership, getInternalNode]);
 
   // ── Handle nodes change — intercept resize to persist size + resolve membership ──
 

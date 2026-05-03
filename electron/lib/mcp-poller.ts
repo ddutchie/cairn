@@ -21,7 +21,7 @@ export interface McpPollerOptions {
 export function startMcpNotificationPoller({
   db,
   dbPath,
-  win,
+  win: _win,
   updateBadge,
   onDbChanged,
 }: McpPollerOptions): void {

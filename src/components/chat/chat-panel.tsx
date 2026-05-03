@@ -1,11 +1,11 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
-import { X, Send, Square, Sparkles, PenSquare, History, Check, Pencil } from "lucide-react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
+import { X, Send, Square, Sparkles, PenSquare, History, Pencil } from "lucide-react";
 import { cn, formatRelative } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { useChatStream } from "@/hooks/useChatStream";
-import { Button } from "@/components/ui/button";
+
 import { Tooltip } from "@/components/ui/tooltip";
 import { ChatMessageBubble } from "./chat-panel/ChatMessageBubble";
 import { SuggestedPrompts } from "./chat-panel/SuggestedPrompts";
@@ -23,7 +23,7 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
     projects, workspaces,
     addMessage,
     chatMessages, chatThreads, aiConfig,
-    setView, createNewThread, deleteThread, renameThread,
+    createNewThread, deleteThread, renameThread,
   } = useCairnStore();
 
   const [input, setInput]             = useState("");
@@ -72,7 +72,10 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
     return () => document.removeEventListener("mousedown", handle);
   }, [historyOpen]);
 
-  const messages = threadId ? chatMessages.filter((m) => m.threadId === threadId) : [];
+  const messages = useMemo(
+    () => threadId ? chatMessages.filter((m) => m.threadId === threadId) : [],
+    [threadId, chatMessages],
+  );
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, isLoading]);
   useEffect(() => { if (chatOpen) inputRef.current?.focus(); }, [chatOpen]);

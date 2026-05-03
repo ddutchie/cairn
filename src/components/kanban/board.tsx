@@ -358,7 +358,7 @@ export function KanbanBoard() {
                 cards={getColumnCards(activeColumn.id)}
                 archivedCards={[]}
                 onCardClick={() => {}}
-                onAddCard={(_data) => {}}
+                onAddCard={() => {}}
                 onRename={() => {}}
                 onSetLimit={() => {}}
                 onDelete={() => {}}

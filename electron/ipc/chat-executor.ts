@@ -65,7 +65,6 @@ const IDEA_FLOW_RULES = {
   ],
 };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function executeTool(
   db: Database.Database,
   req: ChatRequest,
@@ -77,7 +76,6 @@ export async function executeTool(
 ): Promise<unknown> {
   emit?.({ tool: name, label: TOOL_LABELS[name]?.(args) ?? name, args });
   const snap = q.getFullSnapshot(db) as CairnSnapshot;
-  const now = ts();
 
   // ── Shared read tools (also used by db:mcpQuery and MCP server) ──────────
   {

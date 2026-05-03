@@ -47,7 +47,7 @@ async function runToolLoop(
         headers,
         body: JSON.stringify({ model, messages, tools: TOOLS, tool_choice: "auto", max_tokens: 4096, temperature: 0.3 }),
       });
-    } catch (err) {
+    } catch {
       return { exhausted: true, content: `Could not reach the AI endpoint at \`${baseUrl}\`. Check your endpoint URL and make sure the server is running.` };
     }
 

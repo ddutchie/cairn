@@ -102,9 +102,6 @@ export interface CairnStore
 const STORAGE_KEY = "state";
 // AI_CONFIG_KEY and ACTIVE_PROJECT_KEY imported from @/lib/constants
 
-function isElectron(): boolean {
-  return typeof window !== "undefined" && !!window.electron;
-}
 
 
 

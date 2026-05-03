@@ -21,6 +21,7 @@ export function NodeEditModal({ nodeId, type, data, onSave, onClose }: NodeEditM
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [fields, setFields] = useState<Record<string, any>>(data);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { setFields(data); }, [nodeId]);
 
   function set(key: string, value: string) {

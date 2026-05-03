@@ -5,13 +5,13 @@
  * and ensures tools return { error } rather than throwing.
  */
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import BetterSqlite3 from "better-sqlite3";
 import type Database from "better-sqlite3";
 import { applySchema } from "../db/schema";
 import {
   createWorkspace, createProject, createNote,
-  createColumn, createCard, updateNote, getCardById,
+  createColumn, createCard, getCardById,
 } from "../db/queries";
 import { executeTool } from "./chat-executor";
 import type { LLMConfig } from "../lib/llm";
@@ -227,7 +227,6 @@ describe("update_note", () => {
     seed(db);
     const result = await exec(db, "update_note", { noteId: "note1", isPinned: true }) as Record<string, unknown>;
     expect(result).not.toHaveProperty("error");
-    const note = getCardById(db, "note1"); // use getNoteById via queries directly
     const noteRow = db.prepare("SELECT is_pinned FROM notes WHERE id = ?").get("note1") as { is_pinned: number };
     expect(noteRow.is_pinned).toBe(1);
   });

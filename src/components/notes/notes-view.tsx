@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback, memo } from "react";
+import React, { useState, useEffect, useRef, useCallback, memo, useMemo } from "react";
 import {
   FileText, Plus, Pin, PinOff, Trash2, MoreHorizontal, Search,
   Wand2, Archive, ArchiveRestore, FolderInput,
@@ -104,8 +104,14 @@ export function NotesView() {
   const [folderMoveNoteId, setFolderMoveNoteId]  = useState<string | null>(null);
   const [folderMoveDest, setFolderMoveDest]       = useState("");
 
-  const notes           = activeProjectId ? getProjectNotes(activeProjectId) : [];
-  const archivedNotes   = activeProjectId ? getArchivedProjectNotes(activeProjectId) : [];
+  const notes         = useMemo(
+    () => activeProjectId ? getProjectNotes(activeProjectId) : [],
+    [activeProjectId, getProjectNotes],
+  );
+  const archivedNotes = useMemo(
+    () => activeProjectId ? getArchivedProjectNotes(activeProjectId) : [],
+    [activeProjectId, getArchivedProjectNotes],
+  );
   const workspaceProjects = activeWorkspaceId ? getWorkspaceProjects(activeWorkspaceId) : [];
   const projectTagIds   = [...new Set(notes.flatMap((n) => n.tagIds))];
   const projectTags     = projectTagIds.map((id) => getTagById(id)).filter(Boolean) as import("@/types").Tag[];
