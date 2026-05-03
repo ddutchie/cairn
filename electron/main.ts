@@ -22,7 +22,7 @@ import { registerIpcHandlers, registerAppHandlers } from "./ipc/handlers";
 import { readWorkspaceConfig, getDbPathForWorkspace } from "./workspace-config";
 import { startFileWatcher } from "./file-watcher";
 import { markMcpNotificationsRead } from "./db/queries";
-import { setupProtocol, registerAssetProtocol } from "./lib/protocol";
+import { setupProtocol, registerAssetProtocol, setAssetWorkspacePath } from "./lib/protocol";
 import { createTray } from "./lib/tray";
 import { startMcpNotificationPoller } from "./lib/mcp-poller";
 
@@ -140,9 +140,10 @@ app.whenReady().then(async () => {
 
   if (config) fs.mkdirSync(initialWorkspacePath, { recursive: true });
 
-  // Register asset:// protocol handler so the renderer can display pasted images.
-  // Re-registered in reinitialise() when workspace changes.
-  registerAssetProtocol(initialWorkspacePath);
+  // Register the asset:// protocol handler once. The workspace path it reads
+  // is updated via setAssetWorkspacePath() — no re-registration needed.
+  registerAssetProtocol();
+  setAssetWorkspacePath(initialWorkspacePath);
 
   const initialDbPath = getDbPathForWorkspace(initialWorkspacePath);
   const initialDb = initDb(initialDbPath);
@@ -187,8 +188,8 @@ app.whenReady().then(async () => {
     // Restart file watcher on the new path
     startFileWatcher(newWorkspacePath, newDb, notifyDbChanged);
 
-    // Re-register the asset:// protocol for the new workspace
-    registerAssetProtocol(newWorkspacePath);
+    // Point the asset:// handler at the new workspace (no re-registration needed)
+    setAssetWorkspacePath(newWorkspacePath);
 
     // Tell the renderer to re-hydrate from the new DB
     if (!win.isDestroyed()) {
