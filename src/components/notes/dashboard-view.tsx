@@ -49,7 +49,8 @@ const ALLOWED_TOOLS = new Set([
 
 export function DashboardView({ note }: DashboardViewProps) {
   const electron = typeof window !== "undefined" ? window.electron : null;
-  const { updateNote } = useCairnStore();
+  const { updateNote, aiConfig } = useCairnStore();
+  const aiEnabled = aiConfig.aiEnabled ?? true;
 
   const projectId   = note.projectId   ?? "";
   const workspaceId = note.workspaceId ?? "";
@@ -288,20 +289,22 @@ export function DashboardView({ note }: DashboardViewProps) {
               Dashboard error{errors.length > 1 ? `s (${errors.length})` : ""}
             </div>
             <div className="flex items-center gap-1">
-              <button
-                onClick={() => {
-                  const errorSummary = errors.map((e) =>
-                    `- ${e.message}${e.source ? ` (${e.source.split("/").pop()}:${e.line}:${e.col})` : ""}`
-                  ).join("\n");
-                  const prefill = `My dashboard has the following error${errors.length > 1 ? "s" : ""}:\n\n${errorSummary}\n\nHere is the current dashboard HTML:\n\n\`\`\`html\n${note.content ?? ""}\n\`\`\`\n\nPlease fix it.`;
-                  window.dispatchEvent(CairnEvents.openChat(prefill));
-                  setErrors([]);
-                }}
-                className="flex items-center gap-1 px-2 py-0.5 rounded text-[0.786rem] text-[var(--danger)] hover:bg-[var(--danger)]/10 transition-colors"
-              >
-                <Wand2 size={11} />
-                Fix with AI
-              </button>
+              {aiEnabled && (
+                <button
+                  onClick={() => {
+                    const errorSummary = errors.map((e) =>
+                      `- ${e.message}${e.source ? ` (${e.source.split("/").pop()}:${e.line}:${e.col})` : ""}`
+                    ).join("\n");
+                    const prefill = `My dashboard has the following error${errors.length > 1 ? "s" : ""}:\n\n${errorSummary}\n\nHere is the current dashboard HTML:\n\n\`\`\`html\n${note.content ?? ""}\n\`\`\`\n\nPlease fix it.`;
+                    window.dispatchEvent(CairnEvents.openChat(prefill));
+                    setErrors([]);
+                  }}
+                  className="flex items-center gap-1 px-2 py-0.5 rounded text-[0.786rem] text-[var(--danger)] hover:bg-[var(--danger)]/10 transition-colors"
+                >
+                  <Wand2 size={11} />
+                  Fix with AI
+                </button>
+              )}
               <button
                 onClick={() => setErrors([])}
                 className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors p-0.5"

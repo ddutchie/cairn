@@ -63,11 +63,17 @@ function getProjectName(db: Database.Database, projectId: string): string {
   return row?.name ?? projectId;
 }
 
-export function registerIpcHandlers(db: Database.Database, workspacePath: string): void {
+/** Mutable context swapped in-place by main.ts when the workspace changes. */
+export interface DbContext {
+  db: Database.Database;
+  workspacePath: string;
+}
+
+export function registerIpcHandlers(ctx: DbContext): void {
 
   // ── Full snapshot (hydrate store on app launch) ───
-  ipcMain.handle("db:snapshot", () => handle(() => q.getFullSnapshot(db)));
-  ipcMain.handle("db:hasData",  () => handle(() => q.hasData(db)));
+  ipcMain.handle("db:snapshot", () => handle(() => q.getFullSnapshot(ctx.db)));
+  ipcMain.handle("db:hasData",  () => handle(() => q.hasData(ctx.db)));
 
   // ── Dashboard live query bridge ───────────────────
   // Executes read-only MCP-style tool calls from dashboard iframes.
@@ -75,28 +81,28 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
   ipcMain.handle("db:mcpQuery", (_e, { tool, args }: { tool: string; args: Record<string, any> }) => {
     return handle(() => {
       if (tool === "get_cairn_context") {
-        return buildContextResponse(db);
+        return buildContextResponse(ctx.db);
       }
-      const snap = q.getFullSnapshot(db);
-      const res = executeReadTool(db, snap, tool, args);
+      const snap = q.getFullSnapshot(ctx.db);
+      const res = executeReadTool(ctx.db, snap, tool, args);
       if (res.handled) return res.result;
       throw new Error(`Unknown or disallowed tool: ${tool}`);
     });
   });
 
   // ── Workspaces ────────────────────────────────────
-  ipcMain.handle("db:workspace:list",   () => handle(() => q.getAllWorkspaces(db)));
-  ipcMain.handle("db:workspace:create", (_e, args) => handle(() => q.createWorkspace(db, args)));
-  ipcMain.handle("db:workspace:update", (_e, { id, patch }) => handle(() => q.updateWorkspace(db, id, patch)));
+  ipcMain.handle("db:workspace:list",   () => handle(() => q.getAllWorkspaces(ctx.db)));
+  ipcMain.handle("db:workspace:create", (_e, args) => handle(() => q.createWorkspace(ctx.db, args)));
+  ipcMain.handle("db:workspace:update", (_e, { id, patch }) => handle(() => q.updateWorkspace(ctx.db, id, patch)));
 
   // ── Projects ──────────────────────────────────────
-  ipcMain.handle("db:project:list",   (_e, { workspaceId }) => handle(() => q.getProjects(db, workspaceId)));
+  ipcMain.handle("db:project:list",   (_e, { workspaceId }) => handle(() => q.getProjects(ctx.db, workspaceId)));
   ipcMain.handle("db:project:create", (_e, args) => handle(() => {
-    const project = q.createProject(db, args);
+    const project = q.createProject(ctx.db, args);
     // Create default columns atomically in the same handler call
     if (args.withDefaultColumns) {
       const columns = DEFAULT_COLUMNS.map((col) =>
-        q.createColumn(db, {
+        q.createColumn(ctx.db, {
           id: q.generateId(),
           projectId: project.id,
           workspaceId: project.workspaceId,
@@ -109,30 +115,30 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
     }
     return { project, columns: [] };
   }));
-  ipcMain.handle("db:project:update", (_e, { id, patch }) => handle(() => q.updateProject(db, id, patch)));
+  ipcMain.handle("db:project:update", (_e, { id, patch }) => handle(() => q.updateProject(ctx.db, id, patch)));
   ipcMain.handle("db:project:delete", (_e, { id }) => handle(() => {
-    const project = q.getProjectById(db, id);
+    const project = q.getProjectById(ctx.db, id);
     if (project) {
-      deleteProjectNotesDir(workspacePath, project.name);
+      deleteProjectNotesDir(ctx.workspacePath, project.name);
     }
-    q.deleteProject(db, id);
+    q.deleteProject(ctx.db, id);
   }));
 
   // ── Notes ─────────────────────────────────────────
   // All note mutations also write/update/delete the corresponding .md file.
 
-  ipcMain.handle("db:note:list", (_e, { projectId }) => handle(() => q.getNotes(db, projectId)));
+  ipcMain.handle("db:note:list", (_e, { projectId }) => handle(() => q.getNotes(ctx.db, projectId)));
 
   ipcMain.handle("db:note:create", (_e, args) => handle(() => {
-    const note = q.createNote(db, {
+    const note = q.createNote(ctx.db, {
       ...args,
       contentText: stripMarkdown(args.content ?? ""),
     });
     if (note.type !== "dashboard") {
       suppressNextChange(note.id);
-      writeNoteFile(workspacePath, {
+      writeNoteFile(ctx.workspacePath, {
         ...note,
-        projectName: getProjectName(db, note.projectId),
+        projectName: getProjectName(ctx.db, note.projectId),
       });
     }
     return note;
@@ -148,12 +154,12 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
         if (rest.content !== undefined && rest.contentText === undefined) {
           enrichedRest.contentText = stripMarkdown(rest.content);
         }
-        q.updateNote(db, id, enrichedRest);
+        q.updateNote(ctx.db, id, enrichedRest);
       }
-      const note = q.restoreNote(db, id);
+      const note = q.restoreNote(ctx.db, id);
       if (note.type !== "dashboard") {
         suppressNextChange(note.id);
-        writeNoteFile(workspacePath, { ...note, projectName: getProjectName(db, note.projectId) });
+        writeNoteFile(ctx.workspacePath, { ...note, projectName: getProjectName(ctx.db, note.projectId) });
       }
       return note;
     }
@@ -161,39 +167,39 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
     if (patch.content !== undefined && patch.contentText === undefined) {
       enrichedPatch.contentText = stripMarkdown(patch.content);
     }
-    const note = q.updateNote(db, id, enrichedPatch);
+    const note = q.updateNote(ctx.db, id, enrichedPatch);
     if (note.type !== "dashboard") {
       suppressNextChange(note.id);
-      writeNoteFile(workspacePath, {
+      writeNoteFile(ctx.workspacePath, {
         ...note,
-        projectName: getProjectName(db, note.projectId),
+        projectName: getProjectName(ctx.db, note.projectId),
       });
     }
-    invalidateRelationshipCache(db, id);
+    invalidateRelationshipCache(ctx.db, id);
     return note;
   }));
 
   ipcMain.handle("db:note:moveToFolder", (_e, { id, folder }: { id: string; folder: string }) => handle(() => {
     // Use moveNoteFolder (direct SET) rather than updateNote (COALESCE) so that
     // moving a note to root (folder="") is never silently ignored.
-    const note = q.moveNoteFolder(db, id, folder ?? "");
+    const note = q.moveNoteFolder(ctx.db, id, folder ?? "");
     if (note.type !== "dashboard") {
       suppressNextChange(note.id);
-      writeNoteFile(workspacePath, { ...note, projectName: getProjectName(db, note.projectId) });
+      writeNoteFile(ctx.workspacePath, { ...note, projectName: getProjectName(ctx.db, note.projectId) });
     }
     return note;
   }));
 
   ipcMain.handle("db:note:delete", (_e, { id }) => handle(() => {
-    const note = q.getNoteById(db, id);
+    const note = q.getNoteById(ctx.db, id);
     if (note) {
-      const projectName = getProjectName(db, note.projectId);
-      q.deleteNote(db, id);
+      const projectName = getProjectName(ctx.db, note.projectId);
+      q.deleteNote(ctx.db, id);
       if (note.type !== "dashboard") {
-        deleteNoteFile(workspacePath, projectName, id);
+        deleteNoteFile(ctx.workspacePath, projectName, id);
       }
     } else {
-      q.deleteNote(db, id);
+      q.deleteNote(ctx.db, id);
     }
   }));
 
@@ -206,8 +212,8 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
 
   // ── Reveal in Finder / Explorer ───────────────────
   ipcMain.handle("app:revealNote", (_e, { noteId, projectId }) => handle(() => {
-    const projectName = getProjectName(db, projectId);
-    const fp = findNoteFilePath(workspacePath, projectName, noteId);
+    const projectName = getProjectName(ctx.db, projectId);
+    const fp = findNoteFilePath(ctx.workspacePath, projectName, noteId);
     if (fp) {
       shell.showItemInFolder(fp);
     }
@@ -215,10 +221,10 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
 
   // ── Asset upload (paste images into notes) ────────
   // Receives raw image bytes, writes content-addressed to
-  // <workspacePath>/assets/<sha256[0..15]>.<ext>, returns asset:// URL.
+  // <ctx.workspacePath>/assets/<sha256[0..15]>.<ext>, returns asset:// URL.
   ipcMain.handle("app:uploadAsset", (_e, { filename, data }: { filename: string; data: ArrayBuffer }) =>
     handle(() => {
-      const assetDir = path.join(workspacePath, "assets");
+      const assetDir = path.join(ctx.workspacePath, "assets");
       fs.mkdirSync(assetDir, { recursive: true });
       const ext = path.extname(filename).toLowerCase() || ".bin";
       // data arrives as an ArrayBuffer via Electron structured-clone (no JSON serialisation overhead)
@@ -235,7 +241,7 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
 
   // ── Reveal assets folder in Finder / Explorer ─────
   ipcMain.handle("app:revealAssets", () => handle(async () => {
-    const assetDir = path.join(workspacePath, "assets");
+    const assetDir = path.join(ctx.workspacePath, "assets");
     fs.mkdirSync(assetDir, { recursive: true });
     // shell.openPath returns a Promise<string>; non-empty = error message.
     const errMsg = await shell.openPath(assetDir);
@@ -243,46 +249,46 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
   }));
 
   // ── Board columns ─────────────────────────────────
-  ipcMain.handle("db:column:list",   (_e, { projectId }) => handle(() => q.getColumns(db, projectId)));
-  ipcMain.handle("db:column:create", (_e, args) => handle(() => q.createColumn(db, args)));
-  ipcMain.handle("db:column:update", (_e, { id, patch }) => handle(() => q.updateColumn(db, id, patch)));
-  ipcMain.handle("db:column:delete", (_e, { id }) => handle(() => q.deleteColumn(db, id)));
+  ipcMain.handle("db:column:list",   (_e, { projectId }) => handle(() => q.getColumns(ctx.db, projectId)));
+  ipcMain.handle("db:column:create", (_e, args) => handle(() => q.createColumn(ctx.db, args)));
+  ipcMain.handle("db:column:update", (_e, { id, patch }) => handle(() => q.updateColumn(ctx.db, id, patch)));
+  ipcMain.handle("db:column:delete", (_e, { id }) => handle(() => q.deleteColumn(ctx.db, id)));
 
   // ── Task cards ────────────────────────────────────
-  ipcMain.handle("db:card:list",   (_e, opts) => handle(() => q.getCards(db, opts)));
-  ipcMain.handle("db:card:create", (_e, args) => handle(() => q.createCard(db, args)));
+  ipcMain.handle("db:card:list",   (_e, opts) => handle(() => q.getCards(ctx.db, opts)));
+  ipcMain.handle("db:card:create", (_e, args) => handle(() => q.createCard(ctx.db, args)));
   ipcMain.handle("db:card:update", (_e, { id, patch }) => handle(() => {
     // archivedAt: null means "restore" — COALESCE cannot clear to NULL
     if ("archivedAt" in patch && patch.archivedAt === null) {
       const rest = { ...patch };
       delete rest.archivedAt;
-      if (Object.keys(rest).length > 0) q.updateCard(db, id, rest);
-      return q.restoreCard(db, id);
+      if (Object.keys(rest).length > 0) q.updateCard(ctx.db, id, rest);
+      return q.restoreCard(ctx.db, id);
     }
     // dueDate: null means "clear due date"
     if ("dueDate" in patch && patch.dueDate === null) {
       const rest = { ...patch };
       delete rest.dueDate;
-      if (Object.keys(rest).length > 0) q.updateCard(db, id, rest);
-      return q.clearCardDueDate(db, id);
+      if (Object.keys(rest).length > 0) q.updateCard(ctx.db, id, rest);
+      return q.clearCardDueDate(ctx.db, id);
     }
-    const card = q.updateCard(db, id, patch);
-    invalidateRelationshipCache(db, id);
+    const card = q.updateCard(ctx.db, id, patch);
+    invalidateRelationshipCache(ctx.db, id);
     return card;
   }));
-  ipcMain.handle("db:card:delete", (_e, { id }) => handle(() => q.deleteCard(db, id)));
+  ipcMain.handle("db:card:delete", (_e, { id }) => handle(() => q.deleteCard(ctx.db, id)));
 
   // ── Card dependencies ─────────────────────────────
   ipcMain.handle("db:card:addBlocker", (_e, { cardId, blockerCardId }) => handle(() => {
-    const card    = q.getCardById(db, cardId);
-    const blocker = q.getCardById(db, blockerCardId);
+    const card    = q.getCardById(ctx.db, cardId);
+    const blocker = q.getCardById(ctx.db, blockerCardId);
     if (!card)    return { error: "Card not found" };
     if (!blocker) return { error: "Blocker card not found" };
     if (card.projectId !== blocker.projectId) return { error: "Cards must be in the same project" };
     if (cardId === blockerCardId) return { error: "A card cannot block itself" };
     // Circular dependency check: would blockerCardId become reachable from cardId?
     // i.e. if cardId already blocks blockerCardId (directly or transitively), reject.
-    const projectCards = q.getCards(db, { projectId: card.projectId });
+    const projectCards = q.getCards(ctx.db, { projectId: card.projectId });
     const cardLookup = new Map(projectCards.map((c) => [c.id, c]));
     function canReach(from: string, target: string, visited = new Set<string>()): boolean {
       if (from === target) return true;
@@ -295,30 +301,30 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
     if (canReach(blockerCardId, cardId, new Set())) {
       return { error: "Circular dependency detected" };
     }
-    return q.addCardBlocker(db, cardId, blockerCardId);
+    return q.addCardBlocker(ctx.db, cardId, blockerCardId);
   }));
 
   ipcMain.handle("db:card:removeBlocker", (_e, { cardId, blockerCardId }) => handle(() =>
-    q.removeCardBlocker(db, cardId, blockerCardId)
+    q.removeCardBlocker(ctx.db, cardId, blockerCardId)
   ));
 
   ipcMain.handle("db:card:ready", (_e, { projectId }) => handle(() =>
-    q.getReadyCards(db, projectId)
+    q.getReadyCards(ctx.db, projectId)
   ));
 
   // ── Idea Flow ─────────────────────────────────────
-  ipcMain.handle("db:flow:get",         (_e, { projectId }) => handle(() => q.getResolvedFlow(db, projectId)));
+  ipcMain.handle("db:flow:get",         (_e, { projectId }) => handle(() => q.getResolvedFlow(ctx.db, projectId)));
   ipcMain.handle("db:flow:node:create", (_e, args) => handle(() => {
-    const flow = q.getOrCreateFlow(db, args.projectId);
-    return q.createFlowNode(db, { ...args, flowId: flow.id, id: q.generateId() });
+    const flow = q.getOrCreateFlow(ctx.db, args.projectId);
+    return q.createFlowNode(ctx.db, { ...args, flowId: flow.id, id: q.generateId() });
   }));
-  ipcMain.handle("db:flow:node:update", (_e, { id, patch }) => handle(() => q.updateFlowNode(db, id, patch)));
-  ipcMain.handle("db:flow:node:delete", (_e, { id }) => handle(() => q.deleteFlowNode(db, id)));
+  ipcMain.handle("db:flow:node:update", (_e, { id, patch }) => handle(() => q.updateFlowNode(ctx.db, id, patch)));
+  ipcMain.handle("db:flow:node:delete", (_e, { id }) => handle(() => q.deleteFlowNode(ctx.db, id)));
   ipcMain.handle("db:flow:edge:create", (_e, args) => handle(() => {
-    const flow = q.getOrCreateFlow(db, args.projectId);
-    return q.createFlowEdge(db, { ...args, flowId: flow.id, id: q.generateId() });
+    const flow = q.getOrCreateFlow(ctx.db, args.projectId);
+    return q.createFlowEdge(ctx.db, { ...args, flowId: flow.id, id: q.generateId() });
   }));
-  ipcMain.handle("db:flow:edge:delete", (_e, { id }) => handle(() => q.deleteFlowEdge(db, id)));
+  ipcMain.handle("db:flow:edge:delete", (_e, { id }) => handle(() => q.deleteFlowEdge(ctx.db, id)));
 
   // Generate an AI summary for an ai_summary node.
   // Recursively walks the entire connected subgraph (BFS in both edge directions),
@@ -337,14 +343,14 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const nodeRow = db.prepare("SELECT * FROM idea_flow_nodes WHERE id = ?").get(args.nodeId) as any | undefined;
+    const nodeRow = ctx.db.prepare("SELECT * FROM idea_flow_nodes WHERE id = ?").get(args.nodeId) as any | undefined;
     if (!nodeRow) return err("Node not found");
 
     const flowId = nodeRow.flow_id as string;
 
     // Load all edges for this flow once
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const allEdges = db.prepare("SELECT * FROM idea_flow_edges WHERE flow_id = ?").all(flowId) as any[];
+    const allEdges = ctx.db.prepare("SELECT * FROM idea_flow_edges WHERE flow_id = ?").all(flowId) as any[];
 
     // BFS: traverse all nodes reachable from the summary node (both edge directions),
     // excluding the summary node itself and other ai_summary nodes.
@@ -367,7 +373,7 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
     while (queue.length > 0) {
       const current = queue.shift()!;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const currentRow = db.prepare("SELECT type FROM idea_flow_nodes WHERE id = ?").get(current) as any;
+      const currentRow = ctx.db.prepare("SELECT type FROM idea_flow_nodes WHERE id = ?").get(current) as any;
       // Don't recurse through other ai_summary nodes — they're peers, not content
       if (currentRow?.type === "ai_summary") continue;
 
@@ -394,7 +400,7 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
     const parts: string[] = [];
     for (const nid of visited) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const nrow = db.prepare("SELECT * FROM idea_flow_nodes WHERE id = ?").get(nid) as any;
+      const nrow = ctx.db.prepare("SELECT * FROM idea_flow_nodes WHERE id = ?").get(nid) as any;
       if (!nrow) continue;
       let data: Record<string, unknown> = {};
       try { data = JSON.parse(nrow.data); } catch { /* empty */ }
@@ -405,11 +411,11 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
         const body = data.body as string | undefined;
         parts.push(`[Idea] ${title ?? "Untitled"}${body ? `: ${body}` : ""}`);
       } else if (type === "note_ref" && data.noteId) {
-        const noteRow = db.prepare("SELECT title, content_text FROM notes WHERE id = ?").get(data.noteId) as
+        const noteRow = ctx.db.prepare("SELECT title, content_text FROM notes WHERE id = ?").get(data.noteId) as
           { title: string; content_text: string } | undefined;
         if (noteRow) parts.push(`[Note] ${noteRow.title}: ${noteRow.content_text?.slice(0, 600) ?? ""}`);
       } else if (type === "task_ref" && data.cardId) {
-        const cardRow = db.prepare(
+        const cardRow = ctx.db.prepare(
           "SELECT tc.title, tc.description, tc.priority, bc.name as col FROM task_cards tc LEFT JOIN board_columns bc ON tc.column_id = bc.id WHERE tc.id = ?"
         ).get(data.cardId) as { title: string; description: string; priority: string; col: string } | undefined;
         if (cardRow) parts.push(`[Task] ${cardRow.title} (${cardRow.priority}, ${cardRow.col})${cardRow.description ? `: ${cardRow.description}` : ""}`);
@@ -437,25 +443,25 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
     }
 
     // Write summary back into the node's data
-    q.updateFlowNode(db, args.nodeId, { data: { content: summary.trim() } });
+    q.updateFlowNode(ctx.db, args.nodeId, { data: { content: summary.trim() } });
     return ok({ nodeId: args.nodeId, content: summary.trim() });
   });
 
   // ── Tags ──────────────────────────────────────────
-  ipcMain.handle("db:tag:list",   (_e, { workspaceId }) => handle(() => q.getTags(db, workspaceId)));
-  ipcMain.handle("db:tag:create", (_e, args) => handle(() => q.createTag(db, args)));
-  ipcMain.handle("db:tag:update", (_e, { id, patch }) => handle(() => q.updateTag(db, id, patch)));
-  ipcMain.handle("db:tag:delete", (_e, { id }) => handle(() => q.deleteTag(db, id)));
+  ipcMain.handle("db:tag:list",   (_e, { workspaceId }) => handle(() => q.getTags(ctx.db, workspaceId)));
+  ipcMain.handle("db:tag:create", (_e, args) => handle(() => q.createTag(ctx.db, args)));
+  ipcMain.handle("db:tag:update", (_e, { id, patch }) => handle(() => q.updateTag(ctx.db, id, patch)));
+  ipcMain.handle("db:tag:delete", (_e, { id }) => handle(() => q.deleteTag(ctx.db, id)));
 
   // ── Chat ──────────────────────────────────────────
-  ipcMain.handle("db:chat:threads",    (_e, { workspaceId }) => handle(() => q.getChatThreads(db, workspaceId)));
-  ipcMain.handle("db:chat:messages",   (_e, { threadId }) => handle(() => q.getChatMessages(db, threadId)));
-  ipcMain.handle("db:chat:upsertThread",  (_e, args) => handle(() => q.upsertChatThread(db, args)));
-  ipcMain.handle("db:chat:addMessage",    (_e, args) => handle(() => q.addChatMessage(db, args)));
-  ipcMain.handle("db:chat:deleteThread",  (_e, { threadId }) => handle(() => q.deleteChatThread(db, threadId)));
+  ipcMain.handle("db:chat:threads",    (_e, { workspaceId }) => handle(() => q.getChatThreads(ctx.db, workspaceId)));
+  ipcMain.handle("db:chat:messages",   (_e, { threadId }) => handle(() => q.getChatMessages(ctx.db, threadId)));
+  ipcMain.handle("db:chat:upsertThread",  (_e, args) => handle(() => q.upsertChatThread(ctx.db, args)));
+  ipcMain.handle("db:chat:addMessage",    (_e, args) => handle(() => q.addChatMessage(ctx.db, args)));
+  ipcMain.handle("db:chat:deleteThread",  (_e, { threadId }) => handle(() => q.deleteChatThread(ctx.db, threadId)));
 
   // ── AI Chat completions ────────────────────────────
-  registerChatHandler(db, workspacePath);
+  registerChatHandler(ctx.db, ctx.workspacePath);
 
   // ── AI PRD generation (direct, no chat loop) ──────
   ipcMain.handle("ai:generatePrd", async (_e, args: {
@@ -473,7 +479,7 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
       return err("AI is not configured. Add an API key in Settings → AI & Chat, or use a local endpoint.");
     }
     const llmConfig = { baseUrl, model, apiKey };
-    return handle(() => generatePrd(db, workspacePath, {
+    return handle(() => generatePrd(ctx.db, ctx.workspacePath, {
       projectId: args.projectId,
       title: args.title,
       requirements: args.requirements,
@@ -484,35 +490,36 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
   ipcMain.handle("db:graph:get", (_e, args: {
     workspaceId: string;
     filters?: GraphFilters;
-  }) => handle(() => getKnowledgeGraph(db, args.workspaceId, args.filters ?? {})));
+  }) => handle(() => getKnowledgeGraph(ctx.db, args.workspaceId, args.filters ?? {})));
 
   ipcMain.handle("db:graph:neighbors", (_e, args: {
     workspaceId: string;
     nodeId: string;
     depth?: number;
     edgeTypes?: EdgeType[];
-  }) => handle(() => getNeighbours(db, args.workspaceId, args.nodeId, args.depth ?? 1, args.edgeTypes)));
+  }) => handle(() => getNeighbours(ctx.db, args.workspaceId, args.nodeId, args.depth ?? 1, args.edgeTypes)));
 
   ipcMain.handle("db:graph:recompute", (_e, args: {
     workspaceId: string;
   }) => handle(() => {
-    computeAutoRelationships(db, args.workspaceId);
+    computeAutoRelationships(ctx.db, args.workspaceId);
     return { ok: true };
   }));
 }
 
 /**
  * Register app-level IPC handlers that were previously inlined in main.ts.
- *
- * @param db              - the SQLite database instance
- * @param userDataPath    - result of app.getPath("userData")
- * @param updateTrayBadge - callback to update the tray badge count
- */
+  *
+  * @param db              - the SQLite database instance
+  * @param userDataPath    - result of app.getPath(\"userData\")
+  * @param updateTrayBadge - callback to update the tray badge count
+  */
 export function registerAppHandlers(
   db: Database.Database,
   userDataPath: string,
   updateTrayBadge: (count: number) => void,
   win?: BrowserWindow,
+  onReinitialise?: (newWorkspacePath: string) => Promise<void>,
 ): void {
   // ── Workspace folder selection / setup ────────────
   ipcMain.handle("app:selectWorkspaceFolder", async () => {
@@ -550,12 +557,13 @@ export function registerAppHandlers(
     }
   }));
 
-  ipcMain.handle("app:initWorkspace", (_e, { workspacePath: newPath }: { workspacePath: string }) => handle(() => {
+  ipcMain.handle("app:initWorkspace", (_e, { workspacePath: newPath }: { workspacePath: string }) => handle(async () => {
     writeWorkspaceConfig(userDataPath, newPath);
     fs.mkdirSync(newPath, { recursive: true });
-    // The DB was opened against the fallback path at startup — a relaunch is
-    // required so main.ts re-reads the config and opens the correct cairn.db.
-    return { requiresRestart: true };
+    if (onReinitialise) {
+      await onReinitialise(newPath);
+    }
+    return { ok: true };
   }));
 
   // ── App paths (for MCP config generation) ─────────
@@ -615,7 +623,7 @@ export function registerAppHandlers(
 
   // ── MCP notification handler ───────────────────────
   ipcMain.handle("mcp:markNotificationsRead", () => handle(() => {
-    markMcpNotificationsRead(db);
+    markMcpNotificationsRead(ctx.db);
     updateTrayBadge(0);
   }));
 

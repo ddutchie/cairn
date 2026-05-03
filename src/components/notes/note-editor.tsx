@@ -316,6 +316,7 @@ type EditorMode = "write" | "read";
 
 export function NoteEditor({ note }: NoteEditorProps) {
   const { updateNote, aiConfig, activeProjectId, getProjectColumns, tags, createTag, getTagById, activeWorkspaceId, notes, cards, columns, setView } = useCairnStore();
+  const aiEnabled = aiConfig.aiEnabled ?? true;
   const editorRef = useRef<MarkdownEditorHandle>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -554,7 +555,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
 
         {/* Meta */}
         <div className="flex items-center gap-2">
-          {spawnLoading ? (
+          {aiEnabled && (spawnLoading ? (
             <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-[var(--surface-2)] border border-[var(--border)]">
               <Loader2 size={11} className="animate-spin text-[var(--accent)] shrink-0" />
               <span className="text-[0.786rem] text-[var(--text-tertiary)]">
@@ -581,7 +582,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
                 {spawnResult ? `${spawnResult.count} tasks added` : "Spawn tasks"}
               </button>
             </Tooltip>
-          )}
+          ))}
           <Tooltip content={note.isPinned ? "Unpin note" : "Pin note"}>
             <button
               onClick={() => updateNote(note.id, { isPinned: !note.isPinned })}
@@ -638,6 +639,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
           onFormat={handleFormat}
           loading={aiLoading}
           hasSelection={hasSelection}
+          aiEnabled={aiEnabled}
           onDismiss={() => {
             setPreviewText(null);
             selectionRef.current = null;

@@ -213,7 +213,9 @@ export function IdeaFlowView() {
 }
 
 function IdeaFlowCanvas() {
-  const { activeProjectId, columns, activeWorkspaceId } = useCairnStore();
+  const { activeProjectId, columns, activeWorkspaceId, aiConfig } = useCairnStore();
+  const aiEnabled = aiConfig.aiEnabled ?? true;
+  const addNodeMenu = ADD_NODE_MENU.filter((n) => n.type !== "ai_summary" || aiEnabled);
   const { fitView, screenToFlowPosition, getInternalNode } = useReactFlow();
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
@@ -888,7 +890,7 @@ function IdeaFlowCanvas() {
 
             {showAddMenu && (
               <div className="absolute right-0 top-9 z-50 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-xl py-1 min-w-[160px]">
-                {ADD_NODE_MENU.map(({ type, label, icon: Icon }) => (
+                {addNodeMenu.map(({ type, label, icon: Icon }) => (
                   <button
                     key={type}
                     onClick={() => addNode(type, 120 + Math.random() * 300, 120 + Math.random() * 200)}
@@ -924,7 +926,7 @@ function IdeaFlowCanvas() {
             <p className="px-3 pt-1 pb-1.5 text-[0.714rem] font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">
               Add node
             </p>
-            {ADD_NODE_MENU.map(({ type, label, icon: Icon }) => (
+            {addNodeMenu.map(({ type, label, icon: Icon }) => (
               <button
                 key={type}
                 onClick={() => {
