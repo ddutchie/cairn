@@ -65,7 +65,9 @@ export default function Home() {
     setView,
     createNote,
     activeProjectId,
+    aiConfig,
   } = useCairnStore();
+  const aiEnabled = aiConfig.aiEnabled ?? true;
 
   // null = still loading
   // "workspace" = needs workspace folder setup (existing or new user)
@@ -136,7 +138,7 @@ export default function Home() {
       const inInput = tag === "INPUT" || tag === "TEXTAREA" || (e.target as HTMLElement)?.isContentEditable;
 
       if (mod && key === "k") { e.preventDefault(); toggleSearch(); }
-      else if (mod && key === "/") { e.preventDefault(); toggleChat(); }
+      else if (mod && key === "/") { e.preventDefault(); if (aiEnabled) toggleChat(); }
       else if (mod && key === "\\") { e.preventDefault(); toggleSidebar(); }
       else if (mod && key === "1") { e.preventDefault(); setView("overview"); }
       else if (mod && key === "2") { e.preventDefault(); setView("notes"); }
@@ -175,7 +177,7 @@ export default function Home() {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("cairn:open-chat", handleOpenChat);
     };
-  }, [toggleSearch, toggleChat, toggleSidebar, setView, activeProjectId, createNote, chatOpen]);
+  }, [toggleSearch, toggleChat, toggleSidebar, setView, activeProjectId, createNote, chatOpen, aiEnabled]);
 
   // Still loading
   if (onboardingState === null) {

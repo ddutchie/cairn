@@ -13,6 +13,7 @@ export interface AiSummaryNodeData {
 export const AiSummaryNode = memo(function AiSummaryNode({ id, data, selected, isConnectable }: NodeProps) {
   const d = data as unknown as AiSummaryNodeData;
   const { aiConfig } = useCairnStore();
+  const aiEnabled = aiConfig.aiEnabled ?? true;
   const { updateNodeData } = useReactFlow();
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -74,13 +75,13 @@ export const AiSummaryNode = memo(function AiSummaryNode({ id, data, selected, i
           <button
             className={cn(
               "nodrag flex items-center gap-1 px-1.5 py-0.5 rounded text-[0.714rem] font-medium transition-colors",
-              status === "loading"
-                ? "text-[var(--text-tertiary)] cursor-not-allowed"
+              status === "loading" || !aiEnabled
+                ? "text-[var(--text-tertiary)] cursor-not-allowed opacity-40"
                 : "text-[var(--accent)] hover:bg-[var(--accent)]/10 cursor-pointer"
             )}
             onClick={handleGenerate}
-            disabled={status === "loading"}
-            title={hasContent ? "Re-generate summary from connected nodes" : "Generate summary from connected nodes"}
+            disabled={status === "loading" || !aiEnabled}
+            title={!aiEnabled ? "AI features are disabled — enable in Settings → AI" : hasContent ? "Re-generate summary from connected nodes" : "Generate summary from connected nodes"}
           >
             {status === "loading" ? (
               <Loader2 size={10} className="animate-spin" />

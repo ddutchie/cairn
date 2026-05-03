@@ -44,6 +44,7 @@ interface AITextToolbarProps {
   loading: boolean;
   onDismiss: () => void;
   hasSelection: boolean;
+  aiEnabled: boolean;
 }
 
 // ── AI action definitions ─────────────────────────────────────────────────────
@@ -94,7 +95,7 @@ const FORMAT_GROUPS: { id: FormatAction; label: string; icon: React.ReactNode }[
 // Inline actions require a selection; line-level actions work on the cursor line
 const REQUIRES_SELECTION = new Set<FormatAction>(["bold", "italic", "strikethrough", "highlight", "code", "link"]);
 
-export function AITextToolbar({ onAction, onFormat, loading, onDismiss, hasSelection }: AITextToolbarProps) {
+export function AITextToolbar({ onAction, onFormat, loading, onDismiss, hasSelection, aiEnabled }: AITextToolbarProps) {
   const [showCustom, setShowCustom] = useState(false);
   const [customPrompt, setCustomPrompt] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -125,8 +126,8 @@ export function AITextToolbar({ onAction, onFormat, loading, onDismiss, hasSelec
       style={{ background: "var(--surface-2)" }}
       onMouseDown={(e) => e.stopPropagation()}
     >
-      {/* ── AI action row ── */}
-      <div className="flex items-center gap-0.5 px-3 py-1.5 border-b border-[var(--border)]">
+      {/* ── AI action row — hidden when AI is disabled ── */}
+      {aiEnabled && <><div className="flex items-center gap-0.5 px-3 py-1.5 border-b border-[var(--border)]">
         {loading ? (
           <div className="flex items-center gap-2 px-2 py-1 text-xs text-[var(--text-tertiary)]">
             <Loader2 size={11} className="animate-spin" />
@@ -189,6 +190,7 @@ export function AITextToolbar({ onAction, onFormat, loading, onDismiss, hasSelec
           </button>
         </form>
       )}
+      </>}
 
       {/* ── Formatting bar ── */}
       <div className="flex items-center gap-1 px-3 py-1.5">

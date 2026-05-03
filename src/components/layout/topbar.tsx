@@ -33,7 +33,9 @@ export function Topbar() {
     chatOpen,
     workspaces,
     projects,
+    aiConfig,
   } = useCairnStore();
+  const aiEnabled = aiConfig.aiEnabled ?? true;
 
   const workspace = workspaces.find((w) => w.id === activeWorkspaceId);
   const project = projects.find((p) => p.id === activeProjectId);
@@ -113,19 +115,21 @@ export function Topbar() {
 
       {/* Right actions */}
       <div className="flex items-center gap-1">
-        <Tooltip content="AI Chat (⌘/)">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={toggleChat}
-            className={cn(
-              chatOpen && "text-[var(--accent)] bg-[var(--accent-dim)]"
-            )}
-          >
-            <MessageSquare size={13} />
-            <span className="text-xs">Chat</span>
-          </Button>
-        </Tooltip>
+        {aiEnabled && (
+          <Tooltip content="AI Chat (⌘/)">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleChat}
+              className={cn(
+                chatOpen && "text-[var(--accent)] bg-[var(--accent-dim)]"
+              )}
+            >
+              <MessageSquare size={13} />
+              <span className="text-xs">Chat</span>
+            </Button>
+          </Tooltip>
+        )}
       </div>
     </header>
   );

@@ -86,7 +86,9 @@ export function NotesView() {
     getTagById,
     getWorkspaceProjects,
     notes: allNotes,
+    aiConfig,
   } = useCairnStore();
+  const aiEnabled = aiConfig.aiEnabled ?? true;
 
   const [activeNoteId, setActiveNoteId]         = useState<string | null>(null);
   const [filter, setFilter]                     = useState("");
@@ -229,11 +231,13 @@ export function NotesView() {
         <div className="flex items-center justify-between px-3 py-2.5 border-b border-[var(--border)]">
           <span className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider">Notes</span>
           <div className="flex items-center gap-0.5">
-            <Tooltip content="Generate PRD with AI">
-              <Button variant="ghost" size="icon" onClick={() => setPrdModalOpen(true)}>
-                <Wand2 size={13} />
-              </Button>
-            </Tooltip>
+            {aiEnabled && (
+              <Tooltip content="Generate PRD with AI">
+                <Button variant="ghost" size="icon" onClick={() => setPrdModalOpen(true)}>
+                  <Wand2 size={13} />
+                </Button>
+              </Tooltip>
+            )}
             <Tooltip content="New folder">
               <Button variant="ghost" size="icon" onClick={() => setNewFolderOpen(true)}><FolderPlus size={13} /></Button>
             </Tooltip>
@@ -380,7 +384,7 @@ export function NotesView() {
               <div className="flex items-center gap-2 mt-4 justify-center">
                 <Button variant="accent" size="sm" onClick={() => handleCreateNote()}><Plus size={13} /> New Note</Button>
                 <Button variant="ghost" size="sm" onClick={handleCreateDashboard}><LayoutDashboard size={13} /> New Dashboard</Button>
-                <Button variant="ghost" size="sm" onClick={() => setPrdModalOpen(true)}><Wand2 size={13} /> Generate PRD</Button>
+                {aiEnabled && <Button variant="ghost" size="sm" onClick={() => setPrdModalOpen(true)}><Wand2 size={13} /> Generate PRD</Button>}
               </div>
             </div>
           </div>

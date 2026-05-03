@@ -7,7 +7,7 @@ import {
 import { Tooltip } from "@/components/ui/tooltip";
 import { useCairnStore } from "@/store";
 import { cn } from "@/lib/utils";
-import { SettingsGroup, SettingsRow } from "./shared";
+import { SettingsGroup, SettingsRow, Toggle } from "./shared";
 import { MCPServerSettings } from "./MCPSettings";
 
 type TestState = "idle" | "testing" | "ok" | "error";
@@ -24,7 +24,7 @@ export function AISettings() {
   const [modelsFetched, setModelsFetched] = useState(false);
 
   // Always read directly from the store — no local shadow copy
-  const { baseUrl, model, apiKey, maxSteps } = aiConfig;
+  const { baseUrl, model, apiKey, maxSteps, aiEnabled } = aiConfig;
   const isLocal =
     baseUrl.includes("localhost") ||
     baseUrl.includes("127.0.0.1") ||
@@ -77,6 +77,22 @@ export function AISettings() {
 
   return (
     <div className="space-y-8">
+      {/* ── Enable / disable all AI features ── */}
+      <SettingsGroup
+        title="In-app AI"
+        description="Enable or disable all AI-powered features — chat, text actions, PRD generator, task spawning, and Idea Flow summaries."
+      >
+        <SettingsRow
+          label="Enable AI features"
+          description="When off, all AI buttons and shortcuts are hidden. Formatting tools are unaffected."
+        >
+          <Toggle
+            checked={aiEnabled ?? true}
+            onChange={(v) => update({ aiEnabled: v })}
+          />
+        </SettingsRow>
+      </SettingsGroup>
+
       {/* ── Endpoint config ── */}
       <SettingsGroup
         title="AI Endpoint"

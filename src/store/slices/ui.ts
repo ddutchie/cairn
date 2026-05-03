@@ -19,6 +19,8 @@ export interface AIConfig {
   apiKey: string;
   /** Maximum tool-call rounds per chat message. Lower = fewer API calls = lower cost. */
   maxSteps: number;
+  /** When false, all in-app AI features are hidden/disabled. Defaults to true. */
+  aiEnabled: boolean;
 }
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
