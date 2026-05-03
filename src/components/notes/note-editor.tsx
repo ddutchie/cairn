@@ -92,11 +92,10 @@ const rehypeHighlight: Plugin<[], Root> = () => (tree) => {
 };
 
 // ── Math plugins: preserve raw LaTeX source through rehype-katex ──────────────
-// remarkCollectLatex runs at the mdast level and pushes each display-math block's
-// raw source into a shared mutable array (one per ReactMarkdown render).
-// rehypeTagLatex runs after rehype-katex and stamps the nth katex-display <span>
-// with data-latex so the span renderer can offer a "show source" toggle.
-// Inline math ($…$) is excluded — the toggle button doesn't fit in a line.
+// remarkCollectLatex gathers raw LaTeX from mdast math nodes into a shared array.
+// rehypeTagLatex runs after rehype-katex and renames each <span class="katex-display">
+// to <mathblock data-latex="..."> so ReactMarkdown routes it to components.mathblock
+// (the same hName trick used for callouts). Inline math ($…$) is untouched.
 
 function makeLatexPlugins() {
   const latexBlocks: string[] = [];
@@ -113,7 +112,11 @@ function makeLatexPlugins() {
     visit(tree, "element", (node: Element) => {
       const cls = (node.properties?.className as string[] | undefined) ?? [];
       if (cls.includes("katex-display") && latexBlocks[i] !== undefined) {
-        node.properties = { ...node.properties, "data-latex": latexBlocks[i] };
+        // Rename to a custom element so ReactMarkdown routes it to components.mathblock.
+        // This is the same hName trick as callouts — renaming in the hast ensures
+        // the components map is consulted, unlike intercepting generic "span" elements.
+        node.tagName = "mathblock";
+        node.properties = { "data-latex": latexBlocks[i] };
         i++;
       }
     });
@@ -506,15 +509,13 @@ export function NoteEditor({ note }: NoteEditorProps) {
                        // Display math — katex-display spans tagged with data-latex by rehypeTagLatex.
                       // We forward the rendered HTML into MathBlock which adds the toggle button.
                       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                      // Display math — katex-display spans tagged with data-latex by rehypeTagLatex.
+                       // Display math — rehypeTagLatex renames <span.katex-display> to <mathblock>
+                      // and stores the raw LaTeX in data-latex. ReactMarkdown routes custom
+                      // element names through the components map (same mechanism as callouts).
                       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                      span({ className, children, node: _node, ...props }: any) {
-                        const cls: string = className ?? "";
-                        if (cls.includes("katex-display")) {
-                          const latex: string = props["data-latex"] ?? "";
-                          return <MathBlock key={latex} latex={latex} renderedChildren={children} />;
-                        }
-                        return <span className={className} {...props}>{children}</span>;
+                      mathblock({ children, ...props }: any) {
+                        const latex: string = props["data-latex"] ?? "";
+                        return <MathBlock key={latex} latex={latex} renderedChildren={children} />;
                       },
                        // Standard blockquote (non-callout)
                       blockquote({ children }) {
