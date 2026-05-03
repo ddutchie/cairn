@@ -42,10 +42,11 @@ const api = {
 
   // ── Notes ────────────────────────────────────
   note: {
-    list:   (projectId?: string) => invoke("db:note:list", { projectId }),
-    create: (args: unknown) => invoke("db:note:create", args),
-    update: (id: string, patch: unknown) => invoke("db:note:update", { id, patch }),
-    delete: (id: string) => invoke("db:note:delete", { id }),
+    list:         (projectId?: string) => invoke("db:note:list", { projectId }),
+    create:       (args: unknown) => invoke("db:note:create", args),
+    update:       (id: string, patch: unknown) => invoke("db:note:update", { id, patch }),
+    delete:       (id: string) => invoke("db:note:delete", { id }),
+    moveToFolder: (id: string, folder: string) => invoke("db:note:moveToFolder", { id, folder }),
   },
 
   // ── Board columns ─────────────────────────────
@@ -143,6 +144,16 @@ const api = {
 
   // ── Reveal note in Finder / Explorer ─────────
   revealNote: (noteId: string, projectId: string) => invoke("app:revealNote", { noteId, projectId }),
+
+  // ── Open a URL in the system default browser ──
+  openExternal: (url: string) => ipcRenderer.send("app:openExternal", url),
+
+  // ── Asset upload (pasted images) ──────────────
+  // data is an ArrayBuffer — Electron's structured-clone transfers it
+  // natively without serialising to a JSON number array.
+  uploadAsset: (filename: string, data: ArrayBuffer) =>
+    invoke<{ assetUrl: string }>("app:uploadAsset", { filename, data }),
+  revealAssets: () => invoke("app:revealAssets"),
 
   // ── Workspace folder ──────────────────────────
   selectWorkspaceFolder: () => invoke<string | null>("app:selectWorkspaceFolder"),

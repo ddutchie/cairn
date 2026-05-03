@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { ChevronRight } from "lucide-react";
+import { ChevronLeft } from "lucide-react";
 import { WorkspaceIcon } from "@/lib/workspace-icons";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { Workspace } from "@/types";
@@ -21,7 +21,7 @@ export function WorkspaceSwitcher({ workspace, onCollapse }: WorkspaceSwitcherPr
       <Tooltip content="Collapse sidebar" side="right">
         <button onClick={onCollapse}
           className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors">
-          <ChevronRight size={13} />
+          <ChevronLeft size={13} />
         </button>
       </Tooltip>
     </div>

@@ -43,7 +43,7 @@ export function buildContextResponse(db: Database.Database) {
       delete: ["delete_note", "delete_task", "delete_project", "delete_idea_flow_node", "delete_idea_flow_edge"],
     },
     conventions: {
-      notes: "Raw markdown in 'content'. 'content_text' is auto-derived — do not set manually.",
+      notes: "Raw markdown in 'content'. 'content_text' is auto-derived — do not set manually. Use the optional 'folder' parameter in create_note / ensure_note to place a note in a subfolder, e.g. folder=\"Design/Typography\". list_notes returns 'folder' on each note so you can see the current structure.",
       dashboards: "Use create_dashboard to create a live HTML dashboard rendered in a sandboxed iframe. Always fetch data via window.cairn helpers — never bake in static data.",
       tasks: "Always provide columnId (not just projectId) when creating a task. Use list_ready_tasks instead of list_tasks when you want to know what work can start now — it filters out tasks blocked by unresolved dependencies.",
       dependencies: "Use block_task to mark a task as blocked by another (same project only). Circular dependencies are rejected. When a blocker is moved to a done column or archived it is automatically treated as resolved. Use unblock_task to remove a dependency explicitly.",

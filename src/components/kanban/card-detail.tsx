@@ -23,7 +23,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogClose,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -53,7 +52,6 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
     moveCardToProject,
     addCardBlocker,
     removeCardBlocker,
-    getTagById,
     tags,
     getProjectNotes,
     linkNoteToCard,
@@ -147,7 +145,7 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
                 onBlur={(e) => updateCard(cardId, { description: e.target.value })}
                 placeholder="Add a description…"
                 rows={4}
-                className="w-full bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-3 py-2.5 text-sm text-[var(--text-secondary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20 resize-none leading-relaxed"
+                className="w-full bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-3 py-2.5 text-sm text-[var(--text-secondary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)] resize-none leading-relaxed"
               />
             </div>
 
@@ -287,7 +285,7 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
                 id="card-detail-column"
                 value={card.columnId}
                 onChange={(e) => updateCard(cardId, { columnId: e.target.value })}
-                className="w-full px-2 py-1.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-xs text-[var(--text-secondary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20"
+                className="w-full px-2 py-1.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-xs text-[var(--text-secondary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)]"
               >
                 {projectColumns.map((col) => (
                   <option key={col.id} value={col.id}>{col.name}</option>
@@ -305,7 +303,7 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
                 defaultValue={card.assignee ?? ""}
                 onBlur={(e) => updateCard(cardId, { assignee: e.target.value || undefined })}
                 placeholder="Unassigned"
-                className="w-full px-2 py-1.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-xs text-[var(--text-secondary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20"
+                className="w-full px-2 py-1.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-xs text-[var(--text-secondary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)]"
               />
             </div>
 
@@ -363,7 +361,7 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
                     if (result.error) setBlockerError(result.error);
                     e.target.value = "";
                   }}
-                  className="w-full px-2 py-1.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[0.714rem] text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20"
+                  className="w-full px-2 py-1.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[0.714rem] text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)]"
                 >
                   <option value="">+ Add blocker…</option>
                   {candidateBlockers.map((c) => {

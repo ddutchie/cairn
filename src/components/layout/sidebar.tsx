@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect } from "react";
 import {
   FileText, Kanban, Settings, Search, MessageSquare,
   ChevronDown, ChevronRight, Plus, Pin, MoreHorizontal,
-  FolderOpen, Hash, Layers, Pencil, Trash2, GitBranch, BarChart2,
+  FolderOpen, Hash, Layers, Pencil, Trash2, GitBranch, BarChart2, Workflow,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CairnEvents } from "@/lib/events";
@@ -41,7 +41,7 @@ export function Sidebar() {
   function toggleProjectExpand(projectId: string) {
     setExpandedProjects((prev) => {
       const next = new Set(prev);
-      next.has(projectId) ? next.delete(projectId) : next.add(projectId);
+      if (next.has(projectId)) { next.delete(projectId); } else { next.add(projectId); }
       return next;
     });
   }
@@ -75,6 +75,12 @@ export function Sidebar() {
           <button onClick={toggleChat}
             className={cn("p-2 rounded-md transition-colors", chatOpen ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
             <MessageSquare size={15} />
+          </button>
+        </Tooltip>
+        <Tooltip content="Idea Flow (⌘4)" side="right">
+          <button onClick={() => setView("flow")}
+            className={cn("p-2 rounded-md transition-colors", activeView === "flow" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
+            <Workflow size={15} />
           </button>
         </Tooltip>
         <Tooltip content="Knowledge Graph (⌘5)" side="right">
@@ -135,7 +141,7 @@ export function Sidebar() {
               isActive={project.id === activeProjectId}
               isExpanded={expandedProjects.has(project.id)}
               onToggleExpand={() => toggleProjectExpand(project.id)}
-              onSelectProject={() => { setActiveProject(project.id); setView("overview"); }}
+              onSelectProject={() => { setActiveProject(project.id); setView("overview"); if (!expandedProjects.has(project.id)) toggleProjectExpand(project.id); }}
               activeView={activeView}
               onSelectView={(view) => { setActiveProject(project.id); setView(view); }}
               notes={getProjectNotes(project.id).slice(0, 5)}
@@ -282,6 +288,7 @@ function ProjectItem({ project, isActive, isExpanded, onToggleExpand, onSelectPr
             <NavItem icon={<Hash size={11} />} label="Overview" isActive={isActive && activeView === "overview"} onClick={() => onSelectView("overview")} />
             <NavItem icon={<FileText size={11} />} label="Notes" isActive={isActive && activeView === "notes"} onClick={() => onSelectView("notes")} />
             <NavItem icon={<Kanban size={11} />} label="Board" isActive={isActive && activeView === "board"} onClick={() => onSelectView("board")} />
+            <NavItem icon={<Workflow size={11} />} label="Idea Flow" isActive={isActive && activeView === "flow"} onClick={() => onSelectView("flow")} />
             {isActive && activeView === "notes" && notes.length > 0 && (
               <div className="mt-1 space-y-0.5">
                 {notes.map((note) => (

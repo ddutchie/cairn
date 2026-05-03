@@ -125,6 +125,7 @@ export const TOOL_SCHEMAS = {
       content:   sStrOpt,
       tagIds:    sTagIds,
       isPinned:  sBoolOpt,
+      folder:    sStrOpt.describe("Subfolder path within the project, e.g. \"Design/Typography\". Empty or omitted = project root."),
     }),
   },
 
@@ -146,6 +147,7 @@ export const TOOL_SCHEMAS = {
       content:   sStrOpt,
       tagIds:    sTagIds,
       isPinned:  sBoolOpt,
+      folder:    sStrOpt.describe("Subfolder path within the project. Empty or omitted = project root."),
     }),
   },
 

@@ -1,7 +1,7 @@
 /**
  * Shared React hooks for analytics canvas components.
  */
-import { useEffect, useRef, useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useCairnStore } from "@/store";
 import type { GraphNode } from "@/types";
 

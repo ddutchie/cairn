@@ -23,12 +23,14 @@ import {
 export interface NotesSlice {
   notes: Note[];
 
-  createNote: (projectId: ID, title: string, type?: NoteType) => Note;
+  createNote: (projectId: ID, title: string, type?: NoteType, folder?: string) => Note;
   updateNote: (id: ID, patch: Partial<Note>) => void;
   deleteNote: (id: ID) => void;
   archiveNote: (id: ID) => void;
   restoreNote: (id: ID) => void;
   moveNoteToProject: (noteId: ID, targetProjectId: ID) => void;
+  /** Move a note to a subfolder within its current project. folder="" moves to root. */
+  moveNoteToFolder: (noteId: ID, folder: string) => void;
   linkNoteToCard: (noteId: ID, cardId: ID) => void;
   /** Reveal the note's .md file in the OS file explorer. No-op outside Electron. */
   revealNote: (noteId: ID, projectId: ID) => void;
@@ -44,7 +46,7 @@ export const createNotesSlice: StateCreator<CairnStore, [], [], NotesSlice> = (
 ) => ({
   notes: [],
 
-  createNote(projectId, title, type = "note") {
+  createNote(projectId, title, type = "note", folder = "") {
     const proj = get().projects.find((p) => p.id === projectId);
     const note: Note = {
       id: id(),
@@ -58,6 +60,7 @@ export const createNotesSlice: StateCreator<CairnStore, [], [], NotesSlice> = (
       linkedCardIds: [],
       isPinned: false,
       type,
+      folder,
       createdAt: now(),
       updatedAt: now(),
     };
@@ -145,6 +148,16 @@ export const createNotesSlice: StateCreator<CairnStore, [], [], NotesSlice> = (
       targetProjectId, targetProject.workspaceId,
       targetProject.name, set,
     ));
+  },
+
+  moveNoteToFolder(noteId, folder) {
+    set((s) => ({
+      notes: s.notes.map((n) =>
+        n.id === noteId ? { ...n, folder, updatedAt: now() } : n
+      ),
+    }));
+    get().persist();
+    ipc((e) => e.note.moveToFolder(noteId, folder));
   },
 
   linkNoteToCard(noteId, cardId) {

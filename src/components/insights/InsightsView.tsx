@@ -65,12 +65,14 @@ export function InsightsView() {
   const ridgeApplyZoom = useCallback((factor: number, pivotMs?: number) => {
     setRidgeView((prev) => {
       const span     = prev.end - prev.start;
+      // RIDGE_MIN / RIDGE_MAX are module-level constants — not reactive
       const newSpan  = Math.max(RIDGE_MIN, Math.min(RIDGE_MAX, span * factor));
       const pivot    = pivotMs ?? (prev.start + span / 2);
       const ratio    = (pivot - prev.start) / span;
       const newStart = pivot - ratio * newSpan;
       return { start: newStart, end: newStart + newSpan };
     });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const handleRidgeDefaultView = useCallback((v: { start: number; end: number }) => {
     setRidgeDefaultView(v);

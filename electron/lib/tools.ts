@@ -35,8 +35,8 @@ export const TOOL_LABELS: Record<string, (args: ToolArgs) => string> = {
   update_task_status:        () => "Moving task",
   bulk_update_task_status:   (a) => `Moving ${(a.cardIds as string[])?.length ?? 0} tasks`,
   update_task:            () => "Updating task",
-  block_task:             (a) => `Blocking task`,
-  unblock_task:           (a) => `Unblocking task`,
+  block_task:             () => "Blocking task",
+  unblock_task:           () => "Unblocking task",
   list_ready_tasks:       () => "Listing ready tasks",
   create_project:         (a) => `Creating project "${a.name}"`,
   update_project:         (a) => `Updating project "${a.projectId}"`,
@@ -47,8 +47,8 @@ export const TOOL_LABELS: Record<string, (args: ToolArgs) => string> = {
   generate_prd:           (a) => `Generating PRD "${a.title}"`,
   spawn_tasks_from_note:  () => "Spawning tasks from note",
   link_note_to_task:      () => "Linking note to task",
-  move_note:              (a) => `Moving note to project`,
-  get_idea_flow:          (a) => `Reading Idea Flow`,
+  move_note:              () => "Moving note to project",
+  get_idea_flow:          () => "Reading Idea Flow",
   create_idea_flow_node:  (a) => `Adding ${(a.type as string) ?? "node"} to Idea Flow`,
   update_idea_flow_node:  () => "Updating Idea Flow node",
   delete_idea_flow_node:  () => "Removing node from Idea Flow",
@@ -98,7 +98,7 @@ export interface ChatRequest {
   config?: { baseUrl?: string; model?: string; apiKey?: string; maxSteps?: number };
 }
 
-export function buildSystemPrompt(req: ChatRequest): string {
+export function buildSystemPrompt(_req: ChatRequest): string {
   return `You are the Cairn AI assistant — an intelligent helper embedded inside a note-taking and project management app.
 
 ## How to get context
@@ -111,6 +111,12 @@ Call get_cairn_context once if you need a full tool/convention reference.
 - After a write, briefly confirm what you did
 - Use **bold** for key items, bullet lists for multiple items
 - Keep responses concise and actionable
+
+## Notes
+- Notes live in a project. Use create_note or ensure_note to create them.
+- Use the optional \`folder\` parameter to place a note in a subfolder, e.g. \`folder="Research/Papers"\`. Nested paths are supported.
+- list_notes returns a \`folder\` field on each note so you can inspect the current folder structure before deciding where to place a new note.
+- Omit \`folder\` or pass \`folder=""\` to place the note in the project root.
 
 ## Tasks and dependencies
 - Use list_ready_tasks instead of list_tasks when sequencing work — it returns only tasks with no pending blockers

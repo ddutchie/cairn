@@ -56,7 +56,6 @@ export default function Home() {
   const {
     hydrate,
     hydrateFromElectron,
-    workspaces,
     activeView,
     chatOpen,
     searchOpen,
@@ -177,7 +176,7 @@ export default function Home() {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("cairn:open-chat", handleOpenChat);
     };
-  }, [toggleSearch, toggleChat, toggleSidebar, setView, activeProjectId, createNote]);
+  }, [toggleSearch, toggleChat, toggleSidebar, setView, activeProjectId, createNote, chatOpen]);
 
   // Still loading
   if (onboardingState === null) {

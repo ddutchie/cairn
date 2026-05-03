@@ -1,19 +1,184 @@
 "use client";
 
-import React, { useRef, useCallback, useState, useEffect } from "react";
+import React, { useRef, useCallback, useState, useEffect, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { MermaidDiagram } from "./MermaidDiagram";
-import { TableOfContents, headingSlug } from "./TableOfContents";
-import { CodeBlock } from "./CodeBlock";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
 import { Pin, PinOff, Calendar, Eye, Pencil, Wand2, Loader2, CheckCircle2, Tag, Plus, X, Link2, Kanban, ChevronDown, FileText } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { cn, formatRelative } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
 import type { Note } from "@/types";
+import { MermaidDiagram } from "./MermaidDiagram";
+import { TableOfContents, headingSlug } from "./TableOfContents";
+import { CodeBlock } from "./CodeBlock";
+import { Callout } from "./Callout";
+import { MathBlock } from "./MathBlock";
 import { AITextToolbar, buildAIActionPrompt, type AITextAction } from "./ai-text-toolbar";
 import { MarkdownEditor, type MarkdownEditorHandle } from "./markdown-editor";
+// ── Remark plugin: callout blockquotes ────────────────────────────────────────
+// Transforms > [!type] blockquotes in the mdast by tagging the blockquote node
+// with data.hName = "callout" and data.hProperties = { data-* }, so that
+// remark-rehype renders it as <callout data-callout-type="note" ...>.
+// ReactMarkdown's components map picks up "callout" and renders <Callout>.
+import type { Plugin as RemarkPlugin } from "unified";
+import type { Root as MdastRoot, Blockquote, Paragraph, Text as MdastText } from "mdast";
+import type { InlineMath } from "mdast-util-math";
+import { visit as mdastVisit } from "unist-util-visit";
+
+const CALLOUT_RE = /^\[!([^\]]+)\]([\+\-]?)([\s\S]*)/;
+
+const remarkCallout: RemarkPlugin<[], MdastRoot> = () => (tree) => {
+  mdastVisit(tree, "blockquote", (node: Blockquote) => {
+    const firstPara = node.children[0];
+    if (!firstPara || firstPara.type !== "paragraph") return;
+
+    const firstChild = (firstPara as Paragraph).children[0];
+    if (!firstChild || firstChild.type !== "text") return;
+
+    const firstValue = (firstChild as MdastText).value;
+    const match = firstValue.match(CALLOUT_RE);
+    if (!match) return;
+
+    const [, rawType, modifier, restOfFirstLine] = match;
+    const calloutType = rawType.trim().toLowerCase();
+    const collapsible = modifier === "+" || modifier === "-";
+    const defaultOpen = modifier !== "-";
+    const title = restOfFirstLine.trim();
+
+    // Strip the "[!type]\n" prefix from the first text node so the body renders cleanly.
+    const afterDirective = firstValue.slice(firstValue.indexOf("\n") + 1);
+    (firstChild as MdastText).value = afterDirective;
+
+    // Tag the blockquote node with hast properties so remark-rehype renders it
+    // as <callout data-type="note" data-title="..." ...> which ReactMarkdown
+    // maps to the callout() component via the components prop.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (node as any).data = {
+      hName: "callout",
+      hProperties: {
+        "data-callout-type": calloutType,
+        "data-title": title,
+        "data-collapsible": collapsible ? "true" : "false",
+        "data-default-open": defaultOpen ? "true" : "false",
+      },
+    };
+  });
+};
+
+// ── Remark plugin: promote standalone inlineMath to display math ──────────────
+// remark-math parses $$...$$ on a single line as inlineMath (inside a paragraph).
+// When an inlineMath node is the sole child of a paragraph we want it rendered
+// as a display block (katex-display), not inline. Override hName/hProperties so
+// remark-rehype emits <pre><code class="math-display"> which rehype-katex then
+// renders as <span class="katex-display">.
+const remarkPromoteDisplayMath: RemarkPlugin<[], MdastRoot> = () => (tree) => {
+  mdastVisit(tree, "paragraph", (node: Paragraph) => {
+    if (
+      node.children.length === 1 &&
+      node.children[0].type === "inlineMath"
+    ) {
+      const inlineMath = node.children[0] as InlineMath;
+      inlineMath.data = {
+        ...inlineMath.data,
+        hName: "code",
+        hProperties: { className: ["language-math", "math-display"] },
+      };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (node as any).data = { hName: "pre", hProperties: {} };
+    }
+  });
+};
+
+// ── Rehype plugins: math tagging + ==highlight== marks ───────────────────────
+// All post-katex hast work is done in two plugins to minimise full-tree traversals.
+//
+// rehypeCaptureLatex  (runs BEFORE rehype-katex)
+//   Reads raw LaTeX from <code class="math-display"> nodes (emitted by remark-rehype
+//   for both single-line and multi-line $$ blocks) into a shared array before
+//   rehype-katex replaces them with rendered <span class="katex-display"> output.
+//
+// rehypeMergedPass  (runs AFTER rehype-katex) — single traversal for two jobs:
+//   1. Rename <span class="katex-display"> → <mathblock data-latex="..."> so
+//      ReactMarkdown routes it to components.mathblock (same hName trick as callouts).
+//      Uses SKIP to avoid descending into the ~80-node KaTeX subtrees.
+//   2. Convert ==text== marks → <mark> elements (previously a separate pass).
+//
+// Merging into one post-katex traversal saves a full walk of the ~5000-node hast.
+import type { Plugin } from "unified";
+import type { Root, Element, Text, ElementContent, Parent } from "hast";
+import { visit, SKIP } from "unist-util-visit";
+
+function makeLatexPlugins() {
+  const latexBlocks: string[] = [];
+
+  const rehypeCaptureLatex: Plugin<[], Root> = () => (tree) => {
+    latexBlocks.length = 0;
+    visit(tree, "element", (node: Element) => {
+      const cls = (node.properties?.className as string[] | undefined) ?? [];
+      if (cls.includes("math-display")) {
+        const text = (node.children[0] as Text | undefined)?.value ?? "";
+        latexBlocks.push(text);
+      }
+    });
+  };
+
+  const rehypeMergedPass: Plugin<[], Root> = () => (tree) => {
+    let i = 0;
+    visit(tree, (node, index, parent) => {
+      // ── Job 1: rename katex-display spans to <mathblock> ──────────────────
+      if (node.type === "element") {
+        const cls = ((node as Element).properties?.className as string[] | undefined) ?? [];
+        if (cls.includes("katex-display")) {
+          if (latexBlocks[i] !== undefined) {
+            (node as Element).tagName = "mathblock";
+            (node as Element).properties = { "data-latex": latexBlocks[i++] };
+          }
+          // Skip the entire KaTeX subtree — it contains no ==marks== and
+          // we've already handled this katex-display node.
+          return SKIP;
+        }
+      }
+
+      // ── Job 2: ==highlight== marks → <mark> elements ──────────────────────
+      if (
+        node.type === "text" &&
+        (node as Text).value.includes("==") &&
+        parent &&
+        index !== undefined
+      ) {
+        const text = (node as Text).value;
+        const parts = text.split(/(==.+?==)/g);
+        if (parts.length > 1) {
+          const nodes: ElementContent[] = parts
+            .map((part): ElementContent | null => {
+              if (part.startsWith("==") && part.endsWith("==") && part.length > 4) {
+                const mark: Element = {
+                  type: "element",
+                  tagName: "mark",
+                  properties: {},
+                  children: [{ type: "text", value: part.slice(2, -2) }],
+                };
+                return mark;
+              }
+              if (part === "") return null;
+              return { type: "text", value: part } as Text;
+            })
+            .filter((n): n is ElementContent => n !== null);
+          (parent as Parent).children.splice(index, 1, ...nodes);
+          return index; // revisit from same position after splice
+        }
+      }
+    });
+  };
+
+  return { rehypeCaptureLatex, rehypeMergedPass };
+}
+
+
 
 interface NoteEditorProps {
   note: Note;
@@ -47,6 +212,13 @@ export function NoteEditor({ note }: NoteEditorProps) {
 
   // Scroll container ref — used by TableOfContents to scroll to headings
   const previewScrollRef = useRef<HTMLDivElement>(null);
+
+  // ── Math plugins (stable per note) ────────────────────────────────────────
+  // makeLatexPlugins() creates a shared mutable latexBlocks array coupled
+  // across the capture and merge passes. Re-create the pair on note change
+  // so the array resets cleanly. The inline wrapper satisfies react-hooks/use-memo.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const { rehypeCaptureLatex, rehypeMergedPass } = useMemo(() => makeLatexPlugins(), [note.id]);
 
   // ── Save ──────────────────────────────────────────────────────────────────
   const handleContentChange = useCallback(
@@ -320,8 +492,87 @@ export function NoteEditor({ note }: NoteEditorProps) {
               {note.content ? (
                 <div className="prose-cairn">
                   <ReactMarkdown
-                    remarkPlugins={[remarkGfm]}
-                    components={{
+                    remarkPlugins={[remarkGfm, remarkMath, remarkPromoteDisplayMath, remarkCallout]}
+                    rehypePlugins={[rehypeCaptureLatex, rehypeKatex, rehypeMergedPass]}
+                    components={({
+                      // Images — renders asset:// and https:// URLs
+                      img({ src, alt }) {
+                        const srcStr = typeof src === "string" ? src : undefined;
+                        const isExternal = srcStr?.startsWith("http://") || srcStr?.startsWith("https://");
+                        const imgEl = (
+                          <img
+                            src={srcStr}
+                            alt={alt ?? ""}
+                            referrerPolicy="no-referrer"
+                            className="max-w-full rounded-md my-2 border border-[var(--border)]"
+                          />
+                        );
+                        // Wrap external images in a link that opens in the system browser.
+                        // Prefer window.electron.openExternal (Electron shell) over
+                        // window.open, which requires setWindowOpenHandler to forward
+                        // the request and may be blocked by the sandbox.
+                        if (isExternal && srcStr) {
+                          const url = srcStr;
+                          return (
+                            <a
+                              href={url}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                const el = (window as { electron?: { openExternal?: (u: string) => void } }).electron;
+                                if (el?.openExternal) {
+                                  el.openExternal(url);
+                                } else {
+                                  window.open(url, "_blank");
+                                }
+                              }}
+                              className="block"
+                            >
+                              {imgEl}
+                            </a>
+                          );
+                        }
+                        return imgEl;
+                      },
+                      // Highlights ==text== rendered as <mark> by rehypeHighlight
+                      mark({ children }) {
+                        return (
+                          <mark className="rounded px-0.5" style={{ background: "color-mix(in srgb, var(--accent) 22%, transparent)", color: "var(--text-primary)" }}>
+                            {children}
+                          </mark>
+                        );
+                      },
+                      // Callouts — blockquotes tagged with hName="callout" by remarkCallout.
+                      // remark-rehype passes data-* attributes as props to this component.
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      callout({ children, ...props }: any) {
+                        const p = props as Record<string, string>;
+                        return (
+                          <Callout
+                            type={p["data-callout-type"] ?? "note"}
+                            title={p["data-title"] || undefined}
+                            collapsible={p["data-collapsible"] === "true"}
+                            defaultOpen={p["data-default-open"] !== "false"}
+                          >
+                            {children}
+                          </Callout>
+                        );
+                      },
+                        // Display math — rehypeTagLatex renames <span.katex-display> to <mathblock>
+                      // and stores the raw LaTeX in data-latex. ReactMarkdown routes custom
+                      // element names through the components map (same mechanism as callouts).
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                       mathblock({ children, ...props }: any) {
+                        const latex: string = props["data-latex"] ?? "";
+                        return <MathBlock key={latex} latex={latex} renderedChildren={children} />;
+                      },
+                       // Standard blockquote (non-callout)
+                      blockquote({ children }) {
+                        return (
+                          <blockquote className="border-l-2 border-[var(--border)] pl-4 text-[var(--text-secondary)] my-3">
+                            {children}
+                          </blockquote>
+                        );
+                      },
                       // Clickable checkboxes — toggle [ ] ↔ [x] in the raw source
                       input({ type, checked }) {
                         if (type !== "checkbox") return <input type={type} />;
@@ -390,20 +641,55 @@ export function NoteEditor({ note }: NoteEditorProps) {
                         const id = headingSlug(text);
                         return <h3 id={id} data-heading-id={id}>{children}</h3>;
                       },
-                      // Intercept anchor clicks so #hash links scroll within
-                      // the overflow container instead of the page
-                      a({ href, children, ...props }) {
+                       // Footnote superscript — remark-gfm wraps footnote refs in
+                       // a <sup>. Only style <sup data-footnote-ref> so that regular
+                       // superscript text (e.g. X^2) is not accidentally coloured.
+                       sup({ children, ...props }) {
+                        const isFootnoteRef = (props as Record<string, unknown>)["data-footnote-ref"] === true;
+                        if (!isFootnoteRef) return <sup>{children}</sup>;
+                        return (
+                          <sup
+                            className="text-[0.714rem] leading-none"
+                            style={{ color: "var(--accent)", fontFeatureSettings: "'sups' 0" }}
+                          >
+                            {children}
+                          </sup>
+                        );
+                       },
+                        // Intercept all #hash link clicks so they scroll within
+                       // the overflow container rather than the browser page.
+                       // Covers three cases:
+                       //   1. Heading anchors   → [data-heading-id="slug"]
+                       //   2. Footnote targets  → [id="user-content-fn-*"]
+                       //   3. Footnote backrefs → [id="user-content-fnref-*"]
+                       // remark-gfm prefixes footnote IDs with "user-content-"
+                       // in the DOM but the href also carries that prefix, so
+                       // href.slice(1) matches the id attribute directly.
+                       a({ href, children, ...props }) {
                         if (href?.startsWith("#")) {
+                          const isFootnoteRef = (props as Record<string, unknown>)["data-footnote-ref"] === true;
+                           // remark-gfm sets className="data-footnote-backref" (a string, not an array)
+                           const rawClassName: unknown = (props as Record<string, unknown>).className;
+                           const isBackref = typeof rawClassName === "string"
+                             ? rawClassName.includes("data-footnote-backref")
+                             : Array.isArray(rawClassName) && rawClassName.includes("data-footnote-backref");
                           return (
                             <a
                               {...props}
                               href={href}
+                              // Footnote ref superscript: subtle accent colour
+                              style={isFootnoteRef ? { color: "var(--accent)", textDecoration: "none" } : undefined}
+                              aria-label={isBackref ? "Back to reference" : undefined}
                               onClick={(e) => {
                                 e.preventDefault();
-                                const id = href.slice(1);
+                                const rawId = href.slice(1);
                                 const container = previewScrollRef.current;
-                                const target = container?.querySelector(`[data-heading-id="${id}"]`);
-                                target?.scrollIntoView({ behavior: "smooth", block: "start" });
+                                if (!container) return;
+                                // Try heading anchor first, then any element with matching id
+                                const target =
+                                  container.querySelector(`[data-heading-id="${rawId}"]`) ??
+                                  container.querySelector(`[id="${CSS.escape(rawId)}"]`);
+                                target?.scrollIntoView({ behavior: "smooth", block: isBackref ? "center" : "start" });
                               }}
                             >
                               {children}
@@ -411,9 +697,27 @@ export function NoteEditor({ note }: NoteEditorProps) {
                           );
                         }
                         return <a href={href} {...props}>{children}</a>;
-                      },
-                    }}
-                  >
+                       },
+                       // Footnotes section — rendered by remark-gfm as
+                       // <section class="footnotes"> with a sr-only <h2> heading.
+                       // We replace it with a styled version that shows a visible divider.
+                       // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                       section({ children, ...props }: any) {
+                        if ((props.className ?? "").includes("footnotes")) {
+                          return (
+                            <section
+                              {...props}
+                              className="footnotes mt-8 pt-4 text-[0.786rem] text-[var(--text-secondary)]"
+                              style={{ borderTop: "1px solid var(--border)" }}
+                            >
+                              {children}
+                            </section>
+                          );
+                        }
+                        return <section {...props}>{children}</section>;
+                       },
+                     }) as import("react-markdown").Components}
+                   >
                     {note.content}
                   </ReactMarkdown>
                 </div>
@@ -533,7 +837,7 @@ function NoteTagBar({ note, workspaceTags, onToggleTag, onCreateTag, getTagById 
   useEffect(() => {
     if (!pickerOpen) return;
     function handleClick(e: MouseEvent) {
-      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as globalThis.Node)) {
         setPickerOpen(false);
         setNewTagName("");
       }
@@ -599,7 +903,7 @@ function NoteTagBar({ note, workspaceTags, onToggleTag, onCreateTag, getTagById 
                 if (e.key === "Escape") { setPickerOpen(false); setNewTagName(""); }
               }}
               placeholder="Search or create…"
-              className="w-full px-2 py-1 text-xs rounded bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20 mb-2"
+              className="w-full px-2 py-1 text-xs rounded bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)] mb-2"
             />
             <div className="max-h-36 overflow-y-auto space-y-0.5">
               {filteredUnassigned.map((tag) => (

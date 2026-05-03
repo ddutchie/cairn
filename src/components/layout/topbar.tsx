@@ -8,8 +8,6 @@ import {
   Workflow,
   MessageSquare,
   ChevronRight,
-  MoreHorizontal,
-  Bell,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";

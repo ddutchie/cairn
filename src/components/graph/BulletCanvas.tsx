@@ -29,9 +29,9 @@ export function BulletCanvas({ nodes, onNodeClick }: Props) {
   const { activeProjects, scopedCardIds, cards, columns } = useScopedData(nodes);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
 
-  const now = Date.now();
-
   const projectStats = useMemo(() => {
+    // eslint-disable-next-line react-hooks/purity
+    const now = Date.now();
     return activeProjects.map((proj) => {
       const projCards  = cards.filter((c) => scopedCardIds.has(c.id) && c.projectId === proj.id && !c.archivedAt);
       const total      = projCards.length;
@@ -48,7 +48,7 @@ export function BulletCanvas({ nodes, onNodeClick }: Props) {
       const timeLeft   = (endMs - now) / span;
       return { proj, total, doneCount, pct, inProgPct, elapsed, hasDue, isOverdue, timeLeft };
     });
-  }, [activeProjects, cards, columns, scopedCardIds, now]);
+  }, [activeProjects, cards, columns, scopedCardIds]);
 
   const plotW  = dims.width - PAD.left - PAD.right;
   const totalH = PAD.top + PAD.bottom + projectStats.length * ROW_H;

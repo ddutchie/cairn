@@ -102,22 +102,9 @@ export interface CairnStore
 const STORAGE_KEY = "state";
 // AI_CONFIG_KEY and ACTIVE_PROJECT_KEY imported from @/lib/constants
 
-function isElectron(): boolean {
-  return typeof window !== "undefined" && !!window.electron;
-}
 
 
 
-function ipcAwait(
-  fn: (e: NonNullable<Window["electron"]>) => Promise<unknown> | undefined
-): Promise<void> {
-  if (!isElectron() || !window.electron) return Promise.resolve();
-  return (fn(window.electron) ?? Promise.resolve())
-    .then(() => undefined)
-    .catch((err: unknown) => {
-      console.error("[cairn:ipc]", err);
-    });
-}
 
 function loadPersisted(): PersistedState | null {
   return storage.get<PersistedState>(STORAGE_KEY);

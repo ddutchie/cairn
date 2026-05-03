@@ -2,7 +2,7 @@
 
 import React, { useRef, useEffect, useCallback, useState, useMemo } from "react";
 import { ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
-import type { GraphNode, GraphEdge, KnowledgeGraph } from "@/types";
+import type { GraphNode, KnowledgeGraph } from "@/types";
 import { resolveCssVar } from "./graphUtils";
 import { useFontScale } from "./analyticsHooks";
 
@@ -216,6 +216,7 @@ export function ForceGraphCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
 
       {/* Zoom controls */}
       <div className="absolute bottom-4 right-4 flex flex-col gap-1">
+        {/* eslint-disable-next-line react-hooks/refs */}
         {[
           { icon: <ZoomIn size={13} />, action: () => zoomBy(1.4), tip: "Zoom in" },
           { icon: <ZoomOut size={13} />, action: () => zoomBy(1 / 1.4), tip: "Zoom out" },

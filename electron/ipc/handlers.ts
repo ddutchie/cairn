@@ -17,6 +17,7 @@
 import { ipcMain, app, shell, dialog, BrowserWindow, net } from "electron";
 import path from "path";
 import fs from "fs";
+import crypto from "crypto";
 import type Database from "better-sqlite3";
 import * as q from "../db/queries";
 import { registerChatHandler } from "./chat";
@@ -168,6 +169,16 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
     return note;
   }));
 
+  ipcMain.handle("db:note:moveToFolder", (_e, { id, folder }: { id: string; folder: string }) => handle(() => {
+    // Use moveNoteFolder (direct SET) rather than updateNote (COALESCE) so that
+    // moving a note to root (folder="") is never silently ignored.
+    const note = q.moveNoteFolder(db, id, folder ?? "");
+    if (note.type !== "dashboard") {
+      writeNoteFile(workspacePath, { ...note, projectName: getProjectName(db, note.projectId) });
+    }
+    return note;
+  }));
+
   ipcMain.handle("db:note:delete", (_e, { id }) => handle(() => {
     const note = q.getNoteById(db, id);
     if (note) {
@@ -181,6 +192,13 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
     }
   }));
 
+  // ── Open URL in default system browser ───────────
+  ipcMain.on("app:openExternal", (_e, url: string) => {
+    if (typeof url === "string" && (url.startsWith("https://") || url.startsWith("http://"))) {
+      shell.openExternal(url);
+    }
+  });
+
   // ── Reveal in Finder / Explorer ───────────────────
   ipcMain.handle("app:revealNote", (_e, { noteId, projectId }) => handle(() => {
     const projectName = getProjectName(db, projectId);
@@ -188,6 +206,35 @@ export function registerIpcHandlers(db: Database.Database, workspacePath: string
     if (fp) {
       shell.showItemInFolder(fp);
     }
+  }));
+
+  // ── Asset upload (paste images into notes) ────────
+  // Receives raw image bytes, writes content-addressed to
+  // <workspacePath>/assets/<sha256[0..15]>.<ext>, returns asset:// URL.
+  ipcMain.handle("app:uploadAsset", (_e, { filename, data }: { filename: string; data: ArrayBuffer }) =>
+    handle(() => {
+      const assetDir = path.join(workspacePath, "assets");
+      fs.mkdirSync(assetDir, { recursive: true });
+      const ext = path.extname(filename).toLowerCase() || ".bin";
+      // data arrives as an ArrayBuffer via Electron structured-clone (no JSON serialisation overhead)
+      const buf = Buffer.from(data);
+      const hash = crypto.createHash("sha256").update(buf).digest("hex").slice(0, 16);
+      const destName = `${hash}${ext}`;
+      const destPath = path.join(assetDir, destName);
+      if (!fs.existsSync(destPath)) {
+        fs.writeFileSync(destPath, buf);
+      }
+      return { assetUrl: `asset://${destName}` };
+    })
+  );
+
+  // ── Reveal assets folder in Finder / Explorer ─────
+  ipcMain.handle("app:revealAssets", () => handle(async () => {
+    const assetDir = path.join(workspacePath, "assets");
+    fs.mkdirSync(assetDir, { recursive: true });
+    // shell.openPath returns a Promise<string>; non-empty = error message.
+    const errMsg = await shell.openPath(assetDir);
+    if (errMsg) console.error("[cairn:revealAssets]", errMsg);
   }));
 
   // ── Board columns ─────────────────────────────────
@@ -555,7 +602,8 @@ export function registerAppHandlers(
 
   // ── Auto-updater install ───────────────────────────
   ipcMain.handle("updater:install", () => handle(() => {
-    // Dynamically import to avoid issues in dev where autoUpdater isn't active
+    // Dynamically require to avoid issues in dev where autoUpdater isn't active.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { autoUpdater } = require("electron-updater");
     autoUpdater.quitAndInstall();
   }));
