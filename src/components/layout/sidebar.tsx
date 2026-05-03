@@ -141,7 +141,7 @@ export function Sidebar() {
               isActive={project.id === activeProjectId}
               isExpanded={expandedProjects.has(project.id)}
               onToggleExpand={() => toggleProjectExpand(project.id)}
-              onSelectProject={() => { setActiveProject(project.id); setView("overview"); }}
+              onSelectProject={() => { setActiveProject(project.id); setView("overview"); if (!expandedProjects.has(project.id)) toggleProjectExpand(project.id); }}
               activeView={activeView}
               onSelectView={(view) => { setActiveProject(project.id); setView(view); }}
               notes={getProjectNotes(project.id).slice(0, 5)}
