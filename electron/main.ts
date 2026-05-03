@@ -134,21 +134,67 @@ app.whenReady().then(async () => {
 
   // ── Resolve workspace path ────────────────────────────────────────────
   const config = readWorkspaceConfig(userDataPath);
-  const workspacePath = config
+  const initialWorkspacePath = config
     ? config.workspacePath
     : path.join(userDataPath, "cairn"); // fallback while onboarding
 
-  if (config) fs.mkdirSync(workspacePath, { recursive: true });
+  if (config) fs.mkdirSync(initialWorkspacePath, { recursive: true });
 
-  // Register asset:// protocol handler so the renderer can display pasted images
-  registerAssetProtocol(workspacePath);
+  // Register asset:// protocol handler so the renderer can display pasted images.
+  // Re-registered in reinitialise() when workspace changes.
+  registerAssetProtocol(initialWorkspacePath);
 
-  const dbPath = getDbPathForWorkspace(workspacePath);
-  const db = initDb(dbPath);
+  const initialDbPath = getDbPathForWorkspace(initialWorkspacePath);
+  const initialDb = initDb(initialDbPath);
 
-  registerIpcHandlers(db, workspacePath);
+  // ── Mutable context — swapped in reinitialise() without relaunching ──
+  const ctx: import("./ipc/handlers").DbContext = {
+    db: initialDb,
+    workspacePath: initialWorkspacePath,
+  };
+
+  registerIpcHandlers(ctx);
 
   const win = createWindow();
+
+  // ── File watcher for external .md edits ──────────────────────────────
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function notifyDbChanged() {
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      if (!win.isDestroyed()) win.webContents.send("db:changed");
+    }, 300);
+  }
+
+  startFileWatcher(initialWorkspacePath, initialDb, notifyDbChanged);
+
+  // ── Reinitialise without relaunching ─────────────────────────────────
+  // Called by app:initWorkspace when the user picks a workspace folder for
+  // the first time. Swaps the DB and file watcher in place so the onboarding
+  // wizard can continue without a full app restart.
+  async function reinitialise(newWorkspacePath: string): Promise<void> {
+    fs.mkdirSync(newWorkspacePath, { recursive: true });
+
+    // Open the new DB
+    const newDbPath = getDbPathForWorkspace(newWorkspacePath);
+    const newDb = initDb(newDbPath);
+
+    // Swap context — all handlers read from ctx at call time
+    ctx.db = newDb;
+    ctx.workspacePath = newWorkspacePath;
+
+    // Restart file watcher on the new path
+    startFileWatcher(newWorkspacePath, newDb, notifyDbChanged);
+
+    // Re-register the asset:// protocol for the new workspace
+    registerAssetProtocol(newWorkspacePath);
+
+    // Tell the renderer to re-hydrate from the new DB
+    if (!win.isDestroyed()) {
+      win.webContents.send("db:changed");
+    }
+  }
 
   // ── Auto-updater (prod only) ──────────────────────────────────────────
   if (!isDev) {
@@ -174,18 +220,6 @@ app.whenReady().then(async () => {
     setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), 4 * 60 * 60 * 1000);
   }
 
-  // ── File watcher for external .md edits ──────────────────────────────
-  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-
-  function notifyDbChanged() {
-    if (debounceTimer) clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => {
-      if (!win.isDestroyed()) win.webContents.send("db:changed");
-    }, 300);
-  }
-
-  startFileWatcher(workspacePath, db, notifyDbChanged);
-
   // ── System tray ───────────────────────────────────────────────────────
   const { updateBadge } = createTray(win);
 
@@ -193,19 +227,19 @@ app.whenReady().then(async () => {
   let unreadCount = 0;
   win.on("focus", () => {
     if (unreadCount > 0) {
-      markMcpNotificationsRead(db);
+      markMcpNotificationsRead(ctx.db);
       updateBadge(0);
       unreadCount = 0;
     }
   });
 
   // Register app:* and mcp:* IPC handlers (now that updateBadge is available)
-  registerAppHandlers(db, userDataPath, updateBadge, win);
+  registerAppHandlers(ctx.db, userDataPath, updateBadge, win, reinitialise);
 
   // ── MCP notification poller ───────────────────────────────────────────
   startMcpNotificationPoller({
-    db,
-    dbPath,
+    db: ctx.db,
+    dbPath: initialDbPath,
     win,
     updateBadge: (count) => {
       unreadCount = count;

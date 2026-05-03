@@ -50,7 +50,7 @@ import { InsightsView } from "@/components/insights/InsightsView";
 import { ChatPanel } from "@/components/chat/chat-panel";
 import { SearchPanel } from "@/components/search/search-panel";
 import { SettingsView } from "@/components/settings/settings-view";
-import { CreateWorkspace } from "@/components/onboarding/create-workspace";
+import { Onboarding } from "@/components/onboarding";
 
 export default function Home() {
   const {
@@ -72,8 +72,13 @@ export default function Home() {
   // null = still loading
   // "workspace" = needs workspace folder setup (existing or new user)
   // "create" = has workspace folder but no workspace record yet
+  // "dev" = dev shortcut — skip workspace steps, start at appearance
   // false = fully set up
-  const [onboardingState, setOnboardingState] = useState<"workspace" | "create" | false | null>(null);
+  const [onboardingState, setOnboardingState] = useState<"workspace" | "create" | "dev" | false | null>(null);
+  // Ref so the db:changed closure can read the current value without a stale capture
+  const onboardingStateRef = useRef<"workspace" | "create" | "dev" | false | null>(null);
+  // Keep ref in sync whenever state changes
+  useEffect(() => { onboardingStateRef.current = onboardingState; }, [onboardingState]);
 
   // Auto-updater state — tracked separately so event order doesn't matter
   const [updateVersion, setUpdateVersion] = useState<string | null>(null);
@@ -106,6 +111,10 @@ export default function Home() {
         // re-hydrating from SQLite would race against in-flight IPC and overwrite
         // the optimistic state with stale content. Skip hydration entirely.
         if (ownWriteGuard.isOwnWrite()) return;
+        // Don't re-hydrate (and potentially reset onboardingState) while the
+        // onboarding wizard is still in progress — folder selection and workspace
+        // creation trigger db:changed but the wizard handles its own state.
+        if (onboardingStateRef.current !== false) return;
         hydrateFromElectron(true);
       });
 
@@ -164,6 +173,11 @@ export default function Home() {
         e.preventDefault();
         void historyManager.redo();
       }
+      // ⌘⇧. — jump to onboarding appearance step (dev only)
+      else if (process.env.NODE_ENV === "development" && mod && e.shiftKey && key === ".") {
+        e.preventDefault();
+        setOnboardingState("dev");
+      }
     }
     function handleOpenChat(e: Event) {
       const { prefill } = (e as CustomEvent<{ prefill: string }>).detail;
@@ -193,13 +207,18 @@ export default function Home() {
 
   // Needs workspace folder setup (migration prompt or new user folder pick)
   // OR needs workspace record created after folder is chosen
-  if (onboardingState === "workspace" || onboardingState === "create") {
+  if (onboardingState === "workspace" || onboardingState === "create" || onboardingState === "dev") {
+    const initialStep =
+      onboardingState === "workspace" ? "choose-folder" :
+      onboardingState === "create"    ? "workspace-details" :
+      "appearance"; // "dev" — skip straight to appearance
+
     return (
       <main className="flex flex-col h-dvh w-screen overflow-hidden bg-[var(--background)]">
         <TitleBar />
         <div className="flex flex-1 min-h-0">
-          <CreateWorkspace
-            initialStep={onboardingState === "workspace" ? "choose-folder" : "workspace-details"}
+          <Onboarding
+            initialStep={initialStep}
             onComplete={() => setOnboardingState(false)}
           />
         </div>
