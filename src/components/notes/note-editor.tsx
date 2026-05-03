@@ -397,14 +397,27 @@ export function NoteEditor({ note }: NoteEditorProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [note.id]);
 
+  // Local title state so the input is responsive immediately — store update is debounced.
+  // titleRef always holds the latest value so the debounce callback never captures a stale closure.
+  const [localTitle, setLocalTitle] = useState(note.title);
+  const titleRef = useRef(note.title);
   const titleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Sync local title when switching to a different note.
+  useEffect(() => {
+    setLocalTitle(note.title);
+    titleRef.current = note.title;
+  }, [note.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleTitleChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const value = e.target.value;
+      setLocalTitle(value);
+      titleRef.current = value;
       if (titleTimer.current) clearTimeout(titleTimer.current);
       titleTimer.current = setTimeout(() => {
-        updateNote(note.id, { title: value });
-      }, 300);
+        updateNote(note.id, { title: titleRef.current });
+      }, 500);
     },
     [note.id, updateNote]
   );
@@ -610,7 +623,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
       <div className="px-6 pt-5 pb-3 flex-shrink-0 border-b border-[var(--border)]">
         <input
           type="text"
-          value={note.title}
+          value={localTitle}
           onChange={handleTitleChange}
           placeholder="Note title"
           className="w-full bg-transparent text-2xl font-bold text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none tracking-tight max-w-4xl mx-auto block"
