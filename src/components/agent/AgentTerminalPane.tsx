@@ -14,11 +14,12 @@ import "@xterm/xterm/css/xterm.css";
  * Inactive session divs are CSS-hidden (not unmounted) to preserve scroll history.
  */
 
-import { useEffect, useRef, useCallback } from "react";
-import { X, Terminal as TerminalIcon, CircleDot } from "lucide-react";
+import { useEffect, useRef, useCallback, useState } from "react";
+import { X, Terminal as TerminalIcon, CircleDot, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { Tooltip } from "@/components/ui/tooltip";
+import { SpawnAgentModal } from "./SpawnAgentModal";
 import { TerminalManager } from "./TerminalManager";
 import type { TerminalSession } from "@/store/slices/terminal-sessions";
 
@@ -177,6 +178,8 @@ export function AgentTerminalPane() {
     removeTerminalSession,
   } = useCairnStore();
 
+  const [spawnOpen, setSpawnOpen] = useState(false);
+
   const handleClose = useCallback((sessionId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     TerminalManager.delete(sessionId);
@@ -186,17 +189,25 @@ export function AgentTerminalPane() {
 
   if (terminalSessions.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center flex-1 gap-2 text-center p-4">
-        <TerminalIcon size={24} className="text-[var(--text-tertiary)]" />
-        <p className="text-xs text-[var(--text-tertiary)]">No agent sessions</p>
-        <p className="text-xs text-[var(--text-tertiary)]">
-          Spawn an agent from a task card on the Board
-        </p>
-      </div>
+      <>
+        <div className="flex flex-col items-center justify-center flex-1 gap-3 text-center p-4">
+          <TerminalIcon size={24} className="text-[var(--text-tertiary)]" />
+          <p className="text-xs text-[var(--text-tertiary)]">No agent sessions</p>
+          <button
+            onClick={() => setSpawnOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs bg-[var(--accent)] text-white hover:opacity-90 transition-opacity"
+          >
+            <Plus size={12} />
+            New Session
+          </button>
+        </div>
+        <SpawnAgentModal open={spawnOpen} onClose={() => setSpawnOpen(false)} />
+      </>
     );
   }
 
   return (
+    <>
     <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
       {/* Tab bar */}
       <div className="flex items-center border-b border-[var(--border)] overflow-x-auto flex-shrink-0 bg-[var(--surface)]">
@@ -209,6 +220,15 @@ export function AgentTerminalPane() {
             onClose={(e) => handleClose(session.sessionId, e)}
           />
         ))}
+        {/* New session button in tab bar */}
+        <Tooltip content="New session" side="bottom">
+          <button
+            onClick={() => setSpawnOpen(true)}
+            className="flex-shrink-0 px-2 py-2 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors border-r border-[var(--border)]"
+          >
+            <Plus size={12} />
+          </button>
+        </Tooltip>
       </div>
 
       {/* Terminal mounts — each session always mounted, CSS-hidden when inactive */}
@@ -222,6 +242,8 @@ export function AgentTerminalPane() {
         ))}
       </div>
     </div>
+    <SpawnAgentModal open={spawnOpen} onClose={() => setSpawnOpen(false)} />
+    </>
   );
 }
 

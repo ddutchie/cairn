@@ -3,19 +3,24 @@
 /**
  * SpawnAgentModal — prompt editor, agent selector, and spawn action.
  *
- * Pre-fills from task title + description. On confirm: spawns PTY,
- * adds session to store, navigates to Agent view.
+ * `card` is optional. When omitted (ad-hoc spawn from the Agent view),
+ * the task label is hidden, the prompt starts empty, and the session is
+ * labelled "Ad-hoc session".
+ *
+ * Pre-fills from task title + description when a card is provided.
+ * On confirm: spawns PTY, adds session to store, navigates to Agent view.
  */
 
 import { useState, useEffect } from "react";
-import { Terminal, AlertTriangle, Settings } from "lucide-react";
+import { Terminal, AlertTriangle } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useCairnStore } from "@/store";
+import { id } from "@/lib/utils";
 import type { TaskCard } from "@/types";
 
 interface SpawnAgentModalProps {
-  card: TaskCard;
+  card?: TaskCard;
   open: boolean;
   onClose: () => void;
 }
@@ -24,7 +29,7 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
   const {
     agents, fetchAgents,
     activeProjectId, projects,
-    addTerminalSession, setActiveSession, setView,
+    addTerminalSession, setActiveSession, setView, updateProject,
   } = useCairnStore();
 
   const project = projects.find((p) => p.id === activeProjectId) ?? null;
@@ -45,8 +50,12 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
     if (!open) return;
     const defaultAgent = agents.find((a) => a.isDefault) ?? agents[0];
     if (defaultAgent) setSelectedAgentId(defaultAgent.id);
-    const desc = card.description ? `\n\n${card.description}` : "";
-    setPrompt(`Task: ${card.title}${desc}`);
+    if (card) {
+      const desc = card.description ? `\n\n${card.description}` : "";
+      setPrompt(`Task: ${card.title}${desc}`);
+    } else {
+      setPrompt("");
+    }
     setSpawnError(null);
   }, [open, agents, card]);
 
@@ -57,14 +66,18 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
     if (!canSpawn || !selectedAgent || !codeDirectory || !project) return;
     setSpawning(true);
     setSpawnError(null);
+
+    const taskId = card?.id ?? id();
+    const taskTitle = card?.title ?? "Ad-hoc session";
+
     try {
       const result = await window.electron?.agent.spawn({
         agentId: selectedAgent.id,
         projectId: project.id,
         cwd: codeDirectory,
         prompt,
-        taskId: card.id,
-        taskTitle: card.title,
+        taskId,
+        taskTitle,
       }) as { data?: { sessionId: string }; error?: string } | undefined;
 
       if (!result || "error" in result) {
@@ -75,8 +88,8 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
       const { sessionId } = result.data!;
       addTerminalSession({
         sessionId,
-        taskId: card.id,
-        taskTitle: card.title,
+        taskId,
+        taskTitle,
         agentId: selectedAgent.id,
         agentName: selectedAgent.name,
         projectId: project.id,
@@ -100,16 +113,18 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Terminal size={15} />
-            Spawn Agent
+            {card ? "Spawn Agent" : "New Session"}
           </DialogTitle>
         </DialogHeader>
 
         <div className="px-5 py-4 space-y-4">
-          {/* Task label */}
-          <div>
-            <p className="text-[0.714rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)] mb-1">Task</p>
-            <p className="text-sm font-medium text-[var(--text-primary)]">{card.title}</p>
-          </div>
+          {/* Task label — only shown when launched from a card */}
+          {card && (
+            <div>
+              <p className="text-[0.714rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)] mb-1">Task</p>
+              <p className="text-sm font-medium text-[var(--text-primary)]">{card.title}</p>
+            </div>
+          )}
 
           {/* No agents warning */}
           {agents.length === 0 && (
@@ -130,8 +145,15 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
               <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
               <div className="text-xs">
                 No code directory set for this project.{" "}
-                <button onClick={() => { onClose(); setView("settings"); }} className="underline">
-                  Configure in Project Settings
+                <button
+                  className="underline"
+                  onClick={async () => {
+                    if (!project) return;
+                    const result = await window.electron?.agent.pickDirectory() as { data: string | null } | undefined;
+                    if (result?.data) updateProject(project.id, { codeDirectory: result.data });
+                  }}
+                >
+                  Choose folder
                 </button>
               </div>
             </div>
@@ -187,7 +209,7 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
               disabled={!canSpawn || spawning}
             >
               <Terminal size={13} />
-              {spawning ? "Spawning…" : "Spawn"}
+              {spawning ? "Spawning…" : card ? "Spawn" : "Start"}
             </Button>
           </div>
         </div>

@@ -113,79 +113,81 @@ export function AgentView() {
   return (
     <div className="flex flex-1 min-h-0 overflow-hidden bg-[var(--background)]">
 
-      {/* Left pane — file tree */}
-      <div
-        ref={treePaneRef}
-        className="flex-shrink-0 flex flex-col border-r border-[var(--border)] overflow-hidden"
-      >
-        <FileTree project={project} />
-      </div>
+        {/* Left pane — file tree */}
+        <div
+          ref={treePaneRef}
+          className="flex-shrink-0 flex flex-col border-r border-[var(--border)] overflow-hidden"
+        >
+          <FileTree project={project} />
+        </div>
 
-      {/* Left resize divider */}
-      <div
-        id="agent-divider-left"
-        className="w-1 flex-shrink-0 cursor-col-resize hover:bg-[var(--accent)] active:bg-[var(--accent)] transition-colors bg-transparent"
-        role="separator"
-        aria-label="Resize file tree"
-      />
+        {/* Left resize divider — zero layout width, overlaps the pane border */}
+        <div
+          id="agent-divider-left"
+          className="w-0 flex-shrink-0 cursor-col-resize relative z-10"
+          style={{ marginLeft: "-3px", marginRight: "-3px", padding: "0 3px" }}
+          role="separator"
+          aria-label="Resize file tree"
+        />
 
-      {/* Centre pane — tab bar + editor/diff */}
-      <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
-        {/* Tab bar */}
-        <div className="flex items-center gap-0.5 px-2 py-1 border-b border-[var(--border)] bg-[var(--surface)] flex-shrink-0">
-          <button
-            onClick={() => setCentreTab("editor")}
-            className={cn(
-              "px-2.5 py-0.5 rounded text-[0.714rem] transition-colors",
-              centreTab === "editor"
-                ? "text-[var(--text-primary)] bg-[var(--surface-2)]"
-                : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
-            )}
-          >
-            Editor
-          </button>
-          {codeDirectory && (
+        {/* Centre pane — tab bar + editor/diff */}
+        <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+          {/* Tab bar */}
+          <div className="flex items-center gap-0.5 py-1 border-b border-[var(--border)] bg-[var(--surface)] flex-shrink-0">
             <button
-              onClick={() => setCentreTab("diff")}
+              onClick={() => setCentreTab("editor")}
               className={cn(
                 "px-2.5 py-0.5 rounded text-[0.714rem] transition-colors",
-                centreTab === "diff"
+                centreTab === "editor"
                   ? "text-[var(--text-primary)] bg-[var(--surface-2)]"
                   : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
               )}
             >
-              Diff
+              Editor
             </button>
+            {codeDirectory && (
+              <button
+                onClick={() => setCentreTab("diff")}
+                className={cn(
+                  "px-2.5 py-0.5 rounded text-[0.714rem] transition-colors",
+                  centreTab === "diff"
+                    ? "text-[var(--text-primary)] bg-[var(--surface-2)]"
+                    : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
+                )}
+              >
+                Diff
+              </button>
+            )}
+          </div>
+
+          {/* CSS-hide editor so CM6 stays mounted when diff is active */}
+          <div className={cn("flex-1 min-h-0 overflow-hidden flex flex-col", centreTab !== "editor" && "hidden")}>
+            <AgentEditor />
+          </div>
+
+          {centreTab === "diff" && codeDirectory && (
+            <div className="flex-1 min-h-0 overflow-hidden">
+              <DiffViewer cwd={codeDirectory} />
+            </div>
           )}
         </div>
 
-        {/* CSS-hide editor so CM6 stays mounted when diff is active */}
-        <div className={cn("flex-1 min-h-0 overflow-hidden flex flex-col", centreTab !== "editor" && "hidden")}>
-          <AgentEditor />
+        {/* Right resize divider — zero layout width, overlaps the pane border */}
+        <div
+          id="agent-divider-right"
+          className="w-0 flex-shrink-0 cursor-col-resize relative z-10"
+          style={{ marginLeft: "-3px", marginRight: "-3px", padding: "0 3px" }}
+          role="separator"
+          aria-label="Resize terminal pane"
+        />
+
+        {/* Right pane — terminal sessions */}
+        <div
+          ref={terminalPaneRef}
+          className="flex-shrink-0 flex flex-col border-l border-[var(--border)] overflow-hidden"
+        >
+          <AgentTerminalPane />
         </div>
-
-        {centreTab === "diff" && codeDirectory && (
-          <div className="flex-1 min-h-0 overflow-hidden">
-            <DiffViewer cwd={codeDirectory} />
-          </div>
-        )}
-      </div>
-
-      {/* Right resize divider */}
-      <div
-        id="agent-divider-right"
-        className="w-1 flex-shrink-0 cursor-col-resize hover:bg-[var(--accent)] active:bg-[var(--accent)] transition-colors bg-transparent"
-        role="separator"
-        aria-label="Resize terminal pane"
-      />
-
-      {/* Right pane — terminal sessions */}
-      <div
-        ref={terminalPaneRef}
-        className="flex-shrink-0 flex flex-col border-l border-[var(--border)] overflow-hidden"
-      >
-        <AgentTerminalPane />
-      </div>
 
     </div>
   );

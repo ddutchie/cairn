@@ -126,7 +126,7 @@ interface FileTreeProps {
 }
 
 export function FileTree({ project }: FileTreeProps) {
-  const { activeEditorFile, openEditorFile, setView } = useCairnStore();
+  const { activeEditorFile, openEditorFile, updateProject } = useCairnStore();
   const [rootEntries, setRootEntries] = useState<DirEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -144,16 +144,23 @@ export function FileTree({ project }: FileTreeProps) {
       .catch((e: unknown) => setError(String(e)));
   }, [codeDirectory]);
 
+  async function handlePickCodeDir() {
+    if (!project) return;
+    const result = await window.electron?.agent.pickDirectory() as { data: string | null } | undefined;
+    if (result?.data) updateProject(project.id, { codeDirectory: result.data });
+  }
+
   if (!codeDirectory) {
     return (
       <div className="flex flex-col items-center justify-center flex-1 gap-2 p-4 text-center">
         <Folder size={24} className="text-[var(--text-tertiary)]" />
         <p className="text-xs text-[var(--text-tertiary)]">No code directory set</p>
         <button
-          onClick={() => setView("settings")}
-          className="text-xs text-[var(--accent)] hover:underline"
+          onClick={handlePickCodeDir}
+          className="flex items-center gap-1.5 text-xs text-[var(--accent)] hover:underline"
         >
-          Configure in Settings
+          <FolderOpen size={11} />
+          Choose folder
         </button>
       </div>
     );

@@ -107,6 +107,25 @@ export function registerAgentHandlers(db: Database): void {
     handle(() => fs.readFileSync(filePath, "utf-8"))
   );
 
+  ipcMain.handle("agent:readFileBase64", (_e, { filePath }: { filePath: string }) =>
+    handle(() => {
+      const buf = fs.readFileSync(filePath);
+      const ext = path.extname(filePath).slice(1).toLowerCase();
+      const mime =
+        ext === "svg" ? "image/svg+xml" :
+        ext === "jpg" || ext === "jpeg" ? "image/jpeg" :
+        ext === "png" ? "image/png" :
+        ext === "gif" ? "image/gif" :
+        ext === "webp" ? "image/webp" :
+        ext === "ico" ? "image/x-icon" :
+        ext === "bmp" ? "image/bmp" :
+        ext === "avif" ? "image/avif" :
+        ext === "tif" || ext === "tiff" ? "image/tiff" :
+        "application/octet-stream";
+      return `data:${mime};base64,${buf.toString("base64")}`;
+    })
+  );
+
   ipcMain.handle("agent:writeFile", (_e, { filePath, content }: { filePath: string; content: string }) =>
     handle(() => { fs.writeFileSync(filePath, content, "utf-8"); })
   );
@@ -130,23 +149,71 @@ export function registerAgentHandlers(db: Database): void {
       if (!fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) {
         throw new Error(`Not a directory: ${cwd}`);
       }
-      // Run: git diff HEAD  (staged + unstaged vs HEAD)
-      // Falls back to git diff (unstaged only) if HEAD doesn't exist yet
-      let result = spawnSync("git", ["diff", "HEAD", "--unified=3"], {
-        cwd,
-        encoding: "utf-8",
-        timeout: 10_000,
+
+      const parts: string[] = [];
+
+      // ── 1. Tracked changes: staged + unstaged vs HEAD ────────────────────
+      // Falls back to --cached only if HEAD doesn't exist yet (initial repo).
+      let trackedResult = spawnSync("git", ["diff", "HEAD", "--unified=3"], {
+        cwd, encoding: "utf-8", timeout: 10_000,
       });
-      if (result.error) throw result.error;
-      // If HEAD doesn't exist (initial repo), try git diff --cached
-      if (result.status !== 0) {
-        result = spawnSync("git", ["diff", "--cached", "--unified=3"], {
-          cwd,
-          encoding: "utf-8",
-          timeout: 10_000,
+      if (trackedResult.error) throw trackedResult.error;
+      if (trackedResult.status !== 0) {
+        // No HEAD yet — show only what's staged
+        trackedResult = spawnSync("git", ["diff", "--cached", "--unified=3"], {
+          cwd, encoding: "utf-8", timeout: 10_000,
         });
       }
-      return (result.stdout ?? "").trim();
+      if (trackedResult.stdout) parts.push(trackedResult.stdout.trim());
+
+      // ── 2. Untracked (new) files ─────────────────────────────────────────
+      // git diff HEAD misses files that have never been git-added.
+      // We enumerate them and synthesise a unified diff header so the
+      // renderer's parse-diff library handles them identically to real hunks.
+      const untrackedResult = spawnSync(
+        "git", ["ls-files", "--others", "--exclude-standard"],
+        { cwd, encoding: "utf-8", timeout: 10_000 },
+      );
+      if (!untrackedResult.error && untrackedResult.status === 0) {
+        const untrackedFiles = (untrackedResult.stdout ?? "")
+          .split("\n")
+          .map((f) => f.trim())
+          .filter(Boolean);
+
+        for (const relPath of untrackedFiles) {
+          const absPath = path.join(cwd, relPath);
+          let content: string;
+          try {
+            content = fs.readFileSync(absPath, "utf-8");
+          } catch {
+            continue; // binary or unreadable — skip
+          }
+
+          // Synthesise a unified diff:
+          //   diff --git a/<file> b/<file>
+          //   new file mode 100644
+          //   --- /dev/null
+          //   +++ b/<file>
+          //   @@ -0,0 +1,N @@
+          //   +<each line>
+          const lines = content.split("\n");
+          // Drop trailing empty string from trailing newline
+          if (lines[lines.length - 1] === "") lines.pop();
+          const hunk = lines.map((l) => `+${l}`).join("\n");
+          const synth = [
+            `diff --git a/${relPath} b/${relPath}`,
+            `new file mode 100644`,
+            `index 0000000..0000000`,
+            `--- /dev/null`,
+            `+++ b/${relPath}`,
+            `@@ -0,0 +1,${lines.length} @@`,
+            hunk,
+          ].join("\n");
+          parts.push(synth);
+        }
+      }
+
+      return parts.join("\n").trim();
     })
   );
 

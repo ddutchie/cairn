@@ -212,6 +212,7 @@ const api = {
 
     readDir: (dirPath: string) => ipcRenderer.invoke("agent:readDir", { dirPath }),
     readFile: (filePath: string) => ipcRenderer.invoke("agent:readFile", { filePath }),
+    readFileBase64: (filePath: string) => ipcRenderer.invoke("agent:readFileBase64", { filePath }),
     writeFile: (filePath: string, content: string) =>
       ipcRenderer.invoke("agent:writeFile", { filePath, content }),
     validateDirectory: (dirPath: string) =>

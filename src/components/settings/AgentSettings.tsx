@@ -144,40 +144,12 @@ function AgentForm({ initial, onSave, onCancel }: AgentFormProps) {
 export function AgentSettings() {
   const {
     agents, fetchAgents, saveAgent, deleteAgent, setDefaultAgent,
-    activeProjectId, projects, updateProject,
   } = useCairnStore();
 
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [codeDirInput, setCodeDirInput] = useState("");
-  const [codeDirSaving, setCodeDirSaving] = useState(false);
-  const [codeDirSaved, setCodeDirSaved] = useState(false);
-
-  const project = projects.find((p) => p.id === activeProjectId) ?? null;
 
   useEffect(() => { fetchAgents(); }, [fetchAgents]);
-  useEffect(() => {
-    setCodeDirInput(project?.codeDirectory ?? "");
-  }, [project?.codeDirectory]);
-
-  async function handlePickCodeDir() {
-    const result = await window.electron?.agent.pickDirectory() as { data: string | null } | undefined;
-    if (result?.data) setCodeDirInput(result.data);
-  }
-
-  async function handleSaveCodeDir() {
-    if (!project) return;
-    setCodeDirSaving(true);
-    try {
-      // updateProject gives an optimistic store update + IPC write in one call,
-      // so project.codeDirectory is immediately correct in SpawnAgentModal.
-      updateProject(project.id, { codeDirectory: codeDirInput || null });
-      setCodeDirSaved(true);
-      setTimeout(() => setCodeDirSaved(false), 2000);
-    } finally {
-      setCodeDirSaving(false);
-    }
-  }
 
   async function handleSaveAgent(agent: Omit<CodingAgent, "createdAt" | "updatedAt">) {
     await saveAgent(agent);
@@ -193,33 +165,6 @@ export function AgentSettings() {
           Register AI coding agent CLIs. Cairn spawns them in embedded terminal sessions from task cards.
         </p>
       </div>
-
-      {/* Project code directory */}
-      {project && (
-        <div className="space-y-2">
-          <h3 className="text-xs font-semibold uppercase tracking-widest text-[var(--text-tertiary)]">
-            Project Code Directory — {project.name}
-          </h3>
-          <p className="text-xs text-[var(--text-tertiary)]">
-            The working directory for all agent sessions spawned under this project.
-          </p>
-          <div className="flex gap-2">
-            <input
-              value={codeDirInput}
-              onChange={(e) => setCodeDirInput(e.target.value)}
-              placeholder="/path/to/your/project"
-              className="flex-1 rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-sm px-3 py-1.5 font-mono focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
-            />
-            <Button variant="ghost" size="sm" onClick={handlePickCodeDir}>
-              <FolderOpen size={12} />
-              Browse
-            </Button>
-            <Button size="sm" onClick={handleSaveCodeDir} disabled={codeDirSaving}>
-              {codeDirSaved ? <><Check size={12} />Saved</> : codeDirSaving ? "Saving…" : "Save"}
-            </Button>
-          </div>
-        </div>
-      )}
 
       {/* Agent list */}
       <div className="space-y-2">

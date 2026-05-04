@@ -11,13 +11,13 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { EditorView, keymap } from "@codemirror/view";
+import { EditorView, keymap, lineNumbers } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { LanguageDescription, syntaxHighlighting, HighlightStyle } from "@codemirror/language";
 import { languages } from "@codemirror/language-data";
 import { tags } from "@lezer/highlight";
-import { X, Save, FileCode, Eye } from "lucide-react";
+import { X, Save, FileCode, Eye, ImageIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { NoteMarkdownPreview } from "@/components/notes/NoteMarkdownPreview";
@@ -174,6 +174,7 @@ export function AgentEditor() {
 
   const activeFile = activeEditorFile ?? openEditorFiles[0];
   const isMarkdown = (p: string) => p.endsWith(".md") || p.endsWith(".mdx");
+  const isImage = (p: string) => /\.(png|jpe?g|gif|webp|svg|bmp|ico|avif|tiff?)$/i.test(p);
 
   return (
     <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
@@ -199,8 +200,9 @@ export function AgentEditor() {
                   : "bg-[var(--surface)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"
               )}
             >
+              {isImage(filePath) && <ImageIcon size={10} className="flex-shrink-0 text-[var(--text-tertiary)]" />}
               <span className="max-w-[120px] truncate">{name}</span>
-              {(isDirty || isSaving) && (
+              {!isImage(filePath) && (isDirty || isSaving) && (
                 <span className={cn("w-1.5 h-1.5 rounded-full flex-shrink-0", isSaving ? "bg-[var(--text-tertiary)]" : "bg-[var(--accent)]")} />
               )}
               {/* Preview toggle for md files */}
@@ -257,21 +259,29 @@ export function AgentEditor() {
 
           return (
             <div key={filePath} className={cn("absolute inset-0", !isActive && "hidden")}>
-              {/* CM6 editor — hidden (not unmounted) when preview is active */}
-              <div className={cn("absolute inset-0", inPreview && "hidden")}>
-                <FileEditorInner
-                  filePath={filePath}
-                  isActive={isActive && !inPreview}
-                  isDark={isDark}
-                  onDirtyChange={handleDirtyChange}
-                  onSave={handleSave}
-                />
-              </div>
-              {/* Markdown preview */}
-              {inPreview && (
-                <div className="absolute inset-0 overflow-y-auto">
-                  <NoteMarkdownPreview content={previewContent[filePath] ?? ""} />
-                </div>
+              {/* Image viewer — replaces CM6 for binary image files */}
+              {isImage(filePath) ? (
+                <ImageViewer filePath={filePath} />
+              
+              ) : (
+                <>
+                  {/* CM6 editor — hidden (not unmounted) when preview is active */}
+                  <div className={cn("absolute inset-0", inPreview && "hidden")}>
+                    <FileEditorInner
+                      filePath={filePath}
+                      isActive={isActive && !inPreview}
+                      isDark={isDark}
+                      onDirtyChange={handleDirtyChange}
+                      onSave={handleSave}
+                    />
+                  </div>
+                  {/* Markdown preview */}
+                  {inPreview && (
+                    <div className="absolute inset-0 overflow-y-auto">
+                      <NoteMarkdownPreview content={previewContent[filePath] ?? ""} />
+                    </div>
+                  )}
+                </>
               )}
             </div>
           );
@@ -315,9 +325,10 @@ function FileEditorInner({ filePath, isActive, isDark, onDirtyChange, onSave }: 
 
         const state = EditorState.create({
           doc: content,
-          extensions: [
+            extensions: [
             buildTheme(),
             buildHighlightStyle(isDark),
+            lineNumbers(),
             history(),
             keymap.of([
               ...defaultKeymap,
@@ -374,6 +385,42 @@ function FileEditorInner({ filePath, isActive, isDark, onDirtyChange, onSave }: 
         </div>
       )}
       <div ref={containerRef} className="flex-1 min-h-0 overflow-hidden" />
+    </div>
+  );
+}
+
+// ── ImageViewer — loads via base64 IPC to avoid file:// CSP restrictions ──────
+
+function ImageViewer({ filePath }: { filePath: string }) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setSrc(null);
+    setError(null);
+    if (!window.electron) return;
+    (window.electron.agent.readFileBase64(filePath) as Promise<{ data?: string; error?: string }>)
+      .then((result) => {
+        const r = result as { data?: string; error?: string };
+        if (r?.error) setError(r.error);
+        else setSrc(r?.data ?? null);
+      })
+      .catch((e: unknown) => setError(String(e)));
+  }, [filePath]);
+
+  return (
+    <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[var(--background)] overflow-auto p-4">
+      {error && <p className="text-xs text-[var(--danger)]">{error}</p>}
+      {src && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={src}
+          alt={filePath.split("/").pop()}
+          className="max-w-full max-h-full object-contain rounded"
+        />
+      )}
+      {!src && !error && <p className="text-xs text-[var(--text-tertiary)]">Loading…</p>}
+      <p className="text-[0.714rem] text-[var(--text-tertiary)] font-mono">{filePath.split("/").pop()}</p>
     </div>
   );
 }
