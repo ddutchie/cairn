@@ -450,12 +450,25 @@ export const TOOL_SCHEMAS = {
     }),
   },
 
+  // ── Interactive clarification (chat-only, renderer-handled) ─────────────────
+
+  ask_questions: {
+    description: "Present a structured list of clarifying questions to the user as an inline form. Each question gets its own labeled text input. The user fills in all answers and submits them together. Use this instead of asking questions in prose.",
+    schema: z.object({
+      questions: z.array(z.object({
+        id:     z.string().describe("Short unique identifier, e.g. \"target_users\""),
+        label:  z.string().describe("Short bold label shown above the input, e.g. \"Target users\""),
+        prompt: z.string().describe("One-sentence question shown as placeholder text"),
+      })).describe("2–4 targeted questions"),
+    }),
+  },
+
 } as const;
 
 export type ToolName = keyof typeof TOOL_SCHEMAS;
 
 // Chat-only tools (not exposed via MCP)
-export const CHAT_ONLY_TOOLS: ToolName[] = ["get_active_context", "generate_prd", "spawn_tasks_from_note"];
+export const CHAT_ONLY_TOOLS: ToolName[] = ["get_active_context", "generate_prd", "spawn_tasks_from_note", "ask_questions"];
 
 export type ToolCategory = "read" | "write" | "delete";
 

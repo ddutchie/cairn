@@ -27,9 +27,11 @@ Cairn is a desktop app (Electron + Next.js) that combines markdown notes with a 
 - **Notes** — Split-pane markdown editor (write on the left, preview on the right)
 - **AI text actions** — Select any text in a note → floating toolbar → Rephrase, Summarize, Expand, Fix Grammar, Change Tone, or custom prompt
 - **Kanban board** — Drag-and-drop cards across columns with priority indicators
+- **Drag notes into folders** — Drag any note in the sidebar directly onto a folder row to move it; a "Move to root" drop zone appears while dragging
 - **Linked context** — Notes and cards reference each other bidirectionally
 - **Global search** — Instant full-text search across all notes and tasks (`⌘K`)
-- **AI chat** — Integrated assistant with live project context; reads and writes your data (`⌘/`)
+- **AI chat** — Integrated assistant with live project context; reads and writes your data (`⌘/`); supports inline `ask_questions` forms for structured clarification
+- **Interactive PRD generation** — Describe what you want to build; the agent reads your project context, asks targeted clarifying questions via an inline form, then writes and saves a full PRD to your notes
 - **Idea Flow** — A freeform node canvas per project (`⌘4`): add idea, note reference, task reference, group, URL, and AI summary nodes; connect them with labelled edges; the AI and MCP can read and write the canvas as first-class authors
 - **Live dashboards** — Ask the AI to generate an interactive HTML dashboard for any project; choose from a template gallery or start blank; dashboards fetch live data on every load via a sandboxed `window.cairn.query()` bridge; runtime errors surface an inline "Fix with AI" button; HTML editable directly via a built-in CodeMirror overlay
 - **MCP server** — Exposes your workspace to external AI agents (OpenCode, Claude Desktop, etc.) via the Model Context Protocol
@@ -270,18 +272,25 @@ Tests live alongside the code they cover:
 | @dagrejs/dagre | Graph auto-layout (Idea Flow) |
 | CodeMirror 6 | Note editor |
 | react-markdown | Markdown preview |
+| remark-gfm | GitHub Flavored Markdown |
+| remark-breaks | Hard line breaks in markdown |
+| remark-math / rehype-katex | Math expression rendering |
 | Mermaid | Diagram rendering in notes |
+| lowlight | Syntax highlighting in code blocks |
+| cmdk | Command palette |
 | react-day-picker | Date picker |
 | date-fns | Date utilities |
-| Radix UI | Accessible UI primitives |
+| Radix UI | Accessible UI primitives (dialog, dropdown, tooltip, popover, select, context menu) |
+| Vercel AI SDK | AI streaming utilities |
 | esbuild | Bundler |
 | @modelcontextprotocol/sdk | MCP server |
 | Lucide React | Icons |
 | Zod | Schema validation |
 | nanoid | ID generation |
+| tailwind-merge | Tailwind class merge utility |
 | vitest | Unit test runner |
 
-> The **Settings → About** screen in the app shows real installed versions and all open source licenses. These are generated automatically at build time — see below.
+> The **Settings → About** screen in the app shows real installed versions grouped by category (Platform, Data, AI, UI, Editor, Visualisation) and all open source licenses. These are generated automatically at build time — see below.
 
 ## About screen & license generation
 
@@ -303,10 +312,10 @@ If you add a package that should appear in the **Stack** grid in the About scree
 
 ```js
 // scripts/generate-licenses.js — ROLE_MAP
-"your-package-name": ["Display Name", "Short role description"],
+"your-package-name": ["Display Name", "Short role description", "Category"],
 ```
 
-The key must exactly match the package name in `package.json`. The display name and role are what appear in the UI grid. All installed packages (whether in `ROLE_MAP` or not) are automatically included in the full **Open Source Licenses** list.
+The key must exactly match the package name in `package.json`. Valid categories are `Platform`, `Data`, `AI`, `UI`, `Editor`, and `Visualisation` — entries are grouped under these headings in the About screen. All installed packages (whether in `ROLE_MAP` or not) are automatically included in the full **Open Source Licenses** list.
 
 ## Star History
 <p align="center">

@@ -62,6 +62,7 @@ export const TOOL_LABELS: Record<string, (args: ToolArgs) => string> = {
   update_dashboard:       () => "Updating dashboard",
   get_dashboard_constants: () => "Reading dashboard API reference",
   get_idea_flow_rules:    () => "Reading Idea Flow rules",
+  ask_questions:          (a) => `Asking ${(a.questions as unknown[])?.length ?? ""} question${(a.questions as unknown[])?.length !== 1 ? "s" : ""}`,
 };
 
 // Tool definitions for the AI (OpenAI function calling format)
@@ -96,9 +97,11 @@ export interface ChatRequest {
   workspaceId?: string;
   history?: Array<{ role: "user" | "assistant" | "system"; content: string }>;
   config?: { baseUrl?: string; model?: string; apiKey?: string; maxSteps?: number };
+  systemPrompt?: string;
 }
 
-export function buildSystemPrompt(_req: ChatRequest): string {
+export function buildSystemPrompt(req: ChatRequest): string {
+  if (req.systemPrompt) return req.systemPrompt;
   return `You are the Cairn AI assistant — an intelligent helper embedded inside a note-taking and project management app.
 
 ## How to get context
@@ -133,4 +136,53 @@ Each project has a visual node canvas. Call get_idea_flow_rules for node type da
 Call get_knowledge_graph for cross-entity research. Call get_neighbors for focused N-hop traversal from a single node — more efficient than loading the full graph.
 
 Tone: calm, focused, like a thoughtful co-worker.`;
+}
+
+/**
+ * System prompt for the interactive PRD generation micro-chat.
+ * Scoped to a single project. The agent gathers context, asks focused
+ * questions, then writes the PRD as a note via create_note.
+ */
+export function buildPrdSystemPrompt(projectId: string): string {
+  return `You are an expert product manager helping write a Product Requirements Document (PRD).
+
+## Your workflow — follow this order exactly
+
+1. **Gather context first.**
+   Call get_project_context_pack with projectId="${projectId}" immediately.
+   Scan the returned notes for architecture docs, tech specs, or anything describing the product or stack.
+   Call get_note on any relevant notes to read their full content.
+
+2. **Ask focused clarifying questions.**
+   Based on the user's description and the context you found, ask 2–4 targeted questions whose answers would materially improve the PRD.
+   Be specific — do not ask things you can already infer from context.
+   Format as: **Question label** — one-sentence prompt.
+
+3. **Wait for answers.**
+   Do not write the PRD until the user has answered. If they say "skip" or "just write it", proceed immediately.
+
+4. **Write the PRD** as a thorough markdown document with these sections:
+   # <title>
+   ## Overview
+   ## Problem Statement
+   ## Goals & Non-Goals
+   ## User Stories
+   ## Functional Requirements
+   ## Non-Functional Requirements
+   ## Acceptance Criteria
+   ## Open Questions
+
+5. **Save it** by calling create_note with:
+   - projectId: "${projectId}"
+   - title: the PRD title
+   - content: the full markdown
+   - folder: "PRDs"
+   Then confirm with just the note title — do not repeat the full markdown.
+
+## Constraints
+- Never ask the user for IDs.
+- Keep questions concise — this is a focused session, not a discovery interview.
+- PRD content must be specific and actionable, not generic boilerplate.
+
+Tone: direct and concise, like a senior PM pairing with the user.`;
 }

@@ -4,7 +4,8 @@
  * useChatStream — manages the AI chat streaming lifecycle.
  *
  * Subscribes to the Electron chat events (onToken, onDone, onToolCall)
- * and exposes loading state, tool-call list, and streaming content.
+ * and exposes loading state, tool-call list, streaming content, and any
+ * pending ask_questions form emitted by the agent.
  *
  * The component calls `sendStream()` to fire a request and reads back
  * the state updates as tokens/tool calls arrive.
@@ -16,6 +17,12 @@ import { useCairnStore } from "@/store";
 export interface ChatToolCall {
   tool: string;
   label: string;
+}
+
+export interface PendingQuestion {
+  id: string;
+  label: string;
+  prompt: string;
 }
 
 export interface ChatStreamRequest {
@@ -30,22 +37,27 @@ export interface ChatStreamRequest {
     apiKey?: string;
     maxSteps?: number;
   };
+  systemPrompt?: string;
 }
 
 export interface UseChatStreamResult {
   isLoading: boolean;
   toolCalls: ChatToolCall[];
   streamingContent: string;
+  /** Non-null when the agent has called ask_questions — cleared on submit or done. */
+  pendingQuestions: PendingQuestion[] | null;
   sendStream: (req: ChatStreamRequest) => void;
   stopStream: () => void;
+  clearQuestions: () => void;
 }
 
 export function useChatStream(threadId: string | null): UseChatStreamResult {
   const addMessage = useCairnStore((s) => s.addMessage);
 
-  const [isLoading, setIsLoading] = useState(false);
-  const [toolCalls, setToolCalls] = useState<ChatToolCall[]>([]);
+  const [isLoading, setIsLoading]               = useState(false);
+  const [toolCalls, setToolCalls]               = useState<ChatToolCall[]>([]);
   const [streamingContent, setStreamingContent] = useState("");
+  const [pendingQuestions, setPendingQuestions] = useState<PendingQuestion[] | null>(null);
 
   // Keep a stable ref so the onDone handler always reads the latest threadId
   const threadIdRef = useRef<string | null>(null);
@@ -56,7 +68,13 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
     if (!electron) return;
 
     const unsubTool = electron.chat.onToolCall((e) => {
-      setToolCalls((prev) => [...prev, { tool: e.tool, label: e.label }]);
+      if (e.tool === "ask_questions") {
+        // Intercept: surface as an inline form rather than a chip
+        const qs = (e.args.questions as PendingQuestion[] | undefined) ?? [];
+        setPendingQuestions(qs);
+      } else {
+        setToolCalls((prev) => [...prev, { tool: e.tool, label: e.label }]);
+      }
     });
 
     const unsubToken = electron.chat.onToken((e) => {
@@ -72,6 +90,8 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
       setStreamingContent("");
       setIsLoading(false);
       setToolCalls([]);
+      // Do NOT clear pendingQuestions here — the form must stay visible until
+      // the user submits their answers. It is cleared in sendStream() instead.
     });
 
     return () => {
@@ -86,6 +106,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
   function sendStream(req: ChatStreamRequest) {
     setIsLoading(true);
     setToolCalls([]);
+    setPendingQuestions(null);
     window.electron?.chat.stream(req);
   }
 
@@ -94,7 +115,12 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
     setIsLoading(false);
     setToolCalls([]);
     setStreamingContent("");
+    // Keep pendingQuestions — user may still want to answer after stopping
   }
 
-  return { isLoading, toolCalls, streamingContent, sendStream, stopStream };
+  function clearQuestions() {
+    setPendingQuestions(null);
+  }
+
+  return { isLoading, toolCalls, streamingContent, pendingQuestions, sendStream, stopStream, clearQuestions };
 }

@@ -17,12 +17,14 @@ export function DialogContent({
   className,
   children,
   size = "md",
+  "aria-describedby": ariaDescribedBy,
   ...props
 }: DialogContentProps) {
   return (
     <RadixDialog.Portal>
       <RadixDialog.Overlay className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 animate-fade-in" />
       <RadixDialog.Content
+        aria-describedby={ariaDescribedBy ?? undefined}
         className={cn(
           "fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50",
           "bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-2xl",

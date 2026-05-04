@@ -6,8 +6,8 @@
  * same keys in their summary responses, consistent return types, and
  * no tool missing from either side.
  *
- * Chat-only tools (get_active_context, generate_prd, spawn_tasks_from_note)
- * are intentionally absent from MCP — these are excluded from the parity check.
+ * Chat-only tools (defined in CHAT_ONLY_TOOLS in tool-schemas.ts) are
+ * intentionally absent from MCP — these are excluded from the parity check.
  *
  * We also verify get_project_summary returns the canonical ProjectSummaryResult
  * shape from both chat-executor and the shared read-tools module.
@@ -20,6 +20,7 @@ import { applySchema } from "../db/schema";
 import { createWorkspace, createProject, createColumn, createNote, updateNote, createCard, getFullSnapshot } from "../db/queries";
 import { executeReadTool, type CairnSnapshot } from "../lib/read-tools";
 import { TOOLS } from "../lib/tools";
+import { CHAT_ONLY_TOOLS as CHAT_ONLY_TOOLS_LIST } from "../lib/tool-schemas";
 
 // ── Fixture ───────────────────────────────────────────────────────────────────
 
@@ -40,8 +41,9 @@ function seed(db: Database.Database) {
 
 // ── Tool name sets ────────────────────────────────────────────────────────────
 
-// Chat-only tools that intentionally do not exist in the MCP server
-const CHAT_ONLY_TOOLS = new Set(["get_active_context", "generate_prd", "spawn_tasks_from_note"]);
+// Chat-only tools that intentionally do not exist in the MCP server.
+// Imported directly from tool-schemas so this test stays in sync automatically.
+const CHAT_ONLY_TOOLS = new Set(CHAT_ONLY_TOOLS_LIST);
 
 // Shared read tools handled by executeReadTool (and also in mcp-server.ts)
 const SHARED_READ_TOOLS = [

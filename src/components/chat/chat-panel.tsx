@@ -10,6 +10,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { ChatMessageBubble } from "./chat-panel/ChatMessageBubble";
 import { SuggestedPrompts } from "./chat-panel/SuggestedPrompts";
 import { ToolCallIndicator } from "./chat-panel/ToolCallIndicator";
+import { QuestionForm } from "./chat-panel/QuestionForm";
 
 interface ChatPanelProps {
   prefill?: string | null;
@@ -35,7 +36,7 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef       = useRef<HTMLTextAreaElement>(null);
 
-  const { isLoading, toolCalls, streamingContent, sendStream, stopStream } = useChatStream(threadId);
+  const { isLoading, toolCalls, streamingContent, pendingQuestions, sendStream, stopStream } = useChatStream(threadId);
 
   // Track isLoading in a ref so the thread-init effect can read it without
   // being listed as a dependency (we never want a loading-state change to
@@ -222,6 +223,13 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
               />
             ))
         }
+        {pendingQuestions && (
+          <QuestionForm
+            questions={pendingQuestions}
+            onSubmit={(text) => handleSend(text)}
+            disabled={isLoading && !pendingQuestions}
+          />
+        )}
         {isLoading && <ToolCallIndicator toolCalls={toolCalls} streamingContent={streamingContent} />}
         <div ref={messagesEndRef} />
       </div>

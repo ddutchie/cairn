@@ -3,6 +3,7 @@
 import React, { useRef, useCallback, useState, useEffect, useMemo } from "react";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkBreaks from "remark-breaks";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
@@ -217,7 +218,7 @@ function InlineCode({ className, children }: { className?: string; children?: Re
 // the full pipeline and displays it as a collapsible bottom panel.
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const PREVIEW_REMARK_PLUGINS: any[] = [remarkGfm, remarkMath, remarkPromoteDisplayMath, remarkCallout];
+const PREVIEW_REMARK_PLUGINS: any[] = [remarkGfm, remarkBreaks, remarkMath, remarkPromoteDisplayMath, remarkCallout];
 
 interface MDPreviewPanelProps {
   text: string;
@@ -258,6 +259,7 @@ function MDPreviewPanel({ text, onDismiss }: MDPreviewPanelProps) {
         <ReactMarkdown
           remarkPlugins={PREVIEW_REMARK_PLUGINS}
           rehypePlugins={[previewCapture, rehypeKatex, previewMerge]}
+          urlTransform={(url) => url.startsWith("asset://") ? url : defaultUrlTransform(url)}
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           components={({
             mark({ children }: any) {
@@ -703,7 +705,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
               {note.content ? (
                 <div className="prose-cairn">
                   <ReactMarkdown
-                     remarkPlugins={[remarkGfm, remarkMath, remarkPromoteDisplayMath, remarkCallout]}
+                     remarkPlugins={[remarkGfm, remarkBreaks, remarkMath, remarkPromoteDisplayMath, remarkCallout]}
                      rehypePlugins={[rehypeCaptureLatex, rehypeKatex, rehypeMergedPass]}
                      urlTransform={(url) => url.startsWith("asset://") ? url : defaultUrlTransform(url)}
                      components={({

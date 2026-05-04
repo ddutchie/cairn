@@ -82,7 +82,7 @@ export function NotesView() {
     getProjectNotes, getArchivedProjectNotes,
     createNote, updateNote, deleteNote,
     archiveNote, restoreNote, moveNoteToProject, moveNoteToFolder,
-    revealNote, generatePrd,
+    revealNote,
     getTagById,
     getWorkspaceProjects,
     notes: allNotes,
@@ -106,6 +106,34 @@ export function NotesView() {
   // "Move to folder" for a specific note
   const [folderMoveNoteId, setFolderMoveNoteId]  = useState<string | null>(null);
   const [folderMoveDest, setFolderMoveDest]       = useState("");
+
+  // Drag-and-drop: note → folder
+  const dragNoteIdRef = useRef<string | null>(null);
+  const [dropTarget, setDropTarget]              = useState<string | null>(null); // folder path or "__root__"
+
+  const handleNoteDragStart = useCallback((noteId: string) => {
+    dragNoteIdRef.current = noteId;
+  }, []);
+
+  const handleNoteDragEnd = useCallback(() => {
+    dragNoteIdRef.current = null;
+    setDropTarget(null);
+  }, []);
+
+  const handleFolderDragOver = useCallback((folderPath: string) => {
+    setDropTarget(folderPath);
+  }, []);
+
+  const handleFolderDragLeave = useCallback(() => {
+    setDropTarget(null);
+  }, []);
+
+  const handleFolderDrop = useCallback((folderPath: string) => {
+    const noteId = dragNoteIdRef.current;
+    if (noteId) moveNoteToFolder(noteId, folderPath);
+    dragNoteIdRef.current = null;
+    setDropTarget(null);
+  }, [moveNoteToFolder]);
 
   // Subscribe to allNotes directly so this component re-renders when note
   // content changes (e.g. while typing). The selector functions are stable
@@ -314,6 +342,8 @@ export function NotesView() {
                   onMove={() => setMoveNoteId(note.id)}
                   onMoveToFolder={() => setFolderMoveNoteId(note.id)}
                   onReveal={() => revealNote(note.id, note.projectId)}
+                  onDragStart={handleNoteDragStart}
+                  onDragEnd={handleNoteDragEnd}
                 />
               ))
             )
@@ -336,8 +366,30 @@ export function NotesView() {
                   onNoteMoveToFolder={(note) => setFolderMoveNoteId(note.id)}
                   onNoteReveal={(note) => revealNote(note.id, note.projectId)}
                   onCreateInFolder={(folder) => handleCreateNote(folder)}
+                  dropTarget={dropTarget}
+                  onNoteDragStart={handleNoteDragStart}
+                  onNoteDragEnd={handleNoteDragEnd}
+                  onFolderDragOver={handleFolderDragOver}
+                  onFolderDragLeave={handleFolderDragLeave}
+                  onFolderDrop={handleFolderDrop}
                 />
               ))}
+              {/* Root drop zone — visible only while dragging, when folders exist */}
+              {folderTree.length > 0 && dropTarget !== null && (
+                <div
+                  className={cn(
+                    "mx-2 my-1 px-3 py-1.5 rounded text-[0.714rem] text-center transition-colors border border-dashed",
+                    dropTarget === "__root__"
+                      ? "border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] text-[var(--accent)]"
+                      : "border-[var(--border)] text-[var(--text-tertiary)]",
+                  )}
+                  onDragOver={(e) => { e.preventDefault(); setDropTarget("__root__"); }}
+                  onDragLeave={() => setDropTarget(null)}
+                  onDrop={(e) => { e.preventDefault(); handleFolderDrop(""); }}
+                >
+                  Move to root
+                </div>
+              )}
               {/* Root notes (no folder) */}
               {rootNotes.map((note) => (
                 <NoteListItem
@@ -351,6 +403,8 @@ export function NotesView() {
                   onMove={() => setMoveNoteId(note.id)}
                   onMoveToFolder={() => setFolderMoveNoteId(note.id)}
                   onReveal={() => revealNote(note.id, note.projectId)}
+                  onDragStart={handleNoteDragStart}
+                  onDragEnd={handleNoteDragEnd}
                 />
               ))}
             </>
@@ -402,8 +456,8 @@ export function NotesView() {
         )}
       </div>
 
-      {prdModalOpen && activeProjectId && (
-        <PrdModal projectId={activeProjectId} generatePrd={generatePrd} onClose={() => setPrdModalOpen(false)} />
+      {prdModalOpen && activeProjectId && activeWorkspaceId && (
+        <PrdModal projectId={activeProjectId} workspaceId={activeWorkspaceId} onClose={() => setPrdModalOpen(false)} />
       )}
 
       {dashboardTemplateOpen && (
@@ -494,23 +548,40 @@ interface FolderTreeNodeProps {
   onNoteMoveToFolder: (note: Note) => void;
   onNoteReveal: (note: Note) => void;
   onCreateInFolder: (folder: string) => void;
+  // drag-and-drop
+  dropTarget: string | null;
+  onNoteDragStart: (noteId: string) => void;
+  onNoteDragEnd: () => void;
+  onFolderDragOver: (folderPath: string) => void;
+  onFolderDragLeave: () => void;
+  onFolderDrop: (folderPath: string) => void;
 }
 
 const FolderTreeNode = memo(function FolderTreeNode({
   node, activeNoteId, collapsed, depth = 0,
   onToggle, onNoteClick, onNotePin, onNoteDelete,
   onNoteArchive, onNoteMove, onNoteMoveToFolder, onNoteReveal, onCreateInFolder,
+  dropTarget, onNoteDragStart, onNoteDragEnd, onFolderDragOver, onFolderDragLeave, onFolderDrop,
 }: FolderTreeNodeProps) {
   const isCollapsed = collapsed[node.path];
   const indent = depth * 10;
+  const isDragOver = dropTarget === node.path;
 
   return (
     <div>
       {/* Folder row */}
       <div
-        className="group flex items-center gap-1 px-2 py-1.5 cursor-pointer hover:bg-[var(--surface-2)] transition-colors"
+        className={cn(
+          "group flex items-center gap-1 px-2 py-1.5 cursor-pointer transition-colors",
+          isDragOver
+            ? "bg-[color-mix(in_srgb,var(--accent)_15%,transparent)] outline outline-1 outline-[var(--accent)] outline-offset-[-1px] rounded"
+            : "hover:bg-[var(--surface-2)]",
+        )}
         style={{ paddingLeft: `${8 + indent}px` }}
         onClick={() => onToggle(node.path)}
+        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); onFolderDragOver(node.path); }}
+        onDragLeave={(e) => { e.stopPropagation(); onFolderDragLeave(); }}
+        onDrop={(e) => { e.preventDefault(); e.stopPropagation(); onFolderDrop(node.path); }}
       >
         {isCollapsed
           ? <ChevronRight size={11} className="text-[var(--text-tertiary)] flex-shrink-0" />
@@ -548,6 +619,12 @@ const FolderTreeNode = memo(function FolderTreeNode({
               onNoteMoveToFolder={onNoteMoveToFolder}
               onNoteReveal={onNoteReveal}
               onCreateInFolder={onCreateInFolder}
+              dropTarget={dropTarget}
+              onNoteDragStart={onNoteDragStart}
+              onNoteDragEnd={onNoteDragEnd}
+              onFolderDragOver={onFolderDragOver}
+              onFolderDragLeave={onFolderDragLeave}
+              onFolderDrop={onFolderDrop}
             />
           ))}
           {/* Notes in this folder */}
@@ -564,6 +641,8 @@ const FolderTreeNode = memo(function FolderTreeNode({
               onMove={() => onNoteMove(note)}
               onMoveToFolder={() => onNoteMoveToFolder(note)}
               onReveal={() => onNoteReveal(note)}
+              onDragStart={onNoteDragStart}
+              onDragEnd={onNoteDragEnd}
             />
           ))}
           {/* Empty folder state */}
@@ -589,11 +668,16 @@ interface NoteListItemProps {
   note: Note; isActive: boolean; indent?: number;
   onClick: () => void; onPin: () => void; onDelete: () => void;
   onArchive: () => void; onMove: () => void; onMoveToFolder: () => void; onReveal: () => void;
+  onDragStart?: (noteId: string) => void;
+  onDragEnd?: () => void;
 }
 
-function NoteListItem({ note, isActive, indent = 0, onClick, onPin, onDelete, onArchive, onMove, onMoveToFolder, onReveal }: NoteListItemProps) {
+function NoteListItem({ note, isActive, indent = 0, onClick, onPin, onDelete, onArchive, onMove, onMoveToFolder, onReveal, onDragStart, onDragEnd }: NoteListItemProps) {
   return (
     <div onClick={onClick}
+      draggable={!!onDragStart}
+      onDragStart={(e) => { e.stopPropagation(); onDragStart?.(note.id); }}
+      onDragEnd={(e) => { e.stopPropagation(); onDragEnd?.(); }}
       className={cn("group relative flex flex-col gap-0.5 py-2.5 cursor-pointer transition-colors pr-3",
         isActive ? "bg-[var(--surface-2)] border-l-2 border-[var(--accent)]" : "hover:bg-[var(--surface-2)] border-l-2 border-transparent")}
       style={{ paddingLeft: `${12 + indent}px` }}

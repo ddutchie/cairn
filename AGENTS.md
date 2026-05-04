@@ -119,3 +119,8 @@ Notes write to both `.md` files and SQLite simultaneously. Dashboards write to S
 - All DB writes from renderer go through `ipc()` / `ipcAwait()` to the Electron main process
 - `graphData` is lazy — only populated when `loadGraph(activeWorkspaceId)` is called. Both `KnowledgeGraphView` and `InsightsView` call it on mount.
 - D3 `fontSize` in SVG must always be multiplied by `useFontScale()` — never hardcode px values
+
+## Project Management
+
+Use cairn mcp server to manage notes, tasks and idea flow nodes.  
+When you find anything interesting create a note in the right project and add a card to the board (if needed).
