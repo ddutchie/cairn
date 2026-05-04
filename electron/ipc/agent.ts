@@ -37,6 +37,28 @@ export function isSafePath(p: string): boolean {
   return SAFE_PATH_RE.test(p) || SAFE_PATH_WIN_RE.test(p);
 }
 
+/**
+ * Assert that `filePath` is safe and confined to one of the registered project
+ * code directories. Throws if either check fails, which causes handle() to
+ * return { error: "..." } to the renderer without crashing the main process.
+ */
+function assertWithinCodeDirectory(db: Database, filePath: string): void {
+  if (!isSafePath(filePath)) {
+    throw new Error(`Unsafe path: ${filePath}`);
+  }
+  const normalised = path.resolve(filePath);
+  const codeDirs = db
+    .prepare("SELECT code_directory FROM projects WHERE code_directory IS NOT NULL")
+    .all() as { code_directory: string }[];
+  const allowed = codeDirs.some(({ code_directory }) => {
+    const dir = path.resolve(code_directory);
+    return normalised === dir || normalised.startsWith(dir + path.sep);
+  });
+  if (!allowed) {
+    throw new Error(`Path is outside any registered code directory: ${filePath}`);
+  }
+}
+
 // ── Session map ───────────────────────────────────────────────────────────────
 
 interface PtySession {
@@ -77,16 +99,14 @@ export function registerAgentHandlers(db: Database): void {
     handle(() => q.setDefaultCodingAgent(db, id))
   );
 
-  // ── Project code directory ───────────────────────────────────────────────
-
-  ipcMain.handle("agent:saveProjectCodeDir", (_e, { projectId, dirPath }: { projectId: string; dirPath: string | null }) =>
-    handle(() => q.setProjectCodeDirectory(db, projectId, dirPath))
-  );
+  // Note: code_directory is now saved via db:project:update (the generic project
+  // update IPC), which keeps it consistent with all other project field writes.
 
   // ── File system ──────────────────────────────────────────────────────────
 
   ipcMain.handle("agent:readDir", (_e, { dirPath }: { dirPath: string }) =>
     handle(() => {
+      assertWithinCodeDirectory(db, dirPath);
       const entries = fs.readdirSync(dirPath, { withFileTypes: true });
       return entries
         .filter((e) => !e.name.startsWith("."))
@@ -104,11 +124,15 @@ export function registerAgentHandlers(db: Database): void {
   );
 
   ipcMain.handle("agent:readFile", (_e, { filePath }: { filePath: string }) =>
-    handle(() => fs.readFileSync(filePath, "utf-8"))
+    handle(() => {
+      assertWithinCodeDirectory(db, filePath);
+      return fs.readFileSync(filePath, "utf-8");
+    })
   );
 
   ipcMain.handle("agent:readFileBase64", (_e, { filePath }: { filePath: string }) =>
     handle(() => {
+      assertWithinCodeDirectory(db, filePath);
       const buf = fs.readFileSync(filePath);
       const ext = path.extname(filePath).slice(1).toLowerCase();
       const mime =
@@ -127,7 +151,10 @@ export function registerAgentHandlers(db: Database): void {
   );
 
   ipcMain.handle("agent:writeFile", (_e, { filePath, content }: { filePath: string; content: string }) =>
-    handle(() => { fs.writeFileSync(filePath, content, "utf-8"); })
+    handle(() => {
+      assertWithinCodeDirectory(db, filePath);
+      fs.writeFileSync(filePath, content, "utf-8");
+    })
   );
 
   ipcMain.handle("agent:validateDirectory", (_e, { dirPath }: { dirPath: string }) =>
@@ -248,8 +275,8 @@ export function registerAgentHandlers(db: Database): void {
     taskTitle: string;
   }) => {
     return handle(async () => {
-      // Security: validate cwd
-      if (!isSafePath(payload.cwd) && process.platform !== "win32") {
+      // Security: validate cwd on all platforms
+      if (!isSafePath(payload.cwd)) {
         throw new Error(`Invalid cwd path: ${payload.cwd}`);
       }
       const stat = fs.statSync(payload.cwd);
@@ -357,6 +384,13 @@ export function registerAgentHandlers(db: Database): void {
         if (!webContents.isDestroyed()) {
           webContents.send("agent:exit", { sessionId, exitCode });
         }
+      });
+
+      // Kill this session if the renderer that spawned it is destroyed
+      // (e.g. window reload) so we never orphan live PTY processes.
+      webContents.once("destroyed", () => {
+        const s = sessions.get(sessionId);
+        if (s) { try { s.pty.kill(); } catch { /* already dead */ } sessions.delete(sessionId); }
       });
 
       return { sessionId };

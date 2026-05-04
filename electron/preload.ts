@@ -201,33 +201,33 @@ const api = {
   markMcpNotificationsRead: () => ipcRenderer.invoke("mcp:markNotificationsRead"),
 
   // ── Agent / coding sessions ───────────────────
+  // All methods go through invoke() so callers receive T directly and errors
+  // are thrown (matching every other namespace in this file).
   agent: {
-    getCodingAgents: () => ipcRenderer.invoke("agent:getCodingAgents"),
-    saveCodingAgent: (agent: unknown) => ipcRenderer.invoke("agent:saveCodingAgent", agent),
-    deleteCodingAgent: (id: string) => ipcRenderer.invoke("agent:deleteCodingAgent", { id }),
-    setDefaultAgent: (id: string) => ipcRenderer.invoke("agent:setDefaultAgent", { id }),
+    getCodingAgents: () => invoke("agent:getCodingAgents"),
+    saveCodingAgent: (agent: unknown) => invoke("agent:saveCodingAgent", agent),
+    deleteCodingAgent: (id: string) => invoke("agent:deleteCodingAgent", { id }),
+    setDefaultAgent: (id: string) => invoke("agent:setDefaultAgent", { id }),
 
-    saveProjectCodeDir: (projectId: string, dirPath: string | null) =>
-      ipcRenderer.invoke("agent:saveProjectCodeDir", { projectId, dirPath }),
-
-    readDir: (dirPath: string) => ipcRenderer.invoke("agent:readDir", { dirPath }),
-    readFile: (filePath: string) => ipcRenderer.invoke("agent:readFile", { filePath }),
-    readFileBase64: (filePath: string) => ipcRenderer.invoke("agent:readFileBase64", { filePath }),
+    readDir: (dirPath: string) => invoke("agent:readDir", { dirPath }),
+    readFile: (filePath: string) => invoke<string>("agent:readFile", { filePath }),
+    readFileBase64: (filePath: string) => invoke<string>("agent:readFileBase64", { filePath }),
     writeFile: (filePath: string, content: string) =>
-      ipcRenderer.invoke("agent:writeFile", { filePath, content }),
+      invoke("agent:writeFile", { filePath, content }),
     validateDirectory: (dirPath: string) =>
-      ipcRenderer.invoke("agent:validateDirectory", { dirPath }),
-    gitDiff: (cwd: string) =>
-      ipcRenderer.invoke("agent:gitDiff", { cwd }),
+      invoke<boolean>("agent:validateDirectory", { dirPath }),
+    gitDiff: (cwd: string) => invoke<string>("agent:gitDiff", { cwd }),
+    // Pickers bypass invoke() — they return { data: T } directly from the handler
+    // and are not wrapped via handle(), so we keep them as raw invokes.
     pickDirectory: () => ipcRenderer.invoke("agent:pickDirectory"),
     pickFile: () => ipcRenderer.invoke("agent:pickFile"),
 
-    spawn: (payload: unknown) => ipcRenderer.invoke("agent:spawn", payload),
+    spawn: (payload: unknown) => invoke<{ sessionId: string }>("agent:spawn", payload),
     input: (sessionId: string, data: string) =>
-      ipcRenderer.invoke("agent:input", { sessionId, data }),
+      invoke("agent:input", { sessionId, data }),
     resize: (sessionId: string, cols: number, rows: number) =>
-      ipcRenderer.invoke("agent:resize", { sessionId, cols, rows }),
-    kill: (sessionId: string) => ipcRenderer.invoke("agent:kill", { sessionId }),
+      invoke("agent:resize", { sessionId, cols, rows }),
+    kill: (sessionId: string) => invoke("agent:kill", { sessionId }),
 
     onData: (cb: (payload: { sessionId: string; data: string }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

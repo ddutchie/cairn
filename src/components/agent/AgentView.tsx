@@ -34,8 +34,10 @@ export function AgentView() {
 
   // DOM refs for the two resizable panes — widths are mutated directly,
   // never stored in React state, so no re-render occurs during drag.
-  const treePaneRef     = useRef<HTMLDivElement>(null);
-  const terminalPaneRef = useRef<HTMLDivElement>(null);
+  const treePaneRef      = useRef<HTMLDivElement>(null);
+  const terminalPaneRef  = useRef<HTMLDivElement>(null);
+  const leftDividerRef   = useRef<HTMLDivElement>(null);
+  const rightDividerRef  = useRef<HTMLDivElement>(null);
 
   // Set initial widths once on mount via DOM (avoids a React render cycle)
   useEffect(() => {
@@ -94,8 +96,8 @@ export function AgentView() {
       e.preventDefault();
     }
 
-    const leftDivider  = document.getElementById("agent-divider-left");
-    const rightDivider = document.getElementById("agent-divider-right");
+    const leftDivider  = leftDividerRef.current;
+    const rightDivider = rightDividerRef.current;
 
     leftDivider?.addEventListener("mousedown",  startLeftDrag);
     rightDivider?.addEventListener("mousedown", startRightDrag);
@@ -123,7 +125,7 @@ export function AgentView() {
 
         {/* Left resize divider — zero layout width, overlaps the pane border */}
         <div
-          id="agent-divider-left"
+          ref={leftDividerRef}
           className="w-0 flex-shrink-0 cursor-col-resize relative z-10"
           style={{ marginLeft: "-3px", marginRight: "-3px", padding: "0 3px" }}
           role="separator"
@@ -174,7 +176,7 @@ export function AgentView() {
 
         {/* Right resize divider — zero layout width, overlaps the pane border */}
         <div
-          id="agent-divider-right"
+          ref={rightDividerRef}
           className="w-0 flex-shrink-0 cursor-col-resize relative z-10"
           style={{ marginLeft: "-3px", marginRight: "-3px", padding: "0 3px" }}
           role="separator"

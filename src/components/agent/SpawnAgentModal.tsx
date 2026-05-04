@@ -71,21 +71,14 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
     const taskTitle = card?.title ?? "Ad-hoc session";
 
     try {
-      const result = await window.electron?.agent.spawn({
+      const { sessionId } = await window.electron!.agent.spawn({
         agentId: selectedAgent.id,
         projectId: project.id,
         cwd: codeDirectory,
         prompt,
         taskId,
         taskTitle,
-      }) as { data?: { sessionId: string }; error?: string } | undefined;
-
-      if (!result || "error" in result) {
-        setSpawnError((result as { error: string })?.error ?? "Spawn failed");
-        return;
-      }
-
-      const { sessionId } = result.data!;
+      }) as { sessionId: string };
       addTerminalSession({
         sessionId,
         taskId,

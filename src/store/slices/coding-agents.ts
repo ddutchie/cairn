@@ -41,10 +41,8 @@ export const createCodingAgentsSlice: StateCreator<CairnStore, [], [], CodingAge
   async fetchAgents() {
     if (typeof window === "undefined" || !window.electron) return;
     try {
-      const result = await window.electron.agent.getCodingAgents();
-      if (result && "data" in result) {
-        set({ agents: result.data as CodingAgent[] });
-      }
+      const agents = await window.electron.agent.getCodingAgents() as CodingAgent[];
+      set({ agents });
     } catch (err) {
       console.error("[coding-agents] fetchAgents error", err);
     }
@@ -53,15 +51,12 @@ export const createCodingAgentsSlice: StateCreator<CairnStore, [], [], CodingAge
   async saveAgent(agent) {
     if (typeof window === "undefined" || !window.electron) return;
     try {
-      const result = await window.electron.agent.saveCodingAgent(agent);
-      if (result && "data" in result) {
-        const saved = result.data as CodingAgent;
-        set((s) => ({
-          agents: s.agents.some((a) => a.id === saved.id)
-            ? s.agents.map((a) => (a.id === saved.id ? saved : a))
-            : [...s.agents, saved],
-        }));
-      }
+      const saved = await window.electron.agent.saveCodingAgent(agent) as CodingAgent;
+      set((s) => ({
+        agents: s.agents.some((a) => a.id === saved.id)
+          ? s.agents.map((a) => (a.id === saved.id ? saved : a))
+          : [...s.agents, saved],
+      }));
     } catch (err) {
       console.error("[coding-agents] saveAgent error", err);
     }

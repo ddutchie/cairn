@@ -56,21 +56,25 @@ function SessionMount({ session, isActive }: SessionMountProps) {
     initStarted.current = true;
 
     // ── Case 3: create a new terminal ──────────────────────────────────────
+    let unmounted = false;
     (async () => {
       const { Terminal } = await import("@xterm/xterm");
       const { FitAddon } = await import("@xterm/addon-fit");
       const { Unicode11Addon } = await import("@xterm/addon-unicode11");
 
-      if (!containerRef.current) return;
+      // Guard: component may have unmounted while awaiting dynamic imports
+      if (unmounted || !containerRef.current) return;
 
       const cs = getComputedStyle(document.documentElement);
       const resolvedFont = cs.getPropertyValue("--font-mono").trim()
         || "ui-monospace, 'Cascadia Code', 'Fira Code', monospace";
+      const fontScale = parseFloat(cs.getPropertyValue("--font-scale").trim() || "1") || 1;
+      const fontSize = Math.round(13 * fontScale);
 
       const terminal = new Terminal({
         allowProposedApi: true,
         cursorBlink: true,
-        fontSize: 13,
+        fontSize,
         fontFamily: resolvedFont,
         // Set a reasonable initial size so xterm doesn't start at 80×24
         // and immediately jump — FitAddon will correct it once cell dims are known.
@@ -147,6 +151,7 @@ function SessionMount({ session, isActive }: SessionMountProps) {
     })();
 
     return () => {
+      unmounted = true;
       cleanupFns.current.forEach((fn) => fn());
       cleanupFns.current = [];
       initStarted.current = false;

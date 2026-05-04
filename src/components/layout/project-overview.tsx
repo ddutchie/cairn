@@ -185,7 +185,7 @@ export function ProjectOverview() {
             placeholder="Set code directory for agent sessions…"
             className="flex-1 min-w-0 bg-transparent text-[0.786rem] font-mono text-[var(--text-secondary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:text-[var(--text-primary)] transition-colors"
           />
-          {window.electron && (
+          {typeof window !== "undefined" && window.electron && (
             <button
               onClick={handlePickCodeDir}
               className="flex-shrink-0 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors opacity-0 group-hover:opacity-100"

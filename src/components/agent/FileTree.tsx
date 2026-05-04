@@ -55,8 +55,8 @@ function TreeNode({ entry, depth, activePath, onFileClick }: TreeNodeProps) {
     if (!expanded && children === null) {
       setLoading(true);
       try {
-        const result = await window.electron?.agent.readDir(entry.path);
-        if (result && "data" in result) setChildren(result.data as DirEntry[]);
+        const entries = await window.electron?.agent.readDir(entry.path) as DirEntry[] | undefined;
+        if (entries) setChildren(entries);
       } finally {
         setLoading(false);
       }
@@ -135,12 +135,8 @@ export function FileTree({ project }: FileTreeProps) {
   useEffect(() => {
     if (!codeDirectory) { setRootEntries(null); return; }
     setError(null);
-    window.electron?.agent.readDir(codeDirectory)
-      .then((result: unknown) => {
-        const r = result as { data?: DirEntry[]; error?: string };
-        if (r && "data" in r) setRootEntries(r.data ?? []);
-        else setError(r?.error ?? "Failed to read directory");
-      })
+    (window.electron?.agent.readDir(codeDirectory) as Promise<DirEntry[]> | undefined)
+      ?.then((entries) => setRootEntries(entries))
       .catch((e: unknown) => setError(String(e)));
   }, [codeDirectory]);
 

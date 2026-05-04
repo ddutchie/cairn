@@ -44,6 +44,11 @@ class TerminalManagerClass {
     const m = this.sessions.get(sessionId);
     if (!m) return;
     m.rawOutput += data;
+    // Cap at 5 MB — drop the oldest half to amortise future truncations
+    const MAX_RAW = 5 * 1024 * 1024;
+    if (m.rawOutput.length > MAX_RAW) {
+      m.rawOutput = m.rawOutput.slice(m.rawOutput.length - Math.floor(MAX_RAW / 2));
+    }
     // Notify subscribers — they throttle internally if needed
     for (const fn of this.outputListeners) fn(sessionId);
   }
