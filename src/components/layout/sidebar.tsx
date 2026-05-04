@@ -3,11 +3,10 @@
 import React, { useState, useRef, useEffect } from "react";
 import {
   FileText, Kanban, Settings, Search, MessageSquare,
-  ChevronDown, ChevronRight, Plus, Pin, MoreHorizontal,
+  ChevronDown, ChevronRight, Plus, MoreHorizontal,
   FolderOpen, Hash, Layers, Pencil, Trash2, GitBranch, BarChart2, Workflow,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { CairnEvents } from "@/lib/events";
 import { useCairnStore } from "@/store";
 import { ProjectIcon } from "@/lib/workspace-icons";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -19,13 +18,13 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { WorkspaceSwitcher } from "./sidebar/WorkspaceSwitcher";
 import { ProjectCreateForm } from "./sidebar/ProjectCreateForm";
-import type { Project, Note } from "@/types";
+import type { Project } from "@/types";
 
 export function Sidebar() {
   const {
     sidebarCollapsed, toggleSidebar,
     activeWorkspaceId, activeProjectId, activeView,
-    workspaces, getWorkspaceProjects, getProjectNotes,
+    workspaces, getWorkspaceProjects,
     setActiveProject, setView, toggleSearch, toggleChat,
     createProject, updateProject, deleteProject,
     chatOpen, searchOpen,
@@ -144,7 +143,6 @@ export function Sidebar() {
               onSelectProject={() => { setActiveProject(project.id); setView("overview"); if (!expandedProjects.has(project.id)) toggleProjectExpand(project.id); }}
               activeView={activeView}
               onSelectView={(view) => { setActiveProject(project.id); setView(view); }}
-              notes={getProjectNotes(project.id).slice(0, 5)}
               onRename={(name) => updateProject(project.id, { name })}
               onDelete={() => deleteProject(project.id)}
             />
@@ -202,10 +200,10 @@ interface ProjectItemProps {
   onToggleExpand: () => void; onSelectProject: () => void;
   activeView: string;
   onSelectView: (view: "overview" | "notes" | "board" | "flow" | "graph" | "chat") => void;
-  notes: Note[]; onRename: (name: string) => void; onDelete: () => void;
+  onRename: (name: string) => void; onDelete: () => void;
 }
 
-function ProjectItem({ project, isActive, isExpanded, onToggleExpand, onSelectProject, activeView, onSelectView, notes, onRename, onDelete }: ProjectItemProps) {
+function ProjectItem({ project, isActive, isExpanded, onToggleExpand, onSelectProject, activeView, onSelectView, onRename, onDelete }: ProjectItemProps) {
   const [renaming, setRenaming]             = useState(false);
   const [renameValue, setRenameValue]       = useState(project.name);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -289,17 +287,6 @@ function ProjectItem({ project, isActive, isExpanded, onToggleExpand, onSelectPr
             <NavItem icon={<FileText size={11} />} label="Notes" isActive={isActive && activeView === "notes"} onClick={() => onSelectView("notes")} />
             <NavItem icon={<Kanban size={11} />} label="Board" isActive={isActive && activeView === "board"} onClick={() => onSelectView("board")} />
             <NavItem icon={<Workflow size={11} />} label="Idea Flow" isActive={isActive && activeView === "flow"} onClick={() => onSelectView("flow")} />
-            {isActive && activeView === "notes" && notes.length > 0 && (
-              <div className="mt-1 space-y-0.5">
-                {notes.map((note) => (
-                  <button key={note.id} onClick={() => window.dispatchEvent(CairnEvents.selectNote(note.id))}
-                    className="flex items-center gap-1.5 w-full px-1.5 py-1 rounded text-[0.786rem] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)] transition-colors text-left">
-                    {note.isPinned && <Pin size={9} className="text-[var(--accent)] flex-shrink-0" />}
-                    <span className="truncate">{note.title}</span>
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
         )}
       </div>

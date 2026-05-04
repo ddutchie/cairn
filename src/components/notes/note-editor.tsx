@@ -258,6 +258,7 @@ function MDPreviewPanel({ text, onDismiss }: MDPreviewPanelProps) {
         <ReactMarkdown
           remarkPlugins={PREVIEW_REMARK_PLUGINS}
           rehypePlugins={[previewCapture, rehypeKatex, previewMerge]}
+          urlTransform={(url) => url.startsWith("asset://") ? url : defaultUrlTransform(url)}
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           components={({
             mark({ children }: any) {
