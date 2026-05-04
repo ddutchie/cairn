@@ -11,6 +11,25 @@ import type { ToggleableView } from "@/store/slices/ui";
 import { cn } from "@/lib/utils";
 import { SettingsGroup } from "./shared";
 
+function Toggle({ on, disabled, onClick }: { on: boolean; disabled?: boolean; onClick?: () => void }) {
+  return (
+    <button
+      role="switch"
+      aria-checked={on}
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        "flex items-center w-9 h-5 rounded-full px-0.5 transition-colors flex-shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]",
+        on ? "bg-[var(--accent)]" : "bg-[var(--surface-3)]",
+        disabled && "opacity-40 cursor-default",
+        on ? "justify-end" : "justify-start"
+      )}
+    >
+      <span className="w-4 h-4 rounded-full bg-white shadow-sm flex-shrink-0" />
+    </button>
+  );
+}
+
 interface ViewOption {
   view: ToggleableView;
   label: string;
@@ -48,9 +67,7 @@ export function ViewVisibilitySettings() {
               <p className="text-[0.714rem] text-[var(--text-tertiary)]">Always visible</p>
             </div>
           </div>
-          <div className="relative w-8 h-4 rounded-full bg-[var(--accent)] opacity-40 flex-shrink-0 overflow-hidden">
-              <span className="absolute top-0.5 w-3 h-3 rounded-full bg-white shadow translate-x-[18px]" />
-            </div>
+          <Toggle on disabled />
         </div>
       ))}
 
@@ -69,22 +86,7 @@ export function ViewVisibilitySettings() {
                 <p className="text-[0.714rem] text-[var(--text-tertiary)]">{description}</p>
               </div>
             </div>
-            <button
-              role="switch"
-              aria-checked={visible}
-              onClick={() => toggleViewVisibility(view)}
-              className={cn(
-                  "relative w-8 h-4 rounded-full transition-colors flex-shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] overflow-hidden",
-                  visible ? "bg-[var(--accent)]" : "bg-[var(--surface-3)]"
-                )}
-            >
-              <span
-                className={cn(
-                  "absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform",
-                  visible ? "translate-x-[18px]" : "translate-x-0.5"
-                )}
-              />
-            </button>
+            <Toggle on={visible} onClick={() => toggleViewVisibility(view)} />
           </div>
         );
       })}
