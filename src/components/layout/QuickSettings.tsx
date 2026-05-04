@@ -39,7 +39,10 @@ const FONT_SCALES: { value: FontScale; label: string }[] = [
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function QuickSettings() {
-  const { theme, setTheme, fontScale, setFontScale } = useCairnStore();
+  const theme = useCairnStore((s) => s.theme);
+  const setTheme = useCairnStore((s) => s.setTheme);
+  const fontScale = useCairnStore((s) => s.fontScale);
+  const setFontScale = useCairnStore((s) => s.setFontScale);
 
   return (
     <DropdownMenu>

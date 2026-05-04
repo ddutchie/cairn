@@ -16,6 +16,7 @@ import { Terminal, AlertTriangle } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useCairnStore } from "@/store";
+import { useShallow } from "zustand/react/shallow";
 import { id } from "@/lib/utils";
 import type { TaskCard } from "@/types";
 
@@ -26,11 +27,7 @@ interface SpawnAgentModalProps {
 }
 
 export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
-  const {
-    agents, fetchAgents,
-    activeProjectId, projects,
-    addTerminalSession, setActiveSession, setView, updateProject,
-  } = useCairnStore();
+  const { agents, fetchAgents, activeProjectId, projects, addTerminalSession, setActiveSession, setView, updateProject } = useCairnStore(useShallow((s) => ({ agents: s.agents, fetchAgents: s.fetchAgents, activeProjectId: s.activeProjectId, projects: s.projects, addTerminalSession: s.addTerminalSession, setActiveSession: s.setActiveSession, setView: s.setView, updateProject: s.updateProject })));
 
   const project = projects.find((p) => p.id === activeProjectId) ?? null;
   const codeDirectory = project?.codeDirectory ?? null;

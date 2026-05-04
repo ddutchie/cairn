@@ -5,6 +5,7 @@ import { Search, SearchX, FileText, Kanban, X, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CairnEvents } from "@/lib/events";
 import { useCairnStore, type SearchResult } from "@/store";
+import { useShallow } from "zustand/react/shallow";
 
 interface ResultRowProps {
   result: SearchResult;
@@ -61,7 +62,15 @@ function ResultRow({ result, focused, onSelect }: ResultRowProps) {
 type FilterType = "all" | "notes" | "tasks";
 
 export function SearchPanel() {
-  const { searchOpen, toggleSearch, searchAll, setView, setActiveProject, projects, activeWorkspaceId } = useCairnStore();
+  const { searchOpen, toggleSearch, searchAll, setView, setActiveProject, projects, activeWorkspaceId } = useCairnStore(useShallow((s) => ({
+    searchOpen:        s.searchOpen,
+    toggleSearch:      s.toggleSearch,
+    searchAll:         s.searchAll,
+    setView:           s.setView,
+    setActiveProject:  s.setActiveProject,
+    projects:          s.projects,
+    activeWorkspaceId: s.activeWorkspaceId,
+  })));
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [focused, setFocused] = useState(0);

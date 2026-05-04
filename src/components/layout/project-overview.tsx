@@ -6,6 +6,7 @@ import {
   AlertCircle, Activity, Circle, BarChart2, Pencil, Check, FolderOpen, Terminal,
 } from "lucide-react";
 import { useCairnStore } from "@/store";
+import { useShallow } from "zustand/react/shallow";
 import { ProjectIcon, WORKSPACE_ICONS } from "@/lib/workspace-icons";
 import { cn, formatDate, formatRelative, STATUS_COLORS } from "@/lib/utils";
 import { COLUMN_COLORS, PRIORITY_CSS_COLORS } from "@/lib/constants";
@@ -16,7 +17,12 @@ import type { TaskCard, Note, BoardColumn } from "@/types";
 import { useProjectMetrics, type ActivityGroup } from "./project-overview/useProjectMetrics";
 
 export function ProjectOverview() {
-  const { activeProjectId, projects, setView, updateProject } = useCairnStore();
+  const { activeProjectId, projects, setView, updateProject } = useCairnStore(useShallow((s) => ({
+    activeProjectId: s.activeProjectId,
+    projects:        s.projects,
+    setView:         s.setView,
+    updateProject:   s.updateProject,
+  })));
   const project = projects.find((p) => p.id === activeProjectId);
   const metrics = useProjectMetrics(activeProjectId);
 
@@ -227,7 +233,7 @@ export function ProjectOverview() {
             <SectionHeader title="Board" icon={<Kanban size={12} />} action={{ label: "View board", onClick: () => setView("board") }} />
             <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
               {columns.map((col) => (
-                <ColumnPill key={col.id} column={col} cards={useCairnStore.getState().getColumnCards(col.id)}
+                <ColumnPill key={col.id} column={col} cards={allCards.filter((c) => c.columnId === col.id)}
                   onClick={() => { setView("board"); setTimeout(() => window.dispatchEvent(CairnEvents.scrollToColumn(col.id)), 50); }} />
               ))}
             </div>

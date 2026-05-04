@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useCairnStore } from "@/store";
+import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
 import { SettingsGroup, SettingsRow, Toggle } from "./shared";
 import { MCPServerSettings } from "./MCPSettings";
@@ -13,7 +14,7 @@ import { MCPServerSettings } from "./MCPSettings";
 type TestState = "idle" | "testing" | "ok" | "error";
 
 export function AISettings() {
-  const { aiConfig, setAIConfig } = useCairnStore();
+  const { aiConfig, setAIConfig } = useCairnStore(useShallow((s) => ({ aiConfig: s.aiConfig, setAIConfig: s.setAIConfig })));
   const [showKey, setShowKey] = useState(false);
   const [testState, setTestState] = useState<TestState>("idle");
   const [testError, setTestError] = useState("");

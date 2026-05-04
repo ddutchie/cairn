@@ -25,7 +25,7 @@ type Message =
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function PrdModal({ projectId, workspaceId, onClose }: PrdModalProps) {
-  const { aiConfig } = useCairnStore();
+  const aiConfig = useCairnStore((s) => s.aiConfig);
 
   // Use a stable ephemeral thread ID scoped to this modal session
   const threadId = `prd-${projectId}`;

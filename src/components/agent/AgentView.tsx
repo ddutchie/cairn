@@ -11,6 +11,7 @@
 
 import { useRef, useEffect, useState } from "react";
 import { useCairnStore } from "@/store";
+import { useShallow } from "zustand/react/shallow";
 import { FileTree } from "./FileTree";
 import { AgentEditor } from "./AgentEditor";
 import { AgentTerminalPane } from "./AgentTerminalPane";
@@ -26,7 +27,7 @@ const DEFAULT_TERMINAL_WIDTH = 380;
 type CentreTab = "editor" | "diff";
 
 export function AgentView() {
-  const { activeProjectId, projects } = useCairnStore();
+  const { activeProjectId, projects } = useCairnStore(useShallow((s) => ({ activeProjectId: s.activeProjectId, projects: s.projects })));
   const project = projects.find((p) => p.id === activeProjectId) ?? null;
   const codeDirectory = project?.codeDirectory ?? null;
 

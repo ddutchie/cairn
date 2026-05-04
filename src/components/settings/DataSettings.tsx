@@ -5,6 +5,7 @@ import { Trash2, Download, CheckCircle, FolderOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { useCairnStore } from "@/store";
+import { useShallow } from "zustand/react/shallow";
 import { storage } from "@/lib/storage";
 import { SettingsGroup, SettingsRow } from "./shared";
 
@@ -13,7 +14,7 @@ export function DataSettings({
 }: {
   stats: { workspaces: number; projects: number; notes: number; cards: number };
 }) {
-  const { workspaces, projects, notes, columns, cards, tags } = useCairnStore();
+  const { workspaces, projects, notes, columns, cards, tags } = useCairnStore(useShallow((s) => ({ workspaces: s.workspaces, projects: s.projects, notes: s.notes, columns: s.columns, cards: s.cards, tags: s.tags })));
   const [exportDone, setExportDone] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
 

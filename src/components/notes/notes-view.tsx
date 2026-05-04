@@ -8,6 +8,7 @@ import {
   FolderPlus, FolderSymlink,
 } from "lucide-react";
 import { useCairnStore } from "@/store";
+import { useShallow } from "zustand/react/shallow";
 import { cn, formatRelative } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -87,7 +88,24 @@ export function NotesView() {
     getWorkspaceProjects,
     notes: allNotes,
     aiConfig,
-  } = useCairnStore();
+  } = useCairnStore(useShallow((s) => ({
+    activeProjectId:         s.activeProjectId,
+    activeWorkspaceId:       s.activeWorkspaceId,
+    getProjectNotes:         s.getProjectNotes,
+    getArchivedProjectNotes: s.getArchivedProjectNotes,
+    createNote:              s.createNote,
+    updateNote:              s.updateNote,
+    deleteNote:              s.deleteNote,
+    archiveNote:             s.archiveNote,
+    restoreNote:             s.restoreNote,
+    moveNoteToProject:       s.moveNoteToProject,
+    moveNoteToFolder:        s.moveNoteToFolder,
+    revealNote:              s.revealNote,
+    getTagById:              s.getTagById,
+    getWorkspaceProjects:    s.getWorkspaceProjects,
+    notes:                   s.notes,
+    aiConfig:                s.aiConfig,
+  })));
   const aiEnabled = aiConfig.aiEnabled ?? true;
 
   const [activeNoteId, setActiveNoteId]         = useState<string | null>(null);
@@ -148,18 +166,26 @@ export function NotesView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [activeProjectId, allNotes],
   );
-  const workspaceProjects = activeWorkspaceId ? getWorkspaceProjects(activeWorkspaceId) : [];
-  const projectTagIds   = [...new Set(notes.flatMap((n) => n.tagIds))];
-  const projectTags     = projectTagIds.map((id) => getTagById(id)).filter(Boolean) as import("@/types").Tag[];
+  const workspaceProjects = useMemo(
+    () => activeWorkspaceId ? getWorkspaceProjects(activeWorkspaceId) : [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activeWorkspaceId, allNotes],
+  );
+  const projectTags = useMemo(() => {
+    const tagIds = [...new Set(notes.flatMap((n) => n.tagIds))];
+    return tagIds.map((id) => getTagById(id)).filter(Boolean) as import("@/types").Tag[];
+  }, [notes, getTagById]);
 
   const filtered   = useNoteFilter(notes, filter, activeTagId);
   const activeNote = notes.find((n) => n.id === activeNoteId) ?? notes[0] ?? null;
 
   // Folder tree — only built when not filtering
   const isFiltering = !!(filter || activeTagId);
-  const { rootNotes, folders: folderTree } = isFiltering
-    ? { rootNotes: filtered, folders: [] }
-    : buildFolderTree(notes);
+  const { rootNotes, folders: folderTree } = useMemo(
+    () => isFiltering ? { rootNotes: filtered, folders: [] as FolderNode[] } : buildFolderTree(notes),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [notes, isFiltering, filtered],
+  );
 
   // All unique folder paths for the "move to folder" picker
   // Collect all folder paths from the tree (includes empty folders)
@@ -175,17 +201,20 @@ export function NotesView() {
     return paths.sort();
   }, [folderTree]);
 
-  // Auto-select first note
-  useEffect(() => {
-    if (!activeNoteId && notes.length > 0) setActiveNoteId(notes[0].id);
-  }, [activeNoteId, notes]);
-
-  // Auto-select newly created note
+  // Auto-select first note / newly created note in a single unified effect.
+  // Merging the two previous competing effects eliminates the race where both
+  // could fire in the same render cycle and produce two setState calls.
   const prevNoteCountRef = useRef(notes.length);
   useEffect(() => {
-    if (notes.length > prevNoteCountRef.current) setActiveNoteId(notes[0].id);
+    if (notes.length > prevNoteCountRef.current) {
+      // A new note was added — select it (it lands at index 0 after sort)
+      setActiveNoteId(notes[0].id);
+    } else if (!activeNoteId && notes.length > 0) {
+      // No active note yet — select the first one
+      setActiveNoteId(notes[0].id);
+    }
     prevNoteCountRef.current = notes.length;
-  }, [notes]);
+  }, [notes, activeNoteId]);
 
   function handleCreateNote(inFolder = "") {
     if (!activeProjectId) return;
@@ -230,13 +259,15 @@ export function NotesView() {
     setDashboardTemplateOpen(false);
   }
 
-  // ⌘N global shortcut
+  // ⌘N global shortcut — use a ref so the handler always sees the latest
+  // handleCreateNote without needing to re-register the listener on every render.
+  const handleCreateNoteRef = useRef(handleCreateNote);
+  useEffect(() => { handleCreateNoteRef.current = handleCreateNote; });
   useEffect(() => {
-    const handler = () => handleCreateNote();
+    const handler = () => handleCreateNoteRef.current();
     window.addEventListener("cairn:new-note", handler);
     return () => window.removeEventListener("cairn:new-note", handler);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeProjectId]);
+  }, []);
 
   // Deep-link from search/overview
   useEffect(() => {
@@ -245,22 +276,34 @@ export function NotesView() {
     return () => window.removeEventListener("cairn:select-note", handler);
   }, []);
 
-  function handleDelete(noteId: string) {
+  const handleDelete = useCallback((noteId: string) => {
     deleteNote(noteId);
     setDeleteNoteId(null);
     if (activeNoteId === noteId) setActiveNoteId(notes.filter((n) => n.id !== noteId)[0]?.id ?? null);
-  }
+  }, [deleteNote, activeNoteId, notes]);
 
-  function handleArchive(noteId: string) {
+  const handleArchive = useCallback((noteId: string) => {
     archiveNote(noteId);
     if (activeNoteId === noteId) setActiveNoteId(notes.filter((n) => n.id !== noteId)[0]?.id ?? null);
-  }
+  }, [archiveNote, activeNoteId, notes]);
 
   function handleMoveToProject(noteId: string, targetProjectId: string) {
     moveNoteToProject(noteId, targetProjectId);
     if (activeNoteId === noteId) setActiveNoteId(notes.filter((n) => n.id !== noteId)[0]?.id ?? null);
     setMoveNoteId(null);
   }
+
+  // Stable per-note callbacks for NoteListItem — keyed on note.id to keep
+  // React.memo effective. These are defined per-note at render time but each
+  // callback identity is stable across re-renders of NotesView as long as the
+  // relevant note ID and the handler dependencies don't change.
+  const handleNoteClick        = useCallback((id: string) => setActiveNoteId(id), []);
+  const handleNotePin          = useCallback((note: Note) => updateNote(note.id, { isPinned: !note.isPinned }), [updateNote]);
+  const handleNoteDelete       = useCallback((note: Note) => setDeleteNoteId(note.id), []);
+  const handleNoteArchive      = useCallback((note: Note) => handleArchive(note.id), [handleArchive]);
+  const handleNoteMove         = useCallback((note: Note) => setMoveNoteId(note.id), []);
+  const handleNoteMoveToFolder = useCallback((note: Note) => setFolderMoveNoteId(note.id), []);
+  const handleNoteReveal       = useCallback((note: Note) => revealNote(note.id, note.projectId), [revealNote]);
 
   return (
     <div className="flex flex-1 min-h-0 overflow-hidden">
@@ -335,13 +378,13 @@ export function NotesView() {
                   key={note.id}
                   note={note}
                   isActive={note.id === activeNote?.id}
-                  onClick={() => setActiveNoteId(note.id)}
-                  onPin={() => updateNote(note.id, { isPinned: !note.isPinned })}
-                  onDelete={() => setDeleteNoteId(note.id)}
-                  onArchive={() => handleArchive(note.id)}
-                  onMove={() => setMoveNoteId(note.id)}
-                  onMoveToFolder={() => setFolderMoveNoteId(note.id)}
-                  onReveal={() => revealNote(note.id, note.projectId)}
+                  onClick={() => handleNoteClick(note.id)}
+                  onPin={() => handleNotePin(note)}
+                  onDelete={() => handleNoteDelete(note)}
+                  onArchive={() => handleNoteArchive(note)}
+                  onMove={() => handleNoteMove(note)}
+                  onMoveToFolder={() => handleNoteMoveToFolder(note)}
+                  onReveal={() => handleNoteReveal(note)}
                   onDragStart={handleNoteDragStart}
                   onDragEnd={handleNoteDragEnd}
                 />
@@ -358,13 +401,13 @@ export function NotesView() {
                   activeNoteId={activeNote?.id ?? null}
                   collapsed={collapsedFolders}
                   onToggle={toggleFolder}
-                  onNoteClick={(id) => setActiveNoteId(id)}
-                  onNotePin={(note) => updateNote(note.id, { isPinned: !note.isPinned })}
-                  onNoteDelete={(note) => setDeleteNoteId(note.id)}
-                  onNoteArchive={(note) => handleArchive(note.id)}
-                  onNoteMove={(note) => setMoveNoteId(note.id)}
-                  onNoteMoveToFolder={(note) => setFolderMoveNoteId(note.id)}
-                  onNoteReveal={(note) => revealNote(note.id, note.projectId)}
+                   onNoteClick={handleNoteClick}
+                  onNotePin={handleNotePin}
+                  onNoteDelete={handleNoteDelete}
+                  onNoteArchive={handleNoteArchive}
+                  onNoteMove={handleNoteMove}
+                  onNoteMoveToFolder={handleNoteMoveToFolder}
+                  onNoteReveal={handleNoteReveal}
                   onCreateInFolder={(folder) => handleCreateNote(folder)}
                   dropTarget={dropTarget}
                   onNoteDragStart={handleNoteDragStart}
@@ -396,13 +439,13 @@ export function NotesView() {
                   key={note.id}
                   note={note}
                   isActive={note.id === activeNote?.id}
-                  onClick={() => setActiveNoteId(note.id)}
-                  onPin={() => updateNote(note.id, { isPinned: !note.isPinned })}
-                  onDelete={() => setDeleteNoteId(note.id)}
-                  onArchive={() => handleArchive(note.id)}
-                  onMove={() => setMoveNoteId(note.id)}
-                  onMoveToFolder={() => setFolderMoveNoteId(note.id)}
-                  onReveal={() => revealNote(note.id, note.projectId)}
+                  onClick={() => handleNoteClick(note.id)}
+                  onPin={() => handleNotePin(note)}
+                  onDelete={() => handleNoteDelete(note)}
+                  onArchive={() => handleNoteArchive(note)}
+                  onMove={() => handleNoteMove(note)}
+                  onMoveToFolder={() => handleNoteMoveToFolder(note)}
+                  onReveal={() => handleNoteReveal(note)}
                   onDragStart={handleNoteDragStart}
                   onDragEnd={handleNoteDragEnd}
                 />
@@ -672,7 +715,7 @@ interface NoteListItemProps {
   onDragEnd?: () => void;
 }
 
-function NoteListItem({ note, isActive, indent = 0, onClick, onPin, onDelete, onArchive, onMove, onMoveToFolder, onReveal, onDragStart, onDragEnd }: NoteListItemProps) {
+const NoteListItem = React.memo(function NoteListItem({ note, isActive, indent = 0, onClick, onPin, onDelete, onArchive, onMove, onMoveToFolder, onReveal, onDragStart, onDragEnd }: NoteListItemProps) {
   return (
     <div onClick={onClick}
       draggable={!!onDragStart}
@@ -724,7 +767,7 @@ function NoteListItem({ note, isActive, indent = 0, onClick, onPin, onDelete, on
       <span className="text-[0.714rem] text-[var(--text-tertiary)]">{formatRelative(note.updatedAt)}</span>
     </div>
   );
-}
+});
 
 // ── ArchivedNoteListItem ──────────────────────────────────────────────────────
 

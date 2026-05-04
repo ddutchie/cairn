@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useCairnStore } from "@/store";
+import { useShallow } from "zustand/react/shallow";
 import { DEFAULT_WORKSPACE_ICON } from "@/lib/workspace-icons";
 import type { OnboardingStep } from "./shared";
 import { StepChooseFolder } from "./StepChooseFolder";
@@ -24,13 +25,7 @@ interface Props {
 // ── Onboarding wizard ─────────────────────────────────────────────────────────
 
 export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props) {
-  const {
-    createWorkspace, selectAndInitWorkspace, initWorkspacePath, getWorkspacePath,
-    theme, setTheme,
-    fontScale, setFontScale,
-    aiConfig, setAIConfig,
-    hiddenViews, toggleViewVisibility, setHiddenViews,
-  } = useCairnStore();
+  const { createWorkspace, selectAndInitWorkspace, initWorkspacePath, getWorkspacePath, theme, setTheme, fontScale, setFontScale, aiConfig, setAIConfig, hiddenViews, toggleViewVisibility, setHiddenViews } = useCairnStore(useShallow((s) => ({ createWorkspace: s.createWorkspace, selectAndInitWorkspace: s.selectAndInitWorkspace, initWorkspacePath: s.initWorkspacePath, getWorkspacePath: s.getWorkspacePath, theme: s.theme, setTheme: s.setTheme, fontScale: s.fontScale, setFontScale: s.setFontScale, aiConfig: s.aiConfig, setAIConfig: s.setAIConfig, hiddenViews: s.hiddenViews, toggleViewVisibility: s.toggleViewVisibility, setHiddenViews: s.setHiddenViews })));
 
   // ── Wizard step ──────────────────────────────────────────────────────────────
   const [step, setStep] = useState<OnboardingStep>(initialStep);

@@ -22,8 +22,10 @@ interface KanbanCardProps {
   isDragging?: boolean;
 }
 
-export function KanbanCard({ card, onClick, isDragging = false }: KanbanCardProps) {
-  const { getTagById, archiveCard, deleteCard } = useCairnStore();
+export const KanbanCard = React.memo(function KanbanCard({ card, onClick, isDragging = false }: KanbanCardProps) {
+  const getTagById  = useCairnStore((s) => s.getTagById);
+  const archiveCard = useCairnStore((s) => s.archiveCard);
+  const deleteCard  = useCairnStore((s) => s.deleteCard);
 
   // A card is "actively blocked" if it has at least one blocker that isn't done/archived
   const isBlocked = (card.blockedByIds ?? []).length > 0;
@@ -159,4 +161,4 @@ export function KanbanCard({ card, onClick, isDragging = false }: KanbanCardProp
       </ContextMenuContent>
     </ContextMenu>
   );
-}
+});

@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { CheckCircle, Copy } from "lucide-react";
 import { useCairnStore } from "@/store";
+import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
 import { SettingsGroup } from "./shared";
 import { MCP_TOOLS } from "../../../electron/lib/tool-schemas";
@@ -142,7 +143,12 @@ export function MCPConfigBlock({
 // ── MCP Sync Status ───────────────────────────
 
 export function MCPSyncStatus() {
-  const { workspaces, projects, notes, cards } = useCairnStore();
+  const { workspaces, projects, notes, cards } = useCairnStore(useShallow((s) => ({
+    workspaces: s.workspaces,
+    projects:   s.projects,
+    notes:      s.notes,
+    cards:      s.cards,
+  })));
 
   const counts = {
     workspaces: workspaces.length,
@@ -178,12 +184,16 @@ export function MCPSyncStatus() {
 
 export function MCPProjectConfig() {
   const origin = typeof window !== "undefined" ? window.location.origin : "";
-  const { projects, workspaces, activeProjectId } = useCairnStore();
+  const { projects, workspaces, activeProjectId } = useCairnStore(useShallow((s) => ({
+    projects:        s.projects,
+    workspaces:      s.workspaces,
+    activeProjectId: s.activeProjectId,
+  })));
   const [selectedId, setSelectedId] = useState<string>(activeProjectId ?? projects[0]?.id ?? "");
   const [copied, setCopied] = useState<string | null>(null);
 
-  const project = projects.find((p) => p.id === selectedId);
-  const workspace = workspaces.find((w) => w.id === project?.workspaceId);
+  const project   = useMemo(() => projects.find((p) => p.id === selectedId),     [projects, selectedId]);
+  const workspace = useMemo(() => workspaces.find((w) => w.id === project?.workspaceId), [workspaces, project?.workspaceId]);
 
   function copy(text: string, key: string) {
     navigator.clipboard.writeText(text);

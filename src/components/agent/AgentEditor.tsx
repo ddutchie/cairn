@@ -14,6 +14,7 @@ import { useEffect, useState, useCallback } from "react";
 import { X, Save, FileCode, Eye, ImageIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
+import { useShallow } from "zustand/react/shallow";
 import { NoteMarkdownPreview } from "@/components/notes/NoteMarkdownPreview";
 import { Tooltip } from "@/components/ui/tooltip";
 import { FileEditorInner } from "./FileEditorInner";
@@ -22,7 +23,7 @@ import { ImageViewer } from "./ImageViewer";
 // ── AgentEditor ───────────────────────────────────────────────────────────────
 
 export function AgentEditor() {
-  const { openEditorFiles, activeEditorFile, closeEditorFile, setActiveEditorFile } = useCairnStore();
+  const { openEditorFiles, activeEditorFile, closeEditorFile, setActiveEditorFile } = useCairnStore(useShallow((s) => ({ openEditorFiles: s.openEditorFiles, activeEditorFile: s.activeEditorFile, closeEditorFile: s.closeEditorFile, setActiveEditorFile: s.setActiveEditorFile })));
 
   // Dirty state per file path
   const [dirtyFiles, setDirtyFiles] = useState<Set<string>>(new Set());

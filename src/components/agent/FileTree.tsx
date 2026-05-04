@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
+import { useShallow } from "zustand/react/shallow";
 import type { Project } from "@/types";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -135,7 +136,7 @@ interface FileTreeProps {
 }
 
 export function FileTree({ project }: FileTreeProps) {
-  const { activeEditorFile, openEditorFile, updateProject } = useCairnStore();
+  const { activeEditorFile, openEditorFile, updateProject } = useCairnStore(useShallow((s) => ({ activeEditorFile: s.activeEditorFile, openEditorFile: s.openEditorFile, updateProject: s.updateProject })));
   const [rootEntries, setRootEntries] = useState<DirEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 

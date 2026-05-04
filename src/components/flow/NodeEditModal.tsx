@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { X, Search, FileText, CheckSquare, Layers, Loader2, DownloadCloud } from "lucide-react";
 import type { IdeaNodeType } from "@/types";
 import { useCairnStore } from "@/store";
+import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
 import { PRIORITY_COLORS } from "@/lib/utils";
 
@@ -130,7 +131,7 @@ export function NodeEditModal({ nodeId, type, data, onSave, onClose }: NodeEditM
 function NotePicker({ selectedId, onSelect }: { selectedId: string; onSelect: (id: string) => void }) {
   const [query, setQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
-  const { notes, activeProjectId } = useCairnStore();
+  const { notes, activeProjectId } = useCairnStore(useShallow((s) => ({ notes: s.notes, activeProjectId: s.activeProjectId })));
 
   useEffect(() => { inputRef.current?.focus(); }, []);
 
@@ -189,7 +190,7 @@ function NotePicker({ selectedId, onSelect }: { selectedId: string; onSelect: (i
 function TaskPicker({ selectedId, onSelect }: { selectedId: string; onSelect: (id: string) => void }) {
   const [query, setQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
-  const { cards, columns, activeProjectId } = useCairnStore();
+  const { cards, columns, activeProjectId } = useCairnStore(useShallow((s) => ({ cards: s.cards, columns: s.columns, activeProjectId: s.activeProjectId })));
 
   useEffect(() => { inputRef.current?.focus(); }, []);
 

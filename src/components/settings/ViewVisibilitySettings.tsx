@@ -7,6 +7,7 @@
 
 import { Kanban, Workflow, Terminal, GitBranch, BarChart2, MessageSquare, Lock } from "lucide-react";
 import { useCairnStore } from "@/store";
+import { useShallow } from "zustand/react/shallow";
 import type { ToggleableView } from "@/store/slices/ui";
 import { cn } from "@/lib/utils";
 import { SettingsGroup } from "./shared";
@@ -49,7 +50,7 @@ const VIEW_OPTIONS: ViewOption[] = [
 ];
 
 export function ViewVisibilitySettings() {
-  const { hiddenViews, toggleViewVisibility } = useCairnStore();
+  const { hiddenViews, toggleViewVisibility } = useCairnStore(useShallow((s) => ({ hiddenViews: s.hiddenViews, toggleViewVisibility: s.toggleViewVisibility })));
 
   return (
     <SettingsGroup

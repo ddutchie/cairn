@@ -12,7 +12,7 @@ export interface AiSummaryNodeData {
 
 export const AiSummaryNode = memo(function AiSummaryNode({ id, data, selected, isConnectable }: NodeProps) {
   const d = data as unknown as AiSummaryNodeData;
-  const { aiConfig } = useCairnStore();
+  const aiConfig = useCairnStore((s) => s.aiConfig);
   const aiEnabled = aiConfig.aiEnabled ?? true;
   const { updateNodeData } = useReactFlow();
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");

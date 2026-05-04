@@ -24,6 +24,7 @@ import {
 
 import { Lightbulb, FileText, CheckSquare, Link2, Sparkles, Plus, Layers, LayoutDashboard } from "lucide-react";
 import { useCairnStore } from "@/store";
+import { useShallow } from "zustand/react/shallow";
 import type { IdeaNodeType, ResolvedIdeaFlow } from "@/types";
 import { historyManager, flowHandlers, ownWriteGuard } from "@/lib/history";
 import {
@@ -213,7 +214,12 @@ export function IdeaFlowView() {
 }
 
 function IdeaFlowCanvas() {
-  const { activeProjectId, columns, activeWorkspaceId, aiConfig } = useCairnStore();
+  const { activeProjectId, columns, activeWorkspaceId, aiConfig } = useCairnStore(useShallow((s) => ({
+    activeProjectId:   s.activeProjectId,
+    columns:           s.columns,
+    activeWorkspaceId: s.activeWorkspaceId,
+    aiConfig:          s.aiConfig,
+  })));
   const aiEnabled = aiConfig.aiEnabled ?? true;
   const addNodeMenu = ADD_NODE_MENU.filter((n) => n.type !== "ai_summary" || aiEnabled);
   const { fitView, screenToFlowPosition, getInternalNode } = useReactFlow();
@@ -303,6 +309,11 @@ function IdeaFlowCanvas() {
   }, [activeProjectId, setNodes, setEdges, fitView]);
 
   useEffect(() => { loadFlow(true); }, [loadFlow]);
+
+  // Clear the suppress-reload timer on unmount to avoid setting state on a stale ref.
+  useEffect(() => {
+    return () => { if (suppressReloadTimer.current) clearTimeout(suppressReloadTimer.current); };
+  }, []);
 
   // Register flowHandlers so undo/redo commands can patch local React Flow
   // state without a full DB reload (no flicker).

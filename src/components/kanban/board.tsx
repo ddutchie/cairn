@@ -21,6 +21,7 @@ import {
 } from "@dnd-kit/sortable";
 import { Plus, Kanban, Archive, Trash2 } from "lucide-react";
 import { useCairnStore } from "@/store";
+import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { KanbanColumn } from "./column";
@@ -29,6 +30,23 @@ import { CardDetailModal } from "./card-detail";
 import type { TaskCard, BoardColumn } from "@/types";
 
 const ZONE_H = 56;
+
+// ── Zone helpers — no component state deps, safe at module scope ──────────────
+
+function computeZoneRect(el: HTMLDivElement | null): { top: number; left: number; width: number } | null {
+  const r = el?.getBoundingClientRect();
+  if (!r) return null;
+  return { top: r.top, left: r.left, width: r.width };
+}
+
+function getZoneHit(clientX: number, clientY: number, rect: { top: number; left: number; width: number }): "archive" | "delete" | null {
+  const { top, left, width } = rect;
+  const bottom = top + ZONE_H;
+  const mid    = left + width / 2;
+  if (clientY < top || clientY > bottom) return null;
+  if (clientX < left || clientX > left + width) return null;
+  return clientX < mid ? "archive" : "delete";
+}
 
 export function KanbanBoard() {
   const {
@@ -45,7 +63,21 @@ export function KanbanBoard() {
     deleteColumn,
     reorderColumns,
     restoreCard,
-  } = useCairnStore();
+  } = useCairnStore(useShallow((s) => ({
+    activeProjectId:       s.activeProjectId,
+    getProjectColumns:     s.getProjectColumns,
+    getColumnCards:        s.getColumnCards,
+    getArchivedColumnCards: s.getArchivedColumnCards,
+    moveCard:              s.moveCard,
+    archiveCard:           s.archiveCard,
+    deleteCard:            s.deleteCard,
+    createColumn:          s.createColumn,
+    createCard:            s.createCard,
+    updateColumn:          s.updateColumn,
+    deleteColumn:          s.deleteColumn,
+    reorderColumns:        s.reorderColumns,
+    restoreCard:           s.restoreCard,
+  })));
 
   const [activeCard, setActiveCard]         = useState<TaskCard | null>(null);
   const [activeColumn, setActiveColumn]     = useState<BoardColumn | null>(null);
@@ -64,28 +96,11 @@ export function KanbanBoard() {
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   );
 
-  // Compute portal zone position from board container
-  function computeZoneRect() {
-    const r = boardRef.current?.getBoundingClientRect();
-    if (!r) return null;
-    return { top: r.top, left: r.left, width: r.width };
-  }
-
-  // Hit-test a pointer position against the two zones
-  function getZoneHit(clientX: number, clientY: number, rect: { top: number; left: number; width: number }): "archive" | "delete" | null {
-    const { top, left, width } = rect;
-    const bottom = top + ZONE_H;
-    const mid    = left + width / 2;
-    if (clientY < top || clientY > bottom) return null;
-    if (clientX < left || clientX > left + width) return null;
-    return clientX < mid ? "archive" : "delete";
-  }
-
   function handleDragStart(event: DragStartEvent) {
     const col  = event.active.data.current?.column as BoardColumn | undefined;
     const card = event.active.data.current?.card   as TaskCard    | undefined;
     if (col)       { setActiveColumn(col); setZoneRect(null); }
-    else if (card) { setActiveCard(card);  setZoneRect(computeZoneRect()); }
+    else if (card) { setActiveCard(card);  setZoneRect(computeZoneRect(boardRef.current)); }
   }
 
   function handleDragMove(event: DragMoveEvent) {
@@ -207,10 +222,10 @@ export function KanbanBoard() {
   const [addColumnOpen, setAddColumnOpen] = useState(false);
   const [newColumnName, setNewColumnName] = useState("");
 
-  function handleAddColumnConfirm() {
+  const handleAddColumnConfirm = useCallback(() => {
     if (newColumnName.trim() && activeProjectId) createColumn(activeProjectId, newColumnName.trim());
     setAddColumnOpen(false);
-  }
+  }, [newColumnName, activeProjectId, createColumn]);
 
   if (!activeProjectId) {
     return (

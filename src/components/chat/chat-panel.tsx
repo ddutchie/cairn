@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useMemo } from "react";
+import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { X, Send, Square, Sparkles, PenSquare, History, Pencil } from "lucide-react";
 import { cn, formatRelative } from "@/lib/utils";
 import { useCairnStore } from "@/store";
+import { useShallow } from "zustand/react/shallow";
 import { useChatStream } from "@/hooks/useChatStream";
 
 import { Tooltip } from "@/components/ui/tooltip";
@@ -25,7 +26,21 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
     addMessage,
     chatMessages, chatThreads, aiConfig,
     createNewThread, deleteThread, renameThread,
-  } = useCairnStore();
+  } = useCairnStore(useShallow((s) => ({
+    chatOpen:          s.chatOpen,
+    toggleChat:        s.toggleChat,
+    activeProjectId:   s.activeProjectId,
+    activeWorkspaceId: s.activeWorkspaceId,
+    projects:          s.projects,
+    workspaces:        s.workspaces,
+    addMessage:        s.addMessage,
+    chatMessages:      s.chatMessages,
+    chatThreads:       s.chatThreads,
+    aiConfig:          s.aiConfig,
+    createNewThread:   s.createNewThread,
+    deleteThread:      s.deleteThread,
+    renameThread:      s.renameThread,
+  })));
 
   const [input, setInput]             = useState("");
   const [threadId, setThreadId]       = useState<string | null>(null);
@@ -44,13 +59,16 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
   const isLoadingRef = useRef(isLoading);
   useEffect(() => { isLoadingRef.current = isLoading; }, [isLoading]);
 
-  const project   = projects.find((p) => p.id === activeProjectId);
-  const workspace = workspaces.find((w) => w.id === activeWorkspaceId);
+  const project   = useMemo(() => projects.find((p) => p.id === activeProjectId),   [projects, activeProjectId]);
+  const workspace = useMemo(() => workspaces.find((w) => w.id === activeWorkspaceId), [workspaces, activeWorkspaceId]);
 
-  const projectThreads = chatThreads
-    .filter((t) => t.projectId === activeProjectId)
-    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-    .slice(0, 15);
+  const projectThreads = useMemo(
+    () => chatThreads
+      .filter((t) => t.projectId === activeProjectId)
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+      .slice(0, 15),
+    [chatThreads, activeProjectId],
+  );
 
   // Initialise / switch thread.
   // Reads getOrCreateThread directly from the store snapshot (stable, no ref
@@ -90,6 +108,11 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefill]);
+
+  const handleNewThread = useCallback(() => {
+    if (!activeWorkspaceId) return;
+    setThreadId(createNewThread(activeWorkspaceId, activeProjectId ?? undefined).id);
+  }, [activeWorkspaceId, activeProjectId, createNewThread]);
 
   function handleSend(text?: string) {
     const content = text ?? input.trim();
@@ -196,10 +219,7 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
         )}
 
         <Tooltip content="New chat" side="left">
-          <button onClick={() => {
-              if (!activeWorkspaceId) return;
-              setThreadId(createNewThread(activeWorkspaceId, activeProjectId ?? undefined).id);
-            }}
+          <button onClick={handleNewThread}
             className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors">
             <PenSquare size={13} />
           </button>

@@ -3,6 +3,7 @@
  */
 import { useEffect, useState, useMemo } from "react";
 import { useCairnStore } from "@/store";
+import { useShallow } from "zustand/react/shallow";
 import type { GraphNode } from "@/types";
 
 // ── useFontScale ──────────────────────────────────────────────────────────────
@@ -47,7 +48,7 @@ export function useContainerDims(ref: React.RefObject<HTMLElement | null>) {
  * graph node selection, plus the sorted active project list.
  */
 export function useScopedData(nodes: GraphNode[]) {
-  const { projects, cards, columns } = useCairnStore();
+  const { projects, cards, columns } = useCairnStore(useShallow((s) => ({ projects: s.projects, cards: s.cards, columns: s.columns })));
 
   const scopedProjectIds = useMemo(
     () => new Set(nodes.filter((n) => n.type === "project").map((n) => n.id)),

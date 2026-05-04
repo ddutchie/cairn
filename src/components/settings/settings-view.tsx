@@ -11,6 +11,7 @@ import {
   Terminal,
 } from "lucide-react";
 import { useCairnStore } from "@/store";
+import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
 import { GeneralSettings } from "./GeneralSettings";
 import { AISettings } from "./AISettings";
@@ -24,7 +25,7 @@ type SettingsSection = "general" | "ai" | "agents" | "data" | "about" | "shortcu
 
 export function SettingsView() {
   const [section, setSection] = useState<SettingsSection>("general");
-  const { workspaces, projects, notes, cards } = useCairnStore();
+  const { workspaces, projects, notes, cards } = useCairnStore(useShallow((s) => ({ workspaces: s.workspaces, projects: s.projects, notes: s.notes, cards: s.cards })));
 
   return (
     <div className="flex flex-1 min-h-0 overflow-hidden">

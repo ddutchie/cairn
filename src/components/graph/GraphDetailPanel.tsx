@@ -4,6 +4,7 @@ import React from "react";
 import { X, FileText, Kanban, Layers, Hash, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
+import { useShallow } from "zustand/react/shallow";
 import type { GraphNode } from "@/types";
 import { nodeTypeColor } from "@/store/slices/graph";
 
@@ -13,7 +14,13 @@ interface Props {
 }
 
 export function GraphDetailPanel({ node, onClose }: Props) {
-  const { setView, setActiveProject, projects, notes, cards } = useCairnStore();
+  const { setView, setActiveProject, projects, notes, cards } = useCairnStore(useShallow((s) => ({
+    setView:          s.setView,
+    setActiveProject: s.setActiveProject,
+    projects:         s.projects,
+    notes:            s.notes,
+    cards:            s.cards,
+  })));
 
   if (!node) return null;
 
