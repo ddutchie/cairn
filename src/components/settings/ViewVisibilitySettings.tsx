@@ -19,13 +19,15 @@ function Toggle({ on, disabled, onClick }: { on: boolean; disabled?: boolean; on
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        "flex items-center w-9 h-5 rounded-full px-0.5 transition-colors flex-shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]",
+        "flex items-center w-9 h-5 rounded-full px-0.5 transition-colors duration-200 flex-shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]",
         on ? "bg-[var(--accent)]" : "bg-[var(--surface-3)]",
         disabled && "opacity-40 cursor-default",
-        on ? "justify-end" : "justify-start"
       )}
     >
-      <span className="w-4 h-4 rounded-full bg-white shadow-sm flex-shrink-0" />
+      <span
+        className="w-4 h-4 rounded-full bg-white shadow-sm flex-shrink-0 transition-transform duration-200"
+        style={{ transform: on ? "translateX(calc(2.25rem - 1.25rem - 0.25rem))" : "translateX(0)" }}
+      />
     </button>
   );
 }
