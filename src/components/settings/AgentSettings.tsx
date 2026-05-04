@@ -100,7 +100,7 @@ function AgentForm({ initial, onSave, onCancel }: AgentFormProps) {
           />
           <p className="mt-1 text-[0.714rem] text-[var(--text-tertiary)]">
             Claude Code: binary <code className="text-[var(--accent)]">claude</code>, args <code className="text-[var(--accent)]">-p {"{prompt}"}</code>.{" "}
-            OpenCode: binary <code className="text-[var(--accent)]">opencode</code>, args <code className="text-[var(--accent)]">--prompt {"{prompt}"}</code> or <code className="text-[var(--accent)]">run {"{prompt}"}</code>.{" "}
+            OpenCode: binary <code className="text-[var(--accent)]">opencode</code>, args <code className="text-[var(--accent)]">--prompt {"{prompt}"}</code>.{" "}
             Aider: binary <code className="text-[var(--accent)]">aider</code>, args <code className="text-[var(--accent)]">--message {"{prompt}"}</code>.{" "}
             Gemini CLI: binary <code className="text-[var(--accent)]">gemini</code>, args <code className="text-[var(--accent)]">-p {"{prompt}"}</code>.{" "}
             Leave empty for pure interactive TUI.
