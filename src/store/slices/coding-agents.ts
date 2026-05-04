@@ -34,7 +34,7 @@ export interface CodingAgentsSlice {
 
 export const createCodingAgentsSlice: StateCreator<CairnStore, [], [], CodingAgentsSlice> = (
   set,
-  _get
+  get
 ) => ({
   agents: [],
 
@@ -64,18 +64,19 @@ export const createCodingAgentsSlice: StateCreator<CairnStore, [], [], CodingAge
 
   async deleteAgent(agentId) {
     if (typeof window === "undefined" || !window.electron) return;
-    // Optimistic
+    // Optimistic — roll back by re-fetching if the IPC call fails
     set((s) => ({ agents: s.agents.filter((a) => a.id !== agentId) }));
     try {
       await window.electron.agent.deleteCodingAgent(agentId);
     } catch (err) {
       console.error("[coding-agents] deleteAgent error", err);
+      get().fetchAgents();
     }
   },
 
   async setDefaultAgent(agentId) {
     if (typeof window === "undefined" || !window.electron) return;
-    // Optimistic: flip flags locally
+    // Optimistic: flip flags locally — roll back by re-fetching if IPC fails
     set((s) => ({
       agents: s.agents.map((a) => ({ ...a, isDefault: a.id === agentId })),
     }));
@@ -83,6 +84,7 @@ export const createCodingAgentsSlice: StateCreator<CairnStore, [], [], CodingAge
       await window.electron.agent.setDefaultAgent(agentId);
     } catch (err) {
       console.error("[coding-agents] setDefaultAgent error", err);
+      get().fetchAgents();
     }
   },
 });

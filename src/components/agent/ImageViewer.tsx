@@ -19,8 +19,8 @@ export function ImageViewer({ filePath }: ImageViewerProps) {
     setSrc(null);
     setError(null);
     if (!window.electron) return;
-    (window.electron.agent.readFileBase64(filePath) as Promise<string>)
-      .then((dataUrl) => setSrc(dataUrl))
+    window.electron.agent.readFileBase64(filePath)
+      .then((dataUrl: string) => setSrc(dataUrl))
       .catch((e: unknown) => setError(String(e)));
   }, [filePath]);
 
@@ -31,7 +31,7 @@ export function ImageViewer({ filePath }: ImageViewerProps) {
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={src}
-          alt={filePath.split("/").pop()}
+          alt={filePath.split("/").pop() ?? filePath}
           className="max-w-full max-h-full object-contain rounded"
         />
       )}

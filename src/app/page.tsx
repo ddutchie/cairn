@@ -154,8 +154,9 @@ export default function Home() {
       else if (mod && key === "2") { e.preventDefault(); setView("notes"); }
       else if (mod && key === "3") { e.preventDefault(); setView("board"); }
       else if (mod && key === "4") { e.preventDefault(); setView("flow"); }
-      else if (mod && key === "5") { e.preventDefault(); setView("graph"); }
-      else if (mod && key === "6") { e.preventDefault(); setView("insights"); }
+      else if (mod && key === "5") { e.preventDefault(); setView("agent"); }
+      else if (mod && key === "6") { e.preventDefault(); setView("graph"); }
+      else if (mod && key === "7") { e.preventDefault(); setView("insights"); }
       else if (mod && key === "n" && !inInput) {
         e.preventDefault();
         if (activeProjectId) {

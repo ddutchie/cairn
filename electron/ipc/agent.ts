@@ -159,6 +159,7 @@ export function registerAgentHandlers(db: Database): void {
 
   ipcMain.handle("agent:validateDirectory", (_e, { dirPath }: { dirPath: string }) =>
     handle(() => {
+      if (!isSafePath(dirPath)) return false;
       try {
         const stat = fs.statSync(dirPath);
         return stat.isDirectory();
@@ -333,13 +334,15 @@ export function registerAgentHandlers(db: Database): void {
         spawnBin = agent.binaryPath;
         spawnArgs = [];
       } else {
-        // Build token list, substituting {prompt} in-place or appending at end
+        // Build token list, substituting {prompt} in-place or appending at end.
+        // Check for the placeholder as a substring first (handles --flag={prompt}),
+        // then replace it within each token rather than requiring an exact match.
         const PLACEHOLDER = "{prompt}";
+        const hasPlaceholder = trimmedArgs.includes(PLACEHOLDER);
         const tokens = trimmedArgs.split(/\s+/).filter(Boolean);
-        const hasPlaceholder = tokens.includes(PLACEHOLDER);
 
         const finalTokens = hasPlaceholder
-          ? tokens.map((t) => (t === PLACEHOLDER ? payload.prompt : t))
+          ? tokens.map((t) => t.includes(PLACEHOLDER) ? t.replace(PLACEHOLDER, payload.prompt) : t)
           : [...tokens, payload.prompt];
 
         // Build: exec binary arg1 arg2 'prompt...'

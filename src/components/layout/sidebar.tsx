@@ -82,19 +82,19 @@ export function Sidebar() {
             <Workflow size={15} />
           </button>
         </Tooltip>
-        <Tooltip content="Agent (⌘7)" side="right">
+        <Tooltip content="Agent (⌘5)" side="right">
           <button onClick={() => setView("agent")}
             className={cn("p-2 rounded-md transition-colors", activeView === "agent" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
             <Terminal size={15} />
           </button>
         </Tooltip>
-        <Tooltip content="Knowledge Graph (⌘5)" side="right">
+        <Tooltip content="Knowledge Graph (⌘6)" side="right">
           <button onClick={() => setView("graph")}
             className={cn("p-2 rounded-md transition-colors", activeView === "graph" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
             <GitBranch size={15} />
           </button>
         </Tooltip>
-        <Tooltip content="Insights (⌘6)" side="right">
+        <Tooltip content="Insights (⌘7)" side="right">
           <button onClick={() => setView("insights")}
             className={cn("p-2 rounded-md transition-colors", activeView === "insights" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
             <BarChart2 size={15} />
@@ -181,13 +181,13 @@ export function Sidebar() {
           className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors",
             activeView === "graph" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
           <GitBranch size={13} /><span>Knowledge Graph</span>
-          <span className="ml-auto text-[0.714rem] font-mono text-[var(--text-tertiary)]">⌘5</span>
+          <span className="ml-auto text-[0.714rem] font-mono text-[var(--text-tertiary)]">⌘6</span>
         </button>
         <button onClick={() => setView("insights")}
           className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors",
             activeView === "insights" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
           <BarChart2 size={13} /><span>Insights</span>
-          <span className="ml-auto text-[0.714rem] font-mono text-[var(--text-tertiary)]">⌘6</span>
+          <span className="ml-auto text-[0.714rem] font-mono text-[var(--text-tertiary)]">⌘7</span>
         </button>
         <button onClick={() => setView("settings")}
           className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors",

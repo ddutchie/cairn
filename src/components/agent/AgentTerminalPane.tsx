@@ -189,7 +189,7 @@ export function AgentTerminalPane() {
     e.stopPropagation();
     TerminalManager.delete(sessionId);
     removeTerminalSession(sessionId);
-    window.electron?.agent.kill(sessionId);
+    window.electron?.agent.kill(sessionId).catch(console.error);
   }, [removeTerminalSession]);
 
   if (terminalSessions.length === 0) {

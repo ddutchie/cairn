@@ -59,7 +59,7 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
     setSpawnError(null);
   }, [open, agents, card]);
 
-  const canSpawn = agents.length > 0 && !!codeDirectory && !!selectedAgentId;
+  const canSpawn = agents.length > 0 && !!codeDirectory && !!selectedAgentId && !!window.electron;
   const selectedAgent = agents.find((a) => a.id === selectedAgentId);
 
   async function handleSpawn() {
@@ -78,7 +78,7 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
         prompt,
         taskId,
         taskTitle,
-      }) as { sessionId: string };
+      });
       addTerminalSession({
         sessionId,
         taskId,

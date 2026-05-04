@@ -54,17 +54,20 @@ export function buildHighlightStyle(isDark: boolean) {
 }
 
 // ── CM6 base theme ─────────────────────────────────────────────────────────────
+// fontScale mirrors the --font-scale CSS variable so the editor grows/shrinks
+// with the user's font size setting (same as the xterm terminal in AgentTerminalPane).
 
-export function buildTheme() {
+export function buildTheme(fontScale = 1) {
+  const fontSize = `calc(0.714rem * ${fontScale})`;
   return EditorView.theme({
     "&": {
       height: "100%",
-      fontSize: "0.875rem",
+      fontSize,
       fontFamily: "var(--font-mono, ui-monospace, 'Cascadia Code', monospace)",
       background: "var(--background)",
       color: "var(--text-primary)",
     },
-    ".cm-scroller": { fontFamily: "inherit", lineHeight: "1.6", overflow: "auto", padding: "16px" },
+    ".cm-scroller": { fontFamily: "inherit", lineHeight: "1.6", overflow: "auto", padding: "12px 16px" },
     ".cm-content": { caretColor: "var(--accent)" },
     ".cm-focused": { outline: "none" },
     ".cm-cursor": { borderLeftColor: "var(--accent)", borderLeftWidth: "2px" },

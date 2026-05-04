@@ -16,6 +16,7 @@ import { WorkspaceIcon, ProjectIcon } from "@/lib/workspace-icons";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { STATUS_COLORS, PRIORITY_COLORS } from "@/lib/utils";
+import { QuickSettings } from "./QuickSettings";
 
 const VIEW_TABS = [
   { id: "overview" as const, label: "Overview", icon: Hash },
@@ -44,8 +45,9 @@ export function Topbar() {
 
   if (activeView === "settings") {
     return (
-      <header className="flex items-center h-11 px-4 border-b border-[var(--border)] flex-shrink-0 bg-[var(--surface)]">
-        <span className="text-sm font-medium text-[var(--text-primary)]">Settings</span>
+      <header className="flex items-center h-11 px-4 border-b border-[var(--border)] flex-shrink-0 bg-[var(--surface)] gap-3">
+        <span className="text-sm font-medium text-[var(--text-primary)] flex-1">Settings</span>
+        <QuickSettings />
       </header>
     );
   }
@@ -132,6 +134,7 @@ export function Topbar() {
             </Button>
           </Tooltip>
         )}
+        <QuickSettings />
       </div>
     </header>
   );

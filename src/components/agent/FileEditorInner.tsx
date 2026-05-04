@@ -33,16 +33,23 @@ export function FileEditorInner({ filePath, isActive, isDark, onDirtyChange, onS
 
   useEffect(() => {
     if (!window.electron) return;
+    let unmounted = false;
+    const fontScale = parseFloat(
+      getComputedStyle(document.documentElement).getPropertyValue("--font-scale").trim() || "1"
+    ) || 1;
 
-    (window.electron.agent.readFile(filePath) as Promise<string>)
+    window.electron.agent.readFile(filePath)
       .then(async (content: string) => {
         const lang = await LanguageDescription.matchFilename(languages, filePath)
           ?.load().catch(() => null);
 
+        // Guard: component may have unmounted while awaiting async operations
+        if (unmounted || !containerRef.current) return;
+
         const state = EditorState.create({
           doc: content,
           extensions: [
-            buildTheme(),
+            buildTheme(fontScale),
             buildHighlightStyle(isDark),
             lineNumbers(),
             history(),
@@ -66,13 +73,15 @@ export function FileEditorInner({ filePath, isActive, isDark, onDirtyChange, onS
         });
 
         viewRef.current?.destroy();
-        if (containerRef.current) {
-          viewRef.current = new EditorView({ state, parent: containerRef.current });
-        }
+        viewRef.current = new EditorView({ state, parent: containerRef.current });
       })
-      .catch((e: unknown) => setLoadError(String(e)));
+      .catch((e: unknown) => { if (!unmounted) setLoadError(String(e)); });
 
-    return () => { viewRef.current?.destroy(); viewRef.current = null; };
+    return () => {
+      unmounted = true;
+      viewRef.current?.destroy();
+      viewRef.current = null;
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filePath, isDark]);
 

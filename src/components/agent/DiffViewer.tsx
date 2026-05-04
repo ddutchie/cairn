@@ -48,7 +48,7 @@ export function DiffViewer({ cwd }: DiffViewerProps) {
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   const [copied, setCopied] = useState(false);
   const [mode, setMode] = useState<ViewMode>("unified");
-  const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const isMounted = useRef(true);
 
   const fetchDiff = useCallback(async () => {
@@ -56,7 +56,7 @@ export function DiffViewer({ cwd }: DiffViewerProps) {
     setLoading(true);
     setError(null);
     try {
-      const diff = await window.electron.agent.gitDiff(cwd) as string;
+      const diff = await window.electron.agent.gitDiff(cwd);
       if (!isMounted.current) return;
       setDiffText(diff ?? "");
       setLastRefresh(new Date());
@@ -79,25 +79,16 @@ export function DiffViewer({ cwd }: DiffViewerProps) {
     try { return parseDiff(diffText); } catch { return []; }
   }, [diffText]);
 
-  // Reset collapse state when file list changes (new diff fetch)
-  const prevFileCount = useRef(0);
-  useEffect(() => {
-    if (files.length !== prevFileCount.current) {
-      setCollapsed(new Set());
-      prevFileCount.current = files.length;
-    }
-  }, [files.length]);
-
-  const toggleCollapse = useCallback((idx: number) => {
+  const toggleCollapse = useCallback((key: string) => {
     setCollapsed((prev) => {
       const next = new Set(prev);
-      next.has(idx) ? next.delete(idx) : next.add(idx);
+      next.has(key) ? next.delete(key) : next.add(key);
       return next;
     });
   }, []);
 
   const collapseAll = useCallback(() => {
-    setCollapsed(new Set(files.map((_, i) => i)));
+    setCollapsed(new Set(files.map((f) => f.to ?? f.from ?? "")));
   }, [files]);
 
   const expandAll = useCallback(() => setCollapsed(new Set()), []);
@@ -141,7 +132,7 @@ export function DiffViewer({ cwd }: DiffViewerProps) {
 
       {/* Collapse/expand all — single toggle, icon mirrors per-file state */}
       {files.length > 1 && (() => {
-        const allCollapsed = files.every((_, i) => collapsed.has(i));
+        const allCollapsed = files.every((f) => collapsed.has(f.to ?? f.from ?? ""));
         return (
           <Tooltip content={allCollapsed ? "Expand all" : "Collapse all"} side="bottom">
             <button
@@ -219,16 +210,19 @@ export function DiffViewer({ cwd }: DiffViewerProps) {
     <div className="flex flex-col h-full overflow-hidden">
       {toolbar}
       <div className="flex-1 overflow-y-auto">
-        {files.map((file, fi) => (
-          <FileDiff
-            key={fi}
-            file={file}
-            collapsed={collapsed.has(fi)}
-            onToggle={() => toggleCollapse(fi)}
-            mode={mode}
-            palette={palette}
-          />
-        ))}
+        {files.map((file, fi) => {
+          const fileKey = file.to ?? file.from ?? String(fi);
+          return (
+            <FileDiff
+              key={fileKey}
+              file={file}
+              collapsed={collapsed.has(fileKey)}
+              onToggle={() => toggleCollapse(fileKey)}
+              mode={mode}
+              palette={palette}
+            />
+          );
+        })}
       </div>
     </div>
   );

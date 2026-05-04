@@ -49,14 +49,18 @@ function TreeNode({ entry, depth, activePath, onFileClick }: TreeNodeProps) {
   const [expanded, setExpanded] = useState(false);
   const [children, setChildren] = useState<DirEntry[] | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const toggle = useCallback(async () => {
     if (entry.type !== "dir") return;
     if (!expanded && children === null) {
       setLoading(true);
+      setLoadError(null);
       try {
         const entries = await window.electron?.agent.readDir(entry.path) as DirEntry[] | undefined;
         if (entries) setChildren(entries);
+      } catch (e) {
+        setLoadError(String(e));
       } finally {
         setLoading(false);
       }
@@ -85,6 +89,11 @@ function TreeNode({ entry, depth, activePath, onFileClick }: TreeNodeProps) {
           <span className="truncate font-medium">{entry.name}</span>
           {loading && <span className="ml-auto text-[0.714rem] text-[var(--text-tertiary)]">…</span>}
         </button>
+        {expanded && loadError && (
+          <p className="px-3 py-1 text-[0.714rem] text-[var(--danger)]" style={{ paddingLeft: `${indent + 20}px` }}>
+            {loadError}
+          </p>
+        )}
         {expanded && children && (
           <div>
             {children.map((child) => (

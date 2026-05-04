@@ -96,8 +96,8 @@ function ln(change: Change, side: "old" | "new"): number | "" {
       ? ("ln1" in change ? (change as { ln1: number }).ln1 : "")
       : ("ln2" in change ? (change as { ln2: number }).ln2 : "");
   }
-  if (change.type === "del") return side === "old" ? (change as { ln: number }).ln : "";
-  if (change.type === "add") return side === "new" ? (change as { ln: number }).ln : "";
+  if (change.type === "del") return side === "old" ? ((change as { ln?: number }).ln ?? "") : "";
+  if (change.type === "add") return side === "new" ? ((change as { ln?: number }).ln ?? "") : "";
   return "";
 }
 
