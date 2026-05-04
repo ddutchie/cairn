@@ -170,31 +170,32 @@ export function registerAgentHandlers(db: Database): void {
       }
 
       // Build args using {prompt} placeholder substitution.
-      // If args contains {prompt}, substitute in-place (supports any CLI convention).
-      // If args has no placeholder, append the prompt as a trailing positional only
-      // when args is non-empty — otherwise launch interactively with no prompt arg.
       //
-      // Examples:
-      //   args = "run"               → ["run", "<prompt>"]   (OpenCode)
-      //   args = "--message {prompt}"→ ["--message", "<prompt>"]  (custom)
-      //   args = ""                  → []  (interactive TUI, no prompt injected)
+      // Rules:
+      //   args = ""              → pure interactive TUI, no extra arguments
+      //   args = "run"           → ["run", prompt]  (subcommand + prompt)
+      //   args = "run {prompt}"  → ["run", prompt]  (explicit placement)
+      //   args = "--msg {prompt}"→ ["--msg", prompt] (flag-style)
+      //
+      // The cwd positional is NOT passed — node-pty's cwd option sets the
+      // working directory natively, so omitting it avoids ENAMETOOLONG errors.
       const PLACEHOLDER = "{prompt}";
       let allArgs: string[];
-      if (agent.args.includes(PLACEHOLDER)) {
-        // Replace placeholder token — keep surrounding tokens intact
+      if (!agent.args.trim()) {
+        // Empty args: pure interactive TUI, no extra arguments
+        allArgs = [];
+      } else if (agent.args.includes(PLACEHOLDER)) {
         allArgs = agent.args
           .split(/\s+/)
+          .filter(Boolean)
           .flatMap((token) =>
             token === PLACEHOLDER
               ? [payload.prompt]
               : [token.replace(PLACEHOLDER, payload.prompt)]
           );
-      } else if (agent.args.trim()) {
-        // No placeholder: append prompt after the provided args
-        allArgs = [...agent.args.trim().split(/\s+/), payload.prompt];
       } else {
-        // Empty args: interactive mode — no prompt injected
-        allArgs = [];
+        // No placeholder: append prompt after the provided base args
+        allArgs = [...agent.args.trim().split(/\s+/).filter(Boolean), payload.prompt];
       }
 
       const pty = nodePty.spawn(agent.binaryPath, allArgs, {

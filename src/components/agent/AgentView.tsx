@@ -3,18 +3,18 @@
 /**
  * AgentView — full-screen three-pane coding agent workspace (⌘7).
  *
- * Layout:
- *   FileTree (left, resizable) │ AgentEditor (centre, flex-1) │ AgentTerminalPane (right, resizable)
- *
- * Pane widths are stored in local state (not persisted).
- * Sessions in TerminalManager survive navigation away and back.
+ * Pane resizing is done via direct DOM style mutation (no React state during
+ * drag) so the terminal reflows in the same event tick as the mouse move.
+ * TerminalManager.fitAll() is called synchronously on every mousemove so
+ * xterm cols/rows update with zero lag.
  */
 
-import { useRef, useState, useCallback, useEffect } from "react";
+import { useRef, useEffect } from "react";
 import { useCairnStore } from "@/store";
 import { FileTree } from "./FileTree";
 import { AgentEditor } from "./AgentEditor";
 import { AgentTerminalPane } from "./AgentTerminalPane";
+import { TerminalManager } from "./TerminalManager";
 
 const MIN_TREE_WIDTH = 160;
 const MIN_TERMINAL_WIDTH = 280;
@@ -25,71 +25,99 @@ export function AgentView() {
   const { activeProjectId, projects } = useCairnStore();
   const project = projects.find((p) => p.id === activeProjectId) ?? null;
 
-  const [treeWidth, setTreeWidth] = useState(DEFAULT_TREE_WIDTH);
-  const [terminalWidth, setTerminalWidth] = useState(DEFAULT_TERMINAL_WIDTH);
+  // DOM refs for the two resizable panes — widths are mutated directly,
+  // never stored in React state, so no re-render occurs during drag.
+  const treePaneRef     = useRef<HTMLDivElement>(null);
+  const terminalPaneRef = useRef<HTMLDivElement>(null);
 
-  // ── Left divider drag ──────────────────────────────────────────────────────
-  const draggingLeft = useRef(false);
-  const leftStartX = useRef(0);
-  const leftStartWidth = useRef(0);
-
-  const onLeftDividerMouseDown = useCallback((e: React.MouseEvent) => {
-    draggingLeft.current = true;
-    leftStartX.current = e.clientX;
-    leftStartWidth.current = treeWidth;
-    e.preventDefault();
-  }, [treeWidth]);
-
-  // ── Right divider drag ─────────────────────────────────────────────────────
-  const draggingRight = useRef(false);
-  const rightStartX = useRef(0);
-  const rightStartWidth = useRef(0);
-
-  const onRightDividerMouseDown = useCallback((e: React.MouseEvent) => {
-    draggingRight.current = true;
-    rightStartX.current = e.clientX;
-    rightStartWidth.current = terminalWidth;
-    e.preventDefault();
-  }, [terminalWidth]);
-
-  // ── Global mouse events ────────────────────────────────────────────────────
+  // Set initial widths once on mount via DOM (avoids a React render cycle)
   useEffect(() => {
+    if (treePaneRef.current)     treePaneRef.current.style.width     = `${DEFAULT_TREE_WIDTH}px`;
+    if (terminalPaneRef.current) terminalPaneRef.current.style.width = `${DEFAULT_TERMINAL_WIDTH}px`;
+  }, []);
+
+  // ── Drag logic ─────────────────────────────────────────────────────────────
+  useEffect(() => {
+    let dragging: "left" | "right" | null = null;
+    let startX = 0;
+    let startWidth = 0;
+
     function onMouseMove(e: MouseEvent) {
-      if (draggingLeft.current) {
-        const delta = e.clientX - leftStartX.current;
-        setTreeWidth(Math.max(MIN_TREE_WIDTH, leftStartWidth.current + delta));
+      if (!dragging) return;
+
+      if (dragging === "left" && treePaneRef.current) {
+        const next = Math.max(MIN_TREE_WIDTH, startWidth + (e.clientX - startX));
+        treePaneRef.current.style.width = `${next}px`;
       }
-      if (draggingRight.current) {
-        const delta = rightStartX.current - e.clientX;
-        setTerminalWidth(Math.max(MIN_TERMINAL_WIDTH, rightStartWidth.current + delta));
+
+      if (dragging === "right" && terminalPaneRef.current) {
+        const next = Math.max(MIN_TERMINAL_WIDTH, startWidth - (e.clientX - startX));
+        terminalPaneRef.current.style.width = `${next}px`;
+        // Fit all terminals synchronously — same tick as the DOM resize,
+        // so xterm redraws cols/rows with no visible lag.
+        TerminalManager.fitAll();
       }
     }
+
     function onMouseUp() {
-      draggingLeft.current = false;
-      draggingRight.current = false;
+      if (dragging) {
+        // Final fit after drag ends
+        TerminalManager.fitAll();
+        dragging = null;
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+      }
     }
+
+    function startLeftDrag(e: MouseEvent) {
+      dragging = "left";
+      startX = e.clientX;
+      startWidth = treePaneRef.current?.offsetWidth ?? DEFAULT_TREE_WIDTH;
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+      e.preventDefault();
+    }
+
+    function startRightDrag(e: MouseEvent) {
+      dragging = "right";
+      startX = e.clientX;
+      startWidth = terminalPaneRef.current?.offsetWidth ?? DEFAULT_TERMINAL_WIDTH;
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+      e.preventDefault();
+    }
+
+    const leftDivider  = document.getElementById("agent-divider-left");
+    const rightDivider = document.getElementById("agent-divider-right");
+
+    leftDivider?.addEventListener("mousedown",  startLeftDrag);
+    rightDivider?.addEventListener("mousedown", startRightDrag);
     window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", onMouseUp);
+    window.addEventListener("mouseup",   onMouseUp);
+
     return () => {
+      leftDivider?.removeEventListener("mousedown",  startLeftDrag);
+      rightDivider?.removeEventListener("mousedown", startRightDrag);
       window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onMouseUp);
+      window.removeEventListener("mouseup",   onMouseUp);
     };
   }, []);
 
   return (
     <div className="flex flex-1 min-h-0 overflow-hidden bg-[var(--background)]">
+
       {/* Left pane — file tree */}
       <div
+        ref={treePaneRef}
         className="flex-shrink-0 flex flex-col border-r border-[var(--border)] overflow-hidden"
-        style={{ width: treeWidth }}
       >
         <FileTree project={project} />
       </div>
 
       {/* Left resize divider */}
       <div
-        className="w-1 flex-shrink-0 cursor-col-resize hover:bg-[var(--accent)] transition-colors bg-transparent"
-        onMouseDown={onLeftDividerMouseDown}
+        id="agent-divider-left"
+        className="w-1 flex-shrink-0 cursor-col-resize hover:bg-[var(--accent)] active:bg-[var(--accent)] transition-colors bg-transparent"
         role="separator"
         aria-label="Resize file tree"
       />
@@ -101,19 +129,20 @@ export function AgentView() {
 
       {/* Right resize divider */}
       <div
-        className="w-1 flex-shrink-0 cursor-col-resize hover:bg-[var(--accent)] transition-colors bg-transparent"
-        onMouseDown={onRightDividerMouseDown}
+        id="agent-divider-right"
+        className="w-1 flex-shrink-0 cursor-col-resize hover:bg-[var(--accent)] active:bg-[var(--accent)] transition-colors bg-transparent"
         role="separator"
         aria-label="Resize terminal pane"
       />
 
       {/* Right pane — terminal sessions */}
       <div
+        ref={terminalPaneRef}
         className="flex-shrink-0 flex flex-col border-l border-[var(--border)] overflow-hidden"
-        style={{ width: terminalWidth }}
       >
         <AgentTerminalPane />
       </div>
+
     </div>
   );
 }
