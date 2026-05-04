@@ -16,6 +16,7 @@ import {
   X,
   ArrowRight,
   FolderInput,
+  Terminal,
 } from "lucide-react";
 import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
 import {
@@ -30,6 +31,7 @@ import { useCairnStore } from "@/store";
 import { DatePicker } from "@/components/ui/date-picker";
 import { cn, formatRelative, PRIORITY_COLORS } from "@/lib/utils";
 import type { Priority } from "@/types";
+import { SpawnAgentModal } from "@/components/agent/SpawnAgentModal";
 
 interface CardDetailModalProps {
   cardId: string;
@@ -63,6 +65,7 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [moveToProjectOpen, setMoveToProjectOpen] = useState(false);
   const [blockerError, setBlockerError] = useState<string | null>(null);
+  const [spawnAgentOpen, setSpawnAgentOpen] = useState(false);
 
   const card = cards.find((c) => c.id === cardId);
   if (!card) return null;
@@ -109,6 +112,7 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
   }
 
   return (
+    <>
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent size="lg" className="flex flex-col max-h-[80vh]">
         <DialogHeader>
@@ -410,6 +414,15 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
               <Button
                 variant="ghost"
                 size="xs"
+                className="w-full justify-start text-[var(--accent)] hover:bg-[var(--accent-dim)]"
+                onClick={() => setSpawnAgentOpen(true)}
+              >
+                <Terminal size={10} />
+                Spawn Agent
+              </Button>
+              <Button
+                variant="ghost"
+                size="xs"
                 className="w-full justify-start text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
                 onClick={handleDuplicate}
               >
@@ -477,5 +490,15 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
         </div>
       </DialogContent>
     </Dialog>
+
+    {/* Spawn Agent Modal */}
+    {spawnAgentOpen && card && (
+      <SpawnAgentModal
+        card={card}
+        open={spawnAgentOpen}
+        onClose={() => setSpawnAgentOpen(false)}
+      />
+    )}
+    </>
   );
 }

@@ -261,6 +261,30 @@ const MIGRATIONS: Migration[] = [
       db.exec("ALTER TABLE notes ADD COLUMN folder TEXT NOT NULL DEFAULT ''");
     }
   },
+
+  // v9: Coding agents — global registry of AI coding agent CLI configurations
+  (db) => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS coding_agents (
+        id          TEXT PRIMARY KEY,
+        name        TEXT NOT NULL,
+        binary_path TEXT NOT NULL,
+        args        TEXT NOT NULL DEFAULT '',
+        is_default  INTEGER NOT NULL DEFAULT 0,
+        created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_coding_agents_default ON coding_agents(is_default);
+    `);
+  },
+
+  // v10: Project code directory — filesystem path scoping agent sessions per project
+  (db) => {
+    const cols = db.prepare("PRAGMA table_info(projects)").all() as { name: string }[];
+    if (!cols.some((c) => c.name === "code_directory")) {
+      db.exec("ALTER TABLE projects ADD COLUMN code_directory TEXT");
+    }
+  },
 ];
 
 export function applySchema(db: Database.Database): void {

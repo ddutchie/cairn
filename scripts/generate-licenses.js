@@ -21,7 +21,7 @@ const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf-8")
 // is treated as infrastructure and still included in the full license list
 // but excluded from the "Stack" display grid.
 //
-// Categories: Platform | Data | AI | UI | Editor | Visualisation
+// Categories: Platform | Data | AI | UI | Editor | Agent | Visualisation
 const ROLE_MAP = {
   // ── Platform ────────────────────────────────────────────────────────────────
   "electron":                      ["Electron",            "Desktop shell",               "Platform"],
@@ -60,6 +60,14 @@ const ROLE_MAP = {
   "@radix-ui/react-select":        ["Radix Select",        "Select menus",                "UI"],
   "@radix-ui/react-context-menu":  ["Radix Context Menu",  "Context menus",               "UI"],
 
+  // ── Agent ───────────────────────────────────────────────────────────────────
+  "node-pty":                      ["node-pty",             "PTY process spawning",        "Agent"],
+  "@xterm/xterm":                  ["xterm.js",             "Terminal emulator",           "Agent"],
+  "@xterm/addon-fit":              ["xterm addon-fit",      "Terminal auto-resize",        "Agent"],
+  "@xterm/addon-unicode11":        ["xterm addon-unicode11","Unicode 11 / emoji support",  "Agent"],
+  "parse-diff":                    ["parse-diff",           "Git diff parser",             "Agent"],
+  "@codemirror/language-data":     ["CM language-data",     "Language auto-detection",     "Agent"],
+
   // ── Editor ──────────────────────────────────────────────────────────────────
   "@codemirror/view":              ["CodeMirror 6",        "Note editor",                 "Editor"],
   "@codemirror/state":             ["CodeMirror state",    "Editor state model",          "Editor"],
@@ -86,7 +94,7 @@ const ROLE_MAP = {
 };
 
 // Canonical category order for display
-const CATEGORY_ORDER = ["Platform", "Data", "AI", "UI", "Editor", "Visualisation"];
+const CATEGORY_ORDER = ["Platform", "Data", "AI", "UI", "Editor", "Agent", "Visualisation"];
 
 // All deps (runtime + dev) — in an Electron app there's no meaningful runtime/dev split
 const allDeps = {

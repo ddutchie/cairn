@@ -24,6 +24,7 @@ This guide covers everything you need to go from zero to a working dev environme
   - [Key files](#key-files)
 - [Coding conventions](#coding-conventions)
 - [Working on specific areas](#working-on-specific-areas)
+  - [Working on the Agent workspace](#working-on-the-agent-workspace)
 - [Tests](#tests)
 - [Submitting a pull request](#submitting-a-pull-request)
 - [Good first issues](#good-first-issues)
@@ -93,6 +94,7 @@ cairn/
 │   │   └── utils.ts        # newId(), ts()
 │   ├── ipc/
 │   │   ├── handlers.ts     # All db:* and app:* IPC channels
+│   │   ├── agent.ts        # agent:* IPC channels — PTY spawn, file I/O, git diff
 │   │   ├── chat.ts         # AI chat: runToolLoop + IPC handler
 │   │   └── chat-executor.ts# executeTool — all AI tool implementations
 │   ├── lib/
@@ -118,6 +120,7 @@ cairn/
 │   │   ├── flow/           # Idea Flow canvas + node components
 │   │   ├── graph/          # Knowledge Graph + all analytics canvases
 │   │   ├── insights/       # InsightsView (analytics hub)
+│   │   ├── agent/          # Agent workspace: file tree, CM6 editor, xterm terminal, diff viewer
 │   │   ├── chat/           # AI chat panel
 │   │   ├── search/         # Global search panel
 │   │   ├── settings/       # Settings sections
@@ -143,15 +146,16 @@ cairn/
 
 ### Views
 
-| View | Key | Description |
-|------|-----|-------------|
-| Overview | `⌘1` | Project summary — metrics, pinned notes, recent activity |
-| Notes | `⌘2` | Split-pane markdown editor + dashboard renderer |
-| Board | `⌘3` | Kanban with drag-and-drop |
-| Idea Flow | `⌘4` | Freeform node canvas |
-| Knowledge Graph | `⌘5` | Force-directed and Radial tree of notes/cards/tags (`GraphLayoutMode = "force" \| "radial"`) |
-| Insights | `⌘6` | Analytics canvases: Ridgeline, Beeswarm, Bullet, Sankey, Timeline, Matrix, Table |
-| Settings | — | General, AI & Chat, Tags, Shortcuts, Data, About |
+| View | Key | Level | Description |
+|------|-----|-------|-------------|
+| Overview | `⌘1` | Project | Project summary — metrics, pinned notes, recent activity |
+| Notes | `⌘2` | Project | Split-pane markdown editor + dashboard renderer |
+| Board | `⌘3` | Project | Kanban with drag-and-drop |
+| Idea Flow | `⌘4` | Project | Freeform node canvas |
+| Agent | `⌘5` | Project | Coding agent workspace — file tree, CM6 editor, xterm.js terminal, git diff viewer |
+| Knowledge Graph | `⌘6` | Workspace | Force-directed and Radial tree of notes/cards/tags (`GraphLayoutMode = "force" \| "radial"`) |
+| Insights | `⌘7` | Workspace | Analytics canvases: Ridgeline, Beeswarm, Bullet, Sankey, Timeline, Matrix, Table |
+| Settings | — | App | General, AI & Chat, Coding Agents, Tags, Shortcuts, Data, About |
 
 ### Process model
 
@@ -160,6 +164,8 @@ Cairn has two processes that share the same `cairn.db` (SQLite WAL mode):
 **Renderer** (Next.js + React) — everything in `src/`. Never touches the filesystem or database directly. All data operations go through `window.electron.*` calls, defined in `electron/preload.ts` and handled in `electron/ipc/handlers.ts`.
 
 **Main process** (Node.js) — everything in `electron/`. Owns the SQLite database, the filesystem, and the AI chat loop. Returns `{ data: T } | { error: string }` from every IPC handler.
+
+**Agent workspace** (`electron/ipc/agent.ts`) — PTY sessions spawned via `node-pty` in the main process. File I/O is validated against registered `code_directory` paths before any read/write. Sessions are keyed by `sessionId`; PTY output is streamed to the renderer via `agent:data` IPC events. The renderer-side `TerminalManager` singleton holds `xterm.js` instances so they survive view navigation.
 
 **MCP server** (`electron/mcp-server.ts`) — a separate compiled binary that external AI agents connect to. Shares the same SQLite database and writes `.md` files directly; the Electron UI refreshes automatically via WAL mtime polling. Has one important constraint: it cannot import from `electron/db/queries.ts` due to the Node ABI boundary — it uses inlined SQL only.
 
@@ -310,6 +316,7 @@ Shared modules live in `src/components/graph/`: `analyticsUtils.ts`, `analyticsH
 | `electron/notes-files.ts` | Note file I/O: `writeNoteFile`, `deleteNoteFile`, `parseNoteFile`, `upsertNoteFromFile` |
 | `electron/file-watcher.ts` | chokidar watcher on `notes/`; syncs external `.md` edits to SQLite |
 | `electron/ipc/handlers.ts` | All `db:*` and `app:*` IPC channels; wrapped in `handle()` returning `IpcResult<T>` |
+| `electron/ipc/agent.ts` | All `agent:*` IPC channels — PTY spawn/kill, file I/O, git diff, `assertWithinCodeDirectory` |
 | `electron/ipc/chat.ts` | AI chat loop — `runToolLoop` + IPC handler registration |
 | `electron/ipc/chat-executor.ts` | `executeTool` — all AI tool implementations |
 | `electron/lib/llm.ts` | `LLMConfig`, `callLLM`, `streamCompletion`, `isLocalEndpoint` |
@@ -348,6 +355,17 @@ Shared modules live in `src/components/graph/`: `analyticsUtils.ts`, `analyticsH
 | `src/components/graph/ForceGraphCanvas.tsx` | Force-directed canvas via `react-force-graph-2d` |
 | `src/components/graph/RadialTreeCanvas.tsx` | Radial hierarchy tree via D3 |
 | `src/components/graph/graphUtils.ts` | `resolveCssVar()` shared by graph canvases |
+| `src/components/agent/AgentView.tsx` | Three-pane layout — drag-resize dividers, Editor/Diff tab bar |
+| `src/components/agent/AgentTerminalPane.tsx` | xterm.js sessions, tab strip, font-scale sync, SpawnAgentModal integration |
+| `src/components/agent/AgentEditor.tsx` | Multi-file tabbed editor — tab management, preview toggle, save |
+| `src/components/agent/FileEditorInner.tsx` | Single CM6 editor instance per file — CSS-hidden when inactive |
+| `src/components/agent/DiffViewer.tsx` | Git diff polling, toolbar, collapsible files, view mode toggle |
+| `src/components/agent/DiffFile.tsx` | Diff sub-components — palette, syntax HL, UnifiedFile, SplitFile, FileDiff |
+| `src/components/agent/FileTree.tsx` | Lazy-expanding directory tree; direct `pickDirectory` → `updateProject` |
+| `src/components/agent/TerminalManager.ts` | Module-scope singleton — holds xterm Terminal + FitAddon per session |
+| `src/components/agent/SpawnAgentModal.tsx` | Spawn dialog — optional card, ad-hoc sessions, prompt editor |
+| `src/components/agent/editorTheme.ts` | Shared CM6 `buildTheme(fontScale)` + `buildHighlightStyle(isDark)` |
+| `src/components/agent/ImageViewer.tsx` | Image renderer via base64 IPC (avoids `file://` CSP restriction) |
 | `src/components/insights/InsightsView.tsx` | Insights view — hosts all analytics canvases with shared toolbar |
 | `src/components/graph/analyticsUtils.ts` | Shared constants + pure helpers for analytics canvases |
 | `src/components/graph/analyticsHooks.ts` | `useContainerDims`, `useScopedData`, `useFontScale` |
@@ -423,6 +441,16 @@ Use `CanvasEmptyState`, `CanvasTooltip`, and `SvgTimeAxis` from `AnalyticsShared
 2. Add a keyboard shortcut in `src/app/page.tsx`
 3. Add a sidebar button in `src/components/layout/sidebar.tsx` (both collapsed and expanded variants)
 4. Wire the component render in `src/app/page.tsx`
+
+### Working on the Agent workspace
+
+The Agent workspace has its own IPC namespace (`agent:*`) entirely separate from the main `db:*` handlers:
+
+- **PTY sessions** — spawned in `electron/ipc/agent.ts` via `node-pty`. `node-pty` must be `--external` in esbuild and rebuilt for the Electron ABI via `npm run rebuild`. PTY output streams to the renderer via `ipcMain.emit('agent:data', ...)`.
+- **File I/O security** — every `readFile`, `readDir`, `writeFile`, and `readFileBase64` call goes through `assertWithinCodeDirectory(db, path)` before touching the filesystem. This validates the path against all registered `code_directory` values in the `projects` table. Never skip this check when adding new file IPC handlers.
+- **Renderer terminal** — `TerminalManager` (module-scope singleton) holds `xterm.js` Terminal + FitAddon instances. Sessions survive view navigation because the singleton is never garbage-collected. Font size updates must set `terminal.options.fontSize` and call `fitAddon.fit()` via `requestAnimationFrame` (one frame needed for cell remeasure).
+- **CM6 editor** — one `EditorView` instance per open file, CSS-hidden when inactive. `buildTheme(fontScale)` in `editorTheme.ts` accepts `fontScale` so the editor respects the user's font size setting. CM6 `HighlightStyle.define` requires static colour strings — CSS variables cannot be used there (documented in `editorTheme.ts`).
+- **`code_directory`** — stored on the `projects` table (migration v10). Set from the Project Overview inline row, not from AgentSettings. Written via the generic `db:project:update` IPC channel.
 
 ### Adding a new analytics canvas
 

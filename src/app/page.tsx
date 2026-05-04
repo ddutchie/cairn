@@ -50,6 +50,7 @@ import { InsightsView } from "@/components/insights/InsightsView";
 import { ChatPanel } from "@/components/chat/chat-panel";
 import { SearchPanel } from "@/components/search/search-panel";
 import { SettingsView } from "@/components/settings/settings-view";
+import { AgentView } from "@/components/agent/AgentView";
 import { Onboarding } from "@/components/onboarding";
 
 export default function Home() {
@@ -153,8 +154,9 @@ export default function Home() {
       else if (mod && key === "2") { e.preventDefault(); setView("notes"); }
       else if (mod && key === "3") { e.preventDefault(); setView("board"); }
       else if (mod && key === "4") { e.preventDefault(); setView("flow"); }
-      else if (mod && key === "5") { e.preventDefault(); setView("graph"); }
-      else if (mod && key === "6") { e.preventDefault(); setView("insights"); }
+      else if (mod && key === "5") { e.preventDefault(); setView("agent"); }
+      else if (mod && key === "6") { e.preventDefault(); setView("graph"); }
+      else if (mod && key === "7") { e.preventDefault(); setView("insights"); }
       else if (mod && key === "n" && !inInput) {
         e.preventDefault();
         if (activeProjectId) {
@@ -274,6 +276,7 @@ export default function Home() {
            {activeView === "graph"     && <KnowledgeGraphView />}
            {activeView === "insights"  && <InsightsView />}
            {activeView === "settings"  && <SettingsView />}
+           {activeView === "agent"    && <AgentView />}
           </div>
         </div>
 

@@ -3,10 +3,10 @@
 import React, { useState, useRef, useEffect } from "react";
 import {
   FileText, Kanban, Calendar, Pin, ArrowRight, Clock,
-  AlertCircle, Activity, Circle, BarChart2, Pencil, Check,
+  AlertCircle, Activity, Circle, BarChart2, Pencil, Check, FolderOpen, Terminal,
 } from "lucide-react";
 import { useCairnStore } from "@/store";
-import { ProjectIcon } from "@/lib/workspace-icons";
+import { ProjectIcon, WORKSPACE_ICONS } from "@/lib/workspace-icons";
 import { cn, formatDate, formatRelative, STATUS_COLORS } from "@/lib/utils";
 import { COLUMN_COLORS, PRIORITY_CSS_COLORS } from "@/lib/constants";
 import { CairnEvents } from "@/lib/events";
@@ -23,6 +23,7 @@ export function ProjectOverview() {
   const [editOpen, setEditOpen] = useState(false);
   const [editIcon, setEditIcon] = useState("");
   const [editDesc, setEditDesc] = useState("");
+  const [codeDirInput, setCodeDirInput] = useState("");
   const popoverRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -32,6 +33,30 @@ export function ProjectOverview() {
     }
   }, [editOpen, project]);
 
+  // Keep codeDirInput in sync when project changes externally
+  useEffect(() => {
+    setCodeDirInput(project?.codeDirectory ?? "");
+  }, [project?.codeDirectory]);
+
+  async function handlePickCodeDir() {
+    const result = await window.electron?.agent.pickDirectory() as { data: string | null } | undefined;
+    if (result?.data) setCodeDirInput(result.data);
+  }
+
+  function handleSaveCodeDir() {
+    if (!project) return;
+    updateProject(project.id, { codeDirectory: codeDirInput.trim() || null });
+  }
+
+  function handleSaveEdit() {
+    if (!project) return;
+    updateProject(project.id, {
+      icon: editIcon.trim() || undefined,
+      description: editDesc.trim() || undefined,
+    });
+    setEditOpen(false);
+  }
+
   useEffect(() => {
     if (!editOpen) return;
     function handle(e: MouseEvent) {
@@ -40,12 +65,6 @@ export function ProjectOverview() {
     document.addEventListener("mousedown", handle);
     return () => document.removeEventListener("mousedown", handle);
   }, [editOpen]);
-
-  function handleSaveEdit() {
-    if (!project) return;
-    updateProject(project.id, { icon: editIcon.trim() || undefined, description: editDesc.trim() || undefined });
-    setEditOpen(false);
-  }
 
   if (!project || !metrics) {
     return (
@@ -91,27 +110,37 @@ export function ProjectOverview() {
                     className="absolute left-0 top-full mt-2 z-50 w-72 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] shadow-2xl p-4 space-y-3"
                   >
                     <p className="text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wide">Edit project</p>
-                    <div className="flex gap-2">
-                      <div className="flex flex-col gap-1 w-16">
-                        <label className="text-[0.786rem] text-[var(--text-tertiary)]">Icon</label>
-                        <input
-                          value={editIcon}
-                          onChange={(e) => setEditIcon(e.target.value)}
-                          placeholder="🗂️"
-                          maxLength={4}
-                          className="w-full text-center text-xl px-1 py-1.5 rounded-md bg-[var(--surface)] border border-[var(--border)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)]"
-                        />
+                    {/* Icon grid */}
+                    <div>
+                      <label className="text-[0.786rem] text-[var(--text-tertiary)] block mb-1.5">Icon</label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {WORKSPACE_ICONS.map(({ name: iconName }) => (
+                          <button
+                            key={iconName}
+                            type="button"
+                            onClick={() => setEditIcon(iconName)}
+                            className={cn(
+                              "w-7 h-7 rounded-lg flex items-center justify-center transition-colors",
+                              editIcon === iconName
+                                ? "bg-[var(--accent-dim)] ring-1 ring-[var(--accent)] text-[var(--accent)]"
+                                : "bg-[var(--surface)] text-[var(--text-secondary)] hover:bg-[var(--surface-3,var(--surface-2))]"
+                            )}
+                          >
+                            <ProjectIcon name={iconName} size={13} />
+                          </button>
+                        ))}
                       </div>
-                      <div className="flex flex-col gap-1 flex-1">
-                        <label className="text-[0.786rem] text-[var(--text-tertiary)]">Description</label>
-                        <textarea
-                          value={editDesc}
-                          onChange={(e) => setEditDesc(e.target.value)}
-                          placeholder="What is this project about?"
-                          rows={3}
-                          className="w-full px-2 py-1.5 text-xs rounded-md bg-[var(--surface)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)] resize-none"
-                        />
-                      </div>
+                    </div>
+                    {/* Description */}
+                    <div>
+                      <label className="text-[0.786rem] text-[var(--text-tertiary)] block mb-1">Description</label>
+                      <textarea
+                        value={editDesc}
+                        onChange={(e) => setEditDesc(e.target.value)}
+                        placeholder="What is this project about?"
+                        rows={3}
+                        className="w-full px-2 py-1.5 text-xs rounded-md bg-[var(--surface)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)] resize-none"
+                      />
                     </div>
                     <div className="flex justify-end">
                       <Button variant="accent" size="xs" onClick={handleSaveEdit}>
@@ -143,6 +172,28 @@ export function ProjectOverview() {
               {doneCards.length}/{allCards.length} done
             </span>
           </div>
+        </div>
+
+        {/* ── Code directory ────────────────────────────────── */}
+        <div className="flex items-center gap-2 group">
+          <Terminal size={13} className="text-[var(--text-tertiary)] flex-shrink-0" />
+          <input
+            value={codeDirInput}
+            onChange={(e) => setCodeDirInput(e.target.value)}
+            onBlur={handleSaveCodeDir}
+            onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+            placeholder="Set code directory for agent sessions…"
+            className="flex-1 min-w-0 bg-transparent text-[0.786rem] font-mono text-[var(--text-secondary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:text-[var(--text-primary)] transition-colors"
+          />
+          {typeof window !== "undefined" && window.electron && (
+            <button
+              onClick={handlePickCodeDir}
+              className="flex-shrink-0 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors opacity-0 group-hover:opacity-100"
+              title="Browse"
+            >
+              <FolderOpen size={12} />
+            </button>
+          )}
         </div>
 
         {/* ── Stats ─────────────────────────────────────────── */}

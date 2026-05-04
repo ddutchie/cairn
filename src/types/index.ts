@@ -37,6 +37,7 @@ export interface Project {
   priority: Priority;
   dueDate?: string;
   tagIds: ID[];
+  codeDirectory: string | null;
   createdAt: string;
   updatedAt: string;
   archivedAt?: string;
@@ -287,7 +288,7 @@ export interface GraphFilters {
 export interface AppUIState {
   activeWorkspaceId: ID | null;
   activeProjectId: ID | null;
-  activeView: "overview" | "notes" | "board" | "flow" | "graph" | "insights" | "chat" | "search" | "settings";
+  activeView: "overview" | "notes" | "board" | "flow" | "graph" | "insights" | "chat" | "search" | "settings" | "agent";
   sidebarCollapsed: boolean;
   chatOpen: boolean;
   searchOpen: boolean;
