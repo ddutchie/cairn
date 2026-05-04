@@ -76,6 +76,7 @@ jobs:
           node scripts/generate-licenses.js
           npx cross-env ELECTRON_BUILD=true npx next build
           npm run compile
+          npm run smoke-test
           node scripts/build-mcp-binary.js --mac
           chmod +x dist-mcp/cairn-mcp dist-mcp/cairn-mcp-x64
           npx electron-builder --mac --publish always
@@ -114,6 +115,7 @@ jobs:
           node scripts/generate-licenses.js
           npx cross-env ELECTRON_BUILD=true npx next build
           npm run compile
+          npm run smoke-test
           node scripts/build-mcp-binary.js --win
           npx electron-builder --win --publish always
 
@@ -151,6 +153,7 @@ jobs:
           node scripts/generate-licenses.js
           npx cross-env ELECTRON_BUILD=true npx next build
           npm run compile
+          npm run smoke-test
           node scripts/build-mcp-binary.js --linux
           chmod +x dist-mcp/cairn-mcp-linux
           npx electron-builder --linux --publish always

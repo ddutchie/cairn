@@ -21,7 +21,8 @@
     "build:mcp-binary": "node scripts/build-mcp-binary.js",
     "lint": "eslint",
     "type-check": "tsc --noEmit",
-    "mcp": "node dist-mcp/mcp-server.bundle.js"
+    "mcp": "node dist-mcp/mcp-server.bundle.js",
+    "smoke-test": "node scripts/smoke-test.js"
   },
   "main": "dist-electron/main.js",
   "overrides": {
