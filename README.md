@@ -35,8 +35,9 @@ Cairn is a desktop app (Electron + Next.js) that combines markdown notes with a 
 - **Idea Flow** — A freeform node canvas per project (`⌘4`): add idea, note reference, task reference, group, URL, and AI summary nodes; connect them with labelled edges; the AI and MCP can read and write the canvas as first-class authors
 - **Live dashboards** — Ask the AI to generate an interactive HTML dashboard for any project; choose from a template gallery or start blank; dashboards fetch live data on every load via a sandboxed `window.cairn.query()` bridge; runtime errors surface an inline "Fix with AI" button; HTML editable directly via a built-in CodeMirror overlay
 - **MCP server** — Exposes your workspace to external AI agents (OpenCode, Claude Desktop, etc.) via the Model Context Protocol
-- **Knowledge Graph** — Workspace-wide graph of every note, card, project, and tag; Force-directed and Radial tree layouts; auto-discovered relationships (`⌘5`)
-- **Insights** — Analytics view: Ridgeline joy plot, Beeswarm, Bullet health bars, Sankey pipeline flow, Timeline, Matrix heatmap, Table (`⌘6`)
+- **Agent workspace** — Dedicated three-pane view (`⌘5`) for running AI coding agents (Claude Code, OpenCode, Aider, or any CLI binary) connected directly to project tasks. Spawn from a kanban card or ad-hoc. Includes a resizable file tree, multi-file CodeMirror 6 editor (syntax highlighting, ⌘S save, markdown preview, image viewer), xterm.js terminal with persistent sessions, and a git diff viewer (unified / split / changes-only modes with syntax highlighting)
+- **Knowledge Graph** — Workspace-wide graph of every note, card, project, and tag; Force-directed and Radial tree layouts; auto-discovered relationships (`⌘6`)
+- **Insights** — Analytics view: Ridgeline joy plot, Beeswarm, Bullet health bars, Sankey pipeline flow, Timeline, Matrix heatmap, Table (`⌘7`)
 - **Font scaling** — Five-step UI font size preference (XS–XL, default M) in Settings → General
 - **Local-first** — Notes as `.md` files, project data in SQLite; no network required
 - **Dark mode** — Calm, focused aesthetics
@@ -220,15 +221,17 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 | `⌘2` | Notes view |
 | `⌘3` | Board view |
 | `⌘4` | Idea Flow canvas |
-| `⌘5` | Knowledge Graph |
-| `⌘6` | Insights |
+| `⌘5` | Agent workspace |
+| `⌘6` | Knowledge Graph |
+| `⌘7` | Insights |
+| `⌘S` | Save file (Agent editor) |
 | `⌘Z` | Undo |
 | `⌘⇧Z` / `⌘Y` | Redo |
 | `Esc` | Close modal / search |
 
 ## Architecture
 
-Electron + Next.js desktop app. Two processes share a SQLite database (WAL mode): the **renderer** (React/Next.js, no direct DB or filesystem access) communicates with the **main process** (Node.js, owns SQLite + file I/O) via IPC. A standalone **MCP server binary** connects to the same database for external AI agent access.
+Electron + Next.js desktop app. Two processes share a SQLite database (WAL mode): the **renderer** (React/Next.js, no direct DB or filesystem access) communicates with the **main process** (Node.js, owns SQLite + file I/O) via IPC. A standalone **MCP server binary** connects to the same database for external AI agent access. The **Agent workspace** (`⌘5`) runs coding agent CLIs via `node-pty` PTY sessions in the main process, with file I/O confined to registered project code directories.
 
 Notes are plain `.md` files with YAML frontmatter; SQLite is the read cache. The file watcher syncs external edits back automatically.
 
@@ -270,7 +273,11 @@ Tests live alongside the code they cover:
 | react-force-graph-2d | Force-directed graph canvas (Knowledge Graph) |
 | d3-sankey | Sankey pipeline diagram (Insights) |
 | @dagrejs/dagre | Graph auto-layout (Idea Flow) |
-| CodeMirror 6 | Note editor |
+| node-pty | PTY process spawning (Agent terminal) |
+| @xterm/xterm | Terminal emulator (Agent view) |
+| @xterm/addon-fit | Terminal auto-resize |
+| parse-diff | Git diff parser (Agent diff viewer) |
+| CodeMirror 6 | Note editor + Agent file editor |
 | react-markdown | Markdown preview |
 | remark-gfm | GitHub Flavored Markdown |
 | remark-breaks | Hard line breaks in markdown |
@@ -290,7 +297,7 @@ Tests live alongside the code they cover:
 | tailwind-merge | Tailwind class merge utility |
 | vitest | Unit test runner |
 
-> The **Settings → About** screen in the app shows real installed versions grouped by category (Platform, Data, AI, UI, Editor, Visualisation) and all open source licenses. These are generated automatically at build time — see below.
+> The **Settings → About** screen in the app shows real installed versions grouped by category (Platform, Data, AI, UI, Editor, Agent, Visualisation) and all open source licenses. These are generated automatically at build time — see below.
 
 ## About screen & license generation
 
@@ -315,7 +322,7 @@ If you add a package that should appear in the **Stack** grid in the About scree
 "your-package-name": ["Display Name", "Short role description", "Category"],
 ```
 
-The key must exactly match the package name in `package.json`. Valid categories are `Platform`, `Data`, `AI`, `UI`, `Editor`, and `Visualisation` — entries are grouped under these headings in the About screen. All installed packages (whether in `ROLE_MAP` or not) are automatically included in the full **Open Source Licenses** list.
+The key must exactly match the package name in `package.json`. Valid categories are `Platform`, `Data`, `AI`, `UI`, `Editor`, `Agent`, and `Visualisation` — entries are grouped under these headings in the About screen. All installed packages (whether in `ROLE_MAP` or not) are automatically included in the full **Open Source Licenses** list.
 
 ## Star History
 <p align="center">

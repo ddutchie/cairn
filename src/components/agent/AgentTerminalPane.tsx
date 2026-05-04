@@ -34,7 +34,7 @@ function SessionMount({ session, isActive }: SessionMountProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const initStarted = useRef(false);
   const cleanupFns = useRef<Array<() => void>>([]);
-  const { markSessionExited } = useCairnStore();
+  const { markSessionExited, fontScale } = useCairnStore();
 
   useEffect(() => {
     const container = containerRef.current;
@@ -69,7 +69,7 @@ function SessionMount({ session, isActive }: SessionMountProps) {
       const resolvedFont = cs.getPropertyValue("--font-mono").trim()
         || "ui-monospace, 'Cascadia Code', 'Fira Code', monospace";
       const fontScale = parseFloat(cs.getPropertyValue("--font-scale").trim() || "1") || 1;
-      const fontSize = Math.round(13 * fontScale);
+      const fontSize = Math.round(11 * fontScale);
 
       const terminal = new Terminal({
         allowProposedApi: true,
@@ -163,6 +163,17 @@ function SessionMount({ session, isActive }: SessionMountProps) {
   useEffect(() => {
     if (isActive) TerminalManager.fit(session.sessionId);
   }, [isActive, session.sessionId]);
+
+  // Update font size when the user changes the font scale setting.
+  // requestAnimationFrame defers fit() by one frame so xterm's canvas
+  // can re-measure cell dimensions after the font size change.
+  useEffect(() => {
+    const m = TerminalManager.get(session.sessionId);
+    if (!m) return;
+    m.terminal.options.fontSize = Math.round(11 * fontScale);
+    const raf = requestAnimationFrame(() => TerminalManager.fit(session.sessionId));
+    return () => cancelAnimationFrame(raf);
+  }, [fontScale, session.sessionId]);
 
   return (
     <div
