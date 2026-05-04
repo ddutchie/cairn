@@ -231,9 +231,15 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ## Architecture
 
-Electron + Next.js desktop app. Two processes share a SQLite database (WAL mode): the **renderer** (React/Next.js, no direct DB or filesystem access) communicates with the **main process** (Node.js, owns SQLite + file I/O) via IPC. A standalone **MCP server binary** connects to the same database for external AI agent access. The **Agent workspace** (`⌘5`) runs coding agent CLIs via `node-pty` PTY sessions in the main process, with file I/O confined to registered project code directories.
+Cairn is an Electron + Next.js desktop app with three independent processes sharing a single SQLite database (WAL mode):
 
-Notes are plain `.md` files with YAML frontmatter; SQLite is the read cache. The file watcher syncs external edits back automatically.
+- **Renderer** (`src/`) — React/Next.js. Never touches the filesystem or database directly. All data flows through IPC via `window.electron.*`.
+- **Main process** (`electron/`) — Node.js. Owns SQLite, file I/O, the AI chat loop, and PTY sessions for coding agents.
+- **MCP server** (`electron/mcp-server.ts`) — a self-contained binary connecting external AI agents (OpenCode, Claude Desktop, etc.) to the same database via WAL polling.
+
+Notes are plain `.md` files with YAML frontmatter; SQLite is the read/search cache. A chokidar file watcher syncs external edits back automatically. The **Agent workspace** (`⌘5`) runs coding agent CLIs via `node-pty` PTY sessions, with all file I/O path-validated against registered project `code_directory` values.
+
+State in the renderer is managed by Zustand domain slices (`ui`, `workspace`, `board`, `notes`, `tags`, `chat`, `graph`, `selectors`), composed in `src/store/index.ts`. Analytics canvases in Insights follow a shared pattern: `useContainerDims` + `useScopedData` + `useFontScale` + D3/SVG rendering.
 
 For the full architecture reference — process model, storage split, data model, dashboard rendering, write paths, font scaling, analytics canvas pattern, and key files — see [CONTRIBUTING.md](CONTRIBUTING.md#architecture).
 
@@ -257,45 +263,72 @@ Tests live alongside the code they cover:
 
 ## Tech stack
 
+**Platform**
+
 | Tool | Role |
 |------|------|
 | Electron | Desktop shell |
 | Next.js 16 | UI framework (App Router, static export) |
 | TypeScript | Language |
-| Tailwind CSS v4 | Styling |
-| Zustand | State management (domain slices) |
+| esbuild | Bundler (Electron main + MCP binary) |
+| vitest | Unit test runner |
+
+**Data & AI**
+
+| Tool | Role |
+|------|------|
 | better-sqlite3 | SQLite (dual ABI: Electron + pkg/Node 22) |
 | gray-matter | YAML frontmatter parsing for note files |
 | chokidar | File watcher for external `.md` edits |
+| Vercel AI SDK | AI streaming utilities |
+| @modelcontextprotocol/sdk | MCP server |
+| Zod | Schema validation |
+| nanoid | ID generation |
+
+**UI & State**
+
+| Tool | Role |
+|------|------|
+| Tailwind CSS v4 | Styling (CSS custom properties; never raw colour names) |
+| Zustand | State management (domain slices: ui, workspace, board, notes, tags, chat, graph) |
+| Radix UI | Accessible UI primitives (dialog, dropdown, tooltip, popover, select, context menu) |
+| Lucide React | Icons |
+| cmdk | Command palette |
+| react-day-picker | Date picker |
+| date-fns | Date utilities |
+| tailwind-merge | Tailwind class merge utility |
+
+**Editor & Agent**
+
+| Tool | Role |
+|------|------|
+| CodeMirror 6 | Note editor + Agent file editor (CM6, CSS-hidden-per-tab pattern) |
+| node-pty | PTY process spawning (Agent terminal) |
+| @xterm/xterm | Terminal emulator (Agent view) |
+| @xterm/addon-fit | Terminal auto-resize |
+| parse-diff | Git diff parser (Agent diff viewer) |
+
+**Visualisation**
+
+| Tool | Role |
+|------|------|
 | @xyflow/react | Node-based canvas (Idea Flow) |
 | dnd-kit | Drag and drop (Kanban) |
 | D3 v7 | Analytics & graph visualisation (Insights canvases, Radial tree) |
 | react-force-graph-2d | Force-directed graph canvas (Knowledge Graph) |
 | d3-sankey | Sankey pipeline diagram (Insights) |
 | @dagrejs/dagre | Graph auto-layout (Idea Flow) |
-| node-pty | PTY process spawning (Agent terminal) |
-| @xterm/xterm | Terminal emulator (Agent view) |
-| @xterm/addon-fit | Terminal auto-resize |
-| parse-diff | Git diff parser (Agent diff viewer) |
-| CodeMirror 6 | Note editor + Agent file editor |
+
+**Markdown**
+
+| Tool | Role |
+|------|------|
 | react-markdown | Markdown preview |
 | remark-gfm | GitHub Flavored Markdown |
 | remark-breaks | Hard line breaks in markdown |
 | remark-math / rehype-katex | Math expression rendering |
 | Mermaid | Diagram rendering in notes |
 | lowlight | Syntax highlighting in code blocks |
-| cmdk | Command palette |
-| react-day-picker | Date picker |
-| date-fns | Date utilities |
-| Radix UI | Accessible UI primitives (dialog, dropdown, tooltip, popover, select, context menu) |
-| Vercel AI SDK | AI streaming utilities |
-| esbuild | Bundler |
-| @modelcontextprotocol/sdk | MCP server |
-| Lucide React | Icons |
-| Zod | Schema validation |
-| nanoid | ID generation |
-| tailwind-merge | Tailwind class merge utility |
-| vitest | Unit test runner |
 
 > The **Settings → About** screen in the app shows real installed versions grouped by category (Platform, Data, AI, UI, Editor, Agent, Visualisation) and all open source licenses. These are generated automatically at build time — see below.
 

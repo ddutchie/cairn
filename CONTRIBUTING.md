@@ -402,6 +402,26 @@ Shared modules live in `src/components/graph/`: `analyticsUtils.ts`, `analyticsH
 - Components read from the store via `useCairnStore()`. Never call `window.electron.*` directly from a component — go through a store action.
 - The `graph` slice is lazy — `graphData` is only populated when `loadGraph()` is called. Both `KnowledgeGraphView` and `InsightsView` call it on mount.
 
+**Performance: use narrow selectors, not full-store subscriptions.**
+
+Calling `useCairnStore()` with no selector subscribes to the entire store — every write anywhere re-renders the component. Always select only the fields you need:
+
+```ts
+// Avoid — subscribes to the entire store
+const { cards, columns } = useCairnStore();
+
+// Prefer — only re-renders when cards or columns change
+import { useShallow } from 'zustand/react/shallow';
+const { cards, columns } = useCairnStore(
+  useShallow((s) => ({ cards: s.cards, columns: s.columns }))
+);
+
+// For a single value, no useShallow needed
+const fontScale = useCairnStore((s) => s.fontScale);
+```
+
+Use `React.memo` on list-item components (`KanbanCard`, `NoteListItem`, `ProjectItem`, etc.) so their memoisation is meaningful once selectors are in place. Wrap expensive derivations in `useMemo` — `buildFolderTree`, `getWorkspaceProjects`, tag lookups — so they only recompute when their inputs change, not on every store write.
+
 ### IPC boundary
 
 - Renderer → main: use `ipc()` (fire-and-forget) or `ipcAwait()` (returns `IpcResult<T>`) from `src/store/ipc.ts`.
@@ -525,6 +545,9 @@ vitest uses a SQLite shim (`vitest-sqlite-shim.cjs`) to ensure the system Node A
 - [ ] New IPC handlers wrapped in `handle()` and return `IpcResult<T>`
 - [ ] New DB migrations appended (not edited) in `schema.ts`
 - [ ] Screenshots included for UI changes
+- [ ] `useCairnStore()` calls use narrow selectors (not full-store subscriptions)
+- [ ] List-item components wrapped in `React.memo`
+- [ ] Expensive derivations wrapped in `useMemo` (not recomputed every render)
 
 ---
 
@@ -536,6 +559,8 @@ If you're new to the codebase, these are good places to start:
 - **Test coverage** — `chat-executor.ts` and `mcp-server.ts` have limited test coverage. Adding test cases for specific tool implementations is well-scoped and doesn't require understanding the full codebase.
 - **Accessibility** — checking components for missing ARIA labels, keyboard navigation gaps, or colour contrast issues.
 - **Docs** — the `docs/` site at `cairn-site` always needs keeping up to date with new features. Pure HTML/CSS — no build step required.
+- **Zustand selector narrowing** — replacing `useCairnStore()` full-store calls with narrow `useShallow` selectors in a specific component. Self-contained, testable, and high-impact. Good candidates: `AgentTerminalPane`, `TopBar`, `MCPSettings`.
+- **`React.memo` on list items** — wrapping `KanbanCard`, `NoteListItem`, or `ProjectItem` in `React.memo` after narrowing their store subscriptions. Measurable win, well-scoped.
 
 ---
 
