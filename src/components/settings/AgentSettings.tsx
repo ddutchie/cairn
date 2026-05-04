@@ -95,12 +95,14 @@ function AgentForm({ initial, onSave, onCancel }: AgentFormProps) {
           <input
             value={args}
             onChange={(e) => setArgs(e.target.value)}
-            placeholder="e.g. --prompt {prompt}  or  {prompt}  or  leave empty for interactive"
+            placeholder="e.g. -p {prompt}  or  --message {prompt}  or  run {prompt}  or  leave empty for interactive"
             className="w-full rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-sm px-3 py-1.5 font-mono focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
           />
           <p className="mt-1 text-[0.714rem] text-[var(--text-tertiary)]">
-            opencode: use <code className="text-[var(--accent)]">--prompt {"{prompt}"}</code> or just <code className="text-[var(--accent)]">{"{prompt}"}</code>.
-            claude / aider: use <code className="text-[var(--accent)]">--message {"{prompt}"}</code>.
+            Claude Code: binary <code className="text-[var(--accent)]">claude</code>, args <code className="text-[var(--accent)]">-p {"{prompt}"}</code>.{" "}
+            OpenCode: binary <code className="text-[var(--accent)]">opencode</code>, args <code className="text-[var(--accent)]">run {"{prompt}"}</code>.{" "}
+            Aider: binary <code className="text-[var(--accent)]">aider</code>, args <code className="text-[var(--accent)]">--message {"{prompt}"}</code>.{" "}
+            Gemini CLI: binary <code className="text-[var(--accent)]">gemini</code>, args <code className="text-[var(--accent)]">-p {"{prompt}"}</code>.{" "}
             Leave empty for pure interactive TUI.
           </p>
           {/* Live preview */}
