@@ -20,6 +20,27 @@ import { WorkspaceSwitcher } from "./sidebar/WorkspaceSwitcher";
 import { ProjectCreateForm } from "./sidebar/ProjectCreateForm";
 import type { Project } from "@/types";
 
+// ── View nav config ───────────────────────────────────────────────────────────
+
+interface ViewNavItem {
+  view: "board" | "flow" | "agent" | "graph" | "insights";
+  label: string;
+  icon: React.ReactNode;
+  iconSm: React.ReactNode;
+  /** Which hiddenView key this maps to */
+  hiddenKey: "board" | "flow" | "agent" | "graph" | "insights";
+  /** Whether it lives inside the project tree (true) or bottom bar (false) */
+  inProject: boolean;
+}
+
+const VIEW_NAV: ViewNavItem[] = [
+  { view: "board",    label: "Board",           icon: <Kanban size={13} />,   iconSm: <Kanban size={15} />,   hiddenKey: "board",    inProject: true  },
+  { view: "flow",     label: "Idea Flow",        icon: <Workflow size={11} />, iconSm: <Workflow size={15} />, hiddenKey: "flow",     inProject: true  },
+  { view: "agent",    label: "Agent",            icon: <Terminal size={11} />, iconSm: <Terminal size={15} />, hiddenKey: "agent",   inProject: true  },
+  { view: "graph",    label: "Knowledge Graph",  icon: <GitBranch size={13} />,iconSm: <GitBranch size={15} />,hiddenKey: "graph",    inProject: false },
+  { view: "insights", label: "Insights",         icon: <BarChart2 size={13} />,iconSm: <BarChart2 size={15} />,hiddenKey: "insights", inProject: false },
+];
+
 export function Sidebar() {
   const {
     sidebarCollapsed, toggleSidebar,
@@ -28,7 +49,18 @@ export function Sidebar() {
     setActiveProject, setView, toggleSearch, toggleChat,
     createProject, updateProject, deleteProject,
     chatOpen, searchOpen,
+    hiddenViews,
   } = useCairnStore();
+
+  // All navigable views in order (overview + notes always first)
+  const visibleNavItems = VIEW_NAV.filter((item) => !hiddenViews.has(item.hiddenKey));
+  // ⌘1 = overview, ⌘2 = notes, then visible views in order
+  const shortcutBase = 3; // first view after overview+notes
+  function shortcutLabel(item: ViewNavItem): string {
+    const idx = visibleNavItems.indexOf(item);
+    const num = idx + shortcutBase;
+    return num <= 9 ? `⌘${num}` : "";
+  }
 
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set([activeProjectId ?? ""]));
   const [creatingProject, setCreatingProject]   = useState(false);
@@ -70,36 +102,22 @@ export function Sidebar() {
             <Search size={15} />
           </button>
         </Tooltip>
-        <Tooltip content="AI Chat (⌘/)" side="right">
-          <button onClick={toggleChat}
-            className={cn("p-2 rounded-md transition-colors", chatOpen ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
-            <MessageSquare size={15} />
-          </button>
-        </Tooltip>
-        <Tooltip content="Idea Flow (⌘4)" side="right">
-          <button onClick={() => setView("flow")}
-            className={cn("p-2 rounded-md transition-colors", activeView === "flow" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
-            <Workflow size={15} />
-          </button>
-        </Tooltip>
-        <Tooltip content="Agent (⌘5)" side="right">
-          <button onClick={() => setView("agent")}
-            className={cn("p-2 rounded-md transition-colors", activeView === "agent" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
-            <Terminal size={15} />
-          </button>
-        </Tooltip>
-        <Tooltip content="Knowledge Graph (⌘6)" side="right">
-          <button onClick={() => setView("graph")}
-            className={cn("p-2 rounded-md transition-colors", activeView === "graph" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
-            <GitBranch size={15} />
-          </button>
-        </Tooltip>
-        <Tooltip content="Insights (⌘7)" side="right">
-          <button onClick={() => setView("insights")}
-            className={cn("p-2 rounded-md transition-colors", activeView === "insights" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
-            <BarChart2 size={15} />
-          </button>
-        </Tooltip>
+        {!hiddenViews.has("chat") && (
+          <Tooltip content="AI Chat (⌘/)" side="right">
+            <button onClick={toggleChat}
+              className={cn("p-2 rounded-md transition-colors", chatOpen ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
+              <MessageSquare size={15} />
+            </button>
+          </Tooltip>
+        )}
+        {visibleNavItems.map((item) => (
+          <Tooltip key={item.view} content={`${item.label} (${shortcutLabel(item)})`} side="right">
+            <button onClick={() => setView(item.view)}
+              className={cn("p-2 rounded-md transition-colors", activeView === item.view ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
+              {item.iconSm}
+            </button>
+          </Tooltip>
+        ))}
       </aside>
     );
   }
@@ -118,12 +136,14 @@ export function Sidebar() {
             <span className="ml-auto text-[0.714rem] text-[var(--text-tertiary)] font-mono">⌘K</span>
           </button>
         </Tooltip>
-        <Tooltip content="AI Chat (⌘/)">
-          <button onClick={toggleChat}
-            className={cn("p-1.5 rounded-md transition-colors", chatOpen ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
-            <MessageSquare size={13} />
-          </button>
-        </Tooltip>
+        {!hiddenViews.has("chat") && (
+          <Tooltip content="AI Chat (⌘/)">
+            <button onClick={toggleChat}
+              className={cn("p-1.5 rounded-md transition-colors", chatOpen ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
+              <MessageSquare size={13} />
+            </button>
+          </Tooltip>
+        )}
       </div>
 
       {/* Projects list */}
@@ -151,6 +171,8 @@ export function Sidebar() {
               onSelectView={(view) => { setActiveProject(project.id); setView(view); }}
               onRename={(name) => updateProject(project.id, { name })}
               onDelete={() => deleteProject(project.id)}
+              hiddenViews={hiddenViews}
+              visibleNavItems={visibleNavItems}
             />
           ))}
 
@@ -175,20 +197,18 @@ export function Sidebar() {
         )}
       </nav>
 
-      {/* Graph + Settings */}
+      {/* Bottom nav: workspace-level views + Settings */}
       <div className="border-t border-[var(--border)] p-2 space-y-0.5">
-        <button onClick={() => setView("graph")}
-          className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors",
-            activeView === "graph" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
-          <GitBranch size={13} /><span>Knowledge Graph</span>
-          <span className="ml-auto text-[0.714rem] font-mono text-[var(--text-tertiary)]">⌘6</span>
-        </button>
-        <button onClick={() => setView("insights")}
-          className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors",
-            activeView === "insights" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
-          <BarChart2 size={13} /><span>Insights</span>
-          <span className="ml-auto text-[0.714rem] font-mono text-[var(--text-tertiary)]">⌘7</span>
-        </button>
+        {visibleNavItems.filter((item) => !item.inProject).map((item) => (
+          <button key={item.view} onClick={() => setView(item.view)}
+            className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors",
+              activeView === item.view ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
+            {item.icon}<span>{item.label}</span>
+            {shortcutLabel(item) && (
+              <span className="ml-auto text-[0.714rem] font-mono text-[var(--text-tertiary)]">{shortcutLabel(item)}</span>
+            )}
+          </button>
+        ))}
         <button onClick={() => setView("settings")}
           className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors",
             activeView === "settings" ? "text-[var(--text-primary)] bg-[var(--surface-2)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
@@ -207,9 +227,11 @@ interface ProjectItemProps {
   activeView: string;
   onSelectView: (view: "overview" | "notes" | "board" | "flow" | "graph" | "chat" | "agent") => void;
   onRename: (name: string) => void; onDelete: () => void;
+  hiddenViews: Set<string>;
+  visibleNavItems: ViewNavItem[];
 }
 
-function ProjectItem({ project, isActive, isExpanded, onToggleExpand, onSelectProject, activeView, onSelectView, onRename, onDelete }: ProjectItemProps) {
+function ProjectItem({ project, isActive, isExpanded, onToggleExpand, onSelectProject, activeView, onSelectView, onRename, onDelete, hiddenViews, visibleNavItems }: ProjectItemProps) {
   const [renaming, setRenaming]             = useState(false);
   const [renameValue, setRenameValue]       = useState(project.name);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -291,9 +313,15 @@ function ProjectItem({ project, isActive, isExpanded, onToggleExpand, onSelectPr
           <div className="ml-4 mt-0.5 space-y-0.5 border-l border-[var(--border)] pl-2">
             <NavItem icon={<Hash size={11} />} label="Overview" isActive={isActive && activeView === "overview"} onClick={() => onSelectView("overview")} />
             <NavItem icon={<FileText size={11} />} label="Notes" isActive={isActive && activeView === "notes"} onClick={() => onSelectView("notes")} />
-            <NavItem icon={<Kanban size={11} />} label="Board" isActive={isActive && activeView === "board"} onClick={() => onSelectView("board")} />
-            <NavItem icon={<Workflow size={11} />} label="Idea Flow" isActive={isActive && activeView === "flow"} onClick={() => onSelectView("flow")} />
-            <NavItem icon={<Terminal size={11} />} label="Agent" isActive={isActive && activeView === "agent"} onClick={() => onSelectView("agent")} />
+            {visibleNavItems.filter((item) => item.inProject).map((item) => (
+              <NavItem
+                key={item.view}
+                icon={item.icon}
+                label={item.label}
+                isActive={isActive && activeView === item.view}
+                onClick={() => onSelectView(item.view as "board" | "flow" | "agent")}
+              />
+            ))}
           </div>
         )}
       </div>
