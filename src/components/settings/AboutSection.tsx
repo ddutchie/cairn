@@ -11,7 +11,9 @@ export function AboutSection() {
   const [licensesOpen, setLicensesOpen] = useState(false);
   const [changelogOpen, setChangelogOpen] = useState(true);
   const [changelog, setChangelog] = useState<string | null>(null);
-  const { stack, allLicenses } = licensesData;
+  const { stackByCategory, allLicenses } = licensesData as typeof licensesData & {
+    stackByCategory: { category: string; entries: typeof licensesData.stack }[];
+  };
 
   useEffect(() => {
     if (typeof window !== "undefined" && window.electron?.latestChangelog) {
@@ -47,22 +49,27 @@ export function AboutSection() {
         )}
 
         {/* Stack */}
-        <div className="space-y-2">
+        <div className="space-y-3">
           <div className="text-xs font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">Stack</div>
-          <div className="grid grid-cols-2 gap-2">
-            {stack.map((entry) => (
-              <div
-                key={entry.name}
-                className="flex items-center justify-between px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--surface)]"
-              >
-                <div>
-                  <span className="text-xs font-medium text-[var(--text-primary)]">{entry.label}</span>
-                  <span className="text-[0.714rem] text-[var(--text-tertiary)] ml-1.5">{entry.version}</span>
-                </div>
-                <span className="text-[0.786rem] text-[var(--text-tertiary)]">{entry.role}</span>
+          {stackByCategory.map(({ category, entries }) => (
+            <div key={category} className="space-y-1.5">
+              <div className="text-[0.714rem] font-semibold uppercase tracking-wider text-[var(--text-tertiary)] opacity-60">{category}</div>
+              <div className="grid grid-cols-2 gap-1.5">
+                {entries.map((entry) => (
+                  <div
+                    key={entry.name}
+                    className="flex items-center justify-between px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--surface)]"
+                  >
+                    <div>
+                      <span className="text-xs font-medium text-[var(--text-primary)]">{entry.label}</span>
+                      <span className="text-[0.714rem] text-[var(--text-tertiary)] ml-1.5">{entry.version}</span>
+                    </div>
+                    <span className="text-[0.714rem] text-[var(--text-tertiary)]">{entry.role}</span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
         </div>
 
         {/* Licenses */}
