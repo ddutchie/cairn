@@ -6,6 +6,7 @@ import {
   FileText,
   Kanban,
   Workflow,
+  Terminal,
   MessageSquare,
   ChevronRight,
 } from "lucide-react";
@@ -21,6 +22,7 @@ const VIEW_TABS = [
   { id: "notes" as const, label: "Notes", icon: FileText },
   { id: "board" as const, label: "Board", icon: Kanban },
   { id: "flow" as const, label: "Flow", icon: Workflow },
+  { id: "agent" as const, label: "Agent", icon: Terminal },
 ] as const;
 
 export function Topbar() {

@@ -53,9 +53,23 @@ function toProject(row: any) {
     priority: row.priority as string,
     dueDate: row.due_date as string | undefined,
     tagIds: p(row.tag_ids) as string[],
+    codeDirectory: row.code_directory as string | null ?? null,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
     archivedAt: row.archived_at as string | undefined,
+  };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function toCodingAgent(row: any) {
+  return {
+    id: row.id as string,
+    name: row.name as string,
+    binaryPath: row.binary_path as string,
+    args: row.args as string,
+    isDefault: row.is_default === 1,
+    createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string,
   };
 }
 
@@ -201,25 +215,31 @@ export function createProject(db: Database.Database, p: {
 export function updateProject(db: Database.Database, id: string, patch: Partial<{
   name: string; description: string; icon: string; status: string;
   priority: string; dueDate: string; tagIds: string[]; archivedAt: string;
+  codeDirectory: string | null;
 }>) {
   const now = ts();
+  // codeDirectory is nullable — use a sentinel to distinguish "not provided" from "set to null"
+  const hasCodeDir = Object.prototype.hasOwnProperty.call(patch, "codeDirectory");
   db.prepare(`
     UPDATE projects SET
-      name        = COALESCE(?, name),
-      description = COALESCE(?, description),
-      icon        = COALESCE(?, icon),
-      status      = COALESCE(?, status),
-      priority    = COALESCE(?, priority),
-      due_date    = COALESCE(?, due_date),
-      tag_ids     = COALESCE(?, tag_ids),
-      archived_at = COALESCE(?, archived_at),
-      updated_at  = ?
+      name           = COALESCE(?, name),
+      description    = COALESCE(?, description),
+      icon           = COALESCE(?, icon),
+      status         = COALESCE(?, status),
+      priority       = COALESCE(?, priority),
+      due_date       = COALESCE(?, due_date),
+      tag_ids        = COALESCE(?, tag_ids),
+      archived_at    = COALESCE(?, archived_at),
+      code_directory = ${hasCodeDir ? "?" : "code_directory"},
+      updated_at     = ?
     WHERE id = ?
   `).run(
     patch.name ?? null, patch.description ?? null, patch.icon ?? null,
     patch.status ?? null, patch.priority ?? null, patch.dueDate ?? null,
     patch.tagIds ? j(patch.tagIds) : null,
-    patch.archivedAt ?? null, now, id,
+    patch.archivedAt ?? null,
+    ...(hasCodeDir ? [patch.codeDirectory ?? null] : []),
+    now, id,
   );
   return toProject(db.prepare("SELECT * FROM projects WHERE id = ?").get(id));
 }
@@ -930,4 +950,51 @@ export function searchTasks(db: Database.Database, opts: SearchTasksOpts) {
     .all(opts.projectId ?? null, opts.projectId ?? null, `%${q}%`, `%${q}%`, limit)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .map((row) => toCard(row as any));
+}
+
+// ── Coding Agents ─────────────────────────────────────────────────────────────
+
+export function getCodingAgents(db: Database.Database) {
+  return (db.prepare("SELECT * FROM coding_agents ORDER BY created_at").all() as any[])
+    .map(toCodingAgent);
+}
+
+export function getCodingAgentById(db: Database.Database, id: string) {
+  const row = db.prepare("SELECT * FROM coding_agents WHERE id = ?").get(id);
+  return row ? toCodingAgent(row) : null;
+}
+
+export function saveCodingAgent(
+  db: Database.Database,
+  agent: { id: string; name: string; binaryPath: string; args: string; isDefault: boolean },
+) {
+  const now = ts();
+  db.prepare(`
+    INSERT INTO coding_agents (id, name, binary_path, args, is_default, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      name        = excluded.name,
+      binary_path = excluded.binary_path,
+      args        = excluded.args,
+      is_default  = excluded.is_default,
+      updated_at  = excluded.updated_at
+  `).run(agent.id, agent.name, agent.binaryPath, agent.args, agent.isDefault ? 1 : 0, now, now);
+  return getCodingAgentById(db, agent.id)!;
+}
+
+export function setDefaultCodingAgent(db: Database.Database, id: string) {
+  const setDefault = db.transaction(() => {
+    db.prepare("UPDATE coding_agents SET is_default = 0, updated_at = ?").run(ts());
+    db.prepare("UPDATE coding_agents SET is_default = 1, updated_at = ? WHERE id = ?").run(ts(), id);
+  });
+  setDefault();
+}
+
+export function deleteCodingAgent(db: Database.Database, id: string) {
+  db.prepare("DELETE FROM coding_agents WHERE id = ?").run(id);
+}
+
+export function setProjectCodeDirectory(db: Database.Database, projectId: string, path: string | null) {
+  db.prepare("UPDATE projects SET code_directory = ?, updated_at = ? WHERE id = ?")
+    .run(path ?? null, ts(), projectId);
 }

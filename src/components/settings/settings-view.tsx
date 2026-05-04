@@ -8,6 +8,7 @@ import {
   Keyboard,
   Info,
   Tag,
+  Terminal,
 } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { cn } from "@/lib/utils";
@@ -17,8 +18,9 @@ import { TagsSettings } from "./TagsSettings";
 import { ShortcutsSettings } from "./ShortcutsSettings";
 import { DataSettings } from "./DataSettings";
 import { AboutSection } from "./AboutSection";
+import { AgentSettings } from "./AgentSettings";
 
-type SettingsSection = "general" | "ai" | "data" | "about" | "shortcuts" | "tags";
+type SettingsSection = "general" | "ai" | "agents" | "data" | "about" | "shortcuts" | "tags";
 
 export function SettingsView() {
   const [section, setSection] = useState<SettingsSection>("general");
@@ -31,6 +33,7 @@ export function SettingsView() {
         {[
           { id: "general" as const, label: "General", icon: Settings },
           { id: "ai" as const, label: "AI & Chat", icon: Bot },
+          { id: "agents" as const, label: "Coding Agents", icon: Terminal },
           { id: "tags" as const, label: "Tags", icon: Tag },
           { id: "shortcuts" as const, label: "Shortcuts", icon: Keyboard },
           { id: "data" as const, label: "Data", icon: Database },
@@ -65,6 +68,7 @@ export function SettingsView() {
         <div key={section} className="max-w-2xl mx-auto px-8 py-8 space-y-8 animate-fade-in">
           {section === "general" && <GeneralSettings />}
           {section === "ai" && <AISettings />}
+          {section === "agents" && <AgentSettings />}
           {section === "tags" && <TagsSettings />}
           {section === "shortcuts" && <ShortcutsSettings />}
           {section === "data" && (

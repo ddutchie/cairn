@@ -50,6 +50,7 @@ import { InsightsView } from "@/components/insights/InsightsView";
 import { ChatPanel } from "@/components/chat/chat-panel";
 import { SearchPanel } from "@/components/search/search-panel";
 import { SettingsView } from "@/components/settings/settings-view";
+import { AgentView } from "@/components/agent/AgentView";
 import { Onboarding } from "@/components/onboarding";
 
 export default function Home() {
@@ -274,6 +275,7 @@ export default function Home() {
            {activeView === "graph"     && <KnowledgeGraphView />}
            {activeView === "insights"  && <InsightsView />}
            {activeView === "settings"  && <SettingsView />}
+           {activeView === "agent"    && <AgentView />}
           </div>
         </div>
 

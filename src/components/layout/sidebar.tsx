@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect } from "react";
 import {
   FileText, Kanban, Settings, Search, MessageSquare,
   ChevronDown, ChevronRight, Plus, MoreHorizontal,
-  FolderOpen, Hash, Layers, Pencil, Trash2, GitBranch, BarChart2, Workflow,
+  FolderOpen, Hash, Layers, Pencil, Trash2, GitBranch, BarChart2, Workflow, Terminal,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
@@ -80,6 +80,12 @@ export function Sidebar() {
           <button onClick={() => setView("flow")}
             className={cn("p-2 rounded-md transition-colors", activeView === "flow" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
             <Workflow size={15} />
+          </button>
+        </Tooltip>
+        <Tooltip content="Agent (⌘7)" side="right">
+          <button onClick={() => setView("agent")}
+            className={cn("p-2 rounded-md transition-colors", activeView === "agent" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
+            <Terminal size={15} />
           </button>
         </Tooltip>
         <Tooltip content="Knowledge Graph (⌘5)" side="right">
@@ -199,7 +205,7 @@ interface ProjectItemProps {
   project: Project; isActive: boolean; isExpanded: boolean;
   onToggleExpand: () => void; onSelectProject: () => void;
   activeView: string;
-  onSelectView: (view: "overview" | "notes" | "board" | "flow" | "graph" | "chat") => void;
+  onSelectView: (view: "overview" | "notes" | "board" | "flow" | "graph" | "chat" | "agent") => void;
   onRename: (name: string) => void; onDelete: () => void;
 }
 
@@ -287,6 +293,7 @@ function ProjectItem({ project, isActive, isExpanded, onToggleExpand, onSelectPr
             <NavItem icon={<FileText size={11} />} label="Notes" isActive={isActive && activeView === "notes"} onClick={() => onSelectView("notes")} />
             <NavItem icon={<Kanban size={11} />} label="Board" isActive={isActive && activeView === "board"} onClick={() => onSelectView("board")} />
             <NavItem icon={<Workflow size={11} />} label="Idea Flow" isActive={isActive && activeView === "flow"} onClick={() => onSelectView("flow")} />
+            <NavItem icon={<Terminal size={11} />} label="Agent" isActive={isActive && activeView === "agent"} onClick={() => onSelectView("agent")} />
           </div>
         )}
       </div>

@@ -200,6 +200,47 @@ const api = {
   },
   markMcpNotificationsRead: () => ipcRenderer.invoke("mcp:markNotificationsRead"),
 
+  // ── Agent / coding sessions ───────────────────
+  agent: {
+    getCodingAgents: () => ipcRenderer.invoke("agent:getCodingAgents"),
+    saveCodingAgent: (agent: unknown) => ipcRenderer.invoke("agent:saveCodingAgent", agent),
+    deleteCodingAgent: (id: string) => ipcRenderer.invoke("agent:deleteCodingAgent", { id }),
+    setDefaultAgent: (id: string) => ipcRenderer.invoke("agent:setDefaultAgent", { id }),
+
+    saveProjectCodeDir: (projectId: string, dirPath: string | null) =>
+      ipcRenderer.invoke("agent:saveProjectCodeDir", { projectId, dirPath }),
+
+    readDir: (dirPath: string) => ipcRenderer.invoke("agent:readDir", { dirPath }),
+    readFile: (filePath: string) => ipcRenderer.invoke("agent:readFile", { filePath }),
+    writeFile: (filePath: string, content: string) =>
+      ipcRenderer.invoke("agent:writeFile", { filePath, content }),
+    validateDirectory: (dirPath: string) =>
+      ipcRenderer.invoke("agent:validateDirectory", { dirPath }),
+    pickDirectory: () => ipcRenderer.invoke("agent:pickDirectory"),
+    pickFile: () => ipcRenderer.invoke("agent:pickFile"),
+
+    spawn: (payload: unknown) => ipcRenderer.invoke("agent:spawn", payload),
+    input: (sessionId: string, data: string) =>
+      ipcRenderer.invoke("agent:input", { sessionId, data }),
+    resize: (sessionId: string, cols: number, rows: number) =>
+      ipcRenderer.invoke("agent:resize", { sessionId, cols, rows }),
+    kill: (sessionId: string) => ipcRenderer.invoke("agent:kill", { sessionId }),
+
+    onData: (cb: (payload: { sessionId: string; data: string }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, payload: { sessionId: string; data: string }) => cb(payload);
+      ipcRenderer.on("agent:data", handler);
+      return () => ipcRenderer.off("agent:data", handler);
+    },
+
+    onExit: (cb: (payload: { sessionId: string; exitCode: number }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, payload: { sessionId: string; exitCode: number }) => cb(payload);
+      ipcRenderer.on("agent:exit", handler);
+      return () => ipcRenderer.off("agent:exit", handler);
+    },
+  },
+
 } as const;
 
 contextBridge.exposeInMainWorld("electron", api);
