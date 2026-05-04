@@ -9,7 +9,9 @@ import { StepWorkspaceDetails } from "./StepWorkspaceDetails";
 import { StepAppearance } from "./StepAppearance";
 import { StepAISetup } from "./StepAISetup";
 import { StepMCP } from "./StepMCP";
+import { StepViews } from "./StepViews";
 import { StepDone } from "./StepDone";
+import type { ToggleableView } from "@/store/slices/ui";
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -27,6 +29,7 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
     theme, setTheme,
     fontScale, setFontScale,
     aiConfig, setAIConfig,
+    hiddenViews, toggleViewVisibility, setHiddenViews,
   } = useCairnStore();
 
   // ── Wizard step ──────────────────────────────────────────────────────────────
@@ -37,6 +40,17 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
   const [wsName, setWsName] = useState("");
   const [wsIcon, setWsIcon] = useState(DEFAULT_WORKSPACE_ICON);
   const [submitting, setSubmitting] = useState(false);
+
+  // ── View visibility (local copy; committed when user hits Next on StepViews) ─
+  const [localHidden, setLocalHidden] = useState<Set<ToggleableView>>(new Set(hiddenViews));
+
+  function toggleLocalView(view: ToggleableView) {
+    setLocalHidden((prev) => {
+      const next = new Set(prev);
+      if (next.has(view)) { next.delete(view); } else { next.add(view); }
+      return next;
+    });
+  }
 
   // ── AI ───────────────────────────────────────────────────────────────────────
   const [aiEnabled, setAiEnabled] = useState(aiConfig.aiEnabled ?? true);
@@ -150,7 +164,21 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
     return (
       <StepMCP
         onBack={() => setStep("ai-setup")}
-        onNext={() => setStep("done")}
+        onNext={() => setStep("views")}
+      />
+    );
+  }
+
+  if (step === "views") {
+    return (
+      <StepViews
+        hidden={localHidden}
+        onToggle={toggleLocalView}
+        onBack={() => setStep("mcp")}
+        onNext={() => {
+          setHiddenViews([...localHidden]);
+          setStep("done");
+        }}
       />
     );
   }
@@ -158,7 +186,7 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
   // step === "done"
   return (
     <StepDone
-      onBack={() => setStep("mcp")}
+      onBack={() => setStep("views")}
       onComplete={onComplete}
     />
   );

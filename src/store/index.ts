@@ -22,8 +22,8 @@ import { DEFAULT_AI_CONFIG, AI_CONFIG_KEY, ACTIVE_PROJECT_KEY } from "@/lib/cons
 
 // ── Slice imports ─────────────────────────────────────────────────────────────
 import { createUISlice } from "./slices/ui";
-import type { UISlice, AIConfig, Theme } from "./slices/ui";
-import { applyTheme, THEME_KEY, applyFontScale, FONT_SCALE_KEY, DEFAULT_FONT_SCALE } from "./slices/ui";
+import type { UISlice, AIConfig, Theme, ToggleableView } from "./slices/ui";
+import { applyTheme, THEME_KEY, applyFontScale, FONT_SCALE_KEY, DEFAULT_FONT_SCALE, HIDDEN_VIEWS_KEY } from "./slices/ui";
 import type { FontScale } from "./slices/ui";
 import { createWorkspaceSlice } from "./slices/workspace";
 import type { WorkspaceSlice } from "./slices/workspace";
@@ -175,6 +175,11 @@ export const useCairnStore = create<CairnStore>()(
         a[0]({ aiConfig: { ...DEFAULT_AI_CONFIG, ...savedConfig } });
       }
 
+      const savedHidden = storage.get<ToggleableView[]>(HIDDEN_VIEWS_KEY);
+      if (savedHidden) {
+        a[0]({ hiddenViews: new Set(savedHidden) });
+      }
+
       const saved = loadPersisted();
       if (saved && saved.workspaces.length > 0) {
         a[0]({
@@ -211,6 +216,11 @@ export const useCairnStore = create<CairnStore>()(
       const savedConfig = storage.get<AIConfig>(AI_CONFIG_KEY);
       if (savedConfig) {
         set({ aiConfig: { ...DEFAULT_AI_CONFIG, ...savedConfig } });
+      }
+
+      const savedHidden = storage.get<ToggleableView[]>(HIDDEN_VIEWS_KEY);
+      if (savedHidden) {
+        set({ hiddenViews: new Set(savedHidden) });
       }
 
       const snap = (await window.electron!.snapshot()) as PersistedState;

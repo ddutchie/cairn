@@ -8,6 +8,16 @@ import type { ID, AppUIState } from "@/types";
 import { storage } from "@/lib/storage";
 import { DEFAULT_AI_CONFIG, AI_CONFIG_KEY, ACTIVE_PROJECT_KEY } from "@/lib/constants";
 
+// ── View visibility ───────────────────────────────────────────────────────────
+
+/** Views that can be hidden. Overview and Notes are always visible. */
+export type ToggleableView = "board" | "flow" | "agent" | "graph" | "insights" | "chat";
+
+export const HIDDEN_VIEWS_KEY = "hiddenViews";
+
+/** Views that are forcibly hidden when AI is disabled. */
+export const AI_DEPENDENT_VIEWS: ToggleableView[] = ["chat", "agent"];
+
 // ── AI / MCP config ───────────────────────────────────────────────────────────
 
 export interface AIConfig {
@@ -82,6 +92,11 @@ export interface UISlice extends AppUIState {
   fontScale: FontScale;
   setFontScale: (scale: FontScale) => void;
 
+  // View visibility
+  hiddenViews: Set<ToggleableView>;
+  toggleViewVisibility: (view: ToggleableView) => void;
+  setHiddenViews: (views: ToggleableView[]) => void;
+
   // Navigation / selections
   setActiveWorkspace: (id: ID) => void;
   setActiveProject: (id: ID | null) => void;
@@ -108,14 +123,46 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
   aiConfig: DEFAULT_AI_CONFIG,
   theme: "dark" as Theme,
   fontScale: DEFAULT_FONT_SCALE, // 1.2 = M (~16.8px)
+  hiddenViews: new Set<ToggleableView>(),
 
   // ── AI config ──────────────────────────────────
   setAIConfig(patch) {
     set((s) => {
       const next = { ...s.aiConfig, ...patch };
       storage.set(AI_CONFIG_KEY, next);
+      // Sync AI-dependent views when aiEnabled changes
+      if (patch.aiEnabled !== undefined) {
+        const hidden = new Set(s.hiddenViews);
+        if (!patch.aiEnabled) {
+          AI_DEPENDENT_VIEWS.forEach((v) => hidden.add(v));
+        } else {
+          AI_DEPENDENT_VIEWS.forEach((v) => hidden.delete(v));
+        }
+        storage.set(HIDDEN_VIEWS_KEY, [...hidden]);
+        return { aiConfig: next, hiddenViews: hidden };
+      }
       return { aiConfig: next };
     });
+  },
+
+  // ── View visibility ─────────────────────────────
+  toggleViewVisibility(view) {
+    set((s) => {
+      const hidden = new Set(s.hiddenViews);
+      if (hidden.has(view)) {
+        hidden.delete(view);
+      } else {
+        hidden.add(view);
+      }
+      storage.set(HIDDEN_VIEWS_KEY, [...hidden]);
+      return { hiddenViews: hidden };
+    });
+  },
+
+  setHiddenViews(views) {
+    const hidden = new Set<ToggleableView>(views);
+    storage.set(HIDDEN_VIEWS_KEY, [...hidden]);
+    set({ hiddenViews: hidden });
   },
 
   // ── Theme ──────────────────────────────────────

@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { useCairnStore, type Theme, type FontScale } from "@/store";
 import { cn } from "@/lib/utils";
 import { SettingsGroup, SettingsRow } from "./shared";
+import { ViewVisibilitySettings } from "./ViewVisibilitySettings";
 
 const FONT_SCALE_OPTIONS: { value: FontScale; label: string; description: string }[] = [
   { value: 1,   label: "XS", description: "100%" },
@@ -27,6 +28,7 @@ export function GeneralSettings() {
   ];
 
   return (
+    <>
     <SettingsGroup title="General" description="Basic app preferences">
       <SettingsRow label="Workspace name" description="Name shown in the sidebar">
         <Input
@@ -81,6 +83,8 @@ export function GeneralSettings() {
       </SettingsRow>
       <ChangeWorkspaceRow />
     </SettingsGroup>
+    <ViewVisibilitySettings />
+    </>
   );
 }
 

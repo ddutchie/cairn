@@ -67,8 +67,14 @@ export default function Home() {
     createNote,
     activeProjectId,
     aiConfig,
+    hiddenViews,
   } = useCairnStore();
   const aiEnabled = aiConfig.aiEnabled ?? true;
+
+  // All navigable views in shortcut order; overview=⌘1, notes=⌘2, then visible extras
+  const ORDERED_VIEWS = (["board", "flow", "agent", "graph", "insights"] as const).filter(
+    (v) => !hiddenViews.has(v)
+  );
 
   // null = still loading
   // "workspace" = needs workspace folder setup (existing or new user)
@@ -152,11 +158,11 @@ export default function Home() {
       else if (mod && key === "\\") { e.preventDefault(); toggleSidebar(); }
       else if (mod && key === "1") { e.preventDefault(); setView("overview"); }
       else if (mod && key === "2") { e.preventDefault(); setView("notes"); }
-      else if (mod && key === "3") { e.preventDefault(); setView("board"); }
-      else if (mod && key === "4") { e.preventDefault(); setView("flow"); }
-      else if (mod && key === "5") { e.preventDefault(); setView("agent"); }
-      else if (mod && key === "6") { e.preventDefault(); setView("graph"); }
-      else if (mod && key === "7") { e.preventDefault(); setView("insights"); }
+      else if (mod && /^[3-9]$/.test(key)) {
+        const idx = parseInt(key, 10) - 3; // 0-based index into ORDERED_VIEWS
+        const view = ORDERED_VIEWS[idx];
+        if (view) { e.preventDefault(); setView(view); }
+      }
       else if (mod && key === "n" && !inInput) {
         e.preventDefault();
         if (activeProjectId) {
@@ -193,7 +199,7 @@ export default function Home() {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("cairn:open-chat", handleOpenChat);
     };
-  }, [toggleSearch, toggleChat, toggleSidebar, setView, activeProjectId, createNote, chatOpen, aiEnabled]);
+  }, [toggleSearch, toggleChat, toggleSidebar, setView, activeProjectId, createNote, chatOpen, aiEnabled, hiddenViews]);
 
   // Still loading
   if (onboardingState === null) {
