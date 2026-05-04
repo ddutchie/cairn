@@ -169,9 +169,33 @@ export function registerAgentHandlers(db: Database): void {
         throw new Error(`Agent binary not found: ${agent.binaryPath}`);
       }
 
-      // Build args — prompt as a discrete element, never interpolated
-      const baseArgs = agent.args.trim() ? agent.args.trim().split(/\s+/) : [];
-      const allArgs = [...baseArgs, payload.prompt];
+      // Build args using {prompt} placeholder substitution.
+      // If args contains {prompt}, substitute in-place (supports any CLI convention).
+      // If args has no placeholder, append the prompt as a trailing positional only
+      // when args is non-empty — otherwise launch interactively with no prompt arg.
+      //
+      // Examples:
+      //   args = "run"               → ["run", "<prompt>"]   (OpenCode)
+      //   args = "--message {prompt}"→ ["--message", "<prompt>"]  (custom)
+      //   args = ""                  → []  (interactive TUI, no prompt injected)
+      const PLACEHOLDER = "{prompt}";
+      let allArgs: string[];
+      if (agent.args.includes(PLACEHOLDER)) {
+        // Replace placeholder token — keep surrounding tokens intact
+        allArgs = agent.args
+          .split(/\s+/)
+          .flatMap((token) =>
+            token === PLACEHOLDER
+              ? [payload.prompt]
+              : [token.replace(PLACEHOLDER, payload.prompt)]
+          );
+      } else if (agent.args.trim()) {
+        // No placeholder: append prompt after the provided args
+        allArgs = [...agent.args.trim().split(/\s+/), payload.prompt];
+      } else {
+        // Empty args: interactive mode — no prompt injected
+        allArgs = [];
+      }
 
       const pty = nodePty.spawn(agent.binaryPath, allArgs, {
         name: "xterm-256color",

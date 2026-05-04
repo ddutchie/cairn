@@ -87,12 +87,15 @@ function AgentForm({ initial, onSave, onCancel }: AgentFormProps) {
         {/* Args */}
         <div className="col-span-2">
           <label className="text-[0.714rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)] block mb-1">
-            Arguments <span className="normal-case font-normal">(optional, prepended before prompt)</span>
+            Arguments
+            <span className="normal-case font-normal ml-1">
+              — use <code className="text-[var(--accent)]">{"{prompt}"}</code> as placeholder, or leave empty for interactive
+            </span>
           </label>
           <input
             value={args}
             onChange={(e) => setArgs(e.target.value)}
-            placeholder="e.g. --model claude-opus-4-5"
+            placeholder="e.g. run  or  run {prompt}  or  --message {prompt}"
             className="w-full rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-sm px-3 py-1.5 font-mono focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
           />
         </div>

@@ -45,11 +45,15 @@ function SessionMount({ session, isActive }: SessionMountProps) {
       const { FitAddon } = await import("@xterm/addon-fit");
       const { Unicode11Addon } = await import("@xterm/addon-unicode11");
 
+      // Resolve font family from CSS — xterm canvas cannot read CSS variables directly
+      const resolvedFont = getComputedStyle(document.documentElement)
+        .getPropertyValue("--font-mono").trim() || "'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace";
+
       const terminal = new Terminal({
         allowProposedApi: true,
         cursorBlink: true,
         fontSize: 13,
-        fontFamily: "var(--font-mono, 'Cascadia Code', 'Fira Code', monospace)",
+        fontFamily: resolvedFont,
         theme: {
           background: getComputedStyle(document.documentElement)
             .getPropertyValue("--background").trim() || "#1a1a1a",
@@ -121,7 +125,7 @@ function SessionMount({ session, isActive }: SessionMountProps) {
     <div
       className={cn("flex-1 min-h-0 overflow-hidden", !isActive && "hidden")}
       ref={containerRef}
-      style={{ background: "var(--background)" }}
+      style={{ background: "var(--background)", height: "100%", width: "100%" }}
     />
   );
 }
