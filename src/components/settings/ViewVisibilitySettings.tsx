@@ -48,7 +48,9 @@ export function ViewVisibilitySettings() {
               <p className="text-[0.714rem] text-[var(--text-tertiary)]">Always visible</p>
             </div>
           </div>
-          <div className="w-8 h-4 rounded-full bg-[var(--accent)] opacity-40 flex-shrink-0" />
+          <div className="relative w-8 h-4 rounded-full bg-[var(--accent)] opacity-40 flex-shrink-0 overflow-hidden">
+              <span className="absolute top-0.5 w-3 h-3 rounded-full bg-white shadow translate-x-[18px]" />
+            </div>
         </div>
       ))}
 
@@ -72,14 +74,14 @@ export function ViewVisibilitySettings() {
               aria-checked={visible}
               onClick={() => toggleViewVisibility(view)}
               className={cn(
-                "relative w-8 h-4 rounded-full transition-colors flex-shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]",
-                visible ? "bg-[var(--accent)]" : "bg-[var(--surface-3)]"
-              )}
+                  "relative w-8 h-4 rounded-full transition-colors flex-shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] overflow-hidden",
+                  visible ? "bg-[var(--accent)]" : "bg-[var(--surface-3)]"
+                )}
             >
               <span
                 className={cn(
                   "absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform",
-                  visible ? "translate-x-4" : "translate-x-0.5"
+                  visible ? "translate-x-[18px]" : "translate-x-0.5"
                 )}
               />
             </button>
