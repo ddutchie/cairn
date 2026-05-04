@@ -31,7 +31,7 @@ export function ChatMessageBubble({ message, onRetry }: ChatMessageBubbleProps) 
       <div className={cn("flex-1 min-w-0 space-y-1.5", isUser && "items-end flex flex-col")}>
         <div className={cn("px-3 py-2.5 rounded-xl text-xs leading-relaxed max-w-full",
           isUser ? "bg-[var(--accent)] text-white rounded-tr-sm" : "bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-secondary)] rounded-tl-sm")}>
-          {isUser ? <span className="whitespace-pre-wrap">{message.content}</span> : <MarkdownContent content={message.content} />}
+          <MarkdownContent content={message.content} />
         </div>
         {message.contextRefs && message.contextRefs.length > 0 && (
           <div className="flex flex-wrap gap-1">

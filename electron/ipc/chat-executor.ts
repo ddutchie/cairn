@@ -393,6 +393,12 @@ export async function executeTool(
       q.deleteCard(db, args.cardId as string);
       return { deleted: true, id: args.cardId, title: card.title };
     }
+    case "ask_questions": {
+      // Renderer-only tool — the modal intercepts the tool-call event and
+      // renders an inline question form. The executor just acknowledges so the
+      // tool loop can continue after the user submits answers.
+      return { ok: true, questions: args.questions };
+    }
     case "generate_prd": {
       return generatePrd(db, workspacePath, {
         projectId: args.projectId as string,

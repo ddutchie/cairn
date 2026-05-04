@@ -82,7 +82,7 @@ export function NotesView() {
     getProjectNotes, getArchivedProjectNotes,
     createNote, updateNote, deleteNote,
     archiveNote, restoreNote, moveNoteToProject, moveNoteToFolder,
-    revealNote, generatePrd,
+    revealNote,
     getTagById,
     getWorkspaceProjects,
     notes: allNotes,
@@ -456,8 +456,8 @@ export function NotesView() {
         )}
       </div>
 
-      {prdModalOpen && activeProjectId && (
-        <PrdModal projectId={activeProjectId} generatePrd={generatePrd} onClose={() => setPrdModalOpen(false)} />
+      {prdModalOpen && activeProjectId && activeWorkspaceId && (
+        <PrdModal projectId={activeProjectId} workspaceId={activeWorkspaceId} onClose={() => setPrdModalOpen(false)} />
       )}
 
       {dashboardTemplateOpen && (

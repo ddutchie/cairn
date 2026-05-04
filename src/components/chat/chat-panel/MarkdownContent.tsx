@@ -3,6 +3,7 @@
 import React from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkBreaks from "remark-breaks";
 import { MermaidDiagram } from "@/components/notes/MermaidDiagram";
 import { CodeBlock } from "@/components/notes/CodeBlock";
 
@@ -10,7 +11,7 @@ import { CodeBlock } from "@/components/notes/CodeBlock";
 export function MarkdownContent({ content }: { content: string }) {
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
+      remarkPlugins={[remarkGfm, remarkBreaks]}
       components={{
         p: ({ children }) => <p className="mb-1.5 last:mb-0 leading-relaxed">{children}</p>,
         strong: ({ children }) => <strong className="font-semibold text-[var(--text-primary)]">{children}</strong>,
