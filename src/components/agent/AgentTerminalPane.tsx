@@ -18,6 +18,7 @@ import { useEffect, useRef, useCallback } from "react";
 import { X, Terminal as TerminalIcon, CircleDot } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
+import { Tooltip } from "@/components/ui/tooltip";
 import { TerminalManager } from "./TerminalManager";
 import type { TerminalSession } from "@/store/slices/terminal-sessions";
 
@@ -269,14 +270,16 @@ function TerminalTab({ session, isActive, onActivate, onClose }: TerminalTabProp
       )}
 
       {/* Close */}
-      <span
-        role="button"
-        aria-label={`Close ${session.taskTitle}`}
-        onClick={onClose}
-        className="ml-0.5 p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-[var(--surface-2)] transition-all"
-      >
-        <X size={10} />
-      </span>
+      <Tooltip content="Close session" side="bottom">
+        <span
+          role="button"
+          aria-label={`Close ${session.taskTitle}`}
+          onClick={onClose}
+          className="ml-0.5 p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-[var(--surface-2)] transition-all"
+        >
+          <X size={10} />
+        </span>
+      </Tooltip>
     </button>
   );
 }

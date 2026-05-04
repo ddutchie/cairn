@@ -89,15 +89,28 @@ function AgentForm({ initial, onSave, onCancel }: AgentFormProps) {
           <label className="text-[0.714rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)] block mb-1">
             Arguments
             <span className="normal-case font-normal ml-1">
-              — use <code className="text-[var(--accent)]">{"{prompt}"}</code> as placeholder, or leave empty for interactive
+              — use <code className="text-[var(--accent)]">{"{\"{prompt}\"}"}</code> as placeholder, or leave empty for interactive
             </span>
           </label>
           <input
             value={args}
             onChange={(e) => setArgs(e.target.value)}
-            placeholder="e.g. run  or  run {prompt}  or  --message {prompt}"
+            placeholder="e.g. --prompt {prompt}  or  {prompt}  or  leave empty for interactive"
             className="w-full rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-sm px-3 py-1.5 font-mono focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
           />
+          <p className="mt-1 text-[0.714rem] text-[var(--text-tertiary)]">
+            opencode: use <code className="text-[var(--accent)]">--prompt {"{prompt}"}</code> or just <code className="text-[var(--accent)]">{"{prompt}"}</code>.
+            claude / aider: use <code className="text-[var(--accent)]">--message {"{prompt}"}</code>.
+            Leave empty for pure interactive TUI.
+          </p>
+          {/* Live preview */}
+          {binaryPath.trim() && (
+            <p className="mt-1 text-[0.714rem] font-mono text-[var(--text-tertiary)] truncate">
+              <span className="opacity-50">preview: </span>
+              {binaryPath.trim()}
+              {args.trim() ? ` ${args.trim()}` : ""}
+            </p>
+          )}
         </div>
 
         {/* Default toggle */}

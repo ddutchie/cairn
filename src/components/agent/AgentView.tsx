@@ -9,21 +9,28 @@
  * xterm cols/rows update with zero lag.
  */
 
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
 import { useCairnStore } from "@/store";
 import { FileTree } from "./FileTree";
 import { AgentEditor } from "./AgentEditor";
 import { AgentTerminalPane } from "./AgentTerminalPane";
+import { DiffViewer } from "./DiffViewer";
 import { TerminalManager } from "./TerminalManager";
+import { cn } from "@/lib/utils";
 
 const MIN_TREE_WIDTH = 160;
 const MIN_TERMINAL_WIDTH = 280;
 const DEFAULT_TREE_WIDTH = 220;
 const DEFAULT_TERMINAL_WIDTH = 380;
 
+type CentreTab = "editor" | "diff";
+
 export function AgentView() {
   const { activeProjectId, projects } = useCairnStore();
   const project = projects.find((p) => p.id === activeProjectId) ?? null;
+  const codeDirectory = project?.codeDirectory ?? null;
+
+  const [centreTab, setCentreTab] = useState<CentreTab>("editor");
 
   // DOM refs for the two resizable panes — widths are mutated directly,
   // never stored in React state, so no re-render occurs during drag.
@@ -122,9 +129,46 @@ export function AgentView() {
         aria-label="Resize file tree"
       />
 
-      {/* Centre pane — file editor */}
+      {/* Centre pane — tab bar + editor/diff */}
       <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
-        <AgentEditor />
+        {/* Tab bar */}
+        <div className="flex items-center gap-0.5 px-2 py-1 border-b border-[var(--border)] bg-[var(--surface)] flex-shrink-0">
+          <button
+            onClick={() => setCentreTab("editor")}
+            className={cn(
+              "px-2.5 py-0.5 rounded text-[0.714rem] transition-colors",
+              centreTab === "editor"
+                ? "text-[var(--text-primary)] bg-[var(--surface-2)]"
+                : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
+            )}
+          >
+            Editor
+          </button>
+          {codeDirectory && (
+            <button
+              onClick={() => setCentreTab("diff")}
+              className={cn(
+                "px-2.5 py-0.5 rounded text-[0.714rem] transition-colors",
+                centreTab === "diff"
+                  ? "text-[var(--text-primary)] bg-[var(--surface-2)]"
+                  : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
+              )}
+            >
+              Diff
+            </button>
+          )}
+        </div>
+
+        {/* CSS-hide editor so CM6 stays mounted when diff is active */}
+        <div className={cn("flex-1 min-h-0 overflow-hidden flex flex-col", centreTab !== "editor" && "hidden")}>
+          <AgentEditor />
+        </div>
+
+        {centreTab === "diff" && codeDirectory && (
+          <div className="flex-1 min-h-0 overflow-hidden">
+            <DiffViewer cwd={codeDirectory} />
+          </div>
+        )}
       </div>
 
       {/* Right resize divider */}

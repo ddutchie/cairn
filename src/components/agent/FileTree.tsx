@@ -126,7 +126,7 @@ interface FileTreeProps {
 }
 
 export function FileTree({ project }: FileTreeProps) {
-  const { activeEditorFile, setActiveEditorFile, setView } = useCairnStore();
+  const { activeEditorFile, openEditorFile, setView } = useCairnStore();
   const [rootEntries, setRootEntries] = useState<DirEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -194,7 +194,7 @@ export function FileTree({ project }: FileTreeProps) {
             entry={entry}
             depth={0}
             activePath={activeEditorFile}
-            onFileClick={setActiveEditorFile}
+            onFileClick={openEditorFile}
           />
         ))}
         {rootEntries.length === 0 && (

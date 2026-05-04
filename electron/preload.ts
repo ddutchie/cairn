@@ -216,6 +216,8 @@ const api = {
       ipcRenderer.invoke("agent:writeFile", { filePath, content }),
     validateDirectory: (dirPath: string) =>
       ipcRenderer.invoke("agent:validateDirectory", { dirPath }),
+    gitDiff: (cwd: string) =>
+      ipcRenderer.invoke("agent:gitDiff", { cwd }),
     pickDirectory: () => ipcRenderer.invoke("agent:pickDirectory"),
     pickFile: () => ipcRenderer.invoke("agent:pickFile"),
 

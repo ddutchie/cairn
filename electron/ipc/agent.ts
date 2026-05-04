@@ -10,15 +10,16 @@
  *
  * Security:
  *   - binaryPath is validated (absolute, no shell metacharacters) before spawn.
- *   - Prompt is written to a temp file and delivered via stdin redirect, never
- *     shell-interpolated (avoids ENAMETOOLONG and path-resolution bugs).
+ *   - Prompt is single-quote escaped and passed as a CLI argument via
+ *     `exec sh -c '...'`, never shell-interpolated. `exec` replaces sh so
+ *     it cannot echo stray escape sequences back to the PTY.
  *   - cwd is validated as an accessible directory before spawn.
  */
 
 import { ipcMain, dialog, BrowserWindow } from "electron";
 import fs from "fs";
-import os from "os";
 import path from "path";
+import { spawnSync } from "child_process";
 import type { Database } from "better-sqlite3";
 import * as nodePty from "node-pty";
 import * as q from "../db/queries";
@@ -121,6 +122,34 @@ export function registerAgentHandlers(db: Database): void {
     })
   );
 
+  // ── Git diff ─────────────────────────────────────────────────────────────
+
+  ipcMain.handle("agent:gitDiff", (_e, { cwd }: { cwd: string }) =>
+    handle(() => {
+      // Validate cwd exists and is a directory
+      if (!fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) {
+        throw new Error(`Not a directory: ${cwd}`);
+      }
+      // Run: git diff HEAD  (staged + unstaged vs HEAD)
+      // Falls back to git diff (unstaged only) if HEAD doesn't exist yet
+      let result = spawnSync("git", ["diff", "HEAD", "--unified=3"], {
+        cwd,
+        encoding: "utf-8",
+        timeout: 10_000,
+      });
+      if (result.error) throw result.error;
+      // If HEAD doesn't exist (initial repo), try git diff --cached
+      if (result.status !== 0) {
+        result = spawnSync("git", ["diff", "--cached", "--unified=3"], {
+          cwd,
+          encoding: "utf-8",
+          timeout: 10_000,
+        });
+      }
+      return (result.stdout ?? "").trim();
+    })
+  );
+
   // ── Native pickers ───────────────────────────────────────────────────────
 
   ipcMain.handle("agent:pickDirectory", async () => {
@@ -171,60 +200,70 @@ export function registerAgentHandlers(db: Database): void {
         throw new Error(`Agent binary not found: ${agent.binaryPath}`);
       }
 
-      // Build the shell command to execute.
+      // Build the spawn command.
       //
-      // The prompt can be arbitrarily long and contain newlines, colons, and
-      // other characters that are unsafe to pass as CLI positional arguments
-      // (they trigger ENAMETOOLONG or path-resolution bugs in some agents like
-      // OpenCode which lstat their first positional to check if it's a project
-      // directory).
+      // We always use `exec sh -c '...'` when a prompt is involved so that:
+      //   1. The prompt is passed as a properly single-quoted shell argument —
+      //      safe for any length, newlines, colons, etc.
+      //   2. `exec` replaces sh with the agent binary, so sh is never sitting
+      //      on the PTY echoing stray mouse-tracking escape sequences back to
+      //      the terminal.
       //
-      // Strategy: write the prompt to a temp file, then use `sh -c` to invoke
-      // the agent binary with stdin redirected from that file. This is safe
-      // regardless of prompt length or content.
+      // Args field conventions (examples):
+      //   args = ""
+      //     → interactive TUI, spawn binary directly with no args
+      //   args = "{prompt}"
+      //     → exec binary 'prompt text'
+      //        opencode: first positional pre-fills the TUI message
+      //   args = "--prompt {prompt}"
+      //     → exec binary --prompt 'prompt text'
+      //        opencode: explicit flag, identical result to above
+      //   args = "--message {prompt}"
+      //     → exec binary --message 'prompt text'
+      //        claude / aider style
+      //   args = "run"  (no placeholder)
+      //     → exec binary run 'prompt text'   (prompt appended as last arg)
       //
-      // Args field rules:
-      //   args = ""                → interactive TUI, no prompt, no temp file
-      //   args = "run"             → sh -c 'binary run < /tmp/prompt.txt'
-      //   args = "run {prompt}"    → sh -c 'binary run < /tmp/prompt.txt'
-      //                              ({prompt} is replaced by stdin redirect)
-      //   args = "--message {prompt}" → sh -c 'binary --message < /tmp/prompt.txt'
+      // Single-quote escaping: replace every ' in the value with '\''
+      // (end quote, escaped quote, reopen quote) — works in all POSIX shells.
 
-      let promptFile: string | null = null;
+      const shellEscape = (s: string) => `'${s.replace(/'/g, "'\\''")}'`;
+
       let spawnBin: string;
       let spawnArgs: string[];
 
       const trimmedArgs = agent.args.trim();
 
       if (!trimmedArgs) {
-        // Interactive TUI — no prompt, spawn directly
+        // Empty args → pure interactive TUI, spawn binary directly
         spawnBin = agent.binaryPath;
         spawnArgs = [];
       } else {
-        // Write prompt to a temp file to avoid ENAMETOOLONG and path-resolution bugs
-        promptFile = path.join(os.tmpdir(), `cairn-prompt-${newId()}.txt`);
-        fs.writeFileSync(promptFile, payload.prompt, "utf8");
-
-        // Build the base arg tokens, stripping {prompt} placeholder tokens
-        // (prompt is delivered via stdin, not as a positional argument)
+        // Build token list, substituting {prompt} in-place or appending at end
         const PLACEHOLDER = "{prompt}";
-        const baseTokens = trimmedArgs
-          .split(/\s+/)
-          .filter((t) => t && t !== PLACEHOLDER);
+        const tokens = trimmedArgs.split(/\s+/).filter(Boolean);
+        const hasPlaceholder = tokens.includes(PLACEHOLDER);
 
-        // Escape the binary path and arg tokens for sh -c
-        const shellEscape = (s: string) => `'${s.replace(/'/g, "'\\''")}'`;
+        const finalTokens = hasPlaceholder
+          ? tokens.map((t) => (t === PLACEHOLDER ? payload.prompt : t))
+          : [...tokens, payload.prompt];
+
+        // Build: exec binary arg1 arg2 'prompt...'
+        // exec replaces sh so it never sits on the PTY after the binary starts.
         const shellCmd = [
+          "exec",
           shellEscape(agent.binaryPath),
-          ...baseTokens.map(shellEscape),
-          "<",
-          shellEscape(promptFile),
+          ...finalTokens.slice(0, finalTokens.length - 1).map(shellEscape),
+          shellEscape(finalTokens[finalTokens.length - 1]),
         ].join(" ");
 
-        spawnBin = process.platform === "win32" ? "cmd.exe" : "/bin/sh";
-        spawnArgs = process.platform === "win32"
-          ? ["/c", `${[shellEscape(agent.binaryPath), ...baseTokens.map(shellEscape)].join(" ")} < ${shellEscape(promptFile)}`]
-          : ["-c", shellCmd];
+        if (process.platform === "win32") {
+          spawnBin = "cmd.exe";
+          spawnArgs = ["/c", shellCmd.replace(/^exec /, "")]; // cmd has no exec
+        } else {
+          spawnBin = "/bin/sh";
+          spawnArgs = ["-c", shellCmd];
+        }
       }
 
       const pty = nodePty.spawn(spawnBin, spawnArgs, {
@@ -234,14 +273,6 @@ export function registerAgentHandlers(db: Database): void {
         cwd: payload.cwd,
         env: process.env as Record<string, string>,
       });
-
-      // Clean up the temp prompt file once the PTY process exits
-      if (promptFile) {
-        const pf = promptFile;
-        pty.onExit(() => {
-          try { fs.unlinkSync(pf); } catch { /* already gone */ }
-        });
-      }
 
       const sessionId = newId();
       sessions.set(sessionId, { pty, agentId: payload.agentId, taskId: payload.taskId });

@@ -18,8 +18,11 @@ export interface ManagedTerminal {
   rawOutput: string; // accumulated raw output for DiffViewer
 }
 
+type OutputListener = (sessionId: string) => void;
+
 class TerminalManagerClass {
   private sessions = new Map<string, ManagedTerminal>();
+  private outputListeners = new Set<OutputListener>();
 
   set(sessionId: string, managed: ManagedTerminal): void {
     this.sessions.set(sessionId, managed);
@@ -39,11 +42,20 @@ class TerminalManagerClass {
 
   appendOutput(sessionId: string, data: string): void {
     const m = this.sessions.get(sessionId);
-    if (m) m.rawOutput += data;
+    if (!m) return;
+    m.rawOutput += data;
+    // Notify subscribers — they throttle internally if needed
+    for (const fn of this.outputListeners) fn(sessionId);
   }
 
   getRawOutput(sessionId: string): string {
     return this.sessions.get(sessionId)?.rawOutput ?? "";
+  }
+
+  /** Subscribe to raw output changes. Returns an unsubscribe function. */
+  onOutput(fn: OutputListener): () => void {
+    this.outputListeners.add(fn);
+    return () => this.outputListeners.delete(fn);
   }
 
   fit(sessionId: string): void {

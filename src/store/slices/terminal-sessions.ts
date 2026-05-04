@@ -27,12 +27,20 @@ export interface TerminalSession {
 export interface TerminalSessionsSlice {
   terminalSessions: TerminalSession[];
   activeSessionId: string | null;
-  activeEditorFile: string | null; // absolute path open in centre pane
+  /** Ordered list of open file paths in the editor tab strip. */
+  openEditorFiles: string[];
+  /** Currently active tab — always an element of openEditorFiles, or null. */
+  activeEditorFile: string | null;
 
   addTerminalSession: (session: TerminalSession) => void;
   removeTerminalSession: (sessionId: string) => void;
   setActiveSession: (sessionId: string | null) => void;
   markSessionExited: (sessionId: string, exitCode: number) => void;
+  /** Open a file tab (no-op if already open) and make it active. */
+  openEditorFile: (path: string) => void;
+  /** Close a file tab; activates the nearest remaining tab. */
+  closeEditorFile: (path: string) => void;
+  /** @deprecated use openEditorFile */
   setActiveEditorFile: (path: string | null) => void;
 }
 
@@ -44,6 +52,7 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
 ) => ({
   terminalSessions: [],
   activeSessionId: null,
+  openEditorFiles: [],
   activeEditorFile: null,
 
   addTerminalSession(session) {
@@ -76,7 +85,37 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
     }));
   },
 
+  openEditorFile(path) {
+    set((s) => ({
+      openEditorFiles: s.openEditorFiles.includes(path)
+        ? s.openEditorFiles
+        : [...s.openEditorFiles, path],
+      activeEditorFile: path,
+    }));
+  },
+
+  closeEditorFile(path) {
+    set((s) => {
+      const idx = s.openEditorFiles.indexOf(path);
+      if (idx === -1) return {};
+      const next = s.openEditorFiles.filter((f) => f !== path);
+      const nextActive =
+        s.activeEditorFile !== path
+          ? s.activeEditorFile
+          : (next[Math.min(idx, next.length - 1)] ?? null);
+      return { openEditorFiles: next, activeEditorFile: nextActive };
+    });
+  },
+
   setActiveEditorFile(path) {
-    set({ activeEditorFile: path });
+    // Legacy: treat as openEditorFile when path given, no-op on null
+    if (path) {
+      set((s) => ({
+        openEditorFiles: s.openEditorFiles.includes(path)
+          ? s.openEditorFiles
+          : [...s.openEditorFiles, path],
+        activeEditorFile: path,
+      }));
+    }
   },
 });
