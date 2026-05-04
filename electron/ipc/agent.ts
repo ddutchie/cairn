@@ -10,12 +10,14 @@
  *
  * Security:
  *   - binaryPath is validated (absolute, no shell metacharacters) before spawn.
- *   - Prompt is passed as a discrete args array element — never shell-interpolated.
+ *   - Prompt is written to a temp file and delivered via stdin redirect, never
+ *     shell-interpolated (avoids ENAMETOOLONG and path-resolution bugs).
  *   - cwd is validated as an accessible directory before spawn.
  */
 
 import { ipcMain, dialog, BrowserWindow } from "electron";
 import fs from "fs";
+import os from "os";
 import path from "path";
 import type { Database } from "better-sqlite3";
 import * as nodePty from "node-pty";
@@ -169,42 +171,77 @@ export function registerAgentHandlers(db: Database): void {
         throw new Error(`Agent binary not found: ${agent.binaryPath}`);
       }
 
-      // Build args using {prompt} placeholder substitution.
+      // Build the shell command to execute.
       //
-      // Rules:
-      //   args = ""              → pure interactive TUI, no extra arguments
-      //   args = "run"           → ["run", prompt]  (subcommand + prompt)
-      //   args = "run {prompt}"  → ["run", prompt]  (explicit placement)
-      //   args = "--msg {prompt}"→ ["--msg", prompt] (flag-style)
+      // The prompt can be arbitrarily long and contain newlines, colons, and
+      // other characters that are unsafe to pass as CLI positional arguments
+      // (they trigger ENAMETOOLONG or path-resolution bugs in some agents like
+      // OpenCode which lstat their first positional to check if it's a project
+      // directory).
       //
-      // The cwd positional is NOT passed — node-pty's cwd option sets the
-      // working directory natively, so omitting it avoids ENAMETOOLONG errors.
-      const PLACEHOLDER = "{prompt}";
-      let allArgs: string[];
-      if (!agent.args.trim()) {
-        // Empty args: pure interactive TUI, no extra arguments
-        allArgs = [];
-      } else if (agent.args.includes(PLACEHOLDER)) {
-        allArgs = agent.args
-          .split(/\s+/)
-          .filter(Boolean)
-          .flatMap((token) =>
-            token === PLACEHOLDER
-              ? [payload.prompt]
-              : [token.replace(PLACEHOLDER, payload.prompt)]
-          );
+      // Strategy: write the prompt to a temp file, then use `sh -c` to invoke
+      // the agent binary with stdin redirected from that file. This is safe
+      // regardless of prompt length or content.
+      //
+      // Args field rules:
+      //   args = ""                → interactive TUI, no prompt, no temp file
+      //   args = "run"             → sh -c 'binary run < /tmp/prompt.txt'
+      //   args = "run {prompt}"    → sh -c 'binary run < /tmp/prompt.txt'
+      //                              ({prompt} is replaced by stdin redirect)
+      //   args = "--message {prompt}" → sh -c 'binary --message < /tmp/prompt.txt'
+
+      let promptFile: string | null = null;
+      let spawnBin: string;
+      let spawnArgs: string[];
+
+      const trimmedArgs = agent.args.trim();
+
+      if (!trimmedArgs) {
+        // Interactive TUI — no prompt, spawn directly
+        spawnBin = agent.binaryPath;
+        spawnArgs = [];
       } else {
-        // No placeholder: append prompt after the provided base args
-        allArgs = [...agent.args.trim().split(/\s+/).filter(Boolean), payload.prompt];
+        // Write prompt to a temp file to avoid ENAMETOOLONG and path-resolution bugs
+        promptFile = path.join(os.tmpdir(), `cairn-prompt-${newId()}.txt`);
+        fs.writeFileSync(promptFile, payload.prompt, "utf8");
+
+        // Build the base arg tokens, stripping {prompt} placeholder tokens
+        // (prompt is delivered via stdin, not as a positional argument)
+        const PLACEHOLDER = "{prompt}";
+        const baseTokens = trimmedArgs
+          .split(/\s+/)
+          .filter((t) => t && t !== PLACEHOLDER);
+
+        // Escape the binary path and arg tokens for sh -c
+        const shellEscape = (s: string) => `'${s.replace(/'/g, "'\\''")}'`;
+        const shellCmd = [
+          shellEscape(agent.binaryPath),
+          ...baseTokens.map(shellEscape),
+          "<",
+          shellEscape(promptFile),
+        ].join(" ");
+
+        spawnBin = process.platform === "win32" ? "cmd.exe" : "/bin/sh";
+        spawnArgs = process.platform === "win32"
+          ? ["/c", `${[shellEscape(agent.binaryPath), ...baseTokens.map(shellEscape)].join(" ")} < ${shellEscape(promptFile)}`]
+          : ["-c", shellCmd];
       }
 
-      const pty = nodePty.spawn(agent.binaryPath, allArgs, {
+      const pty = nodePty.spawn(spawnBin, spawnArgs, {
         name: "xterm-256color",
         cols: 120,
         rows: 30,
         cwd: payload.cwd,
         env: process.env as Record<string, string>,
       });
+
+      // Clean up the temp prompt file once the PTY process exits
+      if (promptFile) {
+        const pf = promptFile;
+        pty.onExit(() => {
+          try { fs.unlinkSync(pf); } catch { /* already gone */ }
+        });
+      }
 
       const sessionId = newId();
       sessions.set(sessionId, { pty, agentId: payload.agentId, taskId: payload.taskId });
