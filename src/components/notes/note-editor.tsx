@@ -7,7 +7,7 @@ import remarkBreaks from "remark-breaks";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
-import { Pin, PinOff, Calendar, Eye, Pencil, Wand2, Loader2, CheckCircle2, Tag, Plus, X, Link2, Kanban, ChevronDown, FileText } from "lucide-react";
+import { Pin, PinOff, Calendar, Eye, Pencil, Wand2, Loader2, CheckCircle2, Tag, Plus, X, Link2, Kanban, ChevronDown, FileText, FileDown } from "lucide-react";
 import { WikilinkPicker } from "./WikilinkPicker";
 import { getActiveWikilink } from "@/lib/wikilink-parser";
 import { useCairnStore } from "@/store";
@@ -395,12 +395,13 @@ export function NoteEditor({ note }: NoteEditorProps) {
   const [wikilinkPicker, setWikilinkPicker] = useState<{
     query: string;
     triggerFrom: number;
-    top: number;
-    left: number;
+    anchorRect: { top: number; bottom: number; left: number };
   } | null>(null);
 
   // Scroll container ref — used by TableOfContents to scroll to headings
   const previewScrollRef = useRef<HTMLDivElement>(null);
+  // Ref to the prose-cairn div — used by PDF export to capture rendered HTML
+  const proseRef = useRef<HTMLDivElement>(null);
 
   // ── Math plugins (stable per note) ────────────────────────────────────────
   // makeLatexPlugins() creates a shared mutable latexBlocks array coupled
@@ -445,13 +446,11 @@ export function NoteEditor({ note }: NoteEditorProps) {
         if (active) {
           // Position the picker near the cursor
           const coords = view.coordsAtPos(cursorPos);
-          const containerRect = containerRef.current?.getBoundingClientRect();
-          if (coords && containerRect) {
+          if (coords) {
             setWikilinkPicker({
               query: active.query,
               triggerFrom: active.triggerFrom,
-              top: coords.bottom - containerRect.top + 4,
-              left: Math.min(coords.left - containerRect.left, containerRect.width - 290),
+              anchorRect: { top: coords.top, bottom: coords.bottom, left: coords.left },
             });
           } else {
             setWikilinkPicker((prev) => prev ? { ...prev, query: active.query, triggerFrom: active.triggerFrom } : null);
@@ -590,18 +589,22 @@ export function NoteEditor({ note }: NoteEditorProps) {
   const openWikilinkPicker = useCallback(() => {
     const view = editorRef.current?.getView();
     if (!view) return;
+    // Restore focus so coordsAtPos returns a real position (the formatting
+    // toolbar uses onMouseDown+preventDefault which can shift focus away from CM).
+    view.focus();
     const cursorPos = view.state.selection.main.head;
     const coords = view.coordsAtPos(cursorPos);
-    const containerRect = containerRef.current?.getBoundingClientRect();
-    setWikilinkPicker({
-      query: "",
-      triggerFrom: cursorPos,
-      top: coords && containerRect ? coords.bottom - containerRect.top + 4 : 80,
-      left: coords && containerRect ? Math.min(coords.left - containerRect.left, containerRect.width - 290) : 80,
-    });
+    // coords are already viewport-relative — pass them straight through.
+    // If unavailable (cursor not visible), fall back to a mid-screen estimate.
+    const anchorRect = coords
+      ? { top: coords.top, bottom: coords.bottom, left: coords.left }
+      : { top: window.innerHeight / 2, bottom: window.innerHeight / 2 + 20, left: window.innerWidth / 2 };
+    setWikilinkPicker({ query: "", triggerFrom: cursorPos, anchorRect });
   }, []);
 
   const handleFormat = useCallback((action: FormatAction) => {
+    // wikilink opens the picker rather than inserting markdown directly
+    if (action === "wikilink") { openWikilinkPicker(); return; }
     const view = editorRef.current?.getView();
     if (!view) return;
     const range = applyFormat(view, action);
@@ -609,7 +612,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
       const newText = view.state.sliceDoc(range.from, range.to).trim();
       if (newText.length >= 3) setPreviewText(newText);
     }
-  }, []);
+  }, [openWikilinkPicker]);
 
   useEffect(() => {
     if (!spawnLoading) return;
@@ -867,6 +870,55 @@ export function NoteEditor({ note }: NoteEditorProps) {
     updateNote(note.id, { tagIds: [...note.tagIds, tag.id] });
   }, [activeWorkspaceId, note.id, note.tagIds, createTag, updateNote]);
 
+  const [exportState, setExportState] = useState<"idle" | "exporting" | "done">("idle");
+  const handleExportPdf = useCallback(async () => {
+    if (!proseRef.current || !window.electron?.exportNotePdf) return;
+    setExportState("exporting");
+    try {
+      const raw = proseRef.current.innerHTML;
+      // Post-process HTML to make code blocks print-friendly:
+      // CodeBlock uses hardcoded inline styles derived from the active theme.
+      // We parse the captured HTML, rewrite those inline styles to light-palette
+      // values, and remove the Copy button (not useful in a PDF).
+      const doc = new DOMParser().parseFromString(`<div>${raw}</div>`, "text/html");
+      const root = doc.body.firstElementChild!;
+
+      // Each CodeBlock renders as: div.my-4.rounded-lg > div(header) + pre
+      for (const block of root.querySelectorAll<HTMLElement>("div.my-4")) {
+        const pre = block.querySelector<HTMLElement>("pre");
+        const header = block.querySelector<HTMLElement>("div");
+        if (!pre) continue;
+
+        // Force light-theme colours on pre and its border container
+        pre.style.background = "#f8f7f5";
+        pre.style.color      = "#374151";
+        block.style.border   = "1px solid #dddad6";
+
+        // Rewrite token span colours from DARK palette → LIGHT palette
+        const DARK_TO_LIGHT: Record<string, string> = {
+          "#c678dd": "#7c3aed", "#e5c07b": "#b45309", "#56b6c2": "#0891b2",
+          "#d19a66": "#c2410c", "#98c379": "#16a34a", "#e06c75": "#dc2626",
+          "#5c6370": "#9ca3af", "#61afef": "#1d4ed8", "#abb2bf": "#374151",
+        };
+        for (const span of pre.querySelectorAll<HTMLElement>("span[style]")) {
+          const c = span.style.color.toLowerCase();
+          // normalise hex shorthand if needed, try direct map
+          if (DARK_TO_LIGHT[c]) span.style.color = DARK_TO_LIGHT[c];
+        }
+
+        // Remove the Copy button header — not useful in print
+        if (header) header.remove();
+      }
+
+      const html = root.innerHTML;
+      await window.electron.exportNotePdf(note.title, html);
+      setExportState("done");
+      setTimeout(() => setExportState("idle"), 2000);
+    } catch {
+      setExportState("idle");
+    }
+  }, [note.title]);
+
   return (
     <div
       ref={containerRef}
@@ -943,14 +995,25 @@ export function NoteEditor({ note }: NoteEditorProps) {
               </button>
             </Tooltip>
           ))}
-          {mode === "write" && (
-            <Tooltip content="Insert wikilink [[Note Title]]">
+
+          {mode === "read" && window.electron?.exportNotePdf && (
+            <Tooltip content="Export as PDF">
               <button
-                onClick={openWikilinkPicker}
-                className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
+                onClick={handleExportPdf}
+                disabled={exportState === "exporting"}
+                className={cn(
+                  "flex items-center gap-1.5 px-2 py-1 rounded-md text-xs transition-colors",
+                  exportState === "done"
+                    ? "text-[var(--success)]"
+                    : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] disabled:opacity-50"
+                )}
               >
-                <Link2 size={12} />
-                Link
+                {exportState === "exporting"
+                  ? <Loader2 size={12} className="animate-spin" />
+                  : exportState === "done"
+                    ? <CheckCircle2 size={12} />
+                    : <FileDown size={12} />}
+                {exportState === "done" ? "Saved" : "PDF"}
               </button>
             </Tooltip>
           )}
@@ -1026,7 +1089,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
           />
         </div>
 
-        {/* Wikilink autocomplete picker */}
+        {/* Wikilink autocomplete picker — rendered in a portal at fixed viewport coords */}
         {wikilinkPicker && mode === "write" && (
           <WikilinkPicker
             notes={notes.filter((n) => n.id !== note.id)}
@@ -1034,8 +1097,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
             query={wikilinkPicker.query}
             onSelect={handleWikilinkSelect}
             onClose={() => setWikilinkPicker(null)}
-            top={wikilinkPicker.top}
-            left={wikilinkPicker.left}
+            anchorRect={wikilinkPicker.anchorRect}
           />
         )}
 
@@ -1052,7 +1114,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
             )}
             <div className="px-6 py-5 max-w-4xl mx-auto">
               {note.content ? (
-                <div className="prose-cairn">
+                <div className="prose-cairn" ref={proseRef}>
                    <ReactMarkdown
                      remarkPlugins={[remarkGfm, remarkBreaks, remarkMath, remarkPromoteDisplayMath, remarkCallout, remarkWikilinks]}
                      rehypePlugins={[rehypeCaptureLatex, rehypeKatex, rehypeMergedPass]}

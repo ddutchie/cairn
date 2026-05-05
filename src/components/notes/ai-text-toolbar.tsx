@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
   Loader2, Wand2, RefreshCw, AlignLeft, Expand, SpellCheck, MessageSquare, X,
-  Bold, Italic, Strikethrough, Code, Code2, Link, Quote, List, ListOrdered,
+  Bold, Italic, Strikethrough, Code, Code2, Link, Link2, Quote, List, ListOrdered,
   Heading1, Heading2, Heading3, Highlighter, CheckSquare, Minus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -36,7 +36,8 @@ export type FormatAction =
   | "ordered"
   | "task"
   | "codeblock"
-  | "hr";
+  | "hr"
+  | "wikilink";
 
 interface AITextToolbarProps {
   onAction: (action: AITextAction, customPrompt?: string) => void;
@@ -85,8 +86,9 @@ const FORMAT_GROUPS: { id: FormatAction; label: string; icon: React.ReactNode }[
   ],
   // Insert
   [
-    { id: "codeblock", label: "Code block", icon: <Code2 size={12} /> },
-    { id: "hr",        label: "Divider ---", icon: <Minus size={12} /> },
+    { id: "codeblock", label: "Code block",           icon: <Code2 size={12} /> },
+    { id: "hr",        label: "Divider ---",           icon: <Minus size={12} /> },
+    { id: "wikilink",  label: "Wikilink [[Note]]",    icon: <Link2 size={12} /> },
   ],
 ];
 
@@ -458,6 +460,9 @@ export function applyFormat(view: EditorView, action: FormatAction): { from: num
     view.focus();
     return { from: replaceFrom, to: replaceFrom + insert.length };
   }
+
+  // wikilink is handled by the editor (opens the picker) — nothing to do here
+  if (action === "wikilink") return null;
 
   if (action === "hr") {
     const line   = state.doc.lineAt(from);

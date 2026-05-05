@@ -719,7 +719,7 @@ const NoteListItem = React.memo(function NoteListItem({ note, isActive, indent =
               {note.isPinned ? "Unpin" : "Pin"}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onReveal(); }}>
-              <FileText size={12} />Reveal in Finder
+              <FileText size={12} />Reveal in {window.electron?.platform === "win32" ? "Explorer" : window.electron?.platform === "linux" ? "Files" : "Finder"}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onArchive(); }}>
