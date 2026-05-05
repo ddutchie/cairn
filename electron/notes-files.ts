@@ -29,6 +29,7 @@ import fs from "fs";
 import matter from "gray-matter";
 import type Database from "better-sqlite3";
 import * as q from "./db/queries";
+import { generateId } from "./db/queries";
 import { toSlug, stripMarkdown } from "./shared/text-utils";
 
 export { toSlug, stripMarkdown };
@@ -268,6 +269,78 @@ function syncDir(db: Database.Database, dir: string): void {
 // Uses INSERT OR IGNORE + UPDATE to avoid UNIQUE constraint errors when the
 // file watcher fires on a file that was just written by the app itself.
 // The SELECT+INSERT pattern had a race window; this is fully atomic.
+
+/**
+ * Attempt to adopt a plain .md file that was dropped into a project folder
+ * from outside the app (no Cairn frontmatter).
+ *
+ * Resolves the project by matching the first path segment under `notes/` to a
+ * project slug in the database. If a matching project is found, generates a new
+ * note ID, writes Cairn frontmatter back to the file, then upserts into SQLite.
+ *
+ * Returns the adopted NoteData on success, or null if the file can't be adopted
+ * (e.g. not inside a known project folder, or the file is unreadable).
+ */
+export function adoptExternalNoteFile(
+  db: Database.Database,
+  workspacePath: string,
+  filePath: string,
+): NoteData | null {
+  try {
+    const root = notesDir(workspacePath);
+    const rel  = path.relative(root, filePath); // e.g. "my-project/sub/Note Title.md"
+    const segments = rel.split(path.sep);
+    if (segments.length < 1) return null;
+
+    const projectSlug = segments[0];
+
+    // Find the project whose slug matches the folder name
+    const projects = db.prepare(
+      "SELECT id, name, workspace_id FROM projects WHERE archived_at IS NULL"
+    ).all() as { id: string; name: string; workspace_id: string }[];
+
+    const project = projects.find((p) => toSlug(p.name) === projectSlug);
+    if (!project) return null;
+
+    // Read file content
+    const raw = fs.readFileSync(filePath, "utf-8");
+    const { content } = matter(raw);
+
+    // Derive title from filename (strip .md extension)
+    const filename = segments[segments.length - 1];
+    const title = path.basename(filename, ".md");
+
+    // Derive subfolder from intermediate path segments (un-slugged as-is)
+    const folderSegments = segments.slice(1, -1);
+    const folder = folderSegments.join("/");
+
+    const now  = new Date().toISOString();
+    const id   = generateId();
+
+    const note: NoteData = {
+      id,
+      projectId:     project.id,
+      workspaceId:   project.workspace_id,
+      title,
+      content,
+      tagIds:        [],
+      linkedNoteIds: [],
+      linkedCardIds: [],
+      isPinned:      false,
+      folder,
+      createdAt:     now,
+      updatedAt:     now,
+      projectName:   project.name,
+    };
+
+    // Write Cairn frontmatter back to the file so future reads recognise it
+    writeNoteFile(workspacePath, note);
+
+    return note;
+  } catch {
+    return null;
+  }
+}
 
 export function upsertNoteFromFile(db: Database.Database, note: NoteData): void {
   // Only upsert if the referenced project exists

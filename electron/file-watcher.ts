@@ -17,7 +17,7 @@
 
 import chokidar, { type FSWatcher } from "chokidar";
 import type Database from "better-sqlite3";
-import { notesDir, parseNoteFile, upsertNoteFromFile } from "./notes-files";
+import { notesDir, parseNoteFile, upsertNoteFromFile, adoptExternalNoteFile } from "./notes-files";
 import * as q from "./db/queries";
 
 let watcher: FSWatcher | null = null;
@@ -69,8 +69,8 @@ export function startFileWatcher(
   });
 
   watcher
-    .on("add",    (fp) => handleFileAdd(fp, db, onChanged))
-    .on("change", (fp) => handleFileChange(fp, db, onChanged))
+    .on("add",    (fp) => handleFileAdd(fp, workspacePath, db, onChanged))
+    .on("change", (fp) => handleFileChange(fp, workspacePath, db, onChanged))
     .on("unlink", (fp) => handleFileDelete(fp, db, onChanged));
 }
 
@@ -84,9 +84,11 @@ export function stopFileWatcher(): void {
 
 // ── Event handlers ────────────────────────────
 
-function handleFileAdd(filePath: string, db: Database.Database, onChanged: () => void): void {
+function handleFileAdd(filePath: string, workspacePath: string, db: Database.Database, onChanged: () => void): void {
   if (!filePath.endsWith(".md")) return;
-  const note = parseNoteFile(filePath);
+  let note = parseNoteFile(filePath);
+  // Plain .md file with no Cairn frontmatter — try to adopt it
+  if (!note) note = adoptExternalNoteFile(db, workspacePath, filePath);
   if (!note) return;
   pathToNoteId.set(filePath, note.id);
   if (suppressedNoteIds.has(note.id)) return;
@@ -94,9 +96,11 @@ function handleFileAdd(filePath: string, db: Database.Database, onChanged: () =>
   onChanged();
 }
 
-function handleFileChange(filePath: string, db: Database.Database, onChanged: () => void): void {
+function handleFileChange(filePath: string, workspacePath: string, db: Database.Database, onChanged: () => void): void {
   if (!filePath.endsWith(".md")) return;
-  const note = parseNoteFile(filePath);
+  let note = parseNoteFile(filePath);
+  // Plain .md file — try to adopt (e.g. frontmatter was stripped by external editor)
+  if (!note) note = adoptExternalNoteFile(db, workspacePath, filePath);
   if (!note) return;
   pathToNoteId.set(filePath, note.id);
   if (suppressedNoteIds.has(note.id)) return;

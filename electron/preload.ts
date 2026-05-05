@@ -145,6 +145,10 @@ const api = {
   // ── Reveal note in Finder / Explorer ─────────
   revealNote: (noteId: string, projectId: string) => invoke("app:revealNote", { noteId, projectId }),
 
+  // ── Export note as PDF ────────────────────────
+  exportNotePdf: (title: string, html: string) =>
+    invoke<{ filePath: string } | null>("app:exportNotePdf", { title, html }),
+
   // ── Open a URL in the system default browser ──
   openExternal: (url: string) => ipcRenderer.send("app:openExternal", url),
 
