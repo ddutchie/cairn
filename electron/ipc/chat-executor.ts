@@ -334,7 +334,10 @@ export async function executeTool(
       if (!card) return { error: "Task not found" };
       const col = snap.columns.find((c) => c.id === args.targetColumnId);
       if (!col) return { error: "Column not found" };
-      return q.updateCard(db, args.cardId as string, { columnId: args.targetColumnId as string });
+      const result = q.updateCard(db, args.cardId as string, { columnId: args.targetColumnId as string });
+      // When moving to done, clear this card from every other task's blocked_by_ids
+      if (col.type === "done") q.clearBlockersFromAll(db, [args.cardId as string]);
+      return result;
     }
     case "bulk_update_task_status": {
       const col = snap.columns.find((c) => c.id === args.targetColumnId);
@@ -342,6 +345,7 @@ export async function executeTool(
       const cardIds = args.cardIds as string[];
       if (!Array.isArray(cardIds) || cardIds.length === 0) return { error: "cardIds must be a non-empty array" };
       const results: Array<{ id: string; ok: boolean; error?: string }> = [];
+      const movedIds: string[] = [];
       for (const cardId of cardIds) {
         const exists = snap.cards.find((c) => c.id === cardId);
         if (!exists) {
@@ -349,8 +353,11 @@ export async function executeTool(
         } else {
           q.updateCard(db, cardId, { columnId: args.targetColumnId as string });
           results.push({ id: cardId, ok: true });
+          movedIds.push(cardId);
         }
       }
+      // When moving to done, clear all moved card IDs from every other task's blocked_by_ids
+      if (col.type === "done") q.clearBlockersFromAll(db, movedIds);
       const moved = results.filter((r) => r.ok).length;
       const failed = results.filter((r) => !r.ok);
       return { moved, failed, targetColumnId: args.targetColumnId, targetColumnName: col.name };
@@ -375,8 +382,8 @@ export async function executeTool(
         id: card.id, title: card.title, description: card.description,
         priority: card.priority, dueDate: card.dueDate,
         columnId: card.columnId, columnName: col?.name ?? "Unknown", columnType: col?.type ?? "custom",
-        linkedNoteIds: card.linkedNoteIds, projectId: card.projectId,
-        createdAt: card.createdAt, updatedAt: card.updatedAt,
+        linkedNoteIds: card.linkedNoteIds, blockedByIds: card.blockedByIds ?? [],
+        projectId: card.projectId, createdAt: card.createdAt, updatedAt: card.updatedAt,
       };
     }
     case "delete_note": {

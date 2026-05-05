@@ -30,7 +30,7 @@ export interface CairnSnapshot {
     id: string; projectId: string; workspaceId: string; title: string;
     content: string; contentText: string; tagIds: string[];
     linkedNoteIds: string[]; linkedCardIds: string[];
-    isPinned: boolean; type: string;
+    isPinned: boolean; type: string; folder?: string;
     createdAt: string; updatedAt: string; archivedAt?: string;
   }>;
   columns: Array<{
@@ -43,6 +43,7 @@ export interface CairnSnapshot {
     linkedNoteIds: string[]; tagIds: string[]; order: number;
     createdAt: string; updatedAt: string; archivedAt?: string;
   }>;
+  tags: Array<{ id: string; workspaceId: string; name: string; color: string }>;
 }
 
 // ── Tool args (permissive — callers validate before reaching here) ───────────
@@ -110,7 +111,7 @@ export function executeListTasks(snap: CairnSnapshot, args: Args): unknown {
 export function executeListNotes(snap: CairnSnapshot, args: Args): unknown {
   return snap.notes
     .filter((n) => !n.archivedAt && (!args.projectId || n.projectId === args.projectId))
-    .map((n) => ({ id: n.id, title: n.title, projectId: n.projectId, isPinned: n.isPinned, updatedAt: n.updatedAt }));
+    .map((n) => ({ id: n.id, title: n.title, projectId: n.projectId, folder: n.folder ?? "", isPinned: n.isPinned, updatedAt: n.updatedAt }));
 }
 
 export function executeListRecentActivity(snap: CairnSnapshot, args: Args): unknown {
@@ -137,15 +138,22 @@ export function executeSearchNotes(db: Database.Database, args: Args): unknown {
     query: String(args.query),
     projectId: args.projectId as string | undefined,
     limit: args.limit as number | undefined,
-  }).map((n) => ({ id: n.id, title: n.title, snippet: n.contentText.slice(0, 200), projectId: n.projectId }));
+  }).map((n) => ({ id: n.id, title: n.title, snippet: n.contentText.slice(0, 200), projectId: n.projectId, updatedAt: n.updatedAt }));
 }
 
-export function executeSearchTasks(db: Database.Database, args: Args): unknown {
+export function executeSearchTasks(db: Database.Database, snap: CairnSnapshot, args: Args): unknown {
   return q.searchTasks(db, {
     query: String(args.query),
     projectId: args.projectId as string | undefined,
     limit: args.limit as number | undefined,
-  }).map((c) => ({ id: c.id, title: c.title, columnId: c.columnId, priority: c.priority, projectId: c.projectId }));
+  }).map((c) => {
+    const col = snap.columns.find((col) => col.id === c.columnId);
+    return {
+      id: c.id, title: c.title, description: c.description ?? null,
+      columnId: c.columnId, columnName: col?.name ?? "Unknown", columnType: col?.type ?? "custom",
+      priority: c.priority, dueDate: c.dueDate ?? null, projectId: c.projectId,
+    };
+  });
 }
 
 export function executeGetProjectContextPack(snap: CairnSnapshot, args: Args): unknown {
@@ -220,7 +228,7 @@ export function executeReadTool(
     case "search_notes":
       return { handled: true, result: executeSearchNotes(db, args) };
     case "search_tasks":
-      return { handled: true, result: executeSearchTasks(db, args) };
+      return { handled: true, result: executeSearchTasks(db, snap, args) };
     default:
       return { handled: false };
   }

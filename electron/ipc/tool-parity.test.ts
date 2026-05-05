@@ -16,11 +16,18 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import BetterSqlite3 from "better-sqlite3";
 import type Database from "better-sqlite3";
+import os from "os";
+import fs from "fs";
+import path from "path";
 import { applySchema } from "../db/schema";
 import { createWorkspace, createProject, createColumn, createNote, updateNote, createCard, getFullSnapshot } from "../db/queries";
 import { executeReadTool, type CairnSnapshot } from "../lib/read-tools";
 import { TOOLS } from "../lib/tools";
 import { CHAT_ONLY_TOOLS as CHAT_ONLY_TOOLS_LIST } from "../lib/tool-schemas";
+import { executeTool as mcpExec } from "../mcp-server";
+import { executeTool as chatExec } from "./chat-executor";
+import type { LLMConfig } from "../lib/llm";
+import type { ChatRequest } from "../lib/tools";
 
 // ── Fixture ───────────────────────────────────────────────────────────────────
 
@@ -173,5 +180,331 @@ describe("list_recent_activity shape consistency", () => {
     expect(note).toHaveProperty("title");
     expect(note).toHaveProperty("projectId");
     expect(note).toHaveProperty("updatedAt");
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// PART 2 — Cross-executor return shape parity
+//
+// For each shared tool, we call both the MCP executor (mcp-server.ts executeTool)
+// and the chat executor (chat-executor.ts executeTool) against the same seeded DB
+// and assert that the returned keys and values are identical.
+//
+// Known intentional divergences are documented with separate tests that assert
+// the difference explicitly, so regressions are caught if either side changes.
+// ═════════════════════════════════════════════════════════════════════════════
+
+const llmCfg: LLMConfig = { baseUrl: "http://localhost", model: "test", apiKey: "" };
+const chatReq: ChatRequest = { workspaceId: "ws1", projectId: "proj1", threadId: "t1" };
+function noEmit() {}
+
+function makeTmpDir() {
+  return fs.mkdtempSync(path.join(os.tmpdir(), "parity-test-"));
+}
+
+/** Call a tool through both executors and return [mcpResult, chatResult]. */
+async function both(
+  db: Database.Database,
+  wp: string,
+  tool: string,
+  args: Record<string, unknown>,
+): Promise<[unknown, unknown]> {
+  const mcp  = mcpExec(db, wp, tool, args);
+  const chat = await chatExec(db, chatReq, wp, llmCfg, tool, args as never, noEmit);
+  return [mcp, chat];
+}
+
+// ── get_note ──────────────────────────────────────────────────────────────────
+
+describe("get_note — MCP vs chat parity", () => {
+  it("returns identical keys for a found note", async () => {
+    const db = makeDb(); const wp = makeTmpDir();
+    seed(db);
+    const [mcp, chat] = await both(db, wp, "get_note", { noteId: "n1" });
+    const mk = Object.keys(mcp as object).sort();
+    const ck = Object.keys(chat as object).sort();
+    expect(mk).toEqual(ck);
+  });
+
+  it("both return { error } for a missing note", async () => {
+    const db = makeDb(); const wp = makeTmpDir();
+    seed(db);
+    const [mcp, chat] = await both(db, wp, "get_note", { noteId: "nope" });
+    expect(mcp).toHaveProperty("error");
+    expect(chat).toHaveProperty("error");
+  });
+
+  it("content and id values are identical", async () => {
+    const db = makeDb(); const wp = makeTmpDir();
+    seed(db);
+    const [mcp, chat] = await both(db, wp, "get_note", { noteId: "n1" });
+    const m = mcp as Record<string, unknown>;
+    const c = chat as Record<string, unknown>;
+    expect(m.id).toBe(c.id);
+    expect(m.content).toBe(c.content);
+    expect(m.isPinned).toBe(c.isPinned);
+  });
+});
+
+// ── get_task ──────────────────────────────────────────────────────────────────
+
+describe("get_task — MCP vs chat parity", () => {
+  it("returns identical keys for a found task", async () => {
+    const db = makeDb(); const wp = makeTmpDir();
+    seed(db);
+    const [mcp, chat] = await both(db, wp, "get_task", { cardId: "c1" });
+    const mk = Object.keys(mcp as object).sort();
+    const ck = Object.keys(chat as object).sort();
+    expect(mk).toEqual(ck);
+  });
+
+  it("both return { error } for missing task", async () => {
+    const db = makeDb(); const wp = makeTmpDir();
+    seed(db);
+    const [mcp, chat] = await both(db, wp, "get_task", { cardId: "nope" });
+    expect(mcp).toHaveProperty("error");
+    expect(chat).toHaveProperty("error");
+  });
+
+  it("blockedByIds is present and empty in both when no blockers", async () => {
+    const db = makeDb(); const wp = makeTmpDir();
+    seed(db);
+    const [mcp, chat] = await both(db, wp, "get_task", { cardId: "c1" });
+    expect((mcp as Record<string, unknown>).blockedByIds).toEqual([]);
+    expect((chat as Record<string, unknown>).blockedByIds).toEqual([]);
+  });
+});
+
+// ── search_notes ──────────────────────────────────────────────────────────────
+
+describe("search_notes — MCP vs chat parity", () => {
+  it("same item keys in results", async () => {
+    const db = makeDb(); const wp = makeTmpDir();
+    seed(db);
+    const [mcp, chat] = await both(db, wp, "search_notes", { query: "body" });
+    const mr = mcp as Array<Record<string, unknown>>;
+    const cr = chat as Array<Record<string, unknown>>;
+    expect(mr).toHaveLength(1);
+    expect(cr).toHaveLength(1);
+    expect(Object.keys(mr[0]).sort()).toEqual(Object.keys(cr[0]).sort());
+  });
+
+  it("same id and snippet returned", async () => {
+    const db = makeDb(); const wp = makeTmpDir();
+    seed(db);
+    const [mcp, chat] = await both(db, wp, "search_notes", { query: "body" });
+    const mr = (mcp as Array<Record<string, unknown>>)[0];
+    const cr = (chat as Array<Record<string, unknown>>)[0];
+    expect(mr.id).toBe(cr.id);
+    expect(mr.snippet).toBe(cr.snippet);
+  });
+
+  it("both return empty array for no match", async () => {
+    const db = makeDb(); const wp = makeTmpDir();
+    seed(db);
+    const [mcp, chat] = await both(db, wp, "search_notes", { query: "zzznomatch" });
+    expect(mcp).toEqual([]);
+    expect(chat).toEqual([]);
+  });
+});
+
+// ── search_tasks ──────────────────────────────────────────────────────────────
+
+describe("search_tasks — MCP vs chat parity", () => {
+  it("same item keys in results", async () => {
+    const db = makeDb(); const wp = makeTmpDir();
+    seed(db);
+    const [mcp, chat] = await both(db, wp, "search_tasks", { query: "Task" });
+    const mr = mcp as Array<Record<string, unknown>>;
+    const cr = chat as Array<Record<string, unknown>>;
+    expect(mr).toHaveLength(1);
+    expect(cr).toHaveLength(1);
+    expect(Object.keys(mr[0]).sort()).toEqual(Object.keys(cr[0]).sort());
+  });
+
+  it("same id, priority, columnId returned", async () => {
+    const db = makeDb(); const wp = makeTmpDir();
+    seed(db);
+    const [mcp, chat] = await both(db, wp, "search_tasks", { query: "Task" });
+    const mr = (mcp as Array<Record<string, unknown>>)[0];
+    const cr = (chat as Array<Record<string, unknown>>)[0];
+    expect(mr.id).toBe(cr.id);
+    expect(mr.priority).toBe(cr.priority);
+    expect(mr.columnId).toBe(cr.columnId);
+  });
+});
+
+// ── list_notes ────────────────────────────────────────────────────────────────
+
+describe("list_notes — MCP vs chat parity", () => {
+  it("same item keys (including folder)", async () => {
+    const db = makeDb(); const wp = makeTmpDir();
+    seed(db);
+    const [mcp, chat] = await both(db, wp, "list_notes", { projectId: "proj1" });
+    const mr = mcp as Array<Record<string, unknown>>;
+    const cr = chat as Array<Record<string, unknown>>;
+    expect(mr.length).toBeGreaterThan(0);
+    expect(Object.keys(mr[0]).sort()).toEqual(Object.keys(cr[0]).sort());
+  });
+
+  it("folder field present and equal in both", async () => {
+    const db = makeDb(); const wp = makeTmpDir();
+    seed(db);
+    const [mcp, chat] = await both(db, wp, "list_notes", { projectId: "proj1" });
+    const mr = (mcp as Array<Record<string, unknown>>)[0];
+    const cr = (chat as Array<Record<string, unknown>>)[0];
+    expect(mr).toHaveProperty("folder");
+    expect(cr).toHaveProperty("folder");
+    expect(mr.folder).toBe(cr.folder);
+  });
+});
+
+// ── list_tasks ────────────────────────────────────────────────────────────────
+
+describe("list_tasks — MCP vs chat parity", () => {
+  it("same column and task keys", async () => {
+    const db = makeDb(); const wp = makeTmpDir();
+    seed(db);
+    const [mcp, chat] = await both(db, wp, "list_tasks", { projectId: "proj1" });
+    const mcols = mcp as Array<Record<string, unknown>>;
+    const ccols = chat as Array<Record<string, unknown>>;
+    expect(mcols.length).toBeGreaterThan(0);
+    expect(Object.keys(mcols[0]).sort()).toEqual(Object.keys(ccols[0]).sort());
+    // Task item keys
+    const mtasks = mcols.find((c) => (c.tasks as unknown[]).length > 0)!.tasks as Array<Record<string, unknown>>;
+    const ctasks = ccols.find((c) => (c.tasks as unknown[]).length > 0)!.tasks as Array<Record<string, unknown>>;
+    expect(Object.keys(mtasks[0]).sort()).toEqual(Object.keys(ctasks[0]).sort());
+  });
+
+  it("same task id and priority values", async () => {
+    const db = makeDb(); const wp = makeTmpDir();
+    seed(db);
+    const [mcp, chat] = await both(db, wp, "list_tasks", { projectId: "proj1" });
+    const mTask = (mcp as Array<{ tasks: Array<Record<string, unknown>> }>)
+      .flatMap((c) => c.tasks)[0];
+    const cTask = (chat as Array<{ tasks: Array<Record<string, unknown>> }>)
+      .flatMap((c) => c.tasks)[0];
+    expect(mTask.id).toBe(cTask.id);
+    expect(mTask.priority).toBe(cTask.priority);
+  });
+});
+
+// ── resolve_project ───────────────────────────────────────────────────────────
+
+describe("resolve_project — MCP vs chat parity", () => {
+  it("same keys on match", async () => {
+    const db = makeDb(); const wp = makeTmpDir();
+    seed(db);
+    const [mcp, chat] = await both(db, wp, "resolve_project", { name: "Proj" });
+    expect(Object.keys(mcp as object).sort()).toEqual(Object.keys(chat as object).sort());
+  });
+
+  it("same id, name, workspaceId, status values", async () => {
+    const db = makeDb(); const wp = makeTmpDir();
+    seed(db);
+    const [mcp, chat] = await both(db, wp, "resolve_project", { name: "Proj" });
+    const m = mcp as Record<string, unknown>;
+    const c = chat as Record<string, unknown>;
+    expect(m.id).toBe(c.id);
+    expect(m.name).toBe(c.name);
+    expect(m.workspaceId).toBe(c.workspaceId);
+    expect(m.status).toBe(c.status);
+  });
+
+  it("both return error + candidates on no match", async () => {
+    const db = makeDb(); const wp = makeTmpDir();
+    seed(db);
+    const [mcp, chat] = await both(db, wp, "resolve_project", { name: "zzznomatch" });
+    expect(mcp).toHaveProperty("error");
+    expect(chat).toHaveProperty("error");
+    expect((mcp as Record<string, unknown>).candidates).toBeDefined();
+    expect((chat as Record<string, unknown>).candidates).toBeDefined();
+  });
+});
+
+// ── get_project_summary ───────────────────────────────────────────────────────
+
+describe("get_project_summary — MCP vs chat parity", () => {
+  it("same top-level keys", async () => {
+    const db = makeDb(); const wp = makeTmpDir();
+    seed(db);
+    const [mcp, chat] = await both(db, wp, "get_project_summary", { projectId: "proj1" });
+    expect(Object.keys(mcp as object).sort()).toEqual(Object.keys(chat as object).sort());
+  });
+
+  it("same noteCount and totalCards values", async () => {
+    const db = makeDb(); const wp = makeTmpDir();
+    seed(db);
+    const [mcp, chat] = await both(db, wp, "get_project_summary", { projectId: "proj1" });
+    const m = mcp as Record<string, unknown>;
+    const c = chat as Record<string, unknown>;
+    expect(m.noteCount).toBe(c.noteCount);
+    expect(m.totalCards).toBe(c.totalCards);
+  });
+
+  it("both return { error } for missing project", async () => {
+    const db = makeDb(); const wp = makeTmpDir();
+    seed(db);
+    const [mcp, chat] = await both(db, wp, "get_project_summary", { projectId: "nope" });
+    expect(mcp).toHaveProperty("error");
+    expect(chat).toHaveProperty("error");
+  });
+});
+
+// ── get_project_context_pack ──────────────────────────────────────────────────
+
+describe("get_project_context_pack — MCP vs chat parity", () => {
+  it("same top-level keys", async () => {
+    const db = makeDb(); const wp = makeTmpDir();
+    seed(db);
+    const [mcp, chat] = await both(db, wp, "get_project_context_pack", { projectId: "proj1" });
+    expect(Object.keys(mcp as object).sort()).toEqual(Object.keys(chat as object).sort());
+  });
+
+  it("same noteCount and pinned note ids", async () => {
+    const db = makeDb(); const wp = makeTmpDir();
+    seed(db);
+    const [mcp, chat] = await both(db, wp, "get_project_context_pack", { projectId: "proj1" });
+    const m = mcp as Record<string, unknown>;
+    const c = chat as Record<string, unknown>;
+    expect(m.noteCount).toBe(c.noteCount);
+    const mPinned = (m.pinnedNotes as Array<{ id: string }>).map((n) => n.id).sort();
+    const cPinned = (c.pinnedNotes as Array<{ id: string }>).map((n) => n.id).sort();
+    expect(mPinned).toEqual(cPinned);
+  });
+
+  it("both return { error } for missing project", async () => {
+    const db = makeDb(); const wp = makeTmpDir();
+    seed(db);
+    const [mcp, chat] = await both(db, wp, "get_project_context_pack", { projectId: "nope" });
+    expect(mcp).toHaveProperty("error");
+    expect(chat).toHaveProperty("error");
+  });
+});
+
+// ── Known intentional divergences (documented) ───────────────────────────────
+
+describe("known intentional divergences between MCP and chat", () => {
+  it("list_recent_activity: MCP returns a flat array, chat returns { recentNotes, recentTasks }", async () => {
+    const db = makeDb(); const wp = makeTmpDir();
+    seed(db);
+    const [mcp, chat] = await both(db, wp, "list_recent_activity", { workspaceId: "ws1", projectId: "proj1" });
+    // MCP: flat sorted array
+    expect(Array.isArray(mcp)).toBe(true);
+    // Chat (via executeReadTool): split object
+    expect(chat).toHaveProperty("recentNotes");
+    expect(chat).toHaveProperty("recentTasks");
+  });
+
+  it("create_project: MCP returns { projectId, name, columns }, chat returns { project, columns }", async () => {
+    const db = makeDb(); const wp = makeTmpDir();
+    seed(db);
+    const [mcp, chat] = await both(db, wp, "create_project", { workspaceId: "ws1", name: "New Project" });
+    // MCP uses projectId key
+    expect(mcp).toHaveProperty("projectId");
+    expect(mcp).not.toHaveProperty("project");
+    // Chat wraps the full project object
+    expect(chat).toHaveProperty("project");
+    expect(chat).not.toHaveProperty("projectId");
   });
 });

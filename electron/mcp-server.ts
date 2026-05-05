@@ -296,13 +296,18 @@ function toCard(r: any) {
     order: r.order, assignee: r.assignee, createdAt: r.created_at, updatedAt: r.updated_at, archivedAt: r.archived_at };
 }
 
-function getSnapshot(db: Database.Database) {
+export function getSnapshot(db: Database.Database) {
   return {
     workspaces: db.prepare("SELECT * FROM workspaces ORDER BY created_at").all().map(toWorkspace),
     projects:   db.prepare("SELECT * FROM projects ORDER BY created_at").all().map(toProject),
     notes:      db.prepare("SELECT * FROM notes ORDER BY updated_at DESC").all().map(toNote),
     columns:    db.prepare(`SELECT * FROM board_columns ORDER BY "order"`).all().map(toColumn),
     cards:      db.prepare(`SELECT * FROM task_cards ORDER BY "order"`).all().map(toCard),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    tags:       (db.prepare("SELECT * FROM tags ORDER BY name").all() as any[]).map((r) => ({
+      id: r.id as string, workspaceId: r.workspace_id as string,
+      name: r.name as string, color: r.color as string,
+    })),
   };
 }
 
@@ -322,7 +327,7 @@ function insertNotification(db: Database.Database, tool: string, title: string, 
 // ── Tool executor ─────────────────────────────
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function executeTool(db: Database.Database, workspacePath: string, toolName: string, args: Record<string, any>): unknown {
+export function executeTool(db: Database.Database, workspacePath: string, toolName: string, args: Record<string, any>): unknown {
   const snap = getSnapshot(db);
 
   switch (toolName) {
@@ -653,6 +658,20 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
       if (!col) return { error: "Column not found" };
       const now = ts();
       db.prepare(`UPDATE task_cards SET column_id = ?, updated_at = ? WHERE id = ?`).run(targetColumnId, now, cardId);
+      // When a task moves to a done column, clear it from any other task's blocked_by_ids
+      // so get_task no longer reports it as a pending blocker.
+      if (col.type === "done") {
+        const affected = db.prepare(
+          "SELECT id, blocked_by_ids FROM task_cards WHERE blocked_by_ids != '[]' AND id != ?"
+        ).all(cardId) as { id: string; blocked_by_ids: string }[];
+        for (const row of affected) {
+          const ids: string[] = j2(row.blocked_by_ids);
+          if (ids.includes(cardId as string)) {
+            db.prepare("UPDATE task_cards SET blocked_by_ids = ?, updated_at = ? WHERE id = ?")
+              .run(j(ids.filter((bid) => bid !== cardId)), now, row.id);
+          }
+        }
+      }
       insertNotification(db, "update_task_status", "Task moved", `"${card.title}" → ${col.name}`);
       return { id: cardId, title: card.title, previousColumn: card.columnId,
         newColumn: targetColumnId, newColumnName: col.name, updatedAt: now };
@@ -672,6 +691,25 @@ function executeTool(db: Database.Database, workspacePath: string, toolName: str
         } else {
           db.prepare(`UPDATE task_cards SET column_id = ?, updated_at = ? WHERE id = ?`).run(targetColumnId, now, id);
           results.push({ id, ok: true });
+        }
+      }
+      // When moving to a done column, clear all successfully-moved IDs from
+      // any other task's blocked_by_ids.
+      if (col.type === "done") {
+        const movedIds = results.filter((r) => r.ok).map((r) => r.id);
+        if (movedIds.length > 0) {
+          const affected = db.prepare(
+            "SELECT id, blocked_by_ids FROM task_cards WHERE blocked_by_ids != '[]'"
+          ).all() as { id: string; blocked_by_ids: string }[];
+          for (const row of affected) {
+            if (movedIds.includes(row.id)) continue; // skip the tasks we just moved
+            const ids: string[] = j2(row.blocked_by_ids);
+            const cleaned = ids.filter((bid) => !movedIds.includes(bid));
+            if (cleaned.length !== ids.length) {
+              db.prepare("UPDATE task_cards SET blocked_by_ids = ?, updated_at = ? WHERE id = ?")
+                .run(j(cleaned), now, row.id);
+            }
+          }
         }
       }
       const moved = results.filter((r) => r.ok).length;
