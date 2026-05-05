@@ -13,6 +13,7 @@
 
 import { useMemo, useEffect, useState, useRef } from "react";
 import { cn } from "@/lib/utils";
+import { parseWikilinks } from "@/lib/wikilink-parser";
 
 // ── Slug ─────────────────────────────────────────────────────────────────────
 
@@ -55,18 +56,45 @@ export function extractHeadings(markdown: string): Heading[] {
   return headings;
 }
 
+// ── Wikilink extraction ───────────────────────────────────────────────────────
+
+export interface WikiLink {
+  title: string;
+  noteId: string | null;
+}
+
+/** Extract unique wikilinks from raw markdown, deduplicated by title. */
+export function extractWikiLinks(
+  markdown: string,
+  notes: { id: string; title: string }[]
+): WikiLink[] {
+  const titleIndex = new Map(notes.map((n) => [n.title.toLowerCase().trim(), n.id]));
+  const seen = new Set<string>();
+  const links: WikiLink[] = [];
+  for (const { title } of parseWikilinks(markdown)) {
+    const key = title.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    links.push({ title, noteId: titleIndex.get(key) ?? null });
+  }
+  return links;
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 interface Props {
   markdown: string;
   scrollContainerRef: React.RefObject<HTMLDivElement | null>;
+  /** Pass workspace notes to render a Links section in the TOC */
+  notes?: { id: string; title: string }[];
 }
 
 // Minimum gap (px) to maintain between the content column right edge and the TOC left edge
 const MIN_GAP = 24;
 
-export function TableOfContents({ markdown, scrollContainerRef }: Props) {
-  const headings = useMemo(() => extractHeadings(markdown), [markdown]);
+export function TableOfContents({ markdown, scrollContainerRef, notes = [] }: Props) {
+  const headings  = useMemo(() => extractHeadings(markdown), [markdown]);
+  const wikiLinks = useMemo(() => extractWikiLinks(markdown, notes), [markdown, notes]);
   const [visible, setVisible] = useState(false);
   const tocRef = useRef<HTMLDivElement>(null);
 
@@ -100,7 +128,7 @@ export function TableOfContents({ markdown, scrollContainerRef }: Props) {
     };
   }, [scrollContainerRef]);
 
-  if (headings.length < 2) return null;
+  if (headings.length < 2 && wikiLinks.length === 0) return null;
 
   function handleClick(e: React.MouseEvent<HTMLAnchorElement>, id: string) {
     e.preventDefault();
@@ -121,29 +149,67 @@ export function TableOfContents({ markdown, scrollContainerRef }: Props) {
       className="absolute top-5 right-4 w-52 flex-shrink-0 transition-opacity duration-150"
       style={{ opacity: visible ? 1 : 0, pointerEvents: visible ? "auto" : "none" }}
     >
-      <div className="sticky top-5">
-        <p className="text-[0.714rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)] mb-2 px-1">
-          On this page
-        </p>
-        <nav className="flex flex-col gap-0.5">
-          {headings.map((h, i) => (
-            <a
-              key={`${h.id}-${i}`}
-              href={`#${h.id}`}
-              onClick={(e) => handleClick(e, h.id)}
-              className={cn(
-                "text-[0.786rem] leading-snug truncate rounded px-1 py-0.5 transition-colors",
-                "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]",
-                h.level === 1 && "font-medium",
-                h.level === 2 && "pl-3",
-                h.level === 3 && "pl-5 text-[0.714rem]",
-              )}
-              title={h.text}
-            >
-              {h.text}
-            </a>
-          ))}
-        </nav>
+      <div className="sticky top-5 space-y-4">
+        {headings.length >= 2 && (
+          <div>
+            <p className="text-[0.714rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)] mb-2 px-1">
+              On this page
+            </p>
+            <nav className="flex flex-col gap-0.5">
+              {headings.map((h, i) => (
+                <a
+                  key={`${h.id}-${i}`}
+                  href={`#${h.id}`}
+                  onClick={(e) => handleClick(e, h.id)}
+                  className={cn(
+                    "text-[0.786rem] leading-snug truncate rounded px-1 py-0.5 transition-colors",
+                    "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]",
+                    h.level === 1 && "font-medium",
+                    h.level === 2 && "pl-3",
+                    h.level === 3 && "pl-5 text-[0.714rem]",
+                  )}
+                  title={h.text}
+                >
+                  {h.text}
+                </a>
+              ))}
+            </nav>
+          </div>
+        )}
+
+        {wikiLinks.length > 0 && (
+          <div>
+            <p className="text-[0.714rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)] mb-2 px-1">
+              Links
+            </p>
+            <nav className="flex flex-col gap-0.5">
+              {wikiLinks.map((wl, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => {
+                    if (wl.noteId) {
+                      window.dispatchEvent(new CustomEvent("cairn:select-note", { detail: { noteId: wl.noteId } }));
+                    }
+                  }}
+                  title={wl.noteId ? `Open: ${wl.title}` : `Note not found: ${wl.title}`}
+                  className={cn(
+                    "flex items-center gap-1.5 w-full text-left text-[0.786rem] leading-snug truncate rounded px-1 py-0.5 transition-colors",
+                    wl.noteId
+                      ? "text-[var(--accent)] hover:bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] cursor-pointer"
+                      : "text-[var(--text-tertiary)] opacity-50 cursor-default"
+                  )}
+                >
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0" aria-hidden="true">
+                    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                  </svg>
+                  <span className="truncate">{wl.title}</span>
+                </button>
+              ))}
+            </nav>
+          </div>
+        )}
       </div>
     </div>
   );

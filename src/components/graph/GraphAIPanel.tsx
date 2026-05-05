@@ -109,18 +109,16 @@ function actionLabel(action: SuggestedAction): string {
 
 interface ActionCardProps {
   action: SuggestedAction;
+  state: "idle" | "applying" | "done";
   onApply: () => Promise<void>;
   onDismiss: () => void;
 }
 
-function ActionCard({ action, onApply, onDismiss }: ActionCardProps) {
-  const [state, setState] = useState<"idle" | "applying" | "done">("idle");
+function ActionCard({ action, state, onApply, onDismiss }: ActionCardProps) {
   const [expanded, setExpanded] = useState(false);
 
   async function handleApply() {
-    setState("applying");
-    try { await onApply(); setState("done"); }
-    catch { setState("idle"); }
+    await onApply();
   }
 
   return (
@@ -197,7 +195,12 @@ interface ActionsListProps {
 function ActionsList(props: ActionsListProps) {
   const { actions, notes, cards, tags, activeWorkspaceId, updateNote, updateCard, linkNoteToCard, createTag, recomputeGraphRelationships } = props;
   const [dismissed, setDismissed] = useState<Set<number>>(new Set());
+  const [cardStates, setCardStates] = useState<Map<number, "idle" | "applying" | "done">>(() => new Map());
   const [applyAllState, setApplyAllState] = useState<"idle" | "applying" | "done">("idle");
+
+  function setCardState(i: number, state: "idle" | "applying" | "done") {
+    setCardStates((prev) => new Map(prev).set(i, state));
+  }
 
   async function applyAction(action: SuggestedAction) {
     switch (action.type) {
@@ -240,7 +243,13 @@ function ActionsList(props: ActionsListProps) {
     setApplyAllState("applying");
     for (let i = 0; i < actions.length; i++) {
       if (dismissed.has(i)) continue;
-      try { await applyAction(actions[i]); } catch { /* skip */ }
+      setCardState(i, "applying");
+      try {
+        await applyAction(actions[i]);
+        setCardState(i, "done");
+      } catch {
+        setCardState(i, "idle");
+      }
     }
     setApplyAllState("done");
   }
@@ -270,7 +279,16 @@ function ActionsList(props: ActionsListProps) {
           <ActionCard
             key={i}
             action={action}
-            onApply={() => applyAction(action)}
+            state={cardStates.get(i) ?? "idle"}
+            onApply={async () => {
+              setCardState(i, "applying");
+              try {
+                await applyAction(action);
+                setCardState(i, "done");
+              } catch {
+                setCardState(i, "idle");
+              }
+            }}
             onDismiss={() => setDismissed((prev) => new Set([...prev, i]))}
           />
         )

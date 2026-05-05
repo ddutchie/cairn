@@ -838,13 +838,17 @@ export function NoteEditor({ note }: NoteEditorProps) {
           }}
           title={resolved ? `Open: ${title}` : `Note not found: ${title}`}
           className={cn(
-            "inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[0.82em] font-medium transition-colors",
+            "inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[0.82em] font-medium transition-colors align-baseline",
             resolved
-              ? "text-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] hover:bg-[color-mix(in_srgb,var(--accent)_20%,transparent)] cursor-pointer"
-              : "text-[var(--text-tertiary)] bg-[var(--surface-2)] cursor-default line-through"
+              ? "text-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] hover:bg-[color-mix(in_srgb,var(--accent)_18%,transparent)] cursor-pointer"
+              : "text-[var(--text-tertiary)] bg-[var(--surface-2)] cursor-default opacity-60"
           )}
         >
-          [[{title}]]
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0" aria-hidden="true">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+          </svg>
+          {resolved ? title : `${title} ↗`}
         </button>
       );
     },
@@ -1043,6 +1047,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
               <TableOfContents
                 markdown={note.content}
                 scrollContainerRef={previewScrollRef}
+                notes={notes}
               />
             )}
             <div className="px-6 py-5 max-w-4xl mx-auto">
