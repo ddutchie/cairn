@@ -41,7 +41,7 @@ export const DEFAULT_GRAPH_FILTERS: GraphFilters = {
   nodeTypes: ["project", "note", "card", "tag"],
   edgeTypes: [
     "note-note", "note-card", "tag-member", "project-member",
-    "flow-ref", "flow-edge", "co-mention", "keyword", "assignee",
+    "flow-ref", "flow-edge", "co-mention", "keyword", "assignee", "wikilink",
   ],
   includeAuto: true,
 };
@@ -151,5 +151,6 @@ export function edgeTypeLabel(type: GraphEdgeType): string {
     case "co-mention":     return "Co-mention";
     case "keyword":        return "Keyword";
     case "assignee":       return "Assignee";
+    case "wikilink":       return "Wikilink";
   }
 }

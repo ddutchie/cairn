@@ -8,6 +8,8 @@ import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
 import { Pin, PinOff, Calendar, Eye, Pencil, Wand2, Loader2, CheckCircle2, Tag, Plus, X, Link2, Kanban, ChevronDown, FileText } from "lucide-react";
+import { WikilinkPicker } from "./WikilinkPicker";
+import { getActiveWikilink } from "@/lib/wikilink-parser";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn, formatRelative } from "@/lib/utils";
@@ -30,6 +32,7 @@ import type { Plugin as RemarkPlugin } from "unified";
 import type { Root as MdastRoot, Blockquote, Paragraph, Text as MdastText } from "mdast";
 import type { InlineMath } from "mdast-util-math";
 import { visit as mdastVisit } from "unist-util-visit";
+import { WIKILINK_RE } from "@/lib/wikilink-parser";
 
 const CALLOUT_RE = /^\[!([^\]]+)\]([\+\-]?)([\s\S]*)/;
 
@@ -68,6 +71,38 @@ const remarkCallout: RemarkPlugin<[], MdastRoot> = () => (tree) => {
         "data-default-open": defaultOpen ? "true" : "false",
       },
     };
+  });
+};
+
+// ── Remark plugin: wikilinks [[Title]] → <wikilink data-title="Title"> ────────
+// Scans Text nodes for [[...]] patterns, splits them into plain text + wikilink
+// HAST nodes so ReactMarkdown can render them via the `wikilink` component.
+const remarkWikilinks: RemarkPlugin<[], MdastRoot> = () => (tree) => {
+  const re = new RegExp(WIKILINK_RE.source, "g");
+  mdastVisit(tree, "text", (node: MdastText, index, parent) => {
+    if (index == null || !parent) return;
+    const text = node.value;
+    const newNodes: MdastRoot["children"][number][] = [];
+    let lastIndex = 0;
+    let m: RegExpExecArray | null;
+    re.lastIndex = 0;
+    while ((m = re.exec(text)) !== null) {
+      const title = m[1].trim();
+      if (lastIndex < m.index) {
+        newNodes.push({ type: "text", value: text.slice(lastIndex, m.index) });
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      newNodes.push({ type: "text", value: "", data: { hName: "wikilink", hProperties: { "data-title": title } } } as any);
+      lastIndex = m.index + m[0].length;
+    }
+    if (newNodes.length === 0) return;
+    if (lastIndex < text.length) {
+      newNodes.push({ type: "text", value: text.slice(lastIndex) });
+    }
+    // Replace the current node with the split nodes
+    parent.children.splice(index, 1, ...(newNodes as MdastRoot["children"]));
+    // Return the index delta so visitor skips re-visiting replaced nodes
+    return index + newNodes.length;
   });
 };
 
@@ -317,7 +352,7 @@ interface NoteEditorProps {
 type EditorMode = "write" | "read";
 
 export function NoteEditor({ note }: NoteEditorProps) {
-  const { updateNote, aiConfig, activeProjectId, getProjectColumns, tags, createTag, getTagById, activeWorkspaceId, setView } = useCairnStore(useShallow((s) => ({
+  const { updateNote, aiConfig, activeProjectId, getProjectColumns, tags, createTag, getTagById, activeWorkspaceId, setView, notes, projects } = useCairnStore(useShallow((s) => ({
     updateNote:        s.updateNote,
     aiConfig:          s.aiConfig,
     activeProjectId:   s.activeProjectId,
@@ -327,6 +362,8 @@ export function NoteEditor({ note }: NoteEditorProps) {
     getTagById:        s.getTagById,
     activeWorkspaceId: s.activeWorkspaceId,
     setView:           s.setView,
+    notes:             s.notes,
+    projects:          s.projects,
   })));
   const aiEnabled = aiConfig.aiEnabled ?? true;
   const editorRef = useRef<MarkdownEditorHandle>(null);
@@ -353,6 +390,14 @@ export function NoteEditor({ note }: NoteEditorProps) {
 
   // MD preview panel state — selected text to render in the bottom panel
   const [previewText, setPreviewText] = useState<string | null>(null);
+
+  // ── Wikilink picker state ──────────────────────────────────────────────────
+  const [wikilinkPicker, setWikilinkPicker] = useState<{
+    query: string;
+    triggerFrom: number;
+    top: number;
+    left: number;
+  } | null>(null);
 
   // Scroll container ref — used by TableOfContents to scroll to headings
   const previewScrollRef = useRef<HTMLDivElement>(null);
@@ -391,6 +436,31 @@ export function NoteEditor({ note }: NoteEditorProps) {
   const handleContentChange = useCallback(
     (markdown: string) => {
       setWordCount(countWords(markdown));
+
+      // Detect [[ wikilink trigger
+      const view = editorRef.current?.getView();
+      if (view) {
+        const cursorPos = view.state.selection.main.head;
+        const active = getActiveWikilink(markdown, cursorPos);
+        if (active) {
+          // Position the picker near the cursor
+          const coords = view.coordsAtPos(cursorPos);
+          const containerRect = containerRef.current?.getBoundingClientRect();
+          if (coords && containerRect) {
+            setWikilinkPicker({
+              query: active.query,
+              triggerFrom: active.triggerFrom,
+              top: coords.bottom - containerRect.top + 4,
+              left: Math.min(coords.left - containerRect.left, containerRect.width - 290),
+            });
+          } else {
+            setWikilinkPicker((prev) => prev ? { ...prev, query: active.query, triggerFrom: active.triggerFrom } : null);
+          }
+        } else {
+          setWikilinkPicker(null);
+        }
+      }
+
       pendingContent.current = { noteId: note.id, markdown };
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(() => {
@@ -496,6 +566,40 @@ export function NoteEditor({ note }: NoteEditorProps) {
     },
     [aiConfig.baseUrl, aiConfig.model, aiConfig.apiKey]
   );
+
+  // Insert [[Title]] replacing the typed `[[query` trigger text
+  const handleWikilinkSelect = useCallback((title: string) => {
+    const view = editorRef.current?.getView();
+    if (!view || !wikilinkPicker) {
+      setWikilinkPicker(null);
+      return;
+    }
+    // Replace from the `[[` trigger start to the current cursor
+    const from = wikilinkPicker.triggerFrom;
+    const to = view.state.selection.main.head;
+    const insert = `[[${title}]]`;
+    view.dispatch({
+      changes: { from, to, insert },
+      selection: { anchor: from + insert.length },
+    });
+    view.focus();
+    setWikilinkPicker(null);
+  }, [wikilinkPicker]);
+
+  // Toolbar button: open picker at cursor position without a `[[` trigger
+  const openWikilinkPicker = useCallback(() => {
+    const view = editorRef.current?.getView();
+    if (!view) return;
+    const cursorPos = view.state.selection.main.head;
+    const coords = view.coordsAtPos(cursorPos);
+    const containerRect = containerRef.current?.getBoundingClientRect();
+    setWikilinkPicker({
+      query: "",
+      triggerFrom: cursorPos,
+      top: coords && containerRect ? coords.bottom - containerRect.top + 4 : 80,
+      left: coords && containerRect ? Math.min(coords.left - containerRect.left, containerRect.width - 290) : 80,
+    });
+  }, []);
 
   const handleFormat = useCallback((action: FormatAction) => {
     const view = editorRef.current?.getView();
@@ -720,8 +824,33 @@ export function NoteEditor({ note }: NoteEditorProps) {
       }
       return <section {...props}>{children}</section>;
     },
+    wikilink({ ...props }: React.HTMLAttributes<HTMLElement> & ExtraProps) {
+      const title = (props as Record<string, string>)["data-title"] ?? "";
+      const target = notes.find((n) => n.title.toLowerCase() === title.toLowerCase());
+      const resolved = target != null;
+      return (
+        <button
+          type="button"
+          onClick={() => {
+            if (target) {
+              window.dispatchEvent(new CustomEvent("cairn:select-note", { detail: { noteId: target.id } }));
+            }
+          }}
+          title={resolved ? `Open: ${title}` : `Note not found: ${title}`}
+          className={cn(
+            "inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[0.82em] font-medium transition-colors",
+            resolved
+              ? "text-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] hover:bg-[color-mix(in_srgb,var(--accent)_20%,transparent)] cursor-pointer"
+              : "text-[var(--text-tertiary)] bg-[var(--surface-2)] cursor-default line-through"
+          )}
+        >
+          [[{title}]]
+        </button>
+      );
+    },
   // previewScrollRef is a stable React ref — no need to list it as a dep
-  }), [note.id, note.content, updateNote]) as import("react-markdown").Components;
+  // notes is needed for wikilink resolution
+  }), [note.id, note.content, updateNote, notes]) as import("react-markdown").Components;
 
   const handleToggleTag = useCallback((tagId: string) => {
     const has = note.tagIds.includes(tagId);
@@ -743,6 +872,10 @@ export function NoteEditor({ note }: NoteEditorProps) {
         const target = e.target as HTMLElement;
         if (!target.closest(".cm-editor") && !target.closest("[data-ai-toolbar]") && !target.closest("[data-md-preview-portal]")) {
           setPreviewText(null);
+        }
+        // Dismiss wikilink picker when clicking outside it
+        if (!target.closest("[data-wikilink-picker]")) {
+          setWikilinkPicker(null);
         }
       }}
     >
@@ -806,6 +939,17 @@ export function NoteEditor({ note }: NoteEditorProps) {
               </button>
             </Tooltip>
           ))}
+          {mode === "write" && (
+            <Tooltip content="Insert wikilink [[Note Title]]">
+              <button
+                onClick={openWikilinkPicker}
+                className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
+              >
+                <Link2 size={12} />
+                Link
+              </button>
+            </Tooltip>
+          )}
           <Tooltip content={note.isPinned ? "Unpin note" : "Pin note"}>
             <button
               onClick={() => updateNote(note.id, { isPinned: !note.isPinned })}
@@ -878,6 +1022,19 @@ export function NoteEditor({ note }: NoteEditorProps) {
           />
         </div>
 
+        {/* Wikilink autocomplete picker */}
+        {wikilinkPicker && mode === "write" && (
+          <WikilinkPicker
+            notes={notes.filter((n) => n.id !== note.id)}
+            projects={projects}
+            query={wikilinkPicker.query}
+            onSelect={handleWikilinkSelect}
+            onClose={() => setWikilinkPicker(null)}
+            top={wikilinkPicker.top}
+            left={wikilinkPicker.left}
+          />
+        )}
+
         {/* Read / preview pane */}
         {mode === "read" && (
           <div ref={previewScrollRef} className="absolute inset-0 overflow-y-auto overflow-x-hidden">
@@ -891,8 +1048,8 @@ export function NoteEditor({ note }: NoteEditorProps) {
             <div className="px-6 py-5 max-w-4xl mx-auto">
               {note.content ? (
                 <div className="prose-cairn">
-                  <ReactMarkdown
-                     remarkPlugins={[remarkGfm, remarkBreaks, remarkMath, remarkPromoteDisplayMath, remarkCallout]}
+                   <ReactMarkdown
+                     remarkPlugins={[remarkGfm, remarkBreaks, remarkMath, remarkPromoteDisplayMath, remarkCallout, remarkWikilinks]}
                      rehypePlugins={[rehypeCaptureLatex, rehypeKatex, rehypeMergedPass]}
                      urlTransform={(url) => url.startsWith("asset://") ? url : defaultUrlTransform(url)}
                      components={mdComponents}
@@ -951,7 +1108,25 @@ function BacklinksPanel({ note, onOpenCard }: BacklinksPanelProps) {
     [note.linkedCardIds, cards],
   );
 
-  const total = linkedNotes.length + linkedCards.length;
+  // Notes that wikilink to this note via [[Current Note Title]]
+  const wikilinkBacklinks = useMemo(() => {
+    const titleLower = note.title.toLowerCase();
+    const re = /\[\[([^\][\n]+?)\]\]/g;
+    return notes.filter((n) => {
+      if (n.id === note.id) return false;
+      // Already shown in linkedNotes
+      if ((note.linkedNoteIds ?? []).includes(n.id)) return false;
+      const content = n.content ?? "";
+      let m: RegExpExecArray | null;
+      re.lastIndex = 0;
+      while ((m = re.exec(content)) !== null) {
+        if (m[1].trim().toLowerCase() === titleLower) return true;
+      }
+      return false;
+    });
+  }, [note.id, note.title, note.linkedNoteIds, notes]);
+
+  const total = linkedNotes.length + linkedCards.length + wikilinkBacklinks.length;
   if (total === 0) return null;
 
   return (
@@ -991,6 +1166,24 @@ function BacklinksPanel({ note, onOpenCard }: BacklinksPanelProps) {
               </button>
             );
           })}
+          {wikilinkBacklinks.length > 0 && (
+            <>
+              {(linkedNotes.length > 0 || linkedCards.length > 0) && (
+                <div className="h-px bg-[var(--border)] my-1" />
+              )}
+              {wikilinkBacklinks.map((n) => (
+                <button
+                  key={n.id}
+                  onClick={() => window.dispatchEvent(new CustomEvent("cairn:select-note", { detail: { noteId: n.id } }))}
+                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-[var(--surface-2)] text-xs text-[var(--text-secondary)] transition-colors text-left"
+                >
+                  <Link2 size={11} className="text-[var(--accent)] flex-shrink-0" />
+                  <span className="truncate flex-1">{n.title}</span>
+                  <span className="text-[0.714rem] text-[var(--accent)] opacity-70">wikilink</span>
+                </button>
+              ))}
+            </>
+          )}
         </div>
       )}
     </div>

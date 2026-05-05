@@ -625,7 +625,7 @@ export function registerAppHandlers(
 
   // ── MCP notification handler ───────────────────────
   ipcMain.handle("mcp:markNotificationsRead", () => handle(() => {
-    markMcpNotificationsRead(ctx.db);
+    markMcpNotificationsRead(db);
     updateTrayBadge(0);
   }));
 
