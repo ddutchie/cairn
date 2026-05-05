@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import type { KnowledgeGraph, GraphNode } from "@/types";
+import { wikilinkAlreadyExists, buildGraphContext } from "./graph-ai-utils";
 import { MarkdownContent } from "@/components/chat/chat-panel/MarkdownContent";
 
 // ── Action types (mirror suggest_connections schema) ──────────────────────────
@@ -37,34 +38,7 @@ interface GraphAIPanelProps {
   onClose: () => void;
 }
 
-// ── Graph context builder ─────────────────────────────────────────────────────
 
-function buildGraphContext(graph: KnowledgeGraph, selectedNode: GraphNode | null): string {
-  const nodeLines = graph.nodes
-    .slice(0, 80)
-    .map((n) => {
-      const snippet = n.meta?.snippet ? ` — "${n.meta.snippet.slice(0, 80).replace(/\n/g, " ")}"` : "";
-      return `- [${n.type}] id=${n.id} "${n.title}"${snippet}`;
-    })
-    .join("\n");
-
-  const edgeLines = graph.edges
-    .slice(0, 100)
-    .map((e) => {
-      const src = graph.nodes.find((n) => n.id === e.source);
-      const tgt = graph.nodes.find((n) => n.id === e.target);
-      if (!src || !tgt) return null;
-      return `- "${src.title}" → "${tgt.title}" (${e.type}${e.weight != null ? `, w=${e.weight.toFixed(2)}` : ""})`;
-    })
-    .filter(Boolean)
-    .join("\n");
-
-  const sel = selectedNode
-    ? `\n\nSelected: [${selectedNode.type}] id=${selectedNode.id} "${selectedNode.title}"${selectedNode.meta?.snippet ? `\nPreview: "${selectedNode.meta.snippet}"` : ""}`
-    : "";
-
-  return `NODES (${graph.nodes.length} total, first 80):\n${nodeLines || "(none)"}\n\nEDGES (${graph.edges.length} total, first 100):\n${edgeLines || "(none)"}${sel}`;
-}
 
 // ── System prompt ─────────────────────────────────────────────────────────────
 
@@ -84,6 +58,8 @@ Your capabilities:
 Write your analysis as clear, concise markdown prose.
 
 When you have specific actionable suggestions, call the \`suggest_connections\` tool with those actions. The user will see Apply buttons for each one. Use node IDs exactly as they appear in the graph snapshot. Limit to 8 actions maximum.
+
+**Important:** The graph snapshot includes an "EXISTING WIKILINKS" section. Never suggest \`add_wikilink\` actions for pairs that already appear there — those links already exist.
 
 Do not put the actions in your prose — call the tool instead.`;
 
@@ -207,7 +183,9 @@ function ActionsList(props: ActionsListProps) {
       case "add_wikilink": {
         const note = notes.find((n) => n.id === action.sourceNoteId);
         if (!note) throw new Error("Note not found");
-        updateNote(action.sourceNoteId, { content: (note.content ?? "") + `\n\n[[${action.targetTitle}]]` });
+        const existing = note.content ?? "";
+        if (wikilinkAlreadyExists(existing, action.targetTitle)) break;
+        updateNote(action.sourceNoteId, { content: existing + `\n\n[[${action.targetTitle}]]` });
         break;
       }
       case "link_note_note": {
