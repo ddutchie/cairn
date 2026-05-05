@@ -63,6 +63,7 @@ export const TOOL_LABELS: Record<string, (args: ToolArgs) => string> = {
   get_dashboard_constants: () => "Reading dashboard API reference",
   get_idea_flow_rules:    () => "Reading Idea Flow rules",
   ask_questions:          (a) => `Asking ${(a.questions as unknown[])?.length ?? ""} question${(a.questions as unknown[])?.length !== 1 ? "s" : ""}`,
+  suggest_connections:    (a) => `Suggesting ${(a.actions as unknown[])?.length ?? ""} connection${(a.actions as unknown[])?.length !== 1 ? "s" : ""}`,
 };
 
 // Tool definitions for the AI (OpenAI function calling format)

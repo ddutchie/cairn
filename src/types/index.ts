@@ -242,7 +242,8 @@ export type GraphNodeType = "project" | "note" | "card" | "tag";
 
 export type GraphEdgeType =
   | "note-note" | "note-card" | "tag-member" | "project-member"
-  | "flow-ref" | "flow-edge" | "co-mention" | "keyword" | "assignee";
+  | "flow-ref" | "flow-edge" | "co-mention" | "keyword" | "assignee"
+  | "wikilink";
 
 export interface GraphNode {
   id: ID;

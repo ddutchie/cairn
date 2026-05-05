@@ -46,7 +46,8 @@ export type EdgeType =
   | "flow-edge"
   | "co-mention"
   | "keyword"
-  | "assignee";
+  | "assignee"
+  | "wikilink";
 
 export interface GraphEdge {
   id: string;
@@ -363,11 +364,12 @@ export function getKnowledgeGraph(
   }
 
   // ── 6. Auto relationships (relationship_cache) ─────────────────────────────
-  if (includeAuto && (wantsEdge("co-mention") || wantsEdge("keyword") || wantsEdge("assignee"))) {
+  if (includeAuto && (wantsEdge("co-mention") || wantsEdge("keyword") || wantsEdge("assignee") || wantsEdge("wikilink"))) {
     const autoTypes: string[] = [];
     if (wantsEdge("co-mention")) autoTypes.push("co-mention");
     if (wantsEdge("keyword"))    autoTypes.push("keyword");
     if (wantsEdge("assignee"))   autoTypes.push("assignee");
+    if (wantsEdge("wikilink"))   autoTypes.push("wikilink");
 
     if (autoTypes.length > 0) {
       const typePlaceholders = autoTypes.map(() => "?").join(",");
@@ -469,6 +471,18 @@ export function getNeighbours(
 
 // ── Auto-relationship computation ─────────────────────────────────────────────
 
+/** Extract [[Title]] wikilink targets from markdown content */
+function extractWikilinkTitles(content: string): string[] {
+  const results: string[] = [];
+  const re = /\[\[([^\][\n]+?)\]\]/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(content)) !== null) {
+    const title = m[1].trim();
+    if (title.length > 0) results.push(title.toLowerCase());
+  }
+  return results;
+}
+
 /** Tokenise text into lowercase words, filter stop-words, min length 4 */
 function tokenise(text: string): string[] {
   const STOP = new Set([
@@ -524,6 +538,23 @@ export function computeAutoRelationships(
     // Clear stale cache for this workspace's entities
     const allIds = [...notes.map((n) => n.id as string), ...cards.map((c) => c.id as string)];
     for (const id of allIds) deleteOld.run(id, id);
+
+    // ── Wikilink: [[Title]] explicit author-written links ─────────────────
+    const noteTitleToId = new Map<string, string>(); // title_lower → noteId
+    for (const n of notes) noteTitleToId.set((n.title as string).toLowerCase(), n.id as string);
+
+    for (const n of notes) {
+      const content = (n.content_text as string) || "";
+      const targets = extractWikilinkTitles(content);
+      for (const titleLower of targets) {
+        const targetId = noteTitleToId.get(titleLower);
+        if (!targetId || targetId === (n.id as string)) continue;
+        const [src, tgt] = (n.id as string) < targetId
+          ? [n.id as string, targetId]
+          : [targetId, n.id as string];
+        upsert.run(src, tgt, "wikilink", 1.0, now);
+      }
+    }
 
     // ── Co-mention: note content mentions another note/card title ─────────
     const titleMap = new Map<string, string>(); // title_lower → id

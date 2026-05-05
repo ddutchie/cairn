@@ -39,7 +39,7 @@ function makeDb(): Database.Database {
 }
 
 const llmConfig: LLMConfig = { baseUrl: "http://localhost", model: "test", apiKey: "" };
-const chatReq: ChatRequest = { workspaceId: "ws1", projectId: "proj1", threadId: "t1" };
+const chatReq: ChatRequest = { message: "", workspaceId: "ws1", projectId: "proj1", threadId: "t1" };
 
 function noEmit() {}
 

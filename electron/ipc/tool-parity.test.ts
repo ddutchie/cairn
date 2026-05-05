@@ -66,7 +66,7 @@ const SHARED_READ_TOOLS = [
 
 describe("Tool name parity", () => {
   it("TOOLS (chat) contains all shared read tool names", () => {
-    const chatToolNames = new Set(TOOLS.map((t) => t.function.name));
+    const chatToolNames = new Set<string>(TOOLS.map((t) => t.function.name));
     for (const name of SHARED_READ_TOOLS) {
       expect(chatToolNames.has(name), `chat TOOLS missing: ${name}`).toBe(true);
     }
@@ -195,7 +195,7 @@ describe("list_recent_activity shape consistency", () => {
 // ═════════════════════════════════════════════════════════════════════════════
 
 const llmCfg: LLMConfig = { baseUrl: "http://localhost", model: "test", apiKey: "" };
-const chatReq: ChatRequest = { workspaceId: "ws1", projectId: "proj1", threadId: "t1" };
+const chatReq: ChatRequest = { message: "", workspaceId: "ws1", projectId: "proj1", threadId: "t1" };
 function noEmit() {}
 
 function makeTmpDir() {

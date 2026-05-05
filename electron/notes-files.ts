@@ -132,7 +132,7 @@ export interface NoteData {
   linkedNoteIds: string[];
   linkedCardIds: string[];
   isPinned: boolean;
-  folder: string;
+  folder?: string;
   createdAt: string;
   updatedAt: string;
   archivedAt?: string;

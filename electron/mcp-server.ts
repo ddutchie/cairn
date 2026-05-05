@@ -219,7 +219,7 @@ function resolveNoteFilePath(workspacePath: string, projectName: string, title: 
 interface NoteFileData {
   id: string; projectId: string; workspaceId: string; title: string; content: string;
   tagIds: string[]; linkedNoteIds: string[]; linkedCardIds: string[];
-  isPinned: boolean; createdAt: string; updatedAt: string; archivedAt?: string;
+  isPinned: boolean; folder?: string; createdAt: string; updatedAt: string; archivedAt?: string;
   projectName: string;
 }
 

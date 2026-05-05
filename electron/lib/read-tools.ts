@@ -40,8 +40,8 @@ export interface CairnSnapshot {
   cards: Array<{
     id: string; columnId: string; projectId: string; workspaceId: string;
     title: string; description?: string; priority: string; dueDate?: string;
-    linkedNoteIds: string[]; tagIds: string[]; order: number;
-    createdAt: string; updatedAt: string; archivedAt?: string;
+    linkedNoteIds: string[]; blockedByIds: string[]; tagIds: string[]; order: number;
+    assignee?: string; createdAt: string; updatedAt: string; archivedAt?: string;
   }>;
   tags: Array<{ id: string; workspaceId: string; name: string; color: string }>;
 }

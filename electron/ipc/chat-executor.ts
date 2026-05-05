@@ -406,6 +406,12 @@ export async function executeTool(
       // tool loop can continue after the user submits answers.
       return { ok: true, questions: args.questions };
     }
+    case "suggest_connections": {
+      // Renderer-only tool — the Graph AI panel intercepts the tool-call event
+      // and renders each action as an interactive card with an Apply button.
+      // The executor just acknowledges so streaming can continue.
+      return { ok: true, count: (args.actions as unknown[])?.length ?? 0 };
+    }
     case "generate_prd": {
       return generatePrd(db, workspacePath, {
         projectId: args.projectId as string,

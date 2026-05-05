@@ -39,6 +39,7 @@ function edgeColor(edgeType: string): { color: string; opacity: number; dash: bo
     case "co-mention":     return { color: resolveCssVar("--border"),  opacity: 0.5, dash: true  };
     case "keyword":        return { color: resolveCssVar("--border"),  opacity: 0.4, dash: true  };
     case "assignee":       return { color: resolveCssVar("--border"),  opacity: 0.4, dash: true  };
+    case "wikilink":       return { color: resolveCssVar("--accent"),  opacity: 0.75, dash: false };
     default:               return { color: resolveCssVar("--border"),  opacity: 0.4, dash: false };
   }
 }
@@ -134,14 +135,18 @@ export function ForceGraphCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
           const { color, opacity } = edgeColor(link.edgeType ?? "");
           return toAlpha(color, opacity);
         }}
-        linkWidth={(link: { edgeType?: string }) =>
-          link.edgeType === "flow-edge" ? 2 : 1
-        }
+        linkWidth={(link: { edgeType?: string; weight?: number }) => {
+          if (link.edgeType === "flow-edge") return 2;
+          if (link.edgeType === "wikilink") return 2;
+          // Weight-based thickness for auto-discovered edges (0–1 range)
+          if (link.weight != null && link.weight < 1) return 0.5 + link.weight * 1.0;
+          return 1;
+        }}
         linkLineDash={(link: { edgeType?: string }) =>
           edgeColor(link.edgeType ?? "").dash ? [3, 3] : null
         }
         linkDirectionalArrowLength={(link: { edgeType?: string }) =>
-          link.edgeType === "flow-edge" ? 4 : 0
+          link.edgeType === "flow-edge" || link.edgeType === "wikilink" ? 4 : 0
         }
         linkDirectionalArrowRelPos={1}
         onNodeClick={handleNodeClick}
