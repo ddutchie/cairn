@@ -17,14 +17,19 @@
  * In the browser (non-Electron) this renders nothing.
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 export function TitleBar() {
-  const [platform] = useState<"darwin" | "win32" | "linux" | null>(
-    () => (typeof window !== "undefined" && window.electron)
-      ? (window.electron.platform ?? "linux")
-      : null
-  );
+  // Start as null on both server and client so SSR output matches the initial
+  // client render (no hydration mismatch). The real platform is set after
+  // mount — imperceptible in Electron since it renders before the first frame.
+  const [platform, setPlatform] = useState<"darwin" | "win32" | "linux" | null>(null);
+
+  useEffect(() => {
+    if (window.electron) {
+      setPlatform(window.electron.platform ?? "linux");
+    }
+  }, []);
 
   if (!platform) return null;
 
