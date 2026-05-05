@@ -37,11 +37,42 @@ jobs:
               $PRERELEASE
           fi
 
+  # ── E2E smoke tests ───────────────────────────────────────────────────────
+  smoke-e2e:
+    name: E2E smoke tests
+    runs-on: ubuntu-latest
+    needs: prepare-release
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install chromium --with-deps
+
+      - name: Run E2E smoke tests
+        run: npm run test:e2e
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
   # ── macOS ─────────────────────────────────────────────────────────────────
   build-mac:
     name: Build macOS
     runs-on: macos-latest
-    needs: prepare-release
+    needs: [prepare-release, smoke-e2e]
 
     steps:
       - uses: actions/checkout@v6
@@ -85,7 +116,7 @@ jobs:
   build-win:
     name: Build Windows
     runs-on: windows-latest
-    needs: prepare-release
+    needs: [prepare-release, smoke-e2e]
 
     steps:
       - uses: actions/checkout@v6
@@ -123,7 +154,7 @@ jobs:
   build-linux:
     name: Build Linux
     runs-on: ubuntu-latest
-    needs: prepare-release
+    needs: [prepare-release, smoke-e2e]
 
     steps:
       - uses: actions/checkout@v6

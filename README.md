@@ -245,8 +245,10 @@ For the full architecture reference — process model, storage split, data model
 
 ## Testing
 
+### Unit & integration tests (Vitest)
+
 ```bash
-npm test              # run all tests (vitest)
+npm test              # run all tests
 npm run test:watch    # watch mode
 npm run test:coverage # coverage report
 ```
@@ -257,9 +259,22 @@ Tests live alongside the code they cover:
 |------|-------|---------------|
 | `electron/db/queries.test.ts` | 22 | SQLite query helpers — CRUD, search, soft-delete, snapshot |
 | `electron/notes-files.test.ts` | 29 | File I/O, slug generation, frontmatter round-trip (tmp dirs) |
-| `electron/ipc/chat-executor.test.ts` | 21 | Every tool case in `executeTool` — happy path, missing entities, error returns |
+| `electron/mcp-server.test.ts` | 134 | MCP `executeTool` end-to-end via in-memory SQLite — all tools, edge cases, blocker chains |
+| `electron/ipc/chat-executor.test.ts` | 98 | Every tool case in the AI chat executor — happy path, missing entities, error returns |
 | `electron/ipc/handlers.test.ts` | 14 | IPC data layer — `executeReadTool`, `buildContextResponse`, `getBy*` queries |
-| `electron/ipc/tool-parity.test.ts` | 7 | Chat/MCP tool name alignment; `get_project_summary` canonical shape |
+| `electron/ipc/tool-parity.test.ts` | 33 | Cross-executor key parity between MCP and chat paths for all shared tools |
+
+### E2E smoke tests (Playwright)
+
+```bash
+npm run test:e2e         # headless Chromium (starts Next.js dev server automatically)
+npm run test:e2e:ui      # Playwright UI mode — interactive, with time-travel debugger
+npm run test:e2e:headed  # headed run for local debugging
+```
+
+The E2E suite runs against the Next.js dev server with a full `window.electron` IPC mock injected before React boots — no Electron or packaged app required. It covers app boot, crash-free render of all 8 views, and sidebar content. Runs in ~10s.
+
+**Run the E2E suite before cutting a release** to catch renderer crashes that unit tests can't reach.
 
 ## Tech stack
 
@@ -271,7 +286,8 @@ Tests live alongside the code they cover:
 | Next.js 16 | UI framework (App Router, static export) |
 | TypeScript | Language |
 | esbuild | Bundler (Electron main + MCP binary) |
-| vitest | Unit test runner |
+| vitest | Unit & integration test runner |
+| Playwright | E2E smoke tests (browser, no Electron required) |
 
 **Data & AI**
 
