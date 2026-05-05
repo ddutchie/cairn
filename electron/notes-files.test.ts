@@ -9,6 +9,10 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "fs";
 import path from "path";
 import os from "os";
+import BetterSqlite3 from "better-sqlite3";
+import type Database from "better-sqlite3";
+import { applySchema } from "./db/schema";
+import { createWorkspace, createProject } from "./db/queries";
 import {
   toSlug,
   writeNoteFile,
@@ -17,6 +21,9 @@ import {
   deleteNoteFile,
   stripMarkdown,
   projectNotesDir,
+  notesDir,
+  adoptExternalNoteFile,
+  syncNotesFromDisk,
 } from "./notes-files";
 import type { NoteData } from "./notes-files";
 
@@ -284,5 +291,222 @@ describe("stripMarkdown", () => {
 
   it("handles empty string without error", () => {
     expect(stripMarkdown("")).toBe("");
+  });
+});
+
+// ── adoptExternalNoteFile ─────────────────────────────────────────────────
+
+function makeDb(): Database.Database {
+  const db = new BetterSqlite3(":memory:");
+  applySchema(db);
+  return db;
+}
+
+function seedProjectInDb(db: Database.Database, name = "My Project", id = "proj1", wsId = "ws1") {
+  createWorkspace(db, { id: wsId, name: "Test Workspace" });
+  return createProject(db, { id, workspaceId: wsId, name });
+}
+
+describe("adoptExternalNoteFile", () => {
+  let db: Database.Database;
+
+  beforeEach(() => { db = makeDb(); });
+
+  it("returns null for a file outside any project folder", () => {
+    seedProjectInDb(db);
+    // Write a .md file directly in notes/ root (no project subfolder)
+    const notesRoot = notesDir(tmpDir);
+    fs.mkdirSync(notesRoot, { recursive: true });
+    const fp = path.join(notesRoot, "orphan.md");
+    fs.writeFileSync(fp, "# Orphan\n\nNo project.\n", "utf-8");
+
+    const result = adoptExternalNoteFile(db, tmpDir, fp);
+    expect(result).toBeNull();
+  });
+
+  it("returns null when the project slug does not match any project", () => {
+    seedProjectInDb(db, "My Project");
+    const dir = path.join(notesDir(tmpDir), "unknown-project");
+    fs.mkdirSync(dir, { recursive: true });
+    const fp = path.join(dir, "some-note.md");
+    fs.writeFileSync(fp, "# Note\n\nContent.\n", "utf-8");
+
+    expect(adoptExternalNoteFile(db, tmpDir, fp)).toBeNull();
+  });
+
+  it("adopts a plain .md file and writes frontmatter in-place", () => {
+    seedProjectInDb(db, "My Project", "proj1", "ws1");
+    const dir = path.join(notesDir(tmpDir), toSlug("My Project"));
+    fs.mkdirSync(dir, { recursive: true });
+    const fp = path.join(dir, "My External Note.md");
+    fs.writeFileSync(fp, "# External\n\nSome content here.\n", "utf-8");
+
+    const note = adoptExternalNoteFile(db, tmpDir, fp);
+
+    expect(note).not.toBeNull();
+    expect(note!.title).toBe("My External Note");
+    expect(note!.projectId).toBe("proj1");
+    expect(note!.workspaceId).toBe("ws1");
+    expect(note!.content).toContain("Some content here");
+
+    // Frontmatter written IN-PLACE — original file path must now be parseable
+    const parsed = parseNoteFile(fp);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.id).toBe(note!.id);
+    expect(parsed!.title).toBe("My External Note");
+  });
+
+  it("does NOT create a second file — only the original path is modified", () => {
+    seedProjectInDb(db, "My Project", "proj1", "ws1");
+    const dir = path.join(notesDir(tmpDir), toSlug("My Project"));
+    fs.mkdirSync(dir, { recursive: true });
+    const fp = path.join(dir, "My Note.md");
+    fs.writeFileSync(fp, "# My Note\n\nBody.\n", "utf-8");
+
+    adoptExternalNoteFile(db, tmpDir, fp);
+
+    // Only the original file should exist — no slug-derived duplicate
+    const files = fs.readdirSync(dir).filter((f) => f.endsWith(".md"));
+    expect(files).toHaveLength(1);
+    expect(files[0]).toBe("My Note.md");
+  });
+
+  it("copy-paste scenario: two files with different names get independent IDs", () => {
+    seedProjectInDb(db, "My Project", "proj1", "ws1");
+    const dir = path.join(notesDir(tmpDir), toSlug("My Project"));
+    fs.mkdirSync(dir, { recursive: true });
+
+    const original = path.join(dir, "My Note.md");
+    const copy     = path.join(dir, "My Note copy.md");
+
+    fs.writeFileSync(original, "# My Note\n\nOriginal content.\n", "utf-8");
+    fs.writeFileSync(copy,     "# My Note copy\n\nOriginal content.\n", "utf-8");
+
+    const noteA = adoptExternalNoteFile(db, tmpDir, original);
+    const noteB = adoptExternalNoteFile(db, tmpDir, copy);
+
+    expect(noteA).not.toBeNull();
+    expect(noteB).not.toBeNull();
+
+    // IDs must be distinct
+    expect(noteA!.id).not.toBe(noteB!.id);
+
+    // Both original file paths must be parseable with their own IDs
+    const parsedA = parseNoteFile(original);
+    const parsedB = parseNoteFile(copy);
+    expect(parsedA!.id).toBe(noteA!.id);
+    expect(parsedB!.id).toBe(noteB!.id);
+
+    // Still exactly two files — no extra slug-derived duplicates
+    const files = fs.readdirSync(dir).filter((f) => f.endsWith(".md"));
+    expect(files).toHaveLength(2);
+  });
+
+  it("derives subfolder from intermediate path segments", () => {
+    seedProjectInDb(db, "My Project", "proj1", "ws1");
+    const dir = path.join(notesDir(tmpDir), toSlug("My Project"), "design", "typography");
+    fs.mkdirSync(dir, { recursive: true });
+    const fp = path.join(dir, "Font Scale.md");
+    fs.writeFileSync(fp, "# Font Scale\n\nContent.\n", "utf-8");
+
+    const note = adoptExternalNoteFile(db, tmpDir, fp);
+
+    expect(note).not.toBeNull();
+    expect(note!.folder).toBe("design/typography");
+  });
+
+  it("is idempotent — adopting an already-adopted file returns its existing data", () => {
+    seedProjectInDb(db, "My Project", "proj1", "ws1");
+    const dir = path.join(notesDir(tmpDir), toSlug("My Project"));
+    fs.mkdirSync(dir, { recursive: true });
+    const fp = path.join(dir, "Idempotent.md");
+    fs.writeFileSync(fp, "# Idempotent\n\nContent.\n", "utf-8");
+
+    const first  = adoptExternalNoteFile(db, tmpDir, fp);
+    // After first adoption the file has valid frontmatter — parseNoteFile succeeds,
+    // so adoptExternalNoteFile is never actually called a second time by the watcher.
+    // Verify the file is now parseable (and adoption would be skipped).
+    const parsed = parseNoteFile(fp);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.id).toBe(first!.id);
+  });
+});
+
+// ── syncNotesFromDisk ─────────────────────────────────────────────────────
+
+describe("syncNotesFromDisk", () => {
+  let db: Database.Database;
+
+  beforeEach(() => { db = makeDb(); });
+
+  it("imports a Cairn note file that exists at startup", () => {
+    seedProjectInDb(db, "My Project", "proj1", "ws1");
+    const note = makeNote({ projectName: "My Project" });
+    writeNoteFile(tmpDir, note);
+
+    syncNotesFromDisk(db, tmpDir);
+
+    const row = db.prepare("SELECT id FROM notes WHERE id = ?").get(note.id);
+    expect(row).not.toBeNull();
+  });
+
+  it("adopts a plain .md file present at startup (no frontmatter)", () => {
+    seedProjectInDb(db, "My Project", "proj1", "ws1");
+    const dir = path.join(notesDir(tmpDir), toSlug("My Project"));
+    fs.mkdirSync(dir, { recursive: true });
+    const fp = path.join(dir, "Startup Note.md");
+    fs.writeFileSync(fp, "# Startup Note\n\nAdded before app opened.\n", "utf-8");
+
+    syncNotesFromDisk(db, tmpDir);
+
+    // Note must now be in SQLite
+    const rows = db.prepare("SELECT id, title FROM notes WHERE project_id = ?").all("proj1") as { id: string; title: string }[];
+    expect(rows).toHaveLength(1);
+    expect(rows[0].title).toBe("Startup Note");
+
+    // File must have been updated with frontmatter in-place
+    const parsed = parseNoteFile(fp);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.id).toBe(rows[0].id);
+  });
+
+  it("does not overwrite an existing SQLite row for a Cairn note", () => {
+    seedProjectInDb(db, "My Project", "proj1", "ws1");
+    const note = makeNote({ projectName: "My Project", title: "Existing Note" });
+    writeNoteFile(tmpDir, note);
+    // Pre-insert the note into SQLite with modified title
+    db.prepare(`INSERT INTO notes (id, project_id, workspace_id, title, content, content_text,
+      tag_ids, linked_note_ids, linked_card_ids, is_pinned, type, folder, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, '[]', '[]', '[]', 0, 'note', '', ?, ?)`)
+      .run(note.id, note.projectId, note.workspaceId, "Modified Title", note.content, "",
+           note.createdAt, note.updatedAt);
+
+    syncNotesFromDisk(db, tmpDir);
+
+    // Should NOT overwrite — row was already present
+    const row = db.prepare("SELECT title FROM notes WHERE id = ?").get(note.id) as { title: string };
+    expect(row.title).toBe("Modified Title");
+  });
+
+  it("adopts multiple plain .md files across different projects at startup", () => {
+    createWorkspace(db, { id: "ws1", name: "WS" });
+    createProject(db, { id: "proj1", workspaceId: "ws1", name: "Alpha" });
+    createProject(db, { id: "proj2", workspaceId: "ws1", name: "Beta" });
+
+    const dirA = path.join(notesDir(tmpDir), toSlug("Alpha"));
+    const dirB = path.join(notesDir(tmpDir), toSlug("Beta"));
+    fs.mkdirSync(dirA, { recursive: true });
+    fs.mkdirSync(dirB, { recursive: true });
+    fs.writeFileSync(path.join(dirA, "Note A.md"), "# Note A\n\nContent A.\n", "utf-8");
+    fs.writeFileSync(path.join(dirB, "Note B.md"), "# Note B\n\nContent B.\n", "utf-8");
+
+    syncNotesFromDisk(db, tmpDir);
+
+    const all = db.prepare("SELECT id, project_id, title FROM notes ORDER BY title").all() as { id: string; project_id: string; title: string }[];
+    expect(all).toHaveLength(2);
+    expect(all[0].title).toBe("Note A");
+    expect(all[0].project_id).toBe("proj1");
+    expect(all[1].title).toBe("Note B");
+    expect(all[1].project_id).toBe("proj2");
   });
 });

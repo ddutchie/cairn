@@ -242,17 +242,19 @@ export function parseNoteFile(filePath: string): NoteData | null {
 export function syncNotesFromDisk(db: Database.Database, workspacePath: string): void {
   const root = notesDir(workspacePath);
   if (!fs.existsSync(root)) return;
-  syncDir(db, root);
+  syncDir(db, root, workspacePath);
 }
 
-function syncDir(db: Database.Database, dir: string): void {
+function syncDir(db: Database.Database, dir: string, workspacePath: string): void {
   for (const entry of fs.readdirSync(dir)) {
     const fp = path.join(dir, entry);
     const stat = fs.lstatSync(fp);
     if (stat.isDirectory()) {
-      syncDir(db, fp);
+      syncDir(db, fp, workspacePath);
     } else if (entry.endsWith(".md")) {
-      const note = parseNoteFile(fp);
+      let note = parseNoteFile(fp);
+      // Plain .md without Cairn frontmatter — adopt it in-place
+      if (!note) note = adoptExternalNoteFile(db, workspacePath, fp);
       if (!note) continue;
       // Only upsert if the note is missing from SQLite — avoids overwriting
       // in-memory state that is ahead of the file (e.g. unsaved edits).
@@ -263,7 +265,6 @@ function syncDir(db: Database.Database, dir: string): void {
     }
   }
 }
-
 // ── Upsert a parsed note into SQLite ──────────
 //
 // Uses INSERT OR IGNORE + UPDATE to avoid UNIQUE constraint errors when the
@@ -333,8 +334,24 @@ export function adoptExternalNoteFile(
       projectName:   project.name,
     };
 
-    // Write Cairn frontmatter back to the file so future reads recognise it
-    writeNoteFile(workspacePath, note);
+    // Write Cairn frontmatter back IN-PLACE to the original file path.
+    // We must NOT use writeNoteFile() here — that function resolves a new
+    // slug-based path from the title, which would create a second file and
+    // leave the original orphaned with no frontmatter.
+    const frontmatter: Record<string, unknown> = {
+      id,
+      projectId:     project.id,
+      workspaceId:   project.workspace_id,
+      title,
+      folder,
+      tagIds:        [],
+      linkedNoteIds: [],
+      linkedCardIds: [],
+      isPinned:      false,
+      createdAt:     now,
+      updatedAt:     now,
+    };
+    fs.writeFileSync(filePath, matter.stringify(content, frontmatter), "utf-8");
 
     return note;
   } catch {
