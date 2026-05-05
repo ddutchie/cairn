@@ -18,6 +18,7 @@
 
 - [ ] `npm run type-check` passes
 - [ ] `npm test` passes
+- [ ] `npm run test:e2e` passes (run before merging UI changes or cutting a release)
 - [ ] No hardcoded colours — CSS variables only (`var(--accent)`, `var(--text-primary)`, etc.)
 - [ ] No `text-[Npx]` pixel font classes — rem equivalents only (`text-[0.714rem]`, `text-xs`, etc.)
 - [ ] New IPC handlers wrapped in `handle()` and return `IpcResult<T>`

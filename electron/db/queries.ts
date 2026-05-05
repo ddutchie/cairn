@@ -523,6 +523,28 @@ export function removeCardBlocker(db: Database.Database, cardId: string, blocker
 }
 
 /**
+ * When a card (or a set of cards) moves to a done column, remove those card IDs
+ * from every other task's blocked_by_ids so get_task no longer reports them as
+ * pending blockers.
+ */
+export function clearBlockersFromAll(db: Database.Database, doneCardIds: string[]) {
+  if (doneCardIds.length === 0) return;
+  const now = ts();
+  const affected = db.prepare(
+    "SELECT id, blocked_by_ids FROM task_cards WHERE blocked_by_ids != '[]'"
+  ).all() as { id: string; blocked_by_ids: string }[];
+  for (const row of affected) {
+    if (doneCardIds.includes(row.id)) continue; // skip the tasks we just moved
+    const ids = p(row.blocked_by_ids) as string[];
+    const cleaned = ids.filter((bid) => !doneCardIds.includes(bid));
+    if (cleaned.length !== ids.length) {
+      db.prepare("UPDATE task_cards SET blocked_by_ids = ?, updated_at = ? WHERE id = ?")
+        .run(j(cleaned), now, row.id);
+    }
+  }
+}
+
+/**
  * Return active, non-done cards that have no pending blockers.
  * A card is "ready" when:
  *   - Not archived
@@ -955,7 +977,7 @@ export function searchTasks(db: Database.Database, opts: SearchTasksOpts) {
 // ── Coding Agents ─────────────────────────────────────────────────────────────
 
 export function getCodingAgents(db: Database.Database) {
-  return (db.prepare("SELECT * FROM coding_agents ORDER BY created_at").all() as any[])
+  return (db.prepare("SELECT * FROM coding_agents ORDER BY created_at").all() as unknown[])
     .map(toCodingAgent);
 }
 

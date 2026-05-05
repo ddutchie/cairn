@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import {
   FileText, Kanban, Settings, Search, MessageSquare,
   ChevronDown, ChevronRight, Plus, MoreHorizontal,
@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
+import { useShallow } from "zustand/react/shallow";
 import { ProjectIcon } from "@/lib/workspace-icons";
 import { Tooltip } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
@@ -50,24 +51,58 @@ export function Sidebar() {
     createProject, updateProject, deleteProject,
     chatOpen, searchOpen,
     hiddenViews,
-  } = useCairnStore();
+  } = useCairnStore(useShallow((s) => ({
+    sidebarCollapsed:    s.sidebarCollapsed,
+    toggleSidebar:       s.toggleSidebar,
+    activeWorkspaceId:   s.activeWorkspaceId,
+    activeProjectId:     s.activeProjectId,
+    activeView:          s.activeView,
+    workspaces:          s.workspaces,
+    getWorkspaceProjects: s.getWorkspaceProjects,
+    setActiveProject:    s.setActiveProject,
+    setView:             s.setView,
+    toggleSearch:        s.toggleSearch,
+    toggleChat:          s.toggleChat,
+    createProject:       s.createProject,
+    updateProject:       s.updateProject,
+    deleteProject:       s.deleteProject,
+    chatOpen:            s.chatOpen,
+    searchOpen:          s.searchOpen,
+    hiddenViews:         s.hiddenViews,
+  })));
 
   // All navigable views in order (overview + notes always first)
-  const visibleNavItems = VIEW_NAV.filter((item) => !hiddenViews.has(item.hiddenKey));
+  const visibleNavItems = React.useMemo(
+    () => VIEW_NAV.filter((item) => !hiddenViews.has(item.hiddenKey)),
+    [hiddenViews],
+  );
   // ⌘1 = overview, ⌘2 = notes, then visible views in order
   const shortcutBase = 3; // first view after overview+notes
+  const shortcutMap = React.useMemo(() => {
+    const map = new Map<string, string>();
+    visibleNavItems.forEach((item, idx) => {
+      const num = idx + shortcutBase;
+      map.set(item.view, num <= 9 ? `⌘${num}` : "");
+    });
+    return map;
+  }, [visibleNavItems]);
   function shortcutLabel(item: ViewNavItem): string {
-    const idx = visibleNavItems.indexOf(item);
-    const num = idx + shortcutBase;
-    return num <= 9 ? `⌘${num}` : "";
+    return shortcutMap.get(item.view) ?? "";
   }
 
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set([activeProjectId ?? ""]));
   const [creatingProject, setCreatingProject]   = useState(false);
   const [newProjectName, setNewProjectName]     = useState("");
 
-  const workspace = workspaces.find((w) => w.id === activeWorkspaceId);
-  const projects  = activeWorkspaceId ? getWorkspaceProjects(activeWorkspaceId) : [];
+  const workspace = React.useMemo(
+    () => workspaces.find((w) => w.id === activeWorkspaceId),
+    [workspaces, activeWorkspaceId],
+  );
+  const projects = React.useMemo(
+    () => activeWorkspaceId ? getWorkspaceProjects(activeWorkspaceId) : [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activeWorkspaceId, workspaces],
+  );
 
   function toggleProjectExpand(projectId: string) {
     setExpandedProjects((prev) => {
@@ -77,15 +112,15 @@ export function Sidebar() {
     });
   }
 
-  async function commitCreateProject() {
+  const commitCreateProject = useCallback(async () => {
     if (!activeWorkspaceId || !newProjectName.trim()) { setCreatingProject(false); return; }
     setCreatingProject(false);
     setNewProjectName("");
     const proj = await createProject(activeWorkspaceId, newProjectName.trim());
     setActiveProject(proj.id);
-  }
+  }, [activeWorkspaceId, newProjectName, createProject, setActiveProject]);
 
-  function cancelCreateProject() { setCreatingProject(false); setNewProjectName(""); }
+  const cancelCreateProject = useCallback(() => { setCreatingProject(false); setNewProjectName(""); }, []);
 
   if (sidebarCollapsed) {
     return (
@@ -231,7 +266,7 @@ interface ProjectItemProps {
   visibleNavItems: ViewNavItem[];
 }
 
-function ProjectItem({ project, isActive, isExpanded, onToggleExpand, onSelectProject, activeView, onSelectView, onRename, onDelete, hiddenViews, visibleNavItems }: ProjectItemProps) {
+function ProjectItem({ project, isActive, isExpanded, onToggleExpand, onSelectProject, activeView, onSelectView, onRename, onDelete, hiddenViews: _hiddenViews, visibleNavItems }: ProjectItemProps) {
   const [renaming, setRenaming]             = useState(false);
   const [renameValue, setRenameValue]       = useState(project.name);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -330,11 +365,15 @@ function ProjectItem({ project, isActive, isExpanded, onToggleExpand, onSelectPr
 }
 
 function DueDateDot({ dueDate }: { dueDate: string }) {
-  const now = new Date();
-  const due = new Date(dueDate);
-  const diffDays = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  const { diffDays, dueDateLabel } = useMemo(() => {
+    const due = new Date(dueDate);
+    return {
+      diffDays: Math.ceil((due.getTime() - Date.now()) / (1000 * 60 * 60 * 24)),
+      dueDateLabel: due.toLocaleDateString(),
+    };
+  }, [dueDate]);
   if (diffDays < 0) return (
-    <Tooltip content={`Overdue — due ${due.toLocaleDateString()}`} side="right">
+    <Tooltip content={`Overdue — due ${dueDateLabel}`} side="right">
       <span className="w-1.5 h-1.5 rounded-full bg-[var(--danger)] flex-shrink-0" />
     </Tooltip>
   );

@@ -40,8 +40,8 @@ export function StepDone({ onBack, onComplete }: Props) {
     <Shell step="done">
       <div className="w-full max-w-md flex flex-col gap-5">
         <div className="text-center">
-          <p className="text-base font-semibold text-[var(--text-primary)] mb-1">You're all set.</p>
-          <p className="text-xs text-[var(--text-tertiary)]">Here's what's waiting for you.</p>
+          <p className="text-base font-semibold text-[var(--text-primary)] mb-1">You&apos;re all set.</p>
+          <p className="text-xs text-[var(--text-tertiary)]">Here&apos;s what&apos;s waiting for you.</p>
         </div>
 
         <div className="grid grid-cols-2 gap-2">

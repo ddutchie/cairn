@@ -15,6 +15,7 @@ import "@xterm/xterm/css/xterm.css";
  */
 
 import { useEffect, useRef, useCallback, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { X, Terminal as TerminalIcon, CircleDot, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
@@ -34,7 +35,8 @@ function SessionMount({ session, isActive }: SessionMountProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const initStarted = useRef(false);
   const cleanupFns = useRef<Array<() => void>>([]);
-  const { markSessionExited, fontScale } = useCairnStore();
+  const markSessionExited = useCairnStore((s) => s.markSessionExited);
+  const fontScale         = useCairnStore((s) => s.fontScale);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -192,7 +194,12 @@ export function AgentTerminalPane() {
     activeSessionId,
     setActiveSession,
     removeTerminalSession,
-  } = useCairnStore();
+  } = useCairnStore(useShallow((s) => ({
+    terminalSessions:      s.terminalSessions,
+    activeSessionId:       s.activeSessionId,
+    setActiveSession:      s.setActiveSession,
+    removeTerminalSession: s.removeTerminalSession,
+  })));
 
   const [spawnOpen, setSpawnOpen] = useState(false);
 

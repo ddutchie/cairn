@@ -1,12 +1,14 @@
 "use client";
 
-import React, { useCallback, useState, useMemo, useEffect } from "react";
+import React, { useCallback, useState, useMemo } from "react";
 import {
   Clock, Grid3x3, Table2, Activity, Workflow, Crosshair, BarChart2,
   LayoutGrid, ChevronDown, Search, RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
+import { useShallow } from "zustand/react/shallow";
+import { useLoadGraph } from "@/hooks/useLoadGraph";
 import { filterGraphNodes, nodeTypeColor } from "@/store/slices/graph";
 import type { GraphNode, GraphNodeType } from "@/types";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -46,7 +48,18 @@ export function InsightsView() {
     loadGraph,
     setGraphFilters,
     setSelectedGraphNode,
-  } = useCairnStore();
+  } = useCairnStore(useShallow((s) => ({
+    activeWorkspaceId:   s.activeWorkspaceId,
+    graphData:           s.graphData,
+    graphLoading:        s.graphLoading,
+    graphError:          s.graphError,
+    graphFilters:        s.graphFilters,
+    selectedGraphNodeId: s.selectedGraphNodeId,
+    projects:            s.projects,
+    loadGraph:           s.loadGraph,
+    setGraphFilters:     s.setGraphFilters,
+    setSelectedGraphNode: s.setSelectedGraphNode,
+  })));
 
   const [layout,    setLayout]    = useState<InsightsLayout>("ridgeline");
   const [projOpen,  setProjOpen]  = useState(false);
@@ -90,10 +103,7 @@ export function InsightsView() {
   }
 
   // Load graph on mount + when workspace changes (mirrors KnowledgeGraphView)
-  useEffect(() => {
-    if (activeWorkspaceId) loadGraph(activeWorkspaceId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeWorkspaceId]);
+  useLoadGraph(activeWorkspaceId);
 
   // ── Graph data ───────────────────────────────────────────────────────────────
   const allNodes: GraphNode[] = useMemo(
@@ -104,9 +114,9 @@ export function InsightsView() {
     () => allNodes.find((n) => n.id === selectedGraphNodeId) ?? null,
     [allNodes, selectedGraphNodeId]);
 
-  function handleNodeClick(node: GraphNode) { setSelectedGraphNode(node.id); }
+  const handleNodeClick = useCallback((node: GraphNode) => setSelectedGraphNode(node.id), [setSelectedGraphNode]);
 
-  const workspaceProjects = projects.filter((p) => !p.archivedAt);
+  const workspaceProjects = useMemo(() => projects.filter((p) => !p.archivedAt), [projects]);
 
   function toggleProject(pid: string) {
     const current = graphFilters.projectIds;

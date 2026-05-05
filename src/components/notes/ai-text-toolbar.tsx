@@ -277,7 +277,7 @@ export function applyFormat(view: EditorView, action: FormatAction): { from: num
     const isWrapped =
       selectedText.startsWith(open) && selectedText.endsWith(close) && selectedText.length > open.length + close.length;
 
-    let resultFrom = from, resultTo = to;
+    const resultFrom = from; let resultTo = to;
     if (isWrapped) {
       const inner = selectedText.slice(open.length, selectedText.length - close.length);
       view.dispatch({

@@ -7,6 +7,7 @@ import { cn, formatRelative } from "@/lib/utils";
 import { buildSrcdoc, buildThemeStyle, CAIRN_CSS_VARS } from "./dashboard-bootstrap";
 import { CairnEvents } from "@/lib/events";
 import { useCairnStore } from "@/store";
+import { useShallow } from "zustand/react/shallow";
 import { DashboardApiModal } from "./DashboardApiModal";
 
 interface DashboardViewProps {
@@ -49,7 +50,7 @@ const ALLOWED_TOOLS = new Set([
 
 export function DashboardView({ note }: DashboardViewProps) {
   const electron = typeof window !== "undefined" ? window.electron : null;
-  const { updateNote, aiConfig } = useCairnStore();
+  const { updateNote, aiConfig } = useCairnStore(useShallow((s) => ({ updateNote: s.updateNote, aiConfig: s.aiConfig })));
   const aiEnabled = aiConfig.aiEnabled ?? true;
 
   const projectId   = note.projectId   ?? "";

@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { X, Tag } from "lucide-react";
 import { useCairnStore } from "@/store";
+import { useShallow } from "zustand/react/shallow";
 import { SettingsGroup } from "./shared";
 
 const PALETTE = [
@@ -12,7 +13,7 @@ const PALETTE = [
 ];
 
 export function TagsSettings() {
-  const { tags, notes, cards, activeWorkspaceId, updateTag, deleteTag } = useCairnStore();
+  const { tags, notes, cards, activeWorkspaceId, updateTag, deleteTag } = useCairnStore(useShallow((s) => ({ tags: s.tags, notes: s.notes, cards: s.cards, activeWorkspaceId: s.activeWorkspaceId, updateTag: s.updateTag, deleteTag: s.deleteTag })));
   const workspaceTags = tags.filter((t) => t.workspaceId === activeWorkspaceId);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");

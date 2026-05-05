@@ -4,6 +4,7 @@ import React, { useMemo, useState, useCallback } from "react";
 import { ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
+import { useShallow } from "zustand/react/shallow";
 import type { GraphNode, GraphNodeType } from "@/types";
 import { nodeTypeColor } from "@/store/slices/graph";
 
@@ -23,7 +24,7 @@ const TYPE_ORDER: GraphNodeType[] = ["project", "note", "card", "tag"];
 const PRIORITY_ORDER: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
 
 export function TableCanvas({ nodes, onNodeClick, selectedNodeId, search, typeFilter }: Props) {
-  const { projects, notes, cards, tags } = useCairnStore();
+  const { projects, notes, cards, tags } = useCairnStore(useShallow((s) => ({ projects: s.projects, notes: s.notes, cards: s.cards, tags: s.tags })));
   const [sortKey, setSortKey] = useState<SortKey>("type");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 

@@ -3,6 +3,19 @@
  *
  * Uses an in-memory SQLite DB. Covers happy path, missing entity,
  * and ensures tools return { error } rather than throwing.
+ *
+ * Part 2 additions:
+ *   - get_active_context — tags included, workspaceId/projectId scoping
+ *   - get_task — blockedByIds parity with MCP server
+ *   - resolve_project — exact/starts-with/contains priority, error + candidates
+ *   - ensure_note — create and update paths, idempotency, case-sensitive title
+ *   - append_to_note — appends with separator, custom separator, error cases
+ *   - patch_note — single replace, replaceAll, multi-occurrence error
+ *   - block_task / unblock_task — happy path, self-block, circular dep, cross-project
+ *   - list_ready_tasks — unblocked tasks only, blocker resolution on move-to-done
+ *   - update_task_status to done — clears blockedByIds (regression fix)
+ *   - bulk_update_task_status to done — clears blockedByIds for all moved tasks
+ *   - get_project_context_pack — shape, openTasks excludes done, pinnedNotes content
  */
 
 import { describe, it, expect } from "vitest";
@@ -10,7 +23,7 @@ import BetterSqlite3 from "better-sqlite3";
 import type Database from "better-sqlite3";
 import { applySchema } from "../db/schema";
 import {
-  createWorkspace, createProject, createNote,
+  createWorkspace, createProject, createNote, updateNote,
   createColumn, createCard, getCardById,
 } from "../db/queries";
 import { executeTool } from "./chat-executor";
@@ -503,6 +516,518 @@ describe("unknown tool", () => {
     const db = makeDb();
     seed(db);
     const result = await exec(db, "totally_unknown_tool", {}) as Record<string, unknown>;
+    expect(result).toHaveProperty("error");
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// PART 2 — Comprehensive coverage for previously untested tools
+// ═════════════════════════════════════════════════════════════════════════════
+
+// ── get_active_context ────────────────────────────────────────────────────────
+
+describe("get_active_context — full coverage", () => {
+  it("includes tags array", async () => {
+    const db = makeDb();
+    seed(db);
+    db.prepare("INSERT INTO tags (id, workspace_id, name, color) VALUES (?, ?, ?, ?)").run("tag1", "ws1", "urgent", "#ff0000");
+    const result = await exec(db, "get_active_context", {}) as Record<string, unknown>;
+    expect(Array.isArray(result.tags)).toBe(true);
+    const tags = result.tags as Array<{ id: string; name: string }>;
+    expect(tags.find((t) => t.id === "tag1")).toBeDefined();
+  });
+
+  it("recentNotes includes notes from active project", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "get_active_context", {}) as Record<string, unknown>;
+    const notes = result.recentNotes as Array<{ noteId: string }>;
+    expect(notes.some((n) => n.noteId === "note1")).toBe(true);
+  });
+
+  it("columns include task counts", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "get_active_context", {}) as Record<string, unknown>;
+    const columns = result.columns as Array<{ columnId: string; taskCount: number }>;
+    const backlog = columns.find((c) => c.columnId === "col1");
+    expect(backlog?.taskCount).toBe(1);
+  });
+
+  it("allProjects lists all non-archived projects", async () => {
+    const db = makeDb();
+    seed(db);
+    createProject(db, { id: "proj2", workspaceId: "ws1", name: "Second Project" });
+    const result = await exec(db, "get_active_context", {}) as Record<string, unknown>;
+    const projects = result.allProjects as Array<{ projectId: string }>;
+    expect(projects.map((p) => p.projectId)).toContain("proj1");
+    expect(projects.map((p) => p.projectId)).toContain("proj2");
+  });
+});
+
+// ── get_task — blockedByIds parity ────────────────────────────────────────────
+
+describe("get_task — blockedByIds field", () => {
+  it("includes blockedByIds in the result", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "get_task", { cardId: "card1" }) as Record<string, unknown>;
+    expect(result).toHaveProperty("blockedByIds");
+    expect(Array.isArray(result.blockedByIds)).toBe(true);
+  });
+
+  it("blockedByIds is empty when task has no blockers", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "get_task", { cardId: "card1" }) as Record<string, unknown>;
+    expect((result.blockedByIds as string[])).toHaveLength(0);
+  });
+
+  it("blockedByIds contains the blocker after block_task", async () => {
+    const db = makeDb();
+    seed(db);
+    createCard(db, { id: "blocker", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Blocker", order: 1 });
+    await exec(db, "block_task", { cardId: "card1", blockerCardId: "blocker" });
+    const result = await exec(db, "get_task", { cardId: "card1" }) as Record<string, unknown>;
+    expect((result.blockedByIds as string[])).toContain("blocker");
+  });
+});
+
+// ── resolve_project ───────────────────────────────────────────────────────────
+
+describe("resolve_project", () => {
+  it("returns project on exact match", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "resolve_project", { name: "Project" }) as Record<string, unknown>;
+    expect(result).not.toHaveProperty("error");
+    expect(result.id).toBe("proj1");
+  });
+
+  it("case-insensitive exact match", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "resolve_project", { name: "project" }) as Record<string, unknown>;
+    expect(result.id).toBe("proj1");
+  });
+
+  it("starts-with match when no exact match", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "resolve_project", { name: "Proj" }) as Record<string, unknown>;
+    expect(result.id).toBe("proj1");
+  });
+
+  it("contains match as final fallback", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "resolve_project", { name: "rojec" }) as Record<string, unknown>;
+    expect(result.id).toBe("proj1");
+  });
+
+  it("exact beats starts-with when both exist", async () => {
+    const db = makeDb();
+    seed(db);
+    createProject(db, { id: "proj2", workspaceId: "ws1", name: "Project Extended" });
+    const result = await exec(db, "resolve_project", { name: "Project" }) as Record<string, unknown>;
+    expect(result.id).toBe("proj1"); // exact match wins
+  });
+
+  it("returns error and candidates when nothing matches", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "resolve_project", { name: "zzznomatch" }) as Record<string, unknown>;
+    expect(result).toHaveProperty("error");
+    const candidates = result.candidates as Array<{ id: string }>;
+    expect(candidates.map((c) => c.id)).toContain("proj1");
+  });
+
+  it("workspaceId filter scopes candidates", async () => {
+    const db = makeDb();
+    seed(db);
+    createWorkspace(db, { id: "ws2", name: "WS2" });
+    createProject(db, { id: "proj-ws2", workspaceId: "ws2", name: "Project" });
+    const result = await exec(db, "resolve_project", { name: "Project", workspaceId: "ws2" }) as Record<string, unknown>;
+    expect(result.id).toBe("proj-ws2");
+  });
+
+  it("returns columns for matched project", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "resolve_project", { name: "Project" }) as Record<string, unknown>;
+    const columns = result.columns as Array<{ id: string }>;
+    expect(columns.map((c) => c.id)).toContain("col1");
+  });
+});
+
+// ── ensure_note ───────────────────────────────────────────────────────────────
+
+describe("ensure_note", () => {
+  it("creates note and returns action: created", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "ensure_note", { projectId: "proj1", title: "README", content: "hello" }) as Record<string, unknown>;
+    expect(result.action).toBe("created");
+    expect(result).toHaveProperty("id");
+  });
+
+  it("updates existing note and returns action: updated", async () => {
+    const db = makeDb();
+    seed(db);
+    await exec(db, "ensure_note", { projectId: "proj1", title: "README", content: "v1" });
+    const result = await exec(db, "ensure_note", { projectId: "proj1", title: "README", content: "v2" }) as Record<string, unknown>;
+    expect(result.action).toBe("updated");
+  });
+
+  it("only one note exists after two ensure calls with same title", async () => {
+    const db = makeDb();
+    seed(db);
+    await exec(db, "ensure_note", { projectId: "proj1", title: "README", content: "v1" });
+    await exec(db, "ensure_note", { projectId: "proj1", title: "README", content: "v2" });
+    const notes = await exec(db, "list_notes", { projectId: "proj1" }) as Array<{ title: string }>;
+    expect(notes.filter((n) => n.title === "README")).toHaveLength(1);
+  });
+
+  it("title match is case-sensitive — different case creates a new note", async () => {
+    const db = makeDb();
+    seed(db);
+    await exec(db, "ensure_note", { projectId: "proj1", title: "readme", content: "lower" });
+    const result = await exec(db, "ensure_note", { projectId: "proj1", title: "README", content: "upper" }) as Record<string, unknown>;
+    expect(result.action).toBe("created");
+  });
+
+  it("archived note with same title triggers a new create", async () => {
+    const db = makeDb();
+    seed(db);
+    const r1 = await exec(db, "ensure_note", { projectId: "proj1", title: "Spec", content: "old" }) as Record<string, unknown>;
+    db.prepare("UPDATE notes SET archived_at = '2024-01-01T00:00:00.000Z' WHERE id = ?").run(r1.id as string);
+    const r2 = await exec(db, "ensure_note", { projectId: "proj1", title: "Spec", content: "new" }) as Record<string, unknown>;
+    expect(r2.action).toBe("created");
+    expect(r2.id).not.toBe(r1.id);
+  });
+
+  it("returns error for unknown project", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "ensure_note", { projectId: "nope", title: "X" }) as Record<string, unknown>;
+    expect(result).toHaveProperty("error");
+  });
+});
+
+// ── append_to_note ────────────────────────────────────────────────────────────
+
+describe("append_to_note", () => {
+  it("appends content with default double-newline separator", async () => {
+    const db = makeDb();
+    seed(db);
+    await exec(db, "append_to_note", { noteId: "note1", content: "appended text" });
+    const note = await exec(db, "get_note", { noteId: "note1" }) as Record<string, unknown>;
+    expect(note.content as string).toBe("hello\n\nappended text");
+  });
+
+  it("uses a custom separator when provided", async () => {
+    const db = makeDb();
+    seed(db);
+    await exec(db, "append_to_note", { noteId: "note1", content: "new section", separator: "\n---\n" });
+    const note = await exec(db, "get_note", { noteId: "note1" }) as Record<string, unknown>;
+    expect(note.content as string).toBe("hello\n---\nnew section");
+  });
+
+  it("returns newLength reflecting the combined content", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "append_to_note", { noteId: "note1", content: "more" }) as Record<string, unknown>;
+    expect(result.newLength).toBe("hello\n\nmore".length);
+  });
+
+  it("multiple appends accumulate correctly", async () => {
+    const db = makeDb();
+    seed(db);
+    await exec(db, "append_to_note", { noteId: "note1", content: "part 2" });
+    await exec(db, "append_to_note", { noteId: "note1", content: "part 3" });
+    const note = await exec(db, "get_note", { noteId: "note1" }) as Record<string, unknown>;
+    expect(note.content as string).toContain("part 2");
+    expect(note.content as string).toContain("part 3");
+  });
+
+  it("returns { error } for unknown note", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "append_to_note", { noteId: "nope", content: "x" }) as Record<string, unknown>;
+    expect(result).toHaveProperty("error");
+  });
+});
+
+// ── patch_note ────────────────────────────────────────────────────────────────
+
+describe("patch_note", () => {
+  it("replaces a unique string", async () => {
+    const db = makeDb();
+    seed(db);
+    await exec(db, "patch_note", { noteId: "note1", oldString: "hello", newString: "goodbye" });
+    const note = await exec(db, "get_note", { noteId: "note1" }) as Record<string, unknown>;
+    expect(note.content).toBe("goodbye");
+  });
+
+  it("returns error when oldString not found", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "patch_note", { noteId: "note1", oldString: "nothere", newString: "x" }) as Record<string, unknown>;
+    expect(result).toHaveProperty("error");
+  });
+
+  it("returns error when oldString matches multiple times and replaceAll not set", async () => {
+    const db = makeDb();
+    seed(db);
+    updateNote(db, "note1", { content: "TODO fix\nTODO fix" });
+    const result = await exec(db, "patch_note", { noteId: "note1", oldString: "TODO fix", newString: "done" }) as Record<string, unknown>;
+    expect(result).toHaveProperty("error");
+    expect(String(result.error)).toMatch(/2/);
+  });
+
+  it("replaceAll: true replaces all occurrences", async () => {
+    const db = makeDb();
+    seed(db);
+    updateNote(db, "note1", { content: "TODO fix\nTODO fix" });
+    await exec(db, "patch_note", { noteId: "note1", oldString: "TODO fix", newString: "done", replaceAll: true });
+    const note = await exec(db, "get_note", { noteId: "note1" }) as Record<string, unknown>;
+    expect(note.content as string).not.toContain("TODO fix");
+    expect((note.content as string).match(/done/g)?.length).toBe(2);
+  });
+
+  it("sequential patches build on each other", async () => {
+    const db = makeDb();
+    seed(db);
+    await exec(db, "patch_note", { noteId: "note1", oldString: "hello", newString: "Status: draft" });
+    await exec(db, "patch_note", { noteId: "note1", oldString: "Status: draft", newString: "Status: done" });
+    const note = await exec(db, "get_note", { noteId: "note1" }) as Record<string, unknown>;
+    expect(note.content).toBe("Status: done");
+  });
+
+  it("returns { error } for unknown note", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "patch_note", { noteId: "nope", oldString: "x", newString: "y" }) as Record<string, unknown>;
+    expect(result).toHaveProperty("error");
+  });
+});
+
+// ── block_task / unblock_task ─────────────────────────────────────────────────
+
+describe("block_task and unblock_task", () => {
+  function seedTwo(db: Database.Database) {
+    seed(db);
+    createCard(db, { id: "card2", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Task Two", order: 1 });
+  }
+
+  it("block_task returns blocked: true", async () => {
+    const db = makeDb();
+    seedTwo(db);
+    const result = await exec(db, "block_task", { cardId: "card2", blockerCardId: "card1" }) as Record<string, unknown>;
+    expect(result).not.toHaveProperty("error");
+    // result is the updated card from addCardBlocker
+    const ids = result.blockedByIds as string[];
+    expect(ids).toContain("card1");
+  });
+
+  it("blocked task appears in get_task blockedByIds", async () => {
+    const db = makeDb();
+    seedTwo(db);
+    await exec(db, "block_task", { cardId: "card2", blockerCardId: "card1" });
+    const task = await exec(db, "get_task", { cardId: "card2" }) as Record<string, unknown>;
+    expect((task.blockedByIds as string[])).toContain("card1");
+  });
+
+  it("blocked task does not appear in list_ready_tasks", async () => {
+    const db = makeDb();
+    seedTwo(db);
+    await exec(db, "block_task", { cardId: "card2", blockerCardId: "card1" });
+    const ready = await exec(db, "list_ready_tasks", { projectId: "proj1" }) as Array<{ id: string }>;
+    expect(ready.map((r) => r.id)).not.toContain("card2");
+  });
+
+  it("unblock_task clears the blocker from blockedByIds", async () => {
+    const db = makeDb();
+    seedTwo(db);
+    await exec(db, "block_task", { cardId: "card2", blockerCardId: "card1" });
+    await exec(db, "unblock_task", { cardId: "card2", blockerCardId: "card1" });
+    const task = await exec(db, "get_task", { cardId: "card2" }) as Record<string, unknown>;
+    expect((task.blockedByIds as string[])).not.toContain("card1");
+  });
+
+  it("returns { error } when blocking itself", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "block_task", { cardId: "card1", blockerCardId: "card1" }) as Record<string, unknown>;
+    expect(result).toHaveProperty("error");
+    expect(String(result.error)).toMatch(/cannot block itself/i);
+  });
+
+  it("returns { error } for circular dependency", async () => {
+    const db = makeDb();
+    seedTwo(db);
+    await exec(db, "block_task", { cardId: "card1", blockerCardId: "card2" });
+    const result = await exec(db, "block_task", { cardId: "card2", blockerCardId: "card1" }) as Record<string, unknown>;
+    expect(result).toHaveProperty("error");
+    expect(String(result.error)).toMatch(/circular/i);
+  });
+
+  it("returns { error } for cross-project blocking", async () => {
+    const db = makeDb();
+    seed(db);
+    createProject(db, { id: "proj2", workspaceId: "ws1", name: "Other" });
+    createColumn(db, { id: "col-other", projectId: "proj2", workspaceId: "ws1", name: "Backlog", type: "backlog", order: 0 });
+    createCard(db, { id: "card-other", columnId: "col-other", projectId: "proj2", workspaceId: "ws1", title: "Other task", order: 0 });
+    const result = await exec(db, "block_task", { cardId: "card1", blockerCardId: "card-other" }) as Record<string, unknown>;
+    expect(result).toHaveProperty("error");
+    expect(String(result.error)).toMatch(/same project/i);
+  });
+
+  it("returns { error } for missing task", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "block_task", { cardId: "nope", blockerCardId: "card1" }) as Record<string, unknown>;
+    expect(result).toHaveProperty("error");
+  });
+
+  it("returns { error } for missing blocker", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "block_task", { cardId: "card1", blockerCardId: "nope" }) as Record<string, unknown>;
+    expect(result).toHaveProperty("error");
+  });
+});
+
+// ── list_ready_tasks ──────────────────────────────────────────────────────────
+
+describe("list_ready_tasks", () => {
+  it("returns unblocked tasks", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "list_ready_tasks", { projectId: "proj1" }) as Array<{ id: string }>;
+    expect(result.map((r) => r.id)).toContain("card1");
+  });
+
+  it("excludes tasks in done columns", async () => {
+    const db = makeDb();
+    seed(db);
+    createCard(db, { id: "done-card", columnId: "col2", projectId: "proj1", workspaceId: "ws1", title: "Done task", order: 0 });
+    const result = await exec(db, "list_ready_tasks", { projectId: "proj1" }) as Array<{ id: string }>;
+    expect(result.map((r) => r.id)).not.toContain("done-card");
+  });
+
+  it("excludes tasks with unresolved blockers", async () => {
+    const db = makeDb();
+    seed(db);
+    createCard(db, { id: "blocker", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Blocker", order: 1 });
+    createCard(db, { id: "blocked", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Blocked", order: 2 });
+    await exec(db, "block_task", { cardId: "blocked", blockerCardId: "blocker" });
+    const result = await exec(db, "list_ready_tasks", { projectId: "proj1" }) as Array<{ id: string }>;
+    expect(result.map((r) => r.id)).not.toContain("blocked");
+    expect(result.map((r) => r.id)).toContain("blocker");
+  });
+
+  it("task becomes ready after blocker moves to done", async () => {
+    const db = makeDb();
+    seed(db);
+    createCard(db, { id: "blocker", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Blocker", order: 1 });
+    createCard(db, { id: "blocked", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Blocked", order: 2 });
+    await exec(db, "block_task", { cardId: "blocked", blockerCardId: "blocker" });
+    await exec(db, "update_task_status", { cardId: "blocker", targetColumnId: "col2" });
+    const result = await exec(db, "list_ready_tasks", { projectId: "proj1" }) as Array<{ id: string }>;
+    expect(result.map((r) => r.id)).toContain("blocked");
+  });
+});
+
+// ── update_task_status to done — blocker cleanup ──────────────────────────────
+
+describe("update_task_status to done — blocker cleanup", () => {
+  it("clears done task from blocked task's blockedByIds", async () => {
+    const db = makeDb();
+    seed(db);
+    createCard(db, { id: "blocker", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Blocker", order: 1 });
+    createCard(db, { id: "blocked", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Blocked", order: 2 });
+    await exec(db, "block_task", { cardId: "blocked", blockerCardId: "blocker" });
+
+    await exec(db, "update_task_status", { cardId: "blocker", targetColumnId: "col2" });
+
+    const task = await exec(db, "get_task", { cardId: "blocked" }) as Record<string, unknown>;
+    expect((task.blockedByIds as string[])).not.toContain("blocker");
+    expect((task.blockedByIds as string[])).toHaveLength(0);
+  });
+
+  it("moving to non-done does NOT clear blockedByIds", async () => {
+    const db = makeDb();
+    seed(db);
+    createColumn(db, { id: "col-ip", projectId: "proj1", workspaceId: "ws1", name: "In Progress", type: "in_progress", order: 1 });
+    createCard(db, { id: "blocker", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Blocker", order: 1 });
+    createCard(db, { id: "blocked", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Blocked", order: 2 });
+    await exec(db, "block_task", { cardId: "blocked", blockerCardId: "blocker" });
+
+    await exec(db, "update_task_status", { cardId: "blocker", targetColumnId: "col-ip" });
+
+    const task = await exec(db, "get_task", { cardId: "blocked" }) as Record<string, unknown>;
+    expect((task.blockedByIds as string[])).toContain("blocker");
+  });
+});
+
+// ── bulk_update_task_status to done — blocker cleanup ────────────────────────
+
+describe("bulk_update_task_status to done — blocker cleanup", () => {
+  it("clears all bulk-moved tasks from blocked tasks' blockedByIds", async () => {
+    const db = makeDb();
+    seed(db);
+    createCard(db, { id: "b1", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Blocker 1", order: 1 });
+    createCard(db, { id: "b2", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Blocker 2", order: 2 });
+    createCard(db, { id: "dep", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Dependent", order: 3 });
+    await exec(db, "block_task", { cardId: "dep", blockerCardId: "b1" });
+    await exec(db, "block_task", { cardId: "dep", blockerCardId: "b2" });
+
+    await exec(db, "bulk_update_task_status", { cardIds: ["b1", "b2"], targetColumnId: "col2" });
+
+    const task = await exec(db, "get_task", { cardId: "dep" }) as Record<string, unknown>;
+    expect((task.blockedByIds as string[])).toHaveLength(0);
+  });
+});
+
+// ── get_project_context_pack ──────────────────────────────────────────────────
+
+describe("get_project_context_pack", () => {
+  it("returns correct shape", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "get_project_context_pack", { projectId: "proj1" }) as Record<string, unknown>;
+    expect(result).toHaveProperty("project");
+    expect(result).toHaveProperty("noteCount");
+    expect(result).toHaveProperty("pinnedNotes");
+    expect(result).toHaveProperty("openTasks");
+    expect(result).toHaveProperty("recentActivity");
+  });
+
+  it("openTasks excludes done-column tasks", async () => {
+    const db = makeDb();
+    seed(db);
+    createCard(db, { id: "done-card", columnId: "col2", projectId: "proj1", workspaceId: "ws1", title: "Done task", order: 1 });
+    const result = await exec(db, "get_project_context_pack", { projectId: "proj1" }) as Record<string, unknown>;
+    const openTasks = result.openTasks as Array<{ tasks: Array<{ id: string }> }>;
+    const allIds = openTasks.flatMap((c) => c.tasks.map((t) => t.id));
+    expect(allIds).toContain("card1");
+    expect(allIds).not.toContain("done-card");
+  });
+
+  it("pinnedNotes includes full content", async () => {
+    const db = makeDb();
+    seed(db);
+    createNote(db, { id: "pinned", projectId: "proj1", workspaceId: "ws1", title: "Pinned", content: "# Overview\nDetails here", isPinned: true });
+    const result = await exec(db, "get_project_context_pack", { projectId: "proj1" }) as Record<string, unknown>;
+    const pinned = result.pinnedNotes as Array<{ id: string; content: string }>;
+    expect(pinned.find((n) => n.id === "pinned")?.content).toContain("Overview");
+  });
+
+  it("returns { error } for unknown project", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "get_project_context_pack", { projectId: "nope" }) as Record<string, unknown>;
     expect(result).toHaveProperty("error");
   });
 });

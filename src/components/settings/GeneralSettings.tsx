@@ -5,6 +5,7 @@ import { Sun, Moon, Monitor, CheckCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useCairnStore, type Theme, type FontScale } from "@/store";
+import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
 import { SettingsGroup, SettingsRow } from "./shared";
 import { ViewVisibilitySettings } from "./ViewVisibilitySettings";
@@ -18,7 +19,7 @@ const FONT_SCALE_OPTIONS: { value: FontScale; label: string; description: string
 ];
 
 export function GeneralSettings() {
-  const { workspaces, theme, setTheme, fontScale, setFontScale, updateWorkspace } = useCairnStore();
+  const { workspaces, theme, setTheme, fontScale, setFontScale, updateWorkspace, selectAndInitWorkspace } = useCairnStore(useShallow((s) => ({ workspaces: s.workspaces, theme: s.theme, setTheme: s.setTheme, fontScale: s.fontScale, setFontScale: s.setFontScale, updateWorkspace: s.updateWorkspace, selectAndInitWorkspace: s.selectAndInitWorkspace })));
   const workspace = workspaces[0];
 
   const themeOptions: { value: Theme; label: string; icon: React.ReactNode }[] = [
@@ -81,15 +82,14 @@ export function GeneralSettings() {
           ))}
         </div>
       </SettingsRow>
-      <ChangeWorkspaceRow />
+      <ChangeWorkspaceRow selectAndInitWorkspace={selectAndInitWorkspace} />
     </SettingsGroup>
     <ViewVisibilitySettings />
     </>
   );
 }
 
-function ChangeWorkspaceRow() {
-  const { selectAndInitWorkspace } = useCairnStore();
+function ChangeWorkspaceRow({ selectAndInitWorkspace }: { selectAndInitWorkspace: () => Promise<string | null> }) {
   const [changing, setChanging] = useState(false);
   const [done, setDone] = useState(false);
 

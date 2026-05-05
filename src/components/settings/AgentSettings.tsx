@@ -10,8 +10,8 @@
 
 import { useState, useEffect } from "react";
 import { Plus, Trash2, Star, FolderOpen, Check } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
+import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
 import { id } from "@/lib/utils";
 import type { CodingAgent } from "@/store/slices/coding-agents";
@@ -144,9 +144,7 @@ function AgentForm({ initial, onSave, onCancel }: AgentFormProps) {
 // ── AgentSettings ─────────────────────────────────────────────────────────────
 
 export function AgentSettings() {
-  const {
-    agents, fetchAgents, saveAgent, deleteAgent, setDefaultAgent,
-  } = useCairnStore();
+  const { agents, fetchAgents, saveAgent, deleteAgent, setDefaultAgent } = useCairnStore(useShallow((s) => ({ agents: s.agents, fetchAgents: s.fetchAgents, saveAgent: s.saveAgent, deleteAgent: s.deleteAgent, setDefaultAgent: s.setDefaultAgent })));
 
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -191,7 +189,7 @@ export function AgentSettings() {
 
         {agents.length === 0 && !adding && (
           <p className="text-xs text-[var(--text-tertiary)] py-4 text-center border border-dashed border-[var(--border)] rounded-lg">
-            No agents configured yet. Click "Add Agent" to register one.
+            No agents configured yet. Click &quot;Add Agent&quot; to register one.
           </p>
         )}
 

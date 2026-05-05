@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useRef, useCallback, useState, useEffect, useMemo } from "react";
-import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform, type ExtraProps } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import remarkMath from "remark-math";
@@ -9,6 +9,7 @@ import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
 import { Pin, PinOff, Calendar, Eye, Pencil, Wand2, Loader2, CheckCircle2, Tag, Plus, X, Link2, Kanban, ChevronDown, FileText } from "lucide-react";
 import { useCairnStore } from "@/store";
+import { useShallow } from "zustand/react/shallow";
 import { cn, formatRelative } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
@@ -228,7 +229,7 @@ interface MDPreviewPanelProps {
 function MDPreviewPanel({ text, onDismiss }: MDPreviewPanelProps) {
   // Each panel instance gets its own latex plugin pair so the mutable capture
   // array is isolated — safe because the panel remounts when text changes.
-  const { rehypeCaptureLatex: previewCapture, rehypeMergedPass: previewMerge } = useMemo(makeLatexPlugins, []);
+  const { rehypeCaptureLatex: previewCapture, rehypeMergedPass: previewMerge } = useMemo(() => makeLatexPlugins(), []);
 
   // Dismiss on Escape
   useEffect(() => {
@@ -260,16 +261,15 @@ function MDPreviewPanel({ text, onDismiss }: MDPreviewPanelProps) {
           remarkPlugins={PREVIEW_REMARK_PLUGINS}
           rehypePlugins={[previewCapture, rehypeKatex, previewMerge]}
           urlTransform={(url) => url.startsWith("asset://") ? url : defaultUrlTransform(url)}
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           components={({
-            mark({ children }: any) {
+            mark({ children }: React.HTMLAttributes<HTMLElement> & ExtraProps) {
               return (
                 <mark className="rounded px-0.5" style={{ background: "color-mix(in srgb, var(--accent) 22%, transparent)", color: "var(--text-primary)" }}>
                   {children}
                 </mark>
               );
             },
-            callout({ children, ...props }: any) {
+            callout({ children, ...props }: React.HTMLAttributes<HTMLElement> & ExtraProps) {
               const p = props as Record<string, string>;
               return (
                 <Callout
@@ -282,11 +282,11 @@ function MDPreviewPanel({ text, onDismiss }: MDPreviewPanelProps) {
                 </Callout>
               );
             },
-            mathblock({ children, ...props }: any) {
+            mathblock({ children, ...props }: React.HTMLAttributes<HTMLElement> & ExtraProps) {
               const p = props as Record<string, string>;
               return <MathBlock renderedChildren={children} latex={p["data-latex"] ?? ""} />;
             },
-            pre({ children }: any) {
+            pre({ children }: React.HTMLAttributes<HTMLPreElement> & ExtraProps) {
               const child = Array.isArray(children) ? children[0] : children;
               const code = child as React.ReactElement<{ className?: string; children?: React.ReactNode }>;
               const className = code?.props?.className ?? "";
@@ -294,10 +294,10 @@ function MDPreviewPanel({ text, onDismiss }: MDPreviewPanelProps) {
               const content = String(code?.props?.children ?? "").replace(/\n$/, "");
               return <CodeBlock code={content} language={lang} />;
             },
-            code({ children, className }: any) {
+            code({ children, className }: React.HTMLAttributes<HTMLElement> & ExtraProps) {
               return <InlineCode className={className}>{children}</InlineCode>;
             },
-          } as any)}
+          } as import("react-markdown").Components)}
         >
           {text}
         </ReactMarkdown>
@@ -317,7 +317,17 @@ interface NoteEditorProps {
 type EditorMode = "write" | "read";
 
 export function NoteEditor({ note }: NoteEditorProps) {
-  const { updateNote, aiConfig, activeProjectId, getProjectColumns, tags, createTag, getTagById, activeWorkspaceId, notes, cards, columns, setView } = useCairnStore();
+  const { updateNote, aiConfig, activeProjectId, getProjectColumns, tags, createTag, getTagById, activeWorkspaceId, setView } = useCairnStore(useShallow((s) => ({
+    updateNote:        s.updateNote,
+    aiConfig:          s.aiConfig,
+    activeProjectId:   s.activeProjectId,
+    getProjectColumns: s.getProjectColumns,
+    tags:              s.tags,
+    createTag:         s.createTag,
+    getTagById:        s.getTagById,
+    activeWorkspaceId: s.activeWorkspaceId,
+    setView:           s.setView,
+  })));
   const aiEnabled = aiConfig.aiEnabled ?? true;
   const editorRef = useRef<MarkdownEditorHandle>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -359,7 +369,8 @@ export function NoteEditor({ note }: NoteEditorProps) {
   // it without a stale closure value.
   const pendingContent = useRef<{ noteId: string; markdown: string } | null>(null);
   const updateNoteRef = useRef(updateNote);
-  updateNoteRef.current = updateNote;
+  // Keep the ref current without mutating it during render
+  useEffect(() => { updateNoteRef.current = updateNote; });
 
   // Flush any pending debounced save immediately. Safe to call at any time.
   const flushPending = useCallback(() => {
@@ -483,7 +494,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
         selectionRef.current = null;
       }
     },
-    [aiConfig]
+    [aiConfig.baseUrl, aiConfig.model, aiConfig.apiKey]
   );
 
   const handleFormat = useCallback((action: FormatAction) => {
@@ -512,8 +523,8 @@ export function NoteEditor({ note }: NoteEditorProps) {
     const electron = window.electron;
     if (!electron || !activeProjectId) return;
 
-    const columns = getProjectColumns(activeProjectId);
-    const backlogCol = columns.find((c) => c.type === "backlog") ?? columns[0];
+    const projectColumns = getProjectColumns(activeProjectId);
+    const backlogCol = projectColumns.find((c) => c.type === "backlog") ?? projectColumns[0];
     if (!backlogCol) return;
 
     setSpawnLoading(true);
@@ -539,6 +550,189 @@ export function NoteEditor({ note }: NoteEditorProps) {
       setSpawnLoading(false);
     }
   }, [note.id, activeProjectId, getProjectColumns, aiConfig]);
+
+  // ── Stable ReactMarkdown component overrides ──────────────────────────────
+  // Extracted from JSX so ReactMarkdown receives a stable object reference
+  // across renders. Only recreated when the note or updateNote changes.
+  // previewScrollRef is a stable ref so it doesn't need to be in deps.
+  const mdComponents = useMemo(() => ({
+    // Images — renders asset:// and https:// URLs
+    img({ src, alt }: { src?: string; alt?: string }) {
+      const srcStr = typeof src === "string" && src !== "" ? src : undefined;
+      const isExternal = srcStr?.startsWith("http://") || srcStr?.startsWith("https://");
+      const imgEl = (
+        <img
+          src={srcStr}
+          alt={alt ?? ""}
+          referrerPolicy="no-referrer"
+          className="max-w-full rounded-md my-2 border border-[var(--border)]"
+        />
+      );
+      if (isExternal && srcStr) {
+        const url = srcStr;
+        return (
+          <a
+            href={url}
+            onClick={(e) => {
+              e.preventDefault();
+              const el = (window as { electron?: { openExternal?: (u: string) => void } }).electron;
+              if (el?.openExternal) el.openExternal(url);
+              else window.open(url, "_blank");
+            }}
+            className="block"
+          >
+            {imgEl}
+          </a>
+        );
+      }
+      return imgEl;
+    },
+    mark({ children }: { children?: React.ReactNode }) {
+      return (
+        <mark className="rounded px-0.5" style={{ background: "color-mix(in srgb, var(--accent) 22%, transparent)", color: "var(--text-primary)" }}>
+          {children}
+        </mark>
+      );
+    },
+    callout({ children, ...props }: React.HTMLAttributes<HTMLElement> & ExtraProps) {
+      const p = props as Record<string, string>;
+      return (
+        <Callout
+          type={p["data-callout-type"] ?? "note"}
+          title={p["data-title"] || undefined}
+          collapsible={p["data-collapsible"] === "true"}
+          defaultOpen={p["data-default-open"] !== "false"}
+        >
+          {children}
+        </Callout>
+      );
+    },
+    mathblock({ children, ...props }: React.HTMLAttributes<HTMLElement> & ExtraProps) {
+      const latex: string = (props as Record<string, string>)["data-latex"] ?? "";
+      return <MathBlock key={latex} latex={latex} renderedChildren={children} />;
+    },
+    blockquote({ children }: { children?: React.ReactNode }) {
+      return (
+        <blockquote className="border-l-2 border-[var(--border)] pl-4 text-[var(--text-secondary)] my-3">
+          {children}
+        </blockquote>
+      );
+    },
+    // Clickable checkboxes — toggle [ ] ↔ [x] in the raw markdown source
+    input({ type, checked }: { type?: string; checked?: boolean }) {
+      if (type !== "checkbox") return <input type={type} />;
+      return (
+        <input
+          type="checkbox"
+          defaultChecked={checked}
+          className="cursor-pointer accent-[var(--accent)] w-3.5 h-3.5 relative top-[1px]"
+          onChange={(e) => {
+            const checkboxes = Array.from(
+              e.currentTarget.closest(".prose-cairn")!
+                .querySelectorAll<HTMLInputElement>("input[type='checkbox']")
+            );
+            const idx = checkboxes.indexOf(e.currentTarget);
+            if (idx === -1) return;
+            const lines = (note.content ?? "").split("\n");
+            let found = 0;
+            const next = lines.map((line) => {
+              if (/^(\s*[-*+]\s+)\[([ xX])\]/.test(line)) {
+                if (found === idx) { found++; return line.replace(/\[([ xX])\]/, e.currentTarget.checked ? "[x]" : "[ ]"); }
+                found++;
+              }
+              return line;
+            }).join("\n");
+            updateNote(note.id, { content: next });
+          }}
+        />
+      );
+    },
+    pre({ children }: { children?: React.ReactNode }) {
+      const child = Array.isArray(children) ? children[0] : children;
+      const code = child as React.ReactElement<{ className?: string; children?: React.ReactNode }>;
+      const className = code?.props?.className ?? "";
+      const lang = className.replace("language-", "") || undefined;
+      const content = String(code?.props?.children ?? "").replace(/\n$/, "");
+      if (lang === "mermaid") return <MermaidDiagram chart={content} />;
+      return <CodeBlock code={content} language={lang} />;
+    },
+    code({ className, children }: { className?: string; children?: React.ReactNode }) {
+      return <InlineCode className={className}>{children}</InlineCode>;
+    },
+    h1({ children }: { children?: React.ReactNode }) {
+      const text = String(children); const id = headingSlug(text);
+      return <h1 id={id} data-heading-id={id}>{children}</h1>;
+    },
+    h2({ children }: { children?: React.ReactNode }) {
+      const text = String(children); const id = headingSlug(text);
+      return <h2 id={id} data-heading-id={id}>{children}</h2>;
+    },
+    h3({ children }: { children?: React.ReactNode }) {
+      const text = String(children); const id = headingSlug(text);
+      return <h3 id={id} data-heading-id={id}>{children}</h3>;
+    },
+    sup({ children, ...props }: React.HTMLAttributes<HTMLElement> & ExtraProps) {
+      const isFootnoteRef = (props as Record<string, unknown>)["data-footnote-ref"] === true;
+      if (!isFootnoteRef) return <sup>{children}</sup>;
+      return (
+        <sup className="text-[0.714rem] leading-none" style={{ color: "var(--accent)", fontFeatureSettings: "'sups' 0" }}>
+          {children}
+        </sup>
+      );
+    },
+    a({ href, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement> & ExtraProps) {
+      if (href?.startsWith("#")) {
+        const isFootnoteRef = (props as Record<string, unknown>)["data-footnote-ref"] === true;
+        const rawClassName: unknown = props.className;
+        const isBackref = typeof rawClassName === "string"
+          ? rawClassName.includes("data-footnote-backref")
+          : Array.isArray(rawClassName) && rawClassName.includes("data-footnote-backref");
+        return (
+          <a
+            {...(props as React.AnchorHTMLAttributes<HTMLAnchorElement>)}
+            href={href}
+            style={isFootnoteRef ? { color: "var(--accent)", textDecoration: "none" } : undefined}
+            aria-label={isBackref ? "Back to reference" : undefined}
+            onClick={(e) => {
+              e.preventDefault();
+              const rawId = href.slice(1);
+              const container = previewScrollRef.current;
+              if (!container) return;
+              const target =
+                container.querySelector(`[data-heading-id="${rawId}"]`) ??
+                container.querySelector(`[id="${CSS.escape(rawId)}"]`);
+              target?.scrollIntoView({ behavior: "smooth", block: isBackref ? "center" : "start" });
+            }}
+          >
+            {children}
+          </a>
+        );
+      }
+      return <a href={href} {...(props as React.AnchorHTMLAttributes<HTMLAnchorElement>)}>{children}</a>;
+    },
+    section({ children, ...props }: React.HTMLAttributes<HTMLElement> & ExtraProps) {
+      if ((props.className ?? "").includes("footnotes")) {
+        return (
+          <section {...props} className="footnotes mt-8 pt-4 text-[0.786rem] text-[var(--text-secondary)]" style={{ borderTop: "1px solid var(--border)" }}>
+            {children}
+          </section>
+        );
+      }
+      return <section {...props}>{children}</section>;
+    },
+  // previewScrollRef is a stable React ref — no need to list it as a dep
+  }), [note.id, note.content, updateNote]) as import("react-markdown").Components;
+
+  const handleToggleTag = useCallback((tagId: string) => {
+    const has = note.tagIds.includes(tagId);
+    updateNote(note.id, { tagIds: has ? note.tagIds.filter((id) => id !== tagId) : [...note.tagIds, tagId] });
+  }, [note.id, note.tagIds, updateNote]);
+
+  const handleCreateTag = useCallback((name: string) => {
+    if (!activeWorkspaceId) return;
+    const tag = createTag(activeWorkspaceId, name);
+    updateNote(note.id, { tagIds: [...note.tagIds, tag.id] });
+  }, [activeWorkspaceId, note.id, note.tagIds, createTag, updateNote]);
 
   return (
     <div
@@ -649,15 +843,8 @@ export function NoteEditor({ note }: NoteEditorProps) {
         <NoteTagBar
           note={note}
           workspaceTags={tags.filter((t) => t.workspaceId === activeWorkspaceId)}
-          onToggleTag={(tagId) => {
-            const has = note.tagIds.includes(tagId);
-            updateNote(note.id, { tagIds: has ? note.tagIds.filter((id) => id !== tagId) : [...note.tagIds, tagId] });
-          }}
-          onCreateTag={(name) => {
-            if (!activeWorkspaceId) return;
-            const tag = createTag(activeWorkspaceId, name);
-            updateNote(note.id, { tagIds: [...note.tagIds, tag.id] });
-          }}
+          onToggleTag={handleToggleTag}
+          onCreateTag={handleCreateTag}
           getTagById={getTagById}
         />
       </div>
@@ -708,228 +895,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
                      remarkPlugins={[remarkGfm, remarkBreaks, remarkMath, remarkPromoteDisplayMath, remarkCallout]}
                      rehypePlugins={[rehypeCaptureLatex, rehypeKatex, rehypeMergedPass]}
                      urlTransform={(url) => url.startsWith("asset://") ? url : defaultUrlTransform(url)}
-                     components={({
-                      // Images — renders asset:// and https:// URLs
-                      img({ src, alt }) {
-                        const srcStr = typeof src === "string" && src !== "" ? src : undefined;
-                        const isExternal = srcStr?.startsWith("http://") || srcStr?.startsWith("https://");
-                        const imgEl = (
-                          <img
-                            src={srcStr}
-                            alt={alt ?? ""}
-                            referrerPolicy="no-referrer"
-                            className="max-w-full rounded-md my-2 border border-[var(--border)]"
-                          />
-                        );
-                        // Wrap external images in a link that opens in the system browser.
-                        // Prefer window.electron.openExternal (Electron shell) over
-                        // window.open, which requires setWindowOpenHandler to forward
-                        // the request and may be blocked by the sandbox.
-                        if (isExternal && srcStr) {
-                          const url = srcStr;
-                          return (
-                            <a
-                              href={url}
-                              onClick={(e) => {
-                                e.preventDefault();
-                                const el = (window as { electron?: { openExternal?: (u: string) => void } }).electron;
-                                if (el?.openExternal) {
-                                  el.openExternal(url);
-                                } else {
-                                  window.open(url, "_blank");
-                                }
-                              }}
-                              className="block"
-                            >
-                              {imgEl}
-                            </a>
-                          );
-                        }
-                        return imgEl;
-                      },
-                      // Highlights ==text== rendered as <mark> by rehypeHighlight
-                      mark({ children }) {
-                        return (
-                          <mark className="rounded px-0.5" style={{ background: "color-mix(in srgb, var(--accent) 22%, transparent)", color: "var(--text-primary)" }}>
-                            {children}
-                          </mark>
-                        );
-                      },
-                      // Callouts — blockquotes tagged with hName="callout" by remarkCallout.
-                      // remark-rehype passes data-* attributes as props to this component.
-                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                      callout({ children, ...props }: any) {
-                        const p = props as Record<string, string>;
-                        return (
-                          <Callout
-                            type={p["data-callout-type"] ?? "note"}
-                            title={p["data-title"] || undefined}
-                            collapsible={p["data-collapsible"] === "true"}
-                            defaultOpen={p["data-default-open"] !== "false"}
-                          >
-                            {children}
-                          </Callout>
-                        );
-                      },
-                        // Display math — rehypeTagLatex renames <span.katex-display> to <mathblock>
-                      // and stores the raw LaTeX in data-latex. ReactMarkdown routes custom
-                      // element names through the components map (same mechanism as callouts).
-                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                       mathblock({ children, ...props }: any) {
-                        const latex: string = props["data-latex"] ?? "";
-                        return <MathBlock key={latex} latex={latex} renderedChildren={children} />;
-                      },
-                       // Standard blockquote (non-callout)
-                      blockquote({ children }) {
-                        return (
-                          <blockquote className="border-l-2 border-[var(--border)] pl-4 text-[var(--text-secondary)] my-3">
-                            {children}
-                          </blockquote>
-                        );
-                      },
-                      // Clickable checkboxes — toggle [ ] ↔ [x] in the raw source
-                      input({ type, checked }) {
-                        if (type !== "checkbox") return <input type={type} />;
-                        return (
-                          <input
-                            type="checkbox"
-                            defaultChecked={checked}
-                            className="cursor-pointer accent-[var(--accent)] w-3.5 h-3.5 relative top-[1px]"
-                            onChange={(e) => {
-                              const checkboxes = Array.from(
-                                e.currentTarget.closest(".prose-cairn")!
-                                  .querySelectorAll<HTMLInputElement>("input[type='checkbox']")
-                              );
-                              const idx = checkboxes.indexOf(e.currentTarget);
-                              if (idx === -1) return;
-                              const lines = (note.content ?? "").split("\n");
-                              let found = 0;
-                              const next = lines.map((line) => {
-                                if (/^(\s*[-*+]\s+)\[([ xX])\]/.test(line)) {
-                                  if (found === idx) {
-                                    found++;
-                                    return line.replace(/\[([ xX])\]/, e.currentTarget.checked ? "[x]" : "[ ]");
-                                  }
-                                  found++;
-                                }
-                                return line;
-                              }).join("\n");
-                              updateNote(note.id, { content: next });
-                            }}
-                          />
-                        );
-                      },
-                      // Override `pre` (not `code`) for fenced blocks — pre is a true
-                      // block element so ReactMarkdown won't wrap it in a <p>, avoiding
-                      // the double-margin/padding from .prose-cairn p + .prose-cairn pre.
-                      pre({ children }) {
-                        // ReactMarkdown renders <pre><code class="language-x">…</code></pre>
-                        const child = Array.isArray(children) ? children[0] : children;
-                        const code = child as React.ReactElement<{ className?: string; children?: React.ReactNode }>;
-                        const className = code?.props?.className ?? "";
-                        const lang = className.replace("language-", "") || undefined;
-                        const content = String(code?.props?.children ?? "").replace(/\n$/, "");
-                        if (lang === "mermaid") {
-                          return <MermaidDiagram chart={content} />;
-                        }
-                        return <CodeBlock code={content} language={lang} />;
-                      },
-                      // Inline code only — fenced blocks are handled by `pre` above
-                      code({ className, children }) {
-                        return <InlineCode className={className}>{children}</InlineCode>;
-                      },
-                      // Headings get id + data-heading-id for TOC anchor scrolling
-                      h1({ children }) {
-                        const text = String(children);
-                        const id = headingSlug(text);
-                        return <h1 id={id} data-heading-id={id}>{children}</h1>;
-                      },
-                      h2({ children }) {
-                        const text = String(children);
-                        const id = headingSlug(text);
-                        return <h2 id={id} data-heading-id={id}>{children}</h2>;
-                      },
-                      h3({ children }) {
-                        const text = String(children);
-                        const id = headingSlug(text);
-                        return <h3 id={id} data-heading-id={id}>{children}</h3>;
-                      },
-                       // Footnote superscript — remark-gfm wraps footnote refs in
-                       // a <sup>. Only style <sup data-footnote-ref> so that regular
-                       // superscript text (e.g. X^2) is not accidentally coloured.
-                       sup({ children, ...props }) {
-                        const isFootnoteRef = (props as Record<string, unknown>)["data-footnote-ref"] === true;
-                        if (!isFootnoteRef) return <sup>{children}</sup>;
-                        return (
-                          <sup
-                            className="text-[0.714rem] leading-none"
-                            style={{ color: "var(--accent)", fontFeatureSettings: "'sups' 0" }}
-                          >
-                            {children}
-                          </sup>
-                        );
-                       },
-                        // Intercept all #hash link clicks so they scroll within
-                       // the overflow container rather than the browser page.
-                       // Covers three cases:
-                       //   1. Heading anchors   → [data-heading-id="slug"]
-                       //   2. Footnote targets  → [id="user-content-fn-*"]
-                       //   3. Footnote backrefs → [id="user-content-fnref-*"]
-                       // remark-gfm prefixes footnote IDs with "user-content-"
-                       // in the DOM but the href also carries that prefix, so
-                       // href.slice(1) matches the id attribute directly.
-                       a({ href, children, ...props }) {
-                        if (href?.startsWith("#")) {
-                          const isFootnoteRef = (props as Record<string, unknown>)["data-footnote-ref"] === true;
-                           // remark-gfm sets className="data-footnote-backref" (a string, not an array)
-                           const rawClassName: unknown = (props as Record<string, unknown>).className;
-                           const isBackref = typeof rawClassName === "string"
-                             ? rawClassName.includes("data-footnote-backref")
-                             : Array.isArray(rawClassName) && rawClassName.includes("data-footnote-backref");
-                          return (
-                            <a
-                              {...props}
-                              href={href}
-                              // Footnote ref superscript: subtle accent colour
-                              style={isFootnoteRef ? { color: "var(--accent)", textDecoration: "none" } : undefined}
-                              aria-label={isBackref ? "Back to reference" : undefined}
-                              onClick={(e) => {
-                                e.preventDefault();
-                                const rawId = href.slice(1);
-                                const container = previewScrollRef.current;
-                                if (!container) return;
-                                // Try heading anchor first, then any element with matching id
-                                const target =
-                                  container.querySelector(`[data-heading-id="${rawId}"]`) ??
-                                  container.querySelector(`[id="${CSS.escape(rawId)}"]`);
-                                target?.scrollIntoView({ behavior: "smooth", block: isBackref ? "center" : "start" });
-                              }}
-                            >
-                              {children}
-                            </a>
-                          );
-                        }
-                        return <a href={href} {...props}>{children}</a>;
-                       },
-                       // Footnotes section — rendered by remark-gfm as
-                       // <section class="footnotes"> with a sr-only <h2> heading.
-                       // We replace it with a styled version that shows a visible divider.
-                       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                       section({ children, ...props }: any) {
-                        if ((props.className ?? "").includes("footnotes")) {
-                          return (
-                            <section
-                              {...props}
-                              className="footnotes mt-8 pt-4 text-[0.786rem] text-[var(--text-secondary)]"
-                              style={{ borderTop: "1px solid var(--border)" }}
-                            >
-                              {children}
-                            </section>
-                          );
-                        }
-                        return <section {...props}>{children}</section>;
-                       },
-                     }) as import("react-markdown").Components}
+                     components={mdComponents}
                    >
                     {note.content}
                   </ReactMarkdown>
@@ -946,7 +912,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
       </div>
 
       {/* ── Backlinks panel ─────────────────────────────────────────────────── */}
-      <BacklinksPanel note={note} notes={notes} cards={cards} columns={columns} onOpenCard={() => setView("board")} />
+      <BacklinksPanel note={note} onOpenCard={() => setView("board")} />
 
 
 
@@ -965,21 +931,25 @@ export function NoteEditor({ note }: NoteEditorProps) {
 
 interface BacklinksPanelProps {
   note: Note;
-  notes: import("@/types").Note[];
-  cards: import("@/types").TaskCard[];
-  columns: import("@/types").BoardColumn[];
   onOpenCard: () => void;
 }
 
-function BacklinksPanel({ note, notes, cards, columns, onOpenCard }: BacklinksPanelProps) {
+function BacklinksPanel({ note, onOpenCard }: BacklinksPanelProps) {
+  const { notes, cards, columns } = useCairnStore(useShallow((s) => ({
+    notes:   s.notes,
+    cards:   s.cards,
+    columns: s.columns,
+  })));
   const [open, setOpen] = useState(false);
 
-  const linkedNotes = (note.linkedNoteIds ?? [])
-    .map((id) => notes.find((n) => n.id === id))
-    .filter(Boolean) as import("@/types").Note[];
-  const linkedCards = (note.linkedCardIds ?? [])
-    .map((id) => cards.find((c) => c.id === id))
-    .filter(Boolean) as import("@/types").TaskCard[];
+  const linkedNotes = useMemo(
+    () => (note.linkedNoteIds ?? []).map((id) => notes.find((n) => n.id === id)).filter(Boolean) as import("@/types").Note[],
+    [note.linkedNoteIds, notes],
+  );
+  const linkedCards = useMemo(
+    () => (note.linkedCardIds ?? []).map((id) => cards.find((c) => c.id === id)).filter(Boolean) as import("@/types").TaskCard[],
+    [note.linkedCardIds, cards],
+  );
 
   const total = linkedNotes.length + linkedCards.length;
   if (total === 0) return null;

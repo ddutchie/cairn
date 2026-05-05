@@ -3,6 +3,7 @@
 import React, { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
+import { useShallow } from "zustand/react/shallow";
 import type { GraphNode } from "@/types";
 
 interface Props {
@@ -41,7 +42,7 @@ const LABEL_W  = 140;  // px — row label column
 const HEADER_H = 80;   // px — angled header row height
 
 export function MatrixCanvas({ nodes, onNodeClick, selectedNodeId }: Props) {
-  const { tags, notes, cards } = useCairnStore();
+  const { tags, notes, cards } = useCairnStore(useShallow((s) => ({ tags: s.tags, notes: s.notes, cards: s.cards })));
   const [hoveredCell, setHoveredCell] = useState<{ r: number; c: number } | null>(null);
   const [pinnedCell,  setPinnedCell]  = useState<{ r: number; c: number } | null>(null);
 

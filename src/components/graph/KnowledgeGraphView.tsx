@@ -6,6 +6,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
+import { useShallow } from "zustand/react/shallow";
+import { useLoadGraph } from "@/hooks/useLoadGraph";
 import { filterGraphNodes, filterGraphEdges, nodeTypeColor } from "@/store/slices/graph";
 import type { GraphNode, GraphNodeType } from "@/types";
 import { GraphDetailPanel } from "./GraphDetailPanel";
@@ -28,17 +30,28 @@ export function KnowledgeGraphView() {
     setGraphLayout,
     setGraphFilters,
     setSelectedGraphNode,
-  } = useCairnStore();
+  } = useCairnStore(useShallow((s) => ({
+    activeWorkspaceId:            s.activeWorkspaceId,
+    graphData:                    s.graphData,
+    graphLoading:                 s.graphLoading,
+    graphError:                   s.graphError,
+    graphLayout:                  s.graphLayout,
+    graphFilters:                 s.graphFilters,
+    selectedGraphNodeId:          s.selectedGraphNodeId,
+    projects:                     s.projects,
+    loadGraph:                    s.loadGraph,
+    recomputeGraphRelationships:  s.recomputeGraphRelationships,
+    setGraphLayout:               s.setGraphLayout,
+    setGraphFilters:              s.setGraphFilters,
+    setSelectedGraphNode:         s.setSelectedGraphNode,
+  })));
 
   const [projectDropdownOpen, setProjectDropdownOpen] = useState(false);
   const [recomputing, setRecomputing] = useState(false);
   const [graphSearch, setGraphSearch] = useState("");
 
   // Load graph on mount + when workspace changes
-  useEffect(() => {
-    if (activeWorkspaceId) loadGraph(activeWorkspaceId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeWorkspaceId]);
+  useLoadGraph(activeWorkspaceId);
 
   // Clear graph search when leaving force/radial
   useEffect(() => {

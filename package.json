@@ -22,7 +22,10 @@
     "lint": "eslint",
     "type-check": "tsc --noEmit",
     "mcp": "node dist-mcp/mcp-server.bundle.js",
-    "smoke-test": "node scripts/smoke-test.js"
+    "smoke-test": "node scripts/smoke-test.js",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:headed": "playwright test --headed"
   },
   "main": "dist-electron/main.js",
   "overrides": {
@@ -67,6 +70,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@lezer/highlight": "^1.2.3",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "@playwright/test": "^1.59.1",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-dropdown-menu": "^2.1.16",
     "@radix-ui/react-popover": "^1.1.15",

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import {
   Calendar,
   Tag,
@@ -28,6 +28,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useCairnStore } from "@/store";
+import { useShallow } from "zustand/react/shallow";
 import { DatePicker } from "@/components/ui/date-picker";
 import { cn, formatRelative, PRIORITY_COLORS } from "@/lib/utils";
 import type { Priority } from "@/types";
@@ -60,27 +61,43 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
     setView,
     activeWorkspaceId,
     getWorkspaceProjects,
-  } = useCairnStore();
+  } = useCairnStore(useShallow((s) => ({
+    cards:               s.cards,
+    columns:             s.columns,
+    projects:            s.projects,
+    notes:               s.notes,
+    updateCard:          s.updateCard,
+    deleteCard:          s.deleteCard,
+    archiveCard:         s.archiveCard,
+    duplicateCard:       s.duplicateCard,
+    unlinkNoteFromCard:  s.unlinkNoteFromCard,
+    moveCardToProject:   s.moveCardToProject,
+    addCardBlocker:      s.addCardBlocker,
+    removeCardBlocker:   s.removeCardBlocker,
+    tags:                s.tags,
+    getProjectNotes:     s.getProjectNotes,
+    linkNoteToCard:      s.linkNoteToCard,
+    setView:             s.setView,
+    activeWorkspaceId:   s.activeWorkspaceId,
+    getWorkspaceProjects: s.getWorkspaceProjects,
+  })));
 
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [moveToProjectOpen, setMoveToProjectOpen] = useState(false);
   const [blockerError, setBlockerError] = useState<string | null>(null);
   const [spawnAgentOpen, setSpawnAgentOpen] = useState(false);
 
-  const card = cards.find((c) => c.id === cardId);
-  if (!card) return null;
+  const card = useMemo(() => cards.find((c) => c.id === cardId), [cards, cardId]);
+  // Derive all dependent data via useMemo — must be called before any conditional return
+  const column         = useMemo(() => card ? columns.find((c) => c.id === card.columnId) : undefined, [card, columns]);
+  const project        = useMemo(() => card ? projects.find((p) => p.id === card.projectId) : undefined, [card, projects]);
+  const projectColumns = useMemo(() => card ? columns.filter((c) => c.projectId === card.projectId).sort((a, b) => a.order - b.order) : [], [card, columns]);
+  const linkedNotes    = useMemo(() => card ? card.linkedNoteIds.map((nId) => notes.find((n) => n.id === nId)).filter(Boolean) : [], [card, notes]);
+  const projectNotes   = useMemo(() => card ? getProjectNotes(card.projectId) : [], [card, getProjectNotes]);
+  const projectTags    = useMemo(() => card ? tags.filter((t) => t.workspaceId === card.workspaceId) : [], [card, tags]);
+  const otherProjects  = useMemo(() => card ? (activeWorkspaceId ? getWorkspaceProjects(activeWorkspaceId) : projects).filter((p) => p.id !== card.projectId && !p.archivedAt) : [], [card, activeWorkspaceId, getWorkspaceProjects, projects]);
 
-  const column = columns.find((c) => c.id === card.columnId);
-  const project = projects.find((p) => p.id === card.projectId);
-  // All columns for this project — for moving the card to another column
-  const projectColumns = columns
-    .filter((c) => c.projectId === card.projectId)
-    .sort((a, b) => a.order - b.order);
-  const linkedNotes = card.linkedNoteIds.map((nId) => notes.find((n) => n.id === nId)).filter(Boolean);
-  const projectNotes = getProjectNotes(card.projectId);
-  const projectTags = tags.filter((t) => t.workspaceId === card.workspaceId);
-  const otherProjects = (activeWorkspaceId ? getWorkspaceProjects(activeWorkspaceId) : projects)
-    .filter((p) => p.id !== card.projectId && !p.archivedAt);
+  if (!card) return null;
 
   // Dependency data
   const doneColumnIds = new Set(columns.filter((c) => c.projectId === card.projectId && c.type === "done").map((c) => c.id));

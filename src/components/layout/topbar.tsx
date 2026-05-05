@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useMemo } from "react";
 import {
   Hash,
   FileText,
@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
+import { useShallow } from "zustand/react/shallow";
 import { WorkspaceIcon, ProjectIcon } from "@/lib/workspace-icons";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -37,11 +38,27 @@ export function Topbar() {
     workspaces,
     projects,
     aiConfig,
-  } = useCairnStore();
+  } = useCairnStore(useShallow((s) => ({
+    activeWorkspaceId: s.activeWorkspaceId,
+    activeProjectId:   s.activeProjectId,
+    activeView:        s.activeView,
+    setView:           s.setView,
+    toggleChat:        s.toggleChat,
+    chatOpen:          s.chatOpen,
+    workspaces:        s.workspaces,
+    projects:          s.projects,
+    aiConfig:          s.aiConfig,
+  })));
   const aiEnabled = aiConfig.aiEnabled ?? true;
 
-  const workspace = workspaces.find((w) => w.id === activeWorkspaceId);
-  const project = projects.find((p) => p.id === activeProjectId);
+  const workspace = useMemo(
+    () => workspaces.find((w) => w.id === activeWorkspaceId),
+    [workspaces, activeWorkspaceId],
+  );
+  const project = useMemo(
+    () => projects.find((p) => p.id === activeProjectId),
+    [projects, activeProjectId],
+  );
 
   if (activeView === "settings") {
     return (

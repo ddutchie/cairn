@@ -8,6 +8,7 @@
  */
 
 import { useCairnStore } from "@/store";
+import { useShallow } from "zustand/react/shallow";
 import { COLUMN_TYPE_ORDER } from "@/lib/constants";
 import { CairnEvents } from "@/lib/events";
 import type { Note, TaskCard, BoardColumn } from "@/types";
@@ -64,7 +65,15 @@ export function useProjectMetrics(projectId: string | null): ProjectMetrics | nu
     getColumnCards,
     getTagById,
     setView,
-  } = useCairnStore();
+  } = useCairnStore(useShallow((s) => ({
+    projects:          s.projects,
+    getProjectNotes:   s.getProjectNotes,
+    getProjectColumns: s.getProjectColumns,
+    getProjectCards:   s.getProjectCards,
+    getColumnCards:    s.getColumnCards,
+    getTagById:        s.getTagById,
+    setView:           s.setView,
+  })));
 
   const project = projects.find((p) => p.id === projectId);
   if (!project || !projectId) return null;

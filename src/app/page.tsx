@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { Download, X, AlertCircle } from "lucide-react";
 import { useCairnStore } from "@/store";
+import { useShallow } from "zustand/react/shallow";
 import { CairnEvents } from "@/lib/events";
 import { historyManager, ownWriteGuard } from "@/lib/history";
 
@@ -68,7 +69,21 @@ export default function Home() {
     activeProjectId,
     aiConfig,
     hiddenViews,
-  } = useCairnStore();
+  } = useCairnStore(useShallow((s) => ({
+    hydrate:             s.hydrate,
+    hydrateFromElectron: s.hydrateFromElectron,
+    activeView:          s.activeView,
+    chatOpen:            s.chatOpen,
+    searchOpen:          s.searchOpen,
+    toggleSearch:        s.toggleSearch,
+    toggleChat:          s.toggleChat,
+    toggleSidebar:       s.toggleSidebar,
+    setView:             s.setView,
+    createNote:          s.createNote,
+    activeProjectId:     s.activeProjectId,
+    aiConfig:            s.aiConfig,
+    hiddenViews:         s.hiddenViews,
+  })));
   const aiEnabled = aiConfig.aiEnabled ?? true;
 
   // All navigable views in shortcut order; overview=⌘1, notes=⌘2, then visible extras
@@ -199,7 +214,7 @@ export default function Home() {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("cairn:open-chat", handleOpenChat);
     };
-  }, [toggleSearch, toggleChat, toggleSidebar, setView, activeProjectId, createNote, chatOpen, aiEnabled, hiddenViews]);
+  }, [toggleSearch, toggleChat, toggleSidebar, setView, activeProjectId, createNote, chatOpen, aiEnabled, hiddenViews, ORDERED_VIEWS]);
 
   // Still loading
   if (onboardingState === null) {

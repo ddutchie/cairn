@@ -25,7 +25,7 @@ type Message =
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function PrdModal({ projectId, workspaceId, onClose }: PrdModalProps) {
-  const { aiConfig } = useCairnStore();
+  const aiConfig = useCairnStore((s) => s.aiConfig);
 
   // Use a stable ephemeral thread ID scoped to this modal session
   const threadId = `prd-${projectId}`;
@@ -112,7 +112,6 @@ export function PrdModal({ projectId, workspaceId, onClose }: PrdModalProps) {
       // Content was committed by useChatStream's onDone — re-read from history
       // We can't access it here, so we track via a separate effect below
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoading]);
 
   // Simpler: subscribe to onDone ourselves just to capture assistant content
