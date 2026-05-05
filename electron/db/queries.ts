@@ -955,7 +955,7 @@ export function searchTasks(db: Database.Database, opts: SearchTasksOpts) {
 // ── Coding Agents ─────────────────────────────────────────────────────────────
 
 export function getCodingAgents(db: Database.Database) {
-  return (db.prepare("SELECT * FROM coding_agents ORDER BY created_at").all() as any[])
+  return (db.prepare("SELECT * FROM coding_agents ORDER BY created_at").all() as unknown[])
     .map(toCodingAgent);
 }
 

@@ -28,7 +28,6 @@ export function ImageViewer({ filePath }: ImageViewerProps) {
     <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[var(--background)] overflow-auto p-4">
       {error && <p className="text-xs text-[var(--danger)]">{error}</p>}
       {src && (
-        // eslint-disable-next-line @next/next/no-img-element
         <img
           src={src}
           alt={filePath.split("/").pop() ?? filePath}

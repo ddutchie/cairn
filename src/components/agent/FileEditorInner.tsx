@@ -26,10 +26,10 @@ export function FileEditorInner({ filePath, isActive, isDark, onDirtyChange, onS
   const viewRef = useRef<EditorView | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const pathRef = useRef(filePath);
-  pathRef.current = filePath;
-
   const onSaveRef = useRef(onSave);
-  onSaveRef.current = onSave;
+  // Keep refs current without mutating during render
+  useEffect(() => { pathRef.current = filePath; });
+  useEffect(() => { onSaveRef.current = onSave; });
 
   useEffect(() => {
     if (!window.electron) return;

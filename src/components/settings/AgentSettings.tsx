@@ -10,7 +10,6 @@
 
 import { useState, useEffect } from "react";
 import { Plus, Trash2, Star, FolderOpen, Check } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
@@ -190,7 +189,7 @@ export function AgentSettings() {
 
         {agents.length === 0 && !adding && (
           <p className="text-xs text-[var(--text-tertiary)] py-4 text-center border border-dashed border-[var(--border)] rounded-lg">
-            No agents configured yet. Click "Add Agent" to register one.
+            No agents configured yet. Click &quot;Add Agent&quot; to register one.
           </p>
         )}
 

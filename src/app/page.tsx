@@ -214,7 +214,7 @@ export default function Home() {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("cairn:open-chat", handleOpenChat);
     };
-  }, [toggleSearch, toggleChat, toggleSidebar, setView, activeProjectId, createNote, chatOpen, aiEnabled, hiddenViews]);
+  }, [toggleSearch, toggleChat, toggleSidebar, setView, activeProjectId, createNote, chatOpen, aiEnabled, hiddenViews, ORDERED_VIEWS]);
 
   // Still loading
   if (onboardingState === null) {

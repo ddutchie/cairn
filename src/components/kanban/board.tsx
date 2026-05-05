@@ -225,7 +225,7 @@ export function KanbanBoard() {
   const handleAddColumnConfirm = useCallback(() => {
     if (newColumnName.trim() && activeProjectId) createColumn(activeProjectId, newColumnName.trim());
     setAddColumnOpen(false);
-  }, [newColumnName, activeProjectId, createColumn]);
+  }, [newColumnName, activeProjectId, createColumn, setAddColumnOpen]);
 
   if (!activeProjectId) {
     return (

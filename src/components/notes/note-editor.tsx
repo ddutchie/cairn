@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useRef, useCallback, useState, useEffect, useMemo } from "react";
-import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform, type ExtraProps } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import remarkMath from "remark-math";
@@ -229,7 +229,7 @@ interface MDPreviewPanelProps {
 function MDPreviewPanel({ text, onDismiss }: MDPreviewPanelProps) {
   // Each panel instance gets its own latex plugin pair so the mutable capture
   // array is isolated — safe because the panel remounts when text changes.
-  const { rehypeCaptureLatex: previewCapture, rehypeMergedPass: previewMerge } = useMemo(makeLatexPlugins, []);
+  const { rehypeCaptureLatex: previewCapture, rehypeMergedPass: previewMerge } = useMemo(() => makeLatexPlugins(), []);
 
   // Dismiss on Escape
   useEffect(() => {
@@ -261,16 +261,15 @@ function MDPreviewPanel({ text, onDismiss }: MDPreviewPanelProps) {
           remarkPlugins={PREVIEW_REMARK_PLUGINS}
           rehypePlugins={[previewCapture, rehypeKatex, previewMerge]}
           urlTransform={(url) => url.startsWith("asset://") ? url : defaultUrlTransform(url)}
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           components={({
-            mark({ children }: any) {
+            mark({ children }: React.HTMLAttributes<HTMLElement> & ExtraProps) {
               return (
                 <mark className="rounded px-0.5" style={{ background: "color-mix(in srgb, var(--accent) 22%, transparent)", color: "var(--text-primary)" }}>
                   {children}
                 </mark>
               );
             },
-            callout({ children, ...props }: any) {
+            callout({ children, ...props }: React.HTMLAttributes<HTMLElement> & ExtraProps) {
               const p = props as Record<string, string>;
               return (
                 <Callout
@@ -283,11 +282,11 @@ function MDPreviewPanel({ text, onDismiss }: MDPreviewPanelProps) {
                 </Callout>
               );
             },
-            mathblock({ children, ...props }: any) {
+            mathblock({ children, ...props }: React.HTMLAttributes<HTMLElement> & ExtraProps) {
               const p = props as Record<string, string>;
               return <MathBlock renderedChildren={children} latex={p["data-latex"] ?? ""} />;
             },
-            pre({ children }: any) {
+            pre({ children }: React.HTMLAttributes<HTMLPreElement> & ExtraProps) {
               const child = Array.isArray(children) ? children[0] : children;
               const code = child as React.ReactElement<{ className?: string; children?: React.ReactNode }>;
               const className = code?.props?.className ?? "";
@@ -295,10 +294,10 @@ function MDPreviewPanel({ text, onDismiss }: MDPreviewPanelProps) {
               const content = String(code?.props?.children ?? "").replace(/\n$/, "");
               return <CodeBlock code={content} language={lang} />;
             },
-            code({ children, className }: any) {
+            code({ children, className }: React.HTMLAttributes<HTMLElement> & ExtraProps) {
               return <InlineCode className={className}>{children}</InlineCode>;
             },
-          } as any)}
+          } as import("react-markdown").Components)}
         >
           {text}
         </ReactMarkdown>
@@ -370,7 +369,8 @@ export function NoteEditor({ note }: NoteEditorProps) {
   // it without a stale closure value.
   const pendingContent = useRef<{ noteId: string; markdown: string } | null>(null);
   const updateNoteRef = useRef(updateNote);
-  updateNoteRef.current = updateNote;
+  // Keep the ref current without mutating it during render
+  useEffect(() => { updateNoteRef.current = updateNote; });
 
   // Flush any pending debounced save immediately. Safe to call at any time.
   const flushPending = useCallback(() => {
@@ -594,8 +594,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
         </mark>
       );
     },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    callout({ children, ...props }: any) {
+    callout({ children, ...props }: React.HTMLAttributes<HTMLElement> & ExtraProps) {
       const p = props as Record<string, string>;
       return (
         <Callout
@@ -608,9 +607,8 @@ export function NoteEditor({ note }: NoteEditorProps) {
         </Callout>
       );
     },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    mathblock({ children, ...props }: any) {
-      const latex: string = props["data-latex"] ?? "";
+    mathblock({ children, ...props }: React.HTMLAttributes<HTMLElement> & ExtraProps) {
+      const latex: string = (props as Record<string, string>)["data-latex"] ?? "";
       return <MathBlock key={latex} latex={latex} renderedChildren={children} />;
     },
     blockquote({ children }: { children?: React.ReactNode }) {
@@ -673,9 +671,8 @@ export function NoteEditor({ note }: NoteEditorProps) {
       const text = String(children); const id = headingSlug(text);
       return <h3 id={id} data-heading-id={id}>{children}</h3>;
     },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    sup({ children, ...props }: any) {
-      const isFootnoteRef = props["data-footnote-ref"] === true;
+    sup({ children, ...props }: React.HTMLAttributes<HTMLElement> & ExtraProps) {
+      const isFootnoteRef = (props as Record<string, unknown>)["data-footnote-ref"] === true;
       if (!isFootnoteRef) return <sup>{children}</sup>;
       return (
         <sup className="text-[0.714rem] leading-none" style={{ color: "var(--accent)", fontFeatureSettings: "'sups' 0" }}>
@@ -683,10 +680,9 @@ export function NoteEditor({ note }: NoteEditorProps) {
         </sup>
       );
     },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    a({ href, children, ...props }: any) {
+    a({ href, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement> & ExtraProps) {
       if (href?.startsWith("#")) {
-        const isFootnoteRef = props["data-footnote-ref"] === true;
+        const isFootnoteRef = (props as Record<string, unknown>)["data-footnote-ref"] === true;
         const rawClassName: unknown = props.className;
         const isBackref = typeof rawClassName === "string"
           ? rawClassName.includes("data-footnote-backref")
@@ -714,8 +710,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
       }
       return <a href={href} {...(props as React.AnchorHTMLAttributes<HTMLAnchorElement>)}>{children}</a>;
     },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    section({ children, ...props }: any) {
+    section({ children, ...props }: React.HTMLAttributes<HTMLElement> & ExtraProps) {
       if ((props.className ?? "").includes("footnotes")) {
         return (
           <section {...props} className="footnotes mt-8 pt-4 text-[0.786rem] text-[var(--text-secondary)]" style={{ borderTop: "1px solid var(--border)" }}>
@@ -726,7 +721,6 @@ export function NoteEditor({ note }: NoteEditorProps) {
       return <section {...props}>{children}</section>;
     },
   // previewScrollRef is a stable React ref — no need to list it as a dep
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [note.id, note.content, updateNote]) as import("react-markdown").Components;
 
   const handleToggleTag = useCallback((tagId: string) => {

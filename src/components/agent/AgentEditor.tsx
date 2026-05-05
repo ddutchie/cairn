@@ -10,7 +10,7 @@
  * - Dirty dot per tab.
  */
 
-import { useEffect, useState, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { X, Save, FileCode, Eye, ImageIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
@@ -42,7 +42,7 @@ export function AgentEditor() {
   const handleDirtyChange = useCallback((path: string, dirty: boolean) => {
     setDirtyFiles((prev) => {
       const next = new Set(prev);
-      dirty ? next.add(path) : next.delete(path);
+      if (dirty) { next.add(path); } else { next.delete(path); }
       return next;
     });
   }, []);

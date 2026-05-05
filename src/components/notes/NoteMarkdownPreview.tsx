@@ -9,7 +9,7 @@
  */
 
 import React, { useMemo } from "react";
-import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform, type ExtraProps } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import remarkMath from "remark-math";
@@ -28,9 +28,8 @@ import { MathBlock } from "./MathBlock";
 
 const CALLOUT_RE = /^\[!([^\]]+)\]([\+\-]?)([\s\S]*)/;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const remarkCallout = () => (tree: MdastRoot) => {
-  visit(tree as any, "blockquote", (node: Blockquote) => {
+  visit(tree, "blockquote", (node: Blockquote) => {
     const first = node.children[0] as Paragraph | undefined;
     const firstText = first?.children?.[0] as MdastText | undefined;
     if (!firstText || firstText.type !== "text") return;
@@ -57,8 +56,8 @@ const remarkCallout = () => (tree: MdastRoot) => {
   });
 };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const remarkPromoteDisplayMath = () => (tree: MdastRoot) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   visit(tree as any, "paragraph", (node: Paragraph, index: number | undefined, parent: MdastRoot | undefined) => {
     if (!parent || index === undefined) return;
     if (node.children.length !== 1) return;
@@ -75,7 +74,6 @@ const remarkPromoteDisplayMath = () => (tree: MdastRoot) => {
 function makeLatexPlugins() {
   const latexBlocks: string[] = [];
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rehypeCaptureLatex = () => (tree: Root) => {
     latexBlocks.length = 0;
     visit(tree, "element", (node: Element) => {
@@ -87,7 +85,6 @@ function makeLatexPlugins() {
     });
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rehypeMergedPass = () => (tree: Root) => {
     let i = 0;
     visit(tree, (node, index: number | undefined, parent: Parent | undefined) => {
@@ -155,7 +152,7 @@ interface NoteMarkdownPreviewProps {
 }
 
 export function NoteMarkdownPreview({ content, className }: NoteMarkdownPreviewProps) {
-  const { rehypeCaptureLatex, rehypeMergedPass } = useMemo(makeLatexPlugins, []);
+  const { rehypeCaptureLatex, rehypeMergedPass } = useMemo(() => makeLatexPlugins(), []);
 
   if (!content.trim()) {
     return (
@@ -172,14 +169,14 @@ export function NoteMarkdownPreview({ content, className }: NoteMarkdownPreviewP
         rehypePlugins={[rehypeCaptureLatex, rehypeKatex, rehypeMergedPass]}
         urlTransform={(url) => url.startsWith("asset://") ? url : defaultUrlTransform(url)}
         components={({
-          mark({ children }: any) {
+          mark({ children }: React.HTMLAttributes<HTMLElement> & ExtraProps) {
             return (
               <mark className="rounded px-0.5" style={{ background: "color-mix(in srgb, var(--accent) 22%, transparent)", color: "var(--text-primary)" }}>
                 {children}
               </mark>
             );
           },
-          callout({ children, ...props }: any) {
+          callout({ children, ...props }: React.HTMLAttributes<HTMLElement> & ExtraProps) {
             const p = props as Record<string, string>;
             return (
               <Callout
@@ -192,13 +189,13 @@ export function NoteMarkdownPreview({ content, className }: NoteMarkdownPreviewP
               </Callout>
             );
           },
-          mathblock({ children, ...props }: any) {
+          mathblock({ children, ...props }: React.HTMLAttributes<HTMLElement> & ExtraProps) {
             return <MathBlock renderedChildren={children} latex={(props as Record<string, string>)["data-latex"] ?? ""} />;
           },
-          blockquote({ children }: any) {
+          blockquote({ children }: React.BlockquoteHTMLAttributes<HTMLElement> & ExtraProps) {
             return <blockquote className="border-l-2 border-[var(--border)] pl-4 text-[var(--text-secondary)] my-3">{children}</blockquote>;
           },
-          pre({ children }: any) {
+          pre({ children }: React.HTMLAttributes<HTMLPreElement> & ExtraProps) {
             const child = Array.isArray(children) ? children[0] : children;
             const code = child as React.ReactElement<{ className?: string; children?: React.ReactNode }>;
             const lang = (code?.props?.className ?? "").replace("language-", "") || undefined;
@@ -206,16 +203,16 @@ export function NoteMarkdownPreview({ content, className }: NoteMarkdownPreviewP
             if (lang === "mermaid") return <MermaidDiagram chart={text} />;
             return <CodeBlock code={text} language={lang} />;
           },
-          code({ className, children }: any) {
+          code({ className, children }: React.HTMLAttributes<HTMLElement> & ExtraProps) {
             return <InlineCode className={className}>{children}</InlineCode>;
           },
-          h1({ children }: any) { return <h1>{children}</h1>; },
-          h2({ children }: any) { return <h2>{children}</h2>; },
-          h3({ children }: any) { return <h3>{children}</h3>; },
-          a({ href, children, ...props }: any) {
+          h1({ children }: React.HTMLAttributes<HTMLHeadingElement> & ExtraProps) { return <h1>{children}</h1>; },
+          h2({ children }: React.HTMLAttributes<HTMLHeadingElement> & ExtraProps) { return <h2>{children}</h2>; },
+          h3({ children }: React.HTMLAttributes<HTMLHeadingElement> & ExtraProps) { return <h3>{children}</h3>; },
+          a({ href, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement> & ExtraProps) {
             return <a href={href} {...props}>{children}</a>;
           },
-          section({ children, ...props }: any) {
+          section({ children, ...props }: React.HTMLAttributes<HTMLElement> & ExtraProps) {
             if ((props.className ?? "").includes("footnotes")) {
               return <section {...props} className="footnotes mt-8 pt-4 text-[0.786rem] text-[var(--text-secondary)]" style={{ borderTop: "1px solid var(--border)" }}>{children}</section>;
             }

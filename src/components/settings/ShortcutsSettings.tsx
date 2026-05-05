@@ -1,17 +1,13 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { cn } from "@/lib/utils";
 import { SettingsGroup } from "./shared";
 
 export function ShortcutsSettings() {
-  const [mod, setMod] = useState("⌘");
-
-  useEffect(() => {
-    if (typeof window !== "undefined" && window.electron?.platform === "win32") {
-      setMod("Ctrl");
-    }
-  }, []);
+  const [mod] = useState(
+    () => (typeof window !== "undefined" && window.electron?.platform === "win32") ? "Ctrl" : "⌘"
+  );
 
   const groups: { heading: string; shortcuts: { key: string; action: string }[] }[] = [
     {

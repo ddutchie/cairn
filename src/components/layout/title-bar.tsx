@@ -17,16 +17,14 @@
  * In the browser (non-Electron) this renders nothing.
  */
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 export function TitleBar() {
-  const [platform, setPlatform] = useState<"darwin" | "win32" | "linux" | null>(null);
-
-  useEffect(() => {
-    if (typeof window !== "undefined" && window.electron) {
-      setPlatform(window.electron.platform ?? "linux");
-    }
-  }, []);
+  const [platform] = useState<"darwin" | "win32" | "linux" | null>(
+    () => (typeof window !== "undefined" && window.electron)
+      ? (window.electron.platform ?? "linux")
+      : null
+  );
 
   if (!platform) return null;
 

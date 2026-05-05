@@ -117,13 +117,12 @@ export function NotesView() {
   const [dashboardTemplateOpen, setDashboardTemplateOpen] = useState(false);
   const [deleteNoteId, setDeleteNoteId]         = useState<string | null>(null);
   const [newFolderOpen, setNewFolderOpen]        = useState(false);
-  const [newFolderName, setNewFolderName]        = useState("");
 
   // folder → collapsed state; true = collapsed, undefined/false = open
   const [collapsedFolders, setCollapsedFolders]  = useState<Record<string, boolean>>({});
   // "Move to folder" for a specific note
   const [folderMoveNoteId, setFolderMoveNoteId]  = useState<string | null>(null);
-  const [folderMoveDest, setFolderMoveDest]       = useState("");
+  const [, setFolderMoveDest]       = useState("");
 
   // Drag-and-drop: note → folder
   const dragNoteIdRef = useRef<string | null>(null);
@@ -183,23 +182,10 @@ export function NotesView() {
   const isFiltering = !!(filter || activeTagId);
   const { rootNotes, folders: folderTree } = useMemo(
     () => isFiltering ? { rootNotes: filtered, folders: [] as FolderNode[] } : buildFolderTree(notes),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [notes, isFiltering, filtered],
   );
 
-  // All unique folder paths for the "move to folder" picker
-  // Collect all folder paths from the tree (includes empty folders)
-  const allFolderPaths = useMemo(() => {
-    const paths: string[] = [];
-    function collect(nodes: typeof folderTree) {
-      for (const node of nodes) {
-        paths.push(node.path);
-        collect(node.children);
-      }
-    }
-    collect(folderTree);
-    return paths.sort();
-  }, [folderTree]);
+
 
   // Auto-select first note / newly created note in a single unified effect.
   // Merging the two previous competing effects eliminates the race where both
@@ -223,17 +209,6 @@ export function NotesView() {
     // and the race window it creates.
     const note = createNote(activeProjectId, "Untitled Note", "note", inFolder);
     setActiveNoteId(note.id);
-  }
-
-  function handleCreateFolder() {
-    const name = newFolderName.trim();
-    if (!name || !activeProjectId) return;
-    // Immediately create a note in the new folder so it appears in the tree
-    handleCreateNote(name);
-    setNewFolderOpen(false);
-    setNewFolderName("");
-    // Auto-expand the new folder
-    setCollapsedFolders((prev) => ({ ...prev, [name]: false }));
   }
 
   function handleMoveNoteToFolder(noteId: string, folder: string) {

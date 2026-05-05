@@ -266,7 +266,7 @@ interface ProjectItemProps {
   visibleNavItems: ViewNavItem[];
 }
 
-function ProjectItem({ project, isActive, isExpanded, onToggleExpand, onSelectProject, activeView, onSelectView, onRename, onDelete, hiddenViews, visibleNavItems }: ProjectItemProps) {
+function ProjectItem({ project, isActive, isExpanded, onToggleExpand, onSelectProject, activeView, onSelectView, onRename, onDelete, hiddenViews: _hiddenViews, visibleNavItems }: ProjectItemProps) {
   const [renaming, setRenaming]             = useState(false);
   const [renameValue, setRenameValue]       = useState(project.name);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -365,10 +365,15 @@ function ProjectItem({ project, isActive, isExpanded, onToggleExpand, onSelectPr
 }
 
 function DueDateDot({ dueDate }: { dueDate: string }) {
-  const due = new Date(dueDate);
-  const diffDays = Math.ceil((due.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+  const { diffDays, dueDateLabel } = useMemo(() => {
+    const due = new Date(dueDate);
+    return {
+      diffDays: Math.ceil((due.getTime() - Date.now()) / (1000 * 60 * 60 * 24)),
+      dueDateLabel: due.toLocaleDateString(),
+    };
+  }, [dueDate]);
   if (diffDays < 0) return (
-    <Tooltip content={`Overdue — due ${due.toLocaleDateString()}`} side="right">
+    <Tooltip content={`Overdue — due ${dueDateLabel}`} side="right">
       <span className="w-1.5 h-1.5 rounded-full bg-[var(--danger)] flex-shrink-0" />
     </Tooltip>
   );
