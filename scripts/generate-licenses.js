@@ -102,6 +102,24 @@ const allDeps = {
   ...pkg.devDependencies,
 };
 
+// ── Packages excluded from the Open Source Licenses list ──────────────────────
+// These are build/test/dev-only tools that are never shipped to end users.
+// Type stubs (@types/*) are excluded automatically via the prefix check below.
+const DEV_ONLY = new Set([
+  "@playwright/test",
+  "@tailwindcss/postcss",
+  "@vitest/coverage-v8",
+  "@yao-pkg/pkg",
+  "concurrently",
+  "cross-env",
+  "electron-builder",
+  "esbuild",
+  "eslint",
+  "eslint-config-next",
+  "vitest",
+  "wait-on",
+]);
+
 function resolvePackage(name) {
   const pkgPath = path.join(root, "node_modules", name, "package.json");
   if (!fs.existsSync(pkgPath)) return null;
@@ -122,7 +140,11 @@ for (const [name] of Object.entries(allDeps)) {
   const version = resolved.version ?? "unknown";
   const license = resolved.license ?? resolved.licenses?.[0]?.type ?? "unknown";
 
-  allLicenses.push({ name, version, license });
+  // Exclude dev/build-only tools and all @types/* stubs from the shipped list
+  const isDevOnly = DEV_ONLY.has(name) || name.startsWith("@types/");
+  if (!isDevOnly) {
+    allLicenses.push({ name, version, license });
+  }
 
   if (ROLE_MAP[name]) {
     const [label, role, category] = ROLE_MAP[name];
