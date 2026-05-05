@@ -42,7 +42,7 @@ export default defineConfig({
   // Start the Next.js dev server automatically before the suite runs.
   // The server is reused across test files.
   webServer: {
-    command: "npx next dev --port 3000",
+    command: "node scripts/generate-licenses.js && npx next dev --port 3000",
     url: "http://localhost:3000",
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,
