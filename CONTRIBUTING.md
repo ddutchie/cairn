@@ -364,7 +364,7 @@ Shared modules live in `src/components/graph/`: `analyticsUtils.ts`, `analyticsH
 | `src/components/agent/FileTree.tsx` | Lazy-expanding directory tree; direct `pickDirectory` → `updateProject` |
 | `src/components/agent/TerminalManager.ts` | Module-scope singleton — holds xterm Terminal + FitAddon per session |
 | `src/components/agent/SpawnAgentModal.tsx` | Spawn dialog — optional card, ad-hoc sessions, prompt editor |
-| `src/components/agent/editorTheme.ts` | Shared CM6 `buildTheme(fontScale)` + `buildHighlightStyle(isDark)` |
+| `src/components/agent/editorTheme.ts` | Shared CM6 `buildTheme(fontScale)` + `buildHighlightStyle(isDark)` + `buildSearchTheme()` — search panel CSS overrides used by both editors |
 | `src/components/agent/ImageViewer.tsx` | Image renderer via base64 IPC (avoids `file://` CSP restriction) |
 | `src/components/insights/InsightsView.tsx` | Insights view — hosts all analytics canvases with shared toolbar |
 | `src/components/graph/analyticsUtils.ts` | Shared constants + pure helpers for analytics canvases |
@@ -469,7 +469,8 @@ The Agent workspace has its own IPC namespace (`agent:*`) entirely separate from
 - **PTY sessions** — spawned in `electron/ipc/agent.ts` via `node-pty`. `node-pty` must be `--external` in esbuild and rebuilt for the Electron ABI via `npm run rebuild`. PTY output streams to the renderer via `ipcMain.emit('agent:data', ...)`.
 - **File I/O security** — every `readFile`, `readDir`, `writeFile`, and `readFileBase64` call goes through `assertWithinCodeDirectory(db, path)` before touching the filesystem. This validates the path against all registered `code_directory` values in the `projects` table. Never skip this check when adding new file IPC handlers.
 - **Renderer terminal** — `TerminalManager` (module-scope singleton) holds `xterm.js` Terminal + FitAddon instances. Sessions survive view navigation because the singleton is never garbage-collected. Font size updates must set `terminal.options.fontSize` and call `fitAddon.fit()` via `requestAnimationFrame` (one frame needed for cell remeasure).
-- **CM6 editor** — one `EditorView` instance per open file, CSS-hidden when inactive. `buildTheme(fontScale)` in `editorTheme.ts` accepts `fontScale` so the editor respects the user's font size setting. CM6 `HighlightStyle.define` requires static colour strings — CSS variables cannot be used there (documented in `editorTheme.ts`).
+- **CM6 editor** — one `EditorView` instance per open file, CSS-hidden when inactive. `buildTheme(fontScale)` in `editorTheme.ts` accepts `fontScale` so the editor respects the user's font size setting. CM6 `HighlightStyle.define` requires static colour strings — CSS variables cannot be used there (documented in `editorTheme.ts`). The editor includes a find/replace panel via `@codemirror/search` (`⌘F`); `buildSearchTheme()` must be appended **after** `buildTheme()` in the extensions array to override CM6's default `.cm-button`/`.cm-textfield` gradient styles with Cairn CSS variables.
+- **File search** — `agent:searchFiles` IPC (registered in `electron/ipc/agent.ts`) recursively walks the `code_directory` for filename matches, triggered by `⌘⇧F` in `FileTree.tsx` via a capture-phase listener that fires before the global `page.tsx` handler. Subject to the same `assertWithinCodeDirectory` security check as all file operations. Returns up to 50 results; skips `node_modules`, `.git`, `.next`, `dist*`, and similar build directories.
 - **`code_directory`** — stored on the `projects` table (migration v10). Set from the Project Overview inline row, not from AgentSettings. Written via the generic `db:project:update` IPC channel.
 
 ### Adding a new analytics canvas

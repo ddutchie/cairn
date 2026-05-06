@@ -169,6 +169,7 @@ export default function Home() {
       const inInput = tag === "INPUT" || tag === "TEXTAREA" || (e.target as HTMLElement)?.isContentEditable;
 
       if (mod && key === "k") { e.preventDefault(); toggleSearch(); }
+      else if (mod && e.shiftKey && key.toLowerCase() === "f") { if (activeView !== "agent") { e.preventDefault(); toggleSearch(); } }
       else if (mod && key === "/") { e.preventDefault(); if (aiEnabled) toggleChat(); }
       else if (mod && key === "\\") { e.preventDefault(); toggleSidebar(); }
       else if (mod && key === "1") { e.preventDefault(); setView("overview"); }

@@ -71,6 +71,9 @@ const ROLE_MAP = {
   // ── Editor ──────────────────────────────────────────────────────────────────
   "@codemirror/view":              ["CodeMirror 6",        "Note editor",                 "Editor"],
   "@codemirror/state":             ["CodeMirror state",    "Editor state model",          "Editor"],
+  "@codemirror/search":            ["CM search",           "In-editor find/replace panel","Editor"],
+  "@codemirror/commands":          ["CM commands",         "Keybindings & history",       "Editor"],
+  "@codemirror/language":          ["CM language",         "Syntax highlighting support", "Editor"],
   "@codemirror/lang-markdown":     ["CM Markdown",         "Markdown language support",   "Editor"],
   "@lezer/highlight":              ["Lezer",               "Syntax tree highlighter",     "Editor"],
   "react-markdown":                ["react-markdown",      "Markdown render",             "Editor"],

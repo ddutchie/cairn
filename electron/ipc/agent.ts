@@ -123,6 +123,39 @@ export function registerAgentHandlers(db: Database): void {
     })
   );
 
+  ipcMain.handle("agent:searchFiles", (_e, { dirPath, query }: { dirPath: string; query: string }) =>
+    handle(() => {
+      assertWithinCodeDirectory(db, dirPath);
+      const q = query.toLowerCase();
+      const results: { name: string; path: string; relativePath: string }[] = [];
+      const SKIP_DIRS = new Set(["node_modules", ".git", ".next", "dist", "dist-electron", "dist-mcp", "dist-app", "out", ".cache", "coverage", "__pycache__", ".venv", "venv"]);
+      const MAX_RESULTS = 50;
+
+      function walk(dir: string, relDir: string) {
+        if (results.length >= MAX_RESULTS) return;
+        let entries: fs.Dirent[];
+        try { entries = fs.readdirSync(dir, { withFileTypes: true }); }
+        catch { return; }
+        for (const e of entries) {
+          if (results.length >= MAX_RESULTS) return;
+          if (e.name.startsWith(".")) continue;
+          const fullPath = path.join(dir, e.name);
+          const relPath = relDir ? `${relDir}/${e.name}` : e.name;
+          if (e.isDirectory()) {
+            if (!SKIP_DIRS.has(e.name)) walk(fullPath, relPath);
+          } else {
+            if (e.name.toLowerCase().includes(q)) {
+              results.push({ name: e.name, path: fullPath, relativePath: relPath });
+            }
+          }
+        }
+      }
+
+      walk(dirPath, "");
+      return results;
+    })
+  );
+
   ipcMain.handle("agent:readFile", (_e, { filePath }: { filePath: string }) =>
     handle(() => {
       assertWithinCodeDirectory(db, filePath);

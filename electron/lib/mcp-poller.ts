@@ -18,15 +18,21 @@ export interface McpPollerOptions {
   onDbChanged: () => void;
 }
 
+export interface McpPoller {
+  /** Reset the accumulated unread count to zero (call when the badge is cleared). */
+  resetCount: () => void;
+}
+
 export function startMcpNotificationPoller({
   db,
   dbPath,
   win: _win,
   updateBadge,
   onDbChanged,
-}: McpPollerOptions): void {
+}: McpPollerOptions): McpPoller {
   const walPath = dbPath + "-wal";
   let lastMtime = 0;
+  // Accumulated unread count — incremented on new notifications, reset via resetCount()
   let unreadCount = 0;
 
   try {
@@ -57,4 +63,8 @@ export function startMcpNotificationPoller({
   }
 
   setInterval(check, 1000);
+
+  return {
+    resetCount: () => { unreadCount = 0; },
+  };
 }

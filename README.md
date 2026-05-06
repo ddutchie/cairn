@@ -29,13 +29,13 @@ Cairn is a desktop app (Electron + Next.js) that combines markdown notes with a 
 - **Kanban board** — Drag-and-drop cards across columns with priority indicators
 - **Drag notes into folders** — Drag any note in the sidebar directly onto a folder row to move it; a "Move to root" drop zone appears while dragging
 - **Linked context** — Notes and cards reference each other bidirectionally
-- **Global search** — Instant full-text search across all notes and tasks (`⌘K`)
+- **Global search** — Instant full-text search across all notes and tasks (`⌘K` or `⌘⇧F`)
 - **AI chat** — Integrated assistant with live project context; reads and writes your data (`⌘/`); supports inline `ask_questions` forms for structured clarification
 - **Interactive PRD generation** — Describe what you want to build; the agent reads your project context, asks targeted clarifying questions via an inline form, then writes and saves a full PRD to your notes
 - **Idea Flow** — A freeform node canvas per project (`⌘4`): add idea, note reference, task reference, group, URL, and AI summary nodes; connect them with labelled edges; the AI and MCP can read and write the canvas as first-class authors
 - **Live dashboards** — Ask the AI to generate an interactive HTML dashboard for any project; choose from a template gallery or start blank; dashboards fetch live data on every load via a sandboxed `window.cairn.query()` bridge; runtime errors surface an inline "Fix with AI" button; HTML editable directly via a built-in CodeMirror overlay
 - **MCP server** — Exposes your workspace to external AI agents (OpenCode, Claude Desktop, etc.) via the Model Context Protocol
-- **Agent workspace** — Dedicated three-pane view (`⌘5`) for running AI coding agents (Claude Code, OpenCode, Aider, or any CLI binary) connected directly to project tasks. Spawn from a kanban card or ad-hoc. Includes a resizable file tree, multi-file CodeMirror 6 editor (syntax highlighting, ⌘S save, markdown preview, image viewer), xterm.js terminal with persistent sessions, and a git diff viewer (unified / split / changes-only modes with syntax highlighting)
+- **Agent workspace** — Dedicated three-pane view (`⌘5`) for running AI coding agents (Claude Code, OpenCode, Aider, or any CLI binary) connected directly to project tasks. Spawn from a kanban card or ad-hoc. Includes a resizable file tree with `⌘⇧F` filename search, multi-file CodeMirror 6 editor (syntax highlighting, `⌘S` save, `⌘F` find/replace, markdown preview, image viewer), xterm.js terminal with persistent sessions, and a git diff viewer (unified / split / changes-only modes with syntax highlighting)
 - **Knowledge Graph** — Workspace-wide graph of every note, card, project, and tag; Force-directed and Radial tree layouts; auto-discovered relationships (`⌘6`)
 - **Insights** — Analytics view: Ridgeline joy plot, Beeswarm, Bullet health bars, Sankey pipeline flow, Timeline, Matrix heatmap, Table (`⌘7`)
 - **Font scaling** — Five-step UI font size preference (XS–XL, default M) in Settings → General
@@ -196,17 +196,33 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 |------|----------|-------------|
 | `create_dashboard` | write | Create a live HTML dashboard in a project |
 | `update_dashboard` | write | Update an existing dashboard's title or HTML |
+| `get_dashboard_constants` | read | Returns the `window.cairn` query API reference for building dashboards |
 
 **Idea Flow**
 
 | Tool | Category | Description |
 |------|----------|-------------|
 | `get_idea_flow` | read | Full Idea Flow graph: nodes (with resolved note/task content) + edges |
+| `get_idea_flow_rules` | read | Returns node type conventions, data shapes, group rules, and positioning tips |
 | `create_idea_flow_node` | write | Add a node to the canvas (idea, note_ref, task_ref, group, url, ai_summary) |
 | `update_idea_flow_node` | write | Update a node's data and/or position (data fields are merged) |
+| `layout_idea_flow` | write | Auto-arrange all nodes with Dagre. Call after bulk-creating nodes |
 | `create_idea_flow_edge` | write | Connect two nodes with an optional label |
 | `delete_idea_flow_node` | delete | Remove a node and its connected edges |
 | `delete_idea_flow_edge` | delete | Remove a connection |
+
+**Knowledge Graph**
+
+| Tool | Category | Description |
+|------|----------|-------------|
+| `get_knowledge_graph` | read | Full workspace graph: projects, notes, cards, tags as nodes + edges |
+| `get_neighbors` | read | N-hop neighbourhood around a single node |
+
+**Tags**
+
+| Tool | Category | Description |
+|------|----------|-------------|
+| `create_tag` | write | Create a workspace tag with a name and hex colour |
 
 > **Agent tip:** call `get_cairn_context` at the start of a session for all workspace/project/column IDs. Use `list_ready_tasks` instead of `list_tasks` when you want to know what work can actually start — it filters out anything blocked by an unresolved dependency.
 
@@ -215,6 +231,9 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 | Shortcut | Action |
 |----------|--------|
 | `⌘K` | Open global search |
+| `⌘⇧F` | Global search (any view) / File search in Agent view sidebar |
+| `⌘F` | In-context search — find/replace in Note or Agent editor; filter in Notes list, Board, or Knowledge Graph |
+| `⌘N` | New note (switches to Notes view) |
 | `⌘/` | Toggle AI chat |
 | `⌘\` | Toggle sidebar |
 | `⌘1` | Project overview |
@@ -227,11 +246,11 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 | `⌘S` | Save file (Agent editor) |
 | `⌘Z` | Undo |
 | `⌘⇧Z` / `⌘Y` | Redo |
-| `Esc` | Close modal / search |
+| `Esc` | Close modal / search / filter bar |
 
 ## Architecture
 
-Cairn is an Electron + Next.js desktop app with three independent processes sharing a single SQLite database (WAL mode):
+Cairn is an Electron + Next.js desktop app with two processes that share a single SQLite database (WAL mode), plus a separately-invokable MCP binary for external agent access:
 
 - **Renderer** (`src/`) — React/Next.js. Never touches the filesystem or database directly. All data flows through IPC via `window.electron.*`.
 - **Main process** (`electron/`) — Node.js. Owns SQLite, file I/O, the AI chat loop, and PTY sessions for coding agents.
@@ -319,6 +338,7 @@ The E2E suite runs against the Next.js dev server with a full `window.electron` 
 | Tool | Role |
 |------|------|
 | CodeMirror 6 | Note editor + Agent file editor (CM6, CSS-hidden-per-tab pattern) |
+| @codemirror/search | In-editor find/replace panel (`⌘F`) |
 | node-pty | PTY process spawning (Agent terminal) |
 | @xterm/xterm | Terminal emulator (Agent view) |
 | @xterm/addon-fit | Terminal auto-resize |

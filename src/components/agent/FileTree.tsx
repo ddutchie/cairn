@@ -7,10 +7,10 @@
  * Expand/collapse directories on click. File click sets activeEditorFile.
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   ChevronRight, ChevronDown, FolderOpen, Folder,
-  FileText, FileCode, FileJson, Settings, AlertCircle,
+  FileText, FileCode, FileJson, Settings, AlertCircle, Search, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
@@ -135,10 +135,23 @@ interface FileTreeProps {
   project: Project | null;
 }
 
+interface SearchResult {
+  name: string;
+  path: string;
+  relativePath: string;
+}
+
 export function FileTree({ project }: FileTreeProps) {
   const { activeEditorFile, openEditorFile, updateProject } = useCairnStore(useShallow((s) => ({ activeEditorFile: s.activeEditorFile, openEditorFile: s.openEditorFile, updateProject: s.updateProject })));
   const [rootEntries, setRootEntries] = useState<DirEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // File search mode
+  const [searchActive, setSearchActive] = useState(false);
+  const [searchQuery, setSearchQuery]   = useState("");
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [searching, setSearching]       = useState(false);
+  const searchInputRef                  = useRef<HTMLInputElement>(null);
 
   const codeDirectory = project?.codeDirectory ?? null;
 
@@ -149,6 +162,48 @@ export function FileTree({ project }: FileTreeProps) {
       ?.then((entries) => setRootEntries(entries))
       .catch((e: unknown) => setError(String(e)));
   }, [codeDirectory]);
+
+  // ⌘⇧F / Ctrl+⇧F — toggle file search
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      const mod = e.metaKey || e.ctrlKey;
+      // e.key is "F" (uppercase) when Shift is held on most platforms,
+      // but normalise to lowercase to be safe across keyboard layouts.
+      const key = e.key.toLowerCase();
+      if (mod && e.shiftKey && key === "f") {
+        e.preventDefault();  // always prevent — even if no codeDirectory, avoid native find-in-page
+        e.stopPropagation();
+        if (!codeDirectory) return;
+        setSearchActive((v) => {
+          const next = !v;
+          if (!next) { setSearchQuery(""); setSearchResults([]); }
+          return next;
+        });
+        setTimeout(() => searchInputRef.current?.focus(), 0);
+      } else if (e.key === "Escape") {
+        setSearchActive((v) => {
+          if (v) { setSearchQuery(""); setSearchResults([]); }
+          return false;
+        });
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown, true); // capture phase — fires before page.tsx
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [codeDirectory]);
+
+  // Run search whenever query changes
+  useEffect(() => {
+    if (!searchActive || !codeDirectory || !searchQuery.trim()) {
+      setSearchResults([]);
+      return;
+    }
+    const q = searchQuery.trim();
+    setSearching(true);
+    (window.electron?.agent.searchFiles(codeDirectory, q) as Promise<SearchResult[]> | undefined)
+      ?.then((results) => setSearchResults(results ?? []))
+      .catch(() => setSearchResults([]))
+      .finally(() => setSearching(false));
+  }, [searchQuery, searchActive, codeDirectory]);
 
   async function handlePickCodeDir() {
     if (!project) return;
@@ -192,28 +247,91 @@ export function FileTree({ project }: FileTreeProps) {
   return (
     <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
       {/* Header */}
-      <div className="flex items-center gap-1.5 px-3 py-2 border-b border-[var(--border-subtle)] flex-shrink-0">
-        <FolderOpen size={12} className="text-[var(--text-tertiary)]" />
-        <span className="text-[0.714rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)] truncate">
-          {codeDirectory.split("/").pop() ?? "Files"}
-        </span>
-      </div>
-
-      {/* Tree */}
-      <div className="flex-1 overflow-y-auto py-1">
-        {rootEntries.map((entry) => (
-          <TreeNode
-            key={entry.path}
-            entry={entry}
-            depth={0}
-            activePath={activeEditorFile}
-            onFileClick={openEditorFile}
+      {searchActive ? (
+        <div className="flex items-center gap-1.5 px-2 py-1.5 border-b border-[var(--border-subtle)] flex-shrink-0">
+          <Search size={11} className="text-[var(--text-tertiary)] flex-shrink-0" />
+          <input
+            ref={searchInputRef}
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search files…"
+            className="flex-1 min-w-0 bg-transparent text-[0.786rem] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none"
           />
-        ))}
-        {rootEntries.length === 0 && (
-          <p className="text-xs text-[var(--text-tertiary)] px-3 py-4 text-center">
-            Directory is empty
-          </p>
+          <button
+            onClick={() => { setSearchActive(false); setSearchQuery(""); setSearchResults([]); }}
+            className="flex-shrink-0 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+          >
+            <X size={11} />
+          </button>
+        </div>
+      ) : (
+        <div className="flex items-center gap-1.5 px-3 py-2 border-b border-[var(--border-subtle)] flex-shrink-0">
+          <FolderOpen size={12} className="text-[var(--text-tertiary)]" />
+          <span className="text-[0.714rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)] truncate flex-1">
+            {codeDirectory.split("/").pop() ?? "Files"}
+          </span>
+          <button
+            onClick={() => { setSearchActive(true); setTimeout(() => searchInputRef.current?.focus(), 0); }}
+            className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+            title="Search files (⌘⇧F)"
+          >
+            <Search size={11} />
+          </button>
+        </div>
+      )}
+
+      {/* Body — search results or file tree */}
+      <div className="flex-1 overflow-y-auto py-1">
+        {searchActive ? (
+          <>
+            {searching && (
+              <p className="text-[0.714rem] text-[var(--text-tertiary)] px-3 py-2">Searching…</p>
+            )}
+            {!searching && searchQuery.trim() && searchResults.length === 0 && (
+              <p className="text-[0.714rem] text-[var(--text-tertiary)] px-3 py-4 text-center">No files found</p>
+            )}
+            {!searching && !searchQuery.trim() && (
+              <p className="text-[0.714rem] text-[var(--text-tertiary)] px-3 py-4 text-center">Type to search files</p>
+            )}
+            {searchResults.map((result) => (
+              <button
+                key={result.path}
+                onClick={() => { openEditorFile(result.path); setSearchActive(false); setSearchQuery(""); setSearchResults([]); }}
+                className={cn(
+                  "flex flex-col w-full px-3 py-1 text-left transition-colors rounded-sm",
+                  activeEditorFile === result.path
+                    ? "text-[var(--accent)] bg-[var(--accent-dim)]"
+                    : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]"
+                )}
+              >
+                <span className="text-[0.786rem] truncate flex items-center gap-1.5">
+                  <FileIcon name={result.name} size={11} />
+                  {result.name}
+                </span>
+                <span className="text-[0.714rem] text-[var(--text-tertiary)] truncate pl-4">
+                  {result.relativePath.split("/").slice(0, -1).join("/") || "."}
+                </span>
+              </button>
+            ))}
+          </>
+        ) : (
+          <>
+            {rootEntries.map((entry) => (
+              <TreeNode
+                key={entry.path}
+                entry={entry}
+                depth={0}
+                activePath={activeEditorFile}
+                onFileClick={openEditorFile}
+              />
+            ))}
+            {rootEntries.length === 0 && (
+              <p className="text-xs text-[var(--text-tertiary)] px-3 py-4 text-center">
+                Directory is empty
+              </p>
+            )}
+          </>
         )}
       </div>
     </div>

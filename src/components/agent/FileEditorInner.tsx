@@ -9,9 +9,10 @@ import { useEffect, useRef, useState } from "react";
 import { EditorView, keymap } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
+import { search, searchKeymap } from "@codemirror/search";
 import { LanguageDescription } from "@codemirror/language";
 import { languages } from "@codemirror/language-data";
-import { buildTheme, buildHighlightStyle, lineNumbers } from "./editorTheme";
+import { buildTheme, buildHighlightStyle, buildSearchTheme, lineNumbers } from "./editorTheme";
 
 export interface FileEditorInnerProps {
   filePath: string;
@@ -50,12 +51,14 @@ export function FileEditorInner({ filePath, isActive, isDark, onDirtyChange, onS
           doc: content,
           extensions: [
             buildTheme(fontScale),
+            buildSearchTheme(),
             buildHighlightStyle(isDark),
             lineNumbers(),
             history(),
             keymap.of([
               ...defaultKeymap,
               ...historyKeymap,
+              ...searchKeymap,
               {
                 key: "Mod-s",
                 run: (view) => {
@@ -64,6 +67,7 @@ export function FileEditorInner({ filePath, isActive, isDark, onDirtyChange, onS
                 },
               },
             ]),
+            search({ top: false }),
             EditorView.lineWrapping,
             EditorView.updateListener.of((update) => {
               if (update.docChanged) onDirtyChange(pathRef.current, true);

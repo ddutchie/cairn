@@ -234,30 +234,29 @@ app.whenReady().then(async () => {
   // ── System tray ───────────────────────────────────────────────────────
   const { updateBadge } = createTray(win);
 
-  // Clear badge when window gains focus
-  let unreadCount = 0;
-  win.on("focus", () => {
-    if (unreadCount > 0) {
-      markMcpNotificationsRead(ctx.db);
-      updateBadge(0);
-      unreadCount = 0;
-    }
-  });
-
-  // Register app:* and mcp:* IPC handlers (now that updateBadge is available)
-  registerAppHandlers(ctx.db, userDataPath, updateBadge, win, reinitialise);
-
   // ── MCP notification poller ───────────────────────────────────────────
-  startMcpNotificationPoller({
+  const poller = startMcpNotificationPoller({
     db: ctx.db,
     dbPath: initialDbPath,
     win,
-    updateBadge: (count) => {
-      unreadCount = count;
-      updateBadge(count);
-    },
+    updateBadge,
     onDbChanged: notifyDbChanged,
   });
+
+  // Shared reset — clears DB rows, badge, and the poller's accumulated count.
+  // Called from both the window focus event and the renderer IPC handler so
+  // the next batch of notifications always starts from 0.
+  function clearBadge() {
+    markMcpNotificationsRead(ctx.db);
+    updateBadge(0);
+    poller.resetCount();
+  }
+
+  // Clear badge when window gains focus
+  win.on("focus", clearBadge);
+
+  // Register app:* and mcp:* IPC handlers (now that updateBadge is available)
+  registerAppHandlers(ctx.db, userDataPath, updateBadge, win, reinitialise, clearBadge);
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

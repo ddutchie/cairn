@@ -82,6 +82,77 @@ export function buildTheme(fontScale = 1) {
     ".cm-lineNumbers .cm-gutterElement": { padding: "0 8px" },
     ".cm-activeLine": { background: "color-mix(in srgb, var(--accent) 5%, transparent)" },
     ".cm-activeLineGutter": { background: "color-mix(in srgb, var(--accent) 8%, transparent)" },
+  }, { dark: false });
+}
+
+// ── Search panel theme ─────────────────────────────────────────────────────
+// Must be appended after buildTheme() in the extensions array to win the
+// source-order race against CM6's own .cm-button / .cm-textfield base styles.
+export function buildSearchTheme() {
+  return EditorView.theme({
+    ".cm-search": {
+      background: "var(--surface-1, var(--surface)) !important",
+      borderTop: "1px solid var(--border) !important",
+      padding: "5px 10px !important",
+      display: "flex !important",
+      alignItems: "center !important",
+      gap: "4px !important",
+      flexWrap: "wrap !important",
+    },
+    ".cm-search label": {
+      fontSize: "0.75rem !important",
+      color: "var(--text-secondary) !important",
+      display: "inline-flex !important",
+      alignItems: "center !important",
+      gap: "4px !important",
+      margin: "0 !important",
+    },
+    ".cm-search input[type=checkbox]": {
+      margin: "0 !important",
+      accentColor: "var(--accent) !important",
+      width: "12px !important",
+      height: "12px !important",
+    },
+    ".cm-textfield": {
+      background: "var(--surface-2) !important",
+      border: "1px solid var(--border) !important",
+      borderRadius: "4px !important",
+      color: "var(--text-primary) !important",
+      fontSize: "0.8rem !important",
+      padding: "3px 7px !important",
+      outline: "none !important",
+      boxShadow: "none !important",
+      fontFamily: "inherit !important",
+    },
+    ".cm-textfield:focus": {
+      borderColor: "var(--accent) !important",
+    },
+    ".cm-button": {
+      background: "var(--surface-2) !important",
+      backgroundImage: "none !important",
+      border: "1px solid var(--border) !important",
+      borderRadius: "4px !important",
+      color: "var(--text-primary) !important",
+      fontSize: "0.75rem !important",
+      padding: "3px 8px !important",
+      cursor: "pointer !important",
+      fontFamily: "inherit !important",
+      verticalAlign: "middle !important",
+    },
+    ".cm-button:hover": {
+      background: "color-mix(in srgb, var(--accent) 12%, transparent) !important",
+      backgroundImage: "none !important",
+      borderColor: "var(--accent) !important",
+      color: "var(--accent) !important",
+    },
+    ".cm-searchMatch": {
+      background: "color-mix(in srgb, var(--accent) 25%, transparent) !important",
+      borderRadius: "2px !important",
+      outline: "none !important",
+    },
+    ".cm-searchMatch.cm-searchMatch-selected": {
+      background: "color-mix(in srgb, var(--accent) 50%, transparent) !important",
+    },
   });
 }
 
