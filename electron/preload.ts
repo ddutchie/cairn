@@ -214,6 +214,7 @@ const api = {
     setDefaultAgent: (id: string) => invoke("agent:setDefaultAgent", { id }),
 
     readDir: (dirPath: string) => invoke("agent:readDir", { dirPath }),
+    searchFiles: (dirPath: string, query: string) => invoke<{ name: string; path: string; relativePath: string }[]>("agent:searchFiles", { dirPath, query }),
     readFile: (filePath: string) => invoke<string>("agent:readFile", { filePath }),
     readFileBase64: (filePath: string) => invoke<string>("agent:readFileBase64", { filePath }),
     writeFile: (filePath: string, content: string) =>

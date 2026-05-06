@@ -359,3 +359,78 @@ body {
 .prose-cairn td { padding: 0.35rem 0.6rem; border: 1px solid var(--border); }
 .prose-cairn tr:nth-child(even) td { background: var(--surface-2); }
 
+/* ── CodeMirror 6 search panel ───────────────────────────────────────────── */
+/* Global overrides — EditorView.theme() alone can lose to CM6's base sheet. */
+
+.cm-search {
+  background: var(--surface-1, var(--surface)) !important;
+  border-top: 1px solid var(--border) !important;
+  padding: 5px 10px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  flex-wrap: wrap !important;
+}
+
+.cm-search label {
+  font-size: 0.75rem !important;
+  color: var(--text-secondary) !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  margin: 0 !important;
+}
+
+.cm-search input[type=checkbox] {
+  margin: 0 !important;
+  accent-color: var(--accent) !important;
+  width: 12px !important;
+  height: 12px !important;
+}
+
+.cm-search input.cm-textfield {
+  background: var(--surface-2) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 4px !important;
+  color: var(--text-primary) !important;
+  font-size: 0.8rem !important;
+  padding: 3px 7px !important;
+  outline: none !important;
+  box-shadow: none !important;
+  font-family: inherit !important;
+}
+
+.cm-search input.cm-textfield:focus {
+  border-color: var(--accent) !important;
+}
+
+.cm-search button.cm-button {
+  background: var(--surface-2) !important;
+  background-image: none !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 4px !important;
+  color: var(--text-primary) !important;
+  font-size: 0.75rem !important;
+  padding: 3px 8px !important;
+  cursor: pointer !important;
+  box-shadow: none !important;
+  font-family: inherit !important;
+  vertical-align: middle !important;
+}
+
+.cm-search button.cm-button:hover {
+  background: color-mix(in srgb, var(--accent) 12%, transparent) !important;
+  border-color: var(--accent) !important;
+  color: var(--accent) !important;
+}
+
+.cm-searchMatch {
+  background: color-mix(in srgb, var(--accent) 25%, transparent) !important;
+  border-radius: 2px !important;
+  outline: none !important;
+}
+
+.cm-searchMatch.cm-searchMatch-selected {
+  background: color-mix(in srgb, var(--accent) 50%, transparent) !important;
+}
+

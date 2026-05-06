@@ -19,7 +19,7 @@ import {
   horizontalListSortingStrategy,
   arrayMove,
 } from "@dnd-kit/sortable";
-import { Plus, Kanban, Archive, Trash2 } from "lucide-react";
+import { Plus, Kanban, Archive, Trash2, Search, X } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
@@ -85,6 +85,29 @@ export function KanbanBoard() {
   const [overId, setOverId]                 = useState<string | null>(null);
   const [deleteFlashing, setDeleteFlashing] = useState(false);
   const [hoverZone, setHoverZone]           = useState<"archive" | "delete" | null>(null);
+
+  // Board filter — ⌘F / Ctrl+F toggles and focuses
+  const [boardFilter, setBoardFilter]       = useState("");
+  const [filterVisible, setFilterVisible]   = useState(false);
+  const filterInputRef                      = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === "f") {
+        e.preventDefault();
+        setFilterVisible(true);
+        setTimeout(() => { filterInputRef.current?.focus(); filterInputRef.current?.select(); }, 0);
+      }
+      if (e.key === "Escape") {
+        setFilterVisible((visible) => {
+          if (visible) setBoardFilter("");
+          return false;
+        });
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   // Portal zone rects — computed from the board container when drag starts
   const boardRef    = useRef<HTMLDivElement>(null);
@@ -309,30 +332,73 @@ export function KanbanBoard() {
         onDragEnd={handleDragEnd}
       >
         <div ref={boardRef} className="flex-1 flex flex-col min-h-0 w-full overflow-hidden">
+          {/* Filter bar — shown when ⌘F is pressed */}
+          {filterVisible && (
+            <div className="flex items-center gap-2 px-4 py-2 border-b border-[var(--border)] bg-[var(--surface-1)] flex-shrink-0">
+              <div className="relative flex items-center flex-1 max-w-xs">
+                <Search size={12} className="absolute left-2.5 text-[var(--text-tertiary)] pointer-events-none" />
+                <input
+                  ref={filterInputRef}
+                  type="text"
+                  value={boardFilter}
+                  onChange={(e) => setBoardFilter(e.target.value)}
+                  placeholder="Filter cards…"
+                  className="w-full pl-7 pr-2 py-1.5 text-xs rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)]"
+                />
+              </div>
+              {boardFilter && (() => {
+                const q = boardFilter.toLowerCase();
+                const matchCount = columns.reduce((n, col) =>
+                  n + getColumnCards(col.id).filter((c) =>
+                    c.title.toLowerCase().includes(q) || (c.description ?? "").toLowerCase().includes(q)
+                  ).length, 0);
+                return (
+                  <span className="text-xs text-[var(--text-tertiary)]">
+                    {matchCount} match{matchCount === 1 ? "" : "es"}
+                  </span>
+                );
+              })()}
+              <button
+                onClick={() => { setBoardFilter(""); setFilterVisible(false); }}
+                className="p-1 rounded hover:bg-[var(--surface-2)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+              >
+                <X size={13} />
+              </button>
+            </div>
+          )}
           <SortableContext items={columns.map((c) => c.id)} strategy={horizontalListSortingStrategy}>
             <div
               ref={boardScrollRef}
               className="flex-1 flex gap-3 overflow-x-auto p-5 min-h-0 transition-all duration-200"
               style={{ paddingTop: activeCard ? ZONE_H + 20 : 20 }}
             >
-              {columns.map((column) => (
-                <div key={column.id} ref={(el) => { columnRefs.current[column.id] = el; }} className="flex-shrink-0">
-                  <KanbanColumn
-                    column={column}
-                    cards={getColumnCards(column.id)}
-                    archivedCards={getArchivedColumnCards(column.id)}
-                    onCardClick={(cardId) => setDetailCardId(cardId)}
-                    onAddCard={(data) => createCard(column.id, activeProjectId, data.title, { dueDate: data.dueDate, assignee: data.assignee })}
-                    onRename={(name) => updateColumn(column.id, { name })}
-                    onSetLimit={(limit) => updateColumn(column.id, { cardLimit: limit ?? undefined })}
-                    onDelete={() => deleteColumn(column.id)}
-                    onRestoreCard={(cardId) => restoreCard(cardId)}
-                    isDragOver={overId === column.id}
-                    isColumnDragging={activeColumn?.id === column.id}
-                    isHighlighted={highlightedColumnId === column.id}
-                  />
-                </div>
-              ))}
+              {columns.map((column) => {
+                const allCards = getColumnCards(column.id);
+                const filteredCards = boardFilter
+                  ? allCards.filter((c) => {
+                      const q = boardFilter.toLowerCase();
+                      return c.title.toLowerCase().includes(q) || (c.description ?? "").toLowerCase().includes(q);
+                    })
+                  : allCards;
+                return (
+                  <div key={column.id} ref={(el) => { columnRefs.current[column.id] = el; }} className="flex-shrink-0">
+                    <KanbanColumn
+                      column={column}
+                      cards={filteredCards}
+                      archivedCards={getArchivedColumnCards(column.id)}
+                      onCardClick={(cardId) => setDetailCardId(cardId)}
+                      onAddCard={(data) => createCard(column.id, activeProjectId, data.title, { dueDate: data.dueDate, assignee: data.assignee })}
+                      onRename={(name) => updateColumn(column.id, { name })}
+                      onSetLimit={(limit) => updateColumn(column.id, { cardLimit: limit ?? undefined })}
+                      onDelete={() => deleteColumn(column.id)}
+                      onRestoreCard={(cardId) => restoreCard(cardId)}
+                      isDragOver={overId === column.id}
+                      isColumnDragging={activeColumn?.id === column.id}
+                      isHighlighted={highlightedColumnId === column.id}
+                    />
+                  </div>
+                );
+              })}
 
               <div className="flex-shrink-0 w-56">
                 <Button

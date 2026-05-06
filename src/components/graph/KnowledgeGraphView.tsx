@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useCallback, useState, useMemo } from "react";
+import React, { useEffect, useCallback, useState, useMemo, useRef } from "react";
 import {
   GitBranch, Circle, RefreshCw, ChevronDown, LayoutGrid, Search, Sparkles,
 } from "lucide-react";
@@ -51,6 +51,21 @@ export function KnowledgeGraphView() {
   const [recomputing, setRecomputing] = useState(false);
   const [graphSearch, setGraphSearch] = useState("");
   const [aiPanelOpen, setAiPanelOpen] = useState(false);
+
+  // ⌘F / Ctrl+F — focus the graph search input
+  const graphSearchRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === "f") {
+        if (graphLayout !== "force" && graphLayout !== "radial") return;
+        e.preventDefault();
+        graphSearchRef.current?.focus();
+        graphSearchRef.current?.select();
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [graphLayout]);
 
   // Load graph on mount + when workspace changes
   useLoadGraph(activeWorkspaceId);
@@ -237,6 +252,7 @@ export function KnowledgeGraphView() {
             <div className="relative flex items-center">
               <Search size={11} className="absolute left-2.5 text-[var(--text-tertiary)] pointer-events-none" />
               <input
+                ref={graphSearchRef}
                 type="text"
                 value={graphSearch}
                 onChange={(e) => setGraphSearch(e.target.value)}

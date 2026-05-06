@@ -120,6 +120,24 @@ export function NotesView() {
 
   // folder → collapsed state; true = collapsed, undefined/false = open
   const [collapsedFolders, setCollapsedFolders]  = useState<Record<string, boolean>>({});
+
+  // ⌘F / Ctrl+F — focus the filter input, but only when the CM6 editor
+  // is NOT focused (CM6's own searchKeymap handles it when the editor is active).
+  const filterInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === "f") {
+        const inEditor = document.activeElement?.closest(".cm-editor") !== null;
+        if (inEditor) return; // let CM6 searchKeymap handle it
+        e.preventDefault();
+        filterInputRef.current?.focus();
+        filterInputRef.current?.select();
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
   // "Move to folder" for a specific note
   const [folderMoveNoteId, setFolderMoveNoteId]  = useState<string | null>(null);
   const [, setFolderMoveDest]       = useState("");
@@ -311,7 +329,7 @@ export function NotesView() {
         <div className="px-2 py-2 border-b border-[var(--border-subtle)]">
           <div className="relative">
             <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]" />
-            <input type="text" value={filter} onChange={(e) => setFilter(e.target.value)}
+            <input ref={filterInputRef} type="text" value={filter} onChange={(e) => setFilter(e.target.value)}
               placeholder="Filter notes..."
               className="w-full pl-7 pr-2 py-1.5 text-xs rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)]" />
           </div>

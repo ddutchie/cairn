@@ -13,6 +13,8 @@ import { EditorState } from "@codemirror/state";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import { defaultKeymap, indentWithTab, history, historyKeymap } from "@codemirror/commands";
+import { search, searchKeymap } from "@codemirror/search";
+import { buildSearchTheme } from "@/components/agent/editorTheme";
 
 // ── Public handle so parent can read selection for AI toolbar ──────────────
 export interface MarkdownEditorHandle {
@@ -110,6 +112,7 @@ function buildTheme() {
 
     // Active line — very subtle highlight
     ".cm-activeLine": { background: "transparent" },
+
   }, { dark: false });
 }
 
@@ -225,12 +228,14 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(
         doc: initialValue,
         extensions: [
           history(),
-          keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+          keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab, ...searchKeymap]),
           markdown({
             base: markdownLanguage,
             codeLanguages: languages,
           }),
+          search({ top: false }),
           buildTheme(),
+          buildSearchTheme(),
           cmPlaceholder(placeholder),
           updateListener,
           pasteHandler,

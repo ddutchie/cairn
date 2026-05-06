@@ -522,6 +522,8 @@ export function registerAppHandlers(
   updateTrayBadge: (count: number) => void,
   win?: BrowserWindow,
   onReinitialise?: (newWorkspacePath: string) => Promise<void>,
+  /** Called when the badge is cleared from the renderer — resets poller count too. */
+  onBadgeClear?: () => void,
 ): void {
   // ── Workspace folder selection / setup ────────────
   ipcMain.handle("app:selectWorkspaceFolder", async () => {
@@ -627,6 +629,7 @@ export function registerAppHandlers(
   ipcMain.handle("mcp:markNotificationsRead", () => handle(() => {
     markMcpNotificationsRead(db);
     updateTrayBadge(0);
+    onBadgeClear?.();
   }));
 
   // ── Export note as PDF ─────────────────────────────
