@@ -266,19 +266,34 @@ Available query tools inside a dashboard: `get_cairn_context`, `get_project_summ
 ```
 Note write (UI / chat / MCP)
   │
-  ├── writeNoteFile()  → <workspace>/notes/<Project>/<Title>.md
-  └── SQLite upsert   → notes table (type='note', content_text re-derived from markdown)
+  ├── writeNoteFile()  → <workspace>/notes/<Project>/<Title>.tmp → rename → .md  (atomic)
+  └── SQLite upsert   → notes table (type='note', content_text re-derived from markdown,
+                         version = version + 1)
 
 Dashboard write (chat / MCP — create_dashboard / update_dashboard)
   │
   └── SQLite upsert   → notes table (type='dashboard', content = raw HTML)
                         (no .md file written — HTML is not markdown)
 
-External .md edit
+External .md edit (live)
   │
   └── chokidar watcher → parseNoteFile() → upsertNoteFromFile() → SQLite
                                                                  → db:changed → renderer refresh
+
+External .md edit (startup — Cairn was closed)
+  │
+  └── syncNotesFromDisk() → compare frontmatter updatedAt / file mtime vs DB updated_at
+                           → if file is newer: upsertNoteFromFile() → SQLite
 ```
+
+**AI edit lock.** While the AI writes to a note the editor enters read-only mode:
+
+- **In-process (chat executor)** — `electron/lib/ai-write-lock.ts` holds a module-level `Set<string>`. The 5 note-writing cases in `chat-executor.ts` call `lockNote` / `unlockNote` in a try/finally. The lock fires `note:aiWriteStarted` / `note:aiWriteEnded` directly to the renderer via `webContents.send`.
+- **Cross-process (MCP server)** — `mcp_active_writes` SQLite table (migration v11). MCP tools INSERT on start, DELETE on finish. The WAL poller diffs the table each tick and fires the same IPC events.
+
+The renderer's `note-editor.tsx` subscribes to both events and flips the CM6 editor into `readOnly` mode via a `Compartment` — no editor recreation, undo history preserved.
+
+**Optimistic concurrency.** Both `notes` and `task_cards` carry a `version INTEGER` (migrations v12/v13) that increments on every write. MCP tools that mutate notes or tasks accept an optional `expectedVersion` argument and return a conflict error if the row version has advanced since the caller last read it. `get_note` and `get_task` both return the current `version`.
 
 ### Font scaling
 
@@ -310,10 +325,11 @@ Shared modules live in `src/components/graph/`: `analyticsUtils.ts`, `analyticsH
 | `electron/main.ts` | Startup orchestrator — BrowserWindow, IPC registration, file watcher |
 | `electron/lib/protocol.ts` | `app://` scheme registration + CSP headers |
 | `electron/lib/tray.ts` | System tray icon, menu, and badge update logic |
-| `electron/lib/mcp-poller.ts` | WAL mtime polling → `db:changed` IPC + MCP notification dispatch |
+| `electron/lib/ai-write-lock.ts` | Module-level `Set<string>` tracking active in-process AI note writes; fires `note:aiWriteStarted/Ended` IPC |
+| `electron/lib/mcp-poller.ts` | WAL mtime polling → `db:changed` IPC + MCP notification dispatch + `mcp_active_writes` diff for cross-process AI lock events |
 | `electron/lib/read-tools.ts` | `executeReadTool(db, snap, tool, args)` — shared read dispatch used by chat and dashboard bridge |
 | `electron/workspace-config.ts` | Read/write `workspace-config.json`; resolve `cairn.db` path |
-| `electron/notes-files.ts` | Note file I/O: `writeNoteFile`, `deleteNoteFile`, `parseNoteFile`, `upsertNoteFromFile` |
+| `electron/notes-files.ts` | Note file I/O: `writeNoteFile` (atomic `.tmp` → rename), `deleteNoteFile`, `parseNoteFile`, `upsertNoteFromFile`, `syncNotesFromDisk` (startup timestamp compare), `cleanStaleTmpFiles` |
 | `electron/file-watcher.ts` | chokidar watcher on `notes/`; syncs external `.md` edits to SQLite |
 | `electron/ipc/handlers.ts` | All `db:*` and `app:*` IPC channels; wrapped in `handle()` returning `IpcResult<T>` |
 | `electron/ipc/agent.ts` | All `agent:*` IPC channels — PTY spawn/kill, file I/O, git diff, `assertWithinCodeDirectory` |
@@ -336,7 +352,7 @@ Shared modules live in `src/components/graph/`: `analyticsUtils.ts`, `analyticsH
 |------|---------|
 | `src/store/index.ts` | Zustand store composition + hydration; delegates to domain slices |
 | `src/store/slices/` | Domain slices: `ui` (theme, fontScale, activeView), `workspace`, `board`, `notes`, `tags`, `chat`, `graph`, `selectors` |
-| `src/store/ipc.ts` | Shared `isElectron`, `ipc`, `ipcAwait` helpers used by all slices |
+| `src/store/ipc.ts` | Shared `isElectron`, `ipc`, `ipcAwait` helpers; `markOwnNoteWrite` / `isOwnNoteWrite` per-note write map (1.5 s window) used to gate WAL-poller re-hydration |
 | `src/hooks/useChatStream.ts` | AI stream lifecycle hook — subscriptions, loading state, `sendStream` |
 | `src/lib/constants.ts` | Shared constants: `COLUMN_COLORS`, `PRIORITY_OPTIONS`, `DEFAULT_AI_CONFIG`, etc. |
 | `src/lib/events.ts` | Typed `CairnEvents` helpers for internal custom event dispatch |
@@ -428,6 +444,7 @@ Use `React.memo` on list-item components (`KanbanCard`, `NoteListItem`, `Project
 - New IPC channels go in `electron/ipc/handlers.ts`, wrapped in the `handle()` helper.
 - `mcp-server.ts` uses **inlined SQL only** — do not import from `queries.ts` there.
 - Use `import * as z from "zod"` (not `import { z }`) in all Electron/MCP files — esbuild quirk.
+- When calling `ipc()` or `ipcAwait()` for a note mutation, also call `markOwnNoteWrite(noteId)` from `src/store/ipc.ts` immediately before — this tells the WAL poller re-hydration path to preserve the in-memory optimistic state for that note rather than overwriting it from the DB snapshot.
 
 ### Database migrations
 
@@ -511,10 +528,11 @@ npm run test:coverage     # coverage report
 | Test file | What it covers |
 |-----------|---------------|
 | `electron/db/queries.test.ts` | SQLite query helpers — CRUD, search, soft-delete |
-| `electron/notes-files.test.ts` | File I/O, slug generation, frontmatter round-trip |
+| `electron/notes-files.test.ts` | File I/O, slug generation, frontmatter round-trip, atomic writes, startup sync |
+| `electron/mcp-server.test.ts` | All MCP tools end-to-end via in-memory SQLite — happy path, edge cases, conflict detection |
 | `electron/ipc/chat-executor.test.ts` | Every tool case in `executeTool` |
 | `electron/ipc/handlers.test.ts` | IPC data layer, `executeReadTool`, `buildContextResponse` |
-| `electron/ipc/tool-parity.test.ts` | Ensures chat and MCP tool names stay in sync |
+| `electron/ipc/tool-parity.test.ts` | Ensures chat and MCP tool response shapes stay in sync (including `version` field parity) |
 
 **Please add or update tests when:**
 - Adding a new query helper to `queries.ts`
