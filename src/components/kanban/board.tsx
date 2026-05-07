@@ -442,6 +442,17 @@ export function KanbanBoard() {
                   <span className="text-xs text-[var(--text-tertiary)]">
                     {filtered.length} task{filtered.length !== 1 ? "s" : ""}
                   </span>
+                  {filtered.length > 0 && (
+                    <Tooltip content={archiveFilter ? "Delete matching tasks permanently" : "Delete all archived tasks permanently"}>
+                      <button
+                        onClick={() => filtered.forEach((c) => deleteCard(c.id))}
+                        className="flex items-center gap-1.5 ml-auto px-2 py-1 rounded text-xs text-[var(--text-tertiary)] hover:text-[var(--danger)] hover:bg-[var(--danger)]/10 transition-colors"
+                      >
+                        <Trash2 size={11} />
+                        Delete all
+                      </button>
+                    </Tooltip>
+                  )}
                 </div>
                 {/* Archive card grid */}
                 <div className="flex-1 overflow-y-auto p-5">
