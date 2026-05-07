@@ -382,6 +382,11 @@ export async function runAgentLoop(
 
       callbacks.onToolStart(tc.function.name, label);
 
+      // Yield to the event loop so the renderer can process the onToolStart IPC
+      // message and render the running spinner before the (potentially synchronous)
+      // tool execution blocks the main process event loop.
+      await new Promise<void>((r) => setImmediate(r));
+
       let resultContent: string;
       let ok = true;
       try {
