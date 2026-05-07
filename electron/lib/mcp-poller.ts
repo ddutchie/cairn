@@ -54,14 +54,20 @@ export function startMcpNotificationPoller({
         onDbChanged();
 
         const unread = getUnreadMcpNotifications(db);
-        for (const n of unread) {
-          if (Notification.isSupported()) {
-            new Notification({ title: n.title, body: n.body, silent: false }).show();
-          }
-        }
         if (unread.length > 0) {
-          unreadCount += unread.length;
-          updateBadge(unreadCount);
+          // Suppress OS notifications and badge increment while the app is focused —
+          // the user can already see what is happening in the UI.
+          const appFocused = !win.isDestroyed() && win.isFocused();
+          if (!appFocused) {
+            for (const n of unread) {
+              if (Notification.isSupported()) {
+                new Notification({ title: n.title, body: n.body, silent: false }).show();
+              }
+            }
+            unreadCount += unread.length;
+            updateBadge(unreadCount);
+          }
+          // Always mark as read so they don't resurface on the next poll tick.
           markMcpNotificationsRead(db);
         }
       }
