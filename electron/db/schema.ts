@@ -285,6 +285,19 @@ const MIGRATIONS: Migration[] = [
       db.exec("ALTER TABLE projects ADD COLUMN code_directory TEXT");
     }
   },
+
+  // v11: MCP active writes — tracks note IDs being written by the MCP server process
+  // so the Electron renderer can show a read-only indicator on the active note.
+  // The MCP process creates this table on startup via an inline CREATE TABLE IF NOT EXISTS
+  // (it cannot call applySchema due to the Node ABI boundary).
+  (db) => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS mcp_active_writes (
+        note_id    TEXT NOT NULL PRIMARY KEY,
+        started_at TEXT NOT NULL
+      );
+    `);
+  },
 ];
 
 export function applySchema(db: Database.Database): void {

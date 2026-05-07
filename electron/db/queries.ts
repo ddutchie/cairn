@@ -682,6 +682,20 @@ export function markMcpNotificationsRead(db: Database.Database): void {
   db.prepare("UPDATE mcp_notifications SET read = 1 WHERE read = 0").run();
 }
 
+/**
+ * Returns the set of note IDs currently being written by the MCP server process.
+ * Used by mcp-poller to diff against the previous poll and fire aiWriteStarted/Ended events.
+ * Returns an empty set if the table doesn't exist yet (e.g. pre-v11 DB).
+ */
+export function getActiveMcpWrites(db: Database.Database): Set<string> {
+  try {
+    const rows = db.prepare("SELECT note_id FROM mcp_active_writes").all() as { note_id: string }[];
+    return new Set(rows.map((r) => r.note_id));
+  } catch {
+    return new Set();
+  }
+}
+
 export function insertMcpNotification(db: Database.Database, n: { id: string; tool: string; title: string; body: string }): void {
   db.prepare("INSERT INTO mcp_notifications (id, tool, title, body, read, created_at) VALUES (?, ?, ?, ?, 0, ?)").run(n.id, n.tool, n.title, n.body, ts());
 }

@@ -8,7 +8,7 @@
 import { BrowserWindow, Notification } from "electron";
 import fs from "fs";
 import type Database from "better-sqlite3";
-import { getUnreadMcpNotifications, markMcpNotificationsRead } from "../db/queries";
+import { getUnreadMcpNotifications, markMcpNotificationsRead, getActiveMcpWrites } from "../db/queries";
 
 export interface McpPollerOptions {
   db: Database.Database;
@@ -26,7 +26,7 @@ export interface McpPoller {
 export function startMcpNotificationPoller({
   db,
   dbPath,
-  win: _win,
+  win,
   updateBadge,
   onDbChanged,
 }: McpPollerOptions): McpPoller {
@@ -34,10 +34,16 @@ export function startMcpNotificationPoller({
   let lastMtime = 0;
   // Accumulated unread count — incremented on new notifications, reset via resetCount()
   let unreadCount = 0;
+  // Previous snapshot of MCP-locked note IDs — diff each poll to fire started/ended events
+  let prevLocked = new Set<string>();
 
   try {
     lastMtime = fs.statSync(fs.existsSync(walPath) ? walPath : dbPath).mtimeMs;
   } catch { /* db not yet created */ }
+
+  function sendToWin(channel: string, payload: unknown): void {
+    if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
+  }
 
   function check() {
     try {
@@ -59,6 +65,22 @@ export function startMcpNotificationPoller({
           markMcpNotificationsRead(db);
         }
       }
+
+      // Diff mcp_active_writes on every tick (independent of WAL mtime) so the
+      // renderer gets started/ended events promptly even if the write completes
+      // within the same WAL flush window.
+      const currentLocked = getActiveMcpWrites(db);
+      for (const noteId of currentLocked) {
+        if (!prevLocked.has(noteId)) {
+          sendToWin("note:aiWriteStarted", { noteId });
+        }
+      }
+      for (const noteId of prevLocked) {
+        if (!currentLocked.has(noteId)) {
+          sendToWin("note:aiWriteEnded", { noteId });
+        }
+      }
+      prevLocked = currentLocked;
     } catch { /* db file not yet created */ }
   }
 

@@ -311,6 +311,38 @@ export function getSnapshot(db: Database.Database) {
   };
 }
 
+// ── MCP active-write lock helpers ─────────────
+//
+// Tracks which note IDs are currently being written by this MCP process so the
+// Electron renderer can show a read-only indicator. Uses the mcp_active_writes
+// table (created by migration v11; also ensured inline here because applySchema
+// is not called in the MCP process due to the Node ABI boundary).
+//
+// Usage:  lockNote(db, noteId); try { ...write... } finally { unlockNote(db, noteId); }
+
+function ensureMcpActiveWritesTable(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS mcp_active_writes (
+      note_id    TEXT NOT NULL PRIMARY KEY,
+      started_at TEXT NOT NULL
+    );
+  `);
+  // Purge stale rows from a previous crashed process (> 30 s old)
+  db.prepare("DELETE FROM mcp_active_writes WHERE started_at < datetime('now', '-30 seconds')").run();
+}
+
+function lockNote(db: Database.Database, noteId: string): void {
+  try {
+    db.prepare("INSERT OR REPLACE INTO mcp_active_writes (note_id, started_at) VALUES (?, datetime('now'))").run(noteId);
+  } catch { /* best-effort */ }
+}
+
+function unlockNote(db: Database.Database, noteId: string): void {
+  try {
+    db.prepare("DELETE FROM mcp_active_writes WHERE note_id = ?").run(noteId);
+  } catch { /* best-effort */ }
+}
+
 // ── MCP notification helper ───────────────────
 
 function insertNotification(db: Database.Database, tool: string, title: string, body: string): void {
@@ -530,18 +562,23 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
       const markdown = content ?? "";
       const resolvedTagIds = Array.isArray(tagIds) ? tagIds as string[] : [];
       const folder = typeof args.folder === "string" ? args.folder : "";
-      db.prepare(`
-        INSERT INTO notes (id, project_id, workspace_id, title, content, content_text,
-          tag_ids, linked_note_ids, linked_card_ids, is_pinned, type, folder, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, '[]', '[]', 0, 'note', ?, ?, ?)
-      `).run(noteId, projectId, project.workspaceId, title, markdown, stripMarkdown(markdown), j(resolvedTagIds), folder, now, now);
-      writeNoteFile(workspacePath, {
-        id: noteId, projectId, workspaceId: project.workspaceId, title, content: markdown,
-        tagIds: resolvedTagIds, linkedNoteIds: [], linkedCardIds: [], isPinned: false,
-        folder, createdAt: now, updatedAt: now, projectName: project.name,
-      });
-      insertNotification(db, "create_note", "Note created", `"${title}" added to ${project.name}${folder ? ` (${folder})` : ""}`);
-      return { id: noteId, title, folder, createdAt: now };
+      lockNote(db, noteId);
+      try {
+        db.prepare(`
+          INSERT INTO notes (id, project_id, workspace_id, title, content, content_text,
+            tag_ids, linked_note_ids, linked_card_ids, is_pinned, type, folder, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, '[]', '[]', 0, 'note', ?, ?, ?)
+        `).run(noteId, projectId, project.workspaceId, title, markdown, stripMarkdown(markdown), j(resolvedTagIds), folder, now, now);
+        writeNoteFile(workspacePath, {
+          id: noteId, projectId, workspaceId: project.workspaceId, title, content: markdown,
+          tagIds: resolvedTagIds, linkedNoteIds: [], linkedCardIds: [], isPinned: false,
+          folder, createdAt: now, updatedAt: now, projectName: project.name,
+        });
+        insertNotification(db, "create_note", "Note created", `"${title}" added to ${project.name}${folder ? ` (${folder})` : ""}`);
+        return { id: noteId, title, folder, createdAt: now };
+      } finally {
+        unlockNote(db, noteId);
+      }
     }
 
     case "import_note_from_file": {
@@ -586,22 +623,27 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
       const markdown = content !== undefined ? content : null;
       const pinnedVal = isPinned !== undefined ? (isPinned ? 1 : 0) : null;
       const tagIdsJson = Array.isArray(tagIds) ? j(tagIds) : null;
-      db.prepare(`UPDATE notes SET title = COALESCE(?, title), content = COALESCE(?, content), content_text = COALESCE(?, content_text), is_pinned = COALESCE(?, is_pinned), tag_ids = COALESCE(?, tag_ids), updated_at = ? WHERE id = ?`)
-        .run(title ?? null, markdown, markdown !== null ? stripMarkdown(markdown) : null, pinnedVal, tagIdsJson, now, noteId);
-      const resolvedIsPinned = isPinned !== undefined ? (isPinned as boolean) : note.isPinned as boolean;
-      const updateProj = snap.projects.find((pr) => pr.id === note.projectId);
-      writeNoteFile(workspacePath, {
-        id: noteId, projectId: note.projectId as string, workspaceId: note.workspaceId as string,
-        title: title ?? note.title as string,
-        content: markdown !== null ? markdown : note.content as string,
-        tagIds: Array.isArray(tagIds) ? tagIds as string[] : note.tagIds as string[], linkedNoteIds: note.linkedNoteIds as string[],
-        linkedCardIds: note.linkedCardIds as string[], isPinned: resolvedIsPinned,
-        createdAt: note.createdAt as string, updatedAt: now,
-        archivedAt: note.archivedAt as string | undefined,
-        projectName: updateProj?.name ?? note.projectId as string,
-      });
-      insertNotification(db, "update_note", "Note updated", `"${title ?? note.title}" was updated`);
-      return { id: noteId, title: title ?? note.title, isPinned: resolvedIsPinned, updatedAt: now };
+      lockNote(db, noteId as string);
+      try {
+        db.prepare(`UPDATE notes SET title = COALESCE(?, title), content = COALESCE(?, content), content_text = COALESCE(?, content_text), is_pinned = COALESCE(?, is_pinned), tag_ids = COALESCE(?, tag_ids), updated_at = ? WHERE id = ?`)
+          .run(title ?? null, markdown, markdown !== null ? stripMarkdown(markdown) : null, pinnedVal, tagIdsJson, now, noteId);
+        const resolvedIsPinned = isPinned !== undefined ? (isPinned as boolean) : note.isPinned as boolean;
+        const updateProj = snap.projects.find((pr) => pr.id === note.projectId);
+        writeNoteFile(workspacePath, {
+          id: noteId, projectId: note.projectId as string, workspaceId: note.workspaceId as string,
+          title: title ?? note.title as string,
+          content: markdown !== null ? markdown : note.content as string,
+          tagIds: Array.isArray(tagIds) ? tagIds as string[] : note.tagIds as string[], linkedNoteIds: note.linkedNoteIds as string[],
+          linkedCardIds: note.linkedCardIds as string[], isPinned: resolvedIsPinned,
+          createdAt: note.createdAt as string, updatedAt: now,
+          archivedAt: note.archivedAt as string | undefined,
+          projectName: updateProj?.name ?? note.projectId as string,
+        });
+        insertNotification(db, "update_note", "Note updated", `"${title ?? note.title}" was updated`);
+        return { id: noteId, title: title ?? note.title, isPinned: resolvedIsPinned, updatedAt: now };
+      } finally {
+        unlockNote(db, noteId as string);
+      }
     }
 
     case "move_note": {
@@ -1020,42 +1062,47 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
       const ensureResolvedTagIds = Array.isArray(ensureTagIds) ? ensureTagIds as string[] : undefined;
       const ensureResolvedIsPinned = typeof ensureIsPinned === "boolean" ? ensureIsPinned : undefined;
       const ensureFolder = typeof args.folder === "string" ? args.folder : undefined;
-      if (existing) {
-        const tagIdsJson = ensureResolvedTagIds ? j(ensureResolvedTagIds) : null;
-        const pinnedVal = ensureResolvedIsPinned !== undefined ? (ensureResolvedIsPinned ? 1 : 0) : null;
-        const folderVal = ensureFolder !== undefined ? ensureFolder : null;
-        db.prepare(`UPDATE notes SET content = ?, content_text = ?, tag_ids = COALESCE(?, tag_ids), is_pinned = COALESCE(?, is_pinned), folder = COALESCE(?, folder), updated_at = ? WHERE id = ?`)
-          .run(markdown, stripMarkdown(markdown), tagIdsJson, pinnedVal, folderVal, now, existing.id);
-        const updatedFolder = ensureFolder ?? (existing.folder as string) ?? "";
-        writeNoteFile(workspacePath, {
-          id: existing.id, projectId, workspaceId: existing.workspaceId as string,
-          title: existing.title as string, content: markdown,
-          tagIds: ensureResolvedTagIds ?? existing.tagIds as string[], linkedNoteIds: existing.linkedNoteIds as string[],
-          linkedCardIds: existing.linkedCardIds as string[], isPinned: ensureResolvedIsPinned ?? existing.isPinned as boolean,
-          folder: updatedFolder,
-          createdAt: existing.createdAt as string, updatedAt: now,
-          archivedAt: existing.archivedAt as string | undefined,
-          projectName: project.name,
-        });
-        insertNotification(db, "update_note", "Note updated", `"${title}" was updated (ensure_note)`);
-        return { id: existing.id, title, action: "updated", updatedAt: now };
-      } else {
-        const noteId = newId();
-        const newTagIds = ensureResolvedTagIds ?? [];
-        const newIsPinned = ensureResolvedIsPinned ?? false;
-        const newFolder = ensureFolder ?? "";
-        db.prepare(`
-          INSERT INTO notes (id, project_id, workspace_id, title, content, content_text,
-            tag_ids, linked_note_ids, linked_card_ids, is_pinned, type, folder, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, '[]', '[]', ?, 'note', ?, ?, ?)
-        `).run(noteId, projectId, project.workspaceId, title, markdown, stripMarkdown(markdown), j(newTagIds), newIsPinned ? 1 : 0, newFolder, now, now);
-        writeNoteFile(workspacePath, {
-          id: noteId, projectId, workspaceId: project.workspaceId, title, content: markdown,
-          tagIds: newTagIds, linkedNoteIds: [], linkedCardIds: [], isPinned: newIsPinned,
-          folder: newFolder, createdAt: now, updatedAt: now, projectName: project.name,
-        });
-        insertNotification(db, "create_note", "Note created", `"${title}" added to ${project.name}${newFolder ? ` (${newFolder})` : ""} (ensure_note)`);
-        return { id: noteId, title, folder: newFolder, action: "created", createdAt: now };
+      const ensureNoteId = existing?.id ?? newId();
+      lockNote(db, ensureNoteId);
+      try {
+        if (existing) {
+          const tagIdsJson = ensureResolvedTagIds ? j(ensureResolvedTagIds) : null;
+          const pinnedVal = ensureResolvedIsPinned !== undefined ? (ensureResolvedIsPinned ? 1 : 0) : null;
+          const folderVal = ensureFolder !== undefined ? ensureFolder : null;
+          db.prepare(`UPDATE notes SET content = ?, content_text = ?, tag_ids = COALESCE(?, tag_ids), is_pinned = COALESCE(?, is_pinned), folder = COALESCE(?, folder), updated_at = ? WHERE id = ?`)
+            .run(markdown, stripMarkdown(markdown), tagIdsJson, pinnedVal, folderVal, now, existing.id);
+          const updatedFolder = ensureFolder ?? (existing.folder as string) ?? "";
+          writeNoteFile(workspacePath, {
+            id: existing.id, projectId, workspaceId: existing.workspaceId as string,
+            title: existing.title as string, content: markdown,
+            tagIds: ensureResolvedTagIds ?? existing.tagIds as string[], linkedNoteIds: existing.linkedNoteIds as string[],
+            linkedCardIds: existing.linkedCardIds as string[], isPinned: ensureResolvedIsPinned ?? existing.isPinned as boolean,
+            folder: updatedFolder,
+            createdAt: existing.createdAt as string, updatedAt: now,
+            archivedAt: existing.archivedAt as string | undefined,
+            projectName: project.name,
+          });
+          insertNotification(db, "update_note", "Note updated", `"${title}" was updated (ensure_note)`);
+          return { id: existing.id, title, action: "updated", updatedAt: now };
+        } else {
+          const newTagIds = ensureResolvedTagIds ?? [];
+          const newIsPinned = ensureResolvedIsPinned ?? false;
+          const newFolder = ensureFolder ?? "";
+          db.prepare(`
+            INSERT INTO notes (id, project_id, workspace_id, title, content, content_text,
+              tag_ids, linked_note_ids, linked_card_ids, is_pinned, type, folder, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, '[]', '[]', ?, 'note', ?, ?, ?)
+          `).run(ensureNoteId, projectId, project.workspaceId, title, markdown, stripMarkdown(markdown), j(newTagIds), newIsPinned ? 1 : 0, newFolder, now, now);
+          writeNoteFile(workspacePath, {
+            id: ensureNoteId, projectId, workspaceId: project.workspaceId, title, content: markdown,
+            tagIds: newTagIds, linkedNoteIds: [], linkedCardIds: [], isPinned: newIsPinned,
+            folder: newFolder, createdAt: now, updatedAt: now, projectName: project.name,
+          });
+          insertNotification(db, "create_note", "Note created", `"${title}" added to ${project.name}${newFolder ? ` (${newFolder})` : ""} (ensure_note)`);
+          return { id: ensureNoteId, title, folder: newFolder, action: "created", createdAt: now };
+        }
+      } finally {
+        unlockNote(db, ensureNoteId);
       }
     }
 
@@ -1070,20 +1117,25 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
       const newContent = existingContent
         ? existingContent + (separator as string) + (appendContent as string)
         : (appendContent as string);
-      db.prepare(`UPDATE notes SET content = ?, content_text = ?, updated_at = ? WHERE id = ?`)
-        .run(newContent, stripMarkdown(newContent), now, noteId);
-      const proj = snap.projects.find((p) => p.id === note.projectId);
-      writeNoteFile(workspacePath, {
-        id: noteId, projectId: note.projectId as string, workspaceId: note.workspaceId as string,
-        title: note.title as string, content: newContent,
-        tagIds: note.tagIds as string[], linkedNoteIds: note.linkedNoteIds as string[],
-        linkedCardIds: note.linkedCardIds as string[], isPinned: note.isPinned as boolean,
-        createdAt: note.createdAt as string, updatedAt: now,
-        archivedAt: note.archivedAt as string | undefined,
-        projectName: proj?.name ?? note.projectId as string,
-      });
-      insertNotification(db, "update_note", "Note updated", `Content appended to "${note.title}"`);
-      return { id: noteId, title: note.title, updatedAt: now, newLength: newContent.length };
+      lockNote(db, noteId as string);
+      try {
+        db.prepare(`UPDATE notes SET content = ?, content_text = ?, updated_at = ? WHERE id = ?`)
+          .run(newContent, stripMarkdown(newContent), now, noteId);
+        const proj = snap.projects.find((p) => p.id === note.projectId);
+        writeNoteFile(workspacePath, {
+          id: noteId, projectId: note.projectId as string, workspaceId: note.workspaceId as string,
+          title: note.title as string, content: newContent,
+          tagIds: note.tagIds as string[], linkedNoteIds: note.linkedNoteIds as string[],
+          linkedCardIds: note.linkedCardIds as string[], isPinned: note.isPinned as boolean,
+          createdAt: note.createdAt as string, updatedAt: now,
+          archivedAt: note.archivedAt as string | undefined,
+          projectName: proj?.name ?? note.projectId as string,
+        });
+        insertNotification(db, "update_note", "Note updated", `Content appended to "${note.title}"`);
+        return { id: noteId, title: note.title, updatedAt: now, newLength: newContent.length };
+      } finally {
+        unlockNote(db, noteId as string);
+      }
     }
 
     case "patch_note": {
@@ -1100,20 +1152,25 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
       if (count > 1 && !all) return { error: `oldString matches ${count} times — set replaceAll: true to replace all, or provide more surrounding context to make it unique` };
       const now = ts();
       const newContent = all ? existing.split(oldString).join(replacement) : existing.replace(oldString, replacement);
-      db.prepare(`UPDATE notes SET content = ?, content_text = ?, updated_at = ? WHERE id = ?`)
-        .run(newContent, stripMarkdown(newContent), now, noteId);
-      const proj = snap.projects.find((p) => p.id === note.projectId);
-      writeNoteFile(workspacePath, {
-        id: noteId, projectId: note.projectId as string, workspaceId: note.workspaceId as string,
-        title: note.title as string, content: newContent,
-        tagIds: note.tagIds as string[], linkedNoteIds: note.linkedNoteIds as string[],
-        linkedCardIds: note.linkedCardIds as string[], isPinned: note.isPinned as boolean,
-        createdAt: note.createdAt as string, updatedAt: now,
-        archivedAt: note.archivedAt as string | undefined,
-        projectName: proj?.name ?? note.projectId as string,
-      });
-      insertNotification(db, "update_note", "Note updated", `Patch applied to "${note.title}"`);
-      return { id: noteId, title: note.title, updatedAt: now, replacements: all ? count : 1 };
+      lockNote(db, noteId);
+      try {
+        db.prepare(`UPDATE notes SET content = ?, content_text = ?, updated_at = ? WHERE id = ?`)
+          .run(newContent, stripMarkdown(newContent), now, noteId);
+        const proj = snap.projects.find((p) => p.id === note.projectId);
+        writeNoteFile(workspacePath, {
+          id: noteId, projectId: note.projectId as string, workspaceId: note.workspaceId as string,
+          title: note.title as string, content: newContent,
+          tagIds: note.tagIds as string[], linkedNoteIds: note.linkedNoteIds as string[],
+          linkedCardIds: note.linkedCardIds as string[], isPinned: note.isPinned as boolean,
+          createdAt: note.createdAt as string, updatedAt: now,
+          archivedAt: note.archivedAt as string | undefined,
+          projectName: proj?.name ?? note.projectId as string,
+        });
+        insertNotification(db, "update_note", "Note updated", `Patch applied to "${note.title}"`);
+        return { id: noteId, title: note.title, updatedAt: now, replacements: all ? count : 1 };
+      } finally {
+        unlockNote(db, noteId);
+      }
     }
 
     // ── Idea Flow tools ───────────────────────────────────────────────────────
@@ -1694,6 +1751,7 @@ if (require.main === module) {
   // PRAGMA foreign_keys must be set per-connection; applySchema is not called in the MCP process.
   db.pragma("foreign_keys = ON");
   db.pragma("journal_mode = WAL");
+  ensureMcpActiveWritesTable(db);
   const workspacePath = findWorkspacePath(dbPath);
   process.stderr.write(`[cairn:mcp] Workspace folder: ${workspacePath}\n`);
   const server = buildMcpServer(db, workspacePath);
