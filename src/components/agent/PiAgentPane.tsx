@@ -9,6 +9,7 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import { flushSync } from "react-dom";
 import { Send, Square, Trash2, CheckCircle, FileText, Zap, Map as MapIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
@@ -185,7 +186,12 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
       if (e.status === "start") {
         const callId = `${e.name}:${Date.now()}`;
         activeCallIds.set(e.name, callId);
-        addPiToolCall(sessionId, { callId, name: e.name, label: e.label, running: true, ok: true });
+        // flushSync forces React to commit the running chip to the DOM synchronously.
+        // Without this, React 18's automatic batching can coalesce the start and end
+        // IPC messages into a single commit — the spinner is never painted.
+        flushSync(() => {
+          addPiToolCall(sessionId, { callId, name: e.name, label: e.label, running: true, ok: true });
+        });
       } else {
         const callId = activeCallIds.get(e.name) ?? `${e.name}:unknown`;
         activeCallIds.delete(e.name);
@@ -247,7 +253,9 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
       if (e.status === "start") {
         const callId = `${e.name}:${Date.now()}`;
         activeSubCallIds.set(key, callId);
-        addPiSubagentToolCall(sessionId, e.sessionId, { callId, name: e.name, label: e.label, running: true, ok: true });
+        flushSync(() => {
+          addPiSubagentToolCall(sessionId, e.sessionId, { callId, name: e.name, label: e.label, running: true, ok: true });
+        });
       } else {
         const callId = activeSubCallIds.get(key) ?? `${e.name}:unknown`;
         activeSubCallIds.delete(key);
