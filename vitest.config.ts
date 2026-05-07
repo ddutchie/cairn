@@ -1,5 +1,10 @@
 import { defineConfig } from "vitest/config";
 import path from "path";
+import { config as loadDotenv } from "dotenv";
+
+// Load .env.test so test-only variables (TEST_LLM_BASE_URL etc.) are available.
+// The file is gitignored; missing is fine — variables simply won't be set.
+loadDotenv({ path: path.resolve(__dirname, ".env.test"), override: false });
 
 export default defineConfig({
   test: {

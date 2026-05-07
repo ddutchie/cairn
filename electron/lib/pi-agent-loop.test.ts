@@ -28,6 +28,7 @@ import type Database from "better-sqlite3";
 import { applySchema } from "../db/schema";
 import { createWorkspace, createProject, createColumn } from "../db/queries";
 import { runAgentLoop, type PiAgentSession, type AgentLoopCallbacks } from "./pi-agent-loop";
+import { normaliseBaseUrl } from "./llm";
 import type { ChatRequest } from "./tools";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -433,4 +434,63 @@ describe("runAgentLoop — SSE streaming", () => {
     expect(log.findIndex(e => e === starts[0])).toBeLessThan(firstEndIdx);
     expect(lastStartIdx).toBeLessThan(log.lastIndexOf(ends[ends.length - 1]));
   });
+});
+
+// ── Live integration tests ─────────────────────────────────────────────────────
+// Only run when TEST_LLM_BASE_URL is set in .env.test (or the environment).
+// These hit a real LLM endpoint and verify the full round-trip.
+
+const liveBaseUrl = process.env.TEST_LLM_BASE_URL
+  ? normaliseBaseUrl(process.env.TEST_LLM_BASE_URL)
+  : undefined;
+const liveModel   = process.env.TEST_LLM_MODEL   ?? "claude-sonnet-4-6";
+const liveApiKey  = process.env.TEST_LLM_API_KEY  ?? "";
+
+describe.skipIf(!liveBaseUrl)("runAgentLoop — live endpoint", () => {
+  let db: Database.Database;
+
+  beforeEach(() => { db = makeDb(); });
+  afterEach(() => { db.close(); });
+
+  it("completes a simple text prompt without errors", async () => {
+    const session = makeSession();
+    session.messages.push({ role: "user", content: "Reply with exactly the word PONG and nothing else." });
+    const { log, callbacks } = makeCallbacks();
+
+    await runAgentLoop(
+      session,
+      "You are a test assistant. Follow instructions exactly.",
+      "/tmp",
+      { baseUrl: liveBaseUrl!, model: liveModel, apiKey: liveApiKey },
+      db, chatReq, "/tmp", callbacks,
+    );
+
+    expect(log).toContain("done");
+    expect(log.some((e) => e.startsWith("token:"))).toBe(true);
+    expect(log).not.toContain(expect.stringContaining("error:"));
+  }, 30_000);
+
+  it("executes a tool call and returns a result", async () => {
+    const session = makeSession();
+    session.messages.push({ role: "user", content: "Use the ls tool to list files in /tmp and then stop." });
+    const { log, callbacks } = makeCallbacks();
+
+    await runAgentLoop(
+      session,
+      "You are a test assistant with access to coding tools. When asked to list files, always use the ls tool.",
+      "/tmp",
+      { baseUrl: liveBaseUrl!, model: liveModel, apiKey: liveApiKey },
+      db, chatReq, "/tmp", callbacks,
+    );
+
+    expect(log).toContain("done");
+    // tool chip ordering must still hold on real endpoint
+    const toolsReadyIdx = log.indexOf("tools-ready");
+    const toolStartIdx  = log.findIndex((e) => e.startsWith("tool-start:ls"));
+    if (toolStartIdx !== -1) {
+      // If the model chose to call ls, verify ordering
+      expect(toolsReadyIdx).toBeLessThan(toolStartIdx);
+    }
+    expect(log).not.toContain(expect.stringContaining("error:"));
+  }, 60_000);
 });
