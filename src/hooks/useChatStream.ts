@@ -9,6 +9,11 @@
  *
  * The component calls `sendStream()` to fire a request and reads back
  * the state updates as tokens/tool calls arrive.
+ *
+ * Tool calls are tracked with a per-call status ("running" | "done") so the
+ * indicator can show a spinner on the active tool and a check on completed
+ * ones. When the turn finishes, the full tool call list is persisted onto the
+ * assistant ChatMessage so it remains visible in thread history.
  */
 
 import { useState, useEffect, useRef } from "react";
@@ -17,6 +22,8 @@ import { useCairnStore } from "@/store";
 export interface ChatToolCall {
   tool: string;
   label: string;
+  /** "running" = currently executing; "done" = completed this turn */
+  status: "running" | "done";
 }
 
 export interface PendingQuestion {
@@ -59,8 +66,12 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
   const [streamingContent, setStreamingContent] = useState("");
   const [pendingQuestions, setPendingQuestions] = useState<PendingQuestion[] | null>(null);
 
-  // Keep a stable ref so the onDone handler always reads the latest threadId
-  const threadIdRef = useRef<string | null>(null);
+  const threadIdRef  = useRef<string | null>(null);
+  // Accumulates tool calls for the current turn so they can be persisted on done.
+  // A ref (not state) so the onDone closure always reads the latest value without
+  // needing to be in the dependency array.
+  const toolCallsRef = useRef<ChatToolCall[]>([]);
+
   useEffect(() => { threadIdRef.current = threadId; }, [threadId]);
 
   useEffect(() => {
@@ -69,11 +80,18 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
 
     const unsubTool = electron.chat.onToolCall((e) => {
       if (e.tool === "ask_questions") {
-        // Intercept: surface as an inline form rather than a chip
         const qs = (e.args.questions as PendingQuestion[] | undefined) ?? [];
         setPendingQuestions(qs);
       } else {
-        setToolCalls((prev) => [...prev, { tool: e.tool, label: e.label }]);
+        // Mark the previously-running tool as done, add the new one as running.
+        setToolCalls((prev) => {
+          const updated = prev.map((tc) =>
+            tc.status === "running" ? { ...tc, status: "done" as const } : tc
+          );
+          const next = [...updated, { tool: e.tool, label: e.label, status: "running" as const }];
+          toolCallsRef.current = next;
+          return next;
+        });
       }
     });
 
@@ -83,13 +101,18 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
 
     const unsubDone = electron.chat.onDone((e) => {
       const tid = threadIdRef.current;
+      // Mark any still-running tool as done before persisting.
+      const finalToolCalls = toolCallsRef.current.map((tc) =>
+        tc.status === "running" ? { ...tc, status: "done" as const } : tc
+      );
       if (tid) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        addMessage(tid, "assistant", e.content, e.contextRefs as any);
+        addMessage(tid, "assistant", e.content, e.contextRefs as any, finalToolCalls);
       }
       setStreamingContent("");
       setIsLoading(false);
       setToolCalls([]);
+      toolCallsRef.current = [];
       // Do NOT clear pendingQuestions here — the form must stay visible until
       // the user submits their answers. It is cleared in sendStream() instead.
     });
@@ -106,6 +129,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
   function sendStream(req: ChatStreamRequest) {
     setIsLoading(true);
     setToolCalls([]);
+    toolCallsRef.current = [];
     setPendingQuestions(null);
     window.electron?.chat.stream(req);
   }
@@ -114,6 +138,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
     window.electron?.chat.abort();
     setIsLoading(false);
     setToolCalls([]);
+    toolCallsRef.current = [];
     setStreamingContent("");
     // Keep pendingQuestions — user may still want to answer after stopping
   }

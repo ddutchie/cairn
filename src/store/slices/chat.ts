@@ -4,7 +4,7 @@
 
 import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
-import type { ChatThread, ChatMessage, PendingAction, ID } from "@/types";
+import type { ChatThread, ChatMessage, ChatToolCallRecord, PendingAction, ID } from "@/types";
 import { id, now } from "@/lib/utils";
 import { ipc } from "../ipc";
 
@@ -19,7 +19,8 @@ export interface ChatSlice {
     threadId: ID,
     role: ChatMessage["role"],
     content: string,
-    contextRefs?: ChatMessage["contextRefs"]
+    contextRefs?: ChatMessage["contextRefs"],
+    toolCalls?: ChatToolCallRecord[]
   ) => ChatMessage;
   confirmAction: (action: PendingAction) => void;
   deleteThread: (threadId: ID) => void;
@@ -58,13 +59,14 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
     return thread;
   },
 
-  addMessage(threadId, role, content, contextRefs) {
+  addMessage(threadId, role, content, contextRefs, toolCalls) {
     const msg: ChatMessage = {
       id: id(),
       threadId,
       role,
       content,
       contextRefs,
+      toolCalls: toolCalls && toolCalls.length > 0 ? toolCalls : undefined,
       createdAt: now(),
     };
     set((s) => ({

@@ -164,6 +164,7 @@ function toChatMessage(row: any) {
     role: row.role as string,
     content: row.content as string,
     contextRefs: row.context_refs ? JSON.parse(row.context_refs) : undefined,
+    toolCalls: row.tool_calls ? JSON.parse(row.tool_calls) : undefined,
     createdAt: row.created_at as string,
   };
 }
@@ -645,13 +646,13 @@ export function getChatMessages(db: Database.Database, threadId: string) {
 }
 
 export function addChatMessage(db: Database.Database, m: {
-  id: string; threadId: string; role: string; content: string; contextRefs?: unknown;
+  id: string; threadId: string; role: string; content: string; contextRefs?: unknown; toolCalls?: unknown;
 }) {
   const now = ts();
   db.prepare(`
-    INSERT INTO chat_messages (id, thread_id, role, content, context_refs, created_at)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(m.id, m.threadId, m.role, m.content, m.contextRefs ? JSON.stringify(m.contextRefs) : null, now);
+    INSERT INTO chat_messages (id, thread_id, role, content, context_refs, tool_calls, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(m.id, m.threadId, m.role, m.content, m.contextRefs ? JSON.stringify(m.contextRefs) : null, m.toolCalls ? JSON.stringify(m.toolCalls) : null, now);
   return toChatMessage(db.prepare("SELECT * FROM chat_messages WHERE id = ?").get(m.id));
 }
 
