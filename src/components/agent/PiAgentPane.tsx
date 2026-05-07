@@ -71,6 +71,8 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
     ensurePiStreamingMessage,
     updatePiUsage,
     updatePiSubagentUsage,
+    updatePiToolCall,
+    updatePiSubagentToolCall,
     addPiSubagent,
     appendPiSubagentToken,
     finalisePiSubagentMessage,
@@ -89,6 +91,8 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
     ensurePiStreamingMessage:  s.ensurePiStreamingMessage,
     updatePiUsage:             s.updatePiUsage,
     updatePiSubagentUsage:     s.updatePiSubagentUsage,
+    updatePiToolCall:          s.updatePiToolCall,
+    updatePiSubagentToolCall:  s.updatePiSubagentToolCall,
     addPiSubagent:             s.addPiSubagent,
     appendPiSubagentToken:     s.appendPiSubagentToken,
     finalisePiSubagentMessage: s.finalisePiSubagentMessage,
@@ -171,14 +175,22 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
       }
     });
 
+    // callId map: tool name → callId assigned at onToolStart so we can update it on onToolEnd
+    const activeCallIds = new Map<string, string>();
+
     const unsubTool = electron.piAgent.onTool((e) => {
       if (e.sessionId !== sessionId) return;
-      if (e.status === "end") {
-        addPiToolCall(sessionId, {
-          name:     e.name,
+      if (e.status === "start") {
+        const callId = `${e.name}:${Date.now()}`;
+        activeCallIds.set(e.name, callId);
+        addPiToolCall(sessionId, { callId, name: e.name, label: e.label, running: true, ok: true });
+      } else {
+        const callId = activeCallIds.get(e.name) ?? `${e.name}:unknown`;
+        activeCallIds.delete(e.name);
+        updatePiToolCall(sessionId, callId, {
           label:    e.label,
+          running:  false,
           ok:       e.ok ?? true,
-          // Suppress output for read-only tools — no point expanding raw JSON
           output:   READ_ONLY_TOOLS.has(e.name) ? undefined : e.output,
           cairnRef: extractCairnRef(e.name, e.output),
         });
@@ -227,12 +239,21 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
       appendPiSubagentToken(sessionId, e.sessionId, e.delta);
     });
 
+    const activeSubCallIds = new Map<string, string>(); // `${childSessionId}:${name}` → callId
+
     const unsubSubTool = electron.piAgent.onTool((e) => {
       if (!e.sessionId.startsWith(`${sessionId}:sub:`)) return;
-      if (e.status === "end") {
-        addPiSubagentToolCall(sessionId, e.sessionId, {
-          name:     e.name,
+      const key = `${e.sessionId}:${e.name}`;
+      if (e.status === "start") {
+        const callId = `${e.name}:${Date.now()}`;
+        activeSubCallIds.set(key, callId);
+        addPiSubagentToolCall(sessionId, e.sessionId, { callId, name: e.name, label: e.label, running: true, ok: true });
+      } else {
+        const callId = activeSubCallIds.get(key) ?? `${e.name}:unknown`;
+        activeSubCallIds.delete(key);
+        updatePiSubagentToolCall(sessionId, e.sessionId, callId, {
           label:    e.label,
+          running:  false,
           ok:       e.ok ?? true,
           output:   READ_ONLY_TOOLS.has(e.name) ? undefined : e.output,
           cairnRef: extractCairnRef(e.name, e.output),

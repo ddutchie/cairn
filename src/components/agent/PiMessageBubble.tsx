@@ -126,8 +126,18 @@ function ToolOutputPanel({ name, output }: { name: string; output: string }) {
   );
 }
 
-function ToolChip({ tc, index }: { tc: { name: string; label: string; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }; index: number }) {
+function ToolChip({ tc, index }: { tc: { callId?: string; name: string; label: string; running?: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }; index: number }) {
   const [expanded, setExpanded] = useState(false);
+
+  // While running — show a spinner chip, not expandable
+  if (tc.running) {
+    return (
+      <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] w-fit">
+        <Loader2 size={9} className="text-[var(--accent)] animate-spin shrink-0" />
+        <span className="text-[0.714rem] text-[var(--text-secondary)]">{tc.label}</span>
+      </div>
+    );
+  }
 
   // Cairn write tools get a dedicated linked bubble instead of raw JSON expansion
   if (tc.cairnRef && tc.ok) {

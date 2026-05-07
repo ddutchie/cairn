@@ -31,8 +31,12 @@ export interface PiAgentMessage {
   content: string;
   /** Tool calls that occurred before or during this assistant message */
   toolCalls?: {
+    /** Unique key to allow in-place updates (tool name + start timestamp) */
+    callId: string;
     name: string;
     label: string;
+    /** true while the tool is executing, false once done */
+    running: boolean;
     ok: boolean;
     output?: string;
     /** Parsed reference for Cairn write tools — renders a linked bubble instead of raw output */
@@ -86,7 +90,9 @@ export interface TerminalSessionsSlice {
   /** Ensure a streaming assistant message exists — creates one if the last message is not streaming */
   ensurePiStreamingMessage: (sessionId: string) => void;
   /** Append a tool call record to the last assistant message */
-  addPiToolCall: (sessionId: string, toolCall: { name: string; label: string; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void;
+  addPiToolCall: (sessionId: string, toolCall: { callId: string; name: string; label: string; running: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void;
+  /** Update an existing tool call chip in-place (start → done) */
+  updatePiToolCall: (sessionId: string, callId: string, patch: { label?: string; running: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void;
   /** Clear message history for a pi session */
   clearPiMessages: (sessionId: string) => void;
   /** Update token usage for a session after a step completes */
@@ -98,7 +104,9 @@ export interface TerminalSessionsSlice {
   /** Finalise the last streaming message in a subagent */
   finalisePiSubagentMessage: (sessionId: string, childSessionId: string) => void;
   /** Add a tool call to a subagent's last streaming message */
-  addPiSubagentToolCall: (sessionId: string, childSessionId: string, toolCall: { name: string; label: string; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void;
+  addPiSubagentToolCall: (sessionId: string, childSessionId: string, toolCall: { callId: string; name: string; label: string; running: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void;
+  /** Update an existing tool call chip on a subagent message in-place */
+  updatePiSubagentToolCall: (sessionId: string, childSessionId: string, callId: string, patch: { label?: string; running: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void;
   /** Mark a subagent as done and store its result */
   completePiSubagent: (sessionId: string, childSessionId: string, result: string) => void;
   /** Update token usage on an inline subagent block */
@@ -241,7 +249,7 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
     }));
   },
 
-  addPiToolCall(sessionId, toolCall: { name: string; label: string; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) {
+  addPiToolCall(sessionId, toolCall: { callId: string; name: string; label: string; running: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) {
     set((s) => ({
       terminalSessions: s.terminalSessions.map((t) => {
         if (t.sessionId !== sessionId) return t;
@@ -260,6 +268,25 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
           };
         }
         return t;
+      }),
+    }));
+  },
+
+  updatePiToolCall(sessionId, callId, patch) {
+    set((s) => ({
+      terminalSessions: s.terminalSessions.map((t) => {
+        if (t.sessionId !== sessionId) return t;
+        return {
+          ...t,
+          piMessages: (t.piMessages ?? []).map((msg) => {
+            if (!msg.toolCalls) return msg;
+            const idx = msg.toolCalls.findIndex((tc) => tc.callId === callId);
+            if (idx === -1) return msg;
+            const updated = [...msg.toolCalls];
+            updated[idx] = { ...updated[idx], ...patch };
+            return { ...msg, toolCalls: updated };
+          }),
+        };
       }),
     }));
   },
@@ -381,6 +408,35 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
                 ...subMsgs.slice(0, -1),
                 { ...last, toolCalls: [...(last.toolCalls ?? []), toolCall] },
               ],
+            };
+            return { ...msg, subagents: newSubagents };
+          }),
+        };
+      }),
+    }));
+  },
+
+  updatePiSubagentToolCall(sessionId, childSessionId, callId, patch) {
+    set((s) => ({
+      terminalSessions: s.terminalSessions.map((t) => {
+        if (t.sessionId !== sessionId) return t;
+        return {
+          ...t,
+          piMessages: (t.piMessages ?? []).map((msg) => {
+            const subIdx = (msg.subagents ?? []).findIndex((sa) => sa.childSessionId === childSessionId);
+            if (subIdx === -1) return msg;
+            const sub = msg.subagents![subIdx];
+            const newSubagents = [...msg.subagents!];
+            newSubagents[subIdx] = {
+              ...sub,
+              messages: sub.messages.map((m) => {
+                if (!m.toolCalls) return m;
+                const idx = m.toolCalls.findIndex((tc) => tc.callId === callId);
+                if (idx === -1) return m;
+                const updated = [...m.toolCalls];
+                updated[idx] = { ...updated[idx], ...patch };
+                return { ...m, toolCalls: updated };
+              }),
             };
             return { ...msg, subagents: newSubagents };
           }),
