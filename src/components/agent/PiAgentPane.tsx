@@ -136,7 +136,6 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
     if (firedInitial.current) return;
     if (!session.initialPrompt) return;
     firedInitial.current = true;
-    console.log("[PiAgentPane] firing initialPrompt:", session.initialPrompt.slice(0, 80));
     // Defer 100ms so IPC listeners registered in the effect below are fully live.
     setTimeout(() => sendPromptRef.current(session.initialPrompt!), 100);
   // run once on mount only
@@ -149,8 +148,6 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
     if (!electron) return;
 
     const { sessionId } = session;
-
-    console.log("[PiAgentPane] subscribing to IPC events for session", sessionId);
 
     const unsubToken = electron.piAgent.onToken((e) => {
       if (e.sessionId !== sessionId) return;
@@ -206,14 +203,12 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
 
     const unsubDone = electron.piAgent.onDone((e) => {
       if (e.sessionId !== sessionId) return;
-      console.log("[PiAgentPane] done event", e);
       finalisePiMessage(sessionId);
       setIsLoading(false);
     });
 
     const unsubError = electron.piAgent.onError((e) => {
       if (e.sessionId !== sessionId) return;
-      console.log("[PiAgentPane] error event", e);
       finalisePiMessage(sessionId);
       addPiMessage(sessionId, {
         id:        id(),
@@ -284,7 +279,6 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
 
   const sendPrompt = useCallback((text: string) => {
     const trimmed = text.trim();
-    console.log("[PiAgentPane] sendPrompt called", { trimmedLen: trimmed.length, isLoading, cwd: session.cwd });
     if (!trimmed || isLoading || !session.cwd) return;
 
     setInput("");
@@ -320,7 +314,6 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
         apiKey:  aiConfig.apiKey  || undefined,
       },
     };
-    console.log("[PiAgentPane] sending prompt", { ...promptPayload, config: { ...promptPayload.config, apiKey: promptPayload.config.apiKey ? "***" : undefined } });
     window.electron?.piAgent.prompt(promptPayload);
   }, [isLoading, session, aiConfig, activeWorkspaceId, addPiMessage]);
 

@@ -75,8 +75,6 @@ export function registerPiAgentHandler(
       apiKey:  req.config?.apiKey  || "",
     };
 
-    console.log("[pi-agent] prompt received", { sessionId, cwd, projectId, model: llmConfig.model, baseUrl: llmConfig.baseUrl, hasApiKey: !!llmConfig.apiKey });
-
     // Get or create session
     let session = sessions.get(sessionId);
     if (!session) {

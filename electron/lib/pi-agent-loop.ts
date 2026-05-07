@@ -208,10 +208,7 @@ export async function runAgentLoop(
   const allTools = getAllToolDefs();
 
   const { baseUrl, model, apiKey } = llmConfig;
-  console.log("[pi-agent-loop] starting", { baseUrl, model, hasApiKey: !!apiKey, cwd, tools: allTools.length });
-
   if (!apiKey && !isLocalEndpoint(baseUrl)) {
-    console.log("[pi-agent-loop] no API key, aborting");
     callbacks.onError("No API key configured. Set one in Settings → AI & Chat.");
     return;
   }
@@ -221,7 +218,6 @@ export async function runAgentLoop(
   while (steps < MAX_STEPS) {
     if (signal.aborted) { callbacks.onDone(); return; }
     steps++;
-    console.log(`[pi-agent-loop] step ${steps}, messages=${session.messages.length}`);
     // From step 2 onwards, signal the renderer to finalise the previous
     // assistant message and start a fresh one for this turn's tokens.
     if (steps > 1) callbacks.onStepStart();
@@ -259,10 +255,8 @@ export async function runAgentLoop(
       return;
     }
 
-    console.log(`[pi-agent-loop] response status ${response.status}`);
     if (!response.ok) {
       const text = await response.text().catch(() => response.statusText);
-      console.log(`[pi-agent-loop] error response: ${text.slice(0, 300)}`);
       callbacks.onError(`AI error (${response.status}): ${text.slice(0, 300)}`);
       return;
     }
@@ -327,12 +321,9 @@ export async function runAgentLoop(
       }
     }
 
-    console.log(`[pi-agent-loop] stream done: contentBuffer.length=${contentBuffer.length}, toolCalls=${toolCallBuffers.size}`);
-
     // ── No tool calls → turn complete ─────────────────────────────────────
     if (toolCallBuffers.size === 0) {
       session.messages.push({ role: "assistant", content: contentBuffer });
-      console.log("[pi-agent-loop] no tool calls → onDone");
       callbacks.onDone();
       return;
     }
@@ -370,7 +361,6 @@ export async function runAgentLoop(
         CODING_LABELS[tc.function.name]?.(args) ??
         `${tc.function.name}`;
 
-      console.log(`[pi-agent-loop] executing tool: ${tc.function.name}`, args);
       callbacks.onToolStart(tc.function.name, label);
 
       let resultContent: string;
@@ -395,7 +385,6 @@ export async function runAgentLoop(
         resultContent = `Error: ${(e as Error).message}`;
       }
 
-      console.log(`[pi-agent-loop] tool ${tc.function.name} done, ok=${ok}, result.length=${resultContent.length}`);
       callbacks.onToolEnd(tc.function.name, label, ok, resultContent);
 
       session.messages.push({
