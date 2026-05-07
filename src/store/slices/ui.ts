@@ -15,8 +15,7 @@ export type ToggleableView = "board" | "flow" | "agent" | "graph" | "insights" |
 
 export const HIDDEN_VIEWS_KEY = "hiddenViews";
 
-/** Views that are forcibly hidden when AI is disabled. */
-export const AI_DEPENDENT_VIEWS: ToggleableView[] = ["chat", "agent"];
+
 
 // ── AI / MCP config ───────────────────────────────────────────────────────────
 
@@ -132,17 +131,6 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
     set((s) => {
       const next = { ...s.aiConfig, ...patch };
       storage.set(AI_CONFIG_KEY, next);
-      // Sync AI-dependent views when aiEnabled changes
-      if (patch.aiEnabled !== undefined) {
-        const hidden = new Set(s.hiddenViews);
-        if (!patch.aiEnabled) {
-          AI_DEPENDENT_VIEWS.forEach((v) => hidden.add(v));
-        } else {
-          AI_DEPENDENT_VIEWS.forEach((v) => hidden.delete(v));
-        }
-        storage.set(HIDDEN_VIEWS_KEY, [...hidden]);
-        return { aiConfig: next, hiddenViews: hidden };
-      }
       return { aiConfig: next };
     });
   },
@@ -157,6 +145,10 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
         hidden.add(view);
       }
       storage.set(HIDDEN_VIEWS_KEY, [...hidden]);
+      // Close the chat panel if the chat view is being hidden while it's open
+      if (view === "chat" && !s.hiddenViews.has("chat") && s.chatOpen) {
+        return { hiddenViews: hidden, chatOpen: false };
+      }
       return { hiddenViews: hidden };
     });
   },
