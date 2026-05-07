@@ -68,6 +68,10 @@ export function KanbanBoard() {
     getArchivedProjectCards,
   } = useCairnStore(useShallow((s) => ({
     activeProjectId:          s.activeProjectId,
+    // Subscribe to cards directly so bulk archive/restore triggers a re-render.
+    // Selector functions (getColumnCards etc.) read from get() but are stable
+    // references — they won't cause a re-render on their own when cards change.
+    cards:                    s.cards,
     getProjectColumns:        s.getProjectColumns,
     getColumnCards:           s.getColumnCards,
     getArchivedColumnCards:   s.getArchivedColumnCards,
