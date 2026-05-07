@@ -494,7 +494,7 @@ function tokenise(text: string): string[] {
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, " ")
     .split(/\s+/)
-    .filter((w) => w.length >= 4 && !STOP.has(w));
+    .filter((w) => w.length >= 5 && !STOP.has(w));
 }
 
 function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
@@ -506,17 +506,18 @@ function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
 
 export function computeAutoRelationships(
   db: Database.Database,
-  workspaceId: string
+  workspaceId: string,
+  entityIds?: string[]
 ): void {
   const now = Math.floor(Date.now() / 1000);
 
   // Load all non-archived notes + cards for this workspace
-  const notes = db.prepare(
+  const allNotes = db.prepare(
     `SELECT id, title, content_text FROM notes
      WHERE workspace_id = ? AND archived_at IS NULL`
   ).all(workspaceId) as Row[];
 
-  const cards = db.prepare(
+  const allCards = db.prepare(
     `SELECT id, title, description, assignee FROM task_cards
      WHERE workspace_id = ? AND archived_at IS NULL`
   ).all(workspaceId) as Row[];
@@ -534,14 +535,53 @@ export function computeAutoRelationships(
     WHERE source_id = ? OR target_id = ?
   `);
 
+  // ── Incremental mode: filter to only entities that need recomputing ────────
+  // An entity needs recomputing if:
+  //   (a) it is in the entityIds set (directly changed), OR
+  //   (b) its content/title mentions one of the changed entities
+  //       (so incoming co-mention edges are also refreshed)
+  let notes: Row[];
+  let cards: Row[];
+
+  if (entityIds && entityIds.length > 0) {
+    const idSet = new Set(entityIds);
+
+    // Build a set of lowercase titles for the changed entities so we can
+    // detect which other notes/cards mention them.
+    const changedTitles = new Set<string>();
+    for (const n of allNotes) {
+      if (idSet.has(n.id as string)) changedTitles.add((n.title as string).toLowerCase());
+    }
+    for (const c of allCards) {
+      if (idSet.has(c.id as string)) changedTitles.add((c.title as string).toLowerCase());
+    }
+
+    notes = allNotes.filter((n) => {
+      if (idSet.has(n.id as string)) return true;
+      const text = ((n.content_text as string) || "").toLowerCase();
+      for (const t of changedTitles) if (text.includes(t)) return true;
+      return false;
+    });
+
+    cards = allCards.filter((c) => {
+      if (idSet.has(c.id as string)) return true;
+      const text = ((c.description as string) || "").toLowerCase();
+      for (const t of changedTitles) if (text.includes(t)) return true;
+      return false;
+    });
+  } else {
+    notes = allNotes;
+    cards = allCards;
+  }
+
   const runAll = db.transaction(() => {
-    // Clear stale cache for this workspace's entities
+    // Clear stale cache for the entities being recomputed
     const allIds = [...notes.map((n) => n.id as string), ...cards.map((c) => c.id as string)];
     for (const id of allIds) deleteOld.run(id, id);
 
     // ── Wikilink: [[Title]] explicit author-written links ─────────────────
     const noteTitleToId = new Map<string, string>(); // title_lower → noteId
-    for (const n of notes) noteTitleToId.set((n.title as string).toLowerCase(), n.id as string);
+    for (const n of allNotes) noteTitleToId.set((n.title as string).toLowerCase(), n.id as string);
 
     for (const n of notes) {
       const content = (n.content_text as string) || "";
@@ -558,16 +598,17 @@ export function computeAutoRelationships(
 
     // ── Co-mention: note content mentions another note/card title ─────────
     const titleMap = new Map<string, string>(); // title_lower → id
-    for (const n of notes) titleMap.set((n.title as string).toLowerCase(), n.id as string);
-    for (const c of cards) titleMap.set((c.title as string).toLowerCase(), c.id as string);
+    for (const n of allNotes) titleMap.set((n.title as string).toLowerCase(), n.id as string);
+    for (const c of allCards) titleMap.set((c.title as string).toLowerCase(), c.id as string);
 
     for (const n of notes) {
       const text = ((n.content_text as string) || "").toLowerCase();
       for (const [title, targetId] of titleMap) {
         if (targetId === n.id) continue;
-        if (title.length >= 4 && text.includes(title)) {
+        if (title.length >= 5 && text.includes(title)) {
+          const weight = Math.min(0.9, title.length / 20);
           const [src, tgt] = (n.id as string) < targetId ? [n.id as string, targetId] : [targetId, n.id as string];
-          upsert.run(src, tgt, "co-mention", 0.9, now);
+          upsert.run(src, tgt, "co-mention", weight, now);
         }
       }
     }
@@ -578,28 +619,44 @@ export function computeAutoRelationships(
       tokens: new Set(tokenise(((n.title as string) || "") + " " + ((n.content_text as string) || ""))),
     }));
 
+    // For incremental mode, also build tokens for all notes so we can compare
+    // filtered notes against the full corpus.
+    const allNoteTokens: { id: string; tokens: Set<string> }[] = (entityIds && entityIds.length > 0)
+      ? allNotes.map((n) => ({
+          id: n.id as string,
+          tokens: new Set(tokenise(((n.title as string) || "") + " " + ((n.content_text as string) || ""))),
+        }))
+      : noteTokens;
+
+    const filteredIds = new Set(noteTokens.map((t) => t.id));
     const KEYWORD_THRESHOLD = 0.15;
-    for (let i = 0; i < noteTokens.length; i++) {
-      for (let j = i + 1; j < noteTokens.length; j++) {
-        const sim = jaccardSimilarity(noteTokens[i].tokens, noteTokens[j].tokens);
+
+    for (const a of noteTokens) {
+      for (const b of allNoteTokens) {
+        if (a.id >= b.id) continue; // canonical ordering, avoid duplicates
+        if (!filteredIds.has(a.id) && !filteredIds.has(b.id)) continue;
+        const sim = jaccardSimilarity(a.tokens, b.tokens);
         if (sim >= KEYWORD_THRESHOLD) {
-          upsert.run(noteTokens[i].id, noteTokens[j].id, "keyword", Math.round(sim * 100) / 100, now);
+          upsert.run(a.id, b.id, "keyword", Math.round(sim * 100) / 100, now);
         }
       }
     }
 
     // ── Same assignee: cards sharing an assignee ──────────────────────
     const byAssignee = new Map<string, string[]>();
-    for (const c of cards) {
+    for (const c of allCards) {
       if (!c.assignee) continue;
       const key = (c.assignee as string).toLowerCase().trim();
       if (!byAssignee.has(key)) byAssignee.set(key, []);
       byAssignee.get(key)!.push(c.id as string);
     }
 
+    const filteredCardIds = new Set(cards.map((c) => c.id as string));
     for (const [, ids] of byAssignee) {
       for (let i = 0; i < ids.length; i++) {
         for (let j = i + 1; j < ids.length; j++) {
+          // Only emit if at least one card is in the filtered set
+          if (!filteredCardIds.has(ids[i]) && !filteredCardIds.has(ids[j])) continue;
           upsert.run(ids[i], ids[j], "assignee", 1.0, now);
         }
       }

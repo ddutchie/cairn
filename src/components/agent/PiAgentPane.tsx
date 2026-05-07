@@ -9,7 +9,7 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Send, Square, Trash2 } from "lucide-react";
+import { Send, Square, Trash2, CheckCircle, FileText, Zap, Map as MapIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -17,6 +17,7 @@ import { id } from "@/lib/utils";
 import { PiMessageBubble } from "./PiMessageBubble";
 import { ContextRing } from "./ContextRing";
 import { Tooltip } from "@/components/ui/tooltip";
+import { CairnEvents } from "@/lib/events";
 import type { TerminalSession } from "@/store/slices/terminal-sessions";
 
 // ── Cairn tool ref extraction ─────────────────────────────────────────────────
@@ -79,6 +80,8 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
     addPiSubagentToolCall,
     completePiSubagent,
     stepPiSubagent,
+    setPiMode,
+    setView,
     aiConfig,
     projects,
     activeWorkspaceId,
@@ -99,6 +102,8 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
     addPiSubagentToolCall:     s.addPiSubagentToolCall,
     completePiSubagent:        s.completePiSubagent,
     stepPiSubagent:            s.stepPiSubagent,
+    setPiMode:                 s.setPiMode,
+    setView:                   s.setView,
     aiConfig:                  s.aiConfig,
     projects:                  s.projects,
     activeWorkspaceId:         s.activeWorkspaceId,
@@ -261,6 +266,17 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
       stepPiSubagent(sessionId, e.sessionId);
     });
 
+    // Plan mode events
+    const unsubPlanNote = electron.piAgent.onPlanNote((e) => {
+      if (e.sessionId !== sessionId) return;
+      setPiMode(sessionId, "plan", e.noteId);
+    });
+
+    const unsubModeChange = electron.piAgent.onModeChange((e) => {
+      if (e.sessionId !== sessionId) return;
+      setPiMode(sessionId, e.mode, e.planNoteId);
+    });
+
     return () => {
       unsubToken();
       unsubUsage();
@@ -273,6 +289,8 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
       unsubSubToken();
       unsubSubTool();
       unsubSubStep();
+      unsubPlanNote();
+      unsubModeChange();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.sessionId]);
@@ -308,6 +326,7 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
       workspaceId: activeWorkspaceId ?? undefined,
       cwd:         session.cwd,
       taskTitle:   session.taskTitle !== "Ad-hoc session" ? session.taskTitle : undefined,
+      mode:        session.mode ?? "execute",
       config: {
         baseUrl: aiConfig.baseUrl || undefined,
         model:   aiConfig.model   || undefined,
@@ -332,6 +351,38 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
     window.electron?.piAgent.clear(session.sessionId);
   }
 
+  function handleApprovePlan() {
+    if (!session.planNoteId || isLoading || !session.cwd) return;
+    setIsLoading(true);
+    // Add a system-style user message to mark the transition in the chat
+    addPiMessage(session.sessionId, {
+      id:        id(),
+      role:      "user",
+      content:   "Plan approved. Begin implementation.",
+      timestamp: new Date().toISOString(),
+    });
+    addPiMessage(session.sessionId, {
+      id:          id(),
+      role:        "assistant",
+      content:     "",
+      isStreaming: true,
+      timestamp:   new Date().toISOString(),
+    });
+    window.electron?.piAgent.approvePlan({
+      sessionId:   session.sessionId,
+      planNoteId:  session.planNoteId,
+      projectId:   session.projectId,
+      workspaceId: activeWorkspaceId ?? undefined,
+      cwd:         session.cwd,
+      taskTitle:   session.taskTitle !== "Ad-hoc session" ? session.taskTitle : undefined,
+      config: {
+        baseUrl: aiConfig.baseUrl || undefined,
+        model:   aiConfig.model   || undefined,
+        apiKey:  aiConfig.apiKey  || undefined,
+      },
+    });
+  }
+
   return (
     <div className="flex flex-col h-full bg-[var(--background)]">
 
@@ -340,6 +391,49 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
         <span className="text-[0.714rem] text-[var(--text-tertiary)] truncate flex-1">
           {session.taskTitle !== "Ad-hoc session" ? session.taskTitle : project?.name ?? "Cairn Agent"}
         </span>
+
+        {/* Mode badge */}
+        {session.mode === "plan" ? (
+          <span className="flex items-center gap-1 text-[0.643rem] font-semibold px-1.5 py-0.5 rounded-full bg-[color-mix(in_srgb,var(--warning,#f59e0b)_15%,transparent)] text-[var(--warning,#f59e0b)]">
+            <MapIcon size={9} />
+            PLAN
+          </span>
+        ) : session.mode === "execute" ? (
+          <span className="flex items-center gap-1 text-[0.643rem] font-semibold px-1.5 py-0.5 rounded-full bg-[var(--accent-dim)] text-[var(--accent)]">
+            <Zap size={9} />
+            EXECUTE
+          </span>
+        ) : null}
+
+        {/* PRD note chip — shown when plan note exists */}
+        {session.planNoteId && (
+          <Tooltip content="Open plan note" side="left">
+            <button
+              onClick={() => {
+                setView("notes");
+                setTimeout(() => window.dispatchEvent(CairnEvents.selectNote(session.planNoteId!)), 50);
+              }}
+              className="flex items-center gap-1 text-[0.643rem] text-[var(--text-secondary)] hover:text-[var(--text-primary)] px-1.5 py-0.5 rounded-full border border-[var(--border)] hover:bg-[var(--surface-2)] transition-colors"
+            >
+              <FileText size={9} />
+              PRD
+            </button>
+          </Tooltip>
+        )}
+
+        {/* Approve Plan button — plan mode only, once PRD note exists */}
+        {session.mode === "plan" && session.planNoteId && !isLoading && (
+          <Tooltip content="Approve plan and begin implementation" side="left">
+            <button
+              onClick={handleApprovePlan}
+              className="flex items-center gap-1 text-[0.714rem] font-medium px-2 py-0.5 rounded-full bg-[var(--success,#22c55e)] text-white hover:opacity-90 transition-opacity"
+            >
+              <CheckCircle size={11} />
+              Approve Plan
+            </button>
+          </Tooltip>
+        )}
+
         {session.lastUsage && (
           <ContextRing
             promptTokens={session.lastUsage.promptTokens}
@@ -360,9 +454,13 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
       <div className="flex-1 min-h-0 overflow-y-auto px-3 py-3 space-y-3">
         {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full gap-2 text-center">
-            <p className="text-[0.786rem] font-medium text-[var(--text-secondary)]">Cairn Agent</p>
+            <p className="text-[0.786rem] font-medium text-[var(--text-secondary)]">
+              {session.mode === "plan" ? "Plan Mode" : "Cairn Agent"}
+            </p>
             <p className="text-[0.714rem] text-[var(--text-tertiary)] max-w-48">
-              Ask me to read, edit, or run code — or manage your project board.
+              {session.mode === "plan"
+                ? "Describe what you want to build — I'll ask questions and draft a plan before writing any code."
+                : "Ask me to read, edit, or run code — or manage your project board."}
             </p>
           </div>
         )}
@@ -385,7 +483,7 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
                 sendPrompt(input);
               }
             }}
-            placeholder="Ask the agent…"
+            placeholder={session.mode === "plan" ? "Describe what you want to build…" : "Ask the agent…"}
             rows={2}
             disabled={isLoading}
             className={cn(

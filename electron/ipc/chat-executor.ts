@@ -354,12 +354,14 @@ export async function executeTool(
     case "create_task": {
       const col = snap.columns.find((c) => c.id === args.columnId);
       if (!col) return { error: "Column not found" };
+      const title = (args.title as string | null | undefined)?.trim();
+      if (!title) return { error: "Task title is required" };
       const cardId = newId();
       // Query live count so concurrent creates in the same round get unique order values
       const order = q.getCards(db, { columnId: args.columnId as string }).length;
       return q.createCard(db, {
         id: cardId, columnId: args.columnId, projectId: args.projectId,
-        workspaceId: col.workspaceId, title: args.title,
+        workspaceId: col.workspaceId, title,
         description: args.description ?? null, priority: args.priority ?? "medium",
         dueDate: undefined, order,
         tagIds: Array.isArray(args.tagIds) ? args.tagIds as string[] : undefined,
@@ -483,17 +485,21 @@ export async function executeTool(
 
       const createdCards = [];
       const existingCount = snap.cards.filter((c) => c.columnId === args.columnId).length;
+      let orderOffset = 0;
       for (let i = 0; i < tasks.length; i++) {
         const task = tasks[i];
+        const taskTitle = (task.title as string | null | undefined)?.trim();
+        if (!taskTitle) continue; // skip AI-generated tasks with missing/empty titles
         const cardId = newId();
-        emit?.({ tool: "create_task", label: `Creating task "${task.title}"`, args: { title: task.title } });
+        emit?.({ tool: "create_task", label: `Creating task "${taskTitle}"`, args: { title: taskTitle } });
         const card = q.createCard(db, {
           id: cardId, columnId: args.columnId as string,
           projectId: col.projectId, workspaceId: col.workspaceId,
-          title: task.title, description: task.description,
+          title: taskTitle, description: task.description?.trim() || null,
           priority: task.priority ?? "medium",
-          order: existingCount + i,
+          order: existingCount + orderOffset,
         });
+        orderOffset++;
         // Link card → note
         q.updateCard(db, cardId, { linkedNoteIds: [args.noteId as string] });
         createdCards.push({ id: card.id, title: card.title, priority: card.priority });

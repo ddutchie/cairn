@@ -69,14 +69,16 @@ const CODING_LABELS: Record<string, (args: ToolArgs) => string> = {
 // ── Events interface ──────────────────────────────────────────────────────────
 
 export interface AgentLoopCallbacks {
-  onToken:      (delta: string) => void;
-  onToolsReady: () => void;
-  onToolStart:  (name: string, label: string) => void;
-  onToolEnd:    (name: string, label: string, ok: boolean, output: string) => void;
-  onStepStart:  () => void;
-  onUsage:      (promptTokens: number, completionTokens: number) => void;
-  onDone:       () => void;
-  onError:      (message: string) => void;
+  onToken:         (delta: string) => void;
+  onToolsReady:    () => void;
+  onToolStart:     (name: string, label: string) => void;
+  onToolEnd:       (name: string, label: string, ok: boolean, output: string) => void;
+  onStepStart:     () => void;
+  onUsage:         (promptTokens: number, completionTokens: number) => void;
+  onDone:          () => void;
+  onError:         (message: string) => void;
+  /** Fired when the agent writes a note in plan mode — carries the note ID */
+  onPlanNoteFound?: (noteId: string) => void;
 }
 
 // ── Session state ─────────────────────────────────────────────────────────────
@@ -123,13 +125,29 @@ const CAIRN_TOOL_NAMES = new Set([
   "create_idea_flow_edge",
 ]);
 
+// Tools available in plan mode — read-only file access + note writing only
+const PLAN_MODE_ALLOWED = new Set([
+  // coding read-only
+  "read", "grep", "find", "ls",
+  // Cairn read
+  "get_active_context", "get_project_context_pack",
+  "get_note", "list_notes", "search_notes",
+  "list_tasks", "get_task", "search_tasks", "list_ready_tasks",
+  // Cairn write — PRD note only
+  "ensure_note",
+]);
+
 // ── Fetch all tool definitions (coding + Cairn subset) ────────────────────────
 
 import { TOOLS as ALL_CAIRN_TOOLS } from "./tools";
 
-function getAllToolDefs() {
+function getAllToolDefs(mode: "plan" | "execute" = "execute") {
   const cairnSubset = ALL_CAIRN_TOOLS.filter((t) => CAIRN_TOOL_NAMES.has(t.function.name));
-  return [...CODING_TOOL_DEFS, ...cairnSubset];
+  const all = [...CODING_TOOL_DEFS, ...cairnSubset];
+  if (mode === "plan") {
+    return all.filter((t) => PLAN_MODE_ALLOWED.has(t.function.name));
+  }
+  return all;
 }
 
 // ── Execute a single tool call ────────────────────────────────────────────────
@@ -203,9 +221,10 @@ export async function runAgentLoop(
   getWin?: () => BrowserWindow | null,
   sessionId?: string,
   send?: (channel: string, payload: unknown) => void,
+  mode: "plan" | "execute" = "execute",
 ): Promise<void> {
   const { signal } = session.abortCtrl;
-  const allTools = getAllToolDefs();
+  const allTools = getAllToolDefs(mode);
 
   const { baseUrl, model, apiKey } = llmConfig;
   if (!apiKey && !isLocalEndpoint(baseUrl)) {
@@ -386,6 +405,14 @@ export async function runAgentLoop(
       }
 
       callbacks.onToolEnd(tc.function.name, label, ok, resultContent);
+
+      // In plan mode, notify the renderer when the agent writes the PRD note
+      if (mode === "plan" && ok && tc.function.name === "ensure_note") {
+        try {
+          const parsed = JSON.parse(resultContent) as { id?: string };
+          if (parsed?.id) callbacks.onPlanNoteFound?.(parsed.id);
+        } catch { /* non-JSON output — ignore */ }
+      }
 
       session.messages.push({
         role: "tool",

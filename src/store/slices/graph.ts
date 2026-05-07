@@ -29,6 +29,7 @@ export interface GraphSlice {
   // Actions
   loadGraph: (workspaceId: string) => Promise<void>;
   recomputeGraphRelationships: (workspaceId: string) => Promise<void>;
+  recomputeGraphRelationshipsIncremental: (workspaceId: string, entityIds: string[]) => Promise<void>;
   setGraphLayout: (layout: GraphLayoutMode) => void;
   setGraphFilters: (patch: Partial<GraphFilters>) => void;
   setSelectedGraphNode: (id: string | null) => void;
@@ -78,6 +79,11 @@ export const createGraphSlice: StateCreator<CairnStore, [], [], GraphSlice> = (
 
   async recomputeGraphRelationships(workspaceId) {
     await window.electron!.graph.recompute(workspaceId);
+    await get().loadGraph(workspaceId);
+  },
+
+  async recomputeGraphRelationshipsIncremental(workspaceId, entityIds) {
+    await window.electron!.graph.recompute(workspaceId, entityIds);
     await get().loadGraph(workspaceId);
   },
 

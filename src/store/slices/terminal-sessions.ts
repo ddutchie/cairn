@@ -67,6 +67,10 @@ export interface TerminalSession {
   initialPrompt?: string;
   /** Latest token usage from the LLM — updated after each step */
   lastUsage?: { promptTokens: number; completionTokens: number };
+  /** Plan mode: "plan" = conversational planning only; "execute" = full agent (default) */
+  mode?: "plan" | "execute";
+  /** Note ID of the PRD produced during plan mode — set once agent calls ensure_note */
+  planNoteId?: string;
 }
 
 export interface TerminalSessionsSlice {
@@ -113,6 +117,8 @@ export interface TerminalSessionsSlice {
   updatePiSubagentUsage: (sessionId: string, childSessionId: string, promptTokens: number, completionTokens: number) => void;
   /** Start a new step in a subagent (finalise current message) */
   stepPiSubagent: (sessionId: string, childSessionId: string) => void;
+  /** Set the mode for a pi session and optionally record the plan note ID */
+  setPiMode: (sessionId: string, mode: "plan" | "execute", planNoteId?: string) => void;
   /** Open a file tab (no-op if already open) and make it active. */
   openEditorFile: (path: string) => void;
   /** Close a file tab; activates the nearest remaining tab. */
@@ -503,6 +509,16 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
           }),
         };
       }),
+    }));
+  },
+
+  setPiMode(sessionId, mode, planNoteId) {
+    set((s) => ({
+      terminalSessions: s.terminalSessions.map((t) =>
+        t.sessionId === sessionId
+          ? { ...t, mode, ...(planNoteId !== undefined ? { planNoteId } : {}) }
+          : t
+      ),
     }));
   },
 

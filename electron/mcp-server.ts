@@ -711,7 +711,9 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
     }
 
     case "create_task": {
-      const { columnId, projectId, title, description, priority = "medium", dueDate, tagIds } = args;
+      const { columnId, projectId, description, priority = "medium", dueDate, tagIds } = args;
+      const title = (args.title as string | null | undefined)?.trim();
+      if (!title) return { error: "Task title is required" };
       const col = snap.columns.find((c) => c.id === columnId);
       if (!col) return { error: "Column not found" };
       const now = ts();

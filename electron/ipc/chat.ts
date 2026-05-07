@@ -10,7 +10,7 @@
 import { ipcMain } from "electron";
 import type { BrowserWindow } from "electron";
 import type Database from "better-sqlite3";
-import { isLocalEndpoint, streamCompletion, type OpenAIMessage } from "../lib/llm";
+import { isLocalEndpoint, streamCompletion, normaliseBaseUrl, type OpenAIMessage } from "../lib/llm";
 import { TOOLS, buildSystemPrompt, type ChatRequest } from "../lib/tools";
 import { executeTool } from "./chat-executor";
 
@@ -111,7 +111,7 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
     abortControllers.get(event.sender.id)?.abort();
     const abortCtrl = new AbortController();
     abortControllers.set(event.sender.id, abortCtrl);
-    const baseUrl = (req.config?.baseUrl ?? "https://api.openai.com").replace(/\/$/, "");
+    const baseUrl = normaliseBaseUrl(req.config?.baseUrl ?? "https://api.openai.com");
     const model = req.config?.model ?? "gpt-4o-mini";
     const apiKey = req.config?.apiKey ?? "";
     const isLocal = isLocalEndpoint(baseUrl);

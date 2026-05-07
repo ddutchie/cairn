@@ -130,7 +130,7 @@ const api = {
     get:       (workspaceId: string, filters?: unknown) => invoke("db:graph:get", { workspaceId, filters }),
     neighbors: (workspaceId: string, nodeId: string, depth?: number, edgeTypes?: string[]) =>
                  invoke("db:graph:neighbors", { workspaceId, nodeId, depth, edgeTypes }),
-    recompute: (workspaceId: string) => invoke("db:graph:recompute", { workspaceId }),
+    recompute: (workspaceId: string, entityIds?: string[]) => invoke("db:graph:recompute", { workspaceId, entityIds }),
   },
 
   // ── AI helpers ────────────────────────────────
@@ -325,6 +325,22 @@ const api = {
       ipcRenderer.on("pi-agent:subagent", handler);
       return () => ipcRenderer.off("pi-agent:subagent", handler);
     },
+    /** Fired when the agent calls ensure_note in plan mode — carries the PRD note ID */
+    onPlanNote: (cb: (e: { sessionId: string; noteId: string }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { sessionId: string; noteId: string }) => cb(e);
+      ipcRenderer.on("pi-agent:plan-note", handler);
+      return () => ipcRenderer.off("pi-agent:plan-note", handler);
+    },
+    /** Fired when the session mode switches (plan → execute after approval) */
+    onModeChange: (cb: (e: { sessionId: string; mode: "plan" | "execute"; planNoteId?: string }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { sessionId: string; mode: "plan" | "execute"; planNoteId?: string }) => cb(e);
+      ipcRenderer.on("pi-agent:mode-change", handler);
+      return () => ipcRenderer.off("pi-agent:mode-change", handler);
+    },
+    /** Approve the plan — switches session to execute mode and starts implementation */
+    approvePlan: (req: unknown) => ipcRenderer.send("pi-agent:approve-plan", req),
   },
 
 } as const;

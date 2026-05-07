@@ -166,10 +166,11 @@ interface ActionsListProps {
   linkNoteToCard: (noteId: string, cardId: string) => void;
   createTag: (workspaceId: string, name: string) => { id: string };
   recomputeGraphRelationships: (workspaceId: string) => Promise<void>;
+  recomputeGraphRelationshipsIncremental: (workspaceId: string, entityIds: string[]) => Promise<void>;
 }
 
 function ActionsList(props: ActionsListProps) {
-  const { actions, notes, cards, tags, activeWorkspaceId, updateNote, updateCard, linkNoteToCard, createTag, recomputeGraphRelationships } = props;
+  const { actions, notes, cards, tags, activeWorkspaceId, updateNote, updateCard, linkNoteToCard, createTag, recomputeGraphRelationshipsIncremental } = props;
   const [dismissed, setDismissed] = useState<Set<number>>(new Set());
   const [cardStates, setCardStates] = useState<Map<number, "idle" | "applying" | "done">>(() => new Map());
   const [applyAllState, setApplyAllState] = useState<"idle" | "applying" | "done">("idle");
@@ -179,6 +180,7 @@ function ActionsList(props: ActionsListProps) {
   }
 
   async function applyAction(action: SuggestedAction) {
+    const affectedIds: string[] = [];
     switch (action.type) {
       case "add_wikilink": {
         const note = notes.find((n) => n.id === action.sourceNoteId);
@@ -186,6 +188,7 @@ function ActionsList(props: ActionsListProps) {
         const existing = note.content ?? "";
         if (wikilinkAlreadyExists(existing, action.targetTitle)) break;
         updateNote(action.sourceNoteId, { content: existing + `\n\n[[${action.targetTitle}]]` });
+        affectedIds.push(action.sourceNoteId);
         break;
       }
       case "link_note_note": {
@@ -194,10 +197,12 @@ function ActionsList(props: ActionsListProps) {
         if (!src || !tgt) throw new Error("Note not found");
         updateNote(action.sourceNoteId, { linkedNoteIds: Array.from(new Set([...src.linkedNoteIds, action.targetNoteId])) });
         updateNote(action.targetNoteId, { linkedNoteIds: Array.from(new Set([...tgt.linkedNoteIds, action.sourceNoteId])) });
+        affectedIds.push(action.sourceNoteId, action.targetNoteId);
         break;
       }
       case "link_note_card": {
         linkNoteToCard(action.noteId, action.cardId);
+        affectedIds.push(action.noteId, action.cardId);
         break;
       }
       case "add_tag": {
@@ -211,10 +216,13 @@ function ActionsList(props: ActionsListProps) {
           const card = cards.find((c) => c.id === action.nodeId);
           if (card) updateCard(action.nodeId, { tagIds: Array.from(new Set([...card.tagIds, tag.id])) });
         }
+        affectedIds.push(action.nodeId);
         break;
       }
     }
-    if (activeWorkspaceId) recomputeGraphRelationships(activeWorkspaceId).catch(() => {});
+    if (activeWorkspaceId && affectedIds.length > 0) {
+      recomputeGraphRelationshipsIncremental(activeWorkspaceId, affectedIds).catch(() => {});
+    }
   }
 
   async function handleApplyAll() {
@@ -280,18 +288,19 @@ function ActionsList(props: ActionsListProps) {
 export function GraphAIPanel({ graph, selectedNode, onClose }: GraphAIPanelProps) {
   const {
     aiConfig, notes, cards, tags, activeWorkspaceId,
-    updateNote, updateCard, linkNoteToCard, createTag, recomputeGraphRelationships,
+    updateNote, updateCard, linkNoteToCard, createTag, recomputeGraphRelationships, recomputeGraphRelationshipsIncremental,
   } = useCairnStore(useShallow((s) => ({
     aiConfig:                    s.aiConfig,
     notes:                       s.notes,
     cards:                       s.cards,
     tags:                        s.tags,
     activeWorkspaceId:           s.activeWorkspaceId,
-    updateNote:                  s.updateNote,
-    updateCard:                  s.updateCard,
-    linkNoteToCard:              s.linkNoteToCard,
-    createTag:                   s.createTag,
-    recomputeGraphRelationships: s.recomputeGraphRelationships,
+    updateNote:                               s.updateNote,
+    updateCard:                               s.updateCard,
+    linkNoteToCard:                           s.linkNoteToCard,
+    createTag:                               s.createTag,
+    recomputeGraphRelationships:              s.recomputeGraphRelationships,
+    recomputeGraphRelationshipsIncremental:   s.recomputeGraphRelationshipsIncremental,
   })));
 
   const [messages, setMessages]          = useState<Message[]>([]);
@@ -476,6 +485,7 @@ export function GraphAIPanel({ graph, selectedNode, onClose }: GraphAIPanelProps
                     linkNoteToCard={linkNoteToCard}
                     createTag={createTag}
                     recomputeGraphRelationships={recomputeGraphRelationships}
+                    recomputeGraphRelationshipsIncremental={recomputeGraphRelationshipsIncremental}
                   />
                 )}
               </div>
