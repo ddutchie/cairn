@@ -183,12 +183,18 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
 
     const unsubTool = electron.piAgent.onTool((e) => {
       if (e.sessionId !== sessionId) return;
-      if (e.status === "start") {
-        const callId = `${e.name}:${Date.now()}`;
+      if (e.status === "pending") {
+        // Chip created during SSE streaming — appears immediately with tool name as label.
+        // flushSync ensures React commits this before the stream continues.
+        const callId = e.callId ?? `${e.name}:${Date.now()}`;
         activeCallIds.set(e.name, callId);
-        // flushSync forces React to commit the running chip to the DOM synchronously.
-        // Without this, React 18's automatic batching can coalesce the start and end
-        // IPC messages into a single commit — the spinner is never painted.
+        flushSync(() => {
+          addPiToolCall(sessionId, { callId, name: e.name, label: e.label, running: true, ok: true });
+        });
+      } else if (e.status === "start") {
+        // Execution starting — update the existing pending chip with the resolved label.
+        const callId = e.callId ?? activeCallIds.get(e.name) ?? `${e.name}:${Date.now()}`;
+        activeCallIds.set(e.name, callId);
         flushSync(() => {
           addPiToolCall(sessionId, { callId, name: e.name, label: e.label, running: true, ok: true });
         });
@@ -250,8 +256,8 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
     const unsubSubTool = electron.piAgent.onTool((e) => {
       if (!e.sessionId.startsWith(`${sessionId}:sub:`)) return;
       const key = `${e.sessionId}:${e.name}`;
-      if (e.status === "start") {
-        const callId = `${e.name}:${Date.now()}`;
+      if (e.status === "pending" || e.status === "start") {
+        const callId = e.callId ?? activeSubCallIds.get(key) ?? `${e.name}:${Date.now()}`;
         activeSubCallIds.set(key, callId);
         flushSync(() => {
           addPiSubagentToolCall(sessionId, e.sessionId, { callId, name: e.name, label: e.label, running: true, ok: true });

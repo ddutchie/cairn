@@ -87,6 +87,7 @@ function makeCallbacks(): { log: string[]; callbacks: AgentLoopCallbacks } {
   const callbacks: AgentLoopCallbacks = {
     onToken:         (d)       => log.push(`token:${d}`),
     onToolsReady:    ()        => log.push("tools-ready"),
+    onToolPending:   (n, id)   => log.push(`tool-pending:${n}:${id}`),
     onToolStart:     (n, l)    => log.push(`tool-start:${n}:${l}`),
     onToolEnd:       (n, _l, ok, out) => log.push(`tool-end:${n}:${ok}:${out.slice(0, 40)}`),
     onStepStart:     ()        => log.push("step-start"),

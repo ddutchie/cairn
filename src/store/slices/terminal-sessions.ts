@@ -262,21 +262,24 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
         const msgs = t.piMessages ?? [];
         const last = msgs[msgs.length - 1];
         if (last?.isStreaming) {
-          // Happy path: streaming message already exists
+          // If a chip with this callId already exists (created by onToolPending),
+          // update it in-place rather than appending a duplicate.
+          const existing = (last.toolCalls ?? []).findIndex((tc) => tc.callId === toolCall.callId);
+          if (existing !== -1) {
+            const updated = [...last.toolCalls!];
+            updated[existing] = { ...updated[existing], ...toolCall };
+            return { ...t, piMessages: [...msgs.slice(0, -1), { ...last, toolCalls: updated }] };
+          }
+          // Happy path: new chip
           return {
             ...t,
             piMessages: [
               ...msgs.slice(0, -1),
-              {
-                ...last,
-                toolCalls: [...(last.toolCalls ?? []), toolCall],
-              },
+              { ...last, toolCalls: [...(last.toolCalls ?? []), toolCall] },
             ],
           };
         }
-        // Race condition: onToolsReady IPC and onTool(start) IPC can arrive in the
-        // same microtask batch, so ensurePiStreamingMessage may not have been applied
-        // yet. Create the streaming message here and attach the chip atomically.
+        // Race condition fallback: create streaming message and attach chip atomically.
         const newMsg = {
           id: `stream-${Date.now()}`,
           role: "assistant" as const,

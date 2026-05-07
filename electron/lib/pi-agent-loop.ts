@@ -71,7 +71,11 @@ const CODING_LABELS: Record<string, (args: ToolArgs) => string> = {
 export interface AgentLoopCallbacks {
   onToken:         (delta: string) => void;
   onToolsReady:    () => void;
-  onToolStart:     (name: string, label: string) => void;
+  /** Fired during SSE streaming as soon as a tool call name is first seen.
+   *  The chip should appear in "pending" state immediately — before execution. */
+  onToolPending:   (name: string, callId: string) => void;
+  /** callId links back to the pending chip created by onToolPending (if any). */
+  onToolStart:     (name: string, label: string, callId?: string) => void;
   onToolEnd:       (name: string, label: string, ok: boolean, output: string) => void;
   onStepStart:     () => void;
   onUsage:         (promptTokens: number, completionTokens: number) => void;
@@ -287,6 +291,9 @@ export async function runAgentLoop(
     const decoder = new TextDecoder();
     let contentBuffer = "";
     const toolCallBuffers: Map<number, { id: string; name: string; args: string }> = new Map();
+    // callId assigned per tool during streaming — reused at execution time
+    const streamCallIds: Map<number, string> = new Map();
+    let toolsReadyFired = false;
     let streamDone = false;
 
     while (!streamDone) {
@@ -327,13 +334,26 @@ export async function runAgentLoop(
           if (delta.tool_calls) {
             for (const tc of delta.tool_calls) {
               const idx: number = tc.index ?? 0;
-              if (!toolCallBuffers.has(idx)) {
+              const isNew = !toolCallBuffers.has(idx);
+              if (isNew) {
                 toolCallBuffers.set(idx, { id: tc.id ?? "", name: tc.function?.name ?? "", args: "" });
               }
               const buf = toolCallBuffers.get(idx)!;
               if (tc.id) buf.id = tc.id;
               if (tc.function?.name) buf.name = tc.function.name;
               if (tc.function?.arguments) buf.args += tc.function.arguments;
+
+              // As soon as we have the tool name, fire pending chip — mirrors pi's
+              // approach of creating the chip during streaming, not post-stream.
+              if (isNew && buf.name) {
+                if (!toolsReadyFired) {
+                  callbacks.onToolsReady();
+                  toolsReadyFired = true;
+                }
+                const callId = `${buf.name}:${Date.now()}:${idx}`;
+                streamCallIds.set(idx, callId);
+                callbacks.onToolPending(buf.name, callId);
+              }
             }
           }
         } catch { /* skip malformed SSE lines */ }
@@ -363,14 +383,12 @@ export async function runAgentLoop(
       tool_calls: toolCalls,
     });
 
-    // ── Ensure renderer has a streaming message to attach tool chips to ───
-    // When the LLM emits tool calls with no preceding text tokens, onToken
-    // was never called, so no streaming message exists. onToolsReady tells
-    // the renderer to create one before we start firing onToolStart/onToolEnd.
-    callbacks.onToolsReady();
+    // ── Ensure renderer has a streaming message (fallback if onToolsReady
+    //    wasn't fired during streaming, e.g. endpoint doesn't stream tool names).
+    if (!toolsReadyFired) callbacks.onToolsReady();
 
     // ── Execute each tool ─────────────────────────────────────────────────
-    for (const tc of toolCalls) {
+    for (const [tcIdx, tc] of toolCalls.entries()) {
       if (signal.aborted) { callbacks.onDone(); return; }
 
       let args: ToolArgs = {};
@@ -380,7 +398,10 @@ export async function runAgentLoop(
         CODING_LABELS[tc.function.name]?.(args) ??
         `${tc.function.name}`;
 
-      callbacks.onToolStart(tc.function.name, label);
+      // Pass the callId assigned during streaming so the renderer updates the
+      // existing pending chip rather than creating a duplicate.
+      const pendingCallId = streamCallIds.get(tcIdx);
+      callbacks.onToolStart(tc.function.name, label, pendingCallId);
 
       // Yield to the event loop so the renderer can process the onToolStart IPC
       // message and render the running spinner before the (potentially synchronous)

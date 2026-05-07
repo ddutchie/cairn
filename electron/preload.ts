@@ -284,9 +284,9 @@ const api = {
       ipcRenderer.on("pi-agent:token", handler);
       return () => ipcRenderer.off("pi-agent:token", handler);
     },
-    onTool: (cb: (e: { sessionId: string; name: string; label: string; status: "start" | "end"; ok?: boolean; output?: string }) => void) => {
+    onTool: (cb: (e: { sessionId: string; name: string; label: string; callId?: string; status: "pending" | "start" | "end"; ok?: boolean; output?: string }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { sessionId: string; name: string; label: string; status: "start" | "end"; ok?: boolean }) => cb(e);
+      const handler = (_: any, e: { sessionId: string; name: string; label: string; callId?: string; status: "pending" | "start" | "end"; ok?: boolean; output?: string }) => cb(e);
       ipcRenderer.on("pi-agent:tool", handler);
       return () => ipcRenderer.off("pi-agent:tool", handler);
     },
