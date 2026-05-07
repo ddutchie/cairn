@@ -155,15 +155,19 @@ app.whenReady().then(async () => {
   syncNotesFromDisk(initialDb, initialWorkspacePath);
 
   // ── Mutable context — swapped in reinitialise() without relaunching ──
+  // getWin is a lazy getter so it works even though win is assigned after ctx.
+  let _win: import("electron").BrowserWindow | null = null;
   const ctx: import("./ipc/handlers").DbContext = {
     db: initialDb,
     workspacePath: initialWorkspacePath,
+    getWin: () => _win,
   };
 
   registerIpcHandlers(ctx);
   registerAgentHandlers(ctx.db);
 
   const win = createWindow();
+  _win = win;
 
   // ── File watcher for external .md edits ──────────────────────────────
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;

@@ -378,6 +378,22 @@ export function NoteEditor({ note }: NoteEditorProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [note.id]);
 
+  // ── AI write lock ─────────────────────────────────────────────────────────
+  // When the in-app AI or MCP server is actively writing this note, the editor
+  // goes read-only and a non-blocking banner is shown.
+  const [isAiWriting, setIsAiWriting] = useState(false);
+  useEffect(() => {
+    const electron = window.electron;
+    if (!electron) return;
+    const offStarted = electron.onAiWriteStarted(({ noteId }) => {
+      if (noteId === note.id) setIsAiWriting(true);
+    });
+    const offEnded = electron.onAiWriteEnded(({ noteId }) => {
+      if (noteId === note.id) setIsAiWriting(false);
+    });
+    return () => { offStarted(); offEnded(); };
+  }, [note.id]);
+
   // Spawn tasks state
   const [spawnLoading, setSpawnLoading] = useState(false);
   const [spawnResult, setSpawnResult] = useState<{ count: number } | null>(null);
@@ -1077,8 +1093,24 @@ export function NoteEditor({ note }: NoteEditorProps) {
 
       {/* ── Editor / Preview ────────────────────────────────────────────────── */}
       <div className="flex-1 min-h-0 overflow-hidden relative">
+        {/* AI write lock banner */}
+        {isAiWriting && (
+          <div
+            className="absolute top-0 inset-x-0 z-10 flex items-center gap-2 px-4 py-1.5 text-xs"
+            style={{
+              background: "color-mix(in srgb, var(--accent) 12%, transparent)",
+              borderBottom: "1px solid color-mix(in srgb, var(--accent) 30%, transparent)",
+              color: "var(--accent)",
+            }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 animate-spin" style={{ animationDuration: "1.5s" }}>
+              <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+            </svg>
+            AI is editing this note…
+          </div>
+        )}
         {/* CodeMirror — always mounted so state is preserved when toggling */}
-        <div className={cn("absolute inset-0 overflow-auto", mode === "read" && "invisible pointer-events-none")}>
+        <div className={cn("absolute inset-0 overflow-auto", mode === "read" && "invisible pointer-events-none", isAiWriting && "pt-8")}>
           <MarkdownEditor
             key={note.id}
             ref={editorRef}
@@ -1086,6 +1118,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
             onChange={handleContentChange}
             onSelectionChange={handleSelectionChange}
             placeholder="Write here…"
+            readOnly={isAiWriting}
           />
         </div>
 

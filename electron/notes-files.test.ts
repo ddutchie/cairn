@@ -470,20 +470,22 @@ describe("syncNotesFromDisk", () => {
     expect(parsed!.id).toBe(rows[0].id);
   });
 
-  it("does not overwrite an existing SQLite row for a Cairn note", () => {
+  it("does not overwrite an existing SQLite row when the DB row is newer than the file", () => {
     seedProjectInDb(db, "My Project", "proj1", "ws1");
     const note = makeNote({ projectName: "My Project", title: "Existing Note" });
     writeNoteFile(tmpDir, note);
-    // Pre-insert the note into SQLite with modified title
+    // Insert the DB row with an updated_at well in the future relative to the file,
+    // so both the frontmatter timestamp and the file mtime are definitively older.
+    const futureTs = new Date(Date.now() + 60_000).toISOString();
     db.prepare(`INSERT INTO notes (id, project_id, workspace_id, title, content, content_text,
       tag_ids, linked_note_ids, linked_card_ids, is_pinned, type, folder, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, '[]', '[]', '[]', 0, 'note', '', ?, ?)`)
       .run(note.id, note.projectId, note.workspaceId, "Modified Title", note.content, "",
-           note.createdAt, note.updatedAt);
+           note.createdAt, futureTs);
 
     syncNotesFromDisk(db, tmpDir);
 
-    // Should NOT overwrite — row was already present
+    // DB row is newer — file should NOT overwrite it
     const row = db.prepare("SELECT title FROM notes WHERE id = ?").get(note.id) as { title: string };
     expect(row.title).toBe("Modified Title");
   });

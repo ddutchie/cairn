@@ -67,6 +67,8 @@ function getProjectName(db: Database.Database, projectId: string): string {
 export interface DbContext {
   db: Database.Database;
   workspacePath: string;
+  /** Returns the current BrowserWindow, or null before it is created. */
+  getWin: () => BrowserWindow | null;
 }
 
 export function registerIpcHandlers(ctx: DbContext): void {
@@ -149,15 +151,19 @@ export function registerIpcHandlers(ctx: DbContext): void {
     if ("archivedAt" in patch && patch.archivedAt === null) {
       const rest = { ...patch };
       delete rest.archivedAt;
-      if (Object.keys(rest).length > 0) {
-        const enrichedRest = { ...rest };
-        if (rest.content !== undefined && rest.contentText === undefined) {
-          enrichedRest.contentText = stripMarkdown(rest.content);
+      // Wrap both SQL writes in a transaction so a crash between them leaves
+      // the DB in a consistent state (either both applied or neither).
+      const note = ctx.db.transaction(() => {
+        if (Object.keys(rest).length > 0) {
+          const enrichedRest = { ...rest };
+          if (rest.content !== undefined && rest.contentText === undefined) {
+            enrichedRest.contentText = stripMarkdown(rest.content);
+          }
+          q.updateNote(ctx.db, id, enrichedRest);
         }
-        q.updateNote(ctx.db, id, enrichedRest);
-      }
+        return q.restoreNote(ctx.db, id);
+      })();
       suppressNextChange(id);
-      const note = q.restoreNote(ctx.db, id);
       if (note.type !== "dashboard") {
         writeNoteFile(ctx.workspacePath, { ...note, projectName: getProjectName(ctx.db, note.projectId) });
       }
@@ -463,7 +469,7 @@ export function registerIpcHandlers(ctx: DbContext): void {
   ipcMain.handle("db:chat:deleteThread",  (_e, { threadId }) => handle(() => q.deleteChatThread(ctx.db, threadId)));
 
   // ── AI Chat completions ────────────────────────────
-  registerChatHandler(ctx.db, ctx.workspacePath);
+  registerChatHandler(ctx.db, ctx.workspacePath, ctx.getWin);
 
   // ── AI PRD generation (direct, no chat loop) ──────
   ipcMain.handle("ai:generatePrd", async (_e, args: {

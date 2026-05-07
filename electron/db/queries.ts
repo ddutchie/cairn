@@ -91,6 +91,7 @@ function toNote(row: any) {
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
     archivedAt: row.archived_at as string | undefined,
+    version: (row.version ?? 0) as number,
   };
 }
 
@@ -128,6 +129,7 @@ function toCard(row: any) {
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
     archivedAt: row.archived_at as string | undefined,
+    version: (row.version ?? 0) as number,
   };
 }
 
@@ -280,8 +282,8 @@ export function createNote(db: Database.Database, n: {
   const folder = n.folder ?? "";
   db.prepare(`
     INSERT INTO notes (id, project_id, workspace_id, title, content, content_text,
-      tag_ids, linked_note_ids, linked_card_ids, is_pinned, type, folder, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, '[]', '[]', ?, ?, ?, ?, ?)
+      tag_ids, linked_note_ids, linked_card_ids, is_pinned, type, folder, created_at, updated_at, version)
+    VALUES (?, ?, ?, ?, ?, ?, ?, '[]', '[]', ?, ?, ?, ?, ?, 0)
   `).run(n.id, n.projectId, n.workspaceId, n.title, content, contentText, tagIds, isPinned, type, folder, now, now);
   return toNote(db.prepare("SELECT * FROM notes WHERE id = ?").get(n.id));
 }
@@ -304,7 +306,8 @@ export function updateNote(db: Database.Database, id: string, patch: Partial<{
       archived_at     = COALESCE(?, archived_at),
       type            = COALESCE(?, type),
       folder          = COALESCE(?, folder),
-      updated_at      = ?
+      updated_at      = ?,
+      version         = version + 1
     WHERE id = ?
   `).run(
     patch.title ?? null,
@@ -338,7 +341,7 @@ export function getNoteById(db: Database.Database, id: string) {
  */
 export function moveNoteFolder(db: Database.Database, id: string, folder: string) {
   const now = ts();
-  db.prepare("UPDATE notes SET folder = ?, updated_at = ? WHERE id = ?").run(folder, now, id);
+  db.prepare("UPDATE notes SET folder = ?, updated_at = ?, version = version + 1 WHERE id = ?").run(folder, now, id);
   return toNote(db.prepare("SELECT * FROM notes WHERE id = ?").get(id));
 }
 
@@ -347,7 +350,7 @@ export function moveNoteFolder(db: Database.Database, id: string, folder: string
  */
 export function restoreNote(db: Database.Database, id: string) {
   const now = ts();
-  db.prepare("UPDATE notes SET archived_at = NULL, updated_at = ? WHERE id = ?").run(now, id);
+  db.prepare("UPDATE notes SET archived_at = NULL, updated_at = ?, version = version + 1 WHERE id = ?").run(now, id);
   return toNote(db.prepare("SELECT * FROM notes WHERE id = ?").get(id));
 }
 
@@ -441,7 +444,8 @@ export function updateCard(db: Database.Database, id: string, patch: Partial<{
       "order"         = COALESCE(?, "order"),
       assignee        = COALESCE(?, assignee),
       archived_at     = COALESCE(?, archived_at),
-      updated_at      = ?
+      updated_at      = ?,
+      version         = version + 1
     WHERE id = ?
   `).run(
     patch.columnId ?? null, patch.title ?? null, patch.description ?? null,
@@ -465,7 +469,7 @@ export function deleteCard(db: Database.Database, id: string) {
     const ids = p(row.blocked_by_ids) as string[];
     if (ids.includes(id)) {
       const updated = ids.filter((bid) => bid !== id);
-      db.prepare("UPDATE task_cards SET blocked_by_ids = ?, updated_at = ? WHERE id = ?")
+      db.prepare("UPDATE task_cards SET blocked_by_ids = ?, updated_at = ?, version = version + 1 WHERE id = ?")
         .run(j(updated), now, row.id);
     }
   }
@@ -482,7 +486,7 @@ export function getCardById(db: Database.Database, id: string) {
  */
 export function restoreCard(db: Database.Database, id: string) {
   const now = ts();
-  db.prepare("UPDATE task_cards SET archived_at = NULL, updated_at = ? WHERE id = ?").run(now, id);
+  db.prepare("UPDATE task_cards SET archived_at = NULL, updated_at = ?, version = version + 1 WHERE id = ?").run(now, id);
   return toCard(db.prepare("SELECT * FROM task_cards WHERE id = ?").get(id));
 }
 
@@ -491,7 +495,7 @@ export function restoreCard(db: Database.Database, id: string) {
  */
 export function clearCardDueDate(db: Database.Database, id: string) {
   const now = ts();
-  db.prepare("UPDATE task_cards SET due_date = NULL, updated_at = ? WHERE id = ?").run(now, id);
+  db.prepare("UPDATE task_cards SET due_date = NULL, updated_at = ?, version = version + 1 WHERE id = ?").run(now, id);
   return toCard(db.prepare("SELECT * FROM task_cards WHERE id = ?").get(id));
 }
 
@@ -505,7 +509,7 @@ export function addCardBlocker(db: Database.Database, cardId: string, blockerCar
   const ids = p(row.blocked_by_ids) as string[];
   if (!ids.includes(blockerCardId)) {
     ids.push(blockerCardId);
-    db.prepare("UPDATE task_cards SET blocked_by_ids = ?, updated_at = ? WHERE id = ?").run(j(ids), now, cardId);
+    db.prepare("UPDATE task_cards SET blocked_by_ids = ?, updated_at = ?, version = version + 1 WHERE id = ?").run(j(ids), now, cardId);
   }
   return toCard(db.prepare("SELECT * FROM task_cards WHERE id = ?").get(cardId));
 }
@@ -518,7 +522,7 @@ export function removeCardBlocker(db: Database.Database, cardId: string, blocker
   const row = db.prepare("SELECT blocked_by_ids FROM task_cards WHERE id = ?").get(cardId) as { blocked_by_ids: string } | undefined;
   if (!row) throw new Error(`Card ${cardId} not found`);
   const ids = (p(row.blocked_by_ids) as string[]).filter((id) => id !== blockerCardId);
-  db.prepare("UPDATE task_cards SET blocked_by_ids = ?, updated_at = ? WHERE id = ?").run(j(ids), now, cardId);
+  db.prepare("UPDATE task_cards SET blocked_by_ids = ?, updated_at = ?, version = version + 1 WHERE id = ?").run(j(ids), now, cardId);
   return toCard(db.prepare("SELECT * FROM task_cards WHERE id = ?").get(cardId));
 }
 
@@ -538,7 +542,7 @@ export function clearBlockersFromAll(db: Database.Database, doneCardIds: string[
     const ids = p(row.blocked_by_ids) as string[];
     const cleaned = ids.filter((bid) => !doneCardIds.includes(bid));
     if (cleaned.length !== ids.length) {
-      db.prepare("UPDATE task_cards SET blocked_by_ids = ?, updated_at = ? WHERE id = ?")
+      db.prepare("UPDATE task_cards SET blocked_by_ids = ?, updated_at = ?, version = version + 1 WHERE id = ?")
         .run(j(cleaned), now, row.id);
     }
   }
@@ -680,6 +684,20 @@ export function getUnreadMcpNotifications(db: Database.Database): McpNotificatio
 
 export function markMcpNotificationsRead(db: Database.Database): void {
   db.prepare("UPDATE mcp_notifications SET read = 1 WHERE read = 0").run();
+}
+
+/**
+ * Returns the set of note IDs currently being written by the MCP server process.
+ * Used by mcp-poller to diff against the previous poll and fire aiWriteStarted/Ended events.
+ * Returns an empty set if the table doesn't exist yet (e.g. pre-v11 DB).
+ */
+export function getActiveMcpWrites(db: Database.Database): Set<string> {
+  try {
+    const rows = db.prepare("SELECT note_id FROM mcp_active_writes").all() as { note_id: string }[];
+    return new Set(rows.map((r) => r.note_id));
+  } catch {
+    return new Set();
+  }
 }
 
 export function insertMcpNotification(db: Database.Database, n: { id: string; tool: string; title: string; body: string }): void {

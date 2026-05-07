@@ -311,6 +311,59 @@ export function getSnapshot(db: Database.Database) {
   };
 }
 
+// ── MCP active-write lock helpers ─────────────
+//
+// Tracks which note IDs are currently being written by this MCP process so the
+// Electron renderer can show a read-only indicator. Uses the mcp_active_writes
+// table (created by migration v11; also ensured inline here because applySchema
+// is not called in the MCP process due to the Node ABI boundary).
+//
+// Usage:  lockNote(db, noteId); try { ...write... } finally { unlockNote(db, noteId); }
+
+function ensureMcpActiveWritesTable(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS mcp_active_writes (
+      note_id    TEXT NOT NULL PRIMARY KEY,
+      started_at TEXT NOT NULL
+    );
+  `);
+  // Purge stale rows from a previous crashed process (> 30 s old)
+  db.prepare("DELETE FROM mcp_active_writes WHERE started_at < datetime('now', '-30 seconds')").run();
+}
+
+function lockNote(db: Database.Database, noteId: string): void {
+  try {
+    db.prepare("INSERT OR REPLACE INTO mcp_active_writes (note_id, started_at) VALUES (?, datetime('now'))").run(noteId);
+  } catch { /* best-effort */ }
+}
+
+function unlockNote(db: Database.Database, noteId: string): void {
+  try {
+    db.prepare("DELETE FROM mcp_active_writes WHERE note_id = ?").run(noteId);
+  } catch { /* best-effort */ }
+}
+
+// ── Optimistic-concurrency helper ─────────────
+// Returns null when no version column exists yet (pre-v12 DB).
+function getNoteVersion(db: Database.Database, noteId: string): number | null {
+  try {
+    const row = db.prepare("SELECT version FROM notes WHERE id = ?").get(noteId) as { version: number } | undefined;
+    return row?.version ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// Returns null when no version column exists yet (pre-v13 DB).
+function getCardVersion(db: Database.Database, cardId: string): number | null {
+  try {
+    const row = db.prepare("SELECT version FROM task_cards WHERE id = ?").get(cardId) as { version: number } | undefined;
+    return row?.version ?? null;
+  } catch {
+    return null;
+  }
+}
+
 // ── MCP notification helper ───────────────────
 
 function insertNotification(db: Database.Database, tool: string, title: string, body: string): void {
@@ -530,18 +583,25 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
       const markdown = content ?? "";
       const resolvedTagIds = Array.isArray(tagIds) ? tagIds as string[] : [];
       const folder = typeof args.folder === "string" ? args.folder : "";
-      db.prepare(`
-        INSERT INTO notes (id, project_id, workspace_id, title, content, content_text,
-          tag_ids, linked_note_ids, linked_card_ids, is_pinned, type, folder, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, '[]', '[]', 0, 'note', ?, ?, ?)
-      `).run(noteId, projectId, project.workspaceId, title, markdown, stripMarkdown(markdown), j(resolvedTagIds), folder, now, now);
-      writeNoteFile(workspacePath, {
-        id: noteId, projectId, workspaceId: project.workspaceId, title, content: markdown,
-        tagIds: resolvedTagIds, linkedNoteIds: [], linkedCardIds: [], isPinned: false,
-        folder, createdAt: now, updatedAt: now, projectName: project.name,
-      });
-      insertNotification(db, "create_note", "Note created", `"${title}" added to ${project.name}${folder ? ` (${folder})` : ""}`);
-      return { id: noteId, title, folder, createdAt: now };
+      lockNote(db, noteId);
+      try {
+        db.transaction(() => {
+          db.prepare(`
+            INSERT INTO notes (id, project_id, workspace_id, title, content, content_text,
+              tag_ids, linked_note_ids, linked_card_ids, is_pinned, type, folder, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, '[]', '[]', 0, 'note', ?, ?, ?)
+          `).run(noteId, projectId, project.workspaceId, title, markdown, stripMarkdown(markdown), j(resolvedTagIds), folder, now, now);
+          insertNotification(db, "create_note", "Note created", `"${title}" added to ${project.name}${folder ? ` (${folder})` : ""}`);
+        })();
+        writeNoteFile(workspacePath, {
+          id: noteId, projectId, workspaceId: project.workspaceId, title, content: markdown,
+          tagIds: resolvedTagIds, linkedNoteIds: [], linkedCardIds: [], isPinned: false,
+          folder, createdAt: now, updatedAt: now, projectName: project.name,
+        });
+        return { id: noteId, title, folder, createdAt: now };
+      } finally {
+        unlockNote(db, noteId);
+      }
     }
 
     case "import_note_from_file": {
@@ -564,44 +624,62 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
       const now = ts();
       const noteId = newId();
       const importResolvedTagIds = Array.isArray(importTagIds) ? importTagIds as string[] : [];
-      db.prepare(`
-        INSERT INTO notes (id, project_id, workspace_id, title, content, content_text,
-          tag_ids, linked_note_ids, linked_card_ids, is_pinned, type, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, '[]', '[]', 0, 'note', ?, ?)
-      `).run(noteId, projectId, project.workspaceId, title, markdown, stripMarkdown(markdown), j(importResolvedTagIds), now, now);
+      db.transaction(() => {
+        db.prepare(`
+          INSERT INTO notes (id, project_id, workspace_id, title, content, content_text,
+            tag_ids, linked_note_ids, linked_card_ids, is_pinned, type, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, '[]', '[]', 0, 'note', ?, ?)
+        `).run(noteId, projectId, project.workspaceId, title, markdown, stripMarkdown(markdown), j(importResolvedTagIds), now, now);
+        insertNotification(db, "create_note", "Note imported", `"${title}" imported into ${project.name}`);
+      })();
       writeNoteFile(workspacePath, {
         id: noteId, projectId, workspaceId: project.workspaceId, title, content: markdown,
         tagIds: importResolvedTagIds, linkedNoteIds: [], linkedCardIds: [], isPinned: false,
         createdAt: now, updatedAt: now, projectName: project.name,
       });
-      insertNotification(db, "create_note", "Note imported", `"${title}" imported into ${project.name}`);
       return { id: noteId, title, createdAt: now, importedFrom: resolvedPath };
     }
 
     case "update_note": {
-      const { noteId, title, content, isPinned, tagIds } = args;
+      const { noteId, title, content, isPinned, tagIds, expectedVersion } = args;
       const note = snap.notes.find((n) => n.id === noteId);
       if (!note) return { error: "Note not found" };
+      // Optimistic-concurrency check — reject if the caller's snapshot is stale.
+      if (expectedVersion !== undefined) {
+        const currentVersion = getNoteVersion(db, noteId as string);
+        if (currentVersion !== null && currentVersion !== (expectedVersion as number)) {
+          return { error: `Version conflict: note has been modified (expected v${expectedVersion as number}, got v${currentVersion}). Fetch the latest content before retrying.` };
+        }
+      }
       const now = ts();
       const markdown = content !== undefined ? content : null;
       const pinnedVal = isPinned !== undefined ? (isPinned ? 1 : 0) : null;
       const tagIdsJson = Array.isArray(tagIds) ? j(tagIds) : null;
-      db.prepare(`UPDATE notes SET title = COALESCE(?, title), content = COALESCE(?, content), content_text = COALESCE(?, content_text), is_pinned = COALESCE(?, is_pinned), tag_ids = COALESCE(?, tag_ids), updated_at = ? WHERE id = ?`)
-        .run(title ?? null, markdown, markdown !== null ? stripMarkdown(markdown) : null, pinnedVal, tagIdsJson, now, noteId);
-      const resolvedIsPinned = isPinned !== undefined ? (isPinned as boolean) : note.isPinned as boolean;
-      const updateProj = snap.projects.find((pr) => pr.id === note.projectId);
-      writeNoteFile(workspacePath, {
-        id: noteId, projectId: note.projectId as string, workspaceId: note.workspaceId as string,
-        title: title ?? note.title as string,
-        content: markdown !== null ? markdown : note.content as string,
-        tagIds: Array.isArray(tagIds) ? tagIds as string[] : note.tagIds as string[], linkedNoteIds: note.linkedNoteIds as string[],
-        linkedCardIds: note.linkedCardIds as string[], isPinned: resolvedIsPinned,
-        createdAt: note.createdAt as string, updatedAt: now,
-        archivedAt: note.archivedAt as string | undefined,
-        projectName: updateProj?.name ?? note.projectId as string,
-      });
-      insertNotification(db, "update_note", "Note updated", `"${title ?? note.title}" was updated`);
-      return { id: noteId, title: title ?? note.title, isPinned: resolvedIsPinned, updatedAt: now };
+      lockNote(db, noteId as string);
+      try {
+        const resolvedIsPinned = isPinned !== undefined ? (isPinned as boolean) : note.isPinned as boolean;
+        const updateProj = snap.projects.find((pr) => pr.id === note.projectId);
+        // Wrap both SQL writes in a transaction so a partial failure leaves the
+        // DB consistent (both committed or neither).
+        db.transaction(() => {
+          db.prepare(`UPDATE notes SET title = COALESCE(?, title), content = COALESCE(?, content), content_text = COALESCE(?, content_text), is_pinned = COALESCE(?, is_pinned), tag_ids = COALESCE(?, tag_ids), updated_at = ?, version = version + 1 WHERE id = ?`)
+            .run(title ?? null, markdown, markdown !== null ? stripMarkdown(markdown) : null, pinnedVal, tagIdsJson, now, noteId);
+          insertNotification(db, "update_note", "Note updated", `"${title ?? note.title}" was updated`);
+        })();
+        writeNoteFile(workspacePath, {
+          id: noteId, projectId: note.projectId as string, workspaceId: note.workspaceId as string,
+          title: title ?? note.title as string,
+          content: markdown !== null ? markdown : note.content as string,
+          tagIds: Array.isArray(tagIds) ? tagIds as string[] : note.tagIds as string[], linkedNoteIds: note.linkedNoteIds as string[],
+          linkedCardIds: note.linkedCardIds as string[], isPinned: resolvedIsPinned,
+          createdAt: note.createdAt as string, updatedAt: now,
+          archivedAt: note.archivedAt as string | undefined,
+          projectName: updateProj?.name ?? note.projectId as string,
+        });
+        return { id: noteId, title: title ?? note.title, isPinned: resolvedIsPinned, updatedAt: now };
+      } finally {
+        unlockNote(db, noteId as string);
+      }
     }
 
     case "move_note": {
@@ -651,13 +729,19 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
     }
 
     case "update_task_status": {
-      const { cardId, targetColumnId } = args;
+      const { cardId, targetColumnId, expectedVersion: statusExpectedVersion } = args;
       const card = snap.cards.find((c) => c.id === cardId);
       const col = snap.columns.find((c) => c.id === targetColumnId);
       if (!card) return { error: "Card not found" };
       if (!col) return { error: "Column not found" };
+      if (statusExpectedVersion !== undefined) {
+        const currentVersion = getCardVersion(db, cardId as string);
+        if (currentVersion !== null && currentVersion !== (statusExpectedVersion as number)) {
+          return { error: `Version conflict: task has been modified (expected v${statusExpectedVersion as number}, got v${currentVersion}). Fetch the latest state before retrying.` };
+        }
+      }
       const now = ts();
-      db.prepare(`UPDATE task_cards SET column_id = ?, updated_at = ? WHERE id = ?`).run(targetColumnId, now, cardId);
+      db.prepare(`UPDATE task_cards SET column_id = ?, updated_at = ?, version = version + 1 WHERE id = ?`).run(targetColumnId, now, cardId);
       // When a task moves to a done column, clear it from any other task's blocked_by_ids
       // so get_task no longer reports it as a pending blocker.
       if (col.type === "done") {
@@ -667,7 +751,7 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
         for (const row of affected) {
           const ids: string[] = j2(row.blocked_by_ids);
           if (ids.includes(cardId as string)) {
-            db.prepare("UPDATE task_cards SET blocked_by_ids = ?, updated_at = ? WHERE id = ?")
+            db.prepare("UPDATE task_cards SET blocked_by_ids = ?, updated_at = ?, version = version + 1 WHERE id = ?")
               .run(j(ids.filter((bid) => bid !== cardId)), now, row.id);
           }
         }
@@ -689,7 +773,7 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
         if (!card) {
           results.push({ id, ok: false, error: "Task not found" });
         } else {
-          db.prepare(`UPDATE task_cards SET column_id = ?, updated_at = ? WHERE id = ?`).run(targetColumnId, now, id);
+          db.prepare(`UPDATE task_cards SET column_id = ?, updated_at = ?, version = version + 1 WHERE id = ?`).run(targetColumnId, now, id);
           results.push({ id, ok: true });
         }
       }
@@ -706,7 +790,7 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
             const ids: string[] = j2(row.blocked_by_ids);
             const cleaned = ids.filter((bid) => !movedIds.includes(bid));
             if (cleaned.length !== ids.length) {
-              db.prepare("UPDATE task_cards SET blocked_by_ids = ?, updated_at = ? WHERE id = ?")
+              db.prepare("UPDATE task_cards SET blocked_by_ids = ?, updated_at = ?, version = version + 1 WHERE id = ?")
                 .run(j(cleaned), now, row.id);
             }
           }
@@ -727,8 +811,8 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
       const newCardIds = j(Array.from(new Set([...(note.linkedCardIds as string[]), cardId])));
       const newNoteIds = j(Array.from(new Set([...(card.linkedNoteIds as string[]), noteId])));
       const now = ts();
-      db.prepare(`UPDATE notes SET linked_card_ids = ?, updated_at = ? WHERE id = ?`).run(newCardIds, now, noteId);
-      db.prepare(`UPDATE task_cards SET linked_note_ids = ?, updated_at = ? WHERE id = ?`).run(newNoteIds, now, cardId);
+      db.prepare(`UPDATE notes SET linked_card_ids = ?, updated_at = ?, version = version + 1 WHERE id = ?`).run(newCardIds, now, noteId);
+      db.prepare(`UPDATE task_cards SET linked_note_ids = ?, updated_at = ?, version = version + 1 WHERE id = ?`).run(newNoteIds, now, cardId);
       insertNotification(db, "link_note_to_task", "Note linked to task", `"${note.title}" linked to "${card.title}"`);
       return { noteId, cardId, linked: true };
     }
@@ -740,7 +824,7 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
         id: note.id, title: note.title, content: note.content,
         projectId: note.projectId, isPinned: note.isPinned,
         linkedNoteIds: note.linkedNoteIds, linkedCardIds: note.linkedCardIds,
-        updatedAt: note.updatedAt,
+        updatedAt: note.updatedAt, version: note.version ?? 0,
       };
     }
 
@@ -773,7 +857,7 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
         priority: card.priority, dueDate: card.dueDate,
         columnId: card.columnId, columnName: col?.name ?? "Unknown", columnType: col?.type ?? "custom",
         linkedNoteIds: card.linkedNoteIds, blockedByIds: card.blockedByIds ?? [],
-        projectId: card.projectId, createdAt: card.createdAt, updatedAt: card.updatedAt,
+        projectId: card.projectId, createdAt: card.createdAt, updatedAt: card.updatedAt, version: card.version ?? 0,
       };
     }
 
@@ -835,7 +919,7 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
       const ids: string[] = j2(row.blocked_by_ids);
       if (!ids.includes(args.blockerCardId as string)) {
         ids.push(args.blockerCardId as string);
-        db.prepare("UPDATE task_cards SET blocked_by_ids = ?, updated_at = ? WHERE id = ?").run(j(ids), nowB, args.cardId);
+        db.prepare("UPDATE task_cards SET blocked_by_ids = ?, updated_at = ?, version = version + 1 WHERE id = ?").run(j(ids), nowB, args.cardId);
       }
       insertNotification(db, "block_task", "Task blocked", `"${card.title}" is now blocked by "${blocker.title}"`);
       return { cardId: args.cardId, blockerCardId: args.blockerCardId, blocked: true };
@@ -849,7 +933,7 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
       if (!rowU) return { error: "Task not found in DB" };
       const idsU: string[] = j2(rowU.blocked_by_ids);
       const updated = idsU.filter((id) => id !== args.blockerCardId);
-      db.prepare("UPDATE task_cards SET blocked_by_ids = ?, updated_at = ? WHERE id = ?").run(j(updated), nowU, args.cardId);
+      db.prepare("UPDATE task_cards SET blocked_by_ids = ?, updated_at = ?, version = version + 1 WHERE id = ?").run(j(updated), nowU, args.cardId);
       return { cardId: args.cardId, blockerCardId: args.blockerCardId, unblocked: true };
     }
 
@@ -893,28 +977,37 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
     }
 
     case "update_task": {
-      const { cardId, title, description, priority, dueDate, columnId, tagIds } = args;
+      const { cardId, title, description, priority, dueDate, columnId, tagIds, expectedVersion: taskExpectedVersion } = args;
       const card = snap.cards.find((c) => c.id === cardId);
       if (!card) return { error: "Task not found" };
+      if (taskExpectedVersion !== undefined) {
+        const currentVersion = getCardVersion(db, cardId as string);
+        if (currentVersion !== null && currentVersion !== (taskExpectedVersion as number)) {
+          return { error: `Version conflict: task has been modified (expected v${taskExpectedVersion as number}, got v${currentVersion}). Fetch the latest state before retrying.` };
+        }
+      }
       const now = ts();
-      db.prepare(`
-        UPDATE task_cards SET
-          column_id   = COALESCE(?, column_id),
-          title       = COALESCE(?, title),
-          description = COALESCE(?, description),
-          priority    = COALESCE(?, priority),
-          due_date    = COALESCE(?, due_date),
-          tag_ids     = COALESCE(?, tag_ids),
-          updated_at  = ?
-        WHERE id = ?
-      `).run(
-        columnId ?? null, title ?? null, description ?? null,
-        priority ?? null, dueDate ?? null,
-        tagIds != null ? (Array.isArray(tagIds) ? j(tagIds) : tagIds) : null,
-        now, cardId
-      );
+      db.transaction(() => {
+        db.prepare(`
+          UPDATE task_cards SET
+            column_id   = COALESCE(?, column_id),
+            title       = COALESCE(?, title),
+            description = COALESCE(?, description),
+            priority    = COALESCE(?, priority),
+            due_date    = COALESCE(?, due_date),
+            tag_ids     = COALESCE(?, tag_ids),
+            updated_at  = ?,
+            version     = version + 1
+          WHERE id = ?
+        `).run(
+          columnId ?? null, title ?? null, description ?? null,
+          priority ?? null, dueDate ?? null,
+          tagIds != null ? (Array.isArray(tagIds) ? j(tagIds) : tagIds) : null,
+          now, cardId
+        );
+        insertNotification(db, "update_task", "Task updated", `"${title ?? card.title}" was updated`);
+      })();
       const updated = db.prepare("SELECT * FROM task_cards WHERE id = ?").get(cardId) as Record<string, unknown> | undefined;
-      insertNotification(db, "update_task", "Task updated", `"${title ?? card.title}" was updated`);
       return updated ?? { error: "Task not found after update" };
     }
 
@@ -1020,100 +1113,135 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
       const ensureResolvedTagIds = Array.isArray(ensureTagIds) ? ensureTagIds as string[] : undefined;
       const ensureResolvedIsPinned = typeof ensureIsPinned === "boolean" ? ensureIsPinned : undefined;
       const ensureFolder = typeof args.folder === "string" ? args.folder : undefined;
-      if (existing) {
-        const tagIdsJson = ensureResolvedTagIds ? j(ensureResolvedTagIds) : null;
-        const pinnedVal = ensureResolvedIsPinned !== undefined ? (ensureResolvedIsPinned ? 1 : 0) : null;
-        const folderVal = ensureFolder !== undefined ? ensureFolder : null;
-        db.prepare(`UPDATE notes SET content = ?, content_text = ?, tag_ids = COALESCE(?, tag_ids), is_pinned = COALESCE(?, is_pinned), folder = COALESCE(?, folder), updated_at = ? WHERE id = ?`)
-          .run(markdown, stripMarkdown(markdown), tagIdsJson, pinnedVal, folderVal, now, existing.id);
-        const updatedFolder = ensureFolder ?? (existing.folder as string) ?? "";
-        writeNoteFile(workspacePath, {
-          id: existing.id, projectId, workspaceId: existing.workspaceId as string,
-          title: existing.title as string, content: markdown,
-          tagIds: ensureResolvedTagIds ?? existing.tagIds as string[], linkedNoteIds: existing.linkedNoteIds as string[],
-          linkedCardIds: existing.linkedCardIds as string[], isPinned: ensureResolvedIsPinned ?? existing.isPinned as boolean,
-          folder: updatedFolder,
-          createdAt: existing.createdAt as string, updatedAt: now,
-          archivedAt: existing.archivedAt as string | undefined,
-          projectName: project.name,
-        });
-        insertNotification(db, "update_note", "Note updated", `"${title}" was updated (ensure_note)`);
-        return { id: existing.id, title, action: "updated", updatedAt: now };
-      } else {
-        const noteId = newId();
-        const newTagIds = ensureResolvedTagIds ?? [];
-        const newIsPinned = ensureResolvedIsPinned ?? false;
-        const newFolder = ensureFolder ?? "";
-        db.prepare(`
-          INSERT INTO notes (id, project_id, workspace_id, title, content, content_text,
-            tag_ids, linked_note_ids, linked_card_ids, is_pinned, type, folder, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, '[]', '[]', ?, 'note', ?, ?, ?)
-        `).run(noteId, projectId, project.workspaceId, title, markdown, stripMarkdown(markdown), j(newTagIds), newIsPinned ? 1 : 0, newFolder, now, now);
-        writeNoteFile(workspacePath, {
-          id: noteId, projectId, workspaceId: project.workspaceId, title, content: markdown,
-          tagIds: newTagIds, linkedNoteIds: [], linkedCardIds: [], isPinned: newIsPinned,
-          folder: newFolder, createdAt: now, updatedAt: now, projectName: project.name,
-        });
-        insertNotification(db, "create_note", "Note created", `"${title}" added to ${project.name}${newFolder ? ` (${newFolder})` : ""} (ensure_note)`);
-        return { id: noteId, title, folder: newFolder, action: "created", createdAt: now };
+      const ensureNoteId = existing?.id ?? newId();
+      lockNote(db, ensureNoteId);
+      try {
+        if (existing) {
+          const tagIdsJson = ensureResolvedTagIds ? j(ensureResolvedTagIds) : null;
+          const pinnedVal = ensureResolvedIsPinned !== undefined ? (ensureResolvedIsPinned ? 1 : 0) : null;
+          const folderVal = ensureFolder !== undefined ? ensureFolder : null;
+          const updatedFolder = ensureFolder ?? (existing.folder as string) ?? "";
+          db.transaction(() => {
+            db.prepare(`UPDATE notes SET content = ?, content_text = ?, tag_ids = COALESCE(?, tag_ids), is_pinned = COALESCE(?, is_pinned), folder = COALESCE(?, folder), updated_at = ?, version = version + 1 WHERE id = ?`)
+              .run(markdown, stripMarkdown(markdown), tagIdsJson, pinnedVal, folderVal, now, existing.id);
+            insertNotification(db, "update_note", "Note updated", `"${title}" was updated (ensure_note)`);
+          })();
+          writeNoteFile(workspacePath, {
+            id: existing.id, projectId, workspaceId: existing.workspaceId as string,
+            title: existing.title as string, content: markdown,
+            tagIds: ensureResolvedTagIds ?? existing.tagIds as string[], linkedNoteIds: existing.linkedNoteIds as string[],
+            linkedCardIds: existing.linkedCardIds as string[], isPinned: ensureResolvedIsPinned ?? existing.isPinned as boolean,
+            folder: updatedFolder,
+            createdAt: existing.createdAt as string, updatedAt: now,
+            archivedAt: existing.archivedAt as string | undefined,
+            projectName: project.name,
+          });
+          return { id: existing.id, title, action: "updated", updatedAt: now };
+        } else {
+          const newTagIds = ensureResolvedTagIds ?? [];
+          const newIsPinned = ensureResolvedIsPinned ?? false;
+          const newFolder = ensureFolder ?? "";
+          db.transaction(() => {
+            db.prepare(`
+              INSERT INTO notes (id, project_id, workspace_id, title, content, content_text,
+                tag_ids, linked_note_ids, linked_card_ids, is_pinned, type, folder, created_at, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, '[]', '[]', ?, 'note', ?, ?, ?)
+            `).run(ensureNoteId, projectId, project.workspaceId, title, markdown, stripMarkdown(markdown), j(newTagIds), newIsPinned ? 1 : 0, newFolder, now, now);
+            insertNotification(db, "create_note", "Note created", `"${title}" added to ${project.name}${newFolder ? ` (${newFolder})` : ""} (ensure_note)`);
+          })();
+          writeNoteFile(workspacePath, {
+            id: ensureNoteId, projectId, workspaceId: project.workspaceId, title, content: markdown,
+            tagIds: newTagIds, linkedNoteIds: [], linkedCardIds: [], isPinned: newIsPinned,
+            folder: newFolder, createdAt: now, updatedAt: now, projectName: project.name,
+          });
+          return { id: ensureNoteId, title, folder: newFolder, action: "created", createdAt: now };
+        }
+      } finally {
+        unlockNote(db, ensureNoteId);
       }
     }
 
     case "append_to_note": {
       // Appends content to the end of a note without requiring the agent to
       // fetch and re-send the full body.
-      const { noteId, content: appendContent, separator = "\n\n" } = args;
+      const { noteId, content: appendContent, separator = "\n\n", expectedVersion: appendExpectedVersion } = args;
       const note = snap.notes.find((n) => n.id === noteId);
       if (!note) return { error: "Note not found" };
+      if (appendExpectedVersion !== undefined) {
+        const currentVersion = getNoteVersion(db, noteId as string);
+        if (currentVersion !== null && currentVersion !== (appendExpectedVersion as number)) {
+          return { error: `Version conflict: note has been modified (expected v${appendExpectedVersion as number}, got v${currentVersion}). Fetch the latest content before retrying.` };
+        }
+      }
       const now = ts();
       const existingContent = (note.content as string) ?? "";
       const newContent = existingContent
         ? existingContent + (separator as string) + (appendContent as string)
         : (appendContent as string);
-      db.prepare(`UPDATE notes SET content = ?, content_text = ?, updated_at = ? WHERE id = ?`)
-        .run(newContent, stripMarkdown(newContent), now, noteId);
-      const proj = snap.projects.find((p) => p.id === note.projectId);
-      writeNoteFile(workspacePath, {
-        id: noteId, projectId: note.projectId as string, workspaceId: note.workspaceId as string,
-        title: note.title as string, content: newContent,
-        tagIds: note.tagIds as string[], linkedNoteIds: note.linkedNoteIds as string[],
-        linkedCardIds: note.linkedCardIds as string[], isPinned: note.isPinned as boolean,
-        createdAt: note.createdAt as string, updatedAt: now,
-        archivedAt: note.archivedAt as string | undefined,
-        projectName: proj?.name ?? note.projectId as string,
-      });
-      insertNotification(db, "update_note", "Note updated", `Content appended to "${note.title}"`);
-      return { id: noteId, title: note.title, updatedAt: now, newLength: newContent.length };
+      lockNote(db, noteId as string);
+      try {
+        const proj = snap.projects.find((p) => p.id === note.projectId);
+        db.transaction(() => {
+          db.prepare(`UPDATE notes SET content = ?, content_text = ?, updated_at = ?, version = version + 1 WHERE id = ?`)
+            .run(newContent, stripMarkdown(newContent), now, noteId);
+          insertNotification(db, "update_note", "Note updated", `Content appended to "${note.title}"`);
+        })();
+        writeNoteFile(workspacePath, {
+          id: noteId, projectId: note.projectId as string, workspaceId: note.workspaceId as string,
+          title: note.title as string, content: newContent,
+          tagIds: note.tagIds as string[], linkedNoteIds: note.linkedNoteIds as string[],
+          linkedCardIds: note.linkedCardIds as string[], isPinned: note.isPinned as boolean,
+          createdAt: note.createdAt as string, updatedAt: now,
+          archivedAt: note.archivedAt as string | undefined,
+          projectName: proj?.name ?? note.projectId as string,
+        });
+        return { id: noteId, title: note.title, updatedAt: now, newLength: newContent.length };
+      } finally {
+        unlockNote(db, noteId as string);
+      }
     }
 
     case "patch_note": {
       // Surgical in-place replacement — agent sends oldString + newString,
       // server does the substitution. Avoids re-sending full note content.
-      const { noteId, oldString, newString: replacement, replaceAll: all = false } = args as {
-        noteId: string; oldString: string; newString: string; replaceAll?: boolean;
+      const { noteId, oldString, newString: replacement, replaceAll: all = false, expectedVersion: patchExpectedVersion } = args as {
+        noteId: string; oldString: string; newString: string; replaceAll?: boolean; expectedVersion?: number;
       };
       const note = snap.notes.find((n) => n.id === noteId);
       if (!note) return { error: "Note not found" };
+      if (patchExpectedVersion !== undefined) {
+        const currentVersion = getNoteVersion(db, noteId);
+        if (currentVersion !== null && currentVersion !== patchExpectedVersion) {
+          return { error: `Version conflict: note has been modified (expected v${patchExpectedVersion}, got v${currentVersion}). Fetch the latest content before retrying.` };
+        }
+      }
       const existing = (note.content as string) ?? "";
       const count = existing.split(oldString).length - 1;
       if (count === 0) return { error: "oldString not found in note content" };
       if (count > 1 && !all) return { error: `oldString matches ${count} times — set replaceAll: true to replace all, or provide more surrounding context to make it unique` };
       const now = ts();
       const newContent = all ? existing.split(oldString).join(replacement) : existing.replace(oldString, replacement);
-      db.prepare(`UPDATE notes SET content = ?, content_text = ?, updated_at = ? WHERE id = ?`)
-        .run(newContent, stripMarkdown(newContent), now, noteId);
-      const proj = snap.projects.find((p) => p.id === note.projectId);
-      writeNoteFile(workspacePath, {
-        id: noteId, projectId: note.projectId as string, workspaceId: note.workspaceId as string,
-        title: note.title as string, content: newContent,
-        tagIds: note.tagIds as string[], linkedNoteIds: note.linkedNoteIds as string[],
-        linkedCardIds: note.linkedCardIds as string[], isPinned: note.isPinned as boolean,
-        createdAt: note.createdAt as string, updatedAt: now,
-        archivedAt: note.archivedAt as string | undefined,
-        projectName: proj?.name ?? note.projectId as string,
-      });
-      insertNotification(db, "update_note", "Note updated", `Patch applied to "${note.title}"`);
-      return { id: noteId, title: note.title, updatedAt: now, replacements: all ? count : 1 };
+      lockNote(db, noteId);
+      try {
+        const proj = snap.projects.find((p) => p.id === note.projectId);
+        db.transaction(() => {
+          db.prepare(`UPDATE notes SET content = ?, content_text = ?, updated_at = ?, version = version + 1 WHERE id = ?`)
+            .run(newContent, stripMarkdown(newContent), now, noteId);
+          insertNotification(db, "update_note", "Note updated", `Patch applied to "${note.title}"`);
+        })();
+        writeNoteFile(workspacePath, {
+          id: noteId, projectId: note.projectId as string, workspaceId: note.workspaceId as string,
+          title: note.title as string, content: newContent,
+          tagIds: note.tagIds as string[], linkedNoteIds: note.linkedNoteIds as string[],
+          linkedCardIds: note.linkedCardIds as string[], isPinned: note.isPinned as boolean,
+          createdAt: note.createdAt as string, updatedAt: now,
+          archivedAt: note.archivedAt as string | undefined,
+          projectName: proj?.name ?? note.projectId as string,
+        });
+        return { id: noteId, title: note.title, updatedAt: now, replacements: all ? count : 1 };
+      } finally {
+        unlockNote(db, noteId);
+      }
     }
 
     // ── Idea Flow tools ───────────────────────────────────────────────────────
@@ -1694,6 +1822,7 @@ if (require.main === module) {
   // PRAGMA foreign_keys must be set per-connection; applySchema is not called in the MCP process.
   db.pragma("foreign_keys = ON");
   db.pragma("journal_mode = WAL");
+  ensureMcpActiveWritesTable(db);
   const workspacePath = findWorkspacePath(dbPath);
   process.stderr.write(`[cairn:mcp] Workspace folder: ${workspacePath}\n`);
   const server = buildMcpServer(db, workspacePath);

@@ -71,6 +71,9 @@ export interface Note {
   createdAt: string;
   updatedAt: string;
   archivedAt?: string;
+  /** Monotonically incrementing write counter. Used for optimistic-concurrency
+   * checks by MCP tools that accept an optional expectedVersion argument. */
+  version: number;
 }
 
 // ── Board Column ──────────────────────────────
@@ -108,6 +111,8 @@ export interface TaskCard {
   createdAt: string;
   updatedAt: string;
   archivedAt?: string;
+  /** Monotonically incrementing write counter for optimistic concurrency. */
+  version: number;
 }
 
 // ── Chat ──────────────────────────────────────

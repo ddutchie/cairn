@@ -9,7 +9,7 @@
 
 import React, { useEffect, useRef, useImperativeHandle, forwardRef } from "react";
 import { EditorView, ViewUpdate, keymap, placeholder as cmPlaceholder } from "@codemirror/view";
-import { EditorState } from "@codemirror/state";
+import { EditorState, Compartment } from "@codemirror/state";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import { defaultKeymap, indentWithTab, history, historyKeymap } from "@codemirror/commands";
@@ -30,6 +30,8 @@ interface MarkdownEditorProps {
   onSelectionChange?: (sel: { text: string; coords: { top: number; left: number } } | null) => void;
   placeholder?: string;
   className?: string;
+  /** When true, the editor is read-only (used during AI writes). */
+  readOnly?: boolean;
 }
 
 // ── Cairn theme ────────────────────────────────────────────────────────────
@@ -117,9 +119,12 @@ function buildTheme() {
 }
 
 const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(
-  ({ initialValue, onChange, onSelectionChange, placeholder = "Write here…", className }, ref) => {
+  ({ initialValue, onChange, onSelectionChange, placeholder = "Write here…", className, readOnly = false }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const viewRef = useRef<EditorView | null>(null);
+    // Compartment allows reconfiguring editability after the editor is created
+    // without destroying and recreating the full EditorState.
+    const editableCompartment = useRef(new Compartment());
 
     useImperativeHandle(ref, () => ({
       getSelection() {
@@ -240,6 +245,8 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(
           updateListener,
           pasteHandler,
           EditorView.lineWrapping,
+          // Compartment-controlled editability — reconfigured via readOnly prop
+          editableCompartment.current.of(EditorView.editable.of(true)),
         ],
       });
 
@@ -253,6 +260,19 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(
       // Only run on mount — content updates handled below
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    // Toggle read-only mode — used when the AI is actively writing this note.
+    // Reconfigures the editable Compartment so the cursor and interactions are
+    // disabled without destroying editor state or undo history.
+    useEffect(() => {
+      const view = viewRef.current;
+      if (!view) return;
+      view.dispatch({
+        effects: editableCompartment.current.reconfigure(
+          EditorView.editable.of(!readOnly),
+        ),
+      });
+    }, [readOnly]);
 
     // When the note ID changes (different note selected), replace the full doc
     // without recreating the editor (preserves undo history isolation via key

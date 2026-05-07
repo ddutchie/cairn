@@ -153,15 +153,15 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 | Tool | Category | Description |
 |------|----------|-------------|
-| `get_note` | read | Full markdown content, linked IDs, and metadata of a note by ID |
+| `get_note` | read | Full markdown content, linked IDs, metadata, and `version` counter of a note by ID |
 | `list_notes` | read | List all notes in a project |
 | `search_notes` | read | Full-text search across notes |
 | `create_note` | write | Create a markdown note |
 | `import_note_from_file` | write | Import a local file as a note — server reads from disk, no need to inline content |
 | `ensure_note` | write | Idempotent create-or-update by title — prevents duplicate notes on re-run |
-| `append_to_note` | write | Append content to a note without re-sending the full body |
-| `patch_note` | write | Surgically replace a string inside a note — no need to re-send the full content |
-| `update_note` | write | Update a note's title, content, or pinned state |
+| `append_to_note` | write | Append content to a note without re-sending the full body. Accepts optional `expectedVersion` for conflict detection |
+| `patch_note` | write | Surgically replace a string inside a note — no need to re-send the full content. Accepts optional `expectedVersion` for conflict detection |
+| `update_note` | write | Update a note's title, content, or pinned state. Accepts optional `expectedVersion` for conflict detection |
 | `move_note` | write | Move a note to a different project |
 | `delete_note` | delete | Permanently delete a note |
 
@@ -169,13 +169,13 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 | Tool | Category | Description |
 |------|----------|-------------|
-| `get_task` | read | Full task detail by ID — includes `blockedByIds` |
+| `get_task` | read | Full task detail by ID — includes `blockedByIds` and `version` counter |
 | `list_tasks` | read | All tasks in a project grouped by column |
 | `list_ready_tasks` | read | Only unblocked, active tasks — use this to find work that can start now |
 | `search_tasks` | read | Full-text search across task cards |
 | `create_task` | write | Create a task card in a column |
-| `update_task` | write | Update a task's title, description, priority, due date, column, or assignee |
-| `update_task_status` | write | Move a single task to a different column |
+| `update_task` | write | Update a task's title, description, priority, due date, column, or assignee. Accepts optional `expectedVersion` for conflict detection |
+| `update_task_status` | write | Move a single task to a different column. Accepts optional `expectedVersion` for conflict detection |
 | `bulk_update_task_status` | write | Move multiple tasks to the same column in one call |
 | `link_note_to_task` | write | Bidirectionally link a note and a task |
 | `block_task` | write | Mark a task as blocked by another task in the same project |
@@ -256,7 +256,11 @@ Cairn is an Electron + Next.js desktop app with two processes that share a singl
 - **Main process** (`electron/`) — Node.js. Owns SQLite, file I/O, the AI chat loop, and PTY sessions for coding agents.
 - **MCP server** (`electron/mcp-server.ts`) — a self-contained binary connecting external AI agents (OpenCode, Claude Desktop, etc.) to the same database via WAL polling.
 
-Notes are plain `.md` files with YAML frontmatter; SQLite is the read/search cache. A chokidar file watcher syncs external edits back automatically. The **Agent workspace** (`⌘5`) runs coding agent CLIs via `node-pty` PTY sessions, with all file I/O path-validated against registered project `code_directory` values.
+Notes are plain `.md` files with YAML frontmatter; SQLite is the read/search cache. Every note write goes through `writeNoteFile()` which writes to a `.tmp` file and renames it into place (atomic). A chokidar file watcher syncs external edits back on startup and at runtime; on startup, `syncNotesFromDisk` compares file timestamps against the DB and overwrites SQLite if the file is newer. The **Agent workspace** (`⌘5`) runs coding agent CLIs via `node-pty` PTY sessions, with all file I/O path-validated against registered project `code_directory` values.
+
+When the AI (chat executor or MCP server) is writing to a note, the editor enters read-only mode with a pulsing banner. The in-process chat executor uses a module-level lock set (`ai-write-lock.ts`); the MCP server signals via a `mcp_active_writes` SQLite table that the WAL poller diffs every second.
+
+`notes` and `task_cards` each carry a `version` integer that increments on every write. MCP write tools accept an optional `expectedVersion` argument and return a conflict error if the row has been modified since the caller last read it.
 
 State in the renderer is managed by Zustand domain slices (`ui`, `workspace`, `board`, `notes`, `tags`, `chat`, `graph`, `selectors`), composed in `src/store/index.ts`. Analytics canvases in Insights follow a shared pattern: `useContainerDims` + `useScopedData` + `useFontScale` + D3/SVG rendering.
 
@@ -277,7 +281,7 @@ Tests live alongside the code they cover:
 | File | Tests | What's covered |
 |------|-------|---------------|
 | `electron/db/queries.test.ts` | 22 | SQLite query helpers — CRUD, search, soft-delete, snapshot |
-| `electron/notes-files.test.ts` | 29 | File I/O, slug generation, frontmatter round-trip (tmp dirs) |
+| `electron/notes-files.test.ts` | 40 | File I/O, slug generation, frontmatter round-trip, atomic writes, startup sync (tmp dirs) |
 | `electron/mcp-server.test.ts` | 134 | MCP `executeTool` end-to-end via in-memory SQLite — all tools, edge cases, blocker chains |
 | `electron/ipc/chat-executor.test.ts` | 98 | Every tool case in the AI chat executor — happy path, missing entities, error returns |
 | `electron/ipc/handlers.test.ts` | 14 | IPC data layer — `executeReadTool`, `buildContextResponse`, `getBy*` queries |

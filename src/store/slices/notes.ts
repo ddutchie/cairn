@@ -6,7 +6,7 @@ import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
 import type { Note, ID, NoteType } from "@/types";
 import { id, now } from "@/lib/utils";
-import { ipc, isElectron } from "../ipc";
+import { ipc, isElectron, markOwnNoteWrite } from "../ipc";
 import { historyManager } from "@/lib/history";
 import {
   makeCreateNoteCmd,
@@ -63,9 +63,11 @@ export const createNotesSlice: StateCreator<CairnStore, [], [], NotesSlice> = (
       folder,
       createdAt: now(),
       updatedAt: now(),
+      version: 0,
     };
     set((s) => ({ notes: [...s.notes, note] }));
     get().persist();
+    markOwnNoteWrite(note.id);
     ipc((e) => e.note.create(note));
     historyManager.push(makeCreateNoteCmd(note, set));
     return note;
@@ -82,6 +84,7 @@ export const createNotesSlice: StateCreator<CairnStore, [], [], NotesSlice> = (
       ),
     }));
     get().persist();
+    markOwnNoteWrite(noteId);
     ipc((e) => e.note.update(noteId, patch));
     pushUpdateNoteCmd(noteId, prevPatch, patch, set);
   },
@@ -96,6 +99,7 @@ export const createNotesSlice: StateCreator<CairnStore, [], [], NotesSlice> = (
       })),
     }));
     get().persist();
+    markOwnNoteWrite(noteId);
     ipc((e) => e.note.delete(noteId));
     if (savedNote) historyManager.push(makeDeleteNoteCmd(savedNote, set));
   },
@@ -108,6 +112,7 @@ export const createNotesSlice: StateCreator<CairnStore, [], [], NotesSlice> = (
       ),
     }));
     get().persist();
+    markOwnNoteWrite(noteId);
     ipc((e) => e.note.update(noteId, { archivedAt }));
     historyManager.push(makeArchiveNoteCmd(noteId, archivedAt, set));
   },
@@ -119,6 +124,7 @@ export const createNotesSlice: StateCreator<CairnStore, [], [], NotesSlice> = (
       ),
     }));
     get().persist();
+    markOwnNoteWrite(noteId);
     ipc((e) => e.note.update(noteId, { archivedAt: null }));
     historyManager.push(makeRestoreNoteCmd(noteId, set));
   },
@@ -142,6 +148,7 @@ export const createNotesSlice: StateCreator<CairnStore, [], [], NotesSlice> = (
       ),
     }));
     get().persist();
+    markOwnNoteWrite(noteId);
     ipc((e) => e.note.update(noteId, { projectId: targetProjectId }));
     historyManager.push(makeMoveNoteCmd(
       noteId, prevProjectId, prevWorkspaceId,
@@ -157,6 +164,7 @@ export const createNotesSlice: StateCreator<CairnStore, [], [], NotesSlice> = (
       ),
     }));
     get().persist();
+    markOwnNoteWrite(noteId);
     ipc((e) => e.note.moveToFolder(noteId, folder));
   },
 
@@ -188,7 +196,7 @@ export const createNotesSlice: StateCreator<CairnStore, [], [], NotesSlice> = (
     get().persist();
     const note = get().notes.find((n) => n.id === noteId);
     const card = get().cards.find((c) => c.id === cardId);
-    if (note) ipc((e) => e.note.update(noteId, { linkedCardIds: note.linkedCardIds }));
+    if (note) { markOwnNoteWrite(noteId); ipc((e) => e.note.update(noteId, { linkedCardIds: note.linkedCardIds })); }
     if (card) ipc((e) => e.card.update(cardId, { linkedNoteIds: card.linkedNoteIds }));
     historyManager.push(makeLinkNoteToCardCmd(noteId, cardId, prevNoteLinkedCardIds, prevCardLinkedNoteIds, set));
   },

@@ -11,6 +11,25 @@
 import { CairnEvents } from "@/lib/events";
 import { ownWriteGuard } from "@/lib/history";
 
+// ── Per-note own-write map ────────────────────────────────────────────────────
+// Tracks the timestamp of the last own write per note ID so the db:changed
+// handler in page.tsx can skip re-hydrating notes that were just written by
+// the user (preventing optimistic state being overwritten by a stale snapshot).
+// Window is 1.5 s — long enough to outlast a WAL poll cycle (1 s) but short
+// enough not to suppress a legitimate MCP write to the same note immediately
+// after a user keystroke.
+const ownNoteWriteMap = new Map<string, number>();
+const OWN_NOTE_WRITE_WINDOW_MS = 1500;
+
+export function markOwnNoteWrite(noteId: string): void {
+  ownNoteWriteMap.set(noteId, Date.now());
+}
+
+export function isOwnNoteWrite(noteId: string): boolean {
+  const t = ownNoteWriteMap.get(noteId);
+  return t !== undefined && Date.now() - t < OWN_NOTE_WRITE_WINDOW_MS;
+}
+
 export function isElectron(): boolean {
   return typeof window !== "undefined" && !!window.electron;
 }

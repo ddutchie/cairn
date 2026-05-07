@@ -6,6 +6,7 @@
  */
 
 import type Database from "better-sqlite3";
+import type { BrowserWindow } from "electron";
 import path from "path";
 import fs from "fs";
 import dagre from "@dagrejs/dagre";
@@ -20,6 +21,7 @@ import { callLLM, type LLMConfig } from "../lib/llm";
 import { TOOL_LABELS, type ChatRequest, type ToolArgs } from "../lib/tools";
 import { getKnowledgeGraph, getNeighbours } from "../db/graph-queries";
 import type { GraphFilters, EdgeType } from "../db/graph-queries";
+import { aiWriteLock } from "../lib/ai-write-lock";
 
 // ── Static reference constants (returned by get_dashboard_constants / get_idea_flow_rules) ──
 
@@ -73,6 +75,7 @@ export async function executeTool(
   name: string,
   args: ToolArgs,
   emit?: (event: { tool: string; label: string; args: Record<string, unknown> }) => void,
+  getWin?: () => BrowserWindow | null,
 ): Promise<unknown> {
   emit?.({ tool: name, label: TOOL_LABELS[name]?.(args) ?? name, args });
   const snap = q.getFullSnapshot(db) as CairnSnapshot;
@@ -144,7 +147,7 @@ export async function executeTool(
         id: note.id, title: note.title, content: note.content,
         projectId: note.projectId, isPinned: note.isPinned,
         linkedNoteIds: note.linkedNoteIds, linkedCardIds: note.linkedCardIds,
-        updatedAt: note.updatedAt,
+        updatedAt: note.updatedAt, version: note.version ?? 0,
       };
     }
     case "create_dashboard": {
@@ -176,14 +179,20 @@ export async function executeTool(
       const noteId = newId();
       const markdown = (args.content as string) ?? "";
       const folder = typeof args.folder === "string" ? args.folder : "";
-      const note = q.createNote(db, {
-        id: noteId, projectId: args.projectId, workspaceId: project.workspaceId,
-        title: args.title, content: markdown, contentText: stripMarkdown(markdown),
-        tagIds: Array.isArray(args.tagIds) ? args.tagIds as string[] : undefined,
-        folder,
-      });
-      writeNoteFile(workspacePath, { ...note, projectName: project.name });
-      return note;
+      const win = getWin?.() ?? null;
+      aiWriteLock.lock(noteId, win);
+      try {
+        const note = q.createNote(db, {
+          id: noteId, projectId: args.projectId, workspaceId: project.workspaceId,
+          title: args.title, content: markdown, contentText: stripMarkdown(markdown),
+          tagIds: Array.isArray(args.tagIds) ? args.tagIds as string[] : undefined,
+          folder,
+        });
+        writeNoteFile(workspacePath, { ...note, projectName: project.name });
+        return note;
+      } finally {
+        aiWriteLock.unlock(noteId, win);
+      }
     }
     case "import_note_from_file": {
       const project = snap.projects.find((p) => p.id === args.projectId);
@@ -232,42 +241,56 @@ export async function executeTool(
       const ensureTagIds = Array.isArray(args.tagIds) ? args.tagIds as string[] : undefined;
       const ensureIsPinned = typeof args.isPinned === "boolean" ? args.isPinned : undefined;
       const ensureFolder = typeof args.folder === "string" ? args.folder : undefined;
-      if (existing) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const patch: Record<string, any> = { content: markdown, contentText: stripMarkdown(markdown) };
-        if (ensureTagIds !== undefined) patch.tagIds = ensureTagIds;
-        if (ensureIsPinned !== undefined) patch.isPinned = ensureIsPinned;
-        if (ensureFolder !== undefined) patch.folder = ensureFolder;
-        const note = q.updateNote(db, existing.id, patch);
-        writeNoteFile(workspacePath, { ...note, projectName: project.name });
-        return { id: existing.id, title: existing.title, action: "updated", updatedAt: note.updatedAt };
-      } else {
-        const noteId = newId();
-        const note = q.createNote(db, {
-          id: noteId, projectId: args.projectId as string, workspaceId: project.workspaceId,
-          title: args.title as string, content: markdown, contentText: stripMarkdown(markdown),
-          tagIds: ensureTagIds,
-          isPinned: ensureIsPinned,
-          folder: ensureFolder ?? "",
-        });
-        writeNoteFile(workspacePath, { ...note, projectName: project.name });
-        return { id: noteId, title: args.title, action: "created", createdAt: note.createdAt };
+      const ensureNoteId = existing?.id ?? newId();
+      const win = getWin?.() ?? null;
+      aiWriteLock.lock(ensureNoteId, win);
+      try {
+        if (existing) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const patch: Record<string, any> = { content: markdown, contentText: stripMarkdown(markdown) };
+          if (ensureTagIds !== undefined) patch.tagIds = ensureTagIds;
+          if (ensureIsPinned !== undefined) patch.isPinned = ensureIsPinned;
+          if (ensureFolder !== undefined) patch.folder = ensureFolder;
+          const note = q.updateNote(db, existing.id, patch);
+          writeNoteFile(workspacePath, { ...note, projectName: project.name });
+          return { id: existing.id, title: existing.title, action: "updated", updatedAt: note.updatedAt };
+        } else {
+          const note = q.createNote(db, {
+            id: ensureNoteId, projectId: args.projectId as string, workspaceId: project.workspaceId,
+            title: args.title as string, content: markdown, contentText: stripMarkdown(markdown),
+            tagIds: ensureTagIds,
+            isPinned: ensureIsPinned,
+            folder: ensureFolder ?? "",
+          });
+          writeNoteFile(workspacePath, { ...note, projectName: project.name });
+          return { id: ensureNoteId, title: args.title, action: "created", createdAt: note.createdAt };
+        }
+      } finally {
+        aiWriteLock.unlock(ensureNoteId, win);
       }
     }
     case "append_to_note": {
       const note = snap.notes.find((n) => n.id === args.noteId);
       if (!note) return { error: "Note not found" };
-      const separator = (args.separator as string | undefined) ?? "\n\n";
-      const existing = note.content ?? "";
-      const newContent = existing ? existing + separator + (args.content as string) : (args.content as string);
-      const updated = q.updateNote(db, args.noteId as string, { content: newContent, contentText: stripMarkdown(newContent) });
-      const proj = snap.projects.find((p) => p.id === note.projectId);
-      writeNoteFile(workspacePath, { ...updated, projectName: proj?.name ?? note.projectId });
-      return { id: note.id, title: note.title, updatedAt: updated.updatedAt, newLength: newContent.length };
+      const appendNoteId = args.noteId as string;
+      const win = getWin?.() ?? null;
+      aiWriteLock.lock(appendNoteId, win);
+      try {
+        const separator = (args.separator as string | undefined) ?? "\n\n";
+        const existing = note.content ?? "";
+        const newContent = existing ? existing + separator + (args.content as string) : (args.content as string);
+        const updated = q.updateNote(db, appendNoteId, { content: newContent, contentText: stripMarkdown(newContent) });
+        const proj = snap.projects.find((p) => p.id === note.projectId);
+        writeNoteFile(workspacePath, { ...updated, projectName: proj?.name ?? note.projectId });
+        return { id: note.id, title: note.title, updatedAt: updated.updatedAt, newLength: newContent.length };
+      } finally {
+        aiWriteLock.unlock(appendNoteId, win);
+      }
     }
     case "patch_note": {
       const existing = snap.notes.find((n) => n.id === args.noteId);
       if (!existing) return { error: "Note not found" };
+      const patchNoteId = args.noteId as string;
       const oldStr = args.oldString as string;
       const newStr = args.newString as string;
       const all = (args.replaceAll as boolean | undefined) ?? false;
@@ -276,14 +299,21 @@ export async function executeTool(
       if (count === 0) return { error: "oldString not found in note content" };
       if (count > 1 && !all) return { error: `oldString matches ${count} times — set replaceAll: true to replace all, or provide more surrounding context to make it unique` };
       const newContent = all ? currentContent.split(oldStr).join(newStr) : currentContent.replace(oldStr, newStr);
-      const note = q.updateNote(db, args.noteId as string, { content: newContent, contentText: stripMarkdown(newContent) });
-      const proj = snap.projects.find((p) => p.id === existing.projectId);
-      writeNoteFile(workspacePath, { ...note, projectName: proj?.name ?? existing.projectId });
-      return { id: existing.id, title: existing.title, updatedAt: note.updatedAt, replacements: all ? count : 1 };
+      const win = getWin?.() ?? null;
+      aiWriteLock.lock(patchNoteId, win);
+      try {
+        const note = q.updateNote(db, patchNoteId, { content: newContent, contentText: stripMarkdown(newContent) });
+        const proj = snap.projects.find((p) => p.id === existing.projectId);
+        writeNoteFile(workspacePath, { ...note, projectName: proj?.name ?? existing.projectId });
+        return { id: existing.id, title: existing.title, updatedAt: note.updatedAt, replacements: all ? count : 1 };
+      } finally {
+        aiWriteLock.unlock(patchNoteId, win);
+      }
     }
     case "update_note": {
       const existing = snap.notes.find((n) => n.id === args.noteId);
       if (!existing) return { error: "Note not found" };
+      const updateNoteId = args.noteId as string;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const patch: Record<string, any> = {};
       if (args.title !== undefined && args.title !== "") patch.title = args.title as string;
@@ -293,10 +323,16 @@ export async function executeTool(
       }
       if (args.isPinned !== undefined) patch.isPinned = args.isPinned as boolean;
       if (Array.isArray(args.tagIds)) patch.tagIds = args.tagIds as string[];
-      const note = q.updateNote(db, args.noteId as string, patch);
-      const proj = snap.projects.find((p) => p.id === note.projectId);
-      writeNoteFile(workspacePath, { ...note, projectName: proj?.name ?? note.projectId });
-      return note;
+      const win = getWin?.() ?? null;
+      aiWriteLock.lock(updateNoteId, win);
+      try {
+        const note = q.updateNote(db, updateNoteId, patch);
+        const proj = snap.projects.find((p) => p.id === note.projectId);
+        writeNoteFile(workspacePath, { ...note, projectName: proj?.name ?? note.projectId });
+        return note;
+      } finally {
+        aiWriteLock.unlock(updateNoteId, win);
+      }
     }
     case "move_note": {
       const note = snap.notes.find((n) => n.id === args.noteId);
@@ -383,7 +419,7 @@ export async function executeTool(
         priority: card.priority, dueDate: card.dueDate,
         columnId: card.columnId, columnName: col?.name ?? "Unknown", columnType: col?.type ?? "custom",
         linkedNoteIds: card.linkedNoteIds, blockedByIds: card.blockedByIds ?? [],
-        projectId: card.projectId, createdAt: card.createdAt, updatedAt: card.updatedAt,
+        projectId: card.projectId, createdAt: card.createdAt, updatedAt: card.updatedAt, version: card.version ?? 0,
       };
     }
     case "delete_note": {
