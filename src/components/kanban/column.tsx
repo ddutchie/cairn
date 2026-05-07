@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Plus, MoreHorizontal, Pencil, Trash2, GripVertical, ArchiveRestore, ChevronDown, ChevronRight, Gauge } from "lucide-react";
+import { Plus, MoreHorizontal, Pencil, Trash2, GripVertical, ArchiveRestore, ChevronDown, ChevronRight, Gauge, Archive } from "lucide-react";
 import { DatePicker } from "@/components/ui/date-picker";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -36,13 +36,14 @@ interface KanbanColumnProps {
   onSetLimit: (limit: number | null) => void;
   onDelete: () => void;
   onRestoreCard: (cardId: string) => void;
+  onArchiveAllDone?: () => void;
   isDragOver: boolean;
   isColumnDragging?: boolean;
   isHighlighted?: boolean;
 }
 
 export function KanbanColumn({
-  column, cards, archivedCards, onCardClick, onAddCard, onRename, onSetLimit, onDelete, onRestoreCard, isDragOver, isColumnDragging, isHighlighted,
+  column, cards, archivedCards, onCardClick, onAddCard, onRename, onSetLimit, onDelete, onRestoreCard, onArchiveAllDone, isDragOver, isColumnDragging, isHighlighted,
 }: KanbanColumnProps) {
   const [isAddingCard, setIsAddingCard] = useState(false);
   const [newCardTitle, setNewCardTitle] = useState("");
@@ -288,6 +289,18 @@ export function KanbanColumn({
                   <Gauge size={11} className="opacity-40" />
                   Clear WIP limit
                 </DropdownMenuItem>
+              )}
+              {column.type === "done" && cards.length > 0 && onArchiveAllDone && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={onArchiveAllDone}
+                    className="flex items-center gap-2 text-xs"
+                  >
+                    <Archive size={11} />
+                    Archive all done
+                  </DropdownMenuItem>
+                </>
               )}
               <DropdownMenuSeparator />
               <DropdownMenuItem

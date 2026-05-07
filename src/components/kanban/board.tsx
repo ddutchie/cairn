@@ -19,7 +19,8 @@ import {
   horizontalListSortingStrategy,
   arrayMove,
 } from "@dnd-kit/sortable";
-import { Plus, Kanban, Archive, Trash2, Search, X } from "lucide-react";
+import { Plus, Kanban, Archive, Trash2, Search, X, ArchiveRestore, ArchiveX } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
@@ -63,20 +64,24 @@ export function KanbanBoard() {
     deleteColumn,
     reorderColumns,
     restoreCard,
+    archiveAllDoneCards,
+    getArchivedProjectCards,
   } = useCairnStore(useShallow((s) => ({
-    activeProjectId:       s.activeProjectId,
-    getProjectColumns:     s.getProjectColumns,
-    getColumnCards:        s.getColumnCards,
-    getArchivedColumnCards: s.getArchivedColumnCards,
-    moveCard:              s.moveCard,
-    archiveCard:           s.archiveCard,
-    deleteCard:            s.deleteCard,
-    createColumn:          s.createColumn,
-    createCard:            s.createCard,
-    updateColumn:          s.updateColumn,
-    deleteColumn:          s.deleteColumn,
-    reorderColumns:        s.reorderColumns,
-    restoreCard:           s.restoreCard,
+    activeProjectId:          s.activeProjectId,
+    getProjectColumns:        s.getProjectColumns,
+    getColumnCards:           s.getColumnCards,
+    getArchivedColumnCards:   s.getArchivedColumnCards,
+    getArchivedProjectCards:  s.getArchivedProjectCards,
+    moveCard:                 s.moveCard,
+    archiveCard:              s.archiveCard,
+    deleteCard:               s.deleteCard,
+    createColumn:             s.createColumn,
+    createCard:               s.createCard,
+    updateColumn:             s.updateColumn,
+    deleteColumn:             s.deleteColumn,
+    reorderColumns:           s.reorderColumns,
+    restoreCard:              s.restoreCard,
+    archiveAllDoneCards:      s.archiveAllDoneCards,
   })));
 
   const [activeCard, setActiveCard]         = useState<TaskCard | null>(null);
@@ -90,6 +95,10 @@ export function KanbanBoard() {
   const [boardFilter, setBoardFilter]       = useState("");
   const [filterVisible, setFilterVisible]   = useState(false);
   const filterInputRef                      = useRef<HTMLInputElement>(null);
+
+  // Archive view
+  const [archiveViewOpen, setArchiveViewOpen] = useState(false);
+  const [archiveFilter, setArchiveFilter]     = useState("");
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -332,8 +341,42 @@ export function KanbanBoard() {
         onDragEnd={handleDragEnd}
       >
         <div ref={boardRef} className="flex-1 flex flex-col min-h-0 w-full overflow-hidden">
+          {/* Board / Archive toggle bar */}
+          <div className="flex items-center gap-1 px-4 py-1.5 border-b border-[var(--border)] bg-[var(--surface)] flex-shrink-0">
+            <button
+              onClick={() => setArchiveViewOpen(false)}
+              className={cn(
+                "flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors",
+                !archiveViewOpen
+                  ? "bg-[var(--surface-2)] text-[var(--text-primary)]"
+                  : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"
+              )}
+            >
+              <Kanban size={11} />
+              Board
+            </button>
+            <button
+              onClick={() => setArchiveViewOpen(true)}
+              className={cn(
+                "flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors",
+                archiveViewOpen
+                  ? "bg-[var(--surface-2)] text-[var(--text-primary)]"
+                  : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"
+              )}
+            >
+              <Archive size={11} />
+              Archive
+              {activeProjectId && (() => {
+                const count = getArchivedProjectCards(activeProjectId).length;
+                return count > 0 ? (
+                  <span className="ml-0.5 px-1.5 py-0.5 rounded-full text-[0.643rem] bg-[var(--surface-3)] text-[var(--text-tertiary)]">{count}</span>
+                ) : null;
+              })()}
+            </button>
+          </div>
+
           {/* Filter bar — shown when ⌘F is pressed */}
-          {filterVisible && (
+          {filterVisible && !archiveViewOpen && (
             <div className="flex items-center gap-2 px-4 py-2 border-b border-[var(--border)] bg-[var(--surface-1)] flex-shrink-0">
               <div className="relative flex items-center flex-1 max-w-xs">
                 <Search size={12} className="absolute left-2.5 text-[var(--text-tertiary)] pointer-events-none" />
@@ -366,7 +409,97 @@ export function KanbanBoard() {
               </button>
             </div>
           )}
-          <SortableContext items={columns.map((c) => c.id)} strategy={horizontalListSortingStrategy}>
+          {/* ── Archive view ── */}
+          {archiveViewOpen && activeProjectId && (() => {
+            const allArchived = getArchivedProjectCards(activeProjectId);
+            const q = archiveFilter.toLowerCase();
+            const filtered = q
+              ? allArchived.filter((c) =>
+                  c.title.toLowerCase().includes(q) || (c.description ?? "").toLowerCase().includes(q)
+                )
+              : allArchived;
+            // Group by column name for display
+            const colMap = new Map(columns.map((c) => [c.id, c]));
+            return (
+              <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+                {/* Archive toolbar */}
+                <div className="flex items-center gap-2 px-4 py-2 border-b border-[var(--border)] flex-shrink-0">
+                  <div className="relative flex items-center flex-1 max-w-xs">
+                    <Search size={12} className="absolute left-2.5 text-[var(--text-tertiary)] pointer-events-none" />
+                    <input
+                      type="text"
+                      value={archiveFilter}
+                      onChange={(e) => setArchiveFilter(e.target.value)}
+                      placeholder="Search archived tasks…"
+                      className="w-full pl-7 pr-2 py-1.5 text-xs rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)]"
+                    />
+                  </div>
+                  <span className="text-xs text-[var(--text-tertiary)]">
+                    {filtered.length} task{filtered.length !== 1 ? "s" : ""}
+                  </span>
+                </div>
+                {/* Archive card grid */}
+                <div className="flex-1 overflow-y-auto p-5">
+                  {filtered.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-full gap-3">
+                      <ArchiveX size={32} className="text-[var(--text-tertiary)] opacity-30" />
+                      <p className="text-sm text-[var(--text-tertiary)]">
+                        {archiveFilter ? "No archived tasks match your search" : "No archived tasks"}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3">
+                      {filtered.map((card) => {
+                        const col = colMap.get(card.columnId);
+                        return (
+                          <div key={card.id} className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3 flex flex-col gap-2 opacity-80 hover:opacity-100 transition-opacity">
+                            <div className="flex items-start justify-between gap-2">
+                              <span className="text-xs font-medium text-[var(--text-primary)] leading-snug line-clamp-2">{card.title}</span>
+                              <button
+                                onClick={() => restoreCard(card.id)}
+                                title="Restore task"
+                                className="flex-shrink-0 p-1 rounded hover:bg-[var(--accent)]/10 text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors"
+                              >
+                                <ArchiveRestore size={12} />
+                              </button>
+                            </div>
+                            {card.description && (
+                              <p className="text-[0.714rem] text-[var(--text-tertiary)] line-clamp-2">{card.description}</p>
+                            )}
+                            <div className="flex items-center gap-1.5 mt-auto pt-1">
+                              {col && (
+                                <span className="text-[0.643rem] px-1.5 py-0.5 rounded bg-[var(--surface-2)] text-[var(--text-tertiary)]">
+                                  {col.name}
+                                </span>
+                              )}
+                              {card.priority && card.priority !== "medium" && (
+                                <span className={cn(
+                                  "text-[0.643rem] px-1.5 py-0.5 rounded",
+                                  card.priority === "urgent" && "bg-[var(--danger)]/10 text-[var(--danger)]",
+                                  card.priority === "high"   && "bg-amber-500/10 text-amber-400",
+                                  card.priority === "low"    && "bg-[var(--surface-2)] text-[var(--text-tertiary)]",
+                                )}>
+                                  {card.priority}
+                                </span>
+                              )}
+                              {card.archivedAt && (
+                                <span className="text-[0.643rem] text-[var(--text-tertiary)] ml-auto">
+                                  {new Date(card.archivedAt).toLocaleDateString()}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* ── Kanban board ── */}
+          {!archiveViewOpen && <SortableContext items={columns.map((c) => c.id)} strategy={horizontalListSortingStrategy}>
             <div
               ref={boardScrollRef}
               className="flex-1 flex gap-3 overflow-x-auto p-5 min-h-0 transition-all duration-200"
@@ -392,6 +525,7 @@ export function KanbanBoard() {
                       onSetLimit={(limit) => updateColumn(column.id, { cardLimit: limit ?? undefined })}
                       onDelete={() => deleteColumn(column.id)}
                       onRestoreCard={(cardId) => restoreCard(cardId)}
+                      onArchiveAllDone={column.type === "done" ? () => archiveAllDoneCards(column.id) : undefined}
                       isDragOver={overId === column.id}
                       isColumnDragging={activeColumn?.id === column.id}
                       isHighlighted={highlightedColumnId === column.id}
@@ -421,7 +555,7 @@ export function KanbanBoard() {
                 </div>
               )}
             </div>
-          </SortableContext>
+          </SortableContext>}
         </div>
 
         {actionZonesPortal}

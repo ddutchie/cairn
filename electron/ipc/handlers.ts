@@ -301,6 +301,18 @@ export function registerIpcHandlers(ctx: DbContext): void {
   }));
   ipcMain.handle("db:card:delete", (_e, { id }) => handle(() => q.deleteCard(ctx.db, id)));
 
+  // Archive every non-archived card in a given Done-type column
+  ipcMain.handle("db:cards:archive-done", (_e, { columnId }: { columnId: string }) => handle(() => {
+    const col = ctx.db.prepare("SELECT * FROM board_columns WHERE id = ?").get(columnId) as { type: string } | undefined;
+    if (!col) return { error: "Column not found" };
+    if (col.type !== "done") return { error: "Only Done-type columns can be bulk-archived" };
+    const now = new Date().toISOString();
+    const result = ctx.db.prepare(
+      "UPDATE task_cards SET archived_at = ?, updated_at = ?, version = version + 1 WHERE column_id = ? AND archived_at IS NULL"
+    ).run(now, now, columnId);
+    return { archived: result.changes };
+  }));
+
   // ── Card dependencies ─────────────────────────────
   ipcMain.handle("db:card:addBlocker", (_e, { cardId, blockerCardId }) => handle(() => {
     const card    = q.getCardById(ctx.db, cardId);

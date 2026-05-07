@@ -51,6 +51,7 @@ export interface BoardSlice {
   reorderCards: (columnId: ID, cardIds: ID[]) => void;
   archiveCard: (id: ID) => void;
   restoreCard: (id: ID) => void;
+  archiveAllDoneCards: (columnId: ID) => Promise<number>;
   moveCardToProject: (cardId: ID, targetProjectId: ID) => void;
   duplicateCard: (id: ID) => TaskCard | null;
   unlinkNoteFromCard: (noteId: ID, cardId: ID) => void;
@@ -297,6 +298,21 @@ export const createBoardSlice: StateCreator<CairnStore, [], [], BoardSlice> = (
     get().persist();
     ipc((e) => e.card.update(cardId, { archivedAt: null }));
     historyManager.push(makeRestoreCardCmd(cardId, set));
+  },
+
+  async archiveAllDoneCards(columnId) {
+    const archivedAt = now();
+    // Optimistic update — mark all active cards in column as archived
+    set((s) => ({
+      cards: s.cards.map((c) =>
+        c.columnId === columnId && !c.archivedAt
+          ? { ...c, archivedAt, updatedAt: archivedAt }
+          : c
+      ),
+    }));
+    get().persist();
+    const result = await ipc((e) => e.card.archiveDone(columnId)) as { archived?: number } | undefined;
+    return result?.archived ?? 0;
   },
 
   moveCardToProject(cardId, targetProjectId) {

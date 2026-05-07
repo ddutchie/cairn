@@ -63,6 +63,7 @@ const api = {
     create:       (args: unknown) => invoke("db:card:create", args),
     update:       (id: string, patch: unknown) => invoke("db:card:update", { id, patch }),
     delete:       (id: string) => invoke("db:card:delete", { id }),
+    archiveDone:  (columnId: string) => invoke("db:cards:archive-done", { columnId }),
     addBlocker:   (cardId: string, blockerCardId: string) => invoke("db:card:addBlocker", { cardId, blockerCardId }),
     removeBlocker:(cardId: string, blockerCardId: string) => invoke("db:card:removeBlocker", { cardId, blockerCardId }),
     ready:        (projectId?: string) => invoke("db:card:ready", { projectId }),
