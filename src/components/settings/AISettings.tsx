@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import {
-  CheckCircle, RefreshCw, Key, Globe, Cpu, Wifi, WifiOff, Eye, EyeOff, Footprints,
+  CheckCircle, RefreshCw, Key, Globe, Cpu, Wifi, WifiOff, Eye, EyeOff, Footprints, Layers,
 } from "lucide-react";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useCairnStore } from "@/store";
@@ -25,7 +25,7 @@ export function AISettings() {
   const [modelsFetched, setModelsFetched] = useState(false);
 
   // Always read directly from the store — no local shadow copy
-  const { baseUrl, model, apiKey, maxSteps, aiEnabled } = aiConfig;
+  const { baseUrl, model, apiKey, maxSteps, contextLimit, aiEnabled } = aiConfig;
   const isLocal =
     baseUrl.includes("localhost") ||
     baseUrl.includes("127.0.0.1") ||
@@ -273,6 +273,46 @@ export function AISettings() {
                   )}
                 >
                   {n}
+                </button>
+              ))}
+            </div>
+          </div>
+        </SettingsRow>
+
+        {/* Context window */}
+        <SettingsRow
+          label="Context window"
+          description="Token limit of your model. Used to display the context usage ring in the agent pane."
+        >
+          <div className="flex flex-col gap-1.5 items-end">
+            <div className="relative">
+              <Layers size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]" />
+              <input
+                type="number"
+                min={1000}
+                max={2000000}
+                step={1000}
+                value={contextLimit ?? 128000}
+                onChange={(e) => {
+                  const v = parseInt(e.target.value, 10);
+                  if (!isNaN(v) && v >= 1000) update({ contextLimit: v });
+                }}
+                className="pl-7 pr-3 py-1.5 text-xs w-28 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)]"
+              />
+            </div>
+            <div className="flex gap-1.5">
+              {[8000, 32000, 128000, 200000].map((n) => (
+                <button
+                  key={n}
+                  onClick={() => update({ contextLimit: n })}
+                  className={cn(
+                    "px-2 py-1 text-[0.714rem] rounded border transition-colors",
+                    (contextLimit ?? 128000) === n
+                      ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
+                      : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]"
+                  )}
+                >
+                  {n >= 1000 ? `${n / 1000}k` : n}
                 </button>
               ))}
             </div>

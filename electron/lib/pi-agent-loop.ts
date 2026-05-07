@@ -24,6 +24,7 @@ import {
   grepTool,  grepToolDefinition,
   findTool,  findToolDefinition,
   lsTool,    lsToolDefinition,
+  spawnSubagentDefinition, spawnSubagentTool,
 } from "./coding-tools/index";
 import { executeTool } from "../ipc/chat-executor";
 import type { ChatRequest, ToolArgs } from "./tools";
@@ -68,11 +69,14 @@ const CODING_LABELS: Record<string, (args: ToolArgs) => string> = {
 // ── Events interface ──────────────────────────────────────────────────────────
 
 export interface AgentLoopCallbacks {
-  onToken:     (delta: string) => void;
-  onToolStart: (name: string, label: string) => void;
-  onToolEnd:   (name: string, label: string, ok: boolean) => void;
-  onDone:      () => void;
-  onError:     (message: string) => void;
+  onToken:      (delta: string) => void;
+  onToolsReady: () => void;
+  onToolStart:  (name: string, label: string) => void;
+  onToolEnd:    (name: string, label: string, ok: boolean, output: string) => void;
+  onStepStart:  () => void;
+  onUsage:      (promptTokens: number, completionTokens: number) => void;
+  onDone:       () => void;
+  onError:      (message: string) => void;
 }
 
 // ── Session state ─────────────────────────────────────────────────────────────
@@ -92,6 +96,7 @@ const CODING_TOOL_DEFS = [
   grepToolDefinition,
   findToolDefinition,
   lsToolDefinition,
+  spawnSubagentDefinition,
 ];
 
 // Cairn data tool names we expose to the coding agent (subset of chat tools)
@@ -101,6 +106,7 @@ const CAIRN_TOOL_NAMES = new Set([
   "list_notes",
   "get_note",
   "create_note",
+  "ensure_note",
   "update_note",
   "patch_note",
   "append_to_note",
@@ -138,6 +144,9 @@ async function executeSingleTool(
   workspacePath: string,
   llmConfig: AgentLLMConfig,
   onUpdate: (output: string) => void,
+  sessionId: string,
+  send: (channel: string, payload: unknown) => void,
+  getWin?: () => BrowserWindow | null,
 ): Promise<string> {
   switch (name) {
     case "read":  return readTool(args as Parameters<typeof readTool>[0],  cwd);
@@ -151,6 +160,17 @@ async function executeSingleTool(
     case "grep":  return grepTool(args as Parameters<typeof grepTool>[0], cwd);
     case "find":  return findTool(args as Parameters<typeof findTool>[0], cwd);
     case "ls":    return lsTool(args as Parameters<typeof lsTool>[0],    cwd);
+    case "spawn_subagent": return spawnSubagentTool(
+      args as Parameters<typeof spawnSubagentTool>[0],
+      cwd,
+      llmConfig,
+      db,
+      req,
+      workspacePath,
+      sessionId,
+      send,
+      getWin,
+    );
     default: {
       // Delegate to Cairn chat executor
       if (CAIRN_TOOL_NAMES.has(name)) {
@@ -181,6 +201,8 @@ export async function runAgentLoop(
   workspacePath: string,
   callbacks: AgentLoopCallbacks,
   getWin?: () => BrowserWindow | null,
+  sessionId?: string,
+  send?: (channel: string, payload: unknown) => void,
 ): Promise<void> {
   const { signal } = session.abortCtrl;
   const allTools = getAllToolDefs();
@@ -200,6 +222,9 @@ export async function runAgentLoop(
     if (signal.aborted) { callbacks.onDone(); return; }
     steps++;
     console.log(`[pi-agent-loop] step ${steps}, messages=${session.messages.length}`);
+    // From step 2 onwards, signal the renderer to finalise the previous
+    // assistant message and start a fresh one for this turn's tokens.
+    if (steps > 1) callbacks.onStepStart();
 
     // Build messages array for this request
     const messages: AgentMessage[] = [
@@ -225,6 +250,7 @@ export async function runAgentLoop(
           max_tokens: 8192,
           temperature: 0.3,
           stream: true,
+          stream_options: { include_usage: true },
         }),
       });
     } catch (e) {
@@ -266,6 +292,15 @@ export async function runAgentLoop(
         try {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const chunk = JSON.parse(jsonStr) as any;
+
+          // Usage chunk — sent as the final SSE chunk when stream_options.include_usage is set.
+          // It has an empty choices array and a top-level usage object.
+          if (chunk.usage) {
+            const pt = chunk.usage.prompt_tokens ?? 0;
+            const ct = chunk.usage.completion_tokens ?? 0;
+            callbacks.onUsage(pt, ct);
+          }
+
           const delta = chunk.choices?.[0]?.delta;
           if (!delta) continue;
 
@@ -318,6 +353,12 @@ export async function runAgentLoop(
       tool_calls: toolCalls,
     });
 
+    // ── Ensure renderer has a streaming message to attach tool chips to ───
+    // When the LLM emits tool calls with no preceding text tokens, onToken
+    // was never called, so no streaming message exists. onToolsReady tells
+    // the renderer to create one before we start firing onToolStart/onToolEnd.
+    callbacks.onToolsReady();
+
     // ── Execute each tool ─────────────────────────────────────────────────
     for (const tc of toolCalls) {
       if (signal.aborted) { callbacks.onDone(); return; }
@@ -345,6 +386,9 @@ export async function runAgentLoop(
           workspacePath,
           llmConfig,
           (output) => callbacks.onToolStart(tc.function.name, `${label}: ${output.slice(-80)}`),
+          sessionId ?? "",
+          send ?? (() => {}),
+          getWin,
         );
       } catch (e) {
         ok = false;
@@ -352,7 +396,7 @@ export async function runAgentLoop(
       }
 
       console.log(`[pi-agent-loop] tool ${tc.function.name} done, ok=${ok}, result.length=${resultContent.length}`);
-      callbacks.onToolEnd(tc.function.name, label, ok);
+      callbacks.onToolEnd(tc.function.name, label, ok, resultContent);
 
       session.messages.push({
         role: "tool",

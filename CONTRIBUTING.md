@@ -69,9 +69,16 @@ That's it — `compile:watch` runs in parallel and rebuilds the Electron main pr
 npm run type-check        # tsc --noEmit — run this before every commit
 npm test                  # run all unit tests (vitest)
 npm run test:watch        # watch mode
+npm run test:e2e          # E2E smoke tests (headless Chromium) — run before any UI PR
 npm run compile           # one-shot rebuild of dist-electron/ + dist-mcp/
 npm run lint              # eslint
 ```
+
+### Getting help
+
+Not sure where to start? Open a [GitHub Discussion](https://github.com/ddutchie/cairn/discussions) — ask questions, share ideas, or introduce yourself. For bugs use [GitHub Issues](https://github.com/ddutchie/cairn/issues).
+
+> **Working with an AI coding agent?** Read [AGENTS.md](AGENTS.md) — it has architecture conventions and build commands tuned for LLM context windows (and is what powers the built-in Cairn agent).
 
 ---
 
@@ -572,13 +579,15 @@ vitest uses a SQLite shim (`vitest-sqlite-shim.cjs`) to ensure the system Node A
 
 ### PR checklist
 
-- [ ] `npm run type-check` passes
+- [ ] `npm run type-check` passes with zero errors
 - [ ] `npm test` passes
-- [ ] No raw colour values (use CSS variables)
-- [ ] No `text-[Npx]` pixel font classes (use rem equivalents)
+- [ ] `npm run test:e2e` passes (required for UI changes or release PRs)
+- [ ] No raw colour values — CSS variables only (`var(--accent)`, `var(--text-primary)`, etc.)
+- [ ] No `text-[Npx]` pixel font classes — rem equivalents only (`text-[0.714rem]`, `text-xs`, etc.)
 - [ ] New IPC handlers wrapped in `handle()` and return `IpcResult<T>`
 - [ ] New DB migrations appended (not edited) in `schema.ts`
-- [ ] Screenshots included for UI changes
+- [ ] `mcp-server.ts` changes use inlined SQL only — no `import` from `queries.ts`
+- [ ] Screenshots or recording included for any UI changes
 - [ ] `useCairnStore()` calls use narrow selectors (not full-store subscriptions)
 - [ ] List-item components wrapped in `React.memo`
 - [ ] Expensive derivations wrapped in `useMemo` (not recomputed every render)
@@ -587,16 +596,37 @@ vitest uses a SQLite shim (`vitest-sqlite-shim.cjs`) to ensure the system Node A
 
 ## Good first issues
 
-If you're new to the codebase, these are good places to start:
+If you're new to the codebase, these are good places to start. Each one is self-contained, won't conflict with ongoing work, and has clear acceptance criteria.
 
-- **No `404.html`** — GitHub Pages serves a default 404 for the docs site. A styled page would be a clean, self-contained contribution.
-- **Accessibility** — checking components for missing ARIA labels, keyboard navigation gaps, or colour contrast issues.
-- **Docs** — the `docs/` site at `cairn-site` always needs keeping up to date with new features. Pure HTML/CSS — no build step required.
-- **Zustand selector narrowing** — replacing `useCairnStore()` full-store calls with narrow `useShallow` selectors in a specific component. Self-contained, testable, and high-impact. Good candidates: `MCPSettings`, `GeneralSettings`, `InsightsView`.
-- **`React.memo` on list items** — wrapping `ProjectItem` in `React.memo` after narrowing its store subscriptions. `KanbanCard` and `NoteListItem` are already wrapped — `ProjectItem` is the remaining high-value candidate.
+### 🟢 No TypeScript required
+
+- **Accessibility audit** — check components for missing ARIA labels (`aria-label`, `role`), keyboard navigation gaps, or colour contrast issues. Focus on the Kanban board and the Settings panel first.
+- **Docs improvements** — the [cairn-site](https://github.com/ddutchie/cairn-site) docs always lag behind new features. Pure HTML/CSS — no build step.
+- **Improve the `Good first issues` list** — if you find something genuinely approachable that isn't listed here, add it and open a PR.
+
+### 🟡 TypeScript / React
+
+- **Zustand selector narrowing** — replace bare `useCairnStore()` calls (which subscribe to the *entire* store) with narrow `useShallow` selectors. Good candidates with real impact: `MCPSettings`, `GeneralSettings`, `InsightsView`. Each component is a single self-contained file.
+  ```ts
+  // Before — re-renders on every store write
+  const { cards, columns } = useCairnStore();
+  // After — only re-renders when these two fields change
+  const { cards, columns } = useCairnStore(useShallow((s) => ({ cards: s.cards, columns: s.columns })));
+  ```
+- **`React.memo` on `ProjectItem`** — `KanbanCard` and `NoteListItem` are already wrapped; `ProjectItem` (`src/components/layout/sidebar.tsx`) is the remaining high-value candidate. Wrap it after narrowing its store subscriptions.
+- **Test coverage for a utility function** — `electron/shared/text-utils.ts` (`toSlug`, `stripMarkdown`) and `electron/db/utils.ts` (`newId`, `ts`) have no dedicated tests. Add them to the nearest test file.
+
+### 🔴 Electron / SQLite
+
+- **New MCP tool** — pick a missing read-only query (e.g. `list_dashboards`) and add it end-to-end following the 6-step checklist in [Adding a new MCP / AI chat tool](#adding-a-new-mcp--ai-chat-tool).
+- **Bug fixes** — check the [open issues](https://github.com/ddutchie/cairn/issues) labelled `good first issue` for the current list.
+
+> **Tip:** if you're unsure which file to touch, drop a question in [Discussions](https://github.com/ddutchie/cairn/discussions) or leave a comment on the issue before writing code.
 
 ---
 
 ## Questions
 
-Open a [GitHub Discussion](https://github.com/ddutchie/cairn/discussions) or file an issue with the `question` label. We're happy to help orient you.
+Open a [GitHub Discussion](https://github.com/ddutchie/cairn/discussions) or file an issue with the `question` label. We read every one and are happy to help orient you.
+
+For security vulnerabilities, please see [SECURITY.md](SECURITY.md) rather than opening a public issue.

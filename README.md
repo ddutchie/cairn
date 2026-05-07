@@ -10,6 +10,9 @@
   <a href="https://ddutchie.github.io/cairn-site/index.html"><img src="https://img.shields.io/badge/Website-Live-blue" alt="Website"></a>
   <a href="https://ddutchie.github.io/cairn-site/docs"><img src="https://img.shields.io/badge/Docs-Read-green" alt="Docs"></a>
   <a href="https://github.com/ddutchie/cairn/releases"><img src="https://img.shields.io/github/v/release/ddutchie/cairn?label=Releases" alt="Releases"></a>
+  <a href="https://github.com/ddutchie/cairn/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+  <a href="https://github.com/ddutchie/cairn/issues"><img src="https://img.shields.io/github/issues/ddutchie/cairn" alt="Open Issues"></a>
+  <a href="https://github.com/ddutchie/cairn/discussions"><img src="https://img.shields.io/badge/Discussions-Ask%20or%20share-blueviolet" alt="GitHub Discussions"></a>
   <a href="https://deepwiki.com/ddutchie/cairn/"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki"></a>
 </p>
 
@@ -30,12 +33,12 @@ Cairn is a desktop app (Electron + Next.js) that combines markdown notes with a 
 - **Drag notes into folders** — Drag any note in the sidebar directly onto a folder row to move it; a "Move to root" drop zone appears while dragging
 - **Linked context** — Notes and cards reference each other bidirectionally
 - **Global search** — Instant full-text search across all notes and tasks (`⌘K` or `⌘⇧F`)
-- **AI chat** — Integrated assistant with live project context; reads and writes your data (`⌘/`); supports inline `ask_questions` forms for structured clarification
-- **Interactive PRD generation** — Describe what you want to build; the agent reads your project context, asks targeted clarifying questions via an inline form, then writes and saves a full PRD to your notes
-- **Idea Flow** — A freeform node canvas per project (`⌘4`): add idea, note reference, task reference, group, URL, and AI summary nodes; connect them with labelled edges; the AI and MCP can read and write the canvas as first-class authors
-- **Live dashboards** — Ask the AI to generate an interactive HTML dashboard for any project; choose from a template gallery or start blank; dashboards fetch live data on every load via a sandboxed `window.cairn.query()` bridge; runtime errors surface an inline "Fix with AI" button; HTML editable directly via a built-in CodeMirror overlay
+- **AI chat** — Integrated assistant with live project context; reads and writes your data (`⌘/`)
+- **Interactive PRD generation** — Describe what you want to build; the agent asks clarifying questions then writes and saves a full PRD to your notes
+- **Idea Flow** — Freeform node canvas per project (`⌘4`): ideas, note/task refs, groups, URLs, AI summaries — connected with labelled edges
+- **Live dashboards** — AI-generated interactive HTML dashboards with a live `window.cairn.query()` data bridge; inline "Fix with AI" on runtime errors; editable via built-in CodeMirror overlay
 - **MCP server** — Exposes your workspace to external AI agents (OpenCode, Claude Desktop, etc.) via the Model Context Protocol
-- **Agent workspace** — Dedicated three-pane view (`⌘5`) for running AI coding agents (Claude Code, OpenCode, Aider, or any CLI binary) connected directly to project tasks. Spawn from a kanban card or ad-hoc. Includes a resizable file tree with `⌘⇧F` filename search, multi-file CodeMirror 6 editor (syntax highlighting, `⌘S` save, `⌘F` find/replace, markdown preview, image viewer), xterm.js terminal with persistent sessions, and a git diff viewer (unified / split / changes-only modes with syntax highlighting)
+- **Agent workspace** — Three-pane view (`⌘5`) for running AI coding agents (Claude Code, OpenCode, Aider, or any CLI) connected to project tasks; file tree, multi-file CodeMirror 6 editor, xterm.js terminal, and git diff viewer
 - **Knowledge Graph** — Workspace-wide graph of every note, card, project, and tag; Force-directed and Radial tree layouts; auto-discovered relationships (`⌘6`)
 - **Insights** — Analytics view: Ridgeline joy plot, Beeswarm, Bullet health bars, Sankey pipeline flow, Timeline, Matrix heatmap, Table (`⌘7`)
 - **Font scaling** — Five-step UI font size preference (XS–XL, default M) in Settings → General
@@ -73,7 +76,7 @@ Cairn is a desktop app (Electron + Next.js) that combines markdown notes with a 
 ### Install and run in development
 
 ```bash
-git clone https://github.com/YOUR_ORG/cairn
+git clone https://github.com/ddutchie/cairn
 cd cairn
 npm install
 npm run rebuild   # build better-sqlite3 native binaries for Electron + system Node
@@ -92,7 +95,7 @@ npm run build:all      # All three platforms
 
 Output goes to `dist-app/`.
 
-> **Note:** `npm run rebuild` must be re-run after updating the Electron version. It builds three native binaries: one for the Electron ABI (`electron-native/`), one for the Node 22 ABI used by the MCP binary (`pkg-native/`), and one for the current system Node ABI used by vitest (`vitest-native/`). The MCP server is then bundled into a self-contained binary by `scripts/build-mcp-binary.js` — no separate Node installation needed to run it.
+> **Note:** Re-run `npm run rebuild` after any Electron version bump. It builds native binaries for three ABIs (Electron, Node 22/MCP, system Node/vitest) and bundles the MCP server into a self-contained binary via `scripts/build-mcp-binary.js`.
 
 ## AI chat setup
 
@@ -265,54 +268,30 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ## Architecture
 
-Cairn is an Electron + Next.js desktop app with two processes that share a single SQLite database (WAL mode), plus a separately-invokable MCP binary for external agent access:
+Two processes share a single SQLite database (WAL mode):
 
-- **Renderer** (`src/`) — React/Next.js. Never touches the filesystem or database directly. All data flows through IPC via `window.electron.*`.
-- **Main process** (`electron/`) — Node.js. Owns SQLite, file I/O, the AI chat loop, and PTY sessions for coding agents.
-- **MCP server** (`electron/mcp-server.ts`) — a self-contained binary connecting external AI agents (OpenCode, Claude Desktop, etc.) to the same database via WAL polling.
+- **Renderer** (`src/`) — React/Next.js. All data flows through IPC via `window.electron.*`; never touches the DB or filesystem directly.
+- **Main process** (`electron/`) — Node.js. Owns SQLite, file I/O, AI chat loop, and PTY sessions for coding agents.
+- **MCP server** (`electron/mcp-server.ts`) — self-contained binary; connects external agents to the same DB via WAL polling.
 
-Notes are plain `.md` files with YAML frontmatter; SQLite is the read/search cache. Every note write goes through `writeNoteFile()` which writes to a `.tmp` file and renames it into place (atomic). A chokidar file watcher syncs external edits back on startup and at runtime; on startup, `syncNotesFromDisk` compares file timestamps against the DB and overwrites SQLite if the file is newer. The **Agent workspace** (`⌘5`) runs coding agent CLIs via `node-pty` PTY sessions, with all file I/O path-validated against registered project `code_directory` values.
+Notes are plain `.md` files (YAML frontmatter); SQLite is the read/search cache. Writes are atomic (`.tmp` rename). A chokidar watcher syncs external edits at runtime. `notes` and `task_cards` carry a `version` integer; MCP write tools accept `expectedVersion` for conflict detection.
 
-When the AI (chat executor or MCP server) is writing to a note, the editor enters read-only mode with a pulsing banner. The in-process chat executor uses a module-level lock set (`ai-write-lock.ts`); the MCP server signals via a `mcp_active_writes` SQLite table that the WAL poller diffs every second.
-
-`notes` and `task_cards` each carry a `version` integer that increments on every write. MCP write tools accept an optional `expectedVersion` argument and return a conflict error if the row has been modified since the caller last read it.
-
-State in the renderer is managed by Zustand domain slices (`ui`, `workspace`, `board`, `notes`, `tags`, `chat`, `graph`, `selectors`), composed in `src/store/index.ts`. Analytics canvases in Insights follow a shared pattern: `useContainerDims` + `useScopedData` + `useFontScale` + D3/SVG rendering.
-
-For the full architecture reference — process model, storage split, data model, dashboard rendering, write paths, font scaling, analytics canvas pattern, and key files — see [CONTRIBUTING.md](CONTRIBUTING.md#architecture).
+For the full architecture reference see [CONTRIBUTING.md](CONTRIBUTING.md#architecture). AI coding agents should read [AGENTS.md](AGENTS.md) for conventions tuned to LLM context windows.
 
 ## Testing
 
-### Unit & integration tests (Vitest)
-
 ```bash
-npm test              # run all tests
-npm run test:watch    # watch mode
-npm run test:coverage # coverage report
+npm test                 # unit & integration (Vitest)
+npm run test:watch       # watch mode
+npm run test:coverage    # coverage report
+npm run test:e2e         # E2E smoke tests — headless Chromium, no Electron required
+npm run test:e2e:ui      # Playwright UI mode
+npm run test:e2e:headed  # headed for local debugging
 ```
 
-Tests live alongside the code they cover:
+Unit/integration tests (`electron/**/*.test.ts`) cover SQLite queries, file I/O, MCP tools end-to-end, chat executor tool cases, IPC handlers, and MCP↔chat tool parity. The E2E suite runs against the Next.js dev server with a full IPC mock — covers boot, all 8 views, and sidebar content in ~10s.
 
-| File | Tests | What's covered |
-|------|-------|---------------|
-| `electron/db/queries.test.ts` | 22 | SQLite query helpers — CRUD, search, soft-delete, snapshot |
-| `electron/notes-files.test.ts` | 40 | File I/O, slug generation, frontmatter round-trip, atomic writes, startup sync (tmp dirs) |
-| `electron/mcp-server.test.ts` | 134 | MCP `executeTool` end-to-end via in-memory SQLite — all tools, edge cases, blocker chains |
-| `electron/ipc/chat-executor.test.ts` | 98 | Every tool case in the AI chat executor — happy path, missing entities, error returns |
-| `electron/ipc/handlers.test.ts` | 14 | IPC data layer — `executeReadTool`, `buildContextResponse`, `getBy*` queries |
-| `electron/ipc/tool-parity.test.ts` | 33 | Cross-executor key parity between MCP and chat paths for all shared tools |
-
-### E2E smoke tests (Playwright)
-
-```bash
-npm run test:e2e         # headless Chromium (starts Next.js dev server automatically)
-npm run test:e2e:ui      # Playwright UI mode — interactive, with time-travel debugger
-npm run test:e2e:headed  # headed run for local debugging
-```
-
-The E2E suite runs against the Next.js dev server with a full `window.electron` IPC mock injected before React boots — no Electron or packaged app required. It covers app boot, crash-free render of all 8 views, and sidebar content. Runs in ~10s.
-
-**Run the E2E suite before cutting a release** to catch renderer crashes that unit tests can't reach.
+**Run `npm run test:e2e` before cutting a release** to catch renderer crashes unit tests can't reach.
 
 ## Tech stack
 
@@ -392,36 +371,6 @@ The E2E suite runs against the Next.js dev server with a full `window.electron` 
 
 > The **Settings → About** screen in the app shows real installed versions grouped by category (Platform, Data, AI, UI, Editor, Agent, Visualisation) and all open source licenses. These are generated automatically at build time — see below.
 
-## About screen & license generation
-
-<details>
-<summary>How license generation works</summary>
-
-The About section in Settings is populated from `src/generated/licenses.json`, which is generated by `scripts/generate-licenses.js` before each build. It reads installed versions and license identifiers directly from `node_modules` — so it is always accurate and never needs manual updates.
-
-### When to run it
-
-It runs automatically as part of `npm run build:*` and `npm run dev`. You should not need to run it manually unless you want to preview changes to the About screen without starting the full dev server:
-
-```bash
-node scripts/generate-licenses.js
-```
-
-`src/generated/` is `.gitignore`d since it is build output.
-
-### Adding a new dependency
-
-If you add a package that should appear in the **Stack** grid in the About screen (not just the full license list), add an entry to the `ROLE_MAP` object in `scripts/generate-licenses.js`:
-
-```js
-// scripts/generate-licenses.js — ROLE_MAP
-"your-package-name": ["Display Name", "Short role description", "Category"],
-```
-
-The key must exactly match the package name in `package.json`. Valid categories are `Platform`, `Data`, `AI`, `UI`, `Editor`, `Agent`, and `Visualisation` — entries are grouped under these headings in the About screen. All installed packages (whether in `ROLE_MAP` or not) are automatically included in the full **Open Source Licenses** list.
-
-</details>
-
 ## Star History
 <p align="center">
 <a href="https://www.star-history.com/?repos=ddutchie%2Fcairn&type=date&legend=top-left">
@@ -432,6 +381,12 @@ The key must exactly match the package name in `package.json`. Valid categories 
  </picture>
 </a>
 </p>
+
+## Contributing
+
+Contributions are welcome — bug fixes, features, docs, and tests. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide: dev setup, architecture, coding conventions, and PR checklist.
+
+For security issues please see [SECURITY.md](SECURITY.md) rather than filing a public issue.
 
 ## License
 

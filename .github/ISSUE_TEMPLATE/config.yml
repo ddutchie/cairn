@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Question or discussion
+    url: https://github.com/ddutchie/cairn/discussions
+    about: Ask a question, share what you've built, or start a conversation
+  - name: 🔒 Security vulnerability
+    url: https://github.com/ddutchie/cairn/security/advisories/new
+    about: Report a security issue privately

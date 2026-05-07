@@ -283,7 +283,7 @@ const api = {
       ipcRenderer.on("pi-agent:token", handler);
       return () => ipcRenderer.off("pi-agent:token", handler);
     },
-    onTool: (cb: (e: { sessionId: string; name: string; label: string; status: "start" | "end"; ok?: boolean }) => void) => {
+    onTool: (cb: (e: { sessionId: string; name: string; label: string; status: "start" | "end"; ok?: boolean; output?: string }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const handler = (_: any, e: { sessionId: string; name: string; label: string; status: "start" | "end"; ok?: boolean }) => cb(e);
       ipcRenderer.on("pi-agent:tool", handler);
@@ -300,6 +300,30 @@ const api = {
       const handler = (_: any, e: { sessionId: string; error: string }) => cb(e);
       ipcRenderer.on("pi-agent:error", handler);
       return () => ipcRenderer.off("pi-agent:error", handler);
+    },
+    onToolsReady: (cb: (e: { sessionId: string }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { sessionId: string }) => cb(e);
+      ipcRenderer.on("pi-agent:tools-ready", handler);
+      return () => ipcRenderer.off("pi-agent:tools-ready", handler);
+    },
+    onStep: (cb: (e: { sessionId: string }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { sessionId: string }) => cb(e);
+      ipcRenderer.on("pi-agent:step", handler);
+      return () => ipcRenderer.off("pi-agent:step", handler);
+    },
+    onUsage: (cb: (e: { sessionId: string; promptTokens: number; completionTokens: number }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { sessionId: string; promptTokens: number; completionTokens: number }) => cb(e);
+      ipcRenderer.on("pi-agent:usage", handler);
+      return () => ipcRenderer.off("pi-agent:usage", handler);
+    },
+    onSubagent: (cb: (e: { parentSessionId: string; childSessionId: string; status: "start" | "done"; result?: string }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { parentSessionId: string; childSessionId: string; status: "start" | "done"; result?: string }) => cb(e);
+      ipcRenderer.on("pi-agent:subagent", handler);
+      return () => ipcRenderer.off("pi-agent:subagent", handler);
     },
   },
 

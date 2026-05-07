@@ -9,14 +9,52 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Send, Square, RotateCcw, Trash2 } from "lucide-react";
+import { Send, Square, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { id } from "@/lib/utils";
 import { PiMessageBubble } from "./PiMessageBubble";
+import { ContextRing } from "./ContextRing";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { TerminalSession } from "@/store/slices/terminal-sessions";
+
+// ── Cairn tool ref extraction ─────────────────────────────────────────────────
+
+const NOTE_WRITE_TOOLS = new Set([
+  "create_note", "ensure_note", "update_note", "patch_note", "append_to_note",
+]);
+const TASK_WRITE_TOOLS = new Set([
+  "create_task", "update_task", "update_task_status",
+]);
+// Read-only tools — output is never useful to show; suppress it entirely
+const READ_ONLY_TOOLS = new Set([
+  "read", "grep", "find", "ls",
+  "get_active_context", "get_project_context_pack",
+  "list_notes", "get_note", "search_notes",
+  "list_tasks", "get_task", "search_tasks", "list_ready_tasks",
+  "get_idea_flow",
+]);
+
+function extractCairnRef(
+  toolName: string,
+  output: string | undefined,
+): { type: "note" | "task"; id: string; title: string } | undefined {
+  if (!output) return undefined;
+  const isNote = NOTE_WRITE_TOOLS.has(toolName);
+  const isTask = TASK_WRITE_TOOLS.has(toolName);
+  if (!isNote && !isTask) return undefined;
+  try {
+    const parsed = JSON.parse(output);
+    const refId    = parsed?.id;
+    const refTitle = parsed?.title ?? parsed?.name ?? "(untitled)";
+    if (!refId) return undefined;
+    return { type: isNote ? "note" : "task", id: refId, title: refTitle };
+  } catch {
+    return undefined;
+  }
+}
+
 
 interface PiAgentPaneProps {
   session: TerminalSession;
@@ -30,18 +68,36 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
     finalisePiMessage,
     addPiToolCall,
     clearPiMessages,
+    ensurePiStreamingMessage,
+    updatePiUsage,
+    updatePiSubagentUsage,
+    addPiSubagent,
+    appendPiSubagentToken,
+    finalisePiSubagentMessage,
+    addPiSubagentToolCall,
+    completePiSubagent,
+    stepPiSubagent,
     aiConfig,
     projects,
     activeWorkspaceId,
   } = useCairnStore(useShallow((s) => ({
-    addPiMessage:      s.addPiMessage,
-    appendPiToken:     s.appendPiToken,
-    finalisePiMessage: s.finalisePiMessage,
-    addPiToolCall:     s.addPiToolCall,
-    clearPiMessages:   s.clearPiMessages,
-    aiConfig:          s.aiConfig,
-    projects:          s.projects,
-    activeWorkspaceId: s.activeWorkspaceId,
+    addPiMessage:              s.addPiMessage,
+    appendPiToken:             s.appendPiToken,
+    finalisePiMessage:         s.finalisePiMessage,
+    addPiToolCall:             s.addPiToolCall,
+    clearPiMessages:           s.clearPiMessages,
+    ensurePiStreamingMessage:  s.ensurePiStreamingMessage,
+    updatePiUsage:             s.updatePiUsage,
+    updatePiSubagentUsage:     s.updatePiSubagentUsage,
+    addPiSubagent:             s.addPiSubagent,
+    appendPiSubagentToken:     s.appendPiSubagentToken,
+    finalisePiSubagentMessage: s.finalisePiSubagentMessage,
+    addPiSubagentToolCall:     s.addPiSubagentToolCall,
+    completePiSubagent:        s.completePiSubagent,
+    stepPiSubagent:            s.stepPiSubagent,
+    aiConfig:                  s.aiConfig,
+    projects:                  s.projects,
+    activeWorkspaceId:         s.activeWorkspaceId,
   })));
 
   const messages    = session.piMessages ?? [];
@@ -97,12 +153,43 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
       appendPiToken(sessionId, e.delta);
     });
 
+    const unsubUsage = electron.piAgent.onUsage((e) => {
+      if (e.sessionId === sessionId) {
+        // Parent step — update the parent ring
+        updatePiUsage(sessionId, e.promptTokens, e.completionTokens);
+      } else if (e.sessionId.startsWith(`${sessionId}:sub:`)) {
+        // Subagent step — update usage on the subagent inline block, not the parent ring
+        updatePiSubagentUsage(sessionId, e.sessionId, e.promptTokens, e.completionTokens);
+      }
+    });
+
+    const unsubToolsReady = electron.piAgent.onToolsReady((e) => {
+      if (e.sessionId === sessionId) {
+        ensurePiStreamingMessage(sessionId);
+      } else if (e.sessionId.startsWith(`${sessionId}:sub:`)) {
+        // subagent — handled via subagent store (no-op here, subagent messages auto-create)
+      }
+    });
+
     const unsubTool = electron.piAgent.onTool((e) => {
       if (e.sessionId !== sessionId) return;
-      console.log("[PiAgentPane] tool event", e);
       if (e.status === "end") {
-        addPiToolCall(sessionId, { name: e.name, label: e.label, ok: e.ok ?? true });
+        addPiToolCall(sessionId, {
+          name:     e.name,
+          label:    e.label,
+          ok:       e.ok ?? true,
+          // Suppress output for read-only tools — no point expanding raw JSON
+          output:   READ_ONLY_TOOLS.has(e.name) ? undefined : e.output,
+          cairnRef: extractCairnRef(e.name, e.output),
+        });
       }
+    });
+
+    const unsubStep = electron.piAgent.onStep((e) => {
+      if (e.sessionId !== sessionId) return;
+      // Finalise the previous turn's assistant message so the next turn's
+      // tokens appear in a separate bubble.
+      finalisePiMessage(sessionId);
     });
 
     const unsubDone = electron.piAgent.onDone((e) => {
@@ -125,11 +212,51 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
       setIsLoading(false);
     });
 
+    // ── Subagent events (child session IDs routed back to parent) ──────────
+    const unsubSubagent = electron.piAgent.onSubagent((e) => {
+      if (e.parentSessionId !== sessionId) return;
+      if (e.status === "start") {
+        addPiSubagent(sessionId, e.childSessionId);
+      } else {
+        completePiSubagent(sessionId, e.childSessionId, e.result ?? "");
+      }
+    });
+
+    const unsubSubToken = electron.piAgent.onToken((e) => {
+      if (!e.sessionId.startsWith(`${sessionId}:sub:`)) return;
+      appendPiSubagentToken(sessionId, e.sessionId, e.delta);
+    });
+
+    const unsubSubTool = electron.piAgent.onTool((e) => {
+      if (!e.sessionId.startsWith(`${sessionId}:sub:`)) return;
+      if (e.status === "end") {
+        addPiSubagentToolCall(sessionId, e.sessionId, {
+          name:     e.name,
+          label:    e.label,
+          ok:       e.ok ?? true,
+          output:   READ_ONLY_TOOLS.has(e.name) ? undefined : e.output,
+          cairnRef: extractCairnRef(e.name, e.output),
+        });
+      }
+    });
+
+    const unsubSubStep = electron.piAgent.onStep((e) => {
+      if (!e.sessionId.startsWith(`${sessionId}:sub:`)) return;
+      stepPiSubagent(sessionId, e.sessionId);
+    });
+
     return () => {
       unsubToken();
+      unsubUsage();
+      unsubToolsReady();
       unsubTool();
+      unsubStep();
       unsubDone();
       unsubError();
+      unsubSubagent();
+      unsubSubToken();
+      unsubSubTool();
+      unsubSubStep();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.sessionId]);
@@ -199,6 +326,12 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
         <span className="text-[0.714rem] text-[var(--text-tertiary)] truncate flex-1">
           {session.taskTitle !== "Ad-hoc session" ? session.taskTitle : project?.name ?? "Cairn Agent"}
         </span>
+        {session.lastUsage && (
+          <ContextRing
+            promptTokens={session.lastUsage.promptTokens}
+            contextLimit={aiConfig.contextLimit ?? 128000}
+          />
+        )}
         <Tooltip content="Clear conversation" side="left">
           <button
             onClick={handleClear}

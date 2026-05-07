@@ -298,7 +298,11 @@ export default function Home() {
            {activeView === "graph"     && <KnowledgeGraphView />}
            {activeView === "insights"  && <InsightsView />}
            {activeView === "settings"  && <SettingsView />}
-           {activeView === "agent"    && <AgentView />}
+           {/* AgentView stays mounted to preserve terminal sessions and pi agent state.
+               CSS-hidden when inactive so xterm + PiAgentPane refs survive view switches. */}
+           <div className={activeView === "agent" ? "contents" : "hidden"}>
+             <AgentView />
+           </div>
           </div>
         </div>
 

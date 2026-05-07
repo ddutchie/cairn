@@ -13,6 +13,7 @@ export { bashTool,  bashToolDefinition  } from "./bash";
 export { grepTool,  grepToolDefinition  } from "./grep";
 export { findTool,  findToolDefinition  } from "./find";
 export { lsTool,    lsToolDefinition    } from "./ls";
+export { spawnSubagentDefinition, spawnSubagentTool } from "./subagent";
 
 export type { ReadArgs  } from "./read";
 export type { WriteArgs } from "./write";
@@ -21,6 +22,7 @@ export type { BashArgs, BashOptions } from "./bash";
 export type { GrepArgs  } from "./grep";
 export type { FindArgs  } from "./find";
 export type { LsArgs    } from "./ls";
+export type { SpawnSubagentArgs } from "./subagent";
 
 import { readToolDefinition  } from "./read";
 import { writeToolDefinition } from "./write";
@@ -29,6 +31,7 @@ import { bashToolDefinition  } from "./bash";
 import { grepToolDefinition  } from "./grep";
 import { findToolDefinition  } from "./find";
 import { lsToolDefinition    } from "./ls";
+import { spawnSubagentDefinition } from "./subagent";
 
 /** All coding tool definitions in OpenAI function-calling format. */
 export const CODING_TOOL_DEFINITIONS = [
@@ -39,4 +42,5 @@ export const CODING_TOOL_DEFINITIONS = [
   grepToolDefinition,
   findToolDefinition,
   lsToolDefinition,
+  spawnSubagentDefinition,
 ] as const;

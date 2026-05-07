@@ -128,13 +128,18 @@ export function registerPiAgentHandler(
       chatReq,
       ctx.workspacePath,
       {
-        onToken: (delta) => send("pi-agent:token", { sessionId, delta }),
-        onToolStart: (name, label) => send("pi-agent:tool", { sessionId, name, label, status: "start" }),
-        onToolEnd: (name, label, ok) => send("pi-agent:tool", { sessionId, name, label, status: "end", ok }),
-        onDone: () => send("pi-agent:done", { sessionId }),
-        onError: (error) => send("pi-agent:error", { sessionId, error }),
+        onToken:      (delta) => send("pi-agent:token",      { sessionId, delta }),
+        onToolsReady: ()     => send("pi-agent:tools-ready", { sessionId }),
+        onToolStart:  (name, label) => send("pi-agent:tool", { sessionId, name, label, status: "start" }),
+        onToolEnd:    (name, label, ok, output) => send("pi-agent:tool", { sessionId, name, label, status: "end", ok, output }),
+        onStepStart:  () => send("pi-agent:step",  { sessionId }),
+        onUsage:      (promptTokens, completionTokens) => send("pi-agent:usage", { sessionId, promptTokens, completionTokens }),
+        onDone:       () => send("pi-agent:done",  { sessionId }),
+        onError:      (error) => send("pi-agent:error", { sessionId, error }),
       },
       getWin,
+      sessionId,
+      send,
     );
   });
 
