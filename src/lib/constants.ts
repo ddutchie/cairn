@@ -69,11 +69,12 @@ export const PRIORITY_CSS_COLORS: Record<Priority | string, string> = {
 
 /** Default AI/LLM config values. */
 export const DEFAULT_AI_CONFIG: AIConfig = {
-  baseUrl:   "https://api.openai.com",
-  model:     "gpt-4o-mini",
-  apiKey:    "",
-  maxSteps:  20,
-  aiEnabled: true,
+  baseUrl:      "https://api.openai.com",
+  model:        "gpt-4o-mini",
+  apiKey:       "",
+  maxSteps:     20,
+  contextLimit: 128000,
+  aiEnabled:    true,
 };
 
 // ── localStorage keys ─────────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Bot, User, FileText, Kanban, FolderOpen, Search, Copy, Check, RotateCcw } from "lucide-react";
+import { Bot, User, FileText, Kanban, FolderOpen, Search, Copy, Check, RotateCcw, CheckCircle } from "lucide-react";
 import { cn, formatRelative } from "@/lib/utils";
 import { MarkdownContent } from "./MarkdownContent";
 import type { ChatMessage, LinkedContextReference } from "@/types";
@@ -29,6 +29,16 @@ export function ChatMessageBubble({ message, onRetry }: ChatMessageBubbleProps) 
         {isUser ? <User size={11} className="text-[var(--text-tertiary)]" /> : <Bot size={11} className="text-[var(--accent)]" />}
       </div>
       <div className={cn("flex-1 min-w-0 space-y-1.5", isUser && "items-end flex flex-col")}>
+        {!isUser && message.toolCalls && message.toolCalls.length > 0 && (
+          <div className="flex flex-col gap-1 mb-1">
+            {message.toolCalls.map((tc, i) => (
+              <div key={i} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--surface-2)] border border-[var(--border)] w-fit">
+                <CheckCircle size={10} className="text-[var(--accent)] shrink-0" />
+                <span className="text-[0.786rem] text-[var(--text-secondary)]">{tc.label}</span>
+              </div>
+            ))}
+          </div>
+        )}
         <div className={cn("px-3 py-2.5 rounded-xl text-xs leading-relaxed max-w-full",
           isUser ? "bg-[var(--accent)] text-white rounded-tr-sm" : "bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-secondary)] rounded-tl-sm")}>
           <MarkdownContent content={message.content} />

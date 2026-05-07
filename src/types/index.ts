@@ -137,6 +137,11 @@ export interface LinkedContextReference {
   snippet?: string;
 }
 
+export interface ChatToolCallRecord {
+  tool: string;
+  label: string;
+}
+
 export interface ChatMessage {
   id: ID;
   threadId: ID;
@@ -144,6 +149,8 @@ export interface ChatMessage {
   content: string;
   /** Entities cited in or used to produce this message */
   contextRefs?: LinkedContextReference[];
+  /** Tool calls made during this assistant turn — persisted so they remain visible after streaming ends */
+  toolCalls?: ChatToolCallRecord[];
   /** If this message triggered a write action */
   pendingAction?: PendingAction;
   createdAt: string;

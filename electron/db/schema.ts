@@ -317,6 +317,15 @@ const MIGRATIONS: Migration[] = [
       db.exec("ALTER TABLE task_cards ADD COLUMN version INTEGER NOT NULL DEFAULT 0");
     }
   },
+
+  // v14: Persist tool calls on chat messages so they survive the streaming
+  // phase and remain visible in the message history after the response is done.
+  (db) => {
+    const cols = db.prepare("PRAGMA table_info(chat_messages)").all() as { name: string }[];
+    if (!cols.some((c) => c.name === "tool_calls")) {
+      db.exec("ALTER TABLE chat_messages ADD COLUMN tool_calls TEXT");
+    }
+  },
 ];
 
 export function applySchema(db: Database.Database): void {

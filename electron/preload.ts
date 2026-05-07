@@ -266,6 +266,67 @@ const api = {
     },
   },
 
+  // ── Cairn native agent (pi) ───────────────────
+  piAgent: {
+    /** Send a prompt to an existing or new session. Fire-and-forget. */
+    prompt: (req: unknown) => ipcRenderer.send("pi-agent:prompt", req),
+    /** Abort the current in-flight turn for this session. */
+    abort: (sessionId: string) => ipcRenderer.send("pi-agent:abort", { sessionId }),
+    /** Clear message history for a session (start fresh). */
+    clear: (sessionId: string) => ipcRenderer.send("pi-agent:clear", { sessionId }),
+    /** Destroy a session when the tab is closed. */
+    destroy: (sessionId: string) => ipcRenderer.send("pi-agent:destroy", { sessionId }),
+
+    onToken: (cb: (e: { sessionId: string; delta: string }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { sessionId: string; delta: string }) => cb(e);
+      ipcRenderer.on("pi-agent:token", handler);
+      return () => ipcRenderer.off("pi-agent:token", handler);
+    },
+    onTool: (cb: (e: { sessionId: string; name: string; label: string; status: "start" | "end"; ok?: boolean; output?: string }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { sessionId: string; name: string; label: string; status: "start" | "end"; ok?: boolean }) => cb(e);
+      ipcRenderer.on("pi-agent:tool", handler);
+      return () => ipcRenderer.off("pi-agent:tool", handler);
+    },
+    onDone: (cb: (e: { sessionId: string }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { sessionId: string }) => cb(e);
+      ipcRenderer.on("pi-agent:done", handler);
+      return () => ipcRenderer.off("pi-agent:done", handler);
+    },
+    onError: (cb: (e: { sessionId: string; error: string }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { sessionId: string; error: string }) => cb(e);
+      ipcRenderer.on("pi-agent:error", handler);
+      return () => ipcRenderer.off("pi-agent:error", handler);
+    },
+    onToolsReady: (cb: (e: { sessionId: string }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { sessionId: string }) => cb(e);
+      ipcRenderer.on("pi-agent:tools-ready", handler);
+      return () => ipcRenderer.off("pi-agent:tools-ready", handler);
+    },
+    onStep: (cb: (e: { sessionId: string }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { sessionId: string }) => cb(e);
+      ipcRenderer.on("pi-agent:step", handler);
+      return () => ipcRenderer.off("pi-agent:step", handler);
+    },
+    onUsage: (cb: (e: { sessionId: string; promptTokens: number; completionTokens: number }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { sessionId: string; promptTokens: number; completionTokens: number }) => cb(e);
+      ipcRenderer.on("pi-agent:usage", handler);
+      return () => ipcRenderer.off("pi-agent:usage", handler);
+    },
+    onSubagent: (cb: (e: { parentSessionId: string; childSessionId: string; status: "start" | "done"; result?: string }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { parentSessionId: string; childSessionId: string; status: "start" | "done"; result?: string }) => cb(e);
+      ipcRenderer.on("pi-agent:subagent", handler);
+      return () => ipcRenderer.off("pi-agent:subagent", handler);
+    },
+  },
+
 } as const;
 
 contextBridge.exposeInMainWorld("electron", api);

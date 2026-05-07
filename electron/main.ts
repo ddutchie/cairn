@@ -20,6 +20,7 @@ import { autoUpdater } from "electron-updater";
 import { initDb } from "./db/client";
 import { registerIpcHandlers, registerAppHandlers } from "./ipc/handlers";
 import { registerAgentHandlers } from "./ipc/agent";
+import { registerPiAgentHandler } from "./ipc/pi-agent";
 import { readWorkspaceConfig, getDbPathForWorkspace } from "./workspace-config";
 import { startFileWatcher } from "./file-watcher";
 import { syncNotesFromDisk } from "./notes-files";
@@ -165,6 +166,7 @@ app.whenReady().then(async () => {
 
   registerIpcHandlers(ctx);
   registerAgentHandlers(ctx.db);
+  registerPiAgentHandler(ctx);
 
   const win = createWindow();
   _win = win;
