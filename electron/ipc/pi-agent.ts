@@ -68,21 +68,14 @@ export function registerPiAgentHandler(
       }
     };
 
-    // Resolve LLM config from settings stored in DB
-    const settingsRow = ctx.db
-      .prepare("SELECT value FROM settings WHERE key = 'aiConfig' LIMIT 1")
-      .get() as { value: string } | undefined;
-
-    let storedConfig: { baseUrl?: string; model?: string; apiKey?: string } = {};
-    if (settingsRow?.value) {
-      try { storedConfig = JSON.parse(settingsRow.value); } catch { /* ignore */ }
-    }
-
+    // Resolve LLM config — renderer passes config from its aiConfig store
     const llmConfig: AgentLLMConfig = {
-      baseUrl: (req.config?.baseUrl || storedConfig.baseUrl || "https://api.openai.com").replace(/\/$/, ""),
-      model:   req.config?.model   || storedConfig.model   || "gpt-4o",
-      apiKey:  req.config?.apiKey  || storedConfig.apiKey  || "",
+      baseUrl: (req.config?.baseUrl || "https://api.openai.com").replace(/\/$/, ""),
+      model:   req.config?.model   || "gpt-4o",
+      apiKey:  req.config?.apiKey  || "",
     };
+
+    console.log("[pi-agent] prompt received", { sessionId, cwd, projectId, model: llmConfig.model, baseUrl: llmConfig.baseUrl, hasApiKey: !!llmConfig.apiKey });
 
     // Get or create session
     let session = sessions.get(sessionId);

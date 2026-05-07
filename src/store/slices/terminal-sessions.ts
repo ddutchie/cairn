@@ -37,6 +37,8 @@ export interface TerminalSession {
   sessionType: "pty" | "pi";
   /** Message history for pi sessions — not used by pty sessions */
   piMessages?: PiAgentMessage[];
+  /** Prompt to send automatically when PiAgentPane first mounts */
+  initialPrompt?: string;
 }
 
 export interface TerminalSessionsSlice {

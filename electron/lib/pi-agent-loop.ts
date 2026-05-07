@@ -186,7 +186,10 @@ export async function runAgentLoop(
   const allTools = getAllToolDefs();
 
   const { baseUrl, model, apiKey } = llmConfig;
+  console.log("[pi-agent-loop] starting", { baseUrl, model, hasApiKey: !!apiKey, cwd, tools: allTools.length });
+
   if (!apiKey && !isLocalEndpoint(baseUrl)) {
+    console.log("[pi-agent-loop] no API key, aborting");
     callbacks.onError("No API key configured. Set one in Settings → AI & Chat.");
     return;
   }
@@ -196,6 +199,7 @@ export async function runAgentLoop(
   while (steps < MAX_STEPS) {
     if (signal.aborted) { callbacks.onDone(); return; }
     steps++;
+    console.log(`[pi-agent-loop] step ${steps}, messages=${session.messages.length}`);
 
     // Build messages array for this request
     const messages: AgentMessage[] = [
@@ -229,8 +233,10 @@ export async function runAgentLoop(
       return;
     }
 
+    console.log(`[pi-agent-loop] response status ${response.status}`);
     if (!response.ok) {
       const text = await response.text().catch(() => response.statusText);
+      console.log(`[pi-agent-loop] error response: ${text.slice(0, 300)}`);
       callbacks.onError(`AI error (${response.status}): ${text.slice(0, 300)}`);
       return;
     }
@@ -242,15 +248,21 @@ export async function runAgentLoop(
     const decoder = new TextDecoder();
     let contentBuffer = "";
     const toolCallBuffers: Map<number, { id: string; name: string; args: string }> = new Map();
+    let streamDone = false;
 
-    while (true) {
+    while (!streamDone) {
       const { done, value } = await reader.read();
       if (done) break;
       for (const line of decoder.decode(value, { stream: true }).split("\n")) {
         const trimmed = line.trim();
         if (!trimmed.startsWith("data:")) continue;
         const jsonStr = trimmed.slice(5).trim();
-        if (jsonStr === "[DONE]") break;
+        if (jsonStr === "[DONE]") {
+          // Mark done and break the inner loop — the outer while condition
+          // catches this on the next iteration so we don't call reader.read() again.
+          streamDone = true;
+          break;
+        }
         try {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const chunk = JSON.parse(jsonStr) as any;
@@ -280,9 +292,12 @@ export async function runAgentLoop(
       }
     }
 
+    console.log(`[pi-agent-loop] stream done: contentBuffer.length=${contentBuffer.length}, toolCalls=${toolCallBuffers.size}`);
+
     // ── No tool calls → turn complete ─────────────────────────────────────
     if (toolCallBuffers.size === 0) {
       session.messages.push({ role: "assistant", content: contentBuffer });
+      console.log("[pi-agent-loop] no tool calls → onDone");
       callbacks.onDone();
       return;
     }
@@ -314,6 +329,7 @@ export async function runAgentLoop(
         CODING_LABELS[tc.function.name]?.(args) ??
         `${tc.function.name}`;
 
+      console.log(`[pi-agent-loop] executing tool: ${tc.function.name}`, args);
       callbacks.onToolStart(tc.function.name, label);
 
       let resultContent: string;
@@ -335,6 +351,7 @@ export async function runAgentLoop(
         resultContent = `Error: ${(e as Error).message}`;
       }
 
+      console.log(`[pi-agent-loop] tool ${tc.function.name} done, ok=${ok}, result.length=${resultContent.length}`);
       callbacks.onToolEnd(tc.function.name, label, ok);
 
       session.messages.push({

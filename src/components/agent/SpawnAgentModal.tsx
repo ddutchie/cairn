@@ -94,33 +94,18 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
           sessionId,
           taskId,
           taskTitle,
-          agentId:     "cairn-agent",
-          agentName:   "Cairn Agent",
-          projectId:   project.id,
-          cwd:         codeDirectory,
-          status:      "running",
-          exitCode:    null,
-          spawnedAt:   new Date().toISOString(),
-          sessionType: "pi",
-          piMessages:  [],
+          agentId:       "cairn-agent",
+          agentName:     "Cairn Agent",
+          projectId:     project.id,
+          cwd:           codeDirectory,
+          status:        "running",
+          exitCode:      null,
+          spawnedAt:     new Date().toISOString(),
+          sessionType:   "pi",
+          piMessages:    [],
+          // Store the prompt — PiAgentPane will fire it on first mount
+          initialPrompt: prompt.trim() || undefined,
         });
-
-        // Send initial prompt if provided
-        if (prompt.trim()) {
-          window.electron!.piAgent.prompt({
-            sessionId,
-            prompt: prompt.trim(),
-            projectId: project.id,
-            workspaceId: project.workspaceId ?? undefined,
-            cwd: codeDirectory,
-            taskTitle: card?.title,
-            config: {
-              baseUrl: aiConfig.baseUrl || undefined,
-              model:   aiConfig.model   || undefined,
-              apiKey:  aiConfig.apiKey  || undefined,
-            },
-          });
-        }
 
         setActiveSession(sessionId);
         setView("agent");

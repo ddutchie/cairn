@@ -50,8 +50,12 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
   const [input, setInput]         = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const textareaRef    = useRef<HTMLTextAreaElement>(null);
+  const messagesEndRef  = useRef<HTMLDivElement>(null);
+  const textareaRef     = useRef<HTMLTextAreaElement>(null);
+  // Always-current reference to sendPrompt — lets the initialPrompt effect
+  // call it after mount without capturing a stale closure.
+  const sendPromptRef   = useRef<(text: string) => void>(() => {});
+  const firedInitial    = useRef(false);
 
   // Scroll to bottom on new messages
   useEffect(() => {
@@ -63,12 +67,30 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
     if (isActive) textareaRef.current?.focus();
   }, [isActive]);
 
+  // Fire initialPrompt once when the pane first mounts (set by SpawnAgentModal).
+  // Uses a ref so we always call the current sendPrompt (not a stale closure).
+  // NOTE: No cleanup/clearTimeout — React StrictMode double-invokes effects and
+  // the cleanup would cancel the timer before it fires. The firedInitial ref
+  // ensures we only queue this once even across StrictMode remounts.
+  useEffect(() => {
+    if (firedInitial.current) return;
+    if (!session.initialPrompt) return;
+    firedInitial.current = true;
+    console.log("[PiAgentPane] firing initialPrompt:", session.initialPrompt.slice(0, 80));
+    // Defer 100ms so IPC listeners registered in the effect below are fully live.
+    setTimeout(() => sendPromptRef.current(session.initialPrompt!), 100);
+  // run once on mount only
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Subscribe to IPC events for this session
   useEffect(() => {
     const electron = window.electron;
     if (!electron) return;
 
     const { sessionId } = session;
+
+    console.log("[PiAgentPane] subscribing to IPC events for session", sessionId);
 
     const unsubToken = electron.piAgent.onToken((e) => {
       if (e.sessionId !== sessionId) return;
@@ -77,6 +99,7 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
 
     const unsubTool = electron.piAgent.onTool((e) => {
       if (e.sessionId !== sessionId) return;
+      console.log("[PiAgentPane] tool event", e);
       if (e.status === "end") {
         addPiToolCall(sessionId, { name: e.name, label: e.label, ok: e.ok ?? true });
       }
@@ -84,12 +107,14 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
 
     const unsubDone = electron.piAgent.onDone((e) => {
       if (e.sessionId !== sessionId) return;
+      console.log("[PiAgentPane] done event", e);
       finalisePiMessage(sessionId);
       setIsLoading(false);
     });
 
     const unsubError = electron.piAgent.onError((e) => {
       if (e.sessionId !== sessionId) return;
+      console.log("[PiAgentPane] error event", e);
       finalisePiMessage(sessionId);
       addPiMessage(sessionId, {
         id:        id(),
@@ -111,6 +136,7 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
 
   const sendPrompt = useCallback((text: string) => {
     const trimmed = text.trim();
+    console.log("[PiAgentPane] sendPrompt called", { trimmedLen: trimmed.length, isLoading, cwd: session.cwd });
     if (!trimmed || isLoading || !session.cwd) return;
 
     setInput("");
@@ -133,7 +159,7 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
       timestamp:   new Date().toISOString(),
     });
 
-    window.electron?.piAgent.prompt({
+    const promptPayload = {
       sessionId:   session.sessionId,
       prompt:      trimmed,
       projectId:   session.projectId,
@@ -145,8 +171,13 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
         model:   aiConfig.model   || undefined,
         apiKey:  aiConfig.apiKey  || undefined,
       },
-    });
+    };
+    console.log("[PiAgentPane] sending prompt", { ...promptPayload, config: { ...promptPayload.config, apiKey: promptPayload.config.apiKey ? "***" : undefined } });
+    window.electron?.piAgent.prompt(promptPayload);
   }, [isLoading, session, aiConfig, activeWorkspaceId, addPiMessage]);
+
+  // Keep ref current so the initialPrompt effect always calls the latest version
+  sendPromptRef.current = sendPrompt;
 
   function handleStop() {
     window.electron?.piAgent.abort(session.sessionId);
