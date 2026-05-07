@@ -77,6 +77,9 @@ npm run lint              # eslint
 
 ## Project structure
 
+<details>
+<summary>View directory tree</summary>
+
 ```
 cairn/
 ├── electron/               # Electron main process (Node.js, runs in Electron)
@@ -140,9 +143,14 @@ cairn/
 └── README.md
 ```
 
+</details>
+
 ---
 
 ## Architecture
+
+<details>
+<summary>Process model, storage, data model, write paths, key files</summary>
 
 ### Views
 
@@ -394,6 +402,8 @@ Shared modules live in `src/components/graph/`: `analyticsUtils.ts`, `analyticsH
 | `src/components/graph/MatrixCanvas.tsx` | Tag co-occurrence matrix canvas |
 | `src/components/graph/TableCanvas.tsx` | Flat sortable table canvas |
 
+</details>
+
 ---
 
 ## Coding conventions
@@ -472,6 +482,9 @@ Use `CanvasEmptyState`, `CanvasTooltip`, and `SvgTimeAxis` from `AnalyticsShared
 
 ## Working on specific areas
 
+<details>
+<summary>Adding views, Agent workspace internals, analytics canvases, MCP tools, DB tables</summary>
+
 ### Adding a new view
 
 1. Add the view key to the `activeView` union in `src/types/index.ts`
@@ -512,6 +525,8 @@ The Agent workspace has its own IPC namespace (`agent:*`) entirely separate from
 3. Add IPC handlers to `electron/ipc/handlers.ts`
 4. Expose via `window.electron.*` in `electron/preload.ts`
 5. Add corresponding store slice actions in `src/store/slices/`
+
+</details>
 
 ---
 
