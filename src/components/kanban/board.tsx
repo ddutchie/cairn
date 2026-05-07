@@ -20,6 +20,7 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { Plus, Kanban, Archive, Trash2, Search, X, ArchiveRestore, ArchiveX } from "lucide-react";
+import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -456,41 +457,57 @@ export function KanbanBoard() {
                       {filtered.map((card) => {
                         const col = colMap.get(card.columnId);
                         return (
-                          <div key={card.id} className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3 flex flex-col gap-2 opacity-80 hover:opacity-100 transition-opacity">
-                            <div className="flex items-start justify-between gap-2">
+                          <div key={card.id} className="rounded-xl border border-[var(--border)] bg-[var(--surface)] flex flex-col opacity-80 hover:opacity-100 transition-opacity">
+                            {/* Clickable body — opens detail modal */}
+                            <button
+                              onClick={() => setDetailCardId(card.id)}
+                              className="flex-1 p-3 text-left flex flex-col gap-2 hover:bg-[var(--surface-2)] rounded-t-xl transition-colors"
+                            >
                               <span className="text-xs font-medium text-[var(--text-primary)] leading-snug line-clamp-2">{card.title}</span>
-                              <button
-                                onClick={() => restoreCard(card.id)}
-                                title="Restore task"
-                                className="flex-shrink-0 p-1 rounded hover:bg-[var(--accent)]/10 text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors"
-                              >
-                                <ArchiveRestore size={12} />
-                              </button>
-                            </div>
-                            {card.description && (
-                              <p className="text-[0.714rem] text-[var(--text-tertiary)] line-clamp-2">{card.description}</p>
-                            )}
-                            <div className="flex items-center gap-1.5 mt-auto pt-1">
-                              {col && (
-                                <span className="text-[0.643rem] px-1.5 py-0.5 rounded bg-[var(--surface-2)] text-[var(--text-tertiary)]">
-                                  {col.name}
-                                </span>
+                              {card.description && (
+                                <p className="text-[0.714rem] text-[var(--text-tertiary)] line-clamp-2">{card.description}</p>
                               )}
-                              {card.priority && card.priority !== "medium" && (
-                                <span className={cn(
-                                  "text-[0.643rem] px-1.5 py-0.5 rounded",
-                                  card.priority === "urgent" && "bg-[var(--danger)]/10 text-[var(--danger)]",
-                                  card.priority === "high"   && "bg-amber-500/10 text-amber-400",
-                                  card.priority === "low"    && "bg-[var(--surface-2)] text-[var(--text-tertiary)]",
-                                )}>
-                                  {card.priority}
-                                </span>
-                              )}
-                              {card.archivedAt && (
-                                <span className="text-[0.643rem] text-[var(--text-tertiary)] ml-auto">
-                                  {new Date(card.archivedAt).toLocaleDateString()}
-                                </span>
-                              )}
+                              <div className="flex items-center gap-1.5 mt-auto pt-1">
+                                {col && (
+                                  <span className="text-[0.643rem] px-1.5 py-0.5 rounded bg-[var(--surface-2)] text-[var(--text-tertiary)]">
+                                    {col.name}
+                                  </span>
+                                )}
+                                {card.priority && card.priority !== "medium" && (
+                                  <span className={cn(
+                                    "text-[0.643rem] px-1.5 py-0.5 rounded",
+                                    card.priority === "urgent" && "bg-[var(--danger)]/10 text-[var(--danger)]",
+                                    card.priority === "high"   && "bg-amber-500/10 text-amber-400",
+                                    card.priority === "low"    && "bg-[var(--surface-2)] text-[var(--text-tertiary)]",
+                                  )}>
+                                    {card.priority}
+                                  </span>
+                                )}
+                                {card.archivedAt && (
+                                  <span className="text-[0.643rem] text-[var(--text-tertiary)] ml-auto">
+                                    {new Date(card.archivedAt).toLocaleDateString()}
+                                  </span>
+                                )}
+                              </div>
+                            </button>
+                            {/* Action row */}
+                            <div className="flex items-center justify-end gap-0.5 px-2 py-1.5 border-t border-[var(--border)]">
+                              <Tooltip content="Restore to board">
+                                <button
+                                  onClick={() => restoreCard(card.id)}
+                                  className="p-1 rounded hover:bg-[var(--accent)]/10 text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors"
+                                >
+                                  <ArchiveRestore size={12} />
+                                </button>
+                              </Tooltip>
+                              <Tooltip content="Delete permanently">
+                                <button
+                                  onClick={() => deleteCard(card.id)}
+                                  className="p-1 rounded hover:bg-[var(--danger)]/10 text-[var(--text-tertiary)] hover:text-[var(--danger)] transition-colors"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </Tooltip>
                             </div>
                           </div>
                         );
