@@ -192,6 +192,23 @@ const api = {
     return () => ipcRenderer.off("db:changed", handler);
   },
 
+  // ── AI write lock events ──────────────────────
+  // Fired by the main process when the in-app AI chat executor starts or
+  // finishes writing to a note. The renderer uses these to show a read-only
+  // indicator on the active note editor.
+  onAiWriteStarted: (cb: (payload: { noteId: string }) => void) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const handler = (_: any, payload: { noteId: string }) => cb(payload);
+    ipcRenderer.on("note:aiWriteStarted", handler);
+    return () => ipcRenderer.off("note:aiWriteStarted", handler);
+  },
+  onAiWriteEnded: (cb: (payload: { noteId: string }) => void) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const handler = (_: any, payload: { noteId: string }) => cb(payload);
+    ipcRenderer.on("note:aiWriteEnded", handler);
+    return () => ipcRenderer.off("note:aiWriteEnded", handler);
+  },
+
   // ── Dashboard live query bridge ───────────────
   mcpQuery: (tool: string, args: Record<string, unknown>) => invoke<unknown>("db:mcpQuery", { tool, args }),
 

@@ -153,8 +153,8 @@ export function writeNoteFile(workspacePath: string, note: NoteData): void {
   const newPath = resolveNoteFilePath(workspacePath, projectName, note.title, note.id, folder);
 
   if (existingPath && existingPath !== newPath) {
-    // Title or folder changed — delete old file, write new one
-    try { fs.unlinkSync(existingPath); } catch { /* ignore */ }
+    // Title or folder changed — delete old file after the new one is safely written
+    // (handled below — unlink happens after the atomic rename succeeds).
   }
 
   const frontmatter: Record<string, unknown> = {
@@ -172,7 +172,18 @@ export function writeNoteFile(workspacePath: string, note: NoteData): void {
   };
   if (note.archivedAt) frontmatter.archivedAt = note.archivedAt;
 
-  fs.writeFileSync(newPath, matter.stringify(note.content ?? "", frontmatter), "utf-8");
+  // Atomic write: write to a .tmp file first, then rename into place.
+  // fs.renameSync on the same filesystem is atomic at the VFS level, so a
+  // crash between the SQLite UPDATE and this call leaves a stale .tmp (cleaned
+  // up by syncNotesFromDisk on next startup) rather than a half-written .md.
+  const tmpPath = newPath + ".tmp";
+  fs.writeFileSync(tmpPath, matter.stringify(note.content ?? "", frontmatter), "utf-8");
+  fs.renameSync(tmpPath, newPath);
+
+  // Now safe to remove the old file (rename already succeeded)
+  if (existingPath && existingPath !== newPath) {
+    try { fs.unlinkSync(existingPath); } catch { /* ignore */ }
+  }
 }
 
 export function deleteNoteFile(
@@ -234,15 +245,39 @@ export function parseNoteFile(filePath: string): NoteData | null {
 
 // ── Startup sync ──────────────────────────────
 //
-// Walks the entire notes directory and upserts every .md file whose id is not
-// already present in SQLite. Runs once on startup (and after reinitialise) so
-// that notes written to disk but not committed to SQLite (e.g. due to a
-// fire-and-forget IPC race or an unexpected shutdown) are recovered.
+// Walks the entire notes directory on startup and reconciles .md files with
+// SQLite. Two cases are handled:
+//
+//  1. Note missing from SQLite → always import (crash recovery).
+//  2. Note present in SQLite but .md is newer → overwrite SQLite content.
+//     Detects notes edited in an external editor while Cairn was closed.
+//     Uses frontmatter updatedAt as primary signal; falls back to file mtime
+//     (with a 2-second buffer for filesystem precision differences).
+//
+// Also cleans up any stale *.md.tmp files left by a crash during an atomic write.
 
 export function syncNotesFromDisk(db: Database.Database, workspacePath: string): void {
   const root = notesDir(workspacePath);
   if (!fs.existsSync(root)) return;
+  cleanStaleTmpFiles(root);
   syncDir(db, root, workspacePath);
+}
+
+/** Remove any *.md.tmp files left by a crash during an atomic write. */
+function cleanStaleTmpFiles(dir: string): void {
+  try {
+    for (const entry of fs.readdirSync(dir)) {
+      const fp = path.join(dir, entry);
+      try {
+        const stat = fs.lstatSync(fp);
+        if (stat.isDirectory()) {
+          cleanStaleTmpFiles(fp);
+        } else if (entry.endsWith(".md.tmp")) {
+          fs.unlinkSync(fp);
+        }
+      } catch { /* skip unreadable entries */ }
+    }
+  } catch { /* root unreadable */ }
 }
 
 function syncDir(db: Database.Database, dir: string, workspacePath: string): void {
@@ -256,11 +291,29 @@ function syncDir(db: Database.Database, dir: string, workspacePath: string): voi
       // Plain .md without Cairn frontmatter — adopt it in-place
       if (!note) note = adoptExternalNoteFile(db, workspacePath, fp);
       if (!note) continue;
-      // Only upsert if the note is missing from SQLite — avoids overwriting
-      // in-memory state that is ahead of the file (e.g. unsaved edits).
-      const exists = db.prepare("SELECT id FROM notes WHERE id = ?").get(note.id);
-      if (!exists) {
+
+      const row = db.prepare("SELECT updated_at FROM notes WHERE id = ?")
+        .get(note.id) as { updated_at: string } | undefined;
+
+      if (!row) {
+        // Missing from SQLite — always import
         upsertNoteFromFile(db, note);
+      } else {
+        // Compare timestamps: import if file is demonstrably newer than DB row.
+        // Primary: frontmatter updatedAt (written by Cairn on every save).
+        const fileTs = new Date(note.updatedAt ?? note.createdAt).getTime();
+        const dbTs   = new Date(row.updated_at).getTime();
+        if (fileTs > dbTs) {
+          upsertNoteFromFile(db, note);
+        } else {
+          // Fallback: if frontmatter timestamp didn't change (external editor
+          // edited the body without touching frontmatter), use file mtime.
+          // 2-second buffer avoids spurious overwrites from FS precision drift.
+          const fileMtime = stat.mtimeMs;
+          if (fileMtime > dbTs + 2000) {
+            upsertNoteFromFile(db, note);
+          }
+        }
       }
     }
   }

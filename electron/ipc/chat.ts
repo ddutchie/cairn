@@ -8,6 +8,7 @@
  */
 
 import { ipcMain } from "electron";
+import type { BrowserWindow } from "electron";
 import type Database from "better-sqlite3";
 import { isLocalEndpoint, streamCompletion, type OpenAIMessage } from "../lib/llm";
 import { TOOLS, buildSystemPrompt, type ChatRequest } from "../lib/tools";
@@ -34,6 +35,7 @@ async function runToolLoop(
   messages: OpenAIMessage[],
   emitToolCall: (e: { tool: string; label: string; args: Record<string, unknown> }) => void,
   signal?: AbortSignal,
+  getWin?: () => BrowserWindow | null,
 ): Promise<{ exhausted: true; content: string } | { exhausted: false }> {
   const maxSteps = req.config?.maxSteps ?? 20;
   for (let round = 0; round < maxSteps; round++) {
@@ -75,7 +77,7 @@ async function runToolLoop(
       try { args = JSON.parse(call.function.arguments); } catch { args = {}; }
       let result: unknown;
       try {
-        result = await executeTool(db, req, workspacePath, { baseUrl, model, apiKey }, call.function.name, args, emitToolCall);
+        result = await executeTool(db, req, workspacePath, { baseUrl, model, apiKey }, call.function.name, args, emitToolCall, getWin);
       } catch (toolErr) {
         result = { error: `Tool "${call.function.name}" failed: ${String(toolErr)}` };
       }
@@ -89,7 +91,7 @@ async function runToolLoop(
   };
 }
 
-export function registerChatHandler(db: Database.Database, workspacePath: string): void {
+export function registerChatHandler(db: Database.Database, workspacePath: string, getWin?: () => BrowserWindow | null): void {
   // chat:abort — cancel the in-flight stream for this renderer
   ipcMain.on("chat:abort", (event) => {
     const ctrl = abortControllers.get(event.sender.id);
@@ -136,7 +138,7 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
       send("chat:tool-call", e);
     };
 
-    const loopResult = await runToolLoop(db, req, workspacePath, baseUrl, model, apiKey, messages, emitToolCall, abortCtrl.signal);
+    const loopResult = await runToolLoop(db, req, workspacePath, baseUrl, model, apiKey, messages, emitToolCall, abortCtrl.signal, getWin);
 
     abortControllers.delete(event.sender.id);
 

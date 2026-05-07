@@ -67,6 +67,8 @@ function getProjectName(db: Database.Database, projectId: string): string {
 export interface DbContext {
   db: Database.Database;
   workspacePath: string;
+  /** Returns the current BrowserWindow, or null before it is created. */
+  getWin: () => BrowserWindow | null;
 }
 
 export function registerIpcHandlers(ctx: DbContext): void {
@@ -463,7 +465,7 @@ export function registerIpcHandlers(ctx: DbContext): void {
   ipcMain.handle("db:chat:deleteThread",  (_e, { threadId }) => handle(() => q.deleteChatThread(ctx.db, threadId)));
 
   // ── AI Chat completions ────────────────────────────
-  registerChatHandler(ctx.db, ctx.workspacePath);
+  registerChatHandler(ctx.db, ctx.workspacePath, ctx.getWin);
 
   // ── AI PRD generation (direct, no chat loop) ──────
   ipcMain.handle("ai:generatePrd", async (_e, args: {
