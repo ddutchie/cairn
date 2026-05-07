@@ -787,6 +787,7 @@ function IdeaFlowCanvas() {
       order: 0,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      version: 0,
     };
     historyManager.push(makePromoteToTaskCmd(node, newNode.id, createdCard, connectedEdges, activeProjectId));
   }, [nodes, edges, setNodes, setEdges, activeProjectId, activeWorkspaceId, columns]);

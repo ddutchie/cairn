@@ -147,7 +147,7 @@ export async function executeTool(
         id: note.id, title: note.title, content: note.content,
         projectId: note.projectId, isPinned: note.isPinned,
         linkedNoteIds: note.linkedNoteIds, linkedCardIds: note.linkedCardIds,
-        updatedAt: note.updatedAt,
+        updatedAt: note.updatedAt, version: note.version ?? 0,
       };
     }
     case "create_dashboard": {
@@ -419,7 +419,7 @@ export async function executeTool(
         priority: card.priority, dueDate: card.dueDate,
         columnId: card.columnId, columnName: col?.name ?? "Unknown", columnType: col?.type ?? "custom",
         linkedNoteIds: card.linkedNoteIds, blockedByIds: card.blockedByIds ?? [],
-        projectId: card.projectId, createdAt: card.createdAt, updatedAt: card.updatedAt,
+        projectId: card.projectId, createdAt: card.createdAt, updatedAt: card.updatedAt, version: card.version ?? 0,
       };
     }
     case "delete_note": {

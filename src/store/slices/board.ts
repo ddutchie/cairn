@@ -160,6 +160,7 @@ export const createBoardSlice: StateCreator<CairnStore, [], [], BoardSlice> = (
       order: cards.length,
       createdAt: now(),
       updatedAt: now(),
+      version: 0,
       ...(extras?.dueDate ? { dueDate: extras.dueDate } : {}),
       ...(extras?.assignee ? { assignee: extras.assignee } : {}),
     };

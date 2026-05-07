@@ -18,6 +18,7 @@ import type {
 } from "@/types";
 import { storage } from "@/lib/storage";
 import { historyManager } from "@/lib/history";
+import { isOwnNoteWrite } from "./ipc";
 import { DEFAULT_AI_CONFIG, AI_CONFIG_KEY, ACTIVE_PROJECT_KEY } from "@/lib/constants";
 
 // ── Slice imports ─────────────────────────────────────────────────────────────
@@ -230,10 +231,23 @@ export const useCairnStore = create<CairnStore>()(
       // External (MCP/AI) write refreshes invalidate the undo stack.
       if (isRefresh) historyManager.clear();
 
+      // Merge snapshot notes: preserve any note that was recently written by
+      // the user (within the own-write window) so we don't overwrite optimistic
+      // state with a stale snapshot triggered by the WAL poller.
+      const snapNotes: Note[] = snap.notes ?? [];
+      const mergedNotes = isRefresh
+        ? snapNotes.map((sn) => {
+            if (isOwnNoteWrite(sn.id)) {
+              return current.notes.find((cn) => cn.id === sn.id) ?? sn;
+            }
+            return sn;
+          })
+        : snapNotes;
+
       set({
         workspaces: snap.workspaces ?? [],
         projects: snap.projects ?? [],
-        notes: snap.notes ?? [],
+        notes: mergedNotes,
         columns: snap.columns ?? [],
         cards: snap.cards ?? [],
         tags: snap.tags ?? [],

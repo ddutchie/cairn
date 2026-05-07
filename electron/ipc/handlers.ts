@@ -151,15 +151,19 @@ export function registerIpcHandlers(ctx: DbContext): void {
     if ("archivedAt" in patch && patch.archivedAt === null) {
       const rest = { ...patch };
       delete rest.archivedAt;
-      if (Object.keys(rest).length > 0) {
-        const enrichedRest = { ...rest };
-        if (rest.content !== undefined && rest.contentText === undefined) {
-          enrichedRest.contentText = stripMarkdown(rest.content);
+      // Wrap both SQL writes in a transaction so a crash between them leaves
+      // the DB in a consistent state (either both applied or neither).
+      const note = ctx.db.transaction(() => {
+        if (Object.keys(rest).length > 0) {
+          const enrichedRest = { ...rest };
+          if (rest.content !== undefined && rest.contentText === undefined) {
+            enrichedRest.contentText = stripMarkdown(rest.content);
+          }
+          q.updateNote(ctx.db, id, enrichedRest);
         }
-        q.updateNote(ctx.db, id, enrichedRest);
-      }
+        return q.restoreNote(ctx.db, id);
+      })();
       suppressNextChange(id);
-      const note = q.restoreNote(ctx.db, id);
       if (note.type !== "dashboard") {
         writeNoteFile(ctx.workspacePath, { ...note, projectName: getProjectName(ctx.db, note.projectId) });
       }

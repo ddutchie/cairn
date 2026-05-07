@@ -298,6 +298,25 @@ const MIGRATIONS: Migration[] = [
       );
     `);
   },
+
+  // v12: Optimistic concurrency — version counter on notes.
+  // Incremented on every write so MCP tools can detect mid-air collisions via
+  // an optional expectedVersion argument.
+  (db) => {
+    const cols = db.prepare("PRAGMA table_info(notes)").all() as { name: string }[];
+    if (!cols.some((c) => c.name === "version")) {
+      db.exec("ALTER TABLE notes ADD COLUMN version INTEGER NOT NULL DEFAULT 0");
+    }
+  },
+
+  // v13: Optimistic concurrency — version counter on task_cards.
+  // Same pattern as v12 notes — lets MCP detect stale update attempts.
+  (db) => {
+    const cols = db.prepare("PRAGMA table_info(task_cards)").all() as { name: string }[];
+    if (!cols.some((c) => c.name === "version")) {
+      db.exec("ALTER TABLE task_cards ADD COLUMN version INTEGER NOT NULL DEFAULT 0");
+    }
+  },
 ];
 
 export function applySchema(db: Database.Database): void {
