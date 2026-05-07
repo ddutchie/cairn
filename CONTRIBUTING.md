@@ -590,11 +590,10 @@ vitest uses a SQLite shim (`vitest-sqlite-shim.cjs`) to ensure the system Node A
 If you're new to the codebase, these are good places to start:
 
 - **No `404.html`** — GitHub Pages serves a default 404 for the docs site. A styled page would be a clean, self-contained contribution.
-- **Test coverage** — `chat-executor.ts` and `mcp-server.ts` have limited test coverage. Adding test cases for specific tool implementations is well-scoped and doesn't require understanding the full codebase.
 - **Accessibility** — checking components for missing ARIA labels, keyboard navigation gaps, or colour contrast issues.
 - **Docs** — the `docs/` site at `cairn-site` always needs keeping up to date with new features. Pure HTML/CSS — no build step required.
-- **Zustand selector narrowing** — replacing `useCairnStore()` full-store calls with narrow `useShallow` selectors in a specific component. Self-contained, testable, and high-impact. Good candidates: `AgentTerminalPane`, `TopBar`, `MCPSettings`.
-- **`React.memo` on list items** — wrapping `KanbanCard`, `NoteListItem`, or `ProjectItem` in `React.memo` after narrowing their store subscriptions. Measurable win, well-scoped.
+- **Zustand selector narrowing** — replacing `useCairnStore()` full-store calls with narrow `useShallow` selectors in a specific component. Self-contained, testable, and high-impact. Good candidates: `MCPSettings`, `GeneralSettings`, `InsightsView`.
+- **`React.memo` on list items** — wrapping `ProjectItem` in `React.memo` after narrowing its store subscriptions. `KanbanCard` and `NoteListItem` are already wrapped — `ProjectItem` is the remaining high-value candidate.
 
 ---
 
