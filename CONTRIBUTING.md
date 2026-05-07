@@ -186,7 +186,7 @@ Cairn has two processes that share the same `cairn.db` (SQLite WAL mode):
 **Cairn native agent** — a stateful multi-turn tool-call loop running entirely in the main process. No external binary required. Session type `"pi"` in the terminal sessions store; rendered by `PiAgentPane` instead of xterm. Key files:
 
 - `electron/ipc/pi-agent.ts` — IPC handler; `sessions Map<sessionId, PiAgentSession>`; registers all `pi-agent:*` channels
-- `electron/lib/pi-agent-loop.ts` — `runAgentLoop()`; SSE stream parsing; tool execution; callbacks (`onToken`, `onToolsReady`, `onToolStart`, `onToolEnd`, `onStepStart`, `onUsage`, `onSubagent`, `onDone`, `onError`)
+- `electron/lib/pi-agent-loop.ts` — `runAgentLoop()`; SSE stream parsing; tool execution; callbacks (`onToken`, `onToolsReady`, `onToolPending`, `onToolStart`, `onToolEnd`, `onStepStart`, `onUsage`, `onSubagent`, `onDone`, `onError`)
 - `electron/lib/pi-agent-prompt.ts` — system prompt builder; mandatory Cairn workflow injected here
 - `electron/lib/coding-tools/` — 7 ported file-system tools (`read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`) + `spawn_subagent` + `file-mutex.ts`
 
@@ -361,10 +361,10 @@ Shared modules live in `src/components/graph/`: `analyticsUtils.ts`, `analyticsH
 | `electron/ipc/chat.ts` | AI chat loop — `runToolLoop` + IPC handler registration |
 | `electron/ipc/chat-executor.ts` | `executeTool` — all AI tool implementations |
 | `electron/ipc/pi-agent.ts` | Cairn native agent IPC handler — `sessions` Map, all `pi-agent:*` channels |
-| `electron/lib/pi-agent-loop.ts` | `runAgentLoop()` — multi-turn SSE loop, tool execution, all callbacks |
+| `electron/lib/pi-agent-loop.ts` | `runAgentLoop()` — multi-turn SSE loop, tool execution, all callbacks; `onToolPending` fires during streaming |
 | `electron/lib/pi-agent-prompt.ts` | System prompt builder; mandatory Cairn workflow; `spawn_subagent` description |
 | `electron/lib/coding-tools/` | 8 coding tools (`read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`, `spawn_subagent`) + `file-mutex.ts` |
-| `electron/lib/llm.ts` | `LLMConfig`, `callLLM`, `streamCompletion`, `isLocalEndpoint` |
+| `electron/lib/llm.ts` | `LLMConfig`, `callLLM`, `streamCompletion`, `isLocalEndpoint`, `normaliseBaseUrl` |
 | `electron/lib/tools.ts` | `TOOLS` (OpenAI function definitions), `TOOL_LABELS`, `buildSystemPrompt` |
 | `electron/lib/context.ts` | `buildContextResponse` — canonical `get_cairn_context` response |
 | `electron/lib/prd.ts` | `generatePrd` — shared PRD generation logic |
@@ -556,26 +556,35 @@ renderer                         main process
    │                                  │
    ├─ pi-agent:prompt ──────────────► runAgentLoop()
    │                                  │  POST /v1/chat/completions (stream)
-   │ ◄── pi-agent:token (×N) ─────────┤  token deltas
-   │                                  │  [DONE] received
-   │ ◄── pi-agent:tools-ready ────────┤  ensures streaming message exists
+   │ ◄── pi-agent:token (×N) ─────────┤  token deltas arrive
+   │                                  │  ← tool name first seen in stream:
+   │ ◄── pi-agent:tools-ready ────────┤    ensure streaming message exists (once)
+   │ ◄── pi-agent:tool (pending) ─────┤    chip appears immediately (tool name label)
+   │ ◄── pi-agent:token (×N) ─────────┤  remaining tokens / more tool calls
+   │                                  │  [DONE] received — args fully buffered
    │                                  │  for each tool call:
-   │ ◄── pi-agent:tool (start) ───────┤    onToolStart → spinner chip
+   │ ◄── pi-agent:tool (start) ───────┤    onToolStart → update chip label, execute
    │                                  │    execute tool (may take seconds)
-   │ ◄── pi-agent:tool (end) ─────────┤    onToolEnd → update chip + output
+   │ ◄── pi-agent:tool (end) ─────────┤    onToolEnd → chip shows result + output
    │                                  │  if more turns:
    │ ◄── pi-agent:step ───────────────┤    seal message, start next
    │ ◄── pi-agent:usage ──────────────┤    token counts → context ring
    │ ◄── pi-agent:done ───────────────┤  turn complete
 ```
 
+The `pending` status fires during streaming as soon as a tool name is seen in the SSE delta — this is what makes the chip appear immediately rather than waiting for the full response. The `start` event reuses the same `callId` to update the chip's label to the resolved human-readable version once argument parsing is complete.
+
 **Subagents**
 
 `spawn_subagent` in `electron/lib/coding-tools/subagent.ts` runs a nested `runAgentLoop` with a child session ID (`${parentId}:sub:${hex}`). All child events are sent on the child session ID — the renderer routes them based on the prefix. Parent context ring and child ring are independent. The child's final assistant message is returned to the parent as the tool result.
 
+**Plan Mode**
+
+Launch with `mode: "plan"` to produce a PRD before writing code. Plan Mode restricts the available tools to read-only coding tools plus `ensure_note`. The system prompt instructs the agent to write a structured plan note and then stop. The renderer shows an **Approve Plan** button; clicking it calls `pi-agent:approve-plan`, which switches the session to `mode: "execute"` and injects the full PRD content as context. Implemented in `pi-agent-prompt.ts` (`buildPlanModePrompt`, `buildExecuteModePrompt`) and `pi-agent.ts` (`approve-plan` IPC channel). The `PLAN_MODE_ALLOWED` set in `pi-agent-loop.ts` controls which tools are available in plan mode.
+
 **System prompt**
 
-`buildPiAgentSystemPrompt()` in `pi-agent-prompt.ts` injects the project name, `cwd`, active task title, and date. The mandatory workflow section (orient → document → capture → wrap up) is enforced here — if you want the agent to adopt a new habit, add it to this file rather than relying on per-turn instructions.
+`buildPlanModePrompt()` / `buildExecuteModePrompt()` in `pi-agent-prompt.ts` inject the project name, `cwd`, active task title, date, and (in execute mode) the full PRD content. The mandatory workflow section (orient → document → capture → wrap up) is enforced here — if you want the agent to adopt a new habit, add it to this file rather than relying on per-turn instructions.
 
 ### Adding a new analytics canvas
 
@@ -622,6 +631,9 @@ npm run test:coverage     # coverage report
 | `electron/ipc/chat-executor.test.ts` | Every tool case in `executeTool` |
 | `electron/ipc/handlers.test.ts` | IPC data layer, `executeReadTool`, `buildContextResponse` |
 | `electron/ipc/tool-parity.test.ts` | Ensures chat and MCP tool response shapes stay in sync (including `version` field parity) |
+| `electron/lib/pi-agent-loop.test.ts` | Agent loop SSE streaming — 8 mock scenarios (real Node HTTP server) + 2 live integration tests |
+
+**Live integration tests** — copy `.env.test.example` (if present) to `.env.test` and set `TEST_LLM_BASE_URL` to run the two live agent loop tests against a real endpoint. The file is gitignored. Without it the live tests are automatically skipped.
 
 **Please add or update tests when:**
 - Adding a new query helper to `queries.ts`
@@ -656,8 +668,10 @@ vitest uses a SQLite shim (`vitest-sqlite-shim.cjs`) to ensure the system Node A
 - [ ] `mcp-server.ts` changes use inlined SQL only — no `import` from `queries.ts`
 - [ ] Screenshots or recording included for any UI changes
 - [ ] `useCairnStore()` calls use narrow selectors (not full-store subscriptions)
+- [ ] If subscribing to store functions (e.g. `getColumnCards`) ensure raw data (e.g. `cards`) is also in the selector so mutations trigger re-renders
 - [ ] List-item components wrapped in `React.memo`
 - [ ] Expensive derivations wrapped in `useMemo` (not recomputed every render)
+- [ ] IPC-driven state updates that must paint before the next IPC message arrives use `flushSync` to bypass React 18 automatic batching
 
 ---
 
