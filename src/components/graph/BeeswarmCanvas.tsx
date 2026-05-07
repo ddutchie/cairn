@@ -34,7 +34,7 @@ export function BeeswarmCanvas({ nodes, onNodeClick }: Props) {
 
   const datedCards = useMemo(() => {
     return cards
-      .filter((c) => scopedCardIds.has(c.id) && !c.archivedAt)
+      .filter((c) => scopedCardIds.has(c.id))
       .map((c) => ({ ...c, date: new Date(c.dueDate ?? c.createdAt), isDue: !!c.dueDate }))
       .filter((c) => !isNaN(c.date.getTime()));
   }, [cards, scopedCardIds]);

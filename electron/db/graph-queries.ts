@@ -206,9 +206,9 @@ export function getKnowledgeGraph(
   // ── 3. Cards ───────────────────────────────────────────────────────────────
   const cards = db.prepare(
     `SELECT id, project_id, workspace_id, title, description, tag_ids,
-            linked_note_ids, priority, assignee
+            linked_note_ids, priority, assignee, archived_at
      FROM task_cards
-     WHERE project_id IN (${projPlaceholders}) AND archived_at IS NULL`
+     WHERE project_id IN (${projPlaceholders})`
   ).all(...projIdArgs) as Row[];
 
   const cardMap = new Map<string, Row>();
@@ -226,6 +226,7 @@ export function getKnowledgeGraph(
           assignee: c.assignee,
           tagIds: parseJson(c.tag_ids),
           snippet: (c.description as string || "").slice(0, 120),
+          isArchived: !!(c.archived_at),
         },
       });
     }
