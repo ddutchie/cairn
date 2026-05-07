@@ -25,6 +25,7 @@ This guide covers everything you need to go from zero to a working dev environme
 - [Coding conventions](#coding-conventions)
 - [Working on specific areas](#working-on-specific-areas)
   - [Working on the Agent workspace](#working-on-the-agent-workspace)
+  - [Working on the Cairn Agent](#working-on-the-cairn-agent)
 - [Tests](#tests)
 - [Submitting a pull request](#submitting-a-pull-request)
 - [Good first issues](#good-first-issues)
@@ -130,7 +131,7 @@ cairn/
 │   │   ├── flow/           # Idea Flow canvas + node components
 │   │   ├── graph/          # Knowledge Graph + all analytics canvases
 │   │   ├── insights/       # InsightsView (analytics hub)
-│   │   ├── agent/          # Agent workspace: file tree, CM6 editor, xterm terminal, diff viewer
+│   │   ├── agent/          # Agent workspace (PTY + Cairn native agent): PiAgentPane, PiMessageBubble, ContextRing, SpawnAgentModal, file tree, CM6 editor, xterm terminal, diff viewer
 │   │   ├── chat/           # AI chat panel
 │   │   ├── search/         # Global search panel
 │   │   ├── settings/       # Settings sections
@@ -167,7 +168,7 @@ cairn/
 | Notes | `⌘2` | Project | Split-pane markdown editor + dashboard renderer |
 | Board | `⌘3` | Project | Kanban with drag-and-drop |
 | Idea Flow | `⌘4` | Project | Freeform node canvas |
-| Agent | `⌘5` | Project | Coding agent workspace — file tree, CM6 editor, xterm.js terminal, git diff viewer |
+| Agent | `⌘5` | Project | Coding agent workspace — Cairn native agent (chat UI) or external PTY agent (Claude Code, OpenCode, Aider); file tree, CM6 editor, xterm.js terminal, git diff viewer |
 | Knowledge Graph | `⌘6` | Workspace | Force-directed and Radial tree of notes/cards/tags (`GraphLayoutMode = "force" \| "radial"`) |
 | Insights | `⌘7` | Workspace | Analytics canvases: Ridgeline, Beeswarm, Bullet, Sankey, Timeline, Matrix, Table |
 | Settings | — | App | General, AI & Chat, Coding Agents, Tags, Shortcuts, Data, About |
@@ -180,7 +181,16 @@ Cairn has two processes that share the same `cairn.db` (SQLite WAL mode):
 
 **Main process** (Node.js) — everything in `electron/`. Owns the SQLite database, the filesystem, and the AI chat loop. Returns `{ data: T } | { error: string }` from every IPC handler.
 
-**Agent workspace** (`electron/ipc/agent.ts`) — PTY sessions spawned via `node-pty` in the main process. File I/O is validated against registered `code_directory` paths before any read/write. Sessions are keyed by `sessionId`; PTY output is streamed to the renderer via `agent:data` IPC events. The renderer-side `TerminalManager` singleton holds `xterm.js` instances so they survive view navigation.
+**External agent workspace** (`electron/ipc/agent.ts`) — PTY sessions spawned via `node-pty` in the main process. File I/O is validated against registered `code_directory` paths before any read/write. Sessions are keyed by `sessionId`; PTY output is streamed to the renderer via `agent:data` IPC events. The renderer-side `TerminalManager` singleton holds `xterm.js` instances so they survive view navigation.
+
+**Cairn native agent** — a stateful multi-turn tool-call loop running entirely in the main process. No external binary required. Session type `"pi"` in the terminal sessions store; rendered by `PiAgentPane` instead of xterm. Key files:
+
+- `electron/ipc/pi-agent.ts` — IPC handler; `sessions Map<sessionId, PiAgentSession>`; registers all `pi-agent:*` channels
+- `electron/lib/pi-agent-loop.ts` — `runAgentLoop()`; SSE stream parsing; tool execution; callbacks (`onToken`, `onToolsReady`, `onToolStart`, `onToolEnd`, `onStepStart`, `onUsage`, `onSubagent`, `onDone`, `onError`)
+- `electron/lib/pi-agent-prompt.ts` — system prompt builder; mandatory Cairn workflow injected here
+- `electron/lib/coding-tools/` — 7 ported file-system tools (`read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`) + `spawn_subagent` + `file-mutex.ts`
+
+The agent has access to a curated subset of Cairn's data tools (notes CRUD, task management, idea flow) via the same `executeTool` path used by the AI chat. `ensure_note` is the preferred write tool — idempotent by title, no duplicates. `AgentView` is always mounted (CSS-hidden when inactive) so `PiAgentPane` refs and IPC subscriptions survive view switches.
 
 **MCP server** (`electron/mcp-server.ts`) — a separate compiled binary that external AI agents connect to. Shares the same SQLite database and writes `.md` files directly; the Electron UI refreshes automatically via WAL mtime polling. Has one important constraint: it cannot import from `electron/db/queries.ts` due to the Node ABI boundary — it uses inlined SQL only.
 
@@ -350,6 +360,10 @@ Shared modules live in `src/components/graph/`: `analyticsUtils.ts`, `analyticsH
 | `electron/ipc/agent.ts` | All `agent:*` IPC channels — PTY spawn/kill, file I/O, git diff, `assertWithinCodeDirectory` |
 | `electron/ipc/chat.ts` | AI chat loop — `runToolLoop` + IPC handler registration |
 | `electron/ipc/chat-executor.ts` | `executeTool` — all AI tool implementations |
+| `electron/ipc/pi-agent.ts` | Cairn native agent IPC handler — `sessions` Map, all `pi-agent:*` channels |
+| `electron/lib/pi-agent-loop.ts` | `runAgentLoop()` — multi-turn SSE loop, tool execution, all callbacks |
+| `electron/lib/pi-agent-prompt.ts` | System prompt builder; mandatory Cairn workflow; `spawn_subagent` description |
+| `electron/lib/coding-tools/` | 8 coding tools (`read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`, `spawn_subagent`) + `file-mutex.ts` |
 | `electron/lib/llm.ts` | `LLMConfig`, `callLLM`, `streamCompletion`, `isLocalEndpoint` |
 | `electron/lib/tools.ts` | `TOOLS` (OpenAI function definitions), `TOOL_LABELS`, `buildSystemPrompt` |
 | `electron/lib/context.ts` | `buildContextResponse` — canonical `get_cairn_context` response |
@@ -386,8 +400,11 @@ Shared modules live in `src/components/graph/`: `analyticsUtils.ts`, `analyticsH
 | `src/components/graph/ForceGraphCanvas.tsx` | Force-directed canvas via `react-force-graph-2d` |
 | `src/components/graph/RadialTreeCanvas.tsx` | Radial hierarchy tree via D3 |
 | `src/components/graph/graphUtils.ts` | `resolveCssVar()` shared by graph canvases |
-| `src/components/agent/AgentView.tsx` | Three-pane layout — drag-resize dividers, Editor/Diff tab bar |
-| `src/components/agent/AgentTerminalPane.tsx` | xterm.js sessions, tab strip, font-scale sync, SpawnAgentModal integration |
+| `src/components/agent/AgentView.tsx` | Three-pane layout — drag-resize dividers, Editor/Diff tab bar; always mounted (CSS-hidden when inactive) |
+| `src/components/agent/AgentTerminalPane.tsx` | Session tab strip; branches on `sessionType`: `"pi"` → `PiAgentPane`, `"pty"` → `SessionMount` (xterm.js) |
+| `src/components/agent/PiAgentPane.tsx` | Cairn native agent chat UI — IPC subscriptions, `sendPrompt`, `initialPrompt` effect, context ring |
+| `src/components/agent/PiMessageBubble.tsx` | Message renderer — user/assistant/error bubbles, `ToolChip` (running → done), `CairnRefChip`, `SubagentBlock` |
+| `src/components/agent/ContextRing.tsx` | Reusable SVG context usage ring; `size` and `stroke` props; colour shifts at 65 % and 85 % |
 | `src/components/agent/AgentEditor.tsx` | Multi-file tabbed editor — tab management, preview toggle, save |
 | `src/components/agent/FileEditorInner.tsx` | Single CM6 editor instance per file — CSS-hidden when inactive |
 | `src/components/agent/DiffViewer.tsx` | Git diff polling, toolbar, collapsible files, view mode toggle |
@@ -509,6 +526,56 @@ The Agent workspace has its own IPC namespace (`agent:*`) entirely separate from
 - **CM6 editor** — one `EditorView` instance per open file, CSS-hidden when inactive. `buildTheme(fontScale)` in `editorTheme.ts` accepts `fontScale` so the editor respects the user's font size setting. CM6 `HighlightStyle.define` requires static colour strings — CSS variables cannot be used there (documented in `editorTheme.ts`). The editor includes a find/replace panel via `@codemirror/search` (`⌘F`); `buildSearchTheme()` must be appended **after** `buildTheme()` in the extensions array to override CM6's default `.cm-button`/`.cm-textfield` gradient styles with Cairn CSS variables.
 - **File search** — `agent:searchFiles` IPC (registered in `electron/ipc/agent.ts`) recursively walks the `code_directory` for filename matches, triggered by `⌘⇧F` in `FileTree.tsx` via a capture-phase listener that fires before the global `page.tsx` handler. Subject to the same `assertWithinCodeDirectory` security check as all file operations. Returns up to 50 results; skips `node_modules`, `.git`, `.next`, `dist*`, and similar build directories.
 - **`code_directory`** — stored on the `projects` table (migration v10). Set from the Project Overview inline row, not from AgentSettings. Written via the generic `db:project:update` IPC channel.
+
+### Working on the Cairn Agent
+
+The Cairn native agent (`sessionType: "pi"`) runs in the Electron main process. Its IPC namespace is `pi-agent:*`, entirely separate from `agent:*` (PTY) and `db:*` (data).
+
+**Adding a new coding tool**
+
+1. Create `electron/lib/coding-tools/<name>.ts` — export `<name>Tool(args, cwd)` and `<name>ToolDefinition` (OpenAI function schema)
+2. Add it to the barrel in `electron/lib/coding-tools/index.ts`
+3. Add a `case "<name>":` in `executeSingleTool()` in `pi-agent-loop.ts`
+4. Add it to `CODING_TOOL_DEFS` in `pi-agent-loop.ts`
+5. Add a human-readable label to `CODING_LABELS` if it takes a `path` or `command` arg
+6. If the tool produces output worth expanding in the UI, it will appear automatically. Add the tool name to `READ_ONLY_TOOLS` in `PiAgentPane.tsx` if it is read-only and the output should be suppressed.
+
+**Adding a new Cairn data tool to the agent**
+
+The agent exposes a curated subset of Cairn tools defined in `CAIRN_TOOL_NAMES` in `pi-agent-loop.ts`. To expose a new tool:
+
+1. Add the tool name to `CAIRN_TOOL_NAMES`
+2. Update the system prompt in `pi-agent-prompt.ts` if the tool warrants explicit mention
+3. If it is a write tool that returns `{ id, title }`, add it to `NOTE_WRITE_TOOLS` or `TASK_WRITE_TOOLS` in `PiAgentPane.tsx` so it renders as a clickable `CairnRefChip`
+4. If it is read-only, add it to `READ_ONLY_TOOLS` to suppress output expansion
+
+**IPC event flow for a single agent turn**
+
+```
+renderer                         main process
+   │                                  │
+   ├─ pi-agent:prompt ──────────────► runAgentLoop()
+   │                                  │  POST /v1/chat/completions (stream)
+   │ ◄── pi-agent:token (×N) ─────────┤  token deltas
+   │                                  │  [DONE] received
+   │ ◄── pi-agent:tools-ready ────────┤  ensures streaming message exists
+   │                                  │  for each tool call:
+   │ ◄── pi-agent:tool (start) ───────┤    onToolStart → spinner chip
+   │                                  │    execute tool (may take seconds)
+   │ ◄── pi-agent:tool (end) ─────────┤    onToolEnd → update chip + output
+   │                                  │  if more turns:
+   │ ◄── pi-agent:step ───────────────┤    seal message, start next
+   │ ◄── pi-agent:usage ──────────────┤    token counts → context ring
+   │ ◄── pi-agent:done ───────────────┤  turn complete
+```
+
+**Subagents**
+
+`spawn_subagent` in `electron/lib/coding-tools/subagent.ts` runs a nested `runAgentLoop` with a child session ID (`${parentId}:sub:${hex}`). All child events are sent on the child session ID — the renderer routes them based on the prefix. Parent context ring and child ring are independent. The child's final assistant message is returned to the parent as the tool result.
+
+**System prompt**
+
+`buildPiAgentSystemPrompt()` in `pi-agent-prompt.ts` injects the project name, `cwd`, active task title, and date. The mandatory workflow section (orient → document → capture → wrap up) is enforced here — if you want the agent to adopt a new habit, add it to this file rather than relying on per-turn instructions.
 
 ### Adding a new analytics canvas
 

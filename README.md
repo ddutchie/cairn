@@ -38,7 +38,8 @@ Cairn is a desktop app (Electron + Next.js) that combines markdown notes with a 
 - **Idea Flow** — Freeform node canvas per project (`⌘4`): ideas, note/task refs, groups, URLs, AI summaries — connected with labelled edges
 - **Live dashboards** — AI-generated interactive HTML dashboards with a live `window.cairn.query()` data bridge; inline "Fix with AI" on runtime errors; editable via built-in CodeMirror overlay
 - **MCP server** — Exposes your workspace to external AI agents (OpenCode, Claude Desktop, etc.) via the Model Context Protocol
-- **Agent workspace** — Three-pane view (`⌘5`) for running AI coding agents (Claude Code, OpenCode, Aider, or any CLI) connected to project tasks; file tree, multi-file CodeMirror 6 editor, xterm.js terminal, and git diff viewer
+- **Cairn Agent** — Native coding agent (`⌘5`) with board and notes integration: moves tasks, writes session notes, captures discovered work; supports subagents for deep sub-tasks; context usage ring; works with any OpenAI-compatible endpoint
+- **Agent workspace** — Three-pane view (`⌘5`) for running external AI coding agents (Claude Code, OpenCode, Aider, or any CLI) connected to project tasks; file tree, multi-file CodeMirror 6 editor, xterm.js terminal, and git diff viewer
 - **Knowledge Graph** — Workspace-wide graph of every note, card, project, and tag; Force-directed and Radial tree layouts; auto-discovered relationships (`⌘6`)
 - **Insights** — Analytics view: Ridgeline joy plot, Beeswarm, Bullet health bars, Sankey pipeline flow, Timeline, Matrix heatmap, Table (`⌘7`)
 - **Font scaling** — Five-step UI font size preference (XS–XL, default M) in Settings → General
@@ -108,6 +109,29 @@ Configure the AI endpoint in **Settings → AI & Chat** (no restart needed):
 | API Key | _(blank)_ | Not required for local endpoints |
 
 **Quick presets** — one click to switch between OpenAI, Ollama (`localhost:11434`), and LM Studio (`localhost:1234`). Local servers don't need an API key.
+
+## Cairn Agent
+
+Cairn includes a native coding agent that runs directly inside the app — no external CLI binary required. It is accessible from the Agent view (`⌘5`) by choosing **Cairn Agent** in the spawn modal.
+
+The agent is inspired by [pi](https://github.com/earendil-works/pi), an open-source agentic coding framework. The tool implementations (`read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`) are ported directly into the Electron main process and adapted for Cairn's architecture — same semantics, no npm dependency.
+
+### What makes it Cairn-specific
+
+Unlike a general coding agent, the Cairn Agent is a first-class participant in your project:
+
+- **Board integration** — when you attach a task at spawn time, the agent moves it to In Progress immediately and to Review (or Done) when it finishes
+- **Automatic notes** — findings, decisions, and bugs discovered during a session are written to project notes via `ensure_note` (idempotent — no duplicates on re-run)
+- **Session summary** — a summary note is created at the end of every session documenting what changed and what needs follow-up
+- **Out-of-scope capture** — issues found beyond the current task are automatically added to the board as new tasks
+
+### Subagents
+
+The agent can delegate contained sub-tasks to a fresh sub-agent via `spawn_subagent`. The sub-agent runs a full tool-call loop with its own message history — only its final answer is returned to the parent. This keeps the parent context lean for long multi-step tasks. The sub-agent trace is rendered inline and collapsible in the chat UI, with its own context usage ring.
+
+### Context usage ring
+
+A small ring in the agent pane header shows how full the model's context window is after each step. Configure the limit for your model in **Settings → AI & Chat → Context window** (presets: 8k / 32k / 128k / 200k).
 
 ## MCP server
 
