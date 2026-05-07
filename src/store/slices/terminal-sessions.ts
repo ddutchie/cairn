@@ -262,6 +262,7 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
         const msgs = t.piMessages ?? [];
         const last = msgs[msgs.length - 1];
         if (last?.isStreaming) {
+          // Happy path: streaming message already exists
           return {
             ...t,
             piMessages: [
@@ -273,7 +274,18 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
             ],
           };
         }
-        return t;
+        // Race condition: onToolsReady IPC and onTool(start) IPC can arrive in the
+        // same microtask batch, so ensurePiStreamingMessage may not have been applied
+        // yet. Create the streaming message here and attach the chip atomically.
+        const newMsg = {
+          id: `stream-${Date.now()}`,
+          role: "assistant" as const,
+          content: "",
+          isStreaming: true,
+          timestamp: new Date().toISOString(),
+          toolCalls: [toolCall],
+        };
+        return { ...t, piMessages: [...msgs, newMsg] };
       }),
     }));
   },
@@ -406,15 +418,27 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
             const sub = msg.subagents![subIdx];
             const subMsgs = sub.messages;
             const last = subMsgs[subMsgs.length - 1];
-            if (!last?.isStreaming) return msg;
             const newSubagents = [...msg.subagents!];
-            newSubagents[subIdx] = {
-              ...sub,
-              messages: [
-                ...subMsgs.slice(0, -1),
-                { ...last, toolCalls: [...(last.toolCalls ?? []), toolCall] },
-              ],
-            };
+            if (last?.isStreaming) {
+              newSubagents[subIdx] = {
+                ...sub,
+                messages: [
+                  ...subMsgs.slice(0, -1),
+                  { ...last, toolCalls: [...(last.toolCalls ?? []), toolCall] },
+                ],
+              };
+            } else {
+              // Same race as parent: create streaming message and attach chip atomically
+              const newMsg = {
+                id: `stream-${Date.now()}`,
+                role: "assistant" as const,
+                content: "",
+                isStreaming: true,
+                timestamp: new Date().toISOString(),
+                toolCalls: [toolCall],
+              };
+              newSubagents[subIdx] = { ...sub, messages: [...subMsgs, newMsg] };
+            }
             return { ...msg, subagents: newSubagents };
           }),
         };
