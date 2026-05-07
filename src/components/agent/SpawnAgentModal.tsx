@@ -7,17 +7,19 @@
  * the task label is hidden, the prompt starts empty, and the session is
  * labelled "Ad-hoc session".
  *
- * Pre-fills from task title + description when a card is provided.
- * On confirm: spawns PTY, adds session to store, navigates to Agent view.
+ * Session types:
+ *   "pi"  — Cairn native agent (structured chat, no PTY)
+ *   "pty" — External PTY agent (xterm.js terminal)
  */
 
 import { useState, useEffect } from "react";
-import { Terminal, AlertTriangle } from "lucide-react";
+import { Terminal, MessageSquare, AlertTriangle } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { id } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import type { TaskCard } from "@/types";
 
 interface SpawnAgentModalProps {
@@ -27,15 +29,29 @@ interface SpawnAgentModalProps {
 }
 
 export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
-  const { agents, fetchAgents, activeProjectId, projects, addTerminalSession, setActiveSession, setView, updateProject } = useCairnStore(useShallow((s) => ({ agents: s.agents, fetchAgents: s.fetchAgents, activeProjectId: s.activeProjectId, projects: s.projects, addTerminalSession: s.addTerminalSession, setActiveSession: s.setActiveSession, setView: s.setView, updateProject: s.updateProject })));
+  const {
+    agents, fetchAgents, activeProjectId, projects,
+    addTerminalSession, setActiveSession, setView, updateProject, aiConfig,
+  } = useCairnStore(useShallow((s) => ({
+    agents:               s.agents,
+    fetchAgents:          s.fetchAgents,
+    activeProjectId:      s.activeProjectId,
+    projects:             s.projects,
+    addTerminalSession:   s.addTerminalSession,
+    setActiveSession:     s.setActiveSession,
+    setView:              s.setView,
+    updateProject:        s.updateProject,
+    aiConfig:             s.aiConfig,
+  })));
 
-  const project = projects.find((p) => p.id === activeProjectId) ?? null;
+  const project      = projects.find((p) => p.id === activeProjectId) ?? null;
   const codeDirectory = project?.codeDirectory ?? null;
 
+  const [sessionType, setSessionType]   = useState<"pi" | "pty">("pi");
   const [selectedAgentId, setSelectedAgentId] = useState<string>("");
-  const [prompt, setPrompt] = useState("");
-  const [spawning, setSpawning] = useState(false);
-  const [spawnError, setSpawnError] = useState<string | null>(null);
+  const [prompt, setPrompt]             = useState("");
+  const [spawning, setSpawning]         = useState(false);
+  const [spawnError, setSpawnError]     = useState<string | null>(null);
 
   // Fetch agents on open
   useEffect(() => {
@@ -56,40 +72,88 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
     setSpawnError(null);
   }, [open, agents, card]);
 
-  const canSpawn = agents.length > 0 && !!codeDirectory && !!selectedAgentId && !!window.electron;
+  const canSpawnPty = agents.length > 0 && !!codeDirectory && !!selectedAgentId && !!window.electron;
+  const canSpawnPi  = !!codeDirectory && !!window.electron;
+  const canSpawn    = sessionType === "pi" ? canSpawnPi : canSpawnPty;
+
   const selectedAgent = agents.find((a) => a.id === selectedAgentId);
 
   async function handleSpawn() {
-    if (!canSpawn || !selectedAgent || !codeDirectory || !project) return;
+    if (!canSpawn || !codeDirectory || !project) return;
     setSpawning(true);
     setSpawnError(null);
 
-    const taskId = card?.id ?? id();
-    const taskTitle = card?.title ?? "Ad-hoc session";
+    const sessionId  = id();
+    const taskId     = card?.id ?? id();
+    const taskTitle  = card?.title ?? "Ad-hoc session";
 
     try {
-      const { sessionId } = await window.electron!.agent.spawn({
-        agentId: selectedAgent.id,
-        projectId: project.id,
-        cwd: codeDirectory,
-        prompt,
-        taskId,
-        taskTitle,
-      });
-      addTerminalSession({
-        sessionId,
-        taskId,
-        taskTitle,
-        agentId: selectedAgent.id,
-        agentName: selectedAgent.name,
-        projectId: project.id,
-        status: "running",
-        exitCode: null,
-        spawnedAt: new Date().toISOString(),
-      });
-      setActiveSession(sessionId);
-      setView("agent");
-      onClose();
+      if (sessionType === "pi") {
+        // Cairn native agent — no PTY, just create the session and send initial prompt
+        addTerminalSession({
+          sessionId,
+          taskId,
+          taskTitle,
+          agentId:     "cairn-agent",
+          agentName:   "Cairn Agent",
+          projectId:   project.id,
+          cwd:         codeDirectory,
+          status:      "running",
+          exitCode:    null,
+          spawnedAt:   new Date().toISOString(),
+          sessionType: "pi",
+          piMessages:  [],
+        });
+
+        // Send initial prompt if provided
+        if (prompt.trim()) {
+          window.electron!.piAgent.prompt({
+            sessionId,
+            prompt: prompt.trim(),
+            projectId: project.id,
+            workspaceId: project.workspaceId ?? undefined,
+            cwd: codeDirectory,
+            taskTitle: card?.title,
+            config: {
+              baseUrl: aiConfig.baseUrl || undefined,
+              model:   aiConfig.model   || undefined,
+              apiKey:  aiConfig.apiKey  || undefined,
+            },
+          });
+        }
+
+        setActiveSession(sessionId);
+        setView("agent");
+        onClose();
+
+      } else {
+        // External PTY agent
+        if (!selectedAgent) return;
+        const { sessionId: ptySessionId } = await window.electron!.agent.spawn({
+          agentId:   selectedAgent.id,
+          projectId: project.id,
+          cwd:       codeDirectory,
+          prompt,
+          taskId,
+          taskTitle,
+        });
+        addTerminalSession({
+          sessionId:   ptySessionId,
+          taskId,
+          taskTitle,
+          agentId:     selectedAgent.id,
+          agentName:   selectedAgent.name,
+          projectId:   project.id,
+          cwd:         codeDirectory,
+          status:      "running",
+          exitCode:    null,
+          spawnedAt:   new Date().toISOString(),
+          sessionType: "pty",
+        });
+        setActiveSession(ptySessionId);
+        setView("agent");
+        onClose();
+      }
     } catch (e) {
       setSpawnError(String(e));
     } finally {
@@ -102,12 +166,53 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
       <DialogContent size="md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Terminal size={15} />
+            {sessionType === "pi"
+              ? <MessageSquare size={15} />
+              : <Terminal size={15} />}
             {card ? "Spawn Agent" : "New Session"}
           </DialogTitle>
         </DialogHeader>
 
         <div className="px-5 py-4 space-y-4">
+
+          {/* Session type toggle */}
+          <div>
+            <p className="text-[0.714rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)] mb-1.5">
+              Agent type
+            </p>
+            <div className="flex rounded-lg border border-[var(--border)] overflow-hidden text-xs">
+              <button
+                onClick={() => setSessionType("pi")}
+                className={cn(
+                  "flex-1 flex items-center justify-center gap-1.5 py-1.5 transition-colors",
+                  sessionType === "pi"
+                    ? "bg-[var(--accent)] text-white"
+                    : "text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"
+                )}
+              >
+                <MessageSquare size={12} />
+                Cairn Agent
+              </button>
+              <button
+                onClick={() => setSessionType("pty")}
+                className={cn(
+                  "flex-1 flex items-center justify-center gap-1.5 py-1.5 transition-colors border-l border-[var(--border)]",
+                  sessionType === "pty"
+                    ? "bg-[var(--accent)] text-white"
+                    : "text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"
+                )}
+              >
+                <Terminal size={12} />
+                External Agent
+              </button>
+            </div>
+            {sessionType === "pi" && (
+              <p className="text-[0.714rem] text-[var(--text-tertiary)] mt-1">
+                Uses {aiConfig.model || "gpt-4o"} · reads/writes code + Cairn board
+              </p>
+            )}
+          </div>
+
           {/* Task label — only shown when launched from a card */}
           {card && (
             <div>
@@ -116,21 +221,8 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
             </div>
           )}
 
-          {/* No agents warning */}
-          {agents.length === 0 && (
-            <div className="flex items-start gap-2 rounded-lg p-3 bg-[color-mix(in_srgb,var(--warning,#f59e0b)_10%,transparent)] text-[var(--warning,#f59e0b)]" role="alert">
-              <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
-              <div className="text-xs">
-                No coding agents configured.{" "}
-                <button onClick={() => { onClose(); setView("settings"); }} className="underline">
-                  Configure in Settings
-                </button>
-              </div>
-            </div>
-          )}
-
           {/* No code directory warning */}
-          {agents.length > 0 && !codeDirectory && (
+          {!codeDirectory && (
             <div className="flex items-start gap-2 rounded-lg p-3 bg-[color-mix(in_srgb,var(--warning,#f59e0b)_10%,transparent)] text-[var(--warning,#f59e0b)]" role="alert">
               <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
               <div className="text-xs">
@@ -149,35 +241,50 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
             </div>
           )}
 
-          {/* Agent selector */}
-          {agents.length > 0 && (
-            <div>
-              <label className="text-[0.714rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)] block mb-1">
-                Agent
-              </label>
-              <select
-                value={selectedAgentId}
-                onChange={(e) => setSelectedAgentId(e.target.value)}
-                className="w-full rounded-md border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
-              >
-                {agents.map((a) => (
-                  <option key={a.id} value={a.id}>{a.name}{a.isDefault ? " (default)" : ""}</option>
-                ))}
-              </select>
-            </div>
+          {/* PTY-specific: agent selector */}
+          {sessionType === "pty" && (
+            <>
+              {agents.length === 0 ? (
+                <div className="flex items-start gap-2 rounded-lg p-3 bg-[color-mix(in_srgb,var(--warning,#f59e0b)_10%,transparent)] text-[var(--warning,#f59e0b)]" role="alert">
+                  <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+                  <div className="text-xs">
+                    No coding agents configured.{" "}
+                    <button onClick={() => { onClose(); setView("settings"); }} className="underline">
+                      Configure in Settings
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <label className="text-[0.714rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)] block mb-1">
+                    Agent binary
+                  </label>
+                  <select
+                    value={selectedAgentId}
+                    onChange={(e) => setSelectedAgentId(e.target.value)}
+                    className="w-full rounded-md border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
+                  >
+                    {agents.map((a) => (
+                      <option key={a.id} value={a.id}>{a.name}{a.isDefault ? " (default)" : ""}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </>
           )}
 
           {/* Prompt textarea */}
           <div>
             <label className="text-[0.714rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)] block mb-1">
-              Prompt
+              {sessionType === "pi" ? "Initial prompt (optional)" : "Prompt"}
             </label>
             <textarea
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              rows={6}
+              onKeyDown={(e) => { if (e.key === "Enter" && e.metaKey) handleSpawn(); }}
+              rows={5}
               className="w-full rounded-md border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-sm px-3 py-2 font-mono resize-y focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
-              placeholder="Describe the task for the agent…"
+              placeholder={sessionType === "pi" ? "Describe what you want the agent to do…" : "Describe the task for the agent…"}
             />
           </div>
 
@@ -198,8 +305,8 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
               onClick={handleSpawn}
               disabled={!canSpawn || spawning}
             >
-              <Terminal size={13} />
-              {spawning ? "Spawning…" : card ? "Spawn" : "Start"}
+              {sessionType === "pi" ? <MessageSquare size={13} /> : <Terminal size={13} />}
+              {spawning ? "Starting…" : card ? "Spawn" : "Start"}
             </Button>
           </div>
         </div>

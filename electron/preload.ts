@@ -266,6 +266,43 @@ const api = {
     },
   },
 
+  // ── Cairn native agent (pi) ───────────────────
+  piAgent: {
+    /** Send a prompt to an existing or new session. Fire-and-forget. */
+    prompt: (req: unknown) => ipcRenderer.send("pi-agent:prompt", req),
+    /** Abort the current in-flight turn for this session. */
+    abort: (sessionId: string) => ipcRenderer.send("pi-agent:abort", { sessionId }),
+    /** Clear message history for a session (start fresh). */
+    clear: (sessionId: string) => ipcRenderer.send("pi-agent:clear", { sessionId }),
+    /** Destroy a session when the tab is closed. */
+    destroy: (sessionId: string) => ipcRenderer.send("pi-agent:destroy", { sessionId }),
+
+    onToken: (cb: (e: { sessionId: string; delta: string }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { sessionId: string; delta: string }) => cb(e);
+      ipcRenderer.on("pi-agent:token", handler);
+      return () => ipcRenderer.off("pi-agent:token", handler);
+    },
+    onTool: (cb: (e: { sessionId: string; name: string; label: string; status: "start" | "end"; ok?: boolean }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { sessionId: string; name: string; label: string; status: "start" | "end"; ok?: boolean }) => cb(e);
+      ipcRenderer.on("pi-agent:tool", handler);
+      return () => ipcRenderer.off("pi-agent:tool", handler);
+    },
+    onDone: (cb: (e: { sessionId: string }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { sessionId: string }) => cb(e);
+      ipcRenderer.on("pi-agent:done", handler);
+      return () => ipcRenderer.off("pi-agent:done", handler);
+    },
+    onError: (cb: (e: { sessionId: string; error: string }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { sessionId: string; error: string }) => cb(e);
+      ipcRenderer.on("pi-agent:error", handler);
+      return () => ipcRenderer.off("pi-agent:error", handler);
+    },
+  },
+
 } as const;
 
 contextBridge.exposeInMainWorld("electron", api);

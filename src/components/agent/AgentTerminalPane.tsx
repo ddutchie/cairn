@@ -16,12 +16,13 @@ import "@xterm/xterm/css/xterm.css";
 
 import { useEffect, useRef, useCallback, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { X, Terminal as TerminalIcon, CircleDot, Plus } from "lucide-react";
+import { X, Terminal as TerminalIcon, MessageSquare, CircleDot, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { Tooltip } from "@/components/ui/tooltip";
 import { SpawnAgentModal } from "./SpawnAgentModal";
 import { TerminalManager } from "./TerminalManager";
+import { PiAgentPane } from "./PiAgentPane";
 import type { TerminalSession } from "@/store/slices/terminal-sessions";
 
 // ── Single terminal session mount ─────────────────────────────────────────────
@@ -254,15 +255,28 @@ export function AgentTerminalPane() {
         </Tooltip>
       </div>
 
-      {/* Terminal mounts — each session always mounted, CSS-hidden when inactive */}
+      {/* Session content — branches on sessionType */}
       <div className="flex-1 min-h-0 flex flex-col overflow-hidden bg-[var(--background)]">
-        {terminalSessions.map((session) => (
-          <SessionMount
-            key={session.sessionId}
-            session={session}
-            isActive={session.sessionId === activeSessionId}
-          />
-        ))}
+        {terminalSessions.map((session) => {
+          const isActive = session.sessionId === activeSessionId;
+          if (session.sessionType === "pi") {
+            return (
+              <div
+                key={session.sessionId}
+                className={cn("flex-1 min-h-0 overflow-hidden", !isActive && "hidden")}
+              >
+                <PiAgentPane session={session} isActive={isActive} />
+              </div>
+            );
+          }
+          return (
+            <SessionMount
+              key={session.sessionId}
+              session={session}
+              isActive={isActive}
+            />
+          );
+        })}
       </div>
     </div>
     <SpawnAgentModal open={spawnOpen} onClose={() => setSpawnOpen(false)} />
@@ -292,16 +306,26 @@ function TerminalTab({ session, isActive, onActivate, onClose }: TerminalTabProp
           : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"
       )}
     >
-      {/* Status dot */}
-      <CircleDot
-        size={8}
-        className={cn(
-          "flex-shrink-0",
-          session.status === "running"
-            ? "text-[var(--success,#22c55e)]"
-            : "text-[var(--text-tertiary)]"
-        )}
-      />
+      {/* Session type icon / status dot */}
+      {session.sessionType === "pi" ? (
+        <MessageSquare
+          size={8}
+          className={cn(
+            "flex-shrink-0",
+            session.status === "running" ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]"
+          )}
+        />
+      ) : (
+        <CircleDot
+          size={8}
+          className={cn(
+            "flex-shrink-0",
+            session.status === "running"
+              ? "text-[var(--success,#22c55e)]"
+              : "text-[var(--text-tertiary)]"
+          )}
+        />
+      )}
 
       {/* Label */}
       <span className="max-w-[120px] truncate">{session.taskTitle}</span>
