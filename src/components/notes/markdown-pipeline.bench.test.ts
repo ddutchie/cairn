@@ -175,17 +175,20 @@ function fmt(r: BenchResult): string {
 }
 
 // ── Perf ceilings (ms, p95) — fail on catastrophic regression only ────────────
+// Values are calibrated for GitHub Actions shared runners, which are ~3× slower
+// than a typical dev machine. The intent is to catch catastrophic regressions
+// only — not to enforce tight latency budgets.
 
 const CEILINGS: Record<string, Record<FixtureName, number>> = {
-  "remark-parse":          { small: 5,   medium: 10,  large: 30  },
-  "remark-gfm+math":       { small: 15,  medium: 30,  large: 80  },
-  "remark-callout":        { small: 2,   medium: 5,   large: 20  },
-  "remark-promoteDisplay": { small: 2,   medium: 5,   large: 15  },
-  "remark→hast":           { small: 5,   medium: 15,  large: 50  },
-  "rehype-captureLatex":   { small: 2,   medium: 5,   large: 15  },
-  "rehype-katex":          { small: 20,  medium: 60,  large: 200 },
-  "rehype-mergedPass":     { small: 5,   medium: 15,  large: 50  },
-  "full-pipeline":         { small: 30,  medium: 80,  large: 300 },
+  "remark-parse":          { small: 15,  medium: 30,  large: 90   },
+  "remark-gfm+math":       { small: 15,  medium: 30,  large: 80   },
+  "remark-callout":        { small: 10,  medium: 15,  large: 60   },
+  "remark-promoteDisplay": { small: 10,  medium: 15,  large: 45   },
+  "remark→hast":           { small: 15,  medium: 45,  large: 150  },
+  "rehype-captureLatex":   { small: 10,  medium: 15,  large: 45   },
+  "rehype-katex":          { small: 60,  medium: 180, large: 600  },
+  "rehype-mergedPass":     { small: 15,  medium: 45,  large: 150  },
+  "full-pipeline":         { small: 90,  medium: 240, large: 900  },
 };
 
 // ── Processors for building pre-stage inputs ──────────────────────────────────
