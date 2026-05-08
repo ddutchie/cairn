@@ -130,7 +130,11 @@ const CAIRN_TOOL_NAMES = new Set([
   "create_idea_flow_edge",
 ]);
 
-// Tools available in plan mode — read-only file access + note writing only
+// Tools available in plan mode — read-only file access + note writing only.
+// create_note and update_note are intentionally excluded: the agent must use
+// ensure_note (idempotent upsert) so re-running plan mode doesn't create
+// duplicate PRD notes. The renderer uses onPlanNoteFound to track the note ID
+// returned by ensure_note.
 const PLAN_MODE_ALLOWED = new Set([
   // coding read-only
   "read", "grep", "find", "ls",
@@ -138,7 +142,7 @@ const PLAN_MODE_ALLOWED = new Set([
   "get_active_context", "get_project_context_pack",
   "get_note", "list_notes", "search_notes",
   "list_tasks", "get_task", "search_tasks", "list_ready_tasks",
-  // Cairn write — PRD note only
+  // Cairn write — PRD note only (idempotent upsert)
   "ensure_note",
 ]);
 

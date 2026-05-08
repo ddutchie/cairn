@@ -1089,6 +1089,11 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
     }
 
     case "list_tasks": {
+      // Shape note: without includeArchived the response is an array of column objects
+      // ({ columnName, columnType, columnId, tasks[] }). With includeArchived: true the
+      // response is { archived: [...], note: string } — a deliberately different shape
+      // since archived cards don't belong to a displayable column order. Callers must
+      // branch on whether the result is an array or an object.
       const includeArchived = !!(args.includeArchived);
       const cols = snap.columns.filter((c) => !args.columnType || c.type === args.columnType)
         .filter((c) => !args.projectId || c.projectId === args.projectId);

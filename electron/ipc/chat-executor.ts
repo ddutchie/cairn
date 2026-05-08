@@ -582,6 +582,10 @@ export async function executeTool(
     }
 
     case "archive_task": {
+      // Note: mcp-server.ts also calls insertNotification here; chat-executor does not because
+      // insertNotification is a local helper in mcp-server.ts and notifications are an MCP-layer
+      // concern (external agent visibility). The emit() call at the top of executeTool covers
+      // the UI-layer feedback equivalent.
       const card = snap.cards.find((c) => c.id === args.cardId);
       if (!card) return { error: "Task not found" };
       if (card.archivedAt) return { error: "Task is already archived" };
