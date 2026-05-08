@@ -33,9 +33,9 @@ export function BulletCanvas({ nodes, onNodeClick }: Props) {
     // eslint-disable-next-line react-hooks/purity
     const now = Date.now();
     return activeProjects.map((proj) => {
-      const projCards  = cards.filter((c) => scopedCardIds.has(c.id) && c.projectId === proj.id && !c.archivedAt);
+      const projCards  = cards.filter((c) => scopedCardIds.has(c.id) && c.projectId === proj.id);
       const total      = projCards.length;
-      const doneCount  = projCards.filter((c) => { const col = columns.find((x) => x.id === c.columnId); return col && DONE_COLUMNS.has(col.type); }).length;
+      const doneCount  = projCards.filter((c) => { if (c.archivedAt) return true; const col = columns.find((x) => x.id === c.columnId); return col && DONE_COLUMNS.has(col.type); }).length;
       const inProgCount = projCards.filter((c) => { const col = columns.find((x) => x.id === c.columnId); return col && IN_PROG_COLUMNS.has(col.type); }).length;
       const pct        = total > 0 ? doneCount / total : 0;
       const inProgPct  = total > 0 ? inProgCount / total : 0;

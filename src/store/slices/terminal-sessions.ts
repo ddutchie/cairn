@@ -67,6 +67,10 @@ export interface TerminalSession {
   initialPrompt?: string;
   /** Latest token usage from the LLM — updated after each step */
   lastUsage?: { promptTokens: number; completionTokens: number };
+  /** Plan mode: "plan" = conversational planning only; "execute" = full agent (default) */
+  mode?: "plan" | "execute";
+  /** Note ID of the PRD produced during plan mode — set once agent calls ensure_note */
+  planNoteId?: string;
 }
 
 export interface TerminalSessionsSlice {
@@ -113,6 +117,8 @@ export interface TerminalSessionsSlice {
   updatePiSubagentUsage: (sessionId: string, childSessionId: string, promptTokens: number, completionTokens: number) => void;
   /** Start a new step in a subagent (finalise current message) */
   stepPiSubagent: (sessionId: string, childSessionId: string) => void;
+  /** Set the mode for a pi session and optionally record the plan note ID */
+  setPiMode: (sessionId: string, mode: "plan" | "execute", planNoteId?: string) => void;
   /** Open a file tab (no-op if already open) and make it active. */
   openEditorFile: (path: string) => void;
   /** Close a file tab; activates the nearest remaining tab. */
@@ -256,18 +262,33 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
         const msgs = t.piMessages ?? [];
         const last = msgs[msgs.length - 1];
         if (last?.isStreaming) {
+          // If a chip with this callId already exists (created by onToolPending),
+          // update it in-place rather than appending a duplicate.
+          const existing = (last.toolCalls ?? []).findIndex((tc) => tc.callId === toolCall.callId);
+          if (existing !== -1) {
+            const updated = [...last.toolCalls!];
+            updated[existing] = { ...updated[existing], ...toolCall };
+            return { ...t, piMessages: [...msgs.slice(0, -1), { ...last, toolCalls: updated }] };
+          }
+          // Happy path: new chip
           return {
             ...t,
             piMessages: [
               ...msgs.slice(0, -1),
-              {
-                ...last,
-                toolCalls: [...(last.toolCalls ?? []), toolCall],
-              },
+              { ...last, toolCalls: [...(last.toolCalls ?? []), toolCall] },
             ],
           };
         }
-        return t;
+        // Race condition fallback: create streaming message and attach chip atomically.
+        const newMsg = {
+          id: `stream-${Date.now()}`,
+          role: "assistant" as const,
+          content: "",
+          isStreaming: true,
+          timestamp: new Date().toISOString(),
+          toolCalls: [toolCall],
+        };
+        return { ...t, piMessages: [...msgs, newMsg] };
       }),
     }));
   },
@@ -400,15 +421,27 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
             const sub = msg.subagents![subIdx];
             const subMsgs = sub.messages;
             const last = subMsgs[subMsgs.length - 1];
-            if (!last?.isStreaming) return msg;
             const newSubagents = [...msg.subagents!];
-            newSubagents[subIdx] = {
-              ...sub,
-              messages: [
-                ...subMsgs.slice(0, -1),
-                { ...last, toolCalls: [...(last.toolCalls ?? []), toolCall] },
-              ],
-            };
+            if (last?.isStreaming) {
+              newSubagents[subIdx] = {
+                ...sub,
+                messages: [
+                  ...subMsgs.slice(0, -1),
+                  { ...last, toolCalls: [...(last.toolCalls ?? []), toolCall] },
+                ],
+              };
+            } else {
+              // Same race as parent: create streaming message and attach chip atomically
+              const newMsg = {
+                id: `stream-${Date.now()}`,
+                role: "assistant" as const,
+                content: "",
+                isStreaming: true,
+                timestamp: new Date().toISOString(),
+                toolCalls: [toolCall],
+              };
+              newSubagents[subIdx] = { ...sub, messages: [...subMsgs, newMsg] };
+            }
             return { ...msg, subagents: newSubagents };
           }),
         };
@@ -503,6 +536,16 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
           }),
         };
       }),
+    }));
+  },
+
+  setPiMode(sessionId, mode, planNoteId) {
+    set((s) => ({
+      terminalSessions: s.terminalSessions.map((t) =>
+        t.sessionId === sessionId
+          ? { ...t, mode, ...(planNoteId !== undefined ? { planNoteId } : {}) }
+          : t
+      ),
     }));
   },
 

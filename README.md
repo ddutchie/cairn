@@ -29,7 +29,7 @@ Cairn is a desktop app (Electron + Next.js) that combines markdown notes with a 
 - **Projects** — Multiple projects inside a workspace, each with notes and a board
 - **Notes** — Split-pane markdown editor (write on the left, preview on the right)
 - **AI text actions** — Select any text in a note → floating toolbar → Rephrase, Summarize, Expand, Fix Grammar, Change Tone, or custom prompt
-- **Kanban board** — Drag-and-drop cards across columns with priority indicators
+- **Kanban board** — Drag-and-drop cards across columns with priority indicators; Archive All Done button clears the Done column in one click; Archive view (Board / Archive toggle) shows all archived tasks in a searchable grid with restore and delete actions
 - **Drag notes into folders** — Drag any note in the sidebar directly onto a folder row to move it; a "Move to root" drop zone appears while dragging
 - **Linked context** — Notes and cards reference each other bidirectionally
 - **Global search** — Instant full-text search across all notes and tasks (`⌘K` or `⌘⇧F`)
@@ -38,7 +38,7 @@ Cairn is a desktop app (Electron + Next.js) that combines markdown notes with a 
 - **Idea Flow** — Freeform node canvas per project (`⌘4`): ideas, note/task refs, groups, URLs, AI summaries — connected with labelled edges
 - **Live dashboards** — AI-generated interactive HTML dashboards with a live `window.cairn.query()` data bridge; inline "Fix with AI" on runtime errors; editable via built-in CodeMirror overlay
 - **MCP server** — Exposes your workspace to external AI agents (OpenCode, Claude Desktop, etc.) via the Model Context Protocol
-- **Cairn Agent** — Native coding agent (`⌘5`) with board and notes integration: moves tasks, writes session notes, captures discovered work; supports subagents for deep sub-tasks; context usage ring; works with any OpenAI-compatible endpoint
+- **Cairn Agent** — Native coding agent (`⌘5`) with board and notes integration: moves tasks, writes session notes, captures discovered work; supports subagents for deep sub-tasks; Plan Mode writes a PRD note before coding; context usage ring; works with any OpenAI-compatible endpoint
 - **Agent workspace** — Three-pane view (`⌘5`) for running external AI coding agents (Claude Code, OpenCode, Aider, or any CLI) connected to project tasks; file tree, multi-file CodeMirror 6 editor, xterm.js terminal, and git diff viewer
 - **Knowledge Graph** — Workspace-wide graph of every note, card, project, and tag; Force-directed and Radial tree layouts; auto-discovered relationships (`⌘6`)
 - **Insights** — Analytics view: Ridgeline joy plot, Beeswarm, Bullet health bars, Sankey pipeline flow, Timeline, Matrix heatmap, Table (`⌘7`)
@@ -125,6 +125,10 @@ Unlike a general coding agent, the Cairn Agent is a first-class participant in y
 - **Session summary** — a summary note is created at the end of every session documenting what changed and what needs follow-up
 - **Out-of-scope capture** — issues found beyond the current task are automatically added to the board as new tasks
 
+### Plan Mode
+
+Launch the agent in **Plan Mode** to produce a spec before writing any code. The agent reads your codebase (read-only tools only) and writes a structured PRD note to your project. An **Approve Plan** button in the chat header then promotes the session to Execute Mode, injecting the full PRD as context for the coding run.
+
 ### Subagents
 
 The agent can delegate contained sub-tasks to a fresh sub-agent via `spawn_subagent`. The sub-agent runs a full tool-call loop with its own message history — only its final answer is returned to the parent. This keeps the parent context lean for long multi-step tasks. The sub-agent trace is rendered inline and collapsible in the chat UI, with its own context usage ring.
@@ -172,7 +176,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 ### Available MCP tools
 
 <details>
-<summary>View all 34 tools</summary>
+<summary>View all 36 tools</summary>
 
 **Context**
 
@@ -205,7 +209,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 | Tool | Category | Description |
 |------|----------|-------------|
 | `get_task` | read | Full task detail by ID — includes `blockedByIds` and `version` counter |
-| `list_tasks` | read | All tasks in a project grouped by column |
+| `list_tasks` | read | All tasks in a project grouped by column; pass `includeArchived: true` to see archived tasks |
 | `list_ready_tasks` | read | Only unblocked, active tasks — use this to find work that can start now |
 | `search_tasks` | read | Full-text search across task cards |
 | `create_task` | write | Create a task card in a column |
@@ -216,6 +220,8 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 | `block_task` | write | Mark a task as blocked by another task in the same project |
 | `unblock_task` | write | Remove a blocking dependency between two tasks |
 | `delete_task` | delete | Permanently delete a task card |
+| `archive_task` | write | Archive a task (sets `archived_at`) — hidden from the board but retrievable |
+| `restore_task` | write | Restore an archived task back to the active board |
 
 **Projects**
 

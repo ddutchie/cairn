@@ -25,7 +25,7 @@ import { writeNoteFile, deleteNoteFile, deleteProjectNotesDir, stripMarkdown, fi
 import { suppressNextChange } from "../file-watcher";
 import { buildContextResponse } from "../lib/context";
 import { generatePrd } from "../lib/prd";
-import { isLocalEndpoint, callLLM } from "../lib/llm";
+import { isLocalEndpoint, callLLM, normaliseBaseUrl } from "../lib/llm";
 import { executeReadTool } from "../lib/read-tools";
 import { readWorkspaceConfig, writeWorkspaceConfig } from "../workspace-config";
 import { markMcpNotificationsRead } from "../db/queries";
@@ -184,6 +184,8 @@ export function registerIpcHandlers(ctx: DbContext): void {
       });
     }
     invalidateRelationshipCache(ctx.db, id);
+    // Incremental recompute — refresh edges for this note without a full scan
+    if (note.workspaceId) computeAutoRelationships(ctx.db, note.workspaceId, [id]);
     return note;
   }));
 
@@ -264,7 +266,11 @@ export function registerIpcHandlers(ctx: DbContext): void {
 
   // ── Task cards ────────────────────────────────────
   ipcMain.handle("db:card:list",   (_e, opts) => handle(() => q.getCards(ctx.db, opts)));
-  ipcMain.handle("db:card:create", (_e, args) => handle(() => q.createCard(ctx.db, args)));
+  ipcMain.handle("db:card:create", (_e, args) => handle(() => {
+    const title = (args?.title as string | null | undefined)?.trim();
+    if (!title) throw new Error("Task title is required");
+    return q.createCard(ctx.db, { ...args, title });
+  }));
   ipcMain.handle("db:card:update", (_e, { id, patch }) => handle(() => {
     // archivedAt: null means "restore" — COALESCE cannot clear to NULL
     if ("archivedAt" in patch && patch.archivedAt === null) {
@@ -282,9 +288,30 @@ export function registerIpcHandlers(ctx: DbContext): void {
     }
     const card = q.updateCard(ctx.db, id, patch);
     invalidateRelationshipCache(ctx.db, id);
+    // Incremental recompute — refresh edges for this card without a full scan
+    if (card.workspaceId) computeAutoRelationships(ctx.db, card.workspaceId, [id]);
+    // When a card moves to a Done column, remove it from every other card's blockedByIds
+    if (patch.columnId) {
+      const col = ctx.db
+        .prepare("SELECT type FROM board_columns WHERE id = ?")
+        .get(patch.columnId) as { type: string } | undefined;
+      if (col?.type === "done") q.clearBlockersFromAll(ctx.db, [id]);
+    }
     return card;
   }));
   ipcMain.handle("db:card:delete", (_e, { id }) => handle(() => q.deleteCard(ctx.db, id)));
+
+  // Archive every non-archived card in a given Done-type column
+  ipcMain.handle("db:cards:archive-done", (_e, { columnId }: { columnId: string }) => handle(() => {
+    const col = ctx.db.prepare("SELECT * FROM board_columns WHERE id = ?").get(columnId) as { type: string } | undefined;
+    if (!col) throw new Error("Column not found");
+    if (col.type !== "done") throw new Error("Only Done-type columns can be bulk-archived");
+    const now = new Date().toISOString();
+    const result = ctx.db.prepare(
+      "UPDATE task_cards SET archived_at = ?, updated_at = ?, version = version + 1 WHERE column_id = ? AND archived_at IS NULL"
+    ).run(now, now, columnId);
+    return { archived: result.changes };
+  }));
 
   // ── Card dependencies ─────────────────────────────
   ipcMain.handle("db:card:addBlocker", (_e, { cardId, blockerCardId }) => handle(() => {
@@ -342,7 +369,7 @@ export function registerIpcHandlers(ctx: DbContext): void {
     nodeId: string;
     config: { baseUrl: string; model: string; apiKey: string };
   }) => {
-    const baseUrl = (args.config.baseUrl || "https://api.openai.com").replace(/\/$/, "");
+    const baseUrl = normaliseBaseUrl(args.config.baseUrl || "https://api.openai.com");
     const model = args.config.model || "gpt-4o-mini";
     const apiKey = args.config.apiKey || "";
     const isLocal = isLocalEndpoint(baseUrl);
@@ -479,7 +506,7 @@ export function registerIpcHandlers(ctx: DbContext): void {
     config: { baseUrl: string; model: string; apiKey: string };
   }) => {
     // PRD returns its own { error } shape for user-facing validation errors
-    const baseUrl = (args.config.baseUrl || "https://api.openai.com").replace(/\/$/, "");
+    const baseUrl = normaliseBaseUrl(args.config.baseUrl || "https://api.openai.com");
     const model = args.config.model || "gpt-4o-mini";
     const apiKey = args.config.apiKey || "";
     const isLocal = isLocalEndpoint(baseUrl);
@@ -509,8 +536,9 @@ export function registerIpcHandlers(ctx: DbContext): void {
 
   ipcMain.handle("db:graph:recompute", (_e, args: {
     workspaceId: string;
+    entityIds?: string[];
   }) => handle(() => {
-    computeAutoRelationships(ctx.db, args.workspaceId);
+    computeAutoRelationships(ctx.db, args.workspaceId, args.entityIds);
     return { ok: true };
   }));
 }
@@ -519,7 +547,7 @@ export function registerIpcHandlers(ctx: DbContext): void {
  * Register app-level IPC handlers that were previously inlined in main.ts.
   *
   * @param db              - the SQLite database instance
-  * @param userDataPath    - result of app.getPath(\"userData\")
+  * @param userDataPath    - result of app.getPath("userData")
   * @param updateTrayBadge - callback to update the tray badge count
   */
 export function registerAppHandlers(

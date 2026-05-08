@@ -37,7 +37,7 @@ export function Topbar() {
     chatOpen,
     workspaces,
     projects,
-    aiConfig,
+    hiddenViews,
   } = useCairnStore(useShallow((s) => ({
     activeWorkspaceId: s.activeWorkspaceId,
     activeProjectId:   s.activeProjectId,
@@ -47,9 +47,8 @@ export function Topbar() {
     chatOpen:          s.chatOpen,
     workspaces:        s.workspaces,
     projects:          s.projects,
-    aiConfig:          s.aiConfig,
+    hiddenViews:       s.hiddenViews,
   })));
-  const aiEnabled = aiConfig.aiEnabled ?? true;
 
   const workspace = useMemo(
     () => workspaces.find((w) => w.id === activeWorkspaceId),
@@ -109,7 +108,7 @@ export function Topbar() {
       {/* View tabs */}
       {project && (
         <nav className="flex items-center gap-0.5 ml-2">
-          {VIEW_TABS.map((tab) => {
+          {VIEW_TABS.filter((tab) => !hiddenViews.has(tab.id as "board" | "flow" | "agent")).map((tab) => {
             const Icon = tab.icon;
             return (
               <button
@@ -136,7 +135,7 @@ export function Topbar() {
 
       {/* Right actions */}
       <div className="flex items-center gap-1">
-        {aiEnabled && (
+        {!hiddenViews.has("chat") && (
           <Tooltip content="AI Chat (⌘/)">
             <Button
               variant="ghost"

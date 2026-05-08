@@ -16,6 +16,7 @@ export interface SelectorsSlice {
   getColumnCards: (columnId: ID) => TaskCard[];
   getArchivedColumnCards: (columnId: ID) => TaskCard[];
   getProjectCards: (projectId: ID) => TaskCard[];
+  getArchivedProjectCards: (projectId: ID) => TaskCard[];
   getWorkspaceProjects: (workspaceId: ID) => Project[];
   searchAll: (query: string) => SearchResult[];
 }
@@ -74,6 +75,12 @@ export const createSelectorsSlice: StateCreator<
     return get().cards.filter(
       (c) => c.projectId === projectId && !c.archivedAt
     );
+  },
+
+  getArchivedProjectCards(projectId) {
+    return get()
+      .cards.filter((c) => c.projectId === projectId && !!c.archivedAt)
+      .sort((a, b) => new Date(b.archivedAt!).getTime() - new Date(a.archivedAt!).getTime());
   },
 
   getWorkspaceProjects(workspaceId) {

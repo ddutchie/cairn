@@ -43,7 +43,7 @@ export function AISettings() {
     setModelsLoading(true);
     setModelsFetched(true);
     try {
-      const url = (baseUrl || "https://api.openai.com").replace(/\/$/, "");
+      const url = (baseUrl || "https://api.openai.com").replace(/\/+$/, "").replace(/\/v1$/, "");
       const headers: Record<string, string> = {};
       if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
 

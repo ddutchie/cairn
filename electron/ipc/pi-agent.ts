@@ -18,6 +18,7 @@
 import { ipcMain } from "electron";
 import { runAgentLoop, type PiAgentSession, type AgentLLMConfig } from "../lib/pi-agent-loop";
 import { buildPiAgentSystemPrompt } from "../lib/pi-agent-prompt";
+import { normaliseBaseUrl } from "../lib/llm";
 import type { ChatRequest } from "../lib/tools";
 import type { DbContext } from "./handlers";
 
@@ -30,6 +31,21 @@ const sessions = new Map<string, PiAgentSession>();
 interface PiAgentPromptRequest {
   sessionId: string;
   prompt: string;
+  projectId?: string;
+  workspaceId?: string;
+  cwd: string;
+  taskTitle?: string;
+  mode?: "plan" | "execute";
+  config?: {
+    baseUrl?: string;
+    model?: string;
+    apiKey?: string;
+  };
+}
+
+interface PiAgentApprovePlanRequest {
+  sessionId: string;
+  planNoteId: string;
   projectId?: string;
   workspaceId?: string;
   cwd: string;
@@ -59,7 +75,7 @@ export function registerPiAgentHandler(
 
   // ── pi-agent:prompt ───────────────────────────────────────────────────────
   ipcMain.on("pi-agent:prompt", async (event, req: PiAgentPromptRequest) => {
-    const { sessionId, prompt, projectId, workspaceId, cwd, taskTitle } = req;
+    const { sessionId, prompt, projectId, workspaceId, cwd, taskTitle, mode = "execute" } = req;
 
     const send = (channel: string, payload: unknown) => {
       const win = getWin();
@@ -70,7 +86,7 @@ export function registerPiAgentHandler(
 
     // Resolve LLM config — renderer passes config from its aiConfig store
     const llmConfig: AgentLLMConfig = {
-      baseUrl: (req.config?.baseUrl || "https://api.openai.com").replace(/\/$/, ""),
+      baseUrl: normaliseBaseUrl(req.config?.baseUrl || "https://api.openai.com"),
       model:   req.config?.model   || "gpt-4o",
       apiKey:  req.config?.apiKey  || "",
     };
@@ -102,6 +118,7 @@ export function registerPiAgentHandler(
       taskTitle,
       workspaceId,
       projectId,
+      mode,
     });
 
     // Build a minimal ChatRequest for Cairn tool execution
@@ -126,18 +143,113 @@ export function registerPiAgentHandler(
       chatReq,
       ctx.workspacePath,
       {
-        onToken:      (delta) => send("pi-agent:token",      { sessionId, delta }),
-        onToolsReady: ()     => send("pi-agent:tools-ready", { sessionId }),
-        onToolStart:  (name, label) => send("pi-agent:tool", { sessionId, name, label, status: "start" }),
-        onToolEnd:    (name, label, ok, output) => send("pi-agent:tool", { sessionId, name, label, status: "end", ok, output }),
-        onStepStart:  () => send("pi-agent:step",  { sessionId }),
-        onUsage:      (promptTokens, completionTokens) => send("pi-agent:usage", { sessionId, promptTokens, completionTokens }),
-        onDone:       () => send("pi-agent:done",  { sessionId }),
-        onError:      (error) => send("pi-agent:error", { sessionId, error }),
+        onToken:         (delta) => send("pi-agent:token",      { sessionId, delta }),
+        onToolsReady:    ()     => send("pi-agent:tools-ready", { sessionId }),
+        onToolPending:   (name, callId) => send("pi-agent:tool", { sessionId, name, label: name, callId, status: "pending" }),
+        onToolStart:     (name, label, callId) => send("pi-agent:tool", { sessionId, name, label, callId, status: "start" }),
+        onToolEnd:       (name, label, ok, output, callId) => send("pi-agent:tool", { sessionId, name, label, callId, status: "end", ok, output }),
+        onStepStart:     () => send("pi-agent:step",  { sessionId }),
+        onUsage:         (promptTokens, completionTokens) => send("pi-agent:usage", { sessionId, promptTokens, completionTokens }),
+        onDone:          () => send("pi-agent:done",  { sessionId }),
+        onError:         (error) => send("pi-agent:error", { sessionId, error }),
+        onPlanNoteFound: (noteId) => send("pi-agent:plan-note", { sessionId, noteId }),
       },
       getWin,
       sessionId,
       send,
+      mode,
+    );
+  });
+
+  // ── pi-agent:approve-plan ─────────────────────────────────────────────────
+  // Renderer fires this when the user clicks "Approve Plan".
+  // Main fetches the PRD note content, switches the session to execute mode,
+  // injects a system message, and kicks off a new execute-mode loop turn.
+  ipcMain.on("pi-agent:approve-plan", async (_event, req: PiAgentApprovePlanRequest) => {
+    const { sessionId, planNoteId, projectId, workspaceId, cwd, taskTitle } = req;
+
+    const send = (channel: string, payload: unknown) => {
+      const win = getWin();
+      if (win && !win.webContents.isDestroyed()) {
+        win.webContents.send(channel, payload);
+      }
+    };
+
+    const llmConfig: AgentLLMConfig = {
+      baseUrl: normaliseBaseUrl(req.config?.baseUrl || "https://api.openai.com"),
+      model:   req.config?.model   || "gpt-4o",
+      apiKey:  req.config?.apiKey  || "",
+    };
+
+    let session = sessions.get(sessionId);
+    if (!session) {
+      session = { messages: [], abortCtrl: new AbortController() };
+      sessions.set(sessionId, session);
+    } else {
+      session.abortCtrl = new AbortController();
+    }
+
+    // Fetch the PRD note content from SQLite
+    const noteRow = ctx.db
+      .prepare("SELECT content FROM notes WHERE id = ?")
+      .get(planNoteId) as { content: string } | undefined;
+    const planContent = noteRow?.content ?? "";
+
+    // Notify renderer the mode has switched
+    send("pi-agent:mode-change", { sessionId, mode: "execute", planNoteId });
+
+    // Inject the approval message into history
+    session.messages.push({
+      role: "user",
+      content: `The plan has been approved. Begin implementation now, following the approved PRD exactly. The PRD note ID is ${planNoteId} — you can re-read it via get_note if needed.`,
+    });
+
+    const projectName = projectId
+      ? (ctx.db.prepare("SELECT name FROM projects WHERE id = ?").get(projectId) as { name: string } | undefined)?.name ?? "Project"
+      : "Project";
+
+    const systemPrompt = buildPiAgentSystemPrompt({
+      projectName,
+      cwd,
+      taskTitle,
+      workspaceId,
+      projectId,
+      mode: "execute",
+      planContent,
+    });
+
+    const chatReq: ChatRequest = {
+      message: "",
+      threadId: sessionId,
+      projectId,
+      workspaceId,
+      config: { baseUrl: llmConfig.baseUrl, model: llmConfig.model, apiKey: llmConfig.apiKey },
+    };
+
+    await runAgentLoop(
+      session,
+      systemPrompt,
+      cwd,
+      llmConfig,
+      ctx.db,
+      chatReq,
+      ctx.workspacePath,
+      {
+        onToken:       (delta) => send("pi-agent:token",      { sessionId, delta }),
+        onToolsReady:  ()     => send("pi-agent:tools-ready", { sessionId }),
+        onToolPending:   (name, callId) => send("pi-agent:tool", { sessionId, name, label: name, callId, status: "pending" }),
+        onToolStart:     (name, label, callId) => send("pi-agent:tool", { sessionId, name, label, callId, status: "start" }),
+        onToolEnd:       (name, label, ok, output, callId) => send("pi-agent:tool", { sessionId, name, label, callId, status: "end", ok, output }),
+        onStepStart:     () => send("pi-agent:step",  { sessionId }),
+        onUsage:         (promptTokens, completionTokens) => send("pi-agent:usage", { sessionId, promptTokens, completionTokens }),
+        onDone:          () => send("pi-agent:done",  { sessionId }),
+        onError:         (error) => send("pi-agent:error", { sessionId, error }),
+        onPlanNoteFound: (noteId) => send("pi-agent:plan-note", { sessionId, noteId }),
+      },
+      getWin,
+      sessionId,
+      send,
+      "execute",
     );
   });
 

@@ -48,7 +48,8 @@ export function SankeyCanvas({ nodes, onNodeClick }: Props) {
       if (!scopedCardIds.has(card.id)) continue;
       if (!scopedProjectIds.has(card.projectId)) continue;
       const col    = columns.find((c) => c.id === card.columnId);
-      const colKey = col?.type ?? "backlog";
+      // Archived cards count as "done" in the flow diagram
+      const colKey = card.archivedAt ? "done" : (col?.type ?? "backlog");
       const key    = `project:${card.projectId}→col:${colKey}`;
       linkMap.set(key, (linkMap.get(key) ?? 0) + 1);
     }
@@ -73,7 +74,8 @@ export function SankeyCanvas({ nodes, onNodeClick }: Props) {
   const panelTasks = useMemo(() => {
     if (!selectedCol) return [];
     return cards.filter((c) => {
-      if (!scopedCardIds.has(c.id) || c.archivedAt) return false;
+      if (!scopedCardIds.has(c.id)) return false;
+      if (c.archivedAt) return selectedCol === "done";
       const col = columns.find((col) => col.id === c.columnId);
       return col?.type === selectedCol;
     }).sort((a, b) => {

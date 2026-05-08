@@ -13,7 +13,7 @@
  */
 
 import { useState, useEffect } from "react";
-import { Terminal, MessageSquare, AlertTriangle } from "lucide-react";
+import { Terminal, MessageSquare, AlertTriangle, Zap, Map as MapIcon } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useCairnStore } from "@/store";
@@ -48,6 +48,7 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
   const codeDirectory = project?.codeDirectory ?? null;
 
   const [sessionType, setSessionType]   = useState<"pi" | "pty">("pi");
+  const [agentMode, setAgentMode]       = useState<"execute" | "plan">("execute");
   const [selectedAgentId, setSelectedAgentId] = useState<string>("");
   const [prompt, setPrompt]             = useState("");
   const [spawning, setSpawning]         = useState(false);
@@ -103,6 +104,7 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
           spawnedAt:     new Date().toISOString(),
           sessionType:   "pi",
           piMessages:    [],
+          mode:          agentMode,
           // Store the prompt — PiAgentPane will fire it on first mount
           initialPrompt: prompt.trim() || undefined,
         });
@@ -198,6 +200,46 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
             )}
           </div>
 
+          {/* Plan / Execute mode toggle — Cairn Agent only */}
+          {sessionType === "pi" && (
+            <div>
+              <p className="text-[0.714rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)] mb-1.5">
+                Mode
+              </p>
+              <div className="flex rounded-lg border border-[var(--border)] overflow-hidden text-xs">
+                <button
+                  onClick={() => setAgentMode("execute")}
+                  className={cn(
+                    "flex-1 flex items-center justify-center gap-1.5 py-1.5 transition-colors",
+                    agentMode === "execute"
+                      ? "bg-[var(--accent)] text-white"
+                      : "text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"
+                  )}
+                >
+                  <Zap size={12} />
+                  Execute
+                </button>
+                <button
+                  onClick={() => setAgentMode("plan")}
+                  className={cn(
+                    "flex-1 flex items-center justify-center gap-1.5 py-1.5 transition-colors border-l border-[var(--border)]",
+                    agentMode === "plan"
+                      ? "bg-[var(--accent)] text-white"
+                      : "text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"
+                  )}
+                >
+                  <MapIcon size={12} />
+                  Plan
+                </button>
+              </div>
+              <p className="text-[0.714rem] text-[var(--text-tertiary)] mt-1">
+                {agentMode === "plan"
+                  ? "Discuss and refine a plan first — no code written until you approve"
+                  : "Jump straight into implementation"}
+              </p>
+            </div>
+          )}
+
           {/* Task label — only shown when launched from a card */}
           {card && (
             <div>
@@ -261,7 +303,7 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
           {/* Prompt textarea */}
           <div>
             <label className="text-[0.714rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)] block mb-1">
-              {sessionType === "pi" ? "Initial prompt (optional)" : "Prompt"}
+              {sessionType === "pi" && agentMode === "plan" ? "What do you want to build?" : sessionType === "pi" ? "Initial prompt (optional)" : "Prompt"}
             </label>
             <textarea
               value={prompt}
@@ -269,7 +311,13 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
               onKeyDown={(e) => { if (e.key === "Enter" && e.metaKey) handleSpawn(); }}
               rows={5}
               className="w-full rounded-md border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-sm px-3 py-2 font-mono resize-y focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
-              placeholder={sessionType === "pi" ? "Describe what you want the agent to do…" : "Describe the task for the agent…"}
+              placeholder={
+                sessionType === "pi" && agentMode === "plan"
+                  ? "Describe what you want to build — the agent will ask questions and build a plan…"
+                  : sessionType === "pi"
+                  ? "Describe what you want the agent to do…"
+                  : "Describe the task for the agent…"
+              }
             />
           </div>
 

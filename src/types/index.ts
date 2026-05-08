@@ -271,6 +271,7 @@ export interface GraphNode {
     isPinned?: boolean;
     snippet?: string;
     color?: string;
+    isArchived?: boolean;
   };
 }
 

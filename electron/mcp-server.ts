@@ -402,7 +402,7 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
         tags: snap.tags.map((t) => ({ id: t.id, name: t.name, color: t.color, workspaceId: t.workspaceId })),
         tools: {
           read:   ["get_cairn_context", "get_project_context_pack", "resolve_project", "search_notes", "search_tasks", "get_note", "get_task", "get_project_summary", "list_notes", "list_tasks", "list_ready_tasks", "list_recent_activity"],
-          write:  ["create_project", "update_project", "create_note", "import_note_from_file", "ensure_note", "append_to_note", "patch_note", "update_note", "move_note", "create_task", "update_task", "update_task_status", "bulk_update_task_status", "link_note_to_task", "block_task", "unblock_task", "create_dashboard", "update_dashboard", "create_idea_flow_node", "update_idea_flow_node", "create_idea_flow_edge", "create_tag"],
+          write:  ["create_project", "update_project", "create_note", "import_note_from_file", "ensure_note", "append_to_note", "patch_note", "update_note", "move_note", "create_task", "update_task", "update_task_status", "bulk_update_task_status", "archive_task", "restore_task", "link_note_to_task", "block_task", "unblock_task", "create_dashboard", "update_dashboard", "create_idea_flow_node", "update_idea_flow_node", "create_idea_flow_edge", "create_tag"],
           delete: ["delete_note", "delete_task", "delete_project", "delete_idea_flow_node", "delete_idea_flow_edge"],
           ideaFlow: ["get_idea_flow", "create_idea_flow_node", "update_idea_flow_node", "delete_idea_flow_node", "create_idea_flow_edge", "delete_idea_flow_edge", "layout_idea_flow"],
         },
@@ -711,7 +711,9 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
     }
 
     case "create_task": {
-      const { columnId, projectId, title, description, priority = "medium", dueDate, tagIds } = args;
+      const { columnId, projectId, description, priority = "medium", dueDate, tagIds } = args;
+      const title = (args.title as string | null | undefined)?.trim();
+      if (!title) return { error: "Task title is required" };
       const col = snap.columns.find((c) => c.id === columnId);
       if (!col) return { error: "Column not found" };
       const now = ts();
@@ -1011,6 +1013,29 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
       return updated ?? { error: "Task not found after update" };
     }
 
+    case "archive_task": {
+      const { cardId } = args;
+      const card = snap.cards.find((c) => c.id === cardId);
+      if (!card) return { error: "Task not found" };
+      if (card.archivedAt) return { error: "Task is already archived" };
+      const now = ts();
+      db.prepare("UPDATE task_cards SET archived_at = ?, updated_at = ?, version = version + 1 WHERE id = ?").run(now, now, cardId);
+      insertNotification(db, "archive_task", "Task archived", `"${card.title}" was archived`);
+      return { ok: true, cardId, archivedAt: now };
+    }
+
+    case "restore_task": {
+      const { cardId } = args;
+      // Must query DB directly — archived cards are filtered out of snap.cards
+      const row = db.prepare("SELECT * FROM task_cards WHERE id = ?").get(cardId) as Record<string, unknown> | undefined;
+      if (!row) return { error: "Task not found" };
+      if (!row.archived_at) return { error: "Task is not archived" };
+      const now = ts();
+      db.prepare("UPDATE task_cards SET archived_at = NULL, updated_at = ?, version = version + 1 WHERE id = ?").run(now, cardId);
+      insertNotification(db, "restore_task", "Task restored", `"${row.title as string}" was restored`);
+      return { ok: true, cardId, title: row.title };
+    }
+
     case "update_project": {
       const { projectId, name, description, status, priority, icon } = args;
       const project = snap.projects.find((p) => p.id === projectId);
@@ -1064,7 +1089,37 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
     }
 
     case "list_tasks": {
-      const cols = snap.columns.filter((c) => !args.projectId || c.projectId === args.projectId);
+      // Shape note: without includeArchived the response is an array of column objects
+      // ({ columnName, columnType, columnId, tasks[] }). With includeArchived: true the
+      // response is { archived: [...], note: string } — a deliberately different shape
+      // since archived cards don't belong to a displayable column order. Callers must
+      // branch on whether the result is an array or an object.
+      const includeArchived = !!(args.includeArchived);
+      const cols = snap.columns.filter((c) => !args.columnType || c.type === args.columnType)
+        .filter((c) => !args.projectId || c.projectId === args.projectId);
+      if (includeArchived) {
+        // Query DB directly for archived cards — they're filtered out of snap.cards
+        const projectFilter = args.projectId ? `AND tc.project_id = ?` : "";
+        const columnTypeFilter = args.columnType ? `AND bc.type = ?` : "";
+        const queryParams: unknown[] = [];
+        if (args.projectId) queryParams.push(args.projectId);
+        if (args.columnType) queryParams.push(args.columnType);
+        const rows = db.prepare(
+          `SELECT tc.*, bc.name as col_name, bc.type as col_type
+           FROM task_cards tc
+           JOIN board_columns bc ON tc.column_id = bc.id
+           WHERE tc.archived_at IS NOT NULL ${projectFilter} ${columnTypeFilter}
+           ORDER BY tc.archived_at DESC`
+        ).all(...queryParams) as Array<Record<string, unknown>>;
+        return {
+          archived: rows.map((r) => ({
+            id: r.id, title: r.title, priority: r.priority,
+            description: r.description, archivedAt: r.archived_at,
+            columnName: r.col_name, columnType: r.col_type,
+          })),
+          note: "These tasks are archived. Use restore_task to bring one back to the board.",
+        };
+      }
       return cols
         .sort((a, b) => a.order - b.order)
         .map((col) => ({

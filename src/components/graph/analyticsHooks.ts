@@ -65,7 +65,7 @@ export function useScopedData(nodes: GraphNode[]) {
     [projects, scopedProjectIds]);
 
   const scopedCards = useMemo(
-    () => cards.filter((c) => scopedCardIds.has(c.id) && !c.archivedAt),
+    () => cards.filter((c) => scopedCardIds.has(c.id)),
     [cards, scopedCardIds]);
 
   return { scopedProjectIds, scopedCardIds, activeProjects, scopedCards, projects, cards, columns };

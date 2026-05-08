@@ -63,6 +63,7 @@ const api = {
     create:       (args: unknown) => invoke("db:card:create", args),
     update:       (id: string, patch: unknown) => invoke("db:card:update", { id, patch }),
     delete:       (id: string) => invoke("db:card:delete", { id }),
+    archiveDone:  (columnId: string) => invoke("db:cards:archive-done", { columnId }),
     addBlocker:   (cardId: string, blockerCardId: string) => invoke("db:card:addBlocker", { cardId, blockerCardId }),
     removeBlocker:(cardId: string, blockerCardId: string) => invoke("db:card:removeBlocker", { cardId, blockerCardId }),
     ready:        (projectId?: string) => invoke("db:card:ready", { projectId }),
@@ -130,7 +131,7 @@ const api = {
     get:       (workspaceId: string, filters?: unknown) => invoke("db:graph:get", { workspaceId, filters }),
     neighbors: (workspaceId: string, nodeId: string, depth?: number, edgeTypes?: string[]) =>
                  invoke("db:graph:neighbors", { workspaceId, nodeId, depth, edgeTypes }),
-    recompute: (workspaceId: string) => invoke("db:graph:recompute", { workspaceId }),
+    recompute: (workspaceId: string, entityIds?: string[]) => invoke("db:graph:recompute", { workspaceId, entityIds }),
   },
 
   // ── AI helpers ────────────────────────────────
@@ -283,9 +284,9 @@ const api = {
       ipcRenderer.on("pi-agent:token", handler);
       return () => ipcRenderer.off("pi-agent:token", handler);
     },
-    onTool: (cb: (e: { sessionId: string; name: string; label: string; status: "start" | "end"; ok?: boolean; output?: string }) => void) => {
+    onTool: (cb: (e: { sessionId: string; name: string; label: string; callId?: string; status: "pending" | "start" | "end"; ok?: boolean; output?: string }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { sessionId: string; name: string; label: string; status: "start" | "end"; ok?: boolean }) => cb(e);
+      const handler = (_: any, e: { sessionId: string; name: string; label: string; callId?: string; status: "pending" | "start" | "end"; ok?: boolean; output?: string }) => cb(e);
       ipcRenderer.on("pi-agent:tool", handler);
       return () => ipcRenderer.off("pi-agent:tool", handler);
     },
@@ -324,6 +325,29 @@ const api = {
       const handler = (_: any, e: { parentSessionId: string; childSessionId: string; status: "start" | "done"; result?: string }) => cb(e);
       ipcRenderer.on("pi-agent:subagent", handler);
       return () => ipcRenderer.off("pi-agent:subagent", handler);
+    },
+    /** Fired when the agent calls ensure_note in plan mode — carries the PRD note ID */
+    onPlanNote: (cb: (e: { sessionId: string; noteId: string }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { sessionId: string; noteId: string }) => cb(e);
+      ipcRenderer.on("pi-agent:plan-note", handler);
+      return () => ipcRenderer.off("pi-agent:plan-note", handler);
+    },
+    /** Fired when the session mode switches (plan → execute after approval) */
+    onModeChange: (cb: (e: { sessionId: string; mode: "plan" | "execute"; planNoteId?: string }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { sessionId: string; mode: "plan" | "execute"; planNoteId?: string }) => cb(e);
+      ipcRenderer.on("pi-agent:mode-change", handler);
+      return () => ipcRenderer.off("pi-agent:mode-change", handler);
+    },
+    /** Approve the plan — switches session to execute mode and starts implementation */
+    approvePlan: (req: unknown) => ipcRenderer.send("pi-agent:approve-plan", req),
+    /** Fired when the agent calls ask_questions — renderer should render an inline form */
+    onAskQuestions: (cb: (e: { sessionId: string; questions: Array<{ id: string; label: string; prompt: string }> }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { sessionId: string; questions: Array<{ id: string; label: string; prompt: string }> }) => cb(e);
+      ipcRenderer.on("pi-agent:ask-questions", handler);
+      return () => ipcRenderer.off("pi-agent:ask-questions", handler);
     },
   },
 

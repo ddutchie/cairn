@@ -59,19 +59,19 @@ export function PrdModal({ projectId, workspaceId, onClose }: PrdModalProps) {
     if (!isLoading && streamingContent === "" && toolCalls.length === 0) return;
   }, [isLoading, streamingContent, toolCalls]);
 
-  // Track when agent finishes — detect PRD save confirmation
+  // Track when agent finishes — done when a create_note or ensure_note tool call
+  // completed successfully during this session (the PRD was actually saved).
+  const noteWritten = useRef(false);
+  useEffect(() => {
+    if (toolCalls.some((tc) => (tc.tool === "create_note" || tc.tool === "ensure_note") && tc.status === "done")) {
+      noteWritten.current = true;
+    }
+  }, [toolCalls]);
+
   const prevIsLoading = useRef(false);
   useEffect(() => {
-    if (prevIsLoading.current && !isLoading) {
-      const last = historyRef.current[historyRef.current.length - 1];
-      if (last?.role === "assistant") {
-        const lower = last.content.toLowerCase();
-        if (lower.includes("saved") || lower.includes("created") || lower.includes("prd")) {
-          if (last.content.length < 500 && !last.content.includes("\n## ")) {
-            setDone(true);
-          }
-        }
-      }
+    if (prevIsLoading.current && !isLoading && noteWritten.current) {
+      setDone(true);
     }
     prevIsLoading.current = isLoading;
   }, [isLoading]);
@@ -121,6 +121,8 @@ export function PrdModal({ projectId, workspaceId, onClose }: PrdModalProps) {
     const electron = window.electron;
     if (!electron) return;
     const unsub = electron.chat.onDone((e) => {
+      // chat:done doesn't include threadId — this subscription is intentionally
+      // unscoped but low-risk since prd-${projectId} threads are exclusive to this modal.
       if (e.content) {
         setMessages((prev) => [...prev, { role: "assistant", content: e.content }]);
       }

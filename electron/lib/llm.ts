@@ -2,6 +2,16 @@
  * LLM utility helpers shared across the Electron main process.
  */
 
+/**
+ * Normalise a user-supplied base URL.
+ * Strips trailing slashes and a trailing /v1 segment so that both
+ * "http://localhost:3042" and "http://localhost:3042/v1" produce the same result.
+ * The callers always append /v1/chat/completions themselves.
+ */
+export function normaliseBaseUrl(raw: string): string {
+  return raw.replace(/\/+$/, "").replace(/\/v1$/, "");
+}
+
 /** Returns true if the given base URL points to a local server. */
 export function isLocalEndpoint(baseUrl: string): boolean {
   return (

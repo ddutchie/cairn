@@ -85,6 +85,7 @@ describe("Tool name parity", () => {
       "create_note", "import_note_from_file", "ensure_note", "append_to_note", "patch_note",
       "update_note", "move_note", "delete_note",
       "create_task", "update_task", "update_task_status", "bulk_update_task_status",
+      "archive_task", "restore_task",
       "link_note_to_task", "block_task", "unblock_task", "list_ready_tasks",
       "create_dashboard", "update_dashboard", "delete_task",
       "get_idea_flow", "create_idea_flow_node", "update_idea_flow_node", "delete_idea_flow_node",

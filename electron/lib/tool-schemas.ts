@@ -72,8 +72,9 @@ export const TOOL_SCHEMAS = {
   list_tasks: {
     description: "List all tasks in a project, grouped by column.",
     schema: z.object({
-      projectId:  sIdOpt,
-      columnType: sColType,
+      projectId:       sIdOpt,
+      columnType:      sColType,
+      includeArchived: sBoolOpt.describe("When true, include archived tasks in the results (default false)"),
     }),
   },
 
@@ -241,6 +242,16 @@ export const TOOL_SCHEMAS = {
 
   delete_task: {
     description: "Permanently delete a task card. Cannot be undone.",
+    schema: z.object({ cardId: sId }),
+  },
+
+  archive_task: {
+    description: "Archive a task card so it no longer appears in the active board. Use instead of delete when the work is done but you may want to reference it later.",
+    schema: z.object({ cardId: sId }),
+  },
+
+  restore_task: {
+    description: "Restore a previously archived task card back to the active board.",
     schema: z.object({ cardId: sId }),
   },
 

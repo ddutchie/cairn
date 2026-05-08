@@ -6,7 +6,7 @@ import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
 import type { BoardColumn, TaskCard, ID } from "@/types";
 import { id, now } from "@/lib/utils";
-import { ipc, ipcAwaitResult } from "../ipc";
+import { ipc, ipcAwaitResult, isElectron } from "../ipc";
 import { historyManager } from "@/lib/history";
 import {
   makeCreateCardCmd,
@@ -51,6 +51,7 @@ export interface BoardSlice {
   reorderCards: (columnId: ID, cardIds: ID[]) => void;
   archiveCard: (id: ID) => void;
   restoreCard: (id: ID) => void;
+  archiveAllDoneCards: (columnId: ID) => Promise<number>;
   moveCardToProject: (cardId: ID, targetProjectId: ID) => void;
   duplicateCard: (id: ID) => TaskCard | null;
   unlinkNoteFromCard: (noteId: ID, cardId: ID) => void;
@@ -297,6 +298,38 @@ export const createBoardSlice: StateCreator<CairnStore, [], [], BoardSlice> = (
     get().persist();
     ipc((e) => e.card.update(cardId, { archivedAt: null }));
     historyManager.push(makeRestoreCardCmd(cardId, set));
+  },
+
+  async archiveAllDoneCards(columnId) {
+    const archivedAt = now();
+    // Snapshot affected card IDs so we can roll back on IPC failure
+    const affectedIds = new Set(
+      get().cards
+        .filter((c) => c.columnId === columnId && !c.archivedAt)
+        .map((c) => c.id)
+    );
+    // Optimistic update — mark all active cards in column as archived
+    set((s) => ({
+      cards: s.cards.map((c) =>
+        affectedIds.has(c.id) ? { ...c, archivedAt, updatedAt: archivedAt } : c
+      ),
+    }));
+    get().persist();
+    if (!isElectron() || !window.electron) return affectedIds.size;
+    try {
+      const result = await window.electron.card.archiveDone(columnId) as { archived?: number } | undefined;
+      return result?.archived ?? affectedIds.size;
+    } catch (err) {
+      // Roll back optimistic update
+      set((s) => ({
+        cards: s.cards.map((c) =>
+          affectedIds.has(c.id) ? { ...c, archivedAt: undefined, updatedAt: now() } : c
+        ),
+      }));
+      get().persist();
+      console.error("[cairn] archiveAllDoneCards failed, rolled back:", err);
+      return 0;
+    }
   },
 
   moveCardToProject(cardId, targetProjectId) {

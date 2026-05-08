@@ -69,14 +69,21 @@ const CODING_LABELS: Record<string, (args: ToolArgs) => string> = {
 // ── Events interface ──────────────────────────────────────────────────────────
 
 export interface AgentLoopCallbacks {
-  onToken:      (delta: string) => void;
-  onToolsReady: () => void;
-  onToolStart:  (name: string, label: string) => void;
-  onToolEnd:    (name: string, label: string, ok: boolean, output: string) => void;
-  onStepStart:  () => void;
-  onUsage:      (promptTokens: number, completionTokens: number) => void;
-  onDone:       () => void;
-  onError:      (message: string) => void;
+  onToken:         (delta: string) => void;
+  onToolsReady:    () => void;
+  /** Fired during SSE streaming as soon as a tool call name is first seen.
+   *  The chip should appear in "pending" state immediately — before execution. */
+  onToolPending:   (name: string, callId: string) => void;
+  /** callId links back to the pending chip created by onToolPending (if any). */
+  onToolStart:     (name: string, label: string, callId?: string) => void;
+  /** callId links back to the same chip created by onToolPending / updated by onToolStart. */
+  onToolEnd:       (name: string, label: string, ok: boolean, output: string, callId?: string) => void;
+  onStepStart:     () => void;
+  onUsage:         (promptTokens: number, completionTokens: number) => void;
+  onDone:          () => void;
+  onError:         (message: string) => void;
+  /** Fired when the agent writes a note in plan mode — carries the note ID */
+  onPlanNoteFound?: (noteId: string) => void;
 }
 
 // ── Session state ─────────────────────────────────────────────────────────────
@@ -121,15 +128,40 @@ const CAIRN_TOOL_NAMES = new Set([
   "get_idea_flow",
   "create_idea_flow_node",
   "create_idea_flow_edge",
+  // Renderer-side only — main process no-ops immediately; renderer intercepts
+  // the tool-call event and renders an inline QuestionForm.
+  "ask_questions",
+]);
+
+// Tools available in plan mode — read-only file access + note writing only.
+// create_note and update_note are intentionally excluded: the agent must use
+// ensure_note (idempotent upsert) so re-running plan mode doesn't create
+// duplicate PRD notes. The renderer uses onPlanNoteFound to track the note ID
+// returned by ensure_note.
+const PLAN_MODE_ALLOWED = new Set([
+  // coding read-only
+  "read", "grep", "find", "ls",
+  // Cairn read
+  "get_active_context", "get_project_context_pack",
+  "get_note", "list_notes", "search_notes",
+  "list_tasks", "get_task", "search_tasks", "list_ready_tasks",
+  // Cairn write — PRD note only (idempotent upsert)
+  "ensure_note",
+  // Renderer-side: renders an inline question form; main process no-ops immediately
+  "ask_questions",
 ]);
 
 // ── Fetch all tool definitions (coding + Cairn subset) ────────────────────────
 
 import { TOOLS as ALL_CAIRN_TOOLS } from "./tools";
 
-function getAllToolDefs() {
+function getAllToolDefs(mode: "plan" | "execute" = "execute") {
   const cairnSubset = ALL_CAIRN_TOOLS.filter((t) => CAIRN_TOOL_NAMES.has(t.function.name));
-  return [...CODING_TOOL_DEFS, ...cairnSubset];
+  const all = [...CODING_TOOL_DEFS, ...cairnSubset];
+  if (mode === "plan") {
+    return all.filter((t) => PLAN_MODE_ALLOWED.has(t.function.name));
+  }
+  return all;
 }
 
 // ── Execute a single tool call ────────────────────────────────────────────────
@@ -174,6 +206,12 @@ async function executeSingleTool(
     default: {
       // Delegate to Cairn chat executor
       if (CAIRN_TOOL_NAMES.has(name)) {
+        // ask_questions is a renderer-side tool — emit the questions as an IPC event
+        // so PiAgentPane can render an inline QuestionForm. The tool result is a no-op
+        // acknowledgement; the user's answers arrive as the next sendPrompt call.
+        if (name === "ask_questions" && Array.isArray((args as { questions?: unknown }).questions)) {
+          send("pi-agent:ask-questions", { sessionId, questions: (args as { questions: unknown[] }).questions });
+        }
         const result = await executeTool(
           db, req, workspacePath,
           { baseUrl: llmConfig.baseUrl, model: llmConfig.model, apiKey: llmConfig.apiKey },
@@ -203,9 +241,10 @@ export async function runAgentLoop(
   getWin?: () => BrowserWindow | null,
   sessionId?: string,
   send?: (channel: string, payload: unknown) => void,
+  mode: "plan" | "execute" = "execute",
 ): Promise<void> {
   const { signal } = session.abortCtrl;
-  const allTools = getAllToolDefs();
+  const allTools = getAllToolDefs(mode);
 
   const { baseUrl, model, apiKey } = llmConfig;
   if (!apiKey && !isLocalEndpoint(baseUrl)) {
@@ -268,6 +307,9 @@ export async function runAgentLoop(
     const decoder = new TextDecoder();
     let contentBuffer = "";
     const toolCallBuffers: Map<number, { id: string; name: string; args: string }> = new Map();
+    // callId assigned per tool during streaming — reused at execution time
+    const streamCallIds: Map<number, string> = new Map();
+    let toolsReadyFired = false;
     let streamDone = false;
 
     while (!streamDone) {
@@ -308,13 +350,26 @@ export async function runAgentLoop(
           if (delta.tool_calls) {
             for (const tc of delta.tool_calls) {
               const idx: number = tc.index ?? 0;
-              if (!toolCallBuffers.has(idx)) {
+              const isNew = !toolCallBuffers.has(idx);
+              if (isNew) {
                 toolCallBuffers.set(idx, { id: tc.id ?? "", name: tc.function?.name ?? "", args: "" });
               }
               const buf = toolCallBuffers.get(idx)!;
               if (tc.id) buf.id = tc.id;
               if (tc.function?.name) buf.name = tc.function.name;
               if (tc.function?.arguments) buf.args += tc.function.arguments;
+
+              // As soon as we have the tool name, fire pending chip — mirrors pi's
+              // approach of creating the chip during streaming, not post-stream.
+              if (isNew && buf.name) {
+                if (!toolsReadyFired) {
+                  callbacks.onToolsReady();
+                  toolsReadyFired = true;
+                }
+                const callId = `${buf.name}:${Date.now()}:${idx}`;
+                streamCallIds.set(idx, callId);
+                callbacks.onToolPending(buf.name, callId);
+              }
             }
           }
         } catch { /* skip malformed SSE lines */ }
@@ -344,14 +399,12 @@ export async function runAgentLoop(
       tool_calls: toolCalls,
     });
 
-    // ── Ensure renderer has a streaming message to attach tool chips to ───
-    // When the LLM emits tool calls with no preceding text tokens, onToken
-    // was never called, so no streaming message exists. onToolsReady tells
-    // the renderer to create one before we start firing onToolStart/onToolEnd.
-    callbacks.onToolsReady();
+    // ── Ensure renderer has a streaming message (fallback if onToolsReady
+    //    wasn't fired during streaming, e.g. endpoint doesn't stream tool names).
+    if (!toolsReadyFired) callbacks.onToolsReady();
 
     // ── Execute each tool ─────────────────────────────────────────────────
-    for (const tc of toolCalls) {
+    for (const [tcIdx, tc] of toolCalls.entries()) {
       if (signal.aborted) { callbacks.onDone(); return; }
 
       let args: ToolArgs = {};
@@ -361,7 +414,15 @@ export async function runAgentLoop(
         CODING_LABELS[tc.function.name]?.(args) ??
         `${tc.function.name}`;
 
-      callbacks.onToolStart(tc.function.name, label);
+      // Pass the callId assigned during streaming so the renderer updates the
+      // existing pending chip rather than creating a duplicate.
+      const pendingCallId = streamCallIds.get(tcIdx);
+      callbacks.onToolStart(tc.function.name, label, pendingCallId);
+
+      // Yield to the event loop so the renderer can process the onToolStart IPC
+      // message and render the running spinner before the (potentially synchronous)
+      // tool execution blocks the main process event loop.
+      await new Promise<void>((r) => setImmediate(r));
 
       let resultContent: string;
       let ok = true;
@@ -385,7 +446,16 @@ export async function runAgentLoop(
         resultContent = `Error: ${(e as Error).message}`;
       }
 
-      callbacks.onToolEnd(tc.function.name, label, ok, resultContent);
+      callbacks.onToolEnd(tc.function.name, label, ok, resultContent, pendingCallId);
+
+      // In plan mode only, notify the renderer when the agent writes the PRD note.
+      // Suppressed in execute mode to avoid overwriting planNoteId after approval.
+      if (mode === "plan" && ok && tc.function.name === "ensure_note") {
+        try {
+          const parsed = JSON.parse(resultContent) as { id?: string };
+          if (parsed?.id) callbacks.onPlanNoteFound?.(parsed.id);
+        } catch { /* non-JSON output — ignore */ }
+      }
 
       session.messages.push({
         role: "tool",

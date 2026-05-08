@@ -67,7 +67,6 @@ export default function Home() {
     setView,
     createNote,
     activeProjectId,
-    aiConfig,
     hiddenViews,
   } = useCairnStore(useShallow((s) => ({
     hydrate:             s.hydrate,
@@ -81,11 +80,8 @@ export default function Home() {
     setView:             s.setView,
     createNote:          s.createNote,
     activeProjectId:     s.activeProjectId,
-    aiConfig:            s.aiConfig,
     hiddenViews:         s.hiddenViews,
   })));
-  const aiEnabled = aiConfig.aiEnabled ?? true;
-
   // All navigable views in shortcut order; overview=⌘1, notes=⌘2, then visible extras
   const ORDERED_VIEWS = (["board", "flow", "agent", "graph", "insights"] as const).filter(
     (v) => !hiddenViews.has(v)
@@ -170,7 +166,7 @@ export default function Home() {
 
       if (mod && key === "k") { e.preventDefault(); toggleSearch(); }
       else if (mod && e.shiftKey && key.toLowerCase() === "f") { if (activeView !== "agent") { e.preventDefault(); toggleSearch(); } }
-      else if (mod && key === "/") { e.preventDefault(); if (aiEnabled) toggleChat(); }
+      else if (mod && key === "/") { e.preventDefault(); if (!hiddenViews.has("chat")) toggleChat(); }
       else if (mod && key === "\\") { e.preventDefault(); toggleSidebar(); }
       else if (mod && key === "1") { e.preventDefault(); setView("overview"); }
       else if (mod && key === "2") { e.preventDefault(); setView("notes"); }
@@ -215,7 +211,7 @@ export default function Home() {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("cairn:open-chat", handleOpenChat);
     };
-  }, [toggleSearch, toggleChat, toggleSidebar, setView, activeProjectId, createNote, chatOpen, aiEnabled, hiddenViews, ORDERED_VIEWS]);
+  }, [toggleSearch, toggleChat, toggleSidebar, setView, activeProjectId, createNote, chatOpen, hiddenViews, ORDERED_VIEWS]);
 
   // Still loading
   if (onboardingState === null) {
