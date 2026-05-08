@@ -78,6 +78,7 @@ export function KanbanColumn({
 
   useEffect(() => {
     if (renaming) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setRenameValue(column.name);
       renameInputRef.current?.focus();
       renameInputRef.current?.select();

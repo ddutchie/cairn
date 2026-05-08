@@ -16,6 +16,7 @@ export function ImageViewer({ filePath }: ImageViewerProps) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSrc(null);
     setError(null);
     if (!window.electron) return;

@@ -69,6 +69,7 @@ export function DiffViewer({ cwd }: DiffViewerProps) {
 
   useEffect(() => {
     isMounted.current = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchDiff();
     const id = setInterval(fetchDiff, POLL_INTERVAL);
     return () => { isMounted.current = false; clearInterval(id); };

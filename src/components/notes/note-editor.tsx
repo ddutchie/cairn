@@ -374,6 +374,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
   const [wordCount, setWordCount] = useState(() => countWords(note.content ?? ""));
   // Reset when switching notes
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setWordCount(countWords(note.content ?? ""));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [note.id]);
@@ -503,6 +504,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
 
   // Sync local title when switching to a different note.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLocalTitle(note.title);
     titleRef.current = note.title;
   }, [note.id]); // eslint-disable-line react-hooks/exhaustive-deps

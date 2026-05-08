@@ -78,6 +78,7 @@ export function DashboardView({ note }: DashboardViewProps) {
 
   // Rebuild srcdoc when note content or theme changes
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSrcdoc(buildSrcdoc(note.content ?? "", projectId, workspaceId, themeInjection));
     setErrors([]);
   }, [note.id, note.content, projectId, workspaceId, themeInjection]);

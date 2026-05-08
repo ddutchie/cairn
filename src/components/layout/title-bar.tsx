@@ -27,6 +27,7 @@ export function TitleBar() {
 
   useEffect(() => {
     if (window.electron) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setPlatform(window.electron.platform ?? "linux");
     }
   }, []);

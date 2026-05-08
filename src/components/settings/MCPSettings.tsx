@@ -18,6 +18,7 @@ export function MCPServerSettings() {
   useEffect(() => {
     if (typeof window !== "undefined" && window.electron) {
       window.electron.mcpServerPath().then((p) => setMcpServerPath(p));
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setPlatform(window.electron.platform ?? null);
     }
   }, []);

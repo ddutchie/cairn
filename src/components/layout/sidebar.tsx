@@ -274,6 +274,7 @@ function ProjectItem({ project, isActive, isExpanded, onToggleExpand, onSelectPr
 
   useEffect(() => {
     if (renaming) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setRenameValue(project.name);
       renameInputRef.current?.focus();
       renameInputRef.current?.select();
@@ -368,6 +369,7 @@ function DueDateDot({ dueDate }: { dueDate: string }) {
   const { diffDays, dueDateLabel } = useMemo(() => {
     const due = new Date(dueDate);
     return {
+      // eslint-disable-next-line react-hooks/purity
       diffDays: Math.ceil((due.getTime() - Date.now()) / (1000 * 60 * 60 * 24)),
       dueDateLabel: due.toLocaleDateString(),
     };

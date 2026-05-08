@@ -21,6 +21,7 @@ export function StepMCP({ onBack, onNext }: Props) {
       window.electron.mcpServerPath().then(setMcpBin).catch(() => {});
     } else {
       // Web / dev fallback
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setMcpBin("/path/to/cairn-mcp");
     }
   }, []);

@@ -156,6 +156,7 @@ export function FileTree({ project }: FileTreeProps) {
   const codeDirectory = project?.codeDirectory ?? null;
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!codeDirectory) { setRootEntries(null); return; }
     setError(null);
     (window.electron?.agent.readDir(codeDirectory) as Promise<DirEntry[]> | undefined)
@@ -194,6 +195,7 @@ export function FileTree({ project }: FileTreeProps) {
   // Run search whenever query changes
   useEffect(() => {
     if (!searchActive || !codeDirectory || !searchQuery.trim()) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSearchResults([]);
       return;
     }

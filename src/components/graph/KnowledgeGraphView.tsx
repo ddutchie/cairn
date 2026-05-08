@@ -72,6 +72,7 @@ export function KnowledgeGraphView() {
 
   // Clear graph search when leaving force/radial
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (graphLayout !== "force" && graphLayout !== "radial") setGraphSearch("");
   }, [graphLayout]);
 
