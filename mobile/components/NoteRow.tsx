@@ -1,5 +1,6 @@
 import { View, Text, Pressable } from "react-native";
 import { formatDistanceToNow } from "date-fns";
+import { Pin, LayoutDashboard } from "lucide-react-native";
 import type { Note } from "../../src/types/index";
 
 export function NoteRow({ note, onPress }: { note: Note; onPress: () => void }) {
@@ -7,28 +8,51 @@ export function NoteRow({ note, onPress }: { note: Note; onPress: () => void }) 
     <Pressable
       onPress={onPress}
       style={({ pressed }) => ({
-        paddingVertical: 12,
-        paddingHorizontal: 4,
+        flexDirection: "row",
+        alignItems: "stretch",
+        paddingVertical: 10,
+        paddingRight: 12,
+        backgroundColor: pressed ? "#1a1a1a" : "transparent",
         borderBottomWidth: 1,
         borderBottomColor: "#1f1f1f",
-        opacity: pressed ? 0.7 : 1,
       })}
     >
-      <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
-        {note.isPinned && (
-          <View style={{ width: 3, alignSelf: "stretch", borderRadius: 2, backgroundColor: "#7c6af7", marginTop: 2, marginBottom: 2 }} />
-        )}
-        <View style={{ flex: 1 }}>
-          <Text numberOfLines={1} style={{ color: "#e8e4dc", fontSize: 13, fontWeight: "500", marginBottom: 3 }}>
+      {/* Left accent bar for pinned notes */}
+      <View
+        style={{
+          width: 2,
+          borderRadius: 1,
+          backgroundColor: note.isPinned ? "#7c6af7" : "transparent",
+          marginRight: 10,
+          marginLeft: 0,
+          alignSelf: "stretch",
+        }}
+      />
+
+      {/* Content */}
+      <View style={{ flex: 1 }}>
+        {/* Title row */}
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginBottom: 2 }}>
+          {note.isPinned && <Pin size={9} color="#7c6af7" />}
+          {note.type === "dashboard" && <LayoutDashboard size={9} color="#66635f" />}
+          <Text
+            numberOfLines={1}
+            style={{ flex: 1, color: "#9e9a94", fontSize: 12, fontWeight: "500" }}
+          >
             {note.title}
           </Text>
-          {note.contentText.trim() !== "" && (
-            <Text numberOfLines={2} style={{ color: "#66635f", fontSize: 12, lineHeight: 17 }}>
-              {note.contentText.slice(0, 120)}
-            </Text>
-          )}
         </View>
-        <Text style={{ color: "#3a3835", fontSize: 11, flexShrink: 0, marginTop: 1 }}>
+
+        {/* Snippet */}
+        <Text
+          numberOfLines={1}
+          style={{ color: "#66635f", fontSize: 11, marginBottom: 2 }}
+        >
+          {note.contentText?.slice(0, 80) || "Empty note"}
+        </Text>
+
+        {/* Timestamp */}
+        <Text style={{ color: "#3a3835", fontSize: 10 }}>
           {formatDistanceToNow(new Date(note.updatedAt), { addSuffix: true })}
         </Text>
       </View>

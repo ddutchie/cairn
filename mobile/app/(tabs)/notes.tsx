@@ -35,15 +35,21 @@ export default function NotesTab() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#0d0d0d" }} edges={["top"]}>
       {/* Header */}
-      <View style={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 10 }}>
-        <Text style={{ color: "#e8e4dc", fontSize: 22, fontWeight: "700", letterSpacing: -0.3 }}>Notes</Text>
+      <View style={{
+        flexDirection: "row", alignItems: "center",
+        paddingHorizontal: 16, paddingVertical: 10,
+        borderBottomWidth: 1, borderBottomColor: "#2a2a2a",
+      }}>
+        <Text style={{ flex: 1, color: "#9e9a94", fontSize: 12, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.8 }}>
+          Notes
+        </Text>
         {activeProject && (
-          <Text style={{ color: "#66635f", fontSize: 12, marginTop: 2 }}>{activeProject.name}</Text>
+          <Text style={{ color: "#3a3835", fontSize: 11 }}>{activeProject.name}</Text>
         )}
       </View>
 
       {/* Search */}
-      <View style={{ marginHorizontal: 16, marginBottom: 10, flexDirection: "row", alignItems: "center", backgroundColor: "#141414", borderRadius: 10, borderWidth: 1, borderColor: "#2a2a2a", paddingHorizontal: 12, gap: 8 }}>
+      <View style={{ marginHorizontal: 8, marginTop: 8, marginBottom: 6, flexDirection: "row", alignItems: "center", backgroundColor: "#141414", borderRadius: 8, borderWidth: 1, borderColor: "#2a2a2a", paddingHorizontal: 10, gap: 6 }}>
         <Search color="#66635f" size={14} />
         <TextInput
           style={{ flex: 1, color: "#e8e4dc", fontSize: 13, paddingVertical: 10 }}

@@ -59,24 +59,37 @@ export default function ProjectDetail() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#0d0d0d" }} edges={["top"]}>
       {/* Header */}
-      <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 12, gap: 10, borderBottomWidth: 1, borderBottomColor: "#1f1f1f" }}>
+      <View style={{
+        flexDirection: "row", alignItems: "center",
+        paddingHorizontal: 16, paddingVertical: 10,
+        gap: 10, borderBottomWidth: 1, borderBottomColor: "#2a2a2a",
+      }}>
         <Pressable onPress={() => router.back()} hitSlop={8}>
-          <ArrowLeft color="#66635f" size={20} />
+          <ArrowLeft color="#66635f" size={18} />
         </Pressable>
-        <Text numberOfLines={1} style={{ flex: 1, color: "#e8e4dc", fontSize: 16, fontWeight: "600", letterSpacing: -0.2 }}>
+        <Text numberOfLines={1} style={{ flex: 1, color: "#9e9a94", fontSize: 13, fontWeight: "600" }}>
           {project.icon ? `${project.icon} ` : ""}{project.name}
         </Text>
       </View>
 
       {/* Segment */}
-      <View style={{ flexDirection: "row", marginHorizontal: 16, marginVertical: 10, backgroundColor: "#141414", borderRadius: 10, padding: 3, gap: 3, borderWidth: 1, borderColor: "#2a2a2a" }}>
+      <View style={{
+        flexDirection: "row",
+        marginHorizontal: 12, marginVertical: 8,
+        backgroundColor: "#141414",
+        borderRadius: 8, padding: 2, gap: 2,
+        borderWidth: 1, borderColor: "#2a2a2a",
+      }}>
         {(["board", "notes"] as Seg[]).map((s) => (
           <Pressable
             key={s}
             onPress={() => setSeg(s)}
-            style={{ flex: 1, paddingVertical: 7, borderRadius: 8, alignItems: "center", backgroundColor: seg === s ? "#222" : "transparent" }}
+            style={{
+              flex: 1, paddingVertical: 6, borderRadius: 6, alignItems: "center",
+              backgroundColor: seg === s ? "#222" : "transparent",
+            }}
           >
-            <Text style={{ fontSize: 13, fontWeight: "500", textTransform: "capitalize", color: seg === s ? "#e8e4dc" : "#66635f" }}>{s}</Text>
+            <Text style={{ fontSize: 12, fontWeight: "500", textTransform: "capitalize", color: seg === s ? "#e8e4dc" : "#66635f" }}>{s}</Text>
           </Pressable>
         ))}
       </View>
@@ -153,25 +166,79 @@ function Column({ column, cards, allColumns, accent, onAdd, onMove }: {
   accent: string; onAdd: () => void; onMove: (id: string, col: string) => Promise<void>;
 }) {
   return (
-    <View style={{ width: 260, backgroundColor: "#141414", borderRadius: 12, borderWidth: 1, borderColor: "#2a2a2a", padding: 12 }}>
-      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}>
-          <View style={{ width: 7, height: 7, borderRadius: 3.5, backgroundColor: accent }} />
-          <Text style={{ color: "#e8e4dc", fontSize: 12, fontWeight: "600" }}>{column.name}</Text>
-          <View style={{ paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4, backgroundColor: "#1a1a1a" }}>
-            <Text style={{ color: "#66635f", fontSize: 11 }}>{cards.length}</Text>
-          </View>
+    <View style={{
+      width: 224,
+      backgroundColor: "#141414",
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: "#2a2a2a",
+      flexShrink: 0,
+      overflow: "hidden",
+    }}>
+      {/* Column header */}
+      <View style={{
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 6,
+        paddingHorizontal: 10,
+        paddingVertical: 9,
+        borderBottomWidth: 1,
+        borderBottomColor: "#2a2a2a",
+      }}>
+        {/* Colour dot */}
+        <View style={{ width: 7, height: 7, borderRadius: 3.5, backgroundColor: accent, flexShrink: 0 }} />
+        {/* Name */}
+        <Text
+          numberOfLines={1}
+          style={{ color: "#9e9a94", fontSize: 11, fontWeight: "600", flex: 1 }}
+        >
+          {column.name}
+        </Text>
+        {/* Card count badge */}
+        <View style={{ paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4, backgroundColor: "#222" }}>
+          <Text style={{ color: "#66635f", fontSize: 10, fontFamily: "monospace" }}>{cards.length}</Text>
         </View>
-        <Pressable onPress={onAdd} hitSlop={8}>
-          <Plus color="#7c6af7" size={16} />
+        {/* Add button */}
+        <Pressable onPress={onAdd} hitSlop={8} style={{ padding: 2 }}>
+          <Plus color="#7c6af7" size={13} />
         </Pressable>
       </View>
-      <View style={{ gap: 6 }}>
+
+      {/* Cards */}
+      <View style={{ padding: 8, gap: 6 }}>
         {cards.map((c) => <CardChip key={c.id} card={c} columns={allColumns} onMove={onMove} />)}
         {cards.length === 0 && (
-          <Text style={{ color: "#3a3835", fontSize: 12, textAlign: "center", paddingVertical: 16 }}>Empty</Text>
+          <View style={{
+            height: 48,
+            borderRadius: 8,
+            borderWidth: 1,
+            borderColor: "#1f1f1f",
+            borderStyle: "dashed",
+            alignItems: "center",
+            justifyContent: "center",
+          }}>
+            <Text style={{ color: "#3a3835", fontSize: 11 }}>Drop here or add card</Text>
+          </View>
         )}
       </View>
+
+      {/* Add card footer */}
+      <Pressable
+        onPress={onAdd}
+        style={({ pressed }) => ({
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 5,
+          paddingHorizontal: 10,
+          paddingVertical: 9,
+          borderTopWidth: 1,
+          borderTopColor: "#2a2a2a",
+          backgroundColor: pressed ? "#1a1a1a" : "transparent",
+        })}
+      >
+        <Plus color="#66635f" size={12} />
+        <Text style={{ color: "#66635f", fontSize: 12 }}>Add card</Text>
+      </Pressable>
     </View>
   );
 }

@@ -58,8 +58,16 @@ export default function SettingsTab() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#0d0d0d" }} edges={["top"]}>
+      {/* Header */}
+      <View style={{
+        paddingHorizontal: 16, paddingVertical: 10,
+        borderBottomWidth: 1, borderBottomColor: "#2a2a2a",
+      }}>
+        <Text style={{ color: "#9e9a94", fontSize: 12, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.8 }}>
+          Settings
+        </Text>
+      </View>
       <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 40, gap: 20 }}>
-        <Text style={{ color: "#e8e4dc", fontSize: 22, fontWeight: "700", letterSpacing: -0.3 }}>Settings</Text>
 
         {/* Workspace */}
         <View>

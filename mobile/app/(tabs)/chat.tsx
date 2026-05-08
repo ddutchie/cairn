@@ -33,16 +33,23 @@ export default function ChatTab() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#0d0d0d" }} edges={["top"]}>
-      <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12 }}>
-        <View style={{ flex: 1 }}>
-          <Text style={{ color: "#e8e4dc", fontSize: 22, fontWeight: "700", letterSpacing: -0.3 }}>AI Chat</Text>
-          <Text style={{ color: "#66635f", fontSize: 12, marginTop: 2 }}>{threads.length} thread{threads.length !== 1 ? "s" : ""}</Text>
-        </View>
+      <View style={{
+        flexDirection: "row", alignItems: "center",
+        paddingHorizontal: 16, paddingVertical: 10,
+        borderBottomWidth: 1, borderBottomColor: "#2a2a2a",
+      }}>
+        <Text style={{ flex: 1, color: "#9e9a94", fontSize: 12, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.8 }}>
+          AI Chat
+        </Text>
+        <Text style={{ color: "#3a3835", fontSize: 11, marginRight: 10 }}>
+          {threads.length} thread{threads.length !== 1 ? "s" : ""}
+        </Text>
         <Pressable
           onPress={onNew}
-          style={({ pressed }) => ({ width: 34, height: 34, borderRadius: 17, backgroundColor: "#7c6af7", alignItems: "center", justifyContent: "center", opacity: pressed ? 0.8 : 1 })}
+          hitSlop={8}
+          style={({ pressed }) => ({ padding: 4, borderRadius: 6, backgroundColor: pressed ? "#222" : "transparent" })}
         >
-          <Plus color="#fff" size={18} />
+          <Plus color="#7c6af7" size={16} />
         </Pressable>
       </View>
 

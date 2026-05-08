@@ -26,11 +26,15 @@ export default function ProjectsTab() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#0d0d0d" }} edges={["top"]}>
       {/* Header */}
-      <View style={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12 }}>
-        <Text style={{ color: "#e8e4dc", fontSize: 22, fontWeight: "700", letterSpacing: -0.3 }}>
+      <View style={{
+        flexDirection: "row", alignItems: "center",
+        paddingHorizontal: 16, paddingVertical: 10,
+        borderBottomWidth: 1, borderBottomColor: "#2a2a2a",
+      }}>
+        <Text style={{ flex: 1, color: "#9e9a94", fontSize: 12, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.8 }}>
           Projects
         </Text>
-        <Text style={{ color: "#66635f", fontSize: 12, marginTop: 2 }}>
+        <Text style={{ color: "#3a3835", fontSize: 11 }}>
           {active.length} active
         </Text>
       </View>
