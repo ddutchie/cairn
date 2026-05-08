@@ -1,6 +1,7 @@
 /**
- * Onboarding — guides the user to locate their Cairn workspace SQLite file.
- * On iOS, the user picks the workspace.db via the system document picker.
+ * Onboarding — two paths:
+ *   1. Pick an existing workspace.db (iCloud sync with desktop)
+ *   2. Create a fresh demo workspace (simulator / first run)
  */
 import { useState } from "react";
 import { View, Text, Pressable, ActivityIndicator, Alert, ScrollView } from "react-native";
@@ -10,18 +11,20 @@ import * as DocumentPicker from "expo-document-picker";
 import { openDb } from "../db/client";
 import { useStore } from "../store/index";
 import * as queries from "../db/queries";
+import { createFreshWorkspace } from "../db/seed";
 
 const STORAGE_KEY_DB_PATH = "cairn:mobile:dbPath";
 const STORAGE_KEY_WORKSPACE_ID = "cairn:mobile:workspaceId";
 
 export default function Onboarding() {
   const router = useRouter();
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState<"pick" | "demo" | null>(null);
 
   const setDbPath = useStore((s) => s.setDbPath);
   const setActiveWorkspace = useStore((s) => s.setActiveWorkspace);
   const loadWorkspaces = useStore((s) => s.loadWorkspaces);
 
+  // ── Pick existing workspace.db ──────────────────────────────────────────
   async function pickDatabase() {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -34,7 +37,7 @@ export default function Onboarding() {
       const asset = result.assets[0];
       const path = asset.uri.replace("file://", "");
 
-      setLoading(true);
+      setLoading("pick");
 
       await openDb(path);
       await loadWorkspaces();
@@ -46,11 +49,10 @@ export default function Onboarding() {
           "No workspaces found",
           "The selected file does not appear to be a valid Cairn workspace database."
         );
-        setLoading(false);
+        setLoading(null);
         return;
       }
 
-      // Auto-select the first workspace (most Cairn users have one)
       const workspace = workspaces[0];
 
       await AsyncStorage.setItem(STORAGE_KEY_DB_PATH, path);
@@ -62,16 +64,38 @@ export default function Onboarding() {
       router.replace("/(tabs)");
     } catch (e) {
       Alert.alert("Error", String(e));
-      setLoading(false);
+      setLoading(null);
+    }
+  }
+
+  // ── Create fresh demo workspace ─────────────────────────────────────────
+  async function createDemo() {
+    try {
+      setLoading("demo");
+
+      const { dbPath, workspaceId } = await createFreshWorkspace();
+
+      await loadWorkspaces();
+
+      await AsyncStorage.setItem(STORAGE_KEY_DB_PATH, dbPath);
+      await AsyncStorage.setItem(STORAGE_KEY_WORKSPACE_ID, workspaceId);
+
+      setDbPath(dbPath);
+      setActiveWorkspace(workspaceId);
+
+      router.replace("/(tabs)");
+    } catch (e) {
+      Alert.alert("Error creating workspace", String(e));
+      setLoading(null);
     }
   }
 
   return (
     <ScrollView
       className="flex-1 bg-zinc-950"
-      contentContainerClassName="flex-1 items-center justify-center px-8 py-12"
+      contentContainerClassName="flex-grow items-center justify-center px-8 py-16"
     >
-      {/* Logo area */}
+      {/* Logo */}
       <View className="mb-10 items-center">
         <View className="w-16 h-16 rounded-2xl bg-indigo-600 items-center justify-center mb-4">
           <Text className="text-white text-3xl font-bold">C</Text>
@@ -80,53 +104,83 @@ export default function Onboarding() {
         <Text className="text-zinc-400 text-base mt-1">Mobile Companion</Text>
       </View>
 
-      {/* Steps */}
-      <View className="w-full mb-10 gap-4">
+      {/* Demo workspace CTA — prominent for simulator testing */}
+      <View className="w-full mb-6 bg-indigo-600/10 border border-indigo-500/30 rounded-2xl p-5">
+        <Text className="text-indigo-300 text-xs font-semibold uppercase tracking-wider mb-1">
+          Quick start
+        </Text>
+        <Text className="text-white font-semibold text-base mb-1">
+          Create a demo workspace
+        </Text>
+        <Text className="text-zinc-400 text-sm leading-5 mb-4">
+          Spin up a local workspace with sample projects, notes and tasks — no iCloud required. Perfect for trying the app.
+        </Text>
+        <Pressable
+          onPress={createDemo}
+          disabled={loading !== null}
+          className="bg-indigo-600 rounded-xl py-3.5 items-center active:opacity-80"
+        >
+          {loading === "demo" ? (
+            <ActivityIndicator color="white" />
+          ) : (
+            <Text className="text-white font-semibold text-sm">Create demo workspace</Text>
+          )}
+        </Pressable>
+      </View>
+
+      {/* Divider */}
+      <View className="flex-row items-center w-full mb-6 gap-3">
+        <View className="flex-1 h-px bg-zinc-800" />
+        <Text className="text-zinc-600 text-xs">or connect your desktop workspace</Text>
+        <View className="flex-1 h-px bg-zinc-800" />
+      </View>
+
+      {/* iCloud steps */}
+      <View className="w-full mb-6 gap-3">
         {[
           {
             step: "1",
             title: "Place your workspace in iCloud",
-            body: "On your Mac, move (or create) your Cairn workspace folder inside iCloud Drive so it syncs to your iPhone.",
+            body: "On your Mac, move your Cairn workspace folder inside iCloud Drive so it syncs to your iPhone.",
           },
           {
             step: "2",
-            title: "Open workspace.db",
-            body: 'Tap the button below and navigate to your Cairn workspace folder. Select the "workspace.db" file.',
+            title: "Select workspace.db",
+            body: 'Tap below and navigate to your Cairn workspace folder. Select the "workspace.db" file.',
           },
           {
             step: "3",
             title: "Stay in sync",
-            body: "Cairn mobile reads and writes the same SQLite file as the desktop app. Changes sync automatically via iCloud.",
+            body: "Cairn Mobile reads and writes the same SQLite file as the desktop app via iCloud.",
           },
         ].map(({ step, title, body }) => (
-          <View key={step} className="flex-row gap-4 bg-zinc-900 rounded-xl p-4">
-            <View className="w-7 h-7 rounded-full bg-indigo-600 items-center justify-center shrink-0 mt-0.5">
-              <Text className="text-white text-xs font-bold">{step}</Text>
+          <View key={step} className="flex-row gap-3 bg-zinc-900 rounded-xl p-4">
+            <View className="w-6 h-6 rounded-full bg-zinc-700 items-center justify-center shrink-0 mt-0.5">
+              <Text className="text-zinc-300 text-xs font-bold">{step}</Text>
             </View>
             <View className="flex-1">
-              <Text className="text-white text-sm font-semibold mb-1">{title}</Text>
-              <Text className="text-zinc-400 text-sm leading-5">{body}</Text>
+              <Text className="text-white text-sm font-semibold mb-0.5">{title}</Text>
+              <Text className="text-zinc-500 text-sm leading-5">{body}</Text>
             </View>
           </View>
         ))}
       </View>
 
-      {/* CTA */}
       <Pressable
         onPress={pickDatabase}
-        disabled={loading}
-        className="w-full bg-indigo-600 rounded-xl py-4 items-center active:opacity-80"
+        disabled={loading !== null}
+        className="w-full border border-zinc-700 rounded-xl py-3.5 items-center active:opacity-80"
       >
-        {loading ? (
-          <ActivityIndicator color="white" />
+        {loading === "pick" ? (
+          <ActivityIndicator color="#6366f1" />
         ) : (
-          <Text className="text-white font-semibold text-base">Select workspace.db</Text>
+          <Text className="text-zinc-300 font-semibold text-sm">Select workspace.db</Text>
         )}
       </Pressable>
 
-      <Text className="text-zinc-600 text-xs text-center mt-6 leading-5">
-        Cairn Mobile only reads and writes the SQLite database. Your notes and markdown files are
-        never modified without your action.
+      <Text className="text-zinc-700 text-xs text-center mt-6 leading-5">
+        Cairn Mobile only reads and writes the SQLite database. Your markdown files are never
+        modified without your action.
       </Text>
     </ScrollView>
   );
