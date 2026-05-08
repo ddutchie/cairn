@@ -1408,7 +1408,7 @@ describe("list_recent_activity — ordering and workspace scoping", () => {
   });
 
   it("limit parameter caps result count", () => {
-    const { workspaceId, columnId } = seedBase(db);
+    const { workspaceId } = seedBase(db);
     for (let i = 0; i < 25; i++) {
       createNote(db, { id: `n${i}`, projectId: "proj1", workspaceId, title: `Note ${i}` });
     }

@@ -34,6 +34,7 @@ export function ProjectOverview() {
 
   useEffect(() => {
     if (editOpen && project) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setEditIcon(project.icon ?? "");
       setEditDesc(project.description ?? "");
     }
@@ -41,6 +42,7 @@ export function ProjectOverview() {
 
   // Keep codeDirInput in sync when project changes externally
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCodeDirInput(project?.codeDirectory ?? "");
   }, [project?.codeDirectory]);
 

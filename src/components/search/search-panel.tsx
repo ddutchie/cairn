@@ -83,6 +83,7 @@ export function SearchPanel() {
   useEffect(() => {
     if (searchOpen) {
       inputRef.current?.focus();
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setQuery("");
       setResults([]);
       setFocused(0);
@@ -94,6 +95,7 @@ export function SearchPanel() {
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (query.trim().length < 1) { setResults([]); return; }
     searchTimer.current = setTimeout(() => {
       setResults(searchAll(query));

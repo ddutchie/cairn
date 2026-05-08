@@ -7,7 +7,6 @@
  */
 
 import { spawn } from "child_process";
-import path from "path";
 
 const MAX_OUTPUT_BYTES = 50_000;
 const DEFAULT_TIMEOUT_MS = 120_000; // 2 minutes

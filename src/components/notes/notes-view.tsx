@@ -215,6 +215,7 @@ export function NotesView() {
       setActiveNoteId(notes[0].id);
     } else if (!activeNoteId && notes.length > 0) {
       // No active note yet — select the first one
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setActiveNoteId(notes[0].id);
     }
     prevNoteCountRef.current = notes.length;

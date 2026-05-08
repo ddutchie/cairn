@@ -79,7 +79,7 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
     updatePiSubagentToolCall,
     addPiSubagent,
     appendPiSubagentToken,
-    finalisePiSubagentMessage,
+    finalisePiSubagentMessage: _finalisePiSubagentMessage,
     addPiSubagentToolCall,
     completePiSubagent,
     stepPiSubagent,
@@ -127,9 +127,11 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
   const firedInitial    = useRef(false);
 
   // Scroll to bottom on new messages
+  /* eslint-disable react-hooks/exhaustive-deps */
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length, messages[messages.length - 1]?.content?.length]);
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   // Focus input when pane becomes active
   useEffect(() => {

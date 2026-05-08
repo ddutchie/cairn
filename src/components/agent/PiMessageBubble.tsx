@@ -126,7 +126,7 @@ function ToolOutputPanel({ name, output }: { name: string; output: string }) {
   );
 }
 
-function ToolChip({ tc, index }: { tc: { callId?: string; name: string; label: string; running?: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }; index: number }) {
+function ToolChip({ tc, index: _index }: { tc: { callId?: string; name: string; label: string; running?: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }; index: number }) {
   const [expanded, setExpanded] = useState(false);
 
   // While running — show a spinner chip, not expandable

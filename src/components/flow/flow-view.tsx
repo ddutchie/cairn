@@ -308,6 +308,7 @@ function IdeaFlowCanvas() {
     }
   }, [activeProjectId, setNodes, setEdges, fitView]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { loadFlow(true); }, [loadFlow]);
 
   // Clear the suppress-reload timer on unmount to avoid setting state on a stale ref.

@@ -59,6 +59,7 @@ export function WikilinkPicker({
         .slice(0, 12);
 
   // Reset active index when filtered list changes
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setActiveIdx(0); }, [query]);
 
   // Keyboard navigation

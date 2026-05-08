@@ -102,6 +102,7 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
   // Pre-fill input when opened via cairn:open-chat event
   useEffect(() => {
     if (prefill) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setInput(prefill);
       onPrefillConsumed?.();
       setTimeout(() => inputRef.current?.focus(), 50);

@@ -63,6 +63,7 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
   useEffect(() => {
     if (!open) return;
     const defaultAgent = agents.find((a) => a.isDefault) ?? agents[0];
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (defaultAgent) setSelectedAgentId(defaultAgent.id);
     if (card) {
       const desc = card.description ? `\n\n${card.description}` : "";

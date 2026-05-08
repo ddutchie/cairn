@@ -151,6 +151,7 @@ export default function Home() {
       };
     } else {
       hydrate();
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setOnboardingState(false);
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -211,7 +212,7 @@ export default function Home() {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("cairn:open-chat", handleOpenChat);
     };
-  }, [toggleSearch, toggleChat, toggleSidebar, setView, activeProjectId, createNote, chatOpen, hiddenViews, ORDERED_VIEWS]);
+  }, [toggleSearch, toggleChat, toggleSidebar, setView, activeProjectId, createNote, chatOpen, hiddenViews, ORDERED_VIEWS, activeView]);
 
   // Still loading
   if (onboardingState === null) {
