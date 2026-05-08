@@ -8,7 +8,7 @@
  * Multi-turn: each new message continues the same session's history.
  */
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useCallback } from "react";
 import { flushSync } from "react-dom";
 import { Send, Square, Trash2, CheckCircle, FileText, Zap, Map as MapIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -354,8 +354,10 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
     window.electron?.piAgent.prompt(promptPayload);
   }, [isLoading, session, aiConfig, activeWorkspaceId, addPiMessage]);
 
-  // Keep ref current so the initialPrompt effect always calls the latest version
-  sendPromptRef.current = sendPrompt;
+  // Keep ref current so the initialPrompt effect always calls the latest version.
+  // useLayoutEffect runs synchronously after render, keeping the ref up-to-date
+  // before any async callbacks fire without triggering the react-hooks/refs lint rule.
+  useLayoutEffect(() => { sendPromptRef.current = sendPrompt; });
 
   function handleStop() {
     window.electron?.piAgent.abort(session.sessionId);

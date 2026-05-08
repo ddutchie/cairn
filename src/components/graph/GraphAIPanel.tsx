@@ -320,14 +320,13 @@ export function GraphAIPanel({ graph, selectedNode, onClose }: GraphAIPanelProps
 
   useEffect(() => { inputRef.current?.focus(); }, []);
 
+  const nodeIds  = useMemo(() => graph.nodes.map((n) => n.id).join(","),                          [graph.nodes]);
+  const edgeIds  = useMemo(() => graph.edges.map((e) => `${e.source}>${e.target}`).join(","),     [graph.edges]);
   const graphContext = useMemo(
     () => buildGraphContext(graph, selectedNode),
+    // nodeIds / edgeIds are stable string keys derived above; selectedNode?.id is a primitive
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [
-      graph.nodes.map((n) => n.id).join(","),
-      graph.edges.map((e) => `${e.source}>${e.target}`).join(","),
-      selectedNode?.id,
-    ]
+    [nodeIds, edgeIds, selectedNode?.id]
   );
 
   const sendMessage = useCallback(async () => {
