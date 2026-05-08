@@ -8,11 +8,20 @@ const config = getDefaultConfig(__dirname);
 const projectRoot = __dirname;
 const workspaceRoot = path.resolve(projectRoot, "..");
 
+// Watch parent repo for shared src/types — but block its node_modules
+// from leaking into Metro's resolver (prevents duplicate react etc.)
 config.watchFolders = [workspaceRoot];
 config.resolver.nodeModulesPaths = [
   path.resolve(projectRoot, "node_modules"),
-  path.resolve(workspaceRoot, "node_modules"),
 ];
+
+// Ensure singleton packages always resolve from mobile's own node_modules,
+// not from the parent repo's hoisted copies.
+config.resolver.extraNodeModules = {
+  react: path.resolve(projectRoot, "node_modules/react"),
+  "react-native": path.resolve(projectRoot, "node_modules/react-native"),
+  "react-dom": path.resolve(projectRoot, "stubs/empty.js"),
+};
 
 // iOS/Android only — exclude web platform
 config.resolver.platforms = ["ios", "android", "native"];

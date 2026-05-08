@@ -6,7 +6,6 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "scheme": "cairn",
     "splash": {
       "image": "./assets/splash-icon.png",
@@ -22,9 +21,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0a0a0a"
       },
-      "package": "com.cairn.mobile",
-      "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "package": "com.cairn.mobile"
     },
     "plugins": [
       [
@@ -37,10 +34,7 @@
         "expo-sqlite",
         {
           "enableFTS": true,
-          "useSQLCipher": false,
-          "android": {
-            "enableMultiThreadedAccess": true
-          }
+          "useSQLCipher": false
         }
       ]
     ],
