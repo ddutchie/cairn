@@ -178,8 +178,9 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
       }
     });
 
-    // callId map: tool name → callId assigned at onToolStart so we can update it on onToolEnd
-    const activeCallIds = new Map<string, string>();
+    // callId set: tracks in-flight callIds so we can clean up on end.
+    // Keyed by callId (not tool name) so parallel calls to the same tool work correctly.
+    const activeCallIds = new Set<string>();
 
     const unsubTool = electron.piAgent.onTool((e) => {
       if (e.sessionId !== sessionId) return;
@@ -187,20 +188,20 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
         // Chip created during SSE streaming — appears immediately with tool name as label.
         // flushSync ensures React commits this before the stream continues.
         const callId = e.callId ?? `${e.name}:${Date.now()}`;
-        activeCallIds.set(e.name, callId);
+        activeCallIds.add(callId);
         flushSync(() => {
           addPiToolCall(sessionId, { callId, name: e.name, label: e.label, running: true, ok: true });
         });
       } else if (e.status === "start") {
         // Execution starting — update the existing pending chip with the resolved label.
-        const callId = e.callId ?? activeCallIds.get(e.name) ?? `${e.name}:${Date.now()}`;
-        activeCallIds.set(e.name, callId);
+        const callId = e.callId ?? `${e.name}:${Date.now()}`;
+        activeCallIds.add(callId);
         flushSync(() => {
           addPiToolCall(sessionId, { callId, name: e.name, label: e.label, running: true, ok: true });
         });
       } else if (e.status === "end") {
-        const callId = activeCallIds.get(e.name) ?? `${e.name}:unknown`;
-        activeCallIds.delete(e.name);
+        const callId = e.callId ?? `${e.name}:unknown`;
+        activeCallIds.delete(callId);
         updatePiToolCall(sessionId, callId, {
           label:    e.label,
           running:  false,
@@ -253,20 +254,20 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
       appendPiSubagentToken(sessionId, e.sessionId, e.delta);
     });
 
-    const activeSubCallIds = new Map<string, string>(); // `${childSessionId}:${name}` → callId
+    // Keyed by callId (not tool name) so parallel calls to the same tool resolve correctly.
+    const activeSubCallIds = new Set<string>();
 
     const unsubSubTool = electron.piAgent.onTool((e) => {
       if (!e.sessionId.startsWith(`${sessionId}:sub:`)) return;
-      const key = `${e.sessionId}:${e.name}`;
       if (e.status === "pending" || e.status === "start") {
-        const callId = e.callId ?? activeSubCallIds.get(key) ?? `${e.name}:${Date.now()}`;
-        activeSubCallIds.set(key, callId);
+        const callId = e.callId ?? `${e.name}:${Date.now()}`;
+        activeSubCallIds.add(callId);
         flushSync(() => {
           addPiSubagentToolCall(sessionId, e.sessionId, { callId, name: e.name, label: e.label, running: true, ok: true });
         });
       } else if (e.status === "end") {
-        const callId = activeSubCallIds.get(key) ?? `${e.name}:unknown`;
-        activeSubCallIds.delete(key);
+        const callId = e.callId ?? `${e.name}:unknown`;
+        activeSubCallIds.delete(callId);
         updatePiSubagentToolCall(sessionId, e.sessionId, callId, {
           label:    e.label,
           running:  false,

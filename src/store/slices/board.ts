@@ -6,7 +6,7 @@ import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
 import type { BoardColumn, TaskCard, ID } from "@/types";
 import { id, now } from "@/lib/utils";
-import { ipc, ipcAwaitResult } from "../ipc";
+import { ipc, ipcAwaitResult, isElectron } from "../ipc";
 import { historyManager } from "@/lib/history";
 import {
   makeCreateCardCmd,
@@ -302,17 +302,34 @@ export const createBoardSlice: StateCreator<CairnStore, [], [], BoardSlice> = (
 
   async archiveAllDoneCards(columnId) {
     const archivedAt = now();
+    // Snapshot affected card IDs so we can roll back on IPC failure
+    const affectedIds = new Set(
+      get().cards
+        .filter((c) => c.columnId === columnId && !c.archivedAt)
+        .map((c) => c.id)
+    );
     // Optimistic update — mark all active cards in column as archived
     set((s) => ({
       cards: s.cards.map((c) =>
-        c.columnId === columnId && !c.archivedAt
-          ? { ...c, archivedAt, updatedAt: archivedAt }
-          : c
+        affectedIds.has(c.id) ? { ...c, archivedAt, updatedAt: archivedAt } : c
       ),
     }));
     get().persist();
-    const result = await ipc((e) => e.card.archiveDone(columnId)) as { archived?: number } | undefined;
-    return result?.archived ?? 0;
+    if (!isElectron() || !window.electron) return affectedIds.size;
+    try {
+      const result = await window.electron.card.archiveDone(columnId) as { archived?: number } | undefined;
+      return result?.archived ?? affectedIds.size;
+    } catch (err) {
+      // Roll back optimistic update
+      set((s) => ({
+        cards: s.cards.map((c) =>
+          affectedIds.has(c.id) ? { ...c, archivedAt: undefined, updatedAt: now() } : c
+        ),
+      }));
+      get().persist();
+      console.error("[cairn] archiveAllDoneCards failed, rolled back:", err);
+      return 0;
+    }
   },
 
   moveCardToProject(cardId, targetProjectId) {

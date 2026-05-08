@@ -76,7 +76,8 @@ export interface AgentLoopCallbacks {
   onToolPending:   (name: string, callId: string) => void;
   /** callId links back to the pending chip created by onToolPending (if any). */
   onToolStart:     (name: string, label: string, callId?: string) => void;
-  onToolEnd:       (name: string, label: string, ok: boolean, output: string) => void;
+  /** callId links back to the same chip created by onToolPending / updated by onToolStart. */
+  onToolEnd:       (name: string, label: string, ok: boolean, output: string, callId?: string) => void;
   onStepStart:     () => void;
   onUsage:         (promptTokens: number, completionTokens: number) => void;
   onDone:          () => void;
@@ -430,7 +431,7 @@ export async function runAgentLoop(
         resultContent = `Error: ${(e as Error).message}`;
       }
 
-      callbacks.onToolEnd(tc.function.name, label, ok, resultContent);
+      callbacks.onToolEnd(tc.function.name, label, ok, resultContent, pendingCallId);
 
       // In plan mode, notify the renderer when the agent writes the PRD note
       if (mode === "plan" && ok && tc.function.name === "ensure_note") {
