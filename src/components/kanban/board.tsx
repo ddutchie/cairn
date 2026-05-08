@@ -557,7 +557,7 @@ export function KanbanBoard() {
                       onSetLimit={(limit) => updateColumn(column.id, { cardLimit: limit ?? undefined })}
                       onDelete={() => deleteColumn(column.id)}
                       onRestoreCard={(cardId) => restoreCard(cardId)}
-                      onArchiveAllDone={column.type === "done" ? () => archiveAllDoneCards(column.id) : undefined}
+                      onArchiveAllDone={column.type === "done" && allCards.length > 0 ? () => archiveAllDoneCards(column.id) : undefined}
                       isDragOver={overId === column.id}
                       isColumnDragging={activeColumn?.id === column.id}
                       isHighlighted={highlightedColumnId === column.id}

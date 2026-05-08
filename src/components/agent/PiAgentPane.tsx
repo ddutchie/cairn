@@ -198,7 +198,7 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
         flushSync(() => {
           addPiToolCall(sessionId, { callId, name: e.name, label: e.label, running: true, ok: true });
         });
-      } else {
+      } else if (e.status === "end") {
         const callId = activeCallIds.get(e.name) ?? `${e.name}:unknown`;
         activeCallIds.delete(e.name);
         updatePiToolCall(sessionId, callId, {
@@ -208,6 +208,8 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
           output:   READ_ONLY_TOOLS.has(e.name) ? undefined : e.output,
           cairnRef: extractCairnRef(e.name, e.output),
         });
+      } else {
+        console.warn("[PiAgentPane] unhandled pi-agent:tool status:", e.status, e);
       }
     });
 
@@ -262,7 +264,7 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
         flushSync(() => {
           addPiSubagentToolCall(sessionId, e.sessionId, { callId, name: e.name, label: e.label, running: true, ok: true });
         });
-      } else {
+      } else if (e.status === "end") {
         const callId = activeSubCallIds.get(key) ?? `${e.name}:unknown`;
         activeSubCallIds.delete(key);
         updatePiSubagentToolCall(sessionId, e.sessionId, callId, {
@@ -272,6 +274,8 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
           output:   READ_ONLY_TOOLS.has(e.name) ? undefined : e.output,
           cairnRef: extractCairnRef(e.name, e.output),
         });
+      } else {
+        console.warn("[PiAgentPane] unhandled pi-agent:tool status (subagent):", e.status, e);
       }
     });
 

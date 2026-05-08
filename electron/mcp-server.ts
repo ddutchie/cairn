@@ -1095,13 +1095,17 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
       if (includeArchived) {
         // Query DB directly for archived cards — they're filtered out of snap.cards
         const projectFilter = args.projectId ? `AND tc.project_id = ?` : "";
+        const columnTypeFilter = args.columnType ? `AND bc.type = ?` : "";
+        const queryParams: unknown[] = [];
+        if (args.projectId) queryParams.push(args.projectId);
+        if (args.columnType) queryParams.push(args.columnType);
         const rows = db.prepare(
           `SELECT tc.*, bc.name as col_name, bc.type as col_type
            FROM task_cards tc
            JOIN board_columns bc ON tc.column_id = bc.id
-           WHERE tc.archived_at IS NOT NULL ${projectFilter}
+           WHERE tc.archived_at IS NOT NULL ${projectFilter} ${columnTypeFilter}
            ORDER BY tc.archived_at DESC`
-        ).all(...(args.projectId ? [args.projectId] : [])) as Array<Record<string, unknown>>;
+        ).all(...queryParams) as Array<Record<string, unknown>>;
         return {
           archived: rows.map((r) => ({
             id: r.id, title: r.title, priority: r.priority,

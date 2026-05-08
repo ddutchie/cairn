@@ -290,7 +290,7 @@ export function KanbanColumn({
                   Clear WIP limit
                 </DropdownMenuItem>
               )}
-              {column.type === "done" && cards.length > 0 && onArchiveAllDone && (
+              {column.type === "done" && onArchiveAllDone && (
                 <>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem

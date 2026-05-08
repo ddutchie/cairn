@@ -581,6 +581,23 @@ export async function executeTool(
       return q.getReadyCards(db, args.projectId as string | undefined);
     }
 
+    case "archive_task": {
+      const card = snap.cards.find((c) => c.id === args.cardId);
+      if (!card) return { error: "Task not found" };
+      if (card.archivedAt) return { error: "Task is already archived" };
+      const archivedAt = new Date().toISOString();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return q.updateCard(db, args.cardId as string, { archivedAt } as any);
+    }
+
+    case "restore_task": {
+      // Must query DB directly — archived cards are filtered out of snap.cards
+      const row = q.getCardById(db, args.cardId as string);
+      if (!row) return { error: "Task not found" };
+      if (!row.archivedAt) return { error: "Task is not archived" };
+      return q.restoreCard(db, args.cardId as string);
+    }
+
     case "update_project": {
       const project = snap.projects.find((p) => p.id === args.projectId);
       if (!project) return { error: "Project not found" };
