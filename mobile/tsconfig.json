@@ -3,11 +3,24 @@
   "compilerOptions": {
     "strict": true,
     "paths": {
-      "@/*": ["./*"],
-      "@cairn/types": ["../src/types/index.ts"],
-      "@cairn/utils": ["../src/lib/utils.ts"],
-      "@cairn/constants": ["../src/lib/constants.ts"]
-    },
-    "types": ["nativewind/types"]
-  }
+      "@/*": [
+        "./*"
+      ],
+      "@cairn/types": [
+        "../src/types/index.ts"
+      ],
+      "@cairn/utils": [
+        "../src/lib/utils.ts"
+      ],
+      "@cairn/constants": [
+        "../src/lib/constants.ts"
+      ]
+    }
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    ".expo/types/**/*.ts",
+    "expo-env.d.ts"
+  ]
 }
