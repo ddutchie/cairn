@@ -128,6 +128,9 @@ const CAIRN_TOOL_NAMES = new Set([
   "get_idea_flow",
   "create_idea_flow_node",
   "create_idea_flow_edge",
+  // Renderer-side only — main process no-ops immediately; renderer intercepts
+  // the tool-call event and renders an inline QuestionForm.
+  "ask_questions",
 ]);
 
 // Tools available in plan mode — read-only file access + note writing only.
@@ -144,6 +147,8 @@ const PLAN_MODE_ALLOWED = new Set([
   "list_tasks", "get_task", "search_tasks", "list_ready_tasks",
   // Cairn write — PRD note only (idempotent upsert)
   "ensure_note",
+  // Renderer-side: renders an inline question form; main process no-ops immediately
+  "ask_questions",
 ]);
 
 // ── Fetch all tool definitions (coding + Cairn subset) ────────────────────────
@@ -201,6 +206,12 @@ async function executeSingleTool(
     default: {
       // Delegate to Cairn chat executor
       if (CAIRN_TOOL_NAMES.has(name)) {
+        // ask_questions is a renderer-side tool — emit the questions as an IPC event
+        // so PiAgentPane can render an inline QuestionForm. The tool result is a no-op
+        // acknowledgement; the user's answers arrive as the next sendPrompt call.
+        if (name === "ask_questions" && Array.isArray((args as { questions?: unknown }).questions)) {
+          send("pi-agent:ask-questions", { sessionId, questions: (args as { questions: unknown[] }).questions });
+        }
         const result = await executeTool(
           db, req, workspacePath,
           { baseUrl: llmConfig.baseUrl, model: llmConfig.model, apiKey: llmConfig.apiKey },
@@ -437,7 +448,8 @@ export async function runAgentLoop(
 
       callbacks.onToolEnd(tc.function.name, label, ok, resultContent, pendingCallId);
 
-      // In plan mode, notify the renderer when the agent writes the PRD note
+      // In plan mode only, notify the renderer when the agent writes the PRD note.
+      // Suppressed in execute mode to avoid overwriting planNoteId after approval.
       if (mode === "plan" && ok && tc.function.name === "ensure_note") {
         try {
           const parsed = JSON.parse(resultContent) as { id?: string };

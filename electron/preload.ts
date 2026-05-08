@@ -342,6 +342,13 @@ const api = {
     },
     /** Approve the plan — switches session to execute mode and starts implementation */
     approvePlan: (req: unknown) => ipcRenderer.send("pi-agent:approve-plan", req),
+    /** Fired when the agent calls ask_questions — renderer should render an inline form */
+    onAskQuestions: (cb: (e: { sessionId: string; questions: Array<{ id: string; label: string; prompt: string }> }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { sessionId: string; questions: Array<{ id: string; label: string; prompt: string }> }) => cb(e);
+      ipcRenderer.on("pi-agent:ask-questions", handler);
+      return () => ipcRenderer.off("pi-agent:ask-questions", handler);
+    },
   },
 
 } as const;

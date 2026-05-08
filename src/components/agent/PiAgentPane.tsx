@@ -11,6 +11,8 @@
 import { useEffect, useLayoutEffect, useRef, useState, useCallback } from "react";
 import { flushSync } from "react-dom";
 import { Send, Square, Trash2, CheckCircle, FileText, Zap, Map as MapIcon } from "lucide-react";
+import { QuestionForm } from "@/components/chat/chat-panel/QuestionForm";
+import type { PendingQuestion } from "@/hooks/useChatStream";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -113,8 +115,9 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
   const messages    = session.piMessages ?? [];
   const project     = projects.find((p) => p.id === session.projectId);
 
-  const [input, setInput]         = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  const [input, setInput]                         = useState("");
+  const [isLoading, setIsLoading]                 = useState(false);
+  const [pendingQuestions, setPendingQuestions]   = useState<PendingQuestion[] | null>(null);
 
   const messagesEndRef  = useRef<HTMLDivElement>(null);
   const textareaRef     = useRef<HTMLTextAreaElement>(null);
@@ -296,6 +299,11 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
       setPiMode(sessionId, e.mode, e.planNoteId);
     });
 
+    const unsubAskQuestions = electron.piAgent.onAskQuestions((e) => {
+      if (e.sessionId !== sessionId) return;
+      setPendingQuestions(e.questions);
+    });
+
     return () => {
       unsubToken();
       unsubUsage();
@@ -310,6 +318,7 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
       unsubSubStep();
       unsubPlanNote();
       unsubModeChange();
+      unsubAskQuestions();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.sessionId]);
@@ -320,6 +329,7 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
 
     setInput("");
     setIsLoading(true);
+    setPendingQuestions(null);
 
     // Add user message to store
     addPiMessage(session.sessionId, {
@@ -488,6 +498,13 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
         {messages.map((msg) => (
           <PiMessageBubble key={msg.id} message={msg} />
         ))}
+        {pendingQuestions && (
+          <QuestionForm
+            questions={pendingQuestions}
+            onSubmit={(text) => sendPrompt(text)}
+            disabled={isLoading}
+          />
+        )}
         <div ref={messagesEndRef} />
       </div>
 
