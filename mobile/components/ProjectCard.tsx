@@ -1,74 +1,65 @@
 import { View, Text, Pressable } from "react-native";
 import type { Project } from "../../src/types/index";
 
-const STATUS_COLORS: Record<Project["status"], string> = {
-  active: "#22c55e",
-  on_hold: "#eab308",
-  completed: "#6366f1",
-  archived: "#52525b",
+const STATUS_COLOR: Record<Project["status"], string> = {
+  active:    "#3ecf8e",
+  on_hold:   "#f59e0b",
+  completed: "#7c6af7",
+  archived:  "#66635f",
 };
 
-const PRIORITY_COLORS: Record<Project["priority"], string> = {
-  low: "#3f3f46",
-  medium: "#6366f1",
-  high: "#f97316",
+const PRIORITY_COLOR: Record<Project["priority"], string> = {
+  low:    "#66635f",
+  medium: "#7c6af7",
+  high:   "#f97316",
   urgent: "#ef4444",
 };
 
-interface Props {
-  project: Project;
-  onPress: () => void;
-}
-
-export function ProjectCard({ project, onPress }: Props) {
+export function ProjectCard({ project, onPress }: { project: Project; onPress: () => void }) {
   return (
     <Pressable
       onPress={onPress}
-      className="bg-zinc-900 rounded-2xl p-4 active:opacity-80"
+      style={({ pressed }) => ({
+        backgroundColor: pressed ? "#1a1a1a" : "#141414",
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: "#2a2a2a",
+        padding: 16,
+      })}
     >
       {/* Top row */}
-      <View className="flex-row items-start justify-between gap-3 mb-2">
-        <View className="flex-row items-center gap-2 flex-1">
-          {project.icon && (
-            <Text className="text-xl">{project.icon}</Text>
-          )}
-          <Text className="text-white font-semibold text-base flex-1" numberOfLines={1}>
-            {project.name}
-          </Text>
-        </View>
-        {/* Priority dot */}
-        <View
-          className="w-2 h-2 rounded-full mt-1.5 shrink-0"
-          style={{ backgroundColor: PRIORITY_COLORS[project.priority] }}
-        />
+      <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10, marginBottom: 8 }}>
+        {project.icon && (
+          <Text style={{ fontSize: 18, lineHeight: 24 }}>{project.icon}</Text>
+        )}
+        <Text
+          numberOfLines={1}
+          style={{ flex: 1, color: "#e8e4dc", fontSize: 15, fontWeight: "600", letterSpacing: -0.2 }}
+        >
+          {project.name}
+        </Text>
+        {/* Priority indicator */}
+        <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: PRIORITY_COLOR[project.priority], marginTop: 4, flexShrink: 0 }} />
       </View>
 
-      {/* Description */}
       {project.description && (
-        <Text className="text-zinc-500 text-sm mb-3 leading-5" numberOfLines={2}>
+        <Text
+          numberOfLines={2}
+          style={{ color: "#9e9a94", fontSize: 12, lineHeight: 17, marginBottom: 12 }}
+        >
           {project.description}
         </Text>
       )}
 
       {/* Footer */}
-      <View className="flex-row items-center gap-2">
-        <View
-          className="flex-row items-center gap-1.5 px-2 py-0.5 rounded-full"
-          style={{ backgroundColor: `${STATUS_COLORS[project.status]}22` }}
-        >
-          <View
-            className="w-1.5 h-1.5 rounded-full"
-            style={{ backgroundColor: STATUS_COLORS[project.status] }}
-          />
-          <Text
-            className="text-xs font-medium capitalize"
-            style={{ color: STATUS_COLORS[project.status] }}
-          >
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6, backgroundColor: `${STATUS_COLOR[project.status]}18` }}>
+          <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: STATUS_COLOR[project.status] }} />
+          <Text style={{ color: STATUS_COLOR[project.status], fontSize: 11, fontWeight: "500", textTransform: "capitalize" }}>
             {project.status.replace("_", " ")}
           </Text>
         </View>
-
-        <Text className="text-zinc-700 text-xs ml-auto">
+        <Text style={{ color: "#3a3835", fontSize: 11, marginLeft: "auto" }}>
           {new Date(project.updatedAt).toLocaleDateString()}
         </Text>
       </View>

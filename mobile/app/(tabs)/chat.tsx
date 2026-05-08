@@ -1,13 +1,10 @@
-/**
- * Chat tab — thread list for AI conversations.
- */
 import { View, Text, Pressable, FlatList, RefreshControl } from "react-native";
 import { useRouter } from "expo-router";
 import { useState, useCallback, useEffect } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Plus, MessageCircle } from "lucide-react-native";
-import { useStore } from "../../store/index";
 import { formatDistanceToNow } from "date-fns";
+import { useStore } from "../../store/index";
 
 export default function ChatTab() {
   const router = useRouter();
@@ -19,9 +16,7 @@ export default function ChatTab() {
   const loadThreads = useStore((s) => s.loadThreads);
   const createThread = useStore((s) => s.createThread);
 
-  useEffect(() => {
-    if (workspaceId) loadThreads(workspaceId, activeProjectId ?? undefined);
-  }, [workspaceId, activeProjectId]);
+  useEffect(() => { if (workspaceId) loadThreads(workspaceId, activeProjectId ?? undefined); }, [workspaceId, activeProjectId]);
 
   const onRefresh = useCallback(async () => {
     if (!workspaceId) return;
@@ -30,57 +25,60 @@ export default function ChatTab() {
     setRefreshing(false);
   }, [workspaceId, activeProjectId]);
 
-  const onNewThread = async () => {
+  const onNew = async () => {
     if (!workspaceId) return;
-    const thread = await createThread(workspaceId, activeProjectId ?? undefined);
-    router.push(`/chat/${thread.id}`);
+    const t = await createThread(workspaceId, activeProjectId ?? undefined);
+    router.push(`/chat/${t.id}`);
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-zinc-950" edges={["top"]}>
-      {/* Header */}
-      <View className="flex-row items-center justify-between px-5 pt-4 pb-3">
-        <View>
-          <Text className="text-white text-2xl font-bold tracking-tight">AI Chat</Text>
-          <Text className="text-zinc-500 text-sm mt-0.5">{threads.length} thread{threads.length !== 1 ? "s" : ""}</Text>
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#0d0d0d" }} edges={["top"]}>
+      <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12 }}>
+        <View style={{ flex: 1 }}>
+          <Text style={{ color: "#e8e4dc", fontSize: 22, fontWeight: "700", letterSpacing: -0.3 }}>AI Chat</Text>
+          <Text style={{ color: "#66635f", fontSize: 12, marginTop: 2 }}>{threads.length} thread{threads.length !== 1 ? "s" : ""}</Text>
         </View>
         <Pressable
-          onPress={onNewThread}
-          className="w-9 h-9 rounded-full bg-indigo-600 items-center justify-center active:opacity-80"
+          onPress={onNew}
+          style={({ pressed }) => ({ width: 34, height: 34, borderRadius: 17, backgroundColor: "#7c6af7", alignItems: "center", justifyContent: "center", opacity: pressed ? 0.8 : 1 })}
         >
-          <Plus color="white" size={18} />
+          <Plus color="#fff" size={18} />
         </Pressable>
       </View>
 
       <FlatList
         data={threads}
         keyExtractor={(t) => t.id}
-        contentContainerClassName="px-5 pb-8 gap-2"
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366f1" />
-        }
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24, gap: 6 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#7c6af7" />}
         ListEmptyComponent={
-          <View className="items-center py-16">
-            <MessageCircle color="#3f3f46" size={40} />
-            <Text className="text-zinc-600 text-base mt-3">No conversations yet.</Text>
+          <View style={{ alignItems: "center", paddingVertical: 60, gap: 12 }}>
+            <MessageCircle color="#2a2a2a" size={36} />
+            <Text style={{ color: "#66635f", fontSize: 13 }}>No conversations yet</Text>
             <Pressable
-              onPress={onNewThread}
-              className="mt-4 px-5 py-2.5 bg-indigo-600 rounded-xl active:opacity-80"
+              onPress={onNew}
+              style={({ pressed }) => ({ paddingHorizontal: 20, paddingVertical: 10, backgroundColor: "#7c6af7", borderRadius: 10, opacity: pressed ? 0.8 : 1 })}
             >
-              <Text className="text-white font-semibold text-sm">Start a conversation</Text>
+              <Text style={{ color: "#fff", fontSize: 13, fontWeight: "600" }}>Start a conversation</Text>
             </Pressable>
           </View>
         }
-        renderItem={({ item: thread }) => (
+        renderItem={({ item: t }) => (
           <Pressable
-            onPress={() => router.push(`/chat/${thread.id}`)}
-            className="bg-zinc-900 rounded-xl p-4 active:opacity-80"
+            onPress={() => router.push(`/chat/${t.id}`)}
+            style={({ pressed }) => ({
+              backgroundColor: pressed ? "#1a1a1a" : "#141414",
+              borderRadius: 10,
+              borderWidth: 1,
+              borderColor: "#2a2a2a",
+              padding: 14,
+            })}
           >
-            <Text className="text-white font-medium text-sm" numberOfLines={1}>
-              {thread.title || "Untitled conversation"}
+            <Text numberOfLines={1} style={{ color: "#e8e4dc", fontSize: 13, fontWeight: "500", marginBottom: 3 }}>
+              {t.title || "Untitled conversation"}
             </Text>
-            <Text className="text-zinc-500 text-xs mt-1">
-              {formatDistanceToNow(new Date(thread.updatedAt), { addSuffix: true })}
+            <Text style={{ color: "#66635f", fontSize: 11 }}>
+              {formatDistanceToNow(new Date(t.updatedAt), { addSuffix: true })}
             </Text>
           </Pressable>
         )}

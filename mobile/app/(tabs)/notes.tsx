@@ -1,11 +1,8 @@
-/**
- * Notes tab — shows notes for the active project.
- */
-import { View, Text, ScrollView, Pressable, RefreshControl, TextInput } from "react-native";
+import { View, Text, ScrollView, RefreshControl, TextInput } from "react-native";
 import { useRouter } from "expo-router";
 import { useState, useCallback, useEffect } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Search, Pin } from "lucide-react-native";
+import { Search } from "lucide-react-native";
 import { useStore } from "../../store/index";
 import { NoteRow } from "../../components/NoteRow";
 
@@ -18,12 +15,9 @@ export default function NotesTab() {
   const notes = useStore((s) => s.notes);
   const projects = useStore((s) => s.projects);
   const loadNotes = useStore((s) => s.loadNotes);
-
   const activeProject = projects.find((p) => p.id === activeProjectId);
 
-  useEffect(() => {
-    if (activeProjectId) loadNotes(activeProjectId);
-  }, [activeProjectId]);
+  useEffect(() => { if (activeProjectId) loadNotes(activeProjectId); }, [activeProjectId]);
 
   const onRefresh = useCallback(async () => {
     if (!activeProjectId) return;
@@ -32,83 +26,58 @@ export default function NotesTab() {
     setRefreshing(false);
   }, [activeProjectId]);
 
-  const filtered = notes.filter((n) =>
-    query.trim() === "" ||
-    n.title.toLowerCase().includes(query.toLowerCase()) ||
-    n.contentText.toLowerCase().includes(query.toLowerCase())
+  const filtered = notes.filter(
+    (n) => !query.trim() || n.title.toLowerCase().includes(query.toLowerCase()) || n.contentText.toLowerCase().includes(query.toLowerCase())
   );
-
   const pinned = filtered.filter((n) => n.isPinned);
-  const unpinned = filtered.filter((n) => !n.isPinned);
+  const rest = filtered.filter((n) => !n.isPinned);
 
   return (
-    <SafeAreaView className="flex-1 bg-zinc-950" edges={["top"]}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#0d0d0d" }} edges={["top"]}>
       {/* Header */}
-      <View className="px-5 pt-4 pb-2">
-        <Text className="text-white text-2xl font-bold tracking-tight">Notes</Text>
+      <View style={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 10 }}>
+        <Text style={{ color: "#e8e4dc", fontSize: 22, fontWeight: "700", letterSpacing: -0.3 }}>Notes</Text>
         {activeProject && (
-          <Text className="text-zinc-500 text-sm mt-0.5">{activeProject.name}</Text>
+          <Text style={{ color: "#66635f", fontSize: 12, marginTop: 2 }}>{activeProject.name}</Text>
         )}
       </View>
 
       {/* Search */}
-      <View className="px-5 pb-3">
-        <View className="flex-row items-center bg-zinc-900 rounded-xl px-3 gap-2">
-          <Search color="#71717a" size={16} />
-          <TextInput
-            className="flex-1 text-white text-sm py-3"
-            placeholder="Search notes…"
-            placeholderTextColor="#52525b"
-            value={query}
-            onChangeText={setQuery}
-          />
-        </View>
+      <View style={{ marginHorizontal: 16, marginBottom: 10, flexDirection: "row", alignItems: "center", backgroundColor: "#141414", borderRadius: 10, borderWidth: 1, borderColor: "#2a2a2a", paddingHorizontal: 12, gap: 8 }}>
+        <Search color="#66635f" size={14} />
+        <TextInput
+          style={{ flex: 1, color: "#e8e4dc", fontSize: 13, paddingVertical: 10 }}
+          placeholder="Search notes…"
+          placeholderTextColor="#3a3835"
+          value={query}
+          onChangeText={setQuery}
+        />
       </View>
 
       {!activeProjectId ? (
-        <View className="flex-1 items-center justify-center">
-          <Text className="text-zinc-600 text-base">Select a project from the Projects tab.</Text>
+        <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+          <Text style={{ color: "#66635f", fontSize: 13 }}>Select a project from the Projects tab.</Text>
         </View>
       ) : (
         <ScrollView
-          className="flex-1"
-          contentContainerClassName="px-5 pb-8"
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366f1" />
-          }
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#7c6af7" />}
         >
           {filtered.length === 0 && (
-            <View className="items-center py-16">
-              <Text className="text-zinc-600 text-base">No notes found.</Text>
+            <View style={{ alignItems: "center", paddingVertical: 60 }}>
+              <Text style={{ color: "#66635f", fontSize: 13 }}>No notes found.</Text>
             </View>
           )}
-
           {pinned.length > 0 && (
             <>
-              <View className="flex-row items-center gap-1.5 mb-2 mt-1">
-                <Pin color="#6366f1" size={13} />
-                <Text className="text-indigo-400 text-xs font-semibold uppercase tracking-wider">
-                  Pinned
-                </Text>
-              </View>
-              {pinned.map((note) => (
-                <NoteRow
-                  key={note.id}
-                  note={note}
-                  onPress={() => router.push(`/note/${note.id}`)}
-                />
-              ))}
-              {unpinned.length > 0 && <View className="h-px bg-zinc-800 my-3" />}
+              <Text style={{ color: "#7c6af7", fontSize: 10, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.8, marginTop: 4, marginBottom: 4 }}>
+                Pinned
+              </Text>
+              {pinned.map((n) => <NoteRow key={n.id} note={n} onPress={() => router.push(`/note/${n.id}`)} />)}
+              {rest.length > 0 && <View style={{ height: 1, backgroundColor: "#1f1f1f", marginVertical: 8 }} />}
             </>
           )}
-
-          {unpinned.map((note) => (
-            <NoteRow
-              key={note.id}
-              note={note}
-              onPress={() => router.push(`/note/${note.id}`)}
-            />
-          ))}
+          {rest.map((n) => <NoteRow key={n.id} note={n} onPress={() => router.push(`/note/${n.id}`)} />)}
         </ScrollView>
       )}
     </SafeAreaView>

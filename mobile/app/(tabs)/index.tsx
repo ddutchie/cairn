@@ -1,6 +1,3 @@
-/**
- * Projects tab — lists all projects in the active workspace.
- */
 import { View, Text, ScrollView, Pressable, RefreshControl } from "react-native";
 import { useRouter } from "expo-router";
 import { useState, useCallback } from "react";
@@ -24,41 +21,34 @@ export default function ProjectsTab() {
     setRefreshing(false);
   }, [workspaceId]);
 
-  const activeProjects = projects.filter((p) => p.status !== "archived");
+  const active = projects.filter((p) => p.status !== "archived");
 
   return (
-    <SafeAreaView className="flex-1 bg-zinc-950" edges={["top"]}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#0d0d0d" }} edges={["top"]}>
       {/* Header */}
-      <View className="px-5 pt-4 pb-3">
-        <Text className="text-white text-2xl font-bold tracking-tight">Projects</Text>
-        <Text className="text-zinc-500 text-sm mt-0.5">
-          {activeProjects.length} project{activeProjects.length !== 1 ? "s" : ""}
+      <View style={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12 }}>
+        <Text style={{ color: "#e8e4dc", fontSize: 22, fontWeight: "700", letterSpacing: -0.3 }}>
+          Projects
+        </Text>
+        <Text style={{ color: "#66635f", fontSize: 12, marginTop: 2 }}>
+          {active.length} active
         </Text>
       </View>
 
       <ScrollView
-        className="flex-1"
-        contentContainerClassName="px-5 pb-8 gap-3"
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366f1" />
-        }
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24, gap: 8 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#7c6af7" />}
       >
-        {activeProjects.length === 0 && (
-          <View className="items-center py-16">
-            <Text className="text-zinc-600 text-base">No projects found.</Text>
-            <Text className="text-zinc-700 text-sm mt-1">
-              Open a workspace on desktop first.
-            </Text>
+        {active.length === 0 && (
+          <View style={{ alignItems: "center", paddingVertical: 60 }}>
+            <Text style={{ color: "#66635f", fontSize: 14 }}>No projects yet.</Text>
           </View>
         )}
-        {activeProjects.map((project) => (
+        {active.map((p) => (
           <ProjectCard
-            key={project.id}
-            project={project}
-            onPress={() => {
-              setActiveProject(project.id);
-              router.push(`/project/${project.id}`);
-            }}
+            key={p.id}
+            project={p}
+            onPress={() => { setActiveProject(p.id); router.push(`/project/${p.id}`); }}
           />
         ))}
       </ScrollView>

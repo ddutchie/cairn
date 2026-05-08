@@ -1,6 +1,3 @@
-/**
- * Note detail — renders markdown content and allows basic editing.
- */
 import { View, Text, Pressable, ScrollView, TextInput, KeyboardAvoidingView, Platform } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
@@ -12,119 +9,88 @@ import { useStore } from "../../store/index";
 export default function NoteDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-
   const [editing, setEditing] = useState(false);
-  const [editContent, setEditContent] = useState("");
+  const [draft, setDraft] = useState("");
 
   const activeNote = useStore((s) => s.activeNote);
   const loadNote = useStore((s) => s.loadNote);
   const updateNote = useStore((s) => s.updateNote);
   const clearActiveNote = useStore((s) => s.clearActiveNote);
 
-  useEffect(() => {
-    if (id) loadNote(id);
-    return () => clearActiveNote();
-  }, [id]);
+  useEffect(() => { if (id) loadNote(id); return () => clearActiveNote(); }, [id]);
+  useEffect(() => { if (activeNote) setDraft(activeNote.content); }, [activeNote?.id]);
 
-  useEffect(() => {
-    if (activeNote) setEditContent(activeNote.content);
-  }, [activeNote?.id]);
-
-  async function saveEdit() {
+  async function save() {
     if (!activeNote) return;
-    const plain = editContent.replace(/[#*_`>\[\]]/g, "").trim();
-    await updateNote(activeNote.id, { content: editContent, contentText: plain });
+    await updateNote(activeNote.id, { content: draft, contentText: draft.replace(/[#*_`>\[\]]/g, "").trim() });
     setEditing(false);
   }
 
-  if (!activeNote) {
-    return (
-      <SafeAreaView className="flex-1 bg-zinc-950 items-center justify-center">
-        <Text className="text-zinc-500">Loading…</Text>
-      </SafeAreaView>
-    );
-  }
+  if (!activeNote) return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#0d0d0d", alignItems: "center", justifyContent: "center" }}>
+      <Text style={{ color: "#66635f" }}>Loading…</Text>
+    </SafeAreaView>
+  );
 
   return (
-    <SafeAreaView className="flex-1 bg-zinc-950" edges={["top"]}>
-      <KeyboardAvoidingView
-        className="flex-1"
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-      >
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#0d0d0d" }} edges={["top"]}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
         {/* Header */}
-        <View className="flex-row items-center gap-3 px-4 pt-2 pb-3">
-          <Pressable onPress={() => router.back()} className="active:opacity-70">
-            <ArrowLeft color="#a1a1aa" size={22} />
+        <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 12, gap: 10, borderBottomWidth: 1, borderBottomColor: "#1f1f1f" }}>
+          <Pressable onPress={() => router.back()} hitSlop={8}>
+            <ArrowLeft color="#66635f" size={20} />
           </Pressable>
-          <Text className="flex-1 text-white font-bold text-base" numberOfLines={1}>
+          <Text numberOfLines={1} style={{ flex: 1, color: "#e8e4dc", fontSize: 15, fontWeight: "600", letterSpacing: -0.2 }}>
             {activeNote.title}
           </Text>
           {editing ? (
-            <View className="flex-row gap-3">
-              <Pressable onPress={() => { setEditing(false); setEditContent(activeNote.content); }} className="active:opacity-70">
-                <X color="#71717a" size={20} />
+            <View style={{ flexDirection: "row", gap: 14 }}>
+              <Pressable onPress={() => { setEditing(false); setDraft(activeNote.content); }} hitSlop={8}>
+                <X color="#66635f" size={18} />
               </Pressable>
-              <Pressable onPress={saveEdit} className="active:opacity-70">
-                <Check color="#6366f1" size={20} />
+              <Pressable onPress={save} hitSlop={8}>
+                <Check color="#7c6af7" size={18} />
               </Pressable>
             </View>
           ) : (
-            <Pressable onPress={() => setEditing(true)} className="active:opacity-70">
-              <Edit2 color="#71717a" size={20} />
+            <Pressable onPress={() => setEditing(true)} hitSlop={8}>
+              <Edit2 color="#66635f" size={18} />
             </Pressable>
           )}
         </View>
 
         {editing ? (
           <TextInput
-            className="flex-1 px-5 text-white text-sm leading-6 font-mono"
-            value={editContent}
-            onChangeText={setEditContent}
+            style={{ flex: 1, paddingHorizontal: 20, paddingTop: 16, color: "#e8e4dc", fontSize: 14, lineHeight: 22, fontFamily: "monospace" }}
+            value={draft}
+            onChangeText={setDraft}
             multiline
             autoFocus
             textAlignVertical="top"
           />
         ) : (
-          <ScrollView
-            className="flex-1"
-            contentContainerClassName="px-5 pb-12"
-          >
+          <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 40 }}>
             <Markdown
               style={{
-                body: { color: "#e4e4e7", fontSize: 14, lineHeight: 22 },
-                heading1: { color: "#ffffff", fontSize: 20, fontWeight: "700", marginBottom: 8 },
-                heading2: { color: "#f4f4f5", fontSize: 17, fontWeight: "600", marginBottom: 6 },
-                heading3: { color: "#f4f4f5", fontSize: 15, fontWeight: "600", marginBottom: 4 },
-                code_inline: {
-                  backgroundColor: "#27272a",
-                  color: "#a5b4fc",
-                  fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-                  fontSize: 13,
-                },
-                fence: {
-                  backgroundColor: "#18181b",
-                  borderRadius: 8,
-                  padding: 12,
-                },
-                code_block: {
-                  backgroundColor: "#18181b",
-                  color: "#a5b4fc",
-                  fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-                  fontSize: 13,
-                },
-                blockquote: {
-                  borderLeftColor: "#6366f1",
-                  borderLeftWidth: 3,
-                  paddingLeft: 12,
-                  color: "#a1a1aa",
-                },
-                link: { color: "#818cf8" },
-                bullet_list: { marginBottom: 8 },
-                ordered_list: { marginBottom: 8 },
-                hr: { backgroundColor: "#27272a", height: 1 },
+                body:        { color: "#e8e4dc", fontSize: 14, lineHeight: 22 },
+                heading1:    { color: "#f0ece4", fontSize: 20, fontWeight: "700", marginBottom: 10, marginTop: 4, letterSpacing: -0.3 },
+                heading2:    { color: "#e8e4dc", fontSize: 17, fontWeight: "600", marginBottom: 8, marginTop: 18 },
+                heading3:    { color: "#e8e4dc", fontSize: 15, fontWeight: "600", marginBottom: 6, marginTop: 14 },
+                paragraph:   { marginBottom: 12 },
+                code_inline: { backgroundColor: "#1a1a1a", color: "#9281ff", fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace", fontSize: 12, borderRadius: 4 },
+                fence:       { backgroundColor: "#141414", borderRadius: 8, padding: 14, marginBottom: 12 },
+                code_block:  { color: "#9281ff", fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace", fontSize: 12 },
+                blockquote:  { borderLeftColor: "#2a2a2a", borderLeftWidth: 3, paddingLeft: 12, marginBottom: 12 },
+                link:        { color: "#7c6af7" },
+                hr:          { backgroundColor: "#2a2a2a", height: 1, marginVertical: 16 },
+                table:       { borderWidth: 1, borderColor: "#2a2a2a", borderRadius: 6 },
+                th:          { backgroundColor: "#141414", color: "#9e9a94", fontSize: 12, fontWeight: "600", padding: 8 },
+                td:          { color: "#e8e4dc", fontSize: 13, padding: 8, borderTopWidth: 1, borderTopColor: "#2a2a2a" },
+                bullet_list: { marginBottom: 10 },
+                list_item:   { color: "#e8e4dc", marginBottom: 4 },
               }}
             >
-              {activeNote.content || "_No content_"}
+              {activeNote.content || "_No content yet. Tap the edit button to add some._"}
             </Markdown>
           </ScrollView>
         )}

@@ -1,34 +1,34 @@
 import { View, Text, Pressable } from "react-native";
-import { Pin } from "lucide-react-native";
 import { formatDistanceToNow } from "date-fns";
 import type { Note } from "../../src/types/index";
 
-interface Props {
-  note: Note;
-  onPress: () => void;
-}
-
-export function NoteRow({ note, onPress }: Props) {
+export function NoteRow({ note, onPress }: { note: Note; onPress: () => void }) {
   return (
     <Pressable
       onPress={onPress}
-      className="py-3 border-b border-zinc-800/50 active:opacity-70"
+      style={({ pressed }) => ({
+        paddingVertical: 12,
+        paddingHorizontal: 4,
+        borderBottomWidth: 1,
+        borderBottomColor: "#1f1f1f",
+        opacity: pressed ? 0.7 : 1,
+      })}
     >
-      <View className="flex-row items-start justify-between gap-3">
-        <View className="flex-1">
-          <View className="flex-row items-center gap-1.5 mb-1">
-            {note.isPinned && <Pin color="#6366f1" size={12} />}
-            <Text className="text-white font-medium text-sm" numberOfLines={1}>
-              {note.title}
-            </Text>
-          </View>
+      <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
+        {note.isPinned && (
+          <View style={{ width: 3, alignSelf: "stretch", borderRadius: 2, backgroundColor: "#7c6af7", marginTop: 2, marginBottom: 2 }} />
+        )}
+        <View style={{ flex: 1 }}>
+          <Text numberOfLines={1} style={{ color: "#e8e4dc", fontSize: 13, fontWeight: "500", marginBottom: 3 }}>
+            {note.title}
+          </Text>
           {note.contentText.trim() !== "" && (
-            <Text className="text-zinc-500 text-xs leading-4" numberOfLines={2}>
+            <Text numberOfLines={2} style={{ color: "#66635f", fontSize: 12, lineHeight: 17 }}>
               {note.contentText.slice(0, 120)}
             </Text>
           )}
         </View>
-        <Text className="text-zinc-700 text-xs shrink-0 mt-0.5">
+        <Text style={{ color: "#3a3835", fontSize: 11, flexShrink: 0, marginTop: 1 }}>
           {formatDistanceToNow(new Date(note.updatedAt), { addSuffix: true })}
         </Text>
       </View>

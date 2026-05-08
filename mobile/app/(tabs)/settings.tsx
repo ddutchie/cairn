@@ -1,6 +1,3 @@
-/**
- * Settings tab — AI provider config, workspace info, reset.
- */
 import { View, Text, ScrollView, TextInput, Pressable, Alert } from "react-native";
 import { useState, useEffect } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -11,16 +8,12 @@ import { useStore } from "../../store/index";
 
 const AI_CONFIG_KEY = "cairn:mobile:aiConfig";
 
-interface AIConfig {
-  provider: "openai" | "anthropic" | "groq";
-  apiKey: string;
-  model: string;
-}
+interface AIConfig { provider: "openai" | "anthropic" | "groq"; apiKey: string; model: string; }
 
-const PROVIDER_MODELS: Record<AIConfig["provider"], string[]> = {
-  openai: ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"],
+const MODELS: Record<AIConfig["provider"], string[]> = {
+  openai:    ["gpt-4o", "gpt-4o-mini"],
   anthropic: ["claude-opus-4-5", "claude-sonnet-4-5", "claude-haiku-4-5"],
-  groq: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"],
+  groq:      ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"],
 };
 
 export default function SettingsTab() {
@@ -30,168 +23,133 @@ export default function SettingsTab() {
   const activeWorkspaceId = useStore((s) => s.activeWorkspaceId);
   const workspace = workspaces.find((w) => w.id === activeWorkspaceId);
 
-  const [aiConfig, setAIConfig] = useState<AIConfig>({
-    provider: "anthropic",
-    apiKey: "",
-    model: "claude-sonnet-4-5",
-  });
+  const [cfg, setCfg] = useState<AIConfig>({ provider: "anthropic", apiKey: "", model: "claude-sonnet-4-5" });
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    AsyncStorage.getItem(AI_CONFIG_KEY).then((raw) => {
-      if (raw) setAIConfig(JSON.parse(raw));
-    });
+    AsyncStorage.getItem(AI_CONFIG_KEY).then((r) => { if (r) setCfg(JSON.parse(r)); });
   }, []);
 
-  async function saveAIConfig() {
-    await AsyncStorage.setItem(AI_CONFIG_KEY, JSON.stringify(aiConfig));
+  async function save() {
+    await AsyncStorage.setItem(AI_CONFIG_KEY, JSON.stringify(cfg));
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   }
 
-  async function resetWorkspace() {
-    Alert.alert(
-      "Disconnect workspace",
-      "This removes the database connection from this device. Your data is not deleted.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Disconnect",
-          style: "destructive",
-          onPress: async () => {
-            await closeDb();
-            await AsyncStorage.removeItem("cairn:mobile:dbPath");
-            await AsyncStorage.removeItem("cairn:mobile:workspaceId");
-            router.replace("/onboarding");
-          },
-        },
-      ]
-    );
+  async function disconnect() {
+    Alert.alert("Disconnect workspace", "Removes the database connection from this device. Your data is not deleted.", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Disconnect", style: "destructive", onPress: async () => {
+        await closeDb();
+        await AsyncStorage.multiRemove(["cairn:mobile:dbPath", "cairn:mobile:workspaceId"]);
+        router.replace("/onboarding");
+      }},
+    ]);
   }
 
+  const S = {
+    label: { color: "#66635f", fontSize: 11, fontWeight: "600" as const, textTransform: "uppercase" as const, letterSpacing: 0.6, marginBottom: 6 },
+    sectionTitle: { color: "#9e9a94", fontSize: 10, fontWeight: "600" as const, textTransform: "uppercase" as const, letterSpacing: 0.8, marginBottom: 8 },
+    card: { backgroundColor: "#141414", borderRadius: 12, borderWidth: 1, borderColor: "#2a2a2a", padding: 16, gap: 14 as const },
+    row: { flexDirection: "row" as const, justifyContent: "space-between" as const, alignItems: "flex-start" as const },
+    rowLabel: { color: "#66635f", fontSize: 13 },
+    rowValue: { color: "#e8e4dc", fontSize: 13, textAlign: "right" as const, flex: 1, marginLeft: 16 },
+  };
+
   return (
-    <SafeAreaView className="flex-1 bg-zinc-950" edges={["top"]}>
-      <ScrollView contentContainerClassName="px-5 pt-4 pb-12 gap-6">
-        <Text className="text-white text-2xl font-bold tracking-tight">Settings</Text>
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#0d0d0d" }} edges={["top"]}>
+      <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 40, gap: 20 }}>
+        <Text style={{ color: "#e8e4dc", fontSize: 22, fontWeight: "700", letterSpacing: -0.3 }}>Settings</Text>
 
-        {/* Workspace info */}
-        <Section title="Workspace">
-          <InfoRow label="Name" value={workspace?.name ?? "—"} />
-          <InfoRow
-            label="Database"
-            value={dbPath ? dbPath.split("/").slice(-3).join("/") : "Not connected"}
-            small
-          />
-        </Section>
-
-        {/* AI config */}
-        <Section title="AI Provider">
-          {/* Provider picker */}
-          <Text className="text-zinc-400 text-xs mb-1">Provider</Text>
-          <View className="flex-row gap-2 mb-3">
-            {(["openai", "anthropic", "groq"] as AIConfig["provider"][]).map((p) => (
-              <Pressable
-                key={p}
-                onPress={() =>
-                  setAIConfig((c) => ({
-                    ...c,
-                    provider: p,
-                    model: PROVIDER_MODELS[p][0],
-                  }))
-                }
-                className={`flex-1 py-2 rounded-lg items-center ${
-                  aiConfig.provider === p ? "bg-indigo-600" : "bg-zinc-800"
-                }`}
-              >
-                <Text
-                  className={`text-xs font-semibold capitalize ${
-                    aiConfig.provider === p ? "text-white" : "text-zinc-400"
-                  }`}
-                >
-                  {p}
-                </Text>
-              </Pressable>
-            ))}
+        {/* Workspace */}
+        <View>
+          <Text style={S.sectionTitle}>Workspace</Text>
+          <View style={S.card}>
+            <View style={S.row}>
+              <Text style={S.rowLabel}>Name</Text>
+              <Text style={S.rowValue}>{workspace?.name ?? "—"}</Text>
+            </View>
+            <View style={{ height: 1, backgroundColor: "#1f1f1f" }} />
+            <View style={S.row}>
+              <Text style={S.rowLabel}>Database</Text>
+              <Text style={[S.rowValue, { fontFamily: "monospace", fontSize: 11 }]} numberOfLines={2}>
+                {dbPath ?? "—"}
+              </Text>
+            </View>
           </View>
+        </View>
 
-          {/* Model picker */}
-          <Text className="text-zinc-400 text-xs mb-1">Model</Text>
-          <View className="gap-1.5 mb-3">
-            {PROVIDER_MODELS[aiConfig.provider].map((m) => (
-              <Pressable
-                key={m}
-                onPress={() => setAIConfig((c) => ({ ...c, model: m }))}
-                className={`px-3 py-2 rounded-lg ${
-                  aiConfig.model === m ? "bg-indigo-600/20 border border-indigo-500" : "bg-zinc-800"
-                }`}
-              >
-                <Text
-                  className={`text-sm ${aiConfig.model === m ? "text-indigo-300" : "text-zinc-300"}`}
-                >
-                  {m}
-                </Text>
-              </Pressable>
-            ))}
+        {/* AI provider */}
+        <View>
+          <Text style={S.sectionTitle}>AI Provider</Text>
+          <View style={S.card}>
+            {/* Provider */}
+            <View>
+              <Text style={S.label}>Provider</Text>
+              <View style={{ flexDirection: "row", gap: 6 }}>
+                {(["openai", "anthropic", "groq"] as AIConfig["provider"][]).map((p) => (
+                  <Pressable
+                    key={p}
+                    onPress={() => setCfg((c) => ({ ...c, provider: p, model: MODELS[p][0] }))}
+                    style={{ flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: "center", backgroundColor: cfg.provider === p ? "#7c6af7" : "#1a1a1a", borderWidth: 1, borderColor: cfg.provider === p ? "#7c6af7" : "#2a2a2a" }}
+                  >
+                    <Text style={{ fontSize: 11, fontWeight: "600", color: cfg.provider === p ? "#fff" : "#66635f", textTransform: "capitalize" }}>{p}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+
+            {/* Model */}
+            <View>
+              <Text style={S.label}>Model</Text>
+              <View style={{ gap: 5 }}>
+                {MODELS[cfg.provider].map((m) => (
+                  <Pressable
+                    key={m}
+                    onPress={() => setCfg((c) => ({ ...c, model: m }))}
+                    style={{ paddingHorizontal: 12, paddingVertical: 10, borderRadius: 8, backgroundColor: cfg.model === m ? "rgba(124,106,247,0.12)" : "#1a1a1a", borderWidth: 1, borderColor: cfg.model === m ? "#7c6af7" : "#2a2a2a" }}
+                  >
+                    <Text style={{ fontSize: 13, color: cfg.model === m ? "#9281ff" : "#9e9a94" }}>{m}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+
+            {/* API key */}
+            <View>
+              <Text style={S.label}>API Key</Text>
+              <TextInput
+                style={{ backgroundColor: "#1a1a1a", borderRadius: 8, borderWidth: 1, borderColor: "#2a2a2a", paddingHorizontal: 12, paddingVertical: 10, color: "#e8e4dc", fontSize: 13, fontFamily: "monospace" }}
+                placeholder="sk-…"
+                placeholderTextColor="#3a3835"
+                value={cfg.apiKey}
+                onChangeText={(v) => setCfg((c) => ({ ...c, apiKey: v }))}
+                secureTextEntry
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </View>
+
+            <Pressable
+              onPress={save}
+              style={({ pressed }) => ({ backgroundColor: "#7c6af7", borderRadius: 8, paddingVertical: 12, alignItems: "center", opacity: pressed ? 0.8 : 1 })}
+            >
+              <Text style={{ color: "#fff", fontSize: 13, fontWeight: "600" }}>{saved ? "Saved!" : "Save AI Config"}</Text>
+            </Pressable>
           </View>
+        </View>
 
-          {/* API Key */}
-          <Text className="text-zinc-400 text-xs mb-1">API Key</Text>
-          <TextInput
-            className="bg-zinc-800 rounded-xl px-4 py-3 text-white text-sm font-mono mb-4"
-            placeholder="sk-..."
-            placeholderTextColor="#52525b"
-            value={aiConfig.apiKey}
-            onChangeText={(v) => setAIConfig((c) => ({ ...c, apiKey: v }))}
-            secureTextEntry
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-
+        {/* Danger */}
+        <View>
+          <Text style={S.sectionTitle}>Workspace</Text>
           <Pressable
-            onPress={saveAIConfig}
-            className="bg-indigo-600 rounded-xl py-3 items-center active:opacity-80"
+            onPress={disconnect}
+            style={({ pressed }) => ({ borderRadius: 12, borderWidth: 1, borderColor: "#3f1515", backgroundColor: "rgba(239,68,68,0.06)", paddingVertical: 14, alignItems: "center", opacity: pressed ? 0.8 : 1 })}
           >
-            <Text className="text-white font-semibold text-sm">
-              {saved ? "Saved!" : "Save AI Config"}
-            </Text>
+            <Text style={{ color: "#ef4444", fontSize: 13, fontWeight: "600" }}>Disconnect workspace</Text>
           </Pressable>
-        </Section>
-
-        {/* Danger zone */}
-        <Section title="Workspace">
-          <Pressable
-            onPress={resetWorkspace}
-            className="bg-red-900/30 border border-red-800 rounded-xl py-3 items-center active:opacity-80"
-          >
-            <Text className="text-red-400 font-semibold text-sm">Disconnect workspace</Text>
-          </Pressable>
-        </Section>
+        </View>
       </ScrollView>
     </SafeAreaView>
-  );
-}
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <View>
-      <Text className="text-zinc-500 text-xs font-semibold uppercase tracking-wider mb-2">
-        {title}
-      </Text>
-      <View className="bg-zinc-900 rounded-xl p-4 gap-2">{children}</View>
-    </View>
-  );
-}
-
-function InfoRow({ label, value, small }: { label: string; value: string; small?: boolean }) {
-  return (
-    <View className="flex-row justify-between items-start gap-4">
-      <Text className="text-zinc-500 text-sm shrink-0">{label}</Text>
-      <Text
-        className={`text-white ${small ? "text-xs font-mono" : "text-sm"} text-right flex-1`}
-        numberOfLines={2}
-      >
-        {value}
-      </Text>
-    </View>
   );
 }
