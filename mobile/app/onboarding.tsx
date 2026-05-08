@@ -11,7 +11,7 @@ import * as DocumentPicker from "expo-document-picker";
 import { openDb } from "../db/client";
 import { useStore } from "../store/index";
 import * as queries from "../db/queries";
-import { createFreshWorkspace } from "../db/seed";
+import { createFreshWorkspace, DEMO_DB_FILENAME } from "../db/seed";
 
 const STORAGE_KEY_DB_PATH = "cairn:mobile:dbPath";
 const STORAGE_KEY_WORKSPACE_ID = "cairn:mobile:workspaceId";
@@ -35,11 +35,15 @@ export default function Onboarding() {
       if (result.canceled || !result.assets?.[0]) return;
 
       const asset = result.assets[0];
-      const path = asset.uri.replace("file://", "");
+      // Split into directory + filename for the new expo-sqlite API
+      const fullPath = asset.uri.replace("file://", "");
+      const lastSlash = fullPath.lastIndexOf("/");
+      const directory = fullPath.slice(0, lastSlash + 1);
+      const filename = fullPath.slice(lastSlash + 1);
 
       setLoading("pick");
 
-      await openDb(path);
+      await openDb(filename, directory);
       await loadWorkspaces();
 
       const workspaces = await queries.getWorkspaces();
@@ -55,10 +59,11 @@ export default function Onboarding() {
 
       const workspace = workspaces[0];
 
-      await AsyncStorage.setItem(STORAGE_KEY_DB_PATH, path);
+      // Store filename + directory separately for re-opening on next launch
+      await AsyncStorage.setItem(STORAGE_KEY_DB_PATH, JSON.stringify({ filename, directory }));
       await AsyncStorage.setItem(STORAGE_KEY_WORKSPACE_ID, workspace.id);
 
-      setDbPath(path);
+      setDbPath(fullPath);
       setActiveWorkspace(workspace.id);
 
       router.replace("/(tabs)");
@@ -73,14 +78,17 @@ export default function Onboarding() {
     try {
       setLoading("demo");
 
-      const { dbPath, workspaceId } = await createFreshWorkspace();
+      const { workspaceId } = await createFreshWorkspace();
 
       await loadWorkspaces();
 
-      await AsyncStorage.setItem(STORAGE_KEY_DB_PATH, dbPath);
+      await AsyncStorage.setItem(
+        STORAGE_KEY_DB_PATH,
+        JSON.stringify({ filename: DEMO_DB_FILENAME, directory: undefined })
+      );
       await AsyncStorage.setItem(STORAGE_KEY_WORKSPACE_ID, workspaceId);
 
-      setDbPath(dbPath);
+      setDbPath(DEMO_DB_FILENAME);
       setActiveWorkspace(workspaceId);
 
       router.replace("/(tabs)");

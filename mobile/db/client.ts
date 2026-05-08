@@ -1,15 +1,15 @@
 /**
  * Cairn Mobile — expo-sqlite DB client
  *
- * Opens the Cairn workspace SQLite file from a user-configured path
- * (typically an iCloud Drive location synced with the desktop app).
+ * expo-sqlite v16 (SDK 55) API:
+ *   openDatabaseAsync(filename, options?, directory?)
  *
- * On first launch, the user picks the workspace folder via the onboarding
- * screen and the path is persisted in AsyncStorage under STORAGE_KEYS.DB_PATH.
+ * - For the demo/local workspace: filename = "workspace.db", directory = default
+ * - For an iCloud-synced workspace: filename = "workspace.db", directory = the
+ *   chosen iCloud folder path
  *
- * The schema is identical to the desktop (electron/db/schema.ts). We run
- * the same migrations (translated to expo-sqlite API) so the mobile app
- * can open a DB created by the desktop without any conversion.
+ * We store both the filename and directory separately in AsyncStorage so we can
+ * reconstruct the call on app restart.
  */
 
 import * as SQLite from "expo-sqlite";
@@ -22,21 +22,22 @@ export function getDb(): SQLite.SQLiteDatabase {
   return _db;
 }
 
-export async function openDb(dbPath: string): Promise<SQLite.SQLiteDatabase> {
-  // expo-sqlite v16 opens by filename; for a custom path we use the
-  // SQLiteDatabase.openDatabaseAsync with a full absolute path.
-  const db = await SQLite.openDatabaseAsync(dbPath, {
-    useNewConnection: false,
-  });
+/**
+ * Open (or create) the workspace database.
+ *
+ * @param filename  Just the filename, e.g. "workspace.db"
+ * @param directory Optional directory path. Omit to use expo-sqlite's default
+ *                  app-private location. Pass the iCloud folder path for sync.
+ */
+export async function openDb(
+  filename: string,
+  directory?: string
+): Promise<SQLite.SQLiteDatabase> {
+  const db = await SQLite.openDatabaseAsync(filename, {}, directory);
 
-  // WAL mode for concurrent read + write (matches desktop config)
   await db.execAsync("PRAGMA journal_mode = WAL;");
   await db.execAsync("PRAGMA foreign_keys = ON;");
-
-  // Apply base schema (idempotent — CREATE TABLE IF NOT EXISTS)
   await db.execAsync(SCHEMA_SQL);
-
-  // Apply versioned migrations
   await runMigrations(db);
 
   _db = db;

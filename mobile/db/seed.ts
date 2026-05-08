@@ -1,12 +1,10 @@
 /**
  * Cairn Mobile — workspace seeder
  *
- * Creates a brand-new workspace.db at the given path with a default
- * workspace, one sample project, the 5 standard board columns, a
- * handful of task cards and notes — enough to exercise the full UI.
+ * Creates a brand-new workspace.db in expo-sqlite's default app directory
+ * with a default workspace, sample project, board columns, cards and notes.
  */
 
-import * as FileSystem from "expo-file-system/legacy";
 import { openDb, getDb } from "./client";
 
 const id = () =>
@@ -14,34 +12,35 @@ const id = () =>
   Math.random().toString(36).slice(2, 9);
 const now = () => new Date().toISOString();
 
-export async function createFreshWorkspace(): Promise<{
-  dbPath: string;
-  workspaceId: string;
-}> {
-  // Write the DB into the app's documents directory so it persists
-  const dbDir = FileSystem.documentDirectory!;
-  const dbPath = `${dbDir}workspace.db`.replace("file://", "");
+// Filename used for the local demo DB — also persisted in AsyncStorage
+export const DEMO_DB_FILENAME = "workspace.db";
 
-  // Delete any previous demo DB
-  try {
-    await FileSystem.deleteAsync(`file://${dbPath}`, { idempotent: true });
-  } catch {}
-
-  await openDb(dbPath);
+export async function createFreshWorkspace(): Promise<{ workspaceId: string }> {
+  // Open (or recreate) the DB at the default expo-sqlite location
+  await openDb(DEMO_DB_FILENAME);
   const db = getDb();
 
   const workspaceId = id();
   const projectId = id();
   const timestamp = now();
 
-  // ── Workspace ───────────────────────────────────────────────────────────
+  // Clear any previous demo data (idempotent re-runs)
+  await db.execAsync(`
+    DELETE FROM task_cards;
+    DELETE FROM board_columns;
+    DELETE FROM notes;
+    DELETE FROM projects;
+    DELETE FROM workspaces;
+  `);
+
+  // ── Workspace ─────────────────────────────────────────────────────────
   await db.runAsync(
     `INSERT INTO workspaces (id, name, description, icon, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?)`,
     [workspaceId, "My Workspace", "Created on Cairn Mobile", "🗿", timestamp, timestamp]
   );
 
-  // ── Project ─────────────────────────────────────────────────────────────
+  // ── Project ───────────────────────────────────────────────────────────
   await db.runAsync(
     `INSERT INTO projects
        (id, workspace_id, name, description, icon, status, priority, tag_ids, created_at, updated_at)
@@ -53,7 +52,7 @@ export async function createFreshWorkspace(): Promise<{
     ]
   );
 
-  // ── Board columns ────────────────────────────────────────────────────────
+  // ── Board columns ──────────────────────────────────────────────────────
   const columns = [
     { name: "Backlog",     type: "backlog",     order: 0 },
     { name: "Todo",        type: "todo",        order: 1 },
@@ -74,7 +73,7 @@ export async function createFreshWorkspace(): Promise<{
     );
   }
 
-  // ── Task cards ───────────────────────────────────────────────────────────
+  // ── Task cards ─────────────────────────────────────────────────────────
   const cards = [
     { title: "Set up Expo project",        col: "done",        priority: "high",   order: 0 },
     { title: "Wire up expo-sqlite schema", col: "done",        priority: "high",   order: 1 },
@@ -98,14 +97,14 @@ export async function createFreshWorkspace(): Promise<{
     );
   }
 
-  // ── Notes ────────────────────────────────────────────────────────────────
+  // ── Notes ──────────────────────────────────────────────────────────────
   const notes = [
     {
       title: "Welcome to Cairn Mobile",
       isPinned: 1,
       content: `# Welcome to Cairn Mobile 👋
 
-This is a demo workspace created so you can explore the app without needing your desktop workspace synced via iCloud.
+This is a demo workspace so you can explore the app without needing your desktop workspace synced via iCloud.
 
 ## What you can do
 
@@ -119,10 +118,8 @@ When you're ready to connect your real Cairn workspace:
 
 1. Move your Cairn workspace folder to **iCloud Drive**
 2. Go to **Settings → Disconnect workspace**
-3. Re-open the app and select your \`workspace.db\` file
-
-Changes you make here are written to this local demo database and won't appear on your desktop.`,
-      contentText: "Welcome to Cairn Mobile. This is a demo workspace.",
+3. Re-open and select your \`workspace.db\` file`,
+      contentText: "Welcome to Cairn Mobile. Demo workspace to explore the app.",
     },
     {
       title: "Mobile Architecture Notes",
@@ -139,14 +136,7 @@ Changes you make here are written to this local demo database and won't appear o
 
 ## Data sync strategy
 
-The mobile app opens the desktop's \`workspace.db\` SQLite file directly via iCloud Drive. No custom sync protocol — iCloud handles file sync between devices.
-
-## Key constraints
-
-- No MCP server (mobile doesn't run a local HTTP server)
-- No coding agent terminal (no PTY on iOS)
-- No D3 / SVG analytics (Insights view not in MVP)
-- Markdown rendered via \`react-native-markdown-display\``,
+The mobile app opens the desktop's \`workspace.db\` SQLite file directly via iCloud Drive. No custom sync protocol needed — iCloud handles file sync between devices.`,
       contentText: "Mobile architecture notes covering stack and sync strategy.",
     },
     {
@@ -165,18 +155,11 @@ The mobile app opens the desktop's \`workspace.db\` SQLite file directly via iCl
 ## How to configure
 
 1. Go to the **Settings** tab
-2. Select your provider
-3. Choose a model
-4. Paste your API key
-5. Tap **Save AI Config**
+2. Select your provider and model
+3. Paste your API key
+4. Tap **Save AI Config**
 
-Your API key is stored locally on-device in AsyncStorage and never sent anywhere except the provider's API endpoint.
-
-## Usage
-
-- Open the **AI Chat** tab
-- Tap **+** to start a new conversation
-- Messages are persisted to the SQLite database`,
+Your key is stored locally on-device and never sent anywhere except the provider's API.`,
       contentText: "Guide to setting up AI Chat with OpenAI, Anthropic, or Groq.",
     },
   ];
@@ -193,5 +176,5 @@ Your API key is stored locally on-device in AsyncStorage and never sent anywhere
     );
   }
 
-  return { dbPath, workspaceId };
+  return { workspaceId };
 }

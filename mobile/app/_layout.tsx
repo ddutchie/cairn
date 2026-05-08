@@ -25,12 +25,18 @@ export default function RootLayout() {
   useEffect(() => {
     (async () => {
       try {
-        const dbPath = await AsyncStorage.getItem(STORAGE_KEY_DB_PATH);
+        const dbRaw = await AsyncStorage.getItem(STORAGE_KEY_DB_PATH);
         const workspaceId = await AsyncStorage.getItem(STORAGE_KEY_WORKSPACE_ID);
 
-        if (dbPath) {
-          setDbPath(dbPath);
-          await openDb(dbPath);
+        if (dbRaw) {
+          // Stored as JSON { filename, directory } since the new expo-sqlite API
+          // takes filename + optional directory separately
+          const { filename, directory } = JSON.parse(dbRaw) as {
+            filename: string;
+            directory?: string;
+          };
+          setDbPath(filename);
+          await openDb(filename, directory);
           await loadWorkspaces();
 
           if (workspaceId) {
