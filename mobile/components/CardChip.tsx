@@ -1,4 +1,4 @@
-import { View, Text, Pressable, Modal, ScrollView } from "react-native";
+import { View, Text, Pressable, Modal, ScrollView, StyleSheet } from "react-native";
 import { useState } from "react";
 import { MoveRight } from "lucide-react-native";
 import type { TaskCard, BoardColumn } from "../../src/types/index";
@@ -12,6 +12,10 @@ const PRIORITY_COLOR: Record<TaskCard["priority"], string> = {
 
 const PRIORITY_LABEL: Record<TaskCard["priority"], string> = {
   low: "Low", medium: "Med", high: "High", urgent: "!!",
+};
+
+const COL_ACCENT: Record<string, string> = {
+  backlog: "#666360", todo: "#60a5fa", in_progress: "#f59e0b", review: "#a78bfa", done: "#3ecf8e",
 };
 
 export function CardChip({ card, columns, onMove }: {
@@ -57,13 +61,17 @@ export function CardChip({ card, columns, onMove }: {
         </View>
       </Pressable>
 
-      <Modal visible={showMove} transparent animationType="fade">
-        <Pressable
-          style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "center", alignItems: "center", paddingHorizontal: 24 }}
-          onPress={() => setShowMove(false)}
-        >
-          <Pressable style={{ width: "100%", backgroundColor: "#141414", borderRadius: 14, borderWidth: 1, borderColor: "#2a2a2a", overflow: "hidden" }}>
-            <View style={{ padding: 16, borderBottomWidth: 1, borderBottomColor: "#1f1f1f" }}>
+      <Modal visible={showMove} transparent animationType="fade" statusBarTranslucent>
+        <View style={StyleSheet.absoluteFillObject}>
+          {/* Full-screen dim */}
+          <View style={[StyleSheet.absoluteFillObject, { backgroundColor: "rgba(0,0,0,0.82)" }]} />
+          {/* Tap outside to dismiss */}
+          <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setShowMove(false)} />
+          {/* Modal card — centred on top */}
+          <View style={{ flex: 1, justifyContent: "center", alignItems: "center", paddingHorizontal: 32 }}>
+          <View style={{ width: "100%", backgroundColor: "#141414", borderRadius: 14, borderWidth: 1, borderColor: "#2a2a2a", overflow: "hidden" }}>
+            {/* Title row */}
+            <View style={{ paddingHorizontal: 16, paddingTop: 14, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: "#2a2a2a" }}>
               <Text style={{ color: "#66635f", fontSize: 10, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 4 }}>
                 Move to
               </Text>
@@ -71,31 +79,46 @@ export function CardChip({ card, columns, onMove }: {
                 {card.title}
               </Text>
             </View>
-            <ScrollView>
-              {others.map((col) => (
+
+            {/* Column options */}
+            <ScrollView bounces={false}>
+              {others.map((col, i) => (
                 <Pressable
                   key={col.id}
                   onPress={async () => { setShowMove(false); await onMove(card.id, col.id); }}
                   style={({ pressed }) => ({
-                    paddingVertical: 14,
+                    paddingVertical: 13,
                     paddingHorizontal: 16,
-                    borderBottomWidth: 1,
-                    borderBottomColor: "#1f1f1f",
                     backgroundColor: pressed ? "#1a1a1a" : "transparent",
+                    borderTopWidth: i === 0 ? 0 : 1,
+                    borderTopColor: "#1f1f1f",
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 10,
                   })}
                 >
+                  <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: COL_ACCENT[col.type] ?? "#666360" }} />
                   <Text style={{ color: "#e8e4dc", fontSize: 14 }}>{col.name}</Text>
                 </Pressable>
               ))}
             </ScrollView>
+
+            {/* Cancel — separate section */}
             <Pressable
               onPress={() => setShowMove(false)}
-              style={({ pressed }) => ({ padding: 14, alignItems: "center", backgroundColor: pressed ? "#1a1a1a" : "transparent" })}
+              style={({ pressed }) => ({
+                paddingVertical: 13,
+                alignItems: "center",
+                borderTopWidth: 1,
+                borderTopColor: "#2a2a2a",
+                backgroundColor: pressed ? "#1a1a1a" : "transparent",
+              })}
             >
-              <Text style={{ color: "#66635f", fontSize: 14 }}>Cancel</Text>
+              <Text style={{ color: "#9e9a94", fontSize: 14 }}>Cancel</Text>
             </Pressable>
-          </Pressable>
-        </Pressable>
+          </View>
+          </View>
+        </View>
       </Modal>
     </>
   );
