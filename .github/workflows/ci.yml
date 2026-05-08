@@ -42,9 +42,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Lint (errors only)
-        # --max-warnings -1 means any warning count is allowed; only errors fail
-        run: npm run lint -- --max-warnings -1
+      - name: Lint
+        run: npm run lint -- --max-warnings 0
 
   # ── Unit / integration tests ─────────────────────────────────────────────────
   test:
