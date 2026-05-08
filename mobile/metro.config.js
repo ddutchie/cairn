@@ -14,4 +14,7 @@ config.resolver.nodeModulesPaths = [
   path.resolve(workspaceRoot, "node_modules"),
 ];
 
+// iOS/Android only — exclude web platform to avoid react-native-web dependency
+config.resolver.platforms = ["ios", "android", "native"];
+
 module.exports = withNativeWind(config, { input: "./global.css" });
