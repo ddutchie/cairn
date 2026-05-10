@@ -290,18 +290,7 @@ export async function executeTool(
       const failed = results.filter((r) => !r.ok);
       return { moved, failed, targetColumnId: args.targetColumnId, targetColumnName: col.name };
     }
-    case "create_project": {
-      const projectId = newId();
-      const project = q.createProject(db, {
-        id: projectId, workspaceId: args.workspaceId, name: args.name,
-        description: args.description ?? undefined, icon: args.icon ?? undefined,
-        status: args.status ?? "active", priority: args.priority ?? "medium",
-      });
-      const columns = DEFAULT_COLUMNS.map((col) =>
-        q.createColumn(db, { id: newId(), projectId, workspaceId: args.workspaceId, ...col })
-      );
-      return { project, columns: columns.map((c) => ({ id: c.id, name: c.name, type: c.type })) };
-    }
+
     case "get_task": {
       const card = snap.cards.find((c) => c.id === args.cardId);
       if (!card) return { error: "Task not found" };
@@ -406,8 +395,47 @@ export async function executeTool(
       return { tasksCreated: createdCards.length, tasks: createdCards, noteId: args.noteId };
     }
     case "update_task": {
-      const card = snap.cards.find((c) => c.id === args.cardId);
+      const card = snap.cards.find((c) => c.id === args.cardId)
+        ?? q.getCardById(db, args.cardId as string); // archived cards not in snap
       if (!card) return { error: "Task not found" };
+
+      // ── archive / restore ────────────────────────────────────────────────
+      if (args.archived === true) {
+        if (card.archivedAt) return { error: "Task is already archived" };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return q.updateCard(db, args.cardId as string, { archivedAt: new Date().toISOString() } as any);
+      }
+      if (args.archived === false) {
+        if (!card.archivedAt) return { error: "Task is not archived" };
+        return q.restoreCard(db, args.cardId as string);
+      }
+
+      // ── block / unblock ──────────────────────────────────────────────────
+      if (args.blockedBy !== undefined) {
+        const blocker = snap.cards.find((c) => c.id === args.blockedBy);
+        if (!blocker) return { error: "Blocker task not found" };
+        if (card.projectId !== blocker.projectId) return { error: "Cards must be in the same project" };
+        if (args.cardId === args.blockedBy) return { error: "A card cannot block itself" };
+        const projectCards = snap.cards.filter((c) => c.projectId === card.projectId);
+        const cardMap = new Map(projectCards.map((c) => [c.id, c]));
+        function canReach(from: string, target: string, visited = new Set<string>()): boolean {
+          if (from === target) return true;
+          if (visited.has(from)) return false;
+          visited.add(from);
+          const node = cardMap.get(from);
+          if (!node) return false;
+          return node.blockedByIds.some((bid) => canReach(bid, target, visited));
+        }
+        if (canReach(args.blockedBy as string, args.cardId as string, new Set())) {
+          return { error: "Circular dependency detected" };
+        }
+        return q.addCardBlocker(db, args.cardId as string, args.blockedBy as string);
+      }
+      if (args.unblockFrom !== undefined) {
+        return q.removeCardBlocker(db, args.cardId as string, args.unblockFrom as string);
+      }
+
+      // ── field update ─────────────────────────────────────────────────────
       const patch: Record<string, unknown> = {};
       if (args.title !== undefined)       patch.title       = args.title;
       if (args.description !== undefined) patch.description = args.description;
@@ -443,73 +471,38 @@ export async function executeTool(
       return { linked: true, noteId: args.noteId, cardId: args.cardId };
     }
 
-    case "block_task": {
-      const card    = snap.cards.find((c) => c.id === args.cardId);
-      const blocker = snap.cards.find((c) => c.id === args.blockerCardId);
-      if (!card)    return { error: "Task not found" };
-      if (!blocker) return { error: "Blocker task not found" };
-      if (card.projectId !== blocker.projectId) return { error: "Cards must be in the same project" };
-      if (args.cardId === args.blockerCardId)   return { error: "A card cannot block itself" };
-      // Circular dep check using live snap data
-      const projectCards = snap.cards.filter((c) => c.projectId === card.projectId);
-      const cardMap = new Map(projectCards.map((c) => [c.id, c]));
-      function canReach(from: string, target: string, visited = new Set<string>()): boolean {
-        if (from === target) return true;
-        if (visited.has(from)) return false;
-        visited.add(from);
-        const node = cardMap.get(from);
-        if (!node) return false;
-        return node.blockedByIds.some((bid) => canReach(bid, target, visited));
-      }
-      if (canReach(args.blockerCardId as string, args.cardId as string, new Set())) {
-        return { error: "Circular dependency detected" };
-      }
-      return q.addCardBlocker(db, args.cardId as string, args.blockerCardId as string);
-    }
-
-    case "unblock_task": {
-      const card = snap.cards.find((c) => c.id === args.cardId);
-      if (!card) return { error: "Task not found" };
-      return q.removeCardBlocker(db, args.cardId as string, args.blockerCardId as string);
-    }
-
     case "list_ready_tasks": {
       return q.getReadyCards(db, args.projectId as string | undefined);
     }
 
-    case "archive_task": {
-      // Note: mcp-server.ts also calls insertNotification here; chat-executor does not because
-      // insertNotification is a local helper in mcp-server.ts and notifications are an MCP-layer
-      // concern (external agent visibility). The emit() call at the top of executeTool covers
-      // the UI-layer feedback equivalent.
-      const card = snap.cards.find((c) => c.id === args.cardId);
-      if (!card) return { error: "Task not found" };
-      if (card.archivedAt) return { error: "Task is already archived" };
-      const archivedAt = new Date().toISOString();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return q.updateCard(db, args.cardId as string, { archivedAt } as any);
-    }
-
-    case "restore_task": {
-      // Must query DB directly — archived cards are filtered out of snap.cards
-      const row = q.getCardById(db, args.cardId as string);
-      if (!row) return { error: "Task not found" };
-      if (!row.archivedAt) return { error: "Task is not archived" };
-      return q.restoreCard(db, args.cardId as string);
-    }
-
-    case "update_project": {
-      const project = snap.projects.find((p) => p.id === args.projectId);
-      if (!project) return { error: "Project not found" };
-      const patch: Record<string, unknown> = {};
-      if (args.name !== undefined)        patch.name        = args.name;
-      if (args.description !== undefined) patch.description = args.description;
-      if (args.icon !== undefined)        patch.icon        = args.icon;
-      if (args.status !== undefined)      patch.status      = args.status;
-      if (args.priority !== undefined)    patch.priority    = args.priority;
-      if (args.dueDate !== undefined)     patch.dueDate     = args.dueDate || undefined;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return q.updateProject(db, args.projectId as string, patch as any);
+    case "upsert_project": {
+      if (args.projectId) {
+        // ── update path ──────────────────────────────────────────────────────
+        const project = snap.projects.find((p) => p.id === args.projectId);
+        if (!project) return { error: "Project not found" };
+        const patch: Record<string, unknown> = {};
+        if (args.name !== undefined)        patch.name        = args.name;
+        if (args.description !== undefined) patch.description = args.description;
+        if (args.icon !== undefined)        patch.icon        = args.icon;
+        if (args.status !== undefined)      patch.status      = args.status;
+        if (args.priority !== undefined)    patch.priority    = args.priority;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return q.updateProject(db, args.projectId as string, patch as any);
+      } else {
+        // ── create path ──────────────────────────────────────────────────────
+        if (!args.workspaceId) return { error: "workspaceId is required when creating a project" };
+        if (!args.name) return { error: "name is required when creating a project" };
+        const projectId = newId();
+        const project = q.createProject(db, {
+          id: projectId, workspaceId: args.workspaceId as string, name: args.name as string,
+          description: args.description ?? undefined, icon: args.icon ?? undefined,
+          status: (args.status as string) ?? "active", priority: (args.priority as string) ?? "medium",
+        });
+        const columns = DEFAULT_COLUMNS.map((col) =>
+          q.createColumn(db, { id: newId(), projectId, workspaceId: args.workspaceId as string, ...col })
+        );
+        return { project, columns: columns.map((c) => ({ id: c.id, name: c.name, type: c.type })) };
+      }
     }
     case "delete_project": {
       const project = snap.projects.find((p) => p.id === args.projectId);

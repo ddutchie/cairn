@@ -45,7 +45,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import * as z from "zod";
-import { TOOL_SCHEMAS, CHAT_ONLY_TOOLS, EXCLUDED_TOOLS } from "./lib/tool-schemas";
+import { TOOL_SCHEMAS, CHAT_ONLY_TOOLS } from "./lib/tool-schemas";
 
 export const MCP_PORT = 3123;
 
@@ -402,7 +402,7 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
         tags: snap.tags.map((t) => ({ id: t.id, name: t.name, color: t.color, workspaceId: t.workspaceId })),
         tools: {
           read:   ["get_cairn_context", "get_project_context_pack", "search_notes", "search_tasks", "get_note", "get_task", "list_ready_tasks"],
-          write:  ["create_project", "update_project", "ensure_note", "append_to_note", "patch_note", "create_task", "update_task", "bulk_update_task_status", "archive_task", "restore_task", "link_note_to_task", "block_task", "unblock_task", "create_dashboard", "update_dashboard", "create_idea_flow_node", "update_idea_flow_node", "create_idea_flow_edge", "create_tag"],
+          write:  ["upsert_project", "ensure_note", "append_to_note", "patch_note", "create_task", "update_task", "bulk_update_task_status", "link_note_to_task", "create_dashboard", "update_dashboard", "create_idea_flow_node", "update_idea_flow_node", "create_idea_flow_edge", "create_tag"],
           delete: ["delete_note", "delete_task", "delete_project", "delete_idea_flow_node", "delete_idea_flow_edge"],
           ideaFlow: ["get_idea_flow", "create_idea_flow_node", "update_idea_flow_node", "delete_idea_flow_node", "create_idea_flow_edge", "delete_idea_flow_edge", "layout_idea_flow"],
         },
@@ -410,11 +410,11 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
           notes: "Raw markdown in 'content'. 'content_text' is auto-derived — do not set manually.",
           dashboards: "Use create_dashboard to create an HTML dashboard rendered in a sandboxed iframe inside Cairn. The 'html' field must be a complete, self-contained HTML document. Use inline CSS and JS only — no external URLs. The window.cairn.query(tool, args) API is available for live data from read-only tools.",
           tasks: "Always provide columnId (not just projectId) when creating a task. Use list_ready_tasks to find work that can start now — it filters out blocked tasks.",
-          dependencies: "Use block_task to mark a task as blocked by another (same project only). Circular dependencies are rejected. When a blocker is moved to a done column or archived it is automatically treated as resolved. Use unblock_task to remove a dependency explicitly.",
+          dependencies: "Use update_task with blockedBy to mark a task as blocked by another (same project only). Circular dependencies are rejected. When a blocker is moved to a done column or archived it is automatically treated as resolved. Use update_task with unblockFrom to remove a dependency explicitly.",
           priority: ["low", "medium", "high", "urgent"],
           projectStatus: ["active", "on_hold", "completed", "archived"],
           columnTypes: ["backlog", "todo", "in_progress", "review", "done", "custom"],
-          createProject: "create_project auto-creates 5 default columns — no need to create them separately.",
+          createProject: "upsert_project without projectId auto-creates 5 default columns — no need to create them separately. Provide projectId to update an existing project.",
         },
       };
     }
@@ -616,24 +616,46 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
       };
     }
 
-    case "create_project": {
-      const workspace = snap.workspaces.find((w) => w.id === args.workspaceId);
-      if (!workspace) return { error: "Workspace not found" };
-      const projectId = newId();
-      const now = ts();
-      db.prepare(`INSERT INTO projects (id, workspace_id, name, description, icon, status, priority, tag_ids, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, '[]', ?, ?)`)
-        .run(projectId, args.workspaceId, args.name, args.description ?? null, args.icon ?? null,
-          args.status ?? "active", args.priority ?? "medium", now, now);
-      const columns = DEFAULT_COLUMNS.map((col) => {
-        const colId = newId();
-        db.prepare(`INSERT INTO board_columns (id, project_id, workspace_id, name, type, "order", created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-          .run(colId, projectId, args.workspaceId, col.name, col.type, col.order, now, now);
-        return { id: colId, name: col.name, type: col.type };
-      });
-      insertNotification(db, "create_project", "Project created", `"${args.name}" was created`);
-      return { projectId, name: args.name, columns };
+    case "upsert_project": {
+      if (args.projectId) {
+        // ── update path ──────────────────────────────────────────────────────
+        const project = snap.projects.find((p) => p.id === args.projectId);
+        if (!project) return { error: "Project not found" };
+        const now = ts();
+        db.prepare(`
+          UPDATE projects SET
+            name        = COALESCE(?, name),
+            description = COALESCE(?, description),
+            status      = COALESCE(?, status),
+            priority    = COALESCE(?, priority),
+            icon        = COALESCE(?, icon),
+            updated_at  = ?
+          WHERE id = ?
+        `).run(args.name ?? null, args.description ?? null, args.status ?? null, args.priority ?? null, args.icon ?? null, now, args.projectId);
+        const updated = db.prepare("SELECT * FROM projects WHERE id = ?").get(args.projectId) as Record<string, unknown> | undefined;
+        insertNotification(db, "upsert_project", "Project updated", `"${args.name ?? project.name}" was updated`);
+        return updated ?? { error: "Project not found after update" };
+      } else {
+        // ── create path ──────────────────────────────────────────────────────
+        const workspace = snap.workspaces.find((w) => w.id === args.workspaceId);
+        if (!workspace) return { error: "Workspace not found" };
+        if (!args.name) return { error: "name is required when creating a project" };
+        const projectId = newId();
+        const now = ts();
+        db.prepare(`INSERT INTO projects (id, workspace_id, name, description, icon, status, priority, tag_ids, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, '[]', ?, ?)`)
+          .run(projectId, args.workspaceId, args.name, args.description ?? null, args.icon ?? null,
+            args.status ?? "active", args.priority ?? "medium", now, now);
+        const columns = DEFAULT_COLUMNS.map((col) => {
+          const colId = newId();
+          db.prepare(`INSERT INTO board_columns (id, project_id, workspace_id, name, type, "order", created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+            .run(colId, projectId, args.workspaceId, col.name, col.type, col.order, now, now);
+          return { id: colId, name: col.name, type: col.type };
+        });
+        insertNotification(db, "upsert_project", "Project created", `"${args.name}" was created`);
+        return { projectId, name: args.name, columns };
+      }
     }
 
     case "get_task": {
@@ -680,51 +702,6 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
       return { deleted: true, id: args.cardId, title: card.title };
     }
 
-    case "block_task": {
-      const card    = snap.cards.find((c) => c.id === args.cardId);
-      const blocker = snap.cards.find((c) => c.id === args.blockerCardId);
-      if (!card)    return { error: "Task not found" };
-      if (!blocker) return { error: "Blocker task not found" };
-      if (card.projectId !== blocker.projectId) return { error: "Cards must be in the same project" };
-      if (args.cardId === args.blockerCardId)   return { error: "A card cannot block itself" };
-      // Circular dep check
-      const projectCards = snap.cards.filter((c) => c.projectId === card.projectId);
-      const cardMap = new Map(projectCards.map((c) => [c.id, c]));
-      function canReachMcp(from: string, target: string, visited = new Set<string>()): boolean {
-        if (from === target) return true;
-        if (visited.has(from)) return false;
-        visited.add(from);
-        const node = cardMap.get(from);
-        if (!node) return false;
-        return (node.blockedByIds ?? []).some((bid: string) => canReachMcp(bid, target, visited));
-      }
-      if (canReachMcp(args.blockerCardId as string, args.cardId as string, new Set())) {
-        return { error: "Circular dependency detected" };
-      }
-      const nowB = ts();
-      const row = db.prepare("SELECT blocked_by_ids FROM task_cards WHERE id = ?").get(args.cardId) as { blocked_by_ids: string } | undefined;
-      if (!row) return { error: "Task not found in DB" };
-      const ids: string[] = j2(row.blocked_by_ids);
-      if (!ids.includes(args.blockerCardId as string)) {
-        ids.push(args.blockerCardId as string);
-        db.prepare("UPDATE task_cards SET blocked_by_ids = ?, updated_at = ?, version = version + 1 WHERE id = ?").run(j(ids), nowB, args.cardId);
-      }
-      insertNotification(db, "block_task", "Task blocked", `"${card.title}" is now blocked by "${blocker.title}"`);
-      return { cardId: args.cardId, blockerCardId: args.blockerCardId, blocked: true };
-    }
-
-    case "unblock_task": {
-      const card = snap.cards.find((c) => c.id === args.cardId);
-      if (!card) return { error: "Task not found" };
-      const nowU = ts();
-      const rowU = db.prepare("SELECT blocked_by_ids FROM task_cards WHERE id = ?").get(args.cardId) as { blocked_by_ids: string } | undefined;
-      if (!rowU) return { error: "Task not found in DB" };
-      const idsU: string[] = j2(rowU.blocked_by_ids);
-      const updated = idsU.filter((id) => id !== args.blockerCardId);
-      db.prepare("UPDATE task_cards SET blocked_by_ids = ?, updated_at = ?, version = version + 1 WHERE id = ?").run(j(updated), nowU, args.cardId);
-      return { cardId: args.cardId, blockerCardId: args.blockerCardId, unblocked: true };
-    }
-
     case "list_ready_tasks": {
       // Cards that are active, not in a done column, and all blockers are resolved
       const projectFilter = args.projectId ? "AND tc.project_id = ?" : "";
@@ -765,15 +742,83 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
     }
 
     case "update_task": {
-      const { cardId, title, description, priority, dueDate, columnId, tagIds, expectedVersion: taskExpectedVersion } = args;
-      const card = snap.cards.find((c) => c.id === cardId);
+      const { cardId, title, description, priority, dueDate, columnId, tagIds, assignee,
+              archived, blockedBy, unblockFrom,
+              expectedVersion: taskExpectedVersion } = args;
+
+      // Must query DB directly for archived cards not in snap
+      const card = snap.cards.find((c) => c.id === cardId)
+        ?? (db.prepare("SELECT * FROM task_cards WHERE id = ?").get(cardId) as Record<string, unknown> | undefined && toCard(db.prepare("SELECT * FROM task_cards WHERE id = ?").get(cardId)));
       if (!card) return { error: "Task not found" };
+
       if (taskExpectedVersion !== undefined) {
         const currentVersion = getCardVersion(db, cardId as string);
         if (currentVersion !== null && currentVersion !== (taskExpectedVersion as number)) {
           return { error: `Version conflict: task has been modified (expected v${taskExpectedVersion as number}, got v${currentVersion}). Fetch the latest state before retrying.` };
         }
       }
+
+      // ── archive / restore ──────────────────────────────────────────────────
+      if (archived === true) {
+        if (card.archivedAt) return { error: "Task is already archived" };
+        const now = ts();
+        db.prepare("UPDATE task_cards SET archived_at = ?, updated_at = ?, version = version + 1 WHERE id = ?").run(now, now, cardId);
+        insertNotification(db, "update_task", "Task archived", `"${card.title}" was archived`);
+        return { ok: true, cardId, archivedAt: now };
+      }
+      if (archived === false) {
+        // Must query DB directly — archived cards are filtered from snap
+        const row = db.prepare("SELECT * FROM task_cards WHERE id = ?").get(cardId) as Record<string, unknown> | undefined;
+        if (!row) return { error: "Task not found" };
+        if (!row.archived_at) return { error: "Task is not archived" };
+        const now = ts();
+        db.prepare("UPDATE task_cards SET archived_at = NULL, updated_at = ?, version = version + 1 WHERE id = ?").run(now, cardId);
+        insertNotification(db, "update_task", "Task restored", `"${row.title as string}" was restored`);
+        return { ok: true, cardId, title: row.title };
+      }
+
+      // ── block / unblock ────────────────────────────────────────────────────
+      if (blockedBy !== undefined) {
+        const blocker = snap.cards.find((c) => c.id === blockedBy);
+        if (!blocker) return { error: "Blocker task not found" };
+        if (card.projectId !== blocker.projectId) return { error: "Cards must be in the same project" };
+        if (cardId === blockedBy) return { error: "A card cannot block itself" };
+        // Circular dep check
+        const projectCards = snap.cards.filter((c) => c.projectId === card.projectId);
+        const cardMap = new Map(projectCards.map((c) => [c.id, c]));
+        function canReachMcp(from: string, target: string, visited = new Set<string>()): boolean {
+          if (from === target) return true;
+          if (visited.has(from)) return false;
+          visited.add(from);
+          const node = cardMap.get(from);
+          if (!node) return false;
+          return (node.blockedByIds ?? []).some((bid: string) => canReachMcp(bid, target, visited));
+        }
+        if (canReachMcp(blockedBy as string, cardId as string, new Set())) {
+          return { error: "Circular dependency detected" };
+        }
+        const nowB = ts();
+        const row = db.prepare("SELECT blocked_by_ids FROM task_cards WHERE id = ?").get(cardId) as { blocked_by_ids: string } | undefined;
+        if (!row) return { error: "Task not found in DB" };
+        const ids: string[] = j2(row.blocked_by_ids);
+        if (!ids.includes(blockedBy as string)) {
+          ids.push(blockedBy as string);
+          db.prepare("UPDATE task_cards SET blocked_by_ids = ?, updated_at = ?, version = version + 1 WHERE id = ?").run(j(ids), nowB, cardId);
+        }
+        insertNotification(db, "update_task", "Task blocked", `"${card.title}" is now blocked by "${blocker.title}"`);
+        return { cardId, blockerCardId: blockedBy, blocked: true };
+      }
+      if (unblockFrom !== undefined) {
+        const nowU = ts();
+        const rowU = db.prepare("SELECT blocked_by_ids FROM task_cards WHERE id = ?").get(cardId) as { blocked_by_ids: string } | undefined;
+        if (!rowU) return { error: "Task not found in DB" };
+        const idsU: string[] = j2(rowU.blocked_by_ids);
+        const updatedIds = idsU.filter((id) => id !== unblockFrom);
+        db.prepare("UPDATE task_cards SET blocked_by_ids = ?, updated_at = ?, version = version + 1 WHERE id = ?").run(j(updatedIds), nowU, cardId);
+        return { cardId, blockerCardId: unblockFrom, unblocked: true };
+      }
+
+      // ── field update ───────────────────────────────────────────────────────
       const now = ts();
       db.transaction(() => {
         db.prepare(`
@@ -784,6 +829,7 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
             priority    = COALESCE(?, priority),
             due_date    = COALESCE(?, due_date),
             tag_ids     = COALESCE(?, tag_ids),
+            assignee    = COALESCE(?, assignee),
             updated_at  = ?,
             version     = version + 1
           WHERE id = ?
@@ -791,6 +837,7 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
           columnId ?? null, title ?? null, description ?? null,
           priority ?? null, dueDate ?? null,
           tagIds != null ? (Array.isArray(tagIds) ? j(tagIds) : tagIds) : null,
+          assignee !== undefined ? (assignee || null) : null,
           now, cardId
         );
         insertNotification(db, "update_task", "Task updated", `"${title ?? card.title}" was updated`);
@@ -813,49 +860,6 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
       }
       const updated = db.prepare("SELECT * FROM task_cards WHERE id = ?").get(cardId) as Record<string, unknown> | undefined;
       return updated ?? { error: "Task not found after update" };
-    }
-
-    case "archive_task": {
-      const { cardId } = args;
-      const card = snap.cards.find((c) => c.id === cardId);
-      if (!card) return { error: "Task not found" };
-      if (card.archivedAt) return { error: "Task is already archived" };
-      const now = ts();
-      db.prepare("UPDATE task_cards SET archived_at = ?, updated_at = ?, version = version + 1 WHERE id = ?").run(now, now, cardId);
-      insertNotification(db, "archive_task", "Task archived", `"${card.title}" was archived`);
-      return { ok: true, cardId, archivedAt: now };
-    }
-
-    case "restore_task": {
-      const { cardId } = args;
-      // Must query DB directly — archived cards are filtered out of snap.cards
-      const row = db.prepare("SELECT * FROM task_cards WHERE id = ?").get(cardId) as Record<string, unknown> | undefined;
-      if (!row) return { error: "Task not found" };
-      if (!row.archived_at) return { error: "Task is not archived" };
-      const now = ts();
-      db.prepare("UPDATE task_cards SET archived_at = NULL, updated_at = ?, version = version + 1 WHERE id = ?").run(now, cardId);
-      insertNotification(db, "restore_task", "Task restored", `"${row.title as string}" was restored`);
-      return { ok: true, cardId, title: row.title };
-    }
-
-    case "update_project": {
-      const { projectId, name, description, status, priority, icon } = args;
-      const project = snap.projects.find((p) => p.id === projectId);
-      if (!project) return { error: "Project not found" };
-      const now = ts();
-      db.prepare(`
-        UPDATE projects SET
-          name        = COALESCE(?, name),
-          description = COALESCE(?, description),
-          status      = COALESCE(?, status),
-          priority    = COALESCE(?, priority),
-          icon        = COALESCE(?, icon),
-          updated_at  = ?
-        WHERE id = ?
-      `).run(name ?? null, description ?? null, status ?? null, priority ?? null, icon ?? null, now, projectId);
-      const updated = db.prepare("SELECT * FROM projects WHERE id = ?").get(projectId) as Record<string, unknown> | undefined;
-      insertNotification(db, "update_project", "Project updated", `"${name ?? project.name}" was updated`);
-      return updated ?? { error: "Project not found after update" };
     }
 
     case "create_tag": {
@@ -1512,11 +1516,10 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
 function buildMcpServer(db: Database.Database, workspacePath: string): McpServer {
   const server = new McpServer({ name: "cairn", version: "1.0.0" });
 
-  // Register tools from TOOL_SCHEMAS, excluding chat-only and globally-excluded tools
+  // Register tools from TOOL_SCHEMAS, excluding chat-only tools
   const chatOnlySet = new Set<string>(CHAT_ONLY_TOOLS);
-  const excludedSet = new Set<string>(EXCLUDED_TOOLS);
   for (const [name, { description, schema }] of Object.entries(TOOL_SCHEMAS)) {
-    if (chatOnlySet.has(name) || excludedSet.has(name)) continue;
+    if (chatOnlySet.has(name)) continue;
     server.tool(name, description, schema.shape as Record<string, z.ZodTypeAny>,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       async (args: Record<string, any>) => {

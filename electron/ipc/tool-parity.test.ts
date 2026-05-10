@@ -73,11 +73,10 @@ describe("Tool name parity", () => {
       // Shared read tools also in MCP:
       "get_cairn_context", "get_note", "get_task", "get_project_context_pack",
       // Shared write/delete tools also in MCP:
-      "create_project", "update_project", "delete_project",
+      "upsert_project", "delete_project",
       "ensure_note", "append_to_note", "patch_note", "delete_note",
       "create_task", "update_task", "bulk_update_task_status",
-      "archive_task", "restore_task",
-      "link_note_to_task", "block_task", "unblock_task",
+      "link_note_to_task",
       "create_dashboard", "update_dashboard", "delete_task",
       "get_idea_flow", "create_idea_flow_node", "update_idea_flow_node", "delete_idea_flow_node",
       "create_idea_flow_edge", "delete_idea_flow_edge", "layout_idea_flow", "get_idea_flow_rules",
@@ -279,10 +278,10 @@ describe("get_project_context_pack — MCP vs chat parity", () => {
 // ── Known intentional divergences (documented) ───────────────────────────────
 
 describe("known intentional divergences between MCP and chat", () => {
-  it("create_project: MCP returns { projectId, name, columns }, chat returns { project, columns }", async () => {
+  it("upsert_project (create): MCP returns { projectId, name, columns }, chat returns { project, columns }", async () => {
     const db = makeDb(); const wp = makeTmpDir();
     seed(db);
-    const [mcp, chat] = await both(db, wp, "create_project", { workspaceId: "ws1", name: "New Project" });
+    const [mcp, chat] = await both(db, wp, "upsert_project", { workspaceId: "ws1", name: "New Project" });
     // MCP uses projectId key
     expect(mcp).toHaveProperty("projectId");
     expect(mcp).not.toHaveProperty("project");

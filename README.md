@@ -176,7 +176,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 ### Available MCP tools
 
 <details>
-<summary>View all 36 tools</summary>
+<summary>View all 32 tools</summary>
 
 **Context**
 
@@ -184,24 +184,16 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 |------|----------|-------------|
 | `get_cairn_context` | read | Full orientation: workspaces, projects, column IDs, tool list, conventions |
 | `get_project_context_pack` | read | Single-call bundle: project metadata + pinned notes + open tasks + recent activity |
-| `resolve_project` | read | Find a project by name (fuzzy) and return its projectId and column IDs |
-| `get_project_summary` | read | Column breakdown, card counts, pinned notes, recent activity |
-| `list_recent_activity` | read | Recently created/updated notes and tasks |
 
 **Notes**
 
 | Tool | Category | Description |
 |------|----------|-------------|
 | `get_note` | read | Full markdown content, linked IDs, metadata, and `version` counter of a note by ID |
-| `list_notes` | read | List all notes in a project |
-| `search_notes` | read | Full-text search across notes |
-| `create_note` | write | Create a markdown note |
-| `import_note_from_file` | write | Import a local file as a note — server reads from disk, no need to inline content |
+| `search_notes` | read | Full-text search across notes. Empty query returns all notes |
 | `ensure_note` | write | Idempotent create-or-update by title — prevents duplicate notes on re-run |
 | `append_to_note` | write | Append content to a note without re-sending the full body. Accepts optional `expectedVersion` for conflict detection |
 | `patch_note` | write | Surgically replace a string inside a note — no need to re-send the full content. Accepts optional `expectedVersion` for conflict detection |
-| `update_note` | write | Update a note's title, content, or pinned state. Accepts optional `expectedVersion` for conflict detection |
-| `move_note` | write | Move a note to a different project |
 | `delete_note` | delete | Permanently delete a note |
 
 **Tasks**
@@ -209,26 +201,19 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 | Tool | Category | Description |
 |------|----------|-------------|
 | `get_task` | read | Full task detail by ID — includes `blockedByIds` and `version` counter |
-| `list_tasks` | read | All tasks in a project grouped by column; pass `includeArchived: true` to see archived tasks |
 | `list_ready_tasks` | read | Only unblocked, active tasks — use this to find work that can start now |
-| `search_tasks` | read | Full-text search across task cards |
+| `search_tasks` | read | Full-text search across task cards. Empty query returns all tasks |
 | `create_task` | write | Create a task card in a column |
-| `update_task` | write | Update a task's title, description, priority, due date, column, or assignee. Accepts optional `expectedVersion` for conflict detection |
-| `update_task_status` | write | Move a single task to a different column. Accepts optional `expectedVersion` for conflict detection |
+| `update_task` | write | Update a task's fields. Use `archived: true/false` to archive or restore. Use `blockedBy` to add a blocker, `unblockFrom` to remove one. Accepts optional `expectedVersion` for conflict detection |
 | `bulk_update_task_status` | write | Move multiple tasks to the same column in one call |
 | `link_note_to_task` | write | Bidirectionally link a note and a task |
-| `block_task` | write | Mark a task as blocked by another task in the same project |
-| `unblock_task` | write | Remove a blocking dependency between two tasks |
 | `delete_task` | delete | Permanently delete a task card |
-| `archive_task` | write | Archive a task (sets `archived_at`) — hidden from the board but retrievable |
-| `restore_task` | write | Restore an archived task back to the active board |
 
 **Projects**
 
 | Tool | Category | Description |
 |------|----------|-------------|
-| `create_project` | write | Create a project with default board columns |
-| `update_project` | write | Update a project's name, description, status, priority, or due date |
+| `upsert_project` | write | Create or update a project. Omit `projectId` to create (auto-creates 5 default columns); provide `projectId` to update existing fields |
 | `delete_project` | delete | Permanently delete a project and all its contents |
 
 **Dashboards**
@@ -267,7 +252,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 </details>
 
-> **Agent tip:** call `get_cairn_context` at the start of a session for all workspace/project/column IDs. Use `list_ready_tasks` instead of `list_tasks` when you want to know what work can actually start — it filters out anything blocked by an unresolved dependency.
+> **Agent tip:** call `get_cairn_context` at the start of a session for all workspace/project/column IDs. Use `list_ready_tasks` instead of `search_tasks` when you want to know what work can actually start — it filters out anything blocked by an unresolved dependency. Use `update_task` with `blockedBy`/`unblockFrom` to manage task dependencies.
 
 ## Keyboard shortcuts
 

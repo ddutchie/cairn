@@ -241,33 +241,38 @@ describe("bulk_update_task_status", () => {
   });
 });
 
-// ── create_project ────────────────────────────────────────────────────────────
+// ── upsert_project ────────────────────────────────────────────────────────────
 
-describe("create_project", () => {
-  it("creates project with default columns", async () => {
+describe("upsert_project (create)", () => {
+  it("creates project with default columns when projectId is omitted", async () => {
     const db = makeDb();
     seed(db);
-    const result = await exec(db, "create_project", { workspaceId: "ws1", name: "New Project" }) as Record<string, unknown>;
+    const result = await exec(db, "upsert_project", { workspaceId: "ws1", name: "New Project" }) as Record<string, unknown>;
     expect(result).toHaveProperty("project");
     expect(result).toHaveProperty("columns");
     expect((result.columns as unknown[]).length).toBe(5);
   });
-});
 
-// ── update_project ────────────────────────────────────────────────────────────
-
-describe("update_project", () => {
-  it("updates project name", async () => {
+  it("returns { error } for missing workspaceId", async () => {
     const db = makeDb();
     seed(db);
-    const result = await exec(db, "update_project", { projectId: "proj1", name: "Renamed" }) as Record<string, unknown>;
-    expect(result.name).toBe("Renamed");
+    const result = await exec(db, "upsert_project", { name: "X" }) as Record<string, unknown>;
+    expect(result).toHaveProperty("error");
+  });
+});
+
+describe("upsert_project (update)", () => {
+  it("updates project name when projectId is provided", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "upsert_project", { projectId: "proj1", name: "Renamed" }) as Record<string, unknown>;
+    expect(result).toHaveProperty("name");
   });
 
   it("returns { error } for missing project", async () => {
     const db = makeDb();
     seed(db);
-    const result = await exec(db, "update_project", { projectId: "nope", name: "X" }) as Record<string, unknown>;
+    const result = await exec(db, "upsert_project", { projectId: "nope", name: "X" }) as Record<string, unknown>;
     expect(result).toHaveProperty("error");
   });
 });
@@ -402,11 +407,11 @@ describe("get_task — blockedByIds field", () => {
     expect((result.blockedByIds as string[])).toHaveLength(0);
   });
 
-  it("blockedByIds contains the blocker after block_task", async () => {
+  it("blockedByIds contains the blocker after update_task { blockedBy }", async () => {
     const db = makeDb();
     seed(db);
     createCard(db, { id: "blocker", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Blocker", order: 1 });
-    await exec(db, "block_task", { cardId: "card1", blockerCardId: "blocker" });
+    await exec(db, "update_task", { cardId: "card1", blockedBy: "blocker" });
     const result = await exec(db, "get_task", { cardId: "card1" }) as Record<string, unknown>;
     expect((result.blockedByIds as string[])).toContain("blocker");
   });
@@ -564,20 +569,19 @@ describe("patch_note", () => {
   });
 });
 
-// ── block_task / unblock_task ─────────────────────────────────────────────────
+// ── update_task block / unblock ───────────────────────────────────────────────
 
-describe("block_task and unblock_task", () => {
+describe("update_task block and unblock", () => {
   function seedTwo(db: Database.Database) {
     seed(db);
     createCard(db, { id: "card2", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Task Two", order: 1 });
   }
 
-  it("block_task returns blocked: true", async () => {
+  it("blockedBy adds the blocker to blockedByIds", async () => {
     const db = makeDb();
     seedTwo(db);
-    const result = await exec(db, "block_task", { cardId: "card2", blockerCardId: "card1" }) as Record<string, unknown>;
+    const result = await exec(db, "update_task", { cardId: "card2", blockedBy: "card1" }) as Record<string, unknown>;
     expect(result).not.toHaveProperty("error");
-    // result is the updated card from addCardBlocker
     const ids = result.blockedByIds as string[];
     expect(ids).toContain("card1");
   });
@@ -585,7 +589,7 @@ describe("block_task and unblock_task", () => {
   it("blocked task appears in get_task blockedByIds", async () => {
     const db = makeDb();
     seedTwo(db);
-    await exec(db, "block_task", { cardId: "card2", blockerCardId: "card1" });
+    await exec(db, "update_task", { cardId: "card2", blockedBy: "card1" });
     const task = await exec(db, "get_task", { cardId: "card2" }) as Record<string, unknown>;
     expect((task.blockedByIds as string[])).toContain("card1");
   });
@@ -593,16 +597,16 @@ describe("block_task and unblock_task", () => {
   it("blocked task does not appear in list_ready_tasks", async () => {
     const db = makeDb();
     seedTwo(db);
-    await exec(db, "block_task", { cardId: "card2", blockerCardId: "card1" });
+    await exec(db, "update_task", { cardId: "card2", blockedBy: "card1" });
     const ready = await exec(db, "list_ready_tasks", { projectId: "proj1" }) as Array<{ id: string }>;
     expect(ready.map((r) => r.id)).not.toContain("card2");
   });
 
-  it("unblock_task clears the blocker from blockedByIds", async () => {
+  it("unblockFrom clears the blocker from blockedByIds", async () => {
     const db = makeDb();
     seedTwo(db);
-    await exec(db, "block_task", { cardId: "card2", blockerCardId: "card1" });
-    await exec(db, "unblock_task", { cardId: "card2", blockerCardId: "card1" });
+    await exec(db, "update_task", { cardId: "card2", blockedBy: "card1" });
+    await exec(db, "update_task", { cardId: "card2", unblockFrom: "card1" });
     const task = await exec(db, "get_task", { cardId: "card2" }) as Record<string, unknown>;
     expect((task.blockedByIds as string[])).not.toContain("card1");
   });
@@ -610,7 +614,7 @@ describe("block_task and unblock_task", () => {
   it("returns { error } when blocking itself", async () => {
     const db = makeDb();
     seed(db);
-    const result = await exec(db, "block_task", { cardId: "card1", blockerCardId: "card1" }) as Record<string, unknown>;
+    const result = await exec(db, "update_task", { cardId: "card1", blockedBy: "card1" }) as Record<string, unknown>;
     expect(result).toHaveProperty("error");
     expect(String(result.error)).toMatch(/cannot block itself/i);
   });
@@ -618,8 +622,8 @@ describe("block_task and unblock_task", () => {
   it("returns { error } for circular dependency", async () => {
     const db = makeDb();
     seedTwo(db);
-    await exec(db, "block_task", { cardId: "card1", blockerCardId: "card2" });
-    const result = await exec(db, "block_task", { cardId: "card2", blockerCardId: "card1" }) as Record<string, unknown>;
+    await exec(db, "update_task", { cardId: "card1", blockedBy: "card2" });
+    const result = await exec(db, "update_task", { cardId: "card2", blockedBy: "card1" }) as Record<string, unknown>;
     expect(result).toHaveProperty("error");
     expect(String(result.error)).toMatch(/circular/i);
   });
@@ -630,7 +634,7 @@ describe("block_task and unblock_task", () => {
     createProject(db, { id: "proj2", workspaceId: "ws1", name: "Other" });
     createColumn(db, { id: "col-other", projectId: "proj2", workspaceId: "ws1", name: "Backlog", type: "backlog", order: 0 });
     createCard(db, { id: "card-other", columnId: "col-other", projectId: "proj2", workspaceId: "ws1", title: "Other task", order: 0 });
-    const result = await exec(db, "block_task", { cardId: "card1", blockerCardId: "card-other" }) as Record<string, unknown>;
+    const result = await exec(db, "update_task", { cardId: "card1", blockedBy: "card-other" }) as Record<string, unknown>;
     expect(result).toHaveProperty("error");
     expect(String(result.error)).toMatch(/same project/i);
   });
@@ -638,14 +642,14 @@ describe("block_task and unblock_task", () => {
   it("returns { error } for missing task", async () => {
     const db = makeDb();
     seed(db);
-    const result = await exec(db, "block_task", { cardId: "nope", blockerCardId: "card1" }) as Record<string, unknown>;
+    const result = await exec(db, "update_task", { cardId: "nope", blockedBy: "card1" }) as Record<string, unknown>;
     expect(result).toHaveProperty("error");
   });
 
   it("returns { error } for missing blocker", async () => {
     const db = makeDb();
     seed(db);
-    const result = await exec(db, "block_task", { cardId: "card1", blockerCardId: "nope" }) as Record<string, unknown>;
+    const result = await exec(db, "update_task", { cardId: "card1", blockedBy: "nope" }) as Record<string, unknown>;
     expect(result).toHaveProperty("error");
   });
 });
@@ -673,7 +677,7 @@ describe("list_ready_tasks", () => {
     seed(db);
     createCard(db, { id: "blocker", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Blocker", order: 1 });
     createCard(db, { id: "blocked", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Blocked", order: 2 });
-    await exec(db, "block_task", { cardId: "blocked", blockerCardId: "blocker" });
+    await exec(db, "update_task", { cardId: "blocked", blockedBy: "blocker" });
     const result = await exec(db, "list_ready_tasks", { projectId: "proj1" }) as Array<{ id: string }>;
     expect(result.map((r) => r.id)).not.toContain("blocked");
     expect(result.map((r) => r.id)).toContain("blocker");
@@ -684,7 +688,7 @@ describe("list_ready_tasks", () => {
     seed(db);
     createCard(db, { id: "blocker", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Blocker", order: 1 });
     createCard(db, { id: "blocked", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Blocked", order: 2 });
-    await exec(db, "block_task", { cardId: "blocked", blockerCardId: "blocker" });
+    await exec(db, "update_task", { cardId: "blocked", blockedBy: "blocker" });
     await exec(db, "update_task", { cardId: "blocker", columnId: "col2" });
     const result = await exec(db, "list_ready_tasks", { projectId: "proj1" }) as Array<{ id: string }>;
     expect(result.map((r) => r.id)).toContain("blocked");
@@ -699,7 +703,7 @@ describe("update_task to done — blocker cleanup", () => {
     seed(db);
     createCard(db, { id: "blocker", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Blocker", order: 1 });
     createCard(db, { id: "blocked", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Blocked", order: 2 });
-    await exec(db, "block_task", { cardId: "blocked", blockerCardId: "blocker" });
+    await exec(db, "update_task", { cardId: "blocked", blockedBy: "blocker" });
 
     await exec(db, "update_task", { cardId: "blocker", columnId: "col2" });
 
@@ -714,7 +718,7 @@ describe("update_task to done — blocker cleanup", () => {
     createColumn(db, { id: "col-ip", projectId: "proj1", workspaceId: "ws1", name: "In Progress", type: "in_progress", order: 1 });
     createCard(db, { id: "blocker", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Blocker", order: 1 });
     createCard(db, { id: "blocked", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Blocked", order: 2 });
-    await exec(db, "block_task", { cardId: "blocked", blockerCardId: "blocker" });
+    await exec(db, "update_task", { cardId: "blocked", blockedBy: "blocker" });
 
     await exec(db, "update_task", { cardId: "blocker", columnId: "col-ip" });
 
@@ -732,8 +736,8 @@ describe("bulk_update_task_status to done — blocker cleanup", () => {
     createCard(db, { id: "b1", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Blocker 1", order: 1 });
     createCard(db, { id: "b2", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Blocker 2", order: 2 });
     createCard(db, { id: "dep", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Dependent", order: 3 });
-    await exec(db, "block_task", { cardId: "dep", blockerCardId: "b1" });
-    await exec(db, "block_task", { cardId: "dep", blockerCardId: "b2" });
+    await exec(db, "update_task", { cardId: "dep", blockedBy: "b1" });
+    await exec(db, "update_task", { cardId: "dep", blockedBy: "b2" });
 
     await exec(db, "bulk_update_task_status", { cardIds: ["b1", "b2"], targetColumnId: "col2" });
 

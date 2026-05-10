@@ -12,7 +12,7 @@
  *   - get_cairn_context — includes tags (regression: snap.tags was undefined)
  *   - get_project_context_pack — correct shape
  *   - list_ready_tasks — excludes done columns, excludes tasks blocked by unresolved blockers
- *   - block_task / unblock_task — circular dep rejection, cross-project rejection
+ *   - update_task block/unblock — circular dep rejection, cross-project rejection
  *   - create_task / delete_note / delete_task — basic write round-trips
  *   - ensure_note — idempotent create-then-update
  *   - patch_note — string replacement
@@ -327,13 +327,13 @@ describe("list_ready_tasks", () => {
 
   it("excludes tasks blocked by unresolved blockers", () => {
     // Block c3 by "blocker" (which is in backlog — not resolved)
-    executeTool(db, wp, "block_task", { cardId: "c3", blockerCardId: "blocker" });
+    executeTool(db, wp, "update_task", { cardId: "c3", blockedBy: "blocker" });
     const results = executeTool(db, wp, "list_ready_tasks", { projectId: "proj1" }) as Array<{ id: string }>;
     expect(results.map((r) => r.id)).not.toContain("c3");
   });
 
   it("includes task once its blocker moves to done", () => {
-    executeTool(db, wp, "block_task", { cardId: "c3", blockerCardId: "blocker" });
+    executeTool(db, wp, "update_task", { cardId: "c3", blockedBy: "blocker" });
     // Move blocker to done via update_task
     executeTool(db, wp, "update_task", { cardId: "blocker", columnId: "col-done" });
     const results = executeTool(db, wp, "list_ready_tasks", { projectId: "proj1" }) as Array<{ id: string }>;
@@ -346,9 +346,9 @@ describe("list_ready_tasks", () => {
   });
 });
 
-// ── block_task / unblock_task ─────────────────────────────────────────────────
+// ── update_task block / unblock ───────────────────────────────────────────────
 
-describe("block_task / unblock_task", () => {
+describe("update_task block / unblock", () => {
   let db: Database.Database;
   let wp: string;
 
@@ -363,19 +363,19 @@ describe("block_task / unblock_task", () => {
   afterEach(() => removeTmpDir(wp));
 
   it("blocks a task and marks it as blocked", () => {
-    const result = executeTool(db, wp, "block_task", { cardId: "c1", blockerCardId: "c2" }) as Record<string, unknown>;
+    const result = executeTool(db, wp, "update_task", { cardId: "c1", blockedBy: "c2" }) as Record<string, unknown>;
     expect(result.blocked).toBe(true);
   });
 
   it("rejects blocking itself", () => {
-    const result = executeTool(db, wp, "block_task", { cardId: "c1", blockerCardId: "c1" }) as Record<string, unknown>;
+    const result = executeTool(db, wp, "update_task", { cardId: "c1", blockedBy: "c1" }) as Record<string, unknown>;
     expect(result).toHaveProperty("error");
     expect(result.error).toMatch(/cannot block itself/i);
   });
 
   it("rejects circular dependencies", () => {
-    executeTool(db, wp, "block_task", { cardId: "c2", blockerCardId: "c1" });
-    const result = executeTool(db, wp, "block_task", { cardId: "c1", blockerCardId: "c2" }) as Record<string, unknown>;
+    executeTool(db, wp, "update_task", { cardId: "c2", blockedBy: "c1" });
+    const result = executeTool(db, wp, "update_task", { cardId: "c1", blockedBy: "c2" }) as Record<string, unknown>;
     expect(result).toHaveProperty("error");
     expect(result.error).toMatch(/circular/i);
   });
@@ -386,14 +386,14 @@ describe("block_task / unblock_task", () => {
     createColumn(db, { id: "col2", projectId: "proj2", workspaceId: "ws2", name: "Backlog", type: "backlog", order: 0 });
     createCard(db, { id: "c-other", columnId: "col2", projectId: "proj2", workspaceId: "ws2", title: "Other task" });
 
-    const result = executeTool(db, wp, "block_task", { cardId: "c1", blockerCardId: "c-other" }) as Record<string, unknown>;
+    const result = executeTool(db, wp, "update_task", { cardId: "c1", blockedBy: "c-other" }) as Record<string, unknown>;
     expect(result).toHaveProperty("error");
     expect(result.error).toMatch(/same project/i);
   });
 
   it("unblocks a task", () => {
-    executeTool(db, wp, "block_task", { cardId: "c1", blockerCardId: "c2" });
-    const result = executeTool(db, wp, "unblock_task", { cardId: "c1", blockerCardId: "c2" }) as Record<string, unknown>;
+    executeTool(db, wp, "update_task", { cardId: "c1", blockedBy: "c2" });
+    const result = executeTool(db, wp, "update_task", { cardId: "c1", unblockFrom: "c2" }) as Record<string, unknown>;
     expect(result.unblocked).toBe(true);
     // After unblocking, c1 should appear in ready tasks
     const ready = executeTool(db, wp, "list_ready_tasks", { projectId: "proj1" }) as Array<{ id: string }>;
@@ -401,12 +401,12 @@ describe("block_task / unblock_task", () => {
   });
 
   it("rejects missing task", () => {
-    const result = executeTool(db, wp, "block_task", { cardId: "nope", blockerCardId: "c1" }) as Record<string, unknown>;
+    const result = executeTool(db, wp, "update_task", { cardId: "nope", blockedBy: "c1" }) as Record<string, unknown>;
     expect(result).toHaveProperty("error");
   });
 
   it("rejects missing blocker", () => {
-    const result = executeTool(db, wp, "block_task", { cardId: "c1", blockerCardId: "nope" }) as Record<string, unknown>;
+    const result = executeTool(db, wp, "update_task", { cardId: "c1", blockedBy: "nope" }) as Record<string, unknown>;
     expect(result).toHaveProperty("error");
   });
 });
@@ -510,7 +510,7 @@ describe("delete_task", () => {
   it("cleans up blocker references in other tasks", () => {
     const { workspaceId, projectId, columnId } = { workspaceId: "ws1", projectId: "proj1", columnId: "col1" };
     createCard(db, { id: "c2", columnId, projectId, workspaceId, title: "Blocked" });
-    executeTool(db, wp, "block_task", { cardId: "c2", blockerCardId: "c1" });
+    executeTool(db, wp, "update_task", { cardId: "c2", blockedBy: "c1" });
     executeTool(db, wp, "delete_task", { cardId: "c1" });
     // After deleting c1, c2 should now be ready (no blockers)
     const ready = executeTool(db, wp, "list_ready_tasks", { projectId: "proj1" }) as Array<{ id: string }>;
@@ -669,26 +669,39 @@ describe("link_note_to_task", () => {
   });
 });
 
-// ── create_project ────────────────────────────────────────────────────────────
+// ── upsert_project ────────────────────────────────────────────────────────────
 
-describe("create_project", () => {
+describe("upsert_project", () => {
   let db: Database.Database;
   let wp: string;
 
   beforeEach(() => { db = makeDb(); wp = makeTmpDir(); });
   afterEach(() => removeTmpDir(wp));
 
-  it("creates project with default columns", () => {
+  it("creates project with default columns when projectId is omitted", () => {
     createWorkspace(db, { id: "ws1", name: "WS" });
-    const result = executeTool(db, wp, "create_project", { workspaceId: "ws1", name: "New Project" }) as Record<string, unknown>;
+    const result = executeTool(db, wp, "upsert_project", { workspaceId: "ws1", name: "New Project" }) as Record<string, unknown>;
     expect(result).toHaveProperty("projectId");
     expect(result.name).toBe("New Project");
     const columns = result.columns as unknown[];
     expect(columns.length).toBeGreaterThan(0);
   });
 
-  it("returns error for unknown workspace", () => {
-    const result = executeTool(db, wp, "create_project", { workspaceId: "nope", name: "X" }) as Record<string, unknown>;
+  it("returns error for unknown workspace on create", () => {
+    const result = executeTool(db, wp, "upsert_project", { workspaceId: "nope", name: "X" }) as Record<string, unknown>;
+    expect(result).toHaveProperty("error");
+  });
+
+  it("updates existing project when projectId is provided", () => {
+    createWorkspace(db, { id: "ws1", name: "WS" });
+    const created = executeTool(db, wp, "upsert_project", { workspaceId: "ws1", name: "Original" }) as Record<string, unknown>;
+    const pid = created.projectId as string;
+    const updated = executeTool(db, wp, "upsert_project", { projectId: pid, name: "Renamed" }) as Record<string, unknown>;
+    expect((updated as Record<string, unknown>).name).toBe("Renamed");
+  });
+
+  it("returns error for unknown projectId on update", () => {
+    const result = executeTool(db, wp, "upsert_project", { projectId: "nope", name: "X" }) as Record<string, unknown>;
     expect(result).toHaveProperty("error");
   });
 });
@@ -1043,8 +1056,8 @@ describe("list_ready_tasks — multi-level blocker chains", () => {
   afterEach(() => removeTmpDir(wp));
 
   it("c3 is blocked when c2 blocks it and c2 itself is blocked by c1", () => {
-    executeTool(db, wp, "block_task", { cardId: "c2", blockerCardId: "c1" });
-    executeTool(db, wp, "block_task", { cardId: "c3", blockerCardId: "c2" });
+    executeTool(db, wp, "update_task", { cardId: "c2", blockedBy: "c1" });
+    executeTool(db, wp, "update_task", { cardId: "c3", blockedBy: "c2" });
 
     const ready = executeTool(db, wp, "list_ready_tasks", { projectId: "proj1" }) as Array<{ id: string }>;
     const ids = ready.map((r) => r.id);
@@ -1054,8 +1067,8 @@ describe("list_ready_tasks — multi-level blocker chains", () => {
   });
 
   it("resolving root blocker (move to done) makes mid task ready but not leaf", () => {
-    executeTool(db, wp, "block_task", { cardId: "c2", blockerCardId: "c1" });
-    executeTool(db, wp, "block_task", { cardId: "c3", blockerCardId: "c2" });
+    executeTool(db, wp, "update_task", { cardId: "c2", blockedBy: "c1" });
+    executeTool(db, wp, "update_task", { cardId: "c3", blockedBy: "c2" });
 
     executeTool(db, wp, "update_task", { cardId: "c1", columnId: "col-done" });
 
@@ -1066,8 +1079,8 @@ describe("list_ready_tasks — multi-level blocker chains", () => {
   });
 
   it("resolving all blockers in chain makes leaf task ready", () => {
-    executeTool(db, wp, "block_task", { cardId: "c2", blockerCardId: "c1" });
-    executeTool(db, wp, "block_task", { cardId: "c3", blockerCardId: "c2" });
+    executeTool(db, wp, "update_task", { cardId: "c2", blockedBy: "c1" });
+    executeTool(db, wp, "update_task", { cardId: "c3", blockedBy: "c2" });
 
     executeTool(db, wp, "update_task", { cardId: "c1", columnId: "col-done" });
     executeTool(db, wp, "update_task", { cardId: "c2", columnId: "col-done" });
@@ -1082,8 +1095,8 @@ describe("list_ready_tasks — multi-level blocker chains", () => {
     createCard(db, { id: "dep-b", columnId, projectId, workspaceId, title: "Dep B" });
     createCard(db, { id: "work",  columnId, projectId, workspaceId, title: "Main work" });
 
-    executeTool(db, wp, "block_task", { cardId: "work", blockerCardId: "dep-a" });
-    executeTool(db, wp, "block_task", { cardId: "work", blockerCardId: "dep-b" });
+    executeTool(db, wp, "update_task", { cardId: "work", blockedBy: "dep-a" });
+    executeTool(db, wp, "update_task", { cardId: "work", blockedBy: "dep-b" });
 
     // Resolve only dep-a
     executeTool(db, wp, "update_task", { cardId: "dep-a", columnId: "col-done" });
@@ -1111,9 +1124,9 @@ describe("delete_task — blocker reference cleanup across multiple tasks", () =
     createCard(db, { id: "blocked-a", columnId, projectId, workspaceId, title: "Blocked A" });
     createCard(db, { id: "blocked-b", columnId, projectId, workspaceId, title: "Blocked B" });
     createCard(db, { id: "blocked-c", columnId, projectId, workspaceId, title: "Blocked C" });
-    executeTool(db, wp, "block_task", { cardId: "blocked-a", blockerCardId: "blocker" });
-    executeTool(db, wp, "block_task", { cardId: "blocked-b", blockerCardId: "blocker" });
-    executeTool(db, wp, "block_task", { cardId: "blocked-c", blockerCardId: "blocker" });
+    executeTool(db, wp, "update_task", { cardId: "blocked-a", blockedBy: "blocker" });
+    executeTool(db, wp, "update_task", { cardId: "blocked-b", blockedBy: "blocker" });
+    executeTool(db, wp, "update_task", { cardId: "blocked-c", blockedBy: "blocker" });
   });
   afterEach(() => removeTmpDir(wp));
 
@@ -1148,7 +1161,7 @@ describe("blocker cleanup on move-to-done", () => {
     createColumn(db, { id: "col-done", projectId, workspaceId, name: "Done", type: "done", order: 1 });
     createCard(db, { id: "blocker", columnId, projectId, workspaceId, title: "Blocker task" });
     createCard(db, { id: "blocked", columnId, projectId, workspaceId, title: "Blocked task" });
-    executeTool(db, wp, "block_task", { cardId: "blocked", blockerCardId: "blocker" });
+    executeTool(db, wp, "update_task", { cardId: "blocked", blockedBy: "blocker" });
   });
   afterEach(() => removeTmpDir(wp));
 
@@ -1176,7 +1189,7 @@ describe("blocker cleanup on move-to-done", () => {
     // Two blockers, both bulk-moved to done at once
     createCard(db, { id: "blocker2", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Blocker 2" });
     createCard(db, { id: "blocked2", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Blocked 2" });
-    executeTool(db, wp, "block_task", { cardId: "blocked2", blockerCardId: "blocker2" });
+    executeTool(db, wp, "update_task", { cardId: "blocked2", blockedBy: "blocker2" });
 
     executeTool(db, wp, "bulk_update_task_status", { cardIds: ["blocker", "blocker2"], targetColumnId: "col-done" });
 
@@ -1188,7 +1201,7 @@ describe("blocker cleanup on move-to-done", () => {
 
   it("a task with multiple blockers only has the done-moved ones cleared", () => {
     createCard(db, { id: "blocker2", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Blocker 2" });
-    executeTool(db, wp, "block_task", { cardId: "blocked", blockerCardId: "blocker2" });
+    executeTool(db, wp, "update_task", { cardId: "blocked", blockedBy: "blocker2" });
 
     // Only move the first blocker to done
     executeTool(db, wp, "update_task", { cardId: "blocker", columnId: "col-done" });

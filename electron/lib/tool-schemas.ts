@@ -134,16 +134,19 @@ export const TOOL_SCHEMAS = {
   },
 
   update_task: {
-    description: "Update a task card's fields. Only provided fields are changed.",
+    description: "Update a task card. Only provided fields are changed. Use archived=true/false to archive or restore. Use blockedBy to add a blocker, unblockFrom to remove one.",
     schema: z.object({
-      cardId:      sId,
-      title:       sStrOpt,
-      description: sStrOpt,
-      priority:    sPriority,
-      dueDate:     sDueDate,
-      columnId:    sIdOpt.describe("Move to this column"),
-      assignee:    sStrOpt.describe("Assignee name, or empty to clear"),
-      tagIds:      sTagIds,
+      cardId:       sId,
+      title:        sStrOpt,
+      description:  sStrOpt,
+      priority:     sPriority,
+      dueDate:      sDueDate,
+      columnId:     sIdOpt.describe("Move to this column"),
+      assignee:     sStrOpt.describe("Assignee name, or empty to clear"),
+      tagIds:       sTagIds,
+      archived:     sBoolOpt.describe("true=archive, false=restore"),
+      blockedBy:    sIdOpt.describe("Add this card as a blocker (same project, circular deps rejected)"),
+      unblockFrom:  sIdOpt.describe("Remove this card from blockers"),
     }),
   },
 
@@ -160,37 +163,11 @@ export const TOOL_SCHEMAS = {
     schema: z.object({ cardId: sId }),
   },
 
-  archive_task: {
-    description: "Archive a task card so it no longer appears in the active board. Use instead of delete when the work is done but you may want to reference it later.",
-    schema: z.object({ cardId: sId }),
-  },
-
-  restore_task: {
-    description: "Restore a previously archived task card back to the active board.",
-    schema: z.object({ cardId: sId }),
-  },
-
   link_note_to_task: {
     description: "Bidirectionally link a note and a task card.",
     schema: z.object({
       noteId: sId,
       cardId: sId,
-    }),
-  },
-
-  block_task: {
-    description: "Mark a task as blocked by another task in the same project. The blocked task will not appear in list_ready_tasks until the blocker is resolved (moved to done or archived). Circular dependencies are rejected.",
-    schema: z.object({
-      cardId:        sId.describe("The task to mark as blocked"),
-      blockerCardId: sId.describe("The task that is blocking it"),
-    }),
-  },
-
-  unblock_task: {
-    description: "Remove a blocking dependency between two tasks.",
-    schema: z.object({
-      cardId:        sId.describe("The blocked task"),
-      blockerCardId: sId.describe("The blocker to remove"),
     }),
   },
 
@@ -203,23 +180,12 @@ export const TOOL_SCHEMAS = {
 
   // ── Projects ──────────────────────────────────────────────────────────────────
 
-  create_project: {
-    description: "Create a project with default columns (Backlog, Todo, In Progress, Review, Done).",
+  upsert_project: {
+    description: "Create or update a project. Omit projectId to create (auto-creates default columns); provide projectId to update existing fields.",
     schema: z.object({
-      workspaceId: sId,
-      name:        sStr,
-      description: sStrOpt,
-      icon:        sStrOpt.describe("Single emoji"),
-      status:      sStatus,
-      priority:    sPriority,
-    }),
-  },
-
-  update_project: {
-    description: "Update a project's name, description, icon, status, or priority.",
-    schema: z.object({
-      projectId:   sId,
-      name:        sStrOpt,
+      projectId:   sIdOpt.describe("Omit to create a new project"),
+      workspaceId: sId.optional().describe("Required when creating"),
+      name:        sStrOpt.describe("Required when creating"),
       description: sStrOpt,
       icon:        sStrOpt.describe("Single emoji"),
       status:      sStatus,

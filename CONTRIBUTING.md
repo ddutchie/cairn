@@ -594,12 +594,14 @@ Launch with `mode: "plan"` to produce a PRD before writing code. Plan Mode restr
 
 ### Adding a new MCP / AI chat tool
 
-1. Add the Zod schema to `electron/lib/tool-schemas.ts`
-2. Add the tool definition to `TOOLS` in `electron/lib/tools.ts`
+1. Add the Zod schema to `electron/lib/tool-schemas.ts` — `TOOL_SCHEMAS`, and `CHAT_ONLY_TOOLS` if it should be agent/chat only
+2. Add a human-readable `TOOL_LABELS` entry in `electron/lib/tools.ts` (the `TOOLS` array is auto-derived from `TOOL_SCHEMAS`)
 3. Add the executor case to `electron/ipc/chat-executor.ts`
-4. Add the MCP implementation to `electron/mcp-server.ts` (inlined SQL — no `queries.ts` import)
+4. Add the MCP executor case to `electron/mcp-server.ts` (inlined SQL — no `queries.ts` import)
 5. Add a corresponding query helper to `electron/db/queries.ts` if needed
-6. Update `electron/ipc/tool-parity.test.ts` to include the new tool name
+6. Update `electron/ipc/tool-parity.test.ts` to include the new tool name in the documented set
+
+> **Consolidation pattern:** prefer extending an existing tool over adding a new one. `update_task` handles archive/restore (`archived: true/false`) and block/unblock (`blockedBy`/`unblockFrom`) in addition to field updates. `upsert_project` handles both create (no `projectId`) and update (with `projectId`). Follow the same pattern to keep the tool surface small.
 
 ### Adding a new database table
 
