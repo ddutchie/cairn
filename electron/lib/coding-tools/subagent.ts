@@ -10,10 +10,7 @@
  */
 
 import { randomBytes } from "crypto";
-import type Database from "better-sqlite3";
-import type { BrowserWindow } from "electron";
-import { runAgentLoop, type PiAgentSession, type AgentLLMConfig } from "../pi-agent-loop";
-import type { ChatRequest } from "../tools";
+import { runAgentLoop, type PiAgentSession, type AgentLLMConfig, type AgentToolContext } from "../pi-agent-loop";
 
 export interface SpawnSubagentArgs {
   prompt: string;
@@ -55,25 +52,26 @@ export const spawnSubagentDefinition = {
 
 export async function spawnSubagentTool(
   args: SpawnSubagentArgs,
-  parentCwd: string,
+  parentToolCtx: AgentToolContext,
   parentLlmConfig: AgentLLMConfig,
-  db: Database.Database,
-  parentReq: ChatRequest,
-  workspacePath: string,
-  parentSessionId: string,
-  send: (channel: string, payload: unknown) => void,
-  getWin?: () => BrowserWindow | null,
 ): Promise<string> {
-  const childSessionId = `${parentSessionId}:sub:${randomBytes(4).toString("hex")}`;
-  const cwd = args.cwd ?? parentCwd;
+  const childSessionId = `${parentToolCtx.sessionId}:sub:${randomBytes(4).toString("hex")}`;
+
+  const childToolCtx: AgentToolContext = {
+    ...parentToolCtx,
+    cwd:       args.cwd ?? parentToolCtx.cwd,
+    sessionId: childSessionId,
+    req:       { ...parentToolCtx.req, threadId: childSessionId },
+  };
+
   const llmConfig: AgentLLMConfig = {
     ...parentLlmConfig,
     model: args.model ?? parentLlmConfig.model,
   };
 
   // Tell the renderer a subagent is starting
-  send("pi-agent:subagent", {
-    parentSessionId,
+  parentToolCtx.send("pi-agent:subagent", {
+    parentSessionId: parentToolCtx.sessionId,
     childSessionId,
     status: "start",
   });
@@ -87,46 +85,43 @@ export async function spawnSubagentTool(
     "You are a focused sub-agent. Complete the given task thoroughly, use tools as needed, " +
     "then respond with a clear, concise final answer. Do not ask clarifying questions.";
 
-  let finalAnswer = "";
   let errorMessage = "";
 
   await runAgentLoop(
     session,
     systemPrompt,
-    cwd,
     llmConfig,
-    db,
-    { ...parentReq, threadId: childSessionId },
-    workspacePath,
     {
-      onToken:       (delta) => send("pi-agent:token",      { sessionId: childSessionId, delta }),
-      onToolsReady:  ()     => send("pi-agent:tools-ready", { sessionId: childSessionId }),
-      onToolPending: (name, callId) => send("pi-agent:tool", { sessionId: childSessionId, name, label: name, callId, status: "pending" }),
-      onToolStart:   (name, label, callId) => send("pi-agent:tool", { sessionId: childSessionId, name, label, callId, status: "start" }),
-      onToolEnd:     (name, label, ok, output, callId) => send("pi-agent:tool", { sessionId: childSessionId, name, label, callId, status: "end", ok, output }),
-      onStepStart:  () => send("pi-agent:step", { sessionId: childSessionId }),
-      onUsage:      (pt, ct) => send("pi-agent:usage", { sessionId: childSessionId, promptTokens: pt, completionTokens: ct }),
-      onDone:       () => { /* handled below */ },
+      onToken:       (delta) => childToolCtx.send("pi-agent:token",      { sessionId: childSessionId, delta }),
+      onToolsReady:  ()     => childToolCtx.send("pi-agent:tools-ready", { sessionId: childSessionId }),
+      onToolPending: (name, callId) => childToolCtx.send("pi-agent:tool", { sessionId: childSessionId, name, label: name, callId, status: "pending" }),
+      onToolStart:   (name, label, callId) => childToolCtx.send("pi-agent:tool", { sessionId: childSessionId, name, label, callId, status: "start" }),
+      onToolEnd:     (name, label, ok, output, callId) => childToolCtx.send("pi-agent:tool", { sessionId: childSessionId, name, label, callId, status: "end", ok, output }),
+      onStepStart:  () => childToolCtx.send("pi-agent:step", { sessionId: childSessionId }),
+      onUsage:      (pt, ct) => childToolCtx.send("pi-agent:usage", { sessionId: childSessionId, promptTokens: pt, completionTokens: ct }),
+      onDone:       () => { /* handled below via session.messages */ },
       onError:      (msg) => { errorMessage = msg; },
     },
-    getWin,
+    childToolCtx,
   );
 
   // Extract the final assistant message from history
   const lastAssistant = [...session.messages]
     .reverse()
     .find((m) => m.role === "assistant");
-  if (lastAssistant && "content" in lastAssistant && lastAssistant.content) {
-    finalAnswer = lastAssistant.content;
-  }
+
+  const finalAnswer =
+    lastAssistant && "content" in lastAssistant && lastAssistant.content
+      ? lastAssistant.content
+      : "";
 
   const result = errorMessage
     ? `Sub-agent error: ${errorMessage}`
     : finalAnswer || "(sub-agent produced no output)";
 
   // Notify renderer the subagent is done
-  send("pi-agent:subagent", {
-    parentSessionId,
+  parentToolCtx.send("pi-agent:subagent", {
+    parentSessionId: parentToolCtx.sessionId,
     childSessionId,
     status: "done",
     result,

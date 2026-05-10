@@ -1,9 +1,9 @@
 /**
  * Cairn Native Agent Loop
  *
- * A stateful multi-turn tool-call loop. Reuses streamCompletion from llm.ts
- * (OpenAI-compatible). Each session keeps its own message history in the
- * PiAgentSession object managed by the IPC handler.
+ * A stateful multi-turn tool-call loop (OpenAI-compatible streaming).
+ * Each session keeps its own message history in the PiAgentSession object
+ * managed by the IPC handler.
  *
  * Events emitted (via callbacks, forwarded to renderer over IPC):
  *   onToken(delta)              — streaming text chunk
@@ -11,6 +11,7 @@
  *   onToolEnd(name, label, ok)  — tool execution finished
  *   onDone()                    — turn complete, no more tool calls
  *   onError(message)            — unrecoverable error
+ *   onRetry?(attempt, max, delayMs, error) — transient error, retrying
  */
 
 import type Database from "better-sqlite3";
@@ -39,6 +40,15 @@ export interface AgentLLMConfig {
   maxSteps: number;
   /** Sampling temperature. Plan mode overrides this to 0.1 for determinism. */
   temperature: number;
+  /** Maximum automatic retries on transient errors (429/5xx). Defaults to 3. */
+  maxRetries?: number;
+  /** Base delay in ms for exponential backoff. Doubles each attempt. Defaults to 2000. */
+  baseRetryDelayMs?: number;
+  /**
+   * Model context window size in tokens. Used by the sliding-window pruner to
+   * decide when to trim old messages. Defaults to 128000.
+   */
+  contextWindow?: number;
 }
 
 // ── Message types ─────────────────────────────────────────────────────────────
@@ -56,6 +66,29 @@ interface ToolCallSpec {
   id: string;
   type: "function";
   function: { name: string; arguments: string };
+}
+
+// ── Per-session infrastructure context ───────────────────────────────────────
+
+/**
+ * Stable, per-session infrastructure that every tool needs.
+ * Passed as a single object instead of individual positional parameters.
+ */
+export interface AgentToolContext {
+  /** Working directory for all file-system tool calls. */
+  cwd: string;
+  /** SQLite database handle for Cairn tool execution. */
+  db: Database.Database;
+  /** ChatRequest used to scope Cairn tool calls (threadId, projectId, etc.). */
+  req: ChatRequest;
+  /** Absolute path to the Electron workspace root (for note file writes). */
+  workspacePath: string;
+  /** Session ID — used to scope IPC events and subagent child IDs. */
+  sessionId: string;
+  /** Send an IPC event to the renderer window. */
+  send: (channel: string, payload: unknown) => void;
+  /** Returns the current BrowserWindow (may be null if destroyed). */
+  getWin?: () => BrowserWindow | null;
 }
 
 // ── Tool label helper ─────────────────────────────────────────────────────────
@@ -88,6 +121,17 @@ export interface AgentLoopCallbacks {
   onError:         (message: string) => void;
   /** Fired when the agent writes a note in plan mode — carries the note ID */
   onPlanNoteFound?: (noteId: string) => void;
+  /**
+   * Fired before each automatic retry attempt on a transient error.
+   * The renderer can show a countdown ("Retrying in Xs…") in the status area.
+   */
+  onRetry?: (attempt: number, maxRetries: number, delayMs: number, error: string) => void;
+  /**
+   * Optional transform applied to session.messages before each LLM call.
+   * Does NOT mutate session.messages — only affects what is sent to the model.
+   * Use for context pruning, injection, or summarisation.
+   */
+  transformContext?: (messages: AgentMessage[]) => AgentMessage[];
 }
 
 // ── Session state ─────────────────────────────────────────────────────────────
@@ -95,6 +139,8 @@ export interface AgentLoopCallbacks {
 export interface PiAgentSession {
   messages: AgentMessage[];
   abortCtrl: AbortController;
+  /** Most recent prompt_tokens count from the last onUsage callback. Updated each turn. */
+  lastPromptTokens?: number;
 }
 
 // ── All tool definitions ──────────────────────────────────────────────────────
@@ -173,22 +219,107 @@ function getAllToolDefs(mode: "plan" | "execute" = "execute") {
   return all;
 }
 
+// ── Retry helpers ─────────────────────────────────────────────────────────────
+
+/**
+ * Returns true when an HTTP status + body string indicates a transient error
+ * that is worth retrying. Never retries auth/bad-request errors.
+ */
+function isRetryableError(status: number, body: string): boolean {
+  if (status === 400 || status === 401 || status === 403) return false;
+  if (status === 429 || status >= 500) return true;
+  return /overloaded|rate.?limit|service.?unavailable|server.?error|connection.?error|fetch failed|timed?.?out/i.test(body);
+}
+
+/**
+ * Abortable sleep. Rejects with an AbortError if signal fires before the delay.
+ */
+function sleep(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) { reject(new DOMException("Aborted", "AbortError")); return; }
+    const timer = setTimeout(resolve, ms);
+    signal.addEventListener("abort", () => { clearTimeout(timer); reject(new DOMException("Aborted", "AbortError")); }, { once: true });
+  });
+}
+
+// ── Context pruning ───────────────────────────────────────────────────────────
+
+/**
+ * Default transformContext implementation.
+ *
+ * When the last recorded promptTokens exceeds 80 % of the configured context
+ * window, trims the oldest messages while preserving:
+ *   - The first user message (the original request).
+ *   - The most recent KEEP_TURNS assistant+tool pairs.
+ *   - Any tool-result messages whose tool_call_id is still referenced by a
+ *     kept assistant message (orphan prevention).
+ * A synthetic marker message is injected at the trim boundary so the model
+ * knows context was abbreviated.
+ */
+const KEEP_TURNS = 8;
+const CONTEXT_TRIM_THRESHOLD = 0.80;
+
+function buildSlidingWindowPruner(
+  session: PiAgentSession,
+  contextWindow: number,
+): (messages: AgentMessage[]) => AgentMessage[] {
+  return (messages: AgentMessage[]): AgentMessage[] => {
+    const lastPromptTokens = session.lastPromptTokens ?? 0;
+    if (lastPromptTokens === 0 || lastPromptTokens < contextWindow * CONTEXT_TRIM_THRESHOLD) {
+      return messages;
+    }
+
+    const keepIds = new Set<string>(); // tool_call_ids referenced by kept assistant msgs
+    let keptTurns = 0;
+    let keepFromIdx = messages.length;
+
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (msg.role === "assistant") {
+        keptTurns++;
+        if (msg.tool_calls) {
+          for (const tc of msg.tool_calls) keepIds.add(tc.id);
+        }
+        keepFromIdx = i;
+        if (keptTurns >= KEEP_TURNS) break;
+      }
+    }
+
+    const firstUser = messages.find((m) => m.role === "user");
+    const tail = messages.slice(keepFromIdx);
+
+    // Keep any orphaned tool-result messages before the tail whose call_id is still referenced
+    const extraToolResults = messages.slice(1, keepFromIdx).filter(
+      (m) => m.role === "tool" && keepIds.has((m as AgentToolResultMsg).tool_call_id),
+    );
+
+    const marker: AgentUserMessage = {
+      role: "user",
+      content: "[Earlier context trimmed to fit the context window. The full conversation history is preserved in session storage.]",
+    };
+
+    const pruned: AgentMessage[] = [];
+    if (firstUser) pruned.push(firstUser);
+    pruned.push(marker);
+    pruned.push(...extraToolResults);
+    pruned.push(...tail);
+
+    return pruned;
+  };
+}
+
 // ── Execute a single tool call ────────────────────────────────────────────────
 
 async function executeSingleTool(
   name: string,
   args: ToolArgs,
-  cwd: string,
   signal: AbortSignal,
-  db: Database.Database,
-  req: ChatRequest,
-  workspacePath: string,
-  llmConfig: AgentLLMConfig,
   onUpdate: (output: string) => void,
-  sessionId: string,
-  send: (channel: string, payload: unknown) => void,
-  getWin?: () => BrowserWindow | null,
+  toolCtx: AgentToolContext,
+  llmConfig: AgentLLMConfig,
 ): Promise<string> {
+  const { cwd, db, req, workspacePath, sessionId, send, getWin } = toolCtx;
+
   switch (name) {
     case "read":  return readTool(args as Parameters<typeof readTool>[0],  cwd);
     case "write": return writeTool(args as Parameters<typeof writeTool>[0], cwd);
@@ -203,14 +334,8 @@ async function executeSingleTool(
     case "ls":    return lsTool(args as Parameters<typeof lsTool>[0],    cwd);
     case "spawn_subagent": return spawnSubagentTool(
       args as Parameters<typeof spawnSubagentTool>[0],
-      cwd,
+      toolCtx,
       llmConfig,
-      db,
-      req,
-      workspacePath,
-      sessionId,
-      send,
-      getWin,
     );
     default: {
       // Delegate to Cairn chat executor
@@ -239,27 +364,31 @@ async function executeSingleTool(
 export async function runAgentLoop(
   session: PiAgentSession,
   systemPrompt: string,
-  cwd: string,
   llmConfig: AgentLLMConfig,
-  db: Database.Database,
-  req: ChatRequest,
-  workspacePath: string,
   callbacks: AgentLoopCallbacks,
-  getWin?: () => BrowserWindow | null,
-  sessionId?: string,
-  send?: (channel: string, payload: unknown) => void,
+  toolCtx: AgentToolContext,
   mode: "plan" | "execute" = "execute",
 ): Promise<void> {
   const { signal } = session.abortCtrl;
   const allTools = getAllToolDefs(mode);
 
-  const { baseUrl, model, apiKey, maxSteps, temperature: configTemp } = llmConfig;
+  const {
+    baseUrl, model, apiKey, maxSteps, temperature: configTemp,
+    maxRetries    = 3,
+    baseRetryDelayMs = 2000,
+    contextWindow = 128_000,
+  } = llmConfig;
+
   // Plan mode always uses 0.1 for deterministic analysis regardless of user setting
   const temperature = mode === "plan" ? 0.1 : (configTemp ?? 0.3);
   if (!apiKey && !isLocalEndpoint(baseUrl)) {
     callbacks.onError("No API key configured. Set one in Settings → AI & Chat.");
     return;
   }
+
+  // Build the context pruner — closes over session so it sees live lastPromptTokens
+  const pruner = callbacks.transformContext
+    ?? buildSlidingWindowPruner(session, contextWindow);
 
   let steps = 0;
 
@@ -270,41 +399,87 @@ export async function runAgentLoop(
     // assistant message and start a fresh one for this turn's tokens.
     if (steps > 1) callbacks.onStepStart();
 
-    // Build messages array for this request
-    const messages: AgentMessage[] = [
-      { role: "user", content: systemPrompt } as AgentUserMessage,
-      ...session.messages,
-    ];
+    // Build messages array — apply context pruning.
+    // systemPrompt passes as `system:` in the request body (not as a user message).
+    const contextMessages = pruner([...session.messages]);
 
     // ── Stream assistant response ─────────────────────────────────────────
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
 
-    let response: Response;
-    try {
-      response = await fetch(`${baseUrl}/v1/chat/completions`, {
-        method: "POST",
-        headers,
-        signal,
-        body: JSON.stringify({
-          model,
-          messages,
-          tools: allTools,
-          tool_choice: "auto",
-          max_tokens: 8192,
-          temperature,
-          stream: true,
-          stream_options: { include_usage: true },
-        }),
-      });
-    } catch (e) {
+    // Retry loop — wraps the fetch + !response.ok check
+    let response: Response | null = null;
+    let retryAttempt = 0;
+
+    while (true) {
       if (signal.aborted) { callbacks.onDone(); return; }
-      callbacks.onError(`Cannot reach AI endpoint: ${(e as Error).message}`);
-      return;
+
+      let fetchError: string | null = null;
+      try {
+        response = await fetch(`${baseUrl}/v1/chat/completions`, {
+          method: "POST",
+          headers,
+          signal,
+          body: JSON.stringify({
+            model,
+            system: systemPrompt,
+            messages: contextMessages,
+            tools: allTools,
+            tool_choice: "auto",
+            max_tokens: 8192,
+            temperature,
+            stream: true,
+            stream_options: { include_usage: true },
+          }),
+        });
+      } catch (e) {
+        if (signal.aborted) { callbacks.onDone(); return; }
+        fetchError = (e as Error).message;
+      }
+
+      // Determine if we should retry
+      const status = response?.status ?? 0;
+      let bodyText = "";
+      if (response && !response.ok) {
+        bodyText = await response.text().catch(() => response!.statusText);
+      }
+
+      const shouldRetry =
+        fetchError !== null
+          ? /overloaded|rate.?limit|service.?unavailable|server.?error|connection.?error|fetch failed|timed?.?out/i.test(fetchError)
+          : (response && !response.ok && isRetryableError(status, bodyText));
+
+      if (!shouldRetry) break; // success or non-retryable error — exit retry loop
+
+      if (retryAttempt >= maxRetries) {
+        const errMsg = fetchError
+          ? `Cannot reach AI endpoint after ${maxRetries} retries: ${fetchError}`
+          : `AI error (${status}) after ${maxRetries} retries: ${bodyText.slice(0, 300)}`;
+        callbacks.onError(errMsg);
+        return;
+      }
+
+      retryAttempt++;
+      const delayMs = baseRetryDelayMs * 2 ** (retryAttempt - 1);
+      callbacks.onRetry?.(retryAttempt, maxRetries, delayMs, fetchError ?? bodyText.slice(0, 200));
+
+      try {
+        await sleep(delayMs, signal);
+      } catch {
+        callbacks.onDone();
+        return;
+      }
+
+      response = null; // reset for next attempt
     }
 
+    // Non-retryable hard errors
+    if (!response) {
+      callbacks.onError("Cannot reach AI endpoint. Check your network and API settings.");
+      return;
+    }
     if (!response.ok) {
-      const text = await response.text().catch(() => response.statusText);
+      const text = await response.text().catch(() => response!.statusText);
       callbacks.onError(`AI error (${response.status}): ${text.slice(0, 300)}`);
       return;
     }
@@ -329,8 +504,6 @@ export async function runAgentLoop(
         if (!trimmed.startsWith("data:")) continue;
         const jsonStr = trimmed.slice(5).trim();
         if (jsonStr === "[DONE]") {
-          // Mark done and break the inner loop — the outer while condition
-          // catches this on the next iteration so we don't call reader.read() again.
           streamDone = true;
           break;
         }
@@ -339,23 +512,21 @@ export async function runAgentLoop(
           const chunk = JSON.parse(jsonStr) as any;
 
           // Usage chunk — sent as the final SSE chunk when stream_options.include_usage is set.
-          // It has an empty choices array and a top-level usage object.
           if (chunk.usage) {
             const pt = chunk.usage.prompt_tokens ?? 0;
             const ct = chunk.usage.completion_tokens ?? 0;
+            session.lastPromptTokens = pt;
             callbacks.onUsage(pt, ct);
           }
 
           const delta = chunk.choices?.[0]?.delta;
           if (!delta) continue;
 
-          // Text token
           if (delta.content) {
             contentBuffer += delta.content;
             callbacks.onToken(delta.content);
           }
 
-          // Tool call chunks
           if (delta.tool_calls) {
             for (const tc of delta.tool_calls) {
               const idx: number = tc.index ?? 0;
@@ -368,8 +539,7 @@ export async function runAgentLoop(
               if (tc.function?.name) buf.name = tc.function.name;
               if (tc.function?.arguments) buf.args += tc.function.arguments;
 
-              // As soon as we have the tool name, fire pending chip — mirrors pi's
-              // approach of creating the chip during streaming, not post-stream.
+              // Fire pending chip as soon as we see the tool name during streaming
               if (isNew && buf.name) {
                 if (!toolsReadyFired) {
                   callbacks.onToolsReady();
@@ -401,36 +571,32 @@ export async function runAgentLoop(
         function: { name: buf.name, arguments: buf.args },
       }));
 
-    // Persist assistant message with tool_calls
     session.messages.push({
       role: "assistant",
       content: contentBuffer || null,
       tool_calls: toolCalls,
     });
 
-    // ── Ensure renderer has a streaming message (fallback if onToolsReady
-    //    wasn't fired during streaming, e.g. endpoint doesn't stream tool names).
     if (!toolsReadyFired) callbacks.onToolsReady();
 
-    // ── Execute each tool ─────────────────────────────────────────────────
-    for (const [tcIdx, tc] of toolCalls.entries()) {
-      if (signal.aborted) { callbacks.onDone(); return; }
+    // ── Execute tools in parallel ─────────────────────────────────────────
+    // All tools in a turn fire concurrently. Results are appended to
+    // session.messages in original source order regardless of completion order.
+    // onToolEnd fires as each tool finishes (may be out of order for UI updates).
+    // The file mutex in file-mutex.ts serialises concurrent writes to the same path.
+    if (signal.aborted) { callbacks.onDone(); return; }
 
+    type ToolOutcome = { tcIdx: number; tc: ToolCallSpec; ok: boolean; resultContent: string; pendingCallId?: string };
+
+    const toolPromises: Promise<ToolOutcome>[] = toolCalls.map(async (tc, tcIdx): Promise<ToolOutcome> => {
       let args: ToolArgs = {};
       try { args = JSON.parse(tc.function.arguments) as ToolArgs; } catch { args = {}; }
 
-      const label =
-        CODING_LABELS[tc.function.name]?.(args) ??
-        `${tc.function.name}`;
-
-      // Pass the callId assigned during streaming so the renderer updates the
-      // existing pending chip rather than creating a duplicate.
+      const label = CODING_LABELS[tc.function.name]?.(args) ?? tc.function.name;
       const pendingCallId = streamCallIds.get(tcIdx);
       callbacks.onToolStart(tc.function.name, label, pendingCallId);
 
-      // Yield to the event loop so the renderer can process the onToolStart IPC
-      // message and render the running spinner before the (potentially synchronous)
-      // tool execution blocks the main process event loop.
+      // Yield so the renderer processes the onToolStart IPC before execution begins
       await new Promise<void>((r) => setImmediate(r));
 
       let resultContent: string;
@@ -439,16 +605,10 @@ export async function runAgentLoop(
         resultContent = await executeSingleTool(
           tc.function.name,
           args,
-          cwd,
           signal,
-          db,
-          req,
-          workspacePath,
-          llmConfig,
           (output) => callbacks.onToolStart(tc.function.name, `${label}: ${output.slice(-80)}`),
-          sessionId ?? "",
-          send ?? (() => {}),
-          getWin,
+          toolCtx,
+          llmConfig,
         );
       } catch (e) {
         ok = false;
@@ -457,8 +617,7 @@ export async function runAgentLoop(
 
       callbacks.onToolEnd(tc.function.name, label, ok, resultContent, pendingCallId);
 
-      // In plan mode only, notify the renderer when the agent writes the PRD note.
-      // Suppressed in execute mode to avoid overwriting planNoteId after approval.
+      // In plan mode, notify renderer when agent writes the PRD note
       if (mode === "plan" && ok && tc.function.name === "ensure_note") {
         try {
           const parsed = JSON.parse(resultContent) as { id?: string };
@@ -466,6 +625,14 @@ export async function runAgentLoop(
         } catch { /* non-JSON output — ignore */ }
       }
 
+      return { tcIdx, tc, ok, resultContent, pendingCallId };
+    });
+
+    const outcomes = await Promise.all(toolPromises);
+
+    // Append in source order
+    outcomes.sort((a, b) => a.tcIdx - b.tcIdx);
+    for (const { tc, resultContent } of outcomes) {
       session.messages.push({
         role: "tool",
         tool_call_id: tc.id,
