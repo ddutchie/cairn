@@ -398,9 +398,11 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
       taskTitle:   session.taskTitle !== "Ad-hoc session" ? session.taskTitle : undefined,
       mode:        session.mode ?? "execute",
       config: {
-        baseUrl: aiConfig.baseUrl || undefined,
-        model:   aiConfig.model   || undefined,
-        apiKey:  aiConfig.apiKey  || undefined,
+        baseUrl:     aiConfig.baseUrl     || undefined,
+        model:       aiConfig.model       || undefined,
+        apiKey:      aiConfig.apiKey      || undefined,
+        maxSteps:    aiConfig.maxSteps    ?? 20,
+        temperature: aiConfig.temperature ?? 0.3,
       },
     };
     window.electron?.piAgent.prompt(promptPayload);
@@ -448,9 +450,11 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
       cwd:         session.cwd,
       taskTitle:   session.taskTitle !== "Ad-hoc session" ? session.taskTitle : undefined,
       config: {
-        baseUrl: aiConfig.baseUrl || undefined,
-        model:   aiConfig.model   || undefined,
-        apiKey:  aiConfig.apiKey  || undefined,
+        baseUrl:     aiConfig.baseUrl     || undefined,
+        model:       aiConfig.model       || undefined,
+        apiKey:      aiConfig.apiKey      || undefined,
+        maxSteps:    aiConfig.maxSteps    ?? 20,
+        temperature: aiConfig.temperature ?? 0.3,
       },
     });
   }

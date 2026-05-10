@@ -28,6 +28,8 @@ export interface AIConfig {
   apiKey: string;
   /** Maximum tool-call rounds per chat message. Lower = fewer API calls = lower cost. */
   maxSteps: number;
+  /** LLM sampling temperature (0–1). Lower = more deterministic. Applied to the agent loop. */
+  temperature: number;
   /** Context window size in tokens. Used to render the context usage ring. */
   contextLimit: number;
   /** When false, all in-app AI features are hidden/disabled. Defaults to true. */

@@ -45,6 +45,8 @@ interface PiAgentPromptRequest {
     baseUrl?: string;
     model?: string;
     apiKey?: string;
+    maxSteps?: number;
+    temperature?: number;
   };
 }
 
@@ -59,6 +61,8 @@ interface PiAgentApprovePlanRequest {
     baseUrl?: string;
     model?: string;
     apiKey?: string;
+    maxSteps?: number;
+    temperature?: number;
   };
 }
 
@@ -91,9 +95,11 @@ export function registerPiAgentHandler(
 
     // Resolve LLM config — renderer passes config from its aiConfig store
     const llmConfig: AgentLLMConfig = {
-      baseUrl: normaliseBaseUrl(req.config?.baseUrl || "https://api.openai.com"),
-      model:   req.config?.model   || "gpt-4o",
-      apiKey:  req.config?.apiKey  || "",
+      baseUrl:     normaliseBaseUrl(req.config?.baseUrl || "https://api.openai.com"),
+      model:       req.config?.model       || "gpt-4o",
+      apiKey:      req.config?.apiKey      || "",
+      maxSteps:    req.config?.maxSteps    ?? 20,
+      temperature: req.config?.temperature ?? 0.3,
     };
 
     // Get or create session
@@ -213,9 +219,11 @@ export function registerPiAgentHandler(
     };
 
     const llmConfig: AgentLLMConfig = {
-      baseUrl: normaliseBaseUrl(req.config?.baseUrl || "https://api.openai.com"),
-      model:   req.config?.model   || "gpt-4o",
-      apiKey:  req.config?.apiKey  || "",
+      baseUrl:     normaliseBaseUrl(req.config?.baseUrl || "https://api.openai.com"),
+      model:       req.config?.model       || "gpt-4o",
+      apiKey:      req.config?.apiKey      || "",
+      maxSteps:    req.config?.maxSteps    ?? 20,
+      temperature: req.config?.temperature ?? 0.3,
     };
 
     let session = sessions.get(sessionId);

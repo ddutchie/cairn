@@ -37,7 +37,8 @@ async function runToolLoop(
   signal?: AbortSignal,
   getWin?: () => BrowserWindow | null,
 ): Promise<{ exhausted: true; content: string } | { exhausted: false }> {
-  const maxSteps = req.config?.maxSteps ?? 20;
+  const maxSteps    = req.config?.maxSteps    ?? 20;
+  const temperature = req.config?.temperature ?? 0.3;
   for (let round = 0; round < maxSteps; round++) {
     if (signal?.aborted) return { exhausted: true, content: "" };
     let response: Response;
@@ -47,7 +48,7 @@ async function runToolLoop(
       response = await fetch(`${baseUrl}/v1/chat/completions`, {
         method: "POST",
         headers,
-        body: JSON.stringify({ model, messages, tools: TOOLS, tool_choice: "auto", max_tokens: 4096, temperature: 0.3 }),
+        body: JSON.stringify({ model, messages, tools: TOOLS, tool_choice: "auto", max_tokens: 4096, temperature }),
       });
     } catch {
       return { exhausted: true, content: `Could not reach the AI endpoint at \`${baseUrl}\`. Check your endpoint URL and make sure the server is running.` };
