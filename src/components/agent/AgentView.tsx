@@ -113,7 +113,10 @@ export function AgentView() {
     function startBottomDrag(e: MouseEvent) {
       dragging = "bottom";
       startY = e.clientY;
-      startHeight = bottomHeight;
+      // Read current height from DOM so subsequent drags start from the right value
+      // rather than the stale React state captured at effect registration time.
+      startHeight = (bottomDividerRef.current?.nextElementSibling as HTMLElement | null)?.offsetHeight
+        ?? DEFAULT_BOTTOM_HEIGHT;
       document.body.style.cursor = "row-resize";
       document.body.style.userSelect = "none";
       e.preventDefault();

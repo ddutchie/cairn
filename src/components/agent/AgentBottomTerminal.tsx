@@ -54,6 +54,19 @@ export function AgentBottomTerminal({ cwd, height }: AgentBottomTerminalProps) {
     fitAddon: import("@xterm/addon-fit").FitAddon;
   }>>(new Map());
 
+  // Unmount cleanup — kill all PTY sessions, dispose terminals and observers
+  useEffect(() => {
+    return () => {
+      for (const [sid] of termRefs.current) {
+        const container = containerRefs.current.get(sid);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (container as any)?._cleanup?.();
+        window.electron?.agent.kill(sid).catch(() => {});
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Spawn the first shell on mount — guard against StrictMode double-invoke
   useEffect(() => {
     if (!window.electron) return;

@@ -197,33 +197,32 @@ function formatDate(iso: string) {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-// ── PiAgentEmptyState — shown in the content area when no session is loaded ──
+// ── Shared session helpers ─────────────────────────────────────────────────────
+//
+// Both PiAgentEmptyState and PiAgentTab need identical logic for creating new
+// sessions and resuming existing ones. This hook centralises that logic so
+// there is a single source of truth.
 
-function PiAgentEmptyState() {
+function usePiSessionActions() {
   const {
-    piSessionHistory,
-    persistentPiSessionId,
-    setPersistentPiSession,
     addTerminalSession,
     setActiveSession,
     terminalSessions,
     activeProjectId,
     projects,
     upsertPiSessionSummary,
+    setPersistentPiSession,
   } = useCairnStore(useShallow((s) => ({
-    piSessionHistory:       s.piSessionHistory,
-    persistentPiSessionId:  s.persistentPiSessionId,
-    setPersistentPiSession: s.setPersistentPiSession,
     addTerminalSession:     s.addTerminalSession,
     setActiveSession:       s.setActiveSession,
     terminalSessions:       s.terminalSessions,
     activeProjectId:        s.activeProjectId,
     projects:               s.projects,
     upsertPiSessionSummary: s.upsertPiSessionSummary,
+    setPersistentPiSession: s.setPersistentPiSession,
   })));
 
   const project = projects.find((p) => p.id === activeProjectId) ?? null;
-  const recentSessions = piSessionHistory.slice(0, 5);
 
   async function handleNewSession() {
     if (!project?.codeDirectory || !activeProjectId) return;
@@ -287,7 +286,19 @@ function PiAgentEmptyState() {
     setActiveSession(summary.id);
   }
 
+  return { handleNewSession, handleResumeSession, project };
+}
 
+// ── PiAgentEmptyState — shown in the content area when no session is loaded ──
+
+function PiAgentEmptyState() {
+  const { piSessionHistory, persistentPiSessionId } = useCairnStore(useShallow((s) => ({
+    piSessionHistory:      s.piSessionHistory,
+    persistentPiSessionId: s.persistentPiSessionId,
+  })));
+
+  const { handleNewSession, handleResumeSession, project } = usePiSessionActions();
+  const recentSessions = piSessionHistory.slice(0, 5);
 
   return (
     <div className="flex flex-col items-center justify-center h-full gap-4 p-6 text-center">
@@ -355,33 +366,21 @@ function PiAgentTab({ isActive, onActivate }: PiAgentTabProps) {
   const {
     piSessionHistory,
     persistentPiSessionId,
-    setPersistentPiSession,
     fetchPiSessionHistory,
     deletePiSessionFromHistory,
-    addTerminalSession,
-    setActiveSession,
-    terminalSessions,
     activeProjectId,
-    projects,
-    upsertPiSessionSummary,
   } = useCairnStore(useShallow((s) => ({
     piSessionHistory:           s.piSessionHistory,
     persistentPiSessionId:      s.persistentPiSessionId,
-    setPersistentPiSession:     s.setPersistentPiSession,
     fetchPiSessionHistory:      s.fetchPiSessionHistory,
     deletePiSessionFromHistory: s.deletePiSessionFromHistory,
-    addTerminalSession:         s.addTerminalSession,
-    setActiveSession:           s.setActiveSession,
-    terminalSessions:           s.terminalSessions,
     activeProjectId:            s.activeProjectId,
-    projects:                   s.projects,
-    upsertPiSessionSummary:     s.upsertPiSessionSummary,
   })));
 
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const project = projects.find((p) => p.id === activeProjectId) ?? null;
+  const { handleNewSession: _handleNewSession, handleResumeSession: _handleResumeSession, project } = usePiSessionActions();
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -404,116 +403,18 @@ function PiAgentTab({ isActive, onActivate }: PiAgentTabProps) {
 
   async function handleNewSession() {
     setDropdownOpen(false);
-    if (!project?.codeDirectory || !activeProjectId) return;
-    const sessionId = id();
-    const now = new Date().toISOString();
-    const summary: PiSessionSummary = {
-      id: sessionId,
-      projectId: activeProjectId,
-      taskTitle: "Ad-hoc session",
-      taskId: null,
-      cwd: project.codeDirectory,
-      mode: "execute" as const,
-      planNoteId: null,
-      status: "running" as const,
-      spawnedAt: now,
-      updatedAt: now,
-    };
-    try {
-      await window.electron?.piAgent.createSession(summary);
-    } catch (e) {
-      console.error("[PiAgentTab] createSession failed", e);
-    }
-    addTerminalSession({
-      sessionId,
-      taskId: sessionId,
-      taskTitle: "Ad-hoc session",
-      agentId: "cairn-agent",
-      agentName: "Cairn Agent",
-      projectId: activeProjectId,
-      cwd: project.codeDirectory,
-      status: "running",
-      exitCode: null,
-      spawnedAt: now,
-      sessionType: "pi",
-      piMessages: [],
-      mode: "execute",
-    });
-    upsertPiSessionSummary(summary);
-    setPersistentPiSession(sessionId);
-    setActiveSession(sessionId);
+    await _handleNewSession();
   }
 
   async function handleResumeSession(summary: PiSessionSummary) {
     setDropdownOpen(false);
     if (summary.id === persistentPiSessionId) return;
-
-    // Check if already loaded in terminalSessions
-    const alreadyLoaded = terminalSessions.find((t) => t.sessionId === summary.id);
-    if (!alreadyLoaded) {
-      // Load messages from SQLite
-      let piMessages: import("@/store/slices/terminal-sessions").PiAgentMessage[] = [];
-      try {
-        const rows = await window.electron?.piAgent.getMessages(summary.id) as Array<{
-          id: string; role: "user" | "assistant" | "error"; content: string;
-          toolCalls: unknown[] | null; subagents: unknown[] | null; timestamp: string;
-        }> | undefined;
-        if (rows) {
-          piMessages = rows.map((r) => ({
-            id: r.id,
-            role: r.role,
-            content: r.content,
-            toolCalls: (r.toolCalls ?? undefined) as import("@/store/slices/terminal-sessions").PiAgentMessage["toolCalls"],
-            subagents: (r.subagents ?? undefined) as import("@/store/slices/terminal-sessions").PiAgentMessage["subagents"],
-            timestamp: r.timestamp,
-          }));
-        }
-      } catch (e) {
-        console.error("[PiAgentTab] getMessages failed", e);
-      }
-
-      // Restore LLM context in main process
-      window.electron?.piAgent.restoreContext(summary.id);
-
-      addTerminalSession({
-        sessionId:   summary.id,
-        taskId:      summary.taskId ?? summary.id,
-        taskTitle:   summary.taskTitle,
-        agentId:     "cairn-agent",
-        agentName:   "Cairn Agent",
-        projectId:   summary.projectId,
-        cwd:         summary.cwd,
-        status:      summary.status,
-        exitCode:    null,
-        spawnedAt:   summary.spawnedAt,
-        sessionType: "pi",
-        piMessages,
-        mode:        summary.mode,
-        planNoteId:  summary.planNoteId ?? undefined,
-      });
-    } else {
-      // Already loaded — still restore context in case of restart
-      window.electron?.piAgent.restoreContext(summary.id);
-    }
-
-    setPersistentPiSession(summary.id);
-    setActiveSession(summary.id);
+    await _handleResumeSession(summary);
   }
 
   async function handleDeleteSession(e: React.MouseEvent, sessionId: string) {
     e.stopPropagation();
     await deletePiSessionFromHistory(sessionId);
-  }
-
-  function formatDate(iso: string) {
-    const d = new Date(iso);
-    const now = new Date();
-    const diffMs = now.getTime() - d.getTime();
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-    if (diffDays === 0) return "Today";
-    if (diffDays === 1) return "Yesterday";
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
   }
 
   return (

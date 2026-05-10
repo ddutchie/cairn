@@ -170,8 +170,7 @@ export function registerPiAgentHandler(
         onUsage:         (promptTokens, completionTokens) => send("pi-agent:usage", { sessionId, promptTokens, completionTokens }),
         onDone: () => {
           try {
-            const llmRows = session.messages.map((m) => ({ role: m.role, content: ("content" in m && m.content != null) ? String(m.content) : "" }));
-            q.saveLlmHistory(ctx.db, sessionId, llmRows);
+            q.saveLlmHistory(ctx.db, sessionId, session.messages);
             q.updatePiSession(ctx.db, sessionId, { updatedAt: ts() });
           } catch (e) {
             console.warn("[pi-agent] failed to persist session after done:", e);
@@ -180,15 +179,17 @@ export function registerPiAgentHandler(
         },
         onError: (error) => {
           try {
-            const llmRows = session.messages.map((m) => ({ role: m.role, content: ("content" in m && m.content != null) ? String(m.content) : "" }));
-            q.saveLlmHistory(ctx.db, sessionId, llmRows);
+            q.saveLlmHistory(ctx.db, sessionId, session.messages);
             q.updatePiSession(ctx.db, sessionId, { status: "exited", updatedAt: ts() });
           } catch (e) {
             console.warn("[pi-agent] failed to persist session after error:", e);
           }
           send("pi-agent:error", { sessionId, error });
         },
-        onPlanNoteFound: (noteId) => send("pi-agent:plan-note", { sessionId, noteId }),
+        onPlanNoteFound: (noteId) => {
+          send("pi-agent:plan-note", { sessionId, noteId });
+          try { q.updatePiSession(ctx.db, sessionId, { planNoteId: noteId, updatedAt: ts() }); } catch { /* non-critical */ }
+        },
       },
       getWin,
       sessionId,
@@ -293,8 +294,7 @@ export function registerPiAgentHandler(
         onUsage:         (promptTokens, completionTokens) => send("pi-agent:usage", { sessionId, promptTokens, completionTokens }),
         onDone: () => {
           try {
-            const llmRows = session.messages.map((m) => ({ role: m.role, content: ("content" in m && m.content != null) ? String(m.content) : "" }));
-            q.saveLlmHistory(ctx.db, sessionId, llmRows);
+            q.saveLlmHistory(ctx.db, sessionId, session.messages);
             q.updatePiSession(ctx.db, sessionId, { updatedAt: ts() });
           } catch (e) {
             console.warn("[pi-agent] failed to persist session after done:", e);
@@ -303,15 +303,17 @@ export function registerPiAgentHandler(
         },
         onError: (error) => {
           try {
-            const llmRows = session.messages.map((m) => ({ role: m.role, content: ("content" in m && m.content != null) ? String(m.content) : "" }));
-            q.saveLlmHistory(ctx.db, sessionId, llmRows);
+            q.saveLlmHistory(ctx.db, sessionId, session.messages);
             q.updatePiSession(ctx.db, sessionId, { status: "exited", updatedAt: ts() });
           } catch (e) {
             console.warn("[pi-agent] failed to persist session after error:", e);
           }
           send("pi-agent:error", { sessionId, error });
         },
-        onPlanNoteFound: (noteId) => send("pi-agent:plan-note", { sessionId, noteId }),
+        onPlanNoteFound: (noteId) => {
+          send("pi-agent:plan-note", { sessionId, noteId });
+          try { q.updatePiSession(ctx.db, sessionId, { planNoteId: noteId, updatedAt: ts() }); } catch { /* non-critical */ }
+        },
       },
       getWin,
       sessionId,
@@ -347,12 +349,11 @@ export function registerPiAgentHandler(
     try {
       const history = q.getLlmHistory(ctx.db, sessionId);
       if (history.length > 0) {
-        // Cast the stored { role, content } rows back to AgentMessage —
-        // the loop only needs role + content for multi-turn context.
+        // getLlmHistory now returns the full AgentMessage objects (role, content,
+        // tool_calls, tool_call_id, etc.) so multi-turn context is fully restored.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const messages = history.map((h) => ({ role: h.role, content: h.content })) as any[];
         sessions.set(sessionId, {
-          messages,
+          messages: history as any[],
           abortCtrl: new AbortController(),
         });
       }

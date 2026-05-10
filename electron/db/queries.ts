@@ -429,9 +429,13 @@ export function createCard(db: Database.Database, c: {
 export function updateCard(db: Database.Database, id: string, patch: Partial<{
   columnId: string; title: string; description: string; priority: string;
   dueDate: string; tagIds: string[]; linkedNoteIds: string[]; blockedByIds: string[];
-  order: number; assignee: string; archivedAt: string;
+  order: number; assignee: string | null; archivedAt: string;
 }>) {
   const now = ts();
+  // assignee uses CASE WHEN instead of COALESCE so it can be explicitly cleared to NULL.
+  // Pass (1, null) when explicitly setting assignee; pass (0, null) when not touching it.
+  const assigneeSentinel = "assignee" in patch ? 1 : 0;
+  const assigneeValue    = "assignee" in patch ? (patch.assignee || null) : null;
   db.prepare(`
     UPDATE task_cards SET
       column_id       = COALESCE(?, column_id),
@@ -443,7 +447,7 @@ export function updateCard(db: Database.Database, id: string, patch: Partial<{
       linked_note_ids = COALESCE(?, linked_note_ids),
       blocked_by_ids  = COALESCE(?, blocked_by_ids),
       "order"         = COALESCE(?, "order"),
-      assignee        = COALESCE(?, assignee),
+      assignee        = CASE WHEN ? = 1 THEN ? ELSE assignee END,
       archived_at     = COALESCE(?, archived_at),
       updated_at      = ?,
       version         = version + 1
@@ -454,7 +458,9 @@ export function updateCard(db: Database.Database, id: string, patch: Partial<{
     patch.tagIds ? j(patch.tagIds) : null,
     patch.linkedNoteIds ? j(patch.linkedNoteIds) : null,
     patch.blockedByIds ? j(patch.blockedByIds) : null,
-    patch.order ?? null, patch.assignee ?? null, patch.archivedAt ?? null,
+    patch.order ?? null,
+    assigneeSentinel, assigneeValue,
+    patch.archivedAt ?? null,
     now, id,
   );
   return toCard(db.prepare("SELECT * FROM task_cards WHERE id = ?").get(id));
@@ -1189,20 +1195,43 @@ export interface LlmHistoryRow {
   content: string;
 }
 
+/**
+ * Persist the full LLM message history for a session.
+ *
+ * Each message is serialised as JSON and stored in the `content` column so that
+ * tool_calls (assistant→tool) and tool_call_id (tool result) are preserved across
+ * restarts. The `role` column is kept for quick filtering without a JSON parse.
+ */
 export function saveLlmHistory(
   db: Database.Database,
   sessionId: string,
-  messages: Array<{ role: string; content: string }>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  messages: Array<Record<string, any>>,
 ) {
   const save = db.transaction(() => {
     db.prepare("DELETE FROM pi_agent_llm_history WHERE session_id = ?").run(sessionId);
     messages.forEach((msg, i) => {
-      db.prepare(`INSERT INTO pi_agent_llm_history (session_id, "order", role, content) VALUES (?, ?, ?, ?)`).run(sessionId, i, msg.role, msg.content);
+      db.prepare(`INSERT INTO pi_agent_llm_history (session_id, "order", role, content) VALUES (?, ?, ?, ?)`)
+        .run(sessionId, i, msg.role as string, JSON.stringify(msg));
     });
   });
   save();
 }
 
+/**
+ * Restore the full LLM message history for a session.
+ *
+ * The `content` column contains a JSON-serialised AgentMessage object. We parse
+ * it back out; if parsing fails (legacy plain-text rows) we fall back to a minimal
+ * { role, content } shape so old sessions degrade gracefully.
+ */
 export function getLlmHistory(db: Database.Database, sessionId: string): LlmHistoryRow[] {
-  return (db.prepare(`SELECT role, content FROM pi_agent_llm_history WHERE session_id = ? ORDER BY "order" ASC`).all(sessionId) as unknown[]) as LlmHistoryRow[];
+  const rows = db.prepare(`SELECT role, content FROM pi_agent_llm_history WHERE session_id = ? ORDER BY "order" ASC`).all(sessionId) as LlmHistoryRow[];
+  return rows.map((row) => {
+    try {
+      const parsed = JSON.parse(row.content);
+      if (parsed && typeof parsed === "object" && "role" in parsed) return parsed as LlmHistoryRow;
+    } catch { /* legacy plain-text row — fall through */ }
+    return row;
+  });
 }

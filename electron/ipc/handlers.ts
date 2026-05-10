@@ -501,7 +501,6 @@ export function registerIpcHandlers(ctx: DbContext): void {
   ipcMain.handle("db:piSession:delete",       (_e, { id }) => handle(() => q.deletePiSession(ctx.db, id)));
   ipcMain.handle("db:piSession:messages",     (_e, { sessionId }) => handle(() => q.getPiMessages(ctx.db, sessionId)));
   ipcMain.handle("db:piSession:saveMessages", (_e, { sessionId, messages }) => handle(() => q.savePiMessages(ctx.db, sessionId, messages)));
-  ipcMain.handle("db:piSession:llmHistory",   (_e, { sessionId }) => handle(() => q.getLlmHistory(ctx.db, sessionId)));
 
   // ── AI Chat completions ───────────────────────────────────────────────────────────────────
   registerChatHandler(ctx.db, ctx.workspacePath, ctx.getWin);

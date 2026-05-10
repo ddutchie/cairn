@@ -821,6 +821,10 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
 
       // ── field update ───────────────────────────────────────────────────────
       const now = ts();
+      // assignee uses CASE WHEN instead of COALESCE so it can be explicitly cleared to NULL
+      // by passing an empty string. Sentinel 1 = "update assignee"; 0 = "leave unchanged".
+      const assigneeSentinel = assignee !== undefined ? 1 : 0;
+      const assigneeValue    = assignee !== undefined ? (assignee || null) : null;
       db.transaction(() => {
         db.prepare(`
           UPDATE task_cards SET
@@ -830,7 +834,7 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
             priority    = COALESCE(?, priority),
             due_date    = COALESCE(?, due_date),
             tag_ids     = COALESCE(?, tag_ids),
-            assignee    = COALESCE(?, assignee),
+            assignee    = CASE WHEN ? = 1 THEN ? ELSE assignee END,
             updated_at  = ?,
             version     = version + 1
           WHERE id = ?
@@ -838,7 +842,7 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
           columnId ?? null, title ?? null, description ?? null,
           priority ?? null, dueDate ?? null,
           tagIds != null ? (Array.isArray(tagIds) ? j(tagIds) : tagIds) : null,
-          assignee !== undefined ? (assignee || null) : null,
+          assigneeSentinel, assigneeValue,
           now, cardId
         );
         insertNotification(db, "update_task", "Task updated", `"${title ?? card.title}" was updated`);

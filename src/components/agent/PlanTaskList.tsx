@@ -12,9 +12,14 @@ interface PlanTask {
 /** Parse `- [ ] …` and `- [x] …` lines from the `## Tasks` section of a PRD note. */
 function parseTasks(content: string): PlanTask[] {
   const tasks: PlanTask[] = [];
-  const taskSectionMatch = content.match(/^##\s+Tasks\s*\n([\s\S]*?)(?=^##\s|\z)/m);
+  // Match from "## Tasks" to the next level-2 heading or end of string.
+  // Note: \z is not valid in JS regex — we match greedily then truncate at the next heading.
+  const taskSectionMatch = content.match(/^##\s+Tasks\s*\n([\s\S]*)/m);
   if (!taskSectionMatch) return tasks;
-  const section = taskSectionMatch[1];
+  const nextHeading = taskSectionMatch[1].search(/^##\s/m);
+  const section = nextHeading !== -1
+    ? taskSectionMatch[1].slice(0, nextHeading)
+    : taskSectionMatch[1];
   for (const line of section.split("\n")) {
     const m = line.match(/^[-*]\s+\[([x ])\]\s+(.*)/i);
     if (m) {
