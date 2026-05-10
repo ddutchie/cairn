@@ -349,6 +349,18 @@ const api = {
       ipcRenderer.on("pi-agent:ask-questions", handler);
       return () => ipcRenderer.off("pi-agent:ask-questions", handler);
     },
+    /** List all persisted pi sessions for a project (project-scoped history) */
+    listSessions:   (projectId: string) => invoke("db:piSession:list", { projectId }),
+    /** Persist a new pi session row to SQLite */
+    createSession:  (args: unknown) => invoke("db:piSession:create", args),
+    /** Delete a pi session and all its messages from SQLite */
+    deleteSession:  (id: string) => invoke("db:piSession:delete", { id }),
+    /** Fetch the full message transcript for a session */
+    getMessages:    (sessionId: string) => invoke("db:piSession:messages", { sessionId }),
+    /** Bulk-save the full message array for a session (replaces existing rows) */
+    saveMessages:   (sessionId: string, messages: unknown[]) => invoke("db:piSession:saveMessages", { sessionId, messages }),
+    /** Restore LLM context for a session (loads history into main-process Map) — fire-and-forget */
+    restoreContext: (sessionId: string) => ipcRenderer.send("pi-agent:restore-context", { sessionId }),
   },
 
 } as const;

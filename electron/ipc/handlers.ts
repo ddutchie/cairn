@@ -495,7 +495,15 @@ export function registerIpcHandlers(ctx: DbContext): void {
   ipcMain.handle("db:chat:addMessage",    (_e, args) => handle(() => q.addChatMessage(ctx.db, args)));
   ipcMain.handle("db:chat:deleteThread",  (_e, { threadId }) => handle(() => q.deleteChatThread(ctx.db, threadId)));
 
-  // ── AI Chat completions ────────────────────────────
+  // ── Pi Agent Sessions ─────────────────────────────────────────────────────────────────────────────────
+  ipcMain.handle("db:piSession:list",         (_e, { projectId }) => handle(() => q.getPiSessions(ctx.db, projectId)));
+  ipcMain.handle("db:piSession:create",       (_e, args) => handle(() => q.createPiSession(ctx.db, args)));
+  ipcMain.handle("db:piSession:delete",       (_e, { id }) => handle(() => q.deletePiSession(ctx.db, id)));
+  ipcMain.handle("db:piSession:messages",     (_e, { sessionId }) => handle(() => q.getPiMessages(ctx.db, sessionId)));
+  ipcMain.handle("db:piSession:saveMessages", (_e, { sessionId, messages }) => handle(() => q.savePiMessages(ctx.db, sessionId, messages)));
+  ipcMain.handle("db:piSession:llmHistory",   (_e, { sessionId }) => handle(() => q.getLlmHistory(ctx.db, sessionId)));
+
+  // ── AI Chat completions ───────────────────────────────────────────────────────────────────
   registerChatHandler(ctx.db, ctx.workspacePath, ctx.getWin);
 
   // ── AI PRD generation (direct, no chat loop) ──────

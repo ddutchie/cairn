@@ -1039,3 +1039,170 @@ export function setProjectCodeDirectory(db: Database.Database, projectId: string
   db.prepare("UPDATE projects SET code_directory = ?, updated_at = ? WHERE id = ?")
     .run(path ?? null, ts(), projectId);
 }
+
+// ── Pi Agent Sessions ────────────────────────────────────────────────────────────────────
+
+export interface PiSessionRow {
+  id: string;
+  projectId: string;
+  taskTitle: string;
+  taskId: string | null;
+  cwd: string;
+  mode: "plan" | "execute";
+  planNoteId: string | null;
+  status: "running" | "exited";
+  spawnedAt: string;
+  updatedAt: string;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function toPiSession(row: any): PiSessionRow {
+  return {
+    id:          row.id as string,
+    projectId:   row.project_id as string,
+    taskTitle:   row.task_title as string,
+    taskId:      row.task_id as string | null,
+    cwd:         row.cwd as string,
+    mode:        (row.mode ?? "execute") as "plan" | "execute",
+    planNoteId:  row.plan_note_id as string | null,
+    status:      (row.status ?? "running") as "running" | "exited",
+    spawnedAt:   row.spawned_at as string,
+    updatedAt:   row.updated_at as string,
+  };
+}
+
+export function createPiSession(
+  db: Database.Database,
+  session: { id: string; projectId: string; taskTitle: string; taskId?: string | null; cwd: string; mode: "plan" | "execute"; spawnedAt: string },
+): PiSessionRow {
+  const now = ts();
+  db.prepare(`
+    INSERT INTO pi_agent_sessions (id, project_id, task_title, task_id, cwd, mode, status, spawned_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, 'running', ?, ?)
+  `).run(session.id, session.projectId, session.taskTitle, session.taskId ?? null, session.cwd, session.mode, session.spawnedAt, now);
+  return getPiSessionById(db, session.id)!;
+}
+
+export function getPiSessionById(db: Database.Database, id: string): PiSessionRow | null {
+  const row = db.prepare("SELECT * FROM pi_agent_sessions WHERE id = ?").get(id);
+  return row ? toPiSession(row) : null;
+}
+
+export function getPiSessions(db: Database.Database, projectId: string): PiSessionRow[] {
+  return (db.prepare("SELECT * FROM pi_agent_sessions WHERE project_id = ? ORDER BY updated_at DESC LIMIT 50").all(projectId) as unknown[])
+    .map(toPiSession);
+}
+
+export function updatePiSession(
+  db: Database.Database,
+  sessionId: string,
+  patch: { mode?: "plan" | "execute"; planNoteId?: string | null; status?: "running" | "exited"; updatedAt?: string },
+) {
+  const now = patch.updatedAt ?? ts();
+  if (patch.mode !== undefined) {
+    db.prepare("UPDATE pi_agent_sessions SET mode = ?, updated_at = ? WHERE id = ?").run(patch.mode, now, sessionId);
+  }
+  if (patch.planNoteId !== undefined) {
+    db.prepare("UPDATE pi_agent_sessions SET plan_note_id = ?, updated_at = ? WHERE id = ?").run(patch.planNoteId, now, sessionId);
+  }
+  if (patch.status !== undefined) {
+    db.prepare("UPDATE pi_agent_sessions SET status = ?, updated_at = ? WHERE id = ?").run(patch.status, now, sessionId);
+  }
+  if (patch.mode === undefined && patch.planNoteId === undefined && patch.status === undefined) {
+    db.prepare("UPDATE pi_agent_sessions SET updated_at = ? WHERE id = ?").run(now, sessionId);
+  }
+}
+
+export function deletePiSession(db: Database.Database, sessionId: string) {
+  db.prepare("DELETE FROM pi_agent_sessions WHERE id = ?").run(sessionId);
+}
+
+// ── Pi Agent Messages ───────────────────────────────────────────────────────────────────
+
+export interface PiMessageRow {
+  id: string;
+  sessionId: string;
+  role: "user" | "assistant" | "error";
+  content: string;
+  toolCalls: unknown[] | null;
+  subagents: unknown[] | null;
+  timestamp: string;
+  order: number;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function toPiMessage(row: any): PiMessageRow {
+  return {
+    id:        row.id as string,
+    sessionId: row.session_id as string,
+    role:      row.role as "user" | "assistant" | "error",
+    content:   row.content as string,
+    toolCalls: row.tool_calls ? JSON.parse(row.tool_calls as string) : null,
+    subagents: row.subagents ? JSON.parse(row.subagents as string) : null,
+    timestamp: row.timestamp as string,
+    order:     row.order as number,
+  };
+}
+
+export function upsertPiMessage(
+  db: Database.Database,
+  msg: { id: string; sessionId: string; role: "user" | "assistant" | "error"; content: string; toolCalls?: unknown[] | null; subagents?: unknown[] | null; timestamp: string; order: number },
+) {
+  db.prepare(`
+    INSERT INTO pi_agent_messages (id, session_id, role, content, tool_calls, subagents, timestamp, "order")
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      content    = excluded.content,
+      tool_calls = excluded.tool_calls,
+      subagents  = excluded.subagents
+  `).run(
+    msg.id, msg.sessionId, msg.role, msg.content,
+    msg.toolCalls ? JSON.stringify(msg.toolCalls) : null,
+    msg.subagents ? JSON.stringify(msg.subagents) : null,
+    msg.timestamp, msg.order,
+  );
+}
+
+export function savePiMessages(
+  db: Database.Database,
+  sessionId: string,
+  messages: Array<{ id: string; role: "user" | "assistant" | "error"; content: string; toolCalls?: unknown[] | null; subagents?: unknown[] | null; timestamp: string }>,
+) {
+  const save = db.transaction(() => {
+    db.prepare("DELETE FROM pi_agent_messages WHERE session_id = ?").run(sessionId);
+    messages.forEach((msg, i) => {
+      upsertPiMessage(db, { ...msg, sessionId, order: i });
+    });
+  });
+  save();
+}
+
+export function getPiMessages(db: Database.Database, sessionId: string): PiMessageRow[] {
+  return (db.prepare(`SELECT * FROM pi_agent_messages WHERE session_id = ? ORDER BY "order" ASC`).all(sessionId) as unknown[])
+    .map(toPiMessage);
+}
+
+// ── Pi Agent LLM History ──────────────────────────────────────────────────────────────────
+
+export interface LlmHistoryRow {
+  role: string;
+  content: string;
+}
+
+export function saveLlmHistory(
+  db: Database.Database,
+  sessionId: string,
+  messages: Array<{ role: string; content: string }>,
+) {
+  const save = db.transaction(() => {
+    db.prepare("DELETE FROM pi_agent_llm_history WHERE session_id = ?").run(sessionId);
+    messages.forEach((msg, i) => {
+      db.prepare(`INSERT INTO pi_agent_llm_history (session_id, "order", role, content) VALUES (?, ?, ?, ?)`).run(sessionId, i, msg.role, msg.content);
+    });
+  });
+  save();
+}
+
+export function getLlmHistory(db: Database.Database, sessionId: string): LlmHistoryRow[] {
+  return (db.prepare(`SELECT role, content FROM pi_agent_llm_history WHERE session_id = ? ORDER BY "order" ASC`).all(sessionId) as unknown[]) as LlmHistoryRow[];
+}

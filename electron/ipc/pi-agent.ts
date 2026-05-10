@@ -21,6 +21,8 @@ import { buildPiAgentSystemPrompt } from "../lib/pi-agent-prompt";
 import { normaliseBaseUrl } from "../lib/llm";
 import type { ChatRequest } from "../lib/tools";
 import type { DbContext } from "./handlers";
+import * as q from "../db/queries";
+import { ts } from "../db/utils";
 
 // ── Session registry ──────────────────────────────────────────────────────────
 
@@ -150,8 +152,26 @@ export function registerPiAgentHandler(
         onToolEnd:       (name, label, ok, output, callId) => send("pi-agent:tool", { sessionId, name, label, callId, status: "end", ok, output }),
         onStepStart:     () => send("pi-agent:step",  { sessionId }),
         onUsage:         (promptTokens, completionTokens) => send("pi-agent:usage", { sessionId, promptTokens, completionTokens }),
-        onDone:          () => send("pi-agent:done",  { sessionId }),
-        onError:         (error) => send("pi-agent:error", { sessionId, error }),
+        onDone: () => {
+          try {
+            const llmRows = session.messages.map((m) => ({ role: m.role, content: ("content" in m && m.content != null) ? String(m.content) : "" }));
+            q.saveLlmHistory(ctx.db, sessionId, llmRows);
+            q.updatePiSession(ctx.db, sessionId, { updatedAt: ts() });
+          } catch (e) {
+            console.warn("[pi-agent] failed to persist session after done:", e);
+          }
+          send("pi-agent:done", { sessionId });
+        },
+        onError: (error) => {
+          try {
+            const llmRows = session.messages.map((m) => ({ role: m.role, content: ("content" in m && m.content != null) ? String(m.content) : "" }));
+            q.saveLlmHistory(ctx.db, sessionId, llmRows);
+            q.updatePiSession(ctx.db, sessionId, { status: "exited", updatedAt: ts() });
+          } catch (e) {
+            console.warn("[pi-agent] failed to persist session after error:", e);
+          }
+          send("pi-agent:error", { sessionId, error });
+        },
         onPlanNoteFound: (noteId) => send("pi-agent:plan-note", { sessionId, noteId }),
       },
       getWin,
@@ -242,8 +262,26 @@ export function registerPiAgentHandler(
         onToolEnd:       (name, label, ok, output, callId) => send("pi-agent:tool", { sessionId, name, label, callId, status: "end", ok, output }),
         onStepStart:     () => send("pi-agent:step",  { sessionId }),
         onUsage:         (promptTokens, completionTokens) => send("pi-agent:usage", { sessionId, promptTokens, completionTokens }),
-        onDone:          () => send("pi-agent:done",  { sessionId }),
-        onError:         (error) => send("pi-agent:error", { sessionId, error }),
+        onDone: () => {
+          try {
+            const llmRows = session.messages.map((m) => ({ role: m.role, content: ("content" in m && m.content != null) ? String(m.content) : "" }));
+            q.saveLlmHistory(ctx.db, sessionId, llmRows);
+            q.updatePiSession(ctx.db, sessionId, { updatedAt: ts() });
+          } catch (e) {
+            console.warn("[pi-agent] failed to persist session after done:", e);
+          }
+          send("pi-agent:done", { sessionId });
+        },
+        onError: (error) => {
+          try {
+            const llmRows = session.messages.map((m) => ({ role: m.role, content: ("content" in m && m.content != null) ? String(m.content) : "" }));
+            q.saveLlmHistory(ctx.db, sessionId, llmRows);
+            q.updatePiSession(ctx.db, sessionId, { status: "exited", updatedAt: ts() });
+          } catch (e) {
+            console.warn("[pi-agent] failed to persist session after error:", e);
+          }
+          send("pi-agent:error", { sessionId, error });
+        },
         onPlanNoteFound: (noteId) => send("pi-agent:plan-note", { sessionId, noteId }),
       },
       getWin,
@@ -269,6 +307,28 @@ export function registerPiAgentHandler(
     if (session) {
       session.abortCtrl.abort();
       sessions.delete(sessionId);
+    }
+  });
+
+  // ── pi-agent:restore-context ───────────────────────────────────────────────────────
+  // Loads the persisted LLM message history for a session back into the
+  // in-memory sessions Map so the model can continue from where it left off.
+  ipcMain.on("pi-agent:restore-context", (_event, { sessionId }: { sessionId: string }) => {
+    if (sessions.has(sessionId)) return; // already in memory
+    try {
+      const history = q.getLlmHistory(ctx.db, sessionId);
+      if (history.length > 0) {
+        // Cast the stored { role, content } rows back to AgentMessage —
+        // the loop only needs role + content for multi-turn context.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const messages = history.map((h) => ({ role: h.role, content: h.content })) as any[];
+        sessions.set(sessionId, {
+          messages,
+          abortCtrl: new AbortController(),
+        });
+      }
+    } catch (e) {
+      console.warn("[pi-agent] restore-context failed for", sessionId, e);
     }
   });
 }

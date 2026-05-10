@@ -230,6 +230,17 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
       if (e.sessionId !== sessionId) return;
       finalisePiMessage(sessionId);
       setIsLoading(false);
+      // Persist the full message transcript after the turn completes
+      const msgs = useCairnStore.getState().terminalSessions.find((t) => t.sessionId === sessionId)?.piMessages ?? [];
+      const saveable = msgs.filter((m) => !m.isStreaming).map((m) => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        toolCalls: m.toolCalls ?? null,
+        subagents: m.subagents ?? null,
+        timestamp: m.timestamp,
+      }));
+      window.electron?.piAgent.saveMessages(sessionId, saveable).catch(console.error);
     });
 
     const unsubError = electron.piAgent.onError((e) => {
@@ -242,6 +253,19 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
         timestamp: new Date().toISOString(),
       });
       setIsLoading(false);
+      // Persist the message transcript including the error message
+      setTimeout(() => {
+        const msgs = useCairnStore.getState().terminalSessions.find((t) => t.sessionId === sessionId)?.piMessages ?? [];
+        const saveable = msgs.filter((m) => !m.isStreaming).map((m) => ({
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          toolCalls: m.toolCalls ?? null,
+          subagents: m.subagents ?? null,
+          timestamp: m.timestamp,
+        }));
+        window.electron?.piAgent.saveMessages(sessionId, saveable).catch(console.error);
+      }, 0);
     });
 
     // ── Subagent events (child session IDs routed back to parent) ──────────

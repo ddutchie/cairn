@@ -114,12 +114,60 @@ export default function Home() {
       Promise.all([
         electron.needsWorkspaceSetup(),
         hydrateFromElectron(),
-      ]).then(([needsSetup]) => {
+      ]).then(async ([needsSetup]) => {
         if (needsSetup) {
           setOnboardingState("workspace");
         } else {
           const ws = useCairnStore.getState().workspaces;
           setOnboardingState(ws.length === 0 ? "create" : false);
+        }
+
+        // Restore last pi session for the active project
+        const state = useCairnStore.getState();
+        const projId = state.activeProjectId;
+        if (projId && window.electron) {
+          try {
+            await state.fetchPiSessionHistory(projId);
+            const history = useCairnStore.getState().piSessionHistory;
+            if (history.length > 0) {
+              const latest = history[0];
+              // Load messages for the latest session
+              const rows = await window.electron.piAgent.getMessages(latest.id) as Array<{
+                id: string; role: "user" | "assistant" | "error"; content: string;
+                toolCalls: unknown[] | null; subagents: unknown[] | null; timestamp: string;
+              }>;
+              const piMessages = rows.map((r) => ({
+                id: r.id,
+                role: r.role,
+                content: r.content,
+                toolCalls: r.toolCalls ?? undefined,
+                subagents: r.subagents ?? undefined,
+                timestamp: r.timestamp,
+              })) as import("@/store/slices/terminal-sessions").PiAgentMessage[];
+
+              state.addTerminalSession({
+                sessionId:   latest.id,
+                taskId:      latest.taskId ?? latest.id,
+                taskTitle:   latest.taskTitle,
+                agentId:     "cairn-agent",
+                agentName:   "Cairn Agent",
+                projectId:   latest.projectId,
+                cwd:         latest.cwd,
+                status:      latest.status,
+                exitCode:    null,
+                spawnedAt:   latest.spawnedAt,
+                sessionType: "pi",
+                piMessages,
+                mode:        latest.mode,
+                planNoteId:  latest.planNoteId ?? undefined,
+              });
+              state.setPersistentPiSession(latest.id);
+              // Restore LLM context in main process
+              window.electron.piAgent.restoreContext(latest.id);
+            }
+          } catch (e) {
+            console.error("[startup] failed to restore pi session", e);
+          }
         }
       });
 

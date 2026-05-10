@@ -73,6 +73,20 @@ export interface TerminalSession {
   planNoteId?: string;
 }
 
+/** Summary of a persisted pi agent session — loaded from SQLite for the history dropdown */
+export interface PiSessionSummary {
+  id: string;
+  projectId: string;
+  taskTitle: string;
+  taskId: string | null;
+  cwd: string;
+  mode: "plan" | "execute";
+  planNoteId: string | null;
+  status: "running" | "exited";
+  spawnedAt: string;
+  updatedAt: string;
+}
+
 export interface TerminalSessionsSlice {
   terminalSessions: TerminalSession[];
   activeSessionId: string | null;
@@ -119,6 +133,18 @@ export interface TerminalSessionsSlice {
   stepPiSubagent: (sessionId: string, childSessionId: string) => void;
   /** Set the mode for a pi session and optionally record the plan note ID */
   setPiMode: (sessionId: string, mode: "plan" | "execute", planNoteId?: string) => void;
+  /** ID of the session currently shown in the persistent Cairn Agent pinned tab */
+  persistentPiSessionId: string | null;
+  /** Project-scoped history of persisted pi sessions (from SQLite) */
+  piSessionHistory: PiSessionSummary[];
+  /** Set the persistent pi session (switches what the pinned tab shows) */
+  setPersistentPiSession: (sessionId: string | null) => void;
+  /** Fetch session history from SQLite for the given project */
+  fetchPiSessionHistory: (projectId: string) => Promise<void>;
+  /** Remove a session from history (also calls the IPC delete) */
+  deletePiSessionFromHistory: (sessionId: string) => Promise<void>;
+  /** Add or update a session in the local history list (optimistic) */
+  upsertPiSessionSummary: (summary: PiSessionSummary) => void;
   /** Open a file tab (no-op if already open) and make it active. */
   openEditorFile: (path: string) => void;
   /** Close a file tab; activates the nearest remaining tab. */
@@ -137,6 +163,8 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
   activeSessionId: null,
   openEditorFiles: [],
   activeEditorFile: null,
+  persistentPiSessionId: null,
+  piSessionHistory: [],
 
   addTerminalSession(session) {
     set((s) => ({
@@ -547,6 +575,48 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
           : t
       ),
     }));
+  },
+
+  setPersistentPiSession(sessionId) {
+    set({ persistentPiSessionId: sessionId });
+  },
+
+  async fetchPiSessionHistory(projectId) {
+    if (typeof window === "undefined" || !window.electron) return;
+    try {
+      const history = await window.electron.piAgent.listSessions(projectId) as PiSessionSummary[];
+      set({ piSessionHistory: history });
+    } catch (err) {
+      console.error("[pi-sessions] fetchPiSessionHistory error", err);
+    }
+  },
+
+  async deletePiSessionFromHistory(sessionId) {
+    if (typeof window === "undefined" || !window.electron) return;
+    // Optimistic removal
+    set((s) => ({
+      piSessionHistory: s.piSessionHistory.filter((h) => h.id !== sessionId),
+      persistentPiSessionId: s.persistentPiSessionId === sessionId ? null : s.persistentPiSessionId,
+    }));
+    try {
+      await window.electron.piAgent.deleteSession(sessionId);
+    } catch (err) {
+      console.error("[pi-sessions] deletePiSessionFromHistory error", err);
+    }
+  },
+
+  upsertPiSessionSummary(summary) {
+    set((s) => {
+      const exists = s.piSessionHistory.some((h) => h.id === summary.id);
+      if (exists) {
+        return {
+          piSessionHistory: s.piSessionHistory.map((h) => h.id === summary.id ? summary : h),
+        };
+      }
+      return {
+        piSessionHistory: [summary, ...s.piSessionHistory],
+      };
+    });
   },
 
   openEditorFile(path) {
