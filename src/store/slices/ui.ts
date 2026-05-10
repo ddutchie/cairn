@@ -6,7 +6,7 @@ import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
 import type { ID, AppUIState } from "@/types";
 import { storage } from "@/lib/storage";
-import { DEFAULT_AI_CONFIG, AI_CONFIG_KEY, ACTIVE_PROJECT_KEY } from "@/lib/constants";
+import { DEFAULT_AI_CONFIG, AI_CONFIG_KEY, ACTIVE_PROJECT_KEY, CHAT_PANEL_WIDTH_KEY } from "@/lib/constants";
 
 // ── View visibility ───────────────────────────────────────────────────────────
 
@@ -38,6 +38,12 @@ export interface AIConfig {
 
 export type Theme = "light" | "dark" | "system";
 export const THEME_KEY = "theme";
+
+// ── Chat panel width ──────────────────────────────────────────────────────────
+
+export const DEFAULT_CHAT_PANEL_WIDTH = 320; // px  (≈ w-80 at default font scale)
+export const MIN_CHAT_PANEL_WIDTH     = 240; // px
+export const MAX_CHAT_PANEL_WIDTH     = 600; // px
 
 // ── Font scale ────────────────────────────────────────────────────────────────
 
@@ -98,6 +104,10 @@ export interface UISlice extends AppUIState {
   toggleViewVisibility: (view: ToggleableView) => void;
   setHiddenViews: (views: ToggleableView[]) => void;
 
+  // Chat panel width
+  chatPanelWidth: number;
+  setChatPanelWidth: (width: number) => void;
+
   // Navigation / selections
   setActiveWorkspace: (id: ID) => void;
   setActiveProject: (id: ID | null) => void;
@@ -125,6 +135,7 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
   theme: "dark" as Theme,
   fontScale: DEFAULT_FONT_SCALE, // 1.2 = M (~16.8px)
   hiddenViews: new Set<ToggleableView>(),
+  chatPanelWidth: DEFAULT_CHAT_PANEL_WIDTH,
 
   // ── AI config ──────────────────────────────────
   setAIConfig(patch) {
@@ -174,6 +185,13 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
     set({ fontScale: scale });
     storage.set(FONT_SCALE_KEY, scale);
     applyFontScale(scale);
+  },
+
+  // ── Chat panel width ───────────────────────────
+  setChatPanelWidth(width) {
+    const clamped = Math.min(MAX_CHAT_PANEL_WIDTH, Math.max(MIN_CHAT_PANEL_WIDTH, width));
+    set({ chatPanelWidth: clamped });
+    storage.set(CHAT_PANEL_WIDTH_KEY, clamped);
   },
 
   // ── Selections ─────────────────────────────────

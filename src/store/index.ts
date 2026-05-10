@@ -19,12 +19,12 @@ import type {
 import { storage } from "@/lib/storage";
 import { historyManager } from "@/lib/history";
 import { isOwnNoteWrite } from "./ipc";
-import { DEFAULT_AI_CONFIG, AI_CONFIG_KEY, ACTIVE_PROJECT_KEY } from "@/lib/constants";
+import { DEFAULT_AI_CONFIG, AI_CONFIG_KEY, ACTIVE_PROJECT_KEY, CHAT_PANEL_WIDTH_KEY } from "@/lib/constants";
 
 // ── Slice imports ─────────────────────────────────────────────────────────────
 import { createUISlice } from "./slices/ui";
 import type { UISlice, AIConfig, Theme, ToggleableView } from "./slices/ui";
-import { applyTheme, THEME_KEY, applyFontScale, FONT_SCALE_KEY, DEFAULT_FONT_SCALE, HIDDEN_VIEWS_KEY } from "./slices/ui";
+import { applyTheme, THEME_KEY, applyFontScale, FONT_SCALE_KEY, DEFAULT_FONT_SCALE, HIDDEN_VIEWS_KEY, DEFAULT_CHAT_PANEL_WIDTH, MIN_CHAT_PANEL_WIDTH, MAX_CHAT_PANEL_WIDTH } from "./slices/ui";
 import type { FontScale } from "./slices/ui";
 import { createWorkspaceSlice } from "./slices/workspace";
 import type { WorkspaceSlice } from "./slices/workspace";
@@ -181,6 +181,11 @@ export const useCairnStore = create<CairnStore>()(
         a[0]({ hiddenViews: new Set(savedHidden) });
       }
 
+      const savedChatWidth = storage.get<number>(CHAT_PANEL_WIDTH_KEY);
+      if (savedChatWidth) {
+        a[0]({ chatPanelWidth: Math.min(MAX_CHAT_PANEL_WIDTH, Math.max(MIN_CHAT_PANEL_WIDTH, savedChatWidth)) });
+      }
+
       const saved = loadPersisted();
       if (saved && saved.workspaces.length > 0) {
         a[0]({
@@ -222,6 +227,11 @@ export const useCairnStore = create<CairnStore>()(
       const savedHidden = storage.get<ToggleableView[]>(HIDDEN_VIEWS_KEY);
       if (savedHidden) {
         set({ hiddenViews: new Set(savedHidden) });
+      }
+
+      const savedChatWidth = storage.get<number>(CHAT_PANEL_WIDTH_KEY);
+      if (savedChatWidth) {
+        set({ chatPanelWidth: Math.min(MAX_CHAT_PANEL_WIDTH, Math.max(MIN_CHAT_PANEL_WIDTH, savedChatWidth)) });
       }
 
       const snap = (await window.electron!.snapshot()) as PersistedState;
