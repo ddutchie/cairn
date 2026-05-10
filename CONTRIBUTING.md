@@ -186,7 +186,7 @@ Cairn has two processes that share the same `cairn.db` (SQLite WAL mode):
 **Cairn native agent** — a stateful multi-turn tool-call loop running entirely in the main process. No external binary required. Session type `"pi"` in the terminal sessions store; rendered by `PiAgentPane` instead of xterm. Key files:
 
 - `electron/ipc/pi-agent.ts` — IPC handler; `sessions Map<sessionId, PiAgentSession>`; registers all `pi-agent:*` channels
-- `electron/lib/pi-agent-loop.ts` — `runAgentLoop()`; SSE stream parsing; tool execution; callbacks (`onToken`, `onToolsReady`, `onToolPending`, `onToolStart`, `onToolEnd`, `onStepStart`, `onUsage`, `onSubagent`, `onDone`, `onError`)
+- `electron/lib/pi-agent-loop.ts` — `runAgentLoop()`; SSE stream parsing; parallel tool execution (`Promise.all`); callbacks (`onToken`, `onToolsReady`, `onToolPending`, `onToolStart`, `onToolEnd`, `onStepStart`, `onUsage`, `onRetry`, `onSubagent`, `onDone`, `onError`); `transformContext` hook; `AgentToolContext` groups all per-session infrastructure
 - `electron/lib/pi-agent-prompt.ts` — system prompt builder; mandatory Cairn workflow injected here
 - `electron/lib/coding-tools/` — 7 ported file-system tools (`read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`) + `spawn_subagent` + `file-mutex.ts`
 
@@ -361,7 +361,8 @@ Shared modules live in `src/components/graph/`: `analyticsUtils.ts`, `analyticsH
 | `electron/ipc/chat.ts` | AI chat loop — `runToolLoop` + IPC handler registration |
 | `electron/ipc/chat-executor.ts` | `executeTool` — all AI tool implementations |
 | `electron/ipc/pi-agent.ts` | Cairn native agent IPC handler — `sessions` Map, all `pi-agent:*` channels |
-| `electron/lib/pi-agent-loop.ts` | `runAgentLoop()` — multi-turn SSE loop, tool execution, all callbacks; `onToolPending` fires during streaming |
+| `electron/lib/pi-agent-loop.ts` | `runAgentLoop()` — multi-turn SSE loop, parallel tool execution, callbacks, retry, `transformContext` hook; `AgentToolContext` groups cwd/db/IPC/session state |
+| `electron/lib/compaction.ts` | `buildCompactionTransformer` — async LLM-based context compaction; fires `pi-agent:compact` events; falls back to sliding-window pruner while summary is in flight |
 | `electron/lib/pi-agent-prompt.ts` | System prompt builder; mandatory Cairn workflow; `spawn_subagent` description |
 | `electron/lib/coding-tools/` | 8 coding tools (`read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`, `spawn_subagent`) + `file-mutex.ts` |
 | `electron/lib/llm.ts` | `LLMConfig`, `callLLM`, `streamCompletion`, `isLocalEndpoint`, `normaliseBaseUrl` |
@@ -569,10 +570,18 @@ renderer                         main process
    │                                  │  if more turns:
    │ ◄── pi-agent:step ───────────────┤    seal message, start next
    │ ◄── pi-agent:usage ──────────────┤    token counts → context ring
+   │ ◄── pi-agent:retry ──────────────┤    (on transient error) countdown badge
+   │ ◄── pi-agent:compact ────────────┤    (when compaction fires) "Compacting…" indicator
    │ ◄── pi-agent:done ───────────────┤  turn complete
 ```
 
 The `pending` status fires during streaming as soon as a tool name is seen in the SSE delta — this is what makes the chip appear immediately rather than waiting for the full response. The `start` event reuses the same `callId` to update the chip's label to the resolved human-readable version once argument parsing is complete.
+
+**Parallel tool execution** — all tool calls in a single assistant turn run concurrently via `Promise.all` in `executeSingleTool`. Results are appended to `session.messages` in source order regardless of completion order. Per-file serialisation is handled transparently by `file-mutex.ts`.
+
+**Automatic retry** — `isRetryable(status, body)` in `pi-agent-loop.ts` detects transient errors (429, 5xx, overloaded/rate-limit body patterns). Up to `AgentLLMConfig.maxRetries` attempts (default 3) with exponential backoff starting at `baseRetryDelayMs` (default 2000 ms). `onRetry` callback fires before each sleep; `pi-agent:retry` is emitted to the renderer.
+
+**Context compaction** — `buildCompactionTransformer` in `electron/lib/compaction.ts` returns a `transformContext` function passed to `runAgentLoop`. When `session.lastPromptTokens` exceeds 80% of `llmConfig.contextWindow`, it fires a background LLM summarisation call (non-streaming, `temperature: 0.1`). The current turn uses a sliding-window fallback; subsequent turns use the cached summary. `onCompactionStart`/`onCompactionEnd` fire `pi-agent:compact` events to the renderer. To change the threshold or number of verbatim turns preserved, edit `COMPACT_THRESHOLD` and `KEEP_RECENT_TURNS` in `compaction.ts`.
 
 **Subagents**
 

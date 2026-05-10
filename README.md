@@ -38,7 +38,7 @@ Cairn is a desktop app (Electron + Next.js) that combines markdown notes with a 
 - **Idea Flow** — Freeform node canvas per project (`⌘4`): ideas, note/task refs, groups, URLs, AI summaries — connected with labelled edges
 - **Live dashboards** — AI-generated interactive HTML dashboards with a live `window.cairn.query()` data bridge; inline "Fix with AI" on runtime errors; editable via built-in CodeMirror overlay
 - **MCP server** — Exposes your workspace to external AI agents (OpenCode, Claude Desktop, etc.) via the Model Context Protocol
-- **Cairn Agent** — Native coding agent (`⌘5`) with board and notes integration: moves tasks, writes session notes, captures discovered work; supports subagents for deep sub-tasks; Plan Mode writes a PRD note before coding; context usage ring; works with any OpenAI-compatible endpoint
+- **Cairn Agent** — Native coding agent (`⌘5`) with board and notes integration: moves tasks, writes session notes, captures discovered work; supports subagents for deep sub-tasks; Plan Mode writes a PRD note before coding; automatic retry on transient API errors; LLM-based context compaction for long sessions; context usage ring; works with any OpenAI-compatible endpoint
 - **Agent workspace** — Three-pane view (`⌘5`) for running external AI coding agents (Claude Code, OpenCode, Aider, or any CLI) connected to project tasks; file tree, multi-file CodeMirror 6 editor, xterm.js terminal, and git diff viewer
 - **Knowledge Graph** — Workspace-wide graph of every note, card, project, and tag; Force-directed and Radial tree layouts; auto-discovered relationships (`⌘6`)
 - **Insights** — Analytics view: Ridgeline joy plot, Beeswarm, Bullet health bars, Sankey pipeline flow, Timeline, Matrix heatmap, Table (`⌘7`)
@@ -136,6 +136,8 @@ The agent can delegate contained sub-tasks to a fresh sub-agent via `spawn_subag
 ### Context usage ring
 
 A small ring in the agent pane header shows how full the model's context window is after each step. Configure the limit for your model in **Settings → AI & Chat → Context window** (presets: 8k / 32k / 128k / 200k).
+
+When usage reaches 80% the agent automatically summarises older context with a background LLM call — the status bar shows `"Compacting context…"` while this is in flight. If a transient API error occurs, the status bar shows a countdown (`"Transient error — retrying (1/3) in 8s…"`) and the agent retries automatically.
 
 ## MCP server
 
