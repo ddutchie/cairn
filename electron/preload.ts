@@ -321,6 +321,20 @@ const api = {
       ipcRenderer.on("pi-agent:usage", handler);
       return () => ipcRenderer.off("pi-agent:usage", handler);
     },
+    /** Fired before each automatic retry on a transient error. delayMs is the backoff wait. */
+    onRetry: (cb: (e: { sessionId: string; attempt: number; maxRetries: number; delayMs: number; error: string }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { sessionId: string; attempt: number; maxRetries: number; delayMs: number; error: string }) => cb(e);
+      ipcRenderer.on("pi-agent:retry", handler);
+      return () => ipcRenderer.off("pi-agent:retry", handler);
+    },
+    /** Fired when the session starts or finishes an LLM-based compaction pass. */
+    onCompact: (cb: (e: { sessionId: string; status: "start" | "end" }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { sessionId: string; status: "start" | "end" }) => cb(e);
+      ipcRenderer.on("pi-agent:compact", handler);
+      return () => ipcRenderer.off("pi-agent:compact", handler);
+    },
     onSubagent: (cb: (e: { parentSessionId: string; childSessionId: string; status: "start" | "done"; result?: string }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const handler = (_: any, e: { parentSessionId: string; childSessionId: string; status: "start" | "done"; result?: string }) => cb(e);

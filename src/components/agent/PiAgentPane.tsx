@@ -121,6 +121,10 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
   const [pendingQuestions, setPendingQuestions]   = useState<PendingQuestion[] | null>(null);
   // Live PRD note content — updated whenever the agent writes to the plan note
   const [planNoteContent, setPlanNoteContent]     = useState<string | null>(null);
+  // Retry state — shown in status bar when the loop is backing off after a transient error
+  const [retryInfo, setRetryInfo]                 = useState<{ attempt: number; maxRetries: number; delayMs: number } | null>(null);
+  // Compaction state — shown in status bar while an LLM summary call is in flight
+  const [isCompacting, setIsCompacting]           = useState(false);
 
   const messagesEndRef  = useRef<HTMLDivElement>(null);
   const textareaRef     = useRef<HTMLTextAreaElement>(null);
@@ -233,6 +237,8 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
       if (e.sessionId !== sessionId) return;
       finalisePiMessage(sessionId);
       setIsLoading(false);
+      setRetryInfo(null);
+      setIsCompacting(false);
       // Persist the full message transcript after the turn completes
       const msgs = useCairnStore.getState().terminalSessions.find((t) => t.sessionId === sessionId)?.piMessages ?? [];
       const saveable = msgs.filter((m) => !m.isStreaming).map((m) => ({
@@ -249,6 +255,8 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
     const unsubError = electron.piAgent.onError((e) => {
       if (e.sessionId !== sessionId) return;
       finalisePiMessage(sessionId);
+      setRetryInfo(null);
+      setIsCompacting(false);
       addPiMessage(sessionId, {
         id:        id(),
         role:      "error",
@@ -344,6 +352,20 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
       setPlanNoteContent(e.content);
     });
 
+    // Retry events — show backoff countdown in the status bar
+    const unsubRetry = electron.piAgent.onRetry((e) => {
+      if (e.sessionId !== sessionId) return;
+      setRetryInfo({ attempt: e.attempt, maxRetries: e.maxRetries, delayMs: e.delayMs });
+      // Auto-clear the retry badge once enough time has passed (delayMs + 500ms grace)
+      setTimeout(() => setRetryInfo(null), e.delayMs + 500);
+    });
+
+    // Compaction events — show "Compacting…" in status bar while LLM summary is in flight
+    const unsubCompact = electron.piAgent.onCompact((e) => {
+      if (e.sessionId !== sessionId) return;
+      setIsCompacting(e.status === "start");
+    });
+
     return () => {
       unsubToken();
       unsubUsage();
@@ -360,6 +382,8 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
       unsubModeChange();
       unsubAskQuestions();
       unsubNoteUpdated();
+      unsubRetry();
+      unsubCompact();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.sessionId]);
@@ -602,7 +626,14 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
           )}
         </div>
         <p className="text-[0.643rem] text-[var(--text-tertiary)] mt-1 text-center">
-          {isLoading ? "Working… click ◼ to stop" : "Shift+Enter for new line · Enter to send"}
+          {retryInfo
+            ? `Transient error — retrying (${retryInfo.attempt}/${retryInfo.maxRetries}) in ${Math.round(retryInfo.delayMs / 1000)}s…`
+            : isCompacting
+              ? "Compacting context…"
+              : isLoading
+                ? "Working… click ◼ to stop"
+                : "Shift+Enter for new line · Enter to send"
+          }
         </p>
       </div>
       </div>

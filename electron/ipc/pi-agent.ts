@@ -13,10 +13,13 @@
  *   pi-agent:tool      { sessionId, name: string, label: string, status: "start"|"end", ok?: boolean }
  *   pi-agent:done      { sessionId }
  *   pi-agent:error     { sessionId, error: string }
+ *   pi-agent:retry     { sessionId, attempt: number, maxRetries: number, delayMs: number, error: string }
+ *   pi-agent:compact   { sessionId, status: "start" | "end" }
  */
 
 import { ipcMain } from "electron";
-import { runAgentLoop, type PiAgentSession, type AgentLLMConfig } from "../lib/pi-agent-loop";
+import { runAgentLoop, type PiAgentSession, type AgentLLMConfig, type AgentToolContext } from "../lib/pi-agent-loop";
+import { buildCompactionTransformer } from "../lib/compaction";
 import { buildPiAgentSystemPrompt } from "../lib/pi-agent-prompt";
 import { normaliseBaseUrl } from "../lib/llm";
 import type { ChatRequest } from "../lib/tools";
@@ -145,14 +148,28 @@ export function registerPiAgentHandler(
       },
     };
 
+    const toolCtx: AgentToolContext = {
+      cwd,
+      db:            ctx.db,
+      req:           chatReq,
+      workspacePath: ctx.workspacePath,
+      sessionId,
+      send,
+      getWin,
+    };
+
+    const transformContext = buildCompactionTransformer(
+      session,
+      llmConfig,
+      session.abortCtrl.signal,
+      () => send("pi-agent:compact", { sessionId, status: "start" }),
+      () => send("pi-agent:compact", { sessionId, status: "end" }),
+    );
+
     await runAgentLoop(
       session,
       systemPrompt,
-      cwd,
       llmConfig,
-      ctx.db,
-      chatReq,
-      ctx.workspacePath,
       {
         onToken:         (delta) => send("pi-agent:token",      { sessionId, delta }),
         onToolsReady:    ()     => send("pi-agent:tools-ready", { sessionId }),
@@ -174,6 +191,8 @@ export function registerPiAgentHandler(
         },
         onStepStart:     () => send("pi-agent:step",  { sessionId }),
         onUsage:         (promptTokens, completionTokens) => send("pi-agent:usage", { sessionId, promptTokens, completionTokens }),
+        onRetry:         (attempt, maxRetries, delayMs, error) => send("pi-agent:retry", { sessionId, attempt, maxRetries, delayMs, error }),
+        transformContext,
         onDone: () => {
           try {
             q.saveLlmHistory(ctx.db, sessionId, session.messages);
@@ -197,9 +216,7 @@ export function registerPiAgentHandler(
           try { q.updatePiSession(ctx.db, sessionId, { planNoteId: noteId, updatedAt: ts() }); } catch { /* non-critical */ }
         },
       },
-      getWin,
-      sessionId,
-      send,
+      toolCtx,
       mode,
     );
   });
@@ -271,14 +288,28 @@ export function registerPiAgentHandler(
       config: { baseUrl: llmConfig.baseUrl, model: llmConfig.model, apiKey: llmConfig.apiKey },
     };
 
+    const toolCtx: AgentToolContext = {
+      cwd,
+      db:            ctx.db,
+      req:           chatReq,
+      workspacePath: ctx.workspacePath,
+      sessionId,
+      send,
+      getWin,
+    };
+
+    const transformContext = buildCompactionTransformer(
+      session,
+      llmConfig,
+      session.abortCtrl.signal,
+      () => send("pi-agent:compact", { sessionId, status: "start" }),
+      () => send("pi-agent:compact", { sessionId, status: "end" }),
+    );
+
     await runAgentLoop(
       session,
       systemPrompt,
-      cwd,
       llmConfig,
-      ctx.db,
-      chatReq,
-      ctx.workspacePath,
       {
         onToken:       (delta) => send("pi-agent:token",      { sessionId, delta }),
         onToolsReady:  ()     => send("pi-agent:tools-ready", { sessionId }),
@@ -300,6 +331,8 @@ export function registerPiAgentHandler(
         },
         onStepStart:     () => send("pi-agent:step",  { sessionId }),
         onUsage:         (promptTokens, completionTokens) => send("pi-agent:usage", { sessionId, promptTokens, completionTokens }),
+        onRetry:         (attempt, maxRetries, delayMs, error) => send("pi-agent:retry", { sessionId, attempt, maxRetries, delayMs, error }),
+        transformContext,
         onDone: () => {
           try {
             q.saveLlmHistory(ctx.db, sessionId, session.messages);
@@ -323,9 +356,7 @@ export function registerPiAgentHandler(
           try { q.updatePiSession(ctx.db, sessionId, { planNoteId: noteId, updatedAt: ts() }); } catch { /* non-critical */ }
         },
       },
-      getWin,
-      sessionId,
-      send,
+      toolCtx,
       "execute",
     );
   });

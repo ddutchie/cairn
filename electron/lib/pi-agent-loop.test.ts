@@ -27,7 +27,7 @@ import BetterSqlite3 from "better-sqlite3";
 import type Database from "better-sqlite3";
 import { applySchema } from "../db/schema";
 import { createWorkspace, createProject, createColumn } from "../db/queries";
-import { runAgentLoop, type PiAgentSession, type AgentLoopCallbacks } from "./pi-agent-loop";
+import { runAgentLoop, type PiAgentSession, type AgentLoopCallbacks, type AgentToolContext } from "./pi-agent-loop";
 import { normaliseBaseUrl } from "./llm";
 import type { ChatRequest } from "./tools";
 
@@ -52,6 +52,17 @@ const chatReq: ChatRequest = {
   projectId: "proj1",
   threadId: "test",
 };
+
+function makeToolCtx(db: Database.Database): AgentToolContext {
+  return {
+    cwd: "/tmp",
+    db,
+    req: chatReq,
+    workspacePath: "/tmp",
+    sessionId: "test",
+    send: () => {},
+  };
+}
 
 /**
  * Build a server that serves a fixed sequence of SSE response bodies.
@@ -180,9 +191,9 @@ describe("runAgentLoop — SSE streaming", () => {
     const { log, callbacks } = makeCallbacks();
 
     await runAgentLoop(
-      session, "You are a test assistant.", "/tmp",
+      session, "You are a test assistant.",
       { baseUrl: server.url, model: "test", apiKey: "test", maxSteps: 10, temperature: 0.3 },
-      db, chatReq, "/tmp", callbacks,
+      callbacks, makeToolCtx(db),
     );
 
     expect(log).toContain("token:Hello");
@@ -209,9 +220,9 @@ describe("runAgentLoop — SSE streaming", () => {
     const { log, callbacks } = makeCallbacks();
 
     await runAgentLoop(
-      session, "You are a test assistant.", "/tmp",
+      session, "You are a test assistant.",
       { baseUrl: server.url, model: "test", apiKey: "test", maxSteps: 10, temperature: 0.3 },
-      db, chatReq, "/tmp", callbacks,
+      callbacks, makeToolCtx(db),
     );
 
     const toolsReadyIdx = log.indexOf("tools-ready");
@@ -242,9 +253,9 @@ describe("runAgentLoop — SSE streaming", () => {
     const { log, callbacks } = makeCallbacks();
 
     await runAgentLoop(
-      session, "You are a test assistant.", "/tmp",
+      session, "You are a test assistant.",
       { baseUrl: server.url, model: "test", apiKey: "test", maxSteps: 10, temperature: 0.3 },
-      db, chatReq, "/tmp", callbacks,
+      callbacks, makeToolCtx(db),
     );
 
     const firstTokenIdx  = log.findIndex((e) => e.startsWith("token:"));
@@ -271,9 +282,9 @@ describe("runAgentLoop — SSE streaming", () => {
     const { log, callbacks } = makeCallbacks();
 
     await runAgentLoop(
-      session, "You are a test assistant.", "/tmp",
+      session, "You are a test assistant.",
       { baseUrl: server.url, model: "test", apiKey: "test", maxSteps: 10, temperature: 0.3 },
-      db, chatReq, "/tmp", callbacks,
+      callbacks, makeToolCtx(db),
     );
 
     const stepStartIdx      = log.indexOf("step-start");
@@ -320,9 +331,9 @@ describe("runAgentLoop — SSE streaming", () => {
     const { log, callbacks } = makeCallbacks();
 
     await runAgentLoop(
-      session, "You are a test assistant.", "/tmp",
+      session, "You are a test assistant.",
       { baseUrl: server.url, model: "test", apiKey: "test", maxSteps: 10, temperature: 0.3 },
-      db, chatReq, "/tmp", callbacks,
+      callbacks, makeToolCtx(db),
     );
 
     // Tool should have executed with the full reconstructed args
@@ -349,9 +360,9 @@ describe("runAgentLoop — SSE streaming", () => {
     const { log, callbacks } = makeCallbacks();
 
     await runAgentLoop(
-      session, "You are a test assistant.", "/tmp",
+      session, "You are a test assistant.",
       { baseUrl: server.url, model: "test", apiKey: "test", maxSteps: 10, temperature: 0.3 },
-      db, chatReq, "/tmp", callbacks,
+      callbacks, makeToolCtx(db),
     );
 
     expect(log).toContain("usage:512:64");
@@ -369,9 +380,9 @@ describe("runAgentLoop — SSE streaming", () => {
     const { log, callbacks } = makeCallbacks();
 
     await runAgentLoop(
-      session, "You are a test assistant.", "/tmp",
+      session, "You are a test assistant.",
       { baseUrl: server.url, model: "test", apiKey: "test", maxSteps: 10, temperature: 0.3 },
-      db, chatReq, "/tmp", callbacks,
+      callbacks, makeToolCtx(db),
     );
 
     const toolsReadyIdx = log.indexOf("tools-ready");
@@ -417,9 +428,9 @@ describe("runAgentLoop — SSE streaming", () => {
     const { log, callbacks } = makeCallbacks();
 
     await runAgentLoop(
-      session, "You are a test assistant.", "/tmp",
+      session, "You are a test assistant.",
       { baseUrl: server.url, model: "test", apiKey: "test", maxSteps: 10, temperature: 0.3 },
-      db, chatReq, "/tmp", callbacks,
+      callbacks, makeToolCtx(db),
     );
 
     const starts = log.filter((e) => e.startsWith("tool-start:"));
@@ -461,9 +472,8 @@ describe.skipIf(!liveBaseUrl)("runAgentLoop — live endpoint", () => {
     await runAgentLoop(
       session,
       "You are a test assistant. Follow instructions exactly.",
-      "/tmp",
       { baseUrl: liveBaseUrl!, model: liveModel, apiKey: liveApiKey, maxSteps: 10, temperature: 0.3 },
-      db, chatReq, "/tmp", callbacks,
+      callbacks, makeToolCtx(db),
     );
 
     expect(log).toContain("done");
@@ -479,9 +489,8 @@ describe.skipIf(!liveBaseUrl)("runAgentLoop — live endpoint", () => {
     await runAgentLoop(
       session,
       "You are a test assistant with access to coding tools. When asked to list files, always use the ls tool.",
-      "/tmp",
       { baseUrl: liveBaseUrl!, model: liveModel, apiKey: liveApiKey, maxSteps: 10, temperature: 0.3 },
-      db, chatReq, "/tmp", callbacks,
+      callbacks, makeToolCtx(db),
     );
 
     expect(log).toContain("done");
