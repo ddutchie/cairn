@@ -245,7 +245,8 @@ const api = {
     pickDirectory: () => ipcRenderer.invoke("agent:pickDirectory"),
     pickFile: () => ipcRenderer.invoke("agent:pickFile"),
 
-    spawn: (payload: unknown) => invoke<{ sessionId: string }>("agent:spawn", payload),
+    spawn:      (payload: unknown) => invoke<{ sessionId: string }>("agent:spawn",      payload),
+    spawnShell: (cwd: string)      => invoke<{ sessionId: string }>("agent:spawnShell", { cwd }),
     input: (sessionId: string, data: string) =>
       invoke("agent:input", { sessionId, data }),
     resize: (sessionId: string, cols: number, rows: number) =>

@@ -433,6 +433,54 @@ export function registerAgentHandlers(db: Database): void {
     });
   });
 
+  // ── Shell spawn (bottom terminal pane — no agent binary required) ────────
+  //
+  // Spawns the user's login shell ($SHELL / cmd.exe) directly in a given cwd.
+  // Uses the same PTY session map so agent:input / agent:resize / agent:kill
+  // / agent:data / agent:exit all work identically.
+
+  ipcMain.handle("agent:spawnShell", async (event, payload: { cwd: string }) => {
+    return handle(async () => {
+      if (!isSafePath(payload.cwd)) throw new Error(`Invalid cwd: ${payload.cwd}`);
+      const stat = fs.statSync(payload.cwd);
+      if (!stat.isDirectory()) throw new Error(`cwd is not a directory: ${payload.cwd}`);
+
+      const shell = process.platform === "win32"
+        ? (process.env.COMSPEC || "cmd.exe")
+        : (process.env.SHELL  || "/bin/zsh");
+
+      const pty = nodePty.spawn(shell, [], {
+        name: "xterm-256color",
+        cols: 120,
+        rows: 30,
+        cwd:  payload.cwd,
+        env:  process.env as Record<string, string>,
+      });
+
+      const sessionId = newId();
+      // agentId / taskId not meaningful for shell sessions — use sentinel values
+      sessions.set(sessionId, { pty, agentId: "__shell__", taskId: "__shell__" });
+
+      const webContents = event.sender;
+
+      pty.onData((data: string) => {
+        if (!webContents.isDestroyed()) webContents.send("agent:data", { sessionId, data });
+      });
+
+      pty.onExit(({ exitCode }: { exitCode: number }) => {
+        sessions.delete(sessionId);
+        if (!webContents.isDestroyed()) webContents.send("agent:exit", { sessionId, exitCode });
+      });
+
+      webContents.once("destroyed", () => {
+        const s = sessions.get(sessionId);
+        if (s) { try { s.pty.kill(); } catch { /* already dead */ } sessions.delete(sessionId); }
+      });
+
+      return { sessionId };
+    });
+  });
+
   // ── PTY input / resize / kill ────────────────────────────────────────────
 
   ipcMain.handle("agent:input", (_e, { sessionId, data }: { sessionId: string; data: string }) =>

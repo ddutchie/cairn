@@ -16,7 +16,7 @@ import "@xterm/xterm/css/xterm.css";
 
 import { useEffect, useRef, useCallback, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { X, MessageSquare, CircleDot, Plus, ChevronDown, Trash2 } from "lucide-react";
+import { X, MessageSquare, CircleDot, Plus, ChevronDown, Trash2, Bot, History, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { id } from "@/lib/utils";
 import { useCairnStore } from "@/store";
@@ -185,6 +185,160 @@ function SessionMount({ session, isActive }: SessionMountProps) {
       ref={containerRef}
       style={{ background: "var(--background)", height: "100%", width: "100%" }}
     />
+  );
+}
+
+// ── PiAgentEmptyState — shown in the content area when no session is loaded ──
+
+function PiAgentEmptyState() {
+  const {
+    piSessionHistory,
+    persistentPiSessionId,
+    setPersistentPiSession,
+    addTerminalSession,
+    setActiveSession,
+    terminalSessions,
+    activeProjectId,
+    projects,
+    upsertPiSessionSummary,
+  } = useCairnStore(useShallow((s) => ({
+    piSessionHistory:       s.piSessionHistory,
+    persistentPiSessionId:  s.persistentPiSessionId,
+    setPersistentPiSession: s.setPersistentPiSession,
+    addTerminalSession:     s.addTerminalSession,
+    setActiveSession:       s.setActiveSession,
+    terminalSessions:       s.terminalSessions,
+    activeProjectId:        s.activeProjectId,
+    projects:               s.projects,
+    upsertPiSessionSummary: s.upsertPiSessionSummary,
+  })));
+
+  const project = projects.find((p) => p.id === activeProjectId) ?? null;
+  const recentSessions = piSessionHistory.slice(0, 5);
+
+  async function handleNewSession() {
+    if (!project?.codeDirectory || !activeProjectId) return;
+    const sessionId = id();
+    const now = new Date().toISOString();
+    const summary: PiSessionSummary = {
+      id: sessionId,
+      projectId: activeProjectId,
+      taskTitle: "Ad-hoc session",
+      taskId: null,
+      cwd: project.codeDirectory,
+      mode: "execute" as const,
+      planNoteId: null,
+      status: "running" as const,
+      spawnedAt: now,
+      updatedAt: now,
+    };
+    try { await window.electron?.piAgent.createSession(summary); } catch { /* ok */ }
+    addTerminalSession({
+      sessionId, taskId: sessionId, taskTitle: "Ad-hoc session",
+      agentId: "cairn-agent", agentName: "Cairn Agent",
+      projectId: activeProjectId, cwd: project.codeDirectory,
+      status: "running", exitCode: null, spawnedAt: now,
+      sessionType: "pi", piMessages: [], mode: "execute",
+    });
+    upsertPiSessionSummary(summary);
+    setPersistentPiSession(sessionId);
+    setActiveSession(sessionId);
+  }
+
+  async function handleResumeSession(summary: PiSessionSummary) {
+    const alreadyLoaded = terminalSessions.find((t) => t.sessionId === summary.id);
+    if (!alreadyLoaded) {
+      let piMessages: import("@/store/slices/terminal-sessions").PiAgentMessage[] = [];
+      try {
+        const rows = await window.electron?.piAgent.getMessages(summary.id) as Array<{
+          id: string; role: "user" | "assistant" | "error"; content: string;
+          toolCalls: unknown[] | null; subagents: unknown[] | null; timestamp: string;
+        }> | undefined;
+        if (rows) {
+          piMessages = rows.map((r) => ({
+            id: r.id, role: r.role, content: r.content,
+            toolCalls: (r.toolCalls ?? undefined) as import("@/store/slices/terminal-sessions").PiAgentMessage["toolCalls"],
+            subagents: (r.subagents ?? undefined) as import("@/store/slices/terminal-sessions").PiAgentMessage["subagents"],
+            timestamp: r.timestamp,
+          }));
+        }
+      } catch { /* ok */ }
+      window.electron?.piAgent.restoreContext(summary.id);
+      addTerminalSession({
+        sessionId: summary.id, taskId: summary.taskId ?? summary.id,
+        taskTitle: summary.taskTitle, agentId: "cairn-agent", agentName: "Cairn Agent",
+        projectId: summary.projectId, cwd: summary.cwd, status: summary.status,
+        exitCode: null, spawnedAt: summary.spawnedAt, sessionType: "pi",
+        piMessages, mode: summary.mode, planNoteId: summary.planNoteId ?? undefined,
+      });
+    } else {
+      window.electron?.piAgent.restoreContext(summary.id);
+    }
+    setPersistentPiSession(summary.id);
+    setActiveSession(summary.id);
+  }
+
+  function formatDate(iso: string) {
+    const d = new Date(iso);
+    const diffDays = Math.floor((Date.now() - d.getTime()) / 86400000);
+    if (diffDays === 0) return "Today";
+    if (diffDays === 1) return "Yesterday";
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
+
+  return (
+    <div className="flex flex-col items-center justify-center h-full gap-4 p-6 text-center">
+      <div className="w-10 h-10 rounded-full bg-[var(--accent-dim)] border border-[var(--accent)]/20 flex items-center justify-center">
+        <Bot size={18} className="text-[var(--accent)]" />
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <p className="text-[0.786rem] font-semibold text-[var(--text-primary)]">Cairn Agent</p>
+        <p className="text-[0.714rem] text-[var(--text-tertiary)] max-w-44">
+          {project?.codeDirectory
+            ? "Start a new session or resume a previous one."
+            : "Set a code directory on this project to start a session."}
+        </p>
+      </div>
+
+      {/* New session CTA */}
+      <button
+        onClick={handleNewSession}
+        disabled={!project?.codeDirectory}
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--accent)] text-white text-[0.714rem] font-medium hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
+      >
+        <Plus size={11} />
+        New session
+      </button>
+
+      {/* Recent sessions */}
+      {recentSessions.length > 0 && (
+        <div className="w-full max-w-56 flex flex-col gap-0.5 mt-1">
+          <div className="flex items-center gap-1.5 mb-1">
+            <History size={10} className="text-[var(--text-tertiary)]" />
+            <span className="text-[0.643rem] font-medium text-[var(--text-tertiary)] uppercase tracking-wider">Recent</span>
+          </div>
+          {recentSessions.map((summary) => (
+            <button
+              key={summary.id}
+              onClick={() => handleResumeSession(summary)}
+              className={cn(
+                "w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left transition-colors",
+                "hover:bg-[var(--surface-2)] border border-transparent hover:border-[var(--border)]",
+                summary.id === persistentPiSessionId && "bg-[var(--surface-2)] border-[var(--border)]",
+              )}
+            >
+              <div className="flex-1 min-w-0">
+                <p className="text-[0.714rem] text-[var(--text-secondary)] truncate">{summary.taskTitle}</p>
+                <p className="text-[0.607rem] text-[var(--text-tertiary)]">{formatDate(summary.updatedAt)}</p>
+              </div>
+              <ArrowRight size={10} className="text-[var(--text-tertiary)] shrink-0 opacity-0 group-hover:opacity-100" />
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -542,15 +696,8 @@ export function AgentTerminalPane() {
             <PiAgentPane session={persistentSession} isActive={pinnedIsActive} />
           </div>
         ) : (
-          <div className={cn("flex-1 min-h-0 overflow-hidden", !pinnedIsActive && "hidden")}>
-            {/* Welcome state — no session loaded yet */}
-            <div className="flex flex-col items-center justify-center h-full gap-3 text-center p-4">
-              <MessageSquare size={20} className="text-[var(--text-tertiary)]" />
-              <p className="text-[0.786rem] font-medium text-[var(--text-secondary)]">Cairn Agent</p>
-              <p className="text-[0.714rem] text-[var(--text-tertiary)] max-w-48">
-                Select a session from history or start a new one to begin.
-              </p>
-            </div>
+          <div className="flex-1 min-h-0 overflow-hidden">
+            <PiAgentEmptyState />
           </div>
         )}
 

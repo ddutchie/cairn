@@ -15,6 +15,7 @@ import { useShallow } from "zustand/react/shallow";
 import { FileTree } from "./FileTree";
 import { AgentEditor } from "./AgentEditor";
 import { AgentTerminalPane } from "./AgentTerminalPane";
+import { AgentBottomTerminal } from "./AgentBottomTerminal";
 import { DiffViewer } from "./DiffViewer";
 import { TerminalManager } from "./TerminalManager";
 import { cn } from "@/lib/utils";
@@ -24,6 +25,10 @@ const MIN_TERMINAL_WIDTH = 280;
 const DEFAULT_TREE_WIDTH = 220;
 const DEFAULT_TERMINAL_WIDTH = 380;
 
+const MIN_BOTTOM_HEIGHT = 80;
+const MAX_BOTTOM_HEIGHT = 600;
+const DEFAULT_BOTTOM_HEIGHT = 220;
+
 type CentreTab = "editor" | "diff";
 
 export function AgentView() {
@@ -32,6 +37,8 @@ export function AgentView() {
   const codeDirectory = project?.codeDirectory ?? null;
 
   const [centreTab, setCentreTab] = useState<CentreTab>("editor");
+  // Bottom terminal height lives in React state so AgentBottomTerminal re-renders with the new height
+  const [bottomHeight, setBottomHeight] = useState(DEFAULT_BOTTOM_HEIGHT);
 
   // DOM refs for the two resizable panes — widths are mutated directly,
   // never stored in React state, so no re-render occurs during drag.
@@ -39,6 +46,7 @@ export function AgentView() {
   const terminalPaneRef  = useRef<HTMLDivElement>(null);
   const leftDividerRef   = useRef<HTMLDivElement>(null);
   const rightDividerRef  = useRef<HTMLDivElement>(null);
+  const bottomDividerRef = useRef<HTMLDivElement>(null);
 
   // Set initial widths once on mount via DOM (avoids a React render cycle)
   useEffect(() => {
@@ -48,9 +56,11 @@ export function AgentView() {
 
   // ── Drag logic ─────────────────────────────────────────────────────────────
   useEffect(() => {
-    let dragging: "left" | "right" | null = null;
+    let dragging: "left" | "right" | "bottom" | null = null;
     let startX = 0;
+    let startY = 0;
     let startWidth = 0;
+    let startHeight = 0;
 
     function onMouseMove(e: MouseEvent) {
       if (!dragging) return;
@@ -63,15 +73,18 @@ export function AgentView() {
       if (dragging === "right" && terminalPaneRef.current) {
         const next = Math.max(MIN_TERMINAL_WIDTH, startWidth - (e.clientX - startX));
         terminalPaneRef.current.style.width = `${next}px`;
-        // Fit all terminals synchronously — same tick as the DOM resize,
-        // so xterm redraws cols/rows with no visible lag.
         TerminalManager.fitAll();
+      }
+
+      if (dragging === "bottom") {
+        // Dragging up increases height (mouse moves up = lower clientY)
+        const next = Math.min(MAX_BOTTOM_HEIGHT, Math.max(MIN_BOTTOM_HEIGHT, startHeight - (e.clientY - startY)));
+        setBottomHeight(next);
       }
     }
 
     function onMouseUp() {
       if (dragging) {
-        // Final fit after drag ends
         TerminalManager.fitAll();
         dragging = null;
         document.body.style.cursor = "";
@@ -97,24 +110,41 @@ export function AgentView() {
       e.preventDefault();
     }
 
-    const leftDivider  = leftDividerRef.current;
-    const rightDivider = rightDividerRef.current;
+    function startBottomDrag(e: MouseEvent) {
+      dragging = "bottom";
+      startY = e.clientY;
+      startHeight = bottomHeight;
+      document.body.style.cursor = "row-resize";
+      document.body.style.userSelect = "none";
+      e.preventDefault();
+    }
 
-    leftDivider?.addEventListener("mousedown",  startLeftDrag);
-    rightDivider?.addEventListener("mousedown", startRightDrag);
+    const leftDivider   = leftDividerRef.current;
+    const rightDivider  = rightDividerRef.current;
+    const bottomDivider = bottomDividerRef.current;
+
+    leftDivider?.addEventListener("mousedown",   startLeftDrag);
+    rightDivider?.addEventListener("mousedown",  startRightDrag);
+    bottomDivider?.addEventListener("mousedown", startBottomDrag);
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup",   onMouseUp);
 
     return () => {
-      leftDivider?.removeEventListener("mousedown",  startLeftDrag);
-      rightDivider?.removeEventListener("mousedown", startRightDrag);
+      leftDivider?.removeEventListener("mousedown",   startLeftDrag);
+      rightDivider?.removeEventListener("mousedown",  startRightDrag);
+      bottomDivider?.removeEventListener("mousedown", startBottomDrag);
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup",   onMouseUp);
     };
+  // bottomHeight is read as startHeight only on mousedown — safe to omit from deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
-    <div className="flex flex-1 min-h-0 overflow-hidden bg-[var(--background)]">
+    <div className="flex flex-col flex-1 min-h-0 overflow-hidden bg-[var(--background)]">
+
+      {/* ── Three-pane row ─────────────────────────────────────────────────── */}
+      <div className="flex flex-1 min-h-0 overflow-hidden">
 
         {/* Left pane — file tree */}
         <div
@@ -124,7 +154,7 @@ export function AgentView() {
           <FileTree project={project} />
         </div>
 
-        {/* Left resize divider — zero layout width, overlaps the pane border */}
+        {/* Left resize divider */}
         <div
           ref={leftDividerRef}
           className="w-0 flex-shrink-0 cursor-col-resize relative z-10"
@@ -135,7 +165,6 @@ export function AgentView() {
 
         {/* Centre pane — tab bar + editor/diff */}
         <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
-          {/* Tab bar */}
           <div className="flex items-center gap-0.5 py-1 border-b border-[var(--border)] bg-[var(--surface)] flex-shrink-0">
             <button
               onClick={() => setCentreTab("editor")}
@@ -163,7 +192,6 @@ export function AgentView() {
             )}
           </div>
 
-          {/* CSS-hide editor so CM6 stays mounted when diff is active */}
           <div className={cn("flex-1 min-h-0 overflow-hidden flex flex-col", centreTab !== "editor" && "hidden")}>
             <AgentEditor />
           </div>
@@ -175,7 +203,7 @@ export function AgentView() {
           )}
         </div>
 
-        {/* Right resize divider — zero layout width, overlaps the pane border */}
+        {/* Right resize divider */}
         <div
           ref={rightDividerRef}
           className="w-0 flex-shrink-0 cursor-col-resize relative z-10"
@@ -184,13 +212,29 @@ export function AgentView() {
           aria-label="Resize terminal pane"
         />
 
-        {/* Right pane — terminal sessions */}
+        {/* Right pane — agent terminal sessions */}
         <div
           ref={terminalPaneRef}
           className="flex-shrink-0 flex flex-col border-l border-[var(--border)] overflow-hidden"
         >
           <AgentTerminalPane />
         </div>
+      </div>
+
+      {/* ── Bottom terminal (only when a codeDirectory is set) ─────────────── */}
+      {codeDirectory && (
+        <>
+          {/* Horizontal drag divider */}
+          <div
+            ref={bottomDividerRef}
+            className="h-0 flex-shrink-0 cursor-row-resize relative z-10 border-t border-[var(--border)]"
+            style={{ marginTop: "-3px", marginBottom: "-3px", padding: "3px 0" }}
+            role="separator"
+            aria-label="Resize bottom terminal"
+          />
+          <AgentBottomTerminal cwd={codeDirectory} height={bottomHeight} />
+        </>
+      )}
 
     </div>
   );
