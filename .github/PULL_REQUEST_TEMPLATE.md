@@ -17,6 +17,7 @@
 ## Checklist
 
 - [ ] `npm run type-check` passes
+- [ ] `npm run lint` passes
 - [ ] `npm test` passes
 - [ ] `npm run test:e2e` passes (run before merging UI changes or cutting a release)
 - [ ] No hardcoded colours — CSS variables only (`var(--accent)`, `var(--text-primary)`, etc.)
