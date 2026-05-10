@@ -244,7 +244,7 @@ export function MCPProjectConfig() {
             .filter((p) => !p.archivedAt)
             .map((p) => (
               <option key={p.id} value={p.id}>
-                {p.icon ? `${p.icon} ` : ""}{p.name}
+                {p.name}
               </option>
             ))}
         </select>

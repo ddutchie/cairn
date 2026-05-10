@@ -93,10 +93,11 @@ export function PrdModal({ projectId, workspaceId, onClose }: PrdModalProps) {
       workspaceId,
       history,
       config: {
-        baseUrl:  aiConfig.baseUrl  || "https://api.openai.com",
-        model:    aiConfig.model    || "gpt-4o-mini",
-        apiKey:   aiConfig.apiKey   || "",
-        maxSteps: aiConfig.maxSteps ?? 20,
+        baseUrl:     aiConfig.baseUrl     || "https://api.openai.com",
+        model:       aiConfig.model       || "gpt-4o-mini",
+        apiKey:      aiConfig.apiKey      || "",
+        maxSteps:    aiConfig.maxSteps    ?? 20,
+        temperature: aiConfig.temperature ?? 0.3,
       },
       systemPrompt: buildPrdSystemPrompt(projectId),
     });

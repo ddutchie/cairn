@@ -183,10 +183,11 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
       workspaceId: activeWorkspaceId,
       history: messages.slice(-40).map((m) => ({ role: m.role, content: m.content })),
       config: {
-        baseUrl: aiConfig.baseUrl || undefined,
-        model: aiConfig.model || undefined,
-        apiKey: aiConfig.apiKey || undefined,
-        maxSteps: aiConfig.maxSteps ?? 20,
+        baseUrl:     aiConfig.baseUrl     || undefined,
+        model:       aiConfig.model       || undefined,
+        apiKey:      aiConfig.apiKey      || undefined,
+        maxSteps:    aiConfig.maxSteps    ?? 20,
+        temperature: aiConfig.temperature ?? 0.3,
       },
     });
   }

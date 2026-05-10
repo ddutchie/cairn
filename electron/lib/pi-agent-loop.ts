@@ -35,6 +35,10 @@ export interface AgentLLMConfig {
   baseUrl: string;
   model: string;
   apiKey: string;
+  /** Maximum tool-call iterations per turn. Defaults to 20. */
+  maxSteps: number;
+  /** Sampling temperature. Plan mode overrides this to 0.1 for determinism. */
+  temperature: number;
 }
 
 // ── Message types ─────────────────────────────────────────────────────────────
@@ -107,26 +111,38 @@ const CODING_TOOL_DEFS = [
 ];
 
 // Cairn data tool names exposed to the coding agent.
-// Redundant tools (create_note, update_note, update_task_status, list_notes,
-// list_tasks, get_cairn_context) are excluded — see AGENT_EXCLUDED_TOOLS in
-// tool-schemas.ts. ensure_note / patch_note / search_* cover all use cases.
+// get_cairn_context is excluded (see AGENT_EXCLUDED_TOOLS) — agents use
+// get_project_context_pack instead. Delete tools are intentionally omitted
+// to prevent autonomous destructive actions.
 const CAIRN_TOOL_NAMES = new Set([
+  // ── Context / read ──────────────────────────────────────────────────────────
   "get_active_context",
   "get_project_context_pack",
+  "get_neighbors",
+  // ── Notes ───────────────────────────────────────────────────────────────────
   "get_note",
   "ensure_note",
   "patch_note",
   "append_to_note",
   "search_notes",
+  // ── Tasks ───────────────────────────────────────────────────────────────────
   "get_task",
   "create_task",
   "update_task",
+  "bulk_update_task_status",
   "search_tasks",
   "list_ready_tasks",
+  "link_note_to_task",
+  // ── Tags ────────────────────────────────────────────────────────────────────
+  "create_tag",
+  // ── Idea Flow ───────────────────────────────────────────────────────────────
   "get_idea_flow",
+  "get_idea_flow_rules",
   "create_idea_flow_node",
+  "update_idea_flow_node",
   "create_idea_flow_edge",
-  // Renderer-side only — main process no-ops; renderer renders an inline QuestionForm.
+  "layout_idea_flow",
+  // ── Renderer-side only — main process no-ops; renderer renders an inline QuestionForm.
   "ask_questions",
 ]);
 
@@ -220,8 +236,6 @@ async function executeSingleTool(
 
 // ── Main loop ─────────────────────────────────────────────────────────────────
 
-const MAX_STEPS = 30;
-
 export async function runAgentLoop(
   session: PiAgentSession,
   systemPrompt: string,
@@ -239,7 +253,9 @@ export async function runAgentLoop(
   const { signal } = session.abortCtrl;
   const allTools = getAllToolDefs(mode);
 
-  const { baseUrl, model, apiKey } = llmConfig;
+  const { baseUrl, model, apiKey, maxSteps, temperature: configTemp } = llmConfig;
+  // Plan mode always uses 0.1 for deterministic analysis regardless of user setting
+  const temperature = mode === "plan" ? 0.1 : (configTemp ?? 0.3);
   if (!apiKey && !isLocalEndpoint(baseUrl)) {
     callbacks.onError("No API key configured. Set one in Settings → AI & Chat.");
     return;
@@ -247,7 +263,7 @@ export async function runAgentLoop(
 
   let steps = 0;
 
-  while (steps < MAX_STEPS) {
+  while (steps < maxSteps) {
     if (signal.aborted) { callbacks.onDone(); return; }
     steps++;
     // From step 2 onwards, signal the renderer to finalise the previous
@@ -276,7 +292,7 @@ export async function runAgentLoop(
           tools: allTools,
           tool_choice: "auto",
           max_tokens: 8192,
-          temperature: 0.3,
+          temperature,
           stream: true,
           stream_options: { include_usage: true },
         }),
@@ -461,6 +477,6 @@ export async function runAgentLoop(
 
   // Exceeded max steps
   callbacks.onError(
-    `Reached the maximum of ${MAX_STEPS} steps. Any changes made have been saved. Try a more focused request.`
+    `Reached the maximum of ${maxSteps} steps. Any changes made have been saved. Try a more focused request.`
   );
 }

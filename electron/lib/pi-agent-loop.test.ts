@@ -181,7 +181,7 @@ describe("runAgentLoop — SSE streaming", () => {
 
     await runAgentLoop(
       session, "You are a test assistant.", "/tmp",
-      { baseUrl: server.url, model: "test", apiKey: "test" },
+      { baseUrl: server.url, model: "test", apiKey: "test", maxSteps: 10, temperature: 0.3 },
       db, chatReq, "/tmp", callbacks,
     );
 
@@ -210,7 +210,7 @@ describe("runAgentLoop — SSE streaming", () => {
 
     await runAgentLoop(
       session, "You are a test assistant.", "/tmp",
-      { baseUrl: server.url, model: "test", apiKey: "test" },
+      { baseUrl: server.url, model: "test", apiKey: "test", maxSteps: 10, temperature: 0.3 },
       db, chatReq, "/tmp", callbacks,
     );
 
@@ -243,7 +243,7 @@ describe("runAgentLoop — SSE streaming", () => {
 
     await runAgentLoop(
       session, "You are a test assistant.", "/tmp",
-      { baseUrl: server.url, model: "test", apiKey: "test" },
+      { baseUrl: server.url, model: "test", apiKey: "test", maxSteps: 10, temperature: 0.3 },
       db, chatReq, "/tmp", callbacks,
     );
 
@@ -272,7 +272,7 @@ describe("runAgentLoop — SSE streaming", () => {
 
     await runAgentLoop(
       session, "You are a test assistant.", "/tmp",
-      { baseUrl: server.url, model: "test", apiKey: "test" },
+      { baseUrl: server.url, model: "test", apiKey: "test", maxSteps: 10, temperature: 0.3 },
       db, chatReq, "/tmp", callbacks,
     );
 
@@ -321,7 +321,7 @@ describe("runAgentLoop — SSE streaming", () => {
 
     await runAgentLoop(
       session, "You are a test assistant.", "/tmp",
-      { baseUrl: server.url, model: "test", apiKey: "test" },
+      { baseUrl: server.url, model: "test", apiKey: "test", maxSteps: 10, temperature: 0.3 },
       db, chatReq, "/tmp", callbacks,
     );
 
@@ -350,7 +350,7 @@ describe("runAgentLoop — SSE streaming", () => {
 
     await runAgentLoop(
       session, "You are a test assistant.", "/tmp",
-      { baseUrl: server.url, model: "test", apiKey: "test" },
+      { baseUrl: server.url, model: "test", apiKey: "test", maxSteps: 10, temperature: 0.3 },
       db, chatReq, "/tmp", callbacks,
     );
 
@@ -370,7 +370,7 @@ describe("runAgentLoop — SSE streaming", () => {
 
     await runAgentLoop(
       session, "You are a test assistant.", "/tmp",
-      { baseUrl: server.url, model: "test", apiKey: "test" },
+      { baseUrl: server.url, model: "test", apiKey: "test", maxSteps: 10, temperature: 0.3 },
       db, chatReq, "/tmp", callbacks,
     );
 
@@ -418,7 +418,7 @@ describe("runAgentLoop — SSE streaming", () => {
 
     await runAgentLoop(
       session, "You are a test assistant.", "/tmp",
-      { baseUrl: server.url, model: "test", apiKey: "test" },
+      { baseUrl: server.url, model: "test", apiKey: "test", maxSteps: 10, temperature: 0.3 },
       db, chatReq, "/tmp", callbacks,
     );
 
@@ -462,7 +462,7 @@ describe.skipIf(!liveBaseUrl)("runAgentLoop — live endpoint", () => {
       session,
       "You are a test assistant. Follow instructions exactly.",
       "/tmp",
-      { baseUrl: liveBaseUrl!, model: liveModel, apiKey: liveApiKey },
+      { baseUrl: liveBaseUrl!, model: liveModel, apiKey: liveApiKey, maxSteps: 10, temperature: 0.3 },
       db, chatReq, "/tmp", callbacks,
     );
 
@@ -480,7 +480,7 @@ describe.skipIf(!liveBaseUrl)("runAgentLoop — live endpoint", () => {
       session,
       "You are a test assistant with access to coding tools. When asked to list files, always use the ls tool.",
       "/tmp",
-      { baseUrl: liveBaseUrl!, model: liveModel, apiKey: liveApiKey },
+      { baseUrl: liveBaseUrl!, model: liveModel, apiKey: liveApiKey, maxSteps: 10, temperature: 0.3 },
       db, chatReq, "/tmp", callbacks,
     );
 

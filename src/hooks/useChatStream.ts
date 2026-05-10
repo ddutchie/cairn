@@ -43,6 +43,7 @@ export interface ChatStreamRequest {
     model?: string;
     apiKey?: string;
     maxSteps?: number;
+    temperature?: number;
   };
   systemPrompt?: string;
 }

@@ -85,7 +85,7 @@ export interface ChatRequest {
   projectId?: string;
   workspaceId?: string;
   history?: Array<{ role: "user" | "assistant" | "system"; content: string }>;
-  config?: { baseUrl?: string; model?: string; apiKey?: string; maxSteps?: number };
+  config?: { baseUrl?: string; model?: string; apiKey?: string; maxSteps?: number; temperature?: number };
   systemPrompt?: string;
 }
 

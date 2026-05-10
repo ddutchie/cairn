@@ -73,6 +73,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
   model:        "gpt-4o-mini",
   apiKey:       "",
   maxSteps:     20,
+  temperature:  0.3,
   contextLimit: 128000,
   aiEnabled:    true,
 };

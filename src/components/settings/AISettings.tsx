@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import {
-  CheckCircle, RefreshCw, Key, Globe, Cpu, Wifi, WifiOff, Eye, EyeOff, Footprints, Layers,
+  CheckCircle, RefreshCw, Key, Globe, Cpu, Wifi, WifiOff, Eye, EyeOff, Footprints, Layers, Thermometer,
 } from "lucide-react";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useCairnStore } from "@/store";
@@ -10,11 +10,17 @@ import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
 import { SettingsGroup, SettingsRow, Toggle } from "./shared";
 import { MCPServerSettings } from "./MCPSettings";
+import type { ToggleableView } from "@/store/slices/ui";
 
 type TestState = "idle" | "testing" | "ok" | "error";
 
 export function AISettings() {
-  const { aiConfig, setAIConfig } = useCairnStore(useShallow((s) => ({ aiConfig: s.aiConfig, setAIConfig: s.setAIConfig })));
+  const { aiConfig, setAIConfig, hiddenViews, toggleViewVisibility } = useCairnStore(useShallow((s) => ({
+    aiConfig:             s.aiConfig,
+    setAIConfig:          s.setAIConfig,
+    hiddenViews:          s.hiddenViews,
+    toggleViewVisibility: s.toggleViewVisibility,
+  })));
   const [showKey, setShowKey] = useState(false);
   const [testState, setTestState] = useState<TestState>("idle");
   const [testError, setTestError] = useState("");
@@ -25,7 +31,7 @@ export function AISettings() {
   const [modelsFetched, setModelsFetched] = useState(false);
 
   // Always read directly from the store — no local shadow copy
-  const { baseUrl, model, apiKey, maxSteps, contextLimit, aiEnabled } = aiConfig;
+  const { baseUrl, model, apiKey, maxSteps, temperature, contextLimit, aiEnabled } = aiConfig;
   const isLocal =
     baseUrl.includes("localhost") ||
     baseUrl.includes("127.0.0.1") ||
@@ -78,20 +84,31 @@ export function AISettings() {
 
   return (
     <div className="space-y-8">
-      {/* ── Enable / disable all AI features ── */}
+      {/* ── Visibility ── */}
       <SettingsGroup
-        title="In-app AI"
-        description="Enable or disable all AI-powered features — chat, text actions, PRD generator, task spawning, and Idea Flow summaries."
+        title="Visibility"
+        description="Control which AI features and views are shown."
       >
         <SettingsRow
-          label="Enable AI features"
-          description="When off, all AI buttons and shortcuts are hidden. Formatting tools are unaffected."
+          label="Enable inline AI"
+          description="Shows AI buttons in the editor — text actions, PRD generator, task spawning, and Idea Flow AI summaries. Does not affect the Agent or Chat views."
         >
           <Toggle
             checked={aiEnabled ?? true}
             onChange={(v) => update({ aiEnabled: v })}
           />
         </SettingsRow>
+        {([
+          { view: "agent" as ToggleableView, label: "Agent view", description: "Embedded coding agent in the sidebar" },
+          { view: "chat"  as ToggleableView, label: "AI Chat view", description: "In-app AI chat panel" },
+        ]).map(({ view, label, description }) => {
+          const visible = !hiddenViews.has(view);
+          return (
+            <SettingsRow key={view} label={label} description={description}>
+              <Toggle checked={visible} onChange={() => toggleViewVisibility(view)} />
+            </SettingsRow>
+          );
+        })}
       </SettingsGroup>
 
       {/* ── Endpoint config ── */}
@@ -243,7 +260,7 @@ export function AISettings() {
         {/* Max steps */}
         <SettingsRow
           label="Max steps"
-          description="Tool-call rounds the agent can take per message. Lower values reduce API costs."
+          description="Tool-call rounds the agent can take per message. Use ∞ for complex multi-file tasks — but watch API costs."
         >
           <div className="flex flex-col gap-1.5 items-end">
             <div className="relative">
@@ -251,23 +268,74 @@ export function AISettings() {
               <input
                 type="number"
                 min={1}
-                max={50}
+                max={1000}
                 value={maxSteps ?? 20}
                 onChange={(e) => {
                   const v = parseInt(e.target.value, 10);
-                  if (!isNaN(v) && v >= 1 && v <= 50) update({ maxSteps: v });
+                  if (!isNaN(v) && v >= 1 && v <= 1000) update({ maxSteps: v });
                 }}
                 className="pl-7 pr-3 py-1.5 text-xs w-24 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)]"
               />
             </div>
             <div className="flex gap-1.5">
-              {[5, 10, 20].map((n) => (
+              {([10, 20, 30, 50] as const).map((n) => (
                 <button
                   key={n}
                   onClick={() => update({ maxSteps: n })}
                   className={cn(
                     "px-2 py-1 text-[0.714rem] rounded border transition-colors",
                     (maxSteps ?? 20) === n
+                      ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
+                      : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]"
+                  )}
+                >
+                  {n}
+                </button>
+              ))}
+              <button
+                onClick={() => update({ maxSteps: 1000 })}
+                className={cn(
+                  "px-2 py-1 text-[0.714rem] rounded border transition-colors",
+                  (maxSteps ?? 20) === 1000
+                    ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
+                    : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]"
+                )}
+              >
+                ∞
+              </button>
+            </div>
+          </div>
+        </SettingsRow>
+
+        {/* Temperature */}
+        <SettingsRow
+          label="Temperature"
+          description="Sampling temperature for the agent (0–1). Lower = more deterministic. Plan mode always uses 0.1 regardless of this setting."
+        >
+          <div className="flex flex-col gap-1.5 items-end">
+            <div className="relative">
+              <Thermometer size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]" />
+              <input
+                type="number"
+                min={0}
+                max={1}
+                step={0.05}
+                value={temperature ?? 0.3}
+                onChange={(e) => {
+                  const v = parseFloat(e.target.value);
+                  if (!isNaN(v) && v >= 0 && v <= 1) update({ temperature: v });
+                }}
+                className="pl-7 pr-3 py-1.5 text-xs w-24 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)]"
+              />
+            </div>
+            <div className="flex gap-1.5">
+              {[0.1, 0.3, 0.5, 0.7].map((n) => (
+                <button
+                  key={n}
+                  onClick={() => update({ temperature: n })}
+                  className={cn(
+                    "px-2 py-1 text-[0.714rem] rounded border transition-colors",
+                    (temperature ?? 0.3) === n
                       ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
                       : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]"
                   )}
@@ -282,7 +350,7 @@ export function AISettings() {
         {/* Context window */}
         <SettingsRow
           label="Context window"
-          description="Token limit of your model. Used to display the context usage ring in the agent pane."
+          description="Token limit of your model. Used to display the context usage ring in the coding agent — does not truncate or limit API calls."
         >
           <div className="flex flex-col gap-1.5 items-end">
             <div className="relative">
