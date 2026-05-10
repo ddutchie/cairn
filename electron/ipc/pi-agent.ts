@@ -29,7 +29,7 @@ import { ts } from "../db/utils";
 const sessions = new Map<string, PiAgentSession>();
 
 // ── Note-writing tool names ────────────────────────────────────────────────────
-const NOTE_WRITE_TOOLS = new Set(["ensure_note", "update_note", "patch_note", "append_to_note"]);
+const NOTE_WRITE_TOOLS = new Set(["ensure_note", "patch_note", "append_to_note"]);
 
 // ── Request shape ──────────────────────────────────────────────────────────────
 

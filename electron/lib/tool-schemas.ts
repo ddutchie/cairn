@@ -172,7 +172,7 @@ export const TOOL_SCHEMAS = {
   },
 
   list_ready_tasks: {
-    description: "Return only unblocked, active tasks — tasks with no pending blockers and not in a done column. Use this instead of list_tasks when you want to know what work can start right now.",
+    description: "Return only unblocked, active tasks — tasks with no pending blockers and not in a done column. Use this to find work that can start right now.",
     schema: z.object({
       projectId: sId.optional(),
     }),
@@ -418,8 +418,7 @@ function toolCategory(name: string): ToolCategory {
   if (
     name.startsWith("get_") ||
     name.startsWith("list_") ||
-    name.startsWith("search_") ||
-    name.startsWith("resolve_")
+    name.startsWith("search_")
   ) return "read";
   return "write";
 }

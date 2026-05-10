@@ -1228,7 +1228,7 @@ describe("blocker cleanup on move-to-done", () => {
     // Move back to backlog
     executeTool(db, wp, "update_task", { cardId: "blocker", columnId: "col1" });
 
-    // blocked task's blockedByIds was already cleared — agent must call block_task again
+    // blocked task's blockedByIds was already cleared — agent must call update_task { blockedBy } again
     const task = executeTool(db, wp, "get_task", { cardId: "blocked" }) as Record<string, unknown>;
     expect((task.blockedByIds as string[])).toHaveLength(0);
 

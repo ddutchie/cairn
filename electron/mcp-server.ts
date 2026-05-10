@@ -747,8 +747,9 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
               expectedVersion: taskExpectedVersion } = args;
 
       // Must query DB directly for archived cards not in snap
-      const card = snap.cards.find((c) => c.id === cardId)
-        ?? (db.prepare("SELECT * FROM task_cards WHERE id = ?").get(cardId) as Record<string, unknown> | undefined && toCard(db.prepare("SELECT * FROM task_cards WHERE id = ?").get(cardId)));
+      const _rawCard = snap.cards.find((c) => c.id === cardId)
+        ?? (() => { const r = db.prepare("SELECT * FROM task_cards WHERE id = ?").get(cardId); return r ? toCard(r) : undefined; })();
+      const card = _rawCard;
       if (!card) return { error: "Task not found" };
 
       if (taskExpectedVersion !== undefined) {

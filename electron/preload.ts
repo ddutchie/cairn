@@ -334,7 +334,7 @@ const api = {
       ipcRenderer.on("pi-agent:plan-note", handler);
       return () => ipcRenderer.off("pi-agent:plan-note", handler);
     },
-    /** Fired after any note-write tool (patch_note, update_note, ensure_note, append_to_note) completes — delivers fresh note content for live task-list updates */
+    /** Fired after any note-write tool (patch_note, ensure_note, append_to_note) completes — delivers fresh note content for live task-list updates */
     onNoteUpdated: (cb: (e: { sessionId: string; noteId: string; content: string }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const handler = (_: any, e: { sessionId: string; noteId: string; content: string }) => cb(e);

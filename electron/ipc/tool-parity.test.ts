@@ -289,4 +289,25 @@ describe("known intentional divergences between MCP and chat", () => {
     expect(chat).toHaveProperty("project");
     expect(chat).not.toHaveProperty("projectId");
   });
+
+  it("update_task archived=false (restore): MCP returns { ok, cardId, title }, chat returns full card object", async () => {
+    // Use separate DBs so MCP restore does not clear archived_at before chat sees it
+    const dbMcp = makeDb(); const wp = makeTmpDir();
+    seed(dbMcp);
+    dbMcp.prepare("UPDATE task_cards SET archived_at = datetime('now') WHERE id = 'c1'").run();
+    const mcp = mcpExec(dbMcp, wp, "update_task", { cardId: "c1", archived: false });
+
+    const dbChat = makeDb(); const wp2 = makeTmpDir();
+    seed(dbChat);
+    dbChat.prepare("UPDATE task_cards SET archived_at = datetime('now') WHERE id = 'c1'").run();
+    const chat = await chatExec(dbChat, chatReq, wp2, llmCfg, "update_task", { cardId: "c1", archived: false } as never, noEmit);
+
+    // MCP returns a lightweight { ok, cardId, title } shape
+    expect(mcp).toHaveProperty("ok", true);
+    expect(mcp).toHaveProperty("cardId");
+    expect(mcp).not.toHaveProperty("column_id");
+    // Chat returns the full card object from q.restoreCard()
+    expect(chat).toHaveProperty("id");
+    expect(chat).not.toHaveProperty("ok");
+  });
 });

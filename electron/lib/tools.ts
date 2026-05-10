@@ -112,7 +112,7 @@ Call get_active_context first to get IDs (projectId, columnId, workspaceId). Nev
 ## Tasks
 - Use update_task with \`columnId\` to move a task to a different column.
 - Use list_ready_tasks to find unblocked work; use search_tasks with an empty query to list all tasks.
-- Use block_task / unblock_task to manage dependencies. Blockers auto-clear when moved to done or archived.
+- Use update_task with \`blockedBy\` to add a blocker, \`unblockFrom\` to remove one. Blockers auto-clear when moved to done or archived.
 
 ## Dashboards
 Create HTML dashboards with create_dashboard. Call get_dashboard_constants for the window.cairn API before writing HTML.

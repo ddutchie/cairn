@@ -441,7 +441,7 @@ describe("ensure_note", () => {
     seed(db);
     await exec(db, "ensure_note", { projectId: "proj1", title: "README", content: "v1" });
     await exec(db, "ensure_note", { projectId: "proj1", title: "README", content: "v2" });
-    const notes = await exec(db, "list_notes", { projectId: "proj1" }) as Array<{ title: string }>;
+    const notes = await exec(db, "search_notes", { query: "", projectId: "proj1" }) as Array<{ title: string }>;
     expect(notes.filter((n) => n.title === "README")).toHaveLength(1);
   });
 
