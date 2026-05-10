@@ -360,11 +360,12 @@ Shared modules live in `src/components/graph/`: `analyticsUtils.ts`, `analyticsH
 | `electron/ipc/agent.ts` | All `agent:*` IPC channels — PTY spawn/kill, file I/O, git diff, `assertWithinCodeDirectory` |
 | `electron/ipc/chat.ts` | AI chat loop — `runToolLoop` + IPC handler registration |
 | `electron/ipc/chat-executor.ts` | `executeTool` — all AI tool implementations |
-| `electron/ipc/pi-agent.ts` | Cairn native agent IPC handler — `sessions` Map, all `pi-agent:*` channels |
-| `electron/lib/pi-agent-loop.ts` | `runAgentLoop()` — multi-turn SSE loop, parallel tool execution, callbacks, retry, `transformContext` hook; `AgentToolContext` groups cwd/db/IPC/session state |
-| `electron/lib/compaction.ts` | `buildCompactionTransformer` — async LLM-based context compaction; fires `pi-agent:compact` events; falls back to sliding-window pruner while summary is in flight |
+| `electron/ipc/pi-agent.ts` | Cairn native agent IPC handler — `sessions` Map, all `pi-agent:*` channels; `runSession()` shared helper wires compaction + callbacks + `runAgentLoop` for both `prompt` and `approve-plan` handlers |
+| `electron/lib/pi-agent-loop.ts` | `runAgentLoop()` — multi-turn SSE loop, parallel tool execution, callbacks, retry, `transformContext` hook, `shouldStopAfterTurn` hook; `AgentToolContext` groups cwd/db/IPC/session state |
+| `electron/lib/compaction.ts` | `buildCompactionTransformer` — async LLM-based compaction, signal read live from session; `compactNow` — synchronous on-demand compaction for `/compact` slash command |
+| `electron/lib/truncation.ts` | `truncateOutput(text, opts)` — unified byte+line cap for all coding tool outputs; exports `DEFAULT_MAX_BYTES`, `DEFAULT_MAX_LINES`, `TruncationResult` |
 | `electron/lib/pi-agent-prompt.ts` | System prompt builder; mandatory Cairn workflow; `spawn_subagent` description |
-| `electron/lib/coding-tools/` | 8 coding tools (`read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`, `spawn_subagent`) + `file-mutex.ts` |
+| `electron/lib/coding-tools/` | 8 coding tools (`read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`, `spawn_subagent`) + `file-mutex.ts`; all tools use `truncateOutput` from `truncation.ts` |
 | `electron/lib/llm.ts` | `LLMConfig`, `callLLM`, `streamCompletion`, `isLocalEndpoint`, `normaliseBaseUrl` |
 | `electron/lib/tools.ts` | `TOOLS` (OpenAI function definitions), `TOOL_LABELS`, `buildSystemPrompt` |
 | `electron/lib/context.ts` | `buildContextResponse` — canonical `get_cairn_context` response |
@@ -572,6 +573,7 @@ renderer                         main process
    │ ◄── pi-agent:usage ──────────────┤    token counts → context ring
    │ ◄── pi-agent:retry ──────────────┤    (on transient error) countdown badge
    │ ◄── pi-agent:compact ────────────┤    (when compaction fires) "Compacting…" indicator
+   │ ◄── pi-agent:compact-result ─────┤    (/compact slash command result)
    │ ◄── pi-agent:done ───────────────┤  turn complete
 ```
 
@@ -581,7 +583,15 @@ The `pending` status fires during streaming as soon as a tool name is seen in th
 
 **Automatic retry** — `isRetryable(status, body)` in `pi-agent-loop.ts` detects transient errors (429, 5xx, overloaded/rate-limit body patterns). Up to `AgentLLMConfig.maxRetries` attempts (default 3) with exponential backoff starting at `baseRetryDelayMs` (default 2000 ms). `onRetry` callback fires before each sleep; `pi-agent:retry` is emitted to the renderer.
 
-**Context compaction** — `buildCompactionTransformer` in `electron/lib/compaction.ts` returns a `transformContext` function passed to `runAgentLoop`. When `session.lastPromptTokens` exceeds 80% of `llmConfig.contextWindow`, it fires a background LLM summarisation call (non-streaming, `temperature: 0.1`). The current turn uses a sliding-window fallback; subsequent turns use the cached summary. `onCompactionStart`/`onCompactionEnd` fire `pi-agent:compact` events to the renderer. To change the threshold or number of verbatim turns preserved, edit `COMPACT_THRESHOLD` and `KEEP_RECENT_TURNS` in `compaction.ts`.
+**Context compaction** — `buildCompactionTransformer` in `electron/lib/compaction.ts` returns a `transformContext` function stored on `PiAgentSession.compactionTransformer` (built once, reused across prompts so the `cachedSummary` survives multi-turn sessions). When `session.lastPromptTokens` exceeds 80% of `llmConfig.contextWindow`, it fires a background LLM summarisation call (non-streaming, `temperature: 0.1`). The signal is read live from `session.abortCtrl` each invocation. The current turn uses a sliding-window fallback; subsequent turns use the cached summary. `pi-agent:compact` IPC events drive the `"Compacting context…"` status bar indicator. To change the threshold or number of verbatim turns preserved, edit `COMPACT_THRESHOLD` and `KEEP_RECENT_TURNS` in `compaction.ts`.
+
+**`/compact` slash command** — typing `/compact` in the chat input calls `compactNow(session, llmConfig)` in `compaction.ts` via the `pi-agent:compact-now` IPC channel. Unlike the automatic transformer (fire-and-forget), `compactNow` awaits the LLM summary call synchronously and emits a `pi-agent:compact-result` event. The renderer shows a centred italic system message: *"Context compacted — session history summarised into N messages."* `PiAgentMessage.role` includes `"system"` for this purpose; `PiMessageBubble` renders it as muted centred text.
+
+**`shouldStopAfterTurn` hook** — `AgentLoopCallbacks.shouldStop?: (messages) => boolean | Promise<boolean>` is checked after each turn's tool results are appended, before the next LLM call. Returning `true` fires `onDone` cleanly. Use for semantic stop conditions (e.g. stop when a linked task card reaches Done) without modifying the loop. Wire it in `runSession()` in `pi-agent.ts`.
+
+**Output truncation** — all coding tools use `truncateOutput(text, opts)` from `electron/lib/truncation.ts` instead of ad-hoc byte slicing. The library enforces a byte cap (`DEFAULT_MAX_BYTES = 50 000`) and optional line cap (`DEFAULT_MAX_LINES = 2 000`), returns a `TruncationResult` with metadata, and appends a consistent `[Truncated: showed X of Y. Use offset/limit to page.]` hint. When adding a new coding tool, import and call `truncateOutput` on the output before returning.
+
+**`runSession` invariant** — within `pi-agent.ts`, always call `runAgentLoop` via `runSession()` rather than directly. `runSession` is the single place that builds the compaction transformer, wires all IPC-forwarding callbacks, and handles `onDone`/`onError` persistence. The only legitimate direct call site for `runAgentLoop` is `pi-agent-loop.test.ts`.
 
 **Subagents**
 

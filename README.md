@@ -137,7 +137,7 @@ The agent can delegate contained sub-tasks to a fresh sub-agent via `spawn_subag
 
 A small ring in the agent pane header shows how full the model's context window is after each step. Configure the limit for your model in **Settings → AI & Chat → Context window** (presets: 8k / 32k / 128k / 200k).
 
-When usage reaches 80% the agent automatically summarises older context with a background LLM call — the status bar shows `"Compacting context…"` while this is in flight. If a transient API error occurs, the status bar shows a countdown (`"Transient error — retrying (1/3) in 8s…"`) and the agent retries automatically.
+When usage reaches 80% the agent automatically summarises older context with a background LLM call — the status bar shows `"Compacting context…"` while this is in flight. Type `/compact` in the chat input to trigger compaction on demand at any time. If a transient API error occurs, the status bar shows a countdown (`"Transient error — retrying (1/3) in 8s…"`) and the agent retries automatically.
 
 ## MCP server
 

@@ -269,8 +269,18 @@ interface PiMessageBubbleProps {
 }
 
 export function PiMessageBubble({ message }: PiMessageBubbleProps) {
-  const isUser  = message.role === "user";
-  const isError = message.role === "error";
+  const isUser   = message.role === "user";
+  const isError  = message.role === "error";
+  const isSystem = message.role === "system";
+
+  // SYSTEM bubble — centred, muted, italic — used for slash command feedback
+  if (isSystem) {
+    return (
+      <div className="flex justify-center py-0.5">
+        <span className="text-[0.643rem] italic text-[var(--text-tertiary)] px-2">{message.content}</span>
+      </div>
+    );
+  }
 
   // USER bubble — right-aligned, accent background, User icon
   if (isUser) {

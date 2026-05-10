@@ -27,7 +27,7 @@ export interface PiSubagentMessage {
 
 export interface PiAgentMessage {
   id: string;
-  role: "user" | "assistant" | "error";
+  role: "user" | "assistant" | "error" | "system";
   content: string;
   /** Tool calls that occurred before or during this assistant message */
   toolCalls?: {

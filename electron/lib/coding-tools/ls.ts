@@ -6,6 +6,7 @@
 
 import fs from "fs";
 import path from "path";
+import { truncateOutput } from "../truncation";
 
 export interface LsArgs {
   path?: string; // directory to list (default: cwd)
@@ -36,7 +37,8 @@ export async function lsTool(args: LsArgs, cwd: string): Promise<string> {
     })
     .map((e) => (e.isDirectory() ? `${e.name}/` : e.name));
 
-  return lines.join("\n");
+  const { text } = truncateOutput(lines.join("\n"));
+  return text;
 }
 
 export const lsToolDefinition = {

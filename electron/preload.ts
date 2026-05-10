@@ -278,6 +278,8 @@ const api = {
     clear: (sessionId: string) => ipcRenderer.send("pi-agent:clear", { sessionId }),
     /** Destroy a session when the tab is closed. */
     destroy: (sessionId: string) => ipcRenderer.send("pi-agent:destroy", { sessionId }),
+    /** Trigger immediate LLM-based compaction on demand (/compact command). */
+    compactNow: (req: unknown) => ipcRenderer.send("pi-agent:compact-now", req),
 
     onToken: (cb: (e: { sessionId: string; delta: string }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -334,6 +336,13 @@ const api = {
       const handler = (_: any, e: { sessionId: string; status: "start" | "end" }) => cb(e);
       ipcRenderer.on("pi-agent:compact", handler);
       return () => ipcRenderer.off("pi-agent:compact", handler);
+    },
+    /** Fired after a /compact slash command completes with the result. */
+    onCompactResult: (cb: (e: { sessionId: string; messageCount: number; summary: string }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { sessionId: string; messageCount: number; summary: string }) => cb(e);
+      ipcRenderer.on("pi-agent:compact-result", handler);
+      return () => ipcRenderer.off("pi-agent:compact-result", handler);
     },
     onSubagent: (cb: (e: { parentSessionId: string; childSessionId: string; status: "start" | "done"; result?: string }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

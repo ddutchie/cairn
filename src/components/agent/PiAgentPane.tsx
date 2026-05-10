@@ -366,6 +366,15 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
       setIsCompacting(e.status === "start");
     });
 
+    // /compact result — inject a system message confirming compaction
+    const unsubCompactResult = electron.piAgent.onCompactResult((e) => {
+      if (e.sessionId !== sessionId) return;
+      const msg = e.messageCount > 0
+        ? `Context compacted — session history summarised into ${e.messageCount} messages.`
+        : "Nothing to compact — session history is too short.";
+      addPiMessage(sessionId, { id: id(), role: "system" as const, content: msg, timestamp: new Date().toISOString() });
+    });
+
     return () => {
       unsubToken();
       unsubUsage();
@@ -384,6 +393,7 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
       unsubNoteUpdated();
       unsubRetry();
       unsubCompact();
+      unsubCompactResult();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.sessionId]);
@@ -391,6 +401,20 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
   const sendPrompt = useCallback((text: string) => {
     const trimmed = text.trim();
     if (!trimmed || isLoading || !session.cwd) return;
+
+    // ── Slash commands ─────────────────────────────────────────────────────
+    if (trimmed === "/compact") {
+      setInput("");
+      window.electron?.piAgent.compactNow({
+        sessionId: session.sessionId,
+        config: {
+          baseUrl:  aiConfig.baseUrl  || undefined,
+          model:    aiConfig.model    || undefined,
+          apiKey:   aiConfig.apiKey   || undefined,
+        },
+      });
+      return;
+    }
 
     setInput("");
     setIsLoading(true);

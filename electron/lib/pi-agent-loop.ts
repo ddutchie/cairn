@@ -132,6 +132,12 @@ export interface AgentLoopCallbacks {
    * Use for context pruning, injection, or summarisation.
    */
   transformContext?: (messages: AgentMessage[]) => AgentMessage[];
+  /**
+   * Called after each turn's tool results are appended, before the next LLM
+   * call. Return true to stop the loop cleanly (fires onDone, not onError).
+   * Useful for semantic stop conditions e.g. "task card reached Done column".
+   */
+  shouldStop?: (messages: AgentMessage[]) => boolean | Promise<boolean>;
 }
 
 // ── Session state ─────────────────────────────────────────────────────────────
@@ -141,6 +147,12 @@ export interface PiAgentSession {
   abortCtrl: AbortController;
   /** Most recent prompt_tokens count from the last onUsage callback. Updated each turn. */
   lastPromptTokens?: number;
+  /**
+   * Compaction transformer for this session. Stored here so the cachedSummary
+   * inside it survives across multiple pi-agent:prompt calls on the same session.
+   * Built once on first use and reused; the signal is updated via abortCtrl each turn.
+   */
+  compactionTransformer?: (messages: AgentMessage[]) => AgentMessage[];
 }
 
 // ── All tool definitions ──────────────────────────────────────────────────────
@@ -360,6 +372,16 @@ async function executeSingleTool(
 }
 
 // ── Main loop ─────────────────────────────────────────────────────────────────
+//
+// INVARIANT: within the Electron main process, always call runAgentLoop via
+// runSession() in electron/ipc/pi-agent.ts — never directly. runSession()
+// ensures the compaction transformer is built once per session and the correct
+// IPC callbacks are wired. Direct callers bypass compaction and the note-update
+// side effect in onToolEnd.
+//
+// The function is exported so pi-agent-loop.test.ts can call it directly with
+// a mock toolCtx (no real Electron window). This is the only intended direct
+// call site outside of runSession().
 
 export async function runAgentLoop(
   session: PiAgentSession,
@@ -596,7 +618,11 @@ export async function runAgentLoop(
       const pendingCallId = streamCallIds.get(tcIdx);
       callbacks.onToolStart(tc.function.name, label, pendingCallId);
 
-      // Yield so the renderer processes the onToolStart IPC before execution begins
+      // Yield to the event loop so the IPC layer dispatches the onToolStart event
+      // to the renderer before execution begins — this makes the chip appear in
+      // "running" state immediately rather than jumping straight to "done".
+      // A two-way IPC handshake (renderer acks → loop continues) would be more
+      // robust but isn't worth the added complexity here.
       await new Promise<void>((r) => setImmediate(r));
 
       let resultContent: string;
@@ -638,6 +664,12 @@ export async function runAgentLoop(
         tool_call_id: tc.id,
         content: resultContent,
       });
+    }
+
+    // Check semantic stop condition before starting the next LLM call.
+    if (callbacks.shouldStop && await callbacks.shouldStop(session.messages)) {
+      callbacks.onDone();
+      return;
     }
     // Loop continues → next LLM call with tool results appended
   }
