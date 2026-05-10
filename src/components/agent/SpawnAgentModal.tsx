@@ -32,16 +32,19 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
   const {
     agents, fetchAgents, activeProjectId, projects,
     addTerminalSession, setActiveSession, setView, updateProject, aiConfig,
+    setPersistentPiSession, fetchPiSessionHistory,
   } = useCairnStore(useShallow((s) => ({
-    agents:               s.agents,
-    fetchAgents:          s.fetchAgents,
-    activeProjectId:      s.activeProjectId,
-    projects:             s.projects,
-    addTerminalSession:   s.addTerminalSession,
-    setActiveSession:     s.setActiveSession,
-    setView:              s.setView,
-    updateProject:        s.updateProject,
-    aiConfig:             s.aiConfig,
+    agents:                  s.agents,
+    fetchAgents:             s.fetchAgents,
+    activeProjectId:         s.activeProjectId,
+    projects:                s.projects,
+    addTerminalSession:      s.addTerminalSession,
+    setActiveSession:        s.setActiveSession,
+    setView:                 s.setView,
+    updateProject:           s.updateProject,
+    aiConfig:                s.aiConfig,
+    setPersistentPiSession:  s.setPersistentPiSession,
+    fetchPiSessionHistory:   s.fetchPiSessionHistory,
   })));
 
   const project      = projects.find((p) => p.id === activeProjectId) ?? null;
@@ -91,7 +94,22 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
 
     try {
       if (sessionType === "pi") {
-        // Cairn native agent — no PTY, just create the session and send initial prompt
+        const now = new Date().toISOString();
+        // Persist the session row to SQLite immediately
+        try {
+          await window.electron!.piAgent.createSession({
+            id: sessionId,
+            projectId: project.id,
+            taskTitle,
+            taskId: card?.id ?? null,
+            cwd: codeDirectory,
+            mode: agentMode,
+            spawnedAt: now,
+          });
+        } catch (e) {
+          console.error("[SpawnAgentModal] createSession IPC failed", e);
+        }
+
         addTerminalSession({
           sessionId,
           taskId,
@@ -102,14 +120,16 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
           cwd:           codeDirectory,
           status:        "running",
           exitCode:      null,
-          spawnedAt:     new Date().toISOString(),
+          spawnedAt:     now,
           sessionType:   "pi",
           piMessages:    [],
           mode:          agentMode,
-          // Store the prompt — PiAgentPane will fire it on first mount
           initialPrompt: prompt.trim() || undefined,
         });
 
+        setPersistentPiSession(sessionId);
+        // Refresh history so the new session appears in the dropdown
+        fetchPiSessionHistory(project.id);
         setActiveSession(sessionId);
         setView("agent");
         onClose();

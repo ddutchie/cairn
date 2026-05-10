@@ -326,6 +326,48 @@ const MIGRATIONS: Migration[] = [
       db.exec("ALTER TABLE chat_messages ADD COLUMN tool_calls TEXT");
     }
   },
+
+  // v15: Pi Agent persistent tab & session history — stores per-project agent
+  // sessions, their display messages, and the raw LLM context window so sessions
+  // can be resumed across app restarts.
+  (db) => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS pi_agent_sessions (
+        id           TEXT PRIMARY KEY,
+        project_id   TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        task_title   TEXT NOT NULL DEFAULT 'Ad-hoc session',
+        task_id      TEXT,
+        cwd          TEXT NOT NULL,
+        mode         TEXT NOT NULL DEFAULT 'execute',
+        plan_note_id TEXT,
+        status       TEXT NOT NULL DEFAULT 'running',
+        spawned_at   TEXT NOT NULL,
+        updated_at   TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS pi_agent_messages (
+        id           TEXT PRIMARY KEY,
+        session_id   TEXT NOT NULL REFERENCES pi_agent_sessions(id) ON DELETE CASCADE,
+        role         TEXT NOT NULL,
+        content      TEXT NOT NULL DEFAULT '',
+        tool_calls   TEXT,
+        subagents    TEXT,
+        timestamp    TEXT NOT NULL,
+        "order"      INTEGER NOT NULL DEFAULT 0
+      );
+
+      CREATE TABLE IF NOT EXISTS pi_agent_llm_history (
+        session_id TEXT NOT NULL REFERENCES pi_agent_sessions(id) ON DELETE CASCADE,
+        "order"    INTEGER NOT NULL,
+        role       TEXT NOT NULL,
+        content    TEXT NOT NULL,
+        PRIMARY KEY (session_id, "order")
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_pi_sessions_project ON pi_agent_sessions(project_id);
+      CREATE INDEX IF NOT EXISTS idx_pi_messages_session ON pi_agent_messages(session_id);
+    `);
+  },
 ];
 
 export function applySchema(db: Database.Database): void {

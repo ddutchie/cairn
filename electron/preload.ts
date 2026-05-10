@@ -245,7 +245,8 @@ const api = {
     pickDirectory: () => ipcRenderer.invoke("agent:pickDirectory"),
     pickFile: () => ipcRenderer.invoke("agent:pickFile"),
 
-    spawn: (payload: unknown) => invoke<{ sessionId: string }>("agent:spawn", payload),
+    spawn:      (payload: unknown) => invoke<{ sessionId: string }>("agent:spawn",      payload),
+    spawnShell: (cwd: string)      => invoke<{ sessionId: string }>("agent:spawnShell", { cwd }),
     input: (sessionId: string, data: string) =>
       invoke("agent:input", { sessionId, data }),
     resize: (sessionId: string, cols: number, rows: number) =>
@@ -333,6 +334,13 @@ const api = {
       ipcRenderer.on("pi-agent:plan-note", handler);
       return () => ipcRenderer.off("pi-agent:plan-note", handler);
     },
+    /** Fired after any note-write tool (patch_note, ensure_note, append_to_note) completes — delivers fresh note content for live task-list updates */
+    onNoteUpdated: (cb: (e: { sessionId: string; noteId: string; content: string }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { sessionId: string; noteId: string; content: string }) => cb(e);
+      ipcRenderer.on("pi-agent:note-updated", handler);
+      return () => ipcRenderer.off("pi-agent:note-updated", handler);
+    },
     /** Fired when the session mode switches (plan → execute after approval) */
     onModeChange: (cb: (e: { sessionId: string; mode: "plan" | "execute"; planNoteId?: string }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -349,6 +357,18 @@ const api = {
       ipcRenderer.on("pi-agent:ask-questions", handler);
       return () => ipcRenderer.off("pi-agent:ask-questions", handler);
     },
+    /** List all persisted pi sessions for a project (project-scoped history) */
+    listSessions:   (projectId: string) => invoke("db:piSession:list", { projectId }),
+    /** Persist a new pi session row to SQLite */
+    createSession:  (args: unknown) => invoke("db:piSession:create", args),
+    /** Delete a pi session and all its messages from SQLite */
+    deleteSession:  (id: string) => invoke("db:piSession:delete", { id }),
+    /** Fetch the full message transcript for a session */
+    getMessages:    (sessionId: string) => invoke("db:piSession:messages", { sessionId }),
+    /** Bulk-save the full message array for a session (replaces existing rows) */
+    saveMessages:   (sessionId: string, messages: unknown[]) => invoke("db:piSession:saveMessages", { sessionId, messages }),
+    /** Restore LLM context for a session (loads history into main-process Map) — fire-and-forget */
+    restoreContext: (sessionId: string) => ipcRenderer.send("pi-agent:restore-context", { sessionId }),
   },
 
 } as const;

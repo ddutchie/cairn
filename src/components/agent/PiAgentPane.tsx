@@ -18,6 +18,7 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { id } from "@/lib/utils";
 import { PiMessageBubble } from "./PiMessageBubble";
+import { PlanTaskList } from "./PlanTaskList";
 import { ContextRing } from "./ContextRing";
 import { Tooltip } from "@/components/ui/tooltip";
 import { CairnEvents } from "@/lib/events";
@@ -118,6 +119,8 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
   const [input, setInput]                         = useState("");
   const [isLoading, setIsLoading]                 = useState(false);
   const [pendingQuestions, setPendingQuestions]   = useState<PendingQuestion[] | null>(null);
+  // Live PRD note content — updated whenever the agent writes to the plan note
+  const [planNoteContent, setPlanNoteContent]     = useState<string | null>(null);
 
   const messagesEndRef  = useRef<HTMLDivElement>(null);
   const textareaRef     = useRef<HTMLTextAreaElement>(null);
@@ -230,6 +233,17 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
       if (e.sessionId !== sessionId) return;
       finalisePiMessage(sessionId);
       setIsLoading(false);
+      // Persist the full message transcript after the turn completes
+      const msgs = useCairnStore.getState().terminalSessions.find((t) => t.sessionId === sessionId)?.piMessages ?? [];
+      const saveable = msgs.filter((m) => !m.isStreaming).map((m) => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        toolCalls: m.toolCalls ?? null,
+        subagents: m.subagents ?? null,
+        timestamp: m.timestamp,
+      }));
+      window.electron?.piAgent.saveMessages(sessionId, saveable).catch(console.error);
     });
 
     const unsubError = electron.piAgent.onError((e) => {
@@ -242,6 +256,19 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
         timestamp: new Date().toISOString(),
       });
       setIsLoading(false);
+      // Persist the message transcript including the error message
+      setTimeout(() => {
+        const msgs = useCairnStore.getState().terminalSessions.find((t) => t.sessionId === sessionId)?.piMessages ?? [];
+        const saveable = msgs.filter((m) => !m.isStreaming).map((m) => ({
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          toolCalls: m.toolCalls ?? null,
+          subagents: m.subagents ?? null,
+          timestamp: m.timestamp,
+        }));
+        window.electron?.piAgent.saveMessages(sessionId, saveable).catch(console.error);
+      }, 0);
     });
 
     // ── Subagent events (child session IDs routed back to parent) ──────────
@@ -306,6 +333,17 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
       setPendingQuestions(e.questions);
     });
 
+    // Live plan note content updates — keep task list in sync as agent patches the PRD
+    const unsubNoteUpdated = electron.piAgent.onNoteUpdated((e) => {
+      if (e.sessionId !== sessionId) return;
+      // Only track updates to this session's plan note
+      const currentPlanNoteId = useCairnStore.getState().terminalSessions.find(
+        (t) => t.sessionId === sessionId
+      )?.planNoteId;
+      if (!currentPlanNoteId || e.noteId !== currentPlanNoteId) return;
+      setPlanNoteContent(e.content);
+    });
+
     return () => {
       unsubToken();
       unsubUsage();
@@ -321,6 +359,7 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
       unsubPlanNote();
       unsubModeChange();
       unsubAskQuestions();
+      unsubNoteUpdated();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.sessionId]);
@@ -510,8 +549,12 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input */}
-      <div className="border-t border-[var(--border)] p-2 flex-shrink-0">
+      {/* Input — with upward-expanding plan task list docked above it */}
+      <div className="border-t border-[var(--border)] flex-shrink-0">
+        {session.mode === "execute" && planNoteContent && (
+          <PlanTaskList content={planNoteContent} />
+        )}
+      <div className="p-2">
         <div className="relative">
           <textarea
             ref={textareaRef}
@@ -557,6 +600,7 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
         <p className="text-[0.643rem] text-[var(--text-tertiary)] mt-1 text-center">
           {isLoading ? "Working… click ◼ to stop" : "Shift+Enter for new line · Enter to send"}
         </p>
+      </div>
       </div>
     </div>
   );

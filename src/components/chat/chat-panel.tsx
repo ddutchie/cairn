@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect, useMemo, useCallback } from "react"
 import { X, Send, Square, Sparkles, PenSquare, History, Pencil } from "lucide-react";
 import { cn, formatRelative } from "@/lib/utils";
 import { useCairnStore } from "@/store";
+import { MIN_CHAT_PANEL_WIDTH, MAX_CHAT_PANEL_WIDTH } from "@/store/slices/ui";
 import { useShallow } from "zustand/react/shallow";
 import { useChatStream } from "@/hooks/useChatStream";
 
@@ -26,6 +27,7 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
     addMessage,
     chatMessages, chatThreads, aiConfig,
     createNewThread, deleteThread, renameThread,
+    chatPanelWidth, setChatPanelWidth,
   } = useCairnStore(useShallow((s) => ({
     chatOpen:          s.chatOpen,
     toggleChat:        s.toggleChat,
@@ -40,6 +42,8 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
     createNewThread:   s.createNewThread,
     deleteThread:      s.deleteThread,
     renameThread:      s.renameThread,
+    chatPanelWidth:    s.chatPanelWidth,
+    setChatPanelWidth: s.setChatPanelWidth,
   })));
 
   const [input, setInput]             = useState("");
@@ -50,6 +54,8 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
   const historyRef     = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef       = useRef<HTMLTextAreaElement>(null);
+  const panelRef       = useRef<HTMLElement>(null);
+  const dividerRef     = useRef<HTMLDivElement>(null);
 
   const { isLoading, toolCalls, streamingContent, pendingQuestions, sendStream, stopStream } = useChatStream(threadId);
 
@@ -110,6 +116,57 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefill]);
 
+  // ── Drag-to-resize ──────────────────────────────────────────────────────────
+  // Mutates the panel DOM width directly on mousemove (no React state during
+  // drag) for zero-lag resizing, then commits to the store on mouseup.
+  useEffect(() => {
+    const divider = dividerRef.current;
+    const panel   = panelRef.current;
+    if (!divider || !panel) return;
+
+    let dragging = false;
+    let startX   = 0;
+    let startW   = 0;
+
+    function onMouseMove(e: MouseEvent) {
+      if (!dragging) return;
+      // Panel is on the right; dragging left (lower clientX) makes it wider.
+      const next = Math.min(MAX_CHAT_PANEL_WIDTH, Math.max(MIN_CHAT_PANEL_WIDTH, startW - (e.clientX - startX)));
+      panel!.style.width = `${next}px`;
+    }
+
+    function onMouseUp() {
+      if (!dragging) return;
+      dragging = false;
+      document.body.style.cursor     = "";
+      document.body.style.userSelect = "";
+      // Persist final width to store (and localStorage)
+      const finalWidth = panel!.offsetWidth;
+      setChatPanelWidth(finalWidth);
+    }
+
+    function onMouseDown(e: MouseEvent) {
+      dragging = true;
+      startX   = e.clientX;
+      startW   = panel!.offsetWidth;
+      document.body.style.cursor     = "col-resize";
+      document.body.style.userSelect = "none";
+      e.preventDefault();
+    }
+
+    divider.addEventListener("mousedown", onMouseDown);
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup",   onMouseUp);
+
+    return () => {
+      divider.removeEventListener("mousedown", onMouseDown);
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup",   onMouseUp);
+    };
+  // setChatPanelWidth is stable (Zustand action), so omitting from deps is safe.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleNewThread = useCallback(() => {
     if (!activeWorkspaceId) return;
     setThreadId(createNewThread(activeWorkspaceId, activeProjectId ?? undefined).id);
@@ -137,7 +194,18 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
   if (!chatOpen) return null;
 
   return (
-    <aside className="flex flex-col w-80 border-l border-[var(--border)] bg-[var(--surface)] flex-shrink-0 animate-slide-in-right">
+    <aside
+      ref={panelRef}
+      className="flex flex-col border-l border-[var(--border)] bg-[var(--surface)] flex-shrink-0 animate-slide-in-right relative"
+      style={{ width: chatPanelWidth }}
+    >
+      {/* Drag-to-resize handle — sits on the left edge of the panel */}
+      <div
+        ref={dividerRef}
+        className="absolute left-0 top-0 h-full w-0 flex-shrink-0 cursor-col-resize z-10 select-none"
+        style={{ marginLeft: -3, padding: "0 3px" }}
+        aria-hidden
+      />
       {/* Header */}
       <div className="flex items-center gap-2 px-4 h-11 border-b border-[var(--border)] flex-shrink-0">
         <Sparkles size={13} className="text-[var(--accent)]" />

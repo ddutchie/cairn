@@ -16,14 +16,15 @@ import "@xterm/xterm/css/xterm.css";
 
 import { useEffect, useRef, useCallback, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { X, Terminal as TerminalIcon, MessageSquare, CircleDot, Plus } from "lucide-react";
+import { X, MessageSquare, CircleDot, Plus, ChevronDown, Trash2, Bot, History, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { id } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { Tooltip } from "@/components/ui/tooltip";
 import { SpawnAgentModal } from "./SpawnAgentModal";
 import { TerminalManager } from "./TerminalManager";
 import { PiAgentPane } from "./PiAgentPane";
-import type { TerminalSession } from "@/store/slices/terminal-sessions";
+import type { TerminalSession, PiSessionSummary } from "@/store/slices/terminal-sessions";
 
 // ── Single terminal session mount ─────────────────────────────────────────────
 
@@ -187,6 +188,328 @@ function SessionMount({ session, isActive }: SessionMountProps) {
   );
 }
 
+function formatDate(iso: string) {
+  const d = new Date(iso);
+  const diffDays = Math.floor((Date.now() - d.getTime()) / 86400000);
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+// ── Shared session helpers ─────────────────────────────────────────────────────
+//
+// Both PiAgentEmptyState and PiAgentTab need identical logic for creating new
+// sessions and resuming existing ones. This hook centralises that logic so
+// there is a single source of truth.
+
+function usePiSessionActions() {
+  const {
+    addTerminalSession,
+    setActiveSession,
+    terminalSessions,
+    activeProjectId,
+    projects,
+    upsertPiSessionSummary,
+    setPersistentPiSession,
+  } = useCairnStore(useShallow((s) => ({
+    addTerminalSession:     s.addTerminalSession,
+    setActiveSession:       s.setActiveSession,
+    terminalSessions:       s.terminalSessions,
+    activeProjectId:        s.activeProjectId,
+    projects:               s.projects,
+    upsertPiSessionSummary: s.upsertPiSessionSummary,
+    setPersistentPiSession: s.setPersistentPiSession,
+  })));
+
+  const project = projects.find((p) => p.id === activeProjectId) ?? null;
+
+  async function handleNewSession() {
+    if (!project?.codeDirectory || !activeProjectId) return;
+    const sessionId = id();
+    const now = new Date().toISOString();
+    const summary: PiSessionSummary = {
+      id: sessionId,
+      projectId: activeProjectId,
+      taskTitle: "Ad-hoc session",
+      taskId: null,
+      cwd: project.codeDirectory,
+      mode: "execute" as const,
+      planNoteId: null,
+      status: "running" as const,
+      spawnedAt: now,
+      updatedAt: now,
+    };
+    try { await window.electron?.piAgent.createSession(summary); } catch { /* ok */ }
+    addTerminalSession({
+      sessionId, taskId: sessionId, taskTitle: "Ad-hoc session",
+      agentId: "cairn-agent", agentName: "Cairn Agent",
+      projectId: activeProjectId, cwd: project.codeDirectory,
+      status: "running", exitCode: null, spawnedAt: now,
+      sessionType: "pi", piMessages: [], mode: "execute",
+    });
+    upsertPiSessionSummary(summary);
+    setPersistentPiSession(sessionId);
+    setActiveSession(sessionId);
+  }
+
+  async function handleResumeSession(summary: PiSessionSummary) {
+    const alreadyLoaded = terminalSessions.find((t) => t.sessionId === summary.id);
+    if (!alreadyLoaded) {
+      let piMessages: import("@/store/slices/terminal-sessions").PiAgentMessage[] = [];
+      try {
+        const rows = await window.electron?.piAgent.getMessages(summary.id) as Array<{
+          id: string; role: "user" | "assistant" | "error"; content: string;
+          toolCalls: unknown[] | null; subagents: unknown[] | null; timestamp: string;
+        }> | undefined;
+        if (rows) {
+          piMessages = rows.map((r) => ({
+            id: r.id, role: r.role, content: r.content,
+            toolCalls: (r.toolCalls ?? undefined) as import("@/store/slices/terminal-sessions").PiAgentMessage["toolCalls"],
+            subagents: (r.subagents ?? undefined) as import("@/store/slices/terminal-sessions").PiAgentMessage["subagents"],
+            timestamp: r.timestamp,
+          }));
+        }
+      } catch { /* ok */ }
+      window.electron?.piAgent.restoreContext(summary.id);
+      addTerminalSession({
+        sessionId: summary.id, taskId: summary.taskId ?? summary.id,
+        taskTitle: summary.taskTitle, agentId: "cairn-agent", agentName: "Cairn Agent",
+        projectId: summary.projectId, cwd: summary.cwd, status: summary.status,
+        exitCode: null, spawnedAt: summary.spawnedAt, sessionType: "pi",
+        piMessages, mode: summary.mode, planNoteId: summary.planNoteId ?? undefined,
+      });
+    } else {
+      window.electron?.piAgent.restoreContext(summary.id);
+    }
+    setPersistentPiSession(summary.id);
+    setActiveSession(summary.id);
+  }
+
+  return { handleNewSession, handleResumeSession, project };
+}
+
+// ── PiAgentEmptyState — shown in the content area when no session is loaded ──
+
+function PiAgentEmptyState() {
+  const { piSessionHistory, persistentPiSessionId } = useCairnStore(useShallow((s) => ({
+    piSessionHistory:      s.piSessionHistory,
+    persistentPiSessionId: s.persistentPiSessionId,
+  })));
+
+  const { handleNewSession, handleResumeSession, project } = usePiSessionActions();
+  const recentSessions = piSessionHistory.slice(0, 5);
+
+  return (
+    <div className="flex flex-col items-center justify-center h-full gap-4 p-6 text-center">
+      <div className="w-10 h-10 rounded-full bg-[var(--accent-dim)] border border-[var(--accent)]/20 flex items-center justify-center">
+        <Bot size={18} className="text-[var(--accent)]" />
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <p className="text-[0.786rem] font-semibold text-[var(--text-primary)]">Cairn Agent</p>
+        <p className="text-[0.714rem] text-[var(--text-tertiary)] max-w-44">
+          {project?.codeDirectory
+            ? "Start a new session or resume a previous one."
+            : "Set a code directory on this project to start a session."}
+        </p>
+      </div>
+
+      {/* New session CTA */}
+      <button
+        onClick={handleNewSession}
+        disabled={!project?.codeDirectory}
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--accent)] text-white text-[0.714rem] font-medium hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
+      >
+        <Plus size={11} />
+        New session
+      </button>
+
+      {/* Recent sessions */}
+      {recentSessions.length > 0 && (
+        <div className="w-full max-w-56 flex flex-col gap-0.5 mt-1">
+          <div className="flex items-center gap-1.5 mb-1">
+            <History size={10} className="text-[var(--text-tertiary)]" />
+            <span className="text-[0.643rem] font-medium text-[var(--text-tertiary)] uppercase tracking-wider">Recent</span>
+          </div>
+          {recentSessions.map((summary) => (
+            <button
+              key={summary.id}
+              onClick={() => handleResumeSession(summary)}
+              className={cn(
+                "w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left transition-colors",
+                "hover:bg-[var(--surface-2)] border border-transparent hover:border-[var(--border)]",
+                summary.id === persistentPiSessionId && "bg-[var(--surface-2)] border-[var(--border)]",
+              )}
+            >
+              <div className="flex-1 min-w-0">
+                <p className="text-[0.714rem] text-[var(--text-secondary)] truncate">{summary.taskTitle}</p>
+                <p className="text-[0.607rem] text-[var(--text-tertiary)]">{formatDate(summary.updatedAt)}</p>
+              </div>
+              <ArrowRight size={10} className="text-[var(--text-tertiary)] shrink-0 opacity-0 group-hover:opacity-100" />
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── PiAgentTab (pinned Cairn Agent tab with history dropdown) ──────────────
+
+interface PiAgentTabProps {
+  isActive: boolean;
+  onActivate: () => void;
+}
+
+function PiAgentTab({ isActive, onActivate }: PiAgentTabProps) {
+  const {
+    piSessionHistory,
+    persistentPiSessionId,
+    fetchPiSessionHistory,
+    deletePiSessionFromHistory,
+    activeProjectId,
+  } = useCairnStore(useShallow((s) => ({
+    piSessionHistory:           s.piSessionHistory,
+    persistentPiSessionId:      s.persistentPiSessionId,
+    fetchPiSessionHistory:      s.fetchPiSessionHistory,
+    deletePiSessionFromHistory: s.deletePiSessionFromHistory,
+    activeProjectId:            s.activeProjectId,
+  })));
+
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const { handleNewSession: _handleNewSession, handleResumeSession: _handleResumeSession, project } = usePiSessionActions();
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    if (!dropdownOpen) return;
+    function handleClick(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [dropdownOpen]);
+
+  // Refresh history when dropdown opens
+  useEffect(() => {
+    if (dropdownOpen && activeProjectId) {
+      fetchPiSessionHistory(activeProjectId);
+    }
+  }, [dropdownOpen, activeProjectId, fetchPiSessionHistory]);
+
+  async function handleNewSession() {
+    setDropdownOpen(false);
+    await _handleNewSession();
+  }
+
+  async function handleResumeSession(summary: PiSessionSummary) {
+    setDropdownOpen(false);
+    if (summary.id === persistentPiSessionId) return;
+    await _handleResumeSession(summary);
+  }
+
+  async function handleDeleteSession(e: React.MouseEvent, sessionId: string) {
+    e.stopPropagation();
+    await deletePiSessionFromHistory(sessionId);
+  }
+
+  return (
+    <div className="relative flex-shrink-0" ref={dropdownRef}>
+      {/* The pinned tab button */}
+      <button
+        onClick={onActivate}
+        role="tab"
+        aria-selected={isActive}
+        className={cn(
+          "flex items-center gap-1.5 px-3 py-2 text-[0.714rem] whitespace-nowrap border-r border-[var(--border)] transition-colors flex-shrink-0",
+          isActive
+            ? "text-[var(--text-primary)] bg-[var(--background)]"
+            : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"
+        )}
+      >
+        <MessageSquare size={8} className={cn("flex-shrink-0", isActive ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]")} />
+        <span className="max-w-[100px] truncate">Cairn Agent</span>
+        {/* History dropdown chevron */}
+        <span
+          role="button"
+          aria-label="Session history"
+          onClick={(e) => { e.stopPropagation(); setDropdownOpen((v) => !v); }}
+          className={cn(
+            "ml-0.5 p-0.5 rounded transition-colors hover:bg-[var(--surface-2)]",
+            dropdownOpen ? "text-[var(--text-primary)]" : "text-[var(--text-tertiary)]"
+          )}
+        >
+          <ChevronDown size={10} />
+        </span>
+      </button>
+
+      {/* History dropdown */}
+      {dropdownOpen && (
+        <div className="absolute left-0 top-full z-50 mt-0.5 w-64 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-xl overflow-hidden">
+          {/* New session CTA */}
+          <button
+            onClick={handleNewSession}
+            disabled={!project?.codeDirectory}
+            className="w-full flex items-center gap-2 px-3 py-2.5 text-[0.714rem] font-medium text-[var(--accent)] hover:bg-[var(--surface-2)] transition-colors border-b border-[var(--border)] disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <Plus size={11} />
+            New session
+            {!project?.codeDirectory && <span className="ml-auto text-[var(--text-tertiary)] text-[0.643rem]">No code dir</span>}
+          </button>
+
+          {/* History list */}
+          <div className="max-h-64 overflow-y-auto">
+            {piSessionHistory.length === 0 ? (
+              <p className="px-3 py-3 text-[0.714rem] text-[var(--text-tertiary)] text-center">No saved sessions</p>
+            ) : (
+              piSessionHistory.map((summary) => (
+                <button
+                  key={summary.id}
+                  onClick={() => handleResumeSession(summary)}
+                  className={cn(
+                    "w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-[var(--surface-2)] transition-colors group",
+                    summary.id === persistentPiSessionId && "bg-[var(--surface-2)]"
+                  )}
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[0.714rem] text-[var(--text-primary)] truncate">{summary.taskTitle}</p>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span className={cn(
+                        "text-[0.607rem] font-medium px-1 py-0 rounded",
+                        summary.mode === "plan"
+                          ? "bg-[color-mix(in_srgb,var(--warning,#f59e0b)_15%,transparent)] text-[var(--warning,#f59e0b)]"
+                          : "bg-[var(--accent-dim)] text-[var(--accent)]"
+                      )}>
+                        {summary.mode.toUpperCase()}
+                      </span>
+                      <span className="text-[0.607rem] text-[var(--text-tertiary)]">{formatDate(summary.updatedAt)}</span>
+                      {summary.status === "exited" && (
+                        <span className="text-[0.607rem] text-[var(--text-tertiary)]">· exited</span>
+                      )}
+                    </div>
+                  </div>
+                  <span
+                    role="button"
+                    aria-label="Delete session"
+                    onClick={(e) => handleDeleteSession(e, summary.id)}
+                    className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] transition-all flex-shrink-0"
+                  >
+                    <Trash2 size={10} />
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── AgentTerminalPane ─────────────────────────────────────────────────────────
 
 export function AgentTerminalPane() {
@@ -195,14 +518,25 @@ export function AgentTerminalPane() {
     activeSessionId,
     setActiveSession,
     removeTerminalSession,
+    persistentPiSessionId,
+    activeProjectId,
+    fetchPiSessionHistory,
   } = useCairnStore(useShallow((s) => ({
-    terminalSessions:      s.terminalSessions,
-    activeSessionId:       s.activeSessionId,
-    setActiveSession:      s.setActiveSession,
-    removeTerminalSession: s.removeTerminalSession,
+    terminalSessions:       s.terminalSessions,
+    activeSessionId:        s.activeSessionId,
+    setActiveSession:       s.setActiveSession,
+    removeTerminalSession:  s.removeTerminalSession,
+    persistentPiSessionId:  s.persistentPiSessionId,
+    activeProjectId:        s.activeProjectId,
+    fetchPiSessionHistory:  s.fetchPiSessionHistory,
   })));
 
   const [spawnOpen, setSpawnOpen] = useState(false);
+
+  // Fetch session history on mount and when project changes
+  useEffect(() => {
+    if (activeProjectId) fetchPiSessionHistory(activeProjectId);
+  }, [activeProjectId, fetchPiSessionHistory]);
 
   const handleClose = useCallback((sessionId: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -211,31 +545,32 @@ export function AgentTerminalPane() {
     window.electron?.agent.kill(sessionId).catch(console.error);
   }, [removeTerminalSession]);
 
-  if (terminalSessions.length === 0) {
-    return (
-      <>
-        <div className="flex flex-col items-center justify-center flex-1 gap-3 text-center p-4">
-          <TerminalIcon size={24} className="text-[var(--text-tertiary)]" />
-          <p className="text-xs text-[var(--text-tertiary)]">No agent sessions</p>
-          <button
-            onClick={() => setSpawnOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs bg-[var(--accent)] text-white hover:opacity-90 transition-opacity"
-          >
-            <Plus size={12} />
-            New Session
-          </button>
-        </div>
-        <SpawnAgentModal open={spawnOpen} onClose={() => setSpawnOpen(false)} />
-      </>
-    );
-  }
+  // The persistent pi session (may not be in terminalSessions yet if not loaded)
+  const persistentSession = terminalSessions.find((t) => t.sessionId === persistentPiSessionId && t.sessionType === "pi");
+
+  // PTY-only sessions (shown as closeable tabs after the pinned tab)
+  const ptySessions = terminalSessions.filter((t) => t.sessionType === "pty");
+
+  // Determine if the pinned tab is active
+  const pinnedIsActive = persistentPiSessionId !== null && activeSessionId === persistentPiSessionId;
 
   return (
     <>
     <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
       {/* Tab bar */}
       <div className="flex items-center border-b border-[var(--border)] overflow-x-auto flex-shrink-0 bg-[var(--surface)]">
-        {terminalSessions.map((session) => (
+        {/* Always-present Cairn Agent pinned tab */}
+        <PiAgentTab
+          isActive={pinnedIsActive}
+          onActivate={() => {
+            if (persistentPiSessionId) {
+              setActiveSession(persistentPiSessionId);
+            }
+          }}
+        />
+
+        {/* PTY sessions */}
+        {ptySessions.map((session) => (
           <TerminalTab
             key={session.sessionId}
             session={session}
@@ -244,7 +579,8 @@ export function AgentTerminalPane() {
             onClose={(e) => handleClose(session.sessionId, e)}
           />
         ))}
-        {/* New session button in tab bar */}
+
+        {/* New session button */}
         <Tooltip content="New session" side="bottom">
           <button
             onClick={() => setSpawnOpen(true)}
@@ -255,28 +591,27 @@ export function AgentTerminalPane() {
         </Tooltip>
       </div>
 
-      {/* Session content — branches on sessionType */}
+      {/* Session content */}
       <div className="flex-1 min-h-0 flex flex-col overflow-hidden bg-[var(--background)]">
-        {terminalSessions.map((session) => {
-          const isActive = session.sessionId === activeSessionId;
-          if (session.sessionType === "pi") {
-            return (
-              <div
-                key={session.sessionId}
-                className={cn("flex-1 min-h-0 overflow-hidden", !isActive && "hidden")}
-              >
-                <PiAgentPane session={session} isActive={isActive} />
-              </div>
-            );
-          }
-          return (
-            <SessionMount
-              key={session.sessionId}
-              session={session}
-              isActive={isActive}
-            />
-          );
-        })}
+        {/* Pinned pi session content */}
+        {persistentSession ? (
+          <div className={cn("flex-1 min-h-0 overflow-hidden", !pinnedIsActive && "hidden")}>
+            <PiAgentPane session={persistentSession} isActive={pinnedIsActive} />
+          </div>
+        ) : (
+          <div className="flex-1 min-h-0 overflow-hidden">
+            <PiAgentEmptyState />
+          </div>
+        )}
+
+        {/* PTY sessions */}
+        {ptySessions.map((session) => (
+          <SessionMount
+            key={session.sessionId}
+            session={session}
+            isActive={session.sessionId === activeSessionId}
+          />
+        ))}
       </div>
     </div>
     <SpawnAgentModal open={spawnOpen} onClose={() => setSpawnOpen(false)} />

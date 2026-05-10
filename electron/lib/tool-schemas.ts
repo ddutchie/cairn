@@ -37,25 +37,17 @@ export const TOOL_SCHEMAS = {
   // ── Read / context ───────────────────────────────────────────────────────────
 
   get_cairn_context: {
-    description: "Full orientation: workspaces, projects, columns, tags, tools, conventions. Call once at MCP session start if unfamiliar.",
+    description: "Full workspace orientation: projects, columns, tags, conventions. Call once at MCP session start.",
     schema: z.object({}),
   },
 
   get_project_context_pack: {
-    description: "Single-call bundle: project metadata, columns, pinned notes, open tasks, recent activity. Prefer over separate summary+tasks+notes calls.",
+    description: "Project metadata, columns, pinned notes, open tasks, recent activity in one call.",
     schema: z.object({ projectId: sId }),
   },
 
-  resolve_project: {
-    description: "Find a project by name (fuzzy, case-insensitive). Returns projectId and column IDs.",
-    schema: z.object({
-      name:        sStr,
-      workspaceId: sIdOpt,
-    }),
-  },
-
   get_active_context: {
-    description: "Returns active workspace, project, board columns with IDs, recent notes/tasks, and tags. Call first to get IDs.",
+    description: "Active workspace, project, column IDs, recent notes/tasks, and tags. Call first to get IDs.",
     schema: z.object({}),
   },
 
@@ -64,22 +56,8 @@ export const TOOL_SCHEMAS = {
     schema: z.object({ noteId: sId }),
   },
 
-  list_notes: {
-    description: "List all notes in a project.",
-    schema: z.object({ projectId: sIdOpt }),
-  },
-
-  list_tasks: {
-    description: "List all tasks in a project, grouped by column.",
-    schema: z.object({
-      projectId:       sIdOpt,
-      columnType:      sColType,
-      includeArchived: sBoolOpt.describe("When true, include archived tasks in the results (default false)"),
-    }),
-  },
-
   search_notes: {
-    description: "Search notes by query. Returns title, snippet, projectId.",
+    description: "Search notes by text query. Empty query returns all notes.",
     schema: z.object({
       query:     sStr,
       projectId: sIdOpt,
@@ -88,7 +66,7 @@ export const TOOL_SCHEMAS = {
   },
 
   search_tasks: {
-    description: "Search task cards by query.",
+    description: "Search tasks by text query. Empty query returns all tasks.",
     schema: z.object({
       query:      sStr,
       projectId:  sIdOpt,
@@ -97,63 +75,27 @@ export const TOOL_SCHEMAS = {
     }),
   },
 
-  get_project_summary: {
-    description: "Project summary: card counts by column, notes, recent activity.",
-    schema: z.object({ projectId: sId }),
-  },
-
   get_task: {
-    description: "Full task card detail: title, description, priority, dueDate, column, linked notes.",
+    description: "Task card detail: title, description, priority, dueDate, column, linked notes.",
     schema: z.object({ cardId: sId }),
-  },
-
-  list_recent_activity: {
-    description: "Recently created/updated notes and tasks, sorted newest first.",
-    schema: z.object({
-      workspaceId: sIdOpt,
-      projectId:   sIdOpt,
-      limit:       z.number().optional().default(20),
-    }),
   },
 
   // ── Notes ────────────────────────────────────────────────────────────────────
 
-  create_note: {
-    description: "Create a note in a project. Content is markdown.",
-    schema: z.object({
-      projectId: sId,
-      title:     sStr,
-      content:   sStrOpt,
-      tagIds:    sTagIds,
-      isPinned:  sBoolOpt,
-      folder:    sStrOpt.describe("Subfolder path within the project, e.g. \"Design/Typography\". Empty or omitted = project root."),
-    }),
-  },
-
-  import_note_from_file: {
-    description: "Import a local file as a note (MCP reads from disk). title defaults to filename.",
-    schema: z.object({
-      projectId: sId,
-      filePath:  sStr.describe("Absolute path to file"),
-      title:     sStrOpt,
-      tagIds:    sTagIds,
-    }),
-  },
-
   ensure_note: {
-    description: "Idempotent create-or-update by title+projectId. Use to avoid duplicates when re-running.",
+    description: "Create-or-update a note by title+projectId. Idempotent — safe to call repeatedly.",
     schema: z.object({
       projectId: sId,
       title:     sStr,
       content:   sStrOpt,
       tagIds:    sTagIds,
       isPinned:  sBoolOpt,
-      folder:    sStrOpt.describe("Subfolder path within the project. Empty or omitted = project root."),
+      folder:    sStrOpt.describe("Subfolder path. Empty = project root."),
     }),
   },
 
   append_to_note: {
-    description: "Append text to a note without re-sending the full body.",
+    description: "Append text to a note without replacing existing content.",
     schema: z.object({
       noteId:    sId,
       content:   sStr,
@@ -162,31 +104,12 @@ export const TOOL_SCHEMAS = {
   },
 
   patch_note: {
-    description: "Replace a string inside a note without re-sending full content. oldString must be unique unless replaceAll=true. Prefer over update_note for partial edits.",
+    description: "Replace an exact string inside a note. Include surrounding context to make oldString unique.",
     schema: z.object({
       noteId:     sId,
-      oldString:  sStr.describe("Exact string — include context to make unique"),
+      oldString:  sStr,
       newString:  sStr,
       replaceAll: sBoolOpt,
-    }),
-  },
-
-  update_note: {
-    description: "Update a note's title, content, pinned state, or tags.",
-    schema: z.object({
-      noteId:   sId,
-      title:    sStrOpt,
-      content:  sStrOpt,
-      isPinned: sBoolOpt,
-      tagIds:   sTagIds.describe("Full replacement list. Create new tags with create_tag first."),
-    }),
-  },
-
-  move_note: {
-    description: "Move a note to a different project.",
-    schema: z.object({
-      noteId:          sId,
-      targetProjectId: sId,
     }),
   },
 
@@ -211,24 +134,19 @@ export const TOOL_SCHEMAS = {
   },
 
   update_task: {
-    description: "Update a task card's fields. Only provided fields are changed.",
+    description: "Update a task card. Only provided fields are changed. Use archived=true/false to archive or restore. Use blockedBy to add a blocker, unblockFrom to remove one.",
     schema: z.object({
-      cardId:      sId,
-      title:       sStrOpt,
-      description: sStrOpt,
-      priority:    sPriority,
-      dueDate:     sDueDate,
-      columnId:    sIdOpt.describe("Move to this column"),
-      assignee:    sStrOpt.describe("Assignee name, or empty to clear"),
-      tagIds:      sTagIds,
-    }),
-  },
-
-  update_task_status: {
-    description: "Move a single task card to a different column.",
-    schema: z.object({
-      cardId:         sId,
-      targetColumnId: sId,
+      cardId:       sId,
+      title:        sStrOpt,
+      description:  sStrOpt,
+      priority:     sPriority,
+      dueDate:      sDueDate,
+      columnId:     sIdOpt.describe("Move to this column"),
+      assignee:     sStrOpt.describe("Assignee name, or empty to clear"),
+      tagIds:       sTagIds,
+      archived:     sBoolOpt.describe("true=archive, false=restore"),
+      blockedBy:    sIdOpt.describe("Add this card as a blocker (same project, circular deps rejected)"),
+      unblockFrom:  sIdOpt.describe("Remove this card from blockers"),
     }),
   },
 
@@ -245,16 +163,6 @@ export const TOOL_SCHEMAS = {
     schema: z.object({ cardId: sId }),
   },
 
-  archive_task: {
-    description: "Archive a task card so it no longer appears in the active board. Use instead of delete when the work is done but you may want to reference it later.",
-    schema: z.object({ cardId: sId }),
-  },
-
-  restore_task: {
-    description: "Restore a previously archived task card back to the active board.",
-    schema: z.object({ cardId: sId }),
-  },
-
   link_note_to_task: {
     description: "Bidirectionally link a note and a task card.",
     schema: z.object({
@@ -263,24 +171,8 @@ export const TOOL_SCHEMAS = {
     }),
   },
 
-  block_task: {
-    description: "Mark a task as blocked by another task in the same project. The blocked task will not appear in list_ready_tasks until the blocker is resolved (moved to done or archived). Circular dependencies are rejected.",
-    schema: z.object({
-      cardId:        sId.describe("The task to mark as blocked"),
-      blockerCardId: sId.describe("The task that is blocking it"),
-    }),
-  },
-
-  unblock_task: {
-    description: "Remove a blocking dependency between two tasks.",
-    schema: z.object({
-      cardId:        sId.describe("The blocked task"),
-      blockerCardId: sId.describe("The blocker to remove"),
-    }),
-  },
-
   list_ready_tasks: {
-    description: "Return only unblocked, active tasks — tasks with no pending blockers and not in a done column. Use this instead of list_tasks when you want to know what work can start right now.",
+    description: "Return only unblocked, active tasks — tasks with no pending blockers and not in a done column. Use this to find work that can start right now.",
     schema: z.object({
       projectId: sId.optional(),
     }),
@@ -288,23 +180,12 @@ export const TOOL_SCHEMAS = {
 
   // ── Projects ──────────────────────────────────────────────────────────────────
 
-  create_project: {
-    description: "Create a project with default columns (Backlog, Todo, In Progress, Review, Done).",
+  upsert_project: {
+    description: "Create or update a project. Omit projectId to create (auto-creates default columns); provide projectId to update existing fields.",
     schema: z.object({
-      workspaceId: sId,
-      name:        sStr,
-      description: sStrOpt,
-      icon:        sStrOpt.describe("Single emoji"),
-      status:      sStatus,
-      priority:    sPriority,
-    }),
-  },
-
-  update_project: {
-    description: "Update a project's name, description, icon, status, or priority.",
-    schema: z.object({
-      projectId:   sId,
-      name:        sStrOpt,
+      projectId:   sIdOpt.describe("Omit to create a new project"),
+      workspaceId: sId.optional().describe("Required when creating"),
+      name:        sStrOpt.describe("Required when creating"),
       description: sStrOpt,
       icon:        sStrOpt.describe("Single emoji"),
       status:      sStatus,
@@ -520,6 +401,16 @@ export type ToolName = keyof typeof TOOL_SCHEMAS;
 // Chat-only tools (not exposed via MCP)
 export const CHAT_ONLY_TOOLS: ToolName[] = ["get_active_context", "generate_prd", "spawn_tasks_from_note", "ask_questions", "suggest_connections"];
 
+/**
+ * Tools excluded only from in-app agents (chat + pi-agent) but kept in MCP.
+ * External MCP clients (Claude Desktop, etc.) benefit from the broader surface.
+ *
+ *   get_cairn_context  → useful for fresh MCP sessions; agents use get_project_context_pack
+ */
+export const AGENT_EXCLUDED_TOOLS: ToolName[] = [
+  "get_cairn_context",
+];
+
 export type ToolCategory = "read" | "write" | "delete";
 
 function toolCategory(name: string): ToolCategory {
@@ -527,15 +418,14 @@ function toolCategory(name: string): ToolCategory {
   if (
     name.startsWith("get_") ||
     name.startsWith("list_") ||
-    name.startsWith("search_") ||
-    name.startsWith("resolve_")
+    name.startsWith("search_")
   ) return "read";
   return "write";
 }
 
-// MCP tool list: name + category for every tool exposed via MCP (excludes chat-only tools).
-// Imported by MCPSettings.tsx to render the tool list — do not maintain manually there.
-const chatOnlySet = new Set<string>(CHAT_ONLY_TOOLS);
+// MCP tool list: name + category for every tool the MCP server advertises.
+// Excludes chat-only tools. Imported by MCPSettings.tsx.
+const _chatOnlySet = new Set<string>(CHAT_ONLY_TOOLS);
 export const MCP_TOOLS: { name: string; category: ToolCategory }[] = Object.keys(TOOL_SCHEMAS)
-  .filter((name) => !chatOnlySet.has(name))
+  .filter((name) => !_chatOnlySet.has(name))
   .map((name) => ({ name, category: toolCategory(name) }));

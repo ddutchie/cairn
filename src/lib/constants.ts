@@ -84,3 +84,6 @@ export const AI_CONFIG_KEY = "ai-config";
 
 /** localStorage key for the last active project ID. */
 export const ACTIVE_PROJECT_KEY = "active-project";
+
+/** localStorage key for the persisted chat panel width (px). */
+export const CHAT_PANEL_WIDTH_KEY = "chatPanelWidth";

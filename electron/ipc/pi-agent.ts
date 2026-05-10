@@ -21,10 +21,15 @@ import { buildPiAgentSystemPrompt } from "../lib/pi-agent-prompt";
 import { normaliseBaseUrl } from "../lib/llm";
 import type { ChatRequest } from "../lib/tools";
 import type { DbContext } from "./handlers";
+import * as q from "../db/queries";
+import { ts } from "../db/utils";
 
 // ── Session registry ──────────────────────────────────────────────────────────
 
 const sessions = new Map<string, PiAgentSession>();
+
+// ── Note-writing tool names ────────────────────────────────────────────────────
+const NOTE_WRITE_TOOLS = new Set(["ensure_note", "patch_note", "append_to_note"]);
 
 // ── Request shape ──────────────────────────────────────────────────────────────
 
@@ -147,12 +152,44 @@ export function registerPiAgentHandler(
         onToolsReady:    ()     => send("pi-agent:tools-ready", { sessionId }),
         onToolPending:   (name, callId) => send("pi-agent:tool", { sessionId, name, label: name, callId, status: "pending" }),
         onToolStart:     (name, label, callId) => send("pi-agent:tool", { sessionId, name, label, callId, status: "start" }),
-        onToolEnd:       (name, label, ok, output, callId) => send("pi-agent:tool", { sessionId, name, label, callId, status: "end", ok, output }),
+        onToolEnd:       (name, label, ok, output, callId) => {
+          send("pi-agent:tool", { sessionId, name, label, callId, status: "end", ok, output });
+          // After any note-write tool, notify the renderer with the fresh note content
+          // so the plan task list can update live.
+          if (ok && NOTE_WRITE_TOOLS.has(name)) {
+            try {
+              const parsed = JSON.parse(output) as { id?: string };
+              if (parsed?.id) {
+                const row = ctx.db.prepare("SELECT content FROM notes WHERE id = ?").get(parsed.id) as { content: string } | undefined;
+                if (row) send("pi-agent:note-updated", { sessionId, noteId: parsed.id, content: row.content ?? "" });
+              }
+            } catch { /* non-JSON output — ignore */ }
+          }
+        },
         onStepStart:     () => send("pi-agent:step",  { sessionId }),
         onUsage:         (promptTokens, completionTokens) => send("pi-agent:usage", { sessionId, promptTokens, completionTokens }),
-        onDone:          () => send("pi-agent:done",  { sessionId }),
-        onError:         (error) => send("pi-agent:error", { sessionId, error }),
-        onPlanNoteFound: (noteId) => send("pi-agent:plan-note", { sessionId, noteId }),
+        onDone: () => {
+          try {
+            q.saveLlmHistory(ctx.db, sessionId, session.messages);
+            q.updatePiSession(ctx.db, sessionId, { updatedAt: ts() });
+          } catch (e) {
+            console.warn("[pi-agent] failed to persist session after done:", e);
+          }
+          send("pi-agent:done", { sessionId });
+        },
+        onError: (error) => {
+          try {
+            q.saveLlmHistory(ctx.db, sessionId, session.messages);
+            q.updatePiSession(ctx.db, sessionId, { status: "exited", updatedAt: ts() });
+          } catch (e) {
+            console.warn("[pi-agent] failed to persist session after error:", e);
+          }
+          send("pi-agent:error", { sessionId, error });
+        },
+        onPlanNoteFound: (noteId) => {
+          send("pi-agent:plan-note", { sessionId, noteId });
+          try { q.updatePiSession(ctx.db, sessionId, { planNoteId: noteId, updatedAt: ts() }); } catch { /* non-critical */ }
+        },
       },
       getWin,
       sessionId,
@@ -239,12 +276,44 @@ export function registerPiAgentHandler(
         onToolsReady:  ()     => send("pi-agent:tools-ready", { sessionId }),
         onToolPending:   (name, callId) => send("pi-agent:tool", { sessionId, name, label: name, callId, status: "pending" }),
         onToolStart:     (name, label, callId) => send("pi-agent:tool", { sessionId, name, label, callId, status: "start" }),
-        onToolEnd:       (name, label, ok, output, callId) => send("pi-agent:tool", { sessionId, name, label, callId, status: "end", ok, output }),
+        onToolEnd:       (name, label, ok, output, callId) => {
+          send("pi-agent:tool", { sessionId, name, label, callId, status: "end", ok, output });
+          // After any note-write tool, notify the renderer with the fresh note content
+          // so the plan task list can update live.
+          if (ok && NOTE_WRITE_TOOLS.has(name)) {
+            try {
+              const parsed = JSON.parse(output) as { id?: string };
+              if (parsed?.id) {
+                const row = ctx.db.prepare("SELECT content FROM notes WHERE id = ?").get(parsed.id) as { content: string } | undefined;
+                if (row) send("pi-agent:note-updated", { sessionId, noteId: parsed.id, content: row.content ?? "" });
+              }
+            } catch { /* non-JSON output — ignore */ }
+          }
+        },
         onStepStart:     () => send("pi-agent:step",  { sessionId }),
         onUsage:         (promptTokens, completionTokens) => send("pi-agent:usage", { sessionId, promptTokens, completionTokens }),
-        onDone:          () => send("pi-agent:done",  { sessionId }),
-        onError:         (error) => send("pi-agent:error", { sessionId, error }),
-        onPlanNoteFound: (noteId) => send("pi-agent:plan-note", { sessionId, noteId }),
+        onDone: () => {
+          try {
+            q.saveLlmHistory(ctx.db, sessionId, session.messages);
+            q.updatePiSession(ctx.db, sessionId, { updatedAt: ts() });
+          } catch (e) {
+            console.warn("[pi-agent] failed to persist session after done:", e);
+          }
+          send("pi-agent:done", { sessionId });
+        },
+        onError: (error) => {
+          try {
+            q.saveLlmHistory(ctx.db, sessionId, session.messages);
+            q.updatePiSession(ctx.db, sessionId, { status: "exited", updatedAt: ts() });
+          } catch (e) {
+            console.warn("[pi-agent] failed to persist session after error:", e);
+          }
+          send("pi-agent:error", { sessionId, error });
+        },
+        onPlanNoteFound: (noteId) => {
+          send("pi-agent:plan-note", { sessionId, noteId });
+          try { q.updatePiSession(ctx.db, sessionId, { planNoteId: noteId, updatedAt: ts() }); } catch { /* non-critical */ }
+        },
       },
       getWin,
       sessionId,
@@ -269,6 +338,27 @@ export function registerPiAgentHandler(
     if (session) {
       session.abortCtrl.abort();
       sessions.delete(sessionId);
+    }
+  });
+
+  // ── pi-agent:restore-context ───────────────────────────────────────────────────────
+  // Loads the persisted LLM message history for a session back into the
+  // in-memory sessions Map so the model can continue from where it left off.
+  ipcMain.on("pi-agent:restore-context", (_event, { sessionId }: { sessionId: string }) => {
+    if (sessions.has(sessionId)) return; // already in memory
+    try {
+      const history = q.getLlmHistory(ctx.db, sessionId);
+      if (history.length > 0) {
+        // getLlmHistory now returns the full AgentMessage objects (role, content,
+        // tool_calls, tool_call_id, etc.) so multi-turn context is fully restored.
+        sessions.set(sessionId, {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          messages: history as any[],
+          abortCtrl: new AbortController(),
+        });
+      }
+    } catch (e) {
+      console.warn("[pi-agent] restore-context failed for", sessionId, e);
     }
   });
 }
