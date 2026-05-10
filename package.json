@@ -97,6 +97,7 @@
     "esbuild": "^0.28.0",
     "eslint": "^9",
     "eslint-config-next": "16.2.4",
+    "gpt-tokenizer": "^3.4.0",
     "gray-matter": "^4.0.3",
     "lowlight": "^3.3.0",
     "lucide-react": "^1.11.0",

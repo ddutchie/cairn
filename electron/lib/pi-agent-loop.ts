@@ -106,48 +106,41 @@ const CODING_TOOL_DEFS = [
   spawnSubagentDefinition,
 ];
 
-// Cairn data tool names we expose to the coding agent (subset of chat tools)
+// Cairn data tool names exposed to the coding agent.
+// Redundant tools (create_note, update_note, update_task_status, list_notes,
+// list_tasks, get_cairn_context) are excluded — see AGENT_EXCLUDED_TOOLS in
+// tool-schemas.ts. ensure_note / patch_note / search_* cover all use cases.
 const CAIRN_TOOL_NAMES = new Set([
   "get_active_context",
   "get_project_context_pack",
-  "list_notes",
   "get_note",
-  "create_note",
   "ensure_note",
-  "update_note",
   "patch_note",
   "append_to_note",
   "search_notes",
-  "list_tasks",
   "get_task",
   "create_task",
   "update_task",
-  "update_task_status",
   "search_tasks",
   "list_ready_tasks",
   "get_idea_flow",
   "create_idea_flow_node",
   "create_idea_flow_edge",
-  // Renderer-side only — main process no-ops immediately; renderer intercepts
-  // the tool-call event and renders an inline QuestionForm.
+  // Renderer-side only — main process no-ops; renderer renders an inline QuestionForm.
   "ask_questions",
 ]);
 
-// Tools available in plan mode — read-only file access + note writing only.
-// create_note and update_note are intentionally excluded: the agent must use
-// ensure_note (idempotent upsert) so re-running plan mode doesn't create
-// duplicate PRD notes. The renderer uses onPlanNoteFound to track the note ID
-// returned by ensure_note.
+// Tools available in plan mode — read-only + PRD note write only.
 const PLAN_MODE_ALLOWED = new Set([
   // coding read-only
   "read", "grep", "find", "ls",
   // Cairn read
   "get_active_context", "get_project_context_pack",
-  "get_note", "list_notes", "search_notes",
-  "list_tasks", "get_task", "search_tasks", "list_ready_tasks",
+  "get_note", "search_notes",
+  "get_task", "search_tasks", "list_ready_tasks",
   // Cairn write — PRD note only (idempotent upsert)
   "ensure_note",
-  // Renderer-side: renders an inline question form; main process no-ops immediately
+  // Renderer-side: renders inline question form
   "ask_questions",
 ]);
 

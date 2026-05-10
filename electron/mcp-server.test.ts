@@ -5,18 +5,15 @@
  * executeTool is the single dispatch function used by the MCP server for
  * all tool calls — these tests verify its behaviour end-to-end.
  *
- * Write tools that touch the filesystem (create_note, update_note, etc.)
- * use a temp directory as workspacePath so they don't fail.
+ * Write tools that touch the filesystem use a temp directory as workspacePath.
  *
  * Key invariants being tested:
  *   - search_notes / search_tasks — case-insensitive substring match, projectId filter, limit
- *   - resolve_project — exact → starts-with → contains priority, archived exclusion
  *   - get_cairn_context — includes tags (regression: snap.tags was undefined)
- *   - get_project_context_pack / get_project_summary — correct shapes
- *   - list_notes / list_tasks — project filter, archived exclusion
+ *   - get_project_context_pack — correct shape
  *   - list_ready_tasks — excludes done columns, excludes tasks blocked by unresolved blockers
  *   - block_task / unblock_task — circular dep rejection, cross-project rejection
- *   - create_task / create_note / delete_note / delete_task — basic write round-trips
+ *   - create_task / delete_note / delete_task — basic write round-trips
  *   - ensure_note — idempotent create-then-update
  *   - patch_note — string replacement
  *
@@ -24,10 +21,8 @@
  *   - search_notes with many matches — ranking order (most-recently-updated first),
  *     disambiguation by projectId, title-vs-content match priority
  *   - search_tasks with same title across multiple projects and columns
- *   - resolve_project priority when multiple projects partially match the same query
  *   - ensure_note scoping: same title in different projects creates two separate notes
  *   - patch_note with multiple occurrences of the same string
- *   - list_recent_activity ordering and workspaceId scoping across two workspaces
  *   - list_ready_tasks with multi-level blocker chains
  *   - get_project_context_pack with multiple open columns
  *   - delete_task cleans up blocker refs across multiple blocked tasks
@@ -153,71 +148,6 @@ describe("get_cairn_context", () => {
     expect(proj).toBeDefined();
     expect(proj!.columns.length).toBeGreaterThan(0);
     expect((proj!.columns as Array<{ id: string }>).find((c) => c.id === columnId)).toBeDefined();
-  });
-});
-
-// ── resolve_project ───────────────────────────────────────────────────────────
-
-describe("resolve_project", () => {
-  let db: Database.Database;
-  let wp: string;
-
-  beforeEach(() => { db = makeDb(); wp = makeTmpDir(); });
-  afterEach(() => removeTmpDir(wp));
-
-  it("exact match (case-insensitive)", () => {
-    const { workspaceId } = seedBase(db, { projectName: "Cairn Dev" });
-    const result = executeTool(db, wp, "resolve_project", { workspaceId, name: "cairn dev" }) as Record<string, unknown>;
-    expect(result).not.toHaveProperty("error");
-    expect(result.id).toBe("proj1");
-    expect(result.name).toBe("Cairn Dev");
-  });
-
-  it("starts-with match when no exact match", () => {
-    seedBase(db, { projectName: "Cairn Development" });
-    const result = executeTool(db, wp, "resolve_project", { name: "Cairn Dev" }) as Record<string, unknown>;
-    expect(result).not.toHaveProperty("error");
-    expect(result.id).toBe("proj1");
-  });
-
-  it("contains match as fallback", () => {
-    seedBase(db, { projectName: "My Cairn Project" });
-    const result = executeTool(db, wp, "resolve_project", { name: "Cairn" }) as Record<string, unknown>;
-    expect(result).not.toHaveProperty("error");
-    expect(result.id).toBe("proj1");
-  });
-
-  it("returns error with candidates list when no match", () => {
-    seedBase(db, { projectName: "Design" });
-    const result = executeTool(db, wp, "resolve_project", { name: "zzznomatch" }) as Record<string, unknown>;
-    expect(result).toHaveProperty("error");
-    expect(Array.isArray(result.candidates)).toBe(true);
-  });
-
-  it("excludes archived projects from resolution", () => {
-    const { workspaceId } = seedBase(db, { projectName: "Old Project" });
-    db.prepare("UPDATE projects SET archived_at = '2024-01-01T00:00:00.000Z' WHERE id = ?").run("proj1");
-    const result = executeTool(db, wp, "resolve_project", { workspaceId, name: "Old Project" }) as Record<string, unknown>;
-    expect(result).toHaveProperty("error");
-  });
-
-  it("returns columns for the matched project", () => {
-    const { columnId } = seedBase(db, { projectName: "Design" });
-    const result = executeTool(db, wp, "resolve_project", { name: "Design" }) as Record<string, unknown>;
-    expect(Array.isArray(result.columns)).toBe(true);
-    expect((result.columns as Array<{ id: string }>).find((c) => c.id === columnId)).toBeDefined();
-  });
-
-  it("filters by workspaceId when provided", () => {
-    // Two workspaces, each with a "Design" project
-    createWorkspace(db, { id: "ws1", name: "WS1" });
-    createWorkspace(db, { id: "ws2", name: "WS2" });
-    createProject(db, { id: "proj-ws1", workspaceId: "ws1", name: "Design" });
-    createProject(db, { id: "proj-ws2", workspaceId: "ws2", name: "Design" });
-
-    const result = executeTool(db, wp, "resolve_project", { workspaceId: "ws2", name: "Design" }) as Record<string, unknown>;
-    expect(result).not.toHaveProperty("error");
-    expect(result.id).toBe("proj-ws2");
   });
 });
 
@@ -366,89 +296,6 @@ describe("search_tasks", () => {
   });
 });
 
-// ── list_notes ────────────────────────────────────────────────────────────────
-
-describe("list_notes", () => {
-  let db: Database.Database;
-  let wp: string;
-
-  beforeEach(() => {
-    db = makeDb();
-    wp = makeTmpDir();
-    const { workspaceId, projectId } = seedBase(db);
-    createProject(db, { id: "proj2", workspaceId, name: "Proj2" });
-    createNote(db, { id: "n1", projectId, workspaceId, title: "Note 1" });
-    createNote(db, { id: "n2", projectId, workspaceId, title: "Note 2" });
-    createNote(db, { id: "n3", projectId: "proj2", workspaceId, title: "Note in proj2" });
-  });
-  afterEach(() => removeTmpDir(wp));
-
-  it("returns all non-archived notes when no projectId given", () => {
-    const results = executeTool(db, wp, "list_notes", {}) as Array<{ id: string }>;
-    const ids = results.map((r) => r.id);
-    expect(ids).toContain("n1");
-    expect(ids).toContain("n2");
-    expect(ids).toContain("n3");
-  });
-
-  it("filters by projectId", () => {
-    const results = executeTool(db, wp, "list_notes", { projectId: "proj1" }) as Array<{ id: string }>;
-    const ids = results.map((r) => r.id);
-    expect(ids).toContain("n1");
-    expect(ids).toContain("n2");
-    expect(ids).not.toContain("n3");
-  });
-
-  it("excludes archived notes", () => {
-    updateNote(db, "n1", { archivedAt: "2024-01-01T00:00:00.000Z" });
-    const results = executeTool(db, wp, "list_notes", { projectId: "proj1" }) as Array<{ id: string }>;
-    expect(results.map((r) => r.id)).not.toContain("n1");
-  });
-
-  it("result shape includes id, title, projectId, isPinned, updatedAt", () => {
-    const results = executeTool(db, wp, "list_notes", { projectId: "proj1" }) as Array<Record<string, unknown>>;
-    expect(results[0]).toHaveProperty("id");
-    expect(results[0]).toHaveProperty("title");
-    expect(results[0]).toHaveProperty("projectId");
-    expect(results[0]).toHaveProperty("isPinned");
-    expect(results[0]).toHaveProperty("updatedAt");
-  });
-});
-
-// ── list_tasks ────────────────────────────────────────────────────────────────
-
-describe("list_tasks", () => {
-  let db: Database.Database;
-  let wp: string;
-
-  beforeEach(() => {
-    db = makeDb();
-    wp = makeTmpDir();
-    const { workspaceId, projectId, columnId } = seedBase(db);
-    createCard(db, { id: "c1", columnId, projectId, workspaceId, title: "Task A" });
-    createCard(db, { id: "c2", columnId, projectId, workspaceId, title: "Task B" });
-  });
-  afterEach(() => removeTmpDir(wp));
-
-  it("returns tasks grouped by column", () => {
-    const cols = executeTool(db, wp, "list_tasks", { projectId: "proj1" }) as Array<Record<string, unknown>>;
-    expect(Array.isArray(cols)).toBe(true);
-    const backlog = cols.find((c) => c.columnId === "col1");
-    expect(backlog).toBeDefined();
-    const tasks = backlog!.tasks as Array<{ id: string }>;
-    expect(tasks.map((t) => t.id)).toContain("c1");
-    expect(tasks.map((t) => t.id)).toContain("c2");
-  });
-
-  it("excludes archived cards", () => {
-    updateCard(db, "c1", { archivedAt: "2024-01-01T00:00:00.000Z" });
-    const cols = executeTool(db, wp, "list_tasks", { projectId: "proj1" }) as Array<Record<string, unknown>>;
-    const backlog = cols.find((c) => c.columnId === "col1")!;
-    const tasks = backlog.tasks as Array<{ id: string }>;
-    expect(tasks.map((t) => t.id)).not.toContain("c1");
-  });
-});
-
 // ── list_ready_tasks ──────────────────────────────────────────────────────────
 
 describe("list_ready_tasks", () => {
@@ -487,8 +334,8 @@ describe("list_ready_tasks", () => {
 
   it("includes task once its blocker moves to done", () => {
     executeTool(db, wp, "block_task", { cardId: "c3", blockerCardId: "blocker" });
-    // Move blocker to done
-    executeTool(db, wp, "update_task_status", { cardId: "blocker", targetColumnId: "col-done" });
+    // Move blocker to done via update_task
+    executeTool(db, wp, "update_task", { cardId: "blocker", columnId: "col-done" });
     const results = executeTool(db, wp, "list_ready_tasks", { projectId: "proj1" }) as Array<{ id: string }>;
     expect(results.map((r) => r.id)).toContain("c3");
   });
@@ -564,45 +411,6 @@ describe("block_task / unblock_task", () => {
   });
 });
 
-// ── get_project_summary ───────────────────────────────────────────────────────
-
-describe("get_project_summary", () => {
-  let db: Database.Database;
-  let wp: string;
-
-  beforeEach(() => {
-    db = makeDb();
-    wp = makeTmpDir();
-    const { workspaceId, projectId, columnId } = seedBase(db);
-    createNote(db, { id: "n1", projectId, workspaceId, title: "Design Doc", isPinned: true });
-    createNote(db, { id: "n2", projectId, workspaceId, title: "Brainstorm" });
-    createCard(db, { id: "c1", columnId, projectId, workspaceId, title: "Task 1" });
-  });
-  afterEach(() => removeTmpDir(wp));
-
-  it("returns correct shape", () => {
-    const result = executeTool(db, wp, "get_project_summary", { projectId: "proj1" }) as Record<string, unknown>;
-    expect(result).toHaveProperty("project");
-    expect(result).toHaveProperty("noteCount", 2);
-    expect(result).toHaveProperty("totalCards", 1);
-    expect(result).toHaveProperty("cardsByColumn");
-    expect(result).toHaveProperty("pinnedNotes");
-    expect(result).toHaveProperty("recentActivity");
-  });
-
-  it("pinnedNotes only includes pinned notes", () => {
-    const result = executeTool(db, wp, "get_project_summary", { projectId: "proj1" }) as Record<string, unknown>;
-    const pinned = result.pinnedNotes as Array<{ id: string }>;
-    expect(pinned.map((p) => p.id)).toContain("n1");
-    expect(pinned.map((p) => p.id)).not.toContain("n2");
-  });
-
-  it("returns error for unknown project", () => {
-    const result = executeTool(db, wp, "get_project_summary", { projectId: "nope" }) as Record<string, unknown>;
-    expect(result).toHaveProperty("error");
-  });
-});
-
 // ── get_project_context_pack ──────────────────────────────────────────────────
 
 describe("get_project_context_pack", () => {
@@ -666,11 +474,10 @@ describe("create_task", () => {
     expect(result).toHaveProperty("createdAt");
   });
 
-  it("persists the task — appears in list_tasks", () => {
+  it("persists the task — appears in search_tasks", () => {
     executeTool(db, wp, "create_task", { columnId: "col1", projectId: "proj1", title: "Persisted task" });
-    const cols = executeTool(db, wp, "list_tasks", { projectId: "proj1" }) as Array<{ tasks: Array<{ title: string }> }>;
-    const allTitles = cols.flatMap((c) => c.tasks.map((t) => t.title));
-    expect(allTitles).toContain("Persisted task");
+    const results = executeTool(db, wp, "search_tasks", { query: "Persisted task", projectId: "proj1" }) as Array<{ title: string }>;
+    expect(results.map((t) => t.title)).toContain("Persisted task");
   });
 
   it("returns error for unknown column", () => {
@@ -696,9 +503,8 @@ describe("delete_task", () => {
   it("deletes the task", () => {
     const result = executeTool(db, wp, "delete_task", { cardId: "c1" }) as Record<string, unknown>;
     expect(result.deleted).toBe(true);
-    const tasks = executeTool(db, wp, "list_tasks", { projectId: "proj1" }) as Array<{ tasks: Array<{ id: string }> }>;
-    const allIds = tasks.flatMap((c) => c.tasks.map((t) => t.id));
-    expect(allIds).not.toContain("c1");
+    const tasks = executeTool(db, wp, "search_tasks", { query: "To delete", projectId: "proj1" }) as Array<{ id: string }>;
+    expect(tasks.map((t) => t.id)).not.toContain("c1");
   });
 
   it("cleans up blocker references in other tasks", () => {
@@ -717,38 +523,20 @@ describe("delete_task", () => {
   });
 });
 
-// ── create_note / delete_note ─────────────────────────────────────────────────
+ // ── delete_note ───────────────────────────────────────────────────────────────
 
-describe("create_note and delete_note", () => {
+describe("delete_note", () => {
   let db: Database.Database;
   let wp: string;
 
   beforeEach(() => { db = makeDb(); wp = makeTmpDir(); seedBase(db); });
   afterEach(() => removeTmpDir(wp));
 
-  it("create_note returns id and title", () => {
-    const result = executeTool(db, wp, "create_note", { projectId: "proj1", title: "My Note", content: "# Hello" }) as Record<string, unknown>;
-    expect(result).toHaveProperty("id");
-    expect(result.title).toBe("My Note");
-    expect(result).toHaveProperty("createdAt");
-  });
-
-  it("created note appears in list_notes", () => {
-    executeTool(db, wp, "create_note", { projectId: "proj1", title: "Visible Note", content: "" });
-    const notes = executeTool(db, wp, "list_notes", { projectId: "proj1" }) as Array<{ title: string }>;
-    expect(notes.map((n) => n.title)).toContain("Visible Note");
-  });
-
-  it("delete_note removes note from list", () => {
-    const { id } = executeTool(db, wp, "create_note", { projectId: "proj1", title: "To Delete", content: "" }) as { id: string };
+  it("delete_note removes note from search results", () => {
+    const { id } = executeTool(db, wp, "ensure_note", { projectId: "proj1", title: "To Delete", content: "delete me" }) as { id: string };
     executeTool(db, wp, "delete_note", { noteId: id });
-    const notes = executeTool(db, wp, "list_notes", { projectId: "proj1" }) as Array<{ id: string }>;
+    const notes = executeTool(db, wp, "search_notes", { query: "delete me", projectId: "proj1" }) as Array<{ id: string }>;
     expect(notes.map((n) => n.id)).not.toContain(id);
-  });
-
-  it("create_note returns error for unknown project", () => {
-    const result = executeTool(db, wp, "create_note", { projectId: "nope", title: "X" }) as Record<string, unknown>;
-    expect(result).toHaveProperty("error");
   });
 });
 
@@ -776,7 +564,7 @@ describe("ensure_note", () => {
   it("idempotent: only one note with that title exists", () => {
     executeTool(db, wp, "ensure_note", { projectId: "proj1", title: "README", content: "v1" });
     executeTool(db, wp, "ensure_note", { projectId: "proj1", title: "README", content: "v2" });
-    const notes = executeTool(db, wp, "list_notes", { projectId: "proj1" }) as Array<{ title: string }>;
+    const notes = executeTool(db, wp, "search_notes", { query: "README", projectId: "proj1" }) as Array<{ title: string }>;
     const readmes = notes.filter((n) => n.title === "README");
     expect(readmes).toHaveLength(1);
   });
@@ -810,38 +598,6 @@ describe("patch_note", () => {
 
   it("returns error for unknown note", () => {
     const result = executeTool(db, wp, "patch_note", { noteId: "nope", oldString: "x", newString: "y" }) as Record<string, unknown>;
-    expect(result).toHaveProperty("error");
-  });
-});
-
-// ── update_task_status / bulk_update_task_status ──────────────────────────────
-
-describe("update_task_status", () => {
-  let db: Database.Database;
-  let wp: string;
-
-  beforeEach(() => {
-    db = makeDb();
-    wp = makeTmpDir();
-    const { workspaceId, projectId, columnId } = seedBase(db);
-    createColumn(db, { id: "col-done", projectId, workspaceId, name: "Done", type: "done", order: 1 });
-    createCard(db, { id: "c1", columnId, projectId, workspaceId, title: "Task" });
-  });
-  afterEach(() => removeTmpDir(wp));
-
-  it("moves task to new column", () => {
-    const result = executeTool(db, wp, "update_task_status", { cardId: "c1", targetColumnId: "col-done" }) as Record<string, unknown>;
-    expect(result).toHaveProperty("newColumn", "col-done");
-    expect(result).not.toHaveProperty("error");
-  });
-
-  it("returns error for unknown task", () => {
-    const result = executeTool(db, wp, "update_task_status", { cardId: "nope", targetColumnId: "col-done" }) as Record<string, unknown>;
-    expect(result).toHaveProperty("error");
-  });
-
-  it("returns error for unknown column", () => {
-    const result = executeTool(db, wp, "update_task_status", { cardId: "c1", targetColumnId: "nope" }) as Record<string, unknown>;
     expect(result).toHaveProperty("error");
   });
 });
@@ -1157,86 +913,6 @@ describe("search_tasks — multi-match across projects and columns", () => {
   });
 });
 
-// ── resolve_project: priority when multiple projects partially match ───────────
-
-describe("resolve_project — ambiguous multi-match priority", () => {
-  let db: Database.Database;
-  let wp: string;
-
-  beforeEach(() => {
-    db = makeDb();
-    wp = makeTmpDir();
-    createWorkspace(db, { id: "ws1", name: "Workspace" });
-  });
-  afterEach(() => removeTmpDir(wp));
-
-  it("exact match wins over starts-with when both exist", () => {
-    createProject(db, { id: "p-exact",      workspaceId: "ws1", name: "Design" });
-    createProject(db, { id: "p-startswith", workspaceId: "ws1", name: "Design System" });
-
-    const result = executeTool(db, wp, "resolve_project", { name: "Design" }) as Record<string, unknown>;
-    expect(result.id).toBe("p-exact");
-  });
-
-  it("starts-with match wins over contains when both exist", () => {
-    createProject(db, { id: "p-startswith", workspaceId: "ws1", name: "Backend API" });
-    createProject(db, { id: "p-contains",   workspaceId: "ws1", name: "Old Backend API Docs" });
-
-    const result = executeTool(db, wp, "resolve_project", { name: "Backend" }) as Record<string, unknown>;
-    expect(result.id).toBe("p-startswith");
-  });
-
-  it("when two projects both starts-with the query, first inserted is returned", () => {
-    createProject(db, { id: "p1", workspaceId: "ws1", name: "Mobile iOS" });
-    createProject(db, { id: "p2", workspaceId: "ws1", name: "Mobile Android" });
-
-    const result = executeTool(db, wp, "resolve_project", { name: "Mobile" }) as Record<string, unknown>;
-    // resolve_project uses Array.find — returns first match in insertion order
-    expect(result.id).toBe("p1");
-  });
-
-  it("when two projects both contain the query, first inserted is returned", () => {
-    createProject(db, { id: "p1", workspaceId: "ws1", name: "v1 Auth Service" });
-    createProject(db, { id: "p2", workspaceId: "ws1", name: "v2 Auth Service" });
-
-    const result = executeTool(db, wp, "resolve_project", { name: "Auth Service" }) as Record<string, unknown>;
-    expect(result.id).toBe("p1");
-  });
-
-  it("archived project that would be exact match is ignored — falls through to next", () => {
-    createProject(db, { id: "p-archived", workspaceId: "ws1", name: "Payments" });
-    createProject(db, { id: "p-active",   workspaceId: "ws1", name: "Payments v2" });
-    db.prepare("UPDATE projects SET archived_at = '2024-01-01T00:00:00.000Z' WHERE id = ?").run("p-archived");
-
-    // "Payments" exact-matches p-archived but it is archived, so falls through to
-    // starts-with match on "Payments v2"
-    const result = executeTool(db, wp, "resolve_project", { name: "Payments" }) as Record<string, unknown>;
-    expect(result).not.toHaveProperty("error");
-    expect(result.id).toBe("p-active");
-  });
-
-  it("no match returns all active projects as candidates", () => {
-    createProject(db, { id: "p1", workspaceId: "ws1", name: "Alpha" });
-    createProject(db, { id: "p2", workspaceId: "ws1", name: "Beta" });
-
-    const result = executeTool(db, wp, "resolve_project", { name: "Gamma" }) as Record<string, unknown>;
-    expect(result).toHaveProperty("error");
-    const candidates = result.candidates as Array<{ id: string }>;
-    expect(candidates.map((c) => c.id)).toContain("p1");
-    expect(candidates.map((c) => c.id)).toContain("p2");
-  });
-
-  it("candidates list does not include archived projects", () => {
-    createProject(db, { id: "p-live",     workspaceId: "ws1", name: "Live Project" });
-    createProject(db, { id: "p-archived", workspaceId: "ws1", name: "Old Project" });
-    db.prepare("UPDATE projects SET archived_at = '2024-01-01T00:00:00.000Z' WHERE id = ?").run("p-archived");
-
-    const result = executeTool(db, wp, "resolve_project", { name: "zzznomatch" }) as Record<string, unknown>;
-    const candidates = result.candidates as Array<{ id: string }>;
-    expect(candidates.map((c) => c.id)).not.toContain("p-archived");
-  });
-});
-
 // ── ensure_note: scoping by projectId with same title ────────────────────────
 
 describe("ensure_note — same title across different projects", () => {
@@ -1288,10 +964,9 @@ describe("ensure_note — same title across different projects", () => {
     // Different case → treated as a different title → new note created
     expect(r.action).toBe("created");
 
-    const notes = executeTool(db, wp, "list_notes", { projectId: "proj1" }) as Array<{ title: string }>;
-    const titles = notes.map((n) => n.title);
-    expect(titles).toContain("roadmap");
-    expect(titles).toContain("Roadmap");
+    const lower = executeTool(db, wp, "search_notes", { query: "roadmap", projectId: "proj1" }) as Array<{ title: string }>;
+    const titles = lower.map((n) => n.title);
+    expect(titles.some((t) => t === "roadmap" || t === "Roadmap")).toBe(true);
   });
 });
 
@@ -1349,98 +1024,6 @@ describe("patch_note — multiple occurrences", () => {
   });
 });
 
-// ── list_recent_activity: ordering and workspace scoping ─────────────────────
-
-describe("list_recent_activity — ordering and workspace scoping", () => {
-  let db: Database.Database;
-  let wp: string;
-
-  beforeEach(() => {
-    db = makeDb();
-    wp = makeTmpDir();
-  });
-  afterEach(() => removeTmpDir(wp));
-
-  it("items are returned newest first across both notes and tasks", async () => {
-    const { workspaceId, projectId, columnId } = seedBase(db);
-    createNote(db, { id: "n-old", projectId, workspaceId, title: "Old note" });
-    await new Promise((r) => setTimeout(r, 10));
-    createCard(db, { id: "c-new", columnId, projectId, workspaceId, title: "New task" });
-
-    const result = executeTool(db, wp, "list_recent_activity", { workspaceId }) as Array<{ id: string }>;
-    const ids = result.map((r) => r.id);
-    expect(ids.indexOf("c-new")).toBeLessThan(ids.indexOf("n-old"));
-  });
-
-  it("workspaceId filter excludes items from other workspaces", () => {
-    // Workspace 1
-    seedBase(db, { workspaceId: "ws1", projectId: "p1", columnId: "col1" });
-    createNote(db, { id: "n-ws1", projectId: "p1", workspaceId: "ws1", title: "WS1 note" });
-
-    // Workspace 2
-    createWorkspace(db, { id: "ws2", name: "Workspace 2" });
-    createProject(db, { id: "p2", workspaceId: "ws2", name: "WS2 Project" });
-    createColumn(db, { id: "col2", projectId: "p2", workspaceId: "ws2", name: "Backlog", type: "backlog", order: 0 });
-    createNote(db, { id: "n-ws2", projectId: "p2", workspaceId: "ws2", title: "WS2 note" });
-
-    const result = executeTool(db, wp, "list_recent_activity", { workspaceId: "ws1" }) as Array<{ id: string }>;
-    const ids = result.map((r) => r.id);
-    expect(ids).toContain("n-ws1");
-    expect(ids).not.toContain("n-ws2");
-  });
-
-  it("projectId filter narrows activity to a single project within workspace", () => {
-    const { workspaceId, columnId } = seedBase(db, { projectId: "p1", columnId: "col1" });
-    createProject(db, { id: "p2", workspaceId, name: "Other" });
-    createColumn(db, { id: "col2", projectId: "p2", workspaceId, name: "Backlog", type: "backlog", order: 0 });
-
-    createNote(db, { id: "n1", projectId: "p1", workspaceId, title: "P1 note" });
-    createNote(db, { id: "n2", projectId: "p2", workspaceId, title: "P2 note" });
-    createCard(db, { id: "c1", columnId,  projectId: "p1", workspaceId, title: "P1 task" });
-    createCard(db, { id: "c2", columnId: "col2", projectId: "p2", workspaceId, title: "P2 task" });
-
-    const result = executeTool(db, wp, "list_recent_activity", { workspaceId, projectId: "p1" }) as Array<{ id: string }>;
-    const ids = result.map((r) => r.id);
-    expect(ids).toContain("n1");
-    expect(ids).toContain("c1");
-    expect(ids).not.toContain("n2");
-    expect(ids).not.toContain("c2");
-  });
-
-  it("limit parameter caps result count", () => {
-    const { workspaceId } = seedBase(db);
-    for (let i = 0; i < 25; i++) {
-      createNote(db, { id: `n${i}`, projectId: "proj1", workspaceId, title: `Note ${i}` });
-    }
-    const result = executeTool(db, wp, "list_recent_activity", { workspaceId, limit: 5 }) as unknown[];
-    expect(result).toHaveLength(5);
-  });
-
-  it("action field is 'created' for new items, 'updated' after an update", async () => {
-    const { workspaceId } = seedBase(db);
-    createNote(db, { id: "n1", projectId: "proj1", workspaceId, title: "Fresh note" });
-    await new Promise((r) => setTimeout(r, 10));
-    updateNote(db, "n1", { content: "edited" });
-
-    const result = executeTool(db, wp, "list_recent_activity", { workspaceId }) as Array<{ id: string; action: string }>;
-    const entry = result.find((r) => r.id === "n1");
-    expect(entry?.action).toBe("updated");
-  });
-
-  it("archived notes and tasks are excluded", () => {
-    const { workspaceId, columnId } = seedBase(db);
-    createNote(db, { id: "n-arch", projectId: "proj1", workspaceId, title: "Archived note" });
-    createCard(db, { id: "c-arch", columnId, projectId: "proj1", workspaceId, title: "Archived task" });
-    updateNote(db, "n-arch", { archivedAt: "2024-01-01T00:00:00.000Z" });
-    updateCard(db, "c-arch", { archivedAt: "2024-01-01T00:00:00.000Z" });
-
-    const result = executeTool(db, wp, "list_recent_activity", { workspaceId }) as Array<{ id: string }>;
-    const ids = result.map((r) => r.id);
-    expect(ids).not.toContain("n-arch");
-    expect(ids).not.toContain("c-arch");
-  });
-});
-
 // ── list_ready_tasks: multi-level blocker chains ──────────────────────────────
 
 describe("list_ready_tasks — multi-level blocker chains", () => {
@@ -1474,7 +1057,7 @@ describe("list_ready_tasks — multi-level blocker chains", () => {
     executeTool(db, wp, "block_task", { cardId: "c2", blockerCardId: "c1" });
     executeTool(db, wp, "block_task", { cardId: "c3", blockerCardId: "c2" });
 
-    executeTool(db, wp, "update_task_status", { cardId: "c1", targetColumnId: "col-done" });
+    executeTool(db, wp, "update_task", { cardId: "c1", columnId: "col-done" });
 
     const ready = executeTool(db, wp, "list_ready_tasks", { projectId: "proj1" }) as Array<{ id: string }>;
     const ids = ready.map((r) => r.id);
@@ -1486,8 +1069,8 @@ describe("list_ready_tasks — multi-level blocker chains", () => {
     executeTool(db, wp, "block_task", { cardId: "c2", blockerCardId: "c1" });
     executeTool(db, wp, "block_task", { cardId: "c3", blockerCardId: "c2" });
 
-    executeTool(db, wp, "update_task_status", { cardId: "c1", targetColumnId: "col-done" });
-    executeTool(db, wp, "update_task_status", { cardId: "c2", targetColumnId: "col-done" });
+    executeTool(db, wp, "update_task", { cardId: "c1", columnId: "col-done" });
+    executeTool(db, wp, "update_task", { cardId: "c2", columnId: "col-done" });
 
     const ready = executeTool(db, wp, "list_ready_tasks", { projectId: "proj1" }) as Array<{ id: string }>;
     expect(ready.map((r) => r.id)).toContain("c3");
@@ -1503,12 +1086,12 @@ describe("list_ready_tasks — multi-level blocker chains", () => {
     executeTool(db, wp, "block_task", { cardId: "work", blockerCardId: "dep-b" });
 
     // Resolve only dep-a
-    executeTool(db, wp, "update_task_status", { cardId: "dep-a", targetColumnId: "col-done" });
+    executeTool(db, wp, "update_task", { cardId: "dep-a", columnId: "col-done" });
     let ready = executeTool(db, wp, "list_ready_tasks", { projectId: "proj1" }) as Array<{ id: string }>;
     expect(ready.map((r) => r.id)).not.toContain("work"); // dep-b still pending
 
     // Resolve dep-b too
-    executeTool(db, wp, "update_task_status", { cardId: "dep-b", targetColumnId: "col-done" });
+    executeTool(db, wp, "update_task", { cardId: "dep-b", columnId: "col-done" });
     ready = executeTool(db, wp, "list_ready_tasks", { projectId: "proj1" }) as Array<{ id: string }>;
     expect(ready.map((r) => r.id)).toContain("work");
   });
@@ -1544,12 +1127,11 @@ describe("delete_task — blocker reference cleanup across multiple tasks", () =
     expect(ids).toContain("blocked-c");
   });
 
-  it("task that was blocking others is also gone from list_tasks after delete", () => {
+  it("task that was blocking others is also gone from search_tasks after delete", () => {
     executeTool(db, wp, "delete_task", { cardId: "blocker" });
 
-    const cols = executeTool(db, wp, "list_tasks", { projectId: "proj1" }) as Array<{ tasks: Array<{ id: string }> }>;
-    const allIds = cols.flatMap((c) => c.tasks.map((t) => t.id));
-    expect(allIds).not.toContain("blocker");
+    const results = executeTool(db, wp, "search_tasks", { query: "Blocker", projectId: "proj1" }) as Array<{ id: string }>;
+    expect(results.map((t) => t.id)).not.toContain("blocker");
   });
 });
 
@@ -1575,8 +1157,8 @@ describe("blocker cleanup on move-to-done", () => {
     expect((task.blockedByIds as string[])).toContain("blocker");
   });
 
-  it("update_task_status to done clears blockedByIds on the blocked task", () => {
-    executeTool(db, wp, "update_task_status", { cardId: "blocker", targetColumnId: "col-done" });
+  it("update_task (columnId=done) clears blockedByIds on the blocked task", () => {
+    executeTool(db, wp, "update_task", { cardId: "blocker", columnId: "col-done" });
     const task = executeTool(db, wp, "get_task", { cardId: "blocked" }) as Record<string, unknown>;
     expect((task.blockedByIds as string[])).not.toContain("blocker");
     expect((task.blockedByIds as string[])).toHaveLength(0);
@@ -1584,7 +1166,7 @@ describe("blocker cleanup on move-to-done", () => {
 
   it("moving to a non-done column does NOT clear blockedByIds", () => {
     createColumn(db, { id: "col-ip", projectId: "proj1", workspaceId: "ws1", name: "In Progress", type: "in_progress", order: 2 });
-    executeTool(db, wp, "update_task_status", { cardId: "blocker", targetColumnId: "col-ip" });
+    executeTool(db, wp, "update_task", { cardId: "blocker", columnId: "col-ip" });
     const task = executeTool(db, wp, "get_task", { cardId: "blocked" }) as Record<string, unknown>;
     // Blocker is still active — blocked task should still list it
     expect((task.blockedByIds as string[])).toContain("blocker");
@@ -1609,7 +1191,7 @@ describe("blocker cleanup on move-to-done", () => {
     executeTool(db, wp, "block_task", { cardId: "blocked", blockerCardId: "blocker2" });
 
     // Only move the first blocker to done
-    executeTool(db, wp, "update_task_status", { cardId: "blocker", targetColumnId: "col-done" });
+    executeTool(db, wp, "update_task", { cardId: "blocker", columnId: "col-done" });
 
     const task = executeTool(db, wp, "get_task", { cardId: "blocked" }) as Record<string, unknown>;
     const ids = task.blockedByIds as string[];
@@ -1618,7 +1200,7 @@ describe("blocker cleanup on move-to-done", () => {
   });
 
   it("after clearing, the task appears in list_ready_tasks AND get_task shows empty blockedByIds", () => {
-    executeTool(db, wp, "update_task_status", { cardId: "blocker", targetColumnId: "col-done" });
+    executeTool(db, wp, "update_task", { cardId: "blocker", columnId: "col-done" });
 
     const ready = executeTool(db, wp, "list_ready_tasks", { projectId: "proj1" }) as Array<{ id: string }>;
     expect(ready.map((r) => r.id)).toContain("blocked");
@@ -1629,9 +1211,9 @@ describe("blocker cleanup on move-to-done", () => {
 
   it("moving back out of done re-blocks the dependent task (blockedByIds was already cleared — needs explicit re-block)", () => {
     // Move to done → clears blockedByIds
-    executeTool(db, wp, "update_task_status", { cardId: "blocker", targetColumnId: "col-done" });
+    executeTool(db, wp, "update_task", { cardId: "blocker", columnId: "col-done" });
     // Move back to backlog
-    executeTool(db, wp, "update_task_status", { cardId: "blocker", targetColumnId: "col1" });
+    executeTool(db, wp, "update_task", { cardId: "blocker", columnId: "col1" });
 
     // blocked task's blockedByIds was already cleared — agent must call block_task again
     const task = executeTool(db, wp, "get_task", { cardId: "blocked" }) as Record<string, unknown>;

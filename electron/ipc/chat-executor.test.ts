@@ -7,13 +7,11 @@
  * Part 2 additions:
  *   - get_active_context — tags included, workspaceId/projectId scoping
  *   - get_task — blockedByIds parity with MCP server
- *   - resolve_project — exact/starts-with/contains priority, error + candidates
  *   - ensure_note — create and update paths, idempotency, case-sensitive title
  *   - append_to_note — appends with separator, custom separator, error cases
  *   - patch_note — single replace, replaceAll, multi-occurrence error
  *   - block_task / unblock_task — happy path, self-block, circular dep, cross-project
  *   - list_ready_tasks — unblocked tasks only, blocker resolution on move-to-done
- *   - update_task_status to done — clears blockedByIds (regression fix)
  *   - bulk_update_task_status to done — clears blockedByIds for all moved tasks
  *   - get_project_context_pack — shape, openTasks excludes done, pinnedNotes content
  */
@@ -77,63 +75,6 @@ describe("get_active_context", () => {
     const result = await exec(db, "get_active_context", {}) as Record<string, unknown>;
     expect(result).toHaveProperty("activeProject");
     expect(result).toHaveProperty("columns");
-  });
-});
-
-// ── get_project_summary ───────────────────────────────────────────────────────
-
-describe("get_project_summary", () => {
-  it("returns canonical shape", async () => {
-    const db = makeDb();
-    seed(db);
-    const result = await exec(db, "get_project_summary", { projectId: "proj1" }) as Record<string, unknown>;
-    expect(result).toHaveProperty("project");
-    expect(result).toHaveProperty("noteCount");
-    expect(result).toHaveProperty("totalCards");
-    expect(result).toHaveProperty("cardsByColumn");
-    expect(result).toHaveProperty("pinnedNotes");
-    expect(result).toHaveProperty("recentActivity");
-  });
-
-  it("returns { error } for missing project", async () => {
-    const db = makeDb();
-    applySchema(db);
-    const result = await exec(db, "get_project_summary", { projectId: "nope" }) as Record<string, unknown>;
-    expect(result).toHaveProperty("error");
-  });
-});
-
-// ── list_notes ────────────────────────────────────────────────────────────────
-
-describe("list_notes", () => {
-  it("returns all non-archived notes", async () => {
-    const db = makeDb();
-    seed(db);
-    const result = await exec(db, "list_notes", { projectId: "proj1" }) as Array<Record<string, unknown>>;
-    expect(Array.isArray(result)).toBe(true);
-    expect(result.length).toBe(1);
-    expect(result[0].id).toBe("note1");
-  });
-
-  it("returns empty array when project has no notes", async () => {
-    const db = makeDb();
-    seed(db);
-    const result = await exec(db, "list_notes", { projectId: "nonexistent" }) as unknown[];
-    expect(result).toEqual([]);
-  });
-});
-
-// ── list_tasks ────────────────────────────────────────────────────────────────
-
-describe("list_tasks", () => {
-  it("returns columns with tasks", async () => {
-    const db = makeDb();
-    seed(db);
-    const result = await exec(db, "list_tasks", { projectId: "proj1" }) as Array<Record<string, unknown>>;
-    expect(Array.isArray(result)).toBe(true);
-    const backlog = result.find((c) => c.columnId === "col1");
-    expect(backlog).toBeDefined();
-    expect((backlog!.tasks as unknown[]).length).toBe(1);
   });
 });
 
@@ -206,52 +147,6 @@ describe("get_task", () => {
   });
 });
 
-// ── create_note ───────────────────────────────────────────────────────────────
-
-describe("create_note", () => {
-  it("creates and returns a note", async () => {
-    const db = makeDb();
-    seed(db);
-    const result = await exec(db, "create_note", { projectId: "proj1", title: "New Note", content: "body" }) as Record<string, unknown>;
-    expect(result.title).toBe("New Note");
-    expect(result.projectId).toBe("proj1");
-  });
-
-  it("returns { error } for missing project", async () => {
-    const db = makeDb();
-    seed(db);
-    const result = await exec(db, "create_note", { projectId: "nope", title: "X" }) as Record<string, unknown>;
-    expect(result).toHaveProperty("error");
-  });
-});
-
-// ── update_note ───────────────────────────────────────────────────────────────
-
-describe("update_note", () => {
-  it("updates note title and content", async () => {
-    const db = makeDb();
-    seed(db);
-    const result = await exec(db, "update_note", { noteId: "note1", title: "Updated", content: "new body" }) as Record<string, unknown>;
-    expect(result.title).toBe("Updated");
-  });
-
-  it("pins a note via isPinned", async () => {
-    const db = makeDb();
-    seed(db);
-    const result = await exec(db, "update_note", { noteId: "note1", isPinned: true }) as Record<string, unknown>;
-    expect(result).not.toHaveProperty("error");
-    const noteRow = db.prepare("SELECT is_pinned FROM notes WHERE id = ?").get("note1") as { is_pinned: number };
-    expect(noteRow.is_pinned).toBe(1);
-  });
-
-  it("returns { error } for missing note", async () => {
-    const db = makeDb();
-    seed(db);
-    const result = await exec(db, "update_note", { noteId: "nope", title: "X" }) as Record<string, unknown>;
-    expect(result).toHaveProperty("error");
-  });
-});
-
 // ── get_note ──────────────────────────────────────────────────────────────────
 
 describe("get_note linked fields", () => {
@@ -263,45 +158,6 @@ describe("get_note linked fields", () => {
     expect(result).toHaveProperty("linkedNoteIds");
     expect(result).toHaveProperty("linkedCardIds");
     expect(result).toHaveProperty("isPinned");
-  });
-});
-
-// ── move_note ─────────────────────────────────────────────────────────────────
-
-describe("move_note", () => {
-  it("moves note to a different project", async () => {
-    const db = makeDb();
-    seed(db);
-    // Create a second project to move into
-    createProject(db, { id: "proj2", workspaceId: "ws1", name: "Proj2" });
-    const result = await exec(db, "move_note", { noteId: "note1", targetProjectId: "proj2" }) as Record<string, unknown>;
-    expect(result).not.toHaveProperty("error");
-    expect(result.previousProjectId).toBe("proj1");
-    expect(result.newProjectId).toBe("proj2");
-    // Verify DB updated
-    const row = db.prepare("SELECT project_id FROM notes WHERE id = ?").get("note1") as { project_id: string };
-    expect(row.project_id).toBe("proj2");
-  });
-
-  it("returns { error } when note not found", async () => {
-    const db = makeDb();
-    seed(db);
-    const result = await exec(db, "move_note", { noteId: "nope", targetProjectId: "proj1" }) as Record<string, unknown>;
-    expect(result).toHaveProperty("error");
-  });
-
-  it("returns { error } when target project not found", async () => {
-    const db = makeDb();
-    seed(db);
-    const result = await exec(db, "move_note", { noteId: "note1", targetProjectId: "nope" }) as Record<string, unknown>;
-    expect(result).toHaveProperty("error");
-  });
-
-  it("returns { error } when note already in target project", async () => {
-    const db = makeDb();
-    seed(db);
-    const result = await exec(db, "move_note", { noteId: "note1", targetProjectId: "proj1" }) as Record<string, unknown>;
-    expect(result).toHaveProperty("error");
   });
 });
 
@@ -338,31 +194,6 @@ describe("update_task", () => {
     const db = makeDb();
     seed(db);
     const result = await exec(db, "update_task", { cardId: "nope", title: "X" }) as Record<string, unknown>;
-    expect(result).toHaveProperty("error");
-  });
-});
-
-// ── update_task_status ────────────────────────────────────────────────────────
-
-describe("update_task_status", () => {
-  it("moves task to target column", async () => {
-    const db = makeDb();
-    seed(db);
-    const result = await exec(db, "update_task_status", { cardId: "card1", targetColumnId: "col2" }) as Record<string, unknown>;
-    expect(result.columnId).toBe("col2");
-  });
-
-  it("returns { error } for missing card", async () => {
-    const db = makeDb();
-    seed(db);
-    const result = await exec(db, "update_task_status", { cardId: "nope", targetColumnId: "col2" }) as Record<string, unknown>;
-    expect(result).toHaveProperty("error");
-  });
-
-  it("returns { error } for missing target column", async () => {
-    const db = makeDb();
-    seed(db);
-    const result = await exec(db, "update_task_status", { cardId: "card1", targetColumnId: "nope" }) as Record<string, unknown>;
     expect(result).toHaveProperty("error");
   });
 });
@@ -497,18 +328,6 @@ describe("link_note_to_task", () => {
   });
 });
 
-// ── list_recent_activity ──────────────────────────────────────────────────────
-
-describe("list_recent_activity", () => {
-  it("returns recentNotes and recentTasks", async () => {
-    const db = makeDb();
-    seed(db);
-    const result = await exec(db, "list_recent_activity", { projectId: "proj1" }) as Record<string, unknown>;
-    expect(result).toHaveProperty("recentNotes");
-    expect(result).toHaveProperty("recentTasks");
-  });
-});
-
 // ── unknown tool ──────────────────────────────────────────────────────────────
 
 describe("unknown tool", () => {
@@ -590,73 +409,6 @@ describe("get_task — blockedByIds field", () => {
     await exec(db, "block_task", { cardId: "card1", blockerCardId: "blocker" });
     const result = await exec(db, "get_task", { cardId: "card1" }) as Record<string, unknown>;
     expect((result.blockedByIds as string[])).toContain("blocker");
-  });
-});
-
-// ── resolve_project ───────────────────────────────────────────────────────────
-
-describe("resolve_project", () => {
-  it("returns project on exact match", async () => {
-    const db = makeDb();
-    seed(db);
-    const result = await exec(db, "resolve_project", { name: "Project" }) as Record<string, unknown>;
-    expect(result).not.toHaveProperty("error");
-    expect(result.id).toBe("proj1");
-  });
-
-  it("case-insensitive exact match", async () => {
-    const db = makeDb();
-    seed(db);
-    const result = await exec(db, "resolve_project", { name: "project" }) as Record<string, unknown>;
-    expect(result.id).toBe("proj1");
-  });
-
-  it("starts-with match when no exact match", async () => {
-    const db = makeDb();
-    seed(db);
-    const result = await exec(db, "resolve_project", { name: "Proj" }) as Record<string, unknown>;
-    expect(result.id).toBe("proj1");
-  });
-
-  it("contains match as final fallback", async () => {
-    const db = makeDb();
-    seed(db);
-    const result = await exec(db, "resolve_project", { name: "rojec" }) as Record<string, unknown>;
-    expect(result.id).toBe("proj1");
-  });
-
-  it("exact beats starts-with when both exist", async () => {
-    const db = makeDb();
-    seed(db);
-    createProject(db, { id: "proj2", workspaceId: "ws1", name: "Project Extended" });
-    const result = await exec(db, "resolve_project", { name: "Project" }) as Record<string, unknown>;
-    expect(result.id).toBe("proj1"); // exact match wins
-  });
-
-  it("returns error and candidates when nothing matches", async () => {
-    const db = makeDb();
-    seed(db);
-    const result = await exec(db, "resolve_project", { name: "zzznomatch" }) as Record<string, unknown>;
-    expect(result).toHaveProperty("error");
-    const candidates = result.candidates as Array<{ id: string }>;
-    expect(candidates.map((c) => c.id)).toContain("proj1");
-  });
-
-  it("workspaceId filter scopes candidates", async () => {
-    const db = makeDb();
-    seed(db);
-    createWorkspace(db, { id: "ws2", name: "WS2" });
-    createProject(db, { id: "proj-ws2", workspaceId: "ws2", name: "Project" });
-    const result = await exec(db, "resolve_project", { name: "Project", workspaceId: "ws2" }) as Record<string, unknown>;
-    expect(result.id).toBe("proj-ws2");
-  });
-
-  it("returns columns for matched project", async () => {
-    const db = makeDb();
-    seed(db);
-    const result = await exec(db, "resolve_project", { name: "Project" }) as Record<string, unknown>;
-    const columns = result.columns as Array<{ id: string }>;
-    expect(columns.map((c) => c.id)).toContain("col1");
   });
 });
 
@@ -933,15 +685,15 @@ describe("list_ready_tasks", () => {
     createCard(db, { id: "blocker", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Blocker", order: 1 });
     createCard(db, { id: "blocked", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Blocked", order: 2 });
     await exec(db, "block_task", { cardId: "blocked", blockerCardId: "blocker" });
-    await exec(db, "update_task_status", { cardId: "blocker", targetColumnId: "col2" });
+    await exec(db, "update_task", { cardId: "blocker", columnId: "col2" });
     const result = await exec(db, "list_ready_tasks", { projectId: "proj1" }) as Array<{ id: string }>;
     expect(result.map((r) => r.id)).toContain("blocked");
   });
 });
 
-// ── update_task_status to done — blocker cleanup ──────────────────────────────
+// ── update_task (columnId=done) — blocker cleanup ────────────────────────────
 
-describe("update_task_status to done — blocker cleanup", () => {
+describe("update_task to done — blocker cleanup", () => {
   it("clears done task from blocked task's blockedByIds", async () => {
     const db = makeDb();
     seed(db);
@@ -949,7 +701,7 @@ describe("update_task_status to done — blocker cleanup", () => {
     createCard(db, { id: "blocked", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Blocked", order: 2 });
     await exec(db, "block_task", { cardId: "blocked", blockerCardId: "blocker" });
 
-    await exec(db, "update_task_status", { cardId: "blocker", targetColumnId: "col2" });
+    await exec(db, "update_task", { cardId: "blocker", columnId: "col2" });
 
     const task = await exec(db, "get_task", { cardId: "blocked" }) as Record<string, unknown>;
     expect((task.blockedByIds as string[])).not.toContain("blocker");
@@ -964,7 +716,7 @@ describe("update_task_status to done — blocker cleanup", () => {
     createCard(db, { id: "blocked", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Blocked", order: 2 });
     await exec(db, "block_task", { cardId: "blocked", blockerCardId: "blocker" });
 
-    await exec(db, "update_task_status", { cardId: "blocker", targetColumnId: "col-ip" });
+    await exec(db, "update_task", { cardId: "blocker", columnId: "col-ip" });
 
     const task = await exec(db, "get_task", { cardId: "blocked" }) as Record<string, unknown>;
     expect((task.blockedByIds as string[])).toContain("blocker");

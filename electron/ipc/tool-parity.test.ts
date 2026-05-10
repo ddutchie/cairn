@@ -8,9 +8,6 @@
  *
  * Chat-only tools (defined in CHAT_ONLY_TOOLS in tool-schemas.ts) are
  * intentionally absent from MCP — these are excluded from the parity check.
- *
- * We also verify get_project_summary returns the canonical ProjectSummaryResult
- * shape from both chat-executor and the shared read-tools module.
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
@@ -20,8 +17,7 @@ import os from "os";
 import fs from "fs";
 import path from "path";
 import { applySchema } from "../db/schema";
-import { createWorkspace, createProject, createColumn, createNote, updateNote, createCard, getFullSnapshot } from "../db/queries";
-import { executeReadTool, type CairnSnapshot } from "../lib/read-tools";
+import { createWorkspace, createProject, createColumn, createNote, updateNote, createCard } from "../db/queries";
 import { TOOLS } from "../lib/tools";
 import { CHAT_ONLY_TOOLS as CHAT_ONLY_TOOLS_LIST } from "../lib/tool-schemas";
 import { executeTool as mcpExec } from "../mcp-server";
@@ -54,12 +50,8 @@ const CHAT_ONLY_TOOLS = new Set(CHAT_ONLY_TOOLS_LIST);
 
 // Shared read tools handled by executeReadTool (and also in mcp-server.ts)
 const SHARED_READ_TOOLS = [
-  "get_project_summary",
   "get_project_context_pack",
-  "list_tasks",
   "list_ready_tasks",
-  "list_notes",
-  "list_recent_activity",
   "search_notes",
   "search_tasks",
 ];
@@ -78,15 +70,14 @@ describe("Tool name parity", () => {
     // also appear in MCP TOOL_DEFINITIONS.
     const chatToolNames = TOOLS.map((t) => t.function.name);
     const documented = new Set([...CHAT_ONLY_TOOLS, ...SHARED_READ_TOOLS,
+      // Shared read tools also in MCP:
+      "get_cairn_context", "get_note", "get_task", "get_project_context_pack",
       // Shared write/delete tools also in MCP:
-      "get_cairn_context", "get_note", "get_task",
       "create_project", "update_project", "delete_project",
-      "resolve_project",
-      "create_note", "import_note_from_file", "ensure_note", "append_to_note", "patch_note",
-      "update_note", "move_note", "delete_note",
-      "create_task", "update_task", "update_task_status", "bulk_update_task_status",
+      "ensure_note", "append_to_note", "patch_note", "delete_note",
+      "create_task", "update_task", "bulk_update_task_status",
       "archive_task", "restore_task",
-      "link_note_to_task", "block_task", "unblock_task", "list_ready_tasks",
+      "link_note_to_task", "block_task", "unblock_task",
       "create_dashboard", "update_dashboard", "delete_task",
       "get_idea_flow", "create_idea_flow_node", "update_idea_flow_node", "delete_idea_flow_node",
       "create_idea_flow_edge", "delete_idea_flow_edge", "layout_idea_flow", "get_idea_flow_rules",
@@ -99,90 +90,7 @@ describe("Tool name parity", () => {
   });
 });
 
-// ── get_project_summary canonical shape ───────────────────────────────────────
 
-describe("get_project_summary shape consistency", () => {
-  let db: Database.Database;
-  let snap: CairnSnapshot;
-
-  beforeEach(() => {
-    db = makeDb();
-    seed(db);
-    snap = getFullSnapshot(db) as CairnSnapshot;
-  });
-
-  it("executeReadTool returns all canonical fields", () => {
-    const res = executeReadTool(db, snap, "get_project_summary", { projectId: "proj1" });
-    expect(res.handled).toBe(true);
-    if (!res.handled) return;
-    const r = res.result as Record<string, unknown>;
-    // Canonical ProjectSummaryResult fields
-    expect(r).toHaveProperty("project");
-    expect(r).toHaveProperty("noteCount");
-    expect(r).toHaveProperty("totalCards");
-    expect(r).toHaveProperty("cardsByColumn");
-    expect(r).toHaveProperty("pinnedNotes");
-    expect(r).toHaveProperty("recentActivity");
-  });
-
-  it("cardsByColumn entries have consistent shape", () => {
-    const res = executeReadTool(db, snap, "get_project_summary", { projectId: "proj1" });
-    if (!res.handled) return;
-    const r = res.result as Record<string, unknown>;
-    const cols = r.cardsByColumn as Array<Record<string, unknown>>;
-    expect(cols.length).toBeGreaterThan(0);
-    const col = cols[0];
-    expect(col).toHaveProperty("columnName");
-    expect(col).toHaveProperty("columnType");
-    expect(col).toHaveProperty("count");
-    expect(col).toHaveProperty("cards");
-    const cards = col.cards as Array<Record<string, unknown>>;
-    if (cards.length > 0) {
-      expect(cards[0]).toHaveProperty("id");
-      expect(cards[0]).toHaveProperty("title");
-      expect(cards[0]).toHaveProperty("priority");
-    }
-  });
-
-  it("pinnedNotes reflects actual pinned notes", () => {
-    const res = executeReadTool(db, snap, "get_project_summary", { projectId: "proj1" });
-    if (!res.handled) return;
-    const r = res.result as Record<string, unknown>;
-    const pinned = r.pinnedNotes as Array<Record<string, unknown>>;
-    expect(pinned.length).toBe(1);
-    expect(pinned[0].id).toBe("n1");
-  });
-
-  it("noteCount and totalCards are correct", () => {
-    const res = executeReadTool(db, snap, "get_project_summary", { projectId: "proj1" });
-    if (!res.handled) return;
-    const r = res.result as Record<string, unknown>;
-    expect(r.noteCount).toBe(1);
-    expect(r.totalCards).toBe(1);
-  });
-});
-
-// ── list_recent_activity shape ────────────────────────────────────────────────
-
-describe("list_recent_activity shape consistency", () => {
-  it("returns { recentNotes, recentTasks } from executeReadTool", () => {
-    const db = makeDb();
-    seed(db);
-    const snap = getFullSnapshot(db) as CairnSnapshot;
-    const res = executeReadTool(db, snap, "list_recent_activity", { projectId: "proj1" });
-    expect(res.handled).toBe(true);
-    if (!res.handled) return;
-    const r = res.result as Record<string, unknown>;
-    expect(r).toHaveProperty("recentNotes");
-    expect(r).toHaveProperty("recentTasks");
-    // Items have id, title, projectId, updatedAt
-    const note = (r.recentNotes as Array<Record<string, unknown>>)[0];
-    expect(note).toHaveProperty("id");
-    expect(note).toHaveProperty("title");
-    expect(note).toHaveProperty("projectId");
-    expect(note).toHaveProperty("updatedAt");
-  });
-});
 
 // ═════════════════════════════════════════════════════════════════════════════
 // PART 2 — Cross-executor return shape parity
@@ -335,122 +243,7 @@ describe("search_tasks — MCP vs chat parity", () => {
   });
 });
 
-// ── list_notes ────────────────────────────────────────────────────────────────
 
-describe("list_notes — MCP vs chat parity", () => {
-  it("same item keys (including folder)", async () => {
-    const db = makeDb(); const wp = makeTmpDir();
-    seed(db);
-    const [mcp, chat] = await both(db, wp, "list_notes", { projectId: "proj1" });
-    const mr = mcp as Array<Record<string, unknown>>;
-    const cr = chat as Array<Record<string, unknown>>;
-    expect(mr.length).toBeGreaterThan(0);
-    expect(Object.keys(mr[0]).sort()).toEqual(Object.keys(cr[0]).sort());
-  });
-
-  it("folder field present and equal in both", async () => {
-    const db = makeDb(); const wp = makeTmpDir();
-    seed(db);
-    const [mcp, chat] = await both(db, wp, "list_notes", { projectId: "proj1" });
-    const mr = (mcp as Array<Record<string, unknown>>)[0];
-    const cr = (chat as Array<Record<string, unknown>>)[0];
-    expect(mr).toHaveProperty("folder");
-    expect(cr).toHaveProperty("folder");
-    expect(mr.folder).toBe(cr.folder);
-  });
-});
-
-// ── list_tasks ────────────────────────────────────────────────────────────────
-
-describe("list_tasks — MCP vs chat parity", () => {
-  it("same column and task keys", async () => {
-    const db = makeDb(); const wp = makeTmpDir();
-    seed(db);
-    const [mcp, chat] = await both(db, wp, "list_tasks", { projectId: "proj1" });
-    const mcols = mcp as Array<Record<string, unknown>>;
-    const ccols = chat as Array<Record<string, unknown>>;
-    expect(mcols.length).toBeGreaterThan(0);
-    expect(Object.keys(mcols[0]).sort()).toEqual(Object.keys(ccols[0]).sort());
-    // Task item keys
-    const mtasks = mcols.find((c) => (c.tasks as unknown[]).length > 0)!.tasks as Array<Record<string, unknown>>;
-    const ctasks = ccols.find((c) => (c.tasks as unknown[]).length > 0)!.tasks as Array<Record<string, unknown>>;
-    expect(Object.keys(mtasks[0]).sort()).toEqual(Object.keys(ctasks[0]).sort());
-  });
-
-  it("same task id and priority values", async () => {
-    const db = makeDb(); const wp = makeTmpDir();
-    seed(db);
-    const [mcp, chat] = await both(db, wp, "list_tasks", { projectId: "proj1" });
-    const mTask = (mcp as Array<{ tasks: Array<Record<string, unknown>> }>)
-      .flatMap((c) => c.tasks)[0];
-    const cTask = (chat as Array<{ tasks: Array<Record<string, unknown>> }>)
-      .flatMap((c) => c.tasks)[0];
-    expect(mTask.id).toBe(cTask.id);
-    expect(mTask.priority).toBe(cTask.priority);
-  });
-});
-
-// ── resolve_project ───────────────────────────────────────────────────────────
-
-describe("resolve_project — MCP vs chat parity", () => {
-  it("same keys on match", async () => {
-    const db = makeDb(); const wp = makeTmpDir();
-    seed(db);
-    const [mcp, chat] = await both(db, wp, "resolve_project", { name: "Proj" });
-    expect(Object.keys(mcp as object).sort()).toEqual(Object.keys(chat as object).sort());
-  });
-
-  it("same id, name, workspaceId, status values", async () => {
-    const db = makeDb(); const wp = makeTmpDir();
-    seed(db);
-    const [mcp, chat] = await both(db, wp, "resolve_project", { name: "Proj" });
-    const m = mcp as Record<string, unknown>;
-    const c = chat as Record<string, unknown>;
-    expect(m.id).toBe(c.id);
-    expect(m.name).toBe(c.name);
-    expect(m.workspaceId).toBe(c.workspaceId);
-    expect(m.status).toBe(c.status);
-  });
-
-  it("both return error + candidates on no match", async () => {
-    const db = makeDb(); const wp = makeTmpDir();
-    seed(db);
-    const [mcp, chat] = await both(db, wp, "resolve_project", { name: "zzznomatch" });
-    expect(mcp).toHaveProperty("error");
-    expect(chat).toHaveProperty("error");
-    expect((mcp as Record<string, unknown>).candidates).toBeDefined();
-    expect((chat as Record<string, unknown>).candidates).toBeDefined();
-  });
-});
-
-// ── get_project_summary ───────────────────────────────────────────────────────
-
-describe("get_project_summary — MCP vs chat parity", () => {
-  it("same top-level keys", async () => {
-    const db = makeDb(); const wp = makeTmpDir();
-    seed(db);
-    const [mcp, chat] = await both(db, wp, "get_project_summary", { projectId: "proj1" });
-    expect(Object.keys(mcp as object).sort()).toEqual(Object.keys(chat as object).sort());
-  });
-
-  it("same noteCount and totalCards values", async () => {
-    const db = makeDb(); const wp = makeTmpDir();
-    seed(db);
-    const [mcp, chat] = await both(db, wp, "get_project_summary", { projectId: "proj1" });
-    const m = mcp as Record<string, unknown>;
-    const c = chat as Record<string, unknown>;
-    expect(m.noteCount).toBe(c.noteCount);
-    expect(m.totalCards).toBe(c.totalCards);
-  });
-
-  it("both return { error } for missing project", async () => {
-    const db = makeDb(); const wp = makeTmpDir();
-    seed(db);
-    const [mcp, chat] = await both(db, wp, "get_project_summary", { projectId: "nope" });
-    expect(mcp).toHaveProperty("error");
-    expect(chat).toHaveProperty("error");
-  });
-});
 
 // ── get_project_context_pack ──────────────────────────────────────────────────
 
@@ -486,17 +279,6 @@ describe("get_project_context_pack — MCP vs chat parity", () => {
 // ── Known intentional divergences (documented) ───────────────────────────────
 
 describe("known intentional divergences between MCP and chat", () => {
-  it("list_recent_activity: MCP returns a flat array, chat returns { recentNotes, recentTasks }", async () => {
-    const db = makeDb(); const wp = makeTmpDir();
-    seed(db);
-    const [mcp, chat] = await both(db, wp, "list_recent_activity", { workspaceId: "ws1", projectId: "proj1" });
-    // MCP: flat sorted array
-    expect(Array.isArray(mcp)).toBe(true);
-    // Chat (via executeReadTool): split object
-    expect(chat).toHaveProperty("recentNotes");
-    expect(chat).toHaveProperty("recentTasks");
-  });
-
   it("create_project: MCP returns { projectId, name, columns }, chat returns { project, columns }", async () => {
     const db = makeDb(); const wp = makeTmpDir();
     seed(db);

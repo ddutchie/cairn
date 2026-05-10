@@ -45,7 +45,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import * as z from "zod";
-import { TOOL_SCHEMAS, CHAT_ONLY_TOOLS } from "./lib/tool-schemas";
+import { TOOL_SCHEMAS, CHAT_ONLY_TOOLS, EXCLUDED_TOOLS } from "./lib/tool-schemas";
 
 export const MCP_PORT = 3123;
 
@@ -401,15 +401,15 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
         projects,
         tags: snap.tags.map((t) => ({ id: t.id, name: t.name, color: t.color, workspaceId: t.workspaceId })),
         tools: {
-          read:   ["get_cairn_context", "get_project_context_pack", "resolve_project", "search_notes", "search_tasks", "get_note", "get_task", "get_project_summary", "list_notes", "list_tasks", "list_ready_tasks", "list_recent_activity"],
-          write:  ["create_project", "update_project", "create_note", "import_note_from_file", "ensure_note", "append_to_note", "patch_note", "update_note", "move_note", "create_task", "update_task", "update_task_status", "bulk_update_task_status", "archive_task", "restore_task", "link_note_to_task", "block_task", "unblock_task", "create_dashboard", "update_dashboard", "create_idea_flow_node", "update_idea_flow_node", "create_idea_flow_edge", "create_tag"],
+          read:   ["get_cairn_context", "get_project_context_pack", "search_notes", "search_tasks", "get_note", "get_task", "list_ready_tasks"],
+          write:  ["create_project", "update_project", "ensure_note", "append_to_note", "patch_note", "create_task", "update_task", "bulk_update_task_status", "archive_task", "restore_task", "link_note_to_task", "block_task", "unblock_task", "create_dashboard", "update_dashboard", "create_idea_flow_node", "update_idea_flow_node", "create_idea_flow_edge", "create_tag"],
           delete: ["delete_note", "delete_task", "delete_project", "delete_idea_flow_node", "delete_idea_flow_edge"],
           ideaFlow: ["get_idea_flow", "create_idea_flow_node", "update_idea_flow_node", "delete_idea_flow_node", "create_idea_flow_edge", "delete_idea_flow_edge", "layout_idea_flow"],
         },
         conventions: {
           notes: "Raw markdown in 'content'. 'content_text' is auto-derived — do not set manually.",
           dashboards: "Use create_dashboard to create an HTML dashboard rendered in a sandboxed iframe inside Cairn. The 'html' field must be a complete, self-contained HTML document. Use inline CSS and JS only — no external URLs. The window.cairn.query(tool, args) API is available for live data from read-only tools.",
-          tasks: "Always provide columnId (not just projectId) when creating a task. Use list_ready_tasks instead of list_tasks when you want to know what work can start now — it filters out tasks blocked by unresolved dependencies.",
+          tasks: "Always provide columnId (not just projectId) when creating a task. Use list_ready_tasks to find work that can start now — it filters out blocked tasks.",
           dependencies: "Use block_task to mark a task as blocked by another (same project only). Circular dependencies are rejected. When a blocker is moved to a done column or archived it is automatically treated as resolved. Use unblock_task to remove a dependency explicitly.",
           priority: ["low", "medium", "high", "urgent"],
           projectStatus: ["active", "on_hold", "completed", "archived"],
@@ -497,51 +497,6 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
         });
     }
 
-    case "get_project_summary": {
-      const project = snap.projects.find((p) => p.id === args.projectId);
-      if (!project) return { error: "Project not found" };
-      const columns = snap.columns.filter((c) => c.projectId === args.projectId).sort((a, b) => a.order - b.order);
-      const cardsByColumn = columns.map((col) => {
-        const cards = snap.cards.filter((c) => c.columnId === col.id && !c.archivedAt);
-        return { columnName: col.name, columnType: col.type, count: cards.length,
-          cards: cards.map((c) => ({ id: c.id, title: c.title, priority: c.priority, dueDate: c.dueDate })) };
-      });
-      const notes = snap.notes.filter((n) => n.projectId === args.projectId && !n.archivedAt);
-      return {
-        project: { id: project.id, name: project.name, description: project.description,
-          status: project.status, priority: project.priority, dueDate: project.dueDate },
-        noteCount: notes.length,
-        totalCards: cardsByColumn.reduce((s, c) => s + c.count, 0),
-        cardsByColumn,
-        pinnedNotes: notes.filter((n) => n.isPinned).map((n) => ({ id: n.id, title: n.title })),
-        recentActivity: [
-          ...notes.map((n) => ({ type: "note" as const, id: n.id, title: n.title, updatedAt: n.updatedAt })),
-          ...snap.cards.filter((c) => c.projectId === args.projectId && !c.archivedAt)
-            .map((c) => ({ type: "card" as const, id: c.id, title: c.title, updatedAt: c.updatedAt })),
-        ].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()).slice(0, 10),
-      };
-    }
-
-    case "list_recent_activity": {
-      const { workspaceId, projectId, limit = 20 } = args;
-      return [
-        ...snap.notes
-          .filter((n) => n.workspaceId === workspaceId && !n.archivedAt && (!projectId || n.projectId === projectId))
-          .map((n) => {
-            const proj = snap.projects.find((pr) => pr.id === n.projectId);
-            return { type: "note" as const, id: n.id, title: n.title, projectId: n.projectId,
-              projectName: proj?.name ?? "", action: (n.createdAt === n.updatedAt ? "created" : "updated") as "created" | "updated", at: n.updatedAt };
-          }),
-        ...snap.cards
-          .filter((c) => c.workspaceId === workspaceId && !c.archivedAt && (!projectId || c.projectId === projectId))
-          .map((c) => {
-            const proj = snap.projects.find((pr) => pr.id === c.projectId);
-            return { type: "card" as const, id: c.id, title: c.title, projectId: c.projectId,
-              projectName: proj?.name ?? "", action: (c.createdAt === c.updatedAt ? "created" : "updated") as "created" | "updated", at: c.updatedAt };
-          }),
-      ].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime()).slice(0, limit);
-    }
-
     case "create_dashboard": {
       const { projectId, title, html } = args;
       const project = snap.projects.find((pr) => pr.id === projectId);
@@ -574,142 +529,6 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
     case "get_idea_flow_rules":
       return IDEA_FLOW_RULES;
 
-    case "create_note": {
-      const { projectId, title, content, tagIds } = args;
-      const project = snap.projects.find((pr) => pr.id === projectId);
-      if (!project) return { error: "Project not found" };
-      const now = ts();
-      const noteId = newId();
-      const markdown = content ?? "";
-      const resolvedTagIds = Array.isArray(tagIds) ? tagIds as string[] : [];
-      const folder = typeof args.folder === "string" ? args.folder : "";
-      lockNote(db, noteId);
-      try {
-        db.transaction(() => {
-          db.prepare(`
-            INSERT INTO notes (id, project_id, workspace_id, title, content, content_text,
-              tag_ids, linked_note_ids, linked_card_ids, is_pinned, type, folder, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, '[]', '[]', 0, 'note', ?, ?, ?)
-          `).run(noteId, projectId, project.workspaceId, title, markdown, stripMarkdown(markdown), j(resolvedTagIds), folder, now, now);
-          insertNotification(db, "create_note", "Note created", `"${title}" added to ${project.name}${folder ? ` (${folder})` : ""}`);
-        })();
-        writeNoteFile(workspacePath, {
-          id: noteId, projectId, workspaceId: project.workspaceId, title, content: markdown,
-          tagIds: resolvedTagIds, linkedNoteIds: [], linkedCardIds: [], isPinned: false,
-          folder, createdAt: now, updatedAt: now, projectName: project.name,
-        });
-        return { id: noteId, title, folder, createdAt: now };
-      } finally {
-        unlockNote(db, noteId);
-      }
-    }
-
-    case "import_note_from_file": {
-      // Reads a file from the local filesystem (server-side) so agents never need to
-      // inline large payloads (e.g. a full README) as tool arguments.
-      const { projectId, filePath: srcPath, title: explicitTitle, tagIds: importTagIds } = args;
-      const project = snap.projects.find((pr) => pr.id === projectId);
-      if (!project) return { error: "Project not found" };
-      const resolvedPath = path.resolve(srcPath as string);
-      if (!fs.existsSync(resolvedPath)) return { error: `File not found: ${resolvedPath}` };
-      let markdown: string;
-      try {
-        markdown = fs.readFileSync(resolvedPath, "utf8");
-      } catch (e) {
-        return { error: `Cannot read file: ${(e as Error).message}` };
-      }
-      // Use explicit title, or strip extension from filename as fallback
-      const title = (explicitTitle as string | undefined)
-        ?? path.basename(resolvedPath).replace(/\.[^/.]+$/, "");
-      const now = ts();
-      const noteId = newId();
-      const importResolvedTagIds = Array.isArray(importTagIds) ? importTagIds as string[] : [];
-      db.transaction(() => {
-        db.prepare(`
-          INSERT INTO notes (id, project_id, workspace_id, title, content, content_text,
-            tag_ids, linked_note_ids, linked_card_ids, is_pinned, type, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, '[]', '[]', 0, 'note', ?, ?)
-        `).run(noteId, projectId, project.workspaceId, title, markdown, stripMarkdown(markdown), j(importResolvedTagIds), now, now);
-        insertNotification(db, "create_note", "Note imported", `"${title}" imported into ${project.name}`);
-      })();
-      writeNoteFile(workspacePath, {
-        id: noteId, projectId, workspaceId: project.workspaceId, title, content: markdown,
-        tagIds: importResolvedTagIds, linkedNoteIds: [], linkedCardIds: [], isPinned: false,
-        createdAt: now, updatedAt: now, projectName: project.name,
-      });
-      return { id: noteId, title, createdAt: now, importedFrom: resolvedPath };
-    }
-
-    case "update_note": {
-      const { noteId, title, content, isPinned, tagIds, expectedVersion } = args;
-      const note = snap.notes.find((n) => n.id === noteId);
-      if (!note) return { error: "Note not found" };
-      // Optimistic-concurrency check — reject if the caller's snapshot is stale.
-      if (expectedVersion !== undefined) {
-        const currentVersion = getNoteVersion(db, noteId as string);
-        if (currentVersion !== null && currentVersion !== (expectedVersion as number)) {
-          return { error: `Version conflict: note has been modified (expected v${expectedVersion as number}, got v${currentVersion}). Fetch the latest content before retrying.` };
-        }
-      }
-      const now = ts();
-      const markdown = content !== undefined ? content : null;
-      const pinnedVal = isPinned !== undefined ? (isPinned ? 1 : 0) : null;
-      const tagIdsJson = Array.isArray(tagIds) ? j(tagIds) : null;
-      lockNote(db, noteId as string);
-      try {
-        const resolvedIsPinned = isPinned !== undefined ? (isPinned as boolean) : note.isPinned as boolean;
-        const updateProj = snap.projects.find((pr) => pr.id === note.projectId);
-        // Wrap both SQL writes in a transaction so a partial failure leaves the
-        // DB consistent (both committed or neither).
-        db.transaction(() => {
-          db.prepare(`UPDATE notes SET title = COALESCE(?, title), content = COALESCE(?, content), content_text = COALESCE(?, content_text), is_pinned = COALESCE(?, is_pinned), tag_ids = COALESCE(?, tag_ids), updated_at = ?, version = version + 1 WHERE id = ?`)
-            .run(title ?? null, markdown, markdown !== null ? stripMarkdown(markdown) : null, pinnedVal, tagIdsJson, now, noteId);
-          insertNotification(db, "update_note", "Note updated", `"${title ?? note.title}" was updated`);
-        })();
-        writeNoteFile(workspacePath, {
-          id: noteId, projectId: note.projectId as string, workspaceId: note.workspaceId as string,
-          title: title ?? note.title as string,
-          content: markdown !== null ? markdown : note.content as string,
-          tagIds: Array.isArray(tagIds) ? tagIds as string[] : note.tagIds as string[], linkedNoteIds: note.linkedNoteIds as string[],
-          linkedCardIds: note.linkedCardIds as string[], isPinned: resolvedIsPinned,
-          createdAt: note.createdAt as string, updatedAt: now,
-          archivedAt: note.archivedAt as string | undefined,
-          projectName: updateProj?.name ?? note.projectId as string,
-        });
-        return { id: noteId, title: title ?? note.title, isPinned: resolvedIsPinned, updatedAt: now };
-      } finally {
-        unlockNote(db, noteId as string);
-      }
-    }
-
-    case "move_note": {
-      const { noteId, targetProjectId } = args;
-      const note = snap.notes.find((n) => n.id === noteId);
-      if (!note) return { error: "Note not found" };
-      const targetProject = snap.projects.find((p) => p.id === targetProjectId);
-      if (!targetProject) return { error: "Target project not found" };
-      if (note.projectId === targetProjectId) return { error: "Note is already in that project" };
-      const sourceProject = snap.projects.find((p) => p.id === note.projectId);
-      const now = ts();
-      // Remove .md from source folder
-      deleteNoteFile(workspacePath, sourceProject?.name ?? note.projectId as string, noteId as string);
-      // Update DB
-      db.prepare(`UPDATE notes SET project_id = ?, workspace_id = ?, updated_at = ? WHERE id = ?`)
-        .run(targetProject.id, targetProject.workspaceId, now, noteId);
-      // Write .md to target folder
-      writeNoteFile(workspacePath, {
-        id: noteId as string, projectId: targetProject.id, workspaceId: targetProject.workspaceId,
-        title: note.title as string, content: note.content as string,
-        tagIds: note.tagIds as string[], linkedNoteIds: note.linkedNoteIds as string[],
-        linkedCardIds: note.linkedCardIds as string[], isPinned: note.isPinned as boolean,
-        createdAt: note.createdAt as string, updatedAt: now,
-        archivedAt: note.archivedAt as string | undefined,
-        projectName: targetProject.name,
-      });
-      insertNotification(db, "move_note", "Note moved", `"${note.title}" → ${targetProject.name}`);
-      return { id: noteId, title: note.title, previousProjectId: note.projectId, newProjectId: targetProject.id };
-    }
-
     case "create_task": {
       const { columnId, projectId, description, priority = "medium", dueDate, tagIds } = args;
       const title = (args.title as string | null | undefined)?.trim();
@@ -728,39 +547,6 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
       const taskProject = snap.projects.find((pr) => pr.id === projectId);
       insertNotification(db, "create_task", "Task created", `"${title}" added to ${taskProject?.name ?? projectId}`);
       return { id: cardId, title, columnId, createdAt: now };
-    }
-
-    case "update_task_status": {
-      const { cardId, targetColumnId, expectedVersion: statusExpectedVersion } = args;
-      const card = snap.cards.find((c) => c.id === cardId);
-      const col = snap.columns.find((c) => c.id === targetColumnId);
-      if (!card) return { error: "Card not found" };
-      if (!col) return { error: "Column not found" };
-      if (statusExpectedVersion !== undefined) {
-        const currentVersion = getCardVersion(db, cardId as string);
-        if (currentVersion !== null && currentVersion !== (statusExpectedVersion as number)) {
-          return { error: `Version conflict: task has been modified (expected v${statusExpectedVersion as number}, got v${currentVersion}). Fetch the latest state before retrying.` };
-        }
-      }
-      const now = ts();
-      db.prepare(`UPDATE task_cards SET column_id = ?, updated_at = ?, version = version + 1 WHERE id = ?`).run(targetColumnId, now, cardId);
-      // When a task moves to a done column, clear it from any other task's blocked_by_ids
-      // so get_task no longer reports it as a pending blocker.
-      if (col.type === "done") {
-        const affected = db.prepare(
-          "SELECT id, blocked_by_ids FROM task_cards WHERE blocked_by_ids != '[]' AND id != ?"
-        ).all(cardId) as { id: string; blocked_by_ids: string }[];
-        for (const row of affected) {
-          const ids: string[] = j2(row.blocked_by_ids);
-          if (ids.includes(cardId as string)) {
-            db.prepare("UPDATE task_cards SET blocked_by_ids = ?, updated_at = ?, version = version + 1 WHERE id = ?")
-              .run(j(ids.filter((bid) => bid !== cardId)), now, row.id);
-          }
-        }
-      }
-      insertNotification(db, "update_task_status", "Task moved", `"${card.title}" → ${col.name}`);
-      return { id: cardId, title: card.title, previousColumn: card.columnId,
-        newColumn: targetColumnId, newColumnName: col.name, updatedAt: now };
     }
 
     case "bulk_update_task_status": {
@@ -1009,6 +795,22 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
         );
         insertNotification(db, "update_task", "Task updated", `"${title ?? card.title}" was updated`);
       })();
+      // When moving to a done column, clear this card from other tasks' blocked_by_ids
+      if (columnId !== undefined) {
+        const targetCol = snap.columns.find((c) => c.id === columnId);
+        if (targetCol?.type === "done") {
+          const affected = db.prepare(
+            "SELECT id, blocked_by_ids FROM task_cards WHERE blocked_by_ids != '[]' AND id != ?"
+          ).all(cardId) as { id: string; blocked_by_ids: string }[];
+          for (const row of affected) {
+            const ids: string[] = j2(row.blocked_by_ids);
+            if (ids.includes(cardId as string)) {
+              db.prepare("UPDATE task_cards SET blocked_by_ids = ?, updated_at = ?, version = version + 1 WHERE id = ?")
+                .run(j(ids.filter((bid) => bid !== cardId)), now, row.id);
+            }
+          }
+        }
+      }
       const updated = db.prepare("SELECT * FROM task_cards WHERE id = ?").get(cardId) as Record<string, unknown> | undefined;
       return updated ?? { error: "Task not found after update" };
     }
@@ -1080,78 +882,6 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
       db.prepare("DELETE FROM projects WHERE id = ?").run(args.projectId);
       insertNotification(db, "delete_project", "Project deleted", `"${project.name}" was deleted`);
       return { deleted: true, id: args.projectId, name: project.name };
-    }
-
-    case "list_notes": {
-      return snap.notes
-        .filter((n) => !n.archivedAt && (!args.projectId || n.projectId === args.projectId))
-        .map((n) => ({ id: n.id, title: n.title, projectId: n.projectId, folder: n.folder ?? "", isPinned: n.isPinned, updatedAt: n.updatedAt }));
-    }
-
-    case "list_tasks": {
-      // Shape note: without includeArchived the response is an array of column objects
-      // ({ columnName, columnType, columnId, tasks[] }). With includeArchived: true the
-      // response is { archived: [...], note: string } — a deliberately different shape
-      // since archived cards don't belong to a displayable column order. Callers must
-      // branch on whether the result is an array or an object.
-      const includeArchived = !!(args.includeArchived);
-      const cols = snap.columns.filter((c) => !args.columnType || c.type === args.columnType)
-        .filter((c) => !args.projectId || c.projectId === args.projectId);
-      if (includeArchived) {
-        // Query DB directly for archived cards — they're filtered out of snap.cards
-        const projectFilter = args.projectId ? `AND tc.project_id = ?` : "";
-        const columnTypeFilter = args.columnType ? `AND bc.type = ?` : "";
-        const queryParams: unknown[] = [];
-        if (args.projectId) queryParams.push(args.projectId);
-        if (args.columnType) queryParams.push(args.columnType);
-        const rows = db.prepare(
-          `SELECT tc.*, bc.name as col_name, bc.type as col_type
-           FROM task_cards tc
-           JOIN board_columns bc ON tc.column_id = bc.id
-           WHERE tc.archived_at IS NOT NULL ${projectFilter} ${columnTypeFilter}
-           ORDER BY tc.archived_at DESC`
-        ).all(...queryParams) as Array<Record<string, unknown>>;
-        return {
-          archived: rows.map((r) => ({
-            id: r.id, title: r.title, priority: r.priority,
-            description: r.description, archivedAt: r.archived_at,
-            columnName: r.col_name, columnType: r.col_type,
-          })),
-          note: "These tasks are archived. Use restore_task to bring one back to the board.",
-        };
-      }
-      return cols
-        .sort((a, b) => a.order - b.order)
-        .map((col) => ({
-          columnName: col.name,
-          columnType: col.type,
-          columnId: col.id,
-          tasks: snap.cards
-            .filter((c) => c.columnId === col.id && !c.archivedAt)
-            .map((c) => ({ id: c.id, title: c.title, priority: c.priority, description: c.description })),
-        }));
-    }
-
-    case "resolve_project": {
-      // Find a project by exact or fuzzy name match — returns projectId so agents
-      // don't need to call get_cairn_context just to look up an ID.
-      const { workspaceId, name: query } = args;
-      const candidates = snap.projects.filter((p) =>
-        !p.archivedAt && (!workspaceId || p.workspaceId === workspaceId)
-      );
-      const needle = (query as string).toLowerCase().trim();
-      // 1. exact match (case-insensitive)
-      let match = candidates.find((p) => p.name.toLowerCase() === needle);
-      // 2. starts-with
-      if (!match) match = candidates.find((p) => p.name.toLowerCase().startsWith(needle));
-      // 3. contains
-      if (!match) match = candidates.find((p) => p.name.toLowerCase().includes(needle));
-      if (!match) return { error: `No project found matching "${query}"`, candidates: candidates.map((p) => ({ id: p.id, name: p.name })) };
-      const columns = snap.columns
-        .filter((c) => c.projectId === match!.id)
-        .sort((a, b) => a.order - b.order)
-        .map((c) => ({ id: c.id, name: c.name, type: c.type }));
-      return { id: match.id, name: match.name, workspaceId: match.workspaceId, status: match.status, columns };
     }
 
     case "ensure_note": {
@@ -1782,10 +1512,11 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
 function buildMcpServer(db: Database.Database, workspacePath: string): McpServer {
   const server = new McpServer({ name: "cairn", version: "1.0.0" });
 
-  // Register all tools from TOOL_SCHEMAS, excluding chat-only tools
+  // Register tools from TOOL_SCHEMAS, excluding chat-only and globally-excluded tools
   const chatOnlySet = new Set<string>(CHAT_ONLY_TOOLS);
+  const excludedSet = new Set<string>(EXCLUDED_TOOLS);
   for (const [name, { description, schema }] of Object.entries(TOOL_SCHEMAS)) {
-    if (chatOnlySet.has(name)) continue;
+    if (chatOnlySet.has(name) || excludedSet.has(name)) continue;
     server.tool(name, description, schema.shape as Record<string, z.ZodTypeAny>,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       async (args: Record<string, any>) => {

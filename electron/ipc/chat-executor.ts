@@ -8,7 +8,6 @@
 import type Database from "better-sqlite3";
 import type { BrowserWindow } from "electron";
 import path from "path";
-import fs from "fs";
 import dagre from "@dagrejs/dagre";
 import * as q from "../db/queries";
 import { writeNoteFile, deleteNoteFile, stripMarkdown } from "../notes-files";
@@ -173,64 +172,6 @@ export async function executeTool(
       return DASHBOARD_CONSTANTS;
     case "get_idea_flow_rules":
       return IDEA_FLOW_RULES;
-    case "create_note": {
-      const project = snap.projects.find((p) => p.id === args.projectId);
-      if (!project) return { error: "Project not found" };
-      const noteId = newId();
-      const markdown = (args.content as string) ?? "";
-      const folder = typeof args.folder === "string" ? args.folder : "";
-      const win = getWin?.() ?? null;
-      aiWriteLock.lock(noteId, win);
-      try {
-        const note = q.createNote(db, {
-          id: noteId, projectId: args.projectId, workspaceId: project.workspaceId,
-          title: args.title, content: markdown, contentText: stripMarkdown(markdown),
-          tagIds: Array.isArray(args.tagIds) ? args.tagIds as string[] : undefined,
-          folder,
-        });
-        writeNoteFile(workspacePath, { ...note, projectName: project.name });
-        return note;
-      } finally {
-        aiWriteLock.unlock(noteId, win);
-      }
-    }
-    case "import_note_from_file": {
-      const project = snap.projects.find((p) => p.id === args.projectId);
-      if (!project) return { error: "Project not found" };
-      const resolvedPath = path.resolve(args.filePath as string);
-      if (!fs.existsSync(resolvedPath)) return { error: `File not found: ${resolvedPath}` };
-      let markdown: string;
-      try {
-        markdown = fs.readFileSync(resolvedPath, "utf8");
-      } catch (e) {
-        return { error: `Cannot read file: ${(e as Error).message}` };
-      }
-      const title = (args.title as string | undefined)
-        ?? path.basename(resolvedPath).replace(/\.[^/.]+$/, "");
-      const noteId = newId();
-      const note = q.createNote(db, {
-        id: noteId, projectId: args.projectId as string, workspaceId: project.workspaceId,
-        title, content: markdown, contentText: stripMarkdown(markdown),
-        tagIds: Array.isArray(args.tagIds) ? args.tagIds as string[] : undefined,
-      });
-      writeNoteFile(workspacePath, { ...note, projectName: project.name });
-      return { ...note, importedFrom: resolvedPath };
-    }
-    case "resolve_project": {
-      const candidates = snap.projects.filter((p) =>
-        !p.archivedAt && (!args.workspaceId || p.workspaceId === args.workspaceId)
-      );
-      const needle = (args.name as string).toLowerCase().trim();
-      let match = candidates.find((p) => p.name.toLowerCase() === needle);
-      if (!match) match = candidates.find((p) => p.name.toLowerCase().startsWith(needle));
-      if (!match) match = candidates.find((p) => p.name.toLowerCase().includes(needle));
-      if (!match) return { error: `No project found matching "${args.name}"`, candidates: candidates.map((p) => ({ id: p.id, name: p.name })) };
-      const columns = snap.columns
-        .filter((c) => c.projectId === match!.id)
-        .sort((a, b) => a.order - b.order)
-        .map((c) => ({ id: c.id, name: c.name, type: c.type }));
-      return { id: match.id, name: match.name, workspaceId: match.workspaceId, status: match.status, columns };
-    }
     case "ensure_note": {
       const project = snap.projects.find((p) => p.id === args.projectId);
       if (!project) return { error: "Project not found" };
@@ -310,47 +251,6 @@ export async function executeTool(
         aiWriteLock.unlock(patchNoteId, win);
       }
     }
-    case "update_note": {
-      const existing = snap.notes.find((n) => n.id === args.noteId);
-      if (!existing) return { error: "Note not found" };
-      const updateNoteId = args.noteId as string;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const patch: Record<string, any> = {};
-      if (args.title !== undefined && args.title !== "") patch.title = args.title as string;
-      if (args.content !== undefined) {
-        patch.content = args.content as string;
-        patch.contentText = stripMarkdown(args.content as string);
-      }
-      if (args.isPinned !== undefined) patch.isPinned = args.isPinned as boolean;
-      if (Array.isArray(args.tagIds)) patch.tagIds = args.tagIds as string[];
-      const win = getWin?.() ?? null;
-      aiWriteLock.lock(updateNoteId, win);
-      try {
-        const note = q.updateNote(db, updateNoteId, patch);
-        const proj = snap.projects.find((p) => p.id === note.projectId);
-        writeNoteFile(workspacePath, { ...note, projectName: proj?.name ?? note.projectId });
-        return note;
-      } finally {
-        aiWriteLock.unlock(updateNoteId, win);
-      }
-    }
-    case "move_note": {
-      const note = snap.notes.find((n) => n.id === args.noteId);
-      if (!note) return { error: "Note not found" };
-      const targetProject = snap.projects.find((p) => p.id === args.targetProjectId);
-      if (!targetProject) return { error: "Target project not found" };
-      if (note.projectId === args.targetProjectId) return { error: "Note is already in that project" };
-      const sourceProject = snap.projects.find((p) => p.id === note.projectId);
-      // Delete .md from source project folder
-      deleteNoteFile(workspacePath, sourceProject?.name ?? note.projectId, note.id);
-      // updateNote doesn't accept projectId — use a targeted SQL update
-      db.prepare(`UPDATE notes SET project_id = ?, workspace_id = ?, updated_at = ? WHERE id = ?`)
-        .run(targetProject.id, targetProject.workspaceId, ts(), note.id);
-      const moved = q.getNoteById(db, note.id)!;
-      // Write .md to target project folder
-      writeNoteFile(workspacePath, { ...moved, projectName: targetProject.name });
-      return { id: moved.id, title: moved.title, previousProjectId: note.projectId, newProjectId: targetProject.id };
-    }
     case "create_task": {
       const col = snap.columns.find((c) => c.id === args.columnId);
       if (!col) return { error: "Column not found" };
@@ -366,16 +266,6 @@ export async function executeTool(
         dueDate: undefined, order,
         tagIds: Array.isArray(args.tagIds) ? args.tagIds as string[] : undefined,
       });
-    }
-    case "update_task_status": {
-      const card = snap.cards.find((c) => c.id === args.cardId);
-      if (!card) return { error: "Task not found" };
-      const col = snap.columns.find((c) => c.id === args.targetColumnId);
-      if (!col) return { error: "Column not found" };
-      const result = q.updateCard(db, args.cardId as string, { columnId: args.targetColumnId as string });
-      // When moving to done, clear this card from every other task's blocked_by_ids
-      if (col.type === "done") q.clearBlockersFromAll(db, [args.cardId as string]);
-      return result;
     }
     case "bulk_update_task_status": {
       const col = snap.columns.find((c) => c.id === args.targetColumnId);
@@ -526,7 +416,13 @@ export async function executeTool(
       if (args.columnId !== undefined)    patch.columnId    = args.columnId;
       if (args.assignee !== undefined)    patch.assignee    = args.assignee || undefined;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return q.updateCard(db, args.cardId as string, patch as any);
+      const updated = q.updateCard(db, args.cardId as string, patch as any);
+      // When moving to a done column, clear this card from other tasks' blocked_by_ids
+      if (args.columnId !== undefined) {
+        const targetCol = snap.columns.find((c) => c.id === args.columnId);
+        if (targetCol?.type === "done") q.clearBlockersFromAll(db, [args.cardId as string]);
+      }
+      return updated;
     }
     case "link_note_to_task": {
       const note = snap.notes.find((n) => n.id === args.noteId);
