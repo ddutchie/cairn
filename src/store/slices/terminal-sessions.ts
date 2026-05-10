@@ -251,9 +251,17 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
         if (!last.content && !(last.toolCalls?.length) && !(last.subagents?.length)) {
           return { ...t, piMessages: msgs.slice(0, -1) };
         }
+        // Force any still-running tool chips to done so they never stay as spinners
+        // after the step boundary (onStep / onDone fires before onTool end in some cases).
+        const finalisedToolCalls = last.toolCalls?.map((tc) =>
+          tc.running ? { ...tc, running: false } : tc
+        );
         return {
           ...t,
-          piMessages: [...msgs.slice(0, -1), { ...last, isStreaming: false }],
+          piMessages: [
+            ...msgs.slice(0, -1),
+            { ...last, isStreaming: false, toolCalls: finalisedToolCalls },
+          ],
         };
       }),
     }));
