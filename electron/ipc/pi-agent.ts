@@ -351,8 +351,8 @@ export function registerPiAgentHandler(
       if (history.length > 0) {
         // getLlmHistory now returns the full AgentMessage objects (role, content,
         // tool_calls, tool_call_id, etc.) so multi-turn context is fully restored.
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         sessions.set(sessionId, {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           messages: history as any[],
           abortCtrl: new AbortController(),
         });

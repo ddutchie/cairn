@@ -139,8 +139,6 @@ export function AgentView() {
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup",   onMouseUp);
     };
-  // bottomHeight is read as startHeight only on mousedown — safe to omit from deps
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
