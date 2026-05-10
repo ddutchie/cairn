@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import {
-  CheckCircle, RefreshCw, Key, Globe, Cpu, Wifi, WifiOff, Eye, EyeOff, Footprints, Layers, Thermometer, Terminal, MessageSquare,
+  CheckCircle, RefreshCw, Key, Globe, Cpu, Wifi, WifiOff, Eye, EyeOff, Footprints, Layers, Thermometer,
 } from "lucide-react";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useCairnStore } from "@/store";
