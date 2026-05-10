@@ -79,7 +79,6 @@ export function AgentBottomTerminal({ cwd, height }: AgentBottomTerminalProps) {
       if (!container) continue;
       initTerminal(tab.id, container);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tabs]);
 
   // Refit active terminal when height prop changes (drag resize)

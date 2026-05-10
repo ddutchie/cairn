@@ -7,7 +7,6 @@
 
 import type Database from "better-sqlite3";
 import type { BrowserWindow } from "electron";
-import path from "path";
 import dagre from "@dagrejs/dagre";
 import * as q from "../db/queries";
 import { writeNoteFile, deleteNoteFile, stripMarkdown } from "../notes-files";

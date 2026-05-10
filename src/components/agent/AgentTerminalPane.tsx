@@ -188,6 +188,15 @@ function SessionMount({ session, isActive }: SessionMountProps) {
   );
 }
 
+function formatDate(iso: string) {
+  const d = new Date(iso);
+  const diffDays = Math.floor((Date.now() - d.getTime()) / 86400000);
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
 // ── PiAgentEmptyState — shown in the content area when no session is loaded ──
 
 function PiAgentEmptyState() {
@@ -278,14 +287,7 @@ function PiAgentEmptyState() {
     setActiveSession(summary.id);
   }
 
-  function formatDate(iso: string) {
-    const d = new Date(iso);
-    const diffDays = Math.floor((Date.now() - d.getTime()) / 86400000);
-    if (diffDays === 0) return "Today";
-    if (diffDays === 1) return "Yesterday";
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  }
+
 
   return (
     <div className="flex flex-col items-center justify-center h-full gap-4 p-6 text-center">

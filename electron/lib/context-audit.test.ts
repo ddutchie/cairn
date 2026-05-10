@@ -256,7 +256,7 @@ describe("Context Audit (real tokens via gpt-tokenizer / cl100k_base)", () => {
       { function: { name: "import_note_from_file",description: "Import a local file as a note (MCP reads from disk).",            parameters: { type:"object", properties:{ projectId:{type:"string"}, filePath:{type:"string"}, title:{type:"string"}, tagIds:{type:"array"} }, required:["projectId","filePath"] } } },
       { function: { name: "move_note",           description: "Move a note to a different project.",                              parameters: { type:"object", properties:{ noteId:{type:"string"}, targetProjectId:{type:"string"} }, required:["noteId","targetProjectId"] } } },
     ];
-    const deletedSet = new Set(deletedToolDefs.map((d) => d.function.name));
+    const _deletedSet = new Set(deletedToolDefs.map((d) => d.function.name));
 
     // Chat before: all TOOL_SCHEMAS tools + deleted tools (no filtering)
     const beforeChatDefs: ToolDef[] = [
