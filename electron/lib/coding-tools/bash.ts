@@ -2,14 +2,49 @@
  * bash tool — execute shell commands with streaming output + abort.
  *
  * Ported from pi packages/coding-agent/src/core/tools/bash.ts
- * Keeps: output truncation, abort signal, timeout, streaming onUpdate.
- * Removed: TUI rendering, TypeBox schemas, pluggable Operations.
+ * Keeps: output truncation, abort signal, timeout, streaming onUpdate,
+ *        process-group kill (sends SIGKILL to the entire process tree so
+ *        child processes spawned by the command are also terminated),
+ *        detached-PID tracking (so in-flight children are killed on app exit).
  */
 
 import { spawn } from "child_process";
 
 const MAX_OUTPUT_BYTES = 50_000;
 const DEFAULT_TIMEOUT_MS = 120_000; // 2 minutes
+
+// ── Detached child PID tracking ───────────────────────────────────────────────
+// Tracks PIDs of spawned children so they can be killed on app shutdown.
+
+const trackedPids = new Set<number>();
+
+function trackPid(pid: number): void { trackedPids.add(pid); }
+function untrackPid(pid: number): void { trackedPids.delete(pid); }
+
+/** Kill a process and all its children cross-platform. */
+function killProcessTree(pid: number): void {
+  if (process.platform === "win32") {
+    try {
+      spawn("taskkill", ["/F", "/T", "/PID", String(pid)], { stdio: "ignore", detached: true });
+    } catch { /* ignore */ }
+  } else {
+    // Negative PID kills the entire process group
+    try {
+      process.kill(-pid, "SIGKILL");
+    } catch {
+      // Fallback: kill just the direct child if process-group kill fails
+      try { process.kill(pid, "SIGKILL"); } catch { /* already dead */ }
+    }
+  }
+}
+
+/** Called during Electron app shutdown to clean up any lingering children. */
+export function killTrackedBashProcesses(): void {
+  for (const pid of trackedPids) killProcessTree(pid);
+  trackedPids.clear();
+}
+
+// ── Tool implementation ───────────────────────────────────────────────────────
 
 export interface BashArgs {
   command: string;
@@ -40,9 +75,14 @@ export async function bashTool(
 
     const child = spawn("bash", ["-c", args.command], {
       cwd,
+      // detached: true creates a new process group so process.kill(-pid) reaches
+      // all children spawned by the command, not just the direct bash process.
+      detached: process.platform !== "win32",
       env: { ...process.env, TERM: "xterm-256color" },
       stdio: ["ignore", "pipe", "pipe"],
     });
+
+    if (child.pid) trackPid(child.pid);
 
     const onData = (chunk: Buffer) => {
       const text = chunk.toString("utf8");
@@ -65,21 +105,26 @@ export async function bashTool(
     child.stdout.on("data", onData);
     child.stderr.on("data", onData);
 
+    const doKill = () => {
+      if (child.pid) killProcessTree(child.pid);
+    };
+
     const timer = setTimeout(() => {
-      child.kill("SIGKILL");
+      doKill();
       reject(new Error(`Command timed out after ${args.timeout ?? DEFAULT_TIMEOUT_MS / 1000} seconds\n\n${output}`));
     }, timeoutMs);
 
     const abortHandler = () => {
       clearTimeout(timer);
-      child.kill("SIGKILL");
+      doKill();
       reject(new Error(`Command aborted\n\n${output}`));
     };
-    signal?.addEventListener("abort", abortHandler);
+    signal?.addEventListener("abort", abortHandler, { once: true });
 
     child.on("close", (code) => {
       clearTimeout(timer);
       signal?.removeEventListener("abort", abortHandler);
+      if (child.pid) untrackPid(child.pid);
       if (signal?.aborted) return; // already rejected above
       if (code !== 0 && code !== null) {
         reject(new Error(`Command exited with code ${code}\n\n${output}`));
@@ -91,6 +136,7 @@ export async function bashTool(
     child.on("error", (err) => {
       clearTimeout(timer);
       signal?.removeEventListener("abort", abortHandler);
+      if (child.pid) untrackPid(child.pid);
       reject(new Error(`Failed to execute command: ${err.message}`));
     });
   });

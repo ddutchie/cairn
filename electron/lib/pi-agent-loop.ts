@@ -318,7 +318,7 @@ async function executeSingleTool(
   toolCtx: AgentToolContext,
   llmConfig: AgentLLMConfig,
 ): Promise<string> {
-  const { cwd, db, req, workspacePath, sessionId, send, getWin } = toolCtx;
+  const { cwd, db, req, workspacePath, sessionId, send, getWin: _getWin } = toolCtx;
 
   switch (name) {
     case "read":  return readTool(args as Parameters<typeof readTool>[0],  cwd);

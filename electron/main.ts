@@ -27,6 +27,7 @@ import { syncNotesFromDisk } from "./notes-files";
 import { markMcpNotificationsRead } from "./db/queries";
 import { setupProtocol, registerAssetProtocol, setAssetWorkspacePath } from "./lib/protocol";
 import { createTray } from "./lib/tray";
+import { killTrackedBashProcesses } from "./lib/coding-tools/bash";
 import { startMcpNotificationPoller } from "./lib/mcp-poller";
 
 const isDev = !app.isPackaged;
@@ -267,6 +268,11 @@ app.whenReady().then(async () => {
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+});
+
+app.on("before-quit", () => {
+  // Kill any bash child processes that are still running so they don't linger
+  killTrackedBashProcesses();
 });
 
 app.on("window-all-closed", () => {
