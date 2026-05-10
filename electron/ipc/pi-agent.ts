@@ -28,6 +28,9 @@ import { ts } from "../db/utils";
 
 const sessions = new Map<string, PiAgentSession>();
 
+// ── Note-writing tool names ────────────────────────────────────────────────────
+const NOTE_WRITE_TOOLS = new Set(["ensure_note", "update_note", "patch_note", "append_to_note"]);
+
 // ── Request shape ──────────────────────────────────────────────────────────────
 
 interface PiAgentPromptRequest {
@@ -149,7 +152,20 @@ export function registerPiAgentHandler(
         onToolsReady:    ()     => send("pi-agent:tools-ready", { sessionId }),
         onToolPending:   (name, callId) => send("pi-agent:tool", { sessionId, name, label: name, callId, status: "pending" }),
         onToolStart:     (name, label, callId) => send("pi-agent:tool", { sessionId, name, label, callId, status: "start" }),
-        onToolEnd:       (name, label, ok, output, callId) => send("pi-agent:tool", { sessionId, name, label, callId, status: "end", ok, output }),
+        onToolEnd:       (name, label, ok, output, callId) => {
+          send("pi-agent:tool", { sessionId, name, label, callId, status: "end", ok, output });
+          // After any note-write tool, notify the renderer with the fresh note content
+          // so the plan task list can update live.
+          if (ok && NOTE_WRITE_TOOLS.has(name)) {
+            try {
+              const parsed = JSON.parse(output) as { id?: string };
+              if (parsed?.id) {
+                const row = ctx.db.prepare("SELECT content FROM notes WHERE id = ?").get(parsed.id) as { content: string } | undefined;
+                if (row) send("pi-agent:note-updated", { sessionId, noteId: parsed.id, content: row.content ?? "" });
+              }
+            } catch { /* non-JSON output — ignore */ }
+          }
+        },
         onStepStart:     () => send("pi-agent:step",  { sessionId }),
         onUsage:         (promptTokens, completionTokens) => send("pi-agent:usage", { sessionId, promptTokens, completionTokens }),
         onDone: () => {
@@ -259,7 +275,20 @@ export function registerPiAgentHandler(
         onToolsReady:  ()     => send("pi-agent:tools-ready", { sessionId }),
         onToolPending:   (name, callId) => send("pi-agent:tool", { sessionId, name, label: name, callId, status: "pending" }),
         onToolStart:     (name, label, callId) => send("pi-agent:tool", { sessionId, name, label, callId, status: "start" }),
-        onToolEnd:       (name, label, ok, output, callId) => send("pi-agent:tool", { sessionId, name, label, callId, status: "end", ok, output }),
+        onToolEnd:       (name, label, ok, output, callId) => {
+          send("pi-agent:tool", { sessionId, name, label, callId, status: "end", ok, output });
+          // After any note-write tool, notify the renderer with the fresh note content
+          // so the plan task list can update live.
+          if (ok && NOTE_WRITE_TOOLS.has(name)) {
+            try {
+              const parsed = JSON.parse(output) as { id?: string };
+              if (parsed?.id) {
+                const row = ctx.db.prepare("SELECT content FROM notes WHERE id = ?").get(parsed.id) as { content: string } | undefined;
+                if (row) send("pi-agent:note-updated", { sessionId, noteId: parsed.id, content: row.content ?? "" });
+              }
+            } catch { /* non-JSON output — ignore */ }
+          }
+        },
         onStepStart:     () => send("pi-agent:step",  { sessionId }),
         onUsage:         (promptTokens, completionTokens) => send("pi-agent:usage", { sessionId, promptTokens, completionTokens }),
         onDone: () => {

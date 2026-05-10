@@ -343,6 +343,7 @@ export function PiMessageBubble({ message }: PiMessageBubbleProps) {
           <div className={cn(
             "px-3 py-2 rounded-xl rounded-tl-sm text-xs leading-relaxed",
             "bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-secondary)]",
+            "min-w-0 overflow-hidden",
           )}>
             <MarkdownContent content={message.content} />
             {message.isStreaming && (

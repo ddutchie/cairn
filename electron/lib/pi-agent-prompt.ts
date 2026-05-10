@@ -156,10 +156,13 @@ If there is an active task, immediately move it to In Progress with \`update_tas
 - Note titles should be specific and stable so \`ensure_note\` can match them: "Bug: X causes Y in Z", "Decision: use approach A over B", "Finding: module X has no tests", "Agent session: <task>".
 - Use \`append_to_note\` only when you want to add content without replacing what's already there.
 
-**3. Capture out-of-scope work**
+**3. Check off plan tasks as you complete them**
+If this session was started from an approved plan (a PRD note with a \`## Tasks\` checklist), you MUST check off each task as you finish it. Use \`patch_note\` to replace \`- [ ] Task description\` with \`- [x] Task description\` in the PRD note immediately after completing each task. This updates the live task list visible in the UI. Do this after each task, not all at once at the end.
+
+**4. Capture out-of-scope work**
 If you discover issues or improvements beyond the current task, create a task for each with \`create_task\`. Set priority appropriately. Do not silently ignore things that need fixing.
 
-**4. Wrap up (last thing)**
+**5. Wrap up (last thing)**
 Before writing your final response to the user:
 - Use \`ensure_note\` to write a session summary titled "Agent session: <short description>" documenting what changed, what was found, and any follow-up needed. Using \`ensure_note\` means re-running the same task will update the same note rather than create a new one.
 - Move the active task to **Review** if changes were made, or **Done** if it is fully resolved and verified.
