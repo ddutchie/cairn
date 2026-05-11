@@ -21,6 +21,7 @@ import { ipcMain } from "electron";
 import { runAgentLoop, type PiAgentSession, type AgentLLMConfig, type AgentToolContext } from "../lib/pi-agent-loop";
 import { buildCompactionTransformer, compactNow } from "../lib/compaction";
 import { buildPiAgentSystemPrompt } from "../lib/pi-agent-prompt";
+import { discoverSkills, renderSkillsXml } from "../lib/skills";
 import { normaliseBaseUrl } from "../lib/llm";
 import type { DbContext } from "./handlers";
 import * as q from "../db/queries";
@@ -198,10 +199,11 @@ export function registerPiAgentHandler(
       ? (ctx.db.prepare("SELECT name FROM projects WHERE id = ?").get(projectId) as { name: string } | undefined)?.name ?? "Project"
       : "Project";
 
-    const systemPrompt = buildPiAgentSystemPrompt({ projectName, cwd, taskTitle, workspaceId, projectId, mode });
+    const skills = discoverSkills(cwd);
+    const systemPrompt = buildPiAgentSystemPrompt({ projectName, cwd, taskTitle, workspaceId, projectId, mode, skillsXml: renderSkillsXml(skills) });
 
     const toolCtx: AgentToolContext = {
-      cwd, db: ctx.db, workspacePath: ctx.workspacePath, sessionId, send, getWin,
+      cwd, db: ctx.db, workspacePath: ctx.workspacePath, sessionId, send, getWin, skills,
       req: { message: prompt, threadId: sessionId, projectId, workspaceId,
              config: { baseUrl: llmConfig.baseUrl, model: llmConfig.model, apiKey: llmConfig.apiKey } },
     };
@@ -248,10 +250,11 @@ export function registerPiAgentHandler(
       ? (ctx.db.prepare("SELECT name FROM projects WHERE id = ?").get(projectId) as { name: string } | undefined)?.name ?? "Project"
       : "Project";
 
-    const systemPrompt = buildPiAgentSystemPrompt({ projectName, cwd, taskTitle, workspaceId, projectId, mode: "execute", planContent });
+    const skills = discoverSkills(cwd);
+    const systemPrompt = buildPiAgentSystemPrompt({ projectName, cwd, taskTitle, workspaceId, projectId, mode: "execute", planContent, skillsXml: renderSkillsXml(skills) });
 
     const toolCtx: AgentToolContext = {
-      cwd, db: ctx.db, workspacePath: ctx.workspacePath, sessionId, send, getWin,
+      cwd, db: ctx.db, workspacePath: ctx.workspacePath, sessionId, send, getWin, skills,
       req: { message: "", threadId: sessionId, projectId, workspaceId,
              config: { baseUrl: llmConfig.baseUrl, model: llmConfig.model, apiKey: llmConfig.apiKey } },
     };
@@ -317,6 +320,30 @@ export function registerPiAgentHandler(
     if (session) {
       session.abortCtrl.abort();
       sessions.delete(sessionId);
+    }
+  });
+
+  // ── pi-agent:preview-prompt ───────────────────────────────────────────────────────
+  // Used by Settings → Agent Settings to show the full assembled system prompt
+  // and list discovered skills for the given cwd.
+  ipcMain.handle("pi-agent:preview-prompt", (_event, req: {
+    cwd: string;
+    projectId?: string;
+    mode?: "plan" | "execute";
+  }) => {
+    try {
+      const { cwd, projectId, mode = "execute" } = req;
+      const projectName = projectId
+        ? (ctx.db.prepare("SELECT name FROM projects WHERE id = ?").get(projectId) as { name: string } | undefined)?.name ?? "Project"
+        : "Project";
+      const skills = discoverSkills(cwd);
+      const systemPrompt = buildPiAgentSystemPrompt({
+        projectName, cwd, mode,
+        skillsXml: renderSkillsXml(skills),
+      });
+      return { data: { systemPrompt, skills } };
+    } catch (e) {
+      return { error: (e as Error).message };
     }
   });
 

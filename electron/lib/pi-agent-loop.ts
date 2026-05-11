@@ -26,9 +26,11 @@ import {
   findTool,  findToolDefinition,
   lsTool,    lsToolDefinition,
   spawnSubagentDefinition, spawnSubagentTool,
+  skillTool, makeSkillToolDefinition,
 } from "./coding-tools/index";
 import { executeTool } from "../ipc/chat-executor";
 import type { ChatRequest, ToolArgs } from "./tools";
+import type { SkillMeta } from "./skills";
 
 // ── LLM config ───────────────────────────────────────────────────────────────
 
@@ -89,6 +91,11 @@ export interface AgentToolContext {
   send: (channel: string, payload: unknown) => void;
   /** Returns the current BrowserWindow (may be null if destroyed). */
   getWin?: () => BrowserWindow | null;
+  /**
+   * Discovered skills for this session. Passed to the `skill` tool so it can
+   * load the full body of a SKILL.md on demand. Defaults to empty array.
+   */
+  skills?: SkillMeta[];
 }
 
 // ── Tool label helper ─────────────────────────────────────────────────────────
@@ -216,15 +223,19 @@ const PLAN_MODE_ALLOWED = new Set([
   "ensure_note",
   // Renderer-side: renders inline question form
   "ask_questions",
+  // Skills — allowed in both modes so agents can load workflow instructions
+  "skill",
 ]);
 
 // ── Fetch all tool definitions (coding + Cairn subset) ────────────────────────
 
 import { TOOLS as ALL_CAIRN_TOOLS } from "./tools";
 
-function getAllToolDefs(mode: "plan" | "execute" = "execute") {
+function getAllToolDefs(mode: "plan" | "execute" = "execute", skills: SkillMeta[] = []) {
   const cairnSubset = ALL_CAIRN_TOOLS.filter((t) => CAIRN_TOOL_NAMES.has(t.function.name));
-  const all = [...CODING_TOOL_DEFS, ...cairnSubset];
+  // Only include the skill tool when at least one skill is available
+  const skillDef = skills.length > 0 ? [makeSkillToolDefinition(skills)] : [];
+  const all = [...CODING_TOOL_DEFS, ...skillDef, ...cairnSubset];
   if (mode === "plan") {
     return all.filter((t) => PLAN_MODE_ALLOWED.has(t.function.name));
   }
@@ -344,6 +355,10 @@ async function executeSingleTool(
     case "grep":  return grepTool(args as Parameters<typeof grepTool>[0], cwd);
     case "find":  return findTool(args as Parameters<typeof findTool>[0], cwd);
     case "ls":    return lsTool(args as Parameters<typeof lsTool>[0],    cwd);
+    case "skill": return skillTool(
+      args as Parameters<typeof skillTool>[0],
+      toolCtx.skills ?? [],
+    );
     case "spawn_subagent": return spawnSubagentTool(
       args as Parameters<typeof spawnSubagentTool>[0],
       toolCtx,
@@ -392,7 +407,7 @@ export async function runAgentLoop(
   mode: "plan" | "execute" = "execute",
 ): Promise<void> {
   const { signal } = session.abortCtrl;
-  const allTools = getAllToolDefs(mode);
+  const allTools = getAllToolDefs(mode, toolCtx.skills ?? []);
 
   const {
     baseUrl, model, apiKey, maxSteps, temperature: configTemp,
