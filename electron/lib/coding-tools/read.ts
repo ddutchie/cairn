@@ -7,8 +7,9 @@
 
 import fs from "fs";
 import path from "path";
+import { truncateOutput, DEFAULT_MAX_LINES } from "../truncation";
 
-const MAX_LINES = 2000;
+const MAX_LINES = DEFAULT_MAX_LINES;
 const MAX_BYTES = 200_000;
 
 export interface ReadArgs {
@@ -40,27 +41,26 @@ export async function readTool(args: ReadArgs, cwd: string): Promise<string> {
   const end   = Math.min(start + limit, total);
   const slice = lines.slice(start, end);
 
-  let result = slice.map((line, i) => `${start + i + 1}: ${line}`).join("\n");
+  const numbered = slice.map((line, i) => `${start + i + 1}: ${line}`).join("\n");
 
-  // Byte cap
-  if (Buffer.byteLength(result, "utf8") > MAX_BYTES) {
-    const truncated: string[] = [];
-    let bytes = 0;
-    for (const line of slice) {
-      const lineBytes = Buffer.byteLength(line + "\n", "utf8");
-      if (bytes + lineBytes > MAX_BYTES) break;
-      truncated.push(line);
-      bytes += lineBytes;
-    }
-    result = truncated.map((line, i) => `${start + i + 1}: ${line}`).join("\n");
-    result += `\n\n[Output truncated. Use offset=${start + truncated.length + 1} to continue.]`;
+  // Apply byte cap via truncateOutput.
+  const truncResult = truncateOutput(numbered, { maxBytes: MAX_BYTES });
+
+  if (truncResult.truncated) {
+    // Build a precise pagination hint using the actual lines shown.
+    const linesShown = truncResult.shownLines ?? slice.length;
+    return truncResult.text.replace(
+      /\n\n\[Truncated:.*\]$/,
+      `\n\n[Output truncated. Use offset=${start + linesShown + 1} to continue.]`,
+    );
   }
 
+  // If there are more lines beyond the current window, append a pagination hint.
   if (end < total) {
-    result += `\n\n[Showing lines ${offset}–${end} of ${total}. Use offset=${end + 1} to continue.]`;
+    return truncResult.text + `\n\n[Showing lines ${offset}–${end} of ${total}. Use offset=${end + 1} to continue.]`;
   }
 
-  return result;
+  return truncResult.text;
 }
 
 export const readToolDefinition = {

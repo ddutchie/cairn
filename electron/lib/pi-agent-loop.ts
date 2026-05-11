@@ -26,9 +26,11 @@ import {
   findTool,  findToolDefinition,
   lsTool,    lsToolDefinition,
   spawnSubagentDefinition, spawnSubagentTool,
+  skillTool, makeSkillToolDefinition,
 } from "./coding-tools/index";
 import { executeTool } from "../ipc/chat-executor";
 import type { ChatRequest, ToolArgs } from "./tools";
+import type { SkillMeta } from "./skills";
 
 // ── LLM config ───────────────────────────────────────────────────────────────
 
@@ -89,6 +91,11 @@ export interface AgentToolContext {
   send: (channel: string, payload: unknown) => void;
   /** Returns the current BrowserWindow (may be null if destroyed). */
   getWin?: () => BrowserWindow | null;
+  /**
+   * Discovered skills for this session. Passed to the `skill` tool so it can
+   * load the full body of a SKILL.md on demand. Defaults to empty array.
+   */
+  skills?: SkillMeta[];
 }
 
 // ── Tool label helper ─────────────────────────────────────────────────────────
@@ -132,6 +139,12 @@ export interface AgentLoopCallbacks {
    * Use for context pruning, injection, or summarisation.
    */
   transformContext?: (messages: AgentMessage[]) => AgentMessage[];
+  /**
+   * Called after each turn's tool results are appended, before the next LLM
+   * call. Return true to stop the loop cleanly (fires onDone, not onError).
+   * Useful for semantic stop conditions e.g. "task card reached Done column".
+   */
+  shouldStop?: (messages: AgentMessage[]) => boolean | Promise<boolean>;
 }
 
 // ── Session state ─────────────────────────────────────────────────────────────
@@ -141,6 +154,12 @@ export interface PiAgentSession {
   abortCtrl: AbortController;
   /** Most recent prompt_tokens count from the last onUsage callback. Updated each turn. */
   lastPromptTokens?: number;
+  /**
+   * Compaction transformer for this session. Stored here so the cachedSummary
+   * inside it survives across multiple pi-agent:prompt calls on the same session.
+   * Built once on first use and reused; the signal is updated via abortCtrl each turn.
+   */
+  compactionTransformer?: (messages: AgentMessage[]) => AgentMessage[];
 }
 
 // ── All tool definitions ──────────────────────────────────────────────────────
@@ -204,15 +223,19 @@ const PLAN_MODE_ALLOWED = new Set([
   "ensure_note",
   // Renderer-side: renders inline question form
   "ask_questions",
+  // Skills — allowed in both modes so agents can load workflow instructions
+  "skill",
 ]);
 
 // ── Fetch all tool definitions (coding + Cairn subset) ────────────────────────
 
 import { TOOLS as ALL_CAIRN_TOOLS } from "./tools";
 
-function getAllToolDefs(mode: "plan" | "execute" = "execute") {
+function getAllToolDefs(mode: "plan" | "execute" = "execute", skills: SkillMeta[] = []) {
   const cairnSubset = ALL_CAIRN_TOOLS.filter((t) => CAIRN_TOOL_NAMES.has(t.function.name));
-  const all = [...CODING_TOOL_DEFS, ...cairnSubset];
+  // Only include the skill tool when at least one skill is available
+  const skillDef = skills.length > 0 ? [makeSkillToolDefinition(skills)] : [];
+  const all = [...CODING_TOOL_DEFS, ...skillDef, ...cairnSubset];
   if (mode === "plan") {
     return all.filter((t) => PLAN_MODE_ALLOWED.has(t.function.name));
   }
@@ -332,6 +355,10 @@ async function executeSingleTool(
     case "grep":  return grepTool(args as Parameters<typeof grepTool>[0], cwd);
     case "find":  return findTool(args as Parameters<typeof findTool>[0], cwd);
     case "ls":    return lsTool(args as Parameters<typeof lsTool>[0],    cwd);
+    case "skill": return skillTool(
+      args as Parameters<typeof skillTool>[0],
+      toolCtx.skills ?? [],
+    );
     case "spawn_subagent": return spawnSubagentTool(
       args as Parameters<typeof spawnSubagentTool>[0],
       toolCtx,
@@ -360,6 +387,16 @@ async function executeSingleTool(
 }
 
 // ── Main loop ─────────────────────────────────────────────────────────────────
+//
+// INVARIANT: within the Electron main process, always call runAgentLoop via
+// runSession() in electron/ipc/pi-agent.ts — never directly. runSession()
+// ensures the compaction transformer is built once per session and the correct
+// IPC callbacks are wired. Direct callers bypass compaction and the note-update
+// side effect in onToolEnd.
+//
+// The function is exported so pi-agent-loop.test.ts can call it directly with
+// a mock toolCtx (no real Electron window). This is the only intended direct
+// call site outside of runSession().
 
 export async function runAgentLoop(
   session: PiAgentSession,
@@ -370,7 +407,7 @@ export async function runAgentLoop(
   mode: "plan" | "execute" = "execute",
 ): Promise<void> {
   const { signal } = session.abortCtrl;
-  const allTools = getAllToolDefs(mode);
+  const allTools = getAllToolDefs(mode, toolCtx.skills ?? []);
 
   const {
     baseUrl, model, apiKey, maxSteps, temperature: configTemp,
@@ -596,7 +633,11 @@ export async function runAgentLoop(
       const pendingCallId = streamCallIds.get(tcIdx);
       callbacks.onToolStart(tc.function.name, label, pendingCallId);
 
-      // Yield so the renderer processes the onToolStart IPC before execution begins
+      // Yield to the event loop so the IPC layer dispatches the onToolStart event
+      // to the renderer before execution begins — this makes the chip appear in
+      // "running" state immediately rather than jumping straight to "done".
+      // A two-way IPC handshake (renderer acks → loop continues) would be more
+      // robust but isn't worth the added complexity here.
       await new Promise<void>((r) => setImmediate(r));
 
       let resultContent: string;
@@ -638,6 +679,12 @@ export async function runAgentLoop(
         tool_call_id: tc.id,
         content: resultContent,
       });
+    }
+
+    // Check semantic stop condition before starting the next LLM call.
+    if (callbacks.shouldStop && await callbacks.shouldStop(session.messages)) {
+      callbacks.onDone();
+      return;
     }
     // Loop continues → next LLM call with tool results appended
   }

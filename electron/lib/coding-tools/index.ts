@@ -14,6 +14,7 @@ export { grepTool,  grepToolDefinition  } from "./grep";
 export { findTool,  findToolDefinition  } from "./find";
 export { lsTool,    lsToolDefinition    } from "./ls";
 export { spawnSubagentDefinition, spawnSubagentTool } from "./subagent";
+export { skillTool, makeSkillToolDefinition } from "./skill";
 
 export type { ReadArgs  } from "./read";
 export type { WriteArgs } from "./write";
@@ -23,6 +24,7 @@ export type { GrepArgs  } from "./grep";
 export type { FindArgs  } from "./find";
 export type { LsArgs    } from "./ls";
 export type { SpawnSubagentArgs } from "./subagent";
+export type { SkillArgs } from "./skill";
 
 import { readToolDefinition  } from "./read";
 import { writeToolDefinition } from "./write";

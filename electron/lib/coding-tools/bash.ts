@@ -9,8 +9,16 @@
  */
 
 import { spawn } from "child_process";
+import { DEFAULT_MAX_BYTES } from "../truncation";
 
-const MAX_OUTPUT_BYTES = 50_000;
+// Local byte formatter for streaming truncation hints
+function fmt(bytes: number): string {
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+}
+
+const MAX_OUTPUT_BYTES = DEFAULT_MAX_BYTES;
 const DEFAULT_TIMEOUT_MS = 120_000; // 2 minutes
 
 // ── Detached child PID tracking ───────────────────────────────────────────────
@@ -90,12 +98,12 @@ export async function bashTool(
         const available = MAX_OUTPUT_BYTES - Buffer.byteLength(output, "utf8");
         if (available <= 0) {
           truncated = true;
-          output += "\n[Output truncated — exceeded 50 KB limit]";
+          output += `\n\n[Truncated: showed ${fmt(MAX_OUTPUT_BYTES)} of ${fmt(Buffer.byteLength(output, "utf8"))}. Use offset/limit to page.]`;
         } else {
           output += text.slice(0, available);
           if (Buffer.byteLength(text, "utf8") > available) {
             truncated = true;
-            output += "\n[Output truncated — exceeded 50 KB limit]";
+            output += `\n\n[Truncated: showed ${fmt(MAX_OUTPUT_BYTES)} of more. Use offset/limit to page.]`;
           }
         }
       }
@@ -148,7 +156,7 @@ export const bashToolDefinition = {
     name: "bash",
     description:
       "Execute a bash command in the project's root directory. " +
-      "Output is streamed and capped at 50 KB. " +
+      `Output is streamed and capped at ${MAX_OUTPUT_BYTES / 1000}KB. ` +
       "Use for running tests, builds, grep, git commands, etc. " +
       "Avoid interactive commands or long-running processes.",
     parameters: {

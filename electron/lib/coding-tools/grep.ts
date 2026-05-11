@@ -6,6 +6,7 @@
 
 import fs from "fs";
 import path from "path";
+import { truncateOutput } from "../truncation";
 
 const MAX_RESULTS = 100;
 
@@ -101,9 +102,13 @@ export async function grepTool(args: GrepArgs, cwd: string): Promise<string> {
     return `${rel}:${r.line}: ${r.content}`;
   });
 
-  const output = lines.join("\n");
-  const suffix = results.length >= MAX_RESULTS ? `\n\n[Showing first ${MAX_RESULTS} matches]` : "";
-  return output + suffix;
+  const raw = lines.join("\n");
+  const { text } = truncateOutput(raw, {
+    hint: results.length >= MAX_RESULTS
+      ? `[Showing first ${MAX_RESULTS} matches — use a more specific pattern to narrow results.]`
+      : undefined,
+  });
+  return text;
 }
 
 export const grepToolDefinition = {

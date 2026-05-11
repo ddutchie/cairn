@@ -162,7 +162,6 @@ async function generateSummary(
 export function buildCompactionTransformer(
   session: PiAgentSession,
   llmConfig: AgentLLMConfig,
-  signal: AbortSignal,
   onCompactionStart?: () => void,
   onCompactionEnd?: (summary: string) => void,
 ): (messages: AgentMessage[]) => AgentMessage[] {
@@ -173,6 +172,9 @@ export function buildCompactionTransformer(
 
   return (messages: AgentMessage[]): AgentMessage[] => {
     const lastPromptTokens = session.lastPromptTokens ?? 0;
+    // Always read the live signal from the session so a refreshed AbortController
+    // (created on each new prompt) is used rather than the one captured at build time.
+    const signal = session.abortCtrl.signal;
 
     // Below threshold — pass through unchanged
     if (lastPromptTokens === 0 || lastPromptTokens < contextWindow * COMPACT_THRESHOLD) {
@@ -271,6 +273,28 @@ function slidingWindowFallback(messages: AgentMessage[]): AgentMessage[] {
   pruned.push(...extraToolResults);
   pruned.push(...tail);
   return pruned;
+}
+
+/**
+ * Immediately summarise the full session history and return a compacted
+ * context array. Unlike buildCompactionTransformer (which is fire-and-forget),
+ * this awaits the LLM call and resolves with the final messages.
+ *
+ * Used by the /compact slash command to compact on demand.
+ * Returns null if the session has too few messages to be worth compacting.
+ */
+export async function compactNow(
+  session: PiAgentSession,
+  llmConfig: AgentLLMConfig,
+): Promise<{ messages: AgentMessage[]; summary: string } | null> {
+  if (session.messages.length < 4) return null; // nothing meaningful to summarise
+
+  const { toSummarise, toKeep } = splitMessages(session.messages);
+  if (toSummarise.length === 0) return null;
+
+  const summary = await generateSummary(toSummarise, llmConfig, session.abortCtrl.signal);
+  const messages = buildCompactedContext(summary, session.messages[0], toKeep);
+  return { messages, summary };
 }
 
 // Re-export threshold for use in pi-agent-loop default pruner

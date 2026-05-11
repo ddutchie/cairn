@@ -6,6 +6,7 @@
 
 import fs from "fs";
 import path from "path";
+import { truncateOutput } from "../truncation";
 
 const MAX_RESULTS = 50;
 const SKIP_DIRS = new Set(["node_modules", ".git", "dist", ".next", "out", "build", ".turbo"]);
@@ -65,9 +66,13 @@ export async function findTool(args: FindArgs, cwd: string): Promise<string> {
 
   if (results.length === 0) return `No files matching "${args.pattern}" found.`;
 
-  const output = results.join("\n");
-  const suffix = results.length >= MAX_RESULTS ? `\n\n[Showing first ${MAX_RESULTS} results]` : "";
-  return output + suffix;
+  const raw = results.join("\n");
+  const { text } = truncateOutput(raw, {
+    hint: results.length >= MAX_RESULTS
+      ? `[Showing first ${MAX_RESULTS} results — narrow the search path or pattern to see more.]`
+      : undefined,
+  });
+  return text;
 }
 
 export const findToolDefinition = {

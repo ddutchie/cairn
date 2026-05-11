@@ -19,10 +19,10 @@
 
 import { ipcMain } from "electron";
 import { runAgentLoop, type PiAgentSession, type AgentLLMConfig, type AgentToolContext } from "../lib/pi-agent-loop";
-import { buildCompactionTransformer } from "../lib/compaction";
+import { buildCompactionTransformer, compactNow } from "../lib/compaction";
 import { buildPiAgentSystemPrompt } from "../lib/pi-agent-prompt";
+import { discoverSkills, renderSkillsXml } from "../lib/skills";
 import { normaliseBaseUrl } from "../lib/llm";
-import type { ChatRequest } from "../lib/tools";
 import type { DbContext } from "./handlers";
 import * as q from "../db/queries";
 import { ts } from "../db/utils";
@@ -69,6 +69,89 @@ interface PiAgentApprovePlanRequest {
   };
 }
 
+// ── Shared session runner ──────────────────────────────────────────────────────
+
+/**
+ * Wires the compaction transformer, builds all IPC-forwarding callbacks, and
+ * calls runAgentLoop. Extracted to eliminate duplication between the
+ * pi-agent:prompt and pi-agent:approve-plan handlers — both handlers resolve
+ * their differences (system prompt, initial message) before calling this.
+ */
+async function runSession(
+  session: PiAgentSession,
+  systemPrompt: string,
+  llmConfig: AgentLLMConfig,
+  mode: "plan" | "execute",
+  toolCtx: AgentToolContext,
+  ctx: DbContext,
+  send: (channel: string, payload: unknown) => void,
+): Promise<void> {
+  const { sessionId } = toolCtx;
+
+  // Reuse existing transformer to preserve cachedSummary across prompts.
+  // Signal is read live from session.abortCtrl inside the transformer.
+  session.compactionTransformer ??= buildCompactionTransformer(
+    session,
+    llmConfig,
+    () => send("pi-agent:compact", { sessionId, status: "start" }),
+    () => send("pi-agent:compact", { sessionId, status: "end" }),
+  );
+
+  await runAgentLoop(
+    session,
+    systemPrompt,
+    llmConfig,
+    {
+      onToken:        (delta) => send("pi-agent:token",      { sessionId, delta }),
+      onToolsReady:   ()      => send("pi-agent:tools-ready", { sessionId }),
+      onToolPending:  (name, callId) => send("pi-agent:tool", { sessionId, name, label: name, callId, status: "pending" }),
+      onToolStart:    (name, label, callId) => send("pi-agent:tool", { sessionId, name, label, callId, status: "start" }),
+      onToolEnd:      (name, label, ok, output, callId) => {
+        send("pi-agent:tool", { sessionId, name, label, callId, status: "end", ok, output });
+        // After any note-write tool, push fresh note content to the renderer
+        // so the plan task list can update live without a full re-hydration.
+        if (ok && NOTE_WRITE_TOOLS.has(name)) {
+          try {
+            const parsed = JSON.parse(output) as { id?: string };
+            if (parsed?.id) {
+              const row = ctx.db.prepare("SELECT content FROM notes WHERE id = ?").get(parsed.id) as { content: string } | undefined;
+              if (row) send("pi-agent:note-updated", { sessionId, noteId: parsed.id, content: row.content ?? "" });
+            }
+          } catch { /* non-JSON output — ignore */ }
+        }
+      },
+      onStepStart:    () => send("pi-agent:step",  { sessionId }),
+      onUsage:        (promptTokens, completionTokens) => send("pi-agent:usage", { sessionId, promptTokens, completionTokens }),
+      onRetry:        (attempt, maxRetries, delayMs, error) => send("pi-agent:retry", { sessionId, attempt, maxRetries, delayMs, error }),
+      transformContext: session.compactionTransformer,
+      onDone: () => {
+        try {
+          q.saveLlmHistory(ctx.db, sessionId, session.messages);
+          q.updatePiSession(ctx.db, sessionId, { updatedAt: ts() });
+        } catch (e) {
+          console.warn("[pi-agent] failed to persist session after done:", e);
+        }
+        send("pi-agent:done", { sessionId });
+      },
+      onError: (error) => {
+        try {
+          q.saveLlmHistory(ctx.db, sessionId, session.messages);
+          q.updatePiSession(ctx.db, sessionId, { status: "exited", updatedAt: ts() });
+        } catch (e) {
+          console.warn("[pi-agent] failed to persist session after error:", e);
+        }
+        send("pi-agent:error", { sessionId, error });
+      },
+      onPlanNoteFound: (noteId) => {
+        send("pi-agent:plan-note", { sessionId, noteId });
+        try { q.updatePiSession(ctx.db, sessionId, { planNoteId: noteId, updatedAt: ts() }); } catch { /* non-critical */ }
+      },
+    },
+    toolCtx,
+    mode,
+  );
+}
+
 // ── Registration ───────────────────────────────────────────────────────────────
 
 export function registerPiAgentHandler(
@@ -91,148 +174,7 @@ export function registerPiAgentHandler(
 
     const send = (channel: string, payload: unknown) => {
       const win = getWin();
-      if (win && !win.webContents.isDestroyed()) {
-        win.webContents.send(channel, payload);
-      }
-    };
-
-    // Resolve LLM config — renderer passes config from its aiConfig store
-    const llmConfig: AgentLLMConfig = {
-      baseUrl:     normaliseBaseUrl(req.config?.baseUrl || "https://api.openai.com"),
-      model:       req.config?.model       || "gpt-4o",
-      apiKey:      req.config?.apiKey      || "",
-      maxSteps:    req.config?.maxSteps    ?? 20,
-      temperature: req.config?.temperature ?? 0.3,
-    };
-
-    // Get or create session
-    let session = sessions.get(sessionId);
-    if (!session) {
-      session = {
-        messages: [],
-        abortCtrl: new AbortController(),
-      };
-      sessions.set(sessionId, session);
-    } else {
-      // New prompt in existing session — create fresh abort controller
-      session.abortCtrl = new AbortController();
-    }
-
-    // Append the user message to history
-    session.messages.push({ role: "user", content: prompt });
-
-    // Resolve project name for system prompt
-    const projectName = projectId
-      ? (ctx.db.prepare("SELECT name FROM projects WHERE id = ?").get(projectId) as { name: string } | undefined)?.name ?? "Project"
-      : "Project";
-
-    const systemPrompt = buildPiAgentSystemPrompt({
-      projectName,
-      cwd,
-      taskTitle,
-      workspaceId,
-      projectId,
-      mode,
-    });
-
-    // Build a minimal ChatRequest for Cairn tool execution
-    const chatReq: ChatRequest = {
-      message: prompt,
-      threadId: sessionId,
-      projectId,
-      workspaceId,
-      config: {
-        baseUrl: llmConfig.baseUrl,
-        model: llmConfig.model,
-        apiKey: llmConfig.apiKey,
-      },
-    };
-
-    const toolCtx: AgentToolContext = {
-      cwd,
-      db:            ctx.db,
-      req:           chatReq,
-      workspacePath: ctx.workspacePath,
-      sessionId,
-      send,
-      getWin,
-    };
-
-    const transformContext = buildCompactionTransformer(
-      session,
-      llmConfig,
-      session.abortCtrl.signal,
-      () => send("pi-agent:compact", { sessionId, status: "start" }),
-      () => send("pi-agent:compact", { sessionId, status: "end" }),
-    );
-
-    await runAgentLoop(
-      session,
-      systemPrompt,
-      llmConfig,
-      {
-        onToken:         (delta) => send("pi-agent:token",      { sessionId, delta }),
-        onToolsReady:    ()     => send("pi-agent:tools-ready", { sessionId }),
-        onToolPending:   (name, callId) => send("pi-agent:tool", { sessionId, name, label: name, callId, status: "pending" }),
-        onToolStart:     (name, label, callId) => send("pi-agent:tool", { sessionId, name, label, callId, status: "start" }),
-        onToolEnd:       (name, label, ok, output, callId) => {
-          send("pi-agent:tool", { sessionId, name, label, callId, status: "end", ok, output });
-          // After any note-write tool, notify the renderer with the fresh note content
-          // so the plan task list can update live.
-          if (ok && NOTE_WRITE_TOOLS.has(name)) {
-            try {
-              const parsed = JSON.parse(output) as { id?: string };
-              if (parsed?.id) {
-                const row = ctx.db.prepare("SELECT content FROM notes WHERE id = ?").get(parsed.id) as { content: string } | undefined;
-                if (row) send("pi-agent:note-updated", { sessionId, noteId: parsed.id, content: row.content ?? "" });
-              }
-            } catch { /* non-JSON output — ignore */ }
-          }
-        },
-        onStepStart:     () => send("pi-agent:step",  { sessionId }),
-        onUsage:         (promptTokens, completionTokens) => send("pi-agent:usage", { sessionId, promptTokens, completionTokens }),
-        onRetry:         (attempt, maxRetries, delayMs, error) => send("pi-agent:retry", { sessionId, attempt, maxRetries, delayMs, error }),
-        transformContext,
-        onDone: () => {
-          try {
-            q.saveLlmHistory(ctx.db, sessionId, session.messages);
-            q.updatePiSession(ctx.db, sessionId, { updatedAt: ts() });
-          } catch (e) {
-            console.warn("[pi-agent] failed to persist session after done:", e);
-          }
-          send("pi-agent:done", { sessionId });
-        },
-        onError: (error) => {
-          try {
-            q.saveLlmHistory(ctx.db, sessionId, session.messages);
-            q.updatePiSession(ctx.db, sessionId, { status: "exited", updatedAt: ts() });
-          } catch (e) {
-            console.warn("[pi-agent] failed to persist session after error:", e);
-          }
-          send("pi-agent:error", { sessionId, error });
-        },
-        onPlanNoteFound: (noteId) => {
-          send("pi-agent:plan-note", { sessionId, noteId });
-          try { q.updatePiSession(ctx.db, sessionId, { planNoteId: noteId, updatedAt: ts() }); } catch { /* non-critical */ }
-        },
-      },
-      toolCtx,
-      mode,
-    );
-  });
-
-  // ── pi-agent:approve-plan ─────────────────────────────────────────────────
-  // Renderer fires this when the user clicks "Approve Plan".
-  // Main fetches the PRD note content, switches the session to execute mode,
-  // injects a system message, and kicks off a new execute-mode loop turn.
-  ipcMain.on("pi-agent:approve-plan", async (_event, req: PiAgentApprovePlanRequest) => {
-    const { sessionId, planNoteId, projectId, workspaceId, cwd, taskTitle } = req;
-
-    const send = (channel: string, payload: unknown) => {
-      const win = getWin();
-      if (win && !win.webContents.isDestroyed()) {
-        win.webContents.send(channel, payload);
-      }
+      if (win && !win.webContents.isDestroyed()) win.webContents.send(channel, payload);
     };
 
     const llmConfig: AgentLLMConfig = {
@@ -251,16 +193,54 @@ export function registerPiAgentHandler(
       session.abortCtrl = new AbortController();
     }
 
-    // Fetch the PRD note content from SQLite
-    const noteRow = ctx.db
-      .prepare("SELECT content FROM notes WHERE id = ?")
-      .get(planNoteId) as { content: string } | undefined;
-    const planContent = noteRow?.content ?? "";
+    session.messages.push({ role: "user", content: prompt });
 
-    // Notify renderer the mode has switched
+    const projectName = projectId
+      ? (ctx.db.prepare("SELECT name FROM projects WHERE id = ?").get(projectId) as { name: string } | undefined)?.name ?? "Project"
+      : "Project";
+
+    const skills = discoverSkills(cwd);
+    const systemPrompt = buildPiAgentSystemPrompt({ projectName, cwd, taskTitle, workspaceId, projectId, mode, skillsXml: renderSkillsXml(skills) });
+
+    const toolCtx: AgentToolContext = {
+      cwd, db: ctx.db, workspacePath: ctx.workspacePath, sessionId, send, getWin, skills,
+      req: { message: prompt, threadId: sessionId, projectId, workspaceId,
+             config: { baseUrl: llmConfig.baseUrl, model: llmConfig.model, apiKey: llmConfig.apiKey } },
+    };
+
+    await runSession(session, systemPrompt, llmConfig, mode, toolCtx, ctx, send);
+  });
+
+  // ── pi-agent:approve-plan ─────────────────────────────────────────────────
+  // Renderer fires this when the user clicks "Approve Plan". Fetches the PRD
+  // note, injects the approval message, then continues in execute mode.
+  ipcMain.on("pi-agent:approve-plan", async (_event, req: PiAgentApprovePlanRequest) => {
+    const { sessionId, planNoteId, projectId, workspaceId, cwd, taskTitle } = req;
+
+    const send = (channel: string, payload: unknown) => {
+      const win = getWin();
+      if (win && !win.webContents.isDestroyed()) win.webContents.send(channel, payload);
+    };
+
+    const llmConfig: AgentLLMConfig = {
+      baseUrl:     normaliseBaseUrl(req.config?.baseUrl || "https://api.openai.com"),
+      model:       req.config?.model       || "gpt-4o",
+      apiKey:      req.config?.apiKey      || "",
+      maxSteps:    req.config?.maxSteps    ?? 20,
+      temperature: req.config?.temperature ?? 0.3,
+    };
+
+    let session = sessions.get(sessionId);
+    if (!session) {
+      session = { messages: [], abortCtrl: new AbortController() };
+      sessions.set(sessionId, session);
+    } else {
+      session.abortCtrl = new AbortController();
+    }
+
+    const planContent = (ctx.db.prepare("SELECT content FROM notes WHERE id = ?").get(planNoteId) as { content: string } | undefined)?.content ?? "";
+
     send("pi-agent:mode-change", { sessionId, mode: "execute", planNoteId });
-
-    // Inject the approval message into history
     session.messages.push({
       role: "user",
       content: `The plan has been approved. Begin implementation now, following the approved PRD exactly. The PRD note ID is ${planNoteId} — you can re-read it via get_note if needed.`,
@@ -270,103 +250,66 @@ export function registerPiAgentHandler(
       ? (ctx.db.prepare("SELECT name FROM projects WHERE id = ?").get(projectId) as { name: string } | undefined)?.name ?? "Project"
       : "Project";
 
-    const systemPrompt = buildPiAgentSystemPrompt({
-      projectName,
-      cwd,
-      taskTitle,
-      workspaceId,
-      projectId,
-      mode: "execute",
-      planContent,
-    });
-
-    const chatReq: ChatRequest = {
-      message: "",
-      threadId: sessionId,
-      projectId,
-      workspaceId,
-      config: { baseUrl: llmConfig.baseUrl, model: llmConfig.model, apiKey: llmConfig.apiKey },
-    };
+    const skills = discoverSkills(cwd);
+    const systemPrompt = buildPiAgentSystemPrompt({ projectName, cwd, taskTitle, workspaceId, projectId, mode: "execute", planContent, skillsXml: renderSkillsXml(skills) });
 
     const toolCtx: AgentToolContext = {
-      cwd,
-      db:            ctx.db,
-      req:           chatReq,
-      workspacePath: ctx.workspacePath,
-      sessionId,
-      send,
-      getWin,
+      cwd, db: ctx.db, workspacePath: ctx.workspacePath, sessionId, send, getWin, skills,
+      req: { message: "", threadId: sessionId, projectId, workspaceId,
+             config: { baseUrl: llmConfig.baseUrl, model: llmConfig.model, apiKey: llmConfig.apiKey } },
     };
 
-    const transformContext = buildCompactionTransformer(
-      session,
-      llmConfig,
-      session.abortCtrl.signal,
-      () => send("pi-agent:compact", { sessionId, status: "start" }),
-      () => send("pi-agent:compact", { sessionId, status: "end" }),
-    );
+    await runSession(session, systemPrompt, llmConfig, "execute", toolCtx, ctx, send);
+  });
 
-    await runAgentLoop(
-      session,
-      systemPrompt,
-      llmConfig,
-      {
-        onToken:       (delta) => send("pi-agent:token",      { sessionId, delta }),
-        onToolsReady:  ()     => send("pi-agent:tools-ready", { sessionId }),
-        onToolPending:   (name, callId) => send("pi-agent:tool", { sessionId, name, label: name, callId, status: "pending" }),
-        onToolStart:     (name, label, callId) => send("pi-agent:tool", { sessionId, name, label, callId, status: "start" }),
-        onToolEnd:       (name, label, ok, output, callId) => {
-          send("pi-agent:tool", { sessionId, name, label, callId, status: "end", ok, output });
-          // After any note-write tool, notify the renderer with the fresh note content
-          // so the plan task list can update live.
-          if (ok && NOTE_WRITE_TOOLS.has(name)) {
-            try {
-              const parsed = JSON.parse(output) as { id?: string };
-              if (parsed?.id) {
-                const row = ctx.db.prepare("SELECT content FROM notes WHERE id = ?").get(parsed.id) as { content: string } | undefined;
-                if (row) send("pi-agent:note-updated", { sessionId, noteId: parsed.id, content: row.content ?? "" });
-              }
-            } catch { /* non-JSON output — ignore */ }
-          }
-        },
-        onStepStart:     () => send("pi-agent:step",  { sessionId }),
-        onUsage:         (promptTokens, completionTokens) => send("pi-agent:usage", { sessionId, promptTokens, completionTokens }),
-        onRetry:         (attempt, maxRetries, delayMs, error) => send("pi-agent:retry", { sessionId, attempt, maxRetries, delayMs, error }),
-        transformContext,
-        onDone: () => {
-          try {
-            q.saveLlmHistory(ctx.db, sessionId, session.messages);
-            q.updatePiSession(ctx.db, sessionId, { updatedAt: ts() });
-          } catch (e) {
-            console.warn("[pi-agent] failed to persist session after done:", e);
-          }
-          send("pi-agent:done", { sessionId });
-        },
-        onError: (error) => {
-          try {
-            q.saveLlmHistory(ctx.db, sessionId, session.messages);
-            q.updatePiSession(ctx.db, sessionId, { status: "exited", updatedAt: ts() });
-          } catch (e) {
-            console.warn("[pi-agent] failed to persist session after error:", e);
-          }
-          send("pi-agent:error", { sessionId, error });
-        },
-        onPlanNoteFound: (noteId) => {
-          send("pi-agent:plan-note", { sessionId, noteId });
-          try { q.updatePiSession(ctx.db, sessionId, { planNoteId: noteId, updatedAt: ts() }); } catch { /* non-critical */ }
-        },
-      },
-      toolCtx,
-      "execute",
-    );
+  // ── pi-agent:compact-now ─────────────────────────────────────────────────
+  // Triggered by the /compact slash command. Immediately summarises the session
+  // history and returns the result. The renderer shows a status message.
+  ipcMain.on("pi-agent:compact-now", async (_event, req: { sessionId: string; config?: { baseUrl?: string; model?: string; apiKey?: string } }) => {
+    const { sessionId } = req;
+    const session = sessions.get(sessionId);
+    if (!session || session.messages.length === 0) return;
+
+    const send = (channel: string, payload: unknown) => {
+      const win = getWin();
+      if (win && !win.webContents.isDestroyed()) win.webContents.send(channel, payload);
+    };
+
+    const llmConfig: AgentLLMConfig = {
+      baseUrl:     normaliseBaseUrl(req.config?.baseUrl || "https://api.openai.com"),
+      model:       req.config?.model  || "gpt-4o",
+      apiKey:      req.config?.apiKey || "",
+      maxSteps:    20,
+      temperature: 0.1,
+    };
+
+    send("pi-agent:compact", { sessionId, status: "start" });
+    try {
+      const result = await compactNow(session, llmConfig);
+      if (result) {
+        // Update the transformer's cache so the next runAgentLoop call uses the summary
+        session.compactionTransformer = undefined; // reset so it rebuilds with new context
+        send("pi-agent:compact-result", { sessionId, messageCount: result.messages.length, summary: result.summary });
+      } else {
+        send("pi-agent:compact-result", { sessionId, messageCount: 0, summary: "" });
+      }
+    } catch (e) {
+      send("pi-agent:error", { sessionId, error: `Compaction failed: ${(e as Error).message}` });
+    } finally {
+      send("pi-agent:compact", { sessionId, status: "end" });
+    }
   });
 
   // ── pi-agent:clear ────────────────────────────────────────────────────────
-  // Clears a session's message history (new conversation within same session)
+  // Clears a session's message history (new conversation within same session).
+  // Also resets the compaction transformer so the new conversation starts
+  // with a fresh cachedSummary.
   ipcMain.on("pi-agent:clear", (_event, { sessionId }: { sessionId: string }) => {
     const session = sessions.get(sessionId);
     if (session) {
       session.messages = [];
+      session.compactionTransformer = undefined;
+      session.lastPromptTokens = undefined;
     }
   });
 
@@ -377,6 +320,30 @@ export function registerPiAgentHandler(
     if (session) {
       session.abortCtrl.abort();
       sessions.delete(sessionId);
+    }
+  });
+
+  // ── pi-agent:preview-prompt ───────────────────────────────────────────────────────
+  // Used by Settings → Agent Settings to show the full assembled system prompt
+  // and list discovered skills for the given cwd.
+  ipcMain.handle("pi-agent:preview-prompt", (_event, req: {
+    cwd: string;
+    projectId?: string;
+    mode?: "plan" | "execute";
+  }) => {
+    try {
+      const { cwd, projectId, mode = "execute" } = req;
+      const projectName = projectId
+        ? (ctx.db.prepare("SELECT name FROM projects WHERE id = ?").get(projectId) as { name: string } | undefined)?.name ?? "Project"
+        : "Project";
+      const skills = discoverSkills(cwd);
+      const systemPrompt = buildPiAgentSystemPrompt({
+        projectName, cwd, mode,
+        skillsXml: renderSkillsXml(skills),
+      });
+      return { data: { systemPrompt, skills } };
+    } catch (e) {
+      return { error: (e as Error).message };
     }
   });
 
