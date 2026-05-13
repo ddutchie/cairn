@@ -36,8 +36,8 @@ async function runToolLoop(
   emitToolCall: (e: { tool: string; label: string; args: Record<string, unknown> }) => void,
   signal?: AbortSignal,
   getWin?: () => BrowserWindow | null,
-): Promise<{ exhausted: true; content: string; contextRefs: any[] } | { exhausted: false; contextRefs: any[] }> {
-  const contextRefs: any[] = [];
+): Promise<{ exhausted: true; content: string; contextRefs: Array<{ type: string; id: string; title: string; snippet?: string }> } | { exhausted: false; contextRefs: Array<{ type: string; id: string; title: string; snippet?: string }> }> {
+  const contextRefs: Array<{ type: string; id: string; title: string; snippet?: string }> = [];
   const maxSteps    = req.config?.maxSteps    ?? 20;
   const temperature = req.config?.temperature ?? 0.3;
   for (let round = 0; round < maxSteps; round++) {
@@ -84,12 +84,12 @@ async function runToolLoop(
         // Accumulate contextRefs if the tool modified/created tasks or notes
         if (result && typeof result === "object" && !("error" in result)) {
           if (call.function.name === "create_task" || call.function.name === "update_task") {
-            const r = result as any;
+            const r = result as { id?: string; title?: string; description?: string };
             if (r.id && r.title) {
               contextRefs.push({ type: "task", id: r.id, title: r.title, snippet: r.description });
             }
           } else if (call.function.name === "ensure_note" || call.function.name === "append_to_note" || call.function.name === "patch_note") {
-            const r = result as any;
+            const r = result as { id?: string; title?: string };
             if (r.id && r.title) {
               contextRefs.push({ type: "note", id: r.id, title: r.title });
             }

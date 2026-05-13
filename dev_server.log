@@ -155,3 +155,5 @@
 [next]  GET / 200 in 72ms (next.js: 22ms, application-code: 49ms)
 [next]  GET / 200 in 50ms (next.js: 4ms, application-code: 45ms)
 [next]  GET / 200 in 56ms (next.js: 7ms, application-code: 49ms)
+[esbuild] [watch] build started (change: "electron/ipc/chat.ts")
+[esbuild] [watch] build finished
