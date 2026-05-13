@@ -108,10 +108,32 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
   // Pre-fill input when opened via cairn:open-chat event
   useEffect(() => {
     if (prefill) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setInput(prefill);
+      // automatically send the prefill
+      const content = prefill.trim();
       onPrefillConsumed?.();
-      setTimeout(() => inputRef.current?.focus(), 50);
+
+      // small delay to let thread initialization finish if opening for the first time
+      setTimeout(() => {
+         const tId = useCairnStore.getState().getOrCreateThread(activeWorkspaceId!, activeProjectId ?? undefined).id;
+         setThreadId(tId);
+
+         addMessage(tId, "user", content);
+         sendStream({
+           message: content, threadId: tId,
+           projectId: activeProjectId,
+           workspaceId: activeWorkspaceId,
+           history: chatMessages.filter((m) => m.threadId === tId).slice(-40).map((m) => ({ role: m.role, content: m.content })),
+           config: {
+             baseUrl:     aiConfig.baseUrl     || undefined,
+             model:       aiConfig.model       || undefined,
+             apiKey:      aiConfig.apiKey      || undefined,
+             maxSteps:    aiConfig.maxSteps    ?? 20,
+             temperature: aiConfig.temperature ?? 0.3,
+           },
+         });
+
+         inputRef.current?.focus();
+      }, 50);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefill]);

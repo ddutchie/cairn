@@ -17,11 +17,12 @@ import type { TaskCard, Note, BoardColumn } from "@/types";
 import { useProjectMetrics, type ActivityGroup } from "./project-overview/useProjectMetrics";
 
 export function ProjectOverview() {
-  const { activeProjectId, projects, setView, updateProject } = useCairnStore(useShallow((s) => ({
+  const { activeProjectId, projects, setView, updateProject, chatOpen } = useCairnStore(useShallow((s) => ({
     activeProjectId: s.activeProjectId,
     projects:        s.projects,
     setView:         s.setView,
     updateProject:   s.updateProject,
+    chatOpen:        s.chatOpen,
   })));
   const project = projects.find((p) => p.id === activeProjectId);
   const metrics = useProjectMetrics(activeProjectId);
@@ -30,6 +31,7 @@ export function ProjectOverview() {
   const [editIcon, setEditIcon] = useState("");
   const [editDesc, setEditDesc] = useState("");
   const [codeDirInput, setCodeDirInput] = useState("");
+  const [chatPrompt, setChatPrompt] = useState("");
   const popoverRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -92,7 +94,7 @@ export function ProjectOverview() {
   } = metrics;
 
   return (
-    <div className="flex-1 overflow-y-auto">
+    <div className="flex-1 overflow-y-auto relative">
       <div className="max-w-3xl mx-auto px-8 py-8 space-y-8">
 
         {/* ── Header ─────────────────────────────────────────── */}
@@ -308,7 +310,46 @@ export function ProjectOverview() {
           </div>
         )}
 
+        {/* Bottom padding so content isn't hidden behind the floating chat input */}
+        {!chatOpen && <div className="h-24" />}
       </div>
+
+      {/* ── Central Chat Input ────────────────────────────────── */}
+      {!chatOpen && (
+        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 w-full max-w-2xl px-4 pointer-events-none z-10">
+          <div className="bg-[var(--surface)] border border-[var(--border)] shadow-xl rounded-xl p-2 pointer-events-auto flex items-center gap-2">
+            <div className="p-2 text-[var(--accent)] bg-[var(--accent-dim)] rounded-lg shrink-0">
+              <FileText size={16} />
+            </div>
+            <input
+              value={chatPrompt}
+              onChange={(e) => setChatPrompt(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && chatPrompt.trim()) {
+                  e.preventDefault();
+                  const prompt = chatPrompt.trim();
+                  setChatPrompt("");
+                  window.dispatchEvent(CairnEvents.openChat(prompt));
+                }
+              }}
+              placeholder="What would you like to do today?"
+              className="flex-1 bg-transparent border-none text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none px-2 py-1"
+            />
+            <Button
+              variant="accent"
+              size="sm"
+              disabled={!chatPrompt.trim()}
+              onClick={() => {
+                const prompt = chatPrompt.trim();
+                setChatPrompt("");
+                window.dispatchEvent(CairnEvents.openChat(prompt));
+              }}
+            >
+              Ask AI
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

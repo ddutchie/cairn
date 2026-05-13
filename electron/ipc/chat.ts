@@ -36,7 +36,8 @@ async function runToolLoop(
   emitToolCall: (e: { tool: string; label: string; args: Record<string, unknown> }) => void,
   signal?: AbortSignal,
   getWin?: () => BrowserWindow | null,
-): Promise<{ exhausted: true; content: string } | { exhausted: false }> {
+): Promise<{ exhausted: true; content: string; contextRefs: any[] } | { exhausted: false; contextRefs: any[] }> {
+  const contextRefs: any[] = [];
   const maxSteps    = req.config?.maxSteps    ?? 20;
   const temperature = req.config?.temperature ?? 0.3;
   for (let round = 0; round < maxSteps; round++) {
@@ -69,7 +70,7 @@ async function runToolLoop(
     // No tool calls — model is ready to produce its final reply
     if (!assistantMsg.tool_calls?.length) {
       messages.push(assistantMsg);
-      return { exhausted: false };
+      return { exhausted: false, contextRefs };
     }
 
     messages.push(assistantMsg);
@@ -79,6 +80,21 @@ async function runToolLoop(
       let result: unknown;
       try {
         result = await executeTool(db, req, workspacePath, { baseUrl, model, apiKey }, call.function.name, args, emitToolCall, getWin);
+
+        // Accumulate contextRefs if the tool modified/created tasks or notes
+        if (result && typeof result === "object" && !("error" in result)) {
+          if (call.function.name === "create_task" || call.function.name === "update_task") {
+            const r = result as any;
+            if (r.id && r.title) {
+              contextRefs.push({ type: "task", id: r.id, title: r.title, snippet: r.description });
+            }
+          } else if (call.function.name === "ensure_note" || call.function.name === "append_to_note" || call.function.name === "patch_note") {
+            const r = result as any;
+            if (r.id && r.title) {
+              contextRefs.push({ type: "note", id: r.id, title: r.title });
+            }
+          }
+        }
       } catch (toolErr) {
         result = { error: `Tool "${call.function.name}" failed: ${String(toolErr)}` };
       }
@@ -89,6 +105,7 @@ async function runToolLoop(
   return {
     exhausted: true,
     content: "I reached the maximum number of steps for this request. Any actions taken so far have been saved — check your board and notes. Try breaking the request into smaller steps.",
+    contextRefs,
   };
 }
 
@@ -149,7 +166,7 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
     }
 
     if (loopResult.exhausted) {
-      send("chat:done", { content: loopResult.content, contextRefs: [] });
+      send("chat:done", { content: loopResult.content, contextRefs: loopResult.contextRefs || [] });
       return;
     }
 
@@ -170,16 +187,16 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
         // Fallback: just emit the already-received content verbatim
         if (!fullContent) {
           send("chat:token", { delta: lastMsg.content });
-          send("chat:done", { content: lastMsg.content, contextRefs: [] });
+          send("chat:done", { content: lastMsg.content, contextRefs: loopResult.contextRefs || [] });
           return;
         }
       }
 
-      send("chat:done", { content: fullContent || (lastMsg.content ?? ""), contextRefs: [] });
+      send("chat:done", { content: fullContent || (lastMsg.content ?? ""), contextRefs: loopResult.contextRefs || [] });
       return;
     }
 
     // Unexpected state — shouldn't happen, but be safe
-    send("chat:done", { content: "", contextRefs: [] });
+    send("chat:done", { content: "", contextRefs: loopResult.contextRefs || [] });
   });
 }
