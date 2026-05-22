@@ -17,11 +17,11 @@
 import { ipcMain, app, shell, dialog, BrowserWindow, net } from "electron";
 import path from "path";
 import fs from "fs";
-import crypto from "crypto";
 import type Database from "better-sqlite3";
 import * as q from "../db/queries";
 import { registerChatHandler } from "./chat";
 import { writeNoteFile, deleteNoteFile, deleteProjectNotesDir, stripMarkdown, findNoteFilePath } from "../notes-files";
+import { checkMigrations, runMigration } from "../migrations";
 import { suppressNextChange } from "../file-watcher";
 import { buildContextResponse } from "../lib/context";
 import { generatePrd } from "../lib/prd";
@@ -75,7 +75,7 @@ export function registerIpcHandlers(ctx: DbContext): void {
 
   // ── Full snapshot (hydrate store on app launch) ───
   ipcMain.handle("db:snapshot", () => handle(() => q.getFullSnapshot(ctx.db)));
-  ipcMain.handle("db:hasData",  () => handle(() => q.hasData(ctx.db)));
+  ipcMain.handle("db:hasData", () => handle(() => q.hasData(ctx.db)));
 
   // ── Dashboard live query bridge ───────────────────
   // Executes read-only MCP-style tool calls from dashboard iframes.
@@ -93,12 +93,12 @@ export function registerIpcHandlers(ctx: DbContext): void {
   });
 
   // ── Workspaces ────────────────────────────────────
-  ipcMain.handle("db:workspace:list",   () => handle(() => q.getAllWorkspaces(ctx.db)));
+  ipcMain.handle("db:workspace:list", () => handle(() => q.getAllWorkspaces(ctx.db)));
   ipcMain.handle("db:workspace:create", (_e, args) => handle(() => q.createWorkspace(ctx.db, args)));
   ipcMain.handle("db:workspace:update", (_e, { id, patch }) => handle(() => q.updateWorkspace(ctx.db, id, patch)));
 
   // ── Projects ──────────────────────────────────────
-  ipcMain.handle("db:project:list",   (_e, { workspaceId }) => handle(() => q.getProjects(ctx.db, workspaceId)));
+  ipcMain.handle("db:project:list", (_e, { workspaceId }) => handle(() => q.getProjects(ctx.db, workspaceId)));
   ipcMain.handle("db:project:create", (_e, args) => handle(() => {
     const project = q.createProject(ctx.db, args);
     // Create default columns atomically in the same handler call
@@ -230,22 +230,56 @@ export function registerIpcHandlers(ctx: DbContext): void {
   }));
 
   // ── Asset upload (paste images into notes) ────────
-  // Receives raw image bytes, writes content-addressed to
-  // <ctx.workspacePath>/assets/<sha256[0..15]>.<ext>, returns asset:// URL.
+  // Saves to <workspace>/attachments/ with original filename (Obsidian-compatible).
+  // Returns ![[filename]] syntax so images work in both Cairn and Obsidian.
+  // Legacy asset:// URLs still render via the asset:// protocol handler.
   ipcMain.handle("app:uploadAsset", (_e, { filename, data }: { filename: string; data: ArrayBuffer }) =>
     handle(() => {
-      const assetDir = path.join(ctx.workspacePath, "assets");
-      fs.mkdirSync(assetDir, { recursive: true });
-      const ext = path.extname(filename).toLowerCase() || ".bin";
-      // data arrives as an ArrayBuffer via Electron structured-clone (no JSON serialisation overhead)
+      // Determine attachment folder — read from Obsidian config if available
+      let attachDir: string;
+      const obsidianAppJson = path.join(ctx.workspacePath, ".obsidian", "app.json");
+      try {
+        if (fs.existsSync(obsidianAppJson)) {
+          const obsConfig = JSON.parse(fs.readFileSync(obsidianAppJson, "utf-8"));
+          if (typeof obsConfig.attachmentFolderPath === "string" && obsConfig.attachmentFolderPath) {
+            attachDir = path.join(ctx.workspacePath, obsConfig.attachmentFolderPath);
+          } else {
+            // Obsidian default: vault root
+            attachDir = path.join(ctx.workspacePath, "attachments");
+          }
+        } else {
+          attachDir = path.join(ctx.workspacePath, "attachments");
+        }
+      } catch {
+        attachDir = path.join(ctx.workspacePath, "attachments");
+      }
+
+      fs.mkdirSync(attachDir, { recursive: true });
       const buf = Buffer.from(data);
-      const hash = crypto.createHash("sha256").update(buf).digest("hex").slice(0, 16);
-      const destName = `${hash}${ext}`;
-      const destPath = path.join(assetDir, destName);
+      const ext = path.extname(filename).toLowerCase() || ".png";
+      const baseName = path.basename(filename, ext);
+
+      // Dedup: if filename already exists with different content, append suffix
+      let destName = `${baseName}${ext}`;
+      let destPath = path.join(attachDir, destName);
+      let counter = 1;
+      while (fs.existsSync(destPath)) {
+        // Same content → reuse existing file
+        if (fs.statSync(destPath).size === buf.length) {
+          const existing = fs.readFileSync(destPath);
+          if (buf.equals(existing)) break;
+        }
+        destName = `${baseName}-${counter}${ext}`;
+        destPath = path.join(attachDir, destName);
+        counter++;
+      }
+
       if (!fs.existsSync(destPath)) {
         fs.writeFileSync(destPath, buf);
       }
-      return { assetUrl: `asset://${destName}` };
+
+      // Return Obsidian-compatible embed syntax
+      return { assetUrl: `![[${destName}]]` };
     })
   );
 
@@ -259,13 +293,13 @@ export function registerIpcHandlers(ctx: DbContext): void {
   }));
 
   // ── Board columns ─────────────────────────────────
-  ipcMain.handle("db:column:list",   (_e, { projectId }) => handle(() => q.getColumns(ctx.db, projectId)));
+  ipcMain.handle("db:column:list", (_e, { projectId }) => handle(() => q.getColumns(ctx.db, projectId)));
   ipcMain.handle("db:column:create", (_e, args) => handle(() => q.createColumn(ctx.db, args)));
   ipcMain.handle("db:column:update", (_e, { id, patch }) => handle(() => q.updateColumn(ctx.db, id, patch)));
   ipcMain.handle("db:column:delete", (_e, { id }) => handle(() => q.deleteColumn(ctx.db, id)));
 
   // ── Task cards ────────────────────────────────────
-  ipcMain.handle("db:card:list",   (_e, opts) => handle(() => q.getCards(ctx.db, opts)));
+  ipcMain.handle("db:card:list", (_e, opts) => handle(() => q.getCards(ctx.db, opts)));
   ipcMain.handle("db:card:create", (_e, args) => handle(() => {
     const title = (args?.title as string | null | undefined)?.trim();
     if (!title) throw new Error("Task title is required");
@@ -315,9 +349,9 @@ export function registerIpcHandlers(ctx: DbContext): void {
 
   // ── Card dependencies ─────────────────────────────
   ipcMain.handle("db:card:addBlocker", (_e, { cardId, blockerCardId }) => handle(() => {
-    const card    = q.getCardById(ctx.db, cardId);
+    const card = q.getCardById(ctx.db, cardId);
     const blocker = q.getCardById(ctx.db, blockerCardId);
-    if (!card)    return { error: "Card not found" };
+    if (!card) return { error: "Card not found" };
     if (!blocker) return { error: "Blocker card not found" };
     if (card.projectId !== blocker.projectId) return { error: "Cards must be in the same project" };
     if (cardId === blockerCardId) return { error: "A card cannot block itself" };
@@ -348,7 +382,7 @@ export function registerIpcHandlers(ctx: DbContext): void {
   ));
 
   // ── Idea Flow ─────────────────────────────────────
-  ipcMain.handle("db:flow:get",         (_e, { projectId }) => handle(() => q.getResolvedFlow(ctx.db, projectId)));
+  ipcMain.handle("db:flow:get", (_e, { projectId }) => handle(() => q.getResolvedFlow(ctx.db, projectId)));
   ipcMain.handle("db:flow:node:create", (_e, args) => handle(() => {
     const flow = q.getOrCreateFlow(ctx.db, args.projectId);
     return q.createFlowNode(ctx.db, { ...args, flowId: flow.id, id: q.generateId() });
@@ -483,23 +517,23 @@ export function registerIpcHandlers(ctx: DbContext): void {
   });
 
   // ── Tags ──────────────────────────────────────────
-  ipcMain.handle("db:tag:list",   (_e, { workspaceId }) => handle(() => q.getTags(ctx.db, workspaceId)));
+  ipcMain.handle("db:tag:list", (_e, { workspaceId }) => handle(() => q.getTags(ctx.db, workspaceId)));
   ipcMain.handle("db:tag:create", (_e, args) => handle(() => q.createTag(ctx.db, args)));
   ipcMain.handle("db:tag:update", (_e, { id, patch }) => handle(() => q.updateTag(ctx.db, id, patch)));
   ipcMain.handle("db:tag:delete", (_e, { id }) => handle(() => q.deleteTag(ctx.db, id)));
 
   // ── Chat ──────────────────────────────────────────
-  ipcMain.handle("db:chat:threads",    (_e, { workspaceId }) => handle(() => q.getChatThreads(ctx.db, workspaceId)));
-  ipcMain.handle("db:chat:messages",   (_e, { threadId }) => handle(() => q.getChatMessages(ctx.db, threadId)));
-  ipcMain.handle("db:chat:upsertThread",  (_e, args) => handle(() => q.upsertChatThread(ctx.db, args)));
-  ipcMain.handle("db:chat:addMessage",    (_e, args) => handle(() => q.addChatMessage(ctx.db, args)));
-  ipcMain.handle("db:chat:deleteThread",  (_e, { threadId }) => handle(() => q.deleteChatThread(ctx.db, threadId)));
+  ipcMain.handle("db:chat:threads", (_e, { workspaceId }) => handle(() => q.getChatThreads(ctx.db, workspaceId)));
+  ipcMain.handle("db:chat:messages", (_e, { threadId }) => handle(() => q.getChatMessages(ctx.db, threadId)));
+  ipcMain.handle("db:chat:upsertThread", (_e, args) => handle(() => q.upsertChatThread(ctx.db, args)));
+  ipcMain.handle("db:chat:addMessage", (_e, args) => handle(() => q.addChatMessage(ctx.db, args)));
+  ipcMain.handle("db:chat:deleteThread", (_e, { threadId }) => handle(() => q.deleteChatThread(ctx.db, threadId)));
 
   // ── Pi Agent Sessions ─────────────────────────────────────────────────────────────────────────────────
-  ipcMain.handle("db:piSession:list",         (_e, { projectId }) => handle(() => q.getPiSessions(ctx.db, projectId)));
-  ipcMain.handle("db:piSession:create",       (_e, args) => handle(() => q.createPiSession(ctx.db, args)));
-  ipcMain.handle("db:piSession:delete",       (_e, { id }) => handle(() => q.deletePiSession(ctx.db, id)));
-  ipcMain.handle("db:piSession:messages",     (_e, { sessionId }) => handle(() => q.getPiMessages(ctx.db, sessionId)));
+  ipcMain.handle("db:piSession:list", (_e, { projectId }) => handle(() => q.getPiSessions(ctx.db, projectId)));
+  ipcMain.handle("db:piSession:create", (_e, args) => handle(() => q.createPiSession(ctx.db, args)));
+  ipcMain.handle("db:piSession:delete", (_e, { id }) => handle(() => q.deletePiSession(ctx.db, id)));
+  ipcMain.handle("db:piSession:messages", (_e, { sessionId }) => handle(() => q.getPiMessages(ctx.db, sessionId)));
   ipcMain.handle("db:piSession:saveMessages", (_e, { sessionId, messages }) => handle(() => q.savePiMessages(ctx.db, sessionId, messages)));
 
   // ── AI Chat completions ───────────────────────────────────────────────────────────────────
@@ -617,7 +651,7 @@ export function registerAppHandlers(
     const unpackedPath = appPath.replace(/\.asar$/, ".asar.unpacked");
     const binaryName = process.platform === "win32" ? "cairn-mcp.exe"
       : process.platform === "linux" ? "cairn-mcp-linux"
-      : "cairn-mcp";
+        : "cairn-mcp";
     return path.join(unpackedPath, "dist-mcp", binaryName);
   }));
 
@@ -810,18 +844,35 @@ pre, blockquote, table { page-break-inside: avoid; }
       }
 
       // Extract OG title → plain title → hostname fallback
-      const ogTitle    = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1]
-                      ?? html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:title["']/i)?.[1];
-      const ogDesc     = html.match(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i)?.[1]
-                      ?? html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:description["']/i)?.[1]
-                      ?? html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i)?.[1]
-                      ?? html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']description["']/i)?.[1];
-      const htmlTitle  = html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1];
+      const ogTitle = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1]
+        ?? html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:title["']/i)?.[1];
+      const ogDesc = html.match(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i)?.[1]
+        ?? html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:description["']/i)?.[1]
+        ?? html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i)?.[1]
+        ?? html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']description["']/i)?.[1];
+      const htmlTitle = html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1];
 
-      const title       = (ogTitle ?? htmlTitle ?? "").trim().slice(0, 200);
+      const title = (ogTitle ?? htmlTitle ?? "").trim().slice(0, 200);
       const description = (ogDesc ?? "").trim().slice(0, 500);
 
       return { title, description };
+    })
+  );
+
+  // ── Migration handlers ─────────────────────────────
+  ipcMain.handle("app:checkMigrations", () => handle(() =>
+    checkMigrations(ctx.workspacePath)
+  ));
+
+  ipcMain.handle("app:runMigration", (_e, { migrationId }: { migrationId: string }) =>
+    handle(async () => {
+      await runMigration(ctx.workspacePath, migrationId, (pct, msg) => {
+        // Send progress events to the renderer
+        if (win && !win.isDestroyed()) {
+          win.webContents.send("app:migrationProgress", { migrationId, pct, msg });
+        }
+      });
+      return { ok: true };
     })
   );
 }

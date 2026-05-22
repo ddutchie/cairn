@@ -203,9 +203,8 @@ On first launch Cairn asks the user to choose a **workspace folder** — any dir
 ```
 <workspace>/
   cairn.db          ← SQLite: projects, tasks, columns, chat (WAL mode)
-  notes/
-    <Project Name>/
-      <Note Title>.md   ← one file per note, YAML frontmatter + markdown body
+  <Project Name>/
+    <Note Title>.md   ← one file per note, YAML frontmatter + markdown body
 ```
 
 The workspace path is stored in `<userData>/workspace-config.json` so it survives app updates.
@@ -291,7 +290,7 @@ Available query tools inside a dashboard: `get_cairn_context`, `get_project_summ
 ```
 Note write (UI / chat / MCP)
   │
-  ├── writeNoteFile()  → <workspace>/notes/<Project>/<Title>.tmp → rename → .md  (atomic)
+  ├── writeNoteFile()  → <workspace>/<Project>/<Title>.tmp → rename → .md  (atomic)
   └── SQLite upsert   → notes table (type='note', content_text re-derived from markdown,
                          version = version + 1)
 
@@ -348,6 +347,7 @@ Shared modules live in `src/components/graph/`: `analyticsUtils.ts`, `analyticsH
 | File | Purpose |
 |------|---------|
 | `electron/main.ts` | Startup orchestrator — BrowserWindow, IPC registration, file watcher |
+| `electron/migrations.ts` | Workspace migration registry, runner, and layout upgrade schemas |
 | `electron/lib/protocol.ts` | `app://` scheme registration + CSP headers |
 | `electron/lib/tray.ts` | System tray icon, menu, and badge update logic |
 | `electron/lib/ai-write-lock.ts` | Module-level `Set<string>` tracking active in-process AI note writes; fires `note:aiWriteStarted/Ended` IPC |
@@ -355,7 +355,7 @@ Shared modules live in `src/components/graph/`: `analyticsUtils.ts`, `analyticsH
 | `electron/lib/read-tools.ts` | `executeReadTool(db, snap, tool, args)` — shared read dispatch used by chat and dashboard bridge |
 | `electron/workspace-config.ts` | Read/write `workspace-config.json`; resolve `cairn.db` path |
 | `electron/notes-files.ts` | Note file I/O: `writeNoteFile` (atomic `.tmp` → rename), `deleteNoteFile`, `parseNoteFile`, `upsertNoteFromFile`, `syncNotesFromDisk` (startup timestamp compare), `cleanStaleTmpFiles` |
-| `electron/file-watcher.ts` | chokidar watcher on `notes/`; syncs external `.md` edits to SQLite |
+| `electron/file-watcher.ts` | chokidar watcher on workspace root; syncs external `.md` edits to SQLite |
 | `electron/ipc/handlers.ts` | All `db:*` and `app:*` IPC channels; wrapped in `handle()` returning `IpcResult<T>` |
 | `electron/ipc/agent.ts` | All `agent:*` IPC channels — PTY spawn/kill, file I/O, git diff, `assertWithinCodeDirectory` |
 | `electron/ipc/chat.ts` | AI chat loop — `runToolLoop` + IPC handler registration |
@@ -389,6 +389,7 @@ Shared modules live in `src/components/graph/`: `analyticsUtils.ts`, `analyticsH
 | `src/lib/events.ts` | Typed `CairnEvents` helpers for internal custom event dispatch |
 | `src/types/index.ts` | All shared types: `IpcResult<T>`, `ProjectSummaryResult`, `DashboardQueryMessage`, etc. |
 | `src/components/onboarding/create-workspace.tsx` | First-launch folder picker + workspace creation |
+| `src/components/layout/MigrationModal.tsx` | Glassmorphism modal blocking interactions and showing progress during workspace migration |
 | `src/components/notes/note-editor.tsx` | Split-pane markdown editor + AI text toolbar |
 | `src/components/notes/dashboard-view.tsx` | Sandboxed iframe renderer; `window.cairn` postMessage bridge |
 | `src/components/notes/dashboard-bootstrap.ts` | Dashboard bootstrap JS builder (`buildBootstrap`, `buildSrcdoc`) |

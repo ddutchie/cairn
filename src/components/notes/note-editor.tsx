@@ -23,14 +23,14 @@ import { Callout } from "./Callout";
 import { MathBlock } from "./MathBlock";
 import { AITextToolbar, buildAIActionPrompt, applyFormat, type AITextAction, type FormatAction } from "./ai-text-toolbar";
 import { MarkdownEditor, type MarkdownEditorHandle } from "./markdown-editor";
-import { remarkCallout, remarkWikilinks, remarkPromoteDisplayMath, makeLatexPlugins, InlineCode } from "@/lib/markdown/pipeline";
+import { remarkCallout, remarkObsidianEmbeds, remarkWikilinks, remarkPromoteDisplayMath, makeLatexPlugins, InlineCode } from "@/lib/markdown/pipeline";
 
 // ── MD Preview Panel ──────────────────────────────────────────────────────────
 // Docked to the bottom of the editor. Renders selected raw markdown through
 // the full pipeline and displays it as a collapsible bottom panel.
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const PREVIEW_REMARK_PLUGINS: any[] = [remarkGfm, remarkBreaks, remarkMath, remarkPromoteDisplayMath, remarkCallout];
+const PREVIEW_REMARK_PLUGINS: any[] = [remarkGfm, remarkBreaks, remarkMath, remarkPromoteDisplayMath, remarkCallout, remarkObsidianEmbeds];
 
 interface MDPreviewPanelProps {
   text: string;
@@ -927,7 +927,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
               {note.content ? (
                 <div className="prose-cairn" ref={proseRef}>
                    <ReactMarkdown
-                     remarkPlugins={[remarkGfm, remarkBreaks, remarkMath, remarkPromoteDisplayMath, remarkCallout, remarkWikilinks]}
+                     remarkPlugins={[remarkGfm, remarkBreaks, remarkMath, remarkPromoteDisplayMath, remarkCallout, remarkObsidianEmbeds, remarkWikilinks]}
                      rehypePlugins={[rehypeCaptureLatex, rehypeKatex, rehypeMergedPass]}
                      urlTransform={(url) => url.startsWith("asset://") ? url : defaultUrlTransform(url)}
                      components={mdComponents}
