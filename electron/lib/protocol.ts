@@ -39,7 +39,10 @@ export function registerAssetProtocol(): void {
 
   session.defaultSession.protocol.handle("asset", (request) => {
     const url = new URL(request.url);
-    const filename = decodeURIComponent(url.hostname + url.pathname.replace(/^\//, ""));
+    let filename = decodeURIComponent(url.hostname + url.pathname);
+    if (filename.endsWith("/")) {
+      filename = filename.slice(0, -1);
+    }
     if (!_workspacePath) return new Response("No workspace", { status: 503 });
 
     // Try locations in priority order:
