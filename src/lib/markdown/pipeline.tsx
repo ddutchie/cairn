@@ -51,6 +51,57 @@ export const remarkCallout: RemarkPlugin<[], MdastRoot> = () => (tree) => {
   });
 };
 
+// ── Remark plugin: Obsidian embeds ![[file.png]] → <img> ──────────────────────
+// Converts ![[filename.ext]] and ![[filename.ext|width]] into standard markdown
+// image nodes. Supports common image extensions. Must run BEFORE remarkWikilinks
+// so the `!` prefix embeds are consumed first.
+const EMBED_RE = /!\[\[([^\][\n]+?)\]\]/g;
+const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "avif", "bmp", "ico"]);
+
+export const remarkObsidianEmbeds: RemarkPlugin<[], MdastRoot> = () => (tree) => {
+  mdastVisit(tree, "text", (node: MdastText, index, parent) => {
+    if (index == null || !parent) return;
+    const text = node.value;
+    const newNodes: MdastRoot["children"][number][] = [];
+    let lastIndex = 0;
+    let m: RegExpExecArray | null;
+    const re = new RegExp(EMBED_RE.source, "g");
+    while ((m = re.exec(text)) !== null) {
+      const inner = m[1].trim();
+      // Split on `|` for optional width: ![[file.png|300]]
+      const [filePart, widthStr] = inner.split("|").map((s) => s.trim());
+      const ext = filePart.split(".").pop()?.toLowerCase() ?? "";
+
+      if (!IMAGE_EXTS.has(ext)) continue; // not an image — skip
+
+      if (lastIndex < m.index) {
+        newNodes.push({ type: "text", value: text.slice(lastIndex, m.index) });
+      }
+
+      // Create a standard image node — the asset:// protocol resolves the file
+      const width = widthStr ? parseInt(widthStr, 10) : undefined;
+      const imageNode = {
+        type: "image" as const,
+        url: `asset://${filePart}`,
+        alt: filePart,
+        title: null,
+        data: width
+          ? { hProperties: { width: `${width}px`, style: `max-width: ${width}px` } }
+          : undefined,
+      };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      newNodes.push(imageNode as any);
+      lastIndex = m.index + m[0].length;
+    }
+    if (newNodes.length === 0) return;
+    if (lastIndex < text.length) {
+      newNodes.push({ type: "text", value: text.slice(lastIndex) });
+    }
+    parent.children.splice(index, 1, ...(newNodes as MdastRoot["children"]));
+    return index + newNodes.length;
+  });
+};
+
 // ── Remark plugin: wikilinks [[Title]] → <wikilink data-title="Title"> ────────
 export const remarkWikilinks: RemarkPlugin<[], MdastRoot> = () => (tree) => {
   const re = new RegExp(WIKILINK_RE.source, "g");

@@ -110,35 +110,45 @@ export function b(v: number | null): boolean { return v === 1; }
 // ── Mappers ───────────────────────────────────
 
 export function toWorkspace(r: any) {
-  return { id: r.id, name: r.name, description: r.description, icon: r.icon,
-    createdAt: r.created_at, updatedAt: r.updated_at, archivedAt: r.archived_at };
+  return {
+    id: r.id, name: r.name, description: r.description, icon: r.icon,
+    createdAt: r.created_at, updatedAt: r.updated_at, archivedAt: r.archived_at
+  };
 }
 
 export function toProject(r: any) {
-  return { id: r.id, workspaceId: r.workspace_id, name: r.name, description: r.description,
+  return {
+    id: r.id, workspaceId: r.workspace_id, name: r.name, description: r.description,
     icon: r.icon, status: r.status, priority: r.priority, dueDate: r.due_date,
-    tagIds: p(r.tag_ids), createdAt: r.created_at, updatedAt: r.updated_at, archivedAt: r.archived_at };
+    tagIds: p(r.tag_ids), createdAt: r.created_at, updatedAt: r.updated_at, archivedAt: r.archived_at
+  };
 }
 
 export function toNote(r: any) {
-  return { id: r.id, projectId: r.project_id, workspaceId: r.workspace_id, title: r.title,
+  return {
+    id: r.id, projectId: r.project_id, workspaceId: r.workspace_id, title: r.title,
     content: r.content ?? "", contentText: r.content_text ?? "",
     tagIds: p(r.tag_ids), linkedNoteIds: p(r.linked_note_ids), linkedCardIds: p(r.linked_card_ids),
     isPinned: b(r.is_pinned), folder: (r.folder ?? "") as string,
-    createdAt: r.created_at, updatedAt: r.updated_at, archivedAt: r.archived_at };
+    createdAt: r.created_at, updatedAt: r.updated_at, archivedAt: r.archived_at
+  };
 }
 
 export function toColumn(r: any) {
-  return { id: r.id, projectId: r.project_id, workspaceId: r.workspace_id, name: r.name,
+  return {
+    id: r.id, projectId: r.project_id, workspaceId: r.workspace_id, name: r.name,
     type: r.type, order: r.order, cardLimit: r.card_limit,
-    createdAt: r.created_at, updatedAt: r.updated_at };
+    createdAt: r.created_at, updatedAt: r.updated_at
+  };
 }
 
 export function toCard(r: any) {
-  return { id: r.id, columnId: r.column_id, projectId: r.project_id, workspaceId: r.workspace_id,
+  return {
+    id: r.id, columnId: r.column_id, projectId: r.project_id, workspaceId: r.workspace_id,
     title: r.title, description: r.description, tagIds: p(r.tag_ids), priority: r.priority,
     dueDate: r.due_date, linkedNoteIds: p(r.linked_note_ids), blockedByIds: j2(r.blocked_by_ids),
-    order: r.order, assignee: r.assignee, createdAt: r.created_at, updatedAt: r.updated_at, archivedAt: r.archived_at };
+    order: r.order, assignee: r.assignee, createdAt: r.created_at, updatedAt: r.updated_at, archivedAt: r.archived_at
+  };
 }
 
 // ── Snapshot ──────────────────────────────────
@@ -155,11 +165,11 @@ export interface Snapshot {
 export function getSnapshot(db: Database.Database): Snapshot {
   return {
     workspaces: db.prepare("SELECT * FROM workspaces ORDER BY created_at").all().map(toWorkspace),
-    projects:   db.prepare("SELECT * FROM projects ORDER BY created_at").all().map(toProject),
-    notes:      db.prepare("SELECT * FROM notes ORDER BY updated_at DESC").all().map(toNote),
-    columns:    db.prepare(`SELECT * FROM board_columns ORDER BY "order"`).all().map(toColumn),
-    cards:      db.prepare(`SELECT * FROM task_cards ORDER BY "order"`).all().map(toCard),
-    tags:       (db.prepare("SELECT * FROM tags ORDER BY name").all() as any[]).map((r) => ({
+    projects: db.prepare("SELECT * FROM projects ORDER BY created_at").all().map(toProject),
+    notes: db.prepare("SELECT * FROM notes ORDER BY updated_at DESC").all().map(toNote),
+    columns: db.prepare(`SELECT * FROM board_columns ORDER BY "order"`).all().map(toColumn),
+    cards: db.prepare(`SELECT * FROM task_cards ORDER BY "order"`).all().map(toCard),
+    tags: (db.prepare("SELECT * FROM tags ORDER BY name").all() as any[]).map((r) => ({
       id: r.id as string, workspaceId: r.workspace_id as string,
       name: r.name as string, color: r.color as string,
     })),
@@ -242,7 +252,7 @@ export function insertNotification(db: Database.Database, tool: string, title: s
 // ── Note File Synchronizer ────────────────────
 
 export function projectNotesDir(workspacePath: string, projectName: string): string {
-  return path.join(workspacePath, "notes", toSlug(projectName));
+  return path.join(workspacePath, toSlug(projectName));
 }
 
 export function findNoteFilePath(workspacePath: string, projectName: string, noteId: string): string | null {
@@ -286,13 +296,34 @@ export function writeNoteFile(workspacePath: string, note: NoteFileData): void {
   if (existingPath && existingPath !== newPath) {
     try { fs.unlinkSync(existingPath); } catch { /* ignore */ }
   }
-  const frontmatter: Record<string, unknown> = {
+
+  // Preserve non-Cairn frontmatter (Obsidian tags, aliases, cssclass, etc.)
+  const CAIRN_KEYS = new Set([
+    "id", "projectId", "workspaceId", "title", "folder",
+    "tagIds", "linkedNoteIds", "linkedCardIds",
+    "isPinned", "createdAt", "updatedAt", "archivedAt",
+  ]);
+  const existingExtra: Record<string, unknown> = {};
+  try {
+    const readPath = existingPath ?? newPath;
+    if (fs.existsSync(readPath)) {
+      const { data } = matter(fs.readFileSync(readPath, "utf-8"));
+      for (const [key, value] of Object.entries(data)) {
+        if (!CAIRN_KEYS.has(key)) existingExtra[key] = value;
+      }
+    }
+  } catch { /* ignore */ }
+
+  const cairnFields: Record<string, unknown> = {
     id: note.id, projectId: note.projectId, workspaceId: note.workspaceId,
     title: note.title, tagIds: note.tagIds, linkedNoteIds: note.linkedNoteIds,
     linkedCardIds: note.linkedCardIds, isPinned: note.isPinned,
     createdAt: note.createdAt, updatedAt: note.updatedAt,
   };
-  if (note.archivedAt) frontmatter.archivedAt = note.archivedAt;
+  if (note.archivedAt) cairnFields.archivedAt = note.archivedAt;
+
+  // Merge: non-Cairn keys first, then Cairn keys on top (Cairn always wins)
+  const frontmatter = { ...existingExtra, ...cairnFields };
   fs.writeFileSync(newPath, matter.stringify(note.content ?? "", frontmatter), "utf-8");
 }
 

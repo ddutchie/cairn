@@ -212,7 +212,10 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(
                 // Pass the ArrayBuffer directly — Electron structured-clone transfers
                 // it natively, avoiding the overhead of a JSON number array.
                 const result = await electron.uploadAsset(filename, buffer);
-                const markdown = `![](${result.assetUrl})`;
+                // assetUrl is either "![[filename.png]]" (new) or "asset://hash.png" (legacy)
+                const markdown = result.assetUrl.startsWith("![[")
+                  ? result.assetUrl
+                  : `![](${result.assetUrl})`;
                 const { from, to } = view.state.selection.main;
                 view.dispatch({
                   changes: { from, to, insert: markdown },

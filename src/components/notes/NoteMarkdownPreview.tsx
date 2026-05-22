@@ -19,7 +19,7 @@ import { MermaidDiagram } from "./MermaidDiagram";
 import { CodeBlock } from "./CodeBlock";
 import { Callout } from "./Callout";
 import { MathBlock } from "./MathBlock";
-import { remarkCallout, remarkPromoteDisplayMath, makeLatexPlugins, InlineCode } from "@/lib/markdown/pipeline";
+import { remarkCallout, remarkObsidianEmbeds, remarkPromoteDisplayMath, makeLatexPlugins, InlineCode } from "@/lib/markdown/pipeline";
 
 // ── NoteMarkdownPreview ───────────────────────────────────────────────────────
 
@@ -42,7 +42,7 @@ export function NoteMarkdownPreview({ content, className }: NoteMarkdownPreviewP
   return (
     <div className={`prose-cairn px-6 py-5 overflow-y-auto h-full ${className ?? ""}`}>
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkBreaks, remarkMath, remarkPromoteDisplayMath, remarkCallout]}
+        remarkPlugins={[remarkGfm, remarkBreaks, remarkMath, remarkPromoteDisplayMath, remarkCallout, remarkObsidianEmbeds]}
         rehypePlugins={[rehypeCaptureLatex, rehypeKatex, rehypeMergedPass]}
         urlTransform={(url) => url.startsWith("asset://") ? url : defaultUrlTransform(url)}
         components={({

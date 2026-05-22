@@ -34,14 +34,48 @@ import { toSlug, stripMarkdown } from "./shared/text-utils";
 
 export { toSlug, stripMarkdown };
 
+// ── Cairn-owned frontmatter keys ──────────────
+// Only these keys are managed by Cairn. All other frontmatter fields
+// (Obsidian tags, aliases, cssclass, date, publish, etc.) are preserved
+// on every write cycle.
+
+const CAIRN_FRONTMATTER_KEYS = new Set([
+  "id", "projectId", "workspaceId", "title", "folder",
+  "tagIds", "linkedNoteIds", "linkedCardIds",
+  "isPinned", "createdAt", "updatedAt", "archivedAt",
+]);
+
+/**
+ * Read the existing frontmatter from a file on disk, returning all
+ * non-Cairn keys as a record. Returns {} if the file doesn't exist,
+ * has no frontmatter, or is unreadable.
+ */
+export function readExistingFrontmatter(filePath: string): Record<string, unknown> {
+  try {
+    if (!fs.existsSync(filePath)) return {};
+    const { data } = matter(fs.readFileSync(filePath, "utf-8"));
+    const extra: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(data)) {
+      if (!CAIRN_FRONTMATTER_KEYS.has(key)) {
+        extra[key] = value;
+      }
+    }
+    return extra;
+  } catch {
+    return {};
+  }
+}
+
 // ── Path helpers ──────────────────────────────
+// Notes live directly at <workspace>/<project-slug>/ (no intermediate `notes/` dir).
+// This matches Obsidian's vault layout where top-level folders are projects.
 
 export function notesDir(workspacePath: string): string {
-  return path.join(workspacePath, "notes");
+  return workspacePath;
 }
 
 export function projectNotesDir(workspacePath: string, projectName: string): string {
-  return path.join(notesDir(workspacePath), toSlug(projectName));
+  return path.join(workspacePath, toSlug(projectName));
 }
 
 /**
@@ -157,7 +191,11 @@ export function writeNoteFile(workspacePath: string, note: NoteData): void {
     // (handled below — unlink happens after the atomic rename succeeds).
   }
 
-  const frontmatter: Record<string, unknown> = {
+  // Read existing non-Cairn frontmatter (Obsidian tags, aliases, cssclass, etc.)
+  // from the current file on disk so we can preserve it through the write cycle.
+  const existingExtra = readExistingFrontmatter(existingPath ?? newPath);
+
+  const cairnFields: Record<string, unknown> = {
     id: note.id,
     projectId: note.projectId,
     workspaceId: note.workspaceId,
@@ -170,7 +208,10 @@ export function writeNoteFile(workspacePath: string, note: NoteData): void {
     createdAt: note.createdAt,
     updatedAt: note.updatedAt,
   };
-  if (note.archivedAt) frontmatter.archivedAt = note.archivedAt;
+  if (note.archivedAt) cairnFields.archivedAt = note.archivedAt;
+
+  // Merge: non-Cairn keys first, then Cairn keys on top (Cairn always wins).
+  const frontmatter: Record<string, unknown> = { ...existingExtra, ...cairnFields };
 
   // Atomic write: write to a .tmp file first, then rename into place.
   // fs.renameSync on the same filesystem is atomic at the VFS level, so a
@@ -281,7 +322,15 @@ function cleanStaleTmpFiles(dir: string): void {
 }
 
 function syncDir(db: Database.Database, dir: string, workspacePath: string): void {
+  // Known non-note directories to skip when scanning from workspace root
+  const SKIP_DIRS = new Set(["assets", "attachments", "notes"]);
+
   for (const entry of fs.readdirSync(dir)) {
+    // Skip dot-prefixed directories (.obsidian, .trash, .git, etc.)
+    if (entry.startsWith(".")) continue;
+    // Skip known infrastructure directories
+    if (SKIP_DIRS.has(entry) && dir === workspacePath) continue;
+
     const fp = path.join(dir, entry);
     const stat = fs.lstatSync(fp);
     if (stat.isDirectory()) {
@@ -356,13 +405,16 @@ export function adoptExternalNoteFile(
     const project = projects.find((p) => toSlug(p.name) === projectSlug);
     if (!project) return null;
 
-    // Read file content
+    // Read file content and any existing frontmatter (Obsidian fields, etc.)
     const raw = fs.readFileSync(filePath, "utf-8");
-    const { content } = matter(raw);
+    const { data: existingData, content } = matter(raw);
 
-    // Derive title from filename (strip .md extension)
+    // Title resolution: prefer existing frontmatter title (Obsidian convention),
+    // then fall back to filename (strip .md extension).
     const filename = segments[segments.length - 1];
-    const title = path.basename(filename, ".md");
+    const title = (typeof existingData.title === "string" && existingData.title.length > 0)
+      ? existingData.title
+      : path.basename(filename, ".md");
 
     // Derive subfolder from intermediate path segments (un-slugged as-is)
     const folderSegments = segments.slice(1, -1);
@@ -371,13 +423,19 @@ export function adoptExternalNoteFile(
     const now  = new Date().toISOString();
     const id   = generateId();
 
+    // Resolve Obsidian tags → Cairn tag records
+    let tagIds: string[] = [];
+    if (Array.isArray(existingData.tags) && existingData.tags.length > 0) {
+      tagIds = resolveObsidianTagsToCairn(db, project.workspace_id, existingData.tags as string[]);
+    }
+
     const note: NoteData = {
       id,
       projectId:     project.id,
       workspaceId:   project.workspace_id,
       title,
       content,
-      tagIds:        [],
+      tagIds,
       linkedNoteIds: [],
       linkedCardIds: [],
       isPinned:      false,
@@ -391,25 +449,67 @@ export function adoptExternalNoteFile(
     // We must NOT use writeNoteFile() here — that function resolves a new
     // slug-based path from the title, which would create a second file and
     // leave the original orphaned with no frontmatter.
-    const frontmatter: Record<string, unknown> = {
+    //
+    // MERGE strategy: preserve all non-Cairn frontmatter keys (Obsidian
+    // tags, aliases, cssclass, date, publish, custom properties, etc.)
+    const existingExtra: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(existingData)) {
+      if (!CAIRN_FRONTMATTER_KEYS.has(key)) {
+        existingExtra[key] = value;
+      }
+    }
+
+    const cairnFields: Record<string, unknown> = {
       id,
       projectId:     project.id,
       workspaceId:   project.workspace_id,
       title,
       folder,
-      tagIds:        [],
+      tagIds,
       linkedNoteIds: [],
       linkedCardIds: [],
       isPinned:      false,
       createdAt:     now,
       updatedAt:     now,
     };
-    fs.writeFileSync(filePath, matter.stringify(content, frontmatter), "utf-8");
+
+    // Non-Cairn keys first, then Cairn keys on top (Cairn always wins on conflict)
+    const mergedFrontmatter = { ...existingExtra, ...cairnFields };
+    fs.writeFileSync(filePath, matter.stringify(content, mergedFrontmatter), "utf-8");
 
     return note;
   } catch {
     return null;
   }
+}
+
+/**
+ * Resolve Obsidian tag names to Cairn tag IDs.
+ * Creates new tag records in the DB for any tag names that don't already exist.
+ */
+function resolveObsidianTagsToCairn(
+  db: Database.Database,
+  workspaceId: string,
+  tagNames: string[],
+): string[] {
+  const resolvedIds: string[] = [];
+  for (const rawName of tagNames) {
+    const name = String(rawName).trim();
+    if (!name) continue;
+    const existing = db.prepare(
+      "SELECT id FROM tags WHERE workspace_id = ? AND LOWER(name) = ?",
+    ).get(workspaceId, name.toLowerCase()) as { id: string } | undefined;
+    if (existing) {
+      resolvedIds.push(existing.id);
+    } else {
+      const newTagId = generateId();
+      db.prepare(
+        "INSERT INTO tags (id, workspace_id, name, color) VALUES (?, ?, ?, ?)",
+      ).run(newTagId, workspaceId, name, "#6366f1");
+      resolvedIds.push(newTagId);
+    }
+  }
+  return resolvedIds;
 }
 
 export function upsertNoteFromFile(db: Database.Database, note: NoteData): void {

@@ -170,6 +170,16 @@ const api = {
   resetAllData: () => invoke("app:reset"),
   platform: process.platform as "darwin" | "win32" | "linux",
 
+  // ── Migrations ────────────────────────────────
+  checkMigrations: () => invoke<Array<{ id: string; title: string; description: string; needed: boolean }>>("app:checkMigrations"),
+  runMigration: (migrationId: string) => invoke<{ ok: true }>("app:runMigration", { migrationId }),
+  onMigrationProgress: (cb: (e: { migrationId: string; pct: number; msg: string }) => void) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const handler = (_: any, e: { migrationId: string; pct: number; msg: string }) => cb(e);
+    ipcRenderer.on("app:migrationProgress", handler);
+    return () => ipcRenderer.off("app:migrationProgress", handler);
+  },
+
   // ── Auto-updater ──────────────────────────────
   updater: {
     onUpdateAvailable: (cb: (info: { version: string; releaseNotes: string | null }) => void) => {

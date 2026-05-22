@@ -53,6 +53,7 @@ import { SearchPanel } from "@/components/search/search-panel";
 import { SettingsView } from "@/components/settings/settings-view";
 import { AgentView } from "@/components/agent/AgentView";
 import { Onboarding } from "@/components/onboarding";
+import { MigrationModal } from "@/components/layout/MigrationModal";
 
 export default function Home() {
   const {
@@ -362,6 +363,9 @@ export default function Home() {
         {/* Global search overlay */}
         {searchOpen && <SearchPanel />}
       </div>
+
+      {/* Migration modal — blocks app when workspace migrations are pending */}
+      <MigrationModal />
 
       {/* IPC error toasts — bottom-right, auto-dismiss after 5s */}
       {toasts.length > 0 && (

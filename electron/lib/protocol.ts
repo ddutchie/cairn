@@ -34,16 +34,49 @@ export function setAssetWorkspacePath(workspacePath: string): void {
  * take effect immediately without re-registering.
  */
 export function registerAssetProtocol(): void {
+  // Cache for workspace-wide filename lookups (cleared on workspace change)
+  const fileCache = new Map<string, string>();
+
   session.defaultSession.protocol.handle("asset", (request) => {
     const url = new URL(request.url);
     const filename = decodeURIComponent(url.hostname + url.pathname.replace(/^\//, ""));
     if (!_workspacePath) return new Response("No workspace", { status: 503 });
-    const assetDir = path.resolve(_workspacePath, "assets");
-    const filePath = path.resolve(assetDir, filename);
-    if (!filePath.startsWith(assetDir + path.sep) && filePath !== assetDir) {
-      return new Response("Forbidden", { status: 403 });
+
+    // Try locations in priority order:
+    // 1. <ws>/assets/<filename>  (legacy Cairn SHA-hashed images)
+    // 2. <ws>/attachments/<filename>  (Obsidian default attachment folder)
+    // 3. Recursive search of workspace root (Obsidian vault-root images)
+
+    const candidates = [
+      path.resolve(_workspacePath, "assets", filename),
+      path.resolve(_workspacePath, "attachments", filename),
+    ];
+
+    let filePath: string | null = null;
+    for (const candidate of candidates) {
+      // Path-traversal protection: must stay within workspace
+      if (!candidate.startsWith(_workspacePath)) continue;
+      if (fs.existsSync(candidate)) {
+        filePath = candidate;
+        break;
+      }
     }
-    if (!fs.existsSync(filePath)) return new Response("Not found", { status: 404 });
+
+    // Fallback: search workspace recursively (for Obsidian vault-root images)
+    if (!filePath) {
+      const cached = fileCache.get(filename);
+      if (cached && fs.existsSync(cached)) {
+        filePath = cached;
+      } else {
+        const found = findFileRecursive(_workspacePath, filename);
+        if (found && found.startsWith(_workspacePath)) {
+          filePath = found;
+          fileCache.set(filename, found);
+        }
+      }
+    }
+
+    if (!filePath) return new Response("Not found", { status: 404 });
     const ext = path.extname(filePath).toLowerCase().slice(1);
     const mimeTypes: Record<string, string> = {
       png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
@@ -54,6 +87,27 @@ export function registerAssetProtocol(): void {
     const data = fs.readFileSync(filePath);
     return new Response(data, { headers: { "Content-Type": mime } });
   });
+}
+
+/**
+ * Recursively search for a file by name within a directory.
+ * Skips dot-prefixed directories and common non-content dirs.
+ */
+function findFileRecursive(dir: string, filename: string, depth = 0): string | null {
+  if (depth > 5) return null; // prevent deep recursion
+  try {
+    for (const entry of fs.readdirSync(dir)) {
+      if (entry.startsWith(".")) continue;
+      const fp = path.join(dir, entry);
+      const stat = fs.lstatSync(fp);
+      if (stat.isFile() && entry === filename) return fp;
+      if (stat.isDirectory() && entry !== "node_modules") {
+        const found = findFileRecursive(fp, filename, depth + 1);
+        if (found) return found;
+      }
+    }
+  } catch { /* unreadable dir */ }
+  return null;
 }
 
 export function setupProtocol(outDir: string): void {

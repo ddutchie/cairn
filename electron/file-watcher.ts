@@ -17,7 +17,7 @@
 
 import chokidar, { type FSWatcher } from "chokidar";
 import type Database from "better-sqlite3";
-import { notesDir, parseNoteFile, upsertNoteFromFile, adoptExternalNoteFile } from "./notes-files";
+import { parseNoteFile, upsertNoteFromFile, adoptExternalNoteFile } from "./notes-files";
 import * as q from "./db/queries";
 
 let watcher: FSWatcher | null = null;
@@ -43,7 +43,8 @@ export function suppressNextChange(noteId: string): void {
 }
 
 /**
- * Starts watching the notes/ subdirectory of the workspace folder.
+ * Starts watching the workspace directory for .md file additions, changes,
+ * and deletions. Ignores non-note directories like .obsidian, assets, etc.
  * The `onChanged` callback is called after every SQLite mutation so the
  * main process can forward a db:changed event to the renderer.
  */
@@ -55,10 +56,17 @@ export function startFileWatcher(
   stopFileWatcher();
   pathToNoteId.clear();
 
-  const watchPath = notesDir(workspacePath);
+  // Watch from workspace root — notes live at <ws>/<project-slug>/
+  const watchPath = workspacePath;
 
   watcher = chokidar.watch(watchPath, {
-    ignored: /(^|[/\\])\./, // ignore dotfiles
+    ignored: [
+      /(^|[/\\])\./,              // dot-prefixed dirs/files (.obsidian, .trash, .git, etc.)
+      '**/assets/**',             // Cairn legacy asset folder
+      '**/attachments/**',        // Obsidian attachment folder
+      /cairn\.db.*/,              // SQLite database files
+      '**/*.tmp',                 // Atomic write temp files
+    ],
     persistent: true,
     ignoreInitial: true,    // don't fire for files already on disk at startup
     depth: 10,              // recurse into subfolders
