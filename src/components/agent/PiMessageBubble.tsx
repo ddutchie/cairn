@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useState } from "react";
-import { Bot, User, CheckCircle, Loader2, AlertCircle, ChevronDown, ChevronRight, GitBranch, FileText, SquareCheck } from "lucide-react";
+import { CheckCircle, Loader2, ChevronDown, ChevronRight, GitBranch, FileText, SquareCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { MarkdownContent } from "@/components/chat/chat-panel/MarkdownContent";
+import { MessageAvatar, StreamingCursor } from "@/components/chat/chat-panel/message-ui";
 import { CairnEvents } from "@/lib/events";
 import { useCairnStore } from "@/store";
 import { ContextRing } from "./ContextRing";
@@ -232,9 +233,7 @@ function SubagentMessageRow({ msg }: { msg: PiAgentMessage }) {
 
   return (
     <div className="flex gap-1.5 items-start">
-      <div className="w-4 h-4 rounded-full bg-[var(--accent-dim)] border border-[var(--accent)]/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-        <Bot size={8} className="text-[var(--accent)]" />
-      </div>
+      <MessageAvatar role="bot" size="sm" />
       <div className="flex-1 min-w-0 flex flex-col gap-0.5">
         {hasTools && (
           <div className="flex flex-col gap-0.5">
@@ -252,9 +251,7 @@ function SubagentMessageRow({ msg }: { msg: PiAgentMessage }) {
         {hasContent && (
           <div className="px-2 py-1 rounded-lg text-[0.643rem] leading-relaxed bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-secondary)]">
             <MarkdownContent content={msg.content} />
-            {msg.isStreaming && (
-              <span className="inline-block w-0.5 h-2.5 bg-[var(--accent)] animate-pulse ml-0.5 align-middle" />
-            )}
+            {msg.isStreaming && <StreamingCursor size="sm" />}
           </div>
         )}
       </div>
@@ -291,9 +288,7 @@ export function PiMessageBubble({ message }: PiMessageBubbleProps) {
             <p className="whitespace-pre-wrap break-words">{message.content}</p>
           </div>
         </div>
-        <div className="w-5 h-5 rounded-full bg-[var(--surface-3)] border border-[var(--border)] flex items-center justify-center flex-shrink-0 mt-0.5">
-          <User size={10} className="text-[var(--text-tertiary)]" />
-        </div>
+        <MessageAvatar role="user" size="md" />
       </div>
     );
   }
@@ -302,9 +297,7 @@ export function PiMessageBubble({ message }: PiMessageBubbleProps) {
   if (isError) {
     return (
       <div className="flex gap-2 items-start">
-        <div className="w-5 h-5 rounded-full bg-[color-mix(in_srgb,var(--danger)_15%,transparent)] border border-[var(--danger)]/30 flex items-center justify-center flex-shrink-0 mt-0.5">
-          <AlertCircle size={10} className="text-[var(--danger)]" />
-        </div>
+        <MessageAvatar role="error" size="md" />
         <div className="flex-1 min-w-0">
           <div className="px-3 py-2 rounded-xl rounded-tl-sm text-xs leading-relaxed bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] border border-[var(--danger)]/20 text-[var(--danger)]">
             {message.content}
@@ -321,9 +314,7 @@ export function PiMessageBubble({ message }: PiMessageBubbleProps) {
 
   return (
     <div className="flex gap-2 items-start">
-      <div className="w-5 h-5 rounded-full bg-[var(--accent-dim)] border border-[var(--accent)]/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-        <Bot size={10} className="text-[var(--accent)]" />
-      </div>
+      <MessageAvatar role="bot" size="md" />
       <div className="flex-1 min-w-0 flex flex-col gap-1">
 
         {/* Tool call chips — expandable */}
@@ -356,9 +347,7 @@ export function PiMessageBubble({ message }: PiMessageBubbleProps) {
             "min-w-0 overflow-hidden",
           )}>
             <MarkdownContent content={message.content} />
-            {message.isStreaming && (
-              <span className="inline-block w-0.5 h-3 bg-[var(--accent)] animate-pulse ml-0.5 align-middle" />
-            )}
+            {message.isStreaming && <StreamingCursor size="md" />}
           </div>
         )}
       </div>

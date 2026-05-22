@@ -16,10 +16,10 @@ import { useState, useEffect } from "react";
 import { Terminal, MessageSquare, AlertTriangle, Zap, Map as MapIcon } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { id } from "@/lib/utils";
-import { cn } from "@/lib/utils";
 import type { TaskCard } from "@/types";
 
 interface SpawnAgentModalProps {
@@ -188,32 +188,14 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
             <p className="text-[0.714rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)] mb-1.5">
               Agent type
             </p>
-            <div className="flex rounded-lg border border-[var(--border)] overflow-hidden text-xs">
-              <button
-                onClick={() => setSessionType("pi")}
-                className={cn(
-                  "flex-1 flex items-center justify-center gap-1.5 py-1.5 transition-colors",
-                  sessionType === "pi"
-                    ? "bg-[var(--accent)] text-white"
-                    : "text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"
-                )}
-              >
-                <MessageSquare size={12} />
-                Cairn Agent
-              </button>
-              <button
-                onClick={() => setSessionType("pty")}
-                className={cn(
-                  "flex-1 flex items-center justify-center gap-1.5 py-1.5 transition-colors border-l border-[var(--border)]",
-                  sessionType === "pty"
-                    ? "bg-[var(--accent)] text-white"
-                    : "text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"
-                )}
-              >
-                <Terminal size={12} />
-                External Agent
-              </button>
-            </div>
+            <SegmentedControl
+              options={[
+                { value: "pi", label: "Cairn Agent", icon: <MessageSquare size={12} /> },
+                { value: "pty", label: "External Agent", icon: <Terminal size={12} /> },
+              ]}
+              value={sessionType}
+              onChange={setSessionType}
+            />
             {sessionType === "pi" && (
               <p className="text-[0.714rem] text-[var(--text-tertiary)] mt-1">
                 Uses {aiConfig.model || "gpt-4o"} · reads/writes code + Cairn board
@@ -227,32 +209,14 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
               <p className="text-[0.714rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)] mb-1.5">
                 Mode
               </p>
-              <div className="flex rounded-lg border border-[var(--border)] overflow-hidden text-xs">
-                <button
-                  onClick={() => setAgentMode("execute")}
-                  className={cn(
-                    "flex-1 flex items-center justify-center gap-1.5 py-1.5 transition-colors",
-                    agentMode === "execute"
-                      ? "bg-[var(--accent)] text-white"
-                      : "text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"
-                  )}
-                >
-                  <Zap size={12} />
-                  Execute
-                </button>
-                <button
-                  onClick={() => setAgentMode("plan")}
-                  className={cn(
-                    "flex-1 flex items-center justify-center gap-1.5 py-1.5 transition-colors border-l border-[var(--border)]",
-                    agentMode === "plan"
-                      ? "bg-[var(--accent)] text-white"
-                      : "text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"
-                  )}
-                >
-                  <MapIcon size={12} />
-                  Plan
-                </button>
-              </div>
+              <SegmentedControl
+                options={[
+                  { value: "execute", label: "Execute", icon: <Zap size={12} /> },
+                  { value: "plan", label: "Plan", icon: <MapIcon size={12} /> },
+                ]}
+                value={agentMode}
+                onChange={setAgentMode}
+              />
               <p className="text-[0.714rem] text-[var(--text-tertiary)] mt-1">
                 {agentMode === "plan"
                   ? "Discuss and refine a plan first — no code written until you approve"

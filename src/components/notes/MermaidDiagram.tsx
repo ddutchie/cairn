@@ -14,8 +14,8 @@
  */
 
 import { useEffect, useRef, useState, useId, useCallback } from "react";
-import { createPortal } from "react-dom";
-import { Maximize2, X } from "lucide-react";
+import { Maximize2 } from "lucide-react";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 
 interface Props {
   chart: string;
@@ -60,13 +60,6 @@ function DiagramModal({ chart, onClose }: { chart: string; onClose: () => void }
   const containerRef = useRef<HTMLDivElement>(null);
   const modalId = useId().replace(/:/g, "") + "modal";
 
-  // Close on Escape
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [onClose]);
-
   // Render diagram inside modal
   useEffect(() => {
     let cancelled = false;
@@ -93,34 +86,20 @@ function DiagramModal({ chart, onClose }: { chart: string; onClose: () => void }
     return () => { cancelled = true; };
   }, [chart, modalId]);
 
-  return createPortal(
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-6"
-      onClick={onClose}
-    >
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
-
-      {/* Panel — fills 90% of the viewport in both dimensions */}
-      <div
-        className="relative z-10 flex flex-col w-[90vw] h-[88vh] rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl p-6"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <button
-          onClick={onClose}
-          className="absolute top-3 right-3 p-1.5 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
-          aria-label="Close"
-        >
-          <X size={15} />
-        </button>
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent size="full" className="w-[90vw] h-[88vh] max-w-none flex flex-col p-6 animate-slide-in-up" aria-describedby="mermaid-desc">
+        <DialogTitle className="sr-only">Fullscreen Mermaid Diagram</DialogTitle>
+        <div id="mermaid-desc" className="sr-only">
+          Detailed full-screen visualization of the rendered Mermaid chart.
+        </div>
         {/* Container fills all remaining space; SVG is told to fill it */}
         <div
           ref={containerRef}
           className="flex-1 flex justify-center items-center min-h-0 [&_svg]:w-full [&_svg]:h-full [&_svg]:max-w-full [&_svg]:max-h-full"
         />
-      </div>
-    </div>,
-    document.body
+      </DialogContent>
+    </Dialog>
   );
 }
 

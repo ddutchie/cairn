@@ -34,11 +34,7 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import remarkRehype from "remark-rehype";
 import rehypeKatex from "rehype-katex";
-import { visit, SKIP } from "unist-util-visit";
-import type { Plugin } from "unified";
-import type { Root, Element, Text, ElementContent, Parent } from "hast";
-import type { Root as MdastRoot, Paragraph } from "mdast";
-import type { InlineMath } from "mdast-util-math";
+import { remarkCallout, remarkPromoteDisplayMath, makeLatexPlugins } from "@/lib/markdown/pipeline";
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -53,96 +49,6 @@ const fixtures = {
 type FixtureName = keyof typeof fixtures;
 
 // ── Pipeline stages (exact mirrors of note-editor.tsx) ────────────────────────
-
-const CALLOUT_RE = /^\[!([^\]]+)\]([\+\-]?)([\s\S]*)/;
-const remarkCallout = () => (tree: MdastRoot) => {
-  visit(tree, "blockquote", (node: any) => {
-    const firstPara = node.children[0];
-    if (!firstPara || firstPara.type !== "paragraph") return;
-    const firstChild = firstPara.children[0];
-    if (!firstChild || firstChild.type !== "text") return;
-    const match = firstChild.value.match(CALLOUT_RE);
-    if (!match) return;
-    const [, rawType, modifier, rest] = match;
-    firstChild.value = firstChild.value.slice(firstChild.value.indexOf("\n") + 1);
-    node.data = {
-      hName: "callout",
-      hProperties: {
-        "data-callout-type": rawType.trim().toLowerCase(),
-        "data-title": rest.trim(),
-        "data-collapsible": (modifier === "+" || modifier === "-") ? "true" : "false",
-        "data-default-open": modifier !== "-" ? "true" : "false",
-      },
-    };
-  });
-};
-
-const remarkPromoteDisplayMath = () => (tree: MdastRoot) => {
-  visit(tree, "paragraph", (node: Paragraph) => {
-    if (node.children.length === 1 && node.children[0].type === "inlineMath") {
-      const im = node.children[0] as InlineMath;
-      im.data = {
-        ...im.data,
-        hName: "code",
-        hProperties: { className: ["language-math", "math-display"] },
-      };
-      (node as any).data = { hName: "pre", hProperties: {} };
-    }
-  });
-};
-
-function makeLatexPlugins() {
-  const latexBlocks: string[] = [];
-
-  const rehypeCaptureLatex: Plugin<[], Root> = () => (tree) => {
-    latexBlocks.length = 0;
-    visit(tree, "element", (node: Element) => {
-      const cls = (node.properties?.className as string[] | undefined) ?? [];
-      if (cls.includes("math-display")) {
-        latexBlocks.push((node.children[0] as Text | undefined)?.value ?? "");
-      }
-    });
-  };
-
-  // Single post-katex pass: renames katex-display → mathblock AND converts ==marks==.
-  // Uses SKIP to avoid descending into KaTeX subtrees (~80 nodes each).
-  const rehypeMergedPass: Plugin<[], Root> = () => (tree) => {
-    let i = 0;
-    visit(tree, (node, index, parent) => {
-      if (node.type === "element") {
-        const cls = ((node as Element).properties?.className as string[] | undefined) ?? [];
-        if (cls.includes("katex-display")) {
-          if (latexBlocks[i] !== undefined) {
-            (node as Element).tagName = "mathblock";
-            (node as Element).properties = { "data-latex": latexBlocks[i++] };
-          }
-          return SKIP;
-        }
-      }
-      if (
-        node.type === "text" &&
-        (node as Text).value.includes("==") &&
-        parent && index !== undefined
-      ) {
-        const parts = (node as Text).value.split(/(==.+?==)/g);
-        if (parts.length > 1) {
-          const nodes: ElementContent[] = parts
-            .map((part): ElementContent | null => {
-              if (part.startsWith("==") && part.endsWith("==") && part.length > 4)
-                return { type: "element", tagName: "mark", properties: {}, children: [{ type: "text", value: part.slice(2, -2) }] };
-              if (part === "") return null;
-              return { type: "text", value: part } as Text;
-            })
-            .filter((n): n is ElementContent => n !== null);
-          (parent as Parent).children.splice(index, 1, ...nodes);
-          return index;
-        }
-      }
-    });
-  };
-
-  return { rehypeCaptureLatex, rehypeMergedPass };
-}
 
 // ── Benchmark harness ─────────────────────────────────────────────────────────
 

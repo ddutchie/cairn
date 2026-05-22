@@ -22,6 +22,7 @@ export default defineConfig({
     alias: {
       // Redirect better-sqlite3 so it loads via nativeBinding from pkg-native/
       "better-sqlite3": path.resolve(__dirname, "vitest-sqlite-shim.cjs"),
+      "@": path.resolve(__dirname, "./src"),
     },
   },
 });

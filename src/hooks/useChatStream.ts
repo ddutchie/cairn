@@ -18,6 +18,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useCairnStore } from "@/store";
+import type { SuggestedAction } from "@/types";
 
 export interface ChatToolCall {
   tool: string;
@@ -72,6 +73,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
   // A ref (not state) so the onDone closure always reads the latest value without
   // needing to be in the dependency array.
   const toolCallsRef = useRef<ChatToolCall[]>([]);
+  const pendingActionsRef = useRef<SuggestedAction[]>([]);
 
   useEffect(() => { threadIdRef.current = threadId; }, [threadId]);
 
@@ -84,6 +86,10 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
         const qs = (e.args.questions as PendingQuestion[] | undefined) ?? [];
         setPendingQuestions(qs);
       } else {
+        if (e.tool === "suggest_connections") {
+          const incoming = (e.args.actions ?? []) as SuggestedAction[];
+          pendingActionsRef.current = incoming;
+        }
         // Mark the previously-running tool as done, add the new one as running.
         setToolCalls((prev) => {
           const updated = prev.map((tc) =>
@@ -107,13 +113,16 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
         tc.status === "running" ? { ...tc, status: "done" as const } : tc
       );
       if (tid) {
+        const capturedActions = pendingActionsRef.current;
+        pendingActionsRef.current = [];
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        addMessage(tid, "assistant", e.content, e.contextRefs as any, finalToolCalls);
+        addMessage(tid, "assistant", e.content, e.contextRefs as any, finalToolCalls, capturedActions);
       }
       setStreamingContent("");
       setIsLoading(false);
       setToolCalls([]);
       toolCallsRef.current = [];
+      pendingActionsRef.current = [];
       // Do NOT clear pendingQuestions here — the form must stay visible until
       // the user submits their answers. It is cleared in sendStream() instead.
     });
@@ -131,6 +140,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
     setIsLoading(true);
     setToolCalls([]);
     toolCallsRef.current = [];
+    pendingActionsRef.current = [];
     setPendingQuestions(null);
     window.electron?.chat.stream(req);
   }
@@ -140,6 +150,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
     setIsLoading(false);
     setToolCalls([]);
     toolCallsRef.current = [];
+    pendingActionsRef.current = [];
     setStreamingContent("");
     // Keep pendingQuestions — user may still want to answer after stopping
   }

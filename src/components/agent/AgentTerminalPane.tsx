@@ -558,7 +558,7 @@ export function AgentTerminalPane() {
     <>
     <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
       {/* Tab bar */}
-      <div className="flex items-center border-b border-[var(--border)] overflow-x-auto flex-shrink-0 bg-[var(--surface)]">
+      <div className="flex items-center border-b border-[var(--border)] overflow-visible relative z-20 flex-shrink-0 bg-[var(--surface)]">
         {/* Always-present Cairn Agent pinned tab */}
         <PiAgentTab
           isActive={pinnedIsActive}
@@ -569,22 +569,24 @@ export function AgentTerminalPane() {
           }}
         />
 
-        {/* PTY sessions */}
-        {ptySessions.map((session) => (
-          <TerminalTab
-            key={session.sessionId}
-            session={session}
-            isActive={session.sessionId === activeSessionId}
-            onActivate={() => setActiveSession(session.sessionId)}
-            onClose={(e) => handleClose(session.sessionId, e)}
-          />
-        ))}
+        {/* Scrollable PTY sessions */}
+        <div className="flex-1 flex items-center overflow-x-auto min-w-0">
+          {ptySessions.map((session) => (
+            <TerminalTab
+              key={session.sessionId}
+              session={session}
+              isActive={session.sessionId === activeSessionId}
+              onActivate={() => setActiveSession(session.sessionId)}
+              onClose={(e) => handleClose(session.sessionId, e)}
+            />
+          ))}
+        </div>
 
         {/* New session button */}
         <Tooltip content="New session" side="bottom">
           <button
             onClick={() => setSpawnOpen(true)}
-            className="flex-shrink-0 px-2 py-2 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors border-r border-[var(--border)]"
+            className="flex-shrink-0 px-2 py-2 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors border-l border-[var(--border)]"
           >
             <Plus size={12} />
           </button>

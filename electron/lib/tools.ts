@@ -108,17 +108,21 @@ Call get_active_context first to get IDs (projectId, columnId, workspaceId). Nev
 - Use the optional \`folder\` parameter for subfolders, e.g. \`folder="Research/Papers"\`.
 - Use patch_note for targeted edits, append_to_note to add content without replacing.
 - search_notes with an empty query returns all notes in a project.
+- You can pass \`tagNames\` (array of strings) to automatically resolve or create tags case-insensitively, avoiding separate tag creation calls.
 
 ## Tasks
 - Use update_task with \`columnId\` to move a task to a different column.
 - Use list_ready_tasks to find unblocked work; use search_tasks with an empty query to list all tasks.
 - Use update_task with \`blockedBy\` to add a blocker, \`unblockFrom\` to remove one. Blockers auto-clear when moved to done or archived.
+- You can pass \`tagNames\` (array of strings) to automatically resolve or create tags case-insensitively.
 
 ## Dashboards
 Create HTML dashboards with create_dashboard. Call get_dashboard_constants for the window.cairn API before writing HTML.
 
 ## Idea Flow
-Call get_idea_flow_rules before creating nodes. Use spatial.nextPosition from get_idea_flow as the base position.
+- **Prefer backing all canvas concepts with actual notes**: Use type \`note_ref\` or \`task_ref\` nodes.
+- **Inline Note/Task creation**: When creating a \`note_ref\` or \`task_ref\` node, you can inline-create the Note or Task card at the same time by providing \`noteTitle\` & \`noteContent\` (or \`taskTitle\` & \`taskDescription\` & \`priority\`) inside the \`data\` parameter. The system will automatically create the Note/Task and link it in a single step!
+- Use spatial.nextPosition from get_idea_flow as the base position.
 
 ## Knowledge Graph
 Use get_knowledge_graph for cross-entity research, get_neighbors for focused N-hop traversal from one node.

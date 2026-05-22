@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { X, Search, FileText, CheckSquare, Layers, Loader2, DownloadCloud } from "lucide-react";
+import { Search, FileText, CheckSquare, Layers, Loader2, DownloadCloud } from "lucide-react";
 import type { IdeaNodeType } from "@/types";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
 import { PRIORITY_COLORS } from "@/lib/utils";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 interface NodeEditModalProps {
   nodeId: string;
@@ -44,85 +45,80 @@ export function NodeEditModal({ nodeId, type, data, onSave, onClose }: NodeEditM
   }[type];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/40" />
-      <div
-        className="relative bg-[var(--surface)] border border-[var(--border)] rounded-2xl shadow-xl w-full max-w-sm p-5 z-10"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-semibold text-[var(--text-primary)]">{title}</h3>
-          <button
-            onClick={onClose}
-            className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-          >
-            <X size={14} />
-          </button>
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent size="sm" aria-describedby="node-edit-desc">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+        </DialogHeader>
+        <div id="node-edit-desc" className="sr-only">
+          Form to edit the properties of the selected idea flow node.
         </div>
 
-        <div className="flex flex-col gap-3">
-          {type === "idea" && (
-            <>
-              <Field label="Title" value={fields.title ?? ""} onChange={(v) => set("title", v)} autoFocus />
-              <Field label="Body" value={fields.body ?? ""} onChange={(v) => set("body", v)} multiline />
-            </>
-          )}
+        <div className="px-5 py-4 space-y-4">
+          <div className="flex flex-col gap-3">
+            {type === "idea" && (
+              <>
+                <Field label="Title" value={fields.title ?? ""} onChange={(v) => set("title", v)} autoFocus />
+                <Field label="Body" value={fields.body ?? ""} onChange={(v) => set("body", v)} multiline />
+              </>
+            )}
 
-          {type === "note_ref" && (
-            <NotePicker
-              selectedId={fields.noteId ?? ""}
-              onSelect={(id) => set("noteId", id)}
-            />
-          )}
+            {type === "note_ref" && (
+              <NotePicker
+                selectedId={fields.noteId ?? ""}
+                onSelect={(id) => set("noteId", id)}
+              />
+            )}
 
-          {type === "task_ref" && (
-            <TaskPicker
-              selectedId={fields.cardId ?? ""}
-              onSelect={(id) => set("cardId", id)}
-            />
-          )}
+            {type === "task_ref" && (
+              <TaskPicker
+                selectedId={fields.cardId ?? ""}
+                onSelect={(id) => set("cardId", id)}
+              />
+            )}
 
-          {type === "url" && (
-            <UrlEditor
-              url={fields.url ?? ""}
-              title={fields.title ?? ""}
-              description={fields.description ?? ""}
-              onUrlChange={(v) => set("url", v)}
-              onTitleChange={(v) => set("title", v)}
-              onDescriptionChange={(v) => set("description", v)}
-            />
-          )}
+            {type === "url" && (
+              <UrlEditor
+                url={fields.url ?? ""}
+                title={fields.title ?? ""}
+                description={fields.description ?? ""}
+                onUrlChange={(v) => set("url", v)}
+                onTitleChange={(v) => set("title", v)}
+                onDescriptionChange={(v) => set("description", v)}
+              />
+            )}
 
-          {type === "ai_summary" && (
-            <Field label="Content" value={fields.content ?? ""} onChange={(v) => set("content", v)} multiline autoFocus />
-          )}
+            {type === "ai_summary" && (
+              <Field label="Content" value={fields.content ?? ""} onChange={(v) => set("content", v)} multiline autoFocus />
+            )}
 
-          {type === "group" && (
-            <GroupEditor
-              label={fields.label ?? ""}
-              color={fields.color ?? "accent"}
-              onLabelChange={(v) => set("label", v)}
-              onColorChange={(v) => set("color", v)}
-            />
-          )}
+            {type === "group" && (
+              <GroupEditor
+                label={fields.label ?? ""}
+                color={fields.color ?? "accent"}
+                onLabelChange={(v) => set("label", v)}
+                onColorChange={(v) => set("color", v)}
+              />
+            )}
+          </div>
+
+          <div className="flex gap-2 mt-5 justify-end">
+            <button
+              onClick={onClose}
+              className="px-3 py-1.5 rounded-lg text-xs text-[var(--text-secondary)] hover:bg-[var(--surface-2)] transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors"
+            >
+              Save
+            </button>
+          </div>
         </div>
-
-        <div className="flex gap-2 mt-5 justify-end">
-          <button
-            onClick={onClose}
-            className="px-3 py-1.5 rounded-lg text-xs text-[var(--text-secondary)] hover:bg-[var(--surface-2)] transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors"
-          >
-            Save
-          </button>
-        </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

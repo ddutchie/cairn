@@ -103,7 +103,7 @@ export default function Home() {
   const [updateDownloaded, setUpdateDownloaded] = useState(false);
 
   // Chat pre-fill — set by cairn:open-chat event (e.g. from "Fix with AI" button)
-  const [chatPrefill, setChatPrefill] = useState<string | null>(null);
+  const [chatPrefill, setChatPrefill] = useState<{ text: string; autoSend?: boolean } | null>(null);
 
   // IPC error toasts
   const { toasts, dismiss } = useIpcErrorToasts();
@@ -215,7 +215,12 @@ export default function Home() {
 
       if (mod && key === "k") { e.preventDefault(); toggleSearch(); }
       else if (mod && e.shiftKey && key.toLowerCase() === "f") { if (activeView !== "agent") { e.preventDefault(); toggleSearch(); } }
-      else if (mod && key === "/") { e.preventDefault(); if (!hiddenViews.has("chat")) toggleChat(); }
+      else if (mod && key === "/") {
+        if (activeView !== "agent") {
+          e.preventDefault();
+          if (!hiddenViews.has("chat")) toggleChat();
+        }
+      }
       else if (mod && key === "\\") { e.preventDefault(); toggleSidebar(); }
       else if (mod && key === "1") { e.preventDefault(); setView("overview"); }
       else if (mod && key === "2") { e.preventDefault(); setView("notes"); }
@@ -249,8 +254,8 @@ export default function Home() {
       }
     }
     function handleOpenChat(e: Event) {
-      const { prefill } = (e as CustomEvent<{ prefill: string }>).detail;
-      setChatPrefill(prefill);
+      const { prefill, autoSend } = (e as CustomEvent<{ prefill: string; autoSend?: boolean }>).detail;
+      setChatPrefill({ text: prefill, autoSend });
       if (!chatOpen) toggleChat();
     }
 
@@ -352,7 +357,7 @@ export default function Home() {
         </div>
 
         {/* AI Chat panel */}
-        {chatOpen && <ChatPanel prefill={chatPrefill} onPrefillConsumed={() => setChatPrefill(null)} />}
+        {chatOpen && activeView !== "agent" && <ChatPanel prefill={chatPrefill} onPrefillConsumed={() => setChatPrefill(null)} />}
 
         {/* Global search overlay */}
         {searchOpen && <SearchPanel />}

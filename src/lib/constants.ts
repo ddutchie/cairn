@@ -62,8 +62,8 @@ export const PRIORITY_COLORS: Record<string, string> = {
  */
 export const PRIORITY_CSS_COLORS: Record<Priority | string, string> = {
   urgent: "var(--danger)",
-  high:   "var(--danger)",
-  medium: "var(--accent)",
+  high:   "var(--warning)",
+  medium: "var(--info)",
   low:    "var(--text-tertiary)",
 };
 

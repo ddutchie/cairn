@@ -10,10 +10,10 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, useCallback } from "react";
 import { flushSync } from "react-dom";
-import { Send, Square, Trash2, CheckCircle, FileText, Zap, Map as MapIcon } from "lucide-react";
+import { Trash2, CheckCircle, FileText, Zap, Map as MapIcon } from "lucide-react";
 import { QuestionForm } from "@/components/chat/chat-panel/QuestionForm";
+import { ChatInput } from "@/components/chat/ChatInput";
 import type { PendingQuestion } from "@/hooks/useChatStream";
-import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { id } from "@/lib/utils";
@@ -128,10 +128,11 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
 
   const messagesEndRef  = useRef<HTMLDivElement>(null);
   const textareaRef     = useRef<HTMLTextAreaElement>(null);
+
   // Always-current reference to sendPrompt — lets the initialPrompt effect
   // call it after mount without capturing a stale closure.
   const sendPromptRef   = useRef<(text: string) => void>(() => {});
-  const firedInitial    = useRef(false);
+  const firedSessions   = useRef(new Set<string>());
 
   // Scroll to bottom on new messages
   /* eslint-disable react-hooks/exhaustive-deps */
@@ -145,20 +146,19 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
     if (isActive) textareaRef.current?.focus();
   }, [isActive]);
 
-  // Fire initialPrompt once when the pane first mounts (set by SpawnAgentModal).
+  // Fire initialPrompt once when the session is loaded (set by SpawnAgentModal).
   // Uses a ref so we always call the current sendPrompt (not a stale closure).
-  // NOTE: No cleanup/clearTimeout — React StrictMode double-invokes effects and
-  // the cleanup would cancel the timer before it fires. The firedInitial ref
-  // ensures we only queue this once even across StrictMode remounts.
+  // Tracks fired session IDs in a Set ref to ensure we only queue this once per session
+  // even across StrictMode remounts and tab switches.
+  const { sessionId: initialSessionId, initialPrompt } = session;
   useEffect(() => {
-    if (firedInitial.current) return;
-    if (!session.initialPrompt) return;
-    firedInitial.current = true;
+    if (!initialPrompt) return;
+    if (firedSessions.current.has(initialSessionId)) return;
+
+    firedSessions.current.add(initialSessionId);
     // Defer 100ms so IPC listeners registered in the effect below are fully live.
-    setTimeout(() => sendPromptRef.current(session.initialPrompt!), 100);
-  // run once on mount only
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    setTimeout(() => sendPromptRef.current(initialPrompt), 100);
+  }, [initialSessionId, initialPrompt]);
 
   // Subscribe to IPC events for this session
   useEffect(() => {
@@ -606,49 +606,17 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
         {session.mode === "execute" && planNoteContent && (
           <PlanTaskList content={planNoteContent} />
         )}
-      <div className="p-2">
-        <div className="relative">
-          <textarea
-            ref={textareaRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                sendPrompt(input);
-              }
-            }}
-            placeholder={session.mode === "plan" ? "Describe what you want to build…" : "Ask the agent…"}
-            rows={2}
-            disabled={isLoading}
-            className={cn(
-              "w-full resize-none rounded-lg border border-[var(--border)] bg-[var(--surface-2)]",
-              "px-2.5 py-2 pr-8 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]",
-              "focus:outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent-dim)]",
-              "transition-colors leading-relaxed disabled:opacity-60",
-            )}
-          />
-          {isLoading ? (
-            <Tooltip content="Stop" side="left">
-              <button
-                onClick={handleStop}
-                className="absolute right-2 bottom-2 p-1 rounded text-[var(--danger)] hover:bg-[var(--danger)]/10 transition-colors"
-              >
-                <Square size={12} />
-              </button>
-            </Tooltip>
-          ) : (
-            <Tooltip content="Send (Enter)" side="left">
-              <button
-                onClick={() => sendPrompt(input)}
-                disabled={!input.trim()}
-                className="absolute right-2 bottom-2 p-1 rounded text-[var(--accent)] hover:bg-[var(--accent-dim)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                <Send size={12} />
-              </button>
-            </Tooltip>
-          )}
-        </div>
+      <div className="p-3">
+        <ChatInput
+          ref={textareaRef}
+          value={input}
+          onChange={setInput}
+          onSubmit={() => sendPrompt(input)}
+          onStop={handleStop}
+          isLoading={isLoading}
+          disabled={isLoading}
+          placeholder={session.mode === "plan" ? "Describe what you want to build…" : "Ask the agent…"}
+        />
         <p className="text-[0.643rem] text-[var(--text-tertiary)] mt-1 text-center">
           {retryInfo
             ? `Transient error — retrying (${retryInfo.attempt}/${retryInfo.maxRetries}) in ${Math.round(retryInfo.delayMs / 1000)}s…`

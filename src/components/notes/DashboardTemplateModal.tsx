@@ -9,8 +9,9 @@
  */
 
 import React from "react";
-import { X, LayoutDashboard, BarChart2, Users, CheckSquare, Globe, Sparkles } from "lucide-react";
+import { LayoutDashboard, BarChart2, Users, CheckSquare, Globe, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 // ── Templates ─────────────────────────────────────────────────────────────────
 
@@ -249,27 +250,23 @@ interface Props {
 
 export function DashboardTemplateModal({ onSelect, onClose }: Props) {
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-6"
-      onClick={onClose}
-    >
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-      <div
-        className="relative z-10 w-full max-w-xl rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent
+        size="md"
+        aria-describedby="template-desc"
+        className="max-w-xl overflow-hidden p-0 gap-0 border-[var(--border)] bg-[var(--surface)]"
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--border)]">
-          <div className="flex items-center gap-2">
-            <LayoutDashboard size={14} className="text-[var(--text-tertiary)]" />
-            <span className="text-sm font-semibold text-[var(--text-primary)]">New Dashboard</span>
-          </div>
-          <button
-            onClick={onClose}
-            className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-          >
-            <X size={15} />
-          </button>
+        <DialogHeader className="flex flex-row items-center justify-start gap-2 px-5 py-4 border-b border-[var(--border)]">
+          <LayoutDashboard size={14} className="text-[var(--text-tertiary)]" />
+          <DialogTitle className="text-sm font-semibold text-[var(--text-primary)]">
+            New Dashboard
+          </DialogTitle>
+        </DialogHeader>
+
+        {/* Accessibility description */}
+        <div id="template-desc" className="sr-only">
+          Select a template to build a new custom dashboard or start with a blank screen.
         </div>
 
         {/* Template grid */}
@@ -297,7 +294,7 @@ export function DashboardTemplateModal({ onSelect, onClose }: Props) {
             </button>
           ))}
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

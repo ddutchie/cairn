@@ -1,9 +1,11 @@
 "use client";
 
 import React, { useState } from "react";
-import { Bot, User, FileText, Kanban, FolderOpen, Search, Copy, Check, RotateCcw, CheckCircle } from "lucide-react";
+import { FileText, Kanban, FolderOpen, Search, Copy, Check, RotateCcw, CheckCircle } from "lucide-react";
 import { cn, formatRelative } from "@/lib/utils";
 import { MarkdownContent } from "./MarkdownContent";
+import { ActionsList } from "./ActionsList";
+import { MessageAvatar } from "./message-ui";
 import type { ChatMessage, LinkedContextReference } from "@/types";
 
 interface ChatMessageBubbleProps {
@@ -24,10 +26,7 @@ export function ChatMessageBubble({ message, onRetry }: ChatMessageBubbleProps) 
 
   return (
     <div className={cn("group flex gap-2 items-start", isUser && "flex-row-reverse")}>
-      <div className={cn("w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5",
-        isUser ? "bg-[var(--surface-3)] border border-[var(--border)]" : "bg-[var(--accent-dim)] border border-[var(--accent)]/20")}>
-        {isUser ? <User size={11} className="text-[var(--text-tertiary)]" /> : <Bot size={11} className="text-[var(--accent)]" />}
-      </div>
+      <MessageAvatar role={isUser ? "user" : "bot"} size="lg" />
       <div className={cn("flex-1 min-w-0 space-y-1.5", isUser && "items-end flex flex-col")}>
         {!isUser && message.toolCalls && message.toolCalls.length > 0 && (
           <div className="flex flex-col gap-1 mb-1">
@@ -43,6 +42,9 @@ export function ChatMessageBubble({ message, onRetry }: ChatMessageBubbleProps) 
           isUser ? "bg-[var(--accent)] text-white rounded-tr-sm" : "bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-secondary)] rounded-tl-sm")}>
           <MarkdownContent content={message.content} />
         </div>
+        {!isUser && message.actions && message.actions.length > 0 && (
+          <ActionsList actions={message.actions} />
+        )}
         {message.contextRefs && message.contextRefs.length > 0 && (
           <div className="flex flex-wrap gap-1">
             {message.contextRefs.map((ref, i) => <ContextRefChip key={i} ref_={ref} />)}

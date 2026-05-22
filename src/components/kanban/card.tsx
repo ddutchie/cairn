@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/context-menu";
 import { useCairnStore } from "@/store";
 import type { TaskCard } from "@/types";
+import { PRIORITY_CSS_COLORS } from "@/lib/constants";
 
 interface KanbanCardProps {
   card: TaskCard;
@@ -68,13 +69,8 @@ export const KanbanCard = React.memo(function KanbanCard({ card, onClick, isDrag
         >
       {/* Priority indicator */}
       <div
-        className={cn(
-          "absolute top-0 left-0 w-1 h-full opacity-60",
-          card.priority === "urgent" && "bg-red-500",
-          card.priority === "high" && "bg-orange-400",
-          card.priority === "medium" && "bg-amber-400",
-          card.priority === "low" && "bg-stone-500"
-        )}
+        className="absolute top-0 left-0 w-1 h-full opacity-60"
+        style={{ backgroundColor: PRIORITY_CSS_COLORS[card.priority] }}
       />
 
       <div className="pl-2">
@@ -119,7 +115,7 @@ export const KanbanCard = React.memo(function KanbanCard({ card, onClick, isDrag
                 <span className={cn(
                   "flex items-center gap-1 text-[0.714rem] font-medium rounded px-1 py-0.5",
                   status === "overdue" && "text-[var(--danger)] bg-[var(--danger)]/10",
-                  status === "today" && "text-amber-400 bg-amber-400/10",
+                  status === "today" && "text-[var(--warning)] bg-[var(--warning)]/10",
                   status === "upcoming" && "text-[var(--text-tertiary)]",
                 )}>
                   <Calendar size={11} />

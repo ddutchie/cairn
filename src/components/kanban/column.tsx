@@ -247,7 +247,7 @@ export function KanbanColumn({
           )}
           <span className={cn(
             "text-[0.786rem] flex-shrink-0 font-mono",
-            atLimit ? "text-amber-400" : "text-[var(--text-tertiary)]"
+            atLimit ? "text-[var(--warning)]" : "text-[var(--text-tertiary)]"
           )}>
             {column.cardLimit ? `${cards.length}/${column.cardLimit}` : cards.length}
           </span>
@@ -397,7 +397,7 @@ export function KanbanColumn({
         ) : (
           <div className="p-2 border-t border-[var(--border)]">
             {atLimit ? (
-              <p className="w-full text-center text-[0.714rem] text-amber-400 py-1">
+              <p className="w-full text-center text-[0.714rem] text-[var(--warning)] py-1">
                 WIP limit reached ({column.cardLimit})
               </p>
             ) : (

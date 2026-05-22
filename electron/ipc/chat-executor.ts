@@ -65,6 +65,26 @@ const IDEA_FLOW_RULES = {
   ],
 };
 
+function resolveTagNames(db: Database.Database, workspaceId: string, tagNames?: string[]): string[] {
+  if (!Array.isArray(tagNames) || tagNames.length === 0) return [];
+  const resolvedIds: string[] = [];
+  for (const rawName of tagNames) {
+    const name = rawName.trim();
+    if (!name) continue;
+    const existing = db.prepare("SELECT id FROM tags WHERE workspace_id = ? AND LOWER(name) = ?")
+      .get(workspaceId, name.toLowerCase()) as { id: string } | undefined;
+    if (existing) {
+      resolvedIds.push(existing.id);
+    } else {
+      const newTagId = newId();
+      db.prepare("INSERT INTO tags (id, workspace_id, name, color) VALUES (?, ?, ?, ?)")
+        .run(newTagId, workspaceId, name, "#6366f1");
+      resolvedIds.push(newTagId);
+    }
+  }
+  return resolvedIds;
+}
+
 export async function executeTool(
   db: Database.Database,
   req: ChatRequest,
@@ -178,7 +198,13 @@ export async function executeTool(
         (n) => !n.archivedAt && n.projectId === args.projectId && n.title === args.title
       );
       const markdown = (args.content as string | undefined) ?? "";
-      const ensureTagIds = Array.isArray(args.tagIds) ? args.tagIds as string[] : undefined;
+      
+      const resolvedFromNameIds = resolveTagNames(db, project.workspaceId, args.tagNames as string[] | undefined);
+      let ensureTagIds = Array.isArray(args.tagIds) ? args.tagIds as string[] : undefined;
+      if (resolvedFromNameIds.length > 0) {
+        ensureTagIds = Array.from(new Set([...(ensureTagIds ?? []), ...resolvedFromNameIds]));
+      }
+
       const ensureIsPinned = typeof args.isPinned === "boolean" ? args.isPinned : undefined;
       const ensureFolder = typeof args.folder === "string" ? args.folder : undefined;
       const ensureNoteId = existing?.id ?? newId();
