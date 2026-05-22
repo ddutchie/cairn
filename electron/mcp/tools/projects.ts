@@ -5,6 +5,7 @@ import Database from "better-sqlite3";
 import { newId, ts } from "../../db/utils";
 import { DEFAULT_COLUMNS } from "../../db/defaults";
 import { insertNotification, Snapshot } from "../db";
+import { toSlug } from "../../shared/text-utils";
 
 export function upsert_project(db: Database.Database, snap: Snapshot, args: Record<string, any>) {
   if (args.projectId) {
@@ -52,7 +53,7 @@ export function delete_project(db: Database.Database, snap: Snapshot, workspaceP
   const project = snap.projects.find((p) => p.id === args.projectId);
   if (!project) return { error: "Project not found" };
   // Delete notes dir
-  const notesDir = path.join(workspacePath, "notes", project.name.trim().replace(/[/\\:*?"<>|]/g, "").slice(0, 100).trim() || "Untitled");
+  const notesDir = path.join(workspacePath, toSlug(project.name));
   if (fs.existsSync(notesDir)) {
     try { fs.rmSync(notesDir, { recursive: true, force: true }); } catch { /* ignore */ }
   }

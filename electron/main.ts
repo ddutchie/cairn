@@ -263,7 +263,7 @@ app.whenReady().then(async () => {
   win.on("focus", clearBadge);
 
   // Register app:* and mcp:* IPC handlers (now that updateBadge is available)
-  registerAppHandlers(ctx.db, userDataPath, updateBadge, win, reinitialise, clearBadge);
+  registerAppHandlers(ctx, userDataPath, updateBadge, reinitialise, clearBadge);
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

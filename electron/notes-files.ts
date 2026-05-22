@@ -323,13 +323,27 @@ function cleanStaleTmpFiles(dir: string): void {
 
 function syncDir(db: Database.Database, dir: string, workspacePath: string): void {
   // Known non-note directories to skip when scanning from workspace root
-  const SKIP_DIRS = new Set(["assets", "attachments", "notes"]);
+  const SKIP_DIRS = new Set(["assets", "attachments"]);
 
   for (const entry of fs.readdirSync(dir)) {
     // Skip dot-prefixed directories (.obsidian, .trash, .git, etc.)
     if (entry.startsWith(".")) continue;
     // Skip known infrastructure directories
     if (SKIP_DIRS.has(entry) && dir === workspacePath) continue;
+
+    if (entry === "notes" && dir === workspacePath) {
+      // Skip only if it's a legacy notes/ directory (no direct .md files)
+      const notesPath = path.join(workspacePath, "notes");
+      try {
+        const entries = fs.readdirSync(notesPath);
+        const hasDirectMd = entries.some((e) => e.endsWith(".md") && fs.lstatSync(path.join(notesPath, e)).isFile());
+        if (!hasDirectMd) {
+          continue;
+        }
+      } catch {
+        continue;
+      }
+    }
 
     const fp = path.join(dir, entry);
     const stat = fs.lstatSync(fp);

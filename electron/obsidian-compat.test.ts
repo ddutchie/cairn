@@ -529,4 +529,17 @@ describe("mixed Cairn and Obsidian files", () => {
     expect(finalData.aliases).toEqual(["cf"]);
     expect(finalData.id).toBe("cairn-1");
   });
+
+  it("does not skip root notes/ folder if it has direct .md files, synchronising it as a project called notes", () => {
+    seedProject(db, "notes", "proj-notes", "ws1");
+
+    const notesDir = path.join(tmpDir, "notes");
+    writePlainMdFile(notesDir, "My Note.md", "# My Note\n\nContent.");
+
+    syncNotesFromDisk(db, tmpDir);
+
+    const rows = db.prepare("SELECT title FROM notes WHERE project_id = ?").all("proj-notes") as { title: string }[];
+    expect(rows).toHaveLength(1);
+    expect(rows[0].title).toBe("My Note");
+  });
 });
