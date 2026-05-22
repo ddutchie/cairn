@@ -20,7 +20,6 @@ import { SegmentedControl } from "@/components/ui/segmented-control";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { id } from "@/lib/utils";
-import { cn } from "@/lib/utils";
 import type { TaskCard } from "@/types";
 
 interface SpawnAgentModalProps {
