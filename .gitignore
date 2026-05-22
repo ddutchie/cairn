@@ -79,3 +79,5 @@ cairn.db-wal
 *.db-shm
 *.db-wal
 
+# test mock vaults
+/tests/fixtures/obsidian-vault/
