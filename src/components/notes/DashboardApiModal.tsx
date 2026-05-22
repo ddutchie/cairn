@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useState } from "react";
-import { X, HelpCircle, Copy, Check } from "lucide-react";
+import { HelpCircle, Copy, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 interface ApiEntry {
   signature: string;
@@ -98,32 +99,26 @@ interface Props {
 
 export function DashboardApiModal({ onClose }: Props) {
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-6"
-      onClick={onClose}
-    >
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-      <div
-        className="relative z-10 w-full max-w-2xl max-h-[80vh] flex flex-col rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent
+        size="lg"
+        aria-describedby="api-desc"
+        className="max-h-[80vh] flex flex-col overflow-hidden p-0 gap-0 border-[var(--border)] bg-[var(--surface)]"
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-[var(--border)] flex-shrink-0">
-          <div className="flex items-center gap-2">
-            <HelpCircle size={13} className="text-[var(--text-tertiary)]" />
-            <span className="text-sm font-semibold text-[var(--text-primary)]">
-              window.cairn API
-            </span>
-            <span className="text-[0.786rem] text-[var(--text-tertiary)] ml-1">
-              available inside every dashboard
-            </span>
-          </div>
-          <button
-            onClick={onClose}
-            className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-          >
-            <X size={15} />
-          </button>
+        <DialogHeader className="flex flex-row items-center justify-start gap-2 px-5 py-3.5 border-b border-[var(--border)] flex-shrink-0">
+          <HelpCircle size={13} className="text-[var(--text-tertiary)]" />
+          <DialogTitle className="text-sm font-semibold text-[var(--text-primary)]">
+            window.cairn API
+          </DialogTitle>
+          <span className="text-[0.786rem] text-[var(--text-tertiary)] ml-1">
+            available inside every dashboard
+          </span>
+        </DialogHeader>
+
+        {/* Description helper for accessibility */}
+        <div id="api-desc" className="sr-only">
+          API documentation for window.cairn, available inside every dashboard.
         </div>
 
         {/* Entries */}
@@ -162,7 +157,7 @@ export function DashboardApiModal({ onClose }: Props) {
             </p>
           </div>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

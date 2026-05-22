@@ -6,6 +6,7 @@ import * as d3Zoom from "d3-zoom";
 import * as d3Selection from "d3-selection";
 import type { GraphNode, KnowledgeGraph } from "@/types";
 import { resolveCssVar as resolveVar } from "./graphUtils";
+import { useFontScale } from "./analyticsHooks";
 
 interface Props {
   graph: KnowledgeGraph;
@@ -78,6 +79,7 @@ function crossEdgeColor(type: string): string {
 export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgroundClick }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const gRef = useRef<SVGGElement>(null);
+  const fs = useFontScale();
 
   const renderTree = useCallback(() => {
     const svg = svgRef.current;
@@ -250,7 +252,7 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
       })
       .style("font-size", (d) => {
         const type = (d.data as { type: string }).type;
-        return type === "workspace" ? "11px" : type === "project" ? "10.5px" : "9px";
+        return type === "workspace" ? `${11 * fs}px` : type === "project" ? `${10.5 * fs}px` : `${9 * fs}px`;
       })
       .style("font-weight", (d) => {
         const type = (d.data as { type: string }).type;
@@ -273,7 +275,7 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
         return title.length > maxLen ? title.slice(0, maxLen - 1) + "…" : title;
       });
 
-  }, [graph, selectedNodeId, onNodeClick]);
+  }, [graph, selectedNodeId, onNodeClick, fs]);
 
   useEffect(() => { renderTree(); }, [renderTree]);
 
