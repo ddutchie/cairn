@@ -488,7 +488,7 @@ export function KanbanBoard() {
                                   <span className={cn(
                                     "text-[0.643rem] px-1.5 py-0.5 rounded",
                                     card.priority === "urgent" && "bg-[var(--danger)]/10 text-[var(--danger)]",
-                                    card.priority === "high"   && "bg-amber-500/10 text-amber-400",
+                                    card.priority === "high"   && "bg-[var(--warning)]/10 text-[var(--warning)]",
                                     card.priority === "low"    && "bg-[var(--surface-2)] text-[var(--text-tertiary)]",
                                   )}>
                                     {card.priority}
