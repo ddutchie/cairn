@@ -592,10 +592,9 @@ export function registerIpcHandlers(ctx: DbContext): void {
   * @param updateTrayBadge - callback to update the tray badge count
   */
 export function registerAppHandlers(
-  db: Database.Database,
+  ctx: DbContext,
   userDataPath: string,
   updateTrayBadge: (count: number) => void,
-  win?: BrowserWindow,
   onReinitialise?: (newWorkspacePath: string) => Promise<void>,
   /** Called when the badge is cleared from the renderer — resets poller count too. */
   onBadgeClear?: () => void,
@@ -630,9 +629,12 @@ export function registerAppHandlers(
     // On Windows, update the native title bar overlay to match the new theme.
     // Use --surface values (not backgroundColor) to match TitleBar's bg-[var(--surface)].
     // height:39 not 40 — Windows 1px window border makes 40 clip the border-b below the bar.
-    if (process.platform === "win32" && win && !win.isDestroyed()) {
-      const surface = theme === "light" ? "#ffffff" : "#141414";
-      win.setTitleBarOverlay({ color: surface, symbolColor: "#888888", height: 39 });
+    if (process.platform === "win32") {
+      const activeWin = ctx.getWin();
+      if (activeWin && !activeWin.isDestroyed()) {
+        const surface = theme === "light" ? "#ffffff" : "#141414";
+        activeWin.setTitleBarOverlay({ color: surface, symbolColor: "#888888", height: 39 });
+      }
     }
   }));
 
@@ -680,7 +682,7 @@ export function registerAppHandlers(
   ipcMain.handle("app:reset", () => handle(() => {
     const tables = ["chat_messages", "chat_threads", "mcp_notifications", "task_cards", "board_columns", "notes", "tags", "projects", "workspaces"];
     for (const t of tables) {
-      db.prepare(`DELETE FROM ${t}`).run();
+      ctx.db.prepare(`DELETE FROM ${t}`).run();
     }
     app.relaunch();
     app.quit();
@@ -702,7 +704,7 @@ export function registerAppHandlers(
 
   // ── MCP notification handler ───────────────────────
   ipcMain.handle("mcp:markNotificationsRead", () => handle(() => {
-    markMcpNotificationsRead(db);
+    markMcpNotificationsRead(ctx.db);
     updateTrayBadge(0);
     onBadgeClear?.();
   }));
@@ -710,9 +712,10 @@ export function registerAppHandlers(
   // ── Export note as PDF ─────────────────────────────
   ipcMain.handle("app:exportNotePdf", (_e, { title, html }: { title: string; html: string }) =>
     handle(async () => {
-      if (!win || win.isDestroyed()) throw new Error("No window");
+      const activeWin = ctx.getWin();
+      if (!activeWin || activeWin.isDestroyed()) throw new Error("No window");
 
-      const { canceled, filePath: savePath } = await dialog.showSaveDialog(win, {
+      const { canceled, filePath: savePath } = await dialog.showSaveDialog(activeWin, {
         title: "Export Note as PDF",
         defaultPath: `${title}.pdf`,
         filters: [{ name: "PDF Document", extensions: ["pdf"] }],
@@ -868,8 +871,9 @@ pre, blockquote, table { page-break-inside: avoid; }
     handle(async () => {
       await runMigration(ctx.workspacePath, migrationId, (pct, msg) => {
         // Send progress events to the renderer
-        if (win && !win.isDestroyed()) {
-          win.webContents.send("app:migrationProgress", { migrationId, pct, msg });
+        const activeWin = ctx.getWin();
+        if (activeWin && !activeWin.isDestroyed()) {
+          activeWin.webContents.send("app:migrationProgress", { migrationId, pct, msg });
         }
       });
       return { ok: true };

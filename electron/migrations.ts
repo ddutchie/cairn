@@ -75,9 +75,13 @@ const dropNotesDirMigration: Migration = {
   check(workspacePath: string): boolean {
     const notesDir = path.join(workspacePath, "notes");
     if (!fs.existsSync(notesDir)) return false;
-    // Only needed if notes/ contains at least one directory (project folder)
     try {
       const entries = fs.readdirSync(notesDir);
+      // If there are any .md files directly inside notes/, it's an Obsidian project folder named "notes"
+      const hasDirectMd = entries.some((e) => e.endsWith(".md") && fs.lstatSync(path.join(notesDir, e)).isFile());
+      if (hasDirectMd) return false;
+
+      // Only needed if notes/ contains at least one directory (project folder)
       return entries.some((e) => {
         const fp = path.join(notesDir, e);
         return fs.lstatSync(fp).isDirectory() && !e.startsWith(".");
