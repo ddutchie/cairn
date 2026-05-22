@@ -6,6 +6,7 @@
 import React from "react";
 import * as d3 from "d3";
 import { DAY_MS } from "./analyticsUtils";
+import { useFontScale } from "./analyticsHooks";
 
 // ── CanvasEmptyState ──────────────────────────────────────────────────────────
 
@@ -74,6 +75,7 @@ export function SvgTimeAxis({
 }: TimeAxisProps) {
   const lineColor = "var(--text-primary)";
   const fmt = d3.timeFormat(bucketMs < DAY_MS ? "%b %d %H:%M" : "%b %d");
+  const fs = useFontScale();
 
   const count = Math.max(2, Math.floor(plotW / 100));
   const ticks = xScale.ticks(count).map((d) => ({
@@ -98,7 +100,7 @@ export function SvgTimeAxis({
             x={x} y={padTop - 10}
             textAnchor="middle"
             fill={lineColor} fillOpacity={0.3}
-            fontSize={8} fontFamily="var(--font-mono)"
+            fontSize={8 * fs} fontFamily="var(--font-mono)"
           >
             {label}
           </text>
@@ -117,7 +119,7 @@ export function SvgTimeAxis({
             x={todayX} y={padTop - 10}
             textAnchor="middle"
             fill={lineColor} fillOpacity={0.35}
-            fontSize={8} fontFamily="var(--font-mono)"
+            fontSize={8 * fs} fontFamily="var(--font-mono)"
           >
             TODAY
           </text>
