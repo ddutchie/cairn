@@ -131,7 +131,7 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
   // Always-current reference to sendPrompt — lets the initialPrompt effect
   // call it after mount without capturing a stale closure.
   const sendPromptRef   = useRef<(text: string) => void>(() => {});
-  const firedInitial    = useRef(false);
+  const firedSessions   = useRef(new Set<string>());
 
   // Scroll to bottom on new messages
   /* eslint-disable react-hooks/exhaustive-deps */
@@ -145,20 +145,19 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
     if (isActive) textareaRef.current?.focus();
   }, [isActive]);
 
-  // Fire initialPrompt once when the pane first mounts (set by SpawnAgentModal).
+  // Fire initialPrompt once when the session is loaded (set by SpawnAgentModal).
   // Uses a ref so we always call the current sendPrompt (not a stale closure).
-  // NOTE: No cleanup/clearTimeout — React StrictMode double-invokes effects and
-  // the cleanup would cancel the timer before it fires. The firedInitial ref
-  // ensures we only queue this once even across StrictMode remounts.
+  // Tracks fired session IDs in a Set ref to ensure we only queue this once per session
+  // even across StrictMode remounts and tab switches.
+  const { sessionId: initialSessionId, initialPrompt } = session;
   useEffect(() => {
-    if (firedInitial.current) return;
-    if (!session.initialPrompt) return;
-    firedInitial.current = true;
+    if (!initialPrompt) return;
+    if (firedSessions.current.has(initialSessionId)) return;
+
+    firedSessions.current.add(initialSessionId);
     // Defer 100ms so IPC listeners registered in the effect below are fully live.
-    setTimeout(() => sendPromptRef.current(session.initialPrompt!), 100);
-  // run once on mount only
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    setTimeout(() => sendPromptRef.current(initialPrompt), 100);
+  }, [initialSessionId, initialPrompt]);
 
   // Subscribe to IPC events for this session
   useEffect(() => {

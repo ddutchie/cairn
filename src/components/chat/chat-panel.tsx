@@ -7,12 +7,34 @@ import { useCairnStore } from "@/store";
 import { MIN_CHAT_PANEL_WIDTH, MAX_CHAT_PANEL_WIDTH } from "@/store/slices/ui";
 import { useShallow } from "zustand/react/shallow";
 import { useChatStream } from "@/hooks/useChatStream";
+import { buildGraphContext } from "@/components/graph/graph-ai-utils";
 
 import { Tooltip } from "@/components/ui/tooltip";
 import { ChatMessageBubble } from "./chat-panel/ChatMessageBubble";
 import { SuggestedPrompts } from "./chat-panel/SuggestedPrompts";
 import { ToolCallIndicator } from "./chat-panel/ToolCallIndicator";
 import { QuestionForm } from "./chat-panel/QuestionForm";
+
+const GRAPH_SYSTEM_PROMPT = `You are a Knowledge Graph assistant embedded in Cairn, a note-taking and project management app.
+
+You help users build meaningful connections between their notes, tasks, and projects. You have access to a snapshot of their current knowledge graph — each node includes its ID and title.
+
+Your capabilities:
+1. **Suggest missing connections** — identify notes/cards that are related but not yet linked
+2. **Recommend wikilinks** — suggest [[Note Title]] wikilinks to add to specific notes
+3. **Suggest tags** — recommend tags to apply to notes or cards
+4. **Explain connections** — describe why two nodes are related
+5. **Graph analysis** — identify clusters, orphan nodes, and structural patterns
+
+## Workflow
+
+Write your analysis as clear, concise markdown prose.
+
+When you have specific actionable suggestions, call the \`suggest_connections\` tool with those actions. The user will see Apply buttons for each one. Use node IDs exactly as they appear in the graph snapshot. Limit to 8 actions maximum.
+
+**Important:** The graph snapshot includes an "EXISTING WIKILINKS" section. Never suggest \`add_wikilink\` actions for pairs that already appear there — those links already exist.
+
+Do not put the actions in your prose — call the tool instead.`;
 
 interface ChatPanelProps {
   prefill?: { text: string; autoSend?: boolean } | null;
@@ -28,22 +50,26 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
     chatMessages, chatThreads, aiConfig,
     createNewThread, deleteThread, renameThread,
     chatPanelWidth, setChatPanelWidth,
+    activeView, graphData, selectedGraphNodeId,
   } = useCairnStore(useShallow((s) => ({
-    chatOpen:          s.chatOpen,
-    toggleChat:        s.toggleChat,
-    activeProjectId:   s.activeProjectId,
-    activeWorkspaceId: s.activeWorkspaceId,
-    projects:          s.projects,
-    workspaces:        s.workspaces,
-    addMessage:        s.addMessage,
-    chatMessages:      s.chatMessages,
-    chatThreads:       s.chatThreads,
-    aiConfig:          s.aiConfig,
-    createNewThread:   s.createNewThread,
-    deleteThread:      s.deleteThread,
-    renameThread:      s.renameThread,
-    chatPanelWidth:    s.chatPanelWidth,
-    setChatPanelWidth: s.setChatPanelWidth,
+    chatOpen:            s.chatOpen,
+    toggleChat:          s.toggleChat,
+    activeProjectId:     s.activeProjectId,
+    activeWorkspaceId:   s.activeWorkspaceId,
+    projects:            s.projects,
+    workspaces:          s.workspaces,
+    addMessage:          s.addMessage,
+    chatMessages:        s.chatMessages,
+    chatThreads:         s.chatThreads,
+    aiConfig:            s.aiConfig,
+    createNewThread:     s.createNewThread,
+    deleteThread:        s.deleteThread,
+    renameThread:        s.renameThread,
+    chatPanelWidth:      s.chatPanelWidth,
+    setChatPanelWidth:   s.setChatPanelWidth,
+    activeView:          s.activeView,
+    graphData:           s.graphData,
+    selectedGraphNodeId: s.selectedGraphNodeId,
   })));
 
   const [input, setInput]             = useState("");
@@ -67,6 +93,28 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
 
   const project   = useMemo(() => projects.find((p) => p.id === activeProjectId),   [projects, activeProjectId]);
   const workspace = useMemo(() => workspaces.find((w) => w.id === activeWorkspaceId), [workspaces, activeWorkspaceId]);
+
+  const selectedNode = useMemo(() => {
+    if (!selectedGraphNodeId) return null;
+    return graphData.nodes.find((n) => n.id === selectedGraphNodeId) || null;
+  }, [graphData.nodes, selectedGraphNodeId]);
+
+  const graphPrompts = useMemo(() => {
+    if (selectedNode) {
+      return [
+        `What nodes are related to "${selectedNode.title}"?`,
+        `Why is "${selectedNode.title}" connected to this cluster?`,
+        `Find missing connections for "${selectedNode.title}"`,
+        `Explain the structure around "${selectedNode.title}"`,
+      ];
+    }
+    return [
+      "What connections am I missing in this graph?",
+      "Analyze this knowledge graph structure",
+      "Find orphan notes or unlinked tasks",
+      "Suggest new tags to organize this graph",
+    ];
+  }, [selectedNode]);
 
   const projectThreads = useMemo(
     () => chatThreads
@@ -110,6 +158,13 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
     if (!content || !threadId) return;
     setInput("");
     addMessage(threadId, "user", content);
+
+    let systemPrompt: string | undefined = undefined;
+    if (activeView === "graph") {
+      const graphContext = buildGraphContext(graphData, selectedNode);
+      systemPrompt = `${GRAPH_SYSTEM_PROMPT}\n\n--- CURRENT GRAPH SNAPSHOT ---\n${graphContext}`;
+    }
+
     sendStream({
       message: content, threadId,
       projectId: activeProjectId,
@@ -122,8 +177,9 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
         maxSteps:    aiConfig.maxSteps    ?? 20,
         temperature: aiConfig.temperature ?? 0.3,
       },
+      systemPrompt,
     });
-  }, [input, threadId, addMessage, sendStream, activeProjectId, activeWorkspaceId, messages, aiConfig]);
+  }, [input, threadId, addMessage, sendStream, activeProjectId, activeWorkspaceId, messages, aiConfig, activeView, graphData, selectedNode]);
 
   const shouldAutoSendRef = useRef(false);
 
@@ -227,7 +283,9 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
       {/* Header */}
       <div className="flex items-center gap-2 px-4 h-11 border-b border-[var(--border)] flex-shrink-0">
         <Sparkles size={13} className="text-[var(--accent)]" />
-        <span className="text-sm font-semibold text-[var(--text-primary)] flex-1">AI Assistant</span>
+        <span className="text-sm font-semibold text-[var(--text-primary)] flex-1">
+          {activeView === "graph" ? "Graph Assistant" : "AI Assistant"}
+        </span>
         <span className="text-xs text-[var(--text-tertiary)] truncate max-w-24">{project?.name ?? workspace?.name}</span>
 
         {/* Thread history */}
@@ -321,7 +379,14 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3 min-h-0">
         {messages.length === 0
-          ? <SuggestedPrompts onSend={handleSend} disabled={isLoading || !threadId} />
+          ? (
+              <SuggestedPrompts
+                onSend={handleSend}
+                disabled={isLoading || !threadId}
+                prompts={activeView === "graph" ? graphPrompts : undefined}
+                subTitle={activeView === "graph" ? "Ask me to analyze your graph, suggest missing links, wikilinks, or tags." : undefined}
+              />
+            )
           : messages.map((message) => (
               <ChatMessageBubble
                 key={message.id}
@@ -346,7 +411,7 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
         <div className="relative">
           <textarea ref={inputRef} value={input} onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-            placeholder="Ask about your project…" rows={2}
+            placeholder={activeView === "graph" ? "Ask about your knowledge graph…" : "Ask about your project…"} rows={2}
             className="w-full resize-none rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5 pr-10 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)] transition-colors leading-relaxed" />
           {isLoading ? (
             <Tooltip content="Stop generation" side="left">

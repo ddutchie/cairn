@@ -22,6 +22,7 @@ const sStrOpt      = z.string().optional();
 const sNumOpt      = z.number().optional();
 const sBoolOpt     = z.boolean().optional();
 const sTagIds      = z.array(z.string()).optional().describe("Tag IDs (from get_active_context)");
+const sTagNames    = z.array(z.string()).optional().describe("Tag names to automatically resolve or create");
 const sPriority    = z.enum(["low", "medium", "high", "urgent"]).optional();
 const sStatus      = z.enum(["active", "on_hold", "completed", "archived"]).optional();
 const sColType     = z.enum(["backlog", "todo", "in_progress", "review", "done"]).optional();
@@ -89,6 +90,7 @@ export const TOOL_SCHEMAS = {
       title:     sStr,
       content:   sStrOpt,
       tagIds:    sTagIds,
+      tagNames:  sTagNames,
       isPinned:  sBoolOpt,
       folder:    sStrOpt.describe("Subfolder path. Empty = project root."),
     }),
@@ -130,6 +132,7 @@ export const TOOL_SCHEMAS = {
       priority:    sPriority,
       dueDate:     sDueDate,
       tagIds:      sTagIds,
+      tagNames:    sTagNames,
     }),
   },
 
@@ -144,6 +147,7 @@ export const TOOL_SCHEMAS = {
       columnId:     sIdOpt.describe("Move to this column"),
       assignee:     sStrOpt.describe("Assignee name, or empty to clear"),
       tagIds:       sTagIds,
+      tagNames:     sTagNames,
       archived:     sBoolOpt.describe("true=archive, false=restore"),
       blockedBy:    sIdOpt.describe("Add this card as a blocker (same project, circular deps rejected)"),
       unblockFrom:  sIdOpt.describe("Remove this card from blockers"),
@@ -250,7 +254,7 @@ export const TOOL_SCHEMAS = {
   },
 
   create_idea_flow_node: {
-    description: "Add a node to the Idea Flow. Types: idea, note_ref, task_ref, url, ai_summary, group. edges[] wires connections in the same call.",
+    description: "Add a node to the Idea Flow. Types: idea, note_ref, task_ref, url, ai_summary, group. If type is note_ref/task_ref and the backing note/task does not exist, provide noteTitle/noteContent or taskTitle/taskDescription inside data to inline-create and link them in a single call. edges[] wires connections in the same call.",
     schema: z.object({
       projectId: sId,
       type:      z.enum(["idea", "note_ref", "task_ref", "group", "url", "ai_summary"]),
@@ -259,7 +263,7 @@ export const TOOL_SCHEMAS = {
       width:     sNumOpt,
       height:    sNumOpt,
       parentId:  sIdOpt.describe("Parent group node ID"),
-      data:      z.object({}).passthrough().optional().describe("idea={title,body} note_ref={noteId} task_ref={cardId} group={label?,color?} url={url,title?,description?} ai_summary={content}"),
+      data:      z.object({}).passthrough().optional().describe("idea={title,body} note_ref={noteId?, noteTitle?, noteContent?, folder?, tagNames?} task_ref={cardId?, taskTitle?, taskDescription?, priority?, tagNames?} group={label?,color?} url={url,title?,description?} ai_summary={content}"),
       edges:     z.array(z.object({}).passthrough()).optional().describe("[{targetNodeId,label?}] or [{sourceNodeId,label?}]"),
     }),
   },
@@ -409,6 +413,7 @@ export const CHAT_ONLY_TOOLS: ToolName[] = ["get_active_context", "generate_prd"
  */
 export const AGENT_EXCLUDED_TOOLS: ToolName[] = [
   "get_cairn_context",
+  "get_idea_flow_rules",
 ];
 
 export type ToolCategory = "read" | "write" | "delete";

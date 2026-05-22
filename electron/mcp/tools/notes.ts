@@ -10,7 +10,8 @@ import {
   getNoteVersion,
   writeNoteFile,
   deleteNoteFile,
-  j
+  j,
+  resolveTagNames
 } from "../db";
 
 export function get_note(db: Database.Database, snap: Snapshot, args: Record<string, any>) {
@@ -40,7 +41,7 @@ export function search_notes(db: Database.Database, snap: Snapshot, args: Record
 export function ensure_note(db: Database.Database, snap: Snapshot, workspacePath: string, args: Record<string, any>) {
   // Idempotent: finds a note by title+projectId and updates it, or creates it.
   // Prevents duplicate notes when agents re-run (e.g. syncing a README).
-  const { projectId, title, content, tagIds: ensureTagIds, isPinned: ensureIsPinned } = args;
+  const { projectId, title, content, tagIds: ensureTagIds, tagNames, isPinned: ensureIsPinned } = args;
   const project = snap.projects.find((p) => p.id === projectId);
   if (!project) return { error: "Project not found" };
   const existing = snap.notes.find(
@@ -48,7 +49,12 @@ export function ensure_note(db: Database.Database, snap: Snapshot, workspacePath
   );
   const now = ts();
   const markdown = (content as string | undefined) ?? "";
-  const ensureResolvedTagIds = Array.isArray(ensureTagIds) ? ensureTagIds as string[] : undefined;
+  
+  const resolvedFromNameIds = resolveTagNames(db, project.workspaceId, tagNames);
+  let ensureResolvedTagIds = Array.isArray(ensureTagIds) ? ensureTagIds as string[] : undefined;
+  if (resolvedFromNameIds.length > 0) {
+    ensureResolvedTagIds = Array.from(new Set([...(ensureResolvedTagIds ?? []), ...resolvedFromNameIds]));
+  }
   const ensureResolvedIsPinned = typeof ensureIsPinned === "boolean" ? ensureIsPinned : undefined;
   const ensureFolder = typeof args.folder === "string" ? args.folder : undefined;
   const ensureNoteId = existing?.id ?? newId();

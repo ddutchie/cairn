@@ -135,7 +135,7 @@ export function Topbar() {
 
       {/* Right actions */}
       <div className="flex items-center gap-1">
-        {!hiddenViews.has("chat") && (
+        {!hiddenViews.has("chat") && activeView !== "agent" && (
           <Tooltip content="AI Chat (⌘/)">
             <Button
               variant="ghost"

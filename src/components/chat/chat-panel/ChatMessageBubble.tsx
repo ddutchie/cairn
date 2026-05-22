@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { Bot, User, FileText, Kanban, FolderOpen, Search, Copy, Check, RotateCcw, CheckCircle } from "lucide-react";
 import { cn, formatRelative } from "@/lib/utils";
 import { MarkdownContent } from "./MarkdownContent";
+import { ActionsList } from "./ActionsList";
 import type { ChatMessage, LinkedContextReference } from "@/types";
 
 interface ChatMessageBubbleProps {
@@ -43,6 +44,9 @@ export function ChatMessageBubble({ message, onRetry }: ChatMessageBubbleProps) 
           isUser ? "bg-[var(--accent)] text-white rounded-tr-sm" : "bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-secondary)] rounded-tl-sm")}>
           <MarkdownContent content={message.content} />
         </div>
+        {!isUser && message.actions && message.actions.length > 0 && (
+          <ActionsList actions={message.actions} />
+        )}
         {message.contextRefs && message.contextRefs.length > 0 && (
           <div className="flex flex-wrap gap-1">
             {message.contextRefs.map((ref, i) => <ContextRefChip key={i} ref_={ref} />)}

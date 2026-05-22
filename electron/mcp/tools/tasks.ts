@@ -7,7 +7,8 @@ import {
   j2,
   toCard,
   getCardVersion,
-  insertNotification
+  insertNotification,
+  resolveTagNames
 } from "../db";
 
 export function get_task(db: Database.Database, snap: Snapshot, args: Record<string, any>) {
@@ -46,7 +47,7 @@ export function search_tasks(db: Database.Database, snap: Snapshot, args: Record
 }
 
 export function create_task(db: Database.Database, snap: Snapshot, args: Record<string, any>) {
-  const { columnId, projectId, description, priority = "medium", dueDate, tagIds } = args;
+  const { columnId, projectId, description, priority = "medium", dueDate, tagIds, tagNames } = args;
   const title = (args.title as string | null | undefined)?.trim();
   if (!title) return { error: "Task title is required" };
   const col = snap.columns.find((c) => c.id === columnId);
@@ -54,7 +55,12 @@ export function create_task(db: Database.Database, snap: Snapshot, args: Record<
   const now = ts();
   const cardId = newId();
   const order = snap.cards.filter((c) => c.columnId === columnId).length;
-  const resolvedTagIds = Array.isArray(tagIds) ? tagIds as string[] : [];
+  
+  const resolvedFromNameIds = resolveTagNames(db, col.workspaceId, tagNames);
+  let resolvedTagIds = Array.isArray(tagIds) ? tagIds as string[] : [];
+  if (resolvedFromNameIds.length > 0) {
+    resolvedTagIds = Array.from(new Set([...resolvedTagIds, ...resolvedFromNameIds]));
+  }
   db.prepare(`
     INSERT INTO task_cards (id, column_id, project_id, workspace_id, title, description,
       tag_ids, priority, due_date, linked_note_ids, "order", created_at, updated_at)
@@ -182,7 +188,7 @@ export function list_ready_tasks(db: Database.Database, snap: Snapshot, args: Re
 }
 
 export function update_task(db: Database.Database, snap: Snapshot, args: Record<string, any>) {
-  const { cardId, title, description, priority, dueDate, columnId, tagIds, assignee,
+  const { cardId, title, description, priority, dueDate, columnId, tagIds, tagNames, assignee,
           archived, blockedBy, unblockFrom,
           expectedVersion: taskExpectedVersion } = args;
 
@@ -265,6 +271,15 @@ export function update_task(db: Database.Database, snap: Snapshot, args: Record<
   // by passing an empty string. Sentinel 1 = "update assignee"; 0 = "leave unchanged".
   const assigneeSentinel = assignee !== undefined ? 1 : 0;
   const assigneeValue    = assignee !== undefined ? (assignee || null) : null;
+
+  // Resolve tag names to IDs
+  let finalTagIds = tagIds != null ? (Array.isArray(tagIds) ? (tagIds as string[]) : [tagIds as string]) : null;
+  const resolvedFromNameIds = resolveTagNames(db, card.workspaceId, tagNames);
+  if (resolvedFromNameIds.length > 0) {
+    const baseTags = finalTagIds ?? (card.tagIds as string[] ?? []);
+    finalTagIds = Array.from(new Set([...baseTags, ...resolvedFromNameIds]));
+  }
+
   db.transaction(() => {
     db.prepare(`
       UPDATE task_cards SET
@@ -281,7 +296,7 @@ export function update_task(db: Database.Database, snap: Snapshot, args: Record<
     `).run(
       columnId ?? null, title ?? null, description ?? null,
       priority ?? null, dueDate ?? null,
-      tagIds != null ? (Array.isArray(tagIds) ? j(tagIds) : tagIds) : null,
+      finalTagIds != null ? j(finalTagIds) : null,
       assigneeSentinel, assigneeValue,
       now, cardId
     );

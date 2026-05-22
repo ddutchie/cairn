@@ -142,6 +142,12 @@ export interface ChatToolCallRecord {
   label: string;
 }
 
+export type SuggestedAction =
+  | { type: "add_wikilink";   sourceNoteId: string; sourceTitle: string; targetTitle: string; reason: string }
+  | { type: "link_note_note"; sourceNoteId: string; sourceTitle: string; targetNoteId: string; targetTitle: string; reason: string }
+  | { type: "link_note_card"; noteId: string; noteTitle: string; cardId: string; cardTitle: string; reason: string }
+  | { type: "add_tag";        nodeId: string; nodeTitle: string; nodeType: "note" | "card"; tagName: string; reason: string };
+
 export interface ChatMessage {
   id: ID;
   threadId: ID;
@@ -153,6 +159,8 @@ export interface ChatMessage {
   toolCalls?: ChatToolCallRecord[];
   /** If this message triggered a write action */
   pendingAction?: PendingAction;
+  /** Suggested connection actions for graph assistant */
+  actions?: SuggestedAction[];
   createdAt: string;
 }
 

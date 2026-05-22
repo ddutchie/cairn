@@ -215,7 +215,12 @@ export default function Home() {
 
       if (mod && key === "k") { e.preventDefault(); toggleSearch(); }
       else if (mod && e.shiftKey && key.toLowerCase() === "f") { if (activeView !== "agent") { e.preventDefault(); toggleSearch(); } }
-      else if (mod && key === "/") { e.preventDefault(); if (!hiddenViews.has("chat")) toggleChat(); }
+      else if (mod && key === "/") {
+        if (activeView !== "agent") {
+          e.preventDefault();
+          if (!hiddenViews.has("chat")) toggleChat();
+        }
+      }
       else if (mod && key === "\\") { e.preventDefault(); toggleSidebar(); }
       else if (mod && key === "1") { e.preventDefault(); setView("overview"); }
       else if (mod && key === "2") { e.preventDefault(); setView("notes"); }
@@ -352,7 +357,7 @@ export default function Home() {
         </div>
 
         {/* AI Chat panel */}
-        {chatOpen && <ChatPanel prefill={chatPrefill} onPrefillConsumed={() => setChatPrefill(null)} />}
+        {chatOpen && activeView !== "agent" && <ChatPanel prefill={chatPrefill} onPrefillConsumed={() => setChatPrefill(null)} />}
 
         {/* Global search overlay */}
         {searchOpen && <SearchPanel />}

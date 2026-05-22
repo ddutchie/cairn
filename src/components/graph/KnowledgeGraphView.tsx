@@ -2,7 +2,7 @@
 
 import React, { useEffect, useCallback, useState, useMemo, useRef } from "react";
 import {
-  GitBranch, Circle, RefreshCw, ChevronDown, LayoutGrid, Search, Sparkles,
+  GitBranch, Circle, RefreshCw, ChevronDown, LayoutGrid, Search,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
@@ -11,7 +11,6 @@ import { useLoadGraph } from "@/hooks/useLoadGraph";
 import { filterGraphNodes, filterGraphEdges, nodeTypeColor } from "@/store/slices/graph";
 import type { GraphNode, GraphNodeType } from "@/types";
 import { GraphDetailPanel } from "./GraphDetailPanel";
-import { GraphAIPanel } from "./GraphAIPanel";
 import { ForceGraphCanvas } from "./ForceGraphCanvas";
 import { RadialTreeCanvas } from "./RadialTreeCanvas";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -50,7 +49,6 @@ export function KnowledgeGraphView() {
   const [projectDropdownOpen, setProjectDropdownOpen] = useState(false);
   const [recomputing, setRecomputing] = useState(false);
   const [graphSearch, setGraphSearch] = useState("");
-  const [aiPanelOpen, setAiPanelOpen] = useState(false);
 
   // ⌘F / Ctrl+F — focus the graph search input
   const graphSearchRef = useRef<HTMLInputElement>(null);
@@ -313,7 +311,7 @@ export function KnowledgeGraphView() {
           </Tooltip>
         )}
 
-        {/* Stats + Recompute + AI — pinned to right */}
+        {/* Stats + Recompute — pinned to right */}
         <span className="ml-auto flex items-center gap-2 text-[0.786rem] text-[var(--text-tertiary)]">
           {`${filteredNodes.length} nodes · ${filteredEdges.length} edges`}
           <Tooltip content="Recompute auto-relationships">
@@ -323,20 +321,6 @@ export function KnowledgeGraphView() {
               className="flex items-center gap-1 px-1.5 py-1 rounded border border-[var(--border)] text-[var(--text-tertiary)] hover:bg-[var(--surface-2)] transition-colors disabled:opacity-50"
             >
               <RefreshCw size={11} className={recomputing ? "animate-spin" : ""} />
-            </button>
-          </Tooltip>
-          <Tooltip content="AI Graph Assistant">
-            <button
-              onClick={() => setAiPanelOpen((v) => !v)}
-              className={cn(
-                "flex items-center gap-1.5 px-2 py-1 rounded border text-xs transition-colors",
-                aiPanelOpen
-                  ? "border-transparent bg-[var(--accent-dim)] text-[var(--accent)]"
-                  : "border-[var(--border)] text-[var(--text-tertiary)] hover:bg-[var(--surface-2)]"
-              )}
-            >
-              <Sparkles size={11} />
-              AI
             </button>
           </Tooltip>
         </span>
@@ -398,19 +382,10 @@ export function KnowledgeGraphView() {
         </div>
 
         {/* Detail panel */}
-        {selectedNode && !aiPanelOpen && (
+        {selectedNode && (
           <GraphDetailPanel
             node={selectedNode}
             onClose={() => setSelectedGraphNode(null)}
-          />
-        )}
-
-        {/* AI Graph Assistant panel */}
-        {aiPanelOpen && (
-          <GraphAIPanel
-            graph={searchedGraph}
-            selectedNode={selectedNode}
-            onClose={() => setAiPanelOpen(false)}
           />
         )}
       </div>

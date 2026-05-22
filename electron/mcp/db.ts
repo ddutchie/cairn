@@ -208,6 +208,26 @@ export function getCardVersion(db: Database.Database, cardId: string): number | 
   }
 }
 
+export function resolveTagNames(db: Database.Database, workspaceId: string, tagNames?: string[]): string[] {
+  if (!Array.isArray(tagNames) || tagNames.length === 0) return [];
+  const resolvedIds: string[] = [];
+  for (const rawName of tagNames) {
+    const name = rawName.trim();
+    if (!name) continue;
+    const existing = db.prepare("SELECT id FROM tags WHERE workspace_id = ? AND LOWER(name) = ?")
+      .get(workspaceId, name.toLowerCase()) as { id: string } | undefined;
+    if (existing) {
+      resolvedIds.push(existing.id);
+    } else {
+      const newTagId = newId();
+      db.prepare("INSERT INTO tags (id, workspace_id, name, color) VALUES (?, ?, ?, ?)")
+        .run(newTagId, workspaceId, name, "#6366f1");
+      resolvedIds.push(newTagId);
+    }
+  }
+  return resolvedIds;
+}
+
 export function insertNotification(db: Database.Database, tool: string, title: string, body: string): void {
   try {
     const id = newId();
