@@ -16,7 +16,7 @@ export interface SegmentedControlProps<T> {
   className?: string;
 }
 
-export function SegmentedControl<T extends string>({
+export function SegmentedControl<T extends string | number>({
   options,
   value,
   onChange,
@@ -28,7 +28,7 @@ export function SegmentedControl<T extends string>({
         const active = opt.value === value;
         return (
           <button
-            key={opt.value}
+            key={String(opt.value)}
             type="button"
             onClick={() => onChange(opt.value)}
             className={cn(

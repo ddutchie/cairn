@@ -5,8 +5,8 @@
  * Rendered as a Radix DropdownMenu so it dismisses on outside click / Escape.
  */
 
+import React from "react";
 import { Settings2, Sun, Moon, Monitor } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import type { Theme, FontScale } from "@/store/slices/ui";
 import {
@@ -17,18 +17,19 @@ import {
   DropdownMenuLabel,
 } from "@/components/ui/dropdown";
 import { Button } from "@/components/ui/button";
+import { SegmentedControl, type SegmentedControlOption } from "@/components/ui/segmented-control";
 
 // ── Theme options ─────────────────────────────────────────────────────────────
 
-const THEMES: { value: Theme; label: string; icon: React.FC<{ size?: number; className?: string }> }[] = [
-  { value: "dark",   label: "Dark",   icon: Moon },
-  { value: "light",  label: "Light",  icon: Sun },
-  { value: "system", label: "System", icon: Monitor },
+const THEMES: SegmentedControlOption<Theme>[] = [
+  { value: "dark",   label: "Dark",   icon: <Moon size={12} /> },
+  { value: "light",  label: "Light",  icon: <Sun size={12} /> },
+  { value: "system", label: "System", icon: <Monitor size={12} /> },
 ];
 
 // ── Font scale options ────────────────────────────────────────────────────────
 
-const FONT_SCALES: { value: FontScale; label: string }[] = [
+const FONT_SCALES: SegmentedControlOption<FontScale>[] = [
   { value: 1,   label: "XS" },
   { value: 1.1, label: "S"  },
   { value: 1.2, label: "M"  },
@@ -56,43 +57,26 @@ export function QuickSettings() {
 
         {/* Theme */}
         <DropdownMenuLabel>Theme</DropdownMenuLabel>
-        <div className="flex gap-1 px-1 pb-1">
-          {THEMES.map(({ value, label, icon: Icon }) => (
-            <button
-              key={value}
-              onClick={() => setTheme(value)}
-              className={cn(
-                "flex-1 flex flex-col items-center gap-1 py-1.5 rounded-md text-[0.714rem] transition-colors",
-                theme === value
-                  ? "bg-[var(--accent)] text-white"
-                  : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-3)]"
-              )}
-            >
-              <Icon size={12} />
-              {label}
-            </button>
-          ))}
+        <div className="px-1 pb-1">
+          <SegmentedControl
+            options={THEMES}
+            value={theme}
+            onChange={setTheme}
+            className="w-full text-[0.714rem]"
+          />
         </div>
 
         <DropdownMenuSeparator />
 
         {/* Font scale */}
         <DropdownMenuLabel>Font size</DropdownMenuLabel>
-        <div className="flex gap-1 px-1 pb-1">
-          {FONT_SCALES.map(({ value, label }) => (
-            <button
-              key={value}
-              onClick={() => setFontScale(value)}
-              className={cn(
-                "flex-1 py-1 rounded-md text-[0.714rem] font-medium transition-colors",
-                fontScale === value
-                  ? "bg-[var(--accent)] text-white"
-                  : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-3)]"
-              )}
-            >
-              {label}
-            </button>
-          ))}
+        <div className="px-1 pb-1">
+          <SegmentedControl
+            options={FONT_SCALES}
+            value={fontScale}
+            onChange={setFontScale}
+            className="w-full text-[0.714rem]"
+          />
         </div>
 
       </DropdownMenuContent>
