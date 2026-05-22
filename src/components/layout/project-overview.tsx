@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect } from "react";
 import {
   FileText, Kanban, Calendar, Pin, ArrowRight, Clock,
   AlertCircle, Activity, Circle, BarChart2, Pencil, Check, FolderOpen, Terminal,
+  Send, Sparkles,
 } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -17,14 +18,24 @@ import type { TaskCard, Note, BoardColumn } from "@/types";
 import { useProjectMetrics, type ActivityGroup } from "./project-overview/useProjectMetrics";
 
 export function ProjectOverview() {
-  const { activeProjectId, projects, setView, updateProject } = useCairnStore(useShallow((s) => ({
+  const { activeProjectId, projects, setView, updateProject, chatOpen } = useCairnStore(useShallow((s) => ({
     activeProjectId: s.activeProjectId,
     projects:        s.projects,
     setView:         s.setView,
     updateProject:   s.updateProject,
+    chatOpen:        s.chatOpen,
   })));
   const project = projects.find((p) => p.id === activeProjectId);
   const metrics = useProjectMetrics(activeProjectId);
+
+  const [chatInput, setChatInput] = useState("");
+
+  function handleSendChat() {
+    const text = chatInput.trim();
+    if (!text) return;
+    setChatInput("");
+    window.dispatchEvent(CairnEvents.openChat(text, true));
+  }
 
   const [editOpen, setEditOpen] = useState(false);
   const [editIcon, setEditIcon] = useState("");
@@ -92,8 +103,9 @@ export function ProjectOverview() {
   } = metrics;
 
   return (
-    <div className="flex-1 overflow-y-auto">
-      <div className="max-w-3xl mx-auto px-8 py-8 space-y-8">
+    <div className="flex-1 flex flex-col min-h-0 relative">
+      <div className="flex-1 overflow-y-auto">
+        <div className={cn("max-w-3xl mx-auto px-8 py-8 space-y-8", !chatOpen && "pb-32")}>
 
         {/* ── Header ─────────────────────────────────────────── */}
         <div className="flex items-start justify-between gap-6">
@@ -308,7 +320,41 @@ export function ProjectOverview() {
           </div>
         )}
 
+        </div>
       </div>
+
+      {/* Pinned bottom Chat Input (shown only when chat sidebar is closed) */}
+      {!chatOpen && (
+        <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-[var(--background)] via-[color-mix(in srgb,var(--background)_80%,transparent)] to-transparent pointer-events-none z-10">
+          <div className="max-w-3xl mx-auto pointer-events-auto">
+            <div className="relative flex items-center gap-3 rounded-2xl border border-[var(--border)] bg-[color-mix(in srgb,var(--surface-2)_85%,transparent)] backdrop-blur-md px-4 py-3 shadow-[0_8px_30px_rgb(0,0,0,0.12)] transition-all duration-300 hover:border-[color-mix(in srgb,var(--accent)_40%,transparent)] focus-within:border-[var(--accent)] focus-within:ring-2 focus-within:ring-[var(--accent-dim)]">
+              <div className="flex-shrink-0 w-8 h-8 rounded-xl bg-[var(--accent-dim)] text-[var(--accent)] flex items-center justify-center animate-pulse">
+                <Sparkles size={14} />
+              </div>
+              <input
+                type="text"
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSendChat();
+                  }
+                }}
+                placeholder="What would you like to do today?"
+                className="flex-1 bg-transparent text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none py-1 leading-relaxed"
+              />
+              <button
+                onClick={handleSendChat}
+                disabled={!chatInput.trim()}
+                className="flex-shrink-0 w-8 h-8 rounded-xl bg-[var(--accent)] text-white hover:bg-[color-mix(in srgb,var(--accent)_90%,black)] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95 shadow-md shadow-[var(--accent)]/10"
+              >
+                <Send size={13} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

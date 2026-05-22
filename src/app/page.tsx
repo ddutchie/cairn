@@ -103,7 +103,7 @@ export default function Home() {
   const [updateDownloaded, setUpdateDownloaded] = useState(false);
 
   // Chat pre-fill — set by cairn:open-chat event (e.g. from "Fix with AI" button)
-  const [chatPrefill, setChatPrefill] = useState<string | null>(null);
+  const [chatPrefill, setChatPrefill] = useState<{ text: string; autoSend?: boolean } | null>(null);
 
   // IPC error toasts
   const { toasts, dismiss } = useIpcErrorToasts();
@@ -249,8 +249,8 @@ export default function Home() {
       }
     }
     function handleOpenChat(e: Event) {
-      const { prefill } = (e as CustomEvent<{ prefill: string }>).detail;
-      setChatPrefill(prefill);
+      const { prefill, autoSend } = (e as CustomEvent<{ prefill: string; autoSend?: boolean }>).detail;
+      setChatPrefill({ text: prefill, autoSend });
       if (!chatOpen) toggleChat();
     }
 

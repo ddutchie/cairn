@@ -15,7 +15,7 @@ import { ToolCallIndicator } from "./chat-panel/ToolCallIndicator";
 import { QuestionForm } from "./chat-panel/QuestionForm";
 
 interface ChatPanelProps {
-  prefill?: string | null;
+  prefill?: { text: string; autoSend?: boolean } | null;
   onPrefillConsumed?: () => void;
 }
 
@@ -105,16 +105,51 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, isLoading]);
   useEffect(() => { if (chatOpen) inputRef.current?.focus(); }, [chatOpen]);
 
+  const handleSend = useCallback((text?: string) => {
+    const content = text ?? input.trim();
+    if (!content || !threadId) return;
+    setInput("");
+    addMessage(threadId, "user", content);
+    sendStream({
+      message: content, threadId,
+      projectId: activeProjectId,
+      workspaceId: activeWorkspaceId,
+      history: messages.slice(-40).map((m) => ({ role: m.role, content: m.content })),
+      config: {
+        baseUrl:     aiConfig.baseUrl     || undefined,
+        model:       aiConfig.model       || undefined,
+        apiKey:      aiConfig.apiKey      || undefined,
+        maxSteps:    aiConfig.maxSteps    ?? 20,
+        temperature: aiConfig.temperature ?? 0.3,
+      },
+    });
+  }, [input, threadId, addMessage, sendStream, activeProjectId, activeWorkspaceId, messages, aiConfig]);
+
+  const shouldAutoSendRef = useRef(false);
+
   // Pre-fill input when opened via cairn:open-chat event
   useEffect(() => {
     if (prefill) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setInput(prefill);
+      setInput(prefill.text);
+      if (prefill.autoSend) {
+        shouldAutoSendRef.current = true;
+      }
       onPrefillConsumed?.();
       setTimeout(() => inputRef.current?.focus(), 50);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prefill]);
+  }, [prefill, onPrefillConsumed]);
+
+  useEffect(() => {
+    if (threadId && shouldAutoSendRef.current) {
+      shouldAutoSendRef.current = false;
+      const textToSend = input.trim() || prefill?.text;
+      if (textToSend) {
+        handleSend(textToSend);
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threadId, input, prefill, handleSend]);
 
   // ── Drag-to-resize ──────────────────────────────────────────────────────────
   // Mutates the panel DOM width directly on mousemove (no React state during
@@ -172,25 +207,7 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
     setThreadId(createNewThread(activeWorkspaceId, activeProjectId ?? undefined).id);
   }, [activeWorkspaceId, activeProjectId, createNewThread]);
 
-  function handleSend(text?: string) {
-    const content = text ?? input.trim();
-    if (!content || !threadId) return;
-    setInput("");
-    addMessage(threadId, "user", content);
-    sendStream({
-      message: content, threadId,
-      projectId: activeProjectId,
-      workspaceId: activeWorkspaceId,
-      history: messages.slice(-40).map((m) => ({ role: m.role, content: m.content })),
-      config: {
-        baseUrl:     aiConfig.baseUrl     || undefined,
-        model:       aiConfig.model       || undefined,
-        apiKey:      aiConfig.apiKey      || undefined,
-        maxSteps:    aiConfig.maxSteps    ?? 20,
-        temperature: aiConfig.temperature ?? 0.3,
-      },
-    });
-  }
+
 
   if (!chatOpen) return null;
 
