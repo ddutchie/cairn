@@ -130,6 +130,7 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
   // Pre-fill input when opened via cairn:open-chat event
   useEffect(() => {
     if (prefill) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setInput(prefill.text);
       if (prefill.autoSend) {
         shouldAutoSendRef.current = true;
@@ -137,7 +138,6 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
       onPrefillConsumed?.();
       setTimeout(() => inputRef.current?.focus(), 50);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefill, onPrefillConsumed]);
 
   useEffect(() => {
@@ -145,10 +145,10 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
       shouldAutoSendRef.current = false;
       const textToSend = input.trim() || prefill?.text;
       if (textToSend) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         handleSend(textToSend);
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [threadId, input, prefill, handleSend]);
 
   // ── Drag-to-resize ──────────────────────────────────────────────────────────
