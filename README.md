@@ -22,7 +22,7 @@
 
 ## Overview
 
-Cairn is a desktop app (Electron + Next.js) that combines markdown notes with a kanban board. Notes are saved as plain `.md` files in a folder you choose; project and task data lives in a local SQLite database alongside them. No accounts, no cloud, no backend. An embedded AI assistant and a standalone MCP server let AI agents read and write your workspace directly.
+Cairn is a desktop app (Electron + Next.js) that combines markdown notes with a kanban board. It is fully compatible with Obsidian vaults, allowing you to point a workspace directly to any existing Obsidian folder. Notes are saved as plain `.md` files directly in your vault; project and task data lives in a local SQLite database alongside them. No accounts, no cloud, no backend. An embedded AI assistant and a standalone MCP server let AI agents read and write your workspace directly.
 
 ## Features
 
@@ -43,6 +43,7 @@ Cairn is a desktop app (Electron + Next.js) that combines markdown notes with a 
 - **Knowledge Graph** — Workspace-wide graph of every note, card, project, and tag; Force-directed and Radial tree layouts; auto-discovered relationships (`⌘6`)
 - **Insights** — Analytics view: Ridgeline joy plot, Beeswarm, Bullet health bars, Sankey pipeline flow, Timeline, Matrix heatmap, Table (`⌘7`)
 - **Font scaling** — Five-step UI font size preference (XS–XL, default M) in Settings → General
+- **Obsidian Vault Compatibility** — Works side-by-side with Obsidian vaults; renders standard double-bracket embeds (`![[image.png]]`), uploads files to custom attachment folders, resolves local media via sequential-fallback protocol, and merges YAML frontmatter non-destructively
 - **Local-first** — Notes as `.md` files, project data in SQLite; no network required
 - **Dark mode** — Calm, focused aesthetics
 
