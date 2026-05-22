@@ -65,3 +65,17 @@ next-env.d.ts
 # local MCP config — machine-specific paths, not for version control
 opencode.json
 /remotion
+
+# Cairn local workspace & test databases (when running Cairn or tests in this repository)
+cairn.db
+cairn.db-journal
+cairn.db-shm
+cairn.db-wal
+.cairn-migrations.json
+/attachments
+/assets
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
