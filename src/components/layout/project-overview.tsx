@@ -4,7 +4,6 @@ import React, { useState, useRef, useEffect } from "react";
 import {
   FileText, Kanban, Calendar, Pin, ArrowRight, Clock,
   AlertCircle, Activity, Circle, BarChart2, Pencil, Check, FolderOpen, Terminal,
-  Send, Sparkles,
 } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -16,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { TaskCard, Note, BoardColumn } from "@/types";
 import { useProjectMetrics, type ActivityGroup } from "./project-overview/useProjectMetrics";
+import { ChatInput } from "@/components/chat/ChatInput";
 
 export function ProjectOverview() {
   const { activeProjectId, projects, setView, updateProject, chatOpen } = useCairnStore(useShallow((s) => ({
@@ -29,6 +29,7 @@ export function ProjectOverview() {
   const metrics = useProjectMetrics(activeProjectId);
 
   const [chatInput, setChatInput] = useState("");
+  const chatInputRef = useRef<HTMLTextAreaElement>(null);
 
   function handleSendChat() {
     const text = chatInput.trim();
@@ -327,31 +328,15 @@ export function ProjectOverview() {
       {!chatOpen && (
         <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-[var(--background)] via-[color-mix(in srgb,var(--background)_80%,transparent)] to-transparent pointer-events-none z-10">
           <div className="max-w-3xl mx-auto pointer-events-auto">
-            <div className="relative flex items-center gap-3 rounded-2xl border border-[var(--border)] bg-[color-mix(in srgb,var(--surface-2)_85%,transparent)] backdrop-blur-md px-4 py-3 shadow-[0_8px_30px_rgb(0,0,0,0.12)] transition-all duration-300 hover:border-[color-mix(in srgb,var(--accent)_40%,transparent)] focus-within:border-[var(--accent)] focus-within:ring-2 focus-within:ring-[var(--accent-dim)]">
-              <div className="flex-shrink-0 w-8 h-8 rounded-xl bg-[var(--accent-dim)] text-[var(--accent)] flex items-center justify-center animate-pulse">
-                <Sparkles size={14} />
-              </div>
-              <input
-                type="text"
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSendChat();
-                  }
-                }}
-                placeholder="What would you like to do today?"
-                className="flex-1 bg-transparent text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none py-1 leading-relaxed"
-              />
-              <button
-                onClick={handleSendChat}
-                disabled={!chatInput.trim()}
-                className="flex-shrink-0 w-8 h-8 rounded-xl bg-[var(--accent)] text-white hover:bg-[color-mix(in srgb,var(--accent)_90%,black)] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95 shadow-md shadow-[var(--accent)]/10"
-              >
-                <Send size={13} />
-              </button>
-            </div>
+            <ChatInput
+              ref={chatInputRef}
+              value={chatInput}
+              onChange={setChatInput}
+              onSubmit={handleSendChat}
+              placeholder="What would you like to do today?"
+              variant="overview"
+              showSparkles
+            />
           </div>
         </div>
       )}

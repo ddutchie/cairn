@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
-import { X, Send, Square, Sparkles, PenSquare, History, Pencil } from "lucide-react";
+import { X, Sparkles, PenSquare, History, Pencil } from "lucide-react";
 import { cn, formatRelative } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { MIN_CHAT_PANEL_WIDTH, MAX_CHAT_PANEL_WIDTH } from "@/store/slices/ui";
@@ -14,6 +14,7 @@ import { ChatMessageBubble } from "./chat-panel/ChatMessageBubble";
 import { SuggestedPrompts } from "./chat-panel/SuggestedPrompts";
 import { ToolCallIndicator } from "./chat-panel/ToolCallIndicator";
 import { QuestionForm } from "./chat-panel/QuestionForm";
+import { ChatInput } from "./ChatInput";
 
 const GRAPH_SYSTEM_PROMPT = `You are a Knowledge Graph assistant embedded in Cairn, a note-taking and project management app.
 
@@ -80,6 +81,7 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
   const historyRef     = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef       = useRef<HTMLTextAreaElement>(null);
+
   const panelRef       = useRef<HTMLElement>(null);
   const dividerRef     = useRef<HTMLDivElement>(null);
 
@@ -408,27 +410,16 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
 
       {/* Input */}
       <div className="border-t border-[var(--border)] p-3 flex-shrink-0">
-        <div className="relative">
-          <textarea ref={inputRef} value={input} onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-            placeholder={activeView === "graph" ? "Ask about your knowledge graph…" : "Ask about your project…"} rows={2}
-            className="w-full resize-none rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5 pr-10 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)] transition-colors leading-relaxed" />
-          {isLoading ? (
-            <Tooltip content="Stop generation" side="left">
-              <button onClick={stopStream}
-                className="absolute right-2 bottom-2 p-1.5 rounded-md text-[var(--danger)] hover:bg-[var(--danger)]/10 transition-colors">
-                <Square size={13} />
-              </button>
-            </Tooltip>
-          ) : (
-            <Tooltip content="Send (Enter)" side="left">
-              <button onClick={() => handleSend()} disabled={!input.trim()}
-                className="absolute right-2 bottom-2 p-1.5 rounded-md text-[var(--accent)] hover:bg-[var(--accent-dim)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-                <Send size={13} />
-              </button>
-            </Tooltip>
-          )}
-        </div>
+        <ChatInput
+          ref={inputRef}
+          value={input}
+          onChange={setInput}
+          onSubmit={() => handleSend()}
+          onStop={stopStream}
+          isLoading={isLoading}
+          disabled={isLoading}
+          placeholder={activeView === "graph" ? "Ask about your knowledge graph…" : "Ask about your project…"}
+        />
         <p className="text-[0.714rem] text-[var(--text-tertiary)] mt-1.5 text-center">
           {isLoading ? "Generating… click ◼ to stop" : "Shift+Enter for new line · Enter to send"}
         </p>
