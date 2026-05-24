@@ -18,11 +18,17 @@ function actionIcon(type: SuggestedAction["type"]) {
 }
 
 function actionLabel(action: SuggestedAction): string {
+  // Defensive fallbacks to handle minor field naming variations from small on-device models
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const a = action as any;
+  const sourceTitle = a.sourceTitle || a.noteTitle || a.nodeTitle || "undefined";
+  const targetTitle = a.targetTitle || a.cardTitle || a.noteTitle || "undefined";
+
   switch (action.type) {
-    case "add_wikilink":   return `Add [[${action.targetTitle}]] → "${action.sourceTitle}"`;
-    case "link_note_note": return `Link "${action.sourceTitle}" ↔ "${action.targetTitle}"`;
-    case "link_note_card": return `Link "${action.noteTitle}" → "${action.cardTitle}"`;
-    case "add_tag":        return `Tag "${action.nodeTitle}" #${action.tagName}`;
+    case "add_wikilink":   return `Add [[${targetTitle}]] → "${sourceTitle}"`;
+    case "link_note_note": return `Link "${sourceTitle}" ↔ "${targetTitle}"`;
+    case "link_note_card": return `Link "${sourceTitle}" → "${targetTitle}"`;
+    case "add_tag":        return `Tag "${sourceTitle}" #${a.tagName}`;
   }
 }
 
@@ -122,42 +128,55 @@ export function ActionsList({ actions }: ActionsListProps) {
 
   async function applyAction(action: SuggestedAction) {
     const affectedIds: string[] = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const a = action as any;
+    
+    // Resolve primary entity IDs defensively
+    const sourceNoteId = a.sourceNoteId || a.noteId || a.nodeId;
+    const targetNoteId = a.targetNoteId || a.cardId || a.nodeId;
+    const noteId = a.noteId || a.sourceNoteId || a.nodeId;
+    const cardId = a.cardId || a.targetNoteId;
+    const nodeId = a.nodeId || a.sourceNoteId || a.noteId;
+
     switch (action.type) {
       case "add_wikilink": {
-        const note = notes.find((n) => n.id === action.sourceNoteId);
+        const note = notes.find((n) => n.id === sourceNoteId);
         if (!note) throw new Error("Note not found");
+        const targetTitle = a.targetTitle || a.cardTitle || a.noteTitle || "";
         const existing = note.content ?? "";
-        if (wikilinkAlreadyExists(existing, action.targetTitle)) break;
-        updateNote(action.sourceNoteId, { content: existing + `\n\n[[${action.targetTitle}]]` });
-        affectedIds.push(action.sourceNoteId);
+        if (wikilinkAlreadyExists(existing, targetTitle)) break;
+        updateNote(sourceNoteId, { content: existing + `\n\n[[${targetTitle}]]` });
+        affectedIds.push(sourceNoteId);
         break;
       }
       case "link_note_note": {
-        const src = notes.find((n) => n.id === action.sourceNoteId);
-        const tgt = notes.find((n) => n.id === action.targetNoteId);
+        const src = notes.find((n) => n.id === sourceNoteId);
+        const tgt = notes.find((n) => n.id === targetNoteId);
         if (!src || !tgt) throw new Error("Note not found");
-        updateNote(action.sourceNoteId, { linkedNoteIds: Array.from(new Set([...src.linkedNoteIds, action.targetNoteId])) });
-        updateNote(action.targetNoteId, { linkedNoteIds: Array.from(new Set([...tgt.linkedNoteIds, action.sourceNoteId])) });
-        affectedIds.push(action.sourceNoteId, action.targetNoteId);
+        updateNote(sourceNoteId, { linkedNoteIds: Array.from(new Set([...src.linkedNoteIds, targetNoteId])) });
+        updateNote(targetNoteId, { linkedNoteIds: Array.from(new Set([...tgt.linkedNoteIds, sourceNoteId])) });
+        affectedIds.push(sourceNoteId, targetNoteId);
         break;
       }
       case "link_note_card": {
-        linkNoteToCard(action.noteId, action.cardId);
-        affectedIds.push(action.noteId, action.cardId);
+        if (!noteId || !cardId) throw new Error("IDs missing");
+        linkNoteToCard(noteId, cardId);
+        affectedIds.push(noteId, cardId);
         break;
       }
       case "add_tag": {
         if (!activeWorkspaceId) throw new Error("No workspace");
+        if (!nodeId) throw new Error("Node ID missing");
         const existingTag = tags.find((t) => t.name.toLowerCase() === action.tagName.toLowerCase());
         const tag = existingTag ?? createTag(activeWorkspaceId, action.tagName);
         if (action.nodeType === "note") {
-          const note = notes.find((n) => n.id === action.nodeId);
-          if (note) updateNote(action.nodeId, { tagIds: Array.from(new Set([...note.tagIds, tag.id])) });
+          const note = notes.find((n) => n.id === nodeId);
+          if (note) updateNote(nodeId, { tagIds: Array.from(new Set([...note.tagIds, tag.id])) });
         } else {
-          const card = cards.find((c) => c.id === action.nodeId);
-          if (card) updateCard(action.nodeId, { tagIds: Array.from(new Set([...card.tagIds, tag.id])) });
+          const card = cards.find((c) => c.id === nodeId);
+          if (card) updateCard(nodeId, { tagIds: Array.from(new Set([...card.tagIds, tag.id])) });
         }
-        affectedIds.push(action.nodeId);
+        affectedIds.push(nodeId);
         break;
       }
     }
