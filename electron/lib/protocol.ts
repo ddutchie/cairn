@@ -139,7 +139,7 @@ export function setupProtocol(outDir: string): void {
         ].join("; ")
       : [
           "default-src 'self' app:",
-          "script-src 'self' 'unsafe-inline' app:",
+          "script-src 'self' 'unsafe-inline' 'unsafe-eval' app:",
           "style-src 'self' 'unsafe-inline' app:",
           "style-src-elem 'self' 'unsafe-inline' app:",
           "img-src 'self' data: blob: app: asset: https:",

@@ -53,8 +53,8 @@ run("node scripts/generate-licenses.js");
 // 2. Next.js static export
 run("cross-env ELECTRON_BUILD=true next build");
 
-// 3. Bundle Electron main + preload with esbuild (inlines all deps except better-sqlite3 and electron)
-run("esbuild electron/main.ts electron/preload.ts --bundle --platform=node --target=node20 --external:electron --external:better-sqlite3 --outdir=dist-electron --format=cjs");
+// 3. Bundle Electron main + preload with esbuild (inlines all deps except native/dynamic ones)
+run("esbuild electron/main.ts electron/preload.ts --bundle --platform=node --target=node20 --external:electron --external:better-sqlite3 --external:node-pty --external:tsfm-sdk --external:koffi --outdir=dist-electron --format=cjs");
 
 // 4. Bundle MCP server with esbuild (inlines all deps except better-sqlite3)
 run("esbuild electron/mcp-server.ts --bundle --platform=node --target=node22 --external:better-sqlite3 --outfile=dist-mcp/mcp-server.bundle.js --format=cjs");
