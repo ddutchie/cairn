@@ -24,6 +24,31 @@ async function loadTsfm() {
   if (loadingTried) return tsfmModule;
   loadingTried = true;
   try {
+    // Intercept and patch koffi.load to support packaged/ASAR builds before importing tsfm-sdk
+    try {
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-ignore
+      const koffiModule = await import("koffi");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const koffi = (koffiModule as any).default || koffiModule;
+      if (koffi && koffi.load && !koffi.load.__patched) {
+        const originalLoad = koffi.load;
+        koffi.load = function(dylibPath: string, ...args: any[]) {
+          if (dylibPath && dylibPath.includes(".asar") && !dylibPath.includes(".asar.unpacked")) {
+            const newPath = dylibPath.replace(/\.asar(?!\.unpacked)/, ".asar.unpacked");
+            console.log(`[apple-fm] Rewriting ASAR dylib path from ${dylibPath} to ${newPath}`);
+            return originalLoad.call(this, newPath, ...args);
+          }
+          return originalLoad.call(this, dylibPath, ...args);
+        };
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-ignore
+        koffi.load.__patched = true;
+      }
+    } catch (koffiErr) {
+      console.warn("[apple-fm] Failed to patch koffi load function:", koffiErr);
+    }
+
     // Dynamic import to prevent crash on non-macOS/non-Arm64 during boot
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore
