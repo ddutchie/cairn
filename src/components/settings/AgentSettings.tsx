@@ -1,24 +1,19 @@
 "use client";
 
-/**
- * AgentSettings — "Coding Agents" section of Settings.
- *
- * Lets users register/edit/delete AI coding agent CLI configurations
- * (Claude Code, OpenCode, Aider, etc.) and set a global default.
- * Also shows the code directory for the active project.
- *
- * Includes a Skills & System Prompt preview section showing which
- * SKILL.md files were discovered and the full assembled system prompt.
- */
-
 import { useState, useEffect, useCallback } from "react";
-import { Plus, Trash2, Star, FolderOpen, Check, BookOpen, ChevronDown, ChevronUp, Copy, CheckCircle, RefreshCw, FileCode } from "lucide-react";
+import {
+  Plus, Trash2, Star, FolderOpen, Check, BookOpen, ChevronDown, ChevronUp, Copy, CheckCircle, RefreshCw, FileCode,
+  Key, Globe, Cpu, Wifi, WifiOff, Eye, EyeOff, Footprints, Layers, Thermometer
+} from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
+import { Tooltip } from "@/components/ui/tooltip";
 import { id, cn } from "@/lib/utils";
 import type { CodingAgent } from "@/store/slices/coding-agents";
-import { SettingsGroup } from "./shared";
+import { SettingsGroup, SettingsRow } from "./shared";
+
+type TestState = "idle" | "testing" | "ok" | "error";
 
 // ── Agent form ────────────────────────────────────────────────────────────────
 
@@ -400,12 +395,76 @@ function SkillsPreviewSection() {
 // ── AgentSettings ─────────────────────────────────────────────────────────────
 
 export function AgentSettings() {
-  const { agents, fetchAgents, saveAgent, deleteAgent, setDefaultAgent } = useCairnStore(useShallow((s) => ({ agents: s.agents, fetchAgents: s.fetchAgents, saveAgent: s.saveAgent, deleteAgent: s.deleteAgent, setDefaultAgent: s.setDefaultAgent })));
+  const { agents, fetchAgents, saveAgent, deleteAgent, setDefaultAgent, agentConfig, setAgentConfig } = useCairnStore(useShallow((s) => ({
+    agents:          s.agents,
+    fetchAgents:     s.fetchAgents,
+    saveAgent:       s.saveAgent,
+    deleteAgent:     s.deleteAgent,
+    setDefaultAgent: s.setDefaultAgent,
+    agentConfig:     s.agentConfig,
+    setAgentConfig:  s.setAgentConfig,
+  })));
 
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
+  const [showKeyAgent, setShowKeyAgent] = useState(false);
+  const [testStateAgent, setTestStateAgent] = useState<TestState>("idle");
+  const [testErrorAgent, setTestErrorAgent] = useState("");
+
+  const [availableModelsAgent, setAvailableModelsAgent] = useState<string[]>([]);
+  const [modelsLoadingAgent, setModelsLoadingAgent] = useState(false);
+
   useEffect(() => { fetchAgents(); }, [fetchAgents]);
+
+  const { baseUrl: baseUrlAgent, model: modelAgent, apiKey: apiKeyAgent, maxSteps: maxStepsAgent, temperature: temperatureAgent, contextLimit: contextLimitAgent } = agentConfig;
+  const isLocalAgent =
+    baseUrlAgent.includes("localhost") ||
+    baseUrlAgent.includes("127.0.0.1") ||
+    baseUrlAgent.includes("0.0.0.0");
+
+  function updateAgent(patch: Partial<typeof agentConfig>) {
+    setAgentConfig(patch);
+    if (patch.baseUrl !== undefined) {
+      setAvailableModelsAgent([]);
+    }
+  }
+
+  async function fetchModelsAgent() {
+    setModelsLoadingAgent(true);
+    try {
+      const url = (baseUrlAgent || "https://api.openai.com").replace(/\/+$/, "").replace(/\/v1$/, "");
+      const headers: Record<string, string> = {};
+      if (apiKeyAgent) headers["Authorization"] = `Bearer ${apiKeyAgent}`;
+
+      const res = await fetch(`${url}/v1/models`, { headers });
+      if (!res.ok) throw new Error(`${res.status}`);
+
+      const data = await res.json();
+      const ids: string[] = (data?.data ?? [])
+        .map((m: { id: string }) => m.id)
+        .filter((id: string) => {
+          return !id.includes("embed") && !id.includes("whisper") && !id.includes("tts") && !id.includes("dall-e");
+        })
+        .sort();
+
+      setAvailableModelsAgent(ids);
+      setTestStateAgent("ok");
+    } catch (err) {
+      setTestStateAgent("error");
+      setTestErrorAgent(err instanceof Error ? err.message : "Failed to fetch models");
+      setAvailableModelsAgent([]);
+    } finally {
+      setModelsLoadingAgent(false);
+      setTimeout(() => setTestStateAgent("idle"), 5000);
+    }
+  }
+
+  const fallbackModelsAgent = isLocalAgent
+    ? ["llama3.2", "llama3.1", "qwen2.5:14b", "mistral", "phi4", "gemma3:12b"]
+    : ["gpt-4o", "gpt-4-turbo", "gpt-4o-mini", "o1-mini", "o3-mini"];
+
+  const modelOptionsAgent = availableModelsAgent.length > 0 ? availableModelsAgent : fallbackModelsAgent;
 
   async function handleSaveAgent(agent: Omit<CodingAgent, "createdAt" | "updatedAt">) {
     await saveAgent(agent);
@@ -418,20 +477,307 @@ export function AgentSettings() {
       <div>
         <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-1">Coding Agents</h2>
         <p className="text-xs text-[var(--text-tertiary)]">
-          Register AI coding agent CLIs. Cairn spawns them in embedded terminal sessions from task cards.
+          Configure the native Cairn coding agent loop and register external coding agent CLIs.
         </p>
       </div>
+
+      {/* ── Cairn Agent (Pi Agent) Endpoint ── */}
+      <SettingsGroup
+        title="Cairn Coding Agent (Pi)"
+        description="Configure endpoint parameters for the native autonomous coding agent. Coding agents require high-capacity cloud/local models supporting function calling."
+      >
+        {/* Base URL */}
+        <SettingsRow
+          label="Base URL"
+          description="Root URL for the Coding Agent loop. Appends /v1/chat/completions."
+        >
+          <div className="flex flex-col gap-1.5 items-end">
+            <div className="relative">
+              <Globe size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]" />
+              <input
+                type="url"
+                value={baseUrlAgent}
+                onChange={(e) => updateAgent({ baseUrl: e.target.value })}
+                placeholder="https://api.openai.com"
+                className="pl-7 pr-3 py-1.5 text-xs w-64 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)]"
+              />
+            </div>
+            <div className="flex gap-1.5">
+              {[
+                { label: "OpenAI", url: "https://api.openai.com" },
+                { label: "Ollama", url: "http://localhost:11434" },
+                { label: "LM Studio", url: "http://localhost:1234" },
+              ].map(({ label, url }) => (
+                <button
+                  key={label}
+                  onClick={() => updateAgent({ baseUrl: url })}
+                  className={cn(
+                    "px-2 py-1 text-[0.714rem] rounded border transition-colors cursor-pointer",
+                    baseUrlAgent === url
+                      ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
+                      : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]"
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </SettingsRow>
+
+        {/* API Key */}
+        <SettingsRow
+          label="API Key"
+          description={
+            isLocalAgent
+              ? "Local servers don't need a key — leave blank."
+              : "Required for OpenAI. Leave blank to use the OPENAI_API_KEY server env var."
+          }
+        >
+          <div className="relative">
+            <Key size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]" />
+            <input
+              type={showKeyAgent ? "text" : "password"}
+              value={apiKeyAgent}
+              onChange={(e) => updateAgent({ apiKey: e.target.value })}
+              placeholder={isLocalAgent ? "optional" : "sk-…"}
+              className="pl-7 pr-8 py-1.5 text-xs w-52 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)]"
+            />
+            <Tooltip content={showKeyAgent ? "Hide API key" : "Show API key"} side="top">
+              <button
+                onClick={() => setShowKeyAgent((s) => !s)}
+                aria-label={showKeyAgent ? "Hide API key" : "Show API key"}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+              >
+                {showKeyAgent ? <EyeOff size={11} /> : <Eye size={11} />}
+              </button>
+            </Tooltip>
+          </div>
+        </SettingsRow>
+
+        {/* Model Selection */}
+        <SettingsRow
+          label="Model"
+          description={
+            availableModelsAgent.length > 0
+              ? `${availableModelsAgent.length} models loaded from endpoint`
+              : "Type a model name or fetch the list from your endpoint."
+          }
+        >
+          <div className="flex flex-col gap-1.5 items-end w-64">
+            <div className="flex gap-1.5 w-full">
+              <div className="relative flex-1">
+                <Cpu size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]" />
+                <input
+                  type="text"
+                  value={modelAgent}
+                  onChange={(e) => updateAgent({ model: e.target.value })}
+                  placeholder="gpt-4o"
+                  className="pl-7 pr-3 py-1.5 text-xs w-full rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)]"
+                />
+              </div>
+              <button
+                onClick={fetchModelsAgent}
+                disabled={modelsLoadingAgent}
+                aria-label="Fetch agent models from endpoint"
+                className={cn(
+                  "px-2 py-1.5 text-[0.714rem] rounded-md border transition-colors flex items-center gap-1 min-w-[52px] justify-center",
+                  "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]",
+                  modelsLoadingAgent && "opacity-50 cursor-wait"
+                )}
+              >
+                <RefreshCw size={11} className={modelsLoadingAgent ? "animate-spin" : ""} />
+                {modelsLoadingAgent ? "…" : "Fetch"}
+              </button>
+            </div>
+
+            {testStateAgent === "error" && (
+              <p className="text-[0.786rem] text-[var(--danger)] self-start" title={testErrorAgent}>
+                {testErrorAgent.slice(0, 60)}
+              </p>
+            )}
+            {testStateAgent === "ok" && availableModelsAgent.length > 0 && (
+              <p className="text-[0.786rem] text-[var(--success)] self-start flex items-center gap-1">
+                <CheckCircle size={10} /> {availableModelsAgent.length} models available
+              </p>
+            )}
+
+            <div className="flex flex-wrap gap-1 max-h-28 overflow-y-auto w-full pr-0.5">
+              {modelOptionsAgent.map((m) => (
+                <button
+                  key={m}
+                  onClick={() => updateAgent({ model: m })}
+                  className={cn(
+                    "px-2 py-0.5 text-[0.714rem] rounded border transition-colors font-mono whitespace-nowrap",
+                    modelAgent === m
+                      ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
+                      : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]"
+                  )}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
+          </div>
+        </SettingsRow>
+
+        {/* Max steps */}
+        <SettingsRow
+          label="Max steps"
+          description="Tool-call rounds the agent can take per message. Use ∞ for complex multi-file tasks — but watch API costs."
+        >
+          <div className="flex flex-col gap-1.5 items-end">
+            <div className="relative">
+              <Footprints size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]" />
+              <input
+                type="number"
+                min={1}
+                max={1000}
+                value={maxStepsAgent ?? 30}
+                onChange={(e) => {
+                  const v = parseInt(e.target.value, 10);
+                  if (!isNaN(v) && v >= 1 && v <= 1000) updateAgent({ maxSteps: v });
+                }}
+                className="pl-7 pr-3 py-1.5 text-xs w-24 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)]"
+              />
+            </div>
+            <div className="flex gap-1.5">
+              {([10, 20, 30, 50] as const).map((n) => (
+                <button
+                  key={n}
+                  onClick={() => updateAgent({ maxSteps: n })}
+                  className={cn(
+                    "px-2 py-1 text-[0.714rem] rounded border transition-colors",
+                    (maxStepsAgent ?? 30) === n
+                      ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
+                      : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]"
+                  )}
+                >
+                  {n}
+                </button>
+              ))}
+              <button
+                onClick={() => updateAgent({ maxSteps: 1000 })}
+                className={cn(
+                  "px-2 py-1 text-[0.714rem] rounded border transition-colors",
+                  (maxStepsAgent ?? 30) === 1000
+                    ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
+                    : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]"
+                )}
+              >
+                ∞
+              </button>
+            </div>
+          </div>
+        </SettingsRow>
+
+        {/* Temperature */}
+        <SettingsRow
+          label="Temperature"
+          description="Sampling temperature for the agent (0–1). Lower = more deterministic. Plan mode always uses 0.1 regardless of this setting."
+        >
+          <div className="flex flex-col gap-1.5 items-end">
+            <div className="relative">
+              <Thermometer size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]" />
+              <input
+                type="number"
+                min={0}
+                max={1}
+                step={0.05}
+                value={temperatureAgent ?? 0.3}
+                onChange={(e) => {
+                  const v = parseFloat(e.target.value);
+                  if (!isNaN(v) && v >= 0 && v <= 1) updateAgent({ temperature: v });
+                }}
+                className="pl-7 pr-3 py-1.5 text-xs w-24 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)]"
+              />
+            </div>
+            <div className="flex gap-1.5">
+              {[0.1, 0.3, 0.5, 0.7].map((n) => (
+                <button
+                  key={n}
+                  onClick={() => updateAgent({ temperature: n })}
+                  className={cn(
+                    "px-2 py-1 text-[0.714rem] rounded border transition-colors",
+                    (temperatureAgent ?? 0.3) === n
+                      ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
+                      : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]"
+                  )}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
+        </SettingsRow>
+
+        {/* Context window */}
+        <SettingsRow
+          label="Context window"
+          description="Token limit of your model. Used to display the context usage ring in the coding agent — does not truncate or limit API calls."
+        >
+          <div className="flex flex-col gap-1.5 items-end">
+            <div className="relative">
+              <Layers size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]" />
+              <input
+                type="number"
+                min={1000}
+                max={2000000}
+                step={1000}
+                value={contextLimitAgent ?? 128000}
+                onChange={(e) => {
+                  const v = parseInt(e.target.value, 10);
+                  if (!isNaN(v) && v >= 1000) updateAgent({ contextLimit: v });
+                }}
+                className="pl-7 pr-3 py-1.5 text-xs w-28 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)]"
+              />
+            </div>
+            <div className="flex gap-1.5">
+              {[8000, 32000, 128000, 200000].map((n) => (
+                <button
+                  key={n}
+                  onClick={() => updateAgent({ contextLimit: n })}
+                  className={cn(
+                    "px-2 py-1 text-[0.714rem] rounded border transition-colors",
+                    (contextLimitAgent ?? 128000) === n
+                      ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
+                      : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]"
+                  )}
+                >
+                  {n >= 1000 ? `${n / 1000}k` : n}
+                </button>
+              ))}
+            </div>
+          </div>
+        </SettingsRow>
+
+        {/* Agent Connection Status */}
+        <div className="flex items-center gap-3 pt-1 text-xs">
+          <span className={cn(
+            "flex items-center gap-1",
+            testStateAgent === "ok" ? "text-[var(--success)]" : testStateAgent === "error" ? "text-[var(--danger)]" : "text-[var(--text-tertiary)]"
+          )}>
+            {testStateAgent === "ok" && <><CheckCircle size={11} /> Connected</>}
+            {testStateAgent === "error" && <><WifiOff size={11} /> Error</>}
+            {(testStateAgent === "idle" || testStateAgent === "testing") && <><Wifi size={11} /> {testStateAgent === "testing" ? "Connecting…" : "Not tested"}</>}
+          </span>
+          <span className="text-[var(--text-tertiary)]">·</span>
+          <span className="text-[var(--text-tertiary)] font-mono truncate max-w-40">{baseUrlAgent.replace(/^https?:\/\//, "")}</span>
+          <span className="text-[var(--text-tertiary)]">·</span>
+          <span className="text-[var(--text-tertiary)] font-mono">{modelAgent || "no model"}</span>
+        </div>
+      </SettingsGroup>
 
       {/* Agent list */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <h3 className="text-xs font-semibold uppercase tracking-widest text-[var(--text-tertiary)]">
-            Configured Agents
+            Configured CLI Agents
           </h3>
           {!adding && (
             <Button variant="ghost" size="sm" onClick={() => setAdding(true)}>
               <Plus size={12} />
-              Add Agent
+              Add Agent CLI
             </Button>
           )}
         </div>
@@ -445,7 +791,7 @@ export function AgentSettings() {
 
         {agents.length === 0 && !adding && (
           <p className="text-xs text-[var(--text-tertiary)] py-4 text-center border border-dashed border-[var(--border)] rounded-lg">
-            No agents configured yet. Click &quot;Add Agent&quot; to register one.
+            No external agents configured yet. Click &quot;Add Agent CLI&quot; to register one.
           </p>
         )}
 

@@ -19,11 +19,11 @@ import type {
 import { storage } from "@/lib/storage";
 import { historyManager } from "@/lib/history";
 import { isOwnNoteWrite } from "./ipc";
-import { DEFAULT_AI_CONFIG, AI_CONFIG_KEY, ACTIVE_PROJECT_KEY, CHAT_PANEL_WIDTH_KEY } from "@/lib/constants";
+import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KEY, ACTIVE_PROJECT_KEY, CHAT_PANEL_WIDTH_KEY } from "@/lib/constants";
 
 // ── Slice imports ─────────────────────────────────────────────────────────────
 import { createUISlice } from "./slices/ui";
-import type { UISlice, AIConfig, Theme, ToggleableView } from "./slices/ui";
+import type { UISlice, AIConfig, AgentConfig, Theme, ToggleableView } from "./slices/ui";
 import { applyTheme, THEME_KEY, applyFontScale, FONT_SCALE_KEY, DEFAULT_FONT_SCALE, HIDDEN_VIEWS_KEY, MIN_CHAT_PANEL_WIDTH, MAX_CHAT_PANEL_WIDTH } from "./slices/ui";
 import type { FontScale } from "./slices/ui";
 import { createWorkspaceSlice } from "./slices/workspace";
@@ -46,8 +46,8 @@ import { createTerminalSessionsSlice } from "./slices/terminal-sessions";
 import type { TerminalSessionsSlice } from "./slices/terminal-sessions";
 
 // Re-export types used by consumers and constants.ts
-export type { AIConfig, Theme, FontScale };
-export { DEFAULT_AI_CONFIG } from "@/lib/constants";
+export type { AIConfig, AgentConfig, Theme, FontScale };
+export { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG } from "@/lib/constants";
 
 // ── SearchResult (used by SelectorsSlice and components) ─────────────────────
 
@@ -176,6 +176,22 @@ export const useCairnStore = create<CairnStore>()(
         a[0]({ aiConfig: { ...DEFAULT_AI_CONFIG, ...savedConfig } });
       }
 
+      const savedAgentConfig = storage.get<AgentConfig>(AGENT_CONFIG_KEY);
+      if (savedAgentConfig) {
+        a[0]({ agentConfig: { ...DEFAULT_AGENT_CONFIG, ...savedAgentConfig } });
+      } else if (savedConfig && savedConfig.provider !== "apple-fm") {
+        const migrated = {
+          baseUrl: savedConfig.baseUrl || DEFAULT_AGENT_CONFIG.baseUrl,
+          model: savedConfig.model || DEFAULT_AGENT_CONFIG.model,
+          apiKey: savedConfig.apiKey || DEFAULT_AGENT_CONFIG.apiKey,
+          maxSteps: savedConfig.maxSteps || DEFAULT_AGENT_CONFIG.maxSteps,
+          temperature: savedConfig.temperature || DEFAULT_AGENT_CONFIG.temperature,
+          contextLimit: savedConfig.contextLimit || DEFAULT_AGENT_CONFIG.contextLimit,
+        };
+        a[0]({ agentConfig: migrated });
+        storage.set(AGENT_CONFIG_KEY, migrated);
+      }
+
       const savedHidden = storage.get<ToggleableView[]>(HIDDEN_VIEWS_KEY);
       if (savedHidden) {
         a[0]({ hiddenViews: new Set(savedHidden) });
@@ -222,6 +238,38 @@ export const useCairnStore = create<CairnStore>()(
       const savedConfig = storage.get<AIConfig>(AI_CONFIG_KEY);
       if (savedConfig) {
         set({ aiConfig: { ...DEFAULT_AI_CONFIG, ...savedConfig } });
+      } else if (window.electron && window.electron.ai && window.electron.ai.appleStatus) {
+        try {
+          const status = await window.electron.ai.appleStatus();
+          if (status.available) {
+            set({ aiConfig: { ...DEFAULT_AI_CONFIG, provider: "apple-fm" } });
+          } else {
+            set({ aiConfig: DEFAULT_AI_CONFIG });
+          }
+        } catch (e) {
+          console.warn("Failed to check apple-fm availability on startup:", e);
+          set({ aiConfig: DEFAULT_AI_CONFIG });
+        }
+      } else {
+        set({ aiConfig: DEFAULT_AI_CONFIG });
+      }
+
+      const savedAgentConfig = storage.get<AgentConfig>(AGENT_CONFIG_KEY);
+      if (savedAgentConfig) {
+        set({ agentConfig: { ...DEFAULT_AGENT_CONFIG, ...savedAgentConfig } });
+      } else if (savedConfig && savedConfig.provider !== "apple-fm") {
+        const migrated = {
+          baseUrl: savedConfig.baseUrl || DEFAULT_AGENT_CONFIG.baseUrl,
+          model: savedConfig.model || DEFAULT_AGENT_CONFIG.model,
+          apiKey: savedConfig.apiKey || DEFAULT_AGENT_CONFIG.apiKey,
+          maxSteps: savedConfig.maxSteps || DEFAULT_AGENT_CONFIG.maxSteps,
+          temperature: savedConfig.temperature || DEFAULT_AGENT_CONFIG.temperature,
+          contextLimit: savedConfig.contextLimit || DEFAULT_AGENT_CONFIG.contextLimit,
+        };
+        set({ agentConfig: migrated });
+        storage.set(AGENT_CONFIG_KEY, migrated);
+      } else {
+        set({ agentConfig: DEFAULT_AGENT_CONFIG });
       }
 
       const savedHidden = storage.get<ToggleableView[]>(HIDDEN_VIEWS_KEY);

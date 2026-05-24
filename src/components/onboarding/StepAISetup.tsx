@@ -1,15 +1,16 @@
-"use client";
-
-import { Globe, Key, Cpu, Sparkles } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Globe, Key, Cpu, Sparkles, CheckCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Shell, NavRow } from "./shared";
 
 interface Props {
   aiEnabled: boolean;
+  provider?: string;
   baseUrl: string;
   apiKey: string;
   model: string;
   onAiEnabledChange: (v: boolean) => void;
+  onProviderChange: (v: string) => void;
   onBaseUrlChange: (v: string) => void;
   onApiKeyChange: (v: string) => void;
   onModelChange: (v: string) => void;
@@ -24,10 +25,26 @@ const ENDPOINT_PRESETS = [
 ];
 
 export function StepAISetup({
-  aiEnabled, baseUrl, apiKey, model,
-  onAiEnabledChange, onBaseUrlChange, onApiKeyChange, onModelChange,
+  aiEnabled, provider = "openai", baseUrl, apiKey, model,
+  onAiEnabledChange, onProviderChange, onBaseUrlChange, onApiKeyChange, onModelChange,
   onBack, onNext,
 }: Props) {
+  const [appleFMAvailable, setAppleFMAvailable] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.electron && window.electron.ai && window.electron.ai.appleStatus) {
+      window.electron.ai.appleStatus().then((status) => {
+        setAppleFMAvailable(status.available);
+        if (status.available && (provider === "openai" || !provider)) {
+          onProviderChange("apple-fm");
+        }
+      }).catch(() => setAppleFMAvailable(false));
+    } else {
+      setTimeout(() => setAppleFMAvailable(false), 0);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const isLocal =
     baseUrl.includes("localhost") ||
     baseUrl.includes("127.0.0.1") ||
@@ -74,87 +91,156 @@ export function StepAISetup({
         {/* Endpoint config — only when enabled */}
         {aiEnabled && (
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5 flex flex-col gap-4">
-            <p className="text-xs font-medium text-[var(--text-secondary)]">AI endpoint</p>
-
-            {/* Presets */}
-            <div className="flex gap-2">
-              {ENDPOINT_PRESETS.map((p) => (
+            
+            {/* Provider Switcher Cards */}
+            <div className="flex flex-col gap-2.5">
+              <p className="text-xs font-semibold text-[var(--text-secondary)]">Select AI Provider</p>
+              
+              <div className="grid grid-cols-2 gap-3">
+                {/* Apple Intelligence */}
                 <button
-                  key={p.url}
                   type="button"
-                  onClick={() => onBaseUrlChange(p.url)}
+                  disabled={!appleFMAvailable}
+                  onClick={() => onProviderChange("apple-fm")}
                   className={cn(
-                    "px-3 py-1.5 text-xs rounded-lg border transition-colors",
-                    baseUrl === p.url
-                      ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
-                      : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--accent)]/40 hover:text-[var(--text-secondary)]"
+                    "flex flex-col items-center justify-center p-4 rounded-xl border text-center transition-all gap-1.5 relative select-none",
+                    provider === "apple-fm"
+                      ? "border-purple-500 bg-[color-mix(in_srgb,var(--purple-500)_10%,transparent)] shadow-sm"
+                      : !appleFMAvailable
+                        ? "opacity-50 cursor-not-allowed border-[var(--border)]"
+                        : "border-[var(--border)] hover:border-[var(--accent)] hover:bg-[var(--surface-2)] cursor-pointer"
                   )}
                 >
-                  {p.label}
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-purple-500 via-indigo-500 to-cyan-500 flex items-center justify-center text-white font-bold text-sm shadow-sm shrink-0">
+                    
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-[var(--text-primary)]">On-Device</p>
+                    <p className="text-[0.625rem] text-[var(--text-tertiary)] mt-0.5">Apple Intelligence</p>
+                  </div>
+                  {!appleFMAvailable && (
+                    <span className="absolute top-1.5 right-1.5 text-[0.55rem] bg-[var(--surface-3)] text-[var(--text-tertiary)] px-1 py-0.2 rounded border border-[var(--border)] font-normal">
+                      macOS Only
+                    </span>
+                  )}
                 </button>
-              ))}
+
+                {/* Cloud/Local API */}
+                <button
+                  type="button"
+                  onClick={() => onProviderChange("openai")}
+                  className={cn(
+                    "flex flex-col items-center justify-center p-4 rounded-xl border text-center transition-all gap-1.5 select-none cursor-pointer",
+                    provider === "openai"
+                      ? "border-[var(--accent)] bg-[var(--accent-dim)] shadow-sm"
+                      : "border-[var(--border)] hover:border-[var(--accent)] hover:bg-[var(--surface-2)]"
+                  )}
+                >
+                  <div className="w-8 h-8 rounded-full bg-[var(--surface-2)] border border-[var(--border)] flex items-center justify-center text-[var(--text-secondary)] shadow-sm shrink-0">
+                    <Globe size={13} />
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-[var(--text-primary)]">Cloud &amp; Local</p>
+                    <p className="text-[0.625rem] text-[var(--text-tertiary)] mt-0.5">OpenAI, Ollama, LM Studio</p>
+                  </div>
+                </button>
+              </div>
             </div>
 
-            {/* Base URL */}
-            <div className="flex items-center gap-2 bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-3 py-2 focus-within:ring-1 focus-within:ring-[var(--accent)]">
-              <Globe size={12} className="text-[var(--text-tertiary)] shrink-0" />
-              <input
-                type="url"
-                value={baseUrl}
-                onChange={(e) => onBaseUrlChange(e.target.value)}
-                placeholder="https://api.openai.com"
-                className="flex-1 bg-transparent text-xs text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none"
-              />
-            </div>
-
-            {/* API key */}
-            {!isLocal ? (
-              <div className="flex items-center gap-2 bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-3 py-2 focus-within:ring-1 focus-within:ring-[var(--accent)]">
-                <Key size={12} className="text-[var(--text-tertiary)] shrink-0" />
-                <input
-                  type="password"
-                  value={apiKey}
-                  onChange={(e) => onApiKeyChange(e.target.value)}
-                  placeholder="sk-…  (API key)"
-                  className="flex-1 bg-transparent text-xs text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none"
-                />
+            {provider === "apple-fm" ? (
+              <div className="bg-[var(--surface-2)] border border-[var(--border)] rounded-xl p-4 text-xs space-y-2 text-left leading-relaxed">
+                <p className="font-semibold text-[var(--text-primary)] flex items-center gap-1.5">
+                  <CheckCircle size={12} className="text-[var(--success)]" /> Ready for Offline Use
+                </p>
+                <p className="text-[var(--text-secondary)]">
+                  You&apos;ve selected Mac&apos;s native on-device Foundation Model. All interactions are processed privately on your hardware with no network calls, server requirements, or API costs.
+                </p>
               </div>
             ) : (
-              <p className="text-[0.714rem] text-[var(--text-tertiary)]">
-                No API key needed for local endpoints.
-              </p>
-            )}
+              <div className="flex flex-col gap-4">
+                <p className="text-xs font-medium text-[var(--text-secondary)]">API Connection</p>
 
-            {/* Model */}
-            <div>
-              <div className="flex items-center gap-2 bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-3 py-2 mb-2 focus-within:ring-1 focus-within:ring-[var(--accent)]">
-                <Cpu size={12} className="text-[var(--text-tertiary)] shrink-0" />
-                <input
-                  type="text"
-                  value={model}
-                  onChange={(e) => onModelChange(e.target.value)}
-                  placeholder="Model name"
-                  className="flex-1 bg-transparent text-xs text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none"
-                />
+                {/* Presets */}
+                <div className="flex gap-2">
+                  {ENDPOINT_PRESETS.map((p) => (
+                    <button
+                      key={p.url}
+                      type="button"
+                      onClick={() => onBaseUrlChange(p.url)}
+                      className={cn(
+                        "px-3 py-1.5 text-xs rounded-lg border transition-colors cursor-pointer",
+                        baseUrl === p.url
+                          ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
+                          : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--accent)]/40 hover:text-[var(--text-secondary)]"
+                      )}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Base URL */}
+                <div className="flex items-center gap-2 bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-3 py-2 focus-within:ring-1 focus-within:ring-[var(--accent)]">
+                  <Globe size={12} className="text-[var(--text-tertiary)] shrink-0" />
+                  <input
+                    type="url"
+                    value={baseUrl}
+                    onChange={(e) => onBaseUrlChange(e.target.value)}
+                    placeholder="https://api.openai.com"
+                    className="flex-1 bg-transparent text-xs text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none"
+                  />
+                </div>
+
+                {/* API key */}
+                {!isLocal ? (
+                  <div className="flex items-center gap-2 bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-3 py-2 focus-within:ring-1 focus-within:ring-[var(--accent)]">
+                    <Key size={12} className="text-[var(--text-tertiary)] shrink-0" />
+                    <input
+                      type="password"
+                      value={apiKey}
+                      onChange={(e) => onApiKeyChange(e.target.value)}
+                      placeholder="sk-…  (API key)"
+                      className="flex-1 bg-transparent text-xs text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none"
+                    />
+                  </div>
+                ) : (
+                  <p className="text-[0.714rem] text-[var(--text-tertiary)]">
+                    No API key needed for local endpoints.
+                  </p>
+                )}
+
+                {/* Model */}
+                <div>
+                  <div className="flex items-center gap-2 bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-3 py-2 mb-2 focus-within:ring-1 focus-within:ring-[var(--accent)]">
+                    <Cpu size={12} className="text-[var(--text-tertiary)] shrink-0" />
+                    <input
+                      type="text"
+                      value={model}
+                      onChange={(e) => onModelChange(e.target.value)}
+                      placeholder="Model name"
+                      className="flex-1 bg-transparent text-xs text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none"
+                    />
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {suggestedModels.map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => onModelChange(m)}
+                        className={cn(
+                          "px-2 py-0.5 text-[0.714rem] rounded border transition-colors cursor-pointer",
+                          model === m
+                            ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
+                            : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--accent)]/40 hover:text-[var(--text-secondary)]"
+                        )}
+                      >
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
-              <div className="flex flex-wrap gap-1.5">
-                {suggestedModels.map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    onClick={() => onModelChange(m)}
-                    className={cn(
-                      "px-2 py-0.5 text-[0.714rem] rounded border transition-colors",
-                      model === m
-                        ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
-                        : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--accent)]/40 hover:text-[var(--text-secondary)]"
-                    )}
-                  >
-                    {m}
-                  </button>
-                ))}
-              </div>
-            </div>
+            )}
           </div>
         )}
 

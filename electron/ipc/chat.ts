@@ -36,35 +36,50 @@ async function runToolLoop(
   emitToolCall: (e: { tool: string; label: string; args: Record<string, unknown> }) => void,
   signal?: AbortSignal,
   getWin?: () => BrowserWindow | null,
+  provider?: string,
 ): Promise<{ exhausted: true; content: string } | { exhausted: false }> {
   const maxSteps    = req.config?.maxSteps    ?? 20;
   const temperature = req.config?.temperature ?? 0.3;
   for (let round = 0; round < maxSteps; round++) {
     if (signal?.aborted) return { exhausted: true, content: "" };
-    let response: Response;
-    try {
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
-      response = await fetch(`${baseUrl}/v1/chat/completions`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ model, messages, tools: TOOLS, tool_choice: "auto", max_tokens: 4096, temperature }),
-      });
-    } catch {
-      return { exhausted: true, content: `Could not reach the AI endpoint at \`${baseUrl}\`. Check your endpoint URL and make sure the server is running.` };
+    
+    let assistantMsg: OpenAIMessage;
+    
+    if (provider === "apple-fm") {
+      try {
+        const { callAppleFMChat } = await import("../lib/apple-fm");
+        const res = await callAppleFMChat(messages, TOOLS);
+        const choice = res.choices?.[0];
+        if (!choice) return { exhausted: true, content: "No response from Apple Intelligence on-device model." };
+        assistantMsg = choice.message as OpenAIMessage;
+      } catch (err) {
+        return { exhausted: true, content: `On-device Apple Foundation Model error: ${String(err)}` };
+      }
+    } else {
+      let response: Response;
+      try {
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+        response = await fetch(`${baseUrl}/v1/chat/completions`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ model, messages, tools: TOOLS, tool_choice: "auto", max_tokens: 4096, temperature }),
+        });
+      } catch {
+        return { exhausted: true, content: `Could not reach the AI endpoint at \`${baseUrl}\`. Check your endpoint URL and make sure the server is running.` };
+      }
+
+      if (!response.ok) {
+        const errText = await response.text().catch(() => response.statusText);
+        return { exhausted: true, content: `AI endpoint error (${response.status}): ${errText.slice(0, 300)}` };
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data = await response.json() as any;
+      const choice = data.choices?.[0];
+      if (!choice) return { exhausted: true, content: "No response from AI endpoint." };
+      assistantMsg = choice.message as OpenAIMessage;
     }
-
-    if (!response.ok) {
-      const errText = await response.text().catch(() => response.statusText);
-      return { exhausted: true, content: `AI endpoint error (${response.status}): ${errText.slice(0, 300)}` };
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const data = await response.json() as any;
-    const choice = data.choices?.[0];
-    if (!choice) return { exhausted: true, content: "No response from AI endpoint." };
-
-    const assistantMsg = choice.message as OpenAIMessage;
 
     // No tool calls — model is ready to produce its final reply
     if (!assistantMsg.tool_calls?.length) {
@@ -78,7 +93,7 @@ async function runToolLoop(
       try { args = JSON.parse(call.function.arguments); } catch { args = {}; }
       let result: unknown;
       try {
-        result = await executeTool(db, req, workspacePath, { baseUrl, model, apiKey }, call.function.name, args, emitToolCall, getWin);
+        result = await executeTool(db, req, workspacePath, { baseUrl, model, apiKey, provider: provider as "openai" | "apple-fm" }, call.function.name, args, emitToolCall, getWin);
       } catch (toolErr) {
         result = { error: `Tool "${call.function.name}" failed: ${String(toolErr)}` };
       }
@@ -112,6 +127,8 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
     abortControllers.get(event.sender.id)?.abort();
     const abortCtrl = new AbortController();
     abortControllers.set(event.sender.id, abortCtrl);
+    
+    const provider = req.config?.provider ?? "openai";
     const baseUrl = normaliseBaseUrl(req.config?.baseUrl ?? "https://api.openai.com");
     const model = req.config?.model ?? "gpt-4o-mini";
     const apiKey = req.config?.apiKey ?? "";
@@ -121,7 +138,7 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
       if (!event.sender.isDestroyed()) event.sender.send(ch, payload);
     };
 
-    if (!apiKey && !isLocal) {
+    if (provider !== "apple-fm" && !apiKey && !isLocal) {
       send("chat:done", {
         content: "AI chat is not configured. Set an API key in **Settings → AI & Chat**, or use a local endpoint (Ollama, LM Studio) with no key needed.",
         contextRefs: [],
@@ -139,7 +156,7 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
       send("chat:tool-call", e);
     };
 
-    const loopResult = await runToolLoop(db, req, workspacePath, baseUrl, model, apiKey, messages, emitToolCall, abortCtrl.signal, getWin);
+    const loopResult = await runToolLoop(db, req, workspacePath, baseUrl, model, apiKey, messages, emitToolCall, abortCtrl.signal, getWin, provider);
 
     abortControllers.delete(event.sender.id);
 
@@ -161,7 +178,7 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
       // Re-request with stream: true for real SSE tokens
       let fullContent = "";
       try {
-        for await (const delta of streamCompletion({ baseUrl, model, apiKey }, messages, TOOLS)) {
+        for await (const delta of streamCompletion({ baseUrl, model, apiKey, provider: provider as "openai" | "apple-fm" }, messages, TOOLS)) {
           if (abortCtrl.signal.aborted) break;
           fullContent += delta;
           send("chat:token", { delta });

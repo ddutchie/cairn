@@ -31,7 +31,7 @@ interface SpawnAgentModalProps {
 export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
   const {
     agents, fetchAgents, activeProjectId, projects,
-    addTerminalSession, setActiveSession, setView, updateProject, aiConfig,
+    addTerminalSession, setActiveSession, setView, updateProject, agentConfig,
     setPersistentPiSession, fetchPiSessionHistory,
   } = useCairnStore(useShallow((s) => ({
     agents:                  s.agents,
@@ -42,7 +42,7 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
     setActiveSession:        s.setActiveSession,
     setView:                 s.setView,
     updateProject:           s.updateProject,
-    aiConfig:                s.aiConfig,
+    agentConfig:             s.agentConfig,
     setPersistentPiSession:  s.setPersistentPiSession,
     fetchPiSessionHistory:   s.fetchPiSessionHistory,
   })));
@@ -198,7 +198,7 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
             />
             {sessionType === "pi" && (
               <p className="text-[0.714rem] text-[var(--text-tertiary)] mt-1">
-                Uses {aiConfig.model || "gpt-4o"} · reads/writes code + Cairn board
+                Uses {agentConfig.model || "gpt-4o"} · reads/writes code + Cairn board
               </p>
             )}
           </div>

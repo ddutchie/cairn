@@ -137,6 +137,7 @@ const api = {
   // ── AI helpers ────────────────────────────────
   ai: {
     generatePrd: (args: unknown) => invoke<{ id: string; title: string; projectId: string } | { error: string }>("ai:generatePrd", args),
+    appleStatus: () => invoke<{ available: boolean; reason?: string }>("ai:appleStatus"),
   },
 
   // ── App paths ─────────────────────────────────

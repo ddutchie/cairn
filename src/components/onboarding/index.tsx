@@ -25,7 +25,7 @@ interface Props {
 // ── Onboarding wizard ─────────────────────────────────────────────────────────
 
 export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props) {
-  const { createWorkspace, selectAndInitWorkspace, initWorkspacePath, getWorkspacePath, theme, setTheme, fontScale, setFontScale, aiConfig, setAIConfig, hiddenViews, setHiddenViews } = useCairnStore(useShallow((s) => ({ createWorkspace: s.createWorkspace, selectAndInitWorkspace: s.selectAndInitWorkspace, initWorkspacePath: s.initWorkspacePath, getWorkspacePath: s.getWorkspacePath, theme: s.theme, setTheme: s.setTheme, fontScale: s.fontScale, setFontScale: s.setFontScale, aiConfig: s.aiConfig, setAIConfig: s.setAIConfig, hiddenViews: s.hiddenViews, setHiddenViews: s.setHiddenViews })));
+  const { createWorkspace, selectAndInitWorkspace, initWorkspacePath, getWorkspacePath, theme, setTheme, fontScale, setFontScale, aiConfig, setAIConfig, setAgentConfig, hiddenViews, setHiddenViews } = useCairnStore(useShallow((s) => ({ createWorkspace: s.createWorkspace, selectAndInitWorkspace: s.selectAndInitWorkspace, initWorkspacePath: s.initWorkspacePath, getWorkspacePath: s.getWorkspacePath, theme: s.theme, setTheme: s.setTheme, fontScale: s.fontScale, setFontScale: s.setFontScale, aiConfig: s.aiConfig, setAIConfig: s.setAIConfig, setAgentConfig: s.setAgentConfig, hiddenViews: s.hiddenViews, setHiddenViews: s.setHiddenViews })));
 
   // ── Wizard step ──────────────────────────────────────────────────────────────
   const [step, setStep] = useState<OnboardingStep>(initialStep);
@@ -49,6 +49,7 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
 
   // ── AI ───────────────────────────────────────────────────────────────────────
   const [aiEnabled, setAiEnabled] = useState(aiConfig.aiEnabled ?? true);
+  const [provider, setProvider]   = useState<string>(aiConfig.provider ?? "openai");
   const [baseUrl, setBaseUrl]     = useState(aiConfig.baseUrl || "https://api.openai.com");
   const [apiKey, setApiKey]       = useState(aiConfig.apiKey || "");
   const [model, setModel]         = useState(aiConfig.model || "gpt-4o-mini");
@@ -94,7 +95,10 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
   }
 
   function handleSaveAI() {
-    setAIConfig({ aiEnabled, baseUrl, apiKey, model });
+    setAIConfig({ aiEnabled, provider: provider as "openai" | "apple-fm", baseUrl, apiKey, model });
+    if (provider !== "apple-fm") {
+      setAgentConfig({ baseUrl, apiKey, model });
+    }
     setStep("mcp");
   }
 
@@ -142,10 +146,12 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
     return (
       <StepAISetup
         aiEnabled={aiEnabled}
+        provider={provider}
         baseUrl={baseUrl}
         apiKey={apiKey}
         model={model}
         onAiEnabledChange={setAiEnabled}
+        onProviderChange={setProvider}
         onBaseUrlChange={setBaseUrl}
         onApiKeyChange={setApiKey}
         onModelChange={setModel}

@@ -4,7 +4,7 @@
  */
 
 import type { ColumnType, Priority, ProjectStatus } from "@/types";
-import type { AIConfig } from "@/store";
+import type { AIConfig, AgentConfig } from "@/store";
 
 /** Default board columns created with every new project (renderer-side copy). */
 export const DEFAULT_COLUMNS = [
@@ -69,6 +69,7 @@ export const PRIORITY_CSS_COLORS: Record<Priority | string, string> = {
 
 /** Default AI/LLM config values. */
 export const DEFAULT_AI_CONFIG: AIConfig = {
+  provider:     "openai",
   baseUrl:      "https://api.openai.com",
   model:        "gpt-4o-mini",
   apiKey:       "",
@@ -78,10 +79,23 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
   aiEnabled:    true,
 };
 
+/** Default Coding Agent config values. */
+export const DEFAULT_AGENT_CONFIG: AgentConfig = {
+  baseUrl:      "https://api.openai.com",
+  model:        "gpt-4o",
+  apiKey:       "",
+  maxSteps:     30,
+  temperature:  0.3,
+  contextLimit: 128000,
+};
+
 // ── localStorage keys ─────────────────────────────────────────────────────────
 
 /** localStorage key for the persisted AI/LLM configuration. */
 export const AI_CONFIG_KEY = "ai-config";
+
+/** localStorage key for the persisted Coding Agent configuration. */
+export const AGENT_CONFIG_KEY = "agent-config";
 
 /** localStorage key for the last active project ID. */
 export const ACTIVE_PROJECT_KEY = "active-project";
