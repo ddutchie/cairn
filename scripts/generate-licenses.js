@@ -30,6 +30,7 @@ const ROLE_MAP = {
   "typescript":                    ["TypeScript",          "Language",                    "Platform"],
   "esbuild":                       ["esbuild",             "Bundler",                     "Platform"],
   "electron-updater":              ["electron-updater",    "Auto-updater",                "Platform"],
+  "koffi":                         ["Koffi",               "Fast native FFI bridge",      "Platform"],
 
   // ── Data ────────────────────────────────────────────────────────────────────
   "better-sqlite3":                ["better-sqlite3",      "Local database",              "Data"],
@@ -43,6 +44,7 @@ const ROLE_MAP = {
   // ── AI ──────────────────────────────────────────────────────────────────────
   "@modelcontextprotocol/sdk":     ["MCP SDK",             "Agent protocol",              "AI"],
   "ai":                            ["Vercel AI SDK",       "AI streaming utilities",      "AI"],
+  "tsfm-sdk":                      ["tsfm-sdk",            "Apple Foundation Models SDK", "AI"],
 
   // ── UI ──────────────────────────────────────────────────────────────────────
   "tailwindcss":                   ["Tailwind CSS",        "Styling",                     "UI"],
