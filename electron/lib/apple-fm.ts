@@ -33,7 +33,7 @@ async function loadTsfm() {
       const koffi = (koffiModule as any).default || koffiModule;
       if (koffi && koffi.load && !koffi.load.__patched) {
         const originalLoad = koffi.load;
-        koffi.load = function(dylibPath: string, ...args: any[]) {
+        koffi.load = function(dylibPath: string, ...args: unknown[]) {
           if (dylibPath && dylibPath.includes(".asar") && !dylibPath.includes(".asar.unpacked")) {
             const newPath = dylibPath.replace(/\.asar(?!\.unpacked)/, ".asar.unpacked");
             console.log(`[apple-fm] Rewriting ASAR dylib path from ${dylibPath} to ${newPath}`);
