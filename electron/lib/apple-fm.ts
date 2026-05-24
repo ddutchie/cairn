@@ -25,7 +25,11 @@ async function loadTsfm() {
   loadingTried = true;
   try {
     // Dynamic import to prevent crash on non-macOS/non-Arm64 during boot
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-ignore
     tsfmModule = await import("tsfm-sdk");
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-ignore
     compatModule = await import("tsfm-sdk/chat");
     return tsfmModule;
   } catch (err) {
