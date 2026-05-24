@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
-  CheckCircle, RefreshCw, Key, Globe, Cpu, Wifi, WifiOff, Eye, EyeOff, Footprints, Layers, Thermometer,
+  CheckCircle, RefreshCw, Key, Globe, Cpu, Wifi, WifiOff, Eye, EyeOff
 } from "lucide-react";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useCairnStore } from "@/store";
@@ -21,33 +21,53 @@ export function AISettings() {
     hiddenViews:          s.hiddenViews,
     toggleViewVisibility: s.toggleViewVisibility,
   })));
+
   const [showKey, setShowKey] = useState(false);
   const [testState, setTestState] = useState<TestState>("idle");
   const [testError, setTestError] = useState("");
 
-  // Available models fetched from the endpoint
+  const [appleFMAvailable, setAppleFMAvailable] = useState<boolean | null>(null);
+  const [appleFMReason, setAppleFMReason] = useState<string>("");
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.electron && window.electron.ai && window.electron.ai.appleStatus) {
+      window.electron.ai.appleStatus().then((status) => {
+        setAppleFMAvailable(status.available);
+        if (status.reason) setAppleFMReason(status.reason);
+      }).catch((e) => {
+        console.error("Failed to check apple-fm status:", e);
+        setAppleFMReason(`IPC Error: ${e instanceof Error ? e.message : String(e)}`);
+        setAppleFMAvailable(false);
+      });
+    } else {
+      setTimeout(() => {
+        const isPreloadMissing = typeof window === "undefined" || !window.electron || !window.electron.ai || !window.electron.ai.appleStatus;
+        setAppleFMReason(isPreloadMissing ? "Electron preload API 'ai.appleStatus' is missing. Please rebuild and restart." : "Apple Foundation Models are only supported on macOS.");
+        setAppleFMAvailable(false);
+      }, 0);
+    }
+  }, []);
+
+  // Available models fetched from the general endpoint
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
-  const [modelsFetched, setModelsFetched] = useState(false);
 
-  // Always read directly from the store — no local shadow copy
-  const { baseUrl, model, apiKey, maxSteps, temperature, contextLimit, aiEnabled } = aiConfig;
+  // General config destructuring
+  const { provider = "openai", baseUrl, model, apiKey, aiEnabled } = aiConfig;
   const isLocal =
     baseUrl.includes("localhost") ||
     baseUrl.includes("127.0.0.1") ||
     baseUrl.includes("0.0.0.0");
 
-  function update(patch: Partial<typeof aiConfig>) {
+  function updateAIConfig(patch: Partial<typeof aiConfig>) {
     setAIConfig(patch);
     if (patch.baseUrl !== undefined) {
       setAvailableModels([]);
-      setModelsFetched(false);
     }
   }
 
   async function fetchModels() {
     setModelsLoading(true);
-    setModelsFetched(true);
     try {
       const url = (baseUrl || "https://api.openai.com").replace(/\/+$/, "").replace(/\/v1$/, "");
       const headers: Record<string, string> = {};
@@ -95,7 +115,7 @@ export function AISettings() {
         >
           <Toggle
             checked={aiEnabled ?? true}
-            onChange={(v) => update({ aiEnabled: v })}
+            onChange={(v) => updateAIConfig({ aiEnabled: v })}
           />
         </SettingsRow>
         {([
@@ -111,296 +131,242 @@ export function AISettings() {
         })}
       </SettingsGroup>
 
-      {/* ── Endpoint config ── */}
+      {/* ── General Chat & Inline AI Feature Config ── */}
       <SettingsGroup
-        title="AI Endpoint"
-        description="Connect to OpenAI, a local Ollama/LM Studio server, or any OpenAI-compatible API. Changes take effect immediately."
+        title="General Chat & Inline AI"
+        description="Configure endpoints for the main AI Chat panel, in-editor inline text actions, PRD writer, and summaries. Supports offline private models."
       >
-        {/* Base URL */}
+        {/* Provider Switcher */}
         <SettingsRow
-          label="Base URL"
-          description="Root URL. The chat route appends /v1/chat/completions."
+          label="AI Provider"
+          description="Choose between local on-device Apple Intelligence or standard cloud/local API connections."
         >
-          <div className="flex flex-col gap-1.5 items-end">
-            <div className="relative">
-              <Globe size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]" />
-              <input
-                type="url"
-                value={baseUrl}
-                onChange={(e) => update({ baseUrl: e.target.value })}
-                placeholder="https://api.openai.com"
-                className="pl-7 pr-3 py-1.5 text-xs w-64 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)]"
-              />
-            </div>
-            <div className="flex gap-1.5">
-              {[
-                { label: "OpenAI", url: "https://api.openai.com" },
-                { label: "Ollama", url: "http://localhost:11434" },
-                { label: "LM Studio", url: "http://localhost:1234" },
-              ].map(({ label, url }) => (
-                <button
-                  key={label}
-                  onClick={() => update({ baseUrl: url })}
-                  className={cn(
-                    "px-2 py-1 text-[0.714rem] rounded border transition-colors",
-                    baseUrl === url
-                      ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
-                      : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]"
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-        </SettingsRow>
-
-        {/* API Key */}
-        <SettingsRow
-          label="API Key"
-          description={
-            isLocal
-              ? "Local servers don't need a key — leave blank."
-              : "Required for OpenAI. Leave blank to use the OPENAI_API_KEY server env var."
-          }
-        >
-          <div className="relative">
-            <Key size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]" />
-            <input
-              type={showKey ? "text" : "password"}
-              value={apiKey}
-              onChange={(e) => update({ apiKey: e.target.value })}
-              placeholder={isLocal ? "optional" : "sk-…"}
-              className="pl-7 pr-8 py-1.5 text-xs w-52 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)]"
-            />
-            <Tooltip content={showKey ? "Hide API key" : "Show API key"} side="top">
-              <button
-                onClick={() => setShowKey((s) => !s)}
-                aria-label={showKey ? "Hide API key" : "Show API key"}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-              >
-                {showKey ? <EyeOff size={11} /> : <Eye size={11} />}
-              </button>
-            </Tooltip>
-          </div>
-        </SettingsRow>
-
-        {/* Model + fetch */}
-        <SettingsRow
-          label="Model"
-          description={
-            availableModels.length > 0
-              ? `${availableModels.length} models loaded from endpoint`
-              : "Type a model name or fetch the list from your endpoint."
-          }
-        >
-          <div className="flex flex-col gap-1.5 items-end w-64">
-            {/* Text input */}
-            <div className="flex gap-1.5 w-full">
-              <div className="relative flex-1">
-                <Cpu size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]" />
-                <input
-                  type="text"
-                  value={model}
-                  onChange={(e) => update({ model: e.target.value })}
-                  placeholder="gpt-4o-mini"
-                  className="pl-7 pr-3 py-1.5 text-xs w-full rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)]"
-                />
-              </div>
-              <button
-                onClick={fetchModels}
-                disabled={modelsLoading}
-                aria-label="Fetch models from endpoint"
-                className={cn(
-                  "px-2 py-1.5 text-[0.714rem] rounded-md border transition-colors flex items-center gap-1 min-w-[52px] justify-center",
-                  "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]",
-                  modelsLoading && "opacity-50 cursor-wait"
-                )}
-              >
-                <RefreshCw size={11} className={modelsLoading ? "animate-spin" : ""} />
-                {modelsLoading ? "…" : "Fetch"}
-              </button>
-            </div>
-
-            {/* Status line */}
-            {testState === "error" && (
-              <p className="text-[0.786rem] text-[var(--danger)] self-start" title={testError}>
-                {testError.slice(0, 60)}
-              </p>
-            )}
-            {testState === "ok" && availableModels.length > 0 && (
-              <p className="text-[0.786rem] text-[var(--success)] self-start flex items-center gap-1">
-                <CheckCircle size={10} /> {availableModels.length} models available
-              </p>
-            )}
-
-            {/* Model chips — scrollable list */}
-            <div className="flex flex-wrap gap-1 max-h-28 overflow-y-auto w-full pr-0.5">
-              {modelOptions.map((m) => (
-                <button
-                  key={m}
-                  onClick={() => update({ model: m })}
-                  className={cn(
-                    "px-2 py-0.5 text-[0.714rem] rounded border transition-colors font-mono whitespace-nowrap",
-                    model === m
-                      ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
-                      : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]"
-                  )}
-                >
-                  {m}
-                </button>
-              ))}
-              {modelsFetched && availableModels.length === 0 && !modelsLoading && testState !== "error" && (
-                <span className="text-[0.786rem] text-[var(--text-tertiary)]">No models returned</span>
+          <div className="flex gap-2">
+            <button
+              onClick={() => updateAIConfig({ provider: "openai" })}
+              className={cn(
+                "px-3 py-1.5 text-xs rounded-md border transition-all flex items-center gap-2 cursor-pointer",
+                provider === "openai"
+                  ? "border-[var(--accent)] text-[var(--text-primary)] bg-[var(--accent-dim)] font-medium"
+                  : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]"
               )}
-            </div>
+            >
+              <Globe size={12} />
+              Cloud / Local API
+            </button>
+            <button
+              disabled={!appleFMAvailable}
+              onClick={() => updateAIConfig({ provider: "apple-fm" })}
+              className={cn(
+                "px-3 py-1.5 text-xs rounded-md border transition-all flex items-center gap-2 relative",
+                provider === "apple-fm"
+                  ? "border-purple-500 text-[var(--text-primary)] bg-[color-mix(in_srgb,var(--purple-500)_12%,transparent)] font-medium"
+                  : !appleFMAvailable
+                    ? "opacity-50 cursor-not-allowed border-[var(--border)] text-[var(--text-tertiary)]"
+                    : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)] cursor-pointer"
+              )}
+              title={!appleFMAvailable ? (appleFMReason || "Requires Apple Silicon Mac with Apple Intelligence enabled") : " Apple Intelligence"}
+            >
+              <Cpu size={12} className={provider === "apple-fm" ? "text-purple-500 animate-pulse" : ""} />
+               On-Device
+              {!appleFMAvailable && (
+                <span className="text-[0.625rem] bg-[var(--surface-3)] text-[var(--text-tertiary)] px-1 py-0.5 rounded border border-[var(--border)] font-normal">
+                  macOS Only
+                </span>
+              )}
+            </button>
           </div>
         </SettingsRow>
 
-        {/* Max steps */}
-        <SettingsRow
-          label="Max steps"
-          description="Tool-call rounds the agent can take per message. Use ∞ for complex multi-file tasks — but watch API costs."
-        >
-          <div className="flex flex-col gap-1.5 items-end">
-            <div className="relative">
-              <Footprints size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]" />
-              <input
-                type="number"
-                min={1}
-                max={1000}
-                value={maxSteps ?? 20}
-                onChange={(e) => {
-                  const v = parseInt(e.target.value, 10);
-                  if (!isNaN(v) && v >= 1 && v <= 1000) update({ maxSteps: v });
-                }}
-                className="pl-7 pr-3 py-1.5 text-xs w-24 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)]"
-              />
+        {provider === "apple-fm" ? (
+          <SettingsRow
+            label="Apple Intelligence"
+            description="On-device Foundation Models configured successfully."
+          >
+            <div className="bg-[var(--surface-2)] border border-[var(--border)] rounded-lg p-4 space-y-3 w-full max-w-md text-left">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-purple-500 via-indigo-500 to-cyan-500 flex items-center justify-center text-white font-bold shadow-md">
+                  
+                </div>
+                <div>
+                  <h4 className="text-xs font-semibold text-[var(--text-primary)]">On-Device Apple Intelligence</h4>
+                  <p className="text-[0.714rem] text-[var(--text-tertiary)]">Powered by macOS Foundation Models</p>
+                </div>
+              </div>
+              <p className="text-[0.786rem] text-[var(--text-secondary)] leading-relaxed">
+                Cairn is running private, zero-config on-device inference using your Mac&apos;s built-in language model. 
+                All chat history, tasks, and notes remain <strong>100% private and local</strong>, with no API keys, cloud servers, or costs.
+              </p>
+              <div className="text-[0.714rem] flex items-center gap-2 text-[var(--success)] font-medium bg-[color-mix(in_srgb,var(--success)_10%,transparent)] px-2.5 py-1 rounded-md w-fit">
+                <CheckCircle size={12} /> Active &amp; Ready
+              </div>
             </div>
-            <div className="flex gap-1.5">
-              {([10, 20, 30, 50] as const).map((n) => (
-                <button
-                  key={n}
-                  onClick={() => update({ maxSteps: n })}
-                  className={cn(
-                    "px-2 py-1 text-[0.714rem] rounded border transition-colors",
-                    (maxSteps ?? 20) === n
-                      ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
-                      : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]"
-                  )}
-                >
-                  {n}
-                </button>
-              ))}
-              <button
-                onClick={() => update({ maxSteps: 1000 })}
-                className={cn(
-                  "px-2 py-1 text-[0.714rem] rounded border transition-colors",
-                  (maxSteps ?? 20) === 1000
-                    ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
-                    : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]"
+          </SettingsRow>
+        ) : (
+          <>
+            {/* Base URL */}
+            <SettingsRow
+              label="Base URL"
+              description="Root URL. The chat route appends /v1/chat/completions."
+            >
+              <div className="flex flex-col gap-1.5 items-end">
+                <div className="relative">
+                  <Globe size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]" />
+                  <input
+                    type="url"
+                    value={baseUrl}
+                    onChange={(e) => updateAIConfig({ baseUrl: e.target.value })}
+                    placeholder="https://api.openai.com"
+                    className="pl-7 pr-3 py-1.5 text-xs w-64 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)]"
+                  />
+                </div>
+                <div className="flex gap-1.5">
+                  {[
+                    { label: "OpenAI", url: "https://api.openai.com" },
+                    { label: "Ollama", url: "http://localhost:11434" },
+                    { label: "LM Studio", url: "http://localhost:1234" },
+                  ].map(({ label, url }) => (
+                    <button
+                      key={label}
+                      onClick={() => updateAIConfig({ baseUrl: url })}
+                      className={cn(
+                        "px-2 py-1 text-[0.714rem] rounded border transition-colors cursor-pointer",
+                        baseUrl === url
+                          ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
+                          : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]"
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </SettingsRow>
+
+            {/* API Key */}
+            <SettingsRow
+              label="API Key"
+              description={
+                isLocal
+                  ? "Local servers don't need a key — leave blank."
+                  : "Required for OpenAI. Leave blank to use the OPENAI_API_KEY server env var."
+              }
+            >
+              <div className="relative">
+                <Key size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]" />
+                <input
+                  type={showKey ? "text" : "password"}
+                  value={apiKey}
+                  onChange={(e) => updateAIConfig({ apiKey: e.target.value })}
+                  placeholder={isLocal ? "optional" : "sk-…"}
+                  className="pl-7 pr-8 py-1.5 text-xs w-52 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)]"
+                />
+                <Tooltip content={showKey ? "Hide API key" : "Show API key"} side="top">
+                  <button
+                    onClick={() => setShowKey((s) => !s)}
+                    aria-label={showKey ? "Hide API key" : "Show API key"}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+                  >
+                    {showKey ? <EyeOff size={11} /> : <Eye size={11} />}
+                  </button>
+                </Tooltip>
+              </div>
+            </SettingsRow>
+
+            {/* Model Selection */}
+            <SettingsRow
+              label="Model"
+              description={
+                availableModels.length > 0
+                  ? `${availableModels.length} models loaded from endpoint`
+                  : "Type a model name or fetch the list from your endpoint."
+              }
+            >
+              <div className="flex flex-col gap-1.5 items-end w-64">
+                <div className="flex gap-1.5 w-full">
+                  <div className="relative flex-1">
+                    <Cpu size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]" />
+                    <input
+                      type="text"
+                      value={model}
+                      onChange={(e) => updateAIConfig({ model: e.target.value })}
+                      placeholder="gpt-4o-mini"
+                      className="pl-7 pr-3 py-1.5 text-xs w-full rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)]"
+                    />
+                  </div>
+                  <button
+                    onClick={fetchModels}
+                    disabled={modelsLoading}
+                    aria-label="Fetch general models from endpoint"
+                    className={cn(
+                      "px-2 py-1.5 text-[0.714rem] rounded-md border transition-colors flex items-center gap-1 min-w-[52px] justify-center",
+                      "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]",
+                      modelsLoading && "opacity-50 cursor-wait"
+                    )}
+                  >
+                    <RefreshCw size={11} className={modelsLoading ? "animate-spin" : ""} />
+                    {modelsLoading ? "…" : "Fetch"}
+                  </button>
+                </div>
+
+                {testState === "error" && (
+                  <p className="text-[0.786rem] text-[var(--danger)] self-start" title={testError}>
+                    {testError.slice(0, 60)}
+                  </p>
                 )}
-              >
-                ∞
-              </button>
-            </div>
-          </div>
-        </SettingsRow>
+                {testState === "ok" && availableModels.length > 0 && (
+                  <p className="text-[0.786rem] text-[var(--success)] self-start flex items-center gap-1">
+                    <CheckCircle size={10} /> {availableModels.length} models available
+                  </p>
+                )}
 
-        {/* Temperature */}
-        <SettingsRow
-          label="Temperature"
-          description="Sampling temperature for the agent (0–1). Lower = more deterministic. Plan mode always uses 0.1 regardless of this setting."
-        >
-          <div className="flex flex-col gap-1.5 items-end">
-            <div className="relative">
-              <Thermometer size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]" />
-              <input
-                type="number"
-                min={0}
-                max={1}
-                step={0.05}
-                value={temperature ?? 0.3}
-                onChange={(e) => {
-                  const v = parseFloat(e.target.value);
-                  if (!isNaN(v) && v >= 0 && v <= 1) update({ temperature: v });
-                }}
-                className="pl-7 pr-3 py-1.5 text-xs w-24 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)]"
-              />
-            </div>
-            <div className="flex gap-1.5">
-              {[0.1, 0.3, 0.5, 0.7].map((n) => (
-                <button
-                  key={n}
-                  onClick={() => update({ temperature: n })}
-                  className={cn(
-                    "px-2 py-1 text-[0.714rem] rounded border transition-colors",
-                    (temperature ?? 0.3) === n
-                      ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
-                      : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]"
-                  )}
-                >
-                  {n}
-                </button>
-              ))}
-            </div>
-          </div>
-        </SettingsRow>
+                <div className="flex flex-wrap gap-1 max-h-28 overflow-y-auto w-full pr-0.5">
+                  {modelOptions.map((m) => (
+                    <button
+                      key={m}
+                      onClick={() => updateAIConfig({ model: m })}
+                      className={cn(
+                        "px-2 py-0.5 text-[0.714rem] rounded border transition-colors font-mono whitespace-nowrap",
+                        model === m
+                          ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
+                          : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]"
+                      )}
+                    >
+                      {m}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </SettingsRow>
+          </>
+        )}
 
-        {/* Context window */}
-        <SettingsRow
-          label="Context window"
-          description="Token limit of your model. Used to display the context usage ring in the coding agent — does not truncate or limit API calls."
-        >
-          <div className="flex flex-col gap-1.5 items-end">
-            <div className="relative">
-              <Layers size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]" />
-              <input
-                type="number"
-                min={1000}
-                max={2000000}
-                step={1000}
-                value={contextLimit ?? 128000}
-                onChange={(e) => {
-                  const v = parseInt(e.target.value, 10);
-                  if (!isNaN(v) && v >= 1000) update({ contextLimit: v });
-                }}
-                className="pl-7 pr-3 py-1.5 text-xs w-28 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)]"
-              />
-            </div>
-            <div className="flex gap-1.5">
-              {[8000, 32000, 128000, 200000].map((n) => (
-                <button
-                  key={n}
-                  onClick={() => update({ contextLimit: n })}
-                  className={cn(
-                    "px-2 py-1 text-[0.714rem] rounded border transition-colors",
-                    (contextLimit ?? 128000) === n
-                      ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
-                      : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]"
-                  )}
-                >
-                  {n >= 1000 ? `${n / 1000}k` : n}
-                </button>
-              ))}
-            </div>
-          </div>
-        </SettingsRow>
-
-        {/* Status summary */}
+        {/* General Connection Status */}
         <div className="flex items-center gap-3 pt-1 text-xs">
-          <span className={cn(
-            "flex items-center gap-1",
-            testState === "ok" ? "text-[var(--success)]" : testState === "error" ? "text-[var(--danger)]" : "text-[var(--text-tertiary)]"
-          )}>
-            {testState === "ok" && <><CheckCircle size={11} /> Connected</>}
-            {testState === "error" && <><WifiOff size={11} /> Error</>}
-            {(testState === "idle" || testState === "testing") && <><Wifi size={11} /> {testState === "testing" ? "Connecting…" : "Not tested"}</>}
-          </span>
-          <span className="text-[var(--text-tertiary)]">·</span>
-          <span className="text-[var(--text-tertiary)] font-mono truncate max-w-40">{baseUrl.replace(/^https?:\/\//, "")}</span>
-          <span className="text-[var(--text-tertiary)]">·</span>
-          <span className="text-[var(--text-tertiary)] font-mono">{model || "no model"}</span>
+          {provider === "apple-fm" ? (
+            <>
+              <span className="flex items-center gap-1 text-[var(--success)]">
+                <CheckCircle size={11} /> Connected (On-Device)
+              </span>
+              <span className="text-[var(--text-tertiary)]">·</span>
+              <span className="text-[var(--text-tertiary)] font-mono"> macOS Foundation Model</span>
+            </>
+          ) : (
+            <>
+              <span className={cn(
+                "flex items-center gap-1",
+                testState === "ok" ? "text-[var(--success)]" : testState === "error" ? "text-[var(--danger)]" : "text-[var(--text-tertiary)]"
+              )}>
+                {testState === "ok" && <><CheckCircle size={11} /> Connected</>}
+                {testState === "error" && <><WifiOff size={11} /> Error</>}
+                {(testState === "idle" || testState === "testing") && <><Wifi size={11} /> {testState === "testing" ? "Connecting…" : "Not tested"}</>}
+              </span>
+              <span className="text-[var(--text-tertiary)]">·</span>
+              <span className="text-[var(--text-tertiary)] font-mono truncate max-w-40">{baseUrl.replace(/^https?:\/\//, "")}</span>
+              <span className="text-[var(--text-tertiary)]">·</span>
+              <span className="text-[var(--text-tertiary)] font-mono">{model || "no model"}</span>
+            </>
+          )}
         </div>
       </SettingsGroup>
 

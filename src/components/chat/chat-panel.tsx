@@ -285,8 +285,13 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
       {/* Header */}
       <div className="flex items-center gap-2 px-4 h-11 border-b border-[var(--border)] flex-shrink-0">
         <Sparkles size={13} className="text-[var(--accent)]" />
-        <span className="text-sm font-semibold text-[var(--text-primary)] flex-1">
+        <span className="text-sm font-semibold text-[var(--text-primary)] flex items-center gap-1.5 flex-1">
           {activeView === "graph" ? "Graph Assistant" : "AI Assistant"}
+          {aiConfig.provider === "apple-fm" && (
+            <span className="text-[0.625rem] font-bold text-white bg-gradient-to-r from-purple-500 to-indigo-500 px-1.5 py-0.5 rounded shadow-sm flex items-center gap-0.5 select-none" title="On-Device private inference powered by macOS Foundation Models">
+               On-Device
+            </span>
+          )}
         </span>
         <span className="text-xs text-[var(--text-tertiary)] truncate max-w-24">{project?.name ?? workspace?.name}</span>
 

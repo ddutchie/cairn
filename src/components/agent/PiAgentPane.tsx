@@ -86,7 +86,7 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
     stepPiSubagent,
     setPiMode,
     setView,
-    aiConfig,
+    agentConfig,
     projects,
     activeWorkspaceId,
   } = useCairnStore(useShallow((s) => ({
@@ -108,7 +108,7 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
     stepPiSubagent:            s.stepPiSubagent,
     setPiMode:                 s.setPiMode,
     setView:                   s.setView,
-    aiConfig:                  s.aiConfig,
+    agentConfig:               s.agentConfig,
     projects:                  s.projects,
     activeWorkspaceId:         s.activeWorkspaceId,
   })));
@@ -408,9 +408,9 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
       window.electron?.piAgent.compactNow({
         sessionId: session.sessionId,
         config: {
-          baseUrl:  aiConfig.baseUrl  || undefined,
-          model:    aiConfig.model    || undefined,
-          apiKey:   aiConfig.apiKey   || undefined,
+          baseUrl:  agentConfig.baseUrl  || undefined,
+          model:    agentConfig.model    || undefined,
+          apiKey:   agentConfig.apiKey   || undefined,
         },
       });
       return;
@@ -446,15 +446,15 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
       taskTitle:   session.taskTitle !== "Ad-hoc session" ? session.taskTitle : undefined,
       mode:        session.mode ?? "execute",
       config: {
-        baseUrl:     aiConfig.baseUrl     || undefined,
-        model:       aiConfig.model       || undefined,
-        apiKey:      aiConfig.apiKey      || undefined,
-        maxSteps:    aiConfig.maxSteps    ?? 20,
-        temperature: aiConfig.temperature ?? 0.3,
+        baseUrl:     agentConfig.baseUrl     || undefined,
+        model:       agentConfig.model       || undefined,
+        apiKey:      agentConfig.apiKey      || undefined,
+        maxSteps:    agentConfig.maxSteps    ?? 30,
+        temperature: agentConfig.temperature ?? 0.3,
       },
     };
     window.electron?.piAgent.prompt(promptPayload);
-  }, [isLoading, session, aiConfig, activeWorkspaceId, addPiMessage]);
+  }, [isLoading, session, agentConfig, activeWorkspaceId, addPiMessage]);
 
   // Keep ref current so the initialPrompt effect always calls the latest version.
   // useLayoutEffect runs synchronously after render, keeping the ref up-to-date
@@ -498,11 +498,11 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
       cwd:         session.cwd,
       taskTitle:   session.taskTitle !== "Ad-hoc session" ? session.taskTitle : undefined,
       config: {
-        baseUrl:     aiConfig.baseUrl     || undefined,
-        model:       aiConfig.model       || undefined,
-        apiKey:      aiConfig.apiKey      || undefined,
-        maxSteps:    aiConfig.maxSteps    ?? 20,
-        temperature: aiConfig.temperature ?? 0.3,
+        baseUrl:     agentConfig.baseUrl     || undefined,
+        model:       agentConfig.model       || undefined,
+        apiKey:      agentConfig.apiKey      || undefined,
+        maxSteps:    agentConfig.maxSteps    ?? 30,
+        temperature: agentConfig.temperature ?? 0.3,
       },
     });
   }
@@ -561,7 +561,7 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
         {session.lastUsage && (
           <ContextRing
             promptTokens={session.lastUsage.promptTokens}
-            contextLimit={aiConfig.contextLimit ?? 128000}
+            contextLimit={agentConfig.contextLimit ?? 128000}
           />
         )}
         <Tooltip content="Clear conversation" side="left">

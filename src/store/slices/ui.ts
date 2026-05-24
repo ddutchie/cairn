@@ -6,7 +6,7 @@ import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
 import type { ID, AppUIState } from "@/types";
 import { storage } from "@/lib/storage";
-import { DEFAULT_AI_CONFIG, AI_CONFIG_KEY, ACTIVE_PROJECT_KEY, CHAT_PANEL_WIDTH_KEY } from "@/lib/constants";
+import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KEY, ACTIVE_PROJECT_KEY, CHAT_PANEL_WIDTH_KEY } from "@/lib/constants";
 
 // ── View visibility ───────────────────────────────────────────────────────────
 
@@ -20,6 +20,8 @@ export const HIDDEN_VIEWS_KEY = "hiddenViews";
 // ── AI / MCP config ───────────────────────────────────────────────────────────
 
 export interface AIConfig {
+  /** The AI provider ('openai' or 'apple-fm') */
+  provider?: "openai" | "apple-fm";
   /** Base URL for the OpenAI-compatible chat completions endpoint */
   baseUrl: string;
   /** Model name — any string accepted by the endpoint */
@@ -34,6 +36,21 @@ export interface AIConfig {
   contextLimit: number;
   /** When false, all in-app AI features are hidden/disabled. Defaults to true. */
   aiEnabled: boolean;
+}
+
+export interface AgentConfig {
+  /** Base URL for the OpenAI-compatible chat completions endpoint */
+  baseUrl: string;
+  /** Model name — any string accepted by the endpoint */
+  model: string;
+  /** API key. Empty string means "use server-side OPENAI_API_KEY env var" */
+  apiKey: string;
+  /** Maximum tool-call rounds per chat message. */
+  maxSteps: number;
+  /** LLM sampling temperature (0–1). Lower = more deterministic. */
+  temperature: number;
+  /** Context window size in tokens. Used to render the context usage ring. */
+  contextLimit: number;
 }
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
@@ -93,6 +110,10 @@ export interface UISlice extends AppUIState {
   aiConfig: AIConfig;
   setAIConfig: (patch: Partial<AIConfig>) => void;
 
+  // Agent config
+  agentConfig: AgentConfig;
+  setAgentConfig: (patch: Partial<AgentConfig>) => void;
+
   // Theme
   theme: Theme;
   setTheme: (theme: Theme) => void;
@@ -134,6 +155,7 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
   searchOpen: false,
 
   aiConfig: DEFAULT_AI_CONFIG,
+  agentConfig: DEFAULT_AGENT_CONFIG,
   theme: "dark" as Theme,
   fontScale: DEFAULT_FONT_SCALE, // 1.2 = M (~16.8px)
   hiddenViews: new Set<ToggleableView>(),
@@ -145,6 +167,15 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
       const next = { ...s.aiConfig, ...patch };
       storage.set(AI_CONFIG_KEY, next);
       return { aiConfig: next };
+    });
+  },
+
+  // ── Agent config ───────────────────────────────
+  setAgentConfig(patch) {
+    set((s) => {
+      const next = { ...s.agentConfig, ...patch };
+      storage.set(AGENT_CONFIG_KEY, next);
+      return { agentConfig: next };
     });
   },
 

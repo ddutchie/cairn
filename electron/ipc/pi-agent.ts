@@ -177,6 +177,14 @@ export function registerPiAgentHandler(
       if (win && !win.webContents.isDestroyed()) win.webContents.send(channel, payload);
     };
 
+    if (req.config?.provider === "apple-fm") {
+      send("pi-agent:error", {
+        sessionId,
+        error: "Apple Intelligence (on-device model) is not supported for the coding agent. The coding agent requires a larger cloud model or a capable local model (Ollama, LM Studio) to handle complex multi-file edits. Please switch your provider in Settings to use a cloud model or a local model with tool support."
+      });
+      return;
+    }
+
     const llmConfig: AgentLLMConfig = {
       baseUrl:     normaliseBaseUrl(req.config?.baseUrl || "https://api.openai.com"),
       model:       req.config?.model       || "gpt-4o",
@@ -221,6 +229,14 @@ export function registerPiAgentHandler(
       const win = getWin();
       if (win && !win.webContents.isDestroyed()) win.webContents.send(channel, payload);
     };
+
+    if (req.config?.provider === "apple-fm") {
+      send("pi-agent:error", {
+        sessionId,
+        error: "Apple Intelligence (on-device model) is not supported for the coding agent. The coding agent requires a larger cloud model or a capable local model (Ollama, LM Studio) to handle complex multi-file edits. Please switch your provider in Settings to use a cloud model or a local model with tool support."
+      });
+      return;
+    }
 
     const llmConfig: AgentLLMConfig = {
       baseUrl:     normaliseBaseUrl(req.config?.baseUrl || "https://api.openai.com"),

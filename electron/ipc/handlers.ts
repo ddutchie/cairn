@@ -539,6 +539,13 @@ export function registerIpcHandlers(ctx: DbContext): void {
   // ── AI Chat completions ───────────────────────────────────────────────────────────────────
   registerChatHandler(ctx.db, ctx.workspacePath, ctx.getWin);
 
+  ipcMain.handle("ai:appleStatus", async () => {
+    return handle(async () => {
+      const { isAppleFMAvailable } = await import("../lib/apple-fm");
+      return await isAppleFMAvailable();
+    });
+  });
+
   // ── AI PRD generation (direct, no chat loop) ──────
   ipcMain.handle("ai:generatePrd", async (_e, args: {
     projectId: string;

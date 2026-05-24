@@ -21,7 +21,12 @@ export function isLocalEndpoint(baseUrl: string): boolean {
   );
 }
 
-export interface LLMConfig { baseUrl: string; model: string; apiKey: string; }
+export interface LLMConfig {
+  provider?: "openai" | "apple-fm";
+  baseUrl: string;
+  model: string;
+  apiKey: string;
+}
 
 export type OpenAIMessage = {
   role: "system" | "user" | "assistant" | "tool";
@@ -35,6 +40,16 @@ export type OpenAIMessage = {
 };
 
 export async function callLLM(config: LLMConfig, systemPrompt: string, userPrompt: string): Promise<string> {
+  if (config.provider === "apple-fm") {
+    const { callAppleFMChat } = await import("./apple-fm");
+    const messages: OpenAIMessage[] = [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ];
+    const res = await callAppleFMChat(messages);
+    return res.choices?.[0]?.message?.content ?? "";
+  }
+
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (config.apiKey) headers["Authorization"] = `Bearer ${config.apiKey}`;
   const response = await fetch(`${config.baseUrl}/v1/chat/completions`, {
@@ -65,6 +80,15 @@ export async function* streamCompletion(
   messages: OpenAIMessage[],
   tools?: object[],
 ): AsyncGenerator<string> {
+  if (config.provider === "apple-fm") {
+    const { streamAppleFMChat } = await import("./apple-fm");
+    for await (const chunk of streamAppleFMChat(messages, tools)) {
+      const delta = chunk.choices?.[0]?.delta?.content ?? "";
+      if (delta) yield delta;
+    }
+    return;
+  }
+
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (config.apiKey) headers["Authorization"] = `Bearer ${config.apiKey}`;
 
