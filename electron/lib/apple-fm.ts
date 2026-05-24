@@ -90,23 +90,97 @@ async function getClient() {
 }
 
 /**
- * Call Apple Foundation Model chat completions (non-streaming, supports tools).
+ * Recursively sanitizes JSON schemas to meet Apple Foundation Models' native constraints.
+ * Removes empty/invalid additionalProperties objects that trigger NSCocoaErrorDomain:4864 decoder rejects.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function callAppleFMChat(messages: OpenAIMessage[], tools?: any[]): Promise<any> {
-  const client = await getClient();
-  // Filter out any custom tools metadata that Apple FM doesn't need or like, or format it
-  const formattedTools = tools?.map(t => {
-    // Ensure we follow standard chat tool formats
+function sanitizeSchema(obj: any): any {
+  if (obj === null || typeof obj !== "object") return obj;
+
+  if (Array.isArray(obj)) {
+    return obj.map(sanitizeSchema);
+  }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result: any = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (key === "additionalProperties" && value && typeof value === "object" && !Array.isArray(value)) {
+      const valKeys = Object.keys(value);
+      const hasValidKeys = valKeys.some(k => ["type", "const", "$ref", "anyOf"].includes(k));
+      if (!hasValidKeys) {
+        // Skip empty or invalid additionalProperties objects to satisfy Apple native schema parser
+        continue;
+      }
+    }
+    result[key] = sanitizeSchema(value);
+  }
+  return result;
+}
+
+export const APPLE_FM_ALLOWED_TOOLS = new Set<string>([
+  "get_active_context",
+  "get_note",
+  "search_notes",
+  "ensure_note",
+  "append_to_note",
+  "patch_note",
+  "get_task",
+  "search_tasks",
+  "create_task",
+  "update_task",
+  "link_note_to_task",
+  "get_knowledge_graph",
+  "get_neighbors",
+  "create_tag",
+  "suggest_connections",
+  "ask_questions"
+]);
+
+/**
+ * Sanitize and format tools for the Apple Foundation Models compat client.
+ * Unifies duplicate parameter names to share the same schema, preventing tsfm-sdk conflicts.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function formatAndSanitizeTools(tools?: any[]): any[] | undefined {
+  if (!tools || tools.length === 0) return undefined;
+
+  // Filter tools to only include whitelisted core features for on-device chat
+  const filtered = tools.filter(t => APPLE_FM_ALLOWED_TOOLS.has(t.function.name));
+  if (filtered.length === 0) return undefined;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const seenParams = new Map<string, any>();
+  return filtered.map(t => {
+    let parameters = JSON.parse(JSON.stringify(t.function.parameters ?? {}));
+    parameters = sanitizeSchema(parameters);
+
+    if (parameters.properties) {
+      for (const [key, value] of Object.entries(parameters.properties)) {
+        if (seenParams.has(key)) {
+          parameters.properties[key] = seenParams.get(key);
+        } else {
+          seenParams.set(key, value);
+        }
+      }
+    }
     return {
       type: "function",
       function: {
         name: t.function.name,
         description: t.function.description,
-        parameters: t.function.parameters
+        parameters
       }
     };
   });
+}
+
+/**
+ * Call Apple Foundation Model chat completions (non-streaming, supports tools).
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function callAppleFMChat(messages: OpenAIMessage[], tools?: any[]): Promise<any> {
+  const client = await getClient();
+  const formattedTools = formatAndSanitizeTools(tools);
 
   return await client.chat.completions.create({
     messages: messages.map(m => ({
@@ -115,7 +189,7 @@ export async function callAppleFMChat(messages: OpenAIMessage[], tools?: any[]):
       ...(m.tool_calls ? { tool_calls: m.tool_calls } : {}),
       ...(m.tool_call_id ? { tool_call_id: m.tool_call_id } : {})
     })),
-    tools: formattedTools && formattedTools.length > 0 ? formattedTools : undefined,
+    tools: formattedTools,
     stream: false
   });
 }
@@ -126,16 +200,7 @@ export async function callAppleFMChat(messages: OpenAIMessage[], tools?: any[]):
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function* streamAppleFMChat(messages: OpenAIMessage[], tools?: any[]): AsyncGenerator<any> {
   const client = await getClient();
-  const formattedTools = tools?.map(t => {
-    return {
-      type: "function",
-      function: {
-        name: t.function.name,
-        description: t.function.description,
-        parameters: t.function.parameters
-      }
-    };
-  });
+  const formattedTools = formatAndSanitizeTools(tools);
 
   const stream = await client.chat.completions.create({
     messages: messages.map(m => ({
@@ -144,7 +209,7 @@ export async function* streamAppleFMChat(messages: OpenAIMessage[], tools?: any[
       ...(m.tool_calls ? { tool_calls: m.tool_calls } : {}),
       ...(m.tool_call_id ? { tool_call_id: m.tool_call_id } : {})
     })),
-    tools: formattedTools && formattedTools.length > 0 ? formattedTools : undefined,
+    tools: formattedTools,
     stream: true
   });
 

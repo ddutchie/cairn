@@ -362,39 +362,30 @@ export const TOOL_SCHEMAS = {
   suggest_connections: {
     description: "Emit a structured list of suggested connections for the Knowledge Graph Assistant panel. Call this AFTER writing your prose analysis to surface actionable items the user can apply with one click. Each action targets a specific node by its ID from the graph snapshot.",
     schema: z.object({
-      actions: z.array(z.discriminatedUnion("type", [
-        z.object({
-          type:         z.literal("add_wikilink"),
-          sourceNoteId: z.string().describe("ID of the note to insert the wikilink into"),
-          sourceTitle:  z.string().describe("Title of the source note"),
-          targetTitle:  z.string().describe("Title of the note to link to (becomes [[targetTitle]])"),
-          reason:       z.string().describe("One sentence explaining why this link is valuable"),
-        }),
-        z.object({
-          type:         z.literal("link_note_note"),
-          sourceNoteId: z.string().describe("ID of the first note"),
-          sourceTitle:  z.string().describe("Title of the first note"),
-          targetNoteId: z.string().describe("ID of the second note"),
-          targetTitle:  z.string().describe("Title of the second note"),
-          reason:       z.string().describe("One sentence explaining why these notes should be linked"),
-        }),
-        z.object({
-          type:      z.literal("link_note_card"),
-          noteId:    z.string().describe("ID of the note"),
-          noteTitle: z.string().describe("Title of the note"),
-          cardId:    z.string().describe("ID of the task card"),
-          cardTitle: z.string().describe("Title of the task card"),
-          reason:    z.string().describe("One sentence explaining why this note-task link is valuable"),
-        }),
-        z.object({
-          type:      z.literal("add_tag"),
-          nodeId:    z.string().describe("ID of the note or card to tag"),
-          nodeTitle: z.string().describe("Title of the note or card"),
-          nodeType:  z.enum(["note", "card"]).describe("Whether the target is a note or a card"),
-          tagName:   z.string().describe("Name of the tag to apply (will be created if it doesn't exist)"),
-          reason:    z.string().describe("One sentence explaining why this tag is appropriate"),
-        }),
-      ])).describe("List of suggested connection actions, max 8"),
+      actions: z.array(z.object({
+        type: z.enum(["add_wikilink", "link_note_note", "link_note_card", "add_tag"]).describe("Type of connection action to suggest"),
+        reason: z.string().describe("One sentence explaining why this connection is valuable"),
+
+        // wikilink & note-to-note fields
+        sourceNoteId: z.string().optional().describe("ID of the note to insert the wikilink into / first note"),
+        sourceTitle:  z.string().optional().describe("Title of the source/first note"),
+        targetTitle:  z.string().optional().describe("Title of the note to link to (becomes [[targetTitle]]) / second note"),
+
+        // note-to-note field
+        targetNoteId: z.string().optional().describe("ID of the second note"),
+
+        // note-to-task fields
+        noteId:    z.string().optional().describe("ID of the note"),
+        noteTitle: z.string().optional().describe("Title of the note"),
+        cardId:    z.string().optional().describe("ID of the task card"),
+        cardTitle: z.string().optional().describe("Title of the task card"),
+
+        // tag fields
+        nodeId:    z.string().optional().describe("ID of the note or card to tag"),
+        nodeTitle: z.string().optional().describe("Title of the note or card"),
+        nodeType:  z.enum(["note", "card"]).optional().describe("Whether the target is a note or a card"),
+        tagName:   z.string().optional().describe("Name of the tag to apply (will be created if it doesn't exist)"),
+      })).describe("List of suggested connection actions, max 8"),
     }),
   },
 
