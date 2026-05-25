@@ -343,7 +343,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
           electron.chat.stream({
             message: prompt,
             threadId: "ai-text-action",
-            config: { baseUrl: aiConfig.baseUrl, model: aiConfig.model, apiKey: aiConfig.apiKey },
+            config: { provider: aiConfig.provider, baseUrl: aiConfig.baseUrl, model: aiConfig.model, apiKey: aiConfig.apiKey },
           });
         });
 
@@ -357,7 +357,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
         selectionRef.current = null;
       }
     },
-    [aiConfig.baseUrl, aiConfig.model, aiConfig.apiKey]
+    [aiConfig.baseUrl, aiConfig.model, aiConfig.apiKey, aiConfig.provider]
   );
 
   // Insert [[Title]] replacing the typed `[[query` trigger text
@@ -438,7 +438,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
           message: `Spawn tasks from the note with id="${note.id}" into column "${backlogCol.id}". Use the spawn_tasks_from_note tool.`,
           threadId: "spawn-tasks",
           projectId: activeProjectId,
-          config: { baseUrl: aiConfig.baseUrl, model: aiConfig.model, apiKey: aiConfig.apiKey },
+          config: { provider: aiConfig.provider, baseUrl: aiConfig.baseUrl, model: aiConfig.model, apiKey: aiConfig.apiKey },
         });
       });
 

@@ -1,4 +1,20 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+
+// Mock electron before module imports that evaluate app.getPath
+vi.mock("electron", () => {
+  return {
+    app: {
+      getPath: (key: string) => {
+        if (key === "userData") {
+          return "/tmp/cairn-test-userdata";
+        }
+        return `/mock/${key}`;
+      }
+    },
+    BrowserWindow: class {}
+  };
+});
+
 import { callAppleFMChat, isAppleFMAvailable } from "./apple-fm";
 import { TOOLS } from "./tools";
 

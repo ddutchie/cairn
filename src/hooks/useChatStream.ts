@@ -40,6 +40,7 @@ export interface ChatStreamRequest {
   workspaceId: string | null | undefined;
   history: Array<{ role: string; content: string }>;
   config: {
+    provider?: string;
     baseUrl?: string;
     model?: string;
     apiKey?: string;

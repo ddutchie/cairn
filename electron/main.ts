@@ -29,6 +29,7 @@ import { setupProtocol, registerAssetProtocol, setAssetWorkspacePath } from "./l
 import { createTray } from "./lib/tray";
 import { killTrackedBashProcesses } from "./lib/coding-tools/bash";
 import { startMcpNotificationPoller } from "./lib/mcp-poller";
+import { stopServerSync } from "./lib/llama-server";
 
 const isDev = !app.isPackaged;
 
@@ -273,6 +274,8 @@ app.whenReady().then(async () => {
 app.on("before-quit", () => {
   // Kill any bash child processes that are still running so they don't linger
   killTrackedBashProcesses();
+  // Terminate the local llama-server background child process so it doesn't linger
+  stopServerSync();
 });
 
 app.on("window-all-closed", () => {

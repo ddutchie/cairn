@@ -546,6 +546,53 @@ export function registerIpcHandlers(ctx: DbContext): void {
     });
   });
 
+  // ── Local Llama & Gemma 4 Server ──────────────────────────────────────────
+  ipcMain.handle("llama:models:list", () => handle(() => {
+    const { listModels } = require("../lib/llama-server");
+    return listModels();
+  }));
+
+  ipcMain.handle("llama:models:install", (_e, { modelId, useMirror }) => handle(async () => {
+    const { installModel } = require("../lib/llama-server");
+    return await installModel(modelId, ctx.getWin, useMirror);
+  }));
+
+  ipcMain.handle("llama:binary:install", () => handle(async () => {
+    const { installLlamaBinary } = require("../lib/llama-server");
+    return await installLlamaBinary(ctx.getWin);
+  }));
+
+  ipcMain.handle("llama:binary:check-update", () => handle(async () => {
+    const { checkLlamaUpdates } = require("../lib/llama-server");
+    return await checkLlamaUpdates();
+  }));
+
+  ipcMain.handle("llama:models:remove", (_e, { modelId }) => handle(() => {
+    const { removeModel } = require("../lib/llama-server");
+    return removeModel(modelId);
+  }));
+
+  ipcMain.handle("llama:models:clearInactive", () => handle(() => {
+    const { clearInactiveModels } = require("../lib/llama-server");
+    return clearInactiveModels();
+  }));
+
+  ipcMain.handle("llama:server:start", (_e, { modelId }) => handle(async () => {
+    const { startServer } = require("../lib/llama-server");
+    const port = await startServer(modelId);
+    return { port };
+  }));
+
+  ipcMain.handle("llama:server:stop", () => handle(async () => {
+    const { stopServer } = require("../lib/llama-server");
+    return await stopServer();
+  }));
+
+  ipcMain.handle("llama:server:status", () => handle(async () => {
+    const { getServerStatus } = require("../lib/llama-server");
+    return await getServerStatus();
+  }));
+
   // ── AI PRD generation (direct, no chat loop) ──────
   ipcMain.handle("ai:generatePrd", async (_e, args: {
     projectId: string;

@@ -1,70 +1,72 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+
+// 1. Mock electron at the very top to resolve module-level getPath calls
+vi.mock("electron", () => {
+  return {
+    app: {
+      getPath: (key: string) => {
+        if (key === "userData") {
+          return "/tmp/cairn-test-userdata";
+        }
+        return `/mock/${key}`;
+      }
+    },
+    BrowserWindow: class {}
+  };
+});
+
+// 2. Mock llama-server methods since we run in isolated unit tests
+vi.mock("./llama-server", () => {
+  return {
+    isLlamaServerInstalled: vi.fn().mockReturnValue(true),
+    ensureLlamaServerRunning: vi.fn().mockResolvedValue(65370),
+    listModels: vi.fn().mockReturnValue([
+      { id: "gemma-4-e2b-it-q4", name: "Gemma 4", status: "installed" }
+    ])
+  };
+});
+
 import { callAppleFMChat, isAppleFMAvailable } from "./apple-fm";
 
-// Mock the tsfm-sdk module with ES6 class
-vi.mock("tsfm-sdk", () => {
-  class SystemLanguageModel {
-    isAvailable() {
-      return { available: true };
-    }
-  }
-  return {
-    SystemLanguageModel,
-    SystemLanguageModelUnavailableReason: {
-      APPLE_INTELLIGENCE_NOT_ENABLED: "apple_intelligence_not_enabled",
-      DEVICE_NOT_ELIGIBLE: "device_not_eligible",
-      MODEL_NOT_READY: "model_not_ready",
-    },
-  };
-});
-
-// Mock the tsfm-sdk/chat module with ES6 class
-const mockCreate = vi.fn();
-vi.mock("tsfm-sdk/chat", () => {
-  class ChatClient {
-    chat = {
-      completions: {
-        create: mockCreate,
-      },
-    };
-  }
-  return {
-    default: ChatClient,
-  };
-});
-
-describe("Apple Foundation Models Integration", () => {
+describe("Apple Foundation Models (Offline Local Gemma 4 Router)", () => {
   beforeEach(() => {
-    mockCreate.mockReset();
+    vi.clearAllMocks();
   });
 
   describe("isAppleFMAvailable", () => {
-    it("returns available: true when running on Darwin and SDK returns available", async () => {
-      // Mock platform
-      const originalPlatform = process.platform;
-      Object.defineProperty(process, "platform", { value: "darwin" });
+    it("returns available: true when llama-server is installed and models are downloaded", async () => {
+      const { isLlamaServerInstalled, listModels } = await import("./llama-server");
+      vi.mocked(isLlamaServerInstalled).mockReturnValue(true);
+      vi.mocked(listModels).mockReturnValue([
+        { id: "gemma-4-e2b-it-q4", name: "Gemma 4", filename: "gemma-4.gguf", path: "/path", repo: "repo", quant: "Q4", downloadUrl: "url", sizeBytes: 1000, status: "installed", downloadProgress: 100 }
+      ]);
 
       const res = await isAppleFMAvailable();
       expect(res.available).toBe(true);
-
-      // Restore platform
-      Object.defineProperty(process, "platform", { value: originalPlatform });
     });
 
-    it("returns available: false on non-Darwin platforms", async () => {
-      const originalPlatform = process.platform;
-      Object.defineProperty(process, "platform", { value: "linux" });
+    it("returns available: false when llama-server is not installed", async () => {
+      const { isLlamaServerInstalled } = await import("./llama-server");
+      vi.mocked(isLlamaServerInstalled).mockReturnValue(false);
 
       const res = await isAppleFMAvailable();
       expect(res.available).toBe(false);
-      expect(res.reason).toMatch(/requires macOS/);
+      expect(res.reason).toContain("llama-server is not installed");
+    });
 
-      Object.defineProperty(process, "platform", { value: originalPlatform });
+    it("returns available: false when no models are downloaded", async () => {
+      const { isLlamaServerInstalled, listModels } = await import("./llama-server");
+      vi.mocked(isLlamaServerInstalled).mockReturnValue(true);
+      vi.mocked(listModels).mockReturnValue([]);
+
+      const res = await isAppleFMAvailable();
+      expect(res.available).toBe(false);
+      expect(res.reason).toContain("No local Gemma 4 models downloaded");
     });
   });
 
   describe("callAppleFMChat", () => {
-    it("calls tsfm chat completions with formatted tools and messages", async () => {
+    it("makes a local completions POST fetch call and returns data", async () => {
       const mockResponse = {
         choices: [
           {
@@ -84,22 +86,28 @@ describe("Apple Foundation Models Integration", () => {
                           sourceNoteId: "n1",
                           sourceTitle: "Note A",
                           targetTitle: "Note B",
-                          reason: "They are closely related topics.",
-                        },
-                      ],
-                    }),
-                  },
-                },
-              ],
-            },
-          },
-        ],
+                          reason: "Related topics."
+                        }
+                      ]
+                    })
+                  }
+                }
+              ]
+            }
+          }
+        ]
       };
-      mockCreate.mockResolvedValue(mockResponse);
+
+      // Mock the global fetch
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => mockResponse
+      });
+      global.fetch = mockFetch;
 
       const messages = [
-        { role: "system" as const, content: "You are an assistant." },
-        { role: "user" as const, content: "Suggest some connections." },
+        { role: "system" as const, content: "You are a helpful assistant." },
+        { role: "user" as const, content: "Suggest some connections." }
       ];
 
       const tools = [
@@ -107,43 +115,58 @@ describe("Apple Foundation Models Integration", () => {
           type: "function",
           function: {
             name: "suggest_connections",
-            description: "Emit connection actions",
-            parameters: {
-              type: "object",
-              properties: { actions: { type: "array", items: { type: "object" } } },
-            },
-          },
-        },
+            description: "Suggest links",
+            parameters: { type: "object", properties: {} }
+          }
+        }
       ];
 
       const result = await callAppleFMChat(messages, tools);
 
-      expect(mockCreate).toHaveBeenCalledWith({
-        messages: [
-          { role: "system", content: "You are an assistant." },
-          { role: "user", content: "Suggest some connections." },
-        ],
-        tools: [
-          {
-            type: "function",
-            function: {
-              name: "suggest_connections",
-              description: "Emit connection actions",
-              parameters: {
-                type: "object",
-                properties: { actions: { type: "array", items: { type: "object" } } },
-              },
-            },
-          },
-        ],
-        stream: false,
-      });
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const [url, init] = mockFetch.mock.calls[0];
+      expect(url).toBe("http://127.0.0.1:65370/v1/chat/completions");
+      expect(init.method).toBe("POST");
+      
+      const body = JSON.parse(init.body);
+      expect(body.model).toBe("gemma-4");
+      expect(body.messages).toHaveLength(2);
+      expect(body.tools).toBeDefined();
 
       expect(result).toEqual(mockResponse);
       const toolCall = result.choices[0].message.tool_calls[0];
       expect(toolCall.function.name).toBe("suggest_connections");
-      const parsedArgs = JSON.parse(toolCall.function.arguments);
-      expect(parsedArgs.actions[0].type).toBe("add_wikilink");
+    });
+  });
+
+  describe("Gemma 4 XML-style Parser Regex", () => {
+    it("successfully parses nested JSON arguments containing arrays and custom tokens", () => {
+      const rawContent = `Based on your graph structure, here are some suggested connections:
+
+<|tool_call>call:suggest_connections{connections:[{source_note_id:<|"|>4DE9JBdVsNuA<|"|>,target_note_id:<|"|>H4U25-U6N27L<|"|>,type:<|"|>link_note_note<|"|>},{source_note_id:<|"|>QicLuFrfQwqy<|"|>,target_note_id:<|"|>6k1gfpye1d7<|"|>,type:<|"|>link_note_note<|"|>}]}<tool_call|>
+
+Hope this helps!`;
+
+      const matches = [...rawContent.matchAll(/<\|tool_call>call:\s*([a-zA-Z0-9_-]+)(.*?)<tool_call\|>/gs)];
+      expect(matches).toHaveLength(1);
+      
+      const match = matches[0];
+      expect(match[1]).toBe("suggest_connections");
+      
+      let argsStr = match[2];
+      argsStr = argsStr.replace(/<\|"\|>/g, '"');
+      argsStr = argsStr.replace(/([{,]\s*)([a-zA-Z0-9_-]+)\s*:/g, '$1"$2":');
+      
+      const parsed = JSON.parse(argsStr);
+      expect(parsed.connections).toBeDefined();
+      expect(parsed.connections).toHaveLength(2);
+      expect(parsed.connections[0].source_note_id).toBe("4DE9JBdVsNuA");
+      expect(parsed.connections[1].target_note_id).toBe("6k1gfpye1d7");
+
+      const cleanedContent = rawContent.replace(match[0], "").trim();
+      expect(cleanedContent).not.toContain("<|tool_call>");
+      expect(cleanedContent).toContain("Based on your graph");
+      expect(cleanedContent).toContain("Hope this helps!");
     });
   });
 });

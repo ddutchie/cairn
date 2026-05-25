@@ -82,7 +82,7 @@ export async function* streamCompletion(
 ): AsyncGenerator<string> {
   if (config.provider === "apple-fm") {
     const { streamAppleFMChat } = await import("./apple-fm");
-    for await (const chunk of streamAppleFMChat(messages, tools)) {
+    for await (const chunk of streamAppleFMChat(messages)) {
       const delta = chunk.choices?.[0]?.delta?.content ?? "";
       if (delta) yield delta;
     }

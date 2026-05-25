@@ -52,6 +52,33 @@ async function runToolLoop(
         const choice = res.choices?.[0];
         if (!choice) return { exhausted: true, content: "No response from Apple Intelligence on-device model." };
         assistantMsg = choice.message as OpenAIMessage;
+
+        // Self-Healing Parser for Gemma 4 XML-style tool calls and tokenizers
+        if (assistantMsg.content && assistantMsg.content.includes("<|tool_call>call:")) {
+          const matches = [...assistantMsg.content.matchAll(/<\|tool_call>call:\s*([a-zA-Z0-9_-]+)(.*?)<tool_call\|>/gs)];
+          if (matches.length > 0) {
+            assistantMsg.tool_calls = assistantMsg.tool_calls || [];
+            for (const match of matches) {
+              const fullMatch = match[0];
+              const toolName = match[1];
+              let argsStr = match[2];
+              // Replace tokenized quotes: <|"|> -> "
+              argsStr = argsStr.replace(/<\|"\|>/g, '"');
+              // Wrap unquoted keys in double quotes to ensure strict JSON compliance
+              argsStr = argsStr.replace(/([{,]\s*)([a-zA-Z0-9_-]+)\s*:/g, '$1"$2":');
+              assistantMsg.tool_calls.push({
+                id: `call_${Math.random().toString(36).substring(2, 11)}`,
+                type: "function",
+                function: { name: toolName, arguments: argsStr }
+              });
+              assistantMsg.content = assistantMsg.content.replace(fullMatch, "");
+            }
+            assistantMsg.content = assistantMsg.content.trim();
+            if (!assistantMsg.content) {
+              assistantMsg.content = null;
+            }
+          }
+        }
       } catch (err) {
         return { exhausted: true, content: `On-device Apple Foundation Model error: ${String(err)}` };
       }
