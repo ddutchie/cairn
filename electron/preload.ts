@@ -416,6 +416,7 @@ const api = {
   // ── Local Llama & Gemma 4 Server ───────────────
   llama: {
     models: {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       list: () => invoke<any[]>("llama:models:list"),
       install: (modelId: string, useMirror?: boolean) => invoke<void>("llama:models:install", { modelId, useMirror }),
       remove: (modelId: string) => invoke<void>("llama:models:remove", { modelId }),

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { spawn, execSync, exec, ChildProcess } from "child_process";
 import * as path from "path";
 import * as fs from "fs";

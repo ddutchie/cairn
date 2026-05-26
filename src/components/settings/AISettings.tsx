@@ -27,6 +27,7 @@ export function AISettings() {
   const [testError, setTestError] = useState("");
 
   // Llama local model manager state
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [llamaModels, setLlamaModels] = useState<any[]>([]);
   const [serverStatus, setServerStatus] = useState<{
     running: boolean;

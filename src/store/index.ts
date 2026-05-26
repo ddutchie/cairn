@@ -173,7 +173,7 @@ export const useCairnStore = create<CairnStore>()(
 
       const savedConfig = storage.get<AIConfig>(AI_CONFIG_KEY);
       if (savedConfig) {
-        if (savedConfig.provider === ("apple-fm" as any)) {
+        if (savedConfig.provider === ("apple-fm" as unknown as "openai" | "localllm")) {
           savedConfig.provider = "localllm";
           storage.set(AI_CONFIG_KEY, savedConfig);
         }
@@ -241,7 +241,7 @@ export const useCairnStore = create<CairnStore>()(
 
       const savedConfig = storage.get<AIConfig>(AI_CONFIG_KEY);
       if (savedConfig) {
-        if (savedConfig.provider === ("apple-fm" as any)) {
+        if (savedConfig.provider === ("apple-fm" as unknown as "openai" | "localllm")) {
           savedConfig.provider = "localllm";
           storage.set(AI_CONFIG_KEY, savedConfig);
         }

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as path from "path";
 
@@ -63,9 +64,9 @@ vi.mock("child_process", () => {
     exec: vi.fn((cmd, cb) => {
       cb(null, "success", "");
     }),
-    spawn: vi.fn((bin, args) => {
+    spawn: vi.fn((_bin, _args) => {
       spawnedProcess = {
-        kill: vi.fn((sig) => {
+        kill: vi.fn((_sig) => {
           spawnedProcess.killed = true;
           spawnedProcess.exitCode = 0;
         }),
