@@ -53,7 +53,7 @@ async function runToolLoop(
         if (!choice) return { exhausted: true, content: "No response from local Llama on-device model." };
         assistantMsg = choice.message as OpenAIMessage;
 
-        // Self-Healing Parser for Gemma 4 XML-style tool calls and tokenizers
+        // Self-Healing Parser for On-Device XML-style tool calls and tokenizers
         if (assistantMsg.content && assistantMsg.content.includes("<|tool_call>call:")) {
           const matches = [...assistantMsg.content.matchAll(/<\|tool_call>call:\s*([a-zA-Z0-9_-]+)(.*?)<tool_call\|>/gs)];
           if (matches.length > 0) {

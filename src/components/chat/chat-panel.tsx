@@ -292,8 +292,8 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
         <span className="text-sm font-semibold text-[var(--text-primary)] flex items-center gap-1.5 flex-1">
           {activeView === "graph" ? "Graph Assistant" : "AI Assistant"}
           {aiConfig.provider === "localllm" && (
-            <span className="text-[0.625rem] font-bold text-white bg-gradient-to-r from-purple-500 to-indigo-500 px-1.5 py-0.5 rounded shadow-sm flex items-center gap-0.5 select-none whitespace-nowrap shrink-0" title="On-Device private inference powered by Local Gemma 4 & Llama">
-              {chatPanelWidth < 360 ? "Local" : "Local Gemma 4 (Llama)"}
+            <span className="text-[0.625rem] font-bold text-white bg-gradient-to-r from-purple-500 to-indigo-500 px-1.5 py-0.5 rounded shadow-sm flex items-center gap-0.5 select-none whitespace-nowrap shrink-0" title="On-Device private inference powered by Llama">
+              {chatPanelWidth < 360 ? "Local" : "On-Device Llama"}
             </span>
           )}
         </span>

@@ -28,7 +28,7 @@ vi.mock("./llama-server", () => {
 
 import { callLocalLLMChat, isLocalLLMAvailable } from "./local-llm";
 
-describe("Local LLM Router (Offline Local Gemma 4 Router)", () => {
+describe("Local LLM Router (Offline Local Llama/On-Device Router)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -61,7 +61,7 @@ describe("Local LLM Router (Offline Local Gemma 4 Router)", () => {
 
       const res = await isLocalLLMAvailable();
       expect(res.available).toBe(false);
-      expect(res.reason).toContain("No local Gemma 4 models downloaded");
+      expect(res.reason).toContain("No local on-device models downloaded");
     });
   });
 
@@ -139,7 +139,7 @@ describe("Local LLM Router (Offline Local Gemma 4 Router)", () => {
     });
   });
 
-  describe("Gemma 4 XML-style Parser Regex", () => {
+  describe("On-Device XML-style Parser Regex", () => {
     it("successfully parses nested JSON arguments containing arrays and custom tokens", () => {
       const rawContent = `Based on your graph structure, here are some suggested connections:
 

@@ -22,7 +22,7 @@ export interface ModelManifestEntry {
   error?: string;
 }
 
-// Supported Gemma 4 model definitions
+// Supported On-Device model definitions
 export const SUPPORTED_MODELS: Record<string, Omit<ModelManifestEntry, "status" | "downloadProgress" | "path">> = {
   "gemma-4-e2b-it-q4": {
     id: "gemma-4-e2b-it-q4",
@@ -624,7 +624,7 @@ export async function ensureLlamaServerRunning(): Promise<number> {
   // Find first installed model
   const installedEntry = Object.values(manifest).find((entry) => entry.status === "installed");
   if (!installedEntry) {
-    throw new Error("No local Gemma 4 models are downloaded. Please go to Settings → AI & Chat to download a model first.");
+    throw new Error("No local on-device models are downloaded. Please go to Settings → AI & Chat to download a model first.");
   }
 
   return await startServer(installedEntry.id);

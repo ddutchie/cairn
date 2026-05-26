@@ -413,7 +413,7 @@ const api = {
       ),
   },
 
-  // ── Local Llama & Gemma 4 Server ───────────────
+  // ── On-Device Llama Server ───────────────
   llama: {
     models: {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -44,7 +44,6 @@ const ROLE_MAP = {
   // ── AI ──────────────────────────────────────────────────────────────────────
   "@modelcontextprotocol/sdk":     ["MCP SDK",             "Agent protocol",              "AI"],
   "ai":                            ["Vercel AI SDK",       "AI streaming utilities",      "AI"],
-  "tsfm-sdk":                      ["tsfm-sdk",            "Apple Foundation Models SDK", "AI"],
 
   // ── UI ──────────────────────────────────────────────────────────────────────
   "tailwindcss":                   ["Tailwind CSS",        "Styling",                     "UI"],

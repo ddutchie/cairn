@@ -547,7 +547,7 @@ export function registerIpcHandlers(ctx: DbContext): void {
   });
 
   /* eslint-disable @typescript-eslint/no-require-imports */
-  // ── Local Llama & Gemma 4 Server ──────────────────────────────────────────
+  // ── On-Device Llama Server ──────────────────────────────────────────
   ipcMain.handle("llama:models:list", () => handle(() => {
     const { listModels } = require("../lib/llama-server");
     return listModels();

@@ -335,7 +335,7 @@ export function AISettings() {
               )}
             >
               <Cpu size={12} className={provider === "localllm" ? "text-[var(--accent)] animate-pulse" : ""} />
-              Local Gemma 4
+              On-Device Llama
             </button>
           </div>
         </SettingsRow>
@@ -343,9 +343,9 @@ export function AISettings() {
         {provider === "localllm" ? (
           <div className="space-y-3 pt-3 border-t border-[var(--border-subtle)]">
             <div>
-              <h4 className="text-sm font-semibold text-[var(--text-primary)]">Local Gemma 4 Server Console</h4>
+              <h4 className="text-sm font-semibold text-[var(--text-primary)]">On-Device Server Console</h4>
               <p className="text-xs text-[var(--text-tertiary)] mt-0.5 leading-relaxed">
-                Manage your offline Gemma 4 models and the local llama-server instance.
+                Manage your offline Llama models and the local llama-server instance.
               </p>
             </div>
             
@@ -528,7 +528,7 @@ export function AISettings() {
                       </button>
                     </div>
                     <p className="text-[0.714rem] text-[var(--text-tertiary)]">
-                      Or run the Homebrew command above, then restart Cairn to activate the private Gemma 4 integration.
+                      Or run the Homebrew command above, then restart Cairn to activate the private on-device model integration.
                     </p>
                   </div>
                 </div>
@@ -545,7 +545,7 @@ export function AISettings() {
               <div className="space-y-3">
                 <div className="flex justify-between items-center flex-wrap gap-2">
                   <h5 className="text-[0.714rem] font-bold uppercase tracking-wider text-[var(--text-tertiary)]">
-                    Local Gemma 4 Models
+                    On-Device Llama Models
                   </h5>
                   
                   <div className="flex items-center gap-4">
@@ -851,12 +851,12 @@ export function AISettings() {
                 "flex items-center gap-1",
                 serverStatus.running ? "text-[var(--success)]" : "text-[var(--text-tertiary)]"
               )}>
-                <CheckCircle size={11} /> {serverStatus.running ? "Connected (Local Gemma 4)" : "Offline (Local Gemma 4)"}
+                <CheckCircle size={11} /> {serverStatus.running ? "Connected (On-Device Llama)" : "Offline (On-Device Llama)"}
               </span>
               <span className="text-[var(--text-tertiary)]">·</span>
               <span className="text-[var(--text-tertiary)] font-mono">
                 {serverStatus.running && serverStatus.activeModelId
-                  ? llamaModels.find(m => m.id === serverStatus.activeModelId)?.name || "Local Gemma 4"
+                  ? llamaModels.find(m => m.id === serverStatus.activeModelId)?.name || "On-Device"
                   : "No active local model"
                 }
               </span>

@@ -1,5 +1,5 @@
 /**
- * Cairn — Local Llama & Gemma 4 completions router
+ * Cairn — Local Llama & On-Device completions router
  *
  * Routes local LLM queries offline and on-demand to the local llama-server process.
  */
@@ -8,7 +8,7 @@ import { OpenAIMessage } from "./llm";
 import { isLlamaServerInstalled, ensureLlamaServerRunning, listModels } from "./llama-server";
 
 /**
- * Check if the local Llama server and Gemma 4 integration are available and configured.
+ * Check if the local Llama server and on-device model integration are available and configured.
  */
 export async function isLocalLLMAvailable(): Promise<{ available: boolean; reason?: string }> {
   if (!isLlamaServerInstalled()) {
@@ -24,7 +24,7 @@ export async function isLocalLLMAvailable(): Promise<{ available: boolean; reaso
   if (!hasInstalled) {
     return {
       available: false,
-      reason: "No local Gemma 4 models downloaded. Please download a quantization variant in settings first."
+      reason: "No local on-device models downloaded. Please download a quantization variant in settings first."
     };
   }
 
@@ -32,7 +32,7 @@ export async function isLocalLLMAvailable(): Promise<{ available: boolean; reaso
 }
 
 /**
- * Call local Gemma 4 chat completions (non-streaming, supports tools).
+ * Call local on-device chat completions (non-streaming, supports tools).
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function callLocalLLMChat(messages: OpenAIMessage[], tools?: any[]): Promise<any> {
@@ -66,7 +66,7 @@ export async function callLocalLLMChat(messages: OpenAIMessage[], tools?: any[])
 }
 
 /**
- * Stream local Gemma 4 chat completions (yields chunks).
+ * Stream local on-device chat completions (yields chunks).
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function* streamLocalLLMChat(messages: OpenAIMessage[], tools?: any[]): AsyncGenerator<any> {

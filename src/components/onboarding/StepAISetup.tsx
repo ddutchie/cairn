@@ -116,7 +116,7 @@ export function StepAISetup({
                   </div>
                   <div>
                     <p className="text-xs font-semibold text-[var(--text-primary)]">Local Engine</p>
-                    <p className="text-[0.625rem] text-[var(--text-tertiary)] mt-0.5">Gemma 4 (Llama)</p>
+                    <p className="text-[0.625rem] text-[var(--text-tertiary)] mt-0.5">On-Device Llama</p>
                   </div>
                   {localLLMAvailable === false && (
                     <span className="absolute top-1.5 right-1.5 text-[0.55rem] bg-[var(--surface-3)] text-[var(--text-tertiary)] px-1 py-0.2 rounded border border-[var(--border)] font-normal">
@@ -153,7 +153,7 @@ export function StepAISetup({
                   <CheckCircle size={12} className="text-[var(--success)]" /> Ready for Offline Use
                 </p>
                 <p className="text-[var(--text-secondary)]">
-                  You&apos;ve selected the native Local LLM Engine. All interactions are processed privately on your hardware using Gemma 4 via Llama.cpp, with zero network calls, server requirements, or API costs.
+                  You&apos;ve selected the native Local LLM Engine. All interactions are processed privately on your hardware using on-device models via Llama.cpp, with zero network calls, server requirements, or API costs.
                 </p>
               </div>
             ) : (
