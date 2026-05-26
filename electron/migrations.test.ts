@@ -45,6 +45,20 @@ describe("Cairn Migration System", () => {
     expect(m!.needed).toBe(false);
   });
 
+  it("bypasses migration if .obsidian folder exists at the workspace root", () => {
+    // Create the .obsidian folder at root
+    fs.mkdirSync(path.join(tmpDir, ".obsidian"), { recursive: true });
+
+    // Also set up a directory structure that would normally trigger migration
+    const notesDir = path.join(tmpDir, "notes");
+    fs.mkdirSync(path.join(notesDir, "proj-a"), { recursive: true });
+    fs.writeFileSync(path.join(notesDir, "proj-a", "note1.md"), "# Note 1", "utf-8");
+
+    const statuses = checkMigrations(tmpDir);
+    const m = statuses.find((s) => s.id === "v1.5-drop-notes-dir");
+    expect(m!.needed).toBe(false);
+  });
+
   it("performs migration copy-verify-delete successfully", async () => {
     const notesDir = path.join(tmpDir, "notes");
     fs.mkdirSync(path.join(notesDir, "proj-a"), { recursive: true });

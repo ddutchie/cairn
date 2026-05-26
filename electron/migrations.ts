@@ -73,6 +73,9 @@ const dropNotesDirMigration: Migration = {
     "your workspace compatible with Obsidian vaults.",
 
   check(workspacePath: string): boolean {
+    // If it's already an Obsidian vault (contains a .obsidian folder at root), bypass migration
+    if (fs.existsSync(path.join(workspacePath, ".obsidian"))) return false;
+
     const notesDir = path.join(workspacePath, "notes");
     if (!fs.existsSync(notesDir)) return false;
     try {

@@ -80,11 +80,15 @@ export function AgentBottomTerminal({ cwd, height }: AgentBottomTerminalProps) {
   }, []);
 
   async function spawnShell() {
-    const result = await window.electron?.agent.spawnShell(cwd);
-    if (!result?.sessionId) return;
-    const tab: ShellTab = { id: result.sessionId, label: nextLabel(), exited: false };
-    setTabs((prev) => [...prev, tab]);
-    setActiveId(result.sessionId);
+    try {
+      const result = await window.electron?.agent.spawnShell(cwd);
+      if (!result?.sessionId) return;
+      const tab: ShellTab = { id: result.sessionId, label: nextLabel(), exited: false };
+      setTabs((prev) => [...prev, tab]);
+      setActiveId(result.sessionId);
+    } catch (e) {
+      console.error("[AgentBottomTerminal] Failed to spawn terminal shell:", e);
+    }
   }
 
   // Mount a new xterm terminal whenever a new tab is added

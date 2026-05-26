@@ -443,7 +443,7 @@ const api = {
       }
     },
     server: {
-      start: (modelId: string) => invoke<{ port: number }>("llama:server:start", { modelId }),
+      start: (modelId: string, contextLimit?: number) => invoke<{ port: number }>("llama:server:start", { modelId, contextLimit }),
       stop: () => invoke<void>("llama:server:stop"),
       status: () => invoke<{
         running: boolean;

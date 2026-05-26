@@ -138,7 +138,7 @@ export function AISettings() {
     if (!window.electron || !window.electron.llama) return;
     try {
       setServerStatus((prev) => ({ ...prev, error: null }));
-      await window.electron.llama.server.start(modelId);
+      await window.electron.llama.server.start(modelId, aiConfig.contextLimit);
       await refreshLlamaState();
     } catch (e) {
       console.error("Failed to start llama server:", e);
@@ -443,6 +443,28 @@ export function AISettings() {
                         <RefreshCw size={10} /> Check for Updates
                       </button>
                     )}
+                  </div>
+                </div>
+              )}
+
+              {/* Local Context Limit Row */}
+              {serverStatus.installed && (
+                <div className="flex items-center justify-between text-[0.714rem] text-[var(--text-secondary)] border-b border-[var(--border-subtle)] pb-4 pt-1">
+                  <div className="flex flex-col gap-0.5">
+                    <span className="font-semibold text-[var(--text-primary)]">Local Context Limit:</span>
+                    <span className="text-[0.65rem] text-[var(--text-tertiary)] mt-0.5">Context window per query. Clamps for memory stability.</span>
+                  </div>
+                  <div>
+                    <select
+                      value={aiConfig.contextLimit > 32768 ? 16384 : aiConfig.contextLimit || 16384}
+                      onChange={(e) => updateAIConfig({ contextLimit: parseInt(e.target.value, 10) })}
+                      className="px-2.5 py-1 text-[0.714rem] rounded-md bg-[var(--surface-3)] border border-[var(--border)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] cursor-pointer"
+                    >
+                      <option value={4096}>4,096 tokens (Fast / Low RAM)</option>
+                      <option value={8192}>8,192 tokens (Standard)</option>
+                      <option value={16384}>16,384 tokens (Recommended)</option>
+                      <option value={32768}>32,768 tokens (Heavy VRAM)</option>
+                    </select>
                   </div>
                 </div>
               )}

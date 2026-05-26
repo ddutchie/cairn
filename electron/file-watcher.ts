@@ -21,6 +21,9 @@ import { parseNoteFile, upsertNoteFromFile, adoptExternalNoteFile } from "./note
 import * as q from "./db/queries";
 
 let watcher: FSWatcher | null = null;
+let savedWorkspacePath: string | null = null;
+let savedDb: Database.Database | null = null;
+let savedOnChanged: (() => void) | null = null;
 
 // filePath → noteId, populated on add/change so delete can find the record
 const pathToNoteId = new Map<string, string>();
@@ -53,6 +56,10 @@ export function startFileWatcher(
   db: Database.Database,
   onChanged: () => void,
 ): void {
+  savedWorkspacePath = workspacePath;
+  savedDb = db;
+  savedOnChanged = onChanged;
+
   stopFileWatcher();
   pathToNoteId.clear();
 
@@ -88,6 +95,16 @@ export function stopFileWatcher(): void {
     watcher = null;
   }
   pathToNoteId.clear();
+}
+
+export function pauseFileWatcher(): void {
+  stopFileWatcher();
+}
+
+export function resumeFileWatcher(): void {
+  if (savedWorkspacePath && savedDb && savedOnChanged) {
+    startFileWatcher(savedWorkspacePath, savedDb, savedOnChanged);
+  }
 }
 
 // ── Event handlers ────────────────────────────

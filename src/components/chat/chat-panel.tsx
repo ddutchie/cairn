@@ -289,13 +289,8 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
       {/* Header */}
       <div className="flex items-center gap-2 px-4 h-11 border-b border-[var(--border)] flex-shrink-0">
         <Sparkles size={13} className="text-[var(--accent)]" />
-        <span className="text-sm font-semibold text-[var(--text-primary)] flex items-center gap-1.5 flex-1">
+        <span className="text-sm font-semibold text-[var(--text-primary)] flex-1">
           {activeView === "graph" ? "Graph Assistant" : "AI Assistant"}
-          {aiConfig.provider === "localllm" && (
-            <span className="text-[0.625rem] font-bold text-white bg-gradient-to-r from-purple-500 to-indigo-500 px-1.5 py-0.5 rounded shadow-sm flex items-center gap-0.5 select-none whitespace-nowrap shrink-0" title="On-Device private inference powered by Llama">
-              {chatPanelWidth < 360 ? "Local" : "On-Device Llama"}
-            </span>
-          )}
         </span>
         <span className="text-xs text-[var(--text-tertiary)] truncate max-w-24">{project?.name ?? workspace?.name}</span>
 
@@ -429,9 +424,16 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
           disabled={isLoading}
           placeholder={activeView === "graph" ? "Ask about your knowledge graph…" : "Ask about your project…"}
         />
-        <p className="text-[0.714rem] text-[var(--text-tertiary)] mt-1.5 text-center">
-          {isLoading ? "Generating… click ◼ to stop" : "Shift+Enter for new line · Enter to send"}
-        </p>
+        <div className="flex items-center justify-between mt-1.5 px-0.5">
+          <p className="text-[0.714rem] text-[var(--text-tertiary)]">
+            {isLoading ? "Generating… click ◼ to stop" : "Shift+Enter for new line · Enter to send"}
+          </p>
+          {aiConfig.provider === "localllm" && (
+            <span className="text-[0.625rem] font-bold text-white bg-gradient-to-r from-purple-500 to-indigo-500 px-1.5 py-0.5 rounded shadow-sm flex items-center gap-0.5 select-none whitespace-nowrap shrink-0" title="On-Device private inference powered by Llama">
+              {chatPanelWidth < 360 ? "Local" : "On-Device Llama"}
+            </span>
+          )}
+        </div>
       </div>
     </aside>
   );
