@@ -27,9 +27,9 @@ export const SUPPORTED_MODELS: Record<string, Omit<ModelManifestEntry, "status" 
     id: "gemma-4-e2b-it-q4",
     name: "Gemma 4 E2B IT (Q4_K_M)",
     filename: "gemma-4-E2B-it-Q4_K_M.gguf",
-    repo: "ggml-org/gemma-4-E2B-it-GGUF",
+    repo: "unsloth/gemma-4-E2B-it-GGUF",
     quant: "Q4_K_M",
-    downloadUrl: "https://huggingface.co/ggml-org/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_K_M.gguf",
+    downloadUrl: "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_K_M.gguf",
     sizeBytes: 3350000000 // approx 3.35 GB
   },
   "gemma-4-e2b-it-q8": {
@@ -63,6 +63,27 @@ export const SUPPORTED_MODELS: Record<string, Omit<ModelManifestEntry, "status" 
 
 const MODELS_DIR = path.join(app.getPath("userData"), "llama-models");
 const MANIFEST_PATH = path.join(MODELS_DIR, "manifest.json");
+const DEFAULT_MODEL_PATH = path.join(MODELS_DIR, "default-model.json");
+
+function getDefaultModelId(): string | null {
+  if (fs.existsSync(DEFAULT_MODEL_PATH)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(DEFAULT_MODEL_PATH, "utf8"));
+      return data.defaultModelId || null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+export function setDefaultModelId(modelId: string): void {
+  try {
+    fs.writeFileSync(DEFAULT_MODEL_PATH, JSON.stringify({ defaultModelId: modelId }), "utf8");
+  } catch (e) {
+    console.error("[llama-server] Failed to save default model selection:", e);
+  }
+}
 
 export const LOCAL_BIN_DIR = path.join(app.getPath("userData"), "llama-bin");
 export const LOCAL_BIN_PATH = path.join(LOCAL_BIN_DIR, process.platform === "win32" ? "llama-server.exe" : "llama-server");
@@ -528,6 +549,7 @@ export async function startServer(modelId: string): Promise<number> {
   }
 
   console.log("[llama-server] Server successfully started and healthy.");
+  setDefaultModelId(modelId);
   return port;
 }
 
@@ -562,9 +584,6 @@ async function checkHealth(port: number): Promise<boolean> {
   });
 }
 
-/**
- * Returns full status of the local server.
- */
 export async function getServerStatus() {
   const running = serverProcess !== null && !serverProcess.killed;
   const isHealthy = running && serverPort ? await checkHealth(serverPort) : false;
@@ -572,6 +591,7 @@ export async function getServerStatus() {
     running: running && isHealthy,
     port: running && isHealthy ? serverPort : null,
     activeModelId: running && isHealthy ? activeModelId : null,
+    defaultModelId: getDefaultModelId(),
     installed: isLlamaServerInstalled(),
     error: null
   };
@@ -594,8 +614,13 @@ export async function ensureLlamaServerRunning(): Promise<number> {
     if (isHealthy) return serverPort;
   }
 
-  // Find first installed model
+  const defaultModelId = getDefaultModelId();
   const manifest = getManifest();
+  if (defaultModelId && manifest[defaultModelId]?.status === "installed") {
+    return await startServer(defaultModelId);
+  }
+
+  // Find first installed model
   const installedEntry = Object.values(manifest).find((entry) => entry.status === "installed");
   if (!installedEntry) {
     throw new Error("No local Gemma 4 models are downloaded. Please go to Settings → AI & Chat to download a model first.");

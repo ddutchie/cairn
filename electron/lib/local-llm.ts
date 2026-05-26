@@ -1,8 +1,7 @@
 /**
  * Cairn — Local Llama & Gemma 4 completions router
  *
- * Repurposes the original Apple Foundation Models integration to route requests
- * offline and on-demand to the local llama-server process.
+ * Routes local LLM queries offline and on-demand to the local llama-server process.
  */
 
 import { OpenAIMessage } from "./llm";
@@ -11,7 +10,7 @@ import { isLlamaServerInstalled, ensureLlamaServerRunning, listModels } from "./
 /**
  * Check if the local Llama server and Gemma 4 integration are available and configured.
  */
-export async function isAppleFMAvailable(): Promise<{ available: boolean; reason?: string }> {
+export async function isLocalLLMAvailable(): Promise<{ available: boolean; reason?: string }> {
   if (!isLlamaServerInstalled()) {
     return {
       available: false,
@@ -36,7 +35,7 @@ export async function isAppleFMAvailable(): Promise<{ available: boolean; reason
  * Call local Gemma 4 chat completions (non-streaming, supports tools).
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function callAppleFMChat(messages: OpenAIMessage[], tools?: any[]): Promise<any> {
+export async function callLocalLLMChat(messages: OpenAIMessage[], tools?: any[]): Promise<any> {
   const port = await ensureLlamaServerRunning();
   
   const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -70,7 +69,7 @@ export async function callAppleFMChat(messages: OpenAIMessage[], tools?: any[]):
  * Stream local Gemma 4 chat completions (yields chunks).
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function* streamAppleFMChat(messages: OpenAIMessage[], tools?: any[]): AsyncGenerator<any> {
+export async function* streamLocalLLMChat(messages: OpenAIMessage[], tools?: any[]): AsyncGenerator<any> {
   const port = await ensureLlamaServerRunning();
 
   const headers: Record<string, string> = { "Content-Type": "application/json" };

@@ -29,18 +29,18 @@ export function StepAISetup({
   onAiEnabledChange, onProviderChange, onBaseUrlChange, onApiKeyChange, onModelChange,
   onBack, onNext,
 }: Props) {
-  const [appleFMAvailable, setAppleFMAvailable] = useState<boolean | null>(null);
+  const [localLLMAvailable, setLocalLLMAvailable] = useState<boolean | null>(null);
 
   useEffect(() => {
-    if (typeof window !== "undefined" && window.electron && window.electron.ai && window.electron.ai.appleStatus) {
-      window.electron.ai.appleStatus().then((status) => {
-        setAppleFMAvailable(status.available);
+    if (typeof window !== "undefined" && window.electron && window.electron.ai && window.electron.ai.localLLMStatus) {
+      window.electron.ai.localLLMStatus().then((status) => {
+        setLocalLLMAvailable(status.available);
         if (status.available && (provider === "openai" || !provider)) {
-          onProviderChange("apple-fm");
+          onProviderChange("localllm");
         }
-      }).catch(() => setAppleFMAvailable(false));
+      }).catch(() => setLocalLLMAvailable(false));
     } else {
-      setTimeout(() => setAppleFMAvailable(false), 0);
+      setTimeout(() => setLocalLLMAvailable(false), 0);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -97,30 +97,30 @@ export function StepAISetup({
               <p className="text-xs font-semibold text-[var(--text-secondary)]">Select AI Provider</p>
               
               <div className="grid grid-cols-2 gap-3">
-                {/* Apple Intelligence */}
+                {/* Local Engine */}
                 <button
                   type="button"
-                  disabled={!appleFMAvailable}
-                  onClick={() => onProviderChange("apple-fm")}
+                  disabled={localLLMAvailable === false}
+                  onClick={() => onProviderChange("localllm")}
                   className={cn(
                     "flex flex-col items-center justify-center p-4 rounded-xl border text-center transition-all gap-1.5 relative select-none",
-                    provider === "apple-fm"
+                    provider === "localllm"
                       ? "border-purple-500 bg-[color-mix(in_srgb,var(--purple-500)_10%,transparent)] shadow-sm"
-                      : !appleFMAvailable
+                      : localLLMAvailable === false
                         ? "opacity-50 cursor-not-allowed border-[var(--border)]"
                         : "border-[var(--border)] hover:border-[var(--accent)] hover:bg-[var(--surface-2)] cursor-pointer"
                   )}
                 >
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-purple-500 via-indigo-500 to-cyan-500 flex items-center justify-center text-white font-bold text-sm shadow-sm shrink-0">
-                    
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-purple-500 via-indigo-500 to-cyan-500 flex items-center justify-center text-white shadow-sm shrink-0">
+                    <Cpu size={14} />
                   </div>
                   <div>
-                    <p className="text-xs font-semibold text-[var(--text-primary)]">On-Device</p>
-                    <p className="text-[0.625rem] text-[var(--text-tertiary)] mt-0.5">Apple Intelligence</p>
+                    <p className="text-xs font-semibold text-[var(--text-primary)]">Local Engine</p>
+                    <p className="text-[0.625rem] text-[var(--text-tertiary)] mt-0.5">Gemma 4 (Llama)</p>
                   </div>
-                  {!appleFMAvailable && (
+                  {localLLMAvailable === false && (
                     <span className="absolute top-1.5 right-1.5 text-[0.55rem] bg-[var(--surface-3)] text-[var(--text-tertiary)] px-1 py-0.2 rounded border border-[var(--border)] font-normal">
-                      macOS Only
+                      Desktop Only
                     </span>
                   )}
                 </button>
@@ -147,13 +147,13 @@ export function StepAISetup({
               </div>
             </div>
 
-            {provider === "apple-fm" ? (
+            {provider === "localllm" ? (
               <div className="bg-[var(--surface-2)] border border-[var(--border)] rounded-xl p-4 text-xs space-y-2 text-left leading-relaxed">
                 <p className="font-semibold text-[var(--text-primary)] flex items-center gap-1.5">
                   <CheckCircle size={12} className="text-[var(--success)]" /> Ready for Offline Use
                 </p>
                 <p className="text-[var(--text-secondary)]">
-                  You&apos;ve selected Mac&apos;s native on-device Foundation Model. All interactions are processed privately on your hardware with no network calls, server requirements, or API costs.
+                  You&apos;ve selected the native Local LLM Engine. All interactions are processed privately on your hardware using Gemma 4 via Llama.cpp, with zero network calls, server requirements, or API costs.
                 </p>
               </div>
             ) : (

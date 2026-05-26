@@ -539,13 +539,14 @@ export function registerIpcHandlers(ctx: DbContext): void {
   // ── AI Chat completions ───────────────────────────────────────────────────────────────────
   registerChatHandler(ctx.db, ctx.workspacePath, ctx.getWin);
 
-  ipcMain.handle("ai:appleStatus", async () => {
+  ipcMain.handle("ai:localLLMStatus", async () => {
     return handle(async () => {
-      const { isAppleFMAvailable } = await import("../lib/apple-fm");
-      return await isAppleFMAvailable();
+      const { isLocalLLMAvailable } = await import("../lib/local-llm");
+      return await isLocalLLMAvailable();
     });
   });
 
+  /* eslint-disable @typescript-eslint/no-require-imports */
   // ── Local Llama & Gemma 4 Server ──────────────────────────────────────────
   ipcMain.handle("llama:models:list", () => handle(() => {
     const { listModels } = require("../lib/llama-server");
@@ -583,6 +584,12 @@ export function registerIpcHandlers(ctx: DbContext): void {
     return { port };
   }));
 
+  ipcMain.handle("llama:server:setDefault", (_e, { modelId }) => handle(() => {
+    const { setDefaultModelId } = require("../lib/llama-server");
+    setDefaultModelId(modelId);
+    return { success: true };
+  }));
+
   ipcMain.handle("llama:server:stop", () => handle(async () => {
     const { stopServer } = require("../lib/llama-server");
     return await stopServer();
@@ -592,6 +599,7 @@ export function registerIpcHandlers(ctx: DbContext): void {
     const { getServerStatus } = require("../lib/llama-server");
     return await getServerStatus();
   }));
+  /* eslint-enable @typescript-eslint/no-require-imports */
 
   // ── AI PRD generation (direct, no chat loop) ──────
   ipcMain.handle("ai:generatePrd", async (_e, args: {

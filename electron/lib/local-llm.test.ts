@@ -26,14 +26,14 @@ vi.mock("./llama-server", () => {
   };
 });
 
-import { callAppleFMChat, isAppleFMAvailable } from "./apple-fm";
+import { callLocalLLMChat, isLocalLLMAvailable } from "./local-llm";
 
-describe("Apple Foundation Models (Offline Local Gemma 4 Router)", () => {
+describe("Local LLM Router (Offline Local Gemma 4 Router)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  describe("isAppleFMAvailable", () => {
+  describe("isLocalLLMAvailable", () => {
     it("returns available: true when llama-server is installed and models are downloaded", async () => {
       const { isLlamaServerInstalled, listModels } = await import("./llama-server");
       vi.mocked(isLlamaServerInstalled).mockReturnValue(true);
@@ -41,7 +41,7 @@ describe("Apple Foundation Models (Offline Local Gemma 4 Router)", () => {
         { id: "gemma-4-e2b-it-q4", name: "Gemma 4", filename: "gemma-4.gguf", path: "/path", repo: "repo", quant: "Q4", downloadUrl: "url", sizeBytes: 1000, status: "installed", downloadProgress: 100 }
       ]);
 
-      const res = await isAppleFMAvailable();
+      const res = await isLocalLLMAvailable();
       expect(res.available).toBe(true);
     });
 
@@ -49,7 +49,7 @@ describe("Apple Foundation Models (Offline Local Gemma 4 Router)", () => {
       const { isLlamaServerInstalled } = await import("./llama-server");
       vi.mocked(isLlamaServerInstalled).mockReturnValue(false);
 
-      const res = await isAppleFMAvailable();
+      const res = await isLocalLLMAvailable();
       expect(res.available).toBe(false);
       expect(res.reason).toContain("llama-server is not installed");
     });
@@ -59,13 +59,13 @@ describe("Apple Foundation Models (Offline Local Gemma 4 Router)", () => {
       vi.mocked(isLlamaServerInstalled).mockReturnValue(true);
       vi.mocked(listModels).mockReturnValue([]);
 
-      const res = await isAppleFMAvailable();
+      const res = await isLocalLLMAvailable();
       expect(res.available).toBe(false);
       expect(res.reason).toContain("No local Gemma 4 models downloaded");
     });
   });
 
-  describe("callAppleFMChat", () => {
+  describe("callLocalLLMChat", () => {
     it("makes a local completions POST fetch call and returns data", async () => {
       const mockResponse = {
         choices: [
@@ -121,7 +121,7 @@ describe("Apple Foundation Models (Offline Local Gemma 4 Router)", () => {
         }
       ];
 
-      const result = await callAppleFMChat(messages, tools);
+      const result = await callLocalLLMChat(messages, tools);
 
       expect(mockFetch).toHaveBeenCalledTimes(1);
       const [url, init] = mockFetch.mock.calls[0];

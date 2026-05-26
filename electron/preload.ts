@@ -137,7 +137,7 @@ const api = {
   // ── AI helpers ────────────────────────────────
   ai: {
     generatePrd: (args: unknown) => invoke<{ id: string; title: string; projectId: string } | { error: string }>("ai:generatePrd", args),
-    appleStatus: () => invoke<{ available: boolean; reason?: string }>("ai:appleStatus"),
+    localLLMStatus: () => invoke<{ available: boolean; reason?: string }>("ai:localLLMStatus"),
   },
 
   // ── App paths ─────────────────────────────────
@@ -444,7 +444,15 @@ const api = {
     server: {
       start: (modelId: string) => invoke<{ port: number }>("llama:server:start", { modelId }),
       stop: () => invoke<void>("llama:server:stop"),
-      status: () => invoke<{ running: boolean; port: number | null; activeModelId: string | null; installed: boolean; error: string | null }>("llama:server:status"),
+      status: () => invoke<{
+        running: boolean;
+        port: number | null;
+        activeModelId: string | null;
+        defaultModelId: string | null;
+        installed: boolean;
+        error: string | null;
+      }>("llama:server:status"),
+      setDefault: (modelId: string) => invoke<{ success: boolean }>("llama:server:setDefault", { modelId }),
     }
   }
 } as const;

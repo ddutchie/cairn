@@ -95,8 +95,8 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
   }
 
   function handleSaveAI() {
-    setAIConfig({ aiEnabled, provider: provider as "openai" | "apple-fm", baseUrl, apiKey, model });
-    if (provider !== "apple-fm") {
+    setAIConfig({ aiEnabled, provider: provider as "openai" | "localllm", baseUrl, apiKey, model });
+    if (provider !== "localllm") {
       setAgentConfig({ baseUrl, apiKey, model });
     }
     setStep("mcp");

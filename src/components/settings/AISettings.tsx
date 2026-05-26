@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import {
-  CheckCircle, RefreshCw, Key, Globe, Cpu, Wifi, WifiOff, Eye, EyeOff, Trash2
+  CheckCircle, RefreshCw, Key, Globe, Cpu, Wifi, WifiOff, Eye, EyeOff, Trash2, Star
 } from "lucide-react";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useCairnStore } from "@/store";
@@ -32,12 +32,14 @@ export function AISettings() {
     running: boolean;
     port: number | null;
     activeModelId: string | null;
+    defaultModelId: string | null;
     installed: boolean;
     error: string | null;
   }>({
     running: false,
     port: null,
     activeModelId: null,
+    defaultModelId: null,
     installed: true,
     error: null
   });
@@ -143,6 +145,16 @@ export function AISettings() {
     }
   }
 
+  async function handleSetDefaultModel(modelId: string) {
+    if (!window.electron || !window.electron.llama) return;
+    try {
+      await window.electron.llama.server.setDefault(modelId);
+      await refreshLlamaState();
+    } catch (e) {
+      console.error("Failed to set default model:", e);
+    }
+  }
+
   async function handleStopServer() {
     if (!window.electron || !window.electron.llama) return;
     try {
@@ -200,6 +212,7 @@ export function AISettings() {
       setBinaryProgress({ progress: 0, status: "fetching_release" });
       await window.electron.llama.binary.install();
       await refreshLlamaState();
+      await handleCheckForUpdates(); // Refresh version info to show "Up to date"
     } catch (e) {
       console.error("Failed to install local binary:", e);
     }
@@ -312,21 +325,21 @@ export function AISettings() {
               Cloud / Local API
             </button>
             <button
-              onClick={() => updateAIConfig({ provider: "apple-fm" })}
+              onClick={() => updateAIConfig({ provider: "localllm" })}
               className={cn(
                 "px-3 py-1.5 text-xs rounded-md border transition-all flex items-center gap-2 relative cursor-pointer",
-                provider === "apple-fm"
+                provider === "localllm"
                   ? "border-[var(--accent)] text-[var(--text-primary)] bg-[var(--accent-dim)] font-medium"
                   : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]"
               )}
             >
-              <Cpu size={12} className={provider === "apple-fm" ? "text-[var(--accent)] animate-pulse" : ""} />
+              <Cpu size={12} className={provider === "localllm" ? "text-[var(--accent)] animate-pulse" : ""} />
               Local Gemma 4
             </button>
           </div>
         </SettingsRow>
 
-        {provider === "apple-fm" ? (
+        {provider === "localllm" ? (
           <div className="space-y-3 pt-3 border-t border-[var(--border-subtle)]">
             <div>
               <h4 className="text-sm font-semibold text-[var(--text-primary)]">Local Gemma 4 Server Console</h4>
@@ -430,6 +443,29 @@ export function AISettings() {
                       </button>
                     )}
                   </div>
+                </div>
+              )}
+
+              {serverStatus.installed && binaryProgress && (
+                <div className="bg-[var(--surface-3)] p-3 rounded-lg border border-[var(--border)] mb-4 space-y-2">
+                  <div className="flex justify-between text-[0.714rem]">
+                    <span className="text-[var(--text-primary)] font-medium capitalize flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 bg-yellow-500 rounded-full animate-ping" />
+                      Upgrading: {binaryProgress.status.replace("_", " ")}...
+                    </span>
+                    <span className="text-[var(--text-tertiary)] font-mono">
+                      {binaryProgress.progress}% {binaryProgress.speed ? `(${binaryProgress.speed})` : ""}
+                    </span>
+                  </div>
+                  <div className="w-full h-1.5 bg-[var(--surface-1)] rounded-full overflow-hidden border border-[var(--border)]">
+                    <div
+                      className="h-full bg-gradient-to-r from-[var(--accent)] to-indigo-500 rounded-full transition-all duration-300"
+                      style={{ width: `${binaryProgress.progress}%` }}
+                    />
+                  </div>
+                  {binaryProgress.error && (
+                    <p className="text-[0.65rem] text-red-400 font-mono">Error: {binaryProgress.error}</p>
+                  )}
                 </div>
               )}
 
@@ -540,6 +576,7 @@ export function AISettings() {
                     const isDownloading = dl.status === "downloading";
                     const isInstalled = dl.status === "installed" || model.status === "installed";
                     const isActive = serverStatus.running && serverStatus.activeModelId === model.id;
+                    const isDefault = serverStatus.defaultModelId === model.id;
 
                     return (
                       <div
@@ -563,6 +600,22 @@ export function AISettings() {
                           </div>
 
                           <div className="flex items-center gap-2">
+                            {/* Star / Set Default button */}
+                            {isInstalled && (
+                              <button
+                                onClick={() => handleSetDefaultModel(model.id)}
+                                className={cn(
+                                  "p-1.5 rounded border transition-colors cursor-pointer",
+                                  isDefault
+                                    ? "border-amber-500/30 bg-amber-500/10 text-amber-400"
+                                    : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-amber-500/20 hover:text-amber-400"
+                                )}
+                                title={isDefault ? "Current default startup model" : "Set as default startup model"}
+                              >
+                                <Star size={12} fill={isDefault ? "currentColor" : "none"} />
+                              </button>
+                            )}
+
                             {/* Delete/Uninstall button */}
                             {isInstalled && (
                               <button
@@ -791,7 +844,7 @@ export function AISettings() {
 
         {/* General Connection Status */}
         <div className="flex items-center gap-3 pt-1 text-xs">
-          {provider === "apple-fm" ? (
+          {provider === "localllm" ? (
             <>
               <span className={cn(
                 "flex items-center gap-1",

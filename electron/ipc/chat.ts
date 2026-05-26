@@ -45,12 +45,12 @@ async function runToolLoop(
     
     let assistantMsg: OpenAIMessage;
     
-    if (provider === "apple-fm") {
+    if (provider === "localllm") {
       try {
-        const { callAppleFMChat } = await import("../lib/apple-fm");
-        const res = await callAppleFMChat(messages, TOOLS);
+        const { callLocalLLMChat } = await import("../lib/local-llm");
+        const res = await callLocalLLMChat(messages, TOOLS);
         const choice = res.choices?.[0];
-        if (!choice) return { exhausted: true, content: "No response from Apple Intelligence on-device model." };
+        if (!choice) return { exhausted: true, content: "No response from local Llama on-device model." };
         assistantMsg = choice.message as OpenAIMessage;
 
         // Self-Healing Parser for Gemma 4 XML-style tool calls and tokenizers
@@ -80,7 +80,7 @@ async function runToolLoop(
           }
         }
       } catch (err) {
-        return { exhausted: true, content: `On-device Apple Foundation Model error: ${String(err)}` };
+        return { exhausted: true, content: `Local LLM Engine error: ${String(err)}` };
       }
     } else {
       let response: Response;
@@ -120,7 +120,7 @@ async function runToolLoop(
       try { args = JSON.parse(call.function.arguments); } catch { args = {}; }
       let result: unknown;
       try {
-        result = await executeTool(db, req, workspacePath, { baseUrl, model, apiKey, provider: provider as "openai" | "apple-fm" }, call.function.name, args, emitToolCall, getWin);
+        result = await executeTool(db, req, workspacePath, { baseUrl, model, apiKey, provider: provider as "openai" | "localllm" }, call.function.name, args, emitToolCall, getWin);
       } catch (toolErr) {
         result = { error: `Tool "${call.function.name}" failed: ${String(toolErr)}` };
       }
@@ -165,7 +165,7 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
       if (!event.sender.isDestroyed()) event.sender.send(ch, payload);
     };
 
-    if (provider !== "apple-fm" && !apiKey && !isLocal) {
+    if (provider !== "localllm" && !apiKey && !isLocal) {
       send("chat:done", {
         content: "AI chat is not configured. Set an API key in **Settings → AI & Chat**, or use a local endpoint (Ollama, LM Studio) with no key needed.",
         contextRefs: [],
@@ -205,7 +205,7 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
       // Re-request with stream: true for real SSE tokens
       let fullContent = "";
       try {
-        for await (const delta of streamCompletion({ baseUrl, model, apiKey, provider: provider as "openai" | "apple-fm" }, messages, TOOLS)) {
+        for await (const delta of streamCompletion({ baseUrl, model, apiKey, provider: provider as "openai" | "localllm" }, messages, TOOLS)) {
           if (abortCtrl.signal.aborted) break;
           fullContent += delta;
           send("chat:token", { delta });
