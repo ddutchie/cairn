@@ -486,7 +486,7 @@ export function registerAgentHandlers(db: Database): void {
       }
 
       let pty;
-      let lastError: any = null;
+      let lastError: Error | null = null;
 
       for (const attempt of attempts) {
         try {
@@ -500,7 +500,7 @@ export function registerAgentHandlers(db: Database): void {
           console.log(`[agent] Successfully spawned ${attempt.label}`);
           break;
         } catch (e) {
-          lastError = e;
+          lastError = e instanceof Error ? e : new Error(String(e));
           console.warn(`[agent] Failed to spawn ${attempt.label}. Error:`, e);
         }
       }
