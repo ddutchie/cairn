@@ -20,8 +20,8 @@ export const HIDDEN_VIEWS_KEY = "hiddenViews";
 // ── AI / MCP config ───────────────────────────────────────────────────────────
 
 export interface AIConfig {
-  /** The AI provider ('openai' or 'apple-fm') */
-  provider?: "openai" | "apple-fm";
+  /** The AI provider ('openai' or 'localllm') */
+  provider?: "openai" | "localllm";
   /** Base URL for the OpenAI-compatible chat completions endpoint */
   baseUrl: string;
   /** Model name — any string accepted by the endpoint */

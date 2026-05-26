@@ -173,13 +173,17 @@ export const useCairnStore = create<CairnStore>()(
 
       const savedConfig = storage.get<AIConfig>(AI_CONFIG_KEY);
       if (savedConfig) {
+        if (savedConfig.provider === ("apple-fm" as unknown as "openai" | "localllm")) {
+          savedConfig.provider = "localllm";
+          storage.set(AI_CONFIG_KEY, savedConfig);
+        }
         a[0]({ aiConfig: { ...DEFAULT_AI_CONFIG, ...savedConfig } });
       }
 
       const savedAgentConfig = storage.get<AgentConfig>(AGENT_CONFIG_KEY);
       if (savedAgentConfig) {
         a[0]({ agentConfig: { ...DEFAULT_AGENT_CONFIG, ...savedAgentConfig } });
-      } else if (savedConfig && savedConfig.provider !== "apple-fm") {
+      } else if (savedConfig && savedConfig.provider !== "localllm") {
         const migrated = {
           baseUrl: savedConfig.baseUrl || DEFAULT_AGENT_CONFIG.baseUrl,
           model: savedConfig.model || DEFAULT_AGENT_CONFIG.model,
@@ -237,17 +241,21 @@ export const useCairnStore = create<CairnStore>()(
 
       const savedConfig = storage.get<AIConfig>(AI_CONFIG_KEY);
       if (savedConfig) {
+        if (savedConfig.provider === ("apple-fm" as unknown as "openai" | "localllm")) {
+          savedConfig.provider = "localllm";
+          storage.set(AI_CONFIG_KEY, savedConfig);
+        }
         set({ aiConfig: { ...DEFAULT_AI_CONFIG, ...savedConfig } });
-      } else if (window.electron && window.electron.ai && window.electron.ai.appleStatus) {
+      } else if (window.electron && window.electron.ai && window.electron.ai.localLLMStatus) {
         try {
-          const status = await window.electron.ai.appleStatus();
+          const status = await window.electron.ai.localLLMStatus();
           if (status.available) {
-            set({ aiConfig: { ...DEFAULT_AI_CONFIG, provider: "apple-fm" } });
+            set({ aiConfig: { ...DEFAULT_AI_CONFIG, provider: "localllm" } });
           } else {
             set({ aiConfig: DEFAULT_AI_CONFIG });
           }
         } catch (e) {
-          console.warn("Failed to check apple-fm availability on startup:", e);
+          console.warn("Failed to check localLLM availability on startup:", e);
           set({ aiConfig: DEFAULT_AI_CONFIG });
         }
       } else {
@@ -257,7 +265,7 @@ export const useCairnStore = create<CairnStore>()(
       const savedAgentConfig = storage.get<AgentConfig>(AGENT_CONFIG_KEY);
       if (savedAgentConfig) {
         set({ agentConfig: { ...DEFAULT_AGENT_CONFIG, ...savedAgentConfig } });
-      } else if (savedConfig && savedConfig.provider !== "apple-fm") {
+      } else if (savedConfig && savedConfig.provider !== "localllm") {
         const migrated = {
           baseUrl: savedConfig.baseUrl || DEFAULT_AGENT_CONFIG.baseUrl,
           model: savedConfig.model || DEFAULT_AGENT_CONFIG.model,

@@ -176,6 +176,7 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
       workspaceId: activeWorkspaceId,
       history: messages.slice(-40).map((m) => ({ role: m.role, content: m.content })),
       config: {
+        provider:    aiConfig.provider    || "openai",
         baseUrl:     aiConfig.baseUrl     || undefined,
         model:       aiConfig.model       || undefined,
         apiKey:      aiConfig.apiKey      || undefined,
@@ -290,9 +291,9 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
         <Sparkles size={13} className="text-[var(--accent)]" />
         <span className="text-sm font-semibold text-[var(--text-primary)] flex items-center gap-1.5 flex-1">
           {activeView === "graph" ? "Graph Assistant" : "AI Assistant"}
-          {aiConfig.provider === "apple-fm" && (
-            <span className="text-[0.625rem] font-bold text-white bg-gradient-to-r from-purple-500 to-indigo-500 px-1.5 py-0.5 rounded shadow-sm flex items-center gap-0.5 select-none" title="On-Device private inference powered by macOS Foundation Models">
-               On-Device
+          {aiConfig.provider === "localllm" && (
+            <span className="text-[0.625rem] font-bold text-white bg-gradient-to-r from-purple-500 to-indigo-500 px-1.5 py-0.5 rounded shadow-sm flex items-center gap-0.5 select-none whitespace-nowrap shrink-0" title="On-Device private inference powered by Llama">
+              {chatPanelWidth < 360 ? "Local" : "On-Device Llama"}
             </span>
           )}
         </span>

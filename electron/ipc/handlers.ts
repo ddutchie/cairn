@@ -539,12 +539,67 @@ export function registerIpcHandlers(ctx: DbContext): void {
   // ── AI Chat completions ───────────────────────────────────────────────────────────────────
   registerChatHandler(ctx.db, ctx.workspacePath, ctx.getWin);
 
-  ipcMain.handle("ai:appleStatus", async () => {
+  ipcMain.handle("ai:localLLMStatus", async () => {
     return handle(async () => {
-      const { isAppleFMAvailable } = await import("../lib/apple-fm");
-      return await isAppleFMAvailable();
+      const { isLocalLLMAvailable } = await import("../lib/local-llm");
+      return await isLocalLLMAvailable();
     });
   });
+
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  // ── On-Device Llama Server ──────────────────────────────────────────
+  ipcMain.handle("llama:models:list", () => handle(() => {
+    const { listModels } = require("../lib/llama-server");
+    return listModels();
+  }));
+
+  ipcMain.handle("llama:models:install", (_e, { modelId, useMirror }) => handle(async () => {
+    const { installModel } = require("../lib/llama-server");
+    return await installModel(modelId, ctx.getWin, useMirror);
+  }));
+
+  ipcMain.handle("llama:binary:install", () => handle(async () => {
+    const { installLlamaBinary } = require("../lib/llama-server");
+    return await installLlamaBinary(ctx.getWin);
+  }));
+
+  ipcMain.handle("llama:binary:check-update", () => handle(async () => {
+    const { checkLlamaUpdates } = require("../lib/llama-server");
+    return await checkLlamaUpdates();
+  }));
+
+  ipcMain.handle("llama:models:remove", (_e, { modelId }) => handle(() => {
+    const { removeModel } = require("../lib/llama-server");
+    return removeModel(modelId);
+  }));
+
+  ipcMain.handle("llama:models:clearInactive", () => handle(() => {
+    const { clearInactiveModels } = require("../lib/llama-server");
+    return clearInactiveModels();
+  }));
+
+  ipcMain.handle("llama:server:start", (_e, { modelId }) => handle(async () => {
+    const { startServer } = require("../lib/llama-server");
+    const port = await startServer(modelId);
+    return { port };
+  }));
+
+  ipcMain.handle("llama:server:setDefault", (_e, { modelId }) => handle(() => {
+    const { setDefaultModelId } = require("../lib/llama-server");
+    setDefaultModelId(modelId);
+    return { success: true };
+  }));
+
+  ipcMain.handle("llama:server:stop", () => handle(async () => {
+    const { stopServer } = require("../lib/llama-server");
+    return await stopServer();
+  }));
+
+  ipcMain.handle("llama:server:status", () => handle(async () => {
+    const { getServerStatus } = require("../lib/llama-server");
+    return await getServerStatus();
+  }));
+  /* eslint-enable @typescript-eslint/no-require-imports */
 
   // ── AI PRD generation (direct, no chat loop) ──────
   ipcMain.handle("ai:generatePrd", async (_e, args: {

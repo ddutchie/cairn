@@ -69,7 +69,7 @@ export const PRIORITY_CSS_COLORS: Record<Priority | string, string> = {
 
 /** Default AI/LLM config values. */
 export const DEFAULT_AI_CONFIG: AIConfig = {
-  provider:     "openai",
+  provider:     "localllm",
   baseUrl:      "https://api.openai.com",
   model:        "gpt-4o-mini",
   apiKey:       "",

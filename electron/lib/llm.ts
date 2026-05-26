@@ -22,7 +22,7 @@ export function isLocalEndpoint(baseUrl: string): boolean {
 }
 
 export interface LLMConfig {
-  provider?: "openai" | "apple-fm";
+  provider?: "openai" | "localllm";
   baseUrl: string;
   model: string;
   apiKey: string;
@@ -40,13 +40,13 @@ export type OpenAIMessage = {
 };
 
 export async function callLLM(config: LLMConfig, systemPrompt: string, userPrompt: string): Promise<string> {
-  if (config.provider === "apple-fm") {
-    const { callAppleFMChat } = await import("./apple-fm");
+  if (config.provider === "localllm") {
+    const { callLocalLLMChat } = await import("./local-llm");
     const messages: OpenAIMessage[] = [
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt },
     ];
-    const res = await callAppleFMChat(messages);
+    const res = await callLocalLLMChat(messages);
     return res.choices?.[0]?.message?.content ?? "";
   }
 
@@ -80,9 +80,9 @@ export async function* streamCompletion(
   messages: OpenAIMessage[],
   tools?: object[],
 ): AsyncGenerator<string> {
-  if (config.provider === "apple-fm") {
-    const { streamAppleFMChat } = await import("./apple-fm");
-    for await (const chunk of streamAppleFMChat(messages, tools)) {
+  if (config.provider === "localllm") {
+    const { streamLocalLLMChat } = await import("./local-llm");
+    for await (const chunk of streamLocalLLMChat(messages)) {
       const delta = chunk.choices?.[0]?.delta?.content ?? "";
       if (delta) yield delta;
     }

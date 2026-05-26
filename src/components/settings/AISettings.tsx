@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import {
-  CheckCircle, RefreshCw, Key, Globe, Cpu, Wifi, WifiOff, Eye, EyeOff
+  CheckCircle, RefreshCw, Key, Globe, Cpu, Wifi, WifiOff, Eye, EyeOff, Trash2, Star
 } from "lucide-react";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useCairnStore } from "@/store";
@@ -26,27 +26,198 @@ export function AISettings() {
   const [testState, setTestState] = useState<TestState>("idle");
   const [testError, setTestError] = useState("");
 
-  const [appleFMAvailable, setAppleFMAvailable] = useState<boolean | null>(null);
-  const [appleFMReason, setAppleFMReason] = useState<string>("");
+  // Llama local model manager state
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [llamaModels, setLlamaModels] = useState<any[]>([]);
+  const [serverStatus, setServerStatus] = useState<{
+    running: boolean;
+    port: number | null;
+    activeModelId: string | null;
+    defaultModelId: string | null;
+    installed: boolean;
+    error: string | null;
+  }>({
+    running: false,
+    port: null,
+    activeModelId: null,
+    defaultModelId: null,
+    installed: true,
+    error: null
+  });
+
+  const [downloadProgresses, setDownloadProgresses] = useState<Record<string, { progress: number; speed?: string; status: string; error?: string }>>({});
+  const [binaryProgress, setBinaryProgress] = useState<{ progress: number; speed?: string; status: string; error?: string } | null>(null);
+  const [useMirror, setUseMirror] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [updateCheck, setUpdateCheck] = useState<{
+    loading: boolean;
+    result: { updateAvailable: boolean; currentVersion: string | null; latestVersion: string | null } | null;
+    error: string | null;
+  } | null>(null);
+
+  async function handleCheckForUpdates() {
+    if (!window.electron || !window.electron.llama) return;
+    setUpdateCheck({ loading: true, result: null, error: null });
+    try {
+      const res = await window.electron.llama.binary.checkForUpdates();
+      setUpdateCheck({ loading: false, result: res, error: null });
+    } catch (e) {
+      console.error("Failed to check for updates:", e);
+      setUpdateCheck({
+        loading: false,
+        result: null,
+        error: e instanceof Error ? e.message : String(e)
+      });
+    }
+  }
+
+  async function refreshLlamaState() {
+    if (typeof window === "undefined" || !window.electron || !window.electron.llama) return;
+    setIsRefreshing(true);
+    try {
+      const list = await window.electron.llama.models.list();
+      setLlamaModels(list);
+      const status = await window.electron.llama.server.status();
+      setServerStatus(status);
+    } catch (e) {
+      console.error("Failed to fetch llama state:", e);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }
+
+  async function refreshLlamaStateQuiet() {
+    if (typeof window === "undefined" || !window.electron || !window.electron.llama) return;
+    try {
+      const list = await window.electron.llama.models.list();
+      setLlamaModels(list);
+      const status = await window.electron.llama.server.status();
+      setServerStatus(status);
+    } catch (e) {
+      console.error("Failed to fetch llama state:", e);
+    }
+  }
 
   useEffect(() => {
-    if (typeof window !== "undefined" && window.electron && window.electron.ai && window.electron.ai.appleStatus) {
-      window.electron.ai.appleStatus().then((status) => {
-        setAppleFMAvailable(status.available);
-        if (status.reason) setAppleFMReason(status.reason);
-      }).catch((e) => {
-        console.error("Failed to check apple-fm status:", e);
-        setAppleFMReason(`IPC Error: ${e instanceof Error ? e.message : String(e)}`);
-        setAppleFMAvailable(false);
+    if (typeof window !== "undefined" && window.electron && window.electron.llama) {
+      refreshLlamaState();
+      handleCheckForUpdates();
+
+      // Listen to download progress
+      const unsub = window.electron.llama.models.onProgress((event) => {
+        setDownloadProgresses((prev) => ({
+          ...prev,
+          [event.modelId]: {
+            progress: event.progress,
+            speed: event.speed,
+            status: event.status,
+            error: event.error
+          }
+        }));
+        // Periodically refresh list to update manifest statuses
+        refreshLlamaStateQuiet();
       });
-    } else {
-      setTimeout(() => {
-        const isPreloadMissing = typeof window === "undefined" || !window.electron || !window.electron.ai || !window.electron.ai.appleStatus;
-        setAppleFMReason(isPreloadMissing ? "Electron preload API 'ai.appleStatus' is missing. Please rebuild and restart." : "Apple Foundation Models are only supported on macOS.");
-        setAppleFMAvailable(false);
-      }, 0);
+
+      // Listen to binary installer progress
+      const unsubBinary = window.electron.llama.binary.onProgress((event) => {
+        setBinaryProgress(event);
+        if (event.status === "installed") {
+          refreshLlamaStateQuiet();
+          setTimeout(() => setBinaryProgress(null), 3000);
+        }
+      });
+
+      return () => {
+        unsub();
+        unsubBinary();
+      };
     }
   }, []);
+
+  async function handleStartServer(modelId: string) {
+    if (!window.electron || !window.electron.llama) return;
+    try {
+      setServerStatus((prev) => ({ ...prev, error: null }));
+      await window.electron.llama.server.start(modelId);
+      await refreshLlamaState();
+    } catch (e) {
+      console.error("Failed to start llama server:", e);
+      setServerStatus((prev) => ({ ...prev, error: e instanceof Error ? e.message : String(e) }));
+    }
+  }
+
+  async function handleSetDefaultModel(modelId: string) {
+    if (!window.electron || !window.electron.llama) return;
+    try {
+      await window.electron.llama.server.setDefault(modelId);
+      await refreshLlamaState();
+    } catch (e) {
+      console.error("Failed to set default model:", e);
+    }
+  }
+
+  async function handleStopServer() {
+    if (!window.electron || !window.electron.llama) return;
+    try {
+      await window.electron.llama.server.stop();
+      await refreshLlamaState();
+    } catch (e) {
+      console.error("Failed to stop llama server:", e);
+    }
+  }
+
+  async function handleInstallModel(modelId: string) {
+    if (!window.electron || !window.electron.llama) return;
+    try {
+      // Optimistic progress
+      setDownloadProgresses((prev) => ({
+        ...prev,
+        [modelId]: { progress: 0, status: "downloading" }
+      }));
+      await window.electron.llama.models.install(modelId, useMirror);
+      await refreshLlamaState();
+    } catch (e) {
+      console.error("Failed to trigger install:", e);
+    }
+  }
+
+  async function handleRemoveModel(modelId: string) {
+    if (!window.electron || !window.electron.llama) return;
+    try {
+      await window.electron.llama.models.remove(modelId);
+      setDownloadProgresses((prev) => {
+        const next = { ...prev };
+        delete next[modelId];
+        return next;
+      });
+      await refreshLlamaState();
+    } catch (e) {
+      console.error("Failed to delete model:", e);
+      alert(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  async function handleClearInactive() {
+    if (!window.electron || !window.electron.llama) return;
+    try {
+      await window.electron.llama.models.clearInactive();
+      await refreshLlamaState();
+    } catch (e) {
+      console.error("Failed to clear inactive models:", e);
+    }
+  }
+
+  async function handleInstallBinary() {
+    if (!window.electron || !window.electron.llama) return;
+    try {
+      setBinaryProgress({ progress: 0, status: "fetching_release" });
+      await window.electron.llama.binary.install();
+      await refreshLlamaState();
+      await handleCheckForUpdates(); // Refresh version info to show "Up to date"
+    } catch (e) {
+      console.error("Failed to install local binary:", e);
+    }
+  }
 
   // Available models fetched from the general endpoint
   const [availableModels, setAvailableModels] = useState<string[]>([]);
@@ -155,53 +326,384 @@ export function AISettings() {
               Cloud / Local API
             </button>
             <button
-              disabled={!appleFMAvailable}
-              onClick={() => updateAIConfig({ provider: "apple-fm" })}
+              onClick={() => updateAIConfig({ provider: "localllm" })}
               className={cn(
-                "px-3 py-1.5 text-xs rounded-md border transition-all flex items-center gap-2 relative",
-                provider === "apple-fm"
-                  ? "border-purple-500 text-[var(--text-primary)] bg-[color-mix(in_srgb,var(--purple-500)_12%,transparent)] font-medium"
-                  : !appleFMAvailable
-                    ? "opacity-50 cursor-not-allowed border-[var(--border)] text-[var(--text-tertiary)]"
-                    : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)] cursor-pointer"
+                "px-3 py-1.5 text-xs rounded-md border transition-all flex items-center gap-2 relative cursor-pointer",
+                provider === "localllm"
+                  ? "border-[var(--accent)] text-[var(--text-primary)] bg-[var(--accent-dim)] font-medium"
+                  : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]"
               )}
-              title={!appleFMAvailable ? (appleFMReason || "Requires Apple Silicon Mac with Apple Intelligence enabled") : " Apple Intelligence"}
             >
-              <Cpu size={12} className={provider === "apple-fm" ? "text-purple-500 animate-pulse" : ""} />
-               On-Device
-              {!appleFMAvailable && (
-                <span className="text-[0.625rem] bg-[var(--surface-3)] text-[var(--text-tertiary)] px-1 py-0.5 rounded border border-[var(--border)] font-normal">
-                  macOS Only
-                </span>
-              )}
+              <Cpu size={12} className={provider === "localllm" ? "text-[var(--accent)] animate-pulse" : ""} />
+              On-Device Llama
             </button>
           </div>
         </SettingsRow>
 
-        {provider === "apple-fm" ? (
-          <SettingsRow
-            label="Apple Intelligence"
-            description="On-device Foundation Models configured successfully."
-          >
-            <div className="bg-[var(--surface-2)] border border-[var(--border)] rounded-lg p-4 space-y-3 w-full max-w-md text-left">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-purple-500 via-indigo-500 to-cyan-500 flex items-center justify-center text-white font-bold shadow-md">
-                  
+        {provider === "localllm" ? (
+          <div className="space-y-3 pt-3 border-t border-[var(--border-subtle)]">
+            <div>
+              <h4 className="text-sm font-semibold text-[var(--text-primary)]">On-Device Server Console</h4>
+              <p className="text-xs text-[var(--text-tertiary)] mt-0.5 leading-relaxed">
+                Manage your offline Llama models and the local llama-server instance.
+              </p>
+            </div>
+            
+            <div className="bg-[var(--surface-2)] border border-[var(--border)] rounded-lg p-5 space-y-5 w-full text-left">
+              {/* Server Status Header */}
+              <div className="flex items-center justify-between border-b border-[var(--border)] pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-full bg-[var(--accent-dim)] flex items-center justify-center text-[var(--accent)] font-bold shadow-sm">
+                    <Cpu size={16} className={serverStatus.running ? "animate-pulse" : ""} />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-semibold text-[var(--text-primary)]">Llama Server Process</h4>
+                    <p className="text-[0.714rem] text-[var(--text-tertiary)] flex items-center gap-1.5">
+                      {serverStatus.running ? `Running locally on Port ${serverStatus.port}` : "Offline / Idle"}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h4 className="text-xs font-semibold text-[var(--text-primary)]">On-Device Apple Intelligence</h4>
-                  <p className="text-[0.714rem] text-[var(--text-tertiary)]">Powered by macOS Foundation Models</p>
+
+                <div className="flex items-center justify-between gap-3">
+                  {serverStatus.running ? (
+                    <>
+                      <span className="text-[0.714rem] flex items-center gap-1.5 text-[var(--success)] font-medium bg-[color-mix(in_srgb,var(--success)_10%,transparent)] px-2.5 py-1 rounded-md">
+                        <span className="w-2 h-2 rounded-full bg-[var(--success)] animate-ping" />
+                        Active &amp; Ready
+                      </span>
+                      <button
+                        onClick={handleStopServer}
+                        className="px-2.5 py-1 text-xs border border-red-500/30 text-red-500 hover:bg-red-500/10 rounded transition-colors cursor-pointer"
+                      >
+                        Stop Server
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-[0.714rem] flex items-center gap-1.5 text-[var(--text-tertiary)] font-medium bg-[var(--surface-3)] px-2.5 py-1 rounded-md border border-[var(--border)]">
+                        Offline
+                      </span>
+                      {llamaModels.some(m => m.status === "installed") && (
+                        <button
+                          onClick={() => {
+                            const firstInstalled = llamaModels.find(m => m.status === "installed");
+                            if (firstInstalled) handleStartServer(firstInstalled.id);
+                          }}
+                          className="px-2.5 py-1 text-xs bg-[var(--accent)] text-white hover:bg-[var(--accent-dim)] hover:text-[var(--accent)] rounded transition-all font-medium cursor-pointer"
+                        >
+                          Start Server
+                        </button>
+                      )}
+                    </>
+                  )}
                 </div>
               </div>
-              <p className="text-[0.786rem] text-[var(--text-secondary)] leading-relaxed">
-                Cairn is running private, zero-config on-device inference using your Mac&apos;s built-in language model. 
-                All chat history, tasks, and notes remain <strong>100% private and local</strong>, with no API keys, cloud servers, or costs.
-              </p>
-              <div className="text-[0.714rem] flex items-center gap-2 text-[var(--success)] font-medium bg-[color-mix(in_srgb,var(--success)_10%,transparent)] px-2.5 py-1 rounded-md w-fit">
-                <CheckCircle size={12} /> Active &amp; Ready
+
+              {/* Llama Engine Version / Update status */}
+              {serverStatus.installed && (
+                <div className="flex items-center justify-between text-[0.714rem] text-[var(--text-secondary)] border-b border-[var(--border-subtle)] pb-4 pt-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-[var(--text-primary)]">Llama Engine:</span>
+                    {updateCheck?.result ? (
+                      <span className="font-mono bg-[var(--surface-3)] px-1.5 py-0.5 rounded border border-[var(--border)] text-[var(--text-primary)]">
+                        {updateCheck.result.currentVersion || "Local / Manual"}
+                      </span>
+                    ) : (
+                      <span className="text-[var(--text-tertiary)] italic">Loading engine metadata...</span>
+                    )}
+                  </div>
+
+                  <div>
+                    {updateCheck?.loading ? (
+                      <span className="flex items-center gap-1.5 text-[var(--accent)] font-medium">
+                        <RefreshCw size={10} className="animate-spin" />
+                        Checking for updates...
+                      </span>
+                    ) : updateCheck?.result?.updateAvailable ? (
+                      <div className="flex items-center gap-2">
+                        <span className="text-[var(--warning)] font-semibold bg-[color-mix(in_srgb,var(--warning)_10%,transparent)] px-2 py-0.5 rounded">
+                          Update Available: {updateCheck.result.latestVersion}
+                        </span>
+                        <button
+                          onClick={handleInstallBinary}
+                          className="px-2.5 py-1 bg-[var(--accent)] text-white hover:bg-[var(--accent-dim)] hover:text-[var(--accent)] rounded font-semibold transition-all text-[0.65rem] cursor-pointer shadow-sm"
+                        >
+                          Upgrade Engine
+                        </button>
+                      </div>
+                    ) : updateCheck?.result ? (
+                      <span className="text-[var(--success)] font-semibold flex items-center gap-1 bg-[color-mix(in_srgb,var(--success)_10%,transparent)] px-2.5 py-1 rounded-md">
+                        <CheckCircle size={10} /> Up to date
+                      </span>
+                    ) : (
+                      <button
+                        onClick={handleCheckForUpdates}
+                        className="text-[var(--accent)] hover:underline flex items-center gap-1 cursor-pointer font-semibold"
+                      >
+                        <RefreshCw size={10} /> Check for Updates
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {serverStatus.installed && binaryProgress && (
+                <div className="bg-[var(--surface-3)] p-3 rounded-lg border border-[var(--border)] mb-4 space-y-2">
+                  <div className="flex justify-between text-[0.714rem]">
+                    <span className="text-[var(--text-primary)] font-medium capitalize flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 bg-yellow-500 rounded-full animate-ping" />
+                      Upgrading: {binaryProgress.status.replace("_", " ")}...
+                    </span>
+                    <span className="text-[var(--text-tertiary)] font-mono">
+                      {binaryProgress.progress}% {binaryProgress.speed ? `(${binaryProgress.speed})` : ""}
+                    </span>
+                  </div>
+                  <div className="w-full h-1.5 bg-[var(--surface-1)] rounded-full overflow-hidden border border-[var(--border)]">
+                    <div
+                      className="h-full bg-gradient-to-r from-[var(--accent)] to-indigo-500 rounded-full transition-all duration-300"
+                      style={{ width: `${binaryProgress.progress}%` }}
+                    />
+                  </div>
+                  {binaryProgress.error && (
+                    <p className="text-[0.65rem] text-red-400 font-mono">Error: {binaryProgress.error}</p>
+                  )}
+                </div>
+              )}
+
+              {/* Automated 1-Click Engine Downloader Card */}
+              {!serverStatus.installed && (
+                <div className="bg-[color-mix(in_srgb,var(--accent)_8%,transparent)] border border-[color-mix(in_srgb,var(--accent)_30%,transparent)] rounded-lg p-5 space-y-4">
+                  <div className="flex items-center gap-2 text-[var(--accent)] font-semibold text-xs">
+                    <Cpu size={14} className={binaryProgress?.status === "downloading" || binaryProgress?.status === "extracting" ? "animate-spin" : ""} />
+                    Automated Llama Engine Setup
+                  </div>
+                  <p className="text-[0.786rem] text-[var(--text-secondary)] leading-relaxed">
+                    Cairn runs private offline inference using the native C++ compiled <strong>llama-server</strong> engine. 
+                    We can automatically download the latest tiny compiled binary (~15MB) from GitHub, set it up locally, and configure macOS permissions for you.
+                  </p>
+
+                  {binaryProgress ? (
+                    <div className="space-y-2 bg-[var(--surface-3)] p-3 rounded-lg border border-[var(--border)]">
+                      <div className="flex justify-between text-[0.714rem]">
+                        <span className="text-[var(--text-primary)] font-medium capitalize">
+                          {binaryProgress.status.replace("_", " ")}...
+                        </span>
+                        <span className="text-[var(--text-tertiary)] font-mono">
+                          {binaryProgress.progress}% {binaryProgress.speed ? `(${binaryProgress.speed})` : ""}
+                        </span>
+                      </div>
+                      <div className="w-full h-1.5 bg-[var(--surface-1)] rounded-full overflow-hidden border border-[var(--border)]">
+                        <div
+                          className="h-full bg-gradient-to-r from-[var(--accent)] to-indigo-500 rounded-full transition-all duration-300"
+                          style={{ width: `${binaryProgress.progress}%` }}
+                        />
+                      </div>
+                      {binaryProgress.error && (
+                        <p className="text-[0.65rem] text-red-400 font-mono">Error: {binaryProgress.error}</p>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex gap-3 flex-wrap">
+                      <button
+                        onClick={handleInstallBinary}
+                        className="px-3.5 py-1.5 text-xs bg-[var(--accent)] text-white hover:bg-[var(--accent-dim)] hover:text-[var(--accent)] rounded font-semibold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <RefreshCw size={11} />
+                        1-Click Install Local Engine
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="border-t border-[var(--border)] pt-3 space-y-2">
+                    <p className="text-[0.65rem] text-[var(--text-tertiary)] uppercase tracking-wider font-semibold">
+                      Alternative manual installation
+                    </p>
+                    <div className="bg-[var(--surface-1)] border border-[var(--border)] p-2.5 rounded font-mono text-[0.714rem] text-[var(--text-primary)] flex items-center justify-between">
+                      <span>brew install llama.cpp</span>
+                      <button
+                        onClick={() => navigator.clipboard.writeText("brew install llama.cpp")}
+                        className="text-[var(--accent)] hover:underline text-[0.65rem]"
+                      >
+                        Copy
+                      </button>
+                    </div>
+                    <p className="text-[0.714rem] text-[var(--text-tertiary)]">
+                      Or run the Homebrew command above, then restart Cairn to activate the private on-device model integration.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Server Error Log if any */}
+              {serverStatus.error && (
+                <div className="bg-red-500/5 border border-red-500/20 text-red-400 p-3.5 rounded-lg text-[0.786rem] font-mono whitespace-pre-wrap max-h-36 overflow-y-auto">
+                  {serverStatus.error}
+                </div>
+              )}
+
+              {/* Model Quantization Manager */}
+              <div className="space-y-3">
+                <div className="flex justify-between items-center flex-wrap gap-2">
+                  <h5 className="text-[0.714rem] font-bold uppercase tracking-wider text-[var(--text-tertiary)]">
+                    On-Device Llama Models
+                  </h5>
+                  
+                  <div className="flex items-center gap-4">
+                    {/* Mirror Toggle */}
+                    <label className="flex items-center gap-2 text-[0.714rem] text-[var(--text-secondary)] font-medium cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={useMirror}
+                        onChange={(e) => setUseMirror(e.target.checked)}
+                        className="accent-[var(--accent)] rounded"
+                      />
+                      <span>🚀 High-Speed Mirror (hf-mirror.com)</span>
+                    </label>
+
+                    <button
+                      onClick={refreshLlamaState}
+                      disabled={isRefreshing}
+                      className="text-[0.714rem] text-[var(--accent)] hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                      <RefreshCw size={10} className={isRefreshing ? "animate-spin" : ""} />
+                      Refresh
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  {llamaModels.map((model) => {
+                    const dl = downloadProgresses[model.id] || { progress: model.downloadProgress, status: model.status, speed: model.downloadSpeed };
+                    const isDownloading = dl.status === "downloading";
+                    const isInstalled = dl.status === "installed" || model.status === "installed";
+                    const isActive = serverStatus.running && serverStatus.activeModelId === model.id;
+                    const isDefault = serverStatus.defaultModelId === model.id;
+
+                    return (
+                      <div
+                        key={model.id}
+                        className={cn(
+                          "border border-[var(--border)] rounded-lg p-3.5 transition-all bg-[var(--surface-3)]",
+                          isActive && "border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_4%,var(--surface-3))]"
+                        )}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-xs font-semibold text-[var(--text-primary)]">{model.name}</span>
+                              <span className="text-[0.65rem] text-[var(--text-tertiary)] font-mono">
+                                {model.repo} · {model.quant}
+                              </span>
+                            </div>
+                            <p className="text-[0.714rem] text-[var(--text-secondary)]">
+                              File: <code className="bg-[var(--surface-1)] px-1 py-0.5 rounded font-mono text-[0.65rem]">{model.filename}</code>
+                            </p>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            {/* Star / Set Default button */}
+                            {isInstalled && (
+                              <button
+                                onClick={() => handleSetDefaultModel(model.id)}
+                                className={cn(
+                                  "p-1.5 rounded border transition-colors cursor-pointer",
+                                  isDefault
+                                    ? "border-amber-500/30 bg-amber-500/10 text-amber-400"
+                                    : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-amber-500/20 hover:text-amber-400"
+                                )}
+                                title={isDefault ? "Current default startup model" : "Set as default startup model"}
+                              >
+                                <Star size={12} fill={isDefault ? "currentColor" : "none"} />
+                              </button>
+                            )}
+
+                            {/* Delete/Uninstall button */}
+                            {isInstalled && (
+                              <button
+                                disabled={isActive}
+                                onClick={() => handleRemoveModel(model.id)}
+                                className={cn(
+                                  "p-1.5 rounded border border-red-500/20 text-red-400 hover:bg-red-500/10 transition-colors",
+                                  isActive ? "opacity-30 cursor-not-allowed" : "cursor-pointer"
+                                )}
+                                title={isActive ? "Cannot delete model currently loaded in the active server." : "Delete downloaded weights"}
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            )}
+
+                            {/* Main Action buttons */}
+                            {isInstalled ? (
+                              isActive ? (
+                                <span className="text-[0.65rem] bg-[var(--accent)] text-white px-2 py-1 rounded font-medium shadow-sm">
+                                  Running &amp; Locked
+                                </span>
+                              ) : (
+                                <button
+                                  onClick={() => handleStartServer(model.id)}
+                                  className="px-2.5 py-1 text-xs border border-[var(--accent)] text-[var(--accent)] hover:bg-[var(--accent-dim)] rounded font-medium transition-all cursor-pointer"
+                                >
+                                  Load Model
+                                </button>
+                              )
+                            ) : isDownloading ? (
+                              <button
+                                onClick={() => handleRemoveModel(model.id)}
+                                className="px-2 py-1 text-xs border border-[var(--border)] text-[var(--text-tertiary)] hover:border-red-500/20 hover:text-red-400 rounded transition-colors cursor-pointer"
+                              >
+                                Cancel
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => handleInstallModel(model.id)}
+                                className="px-2.5 py-1 text-xs bg-[var(--accent)] text-white hover:bg-[var(--accent-dim)] hover:text-[var(--accent)] rounded font-medium transition-all cursor-pointer"
+                              >
+                                Download (~{(model.sizeBytes / 1024 / 1024 / 1024).toFixed(1)} GB)
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Progress Bar for Downloading models */}
+                        {isDownloading && (
+                          <div className="mt-3.5 space-y-1.5">
+                            <div className="flex justify-between text-[0.65rem]">
+                              <span className="text-[var(--text-secondary)] font-medium flex items-center gap-1.5">
+                                <span className="w-1.5 h-1.5 bg-yellow-500 rounded-full animate-ping" />
+                                Downloading...
+                              </span>
+                              <span className="text-[var(--text-tertiary)] font-mono">
+                                {dl.progress}% {dl.speed ? `(${dl.speed})` : ""}
+                              </span>
+                            </div>
+                            <div className="w-full h-1.5 bg-[var(--surface-1)] rounded-full overflow-hidden border border-[var(--border)]">
+                              <div
+                                className="h-full bg-gradient-to-r from-[var(--accent)] to-indigo-500 rounded-full transition-all duration-300"
+                                style={{ width: `${dl.progress}%` }}
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Footer utilities */}
+              <div className="flex items-center justify-between border-t border-[var(--border)] pt-4 text-[0.714rem] text-[var(--text-tertiary)]">
+                <span>Storage path: <code className="font-mono bg-[var(--surface-3)] px-1.5 py-0.5 rounded">userData/llama-models/</code></span>
+                {llamaModels.some(m => m.status === "installed" && m.id !== serverStatus.activeModelId) && (
+                  <button
+                    onClick={handleClearInactive}
+                    className="text-red-400 hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    Clear Inactive Models
+                  </button>
+                )}
               </div>
             </div>
-          </SettingsRow>
+          </div>
         ) : (
           <>
             {/* Base URL */}
@@ -343,13 +845,21 @@ export function AISettings() {
 
         {/* General Connection Status */}
         <div className="flex items-center gap-3 pt-1 text-xs">
-          {provider === "apple-fm" ? (
+          {provider === "localllm" ? (
             <>
-              <span className="flex items-center gap-1 text-[var(--success)]">
-                <CheckCircle size={11} /> Connected (On-Device)
+              <span className={cn(
+                "flex items-center gap-1",
+                serverStatus.running ? "text-[var(--success)]" : "text-[var(--text-tertiary)]"
+              )}>
+                <CheckCircle size={11} /> {serverStatus.running ? "Connected (On-Device Llama)" : "Offline (On-Device Llama)"}
               </span>
               <span className="text-[var(--text-tertiary)]">·</span>
-              <span className="text-[var(--text-tertiary)] font-mono"> macOS Foundation Model</span>
+              <span className="text-[var(--text-tertiary)] font-mono">
+                {serverStatus.running && serverStatus.activeModelId
+                  ? llamaModels.find(m => m.id === serverStatus.activeModelId)?.name || "On-Device"
+                  : "No active local model"
+                }
+              </span>
             </>
           ) : (
             <>

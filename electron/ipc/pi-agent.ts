@@ -177,10 +177,10 @@ export function registerPiAgentHandler(
       if (win && !win.webContents.isDestroyed()) win.webContents.send(channel, payload);
     };
 
-    if (req.config?.provider === "apple-fm") {
+    if (req.config?.provider === "localllm") {
       send("pi-agent:error", {
         sessionId,
-        error: "Apple Intelligence (on-device model) is not supported for the coding agent. The coding agent requires a larger cloud model or a capable local model (Ollama, LM Studio) to handle complex multi-file edits. Please switch your provider in Settings to use a cloud model or a local model with tool support."
+        error: "Local Engine (on-device model) is not supported for the coding agent. The coding agent requires a larger cloud model or a capable local model (Ollama, LM Studio) to handle complex multi-file edits. Please switch your provider in Settings to use a cloud model or a local model with tool support."
       });
       return;
     }
@@ -230,10 +230,10 @@ export function registerPiAgentHandler(
       if (win && !win.webContents.isDestroyed()) win.webContents.send(channel, payload);
     };
 
-    if (req.config?.provider === "apple-fm") {
+    if (req.config?.provider === "localllm") {
       send("pi-agent:error", {
         sessionId,
-        error: "Apple Intelligence (on-device model) is not supported for the coding agent. The coding agent requires a larger cloud model or a capable local model (Ollama, LM Studio) to handle complex multi-file edits. Please switch your provider in Settings to use a cloud model or a local model with tool support."
+        error: "Local Engine (on-device model) is not supported for the coding agent. The coding agent requires a larger cloud model or a capable local model (Ollama, LM Studio) to handle complex multi-file edits. Please switch your provider in Settings to use a cloud model or a local model with tool support."
       });
       return;
     }

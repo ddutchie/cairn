@@ -1,13 +1,29 @@
-import { describe, it, expect } from "vitest";
-import { callAppleFMChat, isAppleFMAvailable } from "./apple-fm";
+import { describe, it, expect, vi } from "vitest";
+
+// Mock electron before module imports that evaluate app.getPath
+vi.mock("electron", () => {
+  return {
+    app: {
+      getPath: (key: string) => {
+        if (key === "userData") {
+          return "/tmp/cairn-test-userdata";
+        }
+        return `/mock/${key}`;
+      }
+    },
+    BrowserWindow: class {}
+  };
+});
+
+import { callLocalLLMChat, isLocalLLMAvailable } from "./local-llm";
 import { TOOLS } from "./tools";
 
-describe("Apple Foundation Models Real Verification (No Mocking)", () => {
+describe("Local LLM Real Verification (No Mocking)", () => {
   it("verifies tool calling on actual Apple Silicon hardware with complete schemas", async () => {
-    const status = await isAppleFMAvailable();
+    const status = await isLocalLLMAvailable();
     console.log("Real hardware status:", status);
     if (!status.available) {
-      console.warn("Skipping real hardware test: Apple Intelligence is not enabled or supported on this machine.");
+      console.warn("Skipping real hardware test: Local LLM is not enabled or supported on this machine.");
       return;
     }
 
@@ -28,10 +44,10 @@ Suggest connecting "Twitter Launch Strategy" (note1) to "Site Architecture" (not
       { role: "user" as const, content: "Suggest some connections based on my nodes." }
     ];
 
-    console.log("Calling real local Apple Intelligence with flat suggest_connections tool...");
+    console.log("Calling real local LLM with flat suggest_connections tool...");
     const suggestTool = TOOLS.filter(t => t.function.name === "suggest_connections");
-    const res = await callAppleFMChat(messages, suggestTool);
-    console.log("Actual Apple Intelligence Response Shape:\n", JSON.stringify(res, null, 2));
+    const res = await callLocalLLMChat(messages, suggestTool);
+    console.log("Actual Local LLM Response Shape:\n", JSON.stringify(res, null, 2));
 
     expect(res).toBeDefined();
     expect(res.choices).toBeDefined();
@@ -61,8 +77,8 @@ Suggest connecting "Twitter Launch Strategy" (note1) to "Site Architecture" (not
     }
   }, 60000);
 
-  it("verifies that all whitelisted Apple FM tools compile cleanly on actual hardware without conflicts or native schema rejections", async () => {
-    const status = await isAppleFMAvailable();
+  it("verifies that all whitelisted Local LLM tools compile cleanly on actual hardware without conflicts or native schema rejections", async () => {
+    const status = await isLocalLLMAvailable();
     if (!status.available) {
       console.warn("Skipping real hardware validation.");
       return;
@@ -73,10 +89,8 @@ Suggest connecting "Twitter Launch Strategy" (note1) to "Site Architecture" (not
       { role: "user" as const, content: "Hello." }
     ];
 
-    console.log("Compiling all whitelisted tools with Apple Foundation Models...");
-    // Pass the entire TOOLS array from the codebase.
-    // Our formatAndSanitizeTools whitelists and filters it automatically.
-    const res = await callAppleFMChat(messages, TOOLS);
+    console.log("Compiling all whitelisted tools with Local LLM...");
+    const res = await callLocalLLMChat(messages, TOOLS);
     console.log("Completions successfully compiled with all allowed tools!");
     
     expect(res).toBeDefined();

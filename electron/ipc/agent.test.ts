@@ -215,7 +215,7 @@ describe("isSafePath", () => {
   });
 
   it("accepts a Windows absolute path", () => {
-    expect(isSafePath("C:\\Users\\gerard\\AppData\\Local\\opencode.exe")).toBe(true);
+    expect(isSafePath("C:\\Users\\username\\AppData\\Local\\opencode.exe")).toBe(true);
   });
 
   // Metacharacter injection attempts

@@ -137,7 +137,7 @@ const api = {
   // ── AI helpers ────────────────────────────────
   ai: {
     generatePrd: (args: unknown) => invoke<{ id: string; title: string; projectId: string } | { error: string }>("ai:generatePrd", args),
-    appleStatus: () => invoke<{ available: boolean; reason?: string }>("ai:appleStatus"),
+    localLLMStatus: () => invoke<{ available: boolean; reason?: string }>("ai:localLLMStatus"),
   },
 
   // ── App paths ─────────────────────────────────
@@ -413,6 +413,49 @@ const api = {
       ),
   },
 
+  // ── On-Device Llama Server ───────────────
+  llama: {
+    models: {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      list: () => invoke<any[]>("llama:models:list"),
+      install: (modelId: string, useMirror?: boolean) => invoke<void>("llama:models:install", { modelId, useMirror }),
+      remove: (modelId: string) => invoke<void>("llama:models:remove", { modelId }),
+      clearInactive: () => invoke<void>("llama:models:clearInactive"),
+      onProgress: (cb: (e: { modelId: string; progress: number; speed?: string; bytesReceived: number; bytesTotal: number; status: string; error?: string }) => void) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const handler = (_: any, e: any) => cb(e);
+        ipcRenderer.on("llama:download-progress", handler);
+        return () => {
+          ipcRenderer.off("llama:download-progress", handler);
+        };
+      }
+    },
+    binary: {
+      install: () => invoke<void>("llama:binary:install"),
+      checkForUpdates: () => invoke<{ updateAvailable: boolean; currentVersion: string | null; latestVersion: string | null }>("llama:binary:check-update"),
+      onProgress: (cb: (e: { progress: number; speed?: string; status: string; error?: string }) => void) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const handler = (_: any, e: any) => cb(e);
+        ipcRenderer.on("llama:binary-progress", handler);
+        return () => {
+          ipcRenderer.off("llama:binary-progress", handler);
+        };
+      }
+    },
+    server: {
+      start: (modelId: string) => invoke<{ port: number }>("llama:server:start", { modelId }),
+      stop: () => invoke<void>("llama:server:stop"),
+      status: () => invoke<{
+        running: boolean;
+        port: number | null;
+        activeModelId: string | null;
+        defaultModelId: string | null;
+        installed: boolean;
+        error: string | null;
+      }>("llama:server:status"),
+      setDefault: (modelId: string) => invoke<{ success: boolean }>("llama:server:setDefault", { modelId }),
+    }
+  }
 } as const;
 
 contextBridge.exposeInMainWorld("electron", api);
