@@ -248,8 +248,9 @@ export async function installModel(
     let lastBytes = 0;
     let lastTime = Date.now();
     let speed = "0 KB/s";
+    let lastBroadcastTime = 0;
 
-    function broadcastProgress(bytesReceived: number, bytesTotal: number) {
+    function broadcastProgress(bytesReceived: number, bytesTotal: number, force = false) {
       const now = Date.now();
       const duration = (now - lastTime) / 1000;
       if (duration >= 1) {
@@ -260,6 +261,13 @@ export async function installModel(
         const mbs = (delta / 1024 / 1024) / duration;
         speed = `${mbs.toFixed(1)} MB/s`;
       }
+
+      // Throttle progress events and manifest file writes to at most once every 300ms,
+      // unless force is true (e.g. final chunk).
+      if (!force && now - lastBroadcastTime < 300) {
+        return;
+      }
+      lastBroadcastTime = now;
 
       const progress = bytesTotal > 0 ? Math.min(100, Math.round((bytesReceived / bytesTotal) * 100)) : 0;
       
@@ -291,8 +299,9 @@ export async function installModel(
           let redirectUrl = res.headers.location;
           if (useMirror) {
             // ONLY rewrite the CDN URLs to their hf-mirror equivalents, do not rewrite page-level resolvers
-            if (redirectUrl.includes("cdn-lfs.huggingface.co")) {
-              redirectUrl = redirectUrl.replace("cdn-lfs.huggingface.co", "cdn-lfs.hf-mirror.com");
+            // Handles both standard cdn-lfs.huggingface.co and region-specific cdn-lfs-*.huggingface.co
+            if (/cdn-lfs[-a-zA-Z0-9]*\.huggingface\.co/.test(redirectUrl)) {
+              redirectUrl = redirectUrl.replace(/cdn-lfs[-a-zA-Z0-9]*\.huggingface\.co/g, "cdn-lfs.hf-mirror.com");
             }
           }
           download(redirectUrl);
@@ -311,11 +320,12 @@ export async function installModel(
         res.on("data", (chunk) => {
           receivedBytes += chunk.length;
           fileStream.write(chunk);
-          broadcastProgress(receivedBytes, totalBytes);
+          broadcastProgress(receivedBytes, totalBytes, false);
         });
 
         res.on("end", () => {
           fileStream.end();
+          broadcastProgress(receivedBytes, totalBytes, true); // force final update
           resolve();
         });
 
@@ -476,7 +486,7 @@ export async function stopServer(): Promise<void> {
 /**
  * Starts the llama-server child process on a dynamic port with the selected model.
  */
-export async function startServer(modelId: string): Promise<number> {
+export async function startServer(modelId: string, contextLimit?: number): Promise<number> {
   const manifest = getManifest();
   const entry = manifest[modelId];
   if (!entry || entry.status !== "installed") {
@@ -502,11 +512,16 @@ export async function startServer(modelId: string): Promise<number> {
   const port = await findFreePort();
   console.log(`[llama-server] Starting llama-server with ${entry.name} on 127.0.0.1:${port}...`);
 
+  const requestedContext = contextLimit ?? 16384;
+  // Cloud defaults like 128k are too heavy for local CPU/GPU contexts. Clamp to 16k if >32k, otherwise use requested.
+  const contextSize = requestedContext > 32768 ? 16384 : requestedContext;
+
   const processArgs = [
     "-m", entry.path,
     "--port", port.toString(),
     "--host", "127.0.0.1",
-    "-c", "32768", // default context size (32k)
+    "-c", contextSize.toString(),
+    "-np", "1",
     "--no-warmup"
   ];
 
@@ -646,8 +661,15 @@ export async function installLlamaBinary(winGetter: () => BrowserWindow | null):
 
   isBinaryDownloading = true;
   const win = winGetter();
+  let lastProgressTime = 0;
 
-  const sendProgress = (progress: number, speed: string, status: string, error?: string) => {
+  const sendProgress = (progress: number, speed: string, status: string, error?: string, force = false) => {
+    const now = Date.now();
+    if (!force && status === "downloading" && now - lastProgressTime < 300) {
+      return;
+    }
+    lastProgressTime = now;
+
     if (win && !win.isDestroyed()) {
       win.webContents.send("llama:binary-progress", { progress, speed, status, error });
     }
@@ -734,11 +756,13 @@ export async function installLlamaBinary(winGetter: () => BrowserWindow | null):
             }
 
             const pct = Math.min(100, Math.round((receivedBytes / totalBytes) * 100));
-            sendProgress(pct, speed, "downloading");
+            sendProgress(pct, speed, "downloading", undefined, false);
           });
 
           res.on("end", () => {
             fileStream.end();
+            const pct = Math.min(100, Math.round((receivedBytes / totalBytes) * 100));
+            sendProgress(pct, speed, "downloading", undefined, true); // force final
             resolve();
           });
 

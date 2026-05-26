@@ -332,16 +332,21 @@ function syncDir(db: Database.Database, dir: string, workspacePath: string): voi
     if (SKIP_DIRS.has(entry) && dir === workspacePath) continue;
 
     if (entry === "notes" && dir === workspacePath) {
-      // Skip only if it's a legacy notes/ directory (no direct .md files)
-      const notesPath = path.join(workspacePath, "notes");
-      try {
-        const entries = fs.readdirSync(notesPath);
-        const hasDirectMd = entries.some((e) => e.endsWith(".md") && fs.lstatSync(path.join(notesPath, e)).isFile());
-        if (!hasDirectMd) {
+      // If it's already an Obsidian vault (contains a .obsidian folder at root), do NOT skip notes/
+      if (fs.existsSync(path.join(workspacePath, ".obsidian"))) {
+        // Continue scanning notes/
+      } else {
+        // Skip only if it's a legacy notes/ directory (no direct .md files)
+        const notesPath = path.join(workspacePath, "notes");
+        try {
+          const entries = fs.readdirSync(notesPath);
+          const hasDirectMd = entries.some((e) => e.endsWith(".md") && fs.lstatSync(path.join(notesPath, e)).isFile());
+          if (!hasDirectMd) {
+            continue;
+          }
+        } catch {
           continue;
         }
-      } catch {
-        continue;
       }
     }
 

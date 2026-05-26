@@ -22,7 +22,7 @@ import * as q from "../db/queries";
 import { registerChatHandler } from "./chat";
 import { writeNoteFile, deleteNoteFile, deleteProjectNotesDir, stripMarkdown, findNoteFilePath } from "../notes-files";
 import { checkMigrations, runMigration } from "../migrations";
-import { suppressNextChange } from "../file-watcher";
+import { suppressNextChange, pauseFileWatcher, resumeFileWatcher } from "../file-watcher";
 import { buildContextResponse } from "../lib/context";
 import { generatePrd } from "../lib/prd";
 import { isLocalEndpoint, callLLM, normaliseBaseUrl } from "../lib/llm";
@@ -578,9 +578,9 @@ export function registerIpcHandlers(ctx: DbContext): void {
     return clearInactiveModels();
   }));
 
-  ipcMain.handle("llama:server:start", (_e, { modelId }) => handle(async () => {
+  ipcMain.handle("llama:server:start", (_e, { modelId, contextLimit }: { modelId: string; contextLimit?: number }) => handle(async () => {
     const { startServer } = require("../lib/llama-server");
-    const port = await startServer(modelId);
+    const port = await startServer(modelId, contextLimit);
     return { port };
   }));
 
@@ -931,14 +931,19 @@ pre, blockquote, table { page-break-inside: avoid; }
 
   ipcMain.handle("app:runMigration", (_e, { migrationId }: { migrationId: string }) =>
     handle(async () => {
-      await runMigration(ctx.workspacePath, migrationId, (pct, msg) => {
-        // Send progress events to the renderer
-        const activeWin = ctx.getWin();
-        if (activeWin && !activeWin.isDestroyed()) {
-          activeWin.webContents.send("app:migrationProgress", { migrationId, pct, msg });
-        }
-      });
-      return { ok: true };
+      pauseFileWatcher();
+      try {
+        await runMigration(ctx.workspacePath, migrationId, (pct, msg) => {
+          // Send progress events to the renderer
+          const activeWin = ctx.getWin();
+          if (activeWin && !activeWin.isDestroyed()) {
+            activeWin.webContents.send("app:migrationProgress", { migrationId, pct, msg });
+          }
+        });
+        return { ok: true };
+      } finally {
+        resumeFileWatcher();
+      }
     })
   );
 }

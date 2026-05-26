@@ -60,5 +60,6 @@ copyBinary(path.join(root, "vitest-native", "better_sqlite3.node"), `vitest Node
 // Step 2: Build for Electron ABI
 run("npx @electron/rebuild -f better-sqlite3");
 copyBinary(path.join(root, "electron-native", "better_sqlite3_electron.node"), "Electron");
+run("npx @electron/rebuild -f node-pty");
 
 console.log("\nNative rebuild complete.");

@@ -19,6 +19,7 @@
 import { ipcMain, dialog, BrowserWindow } from "electron";
 import fs from "fs";
 import path from "path";
+import os from "os";
 import { spawnSync } from "child_process";
 import type { Database } from "better-sqlite3";
 import * as nodePty from "node-pty";
@@ -445,17 +446,69 @@ export function registerAgentHandlers(db: Database): void {
       const stat = fs.statSync(payload.cwd);
       if (!stat.isDirectory()) throw new Error(`cwd is not a directory: ${payload.cwd}`);
 
-      const shell = process.platform === "win32"
+      const defaultShell = process.platform === "win32"
         ? (process.env.COMSPEC || "cmd.exe")
         : (process.env.SHELL  || "/bin/zsh");
 
-      const pty = nodePty.spawn(shell, [], {
-        name: "xterm-256color",
-        cols: 120,
-        rows: 30,
-        cwd:  payload.cwd,
-        env:  process.env as Record<string, string>,
-      });
+      interface SpawnAttempt {
+        shell: string;
+        cwd: string;
+        label: string;
+      }
+
+      const homeDir = os.homedir();
+      const attempts: SpawnAttempt[] = [];
+
+      if (process.platform === "win32") {
+        attempts.push({ shell: defaultShell, cwd: payload.cwd, label: `default shell in cwd (${payload.cwd})` });
+        attempts.push({ shell: defaultShell, cwd: homeDir, label: `default shell in homedir (${homeDir})` });
+        if (defaultShell !== "cmd.exe") {
+          attempts.push({ shell: "cmd.exe", cwd: payload.cwd, label: `cmd.exe in cwd (${payload.cwd})` });
+          attempts.push({ shell: "cmd.exe", cwd: homeDir, label: `cmd.exe in homedir (${homeDir})` });
+        }
+        attempts.push({ shell: "powershell.exe", cwd: payload.cwd, label: `powershell.exe in cwd (${payload.cwd})` });
+        attempts.push({ shell: "powershell.exe", cwd: homeDir, label: `powershell.exe in homedir (${homeDir})` });
+      } else {
+        attempts.push({ shell: defaultShell, cwd: payload.cwd, label: `default shell in cwd (${payload.cwd})` });
+        attempts.push({ shell: defaultShell, cwd: homeDir, label: `default shell in homedir (${homeDir})` });
+        if (defaultShell !== "/bin/zsh") {
+          attempts.push({ shell: "/bin/zsh", cwd: payload.cwd, label: `/bin/zsh in cwd (${payload.cwd})` });
+          attempts.push({ shell: "/bin/zsh", cwd: homeDir, label: `/bin/zsh in homedir (${homeDir})` });
+        }
+        if (defaultShell !== "/bin/bash") {
+          attempts.push({ shell: "/bin/bash", cwd: payload.cwd, label: `/bin/bash in cwd (${payload.cwd})` });
+          attempts.push({ shell: "/bin/bash", cwd: homeDir, label: `/bin/bash in homedir (${homeDir})` });
+        }
+        if (defaultShell !== "/bin/sh") {
+          attempts.push({ shell: "/bin/sh", cwd: payload.cwd, label: `/bin/sh in cwd (${payload.cwd})` });
+          attempts.push({ shell: "/bin/sh", cwd: homeDir, label: `/bin/sh in homedir (${homeDir})` });
+        }
+      }
+
+      let pty;
+      let lastError: any = null;
+
+      for (const attempt of attempts) {
+        try {
+          pty = nodePty.spawn(attempt.shell, [], {
+            name: "xterm-256color",
+            cols: 120,
+            rows: 30,
+            cwd:  attempt.cwd,
+            env:  process.env as Record<string, string>,
+          });
+          console.log(`[agent] Successfully spawned ${attempt.label}`);
+          break;
+        } catch (e) {
+          lastError = e;
+          console.warn(`[agent] Failed to spawn ${attempt.label}. Error:`, e);
+        }
+      }
+
+      if (!pty) {
+        console.error(`[agent] All spawning attempts failed. Last error:`, lastError);
+        throw lastError || new Error("Failed to spawn terminal shell (all fallback paths exhausted).");
+      }
 
       const sessionId = newId();
       // agentId / taskId not meaningful for shell sessions — use sentinel values

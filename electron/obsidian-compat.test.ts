@@ -542,4 +542,27 @@ describe("mixed Cairn and Obsidian files", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].title).toBe("My Note");
   });
+
+  it("does not skip root notes/ folder in an Obsidian vault even if it has no direct .md files, scanning it as a project", () => {
+    // Create the .obsidian folder to mark it as an Obsidian vault
+    fs.mkdirSync(path.join(tmpDir, ".obsidian"), { recursive: true });
+
+    // Seed project "notes" in the DB
+    seedProject(db, "notes", "proj-notes", "ws1");
+
+    // Create notes/ directory with a subdirectory, but no direct .md files at root of notes/
+    const notesDir = path.join(tmpDir, "notes");
+    const subProjDir = path.join(notesDir, "sub-folder");
+    fs.mkdirSync(subProjDir, { recursive: true });
+    writePlainMdFile(subProjDir, "Sub Note.md", "# Sub Note\n\nContent.");
+
+    // Run sync
+    syncNotesFromDisk(db, tmpDir);
+
+    // Verify: The sub-note is imported successfully under the notes project, even though notes/ had no direct .md files!
+    const rows = db.prepare("SELECT title, folder FROM notes WHERE project_id = ?").all("proj-notes") as { title: string; folder: string }[];
+    expect(rows).toHaveLength(1);
+    expect(rows[0].title).toBe("Sub Note");
+    expect(rows[0].folder).toBe("sub-folder");
+  });
 });
