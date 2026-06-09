@@ -2,7 +2,7 @@
 
 import React, { useEffect, useCallback, useState, useMemo, useRef } from "react";
 import {
-  GitBranch, Circle, RefreshCw, ChevronDown, LayoutGrid, Search,
+  GitBranch, Circle, RefreshCw, ChevronDown, LayoutGrid, Search, SlidersHorizontal, Type,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
@@ -47,8 +47,11 @@ export function KnowledgeGraphView() {
   })));
 
   const [projectDropdownOpen, setProjectDropdownOpen] = useState(false);
+  const [labelDropdownOpen, setLabelDropdownOpen] = useState(false);
   const [recomputing, setRecomputing] = useState(false);
   const [graphSearch, setGraphSearch] = useState("");
+  const [labelMode, setLabelMode] = useState<"smart" | "all" | "minimal">("smart");
+  const [spacing, setSpacing] = useState<number>(1.2);
 
   // ⌘F / Ctrl+F — focus the graph search input
   const graphSearchRef = useRef<HTMLInputElement>(null);
@@ -202,7 +205,7 @@ export function KnowledgeGraphView() {
         {/* Project filter */}
         <div className="relative">
           <button
-            onClick={() => setProjectDropdownOpen((v) => !v)}
+            onClick={() => { setProjectDropdownOpen((v) => !v); setLabelDropdownOpen(false); }}
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-[var(--border)] text-xs text-[var(--text-secondary)] hover:bg-[var(--surface-2)] transition-colors"
           >
             <LayoutGrid size={12} />
@@ -243,6 +246,69 @@ export function KnowledgeGraphView() {
             </div>
           )}
         </div>
+
+        {/* Label Mode dropdown */}
+        {(graphLayout === "force" || graphLayout === "radial") && (
+          <div className="relative">
+            <button
+              onClick={() => { setLabelDropdownOpen((v) => !v); setProjectDropdownOpen(false); }}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-[var(--border)] text-xs text-[var(--text-secondary)] hover:bg-[var(--surface-2)] transition-colors"
+            >
+              <Type size={12} />
+              <span className="capitalize">{labelMode} labels</span>
+              <ChevronDown size={11} />
+            </button>
+            {labelDropdownOpen && (
+              <div className="absolute top-full left-0 mt-1 w-40 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-lg z-20 py-1">
+                {(["smart", "all", "minimal"] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    onClick={() => {
+                      setLabelMode(mode);
+                      setLabelDropdownOpen(false);
+                    }}
+                    className={cn(
+                      "flex items-center justify-between w-full px-3 py-1.5 text-xs transition-colors capitalize",
+                      labelMode === mode
+                        ? "text-[var(--accent)] bg-[var(--accent-dim)] font-medium"
+                        : "text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"
+                    )}
+                  >
+                    <span>{mode}</span>
+                    {labelMode === mode && <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Spacing / Breathing room slider */}
+        {(graphLayout === "force" || graphLayout === "radial") && (
+          <div className="flex items-center gap-2 px-2.5 py-1 rounded-md border border-[var(--border)] bg-[var(--surface)]">
+            <Tooltip content="Adjust graph spacing / breathing room">
+              <div className="flex items-center gap-1.5 text-[var(--text-secondary)] cursor-help">
+                <SlidersHorizontal size={11} className="text-[var(--text-tertiary)]" />
+                <span className="text-[0.714rem] select-none font-medium whitespace-nowrap">Spacing</span>
+              </div>
+            </Tooltip>
+            <input
+              type="range"
+              min="0.8"
+              max="2.0"
+              step="0.1"
+              value={spacing}
+              onChange={(e) => setSpacing(parseFloat(e.target.value))}
+              className="w-16 h-1 rounded bg-[var(--border)] appearance-none cursor-pointer accent-[var(--accent)] focus:outline-none"
+              style={{
+                accentColor: "var(--accent)"
+              }}
+            />
+            <span className="text-[0.643rem] text-[var(--text-tertiary)] min-w-[24px] text-right font-mono">
+              {spacing.toFixed(1)}x
+            </span>
+          </div>
+        )}
 
         {/* Search + type toggles — shown for force and radial */}
         {(graphLayout === "force" || graphLayout === "radial") && (
@@ -327,7 +393,7 @@ export function KnowledgeGraphView() {
       </div>
 
       {/* Canvas area + detail panel */}
-      <div className="flex flex-1 min-h-0 overflow-hidden" onClick={() => setProjectDropdownOpen(false)}>
+      <div className="flex flex-1 min-h-0 overflow-hidden" onClick={() => { setProjectDropdownOpen(false); setLabelDropdownOpen(false); }}>
         {/* Main canvas */}
         <div className="flex flex-1 min-w-0 overflow-hidden relative">
           {graphLoading && (
@@ -352,6 +418,8 @@ export function KnowledgeGraphView() {
               selectedNodeId={selectedGraphNodeId}
               onNodeClick={handleNodeClick}
               onBackgroundClick={handleBackgroundClick}
+              labelMode={labelMode}
+              spacing={spacing}
             />
           )}
 
@@ -361,6 +429,8 @@ export function KnowledgeGraphView() {
               selectedNodeId={selectedGraphNodeId}
               onNodeClick={handleNodeClick}
               onBackgroundClick={handleBackgroundClick}
+              labelMode={labelMode}
+              spacing={spacing}
             />
           )}
 

@@ -228,7 +228,12 @@ export function AITextToolbar({ onAction, onFormat, loading, onDismiss, hasSelec
 // ── AI prompt builder ─────────────────────────────────────────────────────────
 
 export function buildAIActionPrompt(action: AITextAction, selectedText: string, customPrompt?: string): string {
-  const base = `You are an AI writing assistant embedded in a note editor. The user has selected the following text:\n\n"${selectedText}"\n\n`;
+  const base = `You are an AI writing assistant embedded in a note editor. The user has selected the following text:\n\n"${selectedText}"\n\n## RENDERING CAPABILITIES:
+- You have access to the following markdown rendering features:
+  - **Mermaid Diagrams**: Use \`\`\`mermaid\`\`\` blocks for flowcharts, sequence diagrams, etc.
+  - **Tables**: Use standard markdown table syntax for data representation.
+  - **Code Blocks**: Specify the language (e.g., \`\`\`typescript\`\`\`) for syntax highlighting.
+  - **Standard Formatting**: Bold, italic, bulleted/numbered lists, and links.\n\n`;
   switch (action) {
     case "rephrase":     return base + "Rephrase this text to say the same thing in a different, clearer way. Return only the rewritten text, no commentary.";
     case "summarize":    return base + "Summarize this text concisely. Return only the summary, no commentary.";

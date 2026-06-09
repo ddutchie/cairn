@@ -2,6 +2,7 @@
 
 import React, { useRef, useEffect, useCallback, useState, useMemo } from "react";
 import { ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
+import * as d3 from "d3";
 import type { GraphNode, KnowledgeGraph } from "@/types";
 import { resolveCssVar } from "./graphUtils";
 import { useFontScale } from "./analyticsHooks";
@@ -15,6 +16,8 @@ interface Props {
   selectedNodeId: string | null;
   onNodeClick: (node: GraphNode) => void;
   onBackgroundClick: () => void;
+  labelMode: "smart" | "all" | "minimal";
+  spacing: number;
 }
 
 function hexForType(type: GraphNode["type"]): string {
@@ -49,16 +52,66 @@ function toAlpha(hex: string, opacity: number): string {
   return hex.replace(/^#/, "#") + a;
 }
 
-export function ForceGraphCanvas({ graph, selectedNodeId, onNodeClick, onBackgroundClick }: Props) {
+export function ForceGraphCanvas({ graph, selectedNodeId, onNodeClick, onBackgroundClick, labelMode, spacing }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const fgRef = useRef<ForceGraph2DInstance>(null);
   const [ForceGraph2D, setForceGraph2D] = useState<ForceGraph2DInstance>(null);
   const fs = useFontScale();
   const [dims, setDims] = useState({ width: 800, height: 600 });
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+
+  // Compute node degrees to dynamically scale individual node repulsion (charge force)
+  const nodeDegrees = useMemo(() => {
+    const degrees: Record<string, number> = {};
+    for (const link of graph.edges) {
+      degrees[link.source] = (degrees[link.source] ?? 0) + 1;
+      degrees[link.target] = (degrees[link.target] ?? 0) + 1;
+    }
+    return degrees;
+  }, [graph.edges]);
 
   useEffect(() => {
     import("react-force-graph-2d").then((mod) => setForceGraph2D(() => mod.default));
   }, []);
+
+  // Dynamically update D3 forces on spacing changes
+  useEffect(() => {
+    const fg = fgRef.current;
+    if (!fg) return;
+
+    fg.d3Force("charge")?.strength((node: d3.SimulationNodeDatum) => {
+             const n = node as (d3.SimulationNodeDatum & { id?: string; nodeType?: string });
+             const degree = nodeDegrees[n.id ?? ""] ?? 0;
+      if (degree === 0) return -15; // float unlinked nodes close to center without blasting them off
+      if (degree === 1) return -40 * spacing;
+      const isProject = n.nodeType === "project";
+      const baseCharge = isProject ? -150 : -100;
+      return baseCharge * spacing;
+    });
+
+    if (ForceGraph2D) {
+      fg.d3Force("collide", d3.forceCollide<d3.SimulationNodeDatum>().radius((node: d3.SimulationNodeDatum) => {
+        const n = node as (d3.SimulationNodeDatum & { nodeType?: string });
+        const isProject = n.nodeType === "project";
+        const radius = isProject ? 7 : n.nodeType === "tag" ? 4 : 5.5;
+        return (radius + 15) * spacing;
+      }).iterations(2));
+    }
+
+
+    fg.d3Force("link")?.distance((link: { edgeType?: string }) => {
+      let baseDist = 35;
+      if (link.edgeType === "project-member") baseDist = 70;
+      if (link.edgeType === "tag-member")     baseDist = 50;
+      return baseDist * spacing;
+    });
+
+    // Centering gravity forces to prevent drifting of unlinked nodes
+    fg.d3Force("x", d3.forceX(0).strength(0.06 * (spacing >= 1 ? spacing : 1)));
+    fg.d3Force("y", d3.forceY(0).strength(0.06 * (spacing >= 1 ? spacing : 1)));
+
+    fg.d3ReheatSimulation();
+  }, [spacing, ForceGraph2D, nodeDegrees]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -151,6 +204,12 @@ export function ForceGraphCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
         linkDirectionalArrowRelPos={1}
         onNodeClick={handleNodeClick}
         onBackgroundClick={onBackgroundClick}
+        onNodeHover={(node: { id?: string } | null) => {
+          setHoveredNodeId(node ? node.id ?? null : null);
+          if (containerRef.current) {
+            containerRef.current.style.cursor = node ? "pointer" : "default";
+          }
+        }}
         nodeCanvasObject={(
           node: { id?: string; name?: string; nodeType?: string; x?: number; y?: number },
           ctx: CanvasRenderingContext2D,
@@ -158,18 +217,20 @@ export function ForceGraphCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
         ) => {
           const label = node.name ?? "";
           const isSelected = node.id === selectedNodeId;
+          const isHovered = node.id === hoveredNodeId;
           const isProject = node.nodeType === "project";
           const radius = isProject ? 7 : node.nodeType === "tag" ? 4 : 5.5;
           const x = node.x ?? 0;
           const y = node.y ?? 0;
           const color = hexForType((node.nodeType ?? "note") as GraphNode["type"]);
 
-          // Glow for selected node
-          if (isSelected) {
+          // Glow for selected or hovered node
+          if (isSelected || isHovered) {
+            const glowOpacity = isSelected ? 0.08 : 0.04;
             for (let i = 3; i >= 1; i--) {
               ctx.beginPath();
               ctx.arc(x, y, radius + i * 3, 0, 2 * Math.PI);
-              ctx.fillStyle = color + Math.round((0.08 / i) * 255).toString(16).padStart(2, "0");
+              ctx.fillStyle = color + Math.round((glowOpacity / i) * 255).toString(16).padStart(2, "0");
               ctx.fill();
             }
           }
@@ -186,20 +247,41 @@ export function ForceGraphCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
             ctx.stroke();
           }
 
-          // Labels: always for projects, zoom-gated for others
-          // Font size is fixed in screen space (11px for projects, 10px for others)
-          // — divide by globalScale so canvas scaling doesn't affect perceived size
-          const showLabel = isProject || globalScale >= 1.2;
+          // Smart label density rendering
+          let showLabel = false;
+          if (isProject || isSelected || isHovered) {
+            showLabel = true;
+          } else if (labelMode === "all") {
+            showLabel = globalScale >= 0.7;
+          } else if (labelMode === "smart") {
+            showLabel = globalScale >= 1.4;
+          }
+
           if (showLabel) {
-            const screenPx = (isProject ? 11 : 10) * fs;
+            const isHighlight = isSelected || isHovered;
+            const screenPx = (isProject ? 11.5 : 10) * fs;
             const fontSize = screenPx / globalScale;
-            ctx.font = `${isProject ? "600 " : ""}${fontSize}px ui-sans-serif, system-ui, sans-serif`;
-            ctx.fillStyle = resolveCssVar(isProject ? "--text-primary" : "--text-secondary");
-            ctx.textAlign = "center";
-            ctx.textBaseline = "top";
             const maxLen = isProject ? 24 : 18;
             const text = label.length > maxLen ? label.slice(0, maxLen - 1) + "…" : label;
-            ctx.fillText(text, x, y + radius + 3 / globalScale);
+
+            ctx.font = `${(isProject || isHighlight) ? "600 " : ""}${fontSize}px ui-sans-serif, system-ui, sans-serif`;
+            ctx.textAlign = "center";
+            ctx.textBaseline = "top";
+
+            // Halo outline behind text for premium legibility over links and nodes
+            ctx.strokeStyle = resolveCssVar("--background");
+            ctx.lineWidth = 4 / globalScale;
+            ctx.lineJoin = "round";
+            ctx.strokeText(text, x, y + radius + 4 / globalScale);
+
+            // Text fill color
+            if (isHighlight && !isProject) {
+              ctx.fillStyle = resolveCssVar("--accent");
+            } else {
+              ctx.fillStyle = resolveCssVar(isProject ? "--text-primary" : "--text-secondary");
+            }
+            
+            ctx.fillText(text, x, y + radius + 4 / globalScale);
           }
         }}
         nodeCanvasObjectMode={() => "replace"}
@@ -209,12 +291,30 @@ export function ForceGraphCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
         onEngineStart={() => {
           const fg = fgRef.current;
           if (!fg) return;
-          fg.d3Force("charge")?.strength(-120);
-          fg.d3Force("link")?.distance((link: { edgeType?: string }) => {
-            if (link.edgeType === "project-member") return 70;
-            if (link.edgeType === "tag-member")     return 50;
-            return 35;
+          fg.d3Force("charge")?.strength((node: d3.SimulationNodeDatum) => {
+            const n = node as (d3.SimulationNodeDatum & { id?: string; nodeType?: string });
+            const degree = nodeDegrees[n.id ?? ""] ?? 0;
+            if (degree === 0) return -15;
+            if (degree === 1) return -40 * spacing;
+            const isProject = n.nodeType === "project";
+            const baseCharge = isProject ? -150 : -100;
+            return baseCharge * spacing;
           });
+          fg.d3Force("collide", d3.forceCollide<d3.SimulationNodeDatum>().radius((node: d3.SimulationNodeDatum) => {
+            const n = node as (d3.SimulationNodeDatum & { nodeType?: string });
+            const isProject = n.nodeType === "project";
+            const radius = isProject ? 7 : n.nodeType === "tag" ? 4 : 5.5;
+            return (radius + 15) * spacing;
+          }).iterations(2));
+          fg.d3Force("link")?.distance((link: d3.SimulationLinkDatum<d3.SimulationNodeDatum>) => {
+            const l = link as (d3.SimulationLinkDatum<d3.SimulationNodeDatum> & { edgeType?: string });
+            let baseDist = 35;
+            if (l.edgeType === "project-member") baseDist = 70;
+            if (l.edgeType === "tag-member")     baseDist = 50;
+            return baseDist * spacing;
+          });
+          fg.d3Force("x", d3.forceX(0).strength(0.06 * (spacing >= 1 ? spacing : 1)));
+          fg.d3Force("y", d3.forceY(0).strength(0.06 * (spacing >= 1 ? spacing : 1)));
         }}
         onEngineStop={() => fgRef.current?.zoomToFit(400, 40)}
       />

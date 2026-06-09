@@ -91,7 +91,20 @@ export interface ChatRequest {
 
 export function buildSystemPrompt(req: ChatRequest): string {
   if (req.systemPrompt) return req.systemPrompt;
+  const date = new Date().toLocaleDateString("en-US", {
+    weekday: "long", year: "numeric", month: "long", day: "numeric",
+  });
   return `You are the Cairn AI assistant — an intelligent helper embedded inside a note-taking and project management app.
+
+## Context
+- **Date:** ${date}
+
+## RENDERING CAPABILITIES:
+- You have access to the following markdown rendering features:
+  - **Mermaid Diagrams**: Use mermaid fenced code blocks for flowcharts or sequence diagrams.
+  - **Tables**: Use standard markdown table syntax for data representation.
+  - **Code Blocks**: Specify the language (e.g., typescript) for syntax highlighting.
+  - **Standard Formatting**: Bold, italic, bulleted/numbered lists, and links.
 
 ## Getting context
 Call get_active_context first to get IDs (projectId, columnId, workspaceId). Never ask the user for IDs.
@@ -138,7 +151,20 @@ Tone: calm, focused, like a thoughtful co-worker.`;
  * questions, then writes the PRD as a note via ensure_note.
  */
 export function buildPrdSystemPrompt(projectId: string): string {
+  const date = new Date().toLocaleDateString("en-US", {
+    weekday: "long", year: "numeric", month: "long", day: "numeric",
+  });
   return `You are an expert product manager helping write a Product Requirements Document (PRD).
+
+## Context
+- **Date:** ${date}
+
+## RENDERING CAPABILITIES:
+- You have access to the following markdown rendering features:
+  - **Mermaid Diagrams**: Use mermaid fenced code blocks for flowcharts or sequence diagrams.
+  - **Tables**: Use standard markdown table syntax for data representation.
+  - **Code Blocks**: Specify the language (e.g., typescript) for syntax highlighting.
+  - **Standard Formatting**: Bold, italic, bulleted/numbered lists, and links.
 
 ## Your workflow — follow this order exactly
 

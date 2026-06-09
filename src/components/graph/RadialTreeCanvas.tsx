@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useEffect, useCallback } from "react";
+import React, { useRef, useEffect, useCallback, useState } from "react";
 import * as d3Hierarchy from "d3-hierarchy";
 import * as d3Zoom from "d3-zoom";
 import * as d3Selection from "d3-selection";
@@ -13,6 +13,8 @@ interface Props {
   selectedNodeId: string | null;
   onNodeClick: (node: GraphNode) => void;
   onBackgroundClick: () => void;
+  labelMode: "smart" | "all" | "minimal";
+  spacing: number;
 }
 
 type HNode = { id: string; title: string; type: string; children?: HNode[] };
@@ -76,10 +78,23 @@ function crossEdgeColor(type: string): string {
   }
 }
 
-export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgroundClick }: Props) {
+export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgroundClick, labelMode, spacing }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const gRef = useRef<SVGGElement>(null);
   const fs = useFontScale();
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+
+  const labelModeRef = useRef(labelMode);
+  const selectedNodeIdRef = useRef(selectedNodeId);
+  const hoveredNodeIdRef = useRef(hoveredNodeId);
+
+  // Synchronise state values to refs on every render to ensure zoom callback has access
+  // without triggering a full Zoom re-initialisation which would reset zoom/pan coordinates.
+  useEffect(() => {
+    labelModeRef.current = labelMode;
+    selectedNodeIdRef.current = selectedNodeId;
+    hoveredNodeIdRef.current = hoveredNodeId;
+  });
 
   const renderTree = useCallback(() => {
     const svg = svgRef.current;
@@ -88,7 +103,8 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
 
     const width = svg.clientWidth || 800;
     const height = svg.clientHeight || 600;
-    const radius = Math.min(width, height) / 2 - 100;
+    // Scale radial tree radius with spacing (where 1.2 is default)
+    const radius = (Math.min(width, height) / 2 - 100) * (spacing / 1.2);
 
     d3Selection.select(g).selectAll("*").remove();
 
@@ -174,6 +190,14 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
         const baseId = nodeId.includes(":") ? nodeId.split(":")[0] : nodeId;
         const found = graph.nodes.find((n) => n.id === baseId);
         if (found) onNodeClick(found);
+      })
+      .on("mouseenter", (event: MouseEvent, d) => {
+        const nodeId = (d.data as { id: string }).id;
+        const baseId = nodeId.includes(":") ? nodeId.split(":")[0] : nodeId;
+        setHoveredNodeId(baseId);
+      })
+      .on("mouseleave", () => {
+        setHoveredNodeId(null);
       });
 
     // Workspace root: distinctive hollow ring
@@ -205,24 +229,26 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
           .attr("fill-opacity", 0.7);
       } else {
         const radius = type === "project" ? 7 : type === "tag" ? 3.5 : 4.5;
+        const isHovered = baseId === hoveredNodeId;
 
-        // Glow for selected
-        if (isSelected) {
+        // Glow for selected or hovered
+        if (isSelected || isHovered) {
+          const glowOpacity = isSelected ? 0.15 : 0.08;
           sel.append("circle")
             .attr("r", radius + 6)
             .attr("fill", color)
-            .attr("fill-opacity", 0.15);
+            .attr("fill-opacity", glowOpacity);
           sel.append("circle")
             .attr("r", radius + 3)
             .attr("fill", color)
-            .attr("fill-opacity", 0.2);
+            .attr("fill-opacity", glowOpacity * 1.3);
         }
 
         sel.append("circle")
           .attr("r", radius)
-          .attr("fill", isSelected ? color : color + "aa")
-          .attr("stroke", isSelected ? color : "none")
-          .attr("stroke-width", isSelected ? 2 : 0);
+          .attr("fill", (isSelected || isHovered) ? color : color + "aa")
+          .attr("stroke", (isSelected || isHovered) ? color : "none")
+          .attr("stroke-width", (isSelected || isHovered) ? 2 : 0);
 
         // Larger invisible hit zone for small nodes
         sel.append("circle")
@@ -252,22 +278,63 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
       })
       .style("font-size", (d) => {
         const type = (d.data as { type: string }).type;
-        return type === "workspace" ? `${11 * fs}px` : type === "project" ? `${10.5 * fs}px` : `${9 * fs}px`;
+        const nodeId = (d.data as { id: string }).id;
+        const baseId = nodeId.includes(":") ? nodeId.split(":")[0] : nodeId;
+        const isHighlight = baseId === selectedNodeId || baseId === hoveredNodeId;
+
+        if (type === "workspace") return `${11 * fs}px`;
+        if (type === "project") return `${10.5 * fs}px`;
+        return `${(isHighlight ? 9.5 : 9) * fs}px`;
       })
       .style("font-weight", (d) => {
         const type = (d.data as { type: string }).type;
-        return type === "project" ? "600" : "400";
+        const nodeId = (d.data as { id: string }).id;
+        const baseId = nodeId.includes(":") ? nodeId.split(":")[0] : nodeId;
+        const isHighlight = baseId === selectedNodeId || baseId === hoveredNodeId;
+
+        return (type === "project" || isHighlight) ? "600" : "400";
       })
       .style("fill", (d) => {
         const type = (d.data as { type: string }).type;
+        const nodeId = (d.data as { id: string }).id;
+        const baseId = nodeId.includes(":") ? nodeId.split(":")[0] : nodeId;
+        const isHighlight = baseId === selectedNodeId || baseId === hoveredNodeId;
+
+        if (isHighlight && type !== "project" && type !== "workspace") {
+          return resolveVar("--accent");
+        }
         return type === "project"
           ? resolveVar("--text-primary")
           : type === "workspace"
           ? resolveVar("--text-secondary")
           : resolveVar("--text-tertiary");
       })
+      .style("stroke", resolveVar("--background"))
+      .style("stroke-width", "3.5px")
+      .style("stroke-linejoin", "round")
+      .style("paint-order", "stroke fill")
       .style("font-family", "ui-sans-serif, system-ui, sans-serif")
       .style("pointer-events", "none")
+      .style("opacity", (d) => {
+        const type = (d.data as { type: string }).type;
+        const nodeId = (d.data as { id: string }).id;
+        const baseId = nodeId.includes(":") ? nodeId.split(":")[0] : nodeId;
+        const isHighlight = baseId === selectedNodeId || baseId === hoveredNodeId;
+
+        if (type === "workspace" || type === "project" || isHighlight) return 1;
+        if (labelMode === "minimal") return 0;
+        if (labelMode === "smart") {
+          const svg = svgRef.current;
+          let currentK = 1.0;
+          if (svg) {
+              try {
+                currentK = d3Zoom.zoomTransform(svg).k;
+              } catch (_e) {}
+            }
+            return currentK >= 1.3 ? 1 : 0;
+          }
+        return 1;
+      })
       .text((d) => {
         const title = (d.data as { title: string }).title;
         const type = (d.data as { type: string }).type;
@@ -275,7 +342,7 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
         return title.length > maxLen ? title.slice(0, maxLen - 1) + "…" : title;
       });
 
-  }, [graph, selectedNodeId, onNodeClick, fs]);
+  }, [graph, selectedNodeId, hoveredNodeId, labelMode, spacing, onNodeClick, fs]);
 
   useEffect(() => { renderTree(); }, [renderTree]);
 
@@ -290,7 +357,27 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
     const zoom = d3Zoom.zoom<SVGSVGElement, unknown>()
       .scaleExtent([0.15, 5])
       .on("zoom", (event) => {
-        d3Selection.select(g).attr("transform", event.transform);
+        const transform = event.transform;
+        d3Selection.select(g).attr("transform", transform);
+
+        // Dynamically adjust label visibility based on zoom scale k at 60 FPS
+         d3Selection.select(g).selectAll("text")
+           .style("opacity", (d: unknown) => {
+             const node = d as d3Hierarchy.HierarchyNode<HNode>;
+             if (!node.data) return 1;
+             const type = (node.data as { type: string }).type;
+             const nodeId = (node.data as { id: string }).id;
+             const baseId = nodeId.includes(":") ? nodeId.split(":")[0] : nodeId;
+             const isHighlight = baseId === selectedNodeIdRef.current || baseId === hoveredNodeIdRef.current;
+
+
+            if (type === "workspace" || type === "project" || isHighlight) return 1;
+            if (labelModeRef.current === "minimal") return 0;
+            if (labelModeRef.current === "smart") {
+              return transform.k >= 1.3 ? 1 : 0;
+            }
+            return 1;
+          });
       });
 
     const svgSel = d3Selection.select(svg);

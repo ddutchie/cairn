@@ -267,7 +267,13 @@ export function PrdModal({ projectId, workspaceId, onClose }: PrdModalProps) {
 // ── PRD system prompt ─────────────────────────────────────────────────────────
 
 function buildPrdSystemPrompt(projectId: string): string {
+  const date = new Date().toLocaleDateString("en-US", {
+    weekday: "long", year: "numeric", month: "long", day: "numeric",
+  });
   return `You are an expert product manager helping write a Product Requirements Document (PRD).
+
+## Context
+- **Date:** ${date}
 
 ## Your workflow — follow this order exactly
 

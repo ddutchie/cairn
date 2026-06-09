@@ -23,11 +23,13 @@ import {
   findWorkspacePath,
   ensureMcpActiveWritesTable,
   toWorkspace,
-  toProject
+  toProject,
+  getSnapshot
 } from "./mcp/db";
-export { getSnapshot } from "./mcp/db";
+import { executeTool } from "./mcp/tools";
 
-export { executeTool } from "./mcp/tools";
+export { executeTool };
+export { getSnapshot };
 
 export const MCP_PORT = 3123;
 
@@ -43,19 +45,25 @@ function buildMcpServer(db: Database.Database, workspacePath: string): McpServer
       async (args: Record<string, any>) => {
         const result = executeTool(db, workspacePath, name, args);
         const hasError = typeof result === "object" && result !== null && !Array.isArray(result) && "error" in result;
-        return { content: [{ type: "text" as const, text: JSON.stringify(result) }],
-          ...(hasError ? { isError: true } : {}) };
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(result) }],
+          ...(hasError ? { isError: true } : {})
+        };
       }
     );
   }
 
   server.resource("workspaces", "cairn://workspaces", { mimeType: "application/json" }, async () => ({
-    contents: [{ uri: "cairn://workspaces", mimeType: "application/json",
-      text: JSON.stringify(db.prepare("SELECT * FROM workspaces").all().map(toWorkspace)) }],
+    contents: [{
+      uri: "cairn://workspaces", mimeType: "application/json",
+      text: JSON.stringify(db.prepare("SELECT * FROM workspaces").all().map(toWorkspace))
+    }],
   }));
   server.resource("projects", "cairn://projects", { mimeType: "application/json" }, async () => ({
-    contents: [{ uri: "cairn://projects", mimeType: "application/json",
-      text: JSON.stringify(db.prepare("SELECT * FROM projects WHERE archived_at IS NULL").all().map(toProject)) }],
+    contents: [{
+      uri: "cairn://projects", mimeType: "application/json",
+      text: JSON.stringify(db.prepare("SELECT * FROM projects WHERE archived_at IS NULL").all().map(toProject))
+    }],
   }));
 
   return server;
@@ -74,9 +82,13 @@ export function startMcpServer(db: Database.Database, workspacePath: string): ht
     if (req.url === "/health") {
       const snap = getSnapshot(db);
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true, source: "sqlite",
-        counts: { workspaces: snap.workspaces.length, projects: snap.projects.length,
-          notes: snap.notes.length, cards: snap.cards.length } }));
+      res.end(JSON.stringify({
+        ok: true, source: "sqlite",
+        counts: {
+          workspaces: snap.workspaces.length, projects: snap.projects.length,
+          notes: snap.notes.length, cards: snap.cards.length
+        }
+      }));
       return;
     }
 
