@@ -27,7 +27,7 @@ import {
   getSnapshot
 } from "./mcp/db";
 
-import { executeTool } from "./mcp/tools";
+export { executeTool } from "./mcp/tools";
 
 export const MCP_PORT = 3123;
 
