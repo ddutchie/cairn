@@ -361,13 +361,15 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
         d3Selection.select(g).attr("transform", transform);
 
         // Dynamically adjust label visibility based on zoom scale k at 60 FPS
-        d3Selection.select(g).selectAll("text")
-          .style("opacity", (d: d3Hierarchy.HierarchyNode<HNode>) => {
-            if (!d.data) return 1;
-            const type = (d.data as { type: string }).type;
-            const nodeId = (d.data as { id: string }).id;
-            const baseId = nodeId.includes(":") ? nodeId.split(":")[0] : nodeId;
-            const isHighlight = baseId === selectedNodeIdRef.current || baseId === hoveredNodeIdRef.current;
+         d3Selection.select(g).selectAll("text")
+           .style("opacity", (d: unknown) => {
+             const node = d as d3Hierarchy.HierarchyNode<HNode>;
+             if (!node.data) return 1;
+             const type = (node.data as { type: string }).type;
+             const nodeId = (node.data as { id: string }).id;
+             const baseId = nodeId.includes(":") ? nodeId.split(":")[0] : nodeId;
+             const isHighlight = baseId === selectedNodeIdRef.current || baseId === hoveredNodeIdRef.current;
+
 
             if (type === "workspace" || type === "project" || isHighlight) return 1;
             if (labelModeRef.current === "minimal") return 0;

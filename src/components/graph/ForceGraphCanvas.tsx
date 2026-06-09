@@ -79,23 +79,25 @@ export function ForceGraphCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
     const fg = fgRef.current;
     if (!fg) return;
 
-    // Use dynamic repulsion charge per node (unlinked/low-degree nodes get very little repulsion)
-           fg.d3Force("charge")?.strength((node: { id?: string; nodeType?: string }) => {
-             const degree = nodeDegrees[node.id ?? ""] ?? 0;
+    fg.d3Force("charge")?.strength((node: d3.SimulationNodeDatum) => {
+             const n = node as (d3.SimulationNodeDatum & { id?: string; nodeType?: string });
+             const degree = nodeDegrees[n.id ?? ""] ?? 0;
       if (degree === 0) return -15; // float unlinked nodes close to center without blasting them off
       if (degree === 1) return -40 * spacing;
-      const isProject = node.nodeType === "project";
+      const isProject = n.nodeType === "project";
       const baseCharge = isProject ? -150 : -100;
       return baseCharge * spacing;
     });
 
     if (ForceGraph2D) {
-      fg.d3Force("collide", d3.forceCollide().radius((node: { nodeType?: string }) => {
-        const isProject = node.nodeType === "project";
-        const radius = isProject ? 7 : node.nodeType === "tag" ? 4 : 5.5;
+      fg.d3Force("collide", d3.forceCollide<d3.SimulationNodeDatum>().radius((node: d3.SimulationNodeDatum) => {
+        const n = node as (d3.SimulationNodeDatum & { nodeType?: string });
+        const isProject = n.nodeType === "project";
+        const radius = isProject ? 7 : n.nodeType === "tag" ? 4 : 5.5;
         return (radius + 15) * spacing;
       }).iterations(2));
     }
+
 
     fg.d3Force("link")?.distance((link: { edgeType?: string }) => {
       let baseDist = 35;
@@ -289,23 +291,26 @@ export function ForceGraphCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
         onEngineStart={() => {
           const fg = fgRef.current;
           if (!fg) return;
-    fg.d3Force("charge")?.strength((node: { id?: string; nodeType?: string }) => {
-            const degree = nodeDegrees[node.id] ?? 0;
+          fg.d3Force("charge")?.strength((node: d3.SimulationNodeDatum) => {
+            const n = node as (d3.SimulationNodeDatum & { id?: string; nodeType?: string });
+            const degree = nodeDegrees[n.id ?? ""] ?? 0;
             if (degree === 0) return -15;
             if (degree === 1) return -40 * spacing;
-            const isProject = node.nodeType === "project";
+            const isProject = n.nodeType === "project";
             const baseCharge = isProject ? -150 : -100;
             return baseCharge * spacing;
           });
-           fg.d3Force("collide", d3.forceCollide().radius((node: { nodeType?: string }) => {
-             const isProject = node.nodeType === "project";
-            const radius = isProject ? 7 : node.nodeType === "tag" ? 4 : 5.5;
+          fg.d3Force("collide", d3.forceCollide<d3.SimulationNodeDatum>().radius((node: d3.SimulationNodeDatum) => {
+            const n = node as (d3.SimulationNodeDatum & { nodeType?: string });
+            const isProject = n.nodeType === "project";
+            const radius = isProject ? 7 : n.nodeType === "tag" ? 4 : 5.5;
             return (radius + 15) * spacing;
           }).iterations(2));
-          fg.d3Force("link")?.distance((link: { edgeType?: string }) => {
+          fg.d3Force("link")?.distance((link: d3.SimulationLinkDatum<d3.SimulationNodeDatum>) => {
+            const l = link as (d3.SimulationLinkDatum<d3.SimulationNodeDatum> & { edgeType?: string });
             let baseDist = 35;
-            if (link.edgeType === "project-member") baseDist = 70;
-            if (link.edgeType === "tag-member")     baseDist = 50;
+            if (l.edgeType === "project-member") baseDist = 70;
+            if (l.edgeType === "tag-member")     baseDist = 50;
             return baseDist * spacing;
           });
           fg.d3Force("x", d3.forceX(0).strength(0.06 * (spacing >= 1 ? spacing : 1)));
