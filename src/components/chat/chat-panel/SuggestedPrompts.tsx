@@ -17,7 +17,7 @@ interface SuggestedPromptsProps {
   subTitle?: string;
 }
 
-export function SuggestedPrompts({ onSend, disabled, prompts = DEFAULT_PROMPTS, subTitle }: SuggestedPromptsProps) {
+export const SuggestedPrompts = React.memo(function SuggestedPrompts({ onSend, disabled, prompts = DEFAULT_PROMPTS, subTitle }: SuggestedPromptsProps) {
   return (
     <div className="space-y-4">
       <div className="text-center pt-4">
@@ -37,4 +37,4 @@ export function SuggestedPrompts({ onSend, disabled, prompts = DEFAULT_PROMPTS, 
       </div>
     </div>
   );
-}
+});

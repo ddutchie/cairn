@@ -10,7 +10,7 @@ interface ToolCallIndicatorProps {
   streamingContent: string;
 }
 
-export function ToolCallIndicator({ toolCalls, streamingContent }: ToolCallIndicatorProps) {
+export const ToolCallIndicator = React.memo(function ToolCallIndicator({ toolCalls, streamingContent }: ToolCallIndicatorProps) {
   return (
     <div className="flex gap-2 items-start">
       <div className="w-6 h-6 rounded-full bg-[var(--accent-dim)] border border-[var(--accent)]/20 flex items-center justify-center flex-shrink-0 mt-0.5 shrink-0">
@@ -43,4 +43,4 @@ export function ToolCallIndicator({ toolCalls, streamingContent }: ToolCallIndic
       </div>
     </div>
   );
-}
+});

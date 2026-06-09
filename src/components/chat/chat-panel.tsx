@@ -20,6 +20,13 @@ const GRAPH_SYSTEM_PROMPT = `You are a Knowledge Graph assistant embedded in Cai
 
 You help users build meaningful connections between their notes, tasks, and projects. You have access to a snapshot of their current knowledge graph — each node includes its ID and title.
 
+## RENDERING CAPABILITIES:
+- You have access to the following markdown rendering features:
+  - **Mermaid Diagrams**: Use \`\`\`mermaid\`\`\` blocks for flowcharts, sequence diagrams, etc.
+  - **Tables**: Use standard markdown table syntax for data representation.
+  - **Code Blocks**: Specify the language (e.g., \`\`\`typescript\`\`\`) for syntax highlighting.
+  - **Standard Formatting**: Bold, italic, bulleted/numbered lists, and links.
+
 ## GETTING COMPLETE CONTEXT & EXISTING CONNECTIONS FIRST (CRITICAL):
 - The graph snapshot provided in the prompt is **TRUNCATED** to conserve context tokens. It lists at most 80 nodes and 60 wikilinks.
 - **BEFORE proposing any connection suggestions**, check if the workspace has more nodes/edges than shown in the snapshot. If the snapshot lists "(none)", shows truncated counts, or you suspect there are more existing notes/connections, **you MUST call \`get_knowledge_graph\` first** to fetch the full, comprehensive list of nodes and relationships.
@@ -167,7 +174,10 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
     let systemPrompt: string | undefined = undefined;
     if (activeView === "graph") {
       const graphContext = buildGraphContext(graphData, selectedNode);
-      systemPrompt = `${GRAPH_SYSTEM_PROMPT}\n\n--- CURRENT GRAPH SNAPSHOT ---\n${graphContext}`;
+      const date = new Date().toLocaleDateString("en-US", {
+        weekday: "long", year: "numeric", month: "long", day: "numeric",
+      });
+      systemPrompt = `## Context\n- **Date:** ${date}\n\n${GRAPH_SYSTEM_PROMPT}\n\n--- CURRENT GRAPH SNAPSHOT ---\n${graphContext}`;
     }
 
     sendStream({
@@ -186,6 +196,10 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
       systemPrompt,
     });
   }, [input, threadId, addMessage, sendStream, activeProjectId, activeWorkspaceId, messages, aiConfig, activeView, graphData, selectedNode]);
+
+  const handleRetry = useCallback((content: string) => {
+    handleSend(content);
+  }, [handleSend]);
 
   const shouldAutoSendRef = useRef(false);
 
@@ -397,7 +411,7 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
               <ChatMessageBubble
                 key={message.id}
                 message={message}
-                onRetry={!isLoading ? (content) => handleSend(content) : undefined}
+                onRetry={!isLoading ? handleRetry : undefined}
               />
             ))
         }

@@ -21,7 +21,10 @@ export async function generatePrd(
   const project = snap.projects.find((p) => p.id === args.projectId);
   if (!project) return { error: "Project not found" };
 
-  const systemPrompt = `You are an expert product manager. Generate a thorough, well-structured Product Requirements Document (PRD) in markdown format. Include all standard sections. Be specific and actionable.`;
+  const date = new Date().toLocaleDateString("en-US", {
+    weekday: "long", year: "numeric", month: "long", day: "numeric",
+  });
+  const systemPrompt = `You are an expert product manager. Generate a thorough, well-structured Product Requirements Document (PRD) in markdown format. Include all standard sections. Be specific and actionable.\n\nToday's date is ${date}.`;
   const userPrompt = `Generate a complete PRD for the following:\n\n${args.requirements}\n\nInclude these sections:\n# ${args.title}\n\n## Overview\n## Problem Statement\n## Goals & Non-Goals\n## User Stories\n## Functional Requirements\n## Non-Functional Requirements\n## Acceptance Criteria\n## Open Questions\n\nReturn only the markdown document, no commentary.`;
 
   let prdMarkdown: string;

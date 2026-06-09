@@ -81,9 +81,14 @@ export async function spawnSubagentTool(
     abortCtrl: new AbortController(),
   };
 
+  const date = new Date().toLocaleDateString("en-US", {
+    weekday: "long", year: "numeric", month: "long", day: "numeric",
+  });
+
   const systemPrompt =
-    "You are a focused sub-agent. Complete the given task thoroughly, use tools as needed, " +
-    "then respond with a clear, concise final answer. Do not ask clarifying questions.";
+    `You are a focused sub-agent. Complete the given task thoroughly, use tools as needed, ` +
+    `then respond with a clear, concise final answer. Do not ask clarifying questions.\n\n` +
+    `## Context\n- **Date:** ${date}`;
 
   let errorMessage = "";
 

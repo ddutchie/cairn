@@ -13,7 +13,7 @@ interface ChatMessageBubbleProps {
   onRetry?: (content: string) => void;
 }
 
-export function ChatMessageBubble({ message, onRetry }: ChatMessageBubbleProps) {
+export const ChatMessageBubble = React.memo(function ChatMessageBubble({ message, onRetry }: ChatMessageBubbleProps) {
   const isUser = message.role === "user";
   const [copied, setCopied] = useState(false);
 
@@ -74,7 +74,7 @@ export function ChatMessageBubble({ message, onRetry }: ChatMessageBubbleProps) 
       </div>
     </div>
   );
-}
+});
 
 function ContextRefChip({ ref_ }: { ref_: LinkedContextReference }) {
   const icons = { note: <FileText size={9} />, task: <Kanban size={9} />, project: <FolderOpen size={9} />, search_result: <Search size={9} /> };
