@@ -327,12 +327,12 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
           const svg = svgRef.current;
           let currentK = 1.0;
           if (svg) {
-            try {
-              currentK = d3Zoom.zoomTransform(svg).k;
-            } catch (e) {}
+              try {
+                currentK = d3Zoom.zoomTransform(svg).k;
+              } catch (_e) {}
+            }
+            return currentK >= 1.3 ? 1 : 0;
           }
-          return currentK >= 1.3 ? 1 : 0;
-        }
         return 1;
       })
       .text((d) => {
@@ -362,10 +362,10 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
 
         // Dynamically adjust label visibility based on zoom scale k at 60 FPS
         d3Selection.select(g).selectAll("text")
-          .style("opacity", (d: any) => {
-            if (!d) return 1;
-            const type = d.data.type;
-            const nodeId = d.data.id;
+          .style("opacity", (d: d3Hierarchy.HierarchyNode<HNode>) => {
+            if (!d.data) return 1;
+            const type = (d.data as { type: string }).type;
+            const nodeId = (d.data as { id: string }).id;
             const baseId = nodeId.includes(":") ? nodeId.split(":")[0] : nodeId;
             const isHighlight = baseId === selectedNodeIdRef.current || baseId === hoveredNodeIdRef.current;
 

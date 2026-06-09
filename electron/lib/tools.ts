@@ -101,9 +101,9 @@ export function buildSystemPrompt(req: ChatRequest): string {
 
 ## RENDERING CAPABILITIES:
 - You have access to the following markdown rendering features:
-  - **Mermaid Diagrams**: Use ```mermaid``` blocks for flowcharts, sequence diagrams, etc.
+  - **Mermaid Diagrams**: Use mermaid fenced code blocks for flowcharts or sequence diagrams.
   - **Tables**: Use standard markdown table syntax for data representation.
-  - **Code Blocks**: Specify the language (e.g., ```typescript```) for syntax highlighting.
+  - **Code Blocks**: Specify the language (e.g., typescript) for syntax highlighting.
   - **Standard Formatting**: Bold, italic, bulleted/numbered lists, and links.
 
 ## Getting context
@@ -161,9 +161,9 @@ export function buildPrdSystemPrompt(projectId: string): string {
 
 ## RENDERING CAPABILITIES:
 - You have access to the following markdown rendering features:
-  - **Mermaid Diagrams**: Use ```mermaid``` blocks for flowcharts, sequence diagrams, etc.
+  - **Mermaid Diagrams**: Use mermaid fenced code blocks for flowcharts or sequence diagrams.
   - **Tables**: Use standard markdown table syntax for data representation.
-  - **Code Blocks**: Specify the language (e.g., ```typescript```) for syntax highlighting.
+  - **Code Blocks**: Specify the language (e.g., typescript) for syntax highlighting.
   - **Standard Formatting**: Bold, italic, bulleted/numbered lists, and links.
 
 ## Your workflow — follow this order exactly

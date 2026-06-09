@@ -80,8 +80,8 @@ export function ForceGraphCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
     if (!fg) return;
 
     // Use dynamic repulsion charge per node (unlinked/low-degree nodes get very little repulsion)
-    fg.d3Force("charge")?.strength((node: any) => {
-      const degree = nodeDegrees[node.id] ?? 0;
+           fg.d3Force("charge")?.strength((node: { id?: string; nodeType?: string }) => {
+             const degree = nodeDegrees[node.id ?? ""] ?? 0;
       if (degree === 0) return -15; // float unlinked nodes close to center without blasting them off
       if (degree === 1) return -40 * spacing;
       const isProject = node.nodeType === "project";
@@ -90,7 +90,7 @@ export function ForceGraphCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
     });
 
     if (ForceGraph2D) {
-      fg.d3Force("collide", d3.forceCollide().radius((node: any) => {
+      fg.d3Force("collide", d3.forceCollide().radius((node: { nodeType?: string }) => {
         const isProject = node.nodeType === "project";
         const radius = isProject ? 7 : node.nodeType === "tag" ? 4 : 5.5;
         return (radius + 15) * spacing;
@@ -202,8 +202,8 @@ export function ForceGraphCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
         linkDirectionalArrowRelPos={1}
         onNodeClick={handleNodeClick}
         onBackgroundClick={onBackgroundClick}
-        onNodeHover={(node: any) => {
-          setHoveredNodeId(node ? node.id : null);
+        onNodeHover={(node: { id?: string } | null) => {
+          setHoveredNodeId(node ? node.id ?? null : null);
           if (containerRef.current) {
             containerRef.current.style.cursor = node ? "pointer" : "default";
           }
@@ -289,7 +289,7 @@ export function ForceGraphCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
         onEngineStart={() => {
           const fg = fgRef.current;
           if (!fg) return;
-          fg.d3Force("charge")?.strength((node: any) => {
+    fg.d3Force("charge")?.strength((node: { id?: string; nodeType?: string }) => {
             const degree = nodeDegrees[node.id] ?? 0;
             if (degree === 0) return -15;
             if (degree === 1) return -40 * spacing;
@@ -297,8 +297,8 @@ export function ForceGraphCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
             const baseCharge = isProject ? -150 : -100;
             return baseCharge * spacing;
           });
-          fg.d3Force("collide", d3.forceCollide().radius((node: any) => {
-            const isProject = node.nodeType === "project";
+           fg.d3Force("collide", d3.forceCollide().radius((node: { nodeType?: string }) => {
+             const isProject = node.nodeType === "project";
             const radius = isProject ? 7 : node.nodeType === "tag" ? 4 : 5.5;
             return (radius + 15) * spacing;
           }).iterations(2));
