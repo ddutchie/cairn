@@ -23,11 +23,11 @@ import {
   findWorkspacePath,
   ensureMcpActiveWritesTable,
   toWorkspace,
-  toProject
+  toProject,
+  getSnapshot
 } from "./mcp/db";
-export { getSnapshot } from "./mcp/db";
 
-export { executeTool } from "./mcp/tools";
+import { executeTool } from "./mcp/tools";
 
 export const MCP_PORT = 3123;
 
