@@ -634,6 +634,12 @@ function TerminalTab({ session, isActive, onActivate, onClose }: TerminalTabProp
   return (
     <button
       onClick={onActivate}
+      onAuxClick={(e) => {
+        if (e.button === 1) {
+          e.preventDefault();
+          onClose(e);
+        }
+      }}
       role="tab"
       aria-selected={isActive}
       className={cn(

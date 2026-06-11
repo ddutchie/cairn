@@ -15,6 +15,7 @@ interface ChatMessageBubbleProps {
 
 export const ChatMessageBubble = React.memo(function ChatMessageBubble({ message, onRetry }: ChatMessageBubbleProps) {
   const isUser = message.role === "user";
+  const isSystem = message.role === "system";
   const [copied, setCopied] = useState(false);
 
   function handleCopy() {
@@ -22,6 +23,14 @@ export const ChatMessageBubble = React.memo(function ChatMessageBubble({ message
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
+  }
+
+  if (isSystem) {
+    return (
+      <div className="flex justify-center py-0.5">
+        <span className="text-[0.643rem] italic text-[var(--text-tertiary)] px-2">{message.content}</span>
+      </div>
+    );
   }
 
   return (

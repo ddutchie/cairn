@@ -33,6 +33,24 @@ import { stopServerSync } from "./lib/llama-server";
 
 const isDev = !app.isPackaged;
 
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    // Someone tried to run a second instance, we should focus our window.
+    // However, since app.whenReady() is already running, we might need a reference to the main window.
+    // Given the architecture, we could store a reference to the main window globally or
+    // use a singleton pattern, but here we can try to find the window.
+    const allWindows = BrowserWindow.getAllWindows();
+    if (allWindows.length > 0) {
+      if (allWindows[0].isMinimized()) allWindows[0].restore();
+      allWindows[0].focus();
+    }
+  });
+}
+
 app.setName("Cairn");
 
 // Windows: required for Toast notifications to show with the correct app identity.

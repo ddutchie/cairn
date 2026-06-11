@@ -303,8 +303,10 @@ export function registerPiAgentHandler(
     try {
       const result = await compactNow(session, llmConfig);
       if (result) {
+        session.messages = result.messages;
         // Update the transformer's cache so the next runAgentLoop call uses the summary
         session.compactionTransformer = undefined; // reset so it rebuilds with new context
+        q.saveLlmHistory(ctx.db, sessionId, session.messages);
         send("pi-agent:compact-result", { sessionId, messageCount: result.messages.length, summary: result.summary });
       } else {
         send("pi-agent:compact-result", { sessionId, messageCount: 0, summary: "" });

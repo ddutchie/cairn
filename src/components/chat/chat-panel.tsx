@@ -47,6 +47,24 @@ You help users build meaningful connections between their notes, tasks, and proj
 
 Remember: Suggest connections actively. Call \`suggest_connections\` whenever there is even a potential relationship to explore!`;
 
+const CHAT_SLASH_COMMANDS = [
+  {
+    name: "compact",
+    description: "Summarise and compact conversation history",
+    insertText: "/compact",
+  },
+  {
+    name: "board",
+    description: "Show all task board columns and cards",
+    insertText: "List the current task board columns and cards.",
+  },
+  {
+    name: "review-note",
+    description: "Ask AI to review a note",
+    insertText: 'Please review my note "[note title]" and suggest improvements.',
+  },
+];
+
 interface ChatPanelProps {
   prefill?: { text: string; autoSend?: boolean } | null;
   onPrefillConsumed?: () => void;
@@ -168,6 +186,13 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
   const handleSend = useCallback((text?: string) => {
     const content = text ?? input.trim();
     if (!content || !threadId) return;
+
+    if (content === "/compact") {
+      setInput("");
+      useCairnStore.getState().compactChatThread(threadId);
+      return;
+    }
+
     setInput("");
     addMessage(threadId, "user", content);
 
@@ -437,6 +462,7 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
           isLoading={isLoading}
           disabled={isLoading}
           placeholder={activeView === "graph" ? "Ask about your knowledge graph…" : "Ask about your project…"}
+          commands={CHAT_SLASH_COMMANDS}
         />
         <div className="flex items-center justify-between mt-1.5 px-0.5">
           <p className="text-[0.714rem] text-[var(--text-tertiary)]">

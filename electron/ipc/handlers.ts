@@ -527,6 +527,9 @@ export function registerIpcHandlers(ctx: DbContext): void {
   ipcMain.handle("db:chat:messages", (_e, { threadId }) => handle(() => q.getChatMessages(ctx.db, threadId)));
   ipcMain.handle("db:chat:upsertThread", (_e, args) => handle(() => q.upsertChatThread(ctx.db, args)));
   ipcMain.handle("db:chat:addMessage", (_e, args) => handle(() => q.addChatMessage(ctx.db, args)));
+  ipcMain.handle("db:chat:clearThreadMessages", (_e, { threadId }) => handle(() => {
+    ctx.db.prepare("DELETE FROM chat_messages WHERE thread_id = ?").run(threadId);
+  }));
   ipcMain.handle("db:chat:deleteThread", (_e, { threadId }) => handle(() => q.deleteChatThread(ctx.db, threadId)));
 
   // ── Pi Agent Sessions ─────────────────────────────────────────────────────────────────────────────────

@@ -102,6 +102,8 @@ const api = {
     upsertThread:  (args: unknown) => invoke("db:chat:upsertThread", args),
     addMessage:    (args: unknown) => invoke("db:chat:addMessage", args),
     deleteThread:  (threadId: string) => invoke("db:chat:deleteThread", { threadId }),
+    clearThreadMessages: (threadId: string) => invoke("db:chat:clearThreadMessages", { threadId }),
+    compactThread: (req: unknown) => invoke("chat:compactThread", req),
     // ── AI Chat streaming ──────────────────────
     // Fire-and-forget. Listen with onToken / onDone / onToolCall.
     stream: (req: unknown) => ipcRenderer.send("chat:stream", req),

@@ -1,9 +1,15 @@
 "use client";
 
-import React, { useRef, useEffect } from "react";
+import React, { useRef, useEffect, useState, useMemo } from "react";
 import { Send, Square, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
+
+export interface SlashCommand {
+  name: string;
+  description: string;
+  insertText: string;
+}
 
 interface ChatInputProps {
   value: string;
@@ -16,6 +22,7 @@ interface ChatInputProps {
   variant?: "default" | "overview";
   showSparkles?: boolean;
   autoFocus?: boolean;
+  commands?: SlashCommand[];
 }
 
 export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
@@ -31,11 +38,39 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
       variant = "default",
       showSparkles = false,
       autoFocus = false,
+      commands = [],
     },
     ref
   ) => {
     const internalRef = useRef<HTMLTextAreaElement>(null);
     const resolvedRef = (ref as React.RefObject<HTMLTextAreaElement>) || internalRef;
+
+    const [showSuggestions, setShowSuggestions] = useState(false);
+    const [activeIndex, setActiveIndex] = useState(0);
+
+    // Filter commands based on input
+    const filteredCommands = useMemo(() => {
+      if (!commands.length || !value.startsWith("/")) return [];
+      const query = value.slice(1).toLowerCase();
+      return commands.filter((cmd) => cmd.name.toLowerCase().includes(query));
+    }, [commands, value]);
+
+    // Show suggestions only when there are matching commands
+    useEffect(() => {
+      if (filteredCommands.length > 0) {
+        setShowSuggestions(true);
+        setActiveIndex((prev) => Math.min(prev, filteredCommands.length - 1));
+      } else {
+        setShowSuggestions(false);
+        setActiveIndex(0);
+      }
+    }, [filteredCommands]);
+
+    const handleSelectCommand = (cmd: SlashCommand) => {
+      onChange(cmd.insertText);
+      setShowSuggestions(false);
+      resolvedRef.current?.focus();
+    };
 
     // Auto-resize height based on contents
     useEffect(() => {
@@ -53,6 +88,29 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
     }, [autoFocus, resolvedRef]);
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (showSuggestions && filteredCommands.length > 0) {
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          setActiveIndex((prev) => (prev + 1) % filteredCommands.length);
+          return;
+        }
+        if (e.key === "ArrowUp") {
+          e.preventDefault();
+          setActiveIndex((prev) => (prev - 1 + filteredCommands.length) % filteredCommands.length);
+          return;
+        }
+        if (e.key === "Enter" || e.key === "Tab") {
+          e.preventDefault();
+          handleSelectCommand(filteredCommands[activeIndex]);
+          return;
+        }
+        if (e.key === "Escape") {
+          e.preventDefault();
+          setShowSuggestions(false);
+          return;
+        }
+      }
+
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         if (!disabled && !isLoading && value.trim()) {
@@ -64,63 +122,102 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
     const isOverview = variant === "overview";
 
     return (
-      <div
-        className={cn(
-          "relative flex items-end gap-2.5 transition-all duration-300",
-          isOverview
-            ? "rounded-2xl border border-[var(--border)] bg-[color-mix(in srgb,var(--surface-2)_85%,transparent)] backdrop-blur-md px-4 py-3 shadow-[0_8px_30px_rgb(0,0,0,0.12)] hover:border-[color-mix(in srgb,var(--accent)_40%,transparent)] focus-within:border-[var(--accent)] focus-within:ring-2 focus-within:ring-[var(--accent-dim)]"
-            : "rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5 focus-within:border-[var(--accent)] focus-within:ring-2 focus-within:ring-[var(--accent-dim)]"
-        )}
-      >
-        {showSparkles && (
-          <div className="flex-shrink-0 w-8 h-8 rounded-xl bg-[var(--accent-dim)] text-[var(--accent)] flex items-center justify-center animate-pulse self-center">
-            <Sparkles size={14} />
+      <div className="relative w-full">
+        {/* Autocomplete suggestions */}
+        {showSuggestions && filteredCommands.length > 0 && (
+          <div className="absolute bottom-full left-0 right-0 mb-1.5 z-50 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-2xl overflow-hidden max-h-56 overflow-y-auto">
+            <div className="px-3 py-1.5 border-b border-[var(--border)] bg-[var(--surface-2)] flex items-center justify-between">
+              <span className="text-[0.643rem] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">
+                Slash Commands
+              </span>
+              <span className="text-[0.571rem] text-[var(--text-tertiary)]">
+                ↑↓ to navigate · Enter to select
+              </span>
+            </div>
+            <div className="p-1">
+              {filteredCommands.map((cmd, index) => {
+                const isActive = index === activeIndex;
+                return (
+                  <button
+                    key={cmd.name}
+                    type="button"
+                    onClick={() => handleSelectCommand(cmd)}
+                    className={cn(
+                      "w-full text-left px-2.5 py-2 rounded-lg flex flex-col gap-0.5 transition-colors",
+                      isActive
+                        ? "bg-[var(--accent-dim)] text-[var(--accent)]"
+                        : "text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"
+                    )}
+                  >
+                    <span className="text-xs font-semibold">/{cmd.name}</span>
+                    <span className="text-[0.643rem] text-[var(--text-tertiary)]">
+                      {cmd.description}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         )}
 
-        <textarea
-          ref={resolvedRef}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={placeholder}
-          rows={1}
-          disabled={disabled}
+        <div
           className={cn(
-            "flex-1 bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none py-1.5 leading-relaxed resize-none overflow-y-auto max-h-32 disabled:opacity-60",
-            isOverview ? "text-sm min-h-[36px]" : "text-xs min-h-[32px]"
+            "relative flex items-end gap-2.5 transition-all duration-300",
+            isOverview
+              ? "rounded-2xl border border-[var(--border)] bg-[color-mix(in srgb,var(--surface-2)_85%,transparent)] backdrop-blur-md px-4 py-3 shadow-[0_8px_30px_rgb(0,0,0,0.12)] hover:border-[color-mix(in srgb,var(--accent)_40%,transparent)] focus-within:border-[var(--accent)] focus-within:ring-2 focus-within:ring-[var(--accent-dim)]"
+              : "rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5 focus-within:border-[var(--accent)] focus-within:ring-2 focus-within:ring-[var(--accent-dim)]"
           )}
-        />
+        >
+          {showSparkles && (
+            <div className="flex-shrink-0 w-8 h-8 rounded-xl bg-[var(--accent-dim)] text-[var(--accent)] flex items-center justify-center animate-pulse self-center">
+              <Sparkles size={14} />
+            </div>
+          )}
 
-        <div className="flex items-center gap-2 flex-shrink-0 self-center">
-          {isLoading && onStop ? (
-            <Tooltip content="Stop generation" side="left">
-              <button
-                onClick={onStop}
-                type="button"
-                className={cn(
-                  "flex-shrink-0 rounded-lg bg-[var(--danger)] text-white hover:bg-[color-mix(in srgb,var(--danger)_90%,black)] flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95 shadow-md shadow-[var(--danger)]/10",
-                  isOverview ? "w-8 h-8 rounded-xl" : "w-7 h-7"
-                )}
-              >
-                <Square size={isOverview ? 11 : 10} fill="currentColor" />
-              </button>
-            </Tooltip>
-          ) : (
-            <Tooltip content="Send (Enter)" side="left">
-              <button
-                onClick={onSubmit}
-                disabled={disabled || !value.trim()}
-                type="button"
-                className={cn(
-                  "flex-shrink-0 rounded-lg bg-[var(--accent)] text-white hover:bg-[color-mix(in srgb,var(--accent)_90%,black)] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95 shadow-md shadow-[var(--accent)]/10",
-                  isOverview ? "w-8 h-8 rounded-xl" : "w-7 h-7"
-                )}
-              >
-                <Send size={isOverview ? 13 : 12} />
-              </button>
-            </Tooltip>
-          )}
+          <textarea
+            ref={resolvedRef}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={placeholder}
+            rows={1}
+            disabled={disabled}
+            className={cn(
+              "flex-1 bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none py-1.5 leading-relaxed resize-none overflow-y-auto max-h-32 disabled:opacity-60",
+              isOverview ? "text-sm min-h-[36px]" : "text-xs min-h-[32px]"
+            )}
+          />
+
+          <div className="flex items-center gap-2 flex-shrink-0 self-center">
+            {isLoading && onStop ? (
+              <Tooltip content="Stop generation" side="left">
+                <button
+                  onClick={onStop}
+                  type="button"
+                  className={cn(
+                    "flex-shrink-0 rounded-lg bg-[var(--danger)] text-white hover:bg-[color-mix(in srgb,var(--danger)_90%,black)] flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95 shadow-md shadow-[var(--danger)]/10",
+                    isOverview ? "w-8 h-8 rounded-xl" : "w-7 h-7"
+                  )}
+                >
+                  <Square size={isOverview ? 11 : 10} fill="currentColor" />
+                </button>
+              </Tooltip>
+            ) : (
+              <Tooltip content="Send (Enter)" side="left">
+                <button
+                  onClick={onSubmit}
+                  disabled={disabled || !value.trim()}
+                  type="button"
+                  className={cn(
+                    "flex-shrink-0 rounded-lg bg-[var(--accent)] text-white hover:bg-[color-mix(in srgb,var(--accent)_90%,black)] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95 shadow-md shadow-[var(--accent)]/10",
+                    isOverview ? "w-8 h-8 rounded-xl" : "w-7 h-7"
+                  )}
+                >
+                  <Send size={isOverview ? 13 : 12} />
+                </button>
+              </Tooltip>
+            )}
+          </div>
         </div>
       </div>
     );
