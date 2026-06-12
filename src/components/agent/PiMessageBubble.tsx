@@ -287,7 +287,7 @@ export function PiMessageBubble({ message }: PiMessageBubbleProps) {
       <div className="flex gap-2 items-start justify-end">
         <div className="flex-1 min-w-0 flex flex-col items-end gap-1">
           <div className="px-3 py-2 rounded-xl rounded-tr-sm text-xs leading-relaxed bg-[var(--accent)] text-white max-w-[85%]">
-            <p className="whitespace-pre-wrap break-words">{message.content}</p>
+            <MarkdownContent content={message.content} />
           </div>
         </div>
         <MessageAvatar role="user" size="md" />
@@ -344,6 +344,7 @@ export function PiMessageBubble({ message }: PiMessageBubbleProps) {
         {hasSubagents && message.subagents!.map((sub) => (
           <SubagentBlock key={sub.childSessionId} sub={sub} />
         ))}
+
 
         {/* "Thinking…" spinner — only when streaming with no content or tools yet */}
         {!hasContent && message.isStreaming && !hasTools && !hasSubagents && (
