@@ -26,6 +26,16 @@ export const ChatMessageBubble = React.memo(function ChatMessageBubble({ message
   }
 
   if (isSystem) {
+    const isMarkdown = message.content.includes("\n") || message.content.includes("#");
+    if (isMarkdown) {
+      return (
+        <div className="flex justify-center py-1.5 w-full">
+          <div className="text-[0.786rem] text-[var(--text-secondary)] bg-[var(--surface-2)] border border-[var(--border)] rounded-xl px-4 py-3 max-w-[95%] w-full shadow-sm">
+            <MarkdownContent content={message.content} />
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="flex justify-center py-0.5">
         <span className="text-[0.643rem] italic text-[var(--text-tertiary)] px-2">{message.content}</span>
