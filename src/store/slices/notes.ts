@@ -23,7 +23,7 @@ import {
 export interface NotesSlice {
   notes: Note[];
 
-  createNote: (projectId: ID, title: string, type?: NoteType, folder?: string) => Note;
+  createNote: (projectId: ID, title: string, type?: NoteType, folder?: string, content?: string) => Note;
   updateNote: (id: ID, patch: Partial<Note>) => void;
   deleteNote: (id: ID) => void;
   archiveNote: (id: ID) => void;
@@ -46,15 +46,15 @@ export const createNotesSlice: StateCreator<CairnStore, [], [], NotesSlice> = (
 ) => ({
   notes: [],
 
-  createNote(projectId, title, type = "note", folder = "") {
+  createNote(projectId, title, type = "note", folder = "", content = "") {
     const proj = get().projects.find((p) => p.id === projectId);
     const note: Note = {
       id: id(),
       projectId,
       workspaceId: proj?.workspaceId ?? "",
       title,
-      content: "",
-      contentText: "",
+      content,
+      contentText: content,
       tagIds: [],
       linkedNoteIds: [],
       linkedCardIds: [],
