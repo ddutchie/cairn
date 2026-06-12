@@ -94,15 +94,17 @@ export async function executeTool(
   args: ToolArgs,
   emit?: (event: { tool: string; label: string; args: Record<string, unknown> }) => void,
   getWin?: () => BrowserWindow | null,
+  emitDone?: (event: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void,
 ): Promise<unknown> {
   emit?.({ tool: name, label: TOOL_LABELS[name]?.(args) ?? name, args });
   const snap = q.getFullSnapshot(db) as CairnSnapshot;
 
-  // ── Shared read tools (also used by db:mcpQuery and MCP server) ──────────
-  {
-    const res = executeReadTool(db, snap, name, args);
-    if (res.handled) return res.result;
-  }
+  const result = await (async () => {
+    // ── Shared read tools (also used by db:mcpQuery and MCP server) ──────────
+    {
+      const res = executeReadTool(db, snap, name, args);
+      if (res.handled) return res.result;
+    }
 
   switch (name) {
     case "get_cairn_context": {
@@ -760,4 +762,33 @@ export async function executeTool(
     default:
       return { error: `Unknown tool: ${name}` };
   }
+  })();
+
+  // Resolve cairnRef if possible
+  let cairnRef: { type: "note" | "task"; id: string; title: string } | undefined = undefined;
+  if (result && typeof result === "object" && !("error" in result)) {
+    const resObj = result as Record<string, unknown>;
+    
+    // For note tools, the result contains ID and title.
+    const isNote = [
+      "get_note", "ensure_note", "patch_note", "append_to_note"
+    ].includes(name);
+    
+    // For task tools, the result contains ID and title.
+    const isTask = [
+      "get_task", "create_task", "update_task"
+    ].includes(name);
+    
+    if (isNote && typeof resObj.id === "string" && typeof resObj.title === "string") {
+      cairnRef = { type: "note", id: resObj.id, title: resObj.title };
+    } else if (isTask && typeof resObj.id === "string" && typeof resObj.title === "string") {
+      cairnRef = { type: "task", id: resObj.id, title: resObj.title };
+    }
+  }
+
+  if (emitDone) {
+    emitDone({ tool: name, cairnRef });
+  }
+
+  return result;
 }

@@ -26,11 +26,11 @@ import type { TerminalSession } from "@/store/slices/terminal-sessions";
 
 // ── Cairn tool ref extraction ─────────────────────────────────────────────────
 
-const NOTE_WRITE_TOOLS = new Set([
-  "create_note", "ensure_note", "update_note", "patch_note", "append_to_note",
+const NOTE_TOOLS = new Set([
+  "create_note", "ensure_note", "update_note", "patch_note", "append_to_note", "get_note",
 ]);
-const TASK_WRITE_TOOLS = new Set([
-  "create_task", "update_task", "update_task_status",
+const TASK_TOOLS = new Set([
+  "create_task", "update_task", "update_task_status", "get_task",
 ]);
 // Read-only tools — output is never useful to show; suppress it entirely
 const READ_ONLY_TOOLS = new Set([
@@ -46,8 +46,8 @@ function extractCairnRef(
   output: string | undefined,
 ): { type: "note" | "task"; id: string; title: string } | undefined {
   if (!output) return undefined;
-  const isNote = NOTE_WRITE_TOOLS.has(toolName);
-  const isTask = TASK_WRITE_TOOLS.has(toolName);
+  const isNote = NOTE_TOOLS.has(toolName);
+  const isTask = TASK_TOOLS.has(toolName);
   if (!isNote && !isTask) return undefined;
   try {
     const parsed = JSON.parse(output);
