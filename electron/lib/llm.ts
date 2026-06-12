@@ -79,10 +79,14 @@ export async function* streamCompletion(
   config: LLMConfig,
   messages: OpenAIMessage[],
   tools?: object[],
+  onUsage?: (pt: number, ct: number) => void,
 ): AsyncGenerator<string> {
   if (config.provider === "localllm") {
     const { streamLocalLLMChat } = await import("./local-llm");
     for await (const chunk of streamLocalLLMChat(messages)) {
+      if (chunk.usage && onUsage) {
+        onUsage(chunk.usage.prompt_tokens ?? 0, chunk.usage.completion_tokens ?? 0);
+      }
       const delta = chunk.choices?.[0]?.delta?.content ?? "";
       if (delta) yield delta;
     }
@@ -102,6 +106,9 @@ export async function* streamCompletion(
   if (tools && tools.length > 0) {
     body.tools = tools;
     body.tool_choice = "none";
+  }
+  if (onUsage) {
+    body.stream_options = { include_usage: true };
   }
 
   const response = await fetch(`${config.baseUrl}/v1/chat/completions`, {
@@ -127,8 +134,11 @@ export async function* streamCompletion(
       const jsonStr = trimmed.slice(5).trim();
       if (jsonStr === "[DONE]") return;
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const delta: string = (JSON.parse(jsonStr) as any).choices?.[0]?.delta?.content ?? "";
+        const obj = JSON.parse(jsonStr);
+        if (obj.usage && onUsage) {
+          onUsage(obj.usage.prompt_tokens ?? 0, obj.usage.completion_tokens ?? 0);
+        }
+        const delta: string = obj.choices?.[0]?.delta?.content ?? "";
         if (delta) yield delta;
       } catch { /* skip malformed lines */ }
     }

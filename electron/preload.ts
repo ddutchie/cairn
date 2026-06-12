@@ -126,6 +126,12 @@ const api = {
       ipcRenderer.on("chat:tool-call", handler);
       return () => ipcRenderer.off("chat:tool-call", handler);
     },
+    onUsage: (cb: (e: { promptTokens: number; completionTokens: number }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { promptTokens: number; completionTokens: number }) => cb(e);
+      ipcRenderer.on("chat:usage", handler);
+      return () => ipcRenderer.off("chat:usage", handler);
+    },
   },
 
   // ── Knowledge Graph ───────────────────────────

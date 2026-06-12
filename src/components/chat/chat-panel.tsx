@@ -15,6 +15,7 @@ import { SuggestedPrompts } from "./chat-panel/SuggestedPrompts";
 import { ToolCallIndicator } from "./chat-panel/ToolCallIndicator";
 import { QuestionForm } from "./chat-panel/QuestionForm";
 import { ChatInput } from "./ChatInput";
+import { ContextRing } from "@/components/agent/ContextRing";
 
 const GRAPH_SYSTEM_PROMPT = `You are a Knowledge Graph assistant embedded in Cairn, a note-taking and project management app.
 
@@ -152,6 +153,11 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
       .slice(0, 15),
     [chatThreads, activeProjectId],
+  );
+
+  const activeThread = useMemo(
+    () => chatThreads.find((t) => t.id === threadId),
+    [chatThreads, threadId]
   );
 
   // Initialise / switch thread.
@@ -331,7 +337,14 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
         <span className="text-sm font-semibold text-[var(--text-primary)] flex-1">
           {activeView === "graph" ? "Graph Assistant" : "AI Assistant"}
         </span>
-        <span className="text-xs text-[var(--text-tertiary)] truncate max-w-24">{project?.name ?? workspace?.name}</span>
+        <span className="text-xs text-[var(--text-tertiary)] truncate max-w-24 mr-2">{project?.name ?? workspace?.name}</span>
+
+        {activeThread?.lastUsage && (
+          <ContextRing
+            promptTokens={activeThread.lastUsage.promptTokens}
+            contextLimit={aiConfig.contextLimit ?? 128000}
+          />
+        )}
 
         {/* Thread history */}
         {projectThreads.length > 1 && (

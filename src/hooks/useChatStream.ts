@@ -63,6 +63,7 @@ export interface UseChatStreamResult {
 
 export function useChatStream(threadId: string | null): UseChatStreamResult {
   const addMessage = useCairnStore((s) => s.addMessage);
+  const setThreadUsage = useCairnStore((s) => s.setThreadUsage);
 
   const [isLoading, setIsLoading]               = useState(false);
   const [toolCalls, setToolCalls]               = useState<ChatToolCall[]>([]);
@@ -107,7 +108,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
       setStreamingContent((prev) => prev + e.delta);
     });
 
-    const unsubDone = electron.chat.onDone((e) => {
+    const unsubDone = (electron.chat.onDone as (cb: (e: { content: string; contextRefs: unknown[]; error?: string; usage?: { promptTokens: number; completionTokens: number } }) => void) => () => void)((e) => {
       const tid = threadIdRef.current;
       // Mark any still-running tool as done before persisting.
       const finalToolCalls = toolCallsRef.current.map((tc) =>
@@ -118,6 +119,9 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
         pendingActionsRef.current = [];
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         addMessage(tid, "assistant", e.content, e.contextRefs as any, finalToolCalls, capturedActions);
+        if (e.usage) {
+          setThreadUsage(tid, e.usage);
+        }
       }
       setStreamingContent("");
       setIsLoading(false);
@@ -128,12 +132,20 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
       // the user submits their answers. It is cleared in sendStream() instead.
     });
 
+    const unsubUsage = (electron.chat.onUsage as (cb: (e: { promptTokens: number; completionTokens: number }) => void) => () => void)((e) => {
+      const tid = threadIdRef.current;
+      if (tid) {
+        setThreadUsage(tid, e);
+      }
+    });
+
     return () => {
       unsubTool();
       unsubToken();
       unsubDone();
+      unsubUsage();
     };
-  // addMessage is stable (Zustand), intentionally omitted from deps
+  // addMessage and setThreadUsage are stable (Zustand), intentionally omitted from deps
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -143,6 +155,9 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
     toolCallsRef.current = [];
     pendingActionsRef.current = [];
     setPendingQuestions(null);
+    if (threadId) {
+      setThreadUsage(threadId, undefined);
+    }
     window.electron?.chat.stream(req);
   }
 

@@ -126,6 +126,7 @@ export interface ChatThread {
   title?: string;
   createdAt: string;
   updatedAt: string;
+  lastUsage?: { promptTokens: number; completionTokens: number };
 }
 
 export type ChatRole = "user" | "assistant" | "system";

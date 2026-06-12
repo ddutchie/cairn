@@ -37,6 +37,7 @@ async function runToolLoop(
   signal?: AbortSignal,
   getWin?: () => BrowserWindow | null,
   provider?: string,
+  onUsage?: (pt: number, ct: number) => void,
 ): Promise<{ exhausted: true; content: string } | { exhausted: false }> {
   const maxSteps    = req.config?.maxSteps    ?? 20;
   const temperature = req.config?.temperature ?? 0.3;
@@ -51,6 +52,9 @@ async function runToolLoop(
         const res = await callLocalLLMChat(messages, TOOLS);
         const choice = res.choices?.[0];
         if (!choice) return { exhausted: true, content: "No response from local Llama on-device model." };
+        if (res.usage && onUsage) {
+          onUsage(res.usage.prompt_tokens ?? 0, res.usage.completion_tokens ?? 0);
+        }
         assistantMsg = choice.message as OpenAIMessage;
 
         // Self-Healing Parser for On-Device XML-style tool calls and tokenizers
@@ -105,6 +109,9 @@ async function runToolLoop(
       const data = await response.json() as any;
       const choice = data.choices?.[0];
       if (!choice) return { exhausted: true, content: "No response from AI endpoint." };
+      if (data.usage && onUsage) {
+        onUsage(data.usage.prompt_tokens ?? 0, data.usage.completion_tokens ?? 0);
+      }
       assistantMsg = choice.message as OpenAIMessage;
     }
 
@@ -141,7 +148,6 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
     config: { provider?: string; baseUrl?: string; model?: string; apiKey?: string };
   }) => {
     return handle(async () => {
-      const provider = req.config?.provider ?? "openai";
       const baseUrl = normaliseBaseUrl(req.config?.baseUrl ?? "https://api.openai.com");
       const model = req.config?.model ?? "gpt-4o-mini";
       const apiKey = req.config?.apiKey ?? "";
@@ -210,17 +216,25 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
       send("chat:tool-call", e);
     };
 
-    const loopResult = await runToolLoop(db, req, workspacePath, baseUrl, model, apiKey, messages, emitToolCall, abortCtrl.signal, getWin, provider);
+    let promptTokens = 0;
+    let completionTokens = 0;
+    const addUsage = (pt: number, ct: number) => {
+      promptTokens += pt;
+      completionTokens += ct;
+      send("chat:usage", { promptTokens, completionTokens });
+    };
+
+    const loopResult = await runToolLoop(db, req, workspacePath, baseUrl, model, apiKey, messages, emitToolCall, abortCtrl.signal, getWin, provider, addUsage);
 
     abortControllers.delete(event.sender.id);
 
     if (abortCtrl.signal.aborted) {
-      send("chat:done", { content: "", contextRefs: [] });
+      send("chat:done", { content: "", contextRefs: [], usage: promptTokens > 0 ? { promptTokens, completionTokens } : undefined });
       return;
     }
 
     if (loopResult.exhausted) {
-      send("chat:done", { content: loopResult.content, contextRefs: [] });
+      send("chat:done", { content: loopResult.content, contextRefs: [], usage: promptTokens > 0 ? { promptTokens, completionTokens } : undefined });
       return;
     }
 
@@ -232,7 +246,7 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
       // Re-request with stream: true for real SSE tokens
       let fullContent = "";
       try {
-        for await (const delta of streamCompletion({ baseUrl, model, apiKey, provider: provider as "openai" | "localllm" }, messages, TOOLS)) {
+        for await (const delta of streamCompletion({ baseUrl, model, apiKey, provider: provider as "openai" | "localllm" }, messages, TOOLS, addUsage)) {
           if (abortCtrl.signal.aborted) break;
           fullContent += delta;
           send("chat:token", { delta });
@@ -241,16 +255,16 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
         // Fallback: just emit the already-received content verbatim
         if (!fullContent) {
           send("chat:token", { delta: lastMsg.content });
-          send("chat:done", { content: lastMsg.content, contextRefs: [] });
+          send("chat:done", { content: lastMsg.content, contextRefs: [], usage: promptTokens > 0 ? { promptTokens, completionTokens } : undefined });
           return;
         }
       }
 
-      send("chat:done", { content: fullContent || (lastMsg.content ?? ""), contextRefs: [] });
+      send("chat:done", { content: fullContent || (lastMsg.content ?? ""), contextRefs: [], usage: promptTokens > 0 ? { promptTokens, completionTokens } : undefined });
       return;
     }
 
     // Unexpected state — shouldn't happen, but be safe
-    send("chat:done", { content: "", contextRefs: [] });
+    send("chat:done", { content: "", contextRefs: [], usage: promptTokens > 0 ? { promptTokens, completionTokens } : undefined });
   });
 }

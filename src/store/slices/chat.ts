@@ -28,6 +28,7 @@ export interface ChatSlice {
   renameThread: (threadId: ID, title: string) => void;
   createNewThread: (workspaceId: ID, projectId?: ID) => ChatThread;
   compactChatThread: (threadId: ID) => Promise<void>;
+  setThreadUsage: (threadId: ID, usage: { promptTokens: number; completionTokens: number } | undefined) => void;
 }
 
 // ── Slice creator ─────────────────────────────────────────────────────────────
@@ -189,5 +190,14 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
       }
       await ipcAwait((e) => e.chat.addMessage(summaryMsg));
     }
+  },
+
+  setThreadUsage(threadId, usage) {
+    set((s) => ({
+      chatThreads: s.chatThreads.map((t) =>
+        t.id === threadId ? { ...t, lastUsage: usage } : t
+      ),
+    }));
+    get().persist();
   },
 });
