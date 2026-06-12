@@ -137,6 +137,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Exclude workspace from Windows Defender
+        run: Set-MpPreference -ExclusionPath ${{ github.workspace }}
+        shell: powershell
+
       - uses: actions/setup-node@v6
         with:
           node-version: 22
@@ -150,7 +154,7 @@ jobs:
           restore-keys: nextjs-win-
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --fetch-retries=5 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000
 
       - name: Rebuild native modules
         run: npm run rebuild
