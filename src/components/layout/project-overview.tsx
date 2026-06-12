@@ -60,7 +60,10 @@ export function ProjectOverview() {
 
   async function handlePickCodeDir() {
     const result = await window.electron?.agent.pickDirectory() as { data: string | null } | undefined;
-    if (result?.data) setCodeDirInput(result.data);
+    if (result?.data && project) {
+      setCodeDirInput(result.data);
+      updateProject(project.id, { codeDirectory: result.data });
+    }
   }
 
   function handleSaveCodeDir() {

@@ -61,6 +61,29 @@ function extractCairnRef(
 }
 
 
+const NATIVE_AGENT_SLASH_COMMANDS = [
+  {
+    name: "compact",
+    description: "Summarise and compact conversation history",
+    insertText: "/compact",
+  },
+  {
+    name: "code-review",
+    description: "Review recent git changes for bugs and style",
+    insertText: "Please run a code review of the recent changes. Run git diff and analyze it.",
+  },
+  {
+    name: "spawn-subagent",
+    description: "Spawn a subagent to work on a task",
+    insertText: '/spawn-subagent task: "write tests for..."',
+  },
+  {
+    name: "test",
+    description: "Run project tests and verify correctness",
+    insertText: "Run the project tests and report if they pass.",
+  },
+];
+
 interface PiAgentPaneProps {
   session: TerminalSession;
   isActive: boolean;
@@ -616,6 +639,7 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
           isLoading={isLoading}
           disabled={isLoading}
           placeholder={session.mode === "plan" ? "Describe what you want to build…" : "Ask the agent…"}
+          commands={NATIVE_AGENT_SLASH_COMMANDS}
         />
         <p className="text-[0.643rem] text-[var(--text-tertiary)] mt-1 text-center">
           {retryInfo

@@ -112,7 +112,7 @@ Produce a concise summary of the above conversation for use as context in a futu
 
 Be specific. Cite file paths, function names, and line numbers where they matter. Omit pleasantries and filler.`;
 
-async function generateSummary(
+export async function generateSummary(
   messages: AgentMessage[],
   llmConfig: AgentLLMConfig,
   signal: AbortSignal,

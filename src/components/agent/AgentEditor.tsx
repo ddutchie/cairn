@@ -113,6 +113,12 @@ export function AgentEditor() {
             <div
               key={filePath}
               onClick={() => setActiveEditorFile(filePath)}
+              onAuxClick={(e) => {
+                if (e.button === 1) {
+                  e.preventDefault();
+                  handleClose(e, filePath);
+                }
+              }}
               title={filePath}
               className={cn(
                 "group flex items-center gap-1.5 px-3 py-1.5 text-[0.714rem] cursor-pointer select-none flex-shrink-0 border-r border-[var(--border)] transition-colors",

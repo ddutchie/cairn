@@ -15,6 +15,7 @@ import { SuggestedPrompts } from "./chat-panel/SuggestedPrompts";
 import { ToolCallIndicator } from "./chat-panel/ToolCallIndicator";
 import { QuestionForm } from "./chat-panel/QuestionForm";
 import { ChatInput } from "./ChatInput";
+import { ContextRing } from "@/components/agent/ContextRing";
 
 const GRAPH_SYSTEM_PROMPT = `You are a Knowledge Graph assistant embedded in Cairn, a note-taking and project management app.
 
@@ -46,6 +47,24 @@ You help users build meaningful connections between their notes, tasks, and proj
 4. **\`add_tag\`**: Adds tag name \`tagName\` to note or card.
 
 Remember: Suggest connections actively. Call \`suggest_connections\` whenever there is even a potential relationship to explore!`;
+
+const CHAT_SLASH_COMMANDS = [
+  {
+    name: "compact",
+    description: "Summarise and compact conversation history",
+    insertText: "/compact",
+  },
+  {
+    name: "board",
+    description: "Show all task board columns and cards",
+    insertText: "List the current task board columns and cards.",
+  },
+  {
+    name: "review-note",
+    description: "Ask AI to review a note",
+    insertText: 'Please review my note "[note title]" and suggest improvements.',
+  },
+];
 
 interface ChatPanelProps {
   prefill?: { text: string; autoSend?: boolean } | null;
@@ -136,6 +155,11 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
     [chatThreads, activeProjectId],
   );
 
+  const activeThread = useMemo(
+    () => chatThreads.find((t) => t.id === threadId),
+    [chatThreads, threadId]
+  );
+
   // Initialise / switch thread.
   // Reads getOrCreateThread directly from the store snapshot (stable, no ref
   // needed) so the effect only re-runs when the workspace/project identity
@@ -168,6 +192,13 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
   const handleSend = useCallback((text?: string) => {
     const content = text ?? input.trim();
     if (!content || !threadId) return;
+
+    if (content === "/compact") {
+      setInput("");
+      useCairnStore.getState().compactChatThread(threadId);
+      return;
+    }
+
     setInput("");
     addMessage(threadId, "user", content);
 
@@ -306,7 +337,14 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
         <span className="text-sm font-semibold text-[var(--text-primary)] flex-1">
           {activeView === "graph" ? "Graph Assistant" : "AI Assistant"}
         </span>
-        <span className="text-xs text-[var(--text-tertiary)] truncate max-w-24">{project?.name ?? workspace?.name}</span>
+        <span className="text-xs text-[var(--text-tertiary)] truncate max-w-24 mr-2">{project?.name ?? workspace?.name}</span>
+
+        {activeThread?.lastUsage && (
+          <ContextRing
+            promptTokens={activeThread.lastUsage.promptTokens}
+            contextLimit={aiConfig.contextLimit ?? 128000}
+          />
+        )}
 
         {/* Thread history */}
         {projectThreads.length > 1 && (
@@ -437,6 +475,7 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
           isLoading={isLoading}
           disabled={isLoading}
           placeholder={activeView === "graph" ? "Ask about your knowledge graph…" : "Ask about your project…"}
+          commands={CHAT_SLASH_COMMANDS}
         />
         <div className="flex items-center justify-between mt-1.5 px-0.5">
           <p className="text-[0.714rem] text-[var(--text-tertiary)]">

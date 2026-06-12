@@ -8,7 +8,9 @@
  *        detached-PID tracking (so in-flight children are killed on app exit).
  */
 
-import { spawn } from "child_process";
+import { spawn, execSync } from "child_process";
+import fs from "fs";
+import path from "path";
 import { DEFAULT_MAX_BYTES } from "../truncation";
 
 // Local byte formatter for streaming truncation hints
@@ -20,6 +22,75 @@ function fmt(bytes: number): string {
 
 const MAX_OUTPUT_BYTES = DEFAULT_MAX_BYTES;
 const DEFAULT_TIMEOUT_MS = 120_000; // 2 minutes
+
+// ── Git Bash detection on Windows ─────────────────────────────────────────────
+// Prevents spawning WSL bash (which is the default "bash" in C:\Windows\System32)
+// and instead uses the native Git Bash shell.
+function getBashExecutable(): string {
+  if (process.platform !== "win32") {
+    return "bash";
+  }
+
+  // 1. Check standard installation paths
+  const standardPaths = [
+    "C:\\Program Files\\Git\\bin\\bash.exe",
+    "C:\\Program Files\\Git\\usr\\bin\\bash.exe",
+    "C:\\Program Files (x86)\\Git\\bin\\bash.exe",
+  ];
+  if (process.env.USERPROFILE) {
+    standardPaths.push(
+      path.join(process.env.USERPROFILE, "AppData\\Local\\Programs\\Git\\bin\\bash.exe"),
+      path.join(process.env.USERPROFILE, "AppData\\Local\\Programs\\Git\\usr\\bin\\bash.exe")
+    );
+  }
+  if (process.env.LOCALAPPDATA) {
+    standardPaths.push(
+      path.join(process.env.LOCALAPPDATA, "Programs\\Git\\bin\\bash.exe"),
+      path.join(process.env.LOCALAPPDATA, "Programs\\Git\\usr\\bin\\bash.exe")
+    );
+  }
+
+  for (const p of standardPaths) {
+    if (fs.existsSync(p)) {
+      return p;
+    }
+  }
+
+  // 2. Try to locate git.exe via PATH and find bash.exe nearby
+  try {
+    const gitPath = execSync("where git", { encoding: "utf8" }).split("\r\n")[0]?.trim();
+    if (gitPath && fs.existsSync(gitPath)) {
+      // "where git" typically returns "C:\Program Files\Git\cmd\git.exe"
+      const gitDir = path.dirname(gitPath); // e.g. "C:\Program Files\Git\cmd"
+      const candidateBin = path.resolve(gitDir, "..", "bin", "bash.exe");
+      if (fs.existsSync(candidateBin)) {
+        return candidateBin;
+      }
+      const candidateUsrBin = path.resolve(gitDir, "..", "usr", "bin", "bash.exe");
+      if (fs.existsSync(candidateUsrBin)) {
+        return candidateUsrBin;
+      }
+    }
+  } catch {
+    // Ignore error if 'where' fails
+  }
+
+  // 3. Search PATH for bash.exe (excluding WSL / System32)
+  const pathDirs = (process.env.PATH || "").split(path.delimiter);
+  for (const dir of pathDirs) {
+    const lowerDir = dir.toLowerCase();
+    if (lowerDir.includes("system32") || lowerDir.includes("syswow64") || lowerDir.includes("windows")) {
+      continue;
+    }
+    const fullPath = path.join(dir, "bash.exe");
+    if (fs.existsSync(fullPath)) {
+      return fullPath;
+    }
+  }
+
+  // Fallback to default "bash"
+  return "bash";
+}
 
 // ── Detached child PID tracking ───────────────────────────────────────────────
 // Tracks PIDs of spawned children so they can be killed on app shutdown.
@@ -81,7 +152,8 @@ export async function bashTool(
     let output = "";
     let truncated = false;
 
-    const child = spawn("bash", ["-c", args.command], {
+    const bashExe = getBashExecutable();
+    const child = spawn(bashExe, ["-c", args.command], {
       cwd,
       // detached: true creates a new process group so process.kill(-pid) reaches
       // all children spawned by the command, not just the direct bash process.

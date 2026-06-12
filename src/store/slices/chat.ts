@@ -6,7 +6,7 @@ import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
 import type { ChatThread, ChatMessage, ChatToolCallRecord, PendingAction, ID } from "@/types";
 import { id, now } from "@/lib/utils";
-import { ipc } from "../ipc";
+import { ipc, ipcAwait, ipcAwaitResult } from "../ipc";
 
 // ── Slice interface ───────────────────────────────────────────────────────────
 
@@ -27,6 +27,8 @@ export interface ChatSlice {
   deleteThread: (threadId: ID) => void;
   renameThread: (threadId: ID, title: string) => void;
   createNewThread: (workspaceId: ID, projectId?: ID) => ChatThread;
+  compactChatThread: (threadId: ID) => Promise<void>;
+  setThreadUsage: (threadId: ID, usage: { promptTokens: number; completionTokens: number } | undefined) => void;
 }
 
 // ── Slice creator ─────────────────────────────────────────────────────────────
@@ -141,5 +143,61 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
     get().persist();
     ipc((e) => e.chat.upsertThread(thread));
     return thread;
+  },
+
+  async compactChatThread(threadId) {
+    const messages = get().chatMessages.filter((m) => m.threadId === threadId);
+    if (messages.length < 4) return;
+    const history = messages.map((m) => ({ role: m.role, content: m.content }));
+    const aiConfig = get().aiConfig;
+
+    const result = await ipcAwaitResult<{ summary: string }>(async (e) => {
+      const summary = await e.chat.compactThread({
+        messages: history,
+        config: {
+          provider: aiConfig.provider,
+          baseUrl: aiConfig.baseUrl,
+          model: aiConfig.model,
+          apiKey: aiConfig.apiKey,
+        },
+      }) as { summary: string };
+      return { data: summary };
+    });
+
+    if (result && "data" in result && result.data?.summary) {
+      const summary = result.data.summary;
+      const firstUserMsg = messages.find((m) => m.role === "user");
+      const summaryMsg: ChatMessage = {
+        id: id(),
+        threadId,
+        role: "system",
+        content: `[Earlier conversation summarised to fit the context window]\n\n## Session Summary\n\n${summary}\n\n[End of summary — continuing from current state]`,
+        createdAt: now(),
+      };
+
+      set((s) => ({
+        chatMessages: [
+          ...s.chatMessages.filter((m) => m.threadId !== threadId),
+          ...(firstUserMsg ? [firstUserMsg] : []),
+          summaryMsg,
+        ],
+      }));
+      get().persist();
+
+      await ipcAwait((e) => e.chat.clearThreadMessages(threadId));
+      if (firstUserMsg) {
+        await ipcAwait((e) => e.chat.addMessage(firstUserMsg));
+      }
+      await ipcAwait((e) => e.chat.addMessage(summaryMsg));
+    }
+  },
+
+  setThreadUsage(threadId, usage) {
+    set((s) => ({
+      chatThreads: s.chatThreads.map((t) =>
+        t.id === threadId ? { ...t, lastUsage: usage } : t
+      ),
+    }));
+    get().persist();
   },
 });
