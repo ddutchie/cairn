@@ -151,23 +151,19 @@ export function toCard(r: any) {
   };
 }
 
-// ── Snapshot Cache ────────────────────────────
-let cachedSnapshot: Snapshot | null = null;
-let lastSnapshotTime = 0;
-const CACHE_TTL_MS = 2000; // Cache valid for 2 seconds
+// ── Snapshot ──────────────────────────────────
 
-export function clearSnapshotCache(): void {
-  cachedSnapshot = null;
-  lastSnapshotTime = 0;
+export interface Snapshot {
+  workspaces: ReturnType<typeof toWorkspace>[];
+  projects: ReturnType<typeof toProject>[];
+  notes: ReturnType<typeof toNote>[];
+  columns: ReturnType<typeof toColumn>[];
+  cards: ReturnType<typeof toCard>[];
+  tags: { id: string; workspaceId: string; name: string; color: string }[];
 }
 
 export function getSnapshot(db: Database.Database): Snapshot {
-  const now = Date.now();
-  if (cachedSnapshot && (now - lastSnapshotTime < CACHE_TTL_MS)) {
-    return cachedSnapshot;
-  }
-
-  cachedSnapshot = {
+  return {
     workspaces: db.prepare("SELECT * FROM workspaces ORDER BY created_at").all().map(toWorkspace),
     projects: db.prepare("SELECT * FROM projects ORDER BY created_at").all().map(toProject),
     notes: db.prepare("SELECT * FROM notes ORDER BY updated_at DESC").all().map(toNote),
@@ -178,8 +174,6 @@ export function getSnapshot(db: Database.Database): Snapshot {
       name: r.name as string, color: r.color as string,
     })),
   };
-  lastSnapshotTime = now;
-  return cachedSnapshot;
 }
 
 // ── Locks & Notifications ──────────────────────
