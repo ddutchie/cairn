@@ -356,9 +356,9 @@ const api = {
       return () => ipcRenderer.off("pi-agent:retry", handler);
     },
     /** Fired when the session starts or finishes an LLM-based compaction pass. */
-    onCompact: (cb: (e: { sessionId: string; status: "start" | "end" }) => void) => {
+    onCompact: (cb: (e: { sessionId: string; status: "start" | "end"; auto?: boolean }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { sessionId: string; status: "start" | "end" }) => cb(e);
+      const handler = (_: any, e: { sessionId: string; status: "start" | "end"; auto?: boolean }) => cb(e);
       ipcRenderer.on("pi-agent:compact", handler);
       return () => ipcRenderer.off("pi-agent:compact", handler);
     },

@@ -387,6 +387,14 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
     const unsubCompact = electron.piAgent.onCompact((e) => {
       if (e.sessionId !== sessionId) return;
       setIsCompacting(e.status === "start");
+      if (e.status === "end" && e.auto) {
+        addPiMessage(sessionId, {
+          id: id(),
+          role: "system" as const,
+          content: "----- Session Compacted -----",
+          timestamp: new Date().toISOString(),
+        });
+      }
     });
 
     // /compact result — inject a system message confirming compaction

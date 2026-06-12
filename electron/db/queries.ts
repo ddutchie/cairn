@@ -1128,7 +1128,7 @@ export function deletePiSession(db: Database.Database, sessionId: string) {
 export interface PiMessageRow {
   id: string;
   sessionId: string;
-  role: "user" | "assistant" | "error";
+  role: "user" | "assistant" | "error" | "system";
   content: string;
   toolCalls: unknown[] | null;
   subagents: unknown[] | null;
@@ -1141,7 +1141,7 @@ function toPiMessage(row: any): PiMessageRow {
   return {
     id:        row.id as string,
     sessionId: row.session_id as string,
-    role:      row.role as "user" | "assistant" | "error",
+    role:      row.role as "user" | "assistant" | "error" | "system",
     content:   row.content as string,
     toolCalls: row.tool_calls ? JSON.parse(row.tool_calls as string) : null,
     subagents: row.subagents ? JSON.parse(row.subagents as string) : null,
@@ -1152,7 +1152,7 @@ function toPiMessage(row: any): PiMessageRow {
 
 export function upsertPiMessage(
   db: Database.Database,
-  msg: { id: string; sessionId: string; role: "user" | "assistant" | "error"; content: string; toolCalls?: unknown[] | null; subagents?: unknown[] | null; timestamp: string; order: number },
+  msg: { id: string; sessionId: string; role: "user" | "assistant" | "error" | "system"; content: string; toolCalls?: unknown[] | null; subagents?: unknown[] | null; timestamp: string; order: number },
 ) {
   db.prepare(`
     INSERT INTO pi_agent_messages (id, session_id, role, content, tool_calls, subagents, timestamp, "order")
@@ -1172,7 +1172,7 @@ export function upsertPiMessage(
 export function savePiMessages(
   db: Database.Database,
   sessionId: string,
-  messages: Array<{ id: string; role: "user" | "assistant" | "error"; content: string; toolCalls?: unknown[] | null; subagents?: unknown[] | null; timestamp: string }>,
+  messages: Array<{ id: string; role: "user" | "assistant" | "error" | "system"; content: string; toolCalls?: unknown[] | null; subagents?: unknown[] | null; timestamp: string }>,
 ) {
   const save = db.transaction(() => {
     db.prepare("DELETE FROM pi_agent_messages WHERE session_id = ?").run(sessionId);

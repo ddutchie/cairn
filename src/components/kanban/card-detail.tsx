@@ -33,6 +33,7 @@ import { DatePicker } from "@/components/ui/date-picker";
 import { cn, formatRelative, PRIORITY_COLORS } from "@/lib/utils";
 import type { Priority } from "@/types";
 import { SpawnAgentModal } from "@/components/agent/SpawnAgentModal";
+import { MarkdownContent } from "@/components/chat/chat-panel/MarkdownContent";
 
 interface CardDetailModalProps {
   cardId: string;
@@ -86,6 +87,7 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
   const [moveToProjectOpen, setMoveToProjectOpen] = useState(false);
   const [blockerError, setBlockerError] = useState<string | null>(null);
   const [spawnAgentOpen, setSpawnAgentOpen] = useState(false);
+  const [isEditingDesc, setIsEditingDesc] = useState(false);
 
   const card = useMemo(() => cards.find((c) => c.id === cardId), [cards, cardId]);
   // Derive all dependent data via useMemo — must be called before any conditional return
@@ -161,14 +163,41 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
               <label className="block text-xs font-medium text-[var(--text-tertiary)] mb-2 uppercase tracking-wide">
                 Description
               </label>
-              <textarea
-                defaultValue={card.description ?? ""}
-                onBlur={(e) => updateCard(cardId, { description: e.target.value })}
-                placeholder="Add a description…"
-                rows={4}
-                className="w-full bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-3 py-2.5 text-sm text-[var(--text-secondary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)] resize-none leading-relaxed"
-              />
+              {isEditingDesc ? (
+                <textarea
+                  autoFocus
+                  defaultValue={card.description ?? ""}
+                  onBlur={(e) => {
+                    updateCard(cardId, { description: e.target.value });
+                    setIsEditingDesc(false);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                      e.preventDefault();
+                      e.currentTarget.blur();
+                    }
+                  }}
+                  placeholder="Add a description…"
+                  rows={8}
+                  className="w-full bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-3 py-2.5 text-sm text-[var(--text-secondary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)] resize-none leading-relaxed min-h-[12rem]"
+                />
+              ) : (
+                <div
+                  onClick={(e) => {
+                    if ((e.target as HTMLElement).closest("a, button")) return;
+                    setIsEditingDesc(true);
+                  }}
+                  className="w-full bg-[var(--surface-2)] border border-[var(--border)] hover:border-[var(--accent)]/40 rounded-lg px-3 py-2.5 text-sm text-[var(--text-secondary)] min-h-[12rem] cursor-pointer transition-colors overflow-y-auto"
+                >
+                  {card.description?.trim() ? (
+                    <MarkdownContent content={card.description} />
+                  ) : (
+                    <span className="text-[var(--text-tertiary)] italic">Add a description…</span>
+                  )}
+                </div>
+              )}
             </div>
+
 
             {/* Tags */}
             <div>

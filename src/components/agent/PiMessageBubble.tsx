@@ -319,6 +319,18 @@ export function PiMessageBubble({ message }: PiMessageBubbleProps) {
       <MessageAvatar role="bot" size="md" />
       <div className="flex-1 min-w-0 flex flex-col gap-1">
 
+        {/* Markdown content with animated cursor when streaming */}
+        {hasContent && (
+          <div className={cn(
+            "px-3 py-2 rounded-xl rounded-tl-sm text-xs leading-relaxed",
+            "bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-secondary)]",
+            "min-w-0 overflow-hidden",
+          )}>
+            <MarkdownContent content={message.content} />
+            {message.isStreaming && <StreamingCursor size="md" />}
+          </div>
+        )}
+
         {/* Tool call chips — expandable */}
         {hasTools && (
           <div className="flex flex-col gap-0.5">
@@ -338,18 +350,6 @@ export function PiMessageBubble({ message }: PiMessageBubbleProps) {
           <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] w-fit">
             <Loader2 size={9} className="text-[var(--accent)] animate-spin shrink-0" />
             <span className="text-[0.714rem] text-[var(--text-tertiary)]">Thinking…</span>
-          </div>
-        )}
-
-        {/* Markdown content with animated cursor when streaming */}
-        {hasContent && (
-          <div className={cn(
-            "px-3 py-2 rounded-xl rounded-tl-sm text-xs leading-relaxed",
-            "bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-secondary)]",
-            "min-w-0 overflow-hidden",
-          )}>
-            <MarkdownContent content={message.content} />
-            {message.isStreaming && <StreamingCursor size="md" />}
           </div>
         )}
       </div>
