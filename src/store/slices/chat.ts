@@ -28,6 +28,7 @@ export interface ChatSlice {
   renameThread: (threadId: ID, title: string) => void;
   createNewThread: (workspaceId: ID, projectId?: ID) => ChatThread;
   compactChatThread: (threadId: ID) => Promise<void>;
+  clearThreadMessages: (threadId: ID) => Promise<void>;
   setThreadUsage: (threadId: ID, usage: { promptTokens: number; completionTokens: number } | undefined) => void;
 }
 
@@ -147,21 +148,39 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
 
   async compactChatThread(threadId) {
     const messages = get().chatMessages.filter((m) => m.threadId === threadId);
-    if (messages.length < 4) return;
+    if (messages.length < 4) {
+      return;
+    }
     const history = messages.map((m) => ({ role: m.role, content: m.content }));
     const aiConfig = get().aiConfig;
 
+    const tempId = id();
+    const tempMsg: ChatMessage = {
+      id: tempId,
+      threadId,
+      role: "system",
+      content: "Compacting chat history...",
+      createdAt: now(),
+    };
+    set((s) => ({ chatMessages: [...s.chatMessages, tempMsg] }));
+
     const result = await ipcAwaitResult<{ summary: string }>(async (e) => {
-      const summary = await e.chat.compactThread({
-        messages: history,
-        config: {
-          provider: aiConfig.provider,
-          baseUrl: aiConfig.baseUrl,
-          model: aiConfig.model,
-          apiKey: aiConfig.apiKey,
-        },
-      }) as { summary: string };
-      return { data: summary };
+      try {
+        const summaryObj = await e.chat.compactThread({
+          messages: history,
+          config: {
+            provider: aiConfig.provider,
+            baseUrl: aiConfig.baseUrl,
+            model: aiConfig.model,
+            apiKey: aiConfig.apiKey,
+          },
+        }) as { summary: string };
+
+        return { data: summaryObj };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { error: msg };
+      }
     });
 
     if (result && "data" in result && result.data?.summary) {
@@ -189,7 +208,22 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
         await ipcAwait((e) => e.chat.addMessage(firstUserMsg));
       }
       await ipcAwait((e) => e.chat.addMessage(summaryMsg));
+    } else {
+      set((s) => ({
+        chatMessages: s.chatMessages.filter((m) => m.id !== tempId),
+      }));
     }
+  },
+
+  async clearThreadMessages(threadId) {
+    set((s) => ({
+      chatMessages: s.chatMessages.filter((m) => m.threadId !== threadId),
+      chatThreads: s.chatThreads.map((t) =>
+        t.id === threadId ? { ...t, lastUsage: undefined, updatedAt: now() } : t
+      ),
+    }));
+    get().persist();
+    await ipcAwait((e) => e.chat.clearThreadMessages(threadId));
   },
 
   setThreadUsage(threadId, usage) {

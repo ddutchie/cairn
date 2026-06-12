@@ -351,7 +351,7 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
   clearPiMessages(sessionId) {
     set((s) => ({
       terminalSessions: s.terminalSessions.map((t) =>
-        t.sessionId === sessionId ? { ...t, piMessages: [] } : t
+        t.sessionId === sessionId ? { ...t, piMessages: [], lastUsage: undefined } : t
       ),
     }));
   },

@@ -38,6 +38,7 @@ async function runToolLoop(
   getWin?: () => BrowserWindow | null,
   provider?: string,
   onUsage?: (pt: number, ct: number) => void,
+  emitToolCallDone?: (e: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void,
 ): Promise<{ exhausted: true; content: string } | { exhausted: false }> {
   const maxSteps    = req.config?.maxSteps    ?? 20;
   const temperature = req.config?.temperature ?? 0.3;
@@ -127,7 +128,7 @@ async function runToolLoop(
       try { args = JSON.parse(call.function.arguments); } catch { args = {}; }
       let result: unknown;
       try {
-        result = await executeTool(db, req, workspacePath, { baseUrl, model, apiKey, provider: provider as "openai" | "localllm" }, call.function.name, args, emitToolCall, getWin);
+        result = await executeTool(db, req, workspacePath, { baseUrl, model, apiKey, provider: provider as "openai" | "localllm" }, call.function.name, args, emitToolCall, getWin, emitToolCallDone);
       } catch (toolErr) {
         result = { error: `Tool "${call.function.name}" failed: ${String(toolErr)}` };
       }
@@ -142,12 +143,11 @@ async function runToolLoop(
 }
 
 export function registerChatHandler(db: Database.Database, workspacePath: string, getWin?: () => BrowserWindow | null): void {
-  // chat:compactThread — generates a summary for a chat thread
   ipcMain.handle("chat:compactThread", async (_event, req: {
     messages: Array<{ role: string; content: string }>;
     config: { provider?: string; baseUrl?: string; model?: string; apiKey?: string };
   }) => {
-    return handle(async () => {
+    try {
       const baseUrl = normaliseBaseUrl(req.config?.baseUrl ?? "https://api.openai.com");
       const model = req.config?.model ?? "gpt-4o-mini";
       const apiKey = req.config?.apiKey ?? "";
@@ -164,8 +164,11 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const agentMsgs = req.messages as any[];
       const summary = await generateSummary(agentMsgs, llmConfig, new AbortController().signal);
-      return { summary };
-    });
+      return { data: { summary } };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { error: msg };
+    }
   });
 
   // chat:abort — cancel the in-flight stream for this renderer
@@ -216,6 +219,10 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
       send("chat:tool-call", e);
     };
 
+    const emitToolCallDone = (e: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => {
+      send("chat:tool-call-done", e);
+    };
+
     let promptTokens = 0;
     let completionTokens = 0;
     const addUsage = (pt: number, ct: number) => {
@@ -224,7 +231,7 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
       send("chat:usage", { promptTokens, completionTokens });
     };
 
-    const loopResult = await runToolLoop(db, req, workspacePath, baseUrl, model, apiKey, messages, emitToolCall, abortCtrl.signal, getWin, provider, addUsage);
+    const loopResult = await runToolLoop(db, req, workspacePath, baseUrl, model, apiKey, messages, emitToolCall, abortCtrl.signal, getWin, provider, addUsage, emitToolCallDone);
 
     abortControllers.delete(event.sender.id);
 

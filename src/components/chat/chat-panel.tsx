@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
-import { X, Sparkles, PenSquare, History, Pencil } from "lucide-react";
+import { X, Sparkles, PenSquare, History, Pencil, Trash2 } from "lucide-react";
 import { cn, formatRelative } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { MIN_CHAT_PANEL_WIDTH, MAX_CHAT_PANEL_WIDTH } from "@/store/slices/ui";
@@ -81,6 +81,7 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
     createNewThread, deleteThread, renameThread,
     chatPanelWidth, setChatPanelWidth,
     activeView, graphData, selectedGraphNodeId,
+    clearThreadMessages,
   } = useCairnStore(useShallow((s) => ({
     chatOpen:            s.chatOpen,
     toggleChat:          s.toggleChat,
@@ -100,6 +101,7 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
     activeView:          s.activeView,
     graphData:           s.graphData,
     selectedGraphNodeId: s.selectedGraphNodeId,
+    clearThreadMessages: s.clearThreadMessages,
   })));
 
   const [input, setInput]             = useState("");
@@ -115,6 +117,12 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
   const dividerRef     = useRef<HTMLDivElement>(null);
 
   const { isLoading, toolCalls, streamingContent, pendingQuestions, sendStream, stopStream } = useChatStream(threadId);
+
+  const handleClear = useCallback(() => {
+    if (!threadId) return;
+    if (isLoading) stopStream();
+    clearThreadMessages(threadId);
+  }, [threadId, isLoading, stopStream, clearThreadMessages]);
 
   // Track isLoading in a ref so the thread-init effect can read it without
   // being listed as a dependency (we never want a loading-state change to
@@ -193,7 +201,8 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
     const content = text ?? input.trim();
     if (!content || !threadId) return;
 
-    if (content === "/compact") {
+    const trimmed = content.trim();
+    if (trimmed === "/compact" || trimmed === "/ compact") {
       setInput("");
       useCairnStore.getState().compactChatThread(threadId);
       return;
@@ -421,6 +430,14 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
           </div>
         )}
 
+        {messages.length > 0 && (
+          <Tooltip content="Clear conversation" side="left">
+            <button onClick={handleClear}
+              className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--danger)] hover:bg-[var(--surface-2)] transition-colors">
+              <Trash2 size={13} />
+            </button>
+          </Tooltip>
+        )}
         <Tooltip content="New chat" side="left">
           <button onClick={handleNewThread}
             className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors">

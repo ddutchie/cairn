@@ -141,6 +141,7 @@ export interface LinkedContextReference {
 export interface ChatToolCallRecord {
   tool: string;
   label: string;
+  cairnRef?: { type: "note" | "task"; id: ID; title: string };
 }
 
 export type SuggestedAction =

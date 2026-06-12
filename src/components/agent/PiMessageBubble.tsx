@@ -18,11 +18,13 @@ const CAIRN_NOTE_ACTIONS: Record<string, string> = {
   update_note:     "Updated note",
   patch_note:      "Patched note",
   append_to_note:  "Appended to note",
+  get_note:        "Read note",
 };
 const CAIRN_TASK_ACTIONS: Record<string, string> = {
   create_task:        "Created task",
   update_task:        "Updated task",
   update_task_status: "Moved task",
+  get_task:           "Read task",
 };
 
 function CairnRefChip({ tc }: {

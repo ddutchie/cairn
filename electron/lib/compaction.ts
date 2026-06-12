@@ -104,11 +104,12 @@ const SUMMARIZATION_USER_PROMPT = (conversationText: string) =>
 Produce a concise summary of the above conversation for use as context in a future AI coding session. Include:
 
 1. **Goal** — What the user is trying to accomplish (1-2 sentences).
-2. **Progress** — What has been implemented or discovered so far. Reference specific files and functions where relevant.
-3. **Key decisions** — Any important design choices or constraints identified.
-4. **Modified files** — List every file that was created or changed.
-5. **Current state** — Where things stand right now and what remains to be done.
-6. **Open issues** — Bugs, TODOs, or unresolved questions noted during the session.
+2. **Agreed Plan & Approvals** — The specific steps of the plan that was agreed upon, and any explicit user approvals or commands to proceed (e.g., "lets go", "continue").
+3. **Progress** — What has been implemented or discovered so far. Reference specific files and functions where relevant.
+4. **Key decisions** — Any important design choices or constraints identified.
+5. **Modified files** — List every file that was created or changed.
+6. **Current state** — Where things stand right now, what remains to be done, and what steps of the plan are currently being executed.
+7. **Open issues** — Bugs, TODOs, or unresolved questions noted during the session.
 
 Be specific. Cite file paths, function names, and line numbers where they matter. Omit pleasantries and filler.`;
 
@@ -164,13 +165,12 @@ export function buildCompactionTransformer(
   llmConfig: AgentLLMConfig,
   onCompactionStart?: () => void,
   onCompactionEnd?: (summary: string) => void,
-): (messages: AgentMessage[]) => AgentMessage[] {
+): (messages: AgentMessage[]) => Promise<AgentMessage[]> {
   const contextWindow = llmConfig.contextWindow ?? 128_000;
-  let compacting = false;
-  // Cache the last summary so if compaction is still in flight we can use it
   let cachedSummary: string | null = null;
+  let compactionPromise: Promise<string> | null = null;
 
-  return (messages: AgentMessage[]): AgentMessage[] => {
+  return async (messages: AgentMessage[]): Promise<AgentMessage[]> => {
     const lastPromptTokens = session.lastPromptTokens ?? 0;
     // Always read the live signal from the session so a refreshed AbortController
     // (created on each new prompt) is used rather than the one captured at build time.
@@ -182,35 +182,37 @@ export function buildCompactionTransformer(
     }
 
     // If we already have a summary from the last compaction, apply it immediately
-    // while the next compaction (if any) runs asynchronously in the background.
     if (cachedSummary !== null) {
       const { toKeep } = splitMessages(messages);
       return buildCompactedContext(cachedSummary, messages[0], toKeep);
     }
 
-    // Kick off async compaction in the background (fire-and-forget for this turn).
-    // This turn falls back to the sliding-window pruner; the NEXT turn will use
-    // the LLM summary once it arrives.
-    if (!compacting) {
-      compacting = true;
+    // Generate summary if not already in flight
+    if (!compactionPromise) {
       onCompactionStart?.();
 
       const { toSummarise } = splitMessages(messages);
-      generateSummary(toSummarise, llmConfig, signal)
+      compactionPromise = generateSummary(toSummarise, llmConfig, signal)
         .then((summary) => {
           cachedSummary = summary;
           onCompactionEnd?.(summary);
+          return summary;
         })
         .catch((err) => {
-          console.warn("[compaction] summarisation failed, will retry next turn:", err?.message ?? err);
-        })
-        .finally(() => {
-          compacting = false;
+          console.warn("[compaction] summarisation failed:", err?.message ?? err);
+          compactionPromise = null; // reset to allow retry
+          throw err;
         });
     }
 
-    // Fallback for this turn: sliding-window trim (safe, no LLM call)
-    return slidingWindowFallback(messages);
+    try {
+      const summary = await compactionPromise;
+      const { toKeep } = splitMessages(messages);
+      return buildCompactedContext(summary, messages[0], toKeep);
+    } catch {
+      // Fallback for this turn: sliding-window trim (safe, no LLM call)
+      return slidingWindowFallback(messages);
+    }
   };
 }
 

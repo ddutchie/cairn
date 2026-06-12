@@ -126,6 +126,12 @@ const api = {
       ipcRenderer.on("chat:tool-call", handler);
       return () => ipcRenderer.off("chat:tool-call", handler);
     },
+    onToolCallDone: (cb: (e: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => cb(e);
+      ipcRenderer.on("chat:tool-call-done", handler);
+      return () => ipcRenderer.off("chat:tool-call-done", handler);
+    },
     onUsage: (cb: (e: { promptTokens: number; completionTokens: number }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const handler = (_: any, e: { promptTokens: number; completionTokens: number }) => cb(e);

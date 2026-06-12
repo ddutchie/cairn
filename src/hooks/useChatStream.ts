@@ -25,6 +25,7 @@ export interface ChatToolCall {
   label: string;
   /** "running" = currently executing; "done" = completed this turn */
   status: "running" | "done";
+  cairnRef?: { type: "note" | "task"; id: string; title: string };
 }
 
 export interface PendingQuestion {
@@ -104,6 +105,18 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
       }
     });
 
+    const unsubToolDone = electron.chat.onToolCallDone?.((e) => {
+      setToolCalls((prev) => {
+        const lastIdx = [...prev].reverse().findIndex((tc) => tc.tool === e.tool);
+        if (lastIdx === -1) return prev;
+        const idx = prev.length - 1 - lastIdx;
+        const updated = [...prev];
+        updated[idx] = { ...updated[idx], cairnRef: e.cairnRef };
+        toolCallsRef.current = updated;
+        return updated;
+      });
+    });
+
     const unsubToken = electron.chat.onToken((e) => {
       setStreamingContent((prev) => prev + e.delta);
     });
@@ -141,6 +154,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
 
     return () => {
       unsubTool();
+      unsubToolDone?.();
       unsubToken();
       unsubDone();
       unsubUsage();
