@@ -25,9 +25,14 @@ interface Props {
 // theme is always up to date (user may have switched between light and dark).
 async function getMermaid(id: string) {
   const mermaid = (await import("mermaid")).default;
+  
+  // Prevent mermaid from throwing uncaught errors globally that bubble up to Next.js
+  mermaid.parseError = () => {};
+
   const isDark = document.documentElement.getAttribute("data-theme") !== "light";
   mermaid.initialize({
     startOnLoad: false,
+    suppressErrorRendering: true,
     theme: isDark ? "dark" : "default",
     themeVariables: isDark
       ? {
