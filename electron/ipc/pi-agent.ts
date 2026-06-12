@@ -94,7 +94,7 @@ async function runSession(
     session,
     llmConfig,
     () => send("pi-agent:compact", { sessionId, status: "start" }),
-    () => send("pi-agent:compact", { sessionId, status: "end" }),
+    () => send("pi-agent:compact", { sessionId, status: "end", auto: true }),
   );
 
   await runAgentLoop(

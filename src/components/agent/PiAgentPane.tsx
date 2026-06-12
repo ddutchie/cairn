@@ -12,7 +12,7 @@ import { useEffect, useLayoutEffect, useRef, useState, useCallback } from "react
 import { flushSync } from "react-dom";
 import { Trash2, CheckCircle, FileText, Zap, Map as MapIcon } from "lucide-react";
 import { QuestionForm } from "@/components/chat/chat-panel/QuestionForm";
-import { ChatInput } from "@/components/chat/ChatInput";
+import { ChatInput, SuggestionItem } from "@/components/chat/ChatInput";
 import type { PendingQuestion } from "@/hooks/useChatStream";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -22,6 +22,7 @@ import { PlanTaskList } from "./PlanTaskList";
 import { ContextRing } from "./ContextRing";
 import { Tooltip } from "@/components/ui/tooltip";
 import { CairnEvents } from "@/lib/events";
+import { resolvePromptContext } from "@/lib/context-resolver";
 import type { TerminalSession } from "@/store/slices/terminal-sessions";
 
 // ── Cairn tool ref extraction ─────────────────────────────────────────────────
@@ -387,6 +388,14 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
     const unsubCompact = electron.piAgent.onCompact((e) => {
       if (e.sessionId !== sessionId) return;
       setIsCompacting(e.status === "start");
+      if (e.status === "end" && e.auto) {
+        addPiMessage(sessionId, {
+          id: id(),
+          role: "system" as const,
+          content: "----- Session Compacted -----",
+          timestamp: new Date().toISOString(),
+        });
+      }
     });
 
     // /compact result — inject a system message confirming compaction
@@ -421,7 +430,7 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.sessionId]);
 
-  const sendPrompt = useCallback((text: string) => {
+  const sendPrompt = useCallback(async (text: string) => {
     const trimmed = text.trim();
     if (!trimmed || isLoading || !session.cwd) return;
 
@@ -460,9 +469,19 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
       timestamp:   new Date().toISOString(),
     });
 
+    // Resolve context references and append to prompt payload
+    const store = useCairnStore.getState();
+    const resolvedPrompt = await resolvePromptContext(
+      trimmed,
+      store.notes,
+      store.cards,
+      store.columns,
+      session.cwd || null
+    );
+
     const promptPayload = {
       sessionId:   session.sessionId,
-      prompt:      trimmed,
+      prompt:      resolvedPrompt,
       projectId:   session.projectId,
       workspaceId: activeWorkspaceId ?? undefined,
       cwd:         session.cwd,
@@ -483,6 +502,22 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
   // useLayoutEffect runs synchronously after render, keeping the ref up-to-date
   // before any async callbacks fire without triggering the react-hooks/refs lint rule.
   useLayoutEffect(() => { sendPromptRef.current = sendPrompt; });
+
+  const handleSearchFiles = useCallback(async (query: string): Promise<SuggestionItem[]> => {
+    if (!window.electron || !session.cwd) return [];
+    try {
+      const files = await window.electron.agent.searchFiles(session.cwd, query);
+      return files.map((f) => ({
+        id: f.path,
+        type: "file",
+        title: f.relativePath,
+        subtitle: "File",
+      }));
+    } catch (err) {
+      console.error("[pi-agent:autocomplete] searchFiles failed:", err);
+      return [];
+    }
+  }, [session.cwd]);
 
   function handleStop() {
     window.electron?.piAgent.abort(session.sessionId);
@@ -640,6 +675,7 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
           disabled={isLoading}
           placeholder={session.mode === "plan" ? "Describe what you want to build…" : "Ask the agent…"}
           commands={NATIVE_AGENT_SLASH_COMMANDS}
+          onSearchSuggestions={handleSearchFiles}
         />
         <p className="text-[0.643rem] text-[var(--text-tertiary)] mt-1 text-center">
           {retryInfo

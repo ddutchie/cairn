@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useRef, useEffect, useState, useMemo } from "react";
-import { Send, Square, Sparkles } from "lucide-react";
+import { Send, Square, Sparkles, FileText, CheckSquare, FileCode } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
 
@@ -9,6 +9,13 @@ export interface SlashCommand {
   name: string;
   description: string;
   insertText: string;
+}
+
+export interface SuggestionItem {
+  id: string;
+  type: "note" | "card" | "file";
+  title: string;
+  subtitle?: string;
 }
 
 interface ChatInputProps {
@@ -23,6 +30,8 @@ interface ChatInputProps {
   showSparkles?: boolean;
   autoFocus?: boolean;
   commands?: SlashCommand[];
+  suggestions?: SuggestionItem[];
+  onSearchSuggestions?: (query: string) => Promise<SuggestionItem[]>;
 }
 
 export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
@@ -39,6 +48,8 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
       showSparkles = false,
       autoFocus = false,
       commands = [],
+      suggestions = [],
+      onSearchSuggestions,
     },
     ref
   ) => {
@@ -47,29 +58,117 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
 
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [activeIndex, setActiveIndex] = useState(0);
+    const [trigger, setTrigger] = useState<{ type: "command" | "mention"; query: string; index: number } | null>(null);
+    const [asyncSuggestions, setAsyncSuggestions] = useState<SuggestionItem[]>([]);
 
-    // Filter commands based on input
+    // Parser to scan backward from the cursor for a trigger ('/' at start, or '@' preceded by space/newline/start)
+    const getActiveTrigger = () => {
+      const el = resolvedRef.current;
+      if (!el) return null;
+      
+      const text = value;
+      const pos = el.selectionStart;
+      
+      let i = pos - 1;
+      while (i >= 0 && text[i] !== " " && text[i] !== "\n") {
+        if (text[i] === "@") {
+          if (i === 0 || text[i - 1] === " " || text[i - 1] === "\n") {
+            const query = text.slice(i + 1, pos);
+            return { type: "mention" as const, query, index: i };
+          }
+        }
+        if (text[i] === "/" && i === 0) {
+          const query = text.slice(i + 1, pos);
+          return { type: "command" as const, query, index: i };
+        }
+        i--;
+      }
+      return null;
+    };
+
+    const checkTrigger = () => {
+      requestAnimationFrame(() => {
+        const active = getActiveTrigger();
+        setTrigger(active);
+      });
+    };
+
+    // Filter commands based on trigger
     const filteredCommands = useMemo(() => {
-      if (!commands.length || !value.startsWith("/")) return [];
-      const query = value.slice(1).toLowerCase();
-      return commands.filter((cmd) => cmd.name.toLowerCase().includes(query));
-    }, [commands, value]);
+      if (trigger?.type !== "command") return [];
+      const q = trigger.query.toLowerCase();
+      return commands.filter((cmd) => cmd.name.toLowerCase().includes(q));
+    }, [commands, trigger]);
 
-    // Show suggestions only when there are matching commands
+    // Handle async search suggestions with debounce
     useEffect(() => {
-      if (filteredCommands.length > 0) {
+      if (trigger?.type !== "mention" || !onSearchSuggestions) {
+        setAsyncSuggestions([]);
+        return;
+      }
+
+      const query = trigger.query;
+      const delayDebounce = setTimeout(async () => {
+        const results = await onSearchSuggestions(query);
+        setAsyncSuggestions(results);
+      }, 150);
+
+      return () => clearTimeout(delayDebounce);
+    }, [trigger, onSearchSuggestions]);
+
+    // Filter local suggestions or use async suggestions
+    const filteredSuggestions = useMemo(() => {
+      if (trigger?.type !== "mention") return [];
+      if (onSearchSuggestions) {
+        return asyncSuggestions;
+      }
+      if (!suggestions) return [];
+      const q = trigger.query.toLowerCase();
+      return suggestions.filter((item) =>
+        item.title.toLowerCase().includes(q)
+      );
+    }, [suggestions, trigger, onSearchSuggestions, asyncSuggestions]);
+
+    // Show suggestions only when there are matching entries
+    useEffect(() => {
+      const hasOptions = trigger?.type === "command"
+        ? filteredCommands.length > 0
+        : filteredSuggestions.length > 0;
+
+      if (hasOptions) {
         setShowSuggestions(true);
-        setActiveIndex((prev) => Math.min(prev, filteredCommands.length - 1));
+        const listLength = trigger?.type === "command" ? filteredCommands.length : filteredSuggestions.length;
+        setActiveIndex((prev) => Math.min(prev, listLength - 1));
       } else {
         setShowSuggestions(false);
         setActiveIndex(0);
       }
-    }, [filteredCommands]);
+    }, [filteredCommands, filteredSuggestions, trigger]);
 
     const handleSelectCommand = (cmd: SlashCommand) => {
-      onChange(cmd.insertText);
-      setShowSuggestions(false);
+      if (!trigger) return;
+      const before = value.slice(0, trigger.index);
+      const after = value.slice(resolvedRef.current?.selectionEnd ?? value.length);
+      onChange(before + cmd.insertText + after);
+      setTrigger(null);
       resolvedRef.current?.focus();
+    };
+
+    const handleSelectSuggestion = (item: SuggestionItem) => {
+      if (!trigger) return;
+      const before = value.slice(0, trigger.index);
+      const after = value.slice(resolvedRef.current?.selectionEnd ?? value.length);
+      const insertedText = item.type === "file" ? `\`${item.title}\`` : `[[${item.title}]]`;
+      onChange(before + insertedText + after);
+      setTrigger(null);
+      resolvedRef.current?.focus();
+      const newCursorPos = trigger.index + insertedText.length;
+      setTimeout(() => {
+        if (resolvedRef.current) {
+          resolvedRef.current.selectionStart = newCursorPos;
+          resolvedRef.current.selectionEnd = newCursorPos;
+        }
+      }, 0);
     };
 
     // Auto-resize height based on contents
@@ -88,25 +187,31 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
     }, [autoFocus, resolvedRef]);
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (showSuggestions && filteredCommands.length > 0) {
+      const listLength = trigger?.type === "command" ? filteredCommands.length : filteredSuggestions.length;
+      if (showSuggestions && listLength > 0 && trigger) {
         if (e.key === "ArrowDown") {
           e.preventDefault();
-          setActiveIndex((prev) => (prev + 1) % filteredCommands.length);
+          setActiveIndex((prev) => (prev + 1) % listLength);
           return;
         }
         if (e.key === "ArrowUp") {
           e.preventDefault();
-          setActiveIndex((prev) => (prev - 1 + filteredCommands.length) % filteredCommands.length);
+          setActiveIndex((prev) => (prev - 1 + listLength) % listLength);
           return;
         }
         if (e.key === "Enter" || e.key === "Tab") {
           e.preventDefault();
-          handleSelectCommand(filteredCommands[activeIndex]);
+          if (trigger.type === "command") {
+            handleSelectCommand(filteredCommands[activeIndex]);
+          } else {
+            handleSelectSuggestion(filteredSuggestions[activeIndex]);
+          }
           return;
         }
         if (e.key === "Escape") {
           e.preventDefault();
           setShowSuggestions(false);
+          setTrigger(null);
           return;
         }
       }
@@ -124,38 +229,71 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
     return (
       <div className="relative w-full">
         {/* Autocomplete suggestions */}
-        {showSuggestions && filteredCommands.length > 0 && (
-          <div className="absolute bottom-full left-0 right-0 mb-1.5 z-50 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-2xl overflow-hidden max-h-56 overflow-y-auto">
+        {showSuggestions && trigger && (
+          <div className="absolute bottom-full left-0 right-0 mb-1.5 z-50 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-2xl overflow-hidden max-h-56 overflow-y-auto animate-in fade-in slide-in-from-bottom-2 duration-150">
             <div className="px-3 py-1.5 border-b border-[var(--border)] bg-[var(--surface-2)] flex items-center justify-between">
               <span className="text-[0.643rem] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">
-                Slash Commands
+                {trigger.type === "command" ? "Slash Commands" : "Mention Note / Task / File"}
               </span>
               <span className="text-[0.571rem] text-[var(--text-tertiary)]">
                 ↑↓ to navigate · Enter to select
               </span>
             </div>
             <div className="p-1">
-              {filteredCommands.map((cmd, index) => {
-                const isActive = index === activeIndex;
-                return (
-                  <button
-                    key={cmd.name}
-                    type="button"
-                    onClick={() => handleSelectCommand(cmd)}
-                    className={cn(
-                      "w-full text-left px-2.5 py-2 rounded-lg flex flex-col gap-0.5 transition-colors",
-                      isActive
-                        ? "bg-[var(--accent-dim)] text-[var(--accent)]"
-                        : "text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"
-                    )}
-                  >
-                    <span className="text-xs font-semibold">/{cmd.name}</span>
-                    <span className="text-[0.643rem] text-[var(--text-tertiary)]">
-                      {cmd.description}
-                    </span>
-                  </button>
-                );
-              })}
+              {trigger.type === "command"
+                ? filteredCommands.map((cmd, index) => {
+                    const isActive = index === activeIndex;
+                    return (
+                      <button
+                        key={cmd.name}
+                        type="button"
+                        onClick={() => handleSelectCommand(cmd)}
+                        className={cn(
+                          "w-full text-left px-2.5 py-2 rounded-lg flex flex-col gap-0.5 transition-colors",
+                          isActive
+                            ? "bg-[var(--accent-dim)] text-[var(--accent)]"
+                            : "text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"
+                        )}
+                      >
+                        <span className="text-xs font-semibold">/{cmd.name}</span>
+                        <span className="text-[0.643rem] text-[var(--text-tertiary)]">
+                          {cmd.description}
+                        </span>
+                      </button>
+                    );
+                  })
+                : filteredSuggestions.map((item, index) => {
+                    const isActive = index === activeIndex;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => handleSelectSuggestion(item)}
+                        className={cn(
+                          "w-full text-left px-2.5 py-2 rounded-lg flex items-center justify-between gap-3 transition-colors",
+                          isActive
+                            ? "bg-[var(--accent-dim)] text-[var(--accent)]"
+                            : "text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"
+                        )}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          {item.type === "note" ? (
+                            <FileText size={12} className="text-[var(--info)] shrink-0" />
+                          ) : item.type === "file" ? (
+                            <FileCode size={12} className="text-[var(--warning,#f59e0b)] shrink-0" />
+                          ) : (
+                            <CheckSquare size={12} className="text-[var(--accent)] shrink-0" />
+                          )}
+                          <span className="text-xs font-semibold truncate">
+                            {item.title}
+                          </span>
+                        </div>
+                        <span className="text-[0.643rem] text-[var(--text-tertiary)] shrink-0">
+                          {item.subtitle}
+                        </span>
+                      </button>
+                    );
+                  })}
             </div>
           </div>
         )}
@@ -177,8 +315,13 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
           <textarea
             ref={resolvedRef}
             value={value}
-            onChange={(e) => onChange(e.target.value)}
+            onChange={(e) => {
+              onChange(e.target.value);
+              checkTrigger();
+            }}
             onKeyDown={handleKeyDown}
+            onKeyUp={checkTrigger}
+            onSelect={checkTrigger}
             placeholder={placeholder}
             rows={1}
             disabled={disabled}

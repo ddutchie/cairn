@@ -8,13 +8,15 @@ import { MIN_CHAT_PANEL_WIDTH, MAX_CHAT_PANEL_WIDTH } from "@/store/slices/ui";
 import { useShallow } from "zustand/react/shallow";
 import { useChatStream } from "@/hooks/useChatStream";
 import { buildGraphContext } from "@/components/graph/graph-ai-utils";
+import { ipcAwaitResult } from "@/store/ipc";
+import { resolvePromptContext } from "@/lib/context-resolver";
 
 import { Tooltip } from "@/components/ui/tooltip";
 import { ChatMessageBubble } from "./chat-panel/ChatMessageBubble";
 import { SuggestedPrompts } from "./chat-panel/SuggestedPrompts";
 import { ToolCallIndicator } from "./chat-panel/ToolCallIndicator";
 import { QuestionForm } from "./chat-panel/QuestionForm";
-import { ChatInput } from "./ChatInput";
+import { ChatInput, SuggestionItem } from "./ChatInput";
 import { ContextRing } from "@/components/agent/ContextRing";
 
 const GRAPH_SYSTEM_PROMPT = `You are a Knowledge Graph assistant embedded in Cairn, a note-taking and project management app.
@@ -50,6 +52,11 @@ Remember: Suggest connections actively. Call \`suggest_connections\` whenever th
 
 const CHAT_SLASH_COMMANDS = [
   {
+    name: "archive-chat",
+    description: "Archive conversation as a note & clear chat",
+    insertText: "/archive-chat",
+  },
+  {
     name: "compact",
     description: "Summarise and compact conversation history",
     insertText: "/compact",
@@ -82,6 +89,8 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
     chatPanelWidth, setChatPanelWidth,
     activeView, graphData, selectedGraphNodeId,
     clearThreadMessages,
+    createNote,
+    notes, cards,
   } = useCairnStore(useShallow((s) => ({
     chatOpen:            s.chatOpen,
     toggleChat:          s.toggleChat,
@@ -102,6 +111,9 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
     graphData:           s.graphData,
     selectedGraphNodeId: s.selectedGraphNodeId,
     clearThreadMessages: s.clearThreadMessages,
+    createNote:          s.createNote,
+    notes:               s.notes,
+    cards:               s.cards,
   })));
 
   const [input, setInput]             = useState("");
@@ -117,18 +129,6 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
   const dividerRef     = useRef<HTMLDivElement>(null);
 
   const { isLoading, toolCalls, streamingContent, pendingQuestions, sendStream, stopStream } = useChatStream(threadId);
-
-  const handleClear = useCallback(() => {
-    if (!threadId) return;
-    if (isLoading) stopStream();
-    clearThreadMessages(threadId);
-  }, [threadId, isLoading, stopStream, clearThreadMessages]);
-
-  // Track isLoading in a ref so the thread-init effect can read it without
-  // being listed as a dependency (we never want a loading-state change to
-  // re-trigger thread selection).
-  const isLoadingRef = useRef(isLoading);
-  useEffect(() => { isLoadingRef.current = isLoading; }, [isLoading]);
 
   const project   = useMemo(() => projects.find((p) => p.id === activeProjectId),   [projects, activeProjectId]);
   const workspace = useMemo(() => workspaces.find((w) => w.id === activeWorkspaceId), [workspaces, activeWorkspaceId]);
@@ -168,6 +168,132 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
     [chatThreads, threadId]
   );
 
+  const mentionSuggestions = useMemo<SuggestionItem[]>(() => {
+    const projectNotes = notes.filter((n) => n.workspaceId === activeWorkspaceId && (!activeProjectId || n.projectId === activeProjectId) && !n.archivedAt);
+    const projectCards = cards.filter((c) => c.workspaceId === activeWorkspaceId && (!activeProjectId || c.projectId === activeProjectId) && !c.archivedAt);
+    
+    const items: SuggestionItem[] = [];
+    for (const note of projectNotes) {
+      items.push({ id: note.id, type: "note", title: note.title, subtitle: "Note" });
+    }
+    for (const card of projectCards) {
+      items.push({ id: card.id, type: "card", title: card.title, subtitle: `Task - ${card.priority}` });
+    }
+    return items;
+  }, [notes, cards, activeWorkspaceId, activeProjectId]);
+
+  const handleClear = useCallback(() => {
+    if (!threadId) return;
+    if (isLoading) stopStream();
+    clearThreadMessages(threadId);
+  }, [threadId, isLoading, stopStream, clearThreadMessages]);
+
+  const handleArchiveChat = useCallback(async () => {
+    if (!threadId) return;
+    if (isLoading) stopStream();
+
+    const threadMessages = chatMessages.filter((m) => m.threadId === threadId);
+    if (threadMessages.length === 0) {
+      addMessage(threadId, "system", "Error: No messages to archive.");
+      return;
+    }
+
+    if (!activeProjectId) {
+      addMessage(threadId, "system", "Error: No active project selected. Please select a project before archiving the chat.");
+      return;
+    }
+
+    addMessage(threadId, "system", "Archiving conversation to project note...");
+
+    const history = threadMessages.map((m) => ({ role: m.role, content: m.content }));
+
+    let noteContent = "";
+    let useSummary = false;
+
+    try {
+      const result = await ipcAwaitResult<{ summary: string }>(async (e) => {
+        try {
+          const summaryObj = await e.chat.compactThread({
+            messages: history,
+            config: {
+              provider: aiConfig.provider,
+              baseUrl: aiConfig.baseUrl,
+              model: aiConfig.model,
+              apiKey: aiConfig.apiKey,
+            },
+          }) as { summary: string };
+          return { data: summaryObj };
+        } catch (err) {
+          return { error: err instanceof Error ? err.message : String(err) };
+        }
+      });
+
+      if (result && "data" in result && result.data?.summary) {
+        const summary = result.data.summary;
+        const threadTitle = activeThread?.title ?? (threadMessages.find((m) => m.role === "user")?.content.slice(0, 50) ?? "New thread");
+        const dateStr = new Date().toLocaleString();
+        
+        noteContent = `# Chat Summary: ${threadTitle}\n\n` +
+          `- **Date:** ${dateStr}\n` +
+          `- **Original Thread:** ${threadTitle}\n\n` +
+          `---\n\n` +
+          summary;
+        useSummary = true;
+      }
+    } catch (err) {
+      console.warn("Failed to generate AI summary, falling back to raw transcript:", err);
+    }
+
+    if (!useSummary) {
+      // Fallback: raw transcript
+      const threadTitle = activeThread?.title ?? (threadMessages.find((m) => m.role === "user")?.content.slice(0, 50) ?? "New thread");
+      const dateStr = new Date().toLocaleString();
+      
+      let rawTranscript = `# Chat Log: ${threadTitle}\n\n` +
+        `- **Date:** ${dateStr}\n` +
+        `- **Status:** Archive Fallback (AI Compaction Unavailable)\n\n` +
+        `---\n\n` +
+        `### Conversation History\n\n`;
+
+      for (const msg of threadMessages) {
+        if (msg.role === "system") continue;
+        const roleName = msg.role === "user" ? "User" : "AI Assistant";
+        rawTranscript += `### **${roleName}**\n\n${msg.content}\n\n`;
+      }
+      noteContent = rawTranscript;
+    }
+
+    // Determine note title with timestamp
+    const nowObj = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const timestamp = `${nowObj.getFullYear()}-${pad(nowObj.getMonth() + 1)}-${pad(nowObj.getDate())}-${pad(nowObj.getHours())}${pad(nowObj.getMinutes())}${pad(nowObj.getSeconds())}`;
+    
+    const threadTitle = activeThread?.title ?? (threadMessages.find((m) => m.role === "user")?.content.slice(0, 50) ?? "New thread");
+    const sluggedTitle = threadTitle
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/(^-|-$)+/g, "");
+    const noteTitle = `${timestamp}-${sluggedTitle || "conversation"}`;
+
+    // Create the note
+    createNote(activeProjectId, noteTitle, "note", "conversations", noteContent);
+
+    // Clear the chat messages
+    await clearThreadMessages(threadId);
+
+    // Add a final system message confirming the save
+    addMessage(threadId, "system", `Chat archived to project note: \`conversations/${noteTitle}\`.`);
+
+  }, [threadId, isLoading, stopStream, chatMessages, activeProjectId, activeThread, aiConfig, addMessage, createNote, clearThreadMessages]);
+
+  // Track isLoading in a ref so the thread-init effect can read it without
+  // being listed as a dependency (we never want a loading-state change to
+  // re-trigger thread selection).
+  const isLoadingRef = useRef(isLoading);
+  useEffect(() => { isLoadingRef.current = isLoading; }, [isLoading]);
+
+
+
   // Initialise / switch thread.
   // Reads getOrCreateThread directly from the store snapshot (stable, no ref
   // needed) so the effect only re-runs when the workspace/project identity
@@ -197,7 +323,7 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, isLoading]);
   useEffect(() => { if (chatOpen) inputRef.current?.focus(); }, [chatOpen]);
 
-  const handleSend = useCallback((text?: string) => {
+  const handleSend = useCallback(async (text?: string) => {
     const content = text ?? input.trim();
     if (!content || !threadId) return;
 
@@ -208,8 +334,24 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
       return;
     }
 
+    if (trimmed === "/archive-chat" || trimmed === "/archive" || trimmed === "/ archive-chat" || trimmed === "/ archive") {
+      setInput("");
+      handleArchiveChat();
+      return;
+    }
+
     setInput("");
     addMessage(threadId, "user", content);
+
+    // Resolve context references and append to prompt payload
+    const store = useCairnStore.getState();
+    const resolvedMessage = await resolvePromptContext(
+      content,
+      store.notes,
+      store.cards,
+      store.columns,
+      project?.codeDirectory ?? null
+    );
 
     let systemPrompt: string | undefined = undefined;
     if (activeView === "graph") {
@@ -221,7 +363,7 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
     }
 
     sendStream({
-      message: content, threadId,
+      message: resolvedMessage, threadId,
       projectId: activeProjectId,
       workspaceId: activeWorkspaceId,
       history: messages.slice(-40).map((m) => ({ role: m.role, content: m.content })),
@@ -235,7 +377,7 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
       },
       systemPrompt,
     });
-  }, [input, threadId, addMessage, sendStream, activeProjectId, activeWorkspaceId, messages, aiConfig, activeView, graphData, selectedNode]);
+  }, [input, threadId, addMessage, sendStream, activeProjectId, activeWorkspaceId, messages, aiConfig, activeView, graphData, selectedNode, handleArchiveChat, project]);
 
   const handleRetry = useCallback((content: string) => {
     handleSend(content);
@@ -493,6 +635,7 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
           disabled={isLoading}
           placeholder={activeView === "graph" ? "Ask about your knowledge graph…" : "Ask about your project…"}
           commands={CHAT_SLASH_COMMANDS}
+          suggestions={mentionSuggestions}
         />
         <div className="flex items-center justify-between mt-1.5 px-0.5">
           <p className="text-[0.714rem] text-[var(--text-tertiary)]">

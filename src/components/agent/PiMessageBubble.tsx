@@ -287,7 +287,7 @@ export function PiMessageBubble({ message }: PiMessageBubbleProps) {
       <div className="flex gap-2 items-start justify-end">
         <div className="flex-1 min-w-0 flex flex-col items-end gap-1">
           <div className="px-3 py-2 rounded-xl rounded-tr-sm text-xs leading-relaxed bg-[var(--accent)] text-white max-w-[85%]">
-            <p className="whitespace-pre-wrap break-words">{message.content}</p>
+            <MarkdownContent content={message.content} />
           </div>
         </div>
         <MessageAvatar role="user" size="md" />
@@ -319,6 +319,18 @@ export function PiMessageBubble({ message }: PiMessageBubbleProps) {
       <MessageAvatar role="bot" size="md" />
       <div className="flex-1 min-w-0 flex flex-col gap-1">
 
+        {/* Markdown content with animated cursor when streaming */}
+        {hasContent && (
+          <div className={cn(
+            "px-3 py-2 rounded-xl rounded-tl-sm text-xs leading-relaxed",
+            "bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-secondary)]",
+            "min-w-0 overflow-hidden",
+          )}>
+            <MarkdownContent content={message.content} />
+            {message.isStreaming && <StreamingCursor size="md" />}
+          </div>
+        )}
+
         {/* Tool call chips — expandable */}
         {hasTools && (
           <div className="flex flex-col gap-0.5">
@@ -333,23 +345,12 @@ export function PiMessageBubble({ message }: PiMessageBubbleProps) {
           <SubagentBlock key={sub.childSessionId} sub={sub} />
         ))}
 
+
         {/* "Thinking…" spinner — only when streaming with no content or tools yet */}
         {!hasContent && message.isStreaming && !hasTools && !hasSubagents && (
           <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] w-fit">
             <Loader2 size={9} className="text-[var(--accent)] animate-spin shrink-0" />
             <span className="text-[0.714rem] text-[var(--text-tertiary)]">Thinking…</span>
-          </div>
-        )}
-
-        {/* Markdown content with animated cursor when streaming */}
-        {hasContent && (
-          <div className={cn(
-            "px-3 py-2 rounded-xl rounded-tl-sm text-xs leading-relaxed",
-            "bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-secondary)]",
-            "min-w-0 overflow-hidden",
-          )}>
-            <MarkdownContent content={message.content} />
-            {message.isStreaming && <StreamingCursor size="md" />}
           </div>
         )}
       </div>

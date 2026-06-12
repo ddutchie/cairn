@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import {
   FileText, Kanban, Calendar, Pin, ArrowRight, Clock,
   AlertCircle, Activity, Circle, BarChart2, Pencil, Check, FolderOpen, Terminal,
@@ -15,7 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { TaskCard, Note, BoardColumn } from "@/types";
 import { useProjectMetrics, type ActivityGroup } from "./project-overview/useProjectMetrics";
-import { ChatInput } from "@/components/chat/ChatInput";
+import { ChatInput, SuggestionItem } from "@/components/chat/ChatInput";
 
 export function ProjectOverview() {
   const { activeProjectId, projects, setView, updateProject, chatOpen } = useCairnStore(useShallow((s) => ({
@@ -30,6 +30,18 @@ export function ProjectOverview() {
 
   const [chatInput, setChatInput] = useState("");
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
+
+  const mentionSuggestions = useMemo<SuggestionItem[]>(() => {
+    if (!metrics) return [];
+    const items: SuggestionItem[] = [];
+    for (const note of metrics.notes) {
+      items.push({ id: note.id, type: "note", title: note.title, subtitle: "Note" });
+    }
+    for (const card of metrics.allCards) {
+      items.push({ id: card.id, type: "card", title: card.title, subtitle: `Task - ${card.priority}` });
+    }
+    return items;
+  }, [metrics]);
 
   function handleSendChat() {
     const text = chatInput.trim();
@@ -339,6 +351,7 @@ export function ProjectOverview() {
               placeholder="What would you like to do today?"
               variant="overview"
               showSparkles
+              suggestions={mentionSuggestions}
             />
           </div>
         </div>
