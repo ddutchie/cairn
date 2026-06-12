@@ -207,8 +207,17 @@ export function registerPiAgentHandler(
       ? (ctx.db.prepare("SELECT name FROM projects WHERE id = ?").get(projectId) as { name: string } | undefined)?.name ?? "Project"
       : "Project";
 
+    const sessionRow = q.getPiSessionById(ctx.db, sessionId);
+    const planNoteId = sessionRow?.planNoteId;
+    const planContent = planNoteId
+      ? (ctx.db.prepare("SELECT content FROM notes WHERE id = ?").get(planNoteId) as { content: string } | undefined)?.content ?? ""
+      : undefined;
+
     const skills = discoverSkills(cwd);
-    const systemPrompt = buildPiAgentSystemPrompt({ projectName, cwd, taskTitle, workspaceId, projectId, mode, skillsXml: renderSkillsXml(skills) });
+    const systemPrompt = buildPiAgentSystemPrompt({
+      projectName, cwd, taskTitle, workspaceId, projectId, mode, planContent,
+      skillsXml: renderSkillsXml(skills)
+    });
 
     const toolCtx: AgentToolContext = {
       cwd, db: ctx.db, workspacePath: ctx.workspacePath, sessionId, send, getWin, skills,

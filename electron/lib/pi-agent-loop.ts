@@ -138,7 +138,7 @@ export interface AgentLoopCallbacks {
    * Does NOT mutate session.messages — only affects what is sent to the model.
    * Use for context pruning, injection, or summarisation.
    */
-  transformContext?: (messages: AgentMessage[]) => AgentMessage[];
+  transformContext?: (messages: AgentMessage[]) => AgentMessage[] | Promise<AgentMessage[]>;
   /**
    * Called after each turn's tool results are appended, before the next LLM
    * call. Return true to stop the loop cleanly (fires onDone, not onError).
@@ -159,7 +159,7 @@ export interface PiAgentSession {
    * inside it survives across multiple pi-agent:prompt calls on the same session.
    * Built once on first use and reused; the signal is updated via abortCtrl each turn.
    */
-  compactionTransformer?: (messages: AgentMessage[]) => AgentMessage[];
+  compactionTransformer?: (messages: AgentMessage[]) => AgentMessage[] | Promise<AgentMessage[]>;
 }
 
 // ── All tool definitions ──────────────────────────────────────────────────────
@@ -438,7 +438,7 @@ export async function runAgentLoop(
 
     // Build messages array — apply context pruning.
     // systemPrompt passes as `system:` in the request body (not as a user message).
-    const contextMessages = pruner([...session.messages]);
+    const contextMessages = await pruner([...session.messages]);
 
     // ── Stream assistant response ─────────────────────────────────────────
     const headers: Record<string, string> = { "Content-Type": "application/json" };
