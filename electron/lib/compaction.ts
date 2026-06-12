@@ -184,7 +184,7 @@ export function buildCompactionTransformer(
     // If we already have a summary from the last compaction, apply it immediately
     if (cachedSummary !== null) {
       const { toKeep } = splitMessages(messages);
-      return buildCompactedContext(cachedSummary, messages[0], toKeep);
+      return buildCompactedContext(cachedSummary, toKeep);
     }
 
     // Generate summary if not already in flight
@@ -208,7 +208,7 @@ export function buildCompactionTransformer(
     try {
       const summary = await compactionPromise;
       const { toKeep } = splitMessages(messages);
-      return buildCompactedContext(summary, messages[0], toKeep);
+      return buildCompactedContext(summary, toKeep);
     } catch {
       // Fallback for this turn: sliding-window trim (safe, no LLM call)
       return slidingWindowFallback(messages);
@@ -218,7 +218,6 @@ export function buildCompactionTransformer(
 
 function buildCompactedContext(
   summary: string,
-  firstMessage: AgentMessage | undefined,
   recentMessages: AgentMessage[],
 ): AgentMessage[] {
   const summaryMessage: AgentMessage = {
@@ -231,8 +230,6 @@ function buildCompactedContext(
   };
 
   const result: AgentMessage[] = [];
-  // Always keep the very first user message (the original task)
-  if (firstMessage && firstMessage.role === "user") result.push(firstMessage);
   result.push(summaryMessage);
   result.push(...recentMessages);
   return result;
@@ -295,7 +292,7 @@ export async function compactNow(
   if (toSummarise.length === 0) return null;
 
   const summary = await generateSummary(toSummarise, llmConfig, session.abortCtrl.signal);
-  const messages = buildCompactedContext(summary, session.messages[0], toKeep);
+  const messages = buildCompactedContext(summary, toKeep);
   return { messages, summary };
 }
 
