@@ -9,13 +9,14 @@ import { useShallow } from "zustand/react/shallow";
 import { useChatStream } from "@/hooks/useChatStream";
 import { buildGraphContext } from "@/components/graph/graph-ai-utils";
 import { ipcAwaitResult } from "@/store/ipc";
+import { resolvePromptContext } from "@/lib/context-resolver";
 
 import { Tooltip } from "@/components/ui/tooltip";
 import { ChatMessageBubble } from "./chat-panel/ChatMessageBubble";
 import { SuggestedPrompts } from "./chat-panel/SuggestedPrompts";
 import { ToolCallIndicator } from "./chat-panel/ToolCallIndicator";
 import { QuestionForm } from "./chat-panel/QuestionForm";
-import { ChatInput } from "./ChatInput";
+import { ChatInput, SuggestionItem } from "./ChatInput";
 import { ContextRing } from "@/components/agent/ContextRing";
 
 const GRAPH_SYSTEM_PROMPT = `You are a Knowledge Graph assistant embedded in Cairn, a note-taking and project management app.
@@ -89,6 +90,7 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
     activeView, graphData, selectedGraphNodeId,
     clearThreadMessages,
     createNote,
+    notes, cards,
   } = useCairnStore(useShallow((s) => ({
     chatOpen:            s.chatOpen,
     toggleChat:          s.toggleChat,
@@ -110,6 +112,8 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
     selectedGraphNodeId: s.selectedGraphNodeId,
     clearThreadMessages: s.clearThreadMessages,
     createNote:          s.createNote,
+    notes:               s.notes,
+    cards:               s.cards,
   })));
 
   const [input, setInput]             = useState("");
@@ -163,6 +167,20 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
     () => chatThreads.find((t) => t.id === threadId),
     [chatThreads, threadId]
   );
+
+  const mentionSuggestions = useMemo<SuggestionItem[]>(() => {
+    const projectNotes = notes.filter((n) => n.workspaceId === activeWorkspaceId && (!activeProjectId || n.projectId === activeProjectId) && !n.archivedAt);
+    const projectCards = cards.filter((c) => c.workspaceId === activeWorkspaceId && (!activeProjectId || c.projectId === activeProjectId) && !c.archivedAt);
+    
+    const items: SuggestionItem[] = [];
+    for (const note of projectNotes) {
+      items.push({ id: note.id, type: "note", title: note.title, subtitle: "Note" });
+    }
+    for (const card of projectCards) {
+      items.push({ id: card.id, type: "card", title: card.title, subtitle: `Task - ${card.priority}` });
+    }
+    return items;
+  }, [notes, cards, activeWorkspaceId, activeProjectId]);
 
   const handleClear = useCallback(() => {
     if (!threadId) return;
@@ -305,7 +323,7 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, isLoading]);
   useEffect(() => { if (chatOpen) inputRef.current?.focus(); }, [chatOpen]);
 
-  const handleSend = useCallback((text?: string) => {
+  const handleSend = useCallback(async (text?: string) => {
     const content = text ?? input.trim();
     if (!content || !threadId) return;
 
@@ -325,6 +343,16 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
     setInput("");
     addMessage(threadId, "user", content);
 
+    // Resolve context references and append to prompt payload
+    const store = useCairnStore.getState();
+    const resolvedMessage = await resolvePromptContext(
+      content,
+      store.notes,
+      store.cards,
+      store.columns,
+      project?.codeDirectory ?? null
+    );
+
     let systemPrompt: string | undefined = undefined;
     if (activeView === "graph") {
       const graphContext = buildGraphContext(graphData, selectedNode);
@@ -335,7 +363,7 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
     }
 
     sendStream({
-      message: content, threadId,
+      message: resolvedMessage, threadId,
       projectId: activeProjectId,
       workspaceId: activeWorkspaceId,
       history: messages.slice(-40).map((m) => ({ role: m.role, content: m.content })),
@@ -349,7 +377,7 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
       },
       systemPrompt,
     });
-  }, [input, threadId, addMessage, sendStream, activeProjectId, activeWorkspaceId, messages, aiConfig, activeView, graphData, selectedNode, handleArchiveChat]);
+  }, [input, threadId, addMessage, sendStream, activeProjectId, activeWorkspaceId, messages, aiConfig, activeView, graphData, selectedNode, handleArchiveChat, project]);
 
   const handleRetry = useCallback((content: string) => {
     handleSend(content);
@@ -607,6 +635,7 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
           disabled={isLoading}
           placeholder={activeView === "graph" ? "Ask about your knowledge graph…" : "Ask about your project…"}
           commands={CHAT_SLASH_COMMANDS}
+          suggestions={mentionSuggestions}
         />
         <div className="flex items-center justify-between mt-1.5 px-0.5">
           <p className="text-[0.714rem] text-[var(--text-tertiary)]">

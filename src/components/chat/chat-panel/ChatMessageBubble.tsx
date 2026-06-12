@@ -134,7 +134,7 @@ export const ChatMessageBubble = React.memo(function ChatMessageBubble({ message
         )}
         <div className={cn("px-3 py-2.5 rounded-xl text-xs leading-relaxed max-w-full",
           isUser ? "bg-[var(--accent)] text-white rounded-tr-sm" : "bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-secondary)] rounded-tl-sm")}>
-          <MarkdownContent content={message.content} />
+          <MarkdownContent content={message.content} isUser={isUser} />
         </div>
         {!isUser && message.actions && message.actions.length > 0 && (
           <ActionsList actions={message.actions} />
