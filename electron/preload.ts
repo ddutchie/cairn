@@ -469,6 +469,12 @@ const api = {
       }>("llama:server:status"),
       setDefault: (modelId: string) => invoke<{ success: boolean }>("llama:server:setDefault", { modelId }),
     }
+  },
+  // ── Mobile Access ────────────────────────────────
+  mobile: {
+    status: () => invoke<any>("mobile:status"),
+    saveSettings: (newSettings: any) => invoke<any>("mobile:saveSettings", newSettings),
+    regeneratePin: () => invoke<any>("mobile:regeneratePin"),
   }
 } as const;
 

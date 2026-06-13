@@ -17,7 +17,11 @@
  *   pi-agent:compact   { sessionId, status: "start" | "end" }
  */
 
-import { ipcMain } from "electron";
+import { registerIpcHandle, registerIpcOn, broadcastEvent } from "./registry";
+const ipcMain = {
+  handle: registerIpcHandle,
+  on: registerIpcOn,
+};
 import { runAgentLoop, type PiAgentSession, type AgentLLMConfig, type AgentToolContext } from "../lib/pi-agent-loop";
 import { buildCompactionTransformer, compactNow } from "../lib/compaction";
 import { buildPiAgentSystemPrompt } from "../lib/pi-agent-prompt";
@@ -173,8 +177,7 @@ export function registerPiAgentHandler(
     const { sessionId, prompt, projectId, workspaceId, cwd, taskTitle, mode = "execute" } = req;
 
     const send = (channel: string, payload: unknown) => {
-      const win = getWin();
-      if (win && !win.webContents.isDestroyed()) win.webContents.send(channel, payload);
+      broadcastEvent(channel, payload);
     };
 
     if (req.config?.provider === "localllm") {
@@ -235,8 +238,7 @@ export function registerPiAgentHandler(
     const { sessionId, planNoteId, projectId, workspaceId, cwd, taskTitle } = req;
 
     const send = (channel: string, payload: unknown) => {
-      const win = getWin();
-      if (win && !win.webContents.isDestroyed()) win.webContents.send(channel, payload);
+      broadcastEvent(channel, payload);
     };
 
     if (req.config?.provider === "localllm") {
@@ -296,8 +298,7 @@ export function registerPiAgentHandler(
     if (!session || session.messages.length === 0) return;
 
     const send = (channel: string, payload: unknown) => {
-      const win = getWin();
-      if (win && !win.webContents.isDestroyed()) win.webContents.send(channel, payload);
+      broadcastEvent(channel, payload);
     };
 
     const llmConfig: AgentLLMConfig = {

@@ -16,7 +16,12 @@
  *   - cwd is validated as an accessible directory before spawn.
  */
 
-import { ipcMain, dialog, BrowserWindow } from "electron";
+import { dialog, BrowserWindow } from "electron";
+import { registerIpcHandle, registerIpcOn } from "./registry";
+const ipcMain = {
+  handle: registerIpcHandle,
+  on: registerIpcOn,
+};
 import fs from "fs";
 import path from "path";
 import os from "os";

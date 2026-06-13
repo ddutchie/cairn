@@ -71,7 +71,11 @@ function MDPreviewPanel({ text, onDismiss }: MDPreviewPanelProps) {
         <ReactMarkdown
           remarkPlugins={PREVIEW_REMARK_PLUGINS}
           rehypePlugins={[previewCapture, rehypeKatex, previewMerge]}
-          urlTransform={(url) => url.startsWith("asset://") ? url : defaultUrlTransform(url)}
+          urlTransform={(url) =>
+            url.startsWith("asset://")
+              ? (typeof window !== "undefined" && !window.electron ? `/api/assets/${url.slice(8)}` : url)
+              : defaultUrlTransform(url)
+          }
           components={({
             mark({ children }: React.HTMLAttributes<HTMLElement> & ExtraProps) {
               return (
@@ -929,7 +933,11 @@ export function NoteEditor({ note }: NoteEditorProps) {
                    <ReactMarkdown
                      remarkPlugins={[remarkGfm, remarkBreaks, remarkMath, remarkPromoteDisplayMath, remarkCallout, remarkObsidianEmbeds, remarkWikilinks]}
                      rehypePlugins={[rehypeCaptureLatex, rehypeKatex, rehypeMergedPass]}
-                     urlTransform={(url) => url.startsWith("asset://") ? url : defaultUrlTransform(url)}
+                     urlTransform={(url) =>
+                        url.startsWith("asset://")
+                          ? (typeof window !== "undefined" && !window.electron ? `/api/assets/${url.slice(8)}` : url)
+                          : defaultUrlTransform(url)
+                      }
                      components={mdComponents}
                    >
                     {note.content}

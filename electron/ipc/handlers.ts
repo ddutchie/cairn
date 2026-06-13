@@ -14,7 +14,12 @@
  * Channel naming: "db:<entity>:<action>"
  */
 
-import { ipcMain, app, shell, dialog, BrowserWindow, net } from "electron";
+import { app, shell, dialog, BrowserWindow, net } from "electron";
+import { registerIpcHandle, registerIpcOn } from "./registry";
+const ipcMain = {
+  handle: registerIpcHandle,
+  on: registerIpcOn,
+};
 import path from "path";
 import fs from "fs";
 import type Database from "better-sqlite3";
@@ -772,6 +777,30 @@ export function registerAppHandlers(
     markMcpNotificationsRead(ctx.db);
     updateTrayBadge(0);
     onBadgeClear?.();
+  }));
+
+  // ── Mobile Access ──────────────────────────────────
+  ipcMain.handle("mobile:status", () => handle(() => {
+    const { getMobileStatus } = require("../lib/mobile-server");
+    return getMobileStatus();
+  }));
+
+  ipcMain.handle("mobile:saveSettings", (_e, newSettings: any) => handle(() => {
+    const { saveMobileSettings, startMobileServer, stopMobileServer, getMobileStatus } = require("../lib/mobile-server");
+    const s = saveMobileSettings(userDataPath, newSettings);
+    if (s.enabled) {
+      startMobileServer(userDataPath, ctx);
+    } else {
+      stopMobileServer();
+    }
+    return getMobileStatus();
+  }));
+
+  ipcMain.handle("mobile:regeneratePin", () => handle(() => {
+    const { saveMobileSettings, getMobileStatus } = require("../lib/mobile-server");
+    const pin = Math.floor(1000 + Math.random() * 9000).toString();
+    saveMobileSettings(userDataPath, { pin });
+    return getMobileStatus();
   }));
 
   // ── Export note as PDF ─────────────────────────────

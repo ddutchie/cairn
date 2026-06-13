@@ -7,8 +7,12 @@
  * Registered as: ipcMain.on("chat:stream", ...)
  */
 
-import { ipcMain } from "electron";
 import type { BrowserWindow } from "electron";
+import { registerIpcHandle, registerIpcOn } from "./registry";
+const ipcMain = {
+  handle: registerIpcHandle,
+  on: registerIpcOn,
+};
 import type Database from "better-sqlite3";
 import { isLocalEndpoint, streamCompletion, normaliseBaseUrl, type OpenAIMessage } from "../lib/llm";
 import { TOOLS, buildSystemPrompt, type ChatRequest } from "../lib/tools";

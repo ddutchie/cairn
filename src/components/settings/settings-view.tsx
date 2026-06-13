@@ -9,6 +9,7 @@ import {
   Info,
   Tag,
   Terminal,
+  Smartphone,
 } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -20,8 +21,9 @@ import { ShortcutsSettings } from "./ShortcutsSettings";
 import { DataSettings } from "./DataSettings";
 import { AboutSection } from "./AboutSection";
 import { AgentSettings } from "./AgentSettings";
+import { MobileSettings } from "./MobileSettings";
 
-type SettingsSection = "general" | "ai" | "agents" | "data" | "about" | "shortcuts" | "tags";
+type SettingsSection = "general" | "ai" | "agents" | "mobile" | "data" | "about" | "shortcuts" | "tags";
 
 export function SettingsView() {
   const [section, setSection] = useState<SettingsSection>("general");
@@ -35,6 +37,7 @@ export function SettingsView() {
           { id: "general" as const, label: "General", icon: Settings },
           { id: "ai" as const, label: "AI & Chat", icon: Bot },
           { id: "agents" as const, label: "Coding Agents", icon: Terminal },
+          { id: "mobile" as const, label: "Mobile Access", icon: Smartphone },
           { id: "tags" as const, label: "Tags", icon: Tag },
           { id: "shortcuts" as const, label: "Shortcuts", icon: Keyboard },
           { id: "data" as const, label: "Data", icon: Database },
@@ -70,6 +73,7 @@ export function SettingsView() {
           {section === "general" && <GeneralSettings />}
           {section === "ai" && <AISettings />}
           {section === "agents" && <AgentSettings />}
+          {section === "mobile" && <MobileSettings />}
           {section === "tags" && <TagsSettings />}
           {section === "shortcuts" && <ShortcutsSettings />}
           {section === "data" && (
