@@ -9,6 +9,7 @@ import {
   Terminal,
   MessageSquare,
   ChevronRight,
+  Menu,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
@@ -38,6 +39,7 @@ export function Topbar() {
     workspaces,
     projects,
     hiddenViews,
+    toggleSidebar,
   } = useCairnStore(useShallow((s) => ({
     activeWorkspaceId: s.activeWorkspaceId,
     activeProjectId:   s.activeProjectId,
@@ -48,6 +50,7 @@ export function Topbar() {
     workspaces:        s.workspaces,
     projects:          s.projects,
     hiddenViews:       s.hiddenViews,
+    toggleSidebar:     s.toggleSidebar,
   })));
 
   const workspace = useMemo(
@@ -62,6 +65,14 @@ export function Topbar() {
   if (activeView === "settings") {
     return (
       <header className="flex items-center h-11 px-4 border-b border-[var(--border)] flex-shrink-0 bg-[var(--surface)] gap-3">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={toggleSidebar}
+          className="md:hidden p-1 mr-1 text-[var(--text-secondary)] shrink-0"
+        >
+          <Menu size={16} />
+        </Button>
         <span className="text-sm font-medium text-[var(--text-primary)] flex-1">Settings</span>
         <QuickSettings />
       </header>
@@ -70,22 +81,32 @@ export function Topbar() {
 
   return (
     <header className="flex items-center h-11 px-4 border-b border-[var(--border)] flex-shrink-0 bg-[var(--surface)] gap-3">
+      {/* Sidebar toggle for mobile */}
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={toggleSidebar}
+        className="md:hidden p-1 mr-1 text-[var(--text-secondary)] shrink-0"
+      >
+        <Menu size={16} />
+      </Button>
+
       {/* Breadcrumb */}
-      <nav className="flex items-center gap-1 text-xs text-[var(--text-tertiary)] flex-shrink-0">
-        <WorkspaceIcon name={workspace?.icon} size={13} className="text-[var(--text-tertiary)]" />
-        <span>{workspace?.name}</span>
+      <nav className="flex items-center gap-1 text-xs text-[var(--text-tertiary)] flex-shrink-0 min-w-0 max-w-[30%] sm:max-w-none">
+        <WorkspaceIcon name={workspace?.icon} size={13} className="text-[var(--text-tertiary)] shrink-0" />
+        <span className="truncate hidden sm:inline">{workspace?.name}</span>
         {project && (
           <>
-            <ChevronRight size={11} />
-            <ProjectIcon name={project.icon} size={13} className="text-[var(--text-secondary)]" />
-            <span className="text-[var(--text-secondary)] font-medium">{project.name}</span>
+            <ChevronRight size={11} className="shrink-0" />
+            <ProjectIcon name={project.icon} size={13} className="text-[var(--text-secondary)] shrink-0" />
+            <span className="text-[var(--text-secondary)] font-medium truncate">{project.name}</span>
           </>
         )}
       </nav>
 
       {/* Project meta pills */}
       {project && (
-        <div className="flex items-center gap-1.5 flex-shrink-0">
+        <div className="hidden sm:flex items-center gap-1.5 flex-shrink-0">
           <span
             className={cn(
               "text-[0.714rem] font-medium px-1.5 py-0.5 rounded-full border border-[var(--border)]",
@@ -105,30 +126,53 @@ export function Topbar() {
         </div>
       )}
 
-      {/* View tabs */}
+      {/* View Selector (Dropdown on Mobile, Tabs on Desktop) */}
       {project && (
-        <nav className="flex items-center gap-0.5 ml-2">
-          {VIEW_TABS.filter((tab) => !hiddenViews.has(tab.id as "board" | "flow" | "agent")).map((tab) => {
-            const Icon = tab.icon;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setView(tab.id)}
-                aria-current={activeView === tab.id ? "page" : undefined}
-                className={cn(
-                  "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors",
-                  "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]",
-                  activeView === tab.id
-                    ? "text-[var(--text-primary)] bg-[var(--surface-2)]"
-                    : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"
-                )}
-              >
-                <Icon size={12} />
-                {tab.label}
-              </button>
-            );
-          })}
-        </nav>
+        <>
+          {/* Mobile dropdown view selector */}
+          <div className="flex sm:hidden items-center relative ml-2">
+            <select
+              value={activeView}
+              onChange={(e) => setView(e.target.value as "overview" | "notes" | "board" | "flow" | "settings" | "graph" | "insights" | "chat" | "search" | "agent")}
+              className="appearance-none bg-[var(--surface-2)] border border-[var(--border)] rounded-md pl-3 pr-8 py-1 text-xs font-medium text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] cursor-pointer"
+            >
+              {VIEW_TABS.filter((tab) => !hiddenViews.has(tab.id as "board" | "flow" | "agent")).map((tab) => (
+                <option key={tab.id} value={tab.id} className="bg-[var(--surface-2)] text-[var(--text-primary)]">
+                  {tab.label}
+                </option>
+              ))}
+            </select>
+            <div className="absolute right-2.5 pointer-events-none text-[var(--text-tertiary)] flex items-center">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M6 9l6 6 6-6"/>
+              </svg>
+            </div>
+          </div>
+
+          {/* Desktop tabs view selector */}
+          <nav className="hidden sm:flex items-center gap-0.5 ml-2 overflow-x-auto scrollbar-none flex-nowrap shrink">
+            {VIEW_TABS.filter((tab) => !hiddenViews.has(tab.id as "board" | "flow" | "agent")).map((tab) => {
+              const Icon = tab.icon;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setView(tab.id)}
+                  aria-current={activeView === tab.id ? "page" : undefined}
+                  className={cn(
+                    "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap",
+                    "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]",
+                    activeView === tab.id
+                      ? "text-[var(--text-primary)] bg-[var(--surface-2)]"
+                      : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"
+                  )}
+                >
+                  <Icon size={12} className="shrink-0" />
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+        </>
       )}
 
       <div className="flex-1" />
@@ -146,7 +190,7 @@ export function Topbar() {
               )}
             >
               <MessageSquare size={13} />
-              <span className="text-xs">Chat</span>
+              <span className="text-xs hidden sm:inline">Chat</span>
             </Button>
           </Tooltip>
         )}

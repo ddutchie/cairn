@@ -43,6 +43,7 @@ Cairn is a desktop app (Electron + Next.js) that combines markdown notes with a 
 - **Knowledge Graph** — Workspace-wide graph of every note, card, project, and tag; Force-directed and Radial tree layouts; auto-discovered relationships (`⌘6`)
 - **Insights** — Analytics view: Ridgeline joy plot, Beeswarm, Bullet health bars, Sankey pipeline flow, Timeline, Matrix heatmap, Table (`⌘7`)
 - **Font scaling** — Five-step UI font size preference (XS–XL, default M) in Settings → General
+- **Mobile Companion** — Access your workspace on any device (phone, tablet) over the local network via QR code or display PIN; features responsive layouts (slide-over drawers, fullscreen chat, wrapped note headers), Kanban touch drag-and-drop, full Idea Flow touch gestures (long-press canvas, single-tap node), and native PDF sharing sheets
 - **Obsidian Vault Compatibility** — Works side-by-side with Obsidian vaults; renders standard double-bracket embeds (`![[image.png]]`), uploads files to custom attachment folders, resolves local media via sequential-fallback protocol, and merges YAML frontmatter non-destructively
 - **Local-first** — Notes as `.md` files, project data in SQLite; no network required
 - **Dark mode** — Calm, focused aesthetics

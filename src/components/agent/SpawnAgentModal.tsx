@@ -274,7 +274,7 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
                   <select
                     value={selectedAgentId}
                     onChange={(e) => setSelectedAgentId(e.target.value)}
-                    className="w-full rounded-md border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
+                    className="w-full rounded-md border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-sm px-3 py-1.5 focus:outline-none"
                   >
                     {agents.map((a) => (
                       <option key={a.id} value={a.id}>{a.name}{a.isDefault ? " (default)" : ""}</option>
@@ -295,7 +295,7 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
               onChange={(e) => setPrompt(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && e.metaKey) handleSpawn(); }}
               rows={5}
-              className="w-full rounded-md border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-sm px-3 py-2 font-mono resize-y focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
+              className="w-full rounded-md border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-sm px-3 py-2 font-mono resize-y focus:outline-none"
               placeholder={
                 sessionType === "pi" && agentMode === "plan"
                   ? "Describe what you want to build — the agent will ask questions and build a plan…"

@@ -9,7 +9,8 @@
  */
 
 import React, { useMemo } from "react";
-import ReactMarkdown, { defaultUrlTransform, type ExtraProps } from "react-markdown";
+import ReactMarkdown, { type ExtraProps } from "react-markdown";
+import { urlTransform } from "@/lib/utils";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import remarkMath from "remark-math";
@@ -44,7 +45,7 @@ export function NoteMarkdownPreview({ content, className }: NoteMarkdownPreviewP
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkBreaks, remarkMath, remarkPromoteDisplayMath, remarkCallout, remarkObsidianEmbeds]}
         rehypePlugins={[rehypeCaptureLatex, rehypeKatex, rehypeMergedPass]}
-        urlTransform={(url) => url.startsWith("asset://") ? url : defaultUrlTransform(url)}
+        urlTransform={urlTransform}
         components={({
           mark({ children }: React.HTMLAttributes<HTMLElement> & ExtraProps) {
             return (
@@ -94,6 +95,15 @@ export function NoteMarkdownPreview({ content, className }: NoteMarkdownPreviewP
               return <section {...props} className="footnotes mt-8 pt-4 text-[0.786rem] text-[var(--text-secondary)]" style={{ borderTop: "1px solid var(--border)" }}>{children}</section>;
             }
             return <section {...props}>{children}</section>;
+          },
+          table({ children }: { children?: React.ReactNode }) {
+            return (
+              <div className="w-full overflow-x-auto my-3 scrollbar-thin">
+                <table className="min-w-full border-collapse">
+                  {children}
+                </table>
+              </div>
+            );
           },
         } as import("react-markdown").Components)}
       >

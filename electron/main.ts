@@ -17,6 +17,7 @@ import { app, BrowserWindow, shell, protocol } from "electron";
 import path from "path";
 import fs from "fs";
 import { autoUpdater } from "electron-updater";
+import { loadMobileSettings, startMobileServer, stopMobileServer } from "./lib/mobile-server";
 import { initDb } from "./db/client";
 import { registerIpcHandlers, registerAppHandlers } from "./ipc/handlers";
 import { registerAgentHandlers } from "./ipc/agent";
@@ -284,12 +285,27 @@ app.whenReady().then(async () => {
   // Register app:* and mcp:* IPC handlers (now that updateBadge is available)
   registerAppHandlers(ctx, userDataPath, updateBadge, reinitialise, clearBadge);
 
+  // Start mobile access server if enabled
+  try {
+    const mobileSettings = loadMobileSettings(userDataPath);
+    if (mobileSettings.enabled) {
+      startMobileServer(userDataPath, ctx);
+    }
+  } catch (err) {
+    console.error("[main] Failed to auto-start mobile server:", err);
+  }
+
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
 
 app.on("before-quit", () => {
+  // Terminate mobile access server if running
+  try {
+    stopMobileServer();
+  } catch { /* ignore */ }
+
   // Kill any bash child processes that are still running so they don't linger
   killTrackedBashProcesses();
   // Terminate the local llama-server background child process so it doesn't linger

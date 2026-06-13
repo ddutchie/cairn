@@ -17,7 +17,8 @@
  *   pi-agent:compact   { sessionId, status: "start" | "end" }
  */
 
-import { ipcMain } from "electron";
+import { registerIpcHandle, registerIpcOn, broadcastEvent } from "./registry";
+
 import { runAgentLoop, type PiAgentSession, type AgentLLMConfig, type AgentToolContext } from "../lib/pi-agent-loop";
 import { buildCompactionTransformer, compactNow } from "../lib/compaction";
 import { buildPiAgentSystemPrompt } from "../lib/pi-agent-prompt";
@@ -26,6 +27,7 @@ import { normaliseBaseUrl } from "../lib/llm";
 import type { DbContext } from "./handlers";
 import * as q from "../db/queries";
 import { ts } from "../db/utils";
+import { saveCachedConfig, getCachedConfig } from "../lib/config-cache";
 
 // ── Session registry ──────────────────────────────────────────────────────────
 
@@ -161,7 +163,7 @@ export function registerPiAgentHandler(
   const getWin = ctx.getWin;
 
   // ── pi-agent:abort ────────────────────────────────────────────────────────
-  ipcMain.on("pi-agent:abort", (_event, { sessionId }: { sessionId: string }) => {
+  registerIpcOn("pi-agent:abort", (_event, { sessionId }: { sessionId: string }) => {
     const session = sessions.get(sessionId);
     if (session) {
       session.abortCtrl.abort();
@@ -169,12 +171,11 @@ export function registerPiAgentHandler(
   });
 
   // ── pi-agent:prompt ───────────────────────────────────────────────────────
-  ipcMain.on("pi-agent:prompt", async (event, req: PiAgentPromptRequest) => {
+  registerIpcOn("pi-agent:prompt", async (event, req: PiAgentPromptRequest) => {
     const { sessionId, prompt, projectId, workspaceId, cwd, taskTitle, mode = "execute" } = req;
 
     const send = (channel: string, payload: unknown) => {
-      const win = getWin();
-      if (win && !win.webContents.isDestroyed()) win.webContents.send(channel, payload);
+      broadcastEvent(channel, payload);
     };
 
     if (req.config?.provider === "localllm") {
@@ -185,12 +186,37 @@ export function registerPiAgentHandler(
       return;
     }
 
+    if (req.config?.apiKey) {
+      saveCachedConfig("agent", {
+        baseUrl: req.config.baseUrl,
+        model: req.config.model,
+        apiKey: req.config.apiKey,
+        maxSteps: req.config.maxSteps,
+        temperature: req.config.temperature,
+      });
+    }
+
+    let reqConfig = req.config;
+    if (!reqConfig?.apiKey) {
+      const cached = getCachedConfig().agentConfig;
+      if (cached?.apiKey) {
+        reqConfig = {
+          ...reqConfig,
+          baseUrl: reqConfig?.baseUrl || cached.baseUrl,
+          model: reqConfig?.model || cached.model,
+          apiKey: cached.apiKey,
+          maxSteps: reqConfig?.maxSteps || cached.maxSteps,
+          temperature: reqConfig?.temperature || cached.temperature,
+        };
+      }
+    }
+
     const llmConfig: AgentLLMConfig = {
-      baseUrl:     normaliseBaseUrl(req.config?.baseUrl || "https://api.openai.com"),
-      model:       req.config?.model       || "gpt-4o",
-      apiKey:      req.config?.apiKey      || "",
-      maxSteps:    req.config?.maxSteps    ?? 20,
-      temperature: req.config?.temperature ?? 0.3,
+      baseUrl:     normaliseBaseUrl(reqConfig?.baseUrl || "https://api.openai.com"),
+      model:       reqConfig?.model       || "gpt-4o",
+      apiKey:      reqConfig?.apiKey      || "",
+      maxSteps:    reqConfig?.maxSteps    ?? 20,
+      temperature: reqConfig?.temperature ?? 0.3,
     };
 
     let session = sessions.get(sessionId);
@@ -231,12 +257,11 @@ export function registerPiAgentHandler(
   // ── pi-agent:approve-plan ─────────────────────────────────────────────────
   // Renderer fires this when the user clicks "Approve Plan". Fetches the PRD
   // note, injects the approval message, then continues in execute mode.
-  ipcMain.on("pi-agent:approve-plan", async (_event, req: PiAgentApprovePlanRequest) => {
+  registerIpcOn("pi-agent:approve-plan", async (_event, req: PiAgentApprovePlanRequest) => {
     const { sessionId, planNoteId, projectId, workspaceId, cwd, taskTitle } = req;
 
     const send = (channel: string, payload: unknown) => {
-      const win = getWin();
-      if (win && !win.webContents.isDestroyed()) win.webContents.send(channel, payload);
+      broadcastEvent(channel, payload);
     };
 
     if (req.config?.provider === "localllm") {
@@ -247,12 +272,37 @@ export function registerPiAgentHandler(
       return;
     }
 
+    if (req.config?.apiKey) {
+      saveCachedConfig("agent", {
+        baseUrl: req.config.baseUrl,
+        model: req.config.model,
+        apiKey: req.config.apiKey,
+        maxSteps: req.config.maxSteps,
+        temperature: req.config.temperature,
+      });
+    }
+
+    let reqConfig = req.config;
+    if (!reqConfig?.apiKey) {
+      const cached = getCachedConfig().agentConfig;
+      if (cached?.apiKey) {
+        reqConfig = {
+          ...reqConfig,
+          baseUrl: reqConfig?.baseUrl || cached.baseUrl,
+          model: reqConfig?.model || cached.model,
+          apiKey: cached.apiKey,
+          maxSteps: reqConfig?.maxSteps || cached.maxSteps,
+          temperature: reqConfig?.temperature || cached.temperature,
+        };
+      }
+    }
+
     const llmConfig: AgentLLMConfig = {
-      baseUrl:     normaliseBaseUrl(req.config?.baseUrl || "https://api.openai.com"),
-      model:       req.config?.model       || "gpt-4o",
-      apiKey:      req.config?.apiKey      || "",
-      maxSteps:    req.config?.maxSteps    ?? 20,
-      temperature: req.config?.temperature ?? 0.3,
+      baseUrl:     normaliseBaseUrl(reqConfig?.baseUrl || "https://api.openai.com"),
+      model:       reqConfig?.model       || "gpt-4o",
+      apiKey:      reqConfig?.apiKey      || "",
+      maxSteps:    reqConfig?.maxSteps    ?? 20,
+      temperature: reqConfig?.temperature ?? 0.3,
     };
 
     let session = sessions.get(sessionId);
@@ -290,20 +340,40 @@ export function registerPiAgentHandler(
   // ── pi-agent:compact-now ─────────────────────────────────────────────────
   // Triggered by the /compact slash command. Immediately summarises the session
   // history and returns the result. The renderer shows a status message.
-  ipcMain.on("pi-agent:compact-now", async (_event, req: { sessionId: string; config?: { baseUrl?: string; model?: string; apiKey?: string } }) => {
+  registerIpcOn("pi-agent:compact-now", async (_event, req: { sessionId: string; config?: { baseUrl?: string; model?: string; apiKey?: string } }) => {
     const { sessionId } = req;
     const session = sessions.get(sessionId);
     if (!session || session.messages.length === 0) return;
 
     const send = (channel: string, payload: unknown) => {
-      const win = getWin();
-      if (win && !win.webContents.isDestroyed()) win.webContents.send(channel, payload);
+      broadcastEvent(channel, payload);
     };
 
+    if (req.config?.apiKey) {
+      saveCachedConfig("agent", {
+        baseUrl: req.config.baseUrl,
+        model: req.config.model,
+        apiKey: req.config.apiKey,
+      });
+    }
+
+    let reqConfig = req.config;
+    if (!reqConfig?.apiKey) {
+      const cached = getCachedConfig().agentConfig;
+      if (cached?.apiKey) {
+        reqConfig = {
+          ...reqConfig,
+          baseUrl: reqConfig?.baseUrl || cached.baseUrl,
+          model: reqConfig?.model || cached.model,
+          apiKey: cached.apiKey,
+        };
+      }
+    }
+
     const llmConfig: AgentLLMConfig = {
-      baseUrl:     normaliseBaseUrl(req.config?.baseUrl || "https://api.openai.com"),
-      model:       req.config?.model  || "gpt-4o",
-      apiKey:      req.config?.apiKey || "",
+      baseUrl:     normaliseBaseUrl(reqConfig?.baseUrl || "https://api.openai.com"),
+      model:       reqConfig?.model  || "gpt-4o",
+      apiKey:      reqConfig?.apiKey || "",
       maxSteps:    20,
       temperature: 0.1,
     };
@@ -331,7 +401,7 @@ export function registerPiAgentHandler(
   // Clears a session's message history (new conversation within same session).
   // Also resets the compaction transformer so the new conversation starts
   // with a fresh cachedSummary.
-  ipcMain.on("pi-agent:clear", (_event, { sessionId }: { sessionId: string }) => {
+  registerIpcOn("pi-agent:clear", (_event, { sessionId }: { sessionId: string }) => {
     const session = sessions.get(sessionId);
     if (session) {
       session.messages = [];
@@ -342,7 +412,7 @@ export function registerPiAgentHandler(
 
   // ── pi-agent:destroy ──────────────────────────────────────────────────────
   // Called when a pi session tab is closed — frees memory
-  ipcMain.on("pi-agent:destroy", (_event, { sessionId }: { sessionId: string }) => {
+  registerIpcOn("pi-agent:destroy", (_event, { sessionId }: { sessionId: string }) => {
     const session = sessions.get(sessionId);
     if (session) {
       session.abortCtrl.abort();
@@ -353,7 +423,7 @@ export function registerPiAgentHandler(
   // ── pi-agent:preview-prompt ───────────────────────────────────────────────────────
   // Used by Settings → Agent Settings to show the full assembled system prompt
   // and list discovered skills for the given cwd.
-  ipcMain.handle("pi-agent:preview-prompt", (_event, req: {
+  registerIpcHandle("pi-agent:preview-prompt", (_event, req: {
     cwd: string;
     projectId?: string;
     mode?: "plan" | "execute";
@@ -377,7 +447,7 @@ export function registerPiAgentHandler(
   // ── pi-agent:restore-context ───────────────────────────────────────────────────────
   // Loads the persisted LLM message history for a session back into the
   // in-memory sessions Map so the model can continue from where it left off.
-  ipcMain.on("pi-agent:restore-context", (_event, { sessionId }: { sessionId: string }) => {
+  registerIpcOn("pi-agent:restore-context", (_event, { sessionId }: { sessionId: string }) => {
     if (sessions.has(sessionId)) return; // already in memory
     try {
       const history = q.getLlmHistory(ctx.db, sessionId);

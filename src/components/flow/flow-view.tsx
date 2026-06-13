@@ -230,6 +230,13 @@ function IdeaFlowCanvas() {
   const [showAddMenu, setShowAddMenu] = useState(false);
   const addMenuRef = useRef<HTMLDivElement>(null);
 
+  // Detect touch device for mobile-specific interactions
+  const isTouchDevice = typeof navigator !== "undefined" && navigator.maxTouchPoints > 0;
+
+  // Long-press state for mobile add-node and edit-node
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressCancelledRef = useRef(false);
+
   // Context menu state — screen coords for positioning, flow coords for node placement
   const [contextMenu, setContextMenu] = useState<{ screenX: number; screenY: number; flowX: number; flowY: number } | null>(null);
 
@@ -608,6 +615,45 @@ function IdeaFlowCanvas() {
     setContextMenu({ screenX: e.clientX, screenY: e.clientY, flowX: flowPos.x, flowY: flowPos.y });
   }, [screenToFlowPosition]);
 
+  // ── Long-press handlers (mobile) ──────────────────────────────
+
+  /** Pane long-press → show add-node context menu at touch position */
+  const onPaneTouchStart = useCallback((e: React.TouchEvent) => {
+    if (!isTouchDevice) return;
+    longPressCancelledRef.current = false;
+    const touch = e.touches[0];
+    const startX = touch.clientX;
+    const startY = touch.clientY;
+
+    longPressTimerRef.current = setTimeout(() => {
+      if (longPressCancelledRef.current) return;
+      const flowPos = screenToFlowPosition({ x: startX, y: startY });
+      setContextMenu({ screenX: startX, screenY: startY, flowX: flowPos.x, flowY: flowPos.y });
+    }, 350);
+  }, [isTouchDevice, screenToFlowPosition]);
+
+  const onPaneTouchEnd = useCallback(() => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  }, []);
+
+  const onPaneTouchMove = useCallback(() => {
+    longPressCancelledRef.current = true;
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  }, []);
+
+  // Clear long-press timer on unmount
+  useEffect(() => {
+    return () => {
+      if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+    };
+  }, []);
+
   // ── Add node ──────────────────────────────────────────────────
 
   async function addNode(type: IdeaNodeType, x = 200, y = 200) {
@@ -827,11 +873,15 @@ function IdeaFlowCanvas() {
       className="flex flex-1 min-h-0"
       style={{ background: "var(--background)" }}
       onDoubleClick={(e) => {
+        // Desktop: double-click on the pane to add an idea node
         if ((e.target as HTMLElement).classList.contains("react-flow__pane")) {
           const n = nodeCountRef.current;
           addNode("idea", 80 + (n % 5) * 240, 80 + Math.floor(n / 5) * 180);
         }
       }}
+      onTouchStart={onPaneTouchStart}
+      onTouchEnd={onPaneTouchEnd}
+      onTouchMove={onPaneTouchMove}
     >
       <ReactFlow
         nodes={nodesWithCallbacks}
@@ -847,40 +897,49 @@ function IdeaFlowCanvas() {
         onEdgesDelete={onEdgesDelete}
         onNodesDelete={onNodesDelete}
         onNodeDoubleClick={onNodeDoubleClick}
+        onNodeClick={isTouchDevice ? (_e, node) => {
+          // Mobile: single tap on a node opens edit modal (no double-tap needed)
+          if (node.type === "ai_summary") return;
+          setEditTarget({ nodeId: node.id, type: node.type as IdeaNodeType, data: node.data as Record<string, unknown> });
+        } : undefined}
         onPaneClick={() => { setShowAddMenu(false); setContextMenu(null); }}
         onPaneContextMenu={onPaneContextMenu}
 
         connectionLineType={ConnectionLineType.Bezier}
         connectionLineStyle={{ stroke: "#6366f1", strokeWidth: 1.5, opacity: 0.7 }}
         zoomOnDoubleClick={false}
+        zoomOnPinch={true}
+        panOnDrag={true}
         minZoom={0.2}
         maxZoom={2}
         proOptions={{ hideAttribution: true }}
       >
         <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="var(--border)" />
         <Controls style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10 }} />
-        <MiniMap
-          style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}
-          nodeColor={(node) => {
-            switch (node.type) {
-              case "group": {
-                const c = (node.data as Record<string, unknown>).color;
-                if (c === "green")  return "color-mix(in srgb, var(--success) 35%, transparent)";
-                if (c === "orange") return "color-mix(in srgb, var(--warning) 35%, transparent)";
-                if (c === "red")    return "color-mix(in srgb, var(--danger) 35%, transparent)";
-                return "var(--accent-dim)"; // accent + purple both use accent
+        {!isTouchDevice && (
+          <MiniMap
+            style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}
+            nodeColor={(node) => {
+              switch (node.type) {
+                case "group": {
+                  const c = (node.data as Record<string, unknown>).color;
+                  if (c === "green")  return "color-mix(in srgb, var(--success) 35%, transparent)";
+                  if (c === "orange") return "color-mix(in srgb, var(--warning) 35%, transparent)";
+                  if (c === "red")    return "color-mix(in srgb, var(--danger) 35%, transparent)";
+                  return "var(--accent-dim)"; // accent + purple both use accent
+                }
+                case "idea":       return "var(--surface-2)";
+                case "note_ref":   return "color-mix(in srgb, var(--info) 40%, transparent)";
+                case "task_ref":   return "color-mix(in srgb, var(--success) 40%, transparent)";
+                case "url":        return "color-mix(in srgb, var(--warning) 40%, transparent)";
+                case "ai_summary": return "color-mix(in srgb, var(--accent) 35%, transparent)";
+                default:           return "var(--surface-2)";
               }
-              case "idea":       return "var(--surface-2)";
-              case "note_ref":   return "color-mix(in srgb, var(--info) 40%, transparent)";
-              case "task_ref":   return "color-mix(in srgb, var(--success) 40%, transparent)";
-              case "url":        return "color-mix(in srgb, var(--warning) 40%, transparent)";
-              case "ai_summary": return "color-mix(in srgb, var(--accent) 35%, transparent)";
-              default:           return "var(--surface-2)";
-            }
-          }}
-          nodeStrokeWidth={0}
-          maskColor="rgba(0,0,0,0.06)"
-        />
+            }}
+            nodeStrokeWidth={0}
+            maskColor="color-mix(in srgb, var(--text-primary) 6%, transparent)"
+          />
+        )}
 
         <Panel position="top-right">
           <div className="flex items-center gap-2">

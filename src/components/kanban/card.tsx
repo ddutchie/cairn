@@ -55,7 +55,7 @@ export const KanbanCard = React.memo(function KanbanCard({ card, onClick, isDrag
       <ContextMenuTrigger asChild>
         <div
           ref={setNodeRef}
-          style={style}
+          style={{ ...style, touchAction: "none" }}
           {...attributes}
           {...listeners}
           onClick={onClick}

@@ -1,7 +1,7 @@
 /**
  * Cairn — IPC handlers
  *
- * Registered in main.ts via ipcMain.handle(channel, handler).
+ * Registered in main.ts via registerIpcHandle(channel, handler).
  * Each handler receives validated args from the renderer and
  * delegates to the SQLite query layer.
  *
@@ -14,9 +14,12 @@
  * Channel naming: "db:<entity>:<action>"
  */
 
-import { ipcMain, app, shell, dialog, BrowserWindow, net } from "electron";
+import { app, shell, dialog, BrowserWindow, net } from "electron";
+import { registerIpcHandle, registerIpcOn, broadcastEvent } from "./registry";
+
 import path from "path";
 import fs from "fs";
+import * as mobileServer from "../lib/mobile-server";
 import type Database from "better-sqlite3";
 import * as q from "../db/queries";
 import { registerChatHandler } from "./chat";
@@ -28,6 +31,7 @@ import { generatePrd } from "../lib/prd";
 import { isLocalEndpoint, callLLM, normaliseBaseUrl } from "../lib/llm";
 import { executeReadTool } from "../lib/read-tools";
 import { readWorkspaceConfig, writeWorkspaceConfig } from "../workspace-config";
+import { saveCachedConfig, getCachedConfig } from "../lib/config-cache";
 import { markMcpNotificationsRead } from "../db/queries";
 import { DEFAULT_COLUMNS } from "../db/defaults";
 import { getKnowledgeGraph, getNeighbours, computeAutoRelationships, invalidateRelationshipCache } from "../db/graph-queries";
@@ -74,13 +78,13 @@ export interface DbContext {
 export function registerIpcHandlers(ctx: DbContext): void {
 
   // ── Full snapshot (hydrate store on app launch) ───
-  ipcMain.handle("db:snapshot", () => handle(() => q.getFullSnapshot(ctx.db)));
-  ipcMain.handle("db:hasData", () => handle(() => q.hasData(ctx.db)));
+  registerIpcHandle("db:snapshot", () => handle(() => q.getFullSnapshot(ctx.db)));
+  registerIpcHandle("db:hasData", () => handle(() => q.hasData(ctx.db)));
 
   // ── Dashboard live query bridge ───────────────────
   // Executes read-only MCP-style tool calls from dashboard iframes.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  ipcMain.handle("db:mcpQuery", (_e, { tool, args }: { tool: string; args: Record<string, any> }) => {
+  registerIpcHandle("db:mcpQuery", (_e, { tool, args }: { tool: string; args: Record<string, any> }) => {
     return handle(() => {
       if (tool === "get_cairn_context") {
         return buildContextResponse(ctx.db);
@@ -93,13 +97,13 @@ export function registerIpcHandlers(ctx: DbContext): void {
   });
 
   // ── Workspaces ────────────────────────────────────
-  ipcMain.handle("db:workspace:list", () => handle(() => q.getAllWorkspaces(ctx.db)));
-  ipcMain.handle("db:workspace:create", (_e, args) => handle(() => q.createWorkspace(ctx.db, args)));
-  ipcMain.handle("db:workspace:update", (_e, { id, patch }) => handle(() => q.updateWorkspace(ctx.db, id, patch)));
+  registerIpcHandle("db:workspace:list", () => handle(() => q.getAllWorkspaces(ctx.db)));
+  registerIpcHandle("db:workspace:create", (_e, args) => handle(() => q.createWorkspace(ctx.db, args)));
+  registerIpcHandle("db:workspace:update", (_e, { id, patch }) => handle(() => q.updateWorkspace(ctx.db, id, patch)));
 
   // ── Projects ──────────────────────────────────────
-  ipcMain.handle("db:project:list", (_e, { workspaceId }) => handle(() => q.getProjects(ctx.db, workspaceId)));
-  ipcMain.handle("db:project:create", (_e, args) => handle(() => {
+  registerIpcHandle("db:project:list", (_e, { workspaceId }) => handle(() => q.getProjects(ctx.db, workspaceId)));
+  registerIpcHandle("db:project:create", (_e, args) => handle(() => {
     const project = q.createProject(ctx.db, args);
     // Create default columns atomically in the same handler call
     if (args.withDefaultColumns) {
@@ -117,8 +121,8 @@ export function registerIpcHandlers(ctx: DbContext): void {
     }
     return { project, columns: [] };
   }));
-  ipcMain.handle("db:project:update", (_e, { id, patch }) => handle(() => q.updateProject(ctx.db, id, patch)));
-  ipcMain.handle("db:project:delete", (_e, { id }) => handle(() => {
+  registerIpcHandle("db:project:update", (_e, { id, patch }) => handle(() => q.updateProject(ctx.db, id, patch)));
+  registerIpcHandle("db:project:delete", (_e, { id }) => handle(() => {
     const project = q.getProjectById(ctx.db, id);
     if (project) {
       deleteProjectNotesDir(ctx.workspacePath, project.name);
@@ -129,9 +133,9 @@ export function registerIpcHandlers(ctx: DbContext): void {
   // ── Notes ─────────────────────────────────────────
   // All note mutations also write/update/delete the corresponding .md file.
 
-  ipcMain.handle("db:note:list", (_e, { projectId }) => handle(() => q.getNotes(ctx.db, projectId)));
+  registerIpcHandle("db:note:list", (_e, { projectId }) => handle(() => q.getNotes(ctx.db, projectId)));
 
-  ipcMain.handle("db:note:create", (_e, args) => handle(() => {
+  registerIpcHandle("db:note:create", (_e, args) => handle(() => {
     const note = q.createNote(ctx.db, {
       ...args,
       contentText: stripMarkdown(args.content ?? ""),
@@ -146,7 +150,7 @@ export function registerIpcHandlers(ctx: DbContext): void {
     return note;
   }));
 
-  ipcMain.handle("db:note:update", (_e, { id, patch }) => handle(() => {
+  registerIpcHandle("db:note:update", (_e, { id, patch }) => handle(() => {
     // archivedAt: null means "restore" — COALESCE cannot clear to NULL
     if ("archivedAt" in patch && patch.archivedAt === null) {
       const rest = { ...patch };
@@ -189,7 +193,7 @@ export function registerIpcHandlers(ctx: DbContext): void {
     return note;
   }));
 
-  ipcMain.handle("db:note:moveToFolder", (_e, { id, folder }: { id: string; folder: string }) => handle(() => {
+  registerIpcHandle("db:note:moveToFolder", (_e, { id, folder }: { id: string; folder: string }) => handle(() => {
     // Use moveNoteFolder (direct SET) rather than updateNote (COALESCE) so that
     // moving a note to root (folder="") is never silently ignored.
     suppressNextChange(id);
@@ -200,7 +204,7 @@ export function registerIpcHandlers(ctx: DbContext): void {
     return note;
   }));
 
-  ipcMain.handle("db:note:delete", (_e, { id }) => handle(() => {
+  registerIpcHandle("db:note:delete", (_e, { id }) => handle(() => {
     const note = q.getNoteById(ctx.db, id);
     if (note) {
       const projectName = getProjectName(ctx.db, note.projectId);
@@ -214,14 +218,14 @@ export function registerIpcHandlers(ctx: DbContext): void {
   }));
 
   // ── Open URL in default system browser ───────────
-  ipcMain.on("app:openExternal", (_e, url: string) => {
+  registerIpcOn("app:openExternal", (_e, url: string) => {
     if (typeof url === "string" && (url.startsWith("https://") || url.startsWith("http://"))) {
       shell.openExternal(url);
     }
   });
 
   // ── Reveal in Finder / Explorer ───────────────────
-  ipcMain.handle("app:revealNote", (_e, { noteId, projectId }) => handle(() => {
+  registerIpcHandle("app:revealNote", (_e, { noteId, projectId }) => handle(() => {
     const projectName = getProjectName(ctx.db, projectId);
     const fp = findNoteFilePath(ctx.workspacePath, projectName, noteId);
     if (fp) {
@@ -233,7 +237,7 @@ export function registerIpcHandlers(ctx: DbContext): void {
   // Saves to <workspace>/attachments/ with original filename (Obsidian-compatible).
   // Returns ![[filename]] syntax so images work in both Cairn and Obsidian.
   // Legacy asset:// URLs still render via the asset:// protocol handler.
-  ipcMain.handle("app:uploadAsset", (_e, { filename, data }: { filename: string; data: ArrayBuffer }) =>
+  registerIpcHandle("app:uploadAsset", (_e, { filename, data }: { filename: string; data: ArrayBuffer }) =>
     handle(() => {
       // Determine attachment folder — read from Obsidian config if available
       let attachDir: string;
@@ -284,7 +288,7 @@ export function registerIpcHandlers(ctx: DbContext): void {
   );
 
   // ── Reveal assets folder in Finder / Explorer ─────
-  ipcMain.handle("app:revealAssets", () => handle(async () => {
+  registerIpcHandle("app:revealAssets", () => handle(async () => {
     const assetDir = path.join(ctx.workspacePath, "assets");
     fs.mkdirSync(assetDir, { recursive: true });
     // shell.openPath returns a Promise<string>; non-empty = error message.
@@ -293,19 +297,19 @@ export function registerIpcHandlers(ctx: DbContext): void {
   }));
 
   // ── Board columns ─────────────────────────────────
-  ipcMain.handle("db:column:list", (_e, { projectId }) => handle(() => q.getColumns(ctx.db, projectId)));
-  ipcMain.handle("db:column:create", (_e, args) => handle(() => q.createColumn(ctx.db, args)));
-  ipcMain.handle("db:column:update", (_e, { id, patch }) => handle(() => q.updateColumn(ctx.db, id, patch)));
-  ipcMain.handle("db:column:delete", (_e, { id }) => handle(() => q.deleteColumn(ctx.db, id)));
+  registerIpcHandle("db:column:list", (_e, { projectId }) => handle(() => q.getColumns(ctx.db, projectId)));
+  registerIpcHandle("db:column:create", (_e, args) => handle(() => q.createColumn(ctx.db, args)));
+  registerIpcHandle("db:column:update", (_e, { id, patch }) => handle(() => q.updateColumn(ctx.db, id, patch)));
+  registerIpcHandle("db:column:delete", (_e, { id }) => handle(() => q.deleteColumn(ctx.db, id)));
 
   // ── Task cards ────────────────────────────────────
-  ipcMain.handle("db:card:list", (_e, opts) => handle(() => q.getCards(ctx.db, opts)));
-  ipcMain.handle("db:card:create", (_e, args) => handle(() => {
+  registerIpcHandle("db:card:list", (_e, opts) => handle(() => q.getCards(ctx.db, opts)));
+  registerIpcHandle("db:card:create", (_e, args) => handle(() => {
     const title = (args?.title as string | null | undefined)?.trim();
     if (!title) throw new Error("Task title is required");
     return q.createCard(ctx.db, { ...args, title });
   }));
-  ipcMain.handle("db:card:update", (_e, { id, patch }) => handle(() => {
+  registerIpcHandle("db:card:update", (_e, { id, patch }) => handle(() => {
     // archivedAt: null means "restore" — COALESCE cannot clear to NULL
     if ("archivedAt" in patch && patch.archivedAt === null) {
       const rest = { ...patch };
@@ -333,10 +337,10 @@ export function registerIpcHandlers(ctx: DbContext): void {
     }
     return card;
   }));
-  ipcMain.handle("db:card:delete", (_e, { id }) => handle(() => q.deleteCard(ctx.db, id)));
+  registerIpcHandle("db:card:delete", (_e, { id }) => handle(() => q.deleteCard(ctx.db, id)));
 
   // Archive every non-archived card in a given Done-type column
-  ipcMain.handle("db:cards:archive-done", (_e, { columnId }: { columnId: string }) => handle(() => {
+  registerIpcHandle("db:cards:archive-done", (_e, { columnId }: { columnId: string }) => handle(() => {
     const col = ctx.db.prepare("SELECT * FROM board_columns WHERE id = ?").get(columnId) as { type: string } | undefined;
     if (!col) throw new Error("Column not found");
     if (col.type !== "done") throw new Error("Only Done-type columns can be bulk-archived");
@@ -348,7 +352,7 @@ export function registerIpcHandlers(ctx: DbContext): void {
   }));
 
   // ── Card dependencies ─────────────────────────────
-  ipcMain.handle("db:card:addBlocker", (_e, { cardId, blockerCardId }) => handle(() => {
+  registerIpcHandle("db:card:addBlocker", (_e, { cardId, blockerCardId }) => handle(() => {
     const card = q.getCardById(ctx.db, cardId);
     const blocker = q.getCardById(ctx.db, blockerCardId);
     if (!card) return { error: "Card not found" };
@@ -373,39 +377,60 @@ export function registerIpcHandlers(ctx: DbContext): void {
     return q.addCardBlocker(ctx.db, cardId, blockerCardId);
   }));
 
-  ipcMain.handle("db:card:removeBlocker", (_e, { cardId, blockerCardId }) => handle(() =>
+  registerIpcHandle("db:card:removeBlocker", (_e, { cardId, blockerCardId }) => handle(() =>
     q.removeCardBlocker(ctx.db, cardId, blockerCardId)
   ));
 
-  ipcMain.handle("db:card:ready", (_e, { projectId }) => handle(() =>
+  registerIpcHandle("db:card:ready", (_e, { projectId }) => handle(() =>
     q.getReadyCards(ctx.db, projectId)
   ));
 
   // ── Idea Flow ─────────────────────────────────────
-  ipcMain.handle("db:flow:get", (_e, { projectId }) => handle(() => q.getResolvedFlow(ctx.db, projectId)));
-  ipcMain.handle("db:flow:node:create", (_e, args) => handle(() => {
+  registerIpcHandle("db:flow:get", (_e, { projectId }) => handle(() => q.getResolvedFlow(ctx.db, projectId)));
+  registerIpcHandle("db:flow:node:create", (_e, args) => handle(() => {
     const flow = q.getOrCreateFlow(ctx.db, args.projectId);
     return q.createFlowNode(ctx.db, { ...args, flowId: flow.id, id: q.generateId() });
   }));
-  ipcMain.handle("db:flow:node:update", (_e, { id, patch }) => handle(() => q.updateFlowNode(ctx.db, id, patch)));
-  ipcMain.handle("db:flow:node:delete", (_e, { id }) => handle(() => q.deleteFlowNode(ctx.db, id)));
-  ipcMain.handle("db:flow:edge:create", (_e, args) => handle(() => {
+  registerIpcHandle("db:flow:node:update", (_e, { id, patch }) => handle(() => q.updateFlowNode(ctx.db, id, patch)));
+  registerIpcHandle("db:flow:node:delete", (_e, { id }) => handle(() => q.deleteFlowNode(ctx.db, id)));
+  registerIpcHandle("db:flow:edge:create", (_e, args) => handle(() => {
     const flow = q.getOrCreateFlow(ctx.db, args.projectId);
     return q.createFlowEdge(ctx.db, { ...args, flowId: flow.id, id: q.generateId() });
   }));
-  ipcMain.handle("db:flow:edge:delete", (_e, { id }) => handle(() => q.deleteFlowEdge(ctx.db, id)));
+  registerIpcHandle("db:flow:edge:delete", (_e, { id }) => handle(() => q.deleteFlowEdge(ctx.db, id)));
 
   // Generate an AI summary for an ai_summary node.
   // Recursively walks the entire connected subgraph (BFS in both edge directions),
   // collecting all ancestor/peer content nodes transitively — not just direct neighbours.
   // Other ai_summary nodes in the graph are skipped to avoid circular self-reference.
-  ipcMain.handle("db:flow:node:summarize", async (_e, args: {
+  registerIpcHandle("db:flow:node:summarize", async (_e, args: {
     nodeId: string;
     config: { baseUrl: string; model: string; apiKey: string };
   }) => {
-    const baseUrl = normaliseBaseUrl(args.config.baseUrl || "https://api.openai.com");
-    const model = args.config.model || "gpt-4o-mini";
-    const apiKey = args.config.apiKey || "";
+    if (args.config?.apiKey) {
+      saveCachedConfig("ai", {
+        baseUrl: args.config.baseUrl,
+        model: args.config.model,
+        apiKey: args.config.apiKey,
+      });
+    }
+
+    let reqConfig = args.config;
+    if (!reqConfig?.apiKey) {
+      const cached = getCachedConfig().aiConfig;
+      if (cached?.apiKey) {
+        reqConfig = {
+          ...reqConfig,
+          baseUrl: reqConfig?.baseUrl || cached.baseUrl,
+          model: reqConfig?.model || cached.model,
+          apiKey: cached.apiKey,
+        };
+      }
+    }
+
+    const baseUrl = normaliseBaseUrl(reqConfig?.baseUrl || "https://api.openai.com");
+    const model = reqConfig?.model || "gpt-4o-mini";
+    const apiKey = reqConfig?.apiKey || "";
     const isLocal = isLocalEndpoint(baseUrl);
     if (!apiKey && !isLocal) {
       return err("AI is not configured. Add an API key in Settings → AI & Chat, or use a local endpoint.");
@@ -517,32 +542,32 @@ export function registerIpcHandlers(ctx: DbContext): void {
   });
 
   // ── Tags ──────────────────────────────────────────
-  ipcMain.handle("db:tag:list", (_e, { workspaceId }) => handle(() => q.getTags(ctx.db, workspaceId)));
-  ipcMain.handle("db:tag:create", (_e, args) => handle(() => q.createTag(ctx.db, args)));
-  ipcMain.handle("db:tag:update", (_e, { id, patch }) => handle(() => q.updateTag(ctx.db, id, patch)));
-  ipcMain.handle("db:tag:delete", (_e, { id }) => handle(() => q.deleteTag(ctx.db, id)));
+  registerIpcHandle("db:tag:list", (_e, { workspaceId }) => handle(() => q.getTags(ctx.db, workspaceId)));
+  registerIpcHandle("db:tag:create", (_e, args) => handle(() => q.createTag(ctx.db, args)));
+  registerIpcHandle("db:tag:update", (_e, { id, patch }) => handle(() => q.updateTag(ctx.db, id, patch)));
+  registerIpcHandle("db:tag:delete", (_e, { id }) => handle(() => q.deleteTag(ctx.db, id)));
 
   // ── Chat ──────────────────────────────────────────
-  ipcMain.handle("db:chat:threads", (_e, { workspaceId }) => handle(() => q.getChatThreads(ctx.db, workspaceId)));
-  ipcMain.handle("db:chat:messages", (_e, { threadId }) => handle(() => q.getChatMessages(ctx.db, threadId)));
-  ipcMain.handle("db:chat:upsertThread", (_e, args) => handle(() => q.upsertChatThread(ctx.db, args)));
-  ipcMain.handle("db:chat:addMessage", (_e, args) => handle(() => q.addChatMessage(ctx.db, args)));
-  ipcMain.handle("db:chat:clearThreadMessages", (_e, { threadId }) => handle(() => {
+  registerIpcHandle("db:chat:threads", (_e, { workspaceId }) => handle(() => q.getChatThreads(ctx.db, workspaceId)));
+  registerIpcHandle("db:chat:messages", (_e, { threadId }) => handle(() => q.getChatMessages(ctx.db, threadId)));
+  registerIpcHandle("db:chat:upsertThread", (_e, args) => handle(() => q.upsertChatThread(ctx.db, args)));
+  registerIpcHandle("db:chat:addMessage", (_e, args) => handle(() => q.addChatMessage(ctx.db, args)));
+  registerIpcHandle("db:chat:clearThreadMessages", (_e, { threadId }) => handle(() => {
     ctx.db.prepare("DELETE FROM chat_messages WHERE thread_id = ?").run(threadId);
   }));
-  ipcMain.handle("db:chat:deleteThread", (_e, { threadId }) => handle(() => q.deleteChatThread(ctx.db, threadId)));
+  registerIpcHandle("db:chat:deleteThread", (_e, { threadId }) => handle(() => q.deleteChatThread(ctx.db, threadId)));
 
   // ── Pi Agent Sessions ─────────────────────────────────────────────────────────────────────────────────
-  ipcMain.handle("db:piSession:list", (_e, { projectId }) => handle(() => q.getPiSessions(ctx.db, projectId)));
-  ipcMain.handle("db:piSession:create", (_e, args) => handle(() => q.createPiSession(ctx.db, args)));
-  ipcMain.handle("db:piSession:delete", (_e, { id }) => handle(() => q.deletePiSession(ctx.db, id)));
-  ipcMain.handle("db:piSession:messages", (_e, { sessionId }) => handle(() => q.getPiMessages(ctx.db, sessionId)));
-  ipcMain.handle("db:piSession:saveMessages", (_e, { sessionId, messages }) => handle(() => q.savePiMessages(ctx.db, sessionId, messages)));
+  registerIpcHandle("db:piSession:list", (_e, { projectId }) => handle(() => q.getPiSessions(ctx.db, projectId)));
+  registerIpcHandle("db:piSession:create", (_e, args) => handle(() => q.createPiSession(ctx.db, args)));
+  registerIpcHandle("db:piSession:delete", (_e, { id }) => handle(() => q.deletePiSession(ctx.db, id)));
+  registerIpcHandle("db:piSession:messages", (_e, { sessionId }) => handle(() => q.getPiMessages(ctx.db, sessionId)));
+  registerIpcHandle("db:piSession:saveMessages", (_e, { sessionId, messages }) => handle(() => q.savePiMessages(ctx.db, sessionId, messages)));
 
   // ── AI Chat completions ───────────────────────────────────────────────────────────────────
   registerChatHandler(ctx.db, ctx.workspacePath, ctx.getWin);
 
-  ipcMain.handle("ai:localLLMStatus", async () => {
+  registerIpcHandle("ai:localLLMStatus", async () => {
     return handle(async () => {
       const { isLocalLLMAvailable } = await import("../lib/local-llm");
       return await isLocalLLMAvailable();
@@ -551,70 +576,91 @@ export function registerIpcHandlers(ctx: DbContext): void {
 
   /* eslint-disable @typescript-eslint/no-require-imports */
   // ── On-Device Llama Server ──────────────────────────────────────────
-  ipcMain.handle("llama:models:list", () => handle(() => {
+  registerIpcHandle("llama:models:list", () => handle(() => {
     const { listModels } = require("../lib/llama-server");
     return listModels();
   }));
 
-  ipcMain.handle("llama:models:install", (_e, { modelId, useMirror }) => handle(async () => {
+  registerIpcHandle("llama:models:install", (_e, { modelId, useMirror }) => handle(async () => {
     const { installModel } = require("../lib/llama-server");
     return await installModel(modelId, ctx.getWin, useMirror);
   }));
 
-  ipcMain.handle("llama:binary:install", () => handle(async () => {
+  registerIpcHandle("llama:binary:install", () => handle(async () => {
     const { installLlamaBinary } = require("../lib/llama-server");
     return await installLlamaBinary(ctx.getWin);
   }));
 
-  ipcMain.handle("llama:binary:check-update", () => handle(async () => {
+  registerIpcHandle("llama:binary:check-update", () => handle(async () => {
     const { checkLlamaUpdates } = require("../lib/llama-server");
     return await checkLlamaUpdates();
   }));
 
-  ipcMain.handle("llama:models:remove", (_e, { modelId }) => handle(() => {
+  registerIpcHandle("llama:models:remove", (_e, { modelId }) => handle(() => {
     const { removeModel } = require("../lib/llama-server");
     return removeModel(modelId);
   }));
 
-  ipcMain.handle("llama:models:clearInactive", () => handle(() => {
+  registerIpcHandle("llama:models:clearInactive", () => handle(() => {
     const { clearInactiveModels } = require("../lib/llama-server");
     return clearInactiveModels();
   }));
 
-  ipcMain.handle("llama:server:start", (_e, { modelId, contextLimit }: { modelId: string; contextLimit?: number }) => handle(async () => {
+  registerIpcHandle("llama:server:start", (_e, { modelId, contextLimit }: { modelId: string; contextLimit?: number }) => handle(async () => {
     const { startServer } = require("../lib/llama-server");
     const port = await startServer(modelId, contextLimit);
     return { port };
   }));
 
-  ipcMain.handle("llama:server:setDefault", (_e, { modelId }) => handle(() => {
+  registerIpcHandle("llama:server:setDefault", (_e, { modelId }) => handle(() => {
     const { setDefaultModelId } = require("../lib/llama-server");
     setDefaultModelId(modelId);
     return { success: true };
   }));
 
-  ipcMain.handle("llama:server:stop", () => handle(async () => {
+  registerIpcHandle("llama:server:stop", () => handle(async () => {
     const { stopServer } = require("../lib/llama-server");
     return await stopServer();
   }));
 
-  ipcMain.handle("llama:server:status", () => handle(async () => {
+  registerIpcHandle("llama:server:status", () => handle(async () => {
     const { getServerStatus } = require("../lib/llama-server");
     return await getServerStatus();
   }));
   /* eslint-enable @typescript-eslint/no-require-imports */
 
   // ── AI PRD generation (direct, no chat loop) ──────
-  ipcMain.handle("ai:generatePrd", async (_e, args: {
+  registerIpcHandle("ai:generatePrd", async (_e, args: {
     projectId: string;
     title: string;
     requirements: string;
     config: { baseUrl: string; model: string; apiKey: string };
   }) => {
     // PRD returns its own { error } shape for user-facing validation errors
-    const baseUrl = normaliseBaseUrl(args.config.baseUrl || "https://api.openai.com");
-    const model = args.config.model || "gpt-4o-mini";
-    const apiKey = args.config.apiKey || "";
+    if (args.config?.apiKey) {
+      saveCachedConfig("ai", {
+        baseUrl: args.config.baseUrl,
+        model: args.config.model,
+        apiKey: args.config.apiKey,
+      });
+    }
+
+    let reqConfig = args.config;
+    if (!reqConfig?.apiKey) {
+      const cached = getCachedConfig().aiConfig;
+      if (cached?.apiKey) {
+        reqConfig = {
+          ...reqConfig,
+          baseUrl: reqConfig?.baseUrl || cached.baseUrl,
+          model: reqConfig?.model || cached.model,
+          apiKey: cached.apiKey,
+        };
+      }
+    }
+
+    const baseUrl = normaliseBaseUrl(reqConfig?.baseUrl || "https://api.openai.com");
+    const model = reqConfig?.model || "gpt-4o-mini";
+    const apiKey = reqConfig?.apiKey || "";
     const isLocal = isLocalEndpoint(baseUrl);
     if (!apiKey && !isLocal) {
       return err("AI is not configured. Add an API key in Settings → AI & Chat, or use a local endpoint.");
@@ -628,19 +674,19 @@ export function registerIpcHandlers(ctx: DbContext): void {
   });
 
   // ── Knowledge Graph ────────────────────────────────
-  ipcMain.handle("db:graph:get", (_e, args: {
+  registerIpcHandle("db:graph:get", (_e, args: {
     workspaceId: string;
     filters?: GraphFilters;
   }) => handle(() => getKnowledgeGraph(ctx.db, args.workspaceId, args.filters ?? {})));
 
-  ipcMain.handle("db:graph:neighbors", (_e, args: {
+  registerIpcHandle("db:graph:neighbors", (_e, args: {
     workspaceId: string;
     nodeId: string;
     depth?: number;
     edgeTypes?: EdgeType[];
   }) => handle(() => getNeighbours(ctx.db, args.workspaceId, args.nodeId, args.depth ?? 1, args.edgeTypes)));
 
-  ipcMain.handle("db:graph:recompute", (_e, args: {
+  registerIpcHandle("db:graph:recompute", (_e, args: {
     workspaceId: string;
     entityIds?: string[];
   }) => handle(() => {
@@ -665,7 +711,7 @@ export function registerAppHandlers(
   onBadgeClear?: () => void,
 ): void {
   // ── Workspace folder selection / setup ────────────
-  ipcMain.handle("app:selectWorkspaceFolder", async () => {
+  registerIpcHandle("app:selectWorkspaceFolder", async () => {
     return handle(async () => {
       const result = await dialog.showOpenDialog({
         // title renders on all platforms; message is macOS-only and silently ignored on Windows
@@ -680,15 +726,15 @@ export function registerAppHandlers(
     });
   });
 
-  ipcMain.handle("app:getWorkspacePath", () => handle(() =>
+  registerIpcHandle("app:getWorkspacePath", () => handle(() =>
     readWorkspaceConfig(userDataPath)?.workspacePath ?? null
   ));
 
-  ipcMain.handle("app:needsWorkspaceSetup", () => handle(() =>
+  registerIpcHandle("app:needsWorkspaceSetup", () => handle(() =>
     readWorkspaceConfig(userDataPath) === null
   ));
 
-  ipcMain.handle("app:setTheme", (_e, theme: string) => handle(() => {
+  registerIpcHandle("app:setTheme", (_e, theme: string) => handle(() => {
     const themeFile = path.join(userDataPath, "theme.json");
     fs.writeFileSync(themeFile, JSON.stringify({ theme }), "utf8");
     // On Windows, update the native title bar overlay to match the new theme.
@@ -703,7 +749,7 @@ export function registerAppHandlers(
     }
   }));
 
-  ipcMain.handle("app:initWorkspace", (_e, { workspacePath: newPath }: { workspacePath: string }) => handle(async () => {
+  registerIpcHandle("app:initWorkspace", (_e, { workspacePath: newPath }: { workspacePath: string }) => handle(async () => {
     writeWorkspaceConfig(userDataPath, newPath);
     fs.mkdirSync(newPath, { recursive: true });
     if (onReinitialise) {
@@ -713,7 +759,7 @@ export function registerAppHandlers(
   }));
 
   // ── App paths (for MCP config generation) ─────────
-  ipcMain.handle("app:mcpServerPath", () => handle(() => {
+  registerIpcHandle("app:mcpServerPath", () => handle(() => {
     const appPath = app.getAppPath();
     const unpackedPath = appPath.replace(/\.asar$/, ".asar.unpacked");
     const binaryName = process.platform === "win32" ? "cairn-mcp.exe"
@@ -723,7 +769,7 @@ export function registerAppHandlers(
   }));
 
   // ── Latest changelog ───────────────────────────────
-  ipcMain.handle("app:latestChangelog", () => handle(() => {
+  registerIpcHandle("app:latestChangelog", () => handle(() => {
     // In dev, app.getAppPath() points to dist-electron/ — walk up to repo root instead.
     // In packaged builds, changelogs/ is bundled inside the asar alongside dist-electron/.
     const changelogsDir = app.isPackaged
@@ -744,7 +790,7 @@ export function registerAppHandlers(
   }));
 
   // ── Reset all data — wipe every table then relaunch ──────────────────────
-  ipcMain.handle("app:reset", () => handle(() => {
+  registerIpcHandle("app:reset", () => handle(() => {
     const tables = ["chat_messages", "chat_threads", "mcp_notifications", "task_cards", "board_columns", "notes", "tags", "projects", "workspaces"];
     for (const t of tables) {
       ctx.db.prepare(`DELETE FROM ${t}`).run();
@@ -754,13 +800,13 @@ export function registerAppHandlers(
   }));
 
   // ── Relaunch (used after workspace init to re-open DB at correct path) ──
-  ipcMain.handle("app:relaunch", () => handle(() => {
+  registerIpcHandle("app:relaunch", () => handle(() => {
     app.relaunch();
     app.quit();
   }));
 
   // ── Auto-updater install ───────────────────────────
-  ipcMain.handle("updater:install", () => handle(() => {
+  registerIpcHandle("updater:install", () => handle(() => {
     // Dynamically require to avoid issues in dev where autoUpdater isn't active.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { autoUpdater } = require("electron-updater");
@@ -768,24 +814,55 @@ export function registerAppHandlers(
   }));
 
   // ── MCP notification handler ───────────────────────
-  ipcMain.handle("mcp:markNotificationsRead", () => handle(() => {
+  registerIpcHandle("mcp:markNotificationsRead", () => handle(() => {
     markMcpNotificationsRead(ctx.db);
     updateTrayBadge(0);
     onBadgeClear?.();
   }));
 
-  // ── Export note as PDF ─────────────────────────────
-  ipcMain.handle("app:exportNotePdf", (_e, { title, html }: { title: string; html: string }) =>
-    handle(async () => {
-      const activeWin = ctx.getWin();
-      if (!activeWin || activeWin.isDestroyed()) throw new Error("No window");
+  // ── Mobile Access ──────────────────────────────────
+  registerIpcHandle("mobile:status", () => handle(() => {
+    return mobileServer.getMobileStatus(userDataPath);
+  }));
 
-      const { canceled, filePath: savePath } = await dialog.showSaveDialog(activeWin, {
-        title: "Export Note as PDF",
-        defaultPath: `${title}.pdf`,
-        filters: [{ name: "PDF Document", extensions: ["pdf"] }],
-      });
-      if (canceled || !savePath) return null;
+  registerIpcHandle("mobile:saveSettings", (_e, newSettings: Record<string, unknown>) => handle(async () => {
+    const s = mobileServer.saveMobileSettings(userDataPath, newSettings);
+    if (s.enabled) {
+      mobileServer.startMobileServer(userDataPath, ctx);
+    } else {
+      mobileServer.stopMobileServer();
+    }
+    const status = await mobileServer.getMobileStatus(userDataPath);
+    broadcastEvent("mobile:status-changed", status);
+    return status;
+  }));
+
+  registerIpcHandle("mobile:regeneratePin", () => handle(async () => {
+    const pin = Math.floor(1000 + Math.random() * 9000).toString();
+    mobileServer.saveMobileSettings(userDataPath, { pin });
+    const status = await mobileServer.getMobileStatus(userDataPath);
+    broadcastEvent("mobile:status-changed", status);
+    return status;
+  }));
+
+  // ── Export note as PDF ─────────────────────────────
+  registerIpcHandle("app:exportNotePdf", (_e, { title, html, options }: { title: string; html: string; options?: { returnBuffer?: boolean } }) =>
+    handle(async () => {
+      const returnBuffer = options?.returnBuffer ?? false;
+
+      let savePath = "";
+      if (!returnBuffer) {
+        const activeWin = ctx.getWin();
+        if (!activeWin || activeWin.isDestroyed()) throw new Error("No window");
+
+        const { canceled, filePath } = await dialog.showSaveDialog(activeWin, {
+          title: "Export Note as PDF",
+          defaultPath: `${title}.pdf`,
+          filters: [{ name: "PDF Document", extensions: ["pdf"] }],
+        });
+        if (canceled || !filePath) return null;
+        savePath = filePath;
+      }
 
       // Wrap the rendered HTML in a self-contained document with light-theme
       // prose-cairn styles inlined so the PDF is readable regardless of app theme.
@@ -871,6 +948,10 @@ pre, blockquote, table { page-break-inside: avoid; }
 
       printWin.destroy();
 
+      if (returnBuffer) {
+        return { pdfBase64: pdfBuffer.toString("base64") };
+      }
+
       fs.writeFileSync(savePath, pdfBuffer);
       return { filePath: savePath };
     })
@@ -878,7 +959,7 @@ pre, blockquote, table { page-break-inside: avoid; }
 
   // ── URL metadata fetch (OG tags + <title>) ─────────
   // Runs in the main process so there are no CORS restrictions.
-  ipcMain.handle("db:flow:url:fetch", (_e, { url }: { url: string }) =>
+  registerIpcHandle("db:flow:url:fetch", (_e, { url }: { url: string }) =>
     handle(async () => {
       // Basic URL validation
       let parsed: URL;
@@ -928,11 +1009,11 @@ pre, blockquote, table { page-break-inside: avoid; }
   );
 
   // ── Migration handlers ─────────────────────────────
-  ipcMain.handle("app:checkMigrations", () => handle(() =>
+  registerIpcHandle("app:checkMigrations", () => handle(() =>
     checkMigrations(ctx.workspacePath)
   ));
 
-  ipcMain.handle("app:runMigration", (_e, { migrationId }: { migrationId: string }) =>
+  registerIpcHandle("app:runMigration", (_e, { migrationId }: { migrationId: string }) =>
     handle(async () => {
       pauseFileWatcher();
       try {
@@ -949,4 +1030,25 @@ pre, blockquote, table { page-break-inside: avoid; }
       }
     })
   );
+  registerIpcHandle("app:getAiSettings", () => handle(() => getCachedConfig().aiConfig || null));
+  registerIpcHandle("app:saveAiSettings", (_e, { config }: { config: Record<string, unknown> }) => handle(() => {
+    saveCachedConfig("ai", config);
+    return { ok: true };
+  }));
+  registerIpcHandle("app:getAgentSettings", () => handle(() => getCachedConfig().agentConfig || null));
+  registerIpcHandle("app:saveAgentSettings", (_e, { config }: { config: Record<string, unknown> }) => handle(() => {
+    saveCachedConfig("agent", config);
+    return { ok: true };
+  }));
+  registerIpcHandle("app:getTheme", () => handle(() => getCachedConfig().theme || null));
+  registerIpcHandle("app:saveTheme", (_e, { theme }: { theme: string }) => handle(() => {
+    saveCachedConfig("theme", theme);
+    return { ok: true };
+  }));
+  registerIpcHandle("app:getFontScale", () => handle(() => getCachedConfig().fontScale || null));
+  registerIpcHandle("app:saveFontScale", (_e, { fontScale }: { fontScale: number }) => handle(() => {
+    saveCachedConfig("fontScale", fontScale);
+    return { ok: true };
+  }));
 }
+

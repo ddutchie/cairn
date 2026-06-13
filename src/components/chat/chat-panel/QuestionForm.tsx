@@ -52,7 +52,7 @@ export function QuestionForm({ questions, onSubmit, disabled = false }: Question
               placeholder={q.prompt}
               disabled={disabled || submitted}
               rows={2}
-              className="w-full px-2.5 py-1.5 text-xs rounded-md bg-[var(--surface)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent-dim)] resize-none disabled:opacity-50 transition-colors leading-relaxed"
+              className="w-full px-2.5 py-1.5 text-xs rounded-md bg-[var(--surface)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] resize-none disabled:opacity-50 transition-colors leading-relaxed"
             />
           </div>
         ))}

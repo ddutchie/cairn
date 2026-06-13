@@ -221,6 +221,19 @@ export const useCairnStore = create<CairnStore>()(
     async hydrateFromElectron(isRefresh = false) {
       const [set, get] = a;
 
+      // Fetch configurations from backend cache first if window.electron is available
+      let backendAiConfig = null;
+      let backendAgentConfig = null;
+
+      if (window.electron) {
+        try {
+          if (window.electron.getAiSettings)    backendAiConfig = await window.electron.getAiSettings();
+          if (window.electron.getAgentSettings) backendAgentConfig = await window.electron.getAgentSettings();
+        } catch (e) {
+          console.warn("Failed to fetch backend cached settings:", e);
+        }
+      }
+
       if (!isRefresh) {
         const savedTheme = storage.get<Theme>(THEME_KEY);
         if (savedTheme) {
@@ -239,13 +252,16 @@ export const useCairnStore = create<CairnStore>()(
         }
       }
 
-      const savedConfig = storage.get<AIConfig>(AI_CONFIG_KEY);
+      const savedConfig = backendAiConfig || storage.get<AIConfig>(AI_CONFIG_KEY);
       if (savedConfig) {
         if (savedConfig.provider === ("apple-fm" as unknown as "openai" | "localllm")) {
           savedConfig.provider = "localllm";
-          storage.set(AI_CONFIG_KEY, savedConfig);
         }
         set({ aiConfig: { ...DEFAULT_AI_CONFIG, ...savedConfig } });
+        storage.set(AI_CONFIG_KEY, savedConfig);
+        if (!backendAiConfig && window.electron && window.electron.saveAiSettings) {
+          window.electron.saveAiSettings(savedConfig as unknown as Record<string, unknown>).catch(() => {});
+        }
       } else if (window.electron && window.electron.ai && window.electron.ai.localLLMStatus) {
         try {
           const status = await window.electron.ai.localLLMStatus();
@@ -262,17 +278,22 @@ export const useCairnStore = create<CairnStore>()(
         set({ aiConfig: DEFAULT_AI_CONFIG });
       }
 
-      const savedAgentConfig = storage.get<AgentConfig>(AGENT_CONFIG_KEY);
+      const savedAgentConfig = backendAgentConfig || storage.get<AgentConfig>(AGENT_CONFIG_KEY);
       if (savedAgentConfig) {
         set({ agentConfig: { ...DEFAULT_AGENT_CONFIG, ...savedAgentConfig } });
+        storage.set(AGENT_CONFIG_KEY, savedAgentConfig);
+        if (!backendAgentConfig && window.electron && window.electron.saveAgentSettings) {
+          window.electron.saveAgentSettings(savedAgentConfig as unknown as Record<string, unknown>).catch(() => {});
+        }
       } else if (savedConfig && savedConfig.provider !== "localllm") {
-        const migrated = {
-          baseUrl: savedConfig.baseUrl || DEFAULT_AGENT_CONFIG.baseUrl,
-          model: savedConfig.model || DEFAULT_AGENT_CONFIG.model,
-          apiKey: savedConfig.apiKey || DEFAULT_AGENT_CONFIG.apiKey,
-          maxSteps: savedConfig.maxSteps || DEFAULT_AGENT_CONFIG.maxSteps,
-          temperature: savedConfig.temperature || DEFAULT_AGENT_CONFIG.temperature,
-          contextLimit: savedConfig.contextLimit || DEFAULT_AGENT_CONFIG.contextLimit,
+        const configRecord = savedConfig as unknown as Record<string, string | number | undefined>;
+        const migrated: AgentConfig = {
+          baseUrl: (configRecord.baseUrl as string) || DEFAULT_AGENT_CONFIG.baseUrl,
+          model: (configRecord.model as string) || DEFAULT_AGENT_CONFIG.model,
+          apiKey: (configRecord.apiKey as string) || DEFAULT_AGENT_CONFIG.apiKey,
+          maxSteps: (configRecord.maxSteps as number) || DEFAULT_AGENT_CONFIG.maxSteps,
+          temperature: (configRecord.temperature as number) || DEFAULT_AGENT_CONFIG.temperature,
+          contextLimit: (configRecord.contextLimit as number) || DEFAULT_AGENT_CONFIG.contextLimit,
         };
         set({ agentConfig: migrated });
         storage.set(AGENT_CONFIG_KEY, migrated);

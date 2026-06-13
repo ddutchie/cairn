@@ -235,7 +235,7 @@ export function PrdModal({ projectId, workspaceId, onClose }: PrdModalProps) {
                   disabled={isLoading}
                   rows={1}
                   className={cn(
-                    "flex-1 px-3 py-2 text-sm rounded-lg bg-[var(--surface-2)] border text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-dim)] resize-none disabled:opacity-50 transition-colors",
+                    "flex-1 px-3 py-2 text-sm rounded-lg bg-[var(--surface-2)] border text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none resize-none disabled:opacity-50 transition-colors",
                     waitingForUser
                       ? "border-[var(--accent)]"
                       : "border-[var(--border)] focus:border-[var(--accent)]",

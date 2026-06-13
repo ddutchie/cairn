@@ -6,6 +6,7 @@ import {
   DndContext,
   DragOverlay,
   PointerSensor,
+  TouchSensor,
   useSensor,
   useSensors,
   type DragStartEvent,
@@ -130,14 +131,17 @@ export function KanbanBoard() {
   const columns = activeProjectId ? getProjectColumns(activeProjectId) : [];
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+    // Slight distance increase prevents accidental drags on trackpads
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    // TouchSensor: 250ms hold-to-drag so touch doesn't conflict with native scroll
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } })
   );
 
   function handleDragStart(event: DragStartEvent) {
     const col  = event.active.data.current?.column as BoardColumn | undefined;
     const card = event.active.data.current?.card   as TaskCard    | undefined;
     if (col)       { setActiveColumn(col); setZoneRect(null); }
-    else if (card) { setActiveCard(card);  setZoneRect(computeZoneRect(boardRef.current)); }
+    else if (card) { setActiveCard(card);  setZoneRect(computeZoneRect(boardScrollRef.current)); }
   }
 
   function handleDragMove(event: DragMoveEvent) {
@@ -391,7 +395,7 @@ export function KanbanBoard() {
                   value={boardFilter}
                   onChange={(e) => setBoardFilter(e.target.value)}
                   placeholder="Filter cards…"
-                  className="w-full pl-7 pr-2 py-1.5 text-xs rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)]"
+                  className="w-full pl-7 pr-2 py-1.5 text-xs rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)]"
                 />
               </div>
               {boardFilter && (() => {
@@ -637,7 +641,7 @@ export function KanbanBoard() {
               value={newColumnName}
               onChange={(e) => setNewColumnName(e.target.value)}
               placeholder="Column name"
-              className="w-full bg-[var(--surface-2)] border border-[var(--border)] rounded-md px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)]"
+              className="w-full bg-[var(--surface-2)] border border-[var(--border)] rounded-md px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)]"
             />
             <div className="flex justify-end gap-2">
               <DialogClose asChild>

@@ -26,7 +26,8 @@ export function TitleBar() {
   const [platform, setPlatform] = useState<"darwin" | "win32" | "linux" | null>(null);
 
   useEffect(() => {
-    if (window.electron) {
+    const isElectron = typeof navigator !== "undefined" && navigator.userAgent.includes("Electron");
+    if (window.electron && isElectron) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setPlatform(window.electron.platform ?? "linux");
     }

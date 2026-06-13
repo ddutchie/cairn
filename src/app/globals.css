@@ -113,9 +113,20 @@ body {
 }
 
 /* ── Focus ring ──────────────────────────────────────── */
-:focus-visible {
+/* Applied to interactive elements that don't have their own focus-within
+   container (buttons, links, etc.). Text inputs are excluded because their
+   parent containers use focus-within:ring instead. */
+:focus-visible:not(input):not(textarea):not(select) {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* Suppress any remaining browser-default outline on text inputs —
+   focus indication comes from the parent container's focus-within ring. */
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
 }
 
 /* ── TipTap Editor ───────────────────────────────────── */
@@ -289,6 +300,11 @@ body {
   to { opacity: 1; transform: translateY(0); }
 }
 
+@keyframes slideInLeft {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+
 .animate-fade-in {
   animation: fadeIn 0.2s ease-out;
 }
@@ -300,6 +316,23 @@ body {
 .animate-slide-in-up {
   animation: slideInUp 0.25s ease-out;
 }
+
+.animate-slide-in-left {
+  animation: slideInLeft 0.2s ease-out;
+}
+
+.chat-panel-responsive {
+  width: 100vw;
+  height: 100dvh;
+}
+
+@media (min-width: 768px) {
+  .chat-panel-responsive {
+    width: var(--chat-panel-width, 320px);
+    height: auto;
+  }
+}
+
 
 /* ── Typography note ─────────────────────────────────── */
 /* Playfair Display is imported at the top of this file for correct CSS @import ordering */
@@ -433,4 +466,64 @@ body {
 .cm-searchMatch.cm-searchMatch-selected {
   background: color-mix(in srgb, var(--accent) 50%, transparent) !important;
 }
+
+/* ── Mobile Input Auto-Zoom Prevention ─────────────────── */
+@media (max-width: 767px) {
+  input, textarea, select {
+    font-size: 16px !important;
+  }
+}
+
+/* ── iOS Safari textareas and inputs resets ─────────── */
+textarea,
+input[type="text"],
+input[type="search"],
+input[type="email"],
+input[type="password"],
+input[type="number"],
+input[type="tel"],
+input[type="url"] {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* ── Mobile Overview Chat Input Bottom Overlay Fade ──── */
+.overview-chat-overlay {
+  background-image: linear-gradient(
+    to top,
+    var(--background) 0%,
+    color-mix(in srgb, var(--background) 80%, transparent) 60%,
+    color-mix(in srgb, var(--background) 0%, transparent) 100%
+  );
+}
+
+/* ── Print Stylesheet Reset ──────────────────────────── */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .note-editor-print-container,
+  .note-editor-print-container * {
+    visibility: visible;
+  }
+  .note-editor-print-container {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: auto !important;
+    overflow: visible !important;
+  }
+  /* Hide the editor headers and action rows during print */
+  .note-editor-print-container > div:first-child,
+  .note-editor-print-container [data-ai-toolbar] {
+    display: none !important;
+    height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+  }
+}
+
+
 

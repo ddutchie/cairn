@@ -1,6 +1,7 @@
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 import { nanoid } from "nanoid";
+import { defaultUrlTransform } from "react-markdown";
 export { PRIORITY_COLORS } from "./constants";
 
 export function cn(...inputs: ClassValue[]) {
@@ -59,3 +60,9 @@ export const STATUS_COLORS: Record<string, string> = {
   completed: "text-[var(--info)]",
   archived:  "text-[var(--text-tertiary)]",
 };
+
+export function urlTransform(url: string): string {
+  return url.startsWith("asset://")
+    ? (typeof window !== "undefined" && !window.electron ? `/api/assets/${url.slice(8)}` : url)
+    : defaultUrlTransform(url);
+}

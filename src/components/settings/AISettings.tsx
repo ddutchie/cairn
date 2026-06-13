@@ -741,7 +741,7 @@ export function AISettings() {
                     value={baseUrl}
                     onChange={(e) => updateAIConfig({ baseUrl: e.target.value })}
                     placeholder="https://api.openai.com"
-                    className="pl-7 pr-3 py-1.5 text-xs w-64 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)]"
+                    className="pl-7 pr-3 py-1.5 text-xs w-64 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)]"
                   />
                 </div>
                 <div className="flex gap-1.5">
@@ -783,7 +783,7 @@ export function AISettings() {
                   value={apiKey}
                   onChange={(e) => updateAIConfig({ apiKey: e.target.value })}
                   placeholder={isLocal ? "optional" : "sk-…"}
-                  className="pl-7 pr-8 py-1.5 text-xs w-52 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)]"
+                  className="pl-7 pr-8 py-1.5 text-xs w-52 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)]"
                 />
                 <Tooltip content={showKey ? "Hide API key" : "Show API key"} side="top">
                   <button
@@ -815,7 +815,7 @@ export function AISettings() {
                       value={model}
                       onChange={(e) => updateAIConfig({ model: e.target.value })}
                       placeholder="gpt-4o-mini"
-                      className="pl-7 pr-3 py-1.5 text-xs w-full rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)]"
+                      className="pl-7 pr-3 py-1.5 text-xs w-full rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)]"
                     />
                   </div>
                   <button

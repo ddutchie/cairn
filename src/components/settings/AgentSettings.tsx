@@ -60,7 +60,7 @@ function AgentForm({ initial, onSave, onCancel }: AgentFormProps) {
             onChange={(e) => setName(e.target.value)}
             maxLength={64}
             placeholder="e.g. Claude Code"
-            className="w-full rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
+            className="w-full rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-sm px-3 py-1.5 focus:outline-none"
           />
         </div>
 
@@ -74,7 +74,7 @@ function AgentForm({ initial, onSave, onCancel }: AgentFormProps) {
               value={binaryPath}
               onChange={(e) => setBinaryPath(e.target.value)}
               placeholder="/usr/local/bin/claude"
-              className="flex-1 rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-sm px-3 py-1.5 font-mono focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
+              className="flex-1 rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-sm px-3 py-1.5 font-mono focus:outline-none"
             />
             <Button variant="ghost" size="sm" onClick={pickBinary}>
               <FolderOpen size={12} />
@@ -95,7 +95,7 @@ function AgentForm({ initial, onSave, onCancel }: AgentFormProps) {
             value={args}
             onChange={(e) => setArgs(e.target.value)}
             placeholder="e.g. -p {prompt}  or  --message {prompt}  or  run {prompt}  or  leave empty for interactive"
-            className="w-full rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-sm px-3 py-1.5 font-mono focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
+            className="w-full rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-sm px-3 py-1.5 font-mono focus:outline-none"
           />
           <p className="mt-1 text-[0.714rem] text-[var(--text-tertiary)]">
             Claude Code: binary <code className="text-[var(--accent)]">claude</code>, args <code className="text-[var(--accent)]">-p {"{prompt}"}</code>.{" "}
@@ -499,7 +499,7 @@ export function AgentSettings() {
                 value={baseUrlAgent}
                 onChange={(e) => updateAgent({ baseUrl: e.target.value })}
                 placeholder="https://api.openai.com"
-                className="pl-7 pr-3 py-1.5 text-xs w-64 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)]"
+                className="pl-7 pr-3 py-1.5 text-xs w-64 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)]"
               />
             </div>
             <div className="flex gap-1.5">
@@ -541,7 +541,7 @@ export function AgentSettings() {
               value={apiKeyAgent}
               onChange={(e) => updateAgent({ apiKey: e.target.value })}
               placeholder={isLocalAgent ? "optional" : "sk-…"}
-              className="pl-7 pr-8 py-1.5 text-xs w-52 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)]"
+              className="pl-7 pr-8 py-1.5 text-xs w-52 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)]"
             />
             <Tooltip content={showKeyAgent ? "Hide API key" : "Show API key"} side="top">
               <button
@@ -573,7 +573,7 @@ export function AgentSettings() {
                   value={modelAgent}
                   onChange={(e) => updateAgent({ model: e.target.value })}
                   placeholder="gpt-4o"
-                  className="pl-7 pr-3 py-1.5 text-xs w-full rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)]"
+                  className="pl-7 pr-3 py-1.5 text-xs w-full rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)]"
                 />
               </div>
               <button
@@ -638,7 +638,7 @@ export function AgentSettings() {
                   const v = parseInt(e.target.value, 10);
                   if (!isNaN(v) && v >= 1 && v <= 1000) updateAgent({ maxSteps: v });
                 }}
-                className="pl-7 pr-3 py-1.5 text-xs w-24 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)]"
+                className="pl-7 pr-3 py-1.5 text-xs w-24 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
               />
             </div>
             <div className="flex gap-1.5">
@@ -689,7 +689,7 @@ export function AgentSettings() {
                   const v = parseFloat(e.target.value);
                   if (!isNaN(v) && v >= 0 && v <= 1) updateAgent({ temperature: v });
                 }}
-                className="pl-7 pr-3 py-1.5 text-xs w-24 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)]"
+                className="pl-7 pr-3 py-1.5 text-xs w-24 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
               />
             </div>
             <div className="flex gap-1.5">
@@ -729,7 +729,7 @@ export function AgentSettings() {
                   const v = parseInt(e.target.value, 10);
                   if (!isNaN(v) && v >= 1000) updateAgent({ contextLimit: v });
                 }}
-                className="pl-7 pr-3 py-1.5 text-xs w-28 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)]"
+                className="pl-7 pr-3 py-1.5 text-xs w-28 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
               />
             </div>
             <div className="flex gap-1.5">

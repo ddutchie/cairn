@@ -166,6 +166,9 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
     set((s) => {
       const next = { ...s.aiConfig, ...patch };
       storage.set(AI_CONFIG_KEY, next);
+      if (typeof window !== "undefined" && window.electron && window.electron.saveAiSettings) {
+        window.electron.saveAiSettings(next).catch(() => {});
+      }
       return { aiConfig: next };
     });
   },
@@ -175,6 +178,9 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
     set((s) => {
       const next = { ...s.agentConfig, ...patch };
       storage.set(AGENT_CONFIG_KEY, next);
+      if (typeof window !== "undefined" && window.electron && window.electron.saveAgentSettings) {
+        window.electron.saveAgentSettings(next).catch(() => {});
+      }
       return { agentConfig: next };
     });
   },

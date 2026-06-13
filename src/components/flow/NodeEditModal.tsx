@@ -150,7 +150,7 @@ function NotePicker({ selectedId, onSelect }: { selectedId: string; onSelect: (i
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Filter notes…"
-          className="w-full text-xs bg-[var(--surface-2)] border border-[var(--border)] rounded-lg pl-7 pr-2.5 py-1.5 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
+          className="w-full text-xs bg-[var(--surface-2)] border border-[var(--border)] rounded-lg pl-7 pr-2.5 py-1.5 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none"
         />
       </div>
       <div className="flex flex-col max-h-48 overflow-y-auto rounded-lg border border-[var(--border)] divide-y divide-[var(--border)]">
@@ -213,7 +213,7 @@ function TaskPicker({ selectedId, onSelect }: { selectedId: string; onSelect: (i
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Filter tasks…"
-          className="w-full text-xs bg-[var(--surface-2)] border border-[var(--border)] rounded-lg pl-7 pr-2.5 py-1.5 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
+          className="w-full text-xs bg-[var(--surface-2)] border border-[var(--border)] rounded-lg pl-7 pr-2.5 py-1.5 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none"
         />
       </div>
       <div className="flex flex-col max-h-48 overflow-y-auto rounded-lg border border-[var(--border)] divide-y divide-[var(--border)]">
@@ -295,7 +295,7 @@ function UrlEditor({
             onChange={(e) => onUrlChange(e.target.value)}
             placeholder="https://..."
             autoFocus
-            className="flex-1 text-xs bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-2.5 py-1.5 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)] min-w-0"
+            className="flex-1 text-xs bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-2.5 py-1.5 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none min-w-0"
           />
           <button
             type="button"
@@ -347,7 +347,7 @@ function GroupEditor({
           onChange={(e) => onLabelChange(e.target.value)}
           autoFocus
           placeholder="Group name…"
-          className="w-full text-xs bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-2.5 py-1.5 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
+          className="w-full text-xs bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-2.5 py-1.5 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none"
         />
       </div>
       <div className="flex flex-col gap-1">
@@ -380,7 +380,7 @@ function Field({
   onChange: (v: string) => void;
   multiline?: boolean; placeholder?: string; autoFocus?: boolean;
 }) {
-  const base = "w-full text-xs bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-2.5 py-1.5 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)] resize-none";
+  const base = "w-full text-xs bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-2.5 py-1.5 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none resize-none";
   return (
     <div className="flex flex-col gap-1">
       <label className="text-[0.786rem] font-medium text-[var(--text-tertiary)] uppercase tracking-wide">{label}</label>

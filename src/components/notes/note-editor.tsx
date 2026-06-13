@@ -1,20 +1,21 @@
 "use client";
 
 import React, { useRef, useCallback, useState, useEffect, useMemo } from "react";
-import ReactMarkdown, { defaultUrlTransform, type ExtraProps } from "react-markdown";
+import ReactMarkdown, { type ExtraProps } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
-import { Pin, PinOff, Calendar, Eye, Pencil, Wand2, Loader2, CheckCircle2, Tag, Plus, X, Link2, Kanban, ChevronDown, FileText, FileDown } from "lucide-react";
+import { Pin, PinOff, Calendar, Eye, Pencil, Wand2, Loader2, CheckCircle2, Tag, Plus, X, Link2, Kanban, ChevronDown, FileText, FileDown, ChevronLeft } from "lucide-react";
 import { WikilinkPicker } from "./WikilinkPicker";
 import { getActiveWikilink } from "@/lib/wikilink-parser";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
-import { cn, formatRelative } from "@/lib/utils";
+import { cn, formatRelative, urlTransform } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import type { Note } from "@/types";
 import { MermaidDiagram } from "./MermaidDiagram";
 import { TableOfContents, headingSlug } from "./TableOfContents";
@@ -71,7 +72,7 @@ function MDPreviewPanel({ text, onDismiss }: MDPreviewPanelProps) {
         <ReactMarkdown
           remarkPlugins={PREVIEW_REMARK_PLUGINS}
           rehypePlugins={[previewCapture, rehypeKatex, previewMerge]}
-          urlTransform={(url) => url.startsWith("asset://") ? url : defaultUrlTransform(url)}
+          urlTransform={urlTransform}
           components={({
             mark({ children }: React.HTMLAttributes<HTMLElement> & ExtraProps) {
               return (
@@ -123,11 +124,12 @@ function MDPreviewPanel({ text, onDismiss }: MDPreviewPanelProps) {
 
 interface NoteEditorProps {
   note: Note;
+  onBack?: () => void;
 }
 
 type EditorMode = "write" | "read";
 
-export function NoteEditor({ note }: NoteEditorProps) {
+export function NoteEditor({ note, onBack }: NoteEditorProps) {
   const { updateNote, aiConfig, activeProjectId, getProjectColumns, tags, createTag, getTagById, activeWorkspaceId, setView, notes, projects } = useCairnStore(useShallow((s) => ({
     updateNote:        s.updateNote,
     aiConfig:          s.aiConfig,
@@ -649,6 +651,15 @@ export function NoteEditor({ note }: NoteEditorProps) {
         </button>
       );
     },
+    table({ children }: { children?: React.ReactNode }) {
+      return (
+        <div className="w-full overflow-x-auto my-3 scrollbar-thin">
+          <table className="min-w-full border-collapse">
+            {children}
+          </table>
+        </div>
+      );
+    },
   // previewScrollRef is a stable React ref — no need to list it as a dep
   // notes is needed for wikilink resolution
   }), [note.id, note.content, updateNote, notes]) as import("react-markdown").Components;
@@ -666,9 +677,12 @@ export function NoteEditor({ note }: NoteEditorProps) {
 
   const [exportState, setExportState] = useState<"idle" | "exporting" | "done">("idle");
   const handleExportPdf = useCallback(async () => {
-    if (!proseRef.current || !window.electron?.exportNotePdf) return;
+    if (!proseRef.current) return;
     setExportState("exporting");
     try {
+      const isElectron = typeof navigator !== "undefined" && navigator.userAgent.includes("Electron");
+      const isMobile = typeof window !== "undefined" && !!window.electron && !isElectron;
+
       const raw = proseRef.current.innerHTML;
       // Post-process HTML to make code blocks print-friendly:
       // CodeBlock uses hardcoded inline styles derived from the active theme.
@@ -705,10 +719,45 @@ export function NoteEditor({ note }: NoteEditorProps) {
       }
 
       const html = root.innerHTML;
-      await window.electron.exportNotePdf(note.title, html);
+
+      if (isElectron && window.electron?.exportNotePdf) {
+        await window.electron.exportNotePdf(note.title, html);
+      } else if (isMobile && window.electron?.exportNotePdf) {
+        const result = await window.electron.exportNotePdf(note.title, html, { returnBuffer: true });
+        if (result?.pdfBase64) {
+          const binStr = atob(result.pdfBase64);
+          const len = binStr.length;
+          const arr = new Uint8Array(len);
+          for (let i = 0; i < len; i++) {
+            arr[i] = binStr.charCodeAt(i);
+          }
+          const blob = new Blob([arr], { type: "application/pdf" });
+          const file = new File([blob], `${note.title}.pdf`, { type: "application/pdf" });
+
+          if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            await navigator.share({
+              files: [file],
+              title: note.title,
+            });
+          } else {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `${note.title}.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+          }
+        }
+      } else {
+        // Fallback to native browser printing (which enables printing/PDF saving on mobile)
+        window.print();
+      }
       setExportState("done");
       setTimeout(() => setExportState("idle"), 2000);
-    } catch {
+    } catch (err) {
+      console.error("PDF export failed:", err);
       setExportState("idle");
     }
   }, [note.title]);
@@ -716,7 +765,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
   return (
     <div
       ref={containerRef}
-      className="flex flex-col h-full overflow-hidden"
+      className="flex flex-col h-full overflow-hidden note-editor-print-container"
       onMouseDown={(e) => {
         // Dismiss preview when clicking outside the editor or docked panels
         const target = e.target as HTMLElement;
@@ -730,37 +779,51 @@ export function NoteEditor({ note }: NoteEditorProps) {
       }}
     >
       {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-[var(--border)] flex-shrink-0">
-        {/* Mode toggle */}
-        <div className="flex items-center gap-0.5 bg-[var(--surface-2)] rounded-md p-0.5">
-          <button
-            onClick={() => { setMode("write"); setTimeout(() => editorRef.current?.focus(), 50); }}
-            className={cn(
-              "flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors",
-              mode === "write"
-                ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm"
-                : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
-            )}
-          >
-            <Pencil size={11} />
-            Write
-          </button>
-          <button
-            onClick={() => { flushPending(); setMode("read"); }}
-            className={cn(
-              "flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors",
-              mode === "read"
-                ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm"
-                : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
-            )}
-          >
-            <Eye size={11} />
-            Read
-          </button>
+      <div className="flex flex-wrap items-center justify-between gap-2.5 px-3 py-2.5 md:px-4 md:py-2 border-b border-[var(--border)] flex-shrink-0 w-full">
+        <div className="flex items-center justify-between w-full md:w-auto gap-2">
+          {onBack && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onBack}
+              className="md:hidden gap-1.5 pl-1.5 pr-2.5 h-8 text-[var(--text-secondary)]"
+            >
+              <ChevronLeft size={14} />
+              <span>Notes</span>
+            </Button>
+          )}
+
+          {/* Mode toggle */}
+          <div className="flex items-center gap-0.5 bg-[var(--surface-2)] rounded-md p-0.5">
+            <button
+              onClick={() => { setMode("write"); setTimeout(() => editorRef.current?.focus(), 50); }}
+              className={cn(
+                "flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors",
+                mode === "write"
+                  ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm"
+                  : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
+              )}
+            >
+              <Pencil size={11} />
+              Write
+            </button>
+            <button
+              onClick={() => { flushPending(); setMode("read"); }}
+              className={cn(
+                "flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors",
+                mode === "read"
+                  ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm"
+                  : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
+              )}
+            >
+              <Eye size={11} />
+              Read
+            </button>
+          </div>
         </div>
 
         {/* Meta */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {aiEnabled && (spawnLoading ? (
             <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-[var(--surface-2)] border border-[var(--border)]">
               <Loader2 size={11} className="animate-spin text-[var(--accent)] shrink-0" />
@@ -790,7 +853,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
             </Tooltip>
           ))}
 
-          {mode === "read" && window.electron?.exportNotePdf && (
+          {mode === "read" && (
             <Tooltip content="Export as PDF">
               <button
                 onClick={handleExportPdf}
@@ -929,7 +992,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
                    <ReactMarkdown
                      remarkPlugins={[remarkGfm, remarkBreaks, remarkMath, remarkPromoteDisplayMath, remarkCallout, remarkObsidianEmbeds, remarkWikilinks]}
                      rehypePlugins={[rehypeCaptureLatex, rehypeKatex, rehypeMergedPass]}
-                     urlTransform={(url) => url.startsWith("asset://") ? url : defaultUrlTransform(url)}
+                     urlTransform={urlTransform}
                      components={mdComponents}
                    >
                     {note.content}
@@ -1154,7 +1217,7 @@ function NoteTagBar({ note, workspaceTags, onToggleTag, onCreateTag, getTagById 
                 if (e.key === "Escape") { setPickerOpen(false); setNewTagName(""); }
               }}
               placeholder="Search or create…"
-              className="w-full px-2 py-1 text-xs rounded bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)] mb-2"
+              className="w-full px-2 py-1 text-xs rounded bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] mb-2"
             />
             <div className="max-h-36 overflow-y-auto space-y-0.5">
               {filteredUnassigned.map((tag) => (

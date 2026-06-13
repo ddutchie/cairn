@@ -37,6 +37,7 @@ export function AgentView() {
   const codeDirectory = project?.codeDirectory ?? null;
 
   const [centreTab, setCentreTab] = useState<CentreTab>("editor");
+  const [mobileTab, setMobileTab] = useState<"agent" | "files" | "editor" | "diff" | "terminal">("agent");
   // Bottom terminal height lives in React state so AgentBottomTerminal re-renders with the new height
   const [bottomHeight, setBottomHeight] = useState(DEFAULT_BOTTOM_HEIGHT);
 
@@ -143,14 +144,47 @@ export function AgentView() {
 
   return (
     <div className="flex flex-col flex-1 min-h-0 overflow-hidden bg-[var(--background)]">
+      {/* Mobile Tab Selector */}
+      <div className="md:hidden flex items-center gap-0.5 px-2 py-1.5 border-b border-[var(--border)] bg-[var(--surface)] overflow-x-auto scrollbar-none flex-shrink-0">
+        {[
+          { id: "agent" as const, label: "Agent Console" },
+          { id: "files" as const, label: "Files" },
+          { id: "editor" as const, label: "Editor" },
+          ...(codeDirectory ? [{ id: "diff" as const, label: "Diff" }] : []),
+          ...(codeDirectory ? [{ id: "terminal" as const, label: "Terminal" }] : []),
+        ].map((t) => (
+          <button
+            key={t.id}
+            onClick={() => {
+              setMobileTab(t.id);
+              setTimeout(() => TerminalManager.fitAll(), 50);
+            }}
+            className={cn(
+              "px-3 py-1 rounded-md text-[0.786rem] font-medium transition-colors whitespace-nowrap",
+              mobileTab === t.id
+                ? "text-[var(--text-primary)] bg-[var(--surface-2)]"
+                : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
+            )}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
 
-      {/* ── Three-pane row ─────────────────────────────────────────────────── */}
-      <div className="flex flex-1 min-h-0 overflow-hidden">
+      {/* ── Main layout row ── */}
+      <div className={cn(
+        "flex-1 min-h-0 overflow-hidden flex-col md:flex-row",
+        mobileTab === "terminal" ? "hidden md:flex" : "flex"
+      )}>
 
         {/* Left pane — file tree */}
         <div
           ref={treePaneRef}
-          className="flex-shrink-0 flex flex-col border-r border-[var(--border)] overflow-hidden"
+          className={cn(
+            "flex-shrink-0 flex flex-col border-r border-[var(--border)] overflow-hidden",
+            "w-full md:w-auto max-md:!w-full",
+            mobileTab === "files" ? "flex flex-1" : "hidden md:flex"
+          )}
         >
           <FileTree project={project} />
         </div>
@@ -158,15 +192,19 @@ export function AgentView() {
         {/* Left resize divider */}
         <div
           ref={leftDividerRef}
-          className="w-0 flex-shrink-0 cursor-col-resize relative z-10"
+          className="w-0 flex-shrink-0 cursor-col-resize relative z-10 hidden md:block"
           style={{ marginLeft: "-3px", marginRight: "-3px", padding: "0 3px" }}
           role="separator"
           aria-label="Resize file tree"
         />
 
         {/* Centre pane — tab bar + editor/diff */}
-        <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
-          <div className="flex items-center gap-0.5 py-1 border-b border-[var(--border)] bg-[var(--surface)] flex-shrink-0">
+        <div className={cn(
+          "flex-1 min-w-0 flex flex-col overflow-hidden",
+          (mobileTab === "editor" || mobileTab === "diff") ? "flex h-full" : "hidden md:flex"
+        )}>
+          {/* Tab selector for editor / diff (only if not on mobile, since mobile has its own tabs) */}
+          <div className="hidden md:flex items-center gap-0.5 py-1 border-b border-[var(--border)] bg-[var(--surface)] flex-shrink-0">
             <button
               onClick={() => setCentreTab("editor")}
               className={cn(
@@ -193,12 +231,14 @@ export function AgentView() {
             )}
           </div>
 
-          <div className={cn("flex-1 min-h-0 overflow-hidden flex flex-col", centreTab !== "editor" && "hidden")}>
+          {/* Editor content */}
+          <div className={cn("flex-1 min-h-0 overflow-hidden flex flex-col", centreTab !== "editor" && "md:hidden", mobileTab !== "editor" && "max-md:hidden")}>
             <AgentEditor />
           </div>
 
-          {centreTab === "diff" && codeDirectory && (
-            <div className="flex-1 min-h-0 overflow-hidden">
+          {/* Diff content */}
+          {codeDirectory && (
+            <div className={cn("flex-1 min-h-0 overflow-hidden flex flex-col", centreTab !== "diff" && "md:hidden", mobileTab !== "diff" && "max-md:hidden")}>
               <DiffViewer cwd={codeDirectory} />
             </div>
           )}
@@ -207,7 +247,7 @@ export function AgentView() {
         {/* Right resize divider */}
         <div
           ref={rightDividerRef}
-          className="w-0 flex-shrink-0 cursor-col-resize relative z-10"
+          className="w-0 flex-shrink-0 cursor-col-resize relative z-10 hidden md:block"
           style={{ marginLeft: "-3px", marginRight: "-3px", padding: "0 3px" }}
           role="separator"
           aria-label="Resize terminal pane"
@@ -216,7 +256,11 @@ export function AgentView() {
         {/* Right pane — agent terminal sessions */}
         <div
           ref={terminalPaneRef}
-          className="flex-shrink-0 flex flex-col border-l border-[var(--border)] overflow-hidden"
+          className={cn(
+            "flex-shrink-0 flex flex-col border-l border-[var(--border)] overflow-hidden",
+            "w-full md:w-auto max-md:!w-full",
+            mobileTab === "agent" ? "flex flex-1" : "hidden md:flex"
+          )}
         >
           <AgentTerminalPane />
         </div>
@@ -228,12 +272,14 @@ export function AgentView() {
           {/* Horizontal drag divider */}
           <div
             ref={bottomDividerRef}
-            className="h-0 flex-shrink-0 cursor-row-resize relative z-10 border-t border-[var(--border)]"
+            className="h-0 flex-shrink-0 cursor-row-resize relative z-10 border-t border-[var(--border)] hidden md:block"
             style={{ marginTop: "-3px", marginBottom: "-3px", padding: "3px 0" }}
             role="separator"
             aria-label="Resize bottom terminal"
           />
-          <AgentBottomTerminal cwd={codeDirectory} height={bottomHeight} />
+          <div className={cn("flex-shrink-0", mobileTab === "terminal" ? "flex flex-1 h-full w-full" : "hidden md:flex w-full")}>
+            <AgentBottomTerminal cwd={codeDirectory} height={bottomHeight} visible={mobileTab === "terminal"} />
+          </div>
         </>
       )}
 
