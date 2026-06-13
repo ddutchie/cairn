@@ -113,9 +113,20 @@ body {
 }
 
 /* ── Focus ring ──────────────────────────────────────── */
-:focus-visible {
+/* Applied to interactive elements that don't have their own focus-within
+   container (buttons, links, etc.). Text inputs are excluded because their
+   parent containers use focus-within:ring instead. */
+:focus-visible:not(input):not(textarea):not(select) {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* Suppress any remaining browser-default outline on text inputs —
+   focus indication comes from the parent container's focus-within ring. */
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
 }
 
 /* ── TipTap Editor ───────────────────────────────────── */
