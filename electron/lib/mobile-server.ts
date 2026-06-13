@@ -455,7 +455,7 @@ export function loadMobileSettings(userDataPath: string): MobileSettings {
   if (!localSettings.pin) {
     // Generate random 4-digit PIN
     localSettings.pin = Math.floor(1000 + Math.random() * 9000).toString();
-    saveMobileSettings(userDataPath, localSettings);
+    fs.writeFileSync(configPath, JSON.stringify(localSettings, null, 2), "utf-8");
   }
 
   return localSettings;
