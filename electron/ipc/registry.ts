@@ -1,11 +1,11 @@
 import { ipcMain, BrowserWindow } from "electron";
 
-export type IpcHandler = (event: any, ...args: any[]) => any;
+export type IpcHandler = (event: unknown, ...args: unknown[]) => unknown;
 
 const handlers = new Map<string, IpcHandler>();
 const listeners = new Map<string, IpcHandler>();
 
-let mobileBroadcastCallback: ((channel: string, payload: any) => void) | null = null;
+let mobileBroadcastCallback: ((channel: string, payload: unknown) => void) | null = null;
 
 function isWriteChannel(channel: string): boolean {
   if (!channel.startsWith("db:")) return false;
@@ -37,7 +37,7 @@ function isWriteChannel(channel: string): boolean {
  * Register a handler that maps to ipcMain.handle.
  */
 export function registerIpcHandle(channel: string, handler: IpcHandler): void {
-  const wrappedHandler = async (event: any, ...args: any[]) => {
+  const wrappedHandler = async (event: unknown, ...args: unknown[]) => {
     const result = await handler(event, ...args);
     if (isWriteChannel(channel)) {
       broadcastEvent("db:changed", null);
@@ -66,14 +66,14 @@ export function getIpcHandler(channel: string): IpcHandler | undefined {
 /**
  * Set the mobile broadcasting callback (used by mobile-server.ts on start).
  */
-export function setMobileBroadcastCallback(cb: (channel: string, payload: any) => void): void {
+export function setMobileBroadcastCallback(cb: ((channel: string, payload: unknown) => void) | null): void {
   mobileBroadcastCallback = cb;
 }
 
 /**
  * Broadcast an event to all Electron windows and all active mobile clients.
  */
-export function broadcastEvent(channel: string, payload: any): void {
+export function broadcastEvent(channel: string, payload: unknown): void {
   // Send to all Electron windows
   const allWindows = BrowserWindow.getAllWindows();
   for (const win of allWindows) {

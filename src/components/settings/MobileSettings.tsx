@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Smartphone, RefreshCw, Key, Link, Shield, AlertCircle } from "lucide-react";
+import { RefreshCw, Key, Link, Shield, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SettingsGroup, SettingsRow, Toggle } from "./shared";
 import { cn } from "@/lib/utils";
@@ -16,7 +16,6 @@ interface MobileStatus {
 export function MobileSettings() {
   const [status, setStatus] = useState<MobileStatus | null>(null);
   const [loading, setLoading] = useState(false);
-  const [pinMode, setPinMode] = useState(true); // default authEnabled true
 
   const fetchStatus = async () => {
     if (typeof window !== "undefined" && window.electron && window.electron.mobile) {
@@ -32,10 +31,20 @@ export function MobileSettings() {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchStatus();
-    // Refresh status periodically
-    const timer = setInterval(fetchStatus, 5000);
-    return () => clearInterval(timer);
+    // Listen for server status pushes instead of periodic polling
+    if (typeof window !== "undefined" && window.electron && window.electron.mobile) {
+      const mobileApi = window.electron.mobile as unknown as {
+        onStatusChanged: (cb: (status: MobileStatus) => void) => () => void;
+      };
+      const unsub = mobileApi.onStatusChanged((newStatus: MobileStatus) => {
+        setStatus(newStatus);
+      });
+      return () => {
+        if (unsub) unsub();
+      };
+    }
   }, []);
 
   const handleToggleAccess = async (enabled: boolean) => {

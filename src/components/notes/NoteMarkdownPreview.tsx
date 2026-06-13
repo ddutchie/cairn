@@ -9,7 +9,8 @@
  */
 
 import React, { useMemo } from "react";
-import ReactMarkdown, { defaultUrlTransform, type ExtraProps } from "react-markdown";
+import ReactMarkdown, { type ExtraProps } from "react-markdown";
+import { urlTransform } from "@/lib/utils";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import remarkMath from "remark-math";
@@ -44,11 +45,7 @@ export function NoteMarkdownPreview({ content, className }: NoteMarkdownPreviewP
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkBreaks, remarkMath, remarkPromoteDisplayMath, remarkCallout, remarkObsidianEmbeds]}
         rehypePlugins={[rehypeCaptureLatex, rehypeKatex, rehypeMergedPass]}
-        urlTransform={(url) =>
-          url.startsWith("asset://")
-            ? (typeof window !== "undefined" && !window.electron ? `/api/assets/${url.slice(8)}` : url)
-            : defaultUrlTransform(url)
-        }
+        urlTransform={urlTransform}
         components={({
           mark({ children }: React.HTMLAttributes<HTMLElement> & ExtraProps) {
             return (

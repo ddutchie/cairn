@@ -4,15 +4,11 @@
  * Runs the OpenAI-compatible completions loop in the Electron main process
  * so it works in the packaged app (no Next.js server needed).
  *
- * Registered as: ipcMain.on("chat:stream", ...)
+ * Registered as: registerIpcOn("chat:stream", ...)
  */
 
 import type { BrowserWindow } from "electron";
 import { registerIpcHandle, registerIpcOn, broadcastEvent } from "./registry";
-const ipcMain = {
-  handle: registerIpcHandle,
-  on: registerIpcOn,
-};
 import type Database from "better-sqlite3";
 import { isLocalEndpoint, streamCompletion, normaliseBaseUrl, type OpenAIMessage } from "../lib/llm";
 import { TOOLS, buildSystemPrompt, type ChatRequest } from "../lib/tools";
@@ -21,6 +17,49 @@ import { saveCachedConfig, getCachedConfig } from "../lib/config-cache";
 
 // Track one AbortController per renderer webContents ID
 const abortControllers = new Map<number, AbortController>();
+
+function resolveAIConfig(config?: {
+  provider?: string;
+  baseUrl?: string;
+  model?: string;
+  apiKey?: string;
+}): {
+  provider: string;
+  baseUrl: string;
+  model: string;
+  apiKey: string;
+} {
+  if (config?.apiKey) {
+    saveCachedConfig("ai", {
+      provider: config.provider,
+      baseUrl: config.baseUrl,
+      model: config.model,
+      apiKey: config.apiKey,
+    });
+  }
+
+  let reqConfig = config;
+  const isLocal = config?.baseUrl ? isLocalEndpoint(normaliseBaseUrl(config.baseUrl)) : false;
+  if (!reqConfig?.apiKey && reqConfig?.provider !== "localllm" && !isLocal) {
+    const cached = getCachedConfig().aiConfig;
+    if (cached?.apiKey) {
+      reqConfig = {
+        ...reqConfig,
+        provider: reqConfig?.provider || cached.provider,
+        baseUrl: reqConfig?.baseUrl || cached.baseUrl,
+        model: reqConfig?.model || cached.model,
+        apiKey: cached.apiKey,
+      };
+    }
+  }
+
+  return {
+    provider: reqConfig?.provider ?? "openai",
+    baseUrl: normaliseBaseUrl(reqConfig?.baseUrl ?? "https://api.openai.com"),
+    model: reqConfig?.model ?? "gpt-4o-mini",
+    apiKey: reqConfig?.apiKey ?? "",
+  };
+}
 
 // Re-export for backward compatibility (prd.ts and others import LLMConfig from here)
 export type { LLMConfig } from "../lib/llm";
@@ -148,35 +187,12 @@ async function runToolLoop(
 }
 
 export function registerChatHandler(db: Database.Database, workspacePath: string, getWin?: () => BrowserWindow | null): void {
-  ipcMain.handle("chat:compactThread", async (_event, req: {
+  registerIpcHandle("chat:compactThread", async (_event, req: {
     messages: Array<{ role: string; content: string }>;
     config: { provider?: string; baseUrl?: string; model?: string; apiKey?: string };
   }) => {
     try {
-      if (req.config?.apiKey) {
-        saveCachedConfig("ai", {
-          baseUrl: req.config.baseUrl,
-          model: req.config.model,
-          apiKey: req.config.apiKey,
-        });
-      }
-
-      let reqConfig = req.config;
-      if (!reqConfig?.apiKey) {
-        const cached = getCachedConfig().aiConfig;
-        if (cached?.apiKey) {
-          reqConfig = {
-            ...reqConfig,
-            baseUrl: reqConfig?.baseUrl || cached.baseUrl,
-            model: reqConfig?.model || cached.model,
-            apiKey: cached.apiKey,
-          };
-        }
-      }
-
-      const baseUrl = normaliseBaseUrl(reqConfig?.baseUrl ?? "https://api.openai.com");
-      const model = reqConfig?.model ?? "gpt-4o-mini";
-      const apiKey = reqConfig?.apiKey ?? "";
+      const { baseUrl, model, apiKey } = resolveAIConfig(req.config);
       
       const llmConfig = {
         baseUrl,
@@ -198,7 +214,7 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
   });
 
   // chat:abort — cancel the in-flight stream for this renderer
-  ipcMain.on("chat:abort", (event) => {
+  registerIpcOn("chat:abort", (event) => {
     const ctrl = abortControllers.get(event.sender.id);
     if (ctrl) {
       ctrl.abort();
@@ -206,45 +222,18 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
     }
   });
 
-  // chat:stream — fire-and-forget (ipcMain.on, not handle).
+  // chat:stream — fire-and-forget (registerIpcOn, not handle).
   // Emits:
   //   chat:token   { delta: string }   — one SSE content chunk
   //   chat:tool-call { tool, label, args } — tool being invoked
   //   chat:done    { content: string, contextRefs: [], error?: string }
-  ipcMain.on("chat:stream", async (event, req: ChatRequest) => {
+  registerIpcOn("chat:stream", async (event, req: ChatRequest) => {
     // Cancel any previous in-flight request from this renderer
     abortControllers.get(event.sender.id)?.abort();
     const abortCtrl = new AbortController();
     abortControllers.set(event.sender.id, abortCtrl);
     
-    if (req.config?.apiKey) {
-      saveCachedConfig("ai", {
-        provider: req.config.provider,
-        baseUrl: req.config.baseUrl,
-        model: req.config.model,
-        apiKey: req.config.apiKey,
-      });
-    }
-
-    let reqConfig = req.config;
-    const isLocal = req.config?.baseUrl ? isLocalEndpoint(normaliseBaseUrl(req.config.baseUrl)) : false;
-    if (!reqConfig?.apiKey && reqConfig?.provider !== "localllm" && !isLocal) {
-      const cached = getCachedConfig().aiConfig;
-      if (cached?.apiKey) {
-        reqConfig = {
-          ...reqConfig,
-          provider: reqConfig?.provider || cached.provider,
-          baseUrl: reqConfig?.baseUrl || cached.baseUrl,
-          model: reqConfig?.model || cached.model,
-          apiKey: cached.apiKey,
-        };
-      }
-    }
-
-    const provider = reqConfig?.provider ?? "openai";
-    const baseUrl = normaliseBaseUrl(reqConfig?.baseUrl ?? "https://api.openai.com");
-    const model = reqConfig?.model ?? "gpt-4o-mini";
-    const apiKey = reqConfig?.apiKey ?? "";
+    const { provider, baseUrl, model, apiKey } = resolveAIConfig(req.config);
     const isLocalEndpointUrl = isLocalEndpoint(baseUrl);
 
     const send = (ch: string, payload: unknown) => {

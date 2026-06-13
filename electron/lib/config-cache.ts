@@ -21,12 +21,15 @@ export interface CachedConfig {
 }
 
 function getCachePath(): string {
-  // Fallback if app is not yet initialised in tests
-  const userData = app ? app.getPath("userData") : "";
+  // Guard if app is not yet ready or running in tests
+  if (!app || !app.isReady()) {
+    return "";
+  }
+  const userData = app.getPath("userData");
   return path.join(userData, CONFIG_CACHE_FILE);
 }
 
-export function saveCachedConfig(type: "ai" | "agent" | "theme" | "fontScale", config: any): void {
+export function saveCachedConfig(type: "ai" | "agent" | "theme" | "fontScale", config: unknown): void {
   try {
     const filePath = getCachePath();
     if (!filePath) return;
@@ -40,20 +43,23 @@ export function saveCachedConfig(type: "ai" | "agent" | "theme" | "fontScale", c
       }
     }
     
-    if (type === "ai") {
+    // Type-guard/assert type safe access
+    const configRecord = config as Record<string, string | number | undefined> | null | undefined;
+    
+    if (type === "ai" && configRecord) {
       current.aiConfig = {
         ...current.aiConfig,
-        provider: config.provider || current.aiConfig?.provider,
-        baseUrl: config.baseUrl || current.aiConfig?.baseUrl,
-        model: config.model || current.aiConfig?.model,
-        apiKey: config.apiKey || current.aiConfig?.apiKey,
+        provider: typeof configRecord.provider === "string" ? configRecord.provider : current.aiConfig?.provider,
+        baseUrl: typeof configRecord.baseUrl === "string" ? configRecord.baseUrl : current.aiConfig?.baseUrl,
+        model: typeof configRecord.model === "string" ? configRecord.model : current.aiConfig?.model,
+        apiKey: typeof configRecord.apiKey === "string" ? configRecord.apiKey : current.aiConfig?.apiKey,
       };
-    } else if (type === "agent") {
+    } else if (type === "agent" && configRecord) {
       current.agentConfig = {
         ...current.agentConfig,
-        baseUrl: config.baseUrl || current.agentConfig?.baseUrl,
-        model: config.model || current.agentConfig?.model,
-        apiKey: config.apiKey || current.agentConfig?.apiKey,
+        baseUrl: typeof configRecord.baseUrl === "string" ? configRecord.baseUrl : current.agentConfig?.baseUrl,
+        model: typeof configRecord.model === "string" ? configRecord.model : current.agentConfig?.model,
+        apiKey: typeof configRecord.apiKey === "string" ? configRecord.apiKey : current.agentConfig?.apiKey,
       };
     } else if (type === "theme") {
       current.theme = String(config);

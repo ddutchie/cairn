@@ -17,6 +17,7 @@ import { app, BrowserWindow, shell, protocol } from "electron";
 import path from "path";
 import fs from "fs";
 import { autoUpdater } from "electron-updater";
+import { loadMobileSettings, startMobileServer, stopMobileServer } from "./lib/mobile-server";
 import { initDb } from "./db/client";
 import { registerIpcHandlers, registerAppHandlers } from "./ipc/handlers";
 import { registerAgentHandlers } from "./ipc/agent";
@@ -286,7 +287,6 @@ app.whenReady().then(async () => {
 
   // Start mobile access server if enabled
   try {
-    const { loadMobileSettings, startMobileServer } = require("./lib/mobile-server");
     const mobileSettings = loadMobileSettings(userDataPath);
     if (mobileSettings.enabled) {
       startMobileServer(userDataPath, ctx);
@@ -303,7 +303,6 @@ app.whenReady().then(async () => {
 app.on("before-quit", () => {
   // Terminate mobile access server if running
   try {
-    const { stopMobileServer } = require("./lib/mobile-server");
     stopMobileServer();
   } catch { /* ignore */ }
 

@@ -133,7 +133,7 @@ export function Topbar() {
           <div className="flex sm:hidden items-center relative ml-2">
             <select
               value={activeView}
-              onChange={(e) => setView(e.target.value as any)}
+              onChange={(e) => setView(e.target.value as "overview" | "notes" | "board" | "flow" | "settings" | "graph" | "insights" | "chat" | "search" | "agent")}
               className="appearance-none bg-[var(--surface-2)] border border-[var(--border)] rounded-md pl-3 pr-8 py-1 text-xs font-medium text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] cursor-pointer"
             >
               {VIEW_TABS.filter((tab) => !hiddenViews.has(tab.id as "board" | "flow" | "agent")).map((tab) => (

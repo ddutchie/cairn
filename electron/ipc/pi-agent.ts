@@ -18,10 +18,7 @@
  */
 
 import { registerIpcHandle, registerIpcOn, broadcastEvent } from "./registry";
-const ipcMain = {
-  handle: registerIpcHandle,
-  on: registerIpcOn,
-};
+
 import { runAgentLoop, type PiAgentSession, type AgentLLMConfig, type AgentToolContext } from "../lib/pi-agent-loop";
 import { buildCompactionTransformer, compactNow } from "../lib/compaction";
 import { buildPiAgentSystemPrompt } from "../lib/pi-agent-prompt";
@@ -166,7 +163,7 @@ export function registerPiAgentHandler(
   const getWin = ctx.getWin;
 
   // ── pi-agent:abort ────────────────────────────────────────────────────────
-  ipcMain.on("pi-agent:abort", (_event, { sessionId }: { sessionId: string }) => {
+  registerIpcOn("pi-agent:abort", (_event, { sessionId }: { sessionId: string }) => {
     const session = sessions.get(sessionId);
     if (session) {
       session.abortCtrl.abort();
@@ -174,7 +171,7 @@ export function registerPiAgentHandler(
   });
 
   // ── pi-agent:prompt ───────────────────────────────────────────────────────
-  ipcMain.on("pi-agent:prompt", async (event, req: PiAgentPromptRequest) => {
+  registerIpcOn("pi-agent:prompt", async (event, req: PiAgentPromptRequest) => {
     const { sessionId, prompt, projectId, workspaceId, cwd, taskTitle, mode = "execute" } = req;
 
     const send = (channel: string, payload: unknown) => {
@@ -260,7 +257,7 @@ export function registerPiAgentHandler(
   // ── pi-agent:approve-plan ─────────────────────────────────────────────────
   // Renderer fires this when the user clicks "Approve Plan". Fetches the PRD
   // note, injects the approval message, then continues in execute mode.
-  ipcMain.on("pi-agent:approve-plan", async (_event, req: PiAgentApprovePlanRequest) => {
+  registerIpcOn("pi-agent:approve-plan", async (_event, req: PiAgentApprovePlanRequest) => {
     const { sessionId, planNoteId, projectId, workspaceId, cwd, taskTitle } = req;
 
     const send = (channel: string, payload: unknown) => {
@@ -343,7 +340,7 @@ export function registerPiAgentHandler(
   // ── pi-agent:compact-now ─────────────────────────────────────────────────
   // Triggered by the /compact slash command. Immediately summarises the session
   // history and returns the result. The renderer shows a status message.
-  ipcMain.on("pi-agent:compact-now", async (_event, req: { sessionId: string; config?: { baseUrl?: string; model?: string; apiKey?: string } }) => {
+  registerIpcOn("pi-agent:compact-now", async (_event, req: { sessionId: string; config?: { baseUrl?: string; model?: string; apiKey?: string } }) => {
     const { sessionId } = req;
     const session = sessions.get(sessionId);
     if (!session || session.messages.length === 0) return;
@@ -404,7 +401,7 @@ export function registerPiAgentHandler(
   // Clears a session's message history (new conversation within same session).
   // Also resets the compaction transformer so the new conversation starts
   // with a fresh cachedSummary.
-  ipcMain.on("pi-agent:clear", (_event, { sessionId }: { sessionId: string }) => {
+  registerIpcOn("pi-agent:clear", (_event, { sessionId }: { sessionId: string }) => {
     const session = sessions.get(sessionId);
     if (session) {
       session.messages = [];
@@ -415,7 +412,7 @@ export function registerPiAgentHandler(
 
   // ── pi-agent:destroy ──────────────────────────────────────────────────────
   // Called when a pi session tab is closed — frees memory
-  ipcMain.on("pi-agent:destroy", (_event, { sessionId }: { sessionId: string }) => {
+  registerIpcOn("pi-agent:destroy", (_event, { sessionId }: { sessionId: string }) => {
     const session = sessions.get(sessionId);
     if (session) {
       session.abortCtrl.abort();
@@ -426,7 +423,7 @@ export function registerPiAgentHandler(
   // ── pi-agent:preview-prompt ───────────────────────────────────────────────────────
   // Used by Settings → Agent Settings to show the full assembled system prompt
   // and list discovered skills for the given cwd.
-  ipcMain.handle("pi-agent:preview-prompt", (_event, req: {
+  registerIpcHandle("pi-agent:preview-prompt", (_event, req: {
     cwd: string;
     projectId?: string;
     mode?: "plan" | "execute";
@@ -450,7 +447,7 @@ export function registerPiAgentHandler(
   // ── pi-agent:restore-context ───────────────────────────────────────────────────────
   // Loads the persisted LLM message history for a session back into the
   // in-memory sessions Map so the model can continue from where it left off.
-  ipcMain.on("pi-agent:restore-context", (_event, { sessionId }: { sessionId: string }) => {
+  registerIpcOn("pi-agent:restore-context", (_event, { sessionId }: { sessionId: string }) => {
     if (sessions.has(sessionId)) return; // already in memory
     try {
       const history = q.getLlmHistory(ctx.db, sessionId);

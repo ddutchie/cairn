@@ -183,14 +183,14 @@ const api = {
   initWorkspace: (workspacePath: string) => invoke<{ requiresRestart: boolean }>("app:initWorkspace", { workspacePath }),
   relaunch: () => invoke("app:relaunch"),
   resetAllData: () => invoke("app:reset"),
-  getAiSettings: () => invoke<any>("app:getAiSettings"),
-  saveAiSettings: (config: any) => invoke<any>("app:saveAiSettings", { config }),
-  getAgentSettings: () => invoke<any>("app:getAgentSettings"),
-  saveAgentSettings: (config: any) => invoke<any>("app:saveAgentSettings", { config }),
+  getAiSettings: () => invoke<Record<string, unknown> | null>("app:getAiSettings"),
+  saveAiSettings: (config: Record<string, unknown>) => invoke<{ ok: true }>("app:saveAiSettings", { config }),
+  getAgentSettings: () => invoke<Record<string, unknown> | null>("app:getAgentSettings"),
+  saveAgentSettings: (config: Record<string, unknown>) => invoke<{ ok: true }>("app:saveAgentSettings", { config }),
   getTheme: () => invoke<string | null>("app:getTheme"),
-  saveTheme: (theme: string) => invoke<any>("app:saveTheme", { theme }),
+  saveTheme: (theme: string) => invoke<{ ok: true }>("app:saveTheme", { theme }),
   getFontScale: () => invoke<number | null>("app:getFontScale"),
-  saveFontScale: (fontScale: number) => invoke<any>("app:saveFontScale", { fontScale }),
+  saveFontScale: (fontScale: number) => invoke<{ ok: true }>("app:saveFontScale", { fontScale }),
   platform: process.platform as "darwin" | "win32" | "linux",
 
   // ── Migrations ────────────────────────────────
@@ -480,9 +480,35 @@ const api = {
   },
   // ── Mobile Access ────────────────────────────────
   mobile: {
-    status: () => invoke<any>("mobile:status"),
-    saveSettings: (newSettings: any) => invoke<any>("mobile:saveSettings", newSettings),
-    regeneratePin: () => invoke<any>("mobile:regeneratePin"),
+    status: () => invoke<{
+      running: boolean;
+      url: string;
+      qrCode: string;
+      pin: string;
+    }>("mobile:status"),
+    saveSettings: (newSettings: Record<string, unknown>) => invoke<{
+      running: boolean;
+      url: string;
+      qrCode: string;
+      pin: string;
+    }>("mobile:saveSettings", newSettings),
+    regeneratePin: () => invoke<{
+      running: boolean;
+      url: string;
+      qrCode: string;
+      pin: string;
+    }>("mobile:regeneratePin"),
+    onStatusChanged: (cb: (status: {
+      running: boolean;
+      url: string;
+      qrCode: string;
+      pin: string;
+    }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, status: any) => cb(status);
+      ipcRenderer.on("mobile:status-changed", handler);
+      return () => ipcRenderer.off("mobile:status-changed", handler);
+    }
   }
 } as const;
 

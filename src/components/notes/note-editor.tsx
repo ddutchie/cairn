@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useRef, useCallback, useState, useEffect, useMemo } from "react";
-import ReactMarkdown, { defaultUrlTransform, type ExtraProps } from "react-markdown";
+import ReactMarkdown, { type ExtraProps } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import remarkMath from "remark-math";
@@ -12,7 +12,7 @@ import { WikilinkPicker } from "./WikilinkPicker";
 import { getActiveWikilink } from "@/lib/wikilink-parser";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
-import { cn, formatRelative } from "@/lib/utils";
+import { cn, formatRelative, urlTransform } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -72,11 +72,7 @@ function MDPreviewPanel({ text, onDismiss }: MDPreviewPanelProps) {
         <ReactMarkdown
           remarkPlugins={PREVIEW_REMARK_PLUGINS}
           rehypePlugins={[previewCapture, rehypeKatex, previewMerge]}
-          urlTransform={(url) =>
-            url.startsWith("asset://")
-              ? (typeof window !== "undefined" && !window.electron ? `/api/assets/${url.slice(8)}` : url)
-              : defaultUrlTransform(url)
-          }
+          urlTransform={urlTransform}
           components={({
             mark({ children }: React.HTMLAttributes<HTMLElement> & ExtraProps) {
               return (
@@ -996,11 +992,7 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
                    <ReactMarkdown
                      remarkPlugins={[remarkGfm, remarkBreaks, remarkMath, remarkPromoteDisplayMath, remarkCallout, remarkObsidianEmbeds, remarkWikilinks]}
                      rehypePlugins={[rehypeCaptureLatex, rehypeKatex, rehypeMergedPass]}
-                     urlTransform={(url) =>
-                        url.startsWith("asset://")
-                          ? (typeof window !== "undefined" && !window.electron ? `/api/assets/${url.slice(8)}` : url)
-                          : defaultUrlTransform(url)
-                      }
+                     urlTransform={urlTransform}
                      components={mdComponents}
                    >
                     {note.content}

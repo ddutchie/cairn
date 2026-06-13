@@ -91,7 +91,7 @@ export function Sidebar() {
   }
 
   const closeSidebarOnMobile = useCallback(() => {
-    if (typeof window !== "undefined" && window.innerWidth < 768 && !sidebarCollapsed) {
+    if (typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches && !sidebarCollapsed) {
       toggleSidebar();
     }
   }, [sidebarCollapsed, toggleSidebar]);

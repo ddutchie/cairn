@@ -1,7 +1,7 @@
 /**
  * Agent IPC — coding agent PTY session management.
  *
- * Registers all agent:* ipcMain.handle channels and manages node-pty
+ * Registers all agent:* registerIpcHandle channels and manages node-pty
  * child processes via AgentSessionManager. Streams PTY data to the
  * renderer via webContents.send.
  *
@@ -17,11 +17,8 @@
  */
 
 import { dialog, BrowserWindow } from "electron";
-import { registerIpcHandle, registerIpcOn } from "./registry";
-const ipcMain = {
-  handle: registerIpcHandle,
-  on: registerIpcOn,
-};
+import { registerIpcHandle } from "./registry";
+
 import fs from "fs";
 import path from "path";
 import os from "os";
@@ -89,19 +86,19 @@ function handle<T>(fn: () => T | Promise<T>): Promise<{ data: T } | { error: str
 export function registerAgentHandlers(db: Database): void {
   // ── Coding agent CRUD ────────────────────────────────────────────────────
 
-  ipcMain.handle("agent:getCodingAgents", () =>
+  registerIpcHandle("agent:getCodingAgents", () =>
     handle(() => q.getCodingAgents(db))
   );
 
-  ipcMain.handle("agent:saveCodingAgent", (_e, agent) =>
+  registerIpcHandle("agent:saveCodingAgent", (_e, agent) =>
     handle(() => q.saveCodingAgent(db, agent))
   );
 
-  ipcMain.handle("agent:deleteCodingAgent", (_e, { id }: { id: string }) =>
+  registerIpcHandle("agent:deleteCodingAgent", (_e, { id }: { id: string }) =>
     handle(() => q.deleteCodingAgent(db, id))
   );
 
-  ipcMain.handle("agent:setDefaultAgent", (_e, { id }: { id: string }) =>
+  registerIpcHandle("agent:setDefaultAgent", (_e, { id }: { id: string }) =>
     handle(() => q.setDefaultCodingAgent(db, id))
   );
 
@@ -110,7 +107,7 @@ export function registerAgentHandlers(db: Database): void {
 
   // ── File system ──────────────────────────────────────────────────────────
 
-  ipcMain.handle("agent:readDir", (_e, { dirPath }: { dirPath: string }) =>
+  registerIpcHandle("agent:readDir", (_e, { dirPath }: { dirPath: string }) =>
     handle(() => {
       assertWithinCodeDirectory(db, dirPath);
       const entries = fs.readdirSync(dirPath, { withFileTypes: true });
@@ -129,7 +126,7 @@ export function registerAgentHandlers(db: Database): void {
     })
   );
 
-  ipcMain.handle("agent:searchFiles", (_e, { dirPath, query }: { dirPath: string; query: string }) =>
+  registerIpcHandle("agent:searchFiles", (_e, { dirPath, query }: { dirPath: string; query: string }) =>
     handle(() => {
       assertWithinCodeDirectory(db, dirPath);
       const q = query.toLowerCase();
@@ -162,14 +159,14 @@ export function registerAgentHandlers(db: Database): void {
     })
   );
 
-  ipcMain.handle("agent:readFile", (_e, { filePath }: { filePath: string }) =>
+  registerIpcHandle("agent:readFile", (_e, { filePath }: { filePath: string }) =>
     handle(() => {
       assertWithinCodeDirectory(db, filePath);
       return fs.readFileSync(filePath, "utf-8");
     })
   );
 
-  ipcMain.handle("agent:readFileBase64", (_e, { filePath }: { filePath: string }) =>
+  registerIpcHandle("agent:readFileBase64", (_e, { filePath }: { filePath: string }) =>
     handle(() => {
       assertWithinCodeDirectory(db, filePath);
       const buf = fs.readFileSync(filePath);
@@ -189,14 +186,14 @@ export function registerAgentHandlers(db: Database): void {
     })
   );
 
-  ipcMain.handle("agent:writeFile", (_e, { filePath, content }: { filePath: string; content: string }) =>
+  registerIpcHandle("agent:writeFile", (_e, { filePath, content }: { filePath: string; content: string }) =>
     handle(() => {
       assertWithinCodeDirectory(db, filePath);
       fs.writeFileSync(filePath, content, "utf-8");
     })
   );
 
-  ipcMain.handle("agent:validateDirectory", (_e, { dirPath }: { dirPath: string }) =>
+  registerIpcHandle("agent:validateDirectory", (_e, { dirPath }: { dirPath: string }) =>
     handle(() => {
       if (!isSafePath(dirPath)) return false;
       try {
@@ -210,7 +207,7 @@ export function registerAgentHandlers(db: Database): void {
 
   // ── Git diff ─────────────────────────────────────────────────────────────
 
-  ipcMain.handle("agent:gitDiff", (_e, { cwd }: { cwd: string }) =>
+  registerIpcHandle("agent:gitDiff", (_e, { cwd }: { cwd: string }) =>
     handle(() => {
       // Validate cwd exists and is a directory
       if (!fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) {
@@ -286,7 +283,7 @@ export function registerAgentHandlers(db: Database): void {
 
   // ── Native pickers ───────────────────────────────────────────────────────
 
-  ipcMain.handle("agent:pickDirectory", async () => {
+  registerIpcHandle("agent:pickDirectory", async () => {
     const win = BrowserWindow.getFocusedWindow();
     if (!win) return { data: null };
     const result = await dialog.showOpenDialog(win, {
@@ -295,7 +292,7 @@ export function registerAgentHandlers(db: Database): void {
     return { data: result.canceled ? null : result.filePaths[0] };
   });
 
-  ipcMain.handle("agent:pickFile", async () => {
+  registerIpcHandle("agent:pickFile", async () => {
     const win = BrowserWindow.getFocusedWindow();
     if (!win) return { data: null };
     const result = await dialog.showOpenDialog(win, {
@@ -306,7 +303,7 @@ export function registerAgentHandlers(db: Database): void {
 
   // ── PTY spawn ────────────────────────────────────────────────────────────
 
-  ipcMain.handle("agent:spawn", async (event, payload: {
+  registerIpcHandle("agent:spawn", async (event, payload: {
     agentId: string;
     projectId: string;
     cwd: string;
@@ -445,7 +442,7 @@ export function registerAgentHandlers(db: Database): void {
   // Uses the same PTY session map so agent:input / agent:resize / agent:kill
   // / agent:data / agent:exit all work identically.
 
-  ipcMain.handle("agent:spawnShell", async (event, payload: { cwd: string }) => {
+  registerIpcHandle("agent:spawnShell", async (event, payload: { cwd: string }) => {
     return handle(async () => {
       if (!isSafePath(payload.cwd)) throw new Error(`Invalid cwd: ${payload.cwd}`);
       const stat = fs.statSync(payload.cwd);
@@ -541,21 +538,21 @@ export function registerAgentHandlers(db: Database): void {
 
   // ── PTY input / resize / kill ────────────────────────────────────────────
 
-  ipcMain.handle("agent:input", (_e, { sessionId, data }: { sessionId: string; data: string }) =>
+  registerIpcHandle("agent:input", (_e, { sessionId, data }: { sessionId: string; data: string }) =>
     handle(() => {
       const session = sessions.get(sessionId);
       if (session) session.pty.write(data);
     })
   );
 
-  ipcMain.handle("agent:resize", (_e, { sessionId, cols, rows }: { sessionId: string; cols: number; rows: number }) =>
+  registerIpcHandle("agent:resize", (_e, { sessionId, cols, rows }: { sessionId: string; cols: number; rows: number }) =>
     handle(() => {
       const session = sessions.get(sessionId);
       if (session) session.pty.resize(cols, rows);
     })
   );
 
-  ipcMain.handle("agent:kill", (_e, { sessionId }: { sessionId: string }) =>
+  registerIpcHandle("agent:kill", (_e, { sessionId }: { sessionId: string }) =>
     handle(() => {
       const session = sessions.get(sessionId);
       if (session) {

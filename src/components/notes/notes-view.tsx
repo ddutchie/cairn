@@ -5,7 +5,7 @@ import {
   FileText, Plus, Pin, PinOff, Trash2, MoreHorizontal, Search,
   Wand2, Archive, ArchiveRestore, FolderInput,
   ChevronDown, ChevronRight, LayoutDashboard, Folder, FolderOpen,
-  FolderPlus, FolderSymlink, ChevronLeft,
+  FolderPlus, FolderSymlink,
 } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";

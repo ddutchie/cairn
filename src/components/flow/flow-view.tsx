@@ -937,7 +937,7 @@ function IdeaFlowCanvas() {
               }
             }}
             nodeStrokeWidth={0}
-            maskColor="rgba(0,0,0,0.06)"
+            maskColor="color-mix(in srgb, var(--text-primary) 6%, transparent)"
           />
         )}
 

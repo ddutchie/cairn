@@ -485,7 +485,6 @@ input[type="tel"],
 input[type="url"] {
   -webkit-appearance: none;
   appearance: none;
-  box-shadow: none !important;
 }
 
 /* ── Mobile Overview Chat Input Bottom Overlay Fade ──── */
