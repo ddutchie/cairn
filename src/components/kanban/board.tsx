@@ -6,6 +6,7 @@ import {
   DndContext,
   DragOverlay,
   PointerSensor,
+  TouchSensor,
   useSensor,
   useSensors,
   type DragStartEvent,
@@ -130,14 +131,17 @@ export function KanbanBoard() {
   const columns = activeProjectId ? getProjectColumns(activeProjectId) : [];
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+    // Slight distance increase prevents accidental drags on trackpads
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    // TouchSensor: 250ms hold-to-drag so touch doesn't conflict with native scroll
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } })
   );
 
   function handleDragStart(event: DragStartEvent) {
     const col  = event.active.data.current?.column as BoardColumn | undefined;
     const card = event.active.data.current?.card   as TaskCard    | undefined;
     if (col)       { setActiveColumn(col); setZoneRect(null); }
-    else if (card) { setActiveCard(card);  setZoneRect(computeZoneRect(boardRef.current)); }
+    else if (card) { setActiveCard(card);  setZoneRect(computeZoneRect(boardScrollRef.current)); }
   }
 
   function handleDragMove(event: DragMoveEvent) {

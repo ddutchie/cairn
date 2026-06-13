@@ -8,7 +8,7 @@
  */
 
 import type { BrowserWindow } from "electron";
-import { registerIpcHandle, registerIpcOn } from "./registry";
+import { registerIpcHandle, registerIpcOn, broadcastEvent } from "./registry";
 const ipcMain = {
   handle: registerIpcHandle,
   on: registerIpcOn,
@@ -284,6 +284,14 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
     const loopResult = await runToolLoop(db, req, workspacePath, baseUrl, model, apiKey, messages, emitToolCall, abortCtrl.signal, getWin, provider, addUsage, emitToolCallDone);
 
     abortControllers.delete(event.sender.id);
+
+    // Broadcast db:changed so mobile SSE clients (and other Electron windows)
+    // re-hydrate the store after any tool calls that wrote to the DB.
+    // The chat stream runs tool calls internally — we broadcast once after all
+    // tools have finished so the board, notes, and other views stay in sync.
+    if (!abortCtrl.signal.aborted) {
+      broadcastEvent("db:changed", null);
+    }
 
     if (abortCtrl.signal.aborted) {
       send("chat:done", { content: "", contextRefs: [], usage: promptTokens > 0 ? { promptTokens, completionTokens } : undefined });

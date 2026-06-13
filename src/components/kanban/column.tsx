@@ -219,6 +219,7 @@ export function KanbanColumn({
           <button
             {...attributes}
             {...listeners}
+            style={{ touchAction: "none" }}
             className="opacity-0 group-hover:opacity-100 cursor-grab active:cursor-grabbing text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-opacity flex-shrink-0 -ml-1 touch-none"
             tabIndex={-1}
           >
