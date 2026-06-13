@@ -134,7 +134,7 @@ export function Topbar() {
             <select
               value={activeView}
               onChange={(e) => setView(e.target.value as any)}
-              className="appearance-none bg-[var(--surface-2)] border border-[var(--border)] rounded-md pl-3 pr-8 py-1 text-xs font-medium text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)] cursor-pointer"
+              className="appearance-none bg-[var(--surface-2)] border border-[var(--border)] rounded-md pl-3 pr-8 py-1 text-xs font-medium text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] cursor-pointer"
             >
               {VIEW_TABS.filter((tab) => !hiddenViews.has(tab.id as "board" | "flow" | "agent")).map((tab) => (
                 <option key={tab.id} value={tab.id} className="bg-[var(--surface-2)] text-[var(--text-primary)]">

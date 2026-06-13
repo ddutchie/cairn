@@ -342,7 +342,7 @@ export function NotesView() {
             <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]" />
             <input ref={filterInputRef} type="text" value={filter} onChange={(e) => setFilter(e.target.value)}
               placeholder="Filter notes..."
-              className="w-full pl-7 pr-2 py-1.5 text-xs rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)]" />
+              className="w-full pl-7 pr-2 py-1.5 text-xs rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)]" />
           </div>
           {projectTags.length > 0 && (
             <div className="flex flex-wrap gap-1 mt-1.5">

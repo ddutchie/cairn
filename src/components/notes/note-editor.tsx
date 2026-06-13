@@ -1225,7 +1225,7 @@ function NoteTagBar({ note, workspaceTags, onToggleTag, onCreateTag, getTagById 
                 if (e.key === "Escape") { setPickerOpen(false); setNewTagName(""); }
               }}
               placeholder="Search or create…"
-              className="w-full px-2 py-1 text-xs rounded bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)] mb-2"
+              className="w-full px-2 py-1 text-xs rounded bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] mb-2"
             />
             <div className="max-h-36 overflow-y-auto space-y-0.5">
               {filteredUnassigned.map((tag) => (

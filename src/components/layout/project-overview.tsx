@@ -175,7 +175,7 @@ export function ProjectOverview() {
                         onChange={(e) => setEditDesc(e.target.value)}
                         placeholder="What is this project about?"
                         rows={3}
-                        className="w-full px-2 py-1.5 text-xs rounded-md bg-[var(--surface)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)] resize-none"
+                        className="w-full px-2 py-1.5 text-xs rounded-md bg-[var(--surface)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] resize-none"
                       />
                     </div>
                     <div className="flex justify-end">
