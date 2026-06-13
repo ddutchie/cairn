@@ -90,6 +90,12 @@ export function Sidebar() {
     return shortcutMap.get(item.view) ?? "";
   }
 
+  const closeSidebarOnMobile = useCallback(() => {
+    if (typeof window !== "undefined" && window.innerWidth < 768 && !sidebarCollapsed) {
+      toggleSidebar();
+    }
+  }, [sidebarCollapsed, toggleSidebar]);
+
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set([activeProjectId ?? ""]));
   const [creatingProject, setCreatingProject]   = useState(false);
   const [newProjectName, setNewProjectName]     = useState("");
@@ -124,7 +130,7 @@ export function Sidebar() {
 
   if (sidebarCollapsed) {
     return (
-      <aside className="flex flex-col items-center gap-1 py-3 w-12 border-r border-[var(--border)] bg-[var(--surface)] flex-shrink-0">
+      <aside className="hidden md:flex flex-col items-center gap-1 py-3 w-12 border-r border-[var(--border)] bg-[var(--surface)] flex-shrink-0">
         <Tooltip content="Expand sidebar" side="right">
           <button onClick={toggleSidebar} className="p-2 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors">
             <Layers size={16} />
@@ -158,99 +164,106 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="flex flex-col w-56 border-r border-[var(--border)] bg-[var(--surface)] flex-shrink-0 overflow-hidden">
-      <WorkspaceSwitcher workspace={workspace} onCollapse={toggleSidebar} />
+    <>
+      {/* Mobile backdrop */}
+      <div
+        className="fixed inset-0 bg-black/40 z-30 md:hidden animate-fade-in"
+        onClick={toggleSidebar}
+      />
+      <aside className="fixed inset-y-0 left-0 z-40 flex flex-col w-56 border-r border-[var(--border)] bg-[var(--surface)] flex-shrink-0 overflow-hidden md:static md:translate-x-0 animate-slide-in-left md:animate-none">
+        <WorkspaceSwitcher workspace={workspace} onCollapse={toggleSidebar} />
 
-      {/* Quick actions */}
-      <div className="flex items-center gap-0.5 px-2 py-1.5 border-b border-[var(--border-subtle)]">
-        <Tooltip content="Search (⌘K)">
-          <button onClick={toggleSearch}
-            className={cn("flex items-center gap-1.5 flex-1 rounded-md px-2 py-1.5 text-xs transition-colors",
-              searchOpen ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
-            <Search size={12} /><span>Search</span>
-            <span className="ml-auto text-[0.714rem] text-[var(--text-tertiary)] font-mono">⌘K</span>
-          </button>
-        </Tooltip>
-        {!hiddenViews.has("chat") && (
-          <Tooltip content="AI Chat (⌘/)">
-            <button onClick={toggleChat}
-              className={cn("p-1.5 rounded-md transition-colors", chatOpen ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
-              <MessageSquare size={13} />
+        {/* Quick actions */}
+        <div className="flex items-center gap-0.5 px-2 py-1.5 border-b border-[var(--border-subtle)]">
+          <Tooltip content="Search (⌘K)">
+            <button onClick={() => { toggleSearch(); closeSidebarOnMobile(); }}
+              className={cn("flex items-center gap-1.5 flex-1 rounded-md px-2 py-1.5 text-xs transition-colors",
+                searchOpen ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
+              <Search size={12} /><span>Search</span>
+              <span className="ml-auto text-[0.714rem] text-[var(--text-tertiary)] font-mono">⌘K</span>
             </button>
           </Tooltip>
-        )}
-      </div>
-
-      {/* Projects list */}
-      <nav className="flex-1 overflow-y-auto py-2 min-h-0">
-        <div className="flex items-center justify-between px-3 mb-1">
-          <span className="text-[0.714rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)]">Projects</span>
-          <Tooltip content="New project">
-            <button onClick={() => { setCreatingProject(true); setNewProjectName(""); }}
-              className="p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors">
-              <Plus size={12} />
-            </button>
-          </Tooltip>
-        </div>
-
-        <div className="space-y-0.5 px-1">
-          {projects.map((project) => (
-            <ProjectItem
-              key={project.id}
-              project={project}
-              isActive={project.id === activeProjectId}
-              isExpanded={expandedProjects.has(project.id)}
-              onToggleExpand={() => toggleProjectExpand(project.id)}
-              onSelectProject={() => { setActiveProject(project.id); setView("overview"); if (!expandedProjects.has(project.id)) toggleProjectExpand(project.id); }}
-              activeView={activeView}
-              onSelectView={(view) => { setActiveProject(project.id); setView(view); }}
-              onRename={(name) => updateProject(project.id, { name })}
-              onDelete={() => deleteProject(project.id)}
-              hiddenViews={hiddenViews}
-              visibleNavItems={visibleNavItems}
-            />
-          ))}
-
-          {creatingProject && (
-            <ProjectCreateForm
-              value={newProjectName}
-              onChange={setNewProjectName}
-              onCommit={commitCreateProject}
-              onCancel={cancelCreateProject}
-            />
+          {!hiddenViews.has("chat") && (
+            <Tooltip content="AI Chat (⌘/)">
+              <button onClick={() => { toggleChat(); closeSidebarOnMobile(); }}
+                className={cn("p-1.5 rounded-md transition-colors", chatOpen ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
+                <MessageSquare size={13} />
+              </button>
+            </Tooltip>
           )}
         </div>
 
-        {projects.length === 0 && !creatingProject && (
-          <div className="px-3 py-6 text-center">
-            <FolderOpen size={20} className="mx-auto mb-2 text-[var(--text-tertiary)]" />
-            <p className="text-xs text-[var(--text-tertiary)]">No projects yet</p>
-            <button onClick={() => setCreatingProject(true)} className="mt-2 text-xs text-[var(--accent)] hover:text-[var(--accent)] hover:bg-[var(--accent-dim)] px-2 py-0.5 rounded transition-colors">
-              Create one
-            </button>
+        {/* Projects list */}
+        <nav className="flex-1 overflow-y-auto py-2 min-h-0">
+          <div className="flex items-center justify-between px-3 mb-1">
+            <span className="text-[0.714rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)]">Projects</span>
+            <Tooltip content="New project">
+              <button onClick={() => { setCreatingProject(true); setNewProjectName(""); }}
+                className="p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors">
+                <Plus size={12} />
+              </button>
+            </Tooltip>
           </div>
-        )}
-      </nav>
 
-      {/* Bottom nav: workspace-level views + Settings */}
-      <div className="border-t border-[var(--border)] p-2 space-y-0.5">
-        {visibleNavItems.filter((item) => !item.inProject).map((item) => (
-          <button key={item.view} onClick={() => setView(item.view)}
-            className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors",
-              activeView === item.view ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
-            {item.icon}<span>{item.label}</span>
-            {shortcutLabel(item) && (
-              <span className="ml-auto text-[0.714rem] font-mono text-[var(--text-tertiary)]">{shortcutLabel(item)}</span>
+          <div className="space-y-0.5 px-1">
+            {projects.map((project) => (
+              <ProjectItem
+                key={project.id}
+                project={project}
+                isActive={project.id === activeProjectId}
+                isExpanded={expandedProjects.has(project.id)}
+                onToggleExpand={() => toggleProjectExpand(project.id)}
+                onSelectProject={() => { setActiveProject(project.id); setView("overview"); if (!expandedProjects.has(project.id)) toggleProjectExpand(project.id); closeSidebarOnMobile(); }}
+                activeView={activeView}
+                onSelectView={(view) => { setActiveProject(project.id); setView(view); closeSidebarOnMobile(); }}
+                onRename={(name) => updateProject(project.id, { name })}
+                onDelete={() => deleteProject(project.id)}
+                hiddenViews={hiddenViews}
+                visibleNavItems={visibleNavItems}
+              />
+            ))}
+
+            {creatingProject && (
+              <ProjectCreateForm
+                value={newProjectName}
+                onChange={setNewProjectName}
+                onCommit={commitCreateProject}
+                onCancel={cancelCreateProject}
+              />
             )}
+          </div>
+
+          {projects.length === 0 && !creatingProject && (
+            <div className="px-3 py-6 text-center">
+              <FolderOpen size={20} className="mx-auto mb-2 text-[var(--text-tertiary)]" />
+              <p className="text-xs text-[var(--text-tertiary)]">No projects yet</p>
+              <button onClick={() => setCreatingProject(true)} className="mt-2 text-xs text-[var(--accent)] hover:text-[var(--accent)] hover:bg-[var(--accent-dim)] px-2 py-0.5 rounded transition-colors">
+                Create one
+              </button>
+            </div>
+          )}
+        </nav>
+
+        {/* Bottom nav: workspace-level views + Settings */}
+        <div className="border-t border-[var(--border)] p-2 space-y-0.5">
+          {visibleNavItems.filter((item) => !item.inProject).map((item) => (
+            <button key={item.view} onClick={() => { setView(item.view); closeSidebarOnMobile(); }}
+              className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors",
+                activeView === item.view ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
+              {item.icon}<span>{item.label}</span>
+              {shortcutLabel(item) && (
+                <span className="ml-auto text-[0.714rem] font-mono text-[var(--text-tertiary)]">{shortcutLabel(item)}</span>
+              )}
+            </button>
+          ))}
+          <button onClick={() => { setView("settings"); closeSidebarOnMobile(); }}
+            className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors",
+              activeView === "settings" ? "text-[var(--text-primary)] bg-[var(--surface-2)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
+            <Settings size={13} /><span>Settings</span>
           </button>
-        ))}
-        <button onClick={() => setView("settings")}
-          className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors",
-            activeView === "settings" ? "text-[var(--text-primary)] bg-[var(--surface-2)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
-          <Settings size={13} /><span>Settings</span>
-        </button>
-      </div>
-    </aside>
+        </div>
+      </aside>
+    </>
   );
 }
 

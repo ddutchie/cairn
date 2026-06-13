@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useCallback, useState } from "react";
-import { RefreshCw, Calendar, LayoutDashboard, AlertTriangle, X, Zap, Code2, Wand2, Save, HelpCircle } from "lucide-react";
+import { RefreshCw, Calendar, LayoutDashboard, AlertTriangle, X, Zap, Code2, Wand2, Save, HelpCircle, ChevronLeft } from "lucide-react";
 import type { Note, DashboardQueryMessage } from "@/types";
 import { cn, formatRelative } from "@/lib/utils";
 import { buildSrcdoc, buildThemeStyle, CAIRN_CSS_VARS } from "./dashboard-bootstrap";
@@ -9,9 +9,11 @@ import { CairnEvents } from "@/lib/events";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { DashboardApiModal } from "./DashboardApiModal";
+import { Button } from "@/components/ui/button";
 
 interface DashboardViewProps {
   note: Note;
+  onBack?: () => void;
 }
 
 interface DashboardError {
@@ -48,7 +50,7 @@ const ALLOWED_TOOLS = new Set([
   "list_tasks",
 ]);
 
-export function DashboardView({ note }: DashboardViewProps) {
+export function DashboardView({ note, onBack }: DashboardViewProps) {
   const electron = typeof window !== "undefined" ? window.electron : null;
   const { updateNote, aiConfig } = useCairnStore(useShallow((s) => ({ updateNote: s.updateNote, aiConfig: s.aiConfig })));
   const aiEnabled = aiConfig.aiEnabled ?? true;
@@ -237,8 +239,19 @@ export function DashboardView({ note }: DashboardViewProps) {
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-[var(--border)] flex-shrink-0">
+      <div className="flex flex-wrap items-center justify-between gap-2.5 px-4 py-2 border-b border-[var(--border)] flex-shrink-0">
         <div className="flex items-center gap-2 text-xs text-[var(--text-tertiary)]">
+          {onBack && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onBack}
+              className="md:hidden gap-1.5 pl-1.5 pr-2.5 h-8 text-[var(--text-secondary)] mr-1"
+            >
+              <ChevronLeft size={14} />
+              <span>Notes</span>
+            </Button>
+          )}
           <LayoutDashboard size={12} />
           <span className="font-medium text-[var(--text-secondary)]">Dashboard</span>
           {autoRefreshed && (

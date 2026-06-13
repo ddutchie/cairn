@@ -99,6 +99,15 @@ export function NoteMarkdownPreview({ content, className }: NoteMarkdownPreviewP
             }
             return <section {...props}>{children}</section>;
           },
+          table({ children }: { children?: React.ReactNode }) {
+            return (
+              <div className="w-full overflow-x-auto my-3 scrollbar-thin">
+                <table className="min-w-full border-collapse">
+                  {children}
+                </table>
+              </div>
+            );
+          },
         } as import("react-markdown").Components)}
       >
         {content}

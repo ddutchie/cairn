@@ -33,6 +33,7 @@ import { generatePrd } from "../lib/prd";
 import { isLocalEndpoint, callLLM, normaliseBaseUrl } from "../lib/llm";
 import { executeReadTool } from "../lib/read-tools";
 import { readWorkspaceConfig, writeWorkspaceConfig } from "../workspace-config";
+import { saveCachedConfig, getCachedConfig } from "../lib/config-cache";
 import { markMcpNotificationsRead } from "../db/queries";
 import { DEFAULT_COLUMNS } from "../db/defaults";
 import { getKnowledgeGraph, getNeighbours, computeAutoRelationships, invalidateRelationshipCache } from "../db/graph-queries";
@@ -408,9 +409,30 @@ export function registerIpcHandlers(ctx: DbContext): void {
     nodeId: string;
     config: { baseUrl: string; model: string; apiKey: string };
   }) => {
-    const baseUrl = normaliseBaseUrl(args.config.baseUrl || "https://api.openai.com");
-    const model = args.config.model || "gpt-4o-mini";
-    const apiKey = args.config.apiKey || "";
+    if (args.config?.apiKey) {
+      saveCachedConfig("ai", {
+        baseUrl: args.config.baseUrl,
+        model: args.config.model,
+        apiKey: args.config.apiKey,
+      });
+    }
+
+    let reqConfig = args.config;
+    if (!reqConfig?.apiKey) {
+      const cached = getCachedConfig().aiConfig;
+      if (cached?.apiKey) {
+        reqConfig = {
+          ...reqConfig,
+          baseUrl: reqConfig?.baseUrl || cached.baseUrl,
+          model: reqConfig?.model || cached.model,
+          apiKey: cached.apiKey,
+        };
+      }
+    }
+
+    const baseUrl = normaliseBaseUrl(reqConfig?.baseUrl || "https://api.openai.com");
+    const model = reqConfig?.model || "gpt-4o-mini";
+    const apiKey = reqConfig?.apiKey || "";
     const isLocal = isLocalEndpoint(baseUrl);
     if (!apiKey && !isLocal) {
       return err("AI is not configured. Add an API key in Settings → AI & Chat, or use a local endpoint.");
@@ -617,9 +639,30 @@ export function registerIpcHandlers(ctx: DbContext): void {
     config: { baseUrl: string; model: string; apiKey: string };
   }) => {
     // PRD returns its own { error } shape for user-facing validation errors
-    const baseUrl = normaliseBaseUrl(args.config.baseUrl || "https://api.openai.com");
-    const model = args.config.model || "gpt-4o-mini";
-    const apiKey = args.config.apiKey || "";
+    if (args.config?.apiKey) {
+      saveCachedConfig("ai", {
+        baseUrl: args.config.baseUrl,
+        model: args.config.model,
+        apiKey: args.config.apiKey,
+      });
+    }
+
+    let reqConfig = args.config;
+    if (!reqConfig?.apiKey) {
+      const cached = getCachedConfig().aiConfig;
+      if (cached?.apiKey) {
+        reqConfig = {
+          ...reqConfig,
+          baseUrl: reqConfig?.baseUrl || cached.baseUrl,
+          model: reqConfig?.model || cached.model,
+          apiKey: cached.apiKey,
+        };
+      }
+    }
+
+    const baseUrl = normaliseBaseUrl(reqConfig?.baseUrl || "https://api.openai.com");
+    const model = reqConfig?.model || "gpt-4o-mini";
+    const apiKey = reqConfig?.apiKey || "";
     const isLocal = isLocalEndpoint(baseUrl);
     if (!apiKey && !isLocal) {
       return err("AI is not configured. Add an API key in Settings → AI & Chat, or use a local endpoint.");
@@ -804,17 +847,23 @@ export function registerAppHandlers(
   }));
 
   // ── Export note as PDF ─────────────────────────────
-  ipcMain.handle("app:exportNotePdf", (_e, { title, html }: { title: string; html: string }) =>
+  ipcMain.handle("app:exportNotePdf", (_e, { title, html, options }: { title: string; html: string; options?: { returnBuffer?: boolean } }) =>
     handle(async () => {
-      const activeWin = ctx.getWin();
-      if (!activeWin || activeWin.isDestroyed()) throw new Error("No window");
+      const returnBuffer = options?.returnBuffer ?? false;
 
-      const { canceled, filePath: savePath } = await dialog.showSaveDialog(activeWin, {
-        title: "Export Note as PDF",
-        defaultPath: `${title}.pdf`,
-        filters: [{ name: "PDF Document", extensions: ["pdf"] }],
-      });
-      if (canceled || !savePath) return null;
+      let savePath = "";
+      if (!returnBuffer) {
+        const activeWin = ctx.getWin();
+        if (!activeWin || activeWin.isDestroyed()) throw new Error("No window");
+
+        const { canceled, filePath } = await dialog.showSaveDialog(activeWin, {
+          title: "Export Note as PDF",
+          defaultPath: `${title}.pdf`,
+          filters: [{ name: "PDF Document", extensions: ["pdf"] }],
+        });
+        if (canceled || !filePath) return null;
+        savePath = filePath;
+      }
 
       // Wrap the rendered HTML in a self-contained document with light-theme
       // prose-cairn styles inlined so the PDF is readable regardless of app theme.
@@ -900,6 +949,10 @@ pre, blockquote, table { page-break-inside: avoid; }
 
       printWin.destroy();
 
+      if (returnBuffer) {
+        return { pdfBase64: pdfBuffer.toString("base64") };
+      }
+
       fs.writeFileSync(savePath, pdfBuffer);
       return { filePath: savePath };
     })
@@ -978,4 +1031,25 @@ pre, blockquote, table { page-break-inside: avoid; }
       }
     })
   );
+  ipcMain.handle("app:getAiSettings", () => handle(() => getCachedConfig().aiConfig || null));
+  ipcMain.handle("app:saveAiSettings", (_e, { config }: { config: any }) => handle(() => {
+    saveCachedConfig("ai", config);
+    return { ok: true };
+  }));
+  ipcMain.handle("app:getAgentSettings", () => handle(() => getCachedConfig().agentConfig || null));
+  ipcMain.handle("app:saveAgentSettings", (_e, { config }: { config: any }) => handle(() => {
+    saveCachedConfig("agent", config);
+    return { ok: true };
+  }));
+  ipcMain.handle("app:getTheme", () => handle(() => getCachedConfig().theme || null));
+  ipcMain.handle("app:saveTheme", (_e, { theme }: { theme: string }) => handle(() => {
+    saveCachedConfig("theme", theme);
+    return { ok: true };
+  }));
+  ipcMain.handle("app:getFontScale", () => handle(() => getCachedConfig().fontScale || null));
+  ipcMain.handle("app:saveFontScale", (_e, { fontScale }: { fontScale: number }) => handle(() => {
+    saveCachedConfig("fontScale", fontScale);
+    return { ok: true };
+  }));
 }
+

@@ -30,6 +30,7 @@ import { normaliseBaseUrl } from "../lib/llm";
 import type { DbContext } from "./handlers";
 import * as q from "../db/queries";
 import { ts } from "../db/utils";
+import { saveCachedConfig, getCachedConfig } from "../lib/config-cache";
 
 // ── Session registry ──────────────────────────────────────────────────────────
 
@@ -188,12 +189,37 @@ export function registerPiAgentHandler(
       return;
     }
 
+    if (req.config?.apiKey) {
+      saveCachedConfig("agent", {
+        baseUrl: req.config.baseUrl,
+        model: req.config.model,
+        apiKey: req.config.apiKey,
+        maxSteps: req.config.maxSteps,
+        temperature: req.config.temperature,
+      });
+    }
+
+    let reqConfig = req.config;
+    if (!reqConfig?.apiKey) {
+      const cached = getCachedConfig().agentConfig;
+      if (cached?.apiKey) {
+        reqConfig = {
+          ...reqConfig,
+          baseUrl: reqConfig?.baseUrl || cached.baseUrl,
+          model: reqConfig?.model || cached.model,
+          apiKey: cached.apiKey,
+          maxSteps: reqConfig?.maxSteps || cached.maxSteps,
+          temperature: reqConfig?.temperature || cached.temperature,
+        };
+      }
+    }
+
     const llmConfig: AgentLLMConfig = {
-      baseUrl:     normaliseBaseUrl(req.config?.baseUrl || "https://api.openai.com"),
-      model:       req.config?.model       || "gpt-4o",
-      apiKey:      req.config?.apiKey      || "",
-      maxSteps:    req.config?.maxSteps    ?? 20,
-      temperature: req.config?.temperature ?? 0.3,
+      baseUrl:     normaliseBaseUrl(reqConfig?.baseUrl || "https://api.openai.com"),
+      model:       reqConfig?.model       || "gpt-4o",
+      apiKey:      reqConfig?.apiKey      || "",
+      maxSteps:    reqConfig?.maxSteps    ?? 20,
+      temperature: reqConfig?.temperature ?? 0.3,
     };
 
     let session = sessions.get(sessionId);
@@ -249,12 +275,37 @@ export function registerPiAgentHandler(
       return;
     }
 
+    if (req.config?.apiKey) {
+      saveCachedConfig("agent", {
+        baseUrl: req.config.baseUrl,
+        model: req.config.model,
+        apiKey: req.config.apiKey,
+        maxSteps: req.config.maxSteps,
+        temperature: req.config.temperature,
+      });
+    }
+
+    let reqConfig = req.config;
+    if (!reqConfig?.apiKey) {
+      const cached = getCachedConfig().agentConfig;
+      if (cached?.apiKey) {
+        reqConfig = {
+          ...reqConfig,
+          baseUrl: reqConfig?.baseUrl || cached.baseUrl,
+          model: reqConfig?.model || cached.model,
+          apiKey: cached.apiKey,
+          maxSteps: reqConfig?.maxSteps || cached.maxSteps,
+          temperature: reqConfig?.temperature || cached.temperature,
+        };
+      }
+    }
+
     const llmConfig: AgentLLMConfig = {
-      baseUrl:     normaliseBaseUrl(req.config?.baseUrl || "https://api.openai.com"),
-      model:       req.config?.model       || "gpt-4o",
-      apiKey:      req.config?.apiKey      || "",
-      maxSteps:    req.config?.maxSteps    ?? 20,
-      temperature: req.config?.temperature ?? 0.3,
+      baseUrl:     normaliseBaseUrl(reqConfig?.baseUrl || "https://api.openai.com"),
+      model:       reqConfig?.model       || "gpt-4o",
+      apiKey:      reqConfig?.apiKey      || "",
+      maxSteps:    reqConfig?.maxSteps    ?? 20,
+      temperature: reqConfig?.temperature ?? 0.3,
     };
 
     let session = sessions.get(sessionId);
@@ -301,10 +352,31 @@ export function registerPiAgentHandler(
       broadcastEvent(channel, payload);
     };
 
+    if (req.config?.apiKey) {
+      saveCachedConfig("agent", {
+        baseUrl: req.config.baseUrl,
+        model: req.config.model,
+        apiKey: req.config.apiKey,
+      });
+    }
+
+    let reqConfig = req.config;
+    if (!reqConfig?.apiKey) {
+      const cached = getCachedConfig().agentConfig;
+      if (cached?.apiKey) {
+        reqConfig = {
+          ...reqConfig,
+          baseUrl: reqConfig?.baseUrl || cached.baseUrl,
+          model: reqConfig?.model || cached.model,
+          apiKey: cached.apiKey,
+        };
+      }
+    }
+
     const llmConfig: AgentLLMConfig = {
-      baseUrl:     normaliseBaseUrl(req.config?.baseUrl || "https://api.openai.com"),
-      model:       req.config?.model  || "gpt-4o",
-      apiKey:      req.config?.apiKey || "",
+      baseUrl:     normaliseBaseUrl(reqConfig?.baseUrl || "https://api.openai.com"),
+      model:       reqConfig?.model  || "gpt-4o",
+      apiKey:      reqConfig?.apiKey || "",
       maxSteps:    20,
       temperature: 0.1,
     };

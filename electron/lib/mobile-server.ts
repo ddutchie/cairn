@@ -30,8 +30,36 @@ let settings: MobileSettings = {
   pin: "",
 };
 
-// In-memory sessions
-const activeSessions = new Set<string>();
+// Persistent sessions
+const SESSIONS_FILE = "mobile-sessions.json";
+let activeSessions = new Set<string>();
+let activeUserDataPath = "";
+
+function loadSessions(userDataPath: string) {
+  activeUserDataPath = userDataPath;
+  const sessionsPath = path.join(userDataPath, SESSIONS_FILE);
+  if (fs.existsSync(sessionsPath)) {
+    try {
+      const raw = fs.readFileSync(sessionsPath, "utf-8");
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        activeSessions = new Set(parsed);
+      }
+    } catch {
+      // Ignore
+    }
+  }
+}
+
+function saveSessions() {
+  if (!activeUserDataPath) return;
+  try {
+    const sessionsPath = path.join(activeUserDataPath, SESSIONS_FILE);
+    fs.writeFileSync(sessionsPath, JSON.stringify(Array.from(activeSessions)), "utf-8");
+  } catch (err) {
+    console.error("[mobile-server] Failed to save sessions:", err);
+  }
+}
 
 // SSE clients map: clientId -> Response + cleanup callback list
 interface SseClient {
@@ -124,210 +152,92 @@ export function broadcastToMobile(channel: string, payload: any): void {
 setMobileBroadcastCallback(broadcastToMobile);
 
 function getMobileBridgeScript(platform: string): string {
+  const preloadPath = path.join(__dirname, "preload.js");
+  let preloadCode = "";
+  if (fs.existsSync(preloadPath)) {
+    preloadCode = fs.readFileSync(preloadPath, "utf-8");
+  } else {
+    console.error(`[mobile-server] preload.js not found at ${preloadPath}`);
+  }
+
+  // Strip commonjs and node-only parts, inject browser-safe mocks
+  preloadCode = preloadCode
+    .replace('var import_electron = require("electron");', "")
+    .replace('module.exports = __toCommonJS(preload_exports);', "")
+    .replace('import_electron.contextBridge.exposeInMainWorld("electron", api);', "window.electron = api;")
+    .replace('platform: process.platform,', `platform: "${platform}",`);
+
   return `(function() {
   if (typeof window === "undefined") return;
 
   const clientId = "client_" + Math.random().toString(36).substring(2, 11);
   const listeners = new Map();
 
-  function getEventName(path) {
-    const pathStr = path.join(".");
-    const EVENT_MAP = {
-      "onDbChanged": "db:changed",
-      "onAiWriteStarted": "note:aiWriteStarted",
-      "onAiWriteEnded": "note:aiWriteEnded",
-      "onMcpUnreadCount": "mcp:unread-count",
-      "onMigrationProgress": "app:migrationProgress",
-      "chat.onToken": "chat:token",
-      "chat.onDone": "chat:done",
-      "chat.onToolCall": "chat:tool-call",
-      "chat.onToolCallDone": "chat:tool-call-done",
-      "chat.onUsage": "chat:usage",
-      "agent.onData": "agent:data",
-      "agent.onExit": "agent:exit",
-      "piAgent.onToken": "pi-agent:token",
-      "piAgent.onTool": "pi-agent:tool",
-      "piAgent.onDone": "pi-agent:done",
-      "piAgent.onError": "pi-agent:error",
-      "piAgent.onToolsReady": "pi-agent:tools-ready",
-      "piAgent.onStep": "pi-agent:step",
-      "piAgent.onUsage": "pi-agent:usage",
-      "piAgent.onRetry": "pi-agent:retry",
-      "piAgent.onCompact": "pi-agent:compact",
-      "piAgent.onCompactResult": "pi-agent:compact-result",
-      "piAgent.onSubagent": "pi-agent:subagent",
-      "piAgent.onPlanNote": "pi-agent:plan-note",
-      "piAgent.onNoteUpdated": "pi-agent:note-updated",
-      "piAgent.onModeChange": "pi-agent:mode-change",
-      "piAgent.onAskQuestions": "pi-agent:ask-questions",
-      "llama.models.onProgress": "llama:download-progress",
-      "llama.binary.onProgress": "llama:binary-progress"
-    };
-    return EVENT_MAP[pathStr] || pathStr;
-  }
-
-  function addListener(eventName, callback) {
-    if (!listeners.has(eventName)) {
-      listeners.set(eventName, new Set());
-    }
-    listeners.get(eventName).add(callback);
-  }
-
-  function removeListener(eventName, callback) {
-    const set = listeners.get(eventName);
-    if (set) {
-      set.delete(callback);
-      if (set.size === 0) {
-        listeners.delete(eventName);
-      }
-    }
-  }
-
-  function triggerListeners(eventName, payload) {
-    const set = listeners.get(eventName);
-    if (set) {
-      for (const cb of set) {
-        try { cb(payload); } catch (e) { console.error(e); }
-      }
-    }
-  }
-
-  const eventSource = new EventSource("/api/events?clientId=" + clientId);
-  eventSource.onmessage = function(e) {
-    try {
-      const data = JSON.parse(e.data);
-      triggerListeners(data.channel, data.payload);
-    } catch (err) {
-      console.error("Error handling server event:", err);
-    }
-  };
-
-  function createIpcProxy(path = []) {
-    return new Proxy(() => {}, {
-      get(target, prop) {
-        if (prop === "then") return undefined;
-        if (path.length === 0 && prop === "platform") return "${platform}";
-        return createIpcProxy([...path, prop]);
-      },
-      apply(target, thisArg, args) {
-        const lastKey = path[path.length - 1];
-        if (typeof lastKey === "string" && lastKey.startsWith("on") && lastKey[2] === lastKey[2]?.toUpperCase()) {
-          const callback = args[0];
-          const eventName = getEventName(path);
-          addListener(eventName, callback);
-          return () => removeListener(eventName, callback);
-        }
-        
-        let channelName = path.join(":");
-        const channelMap = {
-          "snapshot": "db:snapshot",
-          "hasData": "db:hasData",
-          "workspace:list": "db:workspace:list",
-          "workspace:create": "db:workspace:create",
-          "workspace:update": "db:workspace:update",
-          "project:list": "db:project:list",
-          "project:create": "db:project:create",
-          "project:update": "db:project:update",
-          "project:delete": "db:project:delete",
-          "note:list": "db:note:list",
-          "note:create": "db:note:create",
-          "note:update": "db:note:update",
-          "note:delete": "db:note:delete",
-          "note:moveToFolder": "db:note:moveToFolder",
-          "column:list": "db:column:list",
-          "column:create": "db:column:create",
-          "column:update": "db:column:update",
-          "column:delete": "db:column:delete",
-          "card:list": "db:card:list",
-          "card:create": "db:card:create",
-          "card:update": "db:card:update",
-          "card:delete": "db:card:delete",
-          "card:archiveDone": "db:cards:archive-done",
-          "card:addBlocker": "db:card:addBlocker",
-          "card:removeBlocker": "db:card:removeBlocker",
-          "card:ready": "db:card:ready",
-          "flow:get": "db:flow:get",
-          "flow:node:create": "db:flow:node:create",
-          "flow:node:update": "db:flow:node:update",
-          "flow:node:delete": "db:flow:node:delete",
-          "flow:node:summarize": "db:flow:node:summarize",
-          "flow:edge:create": "db:flow:edge:create",
-          "flow:edge:delete": "db:flow:edge:delete",
-          "flow:url:fetch": "db:flow:url:fetch",
-          "tag:list": "db:tag:list",
-          "tag:create": "db:tag:create",
-          "tag:update": "db:tag:update",
-          "tag:delete": "db:tag:delete",
-          "chat:threads": "db:chat:threads",
-          "chat:messages": "db:chat:messages",
-          "chat:upsertThread": "db:chat:upsertThread",
-          "chat:addMessage": "db:chat:addMessage",
-          "chat:deleteThread": "db:chat:deleteThread",
-          "chat:clearThreadMessages": "db:chat:clearThreadMessages",
-          "chat:compactThread": "chat:compactThread",
-          "chat:stream": "chat:stream",
-          "chat:abort": "chat:abort",
-          "graph:get": "db:graph:get",
-          "graph:neighbors": "db:graph:neighbors",
-          "graph:recompute": "db:graph:recompute",
-          "ai:generatePrd": "ai:generatePrd",
-          "ai:localLLMStatus": "ai:localLLMStatus",
-          "mcpServerPath": "app:mcpServerPath",
-          "latestChangelog": "app:latestChangelog",
-          "revealNote": "app:revealNote",
-          "exportNotePdf": "app:exportNotePdf",
-          "openExternal": "app:openExternal",
-          "uploadAsset": "app:uploadAsset",
-          "revealAssets": "app:revealAssets",
-          "selectWorkspaceFolder": "app:selectWorkspaceFolder",
-          "getWorkspacePath": "app:getWorkspacePath",
-          "needsWorkspaceSetup": "app:needsWorkspaceSetup",
-          "setTheme": "app:setTheme",
-          "initWorkspace": "app:initWorkspace",
-          "relaunch": "app:relaunch",
-          "resetAllData": "app:reset",
-          "checkMigrations": "app:checkMigrations",
-          "runMigration": "app:runMigration",
-          "updater:install": "updater:install",
-          "markMcpNotificationsRead": "mcp:markNotificationsRead",
-          "mcpQuery": "db:mcpQuery",
-          "piAgent:listSessions": "db:piSession:list",
-          "piAgent:createSession": "db:piSession:create",
-          "piAgent:deleteSession": "db:piSession:delete",
-          "piAgent:getMessages": "db:piSession:messages",
-          "piAgent:saveMessages": "db:piSession:saveMessages",
-          "piAgent:prompt": "pi-agent:prompt",
-          "piAgent:abort": "pi-agent:abort",
-          "piAgent:clear": "pi-agent:clear",
-          "piAgent:destroy": "pi-agent:destroy",
-          "piAgent:compactNow": "pi-agent:compact-now",
-          "piAgent:approvePlan": "pi-agent:approve-plan",
-          "piAgent:restoreContext": "pi-agent:restore-context",
-          "piAgent:previewPrompt": "pi-agent:preview-prompt"
-        };
-        
-        const mappedChannel = channelMap[channelName] || channelName;
-        
+  const import_electron = {
+    ipcRenderer: {
+      invoke(channel, payload) {
         return fetch("/api/ipc", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             "x-client-id": clientId
           },
-          body: JSON.stringify({ channel: mappedChannel, args })
+          body: JSON.stringify({ channel, args: [payload] })
         })
         .then(res => res.json())
         .then(result => {
-          if (result && result.error) {
-            throw new Error(result.error);
-          }
-          return result.data;
+          return result; 
         });
+      },
+      send(channel, payload) {
+        fetch("/api/ipc", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-client-id": clientId
+          },
+          body: JSON.stringify({ channel, args: [payload] })
+        }).catch(err => console.error("Fire-and-forget IPC error:", err));
+      },
+      on(channel, cb) {
+        if (!listeners.has(channel)) {
+          listeners.set(channel, new Set());
+        }
+        listeners.get(channel).add(cb);
+      },
+      off(channel, cb) {
+        const set = listeners.get(channel);
+        if (set) {
+          set.delete(cb);
+          if (set.size === 0) listeners.delete(channel);
+        }
       }
-    });
-  }
+    },
+    contextBridge: {
+      exposeInMainWorld(name, value) {
+        window[name] = value;
+      }
+    }
+  };
 
-  window.electron = createIpcProxy([]);
+  const eventSource = new EventSource("/api/events?clientId=" + clientId);
+  eventSource.onmessage = function(e) {
+    try {
+      const data = JSON.parse(e.data);
+      const set = listeners.get(data.channel);
+      if (set) {
+        for (const cb of set) {
+          try { cb(null, data.payload); } catch (err) { console.error(err); }
+        }
+      }
+    } catch (err) {
+      console.error("Error handling server event:", err);
+    }
+  };
+
+  // ── PRELOAD CODE START ──
+  ${preloadCode}
+  // ── PRELOAD CODE END ──
 })();`;
 }
 
@@ -335,8 +245,11 @@ const loginHtml = `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Cairn Mobile Access</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <link rel="icon" type="image/png" sizes="32x32" href="/icon.png">
+  <link rel="apple-touch-icon" href="/icon.png">
   <style>
     :root {
       --background: #0d0d0d;
@@ -495,12 +408,18 @@ export function startMobileServer(userDataPath: string, ctx: DbContext): void {
   if (server) return;
   
   loadMobileSettings(userDataPath);
+  loadSessions(userDataPath);
   
   const outDir = path.join(__dirname, "../out");
 
   server = http.createServer((req, res) => {
     const url = new URL(req.url || "", `http://${req.headers.host}`);
-    const pathname = decodeURIComponent(url.pathname);
+    let pathname = decodeURIComponent(url.pathname);
+    
+    // Alias apple-touch-icons to main icon
+    if (pathname === "/apple-touch-icon.png" || pathname === "/apple-touch-icon-precomposed.png") {
+      pathname = "/icon.png";
+    }
     
     // ── 1. API: PIN Authentication ──
     if (pathname === "/api/auth" && req.method === "POST") {
@@ -512,6 +431,7 @@ export function startMobileServer(userDataPath: string, ctx: DbContext): void {
           if (parsed.pin === settings.pin) {
             const token = crypto.randomBytes(16).toString("hex");
             activeSessions.add(token);
+            saveSessions();
             res.writeHead(200, {
               "Content-Type": "application/json",
               "Set-Cookie": `cairn_session_token=${token}; Path=/; HttpOnly; Max-Age=31536000`,
@@ -533,8 +453,9 @@ export function startMobileServer(userDataPath: string, ctx: DbContext): void {
     const cookies = parseCookies(req.headers.cookie);
     const token = cookies.cairn_session_token;
     const isAuthed = !settings.authEnabled || (token && activeSessions.has(token));
+    const isFavicon = pathname === "/favicon.ico" || pathname === "/favicon.svg" || pathname === "/icon.png";
 
-    if (!isAuthed) {
+    if (!isAuthed && !isFavicon) {
       // Unauthenticated client: serve login page for GET, else 401
       if (req.method === "GET" && !pathname.startsWith("/api/")) {
         res.writeHead(200, { "Content-Type": "text/html" });
@@ -664,7 +585,56 @@ export function startMobileServer(userDataPath: string, ctx: DbContext): void {
       return;
     }
 
-    // ── 7. Static Next.js Files Serving ──
+    // ── 7. Dev Server Proxy / Static Next.js Files Serving ──
+    const isDev = process.env.NODE_ENV === "development";
+
+    if (isDev) {
+      const proxyHeaders = { ...req.headers };
+      // Override headers to prevent Next.js from rejecting requests on mismatching origins/hosts
+      proxyHeaders["host"] = "localhost:3000";
+      proxyHeaders["origin"] = "http://localhost:3000";
+      proxyHeaders["referer"] = "http://localhost:3000/";
+      proxyHeaders["accept-encoding"] = "identity";
+      
+      const proxyReq = http.request(
+        {
+          host: "localhost",
+          port: 3000,
+          path: req.url,
+          method: req.method,
+          headers: proxyHeaders,
+        },
+        (proxyRes) => {
+          const contentType = proxyRes.headers["content-type"] || "";
+          
+          if (contentType.includes("text/html")) {
+            let content = "";
+            proxyRes.on("data", (chunk) => { content += chunk; });
+            proxyRes.on("end", () => {
+              content = content.replace("<head>", '<head><script src="/mobile-bridge.js"></script>');
+              const headers = { ...proxyRes.headers };
+              delete headers["content-length"];
+              delete headers["content-encoding"];
+              res.writeHead(proxyRes.statusCode || 200, headers);
+              res.end(content);
+            });
+          } else {
+            res.writeHead(proxyRes.statusCode || 200, proxyRes.headers);
+            proxyRes.pipe(res);
+          }
+        }
+      );
+      
+      proxyReq.on("error", (err) => {
+        console.error("[mobile-server] Dev proxy error:", err);
+        res.writeHead(502, { "Content-Type": "text/plain" });
+        res.end("Bad Gateway: Next.js dev server is not running or reachable.");
+      });
+      
+      req.pipe(proxyReq);
+      return;
+    }
+
     if (req.method === "GET") {
       const safePath = path.normalize(pathname).replace(/^(\.\.[\/\\])+/, "");
       let filePath = path.join(outDir, safePath);
@@ -726,6 +696,50 @@ export function startMobileServer(userDataPath: string, ctx: DbContext): void {
     res.writeHead(405);
     res.end("Method Not Allowed");
   });
+
+  if (process.env.NODE_ENV === "development") {
+    server.on("upgrade", (req, socket, head) => {
+      const net = require("net");
+      const clientSocket = net.connect(3000, "localhost");
+      
+      // Setup clean bidirectional stream piping immediately
+      socket.pipe(clientSocket);
+      clientSocket.pipe(socket);
+      
+      // Write the upgrade request and headers to the remote Next.js dev server
+      clientSocket.write(`${req.method} ${req.url || ""} HTTP/${req.httpVersion}\r\n`);
+      for (const [key, value] of Object.entries(req.headers)) {
+        let val = value;
+        const k = key.toLowerCase();
+        if (k === "host") {
+          val = "localhost:3000";
+        } else if (k === "origin") {
+          val = "http://localhost:3000";
+        } else if (k === "referer") {
+          val = "http://localhost:3000/";
+        }
+        if (Array.isArray(val)) {
+          val.forEach((v) => {
+            clientSocket.write(`${key}: ${v}\r\n`);
+          });
+        } else if (val !== undefined) {
+          clientSocket.write(`${key}: ${val}\r\n`);
+        }
+      }
+      clientSocket.write("\r\n");
+      clientSocket.write(head);
+      
+      clientSocket.on("error", (err) => {
+        console.error("[mobile-server] Dev ws proxy error:", err);
+        socket.end();
+      });
+
+      socket.on("error", (err) => {
+        console.error("[mobile-server] Client socket error:", err);
+        clientSocket.end();
+      });
+    });
+  }
 
   server.listen(settings.port, "0.0.0.0", () => {
     console.log(`[mobile-server] Exposing Cairn at http://0.0.0.0:${settings.port}`);

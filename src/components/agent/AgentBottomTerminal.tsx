@@ -20,6 +20,7 @@ interface AgentBottomTerminalProps {
   cwd: string;
   /** Controlled height in px — set by the parent drag divider */
   height: number;
+  visible?: boolean;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -35,7 +36,7 @@ interface ShellTab {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export function AgentBottomTerminal({ cwd, height }: AgentBottomTerminalProps) {
+export function AgentBottomTerminal({ cwd, height, visible }: AgentBottomTerminalProps) {
   const fontScale = useCairnStore((s) => s.fontScale);
 
   const [tabs, setTabs]           = useState<ShellTab[]>([]);
@@ -101,14 +102,20 @@ export function AgentBottomTerminal({ cwd, height }: AgentBottomTerminalProps) {
     }
   }, [tabs]);
 
-  // Refit active terminal when height prop changes (drag resize)
+  // Refit active terminal when height, visibility, or active terminal changes
   useEffect(() => {
     if (!activeId) return;
-    const m = termRefs.current.get(activeId);
-    if (m) {
-      try { m.fitAddon.fit(); } catch { /* not yet measured */ }
-    }
-  }, [height, activeId]);
+    const fit = () => {
+      const m = termRefs.current.get(activeId);
+      if (m) {
+        try { m.fitAddon.fit(); } catch { /* not yet measured */ }
+      }
+    };
+    fit();
+    // Also fit after a short delay to ensure DOM has settled
+    const timer = setTimeout(fit, 100);
+    return () => clearTimeout(timer);
+  }, [height, activeId, visible]);
 
   // Update font size when the user changes the font scale setting
   useEffect(() => {
@@ -223,8 +230,8 @@ export function AgentBottomTerminal({ cwd, height }: AgentBottomTerminalProps) {
 
   return (
     <div
-      className="flex flex-col bg-[var(--background)] overflow-hidden"
-      style={{ height }}
+      className="flex flex-col bg-[var(--background)] overflow-hidden h-full md:h-auto w-full"
+      style={typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches ? {} : { height }}
     >
       {/* Tab bar */}
       <div className="flex items-center gap-0 border-b border-[var(--border)] bg-[var(--surface)] flex-shrink-0 h-8 overflow-x-auto">

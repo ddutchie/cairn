@@ -162,8 +162,8 @@ const api = {
   revealNote: (noteId: string, projectId: string) => invoke("app:revealNote", { noteId, projectId }),
 
   // ── Export note as PDF ────────────────────────
-  exportNotePdf: (title: string, html: string) =>
-    invoke<{ filePath: string } | null>("app:exportNotePdf", { title, html }),
+  exportNotePdf: (title: string, html: string, options?: { returnBuffer?: boolean }) =>
+    invoke<{ filePath?: string; pdfBase64?: string } | null>("app:exportNotePdf", { title, html, options }),
 
   // ── Open a URL in the system default browser ──
   openExternal: (url: string) => ipcRenderer.send("app:openExternal", url),
@@ -183,6 +183,14 @@ const api = {
   initWorkspace: (workspacePath: string) => invoke<{ requiresRestart: boolean }>("app:initWorkspace", { workspacePath }),
   relaunch: () => invoke("app:relaunch"),
   resetAllData: () => invoke("app:reset"),
+  getAiSettings: () => invoke<any>("app:getAiSettings"),
+  saveAiSettings: (config: any) => invoke<any>("app:saveAiSettings", { config }),
+  getAgentSettings: () => invoke<any>("app:getAgentSettings"),
+  saveAgentSettings: (config: any) => invoke<any>("app:saveAgentSettings", { config }),
+  getTheme: () => invoke<string | null>("app:getTheme"),
+  saveTheme: (theme: string) => invoke<any>("app:saveTheme", { theme }),
+  getFontScale: () => invoke<number | null>("app:getFontScale"),
+  saveFontScale: (fontScale: number) => invoke<any>("app:saveFontScale", { fontScale }),
   platform: process.platform as "darwin" | "win32" | "linux",
 
   // ── Migrations ────────────────────────────────

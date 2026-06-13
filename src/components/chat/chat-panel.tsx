@@ -472,13 +472,13 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
   return (
     <aside
       ref={panelRef}
-      className="flex flex-col border-l border-[var(--border)] bg-[var(--surface)] flex-shrink-0 animate-slide-in-right relative"
-      style={{ width: chatPanelWidth }}
+      className="fixed inset-0 z-50 md:relative md:inset-auto md:h-auto chat-panel-responsive flex flex-col border-l border-[var(--border)] bg-[var(--surface)] flex-shrink-0 animate-slide-in-right"
+      style={{ "--chat-panel-width": `${chatPanelWidth}px` } as React.CSSProperties}
     >
       {/* Drag-to-resize handle — sits on the left edge of the panel */}
       <div
         ref={dividerRef}
-        className="absolute left-0 top-0 h-full w-0 flex-shrink-0 cursor-col-resize z-10 select-none"
+        className="absolute left-0 top-0 h-full w-0 flex-shrink-0 cursor-col-resize z-10 select-none hidden md:block"
         style={{ marginLeft: -3, padding: "0 3px" }}
         aria-hidden
       />

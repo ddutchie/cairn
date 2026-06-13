@@ -56,9 +56,9 @@ export function DropdownMenuSeparator() {
   return <RadixDropdown.Separator className="my-1 h-px bg-[var(--border)]" />;
 }
 
-export function DropdownMenuLabel({ children }: { children: React.ReactNode }) {
+export function DropdownMenuLabel({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className="px-2.5 py-1.5 text-xs text-[var(--text-tertiary)] font-medium uppercase tracking-wide">
+    <div className={cn("px-2.5 py-1.5 text-xs text-[var(--text-tertiary)] font-medium uppercase tracking-wide", className)}>
       {children}
     </div>
   );

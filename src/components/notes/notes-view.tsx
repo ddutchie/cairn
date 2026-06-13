@@ -5,7 +5,7 @@ import {
   FileText, Plus, Pin, PinOff, Trash2, MoreHorizontal, Search,
   Wand2, Archive, ArchiveRestore, FolderInput,
   ChevronDown, ChevronRight, LayoutDashboard, Folder, FolderOpen,
-  FolderPlus, FolderSymlink,
+  FolderPlus, FolderSymlink, ChevronLeft,
 } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -117,6 +117,7 @@ export function NotesView() {
   const [dashboardTemplateOpen, setDashboardTemplateOpen] = useState(false);
   const [deleteNoteId, setDeleteNoteId]         = useState<string | null>(null);
   const [newFolderOpen, setNewFolderOpen]        = useState(false);
+  const [mobileShowEditor, setMobileShowEditor] = useState(false);
 
   // folder → collapsed state; true = collapsed, undefined/false = open
   const [collapsedFolders, setCollapsedFolders]  = useState<Record<string, boolean>>({});
@@ -228,6 +229,7 @@ export function NotesView() {
     // and the race window it creates.
     const note = createNote(activeProjectId, "Untitled Note", "note", inFolder);
     setActiveNoteId(note.id);
+    setMobileShowEditor(true);
   }
 
   function handleMoveNoteToFolder(noteId: string, folder: string) {
@@ -251,6 +253,7 @@ export function NotesView() {
     if (html) updateNote(note.id, { content: html, contentText: "" });
     setActiveNoteId(note.id);
     setDashboardTemplateOpen(false);
+    setMobileShowEditor(true);
   }
 
   // ⌘N global shortcut — use a ref so the handler always sees the latest
@@ -265,7 +268,11 @@ export function NotesView() {
 
   // Deep-link from search/overview
   useEffect(() => {
-    const handler = (e: Event) => { const { noteId } = (e as CustomEvent).detail; setActiveNoteId(noteId); };
+    const handler = (e: Event) => {
+      const { noteId } = (e as CustomEvent).detail;
+      setActiveNoteId(noteId);
+      setMobileShowEditor(true);
+    };
     window.addEventListener("cairn:select-note", handler);
     return () => window.removeEventListener("cairn:select-note", handler);
   }, []);
@@ -291,7 +298,10 @@ export function NotesView() {
   // React.memo effective. These are defined per-note at render time but each
   // callback identity is stable across re-renders of NotesView as long as the
   // relevant note ID and the handler dependencies don't change.
-  const handleNoteClick        = useCallback((id: string) => setActiveNoteId(id), []);
+  const handleNoteClick        = useCallback((id: string) => {
+    setActiveNoteId(id);
+    setMobileShowEditor(true);
+  }, []);
   const handleNotePin          = useCallback((note: Note) => updateNote(note.id, { isPinned: !note.isPinned }), [updateNote]);
   const handleNoteDelete       = useCallback((note: Note) => setDeleteNoteId(note.id), []);
   const handleNoteArchive      = useCallback((note: Note) => handleArchive(note.id), [handleArchive]);
@@ -302,7 +312,7 @@ export function NotesView() {
   return (
     <div className="flex flex-1 min-h-0 overflow-hidden">
       {/* Notes list */}
-      <div className="w-56 flex-shrink-0 border-r border-[var(--border)] flex flex-col bg-[var(--surface)]">
+      <div className={cn("w-full md:w-56 flex-shrink-0 border-r border-[var(--border)] flex flex-col bg-[var(--surface)]", mobileShowEditor ? "hidden md:flex" : "flex")}>
         {/* Header */}
         <div className="flex items-center justify-between px-3 py-2.5 border-b border-[var(--border)]">
           <span className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider">Notes</span>
@@ -473,11 +483,11 @@ export function NotesView() {
       </div>
 
       {/* Editor pane */}
-      <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+      <div className={cn("flex-1 min-w-0 flex flex-col overflow-hidden", mobileShowEditor ? "flex" : "hidden md:flex")}>
         {activeNote ? (
           activeNote.type === "dashboard"
-            ? <DashboardView note={activeNote} />
-            : <NoteEditor note={activeNote} />
+            ? <DashboardView note={activeNote} onBack={() => setMobileShowEditor(false)} />
+            : <NoteEditor note={activeNote} onBack={() => setMobileShowEditor(false)} />
         ) : (
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center">

@@ -119,16 +119,16 @@ export function ProjectOverview() {
   } = metrics;
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 relative">
-      <div className="flex-1 overflow-y-auto">
-        <div className={cn("max-w-3xl mx-auto px-8 py-8 space-y-8", !chatOpen && "pb-32")}>
+    <div className="flex-1 flex flex-col min-h-0 relative w-full min-w-0 overflow-x-hidden">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden w-full min-w-0">
+        <div className={cn("max-w-3xl mx-auto px-4 py-4 md:px-8 md:py-8 space-y-6 md:space-y-8", !chatOpen && "pb-32")}>
 
         {/* ── Header ─────────────────────────────────────────── */}
-        <div className="flex items-start justify-between gap-6">
-          <div className="flex-1 min-w-0">
-            <div className="group flex items-center gap-2.5 mb-1.5">
-              <ProjectIcon name={project.icon} size={26} className="text-[var(--text-secondary)]" />
-              <h1 className="text-2xl font-bold text-[var(--text-primary)] tracking-tight truncate">
+        <div className="flex flex-col sm:flex-row items-start justify-between gap-4 sm:gap-6 w-full min-w-0">
+          <div className="flex-1 min-w-0 w-full">
+            <div className="group flex items-center gap-2.5 mb-1.5 w-full min-w-0">
+              <ProjectIcon name={project.icon} size={26} className="text-[var(--text-secondary)] flex-shrink-0" />
+              <h1 className="text-2xl font-bold text-[var(--text-primary)] tracking-tight truncate flex-1 min-w-0">
                 {project.name}
               </h1>
               {/* Edit icon/description popover */}
@@ -188,7 +188,7 @@ export function ProjectOverview() {
               </div>
             </div>
             {project.description && (
-              <p className="text-sm text-[var(--text-secondary)] mb-3 max-w-lg">{project.description}</p>
+              <p className="text-sm text-[var(--text-secondary)] mb-3 max-w-full break-words">{project.description}</p>
             )}
             <div className="flex items-center gap-2 flex-wrap">
               <span className={cn("text-xs font-medium px-2 py-0.5 rounded-full border border-[var(--border)]", STATUS_COLORS[project.status])}>
@@ -211,7 +211,7 @@ export function ProjectOverview() {
         </div>
 
         {/* ── Code directory ────────────────────────────────── */}
-        <div className="flex items-center gap-2 group">
+        <div className="flex items-center gap-2 group w-full min-w-0">
           <Terminal size={13} className="text-[var(--text-tertiary)] flex-shrink-0" />
           <input
             value={codeDirInput}
@@ -233,7 +233,7 @@ export function ProjectOverview() {
         </div>
 
         {/* ── Stats ─────────────────────────────────────────── */}
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <StatCard icon={<FileText size={14} />} iconColor="var(--info)" iconBg="color-mix(in srgb, var(--info) 12%, transparent)"
             value={notes.length} label="Notes" onClick={() => setView("notes")} />
           <StatCard icon={<Kanban size={14} />} iconColor="var(--accent)" iconBg="var(--accent-dim)"
@@ -287,7 +287,7 @@ export function ProjectOverview() {
         {pinnedNotes.length > 0 && (
           <section>
             <SectionHeader title="Pinned" icon={<Pin size={12} />} action={{ label: "All notes", onClick: () => setView("notes") }} />
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {pinnedNotes.map((note) => (
                 <PinnedNoteCard key={note.id} note={note}
                   onClick={() => { setView("notes"); window.dispatchEvent(CairnEvents.selectNote(note.id)); }} />
@@ -341,7 +341,7 @@ export function ProjectOverview() {
 
       {/* Pinned bottom Chat Input (shown only when chat sidebar is closed) */}
       {!chatOpen && (
-        <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-[var(--background)] via-[color-mix(in srgb,var(--background)_80%,transparent)] to-transparent pointer-events-none z-10">
+        <div className="absolute bottom-0 left-0 right-0 p-6 overview-chat-overlay pointer-events-none z-10">
           <div className="max-w-3xl mx-auto pointer-events-auto">
             <ChatInput
               ref={chatInputRef}
@@ -450,7 +450,7 @@ function PriorityBreakdownCard({
   return (
     <div>
       <div className="text-[0.714rem] font-medium text-[var(--text-tertiary)] uppercase tracking-wider mb-2.5">Open tasks by priority</div>
-      <div className="grid grid-cols-4 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         {([
           { key: "urgent", label: "Urgent", color: "var(--danger)",        bg: "color-mix(in srgb, var(--danger) 8%, transparent)" },
           { key: "high",   label: "High",   color: "var(--warning)",       bg: "color-mix(in srgb, var(--warning) 8%, transparent)" },

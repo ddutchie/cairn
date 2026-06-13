@@ -53,11 +53,11 @@ export function QuickSettings() {
         </Button>
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent align="end" className="w-48 p-2">
+      <DropdownMenuContent align="end" className="w-[260px] p-3">
 
         {/* Theme */}
         <DropdownMenuLabel>Theme</DropdownMenuLabel>
-        <div className="px-1 pb-1">
+        <div className="px-1 pb-2">
           <SegmentedControl
             options={THEMES}
             value={theme}
@@ -69,7 +69,7 @@ export function QuickSettings() {
         <DropdownMenuSeparator />
 
         {/* Font scale */}
-        <DropdownMenuLabel>Font size</DropdownMenuLabel>
+        <DropdownMenuLabel className="mt-2">Font size</DropdownMenuLabel>
         <div className="px-1 pb-1">
           <SegmentedControl
             options={FONT_SCALES}

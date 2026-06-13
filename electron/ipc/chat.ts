@@ -17,6 +17,7 @@ import type Database from "better-sqlite3";
 import { isLocalEndpoint, streamCompletion, normaliseBaseUrl, type OpenAIMessage } from "../lib/llm";
 import { TOOLS, buildSystemPrompt, type ChatRequest } from "../lib/tools";
 import { executeTool } from "./chat-executor";
+import { saveCachedConfig, getCachedConfig } from "../lib/config-cache";
 
 // Track one AbortController per renderer webContents ID
 const abortControllers = new Map<number, AbortController>();
@@ -152,9 +153,30 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
     config: { provider?: string; baseUrl?: string; model?: string; apiKey?: string };
   }) => {
     try {
-      const baseUrl = normaliseBaseUrl(req.config?.baseUrl ?? "https://api.openai.com");
-      const model = req.config?.model ?? "gpt-4o-mini";
-      const apiKey = req.config?.apiKey ?? "";
+      if (req.config?.apiKey) {
+        saveCachedConfig("ai", {
+          baseUrl: req.config.baseUrl,
+          model: req.config.model,
+          apiKey: req.config.apiKey,
+        });
+      }
+
+      let reqConfig = req.config;
+      if (!reqConfig?.apiKey) {
+        const cached = getCachedConfig().aiConfig;
+        if (cached?.apiKey) {
+          reqConfig = {
+            ...reqConfig,
+            baseUrl: reqConfig?.baseUrl || cached.baseUrl,
+            model: reqConfig?.model || cached.model,
+            apiKey: cached.apiKey,
+          };
+        }
+      }
+
+      const baseUrl = normaliseBaseUrl(reqConfig?.baseUrl ?? "https://api.openai.com");
+      const model = reqConfig?.model ?? "gpt-4o-mini";
+      const apiKey = reqConfig?.apiKey ?? "";
       
       const llmConfig = {
         baseUrl,
@@ -195,17 +217,41 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
     const abortCtrl = new AbortController();
     abortControllers.set(event.sender.id, abortCtrl);
     
-    const provider = req.config?.provider ?? "openai";
-    const baseUrl = normaliseBaseUrl(req.config?.baseUrl ?? "https://api.openai.com");
-    const model = req.config?.model ?? "gpt-4o-mini";
-    const apiKey = req.config?.apiKey ?? "";
-    const isLocal = isLocalEndpoint(baseUrl);
+    if (req.config?.apiKey) {
+      saveCachedConfig("ai", {
+        provider: req.config.provider,
+        baseUrl: req.config.baseUrl,
+        model: req.config.model,
+        apiKey: req.config.apiKey,
+      });
+    }
+
+    let reqConfig = req.config;
+    const isLocal = req.config?.baseUrl ? isLocalEndpoint(normaliseBaseUrl(req.config.baseUrl)) : false;
+    if (!reqConfig?.apiKey && reqConfig?.provider !== "localllm" && !isLocal) {
+      const cached = getCachedConfig().aiConfig;
+      if (cached?.apiKey) {
+        reqConfig = {
+          ...reqConfig,
+          provider: reqConfig?.provider || cached.provider,
+          baseUrl: reqConfig?.baseUrl || cached.baseUrl,
+          model: reqConfig?.model || cached.model,
+          apiKey: cached.apiKey,
+        };
+      }
+    }
+
+    const provider = reqConfig?.provider ?? "openai";
+    const baseUrl = normaliseBaseUrl(reqConfig?.baseUrl ?? "https://api.openai.com");
+    const model = reqConfig?.model ?? "gpt-4o-mini";
+    const apiKey = reqConfig?.apiKey ?? "";
+    const isLocalEndpointUrl = isLocalEndpoint(baseUrl);
 
     const send = (ch: string, payload: unknown) => {
       if (!event.sender.isDestroyed()) event.sender.send(ch, payload);
     };
 
-    if (provider !== "localllm" && !apiKey && !isLocal) {
+    if (provider !== "localllm" && !apiKey && !isLocalEndpointUrl) {
       send("chat:done", {
         content: "AI chat is not configured. Set an API key in **Settings → AI & Chat**, or use a local endpoint (Ollama, LM Studio) with no key needed.",
         contextRefs: [],
