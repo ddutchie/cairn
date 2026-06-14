@@ -168,3 +168,57 @@ export function executeGetProjectContextPack(snap: CairnSnapshot, args: Args): u
     recentActivity,
   };
 }
+
+export function executeSearchNotes(snap: CairnSnapshot, args: Args): unknown {
+  const { query, projectId, limit = 10 } = args;
+  const qr = String(query).toLowerCase();
+  return snap.notes
+    .filter((n) => {
+      if (n.archivedAt) return false;
+      if (projectId && n.projectId !== projectId) return false;
+      return n.title.toLowerCase().includes(qr) || n.contentText.toLowerCase().includes(qr);
+    })
+    .slice(0, limit)
+    .map((n) => ({
+      id: n.id,
+      title: n.title,
+      snippet: n.contentText.slice(0, 200),
+      projectId: n.projectId,
+      updatedAt: n.updatedAt,
+    }));
+}
+
+export function executeSearchTasks(snap: CairnSnapshot, args: Args): unknown {
+  const { query, projectId, columnType, limit = 10 } = args;
+  const qr = String(query).toLowerCase();
+  return snap.cards
+    .filter((c) => {
+      if (c.archivedAt) return false;
+      if (projectId && c.projectId !== projectId) return false;
+      if (columnType) {
+        const col = snap.columns.find((col) => col.id === c.columnId);
+        if (!col || col.type !== columnType) return false;
+      }
+      return c.title.toLowerCase().includes(qr) || (c.description && c.description.toLowerCase().includes(qr));
+    })
+    .slice(0, limit)
+    .map((c) => {
+      const col = snap.columns.find((col) => col.id === c.columnId);
+      const limitVal = 400;
+      const desc = c.description ?? "";
+      const truncated = desc.length > limitVal
+        ? desc.slice(0, limitVal) + "\n... (description truncated, use get_task to read full description)"
+        : (c.description ?? null);
+      return {
+        id: c.id,
+        title: c.title,
+        description: truncated,
+        columnId: c.columnId,
+        columnName: col?.name ?? "Unknown",
+        columnType: col?.type ?? "custom",
+        priority: c.priority,
+        dueDate: c.dueDate ?? null,
+        projectId: c.projectId,
+      };
+    });
+}

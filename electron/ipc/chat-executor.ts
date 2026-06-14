@@ -9,7 +9,6 @@ import type Database from "better-sqlite3";
 import type { BrowserWindow } from "electron";
 import * as q from "../db/queries";
 import { writeNoteFile } from "../notes-files";
-import { buildContextResponse } from "../lib/context";
 import { generatePrd } from "../lib/prd";
 import { executeReadTool, type CairnSnapshot } from "../lib/read-tools";
 import { newId } from "../db/utils";
@@ -42,9 +41,6 @@ export async function executeTool(
     }
 
   switch (name) {
-    case "get_cairn_context": {
-      return buildContextResponse(db);
-    }
     case "get_active_context": {
       const workspace = snap.workspaces.find((w) => w.id === req.workspaceId) ?? snap.workspaces[0];
       const project = snap.projects.find((p) => p.id === req.projectId)
@@ -95,6 +91,7 @@ export async function executeTool(
         tags,
       };
     }
+    case "get_cairn_context":
     case "get_note":
     case "get_task":
     case "create_dashboard":

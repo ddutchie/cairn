@@ -2,6 +2,7 @@
 import Database from "better-sqlite3";
 import { newId, ts } from "../../db/utils";
 import { stripMarkdown } from "../../shared/text-utils";
+import { executeSearchNotes } from "../../shared/read-tools-pure";
 import {
   Snapshot,
   insertNotification,
@@ -26,16 +27,7 @@ export function get_note(db: Database.Database, snap: Snapshot, args: Record<str
 }
 
 export function search_notes(db: Database.Database, snap: Snapshot, args: Record<string, any>) {
-  const { query, projectId, limit = 10 } = args;
-  const qr = String(query).toLowerCase();
-  return snap.notes
-    .filter((n) => {
-      if (n.archivedAt) return false;
-      if (projectId && n.projectId !== projectId) return false;
-      return n.title.toLowerCase().includes(qr) || n.contentText.toLowerCase().includes(qr);
-    })
-    .slice(0, limit)
-    .map((n) => ({ id: n.id, title: n.title, snippet: n.contentText.slice(0, 200), projectId: n.projectId, updatedAt: n.updatedAt }));
+  return executeSearchNotes(snap, args);
 }
 
 export function ensure_note(db: Database.Database, snap: Snapshot, workspacePath: string, args: Record<string, any>) {

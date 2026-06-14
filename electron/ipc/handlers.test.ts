@@ -16,7 +16,7 @@ import { applySchema } from "../db/schema";
 import {
   createWorkspace, createProject, createNote, createColumn, createCard,
 } from "../db/queries";
-import { buildContextResponse } from "../lib/context";
+import { executeTool as executeMcpTool } from "../mcp-server";
 import { executeReadTool } from "../lib/read-tools";
 import * as q from "../db/queries";
 
@@ -51,13 +51,13 @@ describe("getFullSnapshot", () => {
   });
 });
 
-// ── buildContextResponse (get_cairn_context) ──────────────────────────────────
+// ── get_cairn_context ──────────────────────────────────
 
-describe("buildContextResponse", () => {
+describe("get_cairn_context", () => {
   it("includes workspaces and projects with columns", () => {
     const db = makeDb();
     seed(db);
-    const result = buildContextResponse(db) as Record<string, unknown>;
+    const result = executeMcpTool(db, "", "get_cairn_context", {}) as Record<string, unknown>;
     expect(result).toHaveProperty("workspaces");
     expect(result).toHaveProperty("projects");
     const proj = (result.projects as Array<Record<string, unknown>>).find((p) => p.id === "proj1");

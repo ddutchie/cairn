@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import Database from "better-sqlite3";
 import { newId, ts } from "../../db/utils";
+import { executeSearchTasks } from "../../shared/read-tools-pure";
 import {
   Snapshot,
   j,
@@ -25,30 +26,7 @@ export function get_task(db: Database.Database, snap: Snapshot, args: Record<str
 }
 
 export function search_tasks(db: Database.Database, snap: Snapshot, args: Record<string, any>) {
-  const { query, projectId, columnType, limit = 10 } = args;
-  const qr = String(query).toLowerCase();
-  return snap.cards
-    .filter((c) => {
-      if (c.archivedAt) return false;
-      if (projectId && c.projectId !== projectId) return false;
-      if (columnType) {
-        const col = snap.columns.find((col) => col.id === c.columnId);
-        if (col?.type !== columnType) return false;
-      }
-      return c.title.toLowerCase().includes(qr) || (c.description ?? "").toLowerCase().includes(qr);
-    })
-    .slice(0, limit)
-    .map((c) => {
-      const col = snap.columns.find((col) => col.id === c.columnId);
-      const limit = 400;
-      const desc = c.description ?? "";
-      const truncated = desc.length > limit
-        ? desc.slice(0, limit) + "\n... (description truncated, use get_task to read full description)"
-        : (c.description ?? null);
-      return { id: c.id, title: c.title, description: truncated, columnId: c.columnId,
-        columnName: col?.name ?? "Unknown", columnType: col?.type ?? "custom",
-        priority: c.priority, dueDate: c.dueDate, projectId: c.projectId };
-    });
+  return executeSearchTasks(snap, args);
 }
 
 export function create_task(db: Database.Database, snap: Snapshot, args: Record<string, any>) {

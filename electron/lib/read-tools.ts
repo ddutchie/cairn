@@ -15,14 +15,15 @@
  */
 
 import type Database from "better-sqlite3";
-import * as q from "../db/queries";
 import {
   CairnSnapshot,
   executeGetProjectSummary,
   executeListTasks,
   executeListNotes,
   executeListRecentActivity,
-  executeGetProjectContextPack
+  executeGetProjectContextPack,
+  executeSearchNotes as executeSearchNotesPure,
+  executeSearchTasks as executeSearchTasksPure
 } from "../shared/read-tools-pure";
 
 export { CairnSnapshot };
@@ -30,32 +31,12 @@ export { CairnSnapshot };
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Args = Record<string, any>;
 
-export function executeSearchNotes(db: Database.Database, args: Args): unknown {
-  return q.searchNotes(db, {
-    query: String(args.query),
-    projectId: args.projectId as string | undefined,
-    limit: args.limit as number | undefined,
-  }).map((n) => ({ id: n.id, title: n.title, snippet: n.contentText.slice(0, 200), projectId: n.projectId, updatedAt: n.updatedAt }));
+export function executeSearchNotes(snap: CairnSnapshot, args: Args): unknown {
+  return executeSearchNotesPure(snap, args);
 }
 
-export function executeSearchTasks(db: Database.Database, snap: CairnSnapshot, args: Args): unknown {
-  return q.searchTasks(db, {
-    query: String(args.query),
-    projectId: args.projectId as string | undefined,
-    limit: args.limit as number | undefined,
-  }).map((c) => {
-    const col = snap.columns.find((col) => col.id === c.columnId);
-    const limit = 400;
-    const desc = c.description ?? "";
-    const truncated = desc.length > limit
-      ? desc.slice(0, limit) + "\n... (description truncated, use get_task to read full description)"
-      : (c.description ?? null);
-    return {
-      id: c.id, title: c.title, description: truncated,
-      columnId: c.columnId, columnName: col?.name ?? "Unknown", columnType: col?.type ?? "custom",
-      priority: c.priority, dueDate: c.dueDate ?? null, projectId: c.projectId,
-    };
-  });
+export function executeSearchTasks(snap: CairnSnapshot, args: Args): unknown {
+  return executeSearchTasksPure(snap, args);
 }
 
 /**
@@ -83,9 +64,9 @@ export function executeReadTool(
     case "list_recent_activity":
       return { handled: true, result: executeListRecentActivity(snap, args) };
     case "search_notes":
-      return { handled: true, result: executeSearchNotes(db, args) };
+      return { handled: true, result: executeSearchNotes(snap, args) };
     case "search_tasks":
-      return { handled: true, result: executeSearchTasks(db, snap, args) };
+      return { handled: true, result: executeSearchTasks(snap, args) };
     default:
       return { handled: false };
   }
