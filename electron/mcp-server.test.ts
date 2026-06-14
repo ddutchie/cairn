@@ -680,9 +680,9 @@ describe("upsert_project", () => {
 
   it("creates project with default columns when projectId is omitted", () => {
     createWorkspace(db, { id: "ws1", name: "WS" });
-    const result = executeTool(db, wp, "upsert_project", { workspaceId: "ws1", name: "New Project" }) as Record<string, unknown>;
-    expect(result).toHaveProperty("projectId");
-    expect(result.name).toBe("New Project");
+    const result = executeTool(db, wp, "upsert_project", { workspaceId: "ws1", name: "New Project" }) as { project: { id: string; name: string }; columns: unknown[] };
+    expect(result.project).toHaveProperty("id");
+    expect(result.project.name).toBe("New Project");
     const columns = result.columns as unknown[];
     expect(columns.length).toBeGreaterThan(0);
   });
@@ -694,10 +694,10 @@ describe("upsert_project", () => {
 
   it("updates existing project when projectId is provided", () => {
     createWorkspace(db, { id: "ws1", name: "WS" });
-    const created = executeTool(db, wp, "upsert_project", { workspaceId: "ws1", name: "Original" }) as Record<string, unknown>;
-    const pid = created.projectId as string;
-    const updated = executeTool(db, wp, "upsert_project", { projectId: pid, name: "Renamed" }) as Record<string, unknown>;
-    expect((updated as Record<string, unknown>).name).toBe("Renamed");
+    const created = executeTool(db, wp, "upsert_project", { workspaceId: "ws1", name: "Original" }) as { project: { id: string; name: string }; columns: unknown[] };
+    const pid = created.project.id as string;
+    const updated = executeTool(db, wp, "upsert_project", { projectId: pid, name: "Renamed" }) as { id: string; name: string };
+    expect(updated.name).toBe("Renamed");
   });
 
   it("returns error for unknown projectId on update", () => {

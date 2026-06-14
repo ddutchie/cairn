@@ -2,10 +2,25 @@
 import path from "path";
 import os from "os";
 import fs from "fs";
-import Database from "better-sqlite3";
-import matter from "gray-matter";
-import { toSlug } from "../shared/text-utils";
-import { newId, ts } from "../db/utils";
+import { toWorkspace, toProject, toNote, toColumn, toCard, j, j2, p, b } from "../shared/db-mappers";
+import { projectNotesDir, findNoteFilePath, resolveNoteFilePath, writeNoteFile, deleteNoteFile } from "../shared/notes-io";
+
+export {
+  toWorkspace,
+  toProject,
+  toNote,
+  toColumn,
+  toCard,
+  j,
+  j2,
+  p,
+  b,
+  projectNotesDir,
+  findNoteFilePath,
+  resolveNoteFilePath,
+  writeNoteFile,
+  deleteNoteFile
+};
 
 // ── Native Binding Resolver ───────────────────
 
@@ -94,63 +109,6 @@ export function findWorkspacePath(dbPath: string): string {
   return path.dirname(dbPath);
 }
 
-// ── Query Parsing Helpers ──────────────────────
-
-export function j(v: unknown): string { return JSON.stringify(v ?? []); }
-export function j2(v: string | null | undefined): string[] {
-  if (!v) return [];
-  try { return JSON.parse(v) as string[]; } catch { return []; }
-}
-export function p(v: string | null | undefined): unknown[] {
-  if (!v) return [];
-  try { return JSON.parse(v); } catch { return []; }
-}
-export function b(v: number | null): boolean { return v === 1; }
-
-// ── Mappers ───────────────────────────────────
-
-export function toWorkspace(r: any) {
-  return {
-    id: r.id, name: r.name, description: r.description, icon: r.icon,
-    createdAt: r.created_at, updatedAt: r.updated_at, archivedAt: r.archived_at
-  };
-}
-
-export function toProject(r: any) {
-  return {
-    id: r.id, workspaceId: r.workspace_id, name: r.name, description: r.description,
-    icon: r.icon, status: r.status, priority: r.priority, dueDate: r.due_date,
-    tagIds: p(r.tag_ids), createdAt: r.created_at, updatedAt: r.updated_at, archivedAt: r.archived_at
-  };
-}
-
-export function toNote(r: any) {
-  return {
-    id: r.id, projectId: r.project_id, workspaceId: r.workspace_id, title: r.title,
-    content: r.content ?? "", contentText: r.content_text ?? "",
-    tagIds: p(r.tag_ids), linkedNoteIds: p(r.linked_note_ids), linkedCardIds: p(r.linked_card_ids),
-    isPinned: b(r.is_pinned), folder: (r.folder ?? "") as string,
-    createdAt: r.created_at, updatedAt: r.updated_at, archivedAt: r.archived_at
-  };
-}
-
-export function toColumn(r: any) {
-  return {
-    id: r.id, projectId: r.project_id, workspaceId: r.workspace_id, name: r.name,
-    type: r.type, order: r.order, cardLimit: r.card_limit,
-    createdAt: r.created_at, updatedAt: r.updated_at
-  };
-}
-
-export function toCard(r: any) {
-  return {
-    id: r.id, columnId: r.column_id, projectId: r.project_id, workspaceId: r.workspace_id,
-    title: r.title, description: r.description, tagIds: p(r.tag_ids), priority: r.priority,
-    dueDate: r.due_date, linkedNoteIds: p(r.linked_note_ids), blockedByIds: j2(r.blocked_by_ids),
-    order: r.order, assignee: r.assignee, createdAt: r.created_at, updatedAt: r.updated_at, archivedAt: r.archived_at
-  };
-}
-
 // ── Snapshot ──────────────────────────────────
 
 export interface Snapshot {
@@ -170,8 +128,10 @@ export function getSnapshot(db: Database.Database): Snapshot {
     columns: db.prepare(`SELECT * FROM board_columns ORDER BY "order"`).all().map(toColumn),
     cards: db.prepare(`SELECT * FROM task_cards ORDER BY "order"`).all().map(toCard),
     tags: (db.prepare("SELECT * FROM tags ORDER BY name").all() as any[]).map((r) => ({
-      id: r.id as string, workspaceId: r.workspace_id as string,
-      name: r.name as string, color: r.color as string,
+      id: r.id as string,
+      workspaceId: r.workspace_id as string,
+      name: r.name as string,
+      color: r.color as string,
     })),
   };
 }
@@ -247,87 +207,4 @@ export function insertNotification(db: Database.Database, tool: string, title: s
   } catch {
     // best-effort
   }
-}
-
-// ── Note File Synchronizer ────────────────────
-
-export function projectNotesDir(workspacePath: string, projectName: string): string {
-  return path.join(workspacePath, toSlug(projectName));
-}
-
-export function findNoteFilePath(workspacePath: string, projectName: string, noteId: string): string | null {
-  const dir = projectNotesDir(workspacePath, projectName);
-  if (!fs.existsSync(dir)) return null;
-  for (const entry of fs.readdirSync(dir)) {
-    if (!entry.endsWith(".md")) continue;
-    const fp = path.join(dir, entry);
-    try {
-      const { data } = matter(fs.readFileSync(fp, "utf-8"));
-      if (data.id === noteId) return fp;
-    } catch { /* skip */ }
-  }
-  return null;
-}
-
-export function resolveNoteFilePath(workspacePath: string, projectName: string, title: string, noteId: string): string {
-  const dir = projectNotesDir(workspacePath, projectName);
-  const slug = toSlug(title);
-  const candidate = path.join(dir, `${slug}.md`);
-  if (!fs.existsSync(candidate)) return candidate;
-  try {
-    const { data } = matter(fs.readFileSync(candidate, "utf-8"));
-    if (data.id === noteId) return candidate;
-  } catch { /* collision */ }
-  return path.join(dir, `${slug}-${noteId.slice(0, 6)}.md`);
-}
-
-export interface NoteFileData {
-  id: string; projectId: string; workspaceId: string; title: string; content: string;
-  tagIds: string[]; linkedNoteIds: string[]; linkedCardIds: string[];
-  isPinned: boolean; folder?: string; createdAt: string; updatedAt: string; archivedAt?: string;
-  projectName: string;
-}
-
-export function writeNoteFile(workspacePath: string, note: NoteFileData): void {
-  const dir = projectNotesDir(workspacePath, note.projectName);
-  fs.mkdirSync(dir, { recursive: true });
-  const existingPath = findNoteFilePath(workspacePath, note.projectName, note.id);
-  const newPath = resolveNoteFilePath(workspacePath, note.projectName, note.title, note.id);
-  if (existingPath && existingPath !== newPath) {
-    try { fs.unlinkSync(existingPath); } catch { /* ignore */ }
-  }
-
-  // Preserve non-Cairn frontmatter (Obsidian tags, aliases, cssclass, etc.)
-  const CAIRN_KEYS = new Set([
-    "id", "projectId", "workspaceId", "title", "folder",
-    "tagIds", "linkedNoteIds", "linkedCardIds",
-    "isPinned", "createdAt", "updatedAt", "archivedAt",
-  ]);
-  const existingExtra: Record<string, unknown> = {};
-  try {
-    const readPath = existingPath ?? newPath;
-    if (fs.existsSync(readPath)) {
-      const { data } = matter(fs.readFileSync(readPath, "utf-8"));
-      for (const [key, value] of Object.entries(data)) {
-        if (!CAIRN_KEYS.has(key)) existingExtra[key] = value;
-      }
-    }
-  } catch { /* ignore */ }
-
-  const cairnFields: Record<string, unknown> = {
-    id: note.id, projectId: note.projectId, workspaceId: note.workspaceId,
-    title: note.title, tagIds: note.tagIds, linkedNoteIds: note.linkedNoteIds,
-    linkedCardIds: note.linkedCardIds, isPinned: note.isPinned,
-    createdAt: note.createdAt, updatedAt: note.updatedAt,
-  };
-  if (note.archivedAt) cairnFields.archivedAt = note.archivedAt;
-
-  // Merge: non-Cairn keys first, then Cairn keys on top (Cairn always wins)
-  const frontmatter = { ...existingExtra, ...cairnFields };
-  fs.writeFileSync(newPath, matter.stringify(note.content ?? "", frontmatter), "utf-8");
-}
-
-export function deleteNoteFile(workspacePath: string, projectName: string, noteId: string): void {
-  const fp = findNoteFilePath(workspacePath, projectName, noteId);
-  if (fp) { try { fs.unlinkSync(fp); } catch { /* ignore */ } }
 }
