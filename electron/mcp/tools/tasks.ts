@@ -40,7 +40,12 @@ export function search_tasks(db: Database.Database, snap: Snapshot, args: Record
     .slice(0, limit)
     .map((c) => {
       const col = snap.columns.find((col) => col.id === c.columnId);
-      return { id: c.id, title: c.title, description: c.description, columnId: c.columnId,
+      const limit = 400;
+      const desc = c.description ?? "";
+      const truncated = desc.length > limit
+        ? desc.slice(0, limit) + "\n... (description truncated, use get_task to read full description)"
+        : (c.description ?? null);
+      return { id: c.id, title: c.title, description: truncated, columnId: c.columnId,
         columnName: col?.name ?? "Unknown", columnType: col?.type ?? "custom",
         priority: c.priority, dueDate: c.dueDate, projectId: c.projectId };
     });

@@ -45,8 +45,13 @@ export function executeSearchTasks(db: Database.Database, snap: CairnSnapshot, a
     limit: args.limit as number | undefined,
   }).map((c) => {
     const col = snap.columns.find((col) => col.id === c.columnId);
+    const limit = 400;
+    const desc = c.description ?? "";
+    const truncated = desc.length > limit
+      ? desc.slice(0, limit) + "\n... (description truncated, use get_task to read full description)"
+      : (c.description ?? null);
     return {
-      id: c.id, title: c.title, description: c.description ?? null,
+      id: c.id, title: c.title, description: truncated,
       columnId: c.columnId, columnName: col?.name ?? "Unknown", columnType: col?.type ?? "custom",
       priority: c.priority, dueDate: c.dueDate ?? null, projectId: c.projectId,
     };

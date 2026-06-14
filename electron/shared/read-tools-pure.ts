@@ -122,7 +122,14 @@ export function executeGetProjectContextPack(snap: CairnSnapshot, args: Args): u
   const notes = snap.notes.filter((n) => n.projectId === project.id && !n.archivedAt);
   const pinnedNotes = notes
     .filter((n) => n.isPinned)
-    .map((n) => ({ id: n.id, title: n.title, content: n.content }));
+    .map((n) => {
+      const limit = 1000;
+      const content = n.content ?? "";
+      const truncated = content.length > limit
+        ? content.slice(0, limit) + "\n\n... (content truncated, use get_note to read full note)"
+        : content;
+      return { id: n.id, title: n.title, content: truncated };
+    });
   const openCards = columns
     .filter((col) => col.type !== "done")
     .map((col) => ({
@@ -131,7 +138,14 @@ export function executeGetProjectContextPack(snap: CairnSnapshot, args: Args): u
       columnId: col.id,
       tasks: snap.cards
         .filter((c) => c.columnId === col.id && !c.archivedAt)
-        .map((c) => ({ id: c.id, title: c.title, priority: c.priority, description: c.description ?? null })),
+        .map((c) => {
+          const limit = 400;
+          const desc = c.description ?? "";
+          const truncated = desc.length > limit
+            ? desc.slice(0, limit) + "\n... (description truncated, use get_task to read full description)"
+            : (c.description ?? null);
+          return { id: c.id, title: c.title, priority: c.priority, description: truncated };
+        }),
     }))
     .filter((col) => col.tasks.length > 0);
   const recentActivity = [
