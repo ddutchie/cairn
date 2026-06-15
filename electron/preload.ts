@@ -433,6 +433,19 @@ const api = {
       invoke<{ systemPrompt: string; skills: Array<{ name: string; description: string; filePath: string; dirPath: string; license?: string; compatibility?: string }> }>(
         "pi-agent:preview-prompt", req
       ),
+    /** Dynamically switch a session's mode */
+    setMode: (sessionId: string, mode: "plan" | "execute") =>
+      ipcRenderer.send("pi-agent:set-mode", { sessionId, mode }),
+    /** Approve or deny a pending tool call */
+    respondTool: (sessionId: string, callId: string, approved: boolean) =>
+      ipcRenderer.send("pi-agent:respond-tool", { sessionId, callId, approved }),
+    /** Listen for tool call confirmation requests */
+    onToolConfirmRequired: (cb: (e: { sessionId: string; callId: string; name: string; label: string }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { sessionId: string; callId: string; name: string; label: string }) => cb(e);
+      ipcRenderer.on("pi-agent:tool-confirm-required", handler);
+      return () => ipcRenderer.off("pi-agent:tool-confirm-required", handler);
+    },
   },
 
   // ── On-Device Llama Server ───────────────

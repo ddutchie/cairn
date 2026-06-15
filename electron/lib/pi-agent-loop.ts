@@ -51,6 +51,8 @@ export interface AgentLLMConfig {
    * decide when to trim old messages. Defaults to 128000.
    */
   contextWindow?: number;
+  /** Whether to automatically approve tool calls or prompt the user. */
+  autoApprove?: boolean;
 }
 
 // ── Message types ─────────────────────────────────────────────────────────────
@@ -126,6 +128,8 @@ export interface AgentLoopCallbacks {
   onUsage:         (promptTokens: number, completionTokens: number) => void;
   onDone:          () => void;
   onError:         (message: string) => void;
+  /** Fired when a tool call needs user confirmation before execution. */
+  onToolConfirmRequired?: (name: string, label: string, callId: string) => void;
   /** Fired when the agent writes a note in plan mode — carries the note ID */
   onPlanNoteFound?: (noteId: string) => void;
   /**
@@ -161,6 +165,8 @@ export interface PiAgentSession {
    */
   compactionTransformer?: (messages: AgentMessage[]) => AgentMessage[] | Promise<AgentMessage[]>;
 }
+
+export const pendingApprovals = new Map<string, { resolve: (approved: boolean) => void }>();
 
 // ── All tool definitions ──────────────────────────────────────────────────────
 
@@ -209,6 +215,12 @@ const CAIRN_TOOL_NAMES = new Set([
   "layout_idea_flow",
   // ── Renderer-side only — main process no-ops; renderer renders an inline QuestionForm.
   "ask_questions",
+  // ── Codebase Semantic Indexer ───────────────────────────────────────────────
+  "codebase_reindex",
+  "codebase_search_symbols",
+  "codebase_get_symbol_definition",
+  "codebase_get_references",
+  "codebase_get_file_symbols",
 ]);
 
 // Tools available in plan mode — read-only + PRD note write only.
@@ -219,6 +231,9 @@ const PLAN_MODE_ALLOWED = new Set([
   "get_active_context", "get_project_context_pack",
   "get_note", "search_notes",
   "get_task", "search_tasks", "list_ready_tasks",
+  // codebase search (read-only)
+  "codebase_search_symbols", "codebase_get_symbol_definition",
+  "codebase_get_references", "codebase_get_file_symbols",
   // Cairn write — PRD note only (idempotent upsert)
   "ensure_note",
   // Renderer-side: renders inline question form
@@ -640,8 +655,37 @@ export async function runAgentLoop(
       // robust but isn't worth the added complexity here.
       await new Promise<void>((r) => setImmediate(r));
 
-      let resultContent: string;
+      let resultContent: string = "";
       let ok = true;
+
+      if (llmConfig.autoApprove === false) {
+        const callKey = pendingCallId || tc.id;
+        callbacks.onToolConfirmRequired?.(tc.function.name, label, callKey);
+        const approved = await new Promise<boolean>((resolve) => {
+          const onAbort = () => {
+            pendingApprovals.delete(callKey);
+            resolve(false);
+          };
+          if (signal.aborted) {
+            resolve(false);
+            return;
+          }
+          signal.addEventListener("abort", onAbort);
+          pendingApprovals.set(callKey, {
+            resolve: (val) => {
+              signal.removeEventListener("abort", onAbort);
+              resolve(val);
+            }
+          });
+        });
+        if (!approved) {
+          ok = false;
+          resultContent = "Blocked: tool call rejected by user";
+          callbacks.onToolEnd(tc.function.name, label, ok, resultContent, pendingCallId);
+          return { tcIdx, tc, ok, resultContent, pendingCallId };
+        }
+      }
+
       try {
         resultContent = await executeSingleTool(
           tc.function.name,

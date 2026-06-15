@@ -82,6 +82,8 @@ describe("Tool name parity", () => {
       "create_idea_flow_edge", "delete_idea_flow_edge", "layout_idea_flow", "get_idea_flow_rules",
       "get_knowledge_graph", "get_neighbors", "create_tag",
       "get_dashboard_constants",
+      // Codebase indexing & query tools:
+      "codebase_reindex", "codebase_search_symbols", "codebase_get_symbol_definition", "codebase_get_references", "codebase_get_file_symbols",
     ]);
     for (const name of chatToolNames) {
       expect(documented.has(name), `Undocumented chat tool: ${name} — add to CHAT_ONLY_TOOLS or shared list`).toBe(true);

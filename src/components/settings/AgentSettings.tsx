@@ -417,7 +417,7 @@ export function AgentSettings() {
 
   useEffect(() => { fetchAgents(); }, [fetchAgents]);
 
-  const { baseUrl: baseUrlAgent, model: modelAgent, apiKey: apiKeyAgent, maxSteps: maxStepsAgent, temperature: temperatureAgent, contextLimit: contextLimitAgent } = agentConfig;
+  const { baseUrl: baseUrlAgent, model: modelAgent, apiKey: apiKeyAgent, maxSteps: maxStepsAgent, temperature: temperatureAgent, contextLimit: contextLimitAgent, autoApprove = true } = agentConfig;
   const isLocalAgent =
     baseUrlAgent.includes("localhost") ||
     baseUrlAgent.includes("127.0.0.1") ||
@@ -749,6 +749,20 @@ export function AgentSettings() {
               ))}
             </div>
           </div>
+        </SettingsRow>
+
+        {/* Auto-approve */}
+        <SettingsRow
+          label="Auto-approve tool execution"
+          description="When disabled, the agent will pause and prompt for confirmation before running any shell commands, writing files, or managing boards."
+        >
+          <input
+            id="autoApprove"
+            type="checkbox"
+            checked={autoApprove}
+            onChange={(e) => updateAgent({ autoApprove: e.target.checked })}
+            className="w-4 h-4 rounded border-[var(--border)] bg-[var(--surface-2)] text-[var(--accent)] accent-[var(--accent)] cursor-pointer"
+          />
         </SettingsRow>
 
         {/* Agent Connection Status */}

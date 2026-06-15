@@ -19,7 +19,7 @@
 
 import { registerIpcHandle, registerIpcOn, broadcastEvent } from "./registry";
 
-import { runAgentLoop, type PiAgentSession, type AgentLLMConfig, type AgentToolContext } from "../lib/pi-agent-loop";
+import { runAgentLoop, pendingApprovals, type PiAgentSession, type AgentLLMConfig, type AgentToolContext } from "../lib/pi-agent-loop";
 import { buildCompactionTransformer, compactNow } from "../lib/compaction";
 import { buildPiAgentSystemPrompt } from "../lib/pi-agent-prompt";
 import { discoverSkills, renderSkillsXml } from "../lib/skills";
@@ -52,6 +52,7 @@ interface PiAgentPromptRequest {
     apiKey?: string;
     maxSteps?: number;
     temperature?: number;
+    autoApprove?: boolean;
   };
 }
 
@@ -68,6 +69,7 @@ interface PiAgentApprovePlanRequest {
     apiKey?: string;
     maxSteps?: number;
     temperature?: number;
+    autoApprove?: boolean;
   };
 }
 
@@ -108,6 +110,7 @@ async function runSession(
       onToolsReady:   ()      => send("pi-agent:tools-ready", { sessionId }),
       onToolPending:  (name, callId) => send("pi-agent:tool", { sessionId, name, label: name, callId, status: "pending" }),
       onToolStart:    (name, label, callId) => send("pi-agent:tool", { sessionId, name, label, callId, status: "start" }),
+      onToolConfirmRequired: (name, label, callId) => send("pi-agent:tool-confirm-required", { sessionId, name, label, callId }),
       onToolEnd:      (name, label, ok, output, callId) => {
         send("pi-agent:tool", { sessionId, name, label, callId, status: "end", ok, output });
         // After any note-write tool, push fresh note content to the renderer
@@ -193,22 +196,27 @@ export function registerPiAgentHandler(
         apiKey: req.config.apiKey,
         maxSteps: req.config.maxSteps,
         temperature: req.config.temperature,
+        autoApprove: req.config.autoApprove,
       });
     }
 
     let reqConfig = req.config;
-    if (!reqConfig?.apiKey) {
-      const cached = getCachedConfig().agentConfig;
-      if (cached?.apiKey) {
-        reqConfig = {
-          ...reqConfig,
-          baseUrl: reqConfig?.baseUrl || cached.baseUrl,
-          model: reqConfig?.model || cached.model,
-          apiKey: cached.apiKey,
-          maxSteps: reqConfig?.maxSteps || cached.maxSteps,
-          temperature: reqConfig?.temperature || cached.temperature,
-        };
-      }
+    const cached = getCachedConfig().agentConfig;
+    if (!reqConfig?.apiKey && cached?.apiKey) {
+      reqConfig = {
+        ...reqConfig,
+        baseUrl: reqConfig?.baseUrl || cached.baseUrl,
+        model: reqConfig?.model || cached.model,
+        apiKey: cached.apiKey,
+        maxSteps: reqConfig?.maxSteps || cached.maxSteps,
+        temperature: reqConfig?.temperature || cached.temperature,
+        autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : cached.autoApprove,
+      };
+    } else if (cached) {
+      reqConfig = {
+        ...reqConfig,
+        autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : cached.autoApprove,
+      };
     }
 
     const llmConfig: AgentLLMConfig = {
@@ -217,6 +225,7 @@ export function registerPiAgentHandler(
       apiKey:      reqConfig?.apiKey      || "",
       maxSteps:    reqConfig?.maxSteps    ?? 20,
       temperature: reqConfig?.temperature ?? 0.3,
+      autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : true,
     };
 
     let session = sessions.get(sessionId);
@@ -279,22 +288,27 @@ export function registerPiAgentHandler(
         apiKey: req.config.apiKey,
         maxSteps: req.config.maxSteps,
         temperature: req.config.temperature,
+        autoApprove: req.config.autoApprove,
       });
     }
 
     let reqConfig = req.config;
-    if (!reqConfig?.apiKey) {
-      const cached = getCachedConfig().agentConfig;
-      if (cached?.apiKey) {
-        reqConfig = {
-          ...reqConfig,
-          baseUrl: reqConfig?.baseUrl || cached.baseUrl,
-          model: reqConfig?.model || cached.model,
-          apiKey: cached.apiKey,
-          maxSteps: reqConfig?.maxSteps || cached.maxSteps,
-          temperature: reqConfig?.temperature || cached.temperature,
-        };
-      }
+    const cached = getCachedConfig().agentConfig;
+    if (!reqConfig?.apiKey && cached?.apiKey) {
+      reqConfig = {
+        ...reqConfig,
+        baseUrl: reqConfig?.baseUrl || cached.baseUrl,
+        model: reqConfig?.model || cached.model,
+        apiKey: cached.apiKey,
+        maxSteps: reqConfig?.maxSteps || cached.maxSteps,
+        temperature: reqConfig?.temperature || cached.temperature,
+        autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : cached.autoApprove,
+      };
+    } else if (cached) {
+      reqConfig = {
+        ...reqConfig,
+        autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : cached.autoApprove,
+      };
     }
 
     const llmConfig: AgentLLMConfig = {
@@ -303,6 +317,7 @@ export function registerPiAgentHandler(
       apiKey:      reqConfig?.apiKey      || "",
       maxSteps:    reqConfig?.maxSteps    ?? 20,
       temperature: reqConfig?.temperature ?? 0.3,
+      autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : true,
     };
 
     let session = sessions.get(sessionId);
@@ -394,6 +409,25 @@ export function registerPiAgentHandler(
       send("pi-agent:error", { sessionId, error: `Compaction failed: ${(e as Error).message}` });
     } finally {
       send("pi-agent:compact", { sessionId, status: "end" });
+    }
+  });
+
+  // ── pi-agent:set-mode ─────────────────────────────────────────────────────
+  registerIpcOn("pi-agent:set-mode", (_event, { sessionId, mode }: { sessionId: string; mode: "plan" | "execute" }) => {
+    try {
+      q.updatePiSession(ctx.db, sessionId, { mode, updatedAt: ts() });
+      broadcastEvent("pi-agent:mode-change", { sessionId, mode });
+    } catch (e) {
+      console.warn("[pi-agent] failed to update session mode:", e);
+    }
+  });
+
+  // ── pi-agent:respond-tool ──────────────────────────────────────────────────
+  registerIpcOn("pi-agent:respond-tool", (_event, { _sessionId, callId, approved }: { _sessionId: string; callId: string; approved: boolean }) => {
+    const pending = pendingApprovals.get(callId);
+    if (pending) {
+      pending.resolve(approved);
+      pendingApprovals.delete(callId);
     }
   });
 

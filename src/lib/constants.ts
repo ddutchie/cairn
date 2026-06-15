@@ -87,6 +87,7 @@ export const DEFAULT_AGENT_CONFIG: AgentConfig = {
   maxSteps:     30,
   temperature:  0.3,
   contextLimit: 128000,
+  autoApprove:  true,
 };
 
 // ── localStorage keys ─────────────────────────────────────────────────────────

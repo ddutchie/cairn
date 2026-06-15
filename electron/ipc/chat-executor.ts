@@ -115,7 +115,12 @@ export async function executeTool(
     case "delete_idea_flow_edge":
     case "layout_idea_flow":
     case "get_knowledge_graph":
-    case "get_neighbors": {
+    case "get_neighbors":
+    case "codebase_reindex":
+    case "codebase_search_symbols":
+    case "codebase_get_symbol_definition":
+    case "codebase_get_references":
+    case "codebase_get_file_symbols": {
       return executeMcpTool(db, workspacePath, name, args);
     }
     case "ensure_note": {

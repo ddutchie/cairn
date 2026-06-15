@@ -191,6 +191,7 @@ export const useCairnStore = create<CairnStore>()(
           maxSteps: savedConfig.maxSteps || DEFAULT_AGENT_CONFIG.maxSteps,
           temperature: savedConfig.temperature || DEFAULT_AGENT_CONFIG.temperature,
           contextLimit: savedConfig.contextLimit || DEFAULT_AGENT_CONFIG.contextLimit,
+          autoApprove: DEFAULT_AGENT_CONFIG.autoApprove,
         };
         a[0]({ agentConfig: migrated });
         storage.set(AGENT_CONFIG_KEY, migrated);
@@ -294,6 +295,7 @@ export const useCairnStore = create<CairnStore>()(
           maxSteps: (configRecord.maxSteps as number) || DEFAULT_AGENT_CONFIG.maxSteps,
           temperature: (configRecord.temperature as number) || DEFAULT_AGENT_CONFIG.temperature,
           contextLimit: (configRecord.contextLimit as number) || DEFAULT_AGENT_CONFIG.contextLimit,
+          autoApprove: DEFAULT_AGENT_CONFIG.autoApprove,
         };
         set({ agentConfig: migrated });
         storage.set(AGENT_CONFIG_KEY, migrated);

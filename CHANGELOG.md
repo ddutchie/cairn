@@ -1,67 +1,63 @@
 # Changelog
 
-All notable changes to Cairn are documented in this file.
+All notable changes to Cairn are documented in this file. This changelog is condensed to focus on major release cycles, combining minor features leading up to each version milestone. Detailed release histories can be found in the [changelogs/](file:///Users/gerard/Documents/GitHub/cairn/changelogs) directory.
 
-## [1.0.0] — 2026-05-04
+## [2.0.0] — 2026-06-15
 
-- Inline coding agent workspace (⌘7) — run Claude Code, OpenCode, Aider, or any CLI binary inside Cairn
-- Register agents in Settings → Coding Agents; set a code directory per project
-- Spawn an agent from any task card with the prompt pre-filled from the card
-- Three-pane layout: file tree, multi-file tabbed CodeMirror 6 editor, tabbed xterm.js terminal
-- Git diff viewer with unified / split / changes views and syntax highlighting
-- PTY sessions managed by `node-pty`; survive navigation and resize in real time
+### Semantic Codebase Indexing & Querying
+- **AST-Free Semantic Indexer**: Introduced an AST-free, regex-based codebase parser supporting C++, Java, C#, Go, Rust, Python, Ruby, and Shell scripts to map files, classes, functions, methods, docstrings, and references.
+- **Integrated Coding Tools**: Exposes 5 new tools (`codebase_reindex`, `codebase_search_symbols`, `codebase_get_symbol_definition`, `codebase_get_references`, and `codebase_get_file_symbols`) to both the standalone MCP server and the internal agent loop.
+
+### Dynamic Plan/Execute Mode Toggle
+- Added a dynamic toggle badge/button in the agent panel header to switch coding agent sessions in real time between **Plan** mode (lower temperature, read-only outline) and **Execute** mode (full read/write).
+
+### Interactive Tool Confirmations
+- Added a security gate that pauses modifying tool calls (writes, edits, shell commands) when auto-approvals are turned off. Renders inline **Confirm** / **Deny** buttons directly in chat tool chips, with desktop-mobile setting sync.
+
+### On-Device Llama Integration (llama.cpp) *(v1.7.x cycle)*
+- **Cross-Platform completions**: Replaced macOS-restricted engines with a cross-platform offline `llama-server` completions engine.
+- **1-Click native downloader**: Automated downloader that fetches platforms-specific prebuilts from `ggml-org/llama.cpp` and configures macOS FFI execution permissions.
+- **Self-healing tool parser**: Implemented XML and JSON repairing in streaming completions to handle outputs from smaller quantized local models.
+
+### Obsidian Vault Compatibility *(v1.5.x cycle)*
+- **Obsidian vault support**: Drop intermediate `notes/` directory nesting to support standard Obsidian vault layouts.
+- **Workspace migrations**: Automated workspace directory layout migration modal upon startup.
+- **Double-bracket embeds**: Added native rendering for double-bracket image embeds `![[image.png]]`.
+- **Vault-aware upload/paste**: Saves pasted images into configured Obsidian attachment folders and inserts vault-compatible markdown references.
+- **YAML Frontmatter merging**: Uses a merge-not-replace YAML frontmatter sync to preserve custom vault properties like tags and aliases.
+
+### Mobile Companion Integration *(v1.6.x cycle)*
+- **Local network QR pairing**: Connect phones and tablets over local Wi-Fi with PIN/QR authentication.
+- **Responsive touch interfaces**: Renders touch-optimized Kanban boards, slide-over drawers, full-screen mobile chat, and panning gestures for Idea Flow canvases.
+
+### Context Size Optimization & Parity *(v1.8.x - v1.9.x)*
+- **Preview truncation**: Optimizes context consumption by truncating search and pack previews, prompting agents to query full detail only when needed.
+- **Tool shape parity**: Unified database mappings and note I/O to guarantee 100% tool shape consistency between the desktop chat and standalone MCP server.
 
 ---
 
-## [0.9.6] — 2025-04-19
+## [1.0.0] — 2026-05-04
 
-- Interactive `ask_questions` flow and PRD modal in the chat interface
-- Note drag-and-drop reordering; sidebar and dialog polish
+### Inline Coding Agent Workspace
+- **Three-pane layout**: Resizable Agent view (`⌘5`) containing a directory **File Tree**, a multi-file tabbed CodeMirror 6 **Editor** with syntax highlighting, and tabbed **Terminal** sessions.
+- **CLI agent support**: Runs binaries (Claude Code, OpenCode, Aider, or custom CLI scripts) inside a live xterm.js terminal powered by `node-pty`.
+- **Git diff viewer**: Integrated tab rendering unified, split, or changes-only diffs with collapsible file blocks.
+- **Task card spawning**: Reroutes prompt parameters from any task card to auto-orient the agent inside the project's code directory.
 
-## [0.9.5]
+### Interactive PRD Generation *(v0.9.x)*
+- Added interactive clarifying interview flows that collect requirements to automatically generate and save a detailed PRD note.
 
-- AI toolbar, formatting toolbar, preview mode, and file-watcher fixes for notes
+### Knowledge Graph *(v0.8.x)*
+- Visual workspace graph mapping note, card, project, and tag connections in Force-directed or Radial tree layouts.
 
-## [0.9.4]
+### Insights View *(v0.7.x)*
+- Seven custom D3 analytics dashboards tracking project metrics (Ridgeline plots, Beeswarms, Bullet charts, Sankey pipelines, Timeline, and Heatmaps).
 
-- Fix note title lag and stale save race condition
+### Idea Flow Canvas *(v0.6.x)*
+- Spatial freeform canvas to map ideas, link reference nodes, group topics, and leverage background AI graph summarization.
 
-## [0.9.3]
+### Live Dashboards *(v0.5.x)*
+- Live project HTML page sandboxes with custom inline `window.cairn.query()` data bridges.
 
-- Prevent file-watcher delete events from clobbering in-flight note edits; sync notes from disk on startup
-
-## [0.9.2]
-
-- Asset protocol: dynamic workspace path resolution; serve arbitrary files to the renderer
-
-## [0.9.1]
-
-- Onboarding wizard, mutable DB context, and database re-initialisation support
-
-## [0.9.0]
-
-- Global AI enable/disable toggle; AI features gated when disabled
-
-## [0.8.0]
-
-- Knowledge Graph view — force-directed and radial tree layouts
-
-## [0.7.x]
-
-- Insights view with seven analytics canvases (D3 v7)
-- Font scale setting (XS → XL) with CSS `--font-scale` cascade
-
-## [0.6.x]
-
-- Idea Flow view (visual node graph with groups, URL cards, AI summaries)
-- Bidirectional note ↔ task linking
-
-## [0.5.x]
-
-- Dashboards — live HTML canvases with `window.cairn` data API
-
-## [0.4.x — 0.3.x]
-
-- Kanban board, task cards, columns, priorities, due dates
-- Notes with Markdown, wikilinks, file-watcher sync
-- Tags, workspace/project management, dark/light/system themes
+### Core Productivity Foundation *(v0.1.x - v0.4.x)*
+- Kanban board with WIP limits, card archiving, Markdown notes, wikilinks, tags, full-text global search (`⌘K`), and dark/light system theme engines.

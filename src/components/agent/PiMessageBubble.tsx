@@ -129,8 +129,37 @@ function ToolOutputPanel({ name, output }: { name: string; output: string }) {
   );
 }
 
-function ToolChip({ tc, index: _index }: { tc: { callId?: string; name: string; label: string; running?: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }; index: number }) {
+function ToolChip({ tc, sessionId }: {
+  tc: { callId?: string; name: string; label: string; running?: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; confirmRequired?: boolean };
+  sessionId?: string;
+}) {
   const [expanded, setExpanded] = useState(false);
+
+  // While paused waiting for user confirmation
+  if (tc.confirmRequired && sessionId && tc.callId) {
+    return (
+      <div className="flex items-center gap-2 px-2.5 py-1 rounded-md bg-[color-mix(in_srgb,var(--warning,#f59e0b)_8%,transparent)] border border-[color-mix(in_srgb,var(--warning,#f59e0b)_30%,transparent)] w-fit flex-wrap mt-0.5 mb-0.5">
+        <span className="text-[0.714rem] font-medium text-[var(--warning,#f59e0b)] flex items-center gap-1.5 shrink-0">
+          <Loader2 size={9} className="animate-spin shrink-0" />
+          Confirm: {tc.label}
+        </span>
+        <div className="flex items-center gap-1.5 ml-2">
+          <button
+            onClick={() => window.electron?.piAgent.respondTool(sessionId, tc.callId!, true)}
+            className="px-2 py-0.5 text-[0.643rem] font-semibold bg-[var(--success,#22c55e)] hover:opacity-90 text-white rounded transition-opacity cursor-pointer flex items-center gap-1"
+          >
+            Confirm
+          </button>
+          <button
+            onClick={() => window.electron?.piAgent.respondTool(sessionId, tc.callId!, false)}
+            className="px-2 py-0.5 text-[0.643rem] font-semibold bg-[var(--danger,#ef4444)] hover:opacity-90 text-white rounded transition-opacity cursor-pointer flex items-center gap-1"
+          >
+            Deny
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // While running — show a spinner chip, not expandable
   if (tc.running) {
@@ -215,7 +244,7 @@ function SubagentBlock({ sub }: { sub: PiSubagentMessage }) {
             <p className="text-[0.643rem] text-[var(--text-tertiary)]">Waiting…</p>
           )}
           {sub.messages.map((msg) => (
-            <SubagentMessageRow key={msg.id} msg={msg} />
+            <SubagentMessageRow key={msg.id} msg={msg} sessionId={sub.childSessionId} />
           ))}
           {!sub.running && sub.result && (
             <div className="mt-1 pt-1 border-t border-[var(--border)]">
@@ -229,7 +258,7 @@ function SubagentBlock({ sub }: { sub: PiSubagentMessage }) {
   );
 }
 
-function SubagentMessageRow({ msg }: { msg: PiAgentMessage }) {
+function SubagentMessageRow({ msg, sessionId }: { msg: PiAgentMessage; sessionId?: string }) {
   const hasTools = (msg.toolCalls?.length ?? 0) > 0;
   const hasContent = msg.content.length > 0;
 
@@ -240,7 +269,7 @@ function SubagentMessageRow({ msg }: { msg: PiAgentMessage }) {
         {hasTools && (
           <div className="flex flex-col gap-0.5">
             {msg.toolCalls!.map((tc, i) => (
-              <ToolChip key={i} tc={tc} index={i} />
+              <ToolChip key={i} tc={tc} sessionId={sessionId} />
             ))}
           </div>
         )}
@@ -265,9 +294,10 @@ function SubagentMessageRow({ msg }: { msg: PiAgentMessage }) {
 
 interface PiMessageBubbleProps {
   message: PiAgentMessage;
+  sessionId?: string;
 }
 
-export function PiMessageBubble({ message }: PiMessageBubbleProps) {
+export function PiMessageBubble({ message, sessionId }: PiMessageBubbleProps) {
   const isUser   = message.role === "user";
   const isError  = message.role === "error";
   const isSystem = message.role === "system";
@@ -335,7 +365,7 @@ export function PiMessageBubble({ message }: PiMessageBubbleProps) {
         {hasTools && (
           <div className="flex flex-col gap-0.5">
             {message.toolCalls!.map((tc, i) => (
-              <ToolChip key={i} tc={tc} index={i} />
+              <ToolChip key={i} tc={tc} sessionId={sessionId} />
             ))}
           </div>
         )}

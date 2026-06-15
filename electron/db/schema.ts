@@ -368,6 +368,42 @@ const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_pi_messages_session ON pi_agent_messages(session_id);
     `);
   },
+
+  // v16: Local semantic codebase indexing tables
+  (db) => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS codebase_files (
+        id          TEXT PRIMARY KEY,
+        root_path   TEXT NOT NULL,
+        file_path   TEXT NOT NULL UNIQUE,
+        hash        TEXT NOT NULL,
+        indexed_at  TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS codebase_symbols (
+        id          TEXT PRIMARY KEY,
+        file_id     TEXT NOT NULL REFERENCES codebase_files(id) ON DELETE CASCADE,
+        name        TEXT NOT NULL,
+        kind        TEXT NOT NULL,
+        line        INTEGER NOT NULL,
+        signature   TEXT NOT NULL,
+        docstring   TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS codebase_relations (
+        source_id   TEXT NOT NULL REFERENCES codebase_symbols(id) ON DELETE CASCADE,
+        target_name TEXT NOT NULL,
+        type        TEXT NOT NULL,
+        PRIMARY KEY (source_id, target_name, type)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_codebase_files_root_path ON codebase_files(root_path);
+      CREATE INDEX IF NOT EXISTS idx_codebase_symbols_file_id ON codebase_symbols(file_id);
+      CREATE INDEX IF NOT EXISTS idx_codebase_symbols_name ON codebase_symbols(name);
+      CREATE INDEX IF NOT EXISTS idx_codebase_relations_source_id ON codebase_relations(source_id);
+      CREATE INDEX IF NOT EXISTS idx_codebase_relations_target_name ON codebase_relations(target_name);
+    `);
+  },
 ];
 
 export function applySchema(db: Database.Database): void {

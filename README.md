@@ -38,7 +38,7 @@ Cairn is a desktop app (Electron + Next.js) that combines markdown notes with a 
 - **Idea Flow** — Freeform node canvas per project (`⌘4`): ideas, note/task refs, groups, URLs, AI summaries — connected with labelled edges
 - **Live dashboards** — AI-generated interactive HTML dashboards with a live `window.cairn.query()` data bridge; inline "Fix with AI" on runtime errors; editable via built-in CodeMirror overlay
 - **MCP server** — Exposes your workspace to external AI agents (OpenCode, Claude Desktop, etc.) via the Model Context Protocol
-- **Cairn Agent** — Native coding agent (`⌘5`) with board and notes integration: moves tasks, writes session notes, captures discovered work; supports subagents for deep sub-tasks; Plan Mode writes a PRD note before coding; automatic retry on transient API errors; LLM-based context compaction for long sessions; context usage ring; works with any OpenAI-compatible endpoint
+- **Cairn Agent** — Native coding agent (`⌘5`) with board and notes integration: moves tasks, writes session notes, captures discovered work; supports subagents for deep sub-tasks; Plan / Execute mode toggle; interactive tool confirmations with mobile-desktop sync; automatic retry on transient API errors; LLM-based context compaction for long sessions; context usage ring; works with any OpenAI-compatible endpoint
 - **Agent workspace** — Three-pane view (`⌘5`) for running external AI coding agents (Claude Code, OpenCode, Aider, or any CLI) connected to project tasks; file tree, multi-file CodeMirror 6 editor, xterm.js terminal, and git diff viewer
 - **Knowledge Graph** — Workspace-wide graph of every note, card, project, and tag; Force-directed and Radial tree layouts; auto-discovered relationships (`⌘6`)
 - **Insights** — Analytics view: Ridgeline joy plot, Beeswarm, Bullet health bars, Sankey pipeline flow, Timeline, Matrix heatmap, Table (`⌘7`)
@@ -180,7 +180,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 ### Available MCP tools
 
 <details>
-<summary>View all 32 tools</summary>
+<summary>View all 37 tools</summary>
 
 **Context**
 
@@ -253,6 +253,16 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 | Tool | Category | Description |
 |------|----------|-------------|
 | `create_tag` | write | Create a workspace tag with a name and hex colour |
+
+**Codebase**
+
+| Tool | Category | Description |
+|------|----------|-------------|
+| `codebase_reindex` | write | Scan and semantic-index a codebase folder. Updates the SQLite cache of file paths, classes, functions, methods, docstrings, and call dependencies |
+| `codebase_search_symbols` | read | Search for classes, functions, methods, interfaces, or structs by name or docstring query. Optional `folder` and `limit` parameters |
+| `codebase_get_symbol_definition` | read | Lookup the definition signature, line numbers, and docstring of a symbol by its exact name |
+| `codebase_get_references` | read | Find incoming references and outgoing dependencies (call graph) for a given symbol name |
+| `codebase_get_file_symbols` | read | List all classes, functions, methods, interfaces, or structs defined in a specific file path |
 
 </details>
 

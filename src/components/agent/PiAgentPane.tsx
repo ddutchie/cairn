@@ -109,6 +109,7 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
     completePiSubagent,
     stepPiSubagent,
     setPiMode,
+    setPiToolConfirmRequired,
     setView,
     agentConfig,
     projects,
@@ -131,6 +132,7 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
     completePiSubagent:        s.completePiSubagent,
     stepPiSubagent:            s.stepPiSubagent,
     setPiMode:                 s.setPiMode,
+    setPiToolConfirmRequired:  s.setPiToolConfirmRequired,
     setView:                   s.setView,
     agentConfig:               s.agentConfig,
     projects:                  s.projects,
@@ -365,6 +367,11 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
       setPendingQuestions(e.questions);
     });
 
+    const unsubToolConfirmRequired = electron.piAgent.onToolConfirmRequired((e) => {
+      if (e.sessionId !== sessionId) return;
+      setPiToolConfirmRequired(sessionId, e.callId, true);
+    });
+
     // Live plan note content updates — keep task list in sync as agent patches the PRD
     const unsubNoteUpdated = electron.piAgent.onNoteUpdated((e) => {
       if (e.sessionId !== sessionId) return;
@@ -422,6 +429,7 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
       unsubPlanNote();
       unsubModeChange();
       unsubAskQuestions();
+      unsubToolConfirmRequired();
       unsubNoteUpdated();
       unsubRetry();
       unsubCompact();
@@ -576,15 +584,23 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
 
         {/* Mode badge */}
         {session.mode === "plan" ? (
-          <span className="flex items-center gap-1 text-[0.643rem] font-semibold px-1.5 py-0.5 rounded-full bg-[color-mix(in_srgb,var(--warning,#f59e0b)_15%,transparent)] text-[var(--warning,#f59e0b)]">
+          <button
+            disabled={isLoading}
+            onClick={() => window.electron?.piAgent.setMode(session.sessionId, "execute")}
+            className="flex items-center gap-1 text-[0.643rem] font-semibold px-1.5 py-0.5 rounded-full bg-[color-mix(in_srgb,var(--warning,#f59e0b)_15%,transparent)] text-[var(--warning,#f59e0b)] hover:bg-[color-mix(in_srgb,var(--warning,#f59e0b)_25%,transparent)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
             <MapIcon size={9} />
             PLAN
-          </span>
+          </button>
         ) : session.mode === "execute" ? (
-          <span className="flex items-center gap-1 text-[0.643rem] font-semibold px-1.5 py-0.5 rounded-full bg-[var(--accent-dim)] text-[var(--accent)]">
+          <button
+            disabled={isLoading}
+            onClick={() => window.electron?.piAgent.setMode(session.sessionId, "plan")}
+            className="flex items-center gap-1 text-[0.643rem] font-semibold px-1.5 py-0.5 rounded-full bg-[var(--accent-dim)] text-[var(--accent)] hover:bg-[color-mix(in_srgb,var(--accent)_20%,transparent)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
             <Zap size={9} />
             EXECUTE
-          </span>
+          </button>
         ) : null}
 
         {/* PRD note chip — shown when plan note exists */}
@@ -647,7 +663,7 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
           </div>
         )}
         {messages.map((msg) => (
-          <PiMessageBubble key={msg.id} message={msg} />
+          <PiMessageBubble key={msg.id} message={msg} sessionId={session.sessionId} />
         ))}
         {pendingQuestions && (
           <QuestionForm

@@ -51,6 +51,8 @@ export interface AgentConfig {
   temperature: number;
   /** Context window size in tokens. Used to render the context usage ring. */
   contextLimit: number;
+  /** Automatically approve tool execution without prompt. */
+  autoApprove: boolean;
 }
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
