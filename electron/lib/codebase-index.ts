@@ -39,10 +39,10 @@ export interface ExtractedSymbol {
   docstring: string | null;
 }
 
-export function walkDir(dir: string, fileList: string[] = []): string[] {
+export async function walkDir(dir: string, fileList: string[] = []): Promise<string[]> {
   let files: string[];
   try {
-    files = fs.readdirSync(dir);
+    files = await fs.promises.readdir(dir);
   } catch {
     return fileList;
   }
@@ -51,12 +51,12 @@ export function walkDir(dir: string, fileList: string[] = []): string[] {
     const filePath = path.join(dir, file);
     let stat: fs.Stats;
     try {
-      stat = fs.statSync(filePath);
+      stat = await fs.promises.stat(filePath);
     } catch {
       continue;
     }
     if (stat.isDirectory()) {
-      walkDir(filePath, fileList);
+      await walkDir(filePath, fileList);
     } else if (stat.isFile()) {
       const ext = path.extname(file).toLowerCase();
       if (SUPPORTED_EXTENSIONS.has(ext)) {
@@ -69,8 +69,11 @@ export function walkDir(dir: string, fileList: string[] = []): string[] {
 
 export function parseFile(filePath: string): ExtractedSymbol[] {
   const content = fs.readFileSync(filePath, "utf-8");
+  return parseFileContent(content, path.extname(filePath).toLowerCase());
+}
+
+export function parseFileContent(content: string, ext: string): ExtractedSymbol[] {
   const lines = content.split(/\r?\n/);
-  const ext = path.extname(filePath).toLowerCase();
   
   const symbols: ExtractedSymbol[] = [];
   let commentBuffer: string[] = [];
@@ -359,28 +362,46 @@ export async function indexCodebase(db: Database.Database, rootPath: string): Pr
   const absoluteRoot = path.resolve(rootPath);
   
   // 1. Walk files
-  const files = walkDir(absoluteRoot);
+  const files = await walkDir(absoluteRoot);
   const filePathsSet = new Set(files);
   
   // 2. Fetch existing files in DB
   const dbFiles = q.getCodebaseFilesByRoot(db, absoluteRoot);
   const dbFilesMap = new Map(dbFiles.map(f => [f.file_path, f]));
   
-  // Clean up any files that no longer exist on disk
-  for (const dbFile of dbFiles) {
-    if (!filePathsSet.has(dbFile.file_path)) {
-      q.deleteCodebaseFile(db, dbFile.id);
+  // Clean up any files that no longer exist on disk (wrapped in transaction)
+  db.transaction(() => {
+    for (const dbFile of dbFiles) {
+      if (!filePathsSet.has(dbFile.file_path)) {
+        q.deleteCodebaseFile(db, dbFile.id);
+      }
     }
-  }
+  })();
   
   const parsedFileIds: string[] = [];
+  const filesToScan: string[] = [];
+  
+  const saveFileSymbolsTx = db.transaction((fileId: string, filePath: string, hash: string, symbols: ExtractedSymbol[]) => {
+    q.upsertCodebaseFile(db, { id: fileId, rootPath: absoluteRoot, filePath, hash });
+    q.clearCodebaseFileData(db, fileId);
+    for (const sym of symbols) {
+      q.insertCodebaseSymbol(db, {
+        id: newId(),
+        fileId,
+        name: sym.name,
+        kind: sym.kind,
+        line: sym.line,
+        signature: sym.signature,
+        docstring: sym.docstring
+      });
+    }
+  });
   
   // 3. Process each file on disk
-  let count = 0;
   for (const filePath of files) {
     let stat: fs.Stats;
     try {
-      stat = fs.statSync(filePath);
+      stat = await fs.promises.stat(filePath);
     } catch {
       continue;
     }
@@ -394,22 +415,12 @@ export async function indexCodebase(db: Database.Database, rootPath: string): Pr
       fileId = dbFile.id;
     } else {
       fileId = dbFile ? dbFile.id : newId();
-      q.upsertCodebaseFile(db, { id: fileId, rootPath: absoluteRoot, filePath, hash });
-      q.clearCodebaseFileData(db, fileId);
+      filesToScan.push(filePath);
       
       try {
-        const symbols = parseFile(filePath);
-        for (const sym of symbols) {
-          q.insertCodebaseSymbol(db, {
-            id: newId(),
-            fileId,
-            name: sym.name,
-            kind: sym.kind,
-            line: sym.line,
-            signature: sym.signature,
-            docstring: sym.docstring
-          });
-        }
+        const content = await fs.promises.readFile(filePath, "utf-8");
+        const symbols = parseFileContent(content, path.extname(filePath).toLowerCase());
+        saveFileSymbolsTx(fileId, filePath, hash, symbols);
       } catch (err) {
         console.error(`[codebase-indexer] Failed to parse file ${filePath}:`, err);
       }
@@ -417,11 +428,8 @@ export async function indexCodebase(db: Database.Database, rootPath: string): Pr
       parsedFileIds.push(fileId);
     }
     
-    // Yield to the event loop every 10 files to keep Electron main process responsive
-    count++;
-    if (count % 10 === 0) {
-      await new Promise(resolve => setImmediate(resolve));
-    }
+    // Yield to the event loop after every single file to guarantee Electron responsiveness
+    await new Promise(resolve => setImmediate(resolve));
   }
   
   // 4. Resolve Relations (Call Graph)
@@ -434,13 +442,16 @@ export async function indexCodebase(db: Database.Database, rootPath: string): Pr
   
   const knownSymbolNames = new Set(allSymbols.map(s => s.name));
   
-  // Scan all files that were parsed/updated
-  const filesToScan = files.filter(f => {
-    const dbFile = dbFilesMap.get(f);
-    return !dbFile || dbFile.hash !== `${fs.statSync(f).size}-${fs.statSync(f).mtimeMs}`;
+  const saveFileRelationsTx = db.transaction((relations: Array<{ sourceId: string; targetName: string }>) => {
+    for (const rel of relations) {
+      q.insertCodebaseRelation(db, {
+        sourceId: rel.sourceId,
+        targetName: rel.targetName,
+        type: "calls"
+      });
+    }
   });
   
-  let scanCount = 0;
   for (const filePath of filesToScan) {
     const dbFile = q.getCodebaseFileByPath(db, filePath);
     if (!dbFile) continue;
@@ -450,12 +461,13 @@ export async function indexCodebase(db: Database.Database, rootPath: string): Pr
     
     let content: string;
     try {
-      content = fs.readFileSync(filePath, "utf-8");
+      content = await fs.promises.readFile(filePath, "utf-8");
     } catch {
       continue;
     }
     
     const lines = content.split(/\r?\n/);
+    const fileRelations: Array<{ sourceId: string; targetName: string }> = [];
     
     for (let i = 0; i < lines.length; i++) {
       const lineNum = i + 1;
@@ -477,19 +489,23 @@ export async function indexCodebase(db: Database.Database, rootPath: string): Pr
         if (!token) continue;
         if (REJECTED_RELATION_TARGETS.has(token)) continue;
         if (knownSymbolNames.has(token) && token !== enclosingSymbol.name) {
-          q.insertCodebaseRelation(db, {
+          fileRelations.push({
             sourceId: enclosingSymbol.id,
-            targetName: token,
-            type: "calls"
+            targetName: token
           });
         }
       }
     }
     
-    // Yield to the event loop every 5 relation files scanned
-    scanCount++;
-    if (scanCount % 5 === 0) {
-      await new Promise(resolve => setImmediate(resolve));
+    if (fileRelations.length > 0) {
+      try {
+        saveFileRelationsTx(fileRelations);
+      } catch (err) {
+        console.error(`[codebase-indexer] Failed to save relations for ${filePath}:`, err);
+      }
     }
+    
+    // Yield to the event loop after every single relation file scanned
+    await new Promise(resolve => setImmediate(resolve));
   }
 }

@@ -23,7 +23,7 @@ afterEach(() => {
 
 describe("Codebase Semantic Indexer", () => {
   describe("Directory Walker", () => {
-    it("recursively finds files with supported extensions and ignores ignored directories", () => {
+    it("recursively finds files with supported extensions and ignores ignored directories", async () => {
       // Create subdirectories
       fs.mkdirSync(path.join(tmpDir, "src"), { recursive: true });
       fs.mkdirSync(path.join(tmpDir, "node_modules"), { recursive: true });
@@ -38,7 +38,7 @@ describe("Codebase Semantic Indexer", () => {
       fs.writeFileSync(path.join(tmpDir, ".venv", "dep.py"), "def library(): pass");
       fs.writeFileSync(path.join(tmpDir, "README.md"), "# Cairn");
 
-      const files = walkDir(tmpDir).map(f => path.relative(tmpDir, f));
+      const files = (await walkDir(tmpDir)).map(f => path.relative(tmpDir, f));
       expect(files).toContain(path.join("src", "index.ts"));
       expect(files).toContain(path.join("src", "utils.js"));
       expect(files).toContain("README.md");
