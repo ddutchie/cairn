@@ -16,7 +16,8 @@ const SUPPORTED_EXTENSIONS = new Set([
 const IGNORED_DIRS = new Set([
   "node_modules", ".git", ".next",
   "dist", "out", "build", "target",
-  "bin", "obj", ".idea", ".vscode"
+  "bin", "obj", ".idea", ".vscode",
+  ".venv", "venv", "env", ".env"
 ]);
 
 export interface ExtractedSymbol {

@@ -28,12 +28,14 @@ describe("Codebase Semantic Indexer", () => {
       fs.mkdirSync(path.join(tmpDir, "src"), { recursive: true });
       fs.mkdirSync(path.join(tmpDir, "node_modules"), { recursive: true });
       fs.mkdirSync(path.join(tmpDir, ".git"), { recursive: true });
+      fs.mkdirSync(path.join(tmpDir, ".venv"), { recursive: true });
 
       // Create files
       fs.writeFileSync(path.join(tmpDir, "src", "index.ts"), "const a = 1;");
       fs.writeFileSync(path.join(tmpDir, "src", "utils.js"), "const b = 2;");
       fs.writeFileSync(path.join(tmpDir, "node_modules", "package.ts"), "const c = 3;");
       fs.writeFileSync(path.join(tmpDir, ".git", "config.js"), "const d = 4;");
+      fs.writeFileSync(path.join(tmpDir, ".venv", "dep.py"), "def library(): pass");
       fs.writeFileSync(path.join(tmpDir, "README.md"), "# Cairn");
 
       const files = walkDir(tmpDir).map(f => path.relative(tmpDir, f));
@@ -42,6 +44,7 @@ describe("Codebase Semantic Indexer", () => {
       expect(files).toContain("README.md");
       expect(files).not.toContain(path.join("node_modules", "package.ts"));
       expect(files).not.toContain(path.join(".git", "config.js"));
+      expect(files).not.toContain(path.join(".venv", "dep.py"));
     });
   });
 

@@ -7,6 +7,7 @@ All notable changes to Cairn are documented in this file. This changelog is cond
 ### Fixes
 - **Asynchronous Codebase Indexing**: Converted the `codebase_reindex` tool and underlying scanner loops to run asynchronously, yielding to the Node event loop using `setImmediate` to prevent Electron main thread lockup.
 - **Detailed Indexer Progress Logging**: Added verbose console logs to report target paths, file count, and mapping checkpoints during reindexing.
+- **Virtual Environment Exclusions**: Added `.venv`, `venv`, `env`, and `.env` directories to the default codebase indexer exclusions list, filtering out third-party dependencies from symbol searches.
 
 ---
 
