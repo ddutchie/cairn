@@ -9,165 +9,27 @@
 
 import type Database from "better-sqlite3";
 import { ts, newId } from "./utils";
+import {
+  j,
+  p,
+  toWorkspace,
+  toProject,
+  toCodingAgent,
+  toNote,
+  toColumn,
+  toCard,
+  toTag,
+  toChatThread,
+  toChatMessage,
+  toMcpNotification,
+  toIdeaFlow,
+  toIdeaFlowNode,
+  toIdeaFlowEdge,
+  type McpNotification
+} from "../shared/db-mappers";
 
 /** Re-export for callers that only need a new ID without importing utils directly. */
 export { newId as generateId };
-
-// ── tiny helpers ──────────────────────────────
-
-function j(v: unknown): string {
-  return JSON.stringify(v ?? []);
-}
-function p(v: string | null | undefined): unknown[] {
-  if (!v) return [];
-  try { return JSON.parse(v); } catch { return []; }
-}
-function b(v: number | null | undefined): boolean {
-  return v === 1;
-}
-
-// ── Row → domain type mappers ─────────────────
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function toWorkspace(row: any) {
-  return {
-    id: row.id as string,
-    name: row.name as string,
-    description: row.description as string | undefined,
-    icon: row.icon as string | undefined,
-    createdAt: row.created_at as string,
-    updatedAt: row.updated_at as string,
-    archivedAt: row.archived_at as string | undefined,
-  };
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function toProject(row: any) {
-  return {
-    id: row.id as string,
-    workspaceId: row.workspace_id as string,
-    name: row.name as string,
-    description: row.description as string | undefined,
-    icon: row.icon as string | undefined,
-    status: row.status as string,
-    priority: row.priority as string,
-    dueDate: row.due_date as string | undefined,
-    tagIds: p(row.tag_ids) as string[],
-    codeDirectory: row.code_directory as string | null ?? null,
-    createdAt: row.created_at as string,
-    updatedAt: row.updated_at as string,
-    archivedAt: row.archived_at as string | undefined,
-  };
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function toCodingAgent(row: any) {
-  return {
-    id: row.id as string,
-    name: row.name as string,
-    binaryPath: row.binary_path as string,
-    args: row.args as string,
-    isDefault: row.is_default === 1,
-    createdAt: row.created_at as string,
-    updatedAt: row.updated_at as string,
-  };
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function toNote(row: any) {
-  return {
-    id: row.id as string,
-    projectId: row.project_id as string,
-    workspaceId: row.workspace_id as string,
-    title: row.title as string,
-    content: (row.content ?? "") as string,
-    contentText: (row.content_text ?? "") as string,
-    tagIds: p(row.tag_ids) as string[],
-    linkedNoteIds: p(row.linked_note_ids) as string[],
-    linkedCardIds: p(row.linked_card_ids) as string[],
-    isPinned: b(row.is_pinned),
-    type: (row.type ?? "note") as "note" | "dashboard",
-    folder: (row.folder ?? "") as string,
-    createdAt: row.created_at as string,
-    updatedAt: row.updated_at as string,
-    archivedAt: row.archived_at as string | undefined,
-    version: (row.version ?? 0) as number,
-  };
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function toColumn(row: any) {
-  return {
-    id: row.id as string,
-    projectId: row.project_id as string,
-    workspaceId: row.workspace_id as string,
-    name: row.name as string,
-    type: row.type as string,
-    order: row.order as number,
-    cardLimit: row.card_limit as number | undefined,
-    createdAt: row.created_at as string,
-    updatedAt: row.updated_at as string,
-  };
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function toCard(row: any) {
-  return {
-    id: row.id as string,
-    columnId: row.column_id as string,
-    projectId: row.project_id as string,
-    workspaceId: row.workspace_id as string,
-    title: row.title as string,
-    description: row.description as string | undefined,
-    tagIds: p(row.tag_ids) as string[],
-    priority: row.priority as string,
-    dueDate: row.due_date as string | undefined,
-    linkedNoteIds: p(row.linked_note_ids) as string[],
-    blockedByIds: p(row.blocked_by_ids) as string[],
-    order: row.order as number,
-    assignee: row.assignee as string | undefined,
-    createdAt: row.created_at as string,
-    updatedAt: row.updated_at as string,
-    archivedAt: row.archived_at as string | undefined,
-    version: (row.version ?? 0) as number,
-  };
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function toTag(row: any) {
-  return {
-    id: row.id as string,
-    workspaceId: row.workspace_id as string,
-    name: row.name as string,
-    color: row.color as string,
-  };
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function toChatThread(row: any) {
-  return {
-    id: row.id as string,
-    scope: row.scope as string,
-    workspaceId: row.workspace_id as string,
-    projectId: row.project_id as string | undefined,
-    title: row.title as string | undefined,
-    createdAt: row.created_at as string,
-    updatedAt: row.updated_at as string,
-  };
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function toChatMessage(row: any) {
-  return {
-    id: row.id as string,
-    threadId: row.thread_id as string,
-    role: row.role as string,
-    content: row.content as string,
-    contextRefs: row.context_refs ? JSON.parse(row.context_refs) : undefined,
-    toolCalls: row.tool_calls ? JSON.parse(row.tool_calls) : undefined,
-    createdAt: row.created_at as string,
-  };
-}
 
 // ── Workspace ─────────────────────────────────
 
@@ -664,27 +526,6 @@ export function addChatMessage(db: Database.Database, m: {
 
 // ── MCP Notifications ─────────────────────────
 
-export interface McpNotification {
-  id: string;
-  tool: string;
-  title: string;
-  body: string;
-  read: boolean;
-  createdAt: string;
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function toMcpNotification(row: any): McpNotification {
-  return {
-    id: row.id as string,
-    tool: row.tool as string,
-    title: row.title as string,
-    body: row.body as string,
-    read: b(row.read),
-    createdAt: row.created_at as string,
-  };
-}
-
 export function getUnreadMcpNotifications(db: Database.Database): McpNotification[] {
   return db.prepare("SELECT * FROM mcp_notifications WHERE read = 0 ORDER BY created_at ASC").all().map(toMcpNotification);
 }
@@ -712,45 +553,6 @@ export function insertMcpNotification(db: Database.Database, n: { id: string; to
 }
 
 // ── Idea Flow ─────────────────────────────────
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function toIdeaFlow(row: any) {
-  return {
-    id: row.id as string,
-    projectId: row.project_id as string,
-    createdAt: row.created_at as string,
-    updatedAt: row.updated_at as string,
-  };
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function toIdeaFlowNode(row: any) {
-  return {
-    id: row.id as string,
-    flowId: row.flow_id as string,
-    type: row.type as string,
-    x: row.x as number,
-    y: row.y as number,
-    width: row.width as number | undefined,
-    height: row.height as number | undefined,
-    parentId: row.parent_id as string | undefined,
-    data: (() => { try { return JSON.parse(row.data); } catch { return {}; } })(),
-    createdAt: row.created_at as string,
-    updatedAt: row.updated_at as string,
-  };
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function toIdeaFlowEdge(row: any) {
-  return {
-    id: row.id as string,
-    flowId: row.flow_id as string,
-    sourceNodeId: row.source_node_id as string,
-    targetNodeId: row.target_node_id as string,
-    label: row.label as string | undefined,
-    createdAt: row.created_at as string,
-  };
-}
 
 /** Get or lazily create the single IdeaFlow for a project. */
 export function getOrCreateFlow(db: Database.Database, projectId: string) {

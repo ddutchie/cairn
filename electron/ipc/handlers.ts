@@ -26,7 +26,7 @@ import { registerChatHandler } from "./chat";
 import { writeNoteFile, deleteNoteFile, deleteProjectNotesDir, stripMarkdown, findNoteFilePath } from "../notes-files";
 import { checkMigrations, runMigration } from "../migrations";
 import { suppressNextChange, pauseFileWatcher, resumeFileWatcher } from "../file-watcher";
-import { buildContextResponse } from "../lib/context";
+import { executeTool as executeMcpTool } from "../mcp/tools";
 import { generatePrd } from "../lib/prd";
 import { isLocalEndpoint, callLLM, normaliseBaseUrl } from "../lib/llm";
 import { executeReadTool } from "../lib/read-tools";
@@ -87,7 +87,7 @@ export function registerIpcHandlers(ctx: DbContext): void {
   registerIpcHandle("db:mcpQuery", (_e, { tool, args }: { tool: string; args: Record<string, any> }) => {
     return handle(() => {
       if (tool === "get_cairn_context") {
-        return buildContextResponse(ctx.db);
+        return executeMcpTool(ctx.db, ctx.workspacePath, tool, args);
       }
       const snap = q.getFullSnapshot(ctx.db);
       const res = executeReadTool(ctx.db, snap, tool, args);

@@ -116,8 +116,37 @@ export function get_knowledge_graph(db: Database.Database, args: Record<string, 
 export function get_neighbors(db: Database.Database, args: Record<string, any>) {
   const { workspaceId, nodeId, depth = 1 } = args;
   if (!workspaceId || !nodeId) return { error: "workspaceId and nodeId are required" };
-  // Build full graph then BFS
-  const fullResult = get_knowledge_graph(db, { workspaceId, includeAuto: true });
+
+  // Determine relevant projects for the center node to avoid loading the entire workspace
+  let projectIds: string[] | undefined = undefined;
+
+  const isProject = db.prepare("SELECT 1 FROM projects WHERE id = ? AND archived_at IS NULL").get(nodeId);
+  if (isProject) {
+    projectIds = [nodeId];
+  } else {
+    const noteRow = db.prepare("SELECT project_id FROM notes WHERE id = ? AND archived_at IS NULL").get(nodeId) as { project_id: string } | undefined;
+    if (noteRow) {
+      projectIds = [noteRow.project_id];
+    } else {
+      const cardRow = db.prepare("SELECT project_id FROM task_cards WHERE id = ? AND archived_at IS NULL").get(nodeId) as { project_id: string } | undefined;
+      if (cardRow) {
+        projectIds = [cardRow.project_id];
+      } else {
+        // Tag ID: find projects containing notes or cards tagged with it
+        const tagProj = new Set<string>();
+        const taggedNotes = db.prepare("SELECT DISTINCT project_id FROM notes WHERE tag_ids LIKE ? AND archived_at IS NULL").all(`%"${nodeId}"%`) as { project_id: string }[];
+        for (const n of taggedNotes) tagProj.add(n.project_id);
+        const taggedCards = db.prepare("SELECT DISTINCT project_id FROM task_cards WHERE tag_ids LIKE ? AND archived_at IS NULL").all(`%"${nodeId}"%`) as { project_id: string }[];
+        for (const c of taggedCards) tagProj.add(c.project_id);
+        if (tagProj.size > 0) {
+          projectIds = Array.from(tagProj);
+        }
+      }
+    }
+  }
+
+  // Build project-scoped graph then BFS
+  const fullResult = get_knowledge_graph(db, { workspaceId, includeAuto: true, projectIds });
   const graph = fullResult as { nodes: Record<string, unknown>[]; edges: Record<string, unknown>[]; error?: string };
   if (graph.error || !graph.nodes) return { center: null, neighbours: [] };
 

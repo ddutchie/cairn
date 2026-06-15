@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import Database from "better-sqlite3";
 import { newId, ts } from "../../db/utils";
+import { executeSearchTasks } from "../../shared/read-tools-pure";
 import {
   Snapshot,
   j,
@@ -25,25 +26,7 @@ export function get_task(db: Database.Database, snap: Snapshot, args: Record<str
 }
 
 export function search_tasks(db: Database.Database, snap: Snapshot, args: Record<string, any>) {
-  const { query, projectId, columnType, limit = 10 } = args;
-  const qr = String(query).toLowerCase();
-  return snap.cards
-    .filter((c) => {
-      if (c.archivedAt) return false;
-      if (projectId && c.projectId !== projectId) return false;
-      if (columnType) {
-        const col = snap.columns.find((col) => col.id === c.columnId);
-        if (col?.type !== columnType) return false;
-      }
-      return c.title.toLowerCase().includes(qr) || (c.description ?? "").toLowerCase().includes(qr);
-    })
-    .slice(0, limit)
-    .map((c) => {
-      const col = snap.columns.find((col) => col.id === c.columnId);
-      return { id: c.id, title: c.title, description: c.description, columnId: c.columnId,
-        columnName: col?.name ?? "Unknown", columnType: col?.type ?? "custom",
-        priority: c.priority, dueDate: c.dueDate, projectId: c.projectId };
-    });
+  return executeSearchTasks(snap, args);
 }
 
 export function create_task(db: Database.Database, snap: Snapshot, args: Record<string, any>) {
@@ -68,7 +51,8 @@ export function create_task(db: Database.Database, snap: Snapshot, args: Record<
   `).run(cardId, columnId, projectId, col.workspaceId, title, description ?? null, j(resolvedTagIds), priority, dueDate ?? null, order, now, now);
   const taskProject = snap.projects.find((pr) => pr.id === projectId);
   insertNotification(db, "create_task", "Task created", `"${title}" added to ${taskProject?.name ?? projectId}`);
-  return { id: cardId, title, columnId, createdAt: now };
+  const createdRaw = db.prepare("SELECT * FROM task_cards WHERE id = ?").get(cardId);
+  return toCard(createdRaw);
 }
 
 export function bulk_update_task_status(db: Database.Database, snap: Snapshot, args: Record<string, any>) {
@@ -211,17 +195,19 @@ export function update_task(db: Database.Database, snap: Snapshot, args: Record<
     const now = ts();
     db.prepare("UPDATE task_cards SET archived_at = ?, updated_at = ?, version = version + 1 WHERE id = ?").run(now, now, cardId);
     insertNotification(db, "update_task", "Task archived", `"${card.title}" was archived`);
-    return { ok: true, cardId, archivedAt: now };
+    const updatedRaw = db.prepare("SELECT * FROM task_cards WHERE id = ?").get(cardId);
+    return toCard(updatedRaw);
   }
   if (archived === false) {
     // Must query DB directly — archived cards are filtered from snap
-    const row = db.prepare("SELECT * FROM task_cards WHERE id = ?").get(cardId) as Record<string, unknown> | undefined;
+    const row = db.prepare("SELECT * FROM task_cards WHERE id = ?").get(cardId);
     if (!row) return { error: "Task not found" };
     if (!row.archived_at) return { error: "Task is not archived" };
     const now = ts();
     db.prepare("UPDATE task_cards SET archived_at = NULL, updated_at = ?, version = version + 1 WHERE id = ?").run(now, cardId);
     insertNotification(db, "update_task", "Task restored", `"${row.title as string}" was restored`);
-    return { ok: true, cardId, title: row.title };
+    const restoredRaw = db.prepare("SELECT * FROM task_cards WHERE id = ?").get(cardId);
+    return toCard(restoredRaw);
   }
 
   // ── block / unblock ────────────────────────────────────────────────────
@@ -253,7 +239,13 @@ export function update_task(db: Database.Database, snap: Snapshot, args: Record<
       db.prepare("UPDATE task_cards SET blocked_by_ids = ?, updated_at = ?, version = version + 1 WHERE id = ?").run(j(ids), nowB, cardId);
     }
     insertNotification(db, "update_task", "Task blocked", `"${card.title}" is now blocked by "${blocker.title}"`);
-    return { cardId, blockerCardId: blockedBy, blocked: true };
+    const updatedRaw = db.prepare("SELECT * FROM task_cards WHERE id = ?").get(cardId);
+    return {
+      ...toCard(updatedRaw),
+      cardId,
+      blockerCardId: blockedBy,
+      blocked: true,
+    };
   }
   if (unblockFrom !== undefined) {
     const nowU = ts();
@@ -262,7 +254,13 @@ export function update_task(db: Database.Database, snap: Snapshot, args: Record<
     const idsU: string[] = j2(rowU.blocked_by_ids);
     const updatedIds = idsU.filter((id) => id !== unblockFrom);
     db.prepare("UPDATE task_cards SET blocked_by_ids = ?, updated_at = ?, version = version + 1 WHERE id = ?").run(j(updatedIds), nowU, cardId);
-    return { cardId, blockerCardId: unblockFrom, unblocked: true };
+    const updatedRaw = db.prepare("SELECT * FROM task_cards WHERE id = ?").get(cardId);
+    return {
+      ...toCard(updatedRaw),
+      cardId,
+      blockerCardId: unblockFrom,
+      unblocked: true,
+    };
   }
 
   // ── field update ───────────────────────────────────────────────────────
@@ -318,6 +316,6 @@ export function update_task(db: Database.Database, snap: Snapshot, args: Record<
       }
     }
   }
-  const updated = db.prepare("SELECT * FROM task_cards WHERE id = ?").get(cardId) as Record<string, unknown> | undefined;
-  return updated ?? { error: "Task not found after update" };
+  const updatedRaw = db.prepare("SELECT * FROM task_cards WHERE id = ?").get(cardId);
+  return updatedRaw ? toCard(updatedRaw) : { error: "Task not found after update" };
 }

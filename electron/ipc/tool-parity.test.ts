@@ -275,23 +275,19 @@ describe("get_project_context_pack — MCP vs chat parity", () => {
   });
 });
 
-// ── Known intentional divergences (documented) ───────────────────────────────
+// ── Parity for previously divergent tools ────────────────────────────────────
 
-describe("known intentional divergences between MCP and chat", () => {
-  it("upsert_project (create): MCP returns { projectId, name, columns }, chat returns { project, columns }", async () => {
+describe("previously divergent tools — MCP vs chat parity", () => {
+  it("upsert_project (create) returns identical shapes", async () => {
     const db = makeDb(); const wp = makeTmpDir();
     seed(db);
     const [mcp, chat] = await both(db, wp, "upsert_project", { workspaceId: "ws1", name: "New Project" });
-    // MCP uses projectId key
-    expect(mcp).toHaveProperty("projectId");
-    expect(mcp).not.toHaveProperty("project");
-    // Chat wraps the full project object
-    expect(chat).toHaveProperty("project");
-    expect(chat).not.toHaveProperty("projectId");
+    const mk = Object.keys(mcp as object).sort();
+    const ck = Object.keys(chat as object).sort();
+    expect(mk).toEqual(ck);
   });
 
-  it("update_task archived=false (restore): MCP returns { ok, cardId, title }, chat returns full card object", async () => {
-    // Use separate DBs so MCP restore does not clear archived_at before chat sees it
+  it("update_task archived=false (restore) returns identical shapes", async () => {
     const dbMcp = makeDb(); const wp = makeTmpDir();
     seed(dbMcp);
     dbMcp.prepare("UPDATE task_cards SET archived_at = datetime('now') WHERE id = 'c1'").run();
@@ -302,12 +298,8 @@ describe("known intentional divergences between MCP and chat", () => {
     dbChat.prepare("UPDATE task_cards SET archived_at = datetime('now') WHERE id = 'c1'").run();
     const chat = await chatExec(dbChat, chatReq, wp2, llmCfg, "update_task", { cardId: "c1", archived: false } as never, noEmit);
 
-    // MCP returns a lightweight { ok, cardId, title } shape
-    expect(mcp).toHaveProperty("ok", true);
-    expect(mcp).toHaveProperty("cardId");
-    expect(mcp).not.toHaveProperty("column_id");
-    // Chat returns the full card object from q.restoreCard()
-    expect(chat).toHaveProperty("id");
-    expect(chat).not.toHaveProperty("ok");
+    const mk = Object.keys(mcp as object).sort();
+    const ck = Object.keys(chat as object).sort();
+    expect(mk).toEqual(ck);
   });
 });

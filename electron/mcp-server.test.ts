@@ -451,6 +451,35 @@ describe("get_project_context_pack", () => {
     expect(pinned[0].content).toContain("Design");
   });
 
+  it("pinnedNotes content is truncated when it exceeds 1000 characters, but get_note returns full content", () => {
+    const longContent = "A".repeat(1200);
+    db.prepare("UPDATE notes SET content = ? WHERE id = 'n1'").run(longContent);
+    const result = executeTool(db, wp, "get_project_context_pack", { projectId: "proj1" }) as Record<string, unknown>;
+    const pinned = result.pinnedNotes as Array<{ id: string; content: string }>;
+    expect(pinned[0].content).toHaveLength(1000 + "\n\n... (content truncated, use get_note to read full note)".length);
+    expect(pinned[0].content).toContain("content truncated");
+
+    const note = executeTool(db, wp, "get_note", { noteId: "n1" }) as Record<string, unknown>;
+    expect(note.content).toBe(longContent);
+  });
+
+  it("openTasks description is truncated when it exceeds 400 characters, but get_task and search_tasks return truncated/untruncated properly", () => {
+    const longDescription = "B".repeat(500);
+    db.prepare("UPDATE task_cards SET description = ? WHERE id = 'c1'").run(longDescription);
+    const result = executeTool(db, wp, "get_project_context_pack", { projectId: "proj1" }) as Record<string, unknown>;
+    const openTasks = result.openTasks as Array<{ tasks: Array<{ id: string; description: string }> }>;
+    const taskInPack = openTasks[0].tasks[0];
+    expect(taskInPack.description).toHaveLength(400 + "\n... (description truncated, use get_task to read full description)".length);
+    expect(taskInPack.description).toContain("description truncated");
+
+    const searchRes = executeTool(db, wp, "search_tasks", { query: "Open task", projectId: "proj1" }) as Array<{ description: string }>;
+    expect(searchRes[0].description).toHaveLength(400 + "\n... (description truncated, use get_task to read full description)".length);
+    expect(searchRes[0].description).toContain("description truncated");
+
+    const task = executeTool(db, wp, "get_task", { cardId: "c1" }) as Record<string, unknown>;
+    expect(task.description).toBe(longDescription);
+  });
+
   it("returns error for unknown project", () => {
     const result = executeTool(db, wp, "get_project_context_pack", { projectId: "nope" }) as Record<string, unknown>;
     expect(result).toHaveProperty("error");
@@ -680,9 +709,9 @@ describe("upsert_project", () => {
 
   it("creates project with default columns when projectId is omitted", () => {
     createWorkspace(db, { id: "ws1", name: "WS" });
-    const result = executeTool(db, wp, "upsert_project", { workspaceId: "ws1", name: "New Project" }) as Record<string, unknown>;
-    expect(result).toHaveProperty("projectId");
-    expect(result.name).toBe("New Project");
+    const result = executeTool(db, wp, "upsert_project", { workspaceId: "ws1", name: "New Project" }) as { project: { id: string; name: string }; columns: unknown[] };
+    expect(result.project).toHaveProperty("id");
+    expect(result.project.name).toBe("New Project");
     const columns = result.columns as unknown[];
     expect(columns.length).toBeGreaterThan(0);
   });
@@ -694,10 +723,10 @@ describe("upsert_project", () => {
 
   it("updates existing project when projectId is provided", () => {
     createWorkspace(db, { id: "ws1", name: "WS" });
-    const created = executeTool(db, wp, "upsert_project", { workspaceId: "ws1", name: "Original" }) as Record<string, unknown>;
-    const pid = created.projectId as string;
-    const updated = executeTool(db, wp, "upsert_project", { projectId: pid, name: "Renamed" }) as Record<string, unknown>;
-    expect((updated as Record<string, unknown>).name).toBe("Renamed");
+    const created = executeTool(db, wp, "upsert_project", { workspaceId: "ws1", name: "Original" }) as { project: { id: string; name: string }; columns: unknown[] };
+    const pid = created.project.id as string;
+    const updated = executeTool(db, wp, "upsert_project", { projectId: pid, name: "Renamed" }) as { id: string; name: string };
+    expect(updated.name).toBe("Renamed");
   });
 
   it("returns error for unknown projectId on update", () => {

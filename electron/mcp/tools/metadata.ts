@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import Database from "better-sqlite3";
 import { Snapshot } from "../db";
+import { executeGetProjectContextPack } from "../../shared/read-tools-pure";
 
 export const DASHBOARD_CONSTANTS = {
   description: "window.cairn API for Cairn dashboards (rendered in a sandboxed iframe).",
@@ -80,41 +81,5 @@ export function getCairnContext(db: Database.Database, snap: Snapshot, _args: Re
 }
 
 export function getProjectContextPack(db: Database.Database, snap: Snapshot, args: Record<string, any>) {
-  const project = snap.projects.find((p) => p.id === args.projectId);
-  if (!project) return { error: "Project not found" };
-  const columns = snap.columns
-    .filter((c) => c.projectId === project.id)
-    .sort((a, b) => a.order - b.order);
-  const notes = snap.notes.filter((n) => n.projectId === project.id && !n.archivedAt);
-  const pinnedNotes = notes
-    .filter((n) => n.isPinned)
-    .map((n) => ({ id: n.id, title: n.title, content: n.content }));
-  const openCards = columns
-    .filter((col) => col.type !== "done")
-    .map((col) => ({
-      columnName: col.name, columnType: col.type, columnId: col.id,
-      tasks: snap.cards
-        .filter((c) => c.columnId === col.id && !c.archivedAt)
-        .map((c) => ({ id: c.id, title: c.title, priority: c.priority, description: c.description ?? null })),
-    }))
-    .filter((col) => col.tasks.length > 0);
-  const recentActivity = [
-    ...notes.map((n) => ({ type: "note" as const, id: n.id, title: n.title, updatedAt: n.updatedAt })),
-    ...snap.cards
-      .filter((c) => c.projectId === project.id && !c.archivedAt)
-      .map((c) => ({ type: "card" as const, id: c.id, title: c.title, updatedAt: c.updatedAt })),
-  ]
-    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-    .slice(0, 10);
-  return {
-    project: {
-      id: project.id, name: project.name, description: project.description ?? null,
-      status: project.status, priority: project.priority,
-      columns: columns.map((c) => ({ id: c.id, name: c.name, type: c.type })),
-    },
-    noteCount: notes.length,
-    pinnedNotes,
-    openTasks: openCards,
-    recentActivity,
-  };
+  return executeGetProjectContextPack(snap, args);
 }

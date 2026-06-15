@@ -4,7 +4,7 @@ import fs from "fs";
 import Database from "better-sqlite3";
 import { newId, ts } from "../../db/utils";
 import { DEFAULT_COLUMNS } from "../../db/defaults";
-import { insertNotification, Snapshot } from "../db";
+import { insertNotification, Snapshot, toProject } from "../db";
 import { toSlug } from "../../shared/text-utils";
 
 export function upsert_project(db: Database.Database, snap: Snapshot, args: Record<string, any>) {
@@ -23,9 +23,11 @@ export function upsert_project(db: Database.Database, snap: Snapshot, args: Reco
         updated_at  = ?
       WHERE id = ?
     `).run(args.name ?? null, args.description ?? null, args.status ?? null, args.priority ?? null, args.icon ?? null, now, args.projectId);
-    const updated = db.prepare("SELECT * FROM projects WHERE id = ?").get(args.projectId) as Record<string, unknown> | undefined;
+    const updatedRaw = db.prepare("SELECT * FROM projects WHERE id = ?").get(args.projectId);
+    if (!updatedRaw) return { error: "Project not found after update" };
+    const updatedProject = toProject(updatedRaw);
     insertNotification(db, "upsert_project", "Project updated", `"${args.name ?? project.name}" was updated`);
-    return updated ?? { error: "Project not found after update" };
+    return updatedProject;
   } else {
     // ── create path ──────────────────────────────────────────────────────
     const workspace = snap.workspaces.find((w) => w.id === args.workspaceId);
@@ -45,7 +47,9 @@ export function upsert_project(db: Database.Database, snap: Snapshot, args: Reco
       return { id: colId, name: col.name, type: col.type };
     });
     insertNotification(db, "upsert_project", "Project created", `"${args.name}" was created`);
-    return { projectId, name: args.name, columns };
+    const createdRaw = db.prepare("SELECT * FROM projects WHERE id = ?").get(projectId);
+    const createdProject = toProject(createdRaw);
+    return { project: createdProject, columns };
   }
 }
 
