@@ -1037,3 +1037,203 @@ export function getLlmHistory(db: Database.Database, sessionId: string): LlmHist
     return row;
   });
 }
+
+// ── Codebase Semantic Indexing ─────────────────────────
+
+export function getCodebaseFileByPath(db: Database.Database, filePath: string) {
+  return db.prepare("SELECT * FROM codebase_files WHERE file_path = ?").get(filePath) as {
+    id: string;
+    root_path: string;
+    file_path: string;
+    hash: string;
+    indexed_at: string;
+  } | undefined;
+}
+
+export function upsertCodebaseFile(db: Database.Database, file: { id: string; rootPath: string; filePath: string; hash: string }) {
+  const now = ts();
+  db.prepare(`
+    INSERT INTO codebase_files (id, root_path, file_path, hash, indexed_at)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(file_path) DO UPDATE SET
+      hash = excluded.hash,
+      indexed_at = excluded.indexed_at
+  `).run(file.id, file.rootPath, file.filePath, file.hash, now);
+  return db.prepare("SELECT * FROM codebase_files WHERE id = ?").get(file.id) as {
+    id: string;
+    root_path: string;
+    file_path: string;
+    hash: string;
+    indexed_at: string;
+  };
+}
+
+export function clearCodebaseFileData(db: Database.Database, fileId: string) {
+  db.prepare("DELETE FROM codebase_symbols WHERE file_id = ?").run(fileId);
+}
+
+export function insertCodebaseSymbol(db: Database.Database, symbol: {
+  id: string;
+  fileId: string;
+  name: string;
+  kind: string;
+  line: number;
+  signature: string;
+  docstring: string | null;
+}) {
+  db.prepare(`
+    INSERT INTO codebase_symbols (id, file_id, name, kind, line, signature, docstring)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(symbol.id, symbol.fileId, symbol.name, symbol.kind, symbol.line, symbol.signature, symbol.docstring);
+}
+
+export function insertCodebaseRelation(db: Database.Database, relation: {
+  sourceId: string;
+  targetName: string;
+  type: string;
+}) {
+  db.prepare(`
+    INSERT OR IGNORE INTO codebase_relations (source_id, target_name, type)
+    VALUES (?, ?, ?)
+  `).run(relation.sourceId, relation.targetName, relation.type);
+}
+
+export function searchCodebaseSymbols(db: Database.Database, opts: { query: string; folder?: string; limit?: number }) {
+  const q = opts.query.toLowerCase();
+  const limit = opts.limit ?? 50;
+  
+  let sql = `
+    SELECT s.*, f.file_path, f.root_path
+    FROM codebase_symbols s
+    JOIN codebase_files f ON s.file_id = f.id
+    WHERE (lower(s.name) LIKE ? OR lower(s.signature) LIKE ? OR lower(s.docstring) LIKE ?)
+  `;
+  const params: unknown[] = [`%${q}%`, `%${q}%`, `%${q}%`];
+  
+  if (opts.folder) {
+    sql += ` AND f.root_path = ?`;
+    params.push(opts.folder);
+  }
+  
+  sql += ` ORDER BY s.name LIMIT ?`;
+  params.push(limit);
+  
+  return db.prepare(sql).all(...params) as Array<{
+    id: string;
+    file_id: string;
+    name: string;
+    kind: string;
+    line: number;
+    signature: string;
+    docstring: string | null;
+    file_path: string;
+    root_path: string;
+  }>;
+}
+
+export function getCodebaseSymbolDefinition(db: Database.Database, name: string, folder?: string) {
+  let sql = `
+    SELECT s.*, f.file_path, f.root_path
+    FROM codebase_symbols s
+    JOIN codebase_files f ON s.file_id = f.id
+    WHERE s.name = ?
+  `;
+  const params: unknown[] = [name];
+  
+  if (folder) {
+    sql += ` AND f.root_path = ?`;
+    params.push(folder);
+  }
+  
+  return db.prepare(sql).all(...params) as Array<{
+    id: string;
+    file_id: string;
+    name: string;
+    kind: string;
+    line: number;
+    signature: string;
+    docstring: string | null;
+    file_path: string;
+    root_path: string;
+  }>;
+}
+
+export function getCodebaseRelations(db: Database.Database, name: string, folder?: string) {
+  let sql1 = `
+    SELECT r.type, r.target_name, s.name as source_name, f.file_path as source_file
+    FROM codebase_relations r
+    JOIN codebase_symbols s ON r.source_id = s.id
+    JOIN codebase_files f ON s.file_id = f.id
+    WHERE s.name = ?
+  `;
+  const params1: unknown[] = [name];
+  if (folder) {
+    sql1 += ` AND f.root_path = ?`;
+    params1.push(folder);
+  }
+  const outgoing = db.prepare(sql1).all(...params1) as Array<{
+    type: string;
+    target_name: string;
+    source_name: string;
+    source_file: string;
+  }>;
+
+  let sql2 = `
+    SELECT r.type, r.target_name, s.name as source_name, f.file_path as source_file
+    FROM codebase_relations r
+    JOIN codebase_symbols s ON r.source_id = s.id
+    JOIN codebase_files f ON s.file_id = f.id
+    WHERE r.target_name = ?
+  `;
+  const params2: unknown[] = [name];
+  if (folder) {
+    sql2 += ` AND f.root_path = ?`;
+    params2.push(folder);
+  }
+  const incoming = db.prepare(sql2).all(...params2) as Array<{
+    type: string;
+    target_name: string;
+    source_name: string;
+    source_file: string;
+  }>;
+
+  return { incoming, outgoing };
+}
+
+export function getCodebaseFileSymbols(db: Database.Database, filePath: string) {
+  return db.prepare(`
+    SELECT s.*, f.file_path, f.root_path
+    FROM codebase_symbols s
+    JOIN codebase_files f ON s.file_id = f.id
+    WHERE f.file_path = ?
+    ORDER BY s.line
+  `).all(filePath) as Array<{
+    id: string;
+    file_id: string;
+    name: string;
+    kind: string;
+    line: number;
+    signature: string;
+    docstring: string | null;
+    file_path: string;
+    root_path: string;
+  }>;
+}
+
+export function deleteCodebaseRoot(db: Database.Database, rootPath: string) {
+  db.prepare("DELETE FROM codebase_files WHERE root_path = ?").run(rootPath);
+}
+
+export function getCodebaseFilesByRoot(db: Database.Database, rootPath: string) {
+  return db.prepare("SELECT * FROM codebase_files WHERE root_path = ?").all(rootPath) as Array<{
+    id: string;
+    root_path: string;
+    file_path: string;
+    hash: string;
+    indexed_at: string;
+  }>;
+}
+
+export function deleteCodebaseFile(db: Database.Database, fileId: string) {
+  db.prepare("DELETE FROM codebase_files WHERE id = ?").run(fileId);
+}

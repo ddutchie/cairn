@@ -389,6 +389,47 @@ export const TOOL_SCHEMAS = {
     }),
   },
 
+  // ── Codebase Semantic Indexer ─────────────────────────────────────────────────
+
+  codebase_reindex: {
+    description: "Scan and semantic-index a codebase folder. Updates the SQLite cache of file paths, classes, functions, methods, docstrings, and call dependencies.",
+    schema: z.object({
+      folder: sStr.describe("Absolute path to the codebase root folder"),
+    }),
+  },
+
+  codebase_search_symbols: {
+    description: "Search for classes, functions, methods, interfaces, or structs by name or docstring query.",
+    schema: z.object({
+      query:  sStr.describe("The name or text to search for"),
+      folder: sStrOpt.describe("Optional absolute path to limit the search scope"),
+      limit:  sNumOpt.describe("Max number of matches (default: 50)"),
+    }),
+  },
+
+  codebase_get_symbol_definition: {
+    description: "Lookup the definition signature, line numbers, and docstring of a symbol by its name.",
+    schema: z.object({
+      name:   sStr.describe("Exact name of the symbol"),
+      folder: sStrOpt.describe("Optional absolute path to limit search scope"),
+    }),
+  },
+
+  codebase_get_references: {
+    description: "Find incoming references and outgoing dependencies (call graph) for a given symbol name.",
+    schema: z.object({
+      name:   sStr.describe("Name of the symbol"),
+      folder: sStrOpt.describe("Optional absolute path to limit search scope"),
+    }),
+  },
+
+  codebase_get_file_symbols: {
+    description: "List all classes, functions, methods, interfaces, or structs defined in a specific file.",
+    schema: z.object({
+      filePath: sStr.describe("Absolute path to the file"),
+    }),
+  },
+
 } as const;
 
 export type ToolName = keyof typeof TOOL_SCHEMAS;

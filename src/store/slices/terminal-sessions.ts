@@ -41,6 +41,8 @@ export interface PiAgentMessage {
     output?: string;
     /** Parsed reference for Cairn write tools — renders a linked bubble instead of raw output */
     cairnRef?: { type: "note" | "task"; id: string; title: string };
+    /** Whether the tool is paused waiting for user confirmation */
+    confirmRequired?: boolean;
   }[];
   /** Subagents spawned during this message */
   subagents?: PiSubagentMessage[];
@@ -111,6 +113,8 @@ export interface TerminalSessionsSlice {
   addPiToolCall: (sessionId: string, toolCall: { callId: string; name: string; label: string; running: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void;
   /** Update an existing tool call chip in-place (start → done) */
   updatePiToolCall: (sessionId: string, callId: string, patch: { label?: string; running: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void;
+  /** Set confirmation requirement state for a tool chip */
+  setPiToolConfirmRequired: (sessionId: string, callId: string, confirmRequired: boolean) => void;
   /** Clear message history for a pi session */
   clearPiMessages: (sessionId: string) => void;
   /** Update token usage for a session after a step completes */
@@ -340,7 +344,26 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
             const idx = msg.toolCalls.findIndex((tc) => tc.callId === callId);
             if (idx === -1) return msg;
             const updated = [...msg.toolCalls];
-            updated[idx] = { ...updated[idx], ...patch };
+            updated[idx] = { ...updated[idx], ...patch, confirmRequired: false };
+            return { ...msg, toolCalls: updated };
+          }),
+        };
+      }),
+    }));
+  },
+
+  setPiToolConfirmRequired(sessionId, callId, confirmRequired) {
+    set((s) => ({
+      terminalSessions: s.terminalSessions.map((t) => {
+        if (t.sessionId !== sessionId) return t;
+        return {
+          ...t,
+          piMessages: (t.piMessages ?? []).map((msg) => {
+            if (!msg.toolCalls) return msg;
+            const idx = msg.toolCalls.findIndex((tc) => tc.callId === callId);
+            if (idx === -1) return msg;
+            const updated = [...msg.toolCalls];
+            updated[idx] = { ...updated[idx], confirmRequired };
             return { ...msg, toolCalls: updated };
           }),
         };

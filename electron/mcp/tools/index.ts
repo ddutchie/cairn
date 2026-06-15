@@ -16,6 +16,13 @@ import {
   layout_idea_flow
 } from "./flow";
 import { get_knowledge_graph, get_neighbors } from "./graph";
+import {
+  codebase_reindex,
+  codebase_search_symbols,
+  codebase_get_symbol_definition,
+  codebase_get_references,
+  codebase_get_file_symbols
+} from "./codebase";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function executeTool(db: Database.Database, workspacePath: string, toolName: string, args: Record<string, any>): unknown {
@@ -117,6 +124,21 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
 
     case "get_neighbors":
       return get_neighbors(db, args);
+
+    case "codebase_reindex":
+      return codebase_reindex(db, args as Parameters<typeof codebase_reindex>[1]);
+
+    case "codebase_search_symbols":
+      return codebase_search_symbols(db, args as Parameters<typeof codebase_search_symbols>[1]);
+
+    case "codebase_get_symbol_definition":
+      return codebase_get_symbol_definition(db, args as Parameters<typeof codebase_get_symbol_definition>[1]);
+
+    case "codebase_get_references":
+      return codebase_get_references(db, args as Parameters<typeof codebase_get_references>[1]);
+
+    case "codebase_get_file_symbols":
+      return codebase_get_file_symbols(db, args as Parameters<typeof codebase_get_file_symbols>[1]);
 
     default:
       return { error: `Unknown tool: ${toolName}` };

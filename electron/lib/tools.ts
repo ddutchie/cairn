@@ -50,6 +50,11 @@ export const TOOL_LABELS: Record<string, (args: ToolArgs) => string> = {
   get_idea_flow_rules:    () => "Reading Idea Flow rules",
   ask_questions:          (a) => `Asking ${(a.questions as unknown[])?.length ?? ""} question${(a.questions as unknown[])?.length !== 1 ? "s" : ""}`,
   suggest_connections:    (a) => `Suggesting ${(a.actions as unknown[])?.length ?? ""} connection${(a.actions as unknown[])?.length !== 1 ? "s" : ""}`,
+  codebase_reindex:               (a) => `Indexing codebase folder "${a.folder}"`,
+  codebase_search_symbols:        (a) => `Searching codebase symbols for "${a.query}"`,
+  codebase_get_symbol_definition: (a) => `Getting definition of symbol "${a.name}"`,
+  codebase_get_references:        (a) => `Finding references for symbol "${a.name}"`,
+  codebase_get_file_symbols:      (a) => `Listing symbols in "${a.filePath}"`,
 };
 
 // Tool definitions for the AI (OpenAI function calling format)

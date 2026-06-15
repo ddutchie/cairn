@@ -2,6 +2,12 @@
 
 All notable changes to Cairn are documented in this file.
 
+## [2.0.0] — 2026-06-15
+
+- **Semantic Codebase Indexing & Query Tools**: Introduced an AST-free, regex-based semantic indexer to map files, symbol definitions (classes, functions, interfaces), and call graph relations. Connected this search engine natively to the integrated MCP server to enable deep codebase context query capabilities for external AI agents (5 new tools). Incremental indexer supports C++, Java, C#, Go, Rust, Python, Ruby, and Shell scripts.
+- **Dynamic Plan/Execute Mode Toggle**: Dynamic switching of active Coding Agent sessions between Plan (lower temperature, read-only outline) and Execute modes directly in the UI.
+- **Interactive Tool Execution Confirmations**: Security gate forcing confirmation for modifying/write tools when auto-approvals are off. Renders Confirm/Deny buttons inline inside tool chips, with mobile-desktop configuration sync.
+
 ## [1.0.0] — 2026-05-04
 
 - Inline coding agent workspace (⌘7) — run Claude Code, OpenCode, Aider, or any CLI binary inside Cairn

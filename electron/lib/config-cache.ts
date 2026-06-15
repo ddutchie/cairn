@@ -15,6 +15,7 @@ export interface CachedConfig {
     baseUrl?: string;
     model?: string;
     apiKey?: string;
+    autoApprove?: boolean;
   };
   theme?: string;
   fontScale?: number;
@@ -44,7 +45,7 @@ export function saveCachedConfig(type: "ai" | "agent" | "theme" | "fontScale", c
     }
     
     // Type-guard/assert type safe access
-    const configRecord = config as Record<string, string | number | undefined> | null | undefined;
+    const configRecord = config as Record<string, string | number | boolean | undefined> | null | undefined;
     
     if (type === "ai" && configRecord) {
       current.aiConfig = {
@@ -60,6 +61,7 @@ export function saveCachedConfig(type: "ai" | "agent" | "theme" | "fontScale", c
         baseUrl: typeof configRecord.baseUrl === "string" ? configRecord.baseUrl : current.agentConfig?.baseUrl,
         model: typeof configRecord.model === "string" ? configRecord.model : current.agentConfig?.model,
         apiKey: typeof configRecord.apiKey === "string" ? configRecord.apiKey : current.agentConfig?.apiKey,
+        autoApprove: typeof configRecord.autoApprove === "boolean" ? configRecord.autoApprove : current.agentConfig?.autoApprove,
       };
     } else if (type === "theme") {
       current.theme = String(config);
