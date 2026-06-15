@@ -20,6 +20,17 @@ const IGNORED_DIRS = new Set([
   ".venv", "venv", "env", ".env"
 ]);
 
+// Keywords and built-ins to ignore in relation extraction
+const REJECTED_RELATION_TARGETS = new Set([
+  "if", "for", "while", "switch", "catch", "try", "using", "lock", "synchronized",
+  "with", "function", "class", "def", "struct", "interface", "module", "import", "export",
+  "return", "break", "continue", "default", "else", "elif", "except", "finally", "let", "var",
+  "const", "print", "console", "log", "error", "warn", "info", "debug", "int", "float",
+  "str", "bool", "list", "dict", "set", "tuple", "len", "range", "isinstance", "type",
+  "true", "false", "null", "undefined", "nil", "none", "self", "this", "super",
+  "new", "delete", "throw", "void", "yield", "await", "async"
+]);
+
 export interface ExtractedSymbol {
   name: string;
   kind: "class" | "function" | "method" | "struct" | "interface" | "module";
@@ -143,9 +154,13 @@ export function parseFile(filePath: string): ExtractedSymbol[] {
             } else {
               const methodMatch = trimmed.match(/^\s*(?:public|private|protected|async|static|get|set)*\s*([a-zA-Z0-9_$]+)\s*\([^)]*\)\s*[:{]/);
               if (methodMatch) {
-                name = methodMatch[1];
-                kind = "method";
-                matched = true;
+                const possibleName = methodMatch[1];
+                const keywords = new Set(["if", "for", "while", "switch", "catch", "with", "function"]);
+                if (!keywords.has(possibleName)) {
+                  name = possibleName;
+                  kind = "method";
+                  matched = true;
+                }
               }
             }
           }
@@ -460,6 +475,7 @@ export async function indexCodebase(db: Database.Database, rootPath: string): Pr
       const tokens = line.split(/[^a-zA-Z0-9_$]+/);
       for (const token of tokens) {
         if (!token) continue;
+        if (REJECTED_RELATION_TARGETS.has(token)) continue;
         if (knownSymbolNames.has(token) && token !== enclosingSymbol.name) {
           q.insertCodebaseRelation(db, {
             sourceId: enclosingSymbol.id,

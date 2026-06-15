@@ -8,6 +8,7 @@
  */
 
 import type Database from "better-sqlite3";
+import * as path from "path";
 import { ts, newId } from "./utils";
 import {
   j,
@@ -1111,8 +1112,9 @@ export function searchCodebaseSymbols(db: Database.Database, opts: { query: stri
   const params: unknown[] = [`%${q}%`, `%${q}%`, `%${q}%`];
   
   if (opts.folder) {
-    sql += ` AND f.root_path = ?`;
-    params.push(opts.folder);
+    const normalized = path.resolve(opts.folder);
+    sql += ` AND (f.root_path = ? OR f.file_path = ? OR f.file_path LIKE ?)`;
+    params.push(normalized, normalized, `${normalized}${path.sep}%`);
   }
   
   sql += ` ORDER BY s.name LIMIT ?`;
@@ -1141,8 +1143,9 @@ export function getCodebaseSymbolDefinition(db: Database.Database, name: string,
   const params: unknown[] = [name];
   
   if (folder) {
-    sql += ` AND f.root_path = ?`;
-    params.push(folder);
+    const normalized = path.resolve(folder);
+    sql += ` AND (f.root_path = ? OR f.file_path = ? OR f.file_path LIKE ?)`;
+    params.push(normalized, normalized, `${normalized}${path.sep}%`);
   }
   
   return db.prepare(sql).all(...params) as Array<{
@@ -1168,8 +1171,9 @@ export function getCodebaseRelations(db: Database.Database, name: string, folder
   `;
   const params1: unknown[] = [name];
   if (folder) {
-    sql1 += ` AND f.root_path = ?`;
-    params1.push(folder);
+    const normalized = path.resolve(folder);
+    sql1 += ` AND (f.root_path = ? OR f.file_path = ? OR f.file_path LIKE ?)`;
+    params1.push(normalized, normalized, `${normalized}${path.sep}%`);
   }
   const outgoing = db.prepare(sql1).all(...params1) as Array<{
     type: string;
@@ -1187,8 +1191,9 @@ export function getCodebaseRelations(db: Database.Database, name: string, folder
   `;
   const params2: unknown[] = [name];
   if (folder) {
-    sql2 += ` AND f.root_path = ?`;
-    params2.push(folder);
+    const normalized = path.resolve(folder);
+    sql2 += ` AND (f.root_path = ? OR f.file_path = ? OR f.file_path LIKE ?)`;
+    params2.push(normalized, normalized, `${normalized}${path.sep}%`);
   }
   const incoming = db.prepare(sql2).all(...params2) as Array<{
     type: string;
