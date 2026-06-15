@@ -2,6 +2,14 @@
 
 All notable changes to Cairn are documented in this file. This changelog is condensed to focus on major release cycles, combining minor features leading up to each version milestone. Detailed release histories can be found in the [changelogs/](file:///Users/gerard/Documents/GitHub/cairn/changelogs) directory.
 
+## [2.0.1] — 2026-06-15
+
+### Fixes
+- **Asynchronous Codebase Indexing**: Converted the `codebase_reindex` tool and underlying scanner loops to run asynchronously, yielding to the Node event loop using `setImmediate` to prevent Electron main thread lockup.
+- **Detailed Indexer Progress Logging**: Added verbose console logs to report target paths, file count, and mapping checkpoints during reindexing.
+
+---
+
 ## [2.0.0] — 2026-06-15
 
 ### Semantic Codebase Indexing & Querying
