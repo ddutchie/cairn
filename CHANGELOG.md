@@ -1,73 +1,31 @@
 # Changelog
 
-All notable changes to Cairn are documented in this file.
+All notable changes to Cairn are documented in this file. This changelog is condensed to focus on major releases. Detailed notes for all minor and patch releases can be found in the [changelogs/](file:///Users/gerard/Documents/GitHub/cairn/changelogs) directory.
 
 ## [2.0.0] — 2026-06-15
 
-- **Semantic Codebase Indexing & Query Tools**: Introduced an AST-free, regex-based semantic indexer to map files, symbol definitions (classes, functions, interfaces), and call graph relations. Connected this search engine natively to the integrated MCP server to enable deep codebase context query capabilities for external AI agents (5 new tools). Incremental indexer supports C++, Java, C#, Go, Rust, Python, Ruby, and Shell scripts.
-- **Dynamic Plan/Execute Mode Toggle**: Dynamic switching of active Coding Agent sessions between Plan (lower temperature, read-only outline) and Execute modes directly in the UI.
-- **Interactive Tool Execution Confirmations**: Security gate forcing confirmation for modifying/write tools when auto-approvals are off. Renders Confirm/Deny buttons inline inside tool chips, with mobile-desktop configuration sync.
+### Semantic Codebase Indexing & Query Tools
+- **AST-Free Regex Indexer**: Recursively scans workspaces, comparing MD5 hashes to perform incremental indexing. Supports C++, Java, C#, Go, Rust, Python, Ruby, and Shell scripts to map files, symbols, and dependencies.
+- **MCP & Coding Tools Integration**: Exposes 5 new tools (`codebase_reindex`, `codebase_search_symbols`, `codebase_get_symbol_definition`, `codebase_get_references`, and `codebase_get_file_symbols`) to the standalone MCP server and integrated agent loop.
 
-## [1.0.0] — 2026-05-04
+### Dynamic Plan/Execute Mode Toggle
+- Allows users to dynamically switch active coding agent sessions between **Plan** mode (lower temperature, read-only outline) and **Execute** mode (full read/write) in the UI.
 
-- Inline coding agent workspace (⌘7) — run Claude Code, OpenCode, Aider, or any CLI binary inside Cairn
-- Register agents in Settings → Coding Agents; set a code directory per project
-- Spawn an agent from any task card with the prompt pre-filled from the card
-- Three-pane layout: file tree, multi-file tabbed CodeMirror 6 editor, tabbed xterm.js terminal
-- Git diff viewer with unified / split / changes views and syntax highlighting
-- PTY sessions managed by `node-pty`; survive navigation and resize in real time
+### Interactive Tool Confirmations
+- Implements a tool execution confirmation gate. When auto-approvals are turned off, the agent pauses before executing modifying tools, rendering inline Confirm/Deny buttons within the chat tool chips. Supports desktop-mobile sync.
 
 ---
 
-## [0.9.6] — 2025-04-19
+## [1.0.0] — 2026-05-04
 
-- Interactive `ask_questions` flow and PRD modal in the chat interface
-- Note drag-and-drop reordering; sidebar and dialog polish
+### Inline Coding Agent Workspace
+- Introduces the **Agent** view (⌘5) allowing users to run AI coding tools — Claude Code, OpenCode, Aider, or any custom CLI binary — directly inside Cairn.
+- Register agents in Settings and configure a code directory per project.
 
-## [0.9.5]
+### Resizable Three-Pane Workspace
+- Includes a lazy-expanding directory **File Tree** with type-aware icons.
+- Includes a multi-file tabbed CodeMirror 6 **Editor** with syntax highlighting, ⌘S save, markdown preview, and undo/redo history.
+- Includes a tabbed **Terminal** powered by xterm.js and `node-pty`.
 
-- AI toolbar, formatting toolbar, preview mode, and file-watcher fixes for notes
-
-## [0.9.4]
-
-- Fix note title lag and stale save race condition
-
-## [0.9.3]
-
-- Prevent file-watcher delete events from clobbering in-flight note edits; sync notes from disk on startup
-
-## [0.9.2]
-
-- Asset protocol: dynamic workspace path resolution; serve arbitrary files to the renderer
-
-## [0.9.1]
-
-- Onboarding wizard, mutable DB context, and database re-initialisation support
-
-## [0.9.0]
-
-- Global AI enable/disable toggle; AI features gated when disabled
-
-## [0.8.0]
-
-- Knowledge Graph view — force-directed and radial tree layouts
-
-## [0.7.x]
-
-- Insights view with seven analytics canvases (D3 v7)
-- Font scale setting (XS → XL) with CSS `--font-scale` cascade
-
-## [0.6.x]
-
-- Idea Flow view (visual node graph with groups, URL cards, AI summaries)
-- Bidirectional note ↔ task linking
-
-## [0.5.x]
-
-- Dashboards — live HTML canvases with `window.cairn` data API
-
-## [0.4.x — 0.3.x]
-
-- Kanban board, task cards, columns, priorities, due dates
-- Notes with Markdown, wikilinks, file-watcher sync
-- Tags, workspace/project management, dark/light/system themes
+### Git Diff Viewer
+- Renders unified, split, or changes-only diff views for the project's code directory with collapsible file sections and a Copy Patch action.
