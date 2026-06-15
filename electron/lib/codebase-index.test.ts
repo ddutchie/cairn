@@ -28,12 +28,14 @@ describe("Codebase Semantic Indexer", () => {
       fs.mkdirSync(path.join(tmpDir, "src"), { recursive: true });
       fs.mkdirSync(path.join(tmpDir, "node_modules"), { recursive: true });
       fs.mkdirSync(path.join(tmpDir, ".git"), { recursive: true });
+      fs.mkdirSync(path.join(tmpDir, ".venv"), { recursive: true });
 
       // Create files
       fs.writeFileSync(path.join(tmpDir, "src", "index.ts"), "const a = 1;");
       fs.writeFileSync(path.join(tmpDir, "src", "utils.js"), "const b = 2;");
       fs.writeFileSync(path.join(tmpDir, "node_modules", "package.ts"), "const c = 3;");
       fs.writeFileSync(path.join(tmpDir, ".git", "config.js"), "const d = 4;");
+      fs.writeFileSync(path.join(tmpDir, ".venv", "dep.py"), "def library(): pass");
       fs.writeFileSync(path.join(tmpDir, "README.md"), "# Cairn");
 
       const files = walkDir(tmpDir).map(f => path.relative(tmpDir, f));
@@ -42,6 +44,7 @@ describe("Codebase Semantic Indexer", () => {
       expect(files).toContain("README.md");
       expect(files).not.toContain(path.join("node_modules", "package.ts"));
       expect(files).not.toContain(path.join(".git", "config.js"));
+      expect(files).not.toContain(path.join(".venv", "dep.py"));
     });
   });
 
@@ -239,7 +242,7 @@ def format_username(user):
   });
 
   describe("Call Graph / Relation Building & Incremental Sync", () => {
-    it("populates files, symbols, relations, and performs incremental scanning", () => {
+    it("populates files, symbols, relations, and performs incremental scanning", async () => {
       fs.mkdirSync(path.join(tmpDir, "src"), { recursive: true });
       const mainFile = path.join(tmpDir, "src", "main.ts");
       const helperFile = path.join(tmpDir, "src", "helper.ts");
@@ -261,7 +264,7 @@ def format_username(user):
       `);
 
       // 1. Initial Scan
-      indexCodebase(db, tmpDir);
+      await indexCodebase(db, tmpDir);
 
       // Verify files indexed
       const dbFiles = q.getCodebaseFilesByRoot(db, tmpDir);
@@ -286,7 +289,7 @@ def format_username(user):
       // 2. Incremental Scan (no changes)
       // Modify helper file without changing length or mtime significantly, or just run scan again
       const initialIndexedAt = dbFiles[0].indexed_at;
-      indexCodebase(db, tmpDir);
+      await indexCodebase(db, tmpDir);
 
       const dbFilesAfter = q.getCodebaseFilesByRoot(db, tmpDir);
       expect(dbFilesAfter[0].indexed_at).toBe(initialIndexedAt); // unchanged because hash matched
@@ -302,7 +305,7 @@ def format_username(user):
         }
       `);
 
-      indexCodebase(db, tmpDir);
+      await indexCodebase(db, tmpDir);
 
       const dbFilesUpdated = q.getCodebaseFilesByRoot(db, tmpDir);
       const helperDbFile = dbFilesUpdated.find(f => f.file_path === helperFile);

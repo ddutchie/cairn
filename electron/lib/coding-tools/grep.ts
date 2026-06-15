@@ -22,7 +22,8 @@ interface GrepMatch {
   content: string;
 }
 
-const SKIP_DIRS = new Set(["node_modules", ".git", "dist", ".next", "out", "build", ".turbo"]);
+const SKIP_DIRS = new Set(["node_modules", ".git", "dist", ".next", "out", "build", ".turbo", ".venv", "venv", "env", ".env", "__pycache__"]);
+const SKIP_EXTS = new Set([".pyc", ".pyo", ".pyd", ".class", ".o", ".obj", ".dll", ".dylib", ".so", ".bin"]);
 
 function matchesInclude(filePath: string, include?: string): boolean {
   if (!include) return true;
@@ -49,6 +50,8 @@ function searchDir(
       if (SKIP_DIRS.has(entry.name)) continue;
       searchDir(path.join(dirPath, entry.name), regex, include, results);
     } else if (entry.isFile()) {
+      const ext = path.extname(entry.name).toLowerCase();
+      if (SKIP_EXTS.has(ext)) continue;
       const filePath = path.join(dirPath, entry.name);
       if (!matchesInclude(filePath, include)) continue;
       try {
@@ -87,6 +90,8 @@ export async function grepTool(args: GrepArgs, cwd: string): Promise<string> {
   }
 
   if (stat.isFile()) {
+    const ext = path.extname(searchPath).toLowerCase();
+    if (SKIP_EXTS.has(ext)) return "Cannot search binary files.";
     const content = fs.readFileSync(searchPath, "utf8");
     content.split("\n").forEach((line, i) => {
       if (regex.test(line)) results.push({ file: searchPath, line: i + 1, content: line.trim() });

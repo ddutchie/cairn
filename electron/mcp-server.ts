@@ -43,7 +43,7 @@ function buildMcpServer(db: Database.Database, workspacePath: string): McpServer
     server.tool(name, description, schema.shape as Record<string, z.ZodTypeAny>,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       async (args: Record<string, any>) => {
-        const result = executeTool(db, workspacePath, name, args);
+        const result = await executeTool(db, workspacePath, name, args);
         const hasError = typeof result === "object" && result !== null && !Array.isArray(result) && "error" in result;
         return {
           content: [{ type: "text" as const, text: JSON.stringify(result) }],

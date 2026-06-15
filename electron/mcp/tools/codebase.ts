@@ -2,9 +2,9 @@ import type Database from "better-sqlite3";
 import * as q from "../../db/queries";
 import { indexCodebase } from "../../lib/codebase-index";
 
-export function codebase_reindex(db: Database.Database, args: { folder: string }) {
+export async function codebase_reindex(db: Database.Database, args: { folder: string }) {
   try {
-    indexCodebase(db, args.folder);
+    await indexCodebase(db, args.folder);
     return { success: true, folder: args.folder };
   } catch (err) {
     return { error: `Failed to index codebase: ${(err as Error).message}` };

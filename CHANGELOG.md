@@ -2,6 +2,17 @@
 
 All notable changes to Cairn are documented in this file. This changelog is condensed to focus on major release cycles, combining minor features leading up to each version milestone. Detailed release histories can be found in the [changelogs/](file:///Users/gerard/Documents/GitHub/cairn/changelogs) directory.
 
+## [2.0.1] — 2026-06-15
+
+### Fixes
+- **Asynchronous Codebase Indexing**: Converted the `codebase_reindex` tool and underlying scanner loops to run asynchronously, yielding to the Node event loop using `setImmediate` to prevent Electron main thread lockup.
+- **Virtual Environment Exclusions**: Added `.venv`, `venv`, `env`, and `.env` directories to the default codebase indexer exclusions list, filtering out third-party dependencies from symbol searches.
+- **Call Graph Noise Reduction**: Filtered out common programming language keywords and built-in names from outgoing call graph relations. Also fixed JS/TS method declaration parsing to prevent syntax keywords from matching as methods.
+- **Subpath Folder Querying**: Refactored codebase queries to treat the `folder` parameter as a path prefix filter (`LIKE 'folder%'`), allowing searches to correctly narrow to subdirectories (e.g. `...\src\`).
+- **Binary & Venv Exclusions in Grep**: Excluded virtual environment folders and binary file extensions (e.g. `.pyc`, `.class`) from grep searches, preventing binary garbage leakage.
+
+---
+
 ## [2.0.0] — 2026-06-15
 
 ### Semantic Codebase Indexing & Querying

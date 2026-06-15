@@ -16,7 +16,19 @@ const SUPPORTED_EXTENSIONS = new Set([
 const IGNORED_DIRS = new Set([
   "node_modules", ".git", ".next",
   "dist", "out", "build", "target",
-  "bin", "obj", ".idea", ".vscode"
+  "bin", "obj", ".idea", ".vscode",
+  ".venv", "venv", "env", ".env"
+]);
+
+// Keywords and built-ins to ignore in relation extraction
+const REJECTED_RELATION_TARGETS = new Set([
+  "if", "for", "while", "switch", "catch", "try", "using", "lock", "synchronized",
+  "with", "function", "class", "def", "struct", "interface", "module", "import", "export",
+  "return", "break", "continue", "default", "else", "elif", "except", "finally", "let", "var",
+  "const", "print", "console", "log", "error", "warn", "info", "debug", "int", "float",
+  "str", "bool", "list", "dict", "set", "tuple", "len", "range", "isinstance", "type",
+  "true", "false", "null", "undefined", "nil", "none", "self", "this", "super",
+  "new", "delete", "throw", "void", "yield", "await", "async"
 ]);
 
 export interface ExtractedSymbol {
@@ -142,9 +154,13 @@ export function parseFile(filePath: string): ExtractedSymbol[] {
             } else {
               const methodMatch = trimmed.match(/^\s*(?:public|private|protected|async|static|get|set)*\s*([a-zA-Z0-9_$]+)\s*\([^)]*\)\s*[:{]/);
               if (methodMatch) {
-                name = methodMatch[1];
-                kind = "method";
-                matched = true;
+                const possibleName = methodMatch[1];
+                const keywords = new Set(["if", "for", "while", "switch", "catch", "with", "function"]);
+                if (!keywords.has(possibleName)) {
+                  name = possibleName;
+                  kind = "method";
+                  matched = true;
+                }
               }
             }
           }
@@ -339,7 +355,7 @@ export function parseFile(filePath: string): ExtractedSymbol[] {
   return symbols;
 }
 
-export function indexCodebase(db: Database.Database, rootPath: string): void {
+export async function indexCodebase(db: Database.Database, rootPath: string): Promise<void> {
   const absoluteRoot = path.resolve(rootPath);
   
   // 1. Walk files
@@ -360,6 +376,7 @@ export function indexCodebase(db: Database.Database, rootPath: string): void {
   const parsedFileIds: string[] = [];
   
   // 3. Process each file on disk
+  let count = 0;
   for (const filePath of files) {
     let stat: fs.Stats;
     try {
@@ -394,10 +411,16 @@ export function indexCodebase(db: Database.Database, rootPath: string): void {
           });
         }
       } catch (err) {
-        console.error(`[codebase-index] Failed to parse file ${filePath}:`, err);
+        console.error(`[codebase-indexer] Failed to parse file ${filePath}:`, err);
       }
       
       parsedFileIds.push(fileId);
+    }
+    
+    // Yield to the event loop every 10 files to keep Electron main process responsive
+    count++;
+    if (count % 10 === 0) {
+      await new Promise(resolve => setImmediate(resolve));
     }
   }
   
@@ -417,6 +440,7 @@ export function indexCodebase(db: Database.Database, rootPath: string): void {
     return !dbFile || dbFile.hash !== `${fs.statSync(f).size}-${fs.statSync(f).mtimeMs}`;
   });
   
+  let scanCount = 0;
   for (const filePath of filesToScan) {
     const dbFile = q.getCodebaseFileByPath(db, filePath);
     if (!dbFile) continue;
@@ -451,6 +475,7 @@ export function indexCodebase(db: Database.Database, rootPath: string): void {
       const tokens = line.split(/[^a-zA-Z0-9_$]+/);
       for (const token of tokens) {
         if (!token) continue;
+        if (REJECTED_RELATION_TARGETS.has(token)) continue;
         if (knownSymbolNames.has(token) && token !== enclosingSymbol.name) {
           q.insertCodebaseRelation(db, {
             sourceId: enclosingSymbol.id,
@@ -459,6 +484,12 @@ export function indexCodebase(db: Database.Database, rootPath: string): void {
           });
         }
       }
+    }
+    
+    // Yield to the event loop every 5 relation files scanned
+    scanCount++;
+    if (scanCount % 5 === 0) {
+      await new Promise(resolve => setImmediate(resolve));
     }
   }
 }
