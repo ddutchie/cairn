@@ -124,4 +124,58 @@ describe("Grep vs Semantic Search - Context Improvements", () => {
     expect(otherHits).toHaveLength(1);
     expect(otherHits[0].file_path).toContain(path.join("other", "tool.py"));
   });
+
+  it("yields significantly smaller context footprint for structural symbol queries on large files compared to grep + read cycle", async () => {
+    const srcDir = path.join(tmpDir, "src");
+    fs.mkdirSync(srcDir, { recursive: true });
+
+    // Generate a large file (~2000 lines) with multiple functions matching "handler"
+    const fileLines: string[] = [];
+    for (let i = 1; i <= 2000; i++) {
+      if (i % 40 === 0) {
+        fileLines.push(`def handler_function_${i}():`);
+        fileLines.push(`    """Docstring for handler function ${i}."""`);
+        fileLines.push(`    return "handler payload ${i}"`);
+      } else {
+        fileLines.push(`def other_logic_line_${i}():`);
+        fileLines.push(`    pass`);
+      }
+    }
+    const largeFilePath = path.join(srcDir, "large_service.py");
+    fs.writeFileSync(largeFilePath, fileLines.join("\n"));
+
+    // Index the codebase
+    await indexCodebase(db, tmpDir);
+
+    // Scenario: The agent needs to inspect the signature, docstring, and line of a specific function "handler_function_120"
+    
+    // Traditional approach:
+    // 1. Run grep search for "handler_function_120" (returns the matching line)
+    const grepResult = await grepTool({ pattern: "handler_function_120" }, tmpDir);
+    // 2. Read the entire file to read the surrounding docstring and lines
+    const fullFileContent = fs.readFileSync(largeFilePath, "utf8");
+    const traditionalTotalSize = grepResult.length + fullFileContent.length;
+
+    // Structural semantic approach:
+    // Call getCodebaseSymbolDefinition directly to get the structured definition
+    const symbolDefs = q.getCodebaseSymbolDefinition(db, "handler_function_120", tmpDir);
+    const semanticResultJson = JSON.stringify(symbolDefs, null, 2);
+
+    // Output metrics comparison
+    console.log(`[Large File Test Metrics]`);
+    console.log(`Grep Search Result Size: ${grepResult.length} chars`);
+    console.log(`Full File Read Size: ${fullFileContent.length} chars`);
+    console.log(`Traditional Cycle (Grep + Read) Total: ${traditionalTotalSize} chars`);
+    console.log(`Semantic Symbol Definition Size: ${semanticResultJson.length} chars`);
+
+    // Verify codebase semantic lookup is orders of magnitude smaller
+    expect(symbolDefs).toHaveLength(1);
+    expect(symbolDefs[0].name).toBe("handler_function_120");
+    expect(symbolDefs[0].line).toBe(241);
+
+    // The semantic lookup is extremely compact (around 200-300 characters), which is ~200-300x smaller than the file read
+    expect(semanticResultJson.length).toBeLessThan(500);
+    expect(semanticResultJson.length).toBeLessThan(traditionalTotalSize / 100);
+  });
 });
+
