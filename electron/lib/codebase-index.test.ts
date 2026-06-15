@@ -239,7 +239,7 @@ def format_username(user):
   });
 
   describe("Call Graph / Relation Building & Incremental Sync", () => {
-    it("populates files, symbols, relations, and performs incremental scanning", () => {
+    it("populates files, symbols, relations, and performs incremental scanning", async () => {
       fs.mkdirSync(path.join(tmpDir, "src"), { recursive: true });
       const mainFile = path.join(tmpDir, "src", "main.ts");
       const helperFile = path.join(tmpDir, "src", "helper.ts");
@@ -261,7 +261,7 @@ def format_username(user):
       `);
 
       // 1. Initial Scan
-      indexCodebase(db, tmpDir);
+      await indexCodebase(db, tmpDir);
 
       // Verify files indexed
       const dbFiles = q.getCodebaseFilesByRoot(db, tmpDir);
@@ -286,7 +286,7 @@ def format_username(user):
       // 2. Incremental Scan (no changes)
       // Modify helper file without changing length or mtime significantly, or just run scan again
       const initialIndexedAt = dbFiles[0].indexed_at;
-      indexCodebase(db, tmpDir);
+      await indexCodebase(db, tmpDir);
 
       const dbFilesAfter = q.getCodebaseFilesByRoot(db, tmpDir);
       expect(dbFilesAfter[0].indexed_at).toBe(initialIndexedAt); // unchanged because hash matched
@@ -302,7 +302,7 @@ def format_username(user):
         }
       `);
 
-      indexCodebase(db, tmpDir);
+      await indexCodebase(db, tmpDir);
 
       const dbFilesUpdated = q.getCodebaseFilesByRoot(db, tmpDir);
       const helperDbFile = dbFilesUpdated.find(f => f.file_path === helperFile);

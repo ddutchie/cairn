@@ -339,27 +339,36 @@ export function parseFile(filePath: string): ExtractedSymbol[] {
   return symbols;
 }
 
-export function indexCodebase(db: Database.Database, rootPath: string): void {
+export async function indexCodebase(db: Database.Database, rootPath: string): Promise<void> {
   const absoluteRoot = path.resolve(rootPath);
+  console.log(`[codebase-indexer] Starting indexing scan for root: "${absoluteRoot}"`);
   
   // 1. Walk files
   const files = walkDir(absoluteRoot);
   const filePathsSet = new Set(files);
+  console.log(`[codebase-indexer] Found ${files.length} candidate codebase files to evaluate.`);
   
   // 2. Fetch existing files in DB
   const dbFiles = q.getCodebaseFilesByRoot(db, absoluteRoot);
   const dbFilesMap = new Map(dbFiles.map(f => [f.file_path, f]));
   
   // Clean up any files that no longer exist on disk
+  let deletedCount = 0;
   for (const dbFile of dbFiles) {
     if (!filePathsSet.has(dbFile.file_path)) {
       q.deleteCodebaseFile(db, dbFile.id);
+      deletedCount++;
     }
+  }
+  if (deletedCount > 0) {
+    console.log(`[codebase-indexer] Pruned ${deletedCount} obsolete indexed files from database.`);
   }
   
   const parsedFileIds: string[] = [];
   
   // 3. Process each file on disk
+  let count = 0;
+  let updatedCount = 0;
   for (const filePath of files) {
     let stat: fs.Stats;
     try {
@@ -393,13 +402,21 @@ export function indexCodebase(db: Database.Database, rootPath: string): void {
             docstring: sym.docstring
           });
         }
+        updatedCount++;
       } catch (err) {
-        console.error(`[codebase-index] Failed to parse file ${filePath}:`, err);
+        console.error(`[codebase-indexer] Failed to parse file ${filePath}:`, err);
       }
       
       parsedFileIds.push(fileId);
     }
+    
+    // Yield to the event loop every 10 files to keep Electron main process responsive
+    count++;
+    if (count % 10 === 0) {
+      await new Promise(resolve => setImmediate(resolve));
+    }
   }
+  console.log(`[codebase-indexer] Scanned files: processed ${count} files (${updatedCount} new or modified).`);
   
   // 4. Resolve Relations (Call Graph)
   const allSymbols = db.prepare(`
@@ -417,6 +434,11 @@ export function indexCodebase(db: Database.Database, rootPath: string): void {
     return !dbFile || dbFile.hash !== `${fs.statSync(f).size}-${fs.statSync(f).mtimeMs}`;
   });
   
+  if (filesToScan.length > 0) {
+    console.log(`[codebase-indexer] Resolving references for ${filesToScan.length} modified files...`);
+  }
+  
+  let scanCount = 0;
   for (const filePath of filesToScan) {
     const dbFile = q.getCodebaseFileByPath(db, filePath);
     if (!dbFile) continue;
@@ -460,5 +482,12 @@ export function indexCodebase(db: Database.Database, rootPath: string): void {
         }
       }
     }
+    
+    // Yield to the event loop every 5 relation files scanned
+    scanCount++;
+    if (scanCount % 5 === 0) {
+      await new Promise(resolve => setImmediate(resolve));
+    }
   }
+  console.log(`[codebase-indexer] Reference mapping completed successfully.`);
 }
