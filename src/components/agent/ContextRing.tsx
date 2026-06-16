@@ -148,7 +148,7 @@ export function ContextRing({
           {/* Legend */}
           <div className="space-y-1.5 mt-2">
             {categories.map((c) => {
-              if (c.count === 0 && (c.label === "Rules" || c.label === "MCP")) return null;
+              if (c.count === 0 && (c.label === "Rules" || c.label === "MCP" || c.label === "Subagent definitions" || c.label === "Skills")) return null;
               return (
                 <div key={c.label} className="flex items-center justify-between text-[0.714rem]">
                   <div className="flex items-center gap-1.5">
