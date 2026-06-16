@@ -52,6 +52,7 @@ export function AgentView() {
     if (treePaneRef.current) treePaneRef.current.style.width = `${DEFAULT_TREE_WIDTH}px`;
 
     const media = window.matchMedia("(max-width: 767px)");
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsMobile(media.matches);
     const listener = (e: MediaQueryListEvent) => setIsMobile(e.matches);
     media.addEventListener("change", listener);
