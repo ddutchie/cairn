@@ -115,7 +115,7 @@ export function ContextRing({
           <div className="flex items-center justify-between mb-2">
             <span className="font-semibold text-[var(--text-primary)] text-[0.85rem]">Context Usage</span>
             <Popover.Close asChild>
-              <button className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors p-1 rounded hover:bg-[var(--surface-4)] focus:outline-none cursor-pointer">
+              <button className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors p-1 rounded hover:bg-[var(--surface-2)] focus:outline-none cursor-pointer">
                 <X size={12} />
               </button>
             </Popover.Close>
@@ -130,7 +130,7 @@ export function ContextRing({
           </div>
 
           {/* Segmented bar */}
-          <div className="w-full h-1.5 bg-[var(--surface-4)] rounded-full overflow-hidden flex my-3">
+          <div className="w-full h-1.5 bg-[var(--border)] rounded-full overflow-hidden flex my-3">
             {categories.map((c) => {
               const widthPct = (c.count / contextLimit) * 100;
               if (widthPct <= 0) return null;
