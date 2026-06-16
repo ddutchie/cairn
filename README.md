@@ -112,6 +112,9 @@ Configure the AI endpoint in **Settings → AI & Chat** (no restart needed):
 
 **Quick presets** — one click to switch between OpenAI, Ollama (`localhost:11434`), and LM Studio (`localhost:1234`). Local servers don't need an API key.
 
+> [!NOTE]
+> **Proxy & Gateway Timeouts (504)**: If pointing to an API gateway proxy (e.g., Apigee), long synchronous non-stream requests can trigger connection timeouts (returning a `504 Gateway Time-out`). All completion requests in Cairn (including chat tool loop and context compaction) stream internally to keep the connection active.
+
 ## Cairn Agent
 
 Cairn includes a native coding agent that runs directly inside the app — no external CLI binary required. It is accessible from the Agent view (`⌘5`) by choosing **Cairn Agent** in the spawn modal.
