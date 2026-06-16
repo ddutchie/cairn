@@ -217,10 +217,8 @@ export default function Home() {
       if (mod && key === "k") { e.preventDefault(); toggleSearch(); }
       else if (mod && e.shiftKey && key.toLowerCase() === "f") { if (activeView !== "agent") { e.preventDefault(); toggleSearch(); } }
       else if (mod && key === "/") {
-        if (activeView !== "agent") {
-          e.preventDefault();
-          if (!hiddenViews.has("chat")) toggleChat();
-        }
+        e.preventDefault();
+        if (!hiddenViews.has("chat")) toggleChat();
       }
       else if (mod && key === "\\") { e.preventDefault(); toggleSidebar(); }
       else if (mod && key === "1") { e.preventDefault(); setView("overview"); }
