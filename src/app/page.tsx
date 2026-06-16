@@ -268,10 +268,13 @@ export default function Home() {
     };
   }, [toggleSearch, toggleChat, toggleSidebar, setView, activeProjectId, createNote, chatOpen, hiddenViews, ORDERED_VIEWS, activeView]);
 
-  // Auto-activate Cairn Agent tab if we switch to Agent view and the current tab is completions chat
+  // Auto-activate Cairn Agent tab and auto-open right panel drawer if we switch to Agent view
   useEffect(() => {
     if (activeView === "agent") {
       const state = useCairnStore.getState();
+      if (!state.chatOpen) {
+        state.toggleChat();
+      }
       if (state.activeSessionId === null || state.activeSessionId === "chat") {
         if (state.persistentPiSessionId) {
           state.setActiveSession(state.persistentPiSessionId);
@@ -370,7 +373,7 @@ export default function Home() {
         </div>
 
         {/* Right panel drawer (hosts both completions Chat and Agent sessions) */}
-        {(chatOpen || activeView === "agent") && <RightPanel prefill={chatPrefill} onPrefillConsumed={() => setChatPrefill(null)} />}
+        {chatOpen && <RightPanel prefill={chatPrefill} onPrefillConsumed={() => setChatPrefill(null)} />}
 
         {/* Global search overlay */}
         {searchOpen && <SearchPanel />}
