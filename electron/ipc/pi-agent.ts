@@ -126,7 +126,7 @@ async function runSession(
         }
       },
       onStepStart:    () => send("pi-agent:step",  { sessionId }),
-      onUsage:        (promptTokens, completionTokens) => send("pi-agent:usage", { sessionId, promptTokens, completionTokens }),
+      onUsage:        (promptTokens, completionTokens, breakdown) => send("pi-agent:usage", { sessionId, promptTokens, completionTokens, breakdown }),
       onRetry:        (attempt, maxRetries, delayMs, error) => send("pi-agent:retry", { sessionId, attempt, maxRetries, delayMs, error }),
       transformContext: session.compactionTransformer,
       onDone: () => {

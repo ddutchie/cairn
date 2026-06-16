@@ -420,6 +420,7 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
           <ContextRing
             promptTokens={activeThread.lastUsage.promptTokens}
             contextLimit={aiConfig.contextLimit ?? 128000}
+            breakdown={activeThread.lastUsage.breakdown}
           />
         )}
 

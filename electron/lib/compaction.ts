@@ -135,7 +135,7 @@ export async function generateSummary(
       messages: [{ role: "user", content: SUMMARIZATION_USER_PROMPT(conversationText) }],
       max_tokens: SUMMARY_MAX_TOKENS,
       temperature: 0.1, // deterministic summary
-      stream: false,
+      stream: true,
     }),
   });
 
@@ -143,9 +143,27 @@ export async function generateSummary(
     throw new Error(`Compaction LLM call failed: ${response.status} ${response.statusText}`);
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const json = await response.json() as any;
-  const content: string = json.choices?.[0]?.message?.content ?? "";
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("No response stream for compaction");
+
+  const decoder = new TextDecoder();
+  let content = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    for (const line of decoder.decode(value, { stream: true }).split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith("data:")) continue;
+      const jsonStr = trimmed.slice(5).trim();
+      if (jsonStr === "[DONE]") break;
+      try {
+        const obj = JSON.parse(jsonStr);
+        const delta = obj.choices?.[0]?.delta?.content ?? "";
+        if (delta) content += delta;
+      } catch { /* skip malformed lines */ }
+    }
+  }
+
   if (!content) throw new Error("Compaction returned empty summary");
   return content;
 }

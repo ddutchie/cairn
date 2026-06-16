@@ -10,7 +10,7 @@
 import type { BrowserWindow } from "electron";
 import { registerIpcHandle, registerIpcOn, broadcastEvent } from "./registry";
 import type Database from "better-sqlite3";
-import { isLocalEndpoint, streamCompletion, normaliseBaseUrl, type OpenAIMessage } from "../lib/llm";
+import { isLocalEndpoint, streamCompletion, normaliseBaseUrl, type OpenAIMessage, calculatePromptBreakdown, scaleBreakdown, type TokenBreakdown } from "../lib/llm";
 import { TOOLS, buildSystemPrompt, type ChatRequest } from "../lib/tools";
 import { executeTool } from "./chat-executor";
 import { saveCachedConfig, getCachedConfig } from "../lib/config-cache";
@@ -83,9 +83,12 @@ async function runToolLoop(
   provider?: string,
   onUsage?: (pt: number, ct: number) => void,
   emitToolCallDone?: (e: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void,
-): Promise<{ exhausted: true; content: string } | { exhausted: false }> {
+  onToken?: (delta: string) => void,
+): Promise<{ exhausted: true; content: string } | { exhausted: false; content: string }> {
   const maxSteps    = req.config?.maxSteps    ?? 20;
   const temperature = req.config?.temperature ?? 0.3;
+  let accumulatedContent = "";
+
   for (let round = 0; round < maxSteps; round++) {
     if (signal?.aborted) return { exhausted: true, content: "" };
     
@@ -128,6 +131,10 @@ async function runToolLoop(
             }
           }
         }
+        if (assistantMsg.content) {
+          accumulatedContent += assistantMsg.content;
+          if (onToken) onToken(assistantMsg.content);
+        }
       } catch (err) {
         return { exhausted: true, content: `Local LLM Engine error: ${String(err)}` };
       }
@@ -139,9 +146,20 @@ async function runToolLoop(
         response = await fetch(`${baseUrl}/v1/chat/completions`, {
           method: "POST",
           headers,
-          body: JSON.stringify({ model, messages, tools: TOOLS, tool_choice: "auto", max_tokens: 4096, temperature }),
+          signal,
+          body: JSON.stringify({
+            model,
+            messages,
+            tools: TOOLS,
+            tool_choice: "auto",
+            max_tokens: 4096,
+            temperature,
+            stream: true,
+            stream_options: { include_usage: true },
+          }),
         });
-      } catch {
+      } catch (err) {
+        if (signal?.aborted) return { exhausted: true, content: "" };
         return { exhausted: true, content: `Could not reach the AI endpoint at \`${baseUrl}\`. Check your endpoint URL and make sure the server is running.` };
       }
 
@@ -150,20 +168,79 @@ async function runToolLoop(
         return { exhausted: true, content: `AI endpoint error (${response.status}): ${errText.slice(0, 300)}` };
       }
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const data = await response.json() as any;
-      const choice = data.choices?.[0];
-      if (!choice) return { exhausted: true, content: "No response from AI endpoint." };
-      if (data.usage && onUsage) {
-        onUsage(data.usage.prompt_tokens ?? 0, data.usage.completion_tokens ?? 0);
+      const reader = response.body?.getReader();
+      if (!reader) return { exhausted: true, content: "No response stream" };
+
+      const decoder = new TextDecoder();
+      let contentBuffer = "";
+      const toolCallBuffers: Map<number, { id: string; name: string; args: string }> = new Map();
+      let streamDone = false;
+
+      while (!streamDone) {
+        if (signal?.aborted) break;
+        const { done, value } = await reader.read();
+        if (done) break;
+        for (const line of decoder.decode(value, { stream: true }).split("\n")) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith("data:")) continue;
+          const jsonStr = trimmed.slice(5).trim();
+          if (jsonStr === "[DONE]") {
+            streamDone = true;
+            break;
+          }
+          try {
+            const chunk = JSON.parse(jsonStr) as any;
+            if (chunk.usage && onUsage) {
+              onUsage(chunk.usage.prompt_tokens ?? 0, chunk.usage.completion_tokens ?? 0);
+            }
+            const delta = chunk.choices?.[0]?.delta;
+            if (!delta) continue;
+
+            if (delta.content) {
+              contentBuffer += delta.content;
+              accumulatedContent += delta.content;
+              if (onToken) onToken(delta.content);
+            }
+
+            if (delta.tool_calls) {
+              for (const tc of delta.tool_calls) {
+                const idx: number = tc.index ?? 0;
+                if (!toolCallBuffers.has(idx)) {
+                  toolCallBuffers.set(idx, { id: tc.id ?? "", name: tc.function?.name ?? "", args: "" });
+                }
+                const buf = toolCallBuffers.get(idx)!;
+                if (tc.id) buf.id = tc.id;
+                if (tc.function?.name) buf.name = tc.function.name;
+                if (tc.function?.arguments) buf.args += tc.function.arguments;
+              }
+            }
+          } catch { /* skip malformed SSE lines */ }
+        }
       }
-      assistantMsg = choice.message as OpenAIMessage;
+
+      if (signal?.aborted) return { exhausted: true, content: "" };
+
+      const toolCalls = toolCallBuffers.size > 0
+        ? Array.from(toolCallBuffers.entries())
+            .sort(([a], [b]) => a - b)
+            .map(([, buf]) => ({
+              id: buf.id,
+              type: "function" as const,
+              function: { name: buf.name, arguments: buf.args },
+            }))
+        : undefined;
+
+      assistantMsg = {
+        role: "assistant",
+        content: contentBuffer || null,
+        tool_calls: toolCalls,
+      };
     }
 
     // No tool calls — model is ready to produce its final reply
     if (!assistantMsg.tool_calls?.length) {
       messages.push(assistantMsg);
-      return { exhausted: false };
+      return { exhausted: false, content: accumulatedContent };
     }
 
     messages.push(assistantMsg);
@@ -264,13 +341,27 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
 
     let promptTokens = 0;
     let completionTokens = 0;
+    let lastBreakdown: TokenBreakdown | undefined = undefined;
     const addUsage = (pt: number, ct: number) => {
       promptTokens += pt;
       completionTokens += ct;
-      send("chat:usage", { promptTokens, completionTokens });
+      try {
+        const rawBreakdown = calculatePromptBreakdown(buildSystemPrompt(req), messages, TOOLS);
+        lastBreakdown = scaleBreakdown(rawBreakdown, promptTokens);
+      } catch (err) {
+        console.error("[chat] failed to calculate breakdown:", err);
+      }
+      send("chat:usage", { promptTokens, completionTokens, breakdown: lastBreakdown });
     };
 
-    const loopResult = await runToolLoop(db, req, workspacePath, baseUrl, model, apiKey, messages, emitToolCall, abortCtrl.signal, getWin, provider, addUsage, emitToolCallDone);
+    const loopResult = await runToolLoop(
+      db, req, workspacePath, baseUrl, model, apiKey, messages,
+      emitToolCall, abortCtrl.signal, getWin, provider, addUsage,
+      emitToolCallDone,
+      (delta) => {
+        send("chat:token", { delta });
+      }
+    );
 
     abortControllers.delete(event.sender.id);
 
@@ -283,42 +374,10 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
     }
 
     if (abortCtrl.signal.aborted) {
-      send("chat:done", { content: "", contextRefs: [], usage: promptTokens > 0 ? { promptTokens, completionTokens } : undefined });
+      send("chat:done", { content: "", contextRefs: [], usage: promptTokens > 0 ? { promptTokens, completionTokens, breakdown: lastBreakdown } : undefined });
       return;
     }
 
-    if (loopResult.exhausted) {
-      send("chat:done", { content: loopResult.content, contextRefs: [], usage: promptTokens > 0 ? { promptTokens, completionTokens } : undefined });
-      return;
-    }
-
-    const lastMsg = messages[messages.length - 1] as OpenAIMessage;
-
-    if (lastMsg.role === "assistant" && lastMsg.content && !lastMsg.tool_calls?.length) {
-      messages.pop();
-
-      // Re-request with stream: true for real SSE tokens
-      let fullContent = "";
-      try {
-        for await (const delta of streamCompletion({ baseUrl, model, apiKey, provider: provider as "openai" | "localllm" }, messages, TOOLS, addUsage)) {
-          if (abortCtrl.signal.aborted) break;
-          fullContent += delta;
-          send("chat:token", { delta });
-        }
-      } catch {
-        // Fallback: just emit the already-received content verbatim
-        if (!fullContent) {
-          send("chat:token", { delta: lastMsg.content });
-          send("chat:done", { content: lastMsg.content, contextRefs: [], usage: promptTokens > 0 ? { promptTokens, completionTokens } : undefined });
-          return;
-        }
-      }
-
-      send("chat:done", { content: fullContent || (lastMsg.content ?? ""), contextRefs: [], usage: promptTokens > 0 ? { promptTokens, completionTokens } : undefined });
-      return;
-    }
-
-    // Unexpected state — shouldn't happen, but be safe
-    send("chat:done", { content: "", contextRefs: [], usage: promptTokens > 0 ? { promptTokens, completionTokens } : undefined });
+    send("chat:done", { content: loopResult.content, contextRefs: [], usage: promptTokens > 0 ? { promptTokens, completionTokens, breakdown: lastBreakdown } : undefined });
   });
 }

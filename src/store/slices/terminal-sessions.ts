@@ -10,6 +10,8 @@
 import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
 
+import type { TokenBreakdown } from "../../types";
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface PiSubagentMessage {
@@ -22,7 +24,7 @@ export interface PiSubagentMessage {
   /** Final result returned to the parent */
   result?: string;
   /** Latest token usage from the subagent's LLM steps */
-  lastUsage?: { promptTokens: number; completionTokens: number };
+  lastUsage?: { promptTokens: number; completionTokens: number; breakdown?: TokenBreakdown };
 }
 
 export interface PiAgentMessage {
@@ -68,7 +70,7 @@ export interface TerminalSession {
   /** Prompt to send automatically when PiAgentPane first mounts */
   initialPrompt?: string;
   /** Latest token usage from the LLM — updated after each step */
-  lastUsage?: { promptTokens: number; completionTokens: number };
+  lastUsage?: { promptTokens: number; completionTokens: number; breakdown?: TokenBreakdown };
   /** Plan mode: "plan" = conversational planning only; "execute" = full agent (default) */
   mode?: "plan" | "execute";
   /** Note ID of the PRD produced during plan mode — set once agent calls ensure_note */
@@ -118,7 +120,7 @@ export interface TerminalSessionsSlice {
   /** Clear message history for a pi session */
   clearPiMessages: (sessionId: string) => void;
   /** Update token usage for a session after a step completes */
-  updatePiUsage: (sessionId: string, promptTokens: number, completionTokens: number) => void;
+  updatePiUsage: (sessionId: string, promptTokens: number, completionTokens: number, breakdown?: TokenBreakdown) => void;
   /** Register a new subagent on the last streaming assistant message */
   addPiSubagent: (sessionId: string, childSessionId: string) => void;
   /** Append a token to a subagent's last streaming message */
@@ -132,7 +134,7 @@ export interface TerminalSessionsSlice {
   /** Mark a subagent as done and store its result */
   completePiSubagent: (sessionId: string, childSessionId: string, result: string) => void;
   /** Update token usage on an inline subagent block */
-  updatePiSubagentUsage: (sessionId: string, childSessionId: string, promptTokens: number, completionTokens: number) => void;
+  updatePiSubagentUsage: (sessionId: string, childSessionId: string, promptTokens: number, completionTokens: number, breakdown?: TokenBreakdown) => void;
   /** Start a new step in a subagent (finalise current message) */
   stepPiSubagent: (sessionId: string, childSessionId: string) => void;
   /** Set the mode for a pi session and optionally record the plan note ID */
@@ -379,11 +381,11 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
     }));
   },
 
-  updatePiUsage(sessionId, promptTokens, completionTokens) {
+  updatePiUsage(sessionId, promptTokens, completionTokens, breakdown) {
     set((s) => ({
       terminalSessions: s.terminalSessions.map((t) =>
         t.sessionId === sessionId
-          ? { ...t, lastUsage: { promptTokens, completionTokens } }
+          ? { ...t, lastUsage: { promptTokens, completionTokens, breakdown } }
           : t
       ),
     }));
@@ -555,7 +557,7 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
     }));
   },
 
-  updatePiSubagentUsage(sessionId, childSessionId, promptTokens, completionTokens) {
+  updatePiSubagentUsage(sessionId, childSessionId, promptTokens, completionTokens, breakdown) {
     set((s) => ({
       terminalSessions: s.terminalSessions.map((t) => {
         if (t.sessionId !== sessionId) return t;
@@ -565,7 +567,7 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
             const subIdx = (msg.subagents ?? []).findIndex((sa) => sa.childSessionId === childSessionId);
             if (subIdx === -1) return msg;
             const newSubagents = [...msg.subagents!];
-            newSubagents[subIdx] = { ...newSubagents[subIdx], lastUsage: { promptTokens, completionTokens } };
+            newSubagents[subIdx] = { ...newSubagents[subIdx], lastUsage: { promptTokens, completionTokens, breakdown } };
             return { ...msg, subagents: newSubagents };
           }),
         };
