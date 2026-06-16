@@ -16,7 +16,7 @@
 
 import type Database from "better-sqlite3";
 import type { BrowserWindow } from "electron";
-import { isLocalEndpoint } from "./llm";
+import { isLocalEndpoint, calculatePromptBreakdown, scaleBreakdown, type TokenBreakdown } from "./llm";
 import {
   readTool,  readToolDefinition,
   writeTool, writeToolDefinition,
@@ -125,7 +125,7 @@ export interface AgentLoopCallbacks {
   /** callId links back to the same chip created by onToolPending / updated by onToolStart. */
   onToolEnd:       (name: string, label: string, ok: boolean, output: string, callId?: string) => void;
   onStepStart:     () => void;
-  onUsage:         (promptTokens: number, completionTokens: number) => void;
+  onUsage:         (promptTokens: number, completionTokens: number, breakdown?: TokenBreakdown) => void;
   onDone:          () => void;
   onError:         (message: string) => void;
   /** Fired when a tool call needs user confirmation before execution. */
@@ -568,7 +568,14 @@ export async function runAgentLoop(
             const pt = chunk.usage.prompt_tokens ?? 0;
             const ct = chunk.usage.completion_tokens ?? 0;
             session.lastPromptTokens = pt;
-            callbacks.onUsage(pt, ct);
+            let breakdown: TokenBreakdown | undefined;
+            try {
+              const rawBreakdown = calculatePromptBreakdown(systemPrompt, contextMessages, allTools);
+              breakdown = scaleBreakdown(rawBreakdown, pt);
+            } catch (err) {
+              console.error("[pi-agent] failed to calculate breakdown:", err);
+            }
+            callbacks.onUsage(pt, ct, breakdown);
           }
 
           const delta = chunk.choices?.[0]?.delta;

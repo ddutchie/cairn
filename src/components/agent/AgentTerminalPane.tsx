@@ -527,6 +527,8 @@ export function AgentTerminalPane({ isRightPanel = false, chatPrefill = null, on
     activeProjectId,
     fetchPiSessionHistory,
     toggleChat,
+    activeView,
+    chatOpen,
   } = useCairnStore(useShallow((s) => ({
     terminalSessions:       s.terminalSessions,
     activeSessionId:        s.activeSessionId,
@@ -536,6 +538,8 @@ export function AgentTerminalPane({ isRightPanel = false, chatPrefill = null, on
     activeProjectId:        s.activeProjectId,
     fetchPiSessionHistory:  s.fetchPiSessionHistory,
     toggleChat:             s.toggleChat,
+    activeView:             s.activeView,
+    chatOpen:               s.chatOpen,
   })));
 
   const [spawnOpen, setSpawnOpen] = useState(false);
@@ -564,6 +568,14 @@ export function AgentTerminalPane({ isRightPanel = false, chatPrefill = null, on
       setActiveSession("chat");
     }
   }, [activeSessionId, setActiveSession]);
+
+  // Default active session to "chat" when opening chat panel outside of agent view
+  // or when navigating away from the agent view.
+  useEffect(() => {
+    if (activeView !== "agent") {
+      setActiveSession("chat");
+    }
+  }, [activeView, chatOpen, setActiveSession]);
 
   // Determine if the pinned tab is active
   const pinnedIsActive = persistentPiSessionId !== null && activeSessionId === persistentPiSessionId;

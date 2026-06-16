@@ -227,6 +227,7 @@ function SubagentBlock({ sub }: { sub: PiSubagentMessage }) {
           <ContextRing
             promptTokens={sub.lastUsage.promptTokens}
             contextLimit={contextLimit}
+            breakdown={sub.lastUsage.breakdown}
             size={12}
             stroke={1.5}
           />

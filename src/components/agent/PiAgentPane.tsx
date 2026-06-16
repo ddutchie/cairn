@@ -636,6 +636,7 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
           <ContextRing
             promptTokens={session.lastUsage.promptTokens}
             contextLimit={agentConfig.contextLimit ?? 128000}
+            breakdown={session.lastUsage.breakdown}
           />
         )}
         <Tooltip content="Clear conversation" side="left">

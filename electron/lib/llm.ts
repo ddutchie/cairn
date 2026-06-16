@@ -2,6 +2,8 @@
  * LLM utility helpers shared across the Electron main process.
  */
 
+import { encode } from "gpt-tokenizer";
+
 /**
  * Normalise a user-supplied base URL.
  * Strips trailing slashes and a trailing /v1 segment so that both
@@ -63,12 +65,33 @@ export async function callLLM(config: LLMConfig, systemPrompt: string, userPromp
       ],
       max_tokens: 4096,
       temperature: 0.4,
+      // Must stream to prevent proxy connection drop timeouts (e.g. gateway/reverse proxy limits on blocking sync calls returning 504 Gateway Time-out)
+      stream: true,
     }),
   });
   if (!response.ok) throw new Error(`LLM error ${response.status}: ${await response.text().catch(() => response.statusText)}`);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const data = await response.json() as any;
-  return (data.choices?.[0]?.message?.content as string) ?? "";
+
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("No readable stream");
+
+  const decoder = new TextDecoder();
+  let content = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    for (const line of decoder.decode(value, { stream: true }).split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith("data:")) continue;
+      const jsonStr = trimmed.slice(5).trim();
+      if (jsonStr === "[DONE]") break;
+      try {
+        const obj = JSON.parse(jsonStr);
+        const delta = obj.choices?.[0]?.delta?.content ?? "";
+        if (delta) content += delta;
+      } catch { /* skip malformed lines */ }
+    }
+  }
+  return content;
 }
 
 /**
@@ -144,3 +167,151 @@ export async function* streamCompletion(
     }
   }
 }
+
+export interface TokenBreakdown {
+  systemPrompt: number;
+  skills: number;
+  tools: number;
+  conversation: number;
+  toolOutputs: number;
+  rules: number;
+  mcp: number;
+  subagentDefinitions: number;
+}
+
+function tok(s: string): number {
+  return encode(s).length;
+}
+
+export function calculatePromptBreakdown(
+  systemPrompt: string | undefined,
+  messages: OpenAIMessage[],
+  tools?: object[]
+): TokenBreakdown {
+  let systemTokens = 0;
+  let skillsTokens = 0;
+  let toolsTokens = 0;
+  let conversationTokens = 0;
+  let toolOutputsTokens = 0;
+  const rulesTokens = 0;
+  const mcpTokens = 0;
+  const subagentTokens = 0;
+
+  // 1. System Prompt & Skills
+  if (systemPrompt) {
+    let sysText = systemPrompt;
+    // Extract available_skills XML if present
+    const skillsMatch = sysText.match(/<available_skills>[\s\S]*?<\/available_skills>/);
+    if (skillsMatch) {
+      const skillsXml = skillsMatch[0];
+      skillsTokens += tok(skillsXml);
+      sysText = sysText.replace(skillsXml, "");
+    }
+    systemTokens = tok(sysText);
+  }
+
+  // 2. Tools (Definitions/Schemas)
+  if (tools && tools.length > 0) {
+    for (const tool of tools) {
+      const t = tool as Record<string, unknown>;
+      const func = (t.function ?? {}) as Record<string, unknown>;
+      const toolStr = JSON.stringify({
+        type: "function",
+        function: {
+          name: (func.name ?? t.name ?? "") as string,
+          description: (func.description ?? t.description ?? "") as string,
+          parameters: (func.parameters ?? t.parameters ?? {}) as object,
+        },
+      });
+      toolsTokens += tok(toolStr);
+    }
+  }
+
+  // 3. Messages / Conversation vs Tool Outputs
+  const toolCallNames = new Map<string, string>();
+  for (const msg of messages) {
+    if (msg.role === "assistant" && msg.tool_calls) {
+      for (const tc of msg.tool_calls) {
+        if (tc.id && tc.function?.name) {
+          toolCallNames.set(tc.id, tc.function.name);
+        }
+      }
+    }
+  }
+
+  for (const msg of messages) {
+    if (msg.role === "system") {
+      if (!systemPrompt) {
+        let content = msg.content ?? "";
+        const skillsMatch = content.match(/<available_skills>[\s\S]*?<\/available_skills>/);
+        if (skillsMatch) {
+          const skillsXml = skillsMatch[0];
+          skillsTokens += tok(skillsXml);
+          content = content.replace(skillsXml, "");
+        }
+        systemTokens += tok(content);
+      }
+      continue;
+    }
+
+    const textContent = msg.content ?? "";
+    const textTokens = tok(textContent);
+    const toolCallsTokens = msg.tool_calls ? tok(JSON.stringify(msg.tool_calls)) : 0;
+
+    if (msg.role === "tool") {
+      // If it's the "skill" tool, count under skills
+      if (msg.tool_call_id && toolCallNames.get(msg.tool_call_id) === "skill") {
+        skillsTokens += textTokens;
+      } else {
+        toolOutputsTokens += textTokens;
+      }
+    } else if (msg.role === "assistant") {
+      conversationTokens += textTokens;
+      toolOutputsTokens += toolCallsTokens;
+    } else {
+      // user role
+      conversationTokens += textTokens;
+    }
+  }
+
+  return {
+    systemPrompt: systemTokens,
+    skills: skillsTokens,
+    tools: toolsTokens,
+    conversation: conversationTokens,
+    toolOutputs: toolOutputsTokens,
+    rules: rulesTokens,
+    mcp: mcpTokens,
+    subagentDefinitions: subagentTokens,
+  };
+}
+
+export function scaleBreakdown(
+  breakdown: TokenBreakdown,
+  targetTotal: number
+): TokenBreakdown {
+  const sum =
+    breakdown.systemPrompt +
+    breakdown.skills +
+    breakdown.tools +
+    breakdown.conversation +
+    breakdown.toolOutputs +
+    breakdown.rules +
+    breakdown.mcp +
+    breakdown.subagentDefinitions;
+
+  if (sum <= 0 || targetTotal <= 0) return breakdown;
+
+  const ratio = targetTotal / sum;
+  return {
+    systemPrompt: Math.round(breakdown.systemPrompt * ratio),
+    skills: Math.round(breakdown.skills * ratio),
+    tools: Math.round(breakdown.tools * ratio),
+    conversation: Math.round(breakdown.conversation * ratio),
+    toolOutputs: Math.round(breakdown.toolOutputs * ratio),
+    rules: Math.round(breakdown.rules * ratio),
+    mcp: Math.round(breakdown.mcp * ratio),
+    subagentDefinitions: Math.round(breakdown.subagentDefinitions * ratio),
+  };
+}
+

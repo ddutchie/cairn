@@ -118,6 +118,17 @@ export interface TaskCard {
 // ── Chat ──────────────────────────────────────
 export type ChatThreadScope = "workspace" | "project";
 
+export interface TokenBreakdown {
+  systemPrompt: number;
+  skills: number;
+  tools: number;
+  conversation: number;
+  toolOutputs: number;
+  rules: number;
+  mcp: number;
+  subagentDefinitions: number;
+}
+
 export interface ChatThread {
   id: ID;
   scope: ChatThreadScope;
@@ -126,7 +137,7 @@ export interface ChatThread {
   title?: string;
   createdAt: string;
   updatedAt: string;
-  lastUsage?: { promptTokens: number; completionTokens: number };
+  lastUsage?: { promptTokens: number; completionTokens: number; breakdown?: TokenBreakdown };
 }
 
 export type ChatRole = "user" | "assistant" | "system";

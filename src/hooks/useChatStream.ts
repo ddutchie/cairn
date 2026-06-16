@@ -18,7 +18,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useCairnStore } from "@/store";
-import type { SuggestedAction } from "@/types";
+import type { SuggestedAction, TokenBreakdown } from "@/types";
 
 export interface ChatToolCall {
   tool: string;
@@ -121,7 +121,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
       setStreamingContent((prev) => prev + e.delta);
     });
 
-    const unsubDone = (electron.chat.onDone as (cb: (e: { content: string; contextRefs: unknown[]; error?: string; usage?: { promptTokens: number; completionTokens: number } }) => void) => () => void)((e) => {
+    const unsubDone = (electron.chat.onDone as (cb: (e: { content: string; contextRefs: unknown[]; error?: string; usage?: { promptTokens: number; completionTokens: number; breakdown?: TokenBreakdown } }) => void) => () => void)((e) => {
       const tid = threadIdRef.current;
       // Mark any still-running tool as done before persisting.
       const finalToolCalls = toolCallsRef.current.map((tc) =>
@@ -145,7 +145,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
       // the user submits their answers. It is cleared in sendStream() instead.
     });
 
-    const unsubUsage = (electron.chat.onUsage as (cb: (e: { promptTokens: number; completionTokens: number }) => void) => () => void)((e) => {
+    const unsubUsage = (electron.chat.onUsage as (cb: (e: { promptTokens: number; completionTokens: number; breakdown?: TokenBreakdown }) => void) => () => void)((e) => {
       const tid = threadIdRef.current;
       if (tid) {
         setThreadUsage(tid, e);
