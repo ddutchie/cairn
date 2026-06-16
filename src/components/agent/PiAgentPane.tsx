@@ -577,7 +577,7 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
     <div className="flex flex-col h-full bg-[var(--background)]">
 
       {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-[var(--border)] bg-[var(--surface)] flex-shrink-0">
+      <div className="flex items-center gap-2 px-3 h-9 border-b border-[var(--border)] bg-[var(--surface-2)] flex-shrink-0">
         <span className="text-[0.714rem] text-[var(--text-tertiary)] truncate flex-1">
           {session.taskTitle !== "Ad-hoc session" ? session.taskTitle : project?.name ?? "Cairn Agent"}
         </span>

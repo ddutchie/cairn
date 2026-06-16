@@ -103,7 +103,7 @@ export function DiffViewer({ cwd }: DiffViewerProps) {
 
   // ── Toolbar ────────────────────────────────────────────────────────────────
   const toolbar = (
-    <div className="flex items-center gap-2 px-3 py-1.5 border-b border-[var(--border)] bg-[var(--surface)] flex-shrink-0">
+    <div className="flex items-center gap-2 px-3 h-9 border-b border-[var(--border)] bg-[var(--surface)] flex-shrink-0">
       <FolderGit2 size={13} className="text-[var(--text-tertiary)] flex-shrink-0" />
       <span className="text-[0.714rem] text-[var(--text-tertiary)] flex-1 truncate" title={cwd}>
         {files.length > 0

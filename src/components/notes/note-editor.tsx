@@ -779,7 +779,7 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
       }}
     >
       {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center justify-between gap-2.5 px-3 py-2.5 md:px-4 md:py-2 border-b border-[var(--border)] flex-shrink-0 w-full">
+      <div className="flex flex-wrap md:flex-nowrap items-center justify-between gap-2.5 px-3 py-2.5 md:px-4 md:h-9 md:py-0 border-b border-[var(--border)] flex-shrink-0 w-full">
         <div className="flex items-center justify-between w-full md:w-auto gap-2">
           {onBack && (
             <Button
@@ -823,7 +823,7 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
         </div>
 
         {/* Meta */}
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap md:flex-nowrap">
           {aiEnabled && (spawnLoading ? (
             <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-[var(--surface-2)] border border-[var(--border)]">
               <Loader2 size={11} className="animate-spin text-[var(--accent)] shrink-0" />

@@ -16,7 +16,7 @@ import "@xterm/xterm/css/xterm.css";
 
 import { useEffect, useRef, useCallback, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { X, MessageSquare, CircleDot, Plus, ChevronDown, Trash2, Bot, History, ArrowRight } from "lucide-react";
+import { X, MessageSquare, CircleDot, Plus, ChevronDown, Trash2, Bot, History, ArrowRight, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { id } from "@/lib/utils";
 import { useCairnStore } from "@/store";
@@ -24,6 +24,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { SpawnAgentModal } from "./SpawnAgentModal";
 import { TerminalManager } from "./TerminalManager";
 import { PiAgentPane } from "./PiAgentPane";
+import { ChatPanel } from "@/components/chat/chat-panel";
 import type { TerminalSession, PiSessionSummary } from "@/store/slices/terminal-sessions";
 
 // ── Single terminal session mount ─────────────────────────────────────────────
@@ -418,20 +419,20 @@ function PiAgentTab({ isActive, onActivate }: PiAgentTabProps) {
   }
 
   return (
-    <div className="relative flex-shrink-0" ref={dropdownRef}>
+    <div className="relative flex-shrink-0 h-full" ref={dropdownRef}>
       {/* The pinned tab button */}
       <button
         onClick={onActivate}
         role="tab"
         aria-selected={isActive}
         className={cn(
-          "flex items-center gap-1.5 px-3 py-2 text-[0.714rem] whitespace-nowrap border-r border-[var(--border)] transition-colors flex-shrink-0",
+          "flex items-center gap-1.5 px-3 h-full text-xs font-semibold whitespace-nowrap border-r border-[var(--border)] transition-colors flex-shrink-0",
           isActive
             ? "text-[var(--text-primary)] bg-[var(--background)]"
             : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"
         )}
       >
-        <MessageSquare size={8} className={cn("flex-shrink-0", isActive ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]")} />
+        <MessageSquare size={11} className={cn("flex-shrink-0", isActive ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]")} />
         <span className="max-w-[100px] truncate">Cairn Agent</span>
         {/* History dropdown chevron */}
         <span
@@ -510,9 +511,13 @@ function PiAgentTab({ isActive, onActivate }: PiAgentTabProps) {
   );
 }
 
-// ── AgentTerminalPane ─────────────────────────────────────────────────────────
+interface AgentTerminalPaneProps {
+  isRightPanel?: boolean;
+  chatPrefill?: { text: string; autoSend?: boolean } | null;
+  onPrefillConsumed?: () => void;
+}
 
-export function AgentTerminalPane() {
+export function AgentTerminalPane({ isRightPanel = false, chatPrefill = null, onPrefillConsumed }: AgentTerminalPaneProps = {}) {
   const {
     terminalSessions,
     activeSessionId,
@@ -521,6 +526,7 @@ export function AgentTerminalPane() {
     persistentPiSessionId,
     activeProjectId,
     fetchPiSessionHistory,
+    toggleChat,
   } = useCairnStore(useShallow((s) => ({
     terminalSessions:       s.terminalSessions,
     activeSessionId:        s.activeSessionId,
@@ -529,6 +535,7 @@ export function AgentTerminalPane() {
     persistentPiSessionId:  s.persistentPiSessionId,
     activeProjectId:        s.activeProjectId,
     fetchPiSessionHistory:  s.fetchPiSessionHistory,
+    toggleChat:             s.toggleChat,
   })));
 
   const [spawnOpen, setSpawnOpen] = useState(false);
@@ -551,6 +558,13 @@ export function AgentTerminalPane() {
   // PTY-only sessions (shown as closeable tabs after the pinned tab)
   const ptySessions = terminalSessions.filter((t) => t.sessionType === "pty");
 
+  // Default to "chat" if activeSessionId is null on mount
+  useEffect(() => {
+    if (activeSessionId === null) {
+      setActiveSession("chat");
+    }
+  }, [activeSessionId, setActiveSession]);
+
   // Determine if the pinned tab is active
   const pinnedIsActive = persistentPiSessionId !== null && activeSessionId === persistentPiSessionId;
 
@@ -558,7 +572,21 @@ export function AgentTerminalPane() {
     <>
     <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
       {/* Tab bar */}
-      <div className="flex items-center border-b border-[var(--border)] overflow-visible relative z-20 flex-shrink-0 bg-[var(--surface)]">
+      <div className="flex items-center h-11 border-b border-[var(--border)] overflow-visible relative z-20 flex-shrink-0 bg-[var(--surface)]">
+        {/* AI Chat tab (always present) */}
+        <button
+          onClick={() => setActiveSession("chat")}
+          className={cn(
+            "flex items-center gap-1.5 px-3 h-full text-xs font-semibold whitespace-nowrap border-r border-[var(--border)] transition-colors flex-shrink-0",
+            activeSessionId === "chat"
+              ? "text-[var(--text-primary)] bg-[var(--background)]"
+              : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"
+          )}
+        >
+          <Sparkles size={11} className={cn("flex-shrink-0", activeSessionId === "chat" ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]")} />
+          <span>AI Chat</span>
+        </button>
+
         {/* Always-present Cairn Agent pinned tab */}
         <PiAgentTab
           isActive={pinnedIsActive}
@@ -570,7 +598,7 @@ export function AgentTerminalPane() {
         />
 
         {/* Scrollable PTY sessions */}
-        <div className="flex-1 flex items-center overflow-x-auto min-w-0">
+        <div className="flex-1 flex items-center overflow-x-auto min-w-0 h-full">
           {ptySessions.map((session) => (
             <TerminalTab
               key={session.sessionId}
@@ -586,24 +614,43 @@ export function AgentTerminalPane() {
         <Tooltip content="New session" side="bottom">
           <button
             onClick={() => setSpawnOpen(true)}
-            className="flex-shrink-0 px-2 py-2 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors border-l border-[var(--border)]"
+            className="flex-shrink-0 px-3 h-full text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors border-l border-[var(--border)] flex items-center justify-center"
           >
             <Plus size={12} />
           </button>
         </Tooltip>
+
+        {/* Close panel button (visible only in right panel drawer) */}
+        {isRightPanel && (
+          <Tooltip content="Close panel (⌘/)" side="bottom">
+            <button
+              onClick={toggleChat}
+              className="flex-shrink-0 px-3 h-full text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors border-l border-[var(--border)] flex items-center justify-center"
+            >
+              <X size={12} />
+            </button>
+          </Tooltip>
+        )}
       </div>
 
       {/* Session content */}
       <div className="flex-1 min-h-0 flex flex-col overflow-hidden bg-[var(--background)]">
+        {/* AI Chat content */}
+        {activeSessionId === "chat" && (
+          <ChatPanel prefill={chatPrefill} onPrefillConsumed={onPrefillConsumed} />
+        )}
+
         {/* Pinned pi session content */}
-        {persistentSession ? (
-          <div className={cn("flex-1 min-h-0 overflow-hidden", !pinnedIsActive && "hidden")}>
-            <PiAgentPane session={persistentSession} isActive={pinnedIsActive} />
-          </div>
-        ) : (
-          <div className="flex-1 min-h-0 overflow-hidden">
-            <PiAgentEmptyState />
-          </div>
+        {pinnedIsActive && (
+          persistentSession ? (
+            <div className="flex-1 min-h-0 overflow-hidden">
+              <PiAgentPane session={persistentSession} isActive={pinnedIsActive} />
+            </div>
+          ) : (
+            <div className="flex-1 min-h-0 overflow-hidden">
+              <PiAgentEmptyState />
+            </div>
+          )
         )}
 
         {/* PTY sessions */}
@@ -643,7 +690,7 @@ function TerminalTab({ session, isActive, onActivate, onClose }: TerminalTabProp
       role="tab"
       aria-selected={isActive}
       className={cn(
-        "flex items-center gap-1.5 px-3 py-2 text-[0.714rem] whitespace-nowrap border-r border-[var(--border)] transition-colors flex-shrink-0 group",
+        "flex items-center gap-1.5 px-3 h-full text-xs font-semibold whitespace-nowrap border-r border-[var(--border)] transition-colors flex-shrink-0 group",
         isActive
           ? "text-[var(--text-primary)] bg-[var(--background)]"
           : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"

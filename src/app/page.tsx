@@ -48,7 +48,7 @@ import { KanbanBoard } from "@/components/kanban/board";
 import { IdeaFlowView } from "@/components/flow/flow-view";
 import { KnowledgeGraphView } from "@/components/graph/KnowledgeGraphView";
 import { InsightsView } from "@/components/insights/InsightsView";
-import { ChatPanel } from "@/components/chat/chat-panel";
+import { RightPanel } from "@/components/layout/RightPanel";
 import { SearchPanel } from "@/components/search/search-panel";
 import { SettingsView } from "@/components/settings/settings-view";
 import { AgentView } from "@/components/agent/AgentView";
@@ -268,6 +268,18 @@ export default function Home() {
     };
   }, [toggleSearch, toggleChat, toggleSidebar, setView, activeProjectId, createNote, chatOpen, hiddenViews, ORDERED_VIEWS, activeView]);
 
+  // Auto-activate Cairn Agent tab if we switch to Agent view and the current tab is completions chat
+  useEffect(() => {
+    if (activeView === "agent") {
+      const state = useCairnStore.getState();
+      if (state.activeSessionId === null || state.activeSessionId === "chat") {
+        if (state.persistentPiSessionId) {
+          state.setActiveSession(state.persistentPiSessionId);
+        }
+      }
+    }
+  }, [activeView]);
+
   // Still loading
   if (onboardingState === null) {
     return (
@@ -357,8 +369,8 @@ export default function Home() {
           </div>
         </div>
 
-        {/* AI Chat panel */}
-        {chatOpen && activeView !== "agent" && <ChatPanel prefill={chatPrefill} onPrefillConsumed={() => setChatPrefill(null)} />}
+        {/* Right panel drawer (hosts both completions Chat and Agent sessions) */}
+        {(chatOpen || activeView === "agent") && <RightPanel prefill={chatPrefill} onPrefillConsumed={() => setChatPrefill(null)} />}
 
         {/* Global search overlay */}
         {searchOpen && <SearchPanel />}

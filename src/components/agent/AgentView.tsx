@@ -41,23 +41,20 @@ export function AgentView() {
   // Bottom terminal height lives in React state so AgentBottomTerminal re-renders with the new height
   const [bottomHeight, setBottomHeight] = useState(DEFAULT_BOTTOM_HEIGHT);
 
-  // DOM refs for the two resizable panes — widths are mutated directly,
+  // DOM refs for the resizable tree pane — mutated directly,
   // never stored in React state, so no re-render occurs during drag.
   const treePaneRef      = useRef<HTMLDivElement>(null);
-  const terminalPaneRef  = useRef<HTMLDivElement>(null);
   const leftDividerRef   = useRef<HTMLDivElement>(null);
-  const rightDividerRef  = useRef<HTMLDivElement>(null);
   const bottomDividerRef = useRef<HTMLDivElement>(null);
 
   // Set initial widths once on mount via DOM (avoids a React render cycle)
   useEffect(() => {
-    if (treePaneRef.current)     treePaneRef.current.style.width     = `${DEFAULT_TREE_WIDTH}px`;
-    if (terminalPaneRef.current) terminalPaneRef.current.style.width = `${DEFAULT_TERMINAL_WIDTH}px`;
+    if (treePaneRef.current) treePaneRef.current.style.width = `${DEFAULT_TREE_WIDTH}px`;
   }, []);
 
   // ── Drag logic ─────────────────────────────────────────────────────────────
   useEffect(() => {
-    let dragging: "left" | "right" | "bottom" | null = null;
+    let dragging: "left" | "bottom" | null = null;
     let startX = 0;
     let startY = 0;
     let startWidth = 0;
@@ -69,12 +66,6 @@ export function AgentView() {
       if (dragging === "left" && treePaneRef.current) {
         const next = Math.max(MIN_TREE_WIDTH, startWidth + (e.clientX - startX));
         treePaneRef.current.style.width = `${next}px`;
-      }
-
-      if (dragging === "right" && terminalPaneRef.current) {
-        const next = Math.max(MIN_TERMINAL_WIDTH, startWidth - (e.clientX - startX));
-        terminalPaneRef.current.style.width = `${next}px`;
-        TerminalManager.fitAll();
       }
 
       if (dragging === "bottom") {
@@ -102,15 +93,6 @@ export function AgentView() {
       e.preventDefault();
     }
 
-    function startRightDrag(e: MouseEvent) {
-      dragging = "right";
-      startX = e.clientX;
-      startWidth = terminalPaneRef.current?.offsetWidth ?? DEFAULT_TERMINAL_WIDTH;
-      document.body.style.cursor = "col-resize";
-      document.body.style.userSelect = "none";
-      e.preventDefault();
-    }
-
     function startBottomDrag(e: MouseEvent) {
       dragging = "bottom";
       startY = e.clientY;
@@ -124,18 +106,15 @@ export function AgentView() {
     }
 
     const leftDivider   = leftDividerRef.current;
-    const rightDivider  = rightDividerRef.current;
     const bottomDivider = bottomDividerRef.current;
 
     leftDivider?.addEventListener("mousedown",   startLeftDrag);
-    rightDivider?.addEventListener("mousedown",  startRightDrag);
     bottomDivider?.addEventListener("mousedown", startBottomDrag);
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup",   onMouseUp);
 
     return () => {
       leftDivider?.removeEventListener("mousedown",   startLeftDrag);
-      rightDivider?.removeEventListener("mousedown",  startRightDrag);
       bottomDivider?.removeEventListener("mousedown", startBottomDrag);
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup",   onMouseUp);
@@ -204,11 +183,11 @@ export function AgentView() {
           (mobileTab === "editor" || mobileTab === "diff") ? "flex h-full" : "hidden md:flex"
         )}>
           {/* Tab selector for editor / diff (only if not on mobile, since mobile has its own tabs) */}
-          <div className="hidden md:flex items-center gap-0.5 py-1 border-b border-[var(--border)] bg-[var(--surface)] flex-shrink-0">
+          <div className="hidden md:flex items-center gap-1 px-3 h-9 border-b border-[var(--border)] bg-[var(--surface-2)] flex-shrink-0">
             <button
               onClick={() => setCentreTab("editor")}
               className={cn(
-                "px-2.5 py-0.5 rounded text-[0.714rem] transition-colors",
+                "px-2.5 py-1 rounded text-xs font-semibold transition-colors",
                 centreTab === "editor"
                   ? "text-[var(--text-primary)] bg-[var(--surface-2)]"
                   : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
@@ -220,7 +199,7 @@ export function AgentView() {
               <button
                 onClick={() => setCentreTab("diff")}
                 className={cn(
-                  "px-2.5 py-0.5 rounded text-[0.714rem] transition-colors",
+                  "px-2.5 py-1 rounded text-xs font-semibold transition-colors",
                   centreTab === "diff"
                     ? "text-[var(--text-primary)] bg-[var(--surface-2)]"
                     : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
@@ -244,22 +223,11 @@ export function AgentView() {
           )}
         </div>
 
-        {/* Right resize divider */}
+        {/* Right pane — agent terminal sessions (only on mobile, as desktop uses RightPanel drawer) */}
         <div
-          ref={rightDividerRef}
-          className="w-0 flex-shrink-0 cursor-col-resize relative z-10 hidden md:block"
-          style={{ marginLeft: "-3px", marginRight: "-3px", padding: "0 3px" }}
-          role="separator"
-          aria-label="Resize terminal pane"
-        />
-
-        {/* Right pane — agent terminal sessions */}
-        <div
-          ref={terminalPaneRef}
           className={cn(
-            "flex-shrink-0 flex flex-col border-l border-[var(--border)] overflow-hidden",
-            "w-full md:w-auto max-md:!w-full",
-            mobileTab === "agent" ? "flex flex-1" : "hidden md:flex"
+            "w-full flex-col flex-1 min-h-0 overflow-hidden md:hidden",
+            (mobileTab === "agent" || mobileTab === "terminal") ? "flex" : "hidden"
           )}
         >
           <AgentTerminalPane />
