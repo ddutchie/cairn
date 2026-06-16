@@ -47,14 +47,14 @@ export function ContextRing({
   const conversation = breakdown?.conversation ?? Math.max(0, promptTokens - system - toolOutputs);
 
   const categories = [
-    { label: "System prompt", count: system, colorClass: "bg-gray-500" },
-    { label: "Tool definitions", count: tools, colorClass: "bg-purple-500" },
-    { label: "Rules", count: rules, colorClass: "bg-emerald-500" },
-    { label: "Skills", count: skills, colorClass: "bg-amber-500" },
-    { label: "MCP", count: mcp, colorClass: "bg-pink-500" },
-    { label: "Subagent definitions", count: subagent, colorClass: "bg-blue-500" },
-    { label: "Conversation", count: conversation, colorClass: "bg-teal-500" },
-    { label: "Tool outputs", count: toolOutputs, colorClass: "bg-indigo-500" },
+    { label: "System prompt", count: system, color: "var(--muted-fg)" },
+    { label: "Tool definitions", count: tools, color: "var(--accent)" },
+    { label: "Rules", count: rules, color: "var(--text-tertiary)" },
+    { label: "Skills", count: skills, color: "var(--warning)" },
+    { label: "MCP", count: mcp, color: "var(--border)" },
+    { label: "Subagent definitions", count: subagent, color: "var(--info)" },
+    { label: "Conversation", count: conversation, color: "var(--success)" },
+    { label: "Tool outputs", count: toolOutputs, color: "var(--danger)" },
   ];
 
   function formatTokenCount(num: number): string {
@@ -137,8 +137,8 @@ export function ContextRing({
               return (
                 <div
                   key={c.label}
-                  style={{ width: `${widthPct}%` }}
-                  className={`h-full ${c.colorClass} transition-all duration-300`}
+                  style={{ width: `${widthPct}%`, backgroundColor: c.color }}
+                  className="h-full transition-all duration-300"
                   title={`${c.label}: ${c.count.toLocaleString()} tokens`}
                 />
               );
@@ -152,7 +152,7 @@ export function ContextRing({
               return (
                 <div key={c.label} className="flex items-center justify-between text-[0.714rem]">
                   <div className="flex items-center gap-1.5">
-                    <div className={`w-2.5 h-2.5 rounded-sm ${c.colorClass} opacity-90`} />
+                    <div className="w-2.5 h-2.5 rounded-sm opacity-90" style={{ backgroundColor: c.color }} />
                     <span className="text-[var(--text-secondary)]">{c.label}</span>
                   </div>
                   <span className="font-mono text-[var(--text-primary)] font-medium">
