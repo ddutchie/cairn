@@ -45,9 +45,18 @@ export function AgentView() {
   const leftDividerRef   = useRef<HTMLDivElement>(null);
   const bottomDividerRef = useRef<HTMLDivElement>(null);
 
+  const [isMobile, setIsMobile] = useState(false);
+
   // Set initial widths once on mount via DOM (avoids a React render cycle)
   useEffect(() => {
     if (treePaneRef.current) treePaneRef.current.style.width = `${DEFAULT_TREE_WIDTH}px`;
+
+    const media = window.matchMedia("(max-width: 767px)");
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setIsMobile(media.matches);
+    const listener = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    media.addEventListener("change", listener);
+    return () => media.removeEventListener("change", listener);
   }, []);
 
   // ── Drag logic ─────────────────────────────────────────────────────────────
@@ -222,14 +231,16 @@ export function AgentView() {
         </div>
 
         {/* Right pane — agent terminal sessions (only on mobile, as desktop uses RightPanel drawer) */}
-        <div
-          className={cn(
-            "w-full flex-col flex-1 min-h-0 overflow-hidden md:hidden",
-            (mobileTab === "agent" || mobileTab === "terminal") ? "flex" : "hidden"
-          )}
-        >
-          <AgentTerminalPane />
-        </div>
+        {isMobile && (
+          <div
+            className={cn(
+              "w-full flex-col flex-1 min-h-0 overflow-hidden md:hidden",
+              (mobileTab === "agent" || mobileTab === "terminal") ? "flex" : "hidden"
+            )}
+          >
+            <AgentTerminalPane />
+          </div>
+        )}
       </div>
 
       {/* ── Bottom terminal (only when a codeDirectory is set) ─────────────── */}
