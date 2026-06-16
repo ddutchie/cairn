@@ -5,13 +5,14 @@
 import "@xterm/xterm/css/xterm.css";
 
 /**
- * AgentTerminalPane — right pane of the Agent view.
+ * SessionPane — tabbed container for Chat, Agent, and PTY terminal sessions.
  *
  * Renders xterm.js terminal sessions as tabs. Each session's Terminal
  * instance is held in TerminalManager (module-scope singleton), so sessions
  * survive navigation away from the Agent view.
  *
- * Inactive session divs are CSS-hidden (not unmounted) to preserve scroll history.
+ * Chat and Agent panes are CSS-hidden (not unmounted) when inactive to
+ * preserve IPC subscriptions, scroll position, and React state.
  */
 
 import { useEffect, useRef, useCallback, useState } from "react";
@@ -23,7 +24,7 @@ import { useCairnStore } from "@/store";
 import { Tooltip } from "@/components/ui/tooltip";
 import { SpawnAgentModal } from "./SpawnAgentModal";
 import { TerminalManager } from "./TerminalManager";
-import { PiAgentPane } from "./PiAgentPane";
+import { AgentChatPane } from "./AgentChatPane";
 import { ChatPanel } from "@/components/chat/chat-panel";
 import type { TerminalSession, PiSessionSummary } from "@/store/slices/terminal-sessions";
 
@@ -200,11 +201,11 @@ function formatDate(iso: string) {
 
 // ── Shared session helpers ─────────────────────────────────────────────────────
 //
-// Both PiAgentEmptyState and PiAgentTab need identical logic for creating new
+// Both AgentEmptyState and AgentSessionTab need identical logic for creating new
 // sessions and resuming existing ones. This hook centralises that logic so
 // there is a single source of truth.
 
-function usePiSessionActions() {
+function useAgentSessionActions() {
   const {
     addTerminalSession,
     setActiveSession,
@@ -290,15 +291,15 @@ function usePiSessionActions() {
   return { handleNewSession, handleResumeSession, project };
 }
 
-// ── PiAgentEmptyState — shown in the content area when no session is loaded ──
+// ── AgentEmptyState — shown in the content area when no session is loaded ────
 
-function PiAgentEmptyState() {
+function AgentEmptyState() {
   const { piSessionHistory, persistentPiSessionId } = useCairnStore(useShallow((s) => ({
     piSessionHistory:      s.piSessionHistory,
     persistentPiSessionId: s.persistentPiSessionId,
   })));
 
-  const { handleNewSession, handleResumeSession, project } = usePiSessionActions();
+  const { handleNewSession, handleResumeSession, project } = useAgentSessionActions();
   const recentSessions = piSessionHistory.slice(0, 5);
 
   return (
@@ -356,14 +357,14 @@ function PiAgentEmptyState() {
   );
 }
 
-// ── PiAgentTab (pinned Cairn Agent tab with history dropdown) ──────────────
+// ── AgentSessionTab (pinned Cairn Agent tab with history dropdown) ─────────
 
-interface PiAgentTabProps {
+interface AgentSessionTabProps {
   isActive: boolean;
   onActivate: () => void;
 }
 
-function PiAgentTab({ isActive, onActivate }: PiAgentTabProps) {
+function AgentSessionTab({ isActive, onActivate }: AgentSessionTabProps) {
   const {
     piSessionHistory,
     persistentPiSessionId,
@@ -381,7 +382,7 @@ function PiAgentTab({ isActive, onActivate }: PiAgentTabProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const { handleNewSession: _handleNewSession, handleResumeSession: _handleResumeSession, project } = usePiSessionActions();
+  const { handleNewSession: _handleNewSession, handleResumeSession: _handleResumeSession, project } = useAgentSessionActions();
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -511,13 +512,13 @@ function PiAgentTab({ isActive, onActivate }: PiAgentTabProps) {
   );
 }
 
-interface AgentTerminalPaneProps {
+interface SessionPaneProps {
   isRightPanel?: boolean;
   chatPrefill?: { text: string; autoSend?: boolean } | null;
   onPrefillConsumed?: () => void;
 }
 
-export function AgentTerminalPane({ isRightPanel = false, chatPrefill = null, onPrefillConsumed }: AgentTerminalPaneProps = {}) {
+export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefillConsumed }: SessionPaneProps = {}) {
   const {
     terminalSessions,
     activeSessionId,
@@ -609,7 +610,7 @@ export function AgentTerminalPane({ isRightPanel = false, chatPrefill = null, on
         </button>
 
         {/* Always-present Cairn Agent pinned tab */}
-        <PiAgentTab
+        <AgentSessionTab
           isActive={pinnedIsActive}
           onActivate={() => {
             if (persistentPiSessionId) {
@@ -654,25 +655,24 @@ export function AgentTerminalPane({ isRightPanel = false, chatPrefill = null, on
         )}
       </div>
 
-      {/* Session content */}
+      {/* Session content — CSS-hidden instead of unmounted to preserve
+          IPC subscriptions, scroll position, and React state across tab switches. */}
       <div className="flex-1 min-h-0 flex flex-col overflow-hidden bg-[var(--background)]">
         {/* AI Chat content */}
-        {activeSessionId === "chat" && (
+        <div className={activeSessionId === "chat" ? "flex flex-1 flex-col min-h-0 overflow-hidden" : "hidden"}>
           <ChatPanel prefill={chatPrefill} onPrefillConsumed={onPrefillConsumed} />
-        )}
+        </div>
 
-        {/* Pinned pi session content */}
-        {pinnedIsActive && (
-          persistentSession ? (
-            <div className="flex-1 min-h-0 overflow-hidden">
-              <PiAgentPane session={persistentSession} isActive={pinnedIsActive} />
-            </div>
-          ) : (
-            <div className="flex-1 min-h-0 overflow-hidden">
-              <PiAgentEmptyState />
-            </div>
-          )
-        )}
+        {/* Pinned agent session content */}
+        {persistentSession ? (
+          <div className={pinnedIsActive ? "flex flex-1 min-h-0 overflow-hidden" : "hidden"}>
+            <AgentChatPane session={persistentSession} isActive={pinnedIsActive} />
+          </div>
+        ) : pinnedIsActive ? (
+          <div className="flex-1 min-h-0 overflow-hidden">
+            <AgentEmptyState />
+          </div>
+        ) : null}
 
         {/* PTY sessions */}
         {ptySessions.map((session) => (

@@ -1,15 +1,14 @@
 "use client";
 
 /**
- * PiAgentPane — chat UI for Cairn native agent sessions.
+ * AgentChatPane — chat UI for Cairn native agent sessions.
  *
- * Rendered inside AgentTerminalPane when session.sessionType === "pi".
+ * Rendered inside SessionPane when session.sessionType === "pi".
  * Subscribes to pi-agent:* IPC events and updates Zustand store.
  * Multi-turn: each new message continues the same session's history.
  */
 
 import { useEffect, useLayoutEffect, useRef, useState, useCallback } from "react";
-import { flushSync } from "react-dom";
 import { Trash2, CheckCircle, FileText, Zap, Map as MapIcon } from "lucide-react";
 import { QuestionForm } from "@/components/chat/chat-panel/QuestionForm";
 import { ChatInput, SuggestionItem } from "@/components/chat/ChatInput";
@@ -17,7 +16,7 @@ import type { PendingQuestion } from "@/hooks/useChatStream";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { id } from "@/lib/utils";
-import { PiMessageBubble } from "./PiMessageBubble";
+import { AgentMessageBubble } from "./AgentMessageBubble";
 import { PlanTaskList } from "./PlanTaskList";
 import { ContextRing } from "./ContextRing";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -85,58 +84,38 @@ const NATIVE_AGENT_SLASH_COMMANDS = [
   },
 ];
 
-interface PiAgentPaneProps {
+interface AgentChatPaneProps {
   session: TerminalSession;
   isActive: boolean;
 }
 
-export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
-  const {
-    addPiMessage,
-    appendPiToken,
-    finalisePiMessage,
-    addPiToolCall,
-    clearPiMessages,
-    ensurePiStreamingMessage,
-    updatePiUsage,
-    updatePiSubagentUsage,
-    updatePiToolCall,
-    updatePiSubagentToolCall,
-    addPiSubagent,
-    appendPiSubagentToken,
-    finalisePiSubagentMessage: _finalisePiSubagentMessage,
-    addPiSubagentToolCall,
-    completePiSubagent,
-    stepPiSubagent,
-    setPiMode,
-    setPiToolConfirmRequired,
-    setView,
-    agentConfig,
-    projects,
-    activeWorkspaceId,
-  } = useCairnStore(useShallow((s) => ({
-    addPiMessage:              s.addPiMessage,
-    appendPiToken:             s.appendPiToken,
-    finalisePiMessage:         s.finalisePiMessage,
-    addPiToolCall:             s.addPiToolCall,
-    clearPiMessages:           s.clearPiMessages,
-    ensurePiStreamingMessage:  s.ensurePiStreamingMessage,
-    updatePiUsage:             s.updatePiUsage,
-    updatePiSubagentUsage:     s.updatePiSubagentUsage,
-    updatePiToolCall:          s.updatePiToolCall,
-    updatePiSubagentToolCall:  s.updatePiSubagentToolCall,
-    addPiSubagent:             s.addPiSubagent,
-    appendPiSubagentToken:     s.appendPiSubagentToken,
-    finalisePiSubagentMessage: s.finalisePiSubagentMessage,
-    addPiSubagentToolCall:     s.addPiSubagentToolCall,
-    completePiSubagent:        s.completePiSubagent,
-    stepPiSubagent:            s.stepPiSubagent,
-    setPiMode:                 s.setPiMode,
-    setPiToolConfirmRequired:  s.setPiToolConfirmRequired,
-    setView:                   s.setView,
-    agentConfig:               s.agentConfig,
-    projects:                  s.projects,
-    activeWorkspaceId:         s.activeWorkspaceId,
+export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
+  // Actions — stable Zustand references, never trigger re-renders
+  const addPiMessage             = useCairnStore((s) => s.addPiMessage);
+  const appendPiToken            = useCairnStore((s) => s.appendPiToken);
+  const finalisePiMessage        = useCairnStore((s) => s.finalisePiMessage);
+  const addPiToolCall             = useCairnStore((s) => s.addPiToolCall);
+  const clearPiMessages          = useCairnStore((s) => s.clearPiMessages);
+  const ensurePiStreamingMessage = useCairnStore((s) => s.ensurePiStreamingMessage);
+  const updatePiUsage            = useCairnStore((s) => s.updatePiUsage);
+  const updatePiSubagentUsage    = useCairnStore((s) => s.updatePiSubagentUsage);
+  const updatePiToolCall         = useCairnStore((s) => s.updatePiToolCall);
+  const updatePiSubagentToolCall = useCairnStore((s) => s.updatePiSubagentToolCall);
+  const addPiSubagent            = useCairnStore((s) => s.addPiSubagent);
+  const appendPiSubagentToken    = useCairnStore((s) => s.appendPiSubagentToken);
+  const _finalisePiSubagentMessage = useCairnStore((s) => s.finalisePiSubagentMessage);
+  const addPiSubagentToolCall    = useCairnStore((s) => s.addPiSubagentToolCall);
+  const completePiSubagent       = useCairnStore((s) => s.completePiSubagent);
+  const stepPiSubagent           = useCairnStore((s) => s.stepPiSubagent);
+  const setPiMode                = useCairnStore((s) => s.setPiMode);
+  const setPiToolConfirmRequired = useCairnStore((s) => s.setPiToolConfirmRequired);
+  const setView                  = useCairnStore((s) => s.setView);
+
+  // Reactive state — only values that actually drive re-renders
+  const { agentConfig, projects, activeWorkspaceId } = useCairnStore(useShallow((s) => ({
+    agentConfig:       s.agentConfig,
+    projects:          s.projects,
+    activeWorkspaceId: s.activeWorkspaceId,
   })));
 
   const messages    = session.piMessages ?? [];
@@ -163,8 +142,8 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
   // Scroll to bottom on new messages
   /* eslint-disable react-hooks/exhaustive-deps */
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages.length, messages[messages.length - 1]?.content?.length]);
+    if (isActive) messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages.length, messages[messages.length - 1]?.content?.length, isActive]);
   /* eslint-enable react-hooks/exhaustive-deps */
 
   // Focus input when pane becomes active
@@ -227,16 +206,12 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
         // flushSync ensures React commits this before the stream continues.
         const callId = e.callId ?? `${e.name}:${Date.now()}`;
         activeCallIds.add(callId);
-        flushSync(() => {
-          addPiToolCall(sessionId, { callId, name: e.name, label: e.label, running: true, ok: true });
-        });
+        addPiToolCall(sessionId, { callId, name: e.name, label: e.label, running: true, ok: true });
       } else if (e.status === "start") {
         // Execution starting — update the existing pending chip with the resolved label.
         const callId = e.callId ?? `${e.name}:${Date.now()}`;
         activeCallIds.add(callId);
-        flushSync(() => {
-          addPiToolCall(sessionId, { callId, name: e.name, label: e.label, running: true, ok: true });
-        });
+        addPiToolCall(sessionId, { callId, name: e.name, label: e.label, running: true, ok: true });
       } else if (e.status === "end") {
         const callId = e.callId ?? `${e.name}:unknown`;
         activeCallIds.delete(callId);
@@ -248,7 +223,7 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
           cairnRef: extractCairnRef(e.name, e.output),
         });
       } else {
-        console.warn("[PiAgentPane] unhandled pi-agent:tool status:", e.status, e);
+        console.warn("[AgentChatPane] unhandled pi-agent:tool status:", e.status, e);
       }
     });
 
@@ -328,9 +303,7 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
       if (e.status === "pending" || e.status === "start") {
         const callId = e.callId ?? `${e.name}:${Date.now()}`;
         activeSubCallIds.add(callId);
-        flushSync(() => {
-          addPiSubagentToolCall(sessionId, e.sessionId, { callId, name: e.name, label: e.label, running: true, ok: true });
-        });
+        addPiSubagentToolCall(sessionId, e.sessionId, { callId, name: e.name, label: e.label, running: true, ok: true });
       } else if (e.status === "end") {
         const callId = e.callId ?? `${e.name}:unknown`;
         activeSubCallIds.delete(callId);
@@ -342,7 +315,7 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
           cairnRef: extractCairnRef(e.name, e.output),
         });
       } else {
-        console.warn("[PiAgentPane] unhandled pi-agent:tool status (subagent):", e.status, e);
+        console.warn("[AgentChatPane] unhandled pi-agent:tool status (subagent):", e.status, e);
       }
     });
 
@@ -664,7 +637,7 @@ export function PiAgentPane({ session, isActive }: PiAgentPaneProps) {
           </div>
         )}
         {messages.map((msg) => (
-          <PiMessageBubble key={msg.id} message={msg} sessionId={session.sessionId} />
+          <AgentMessageBubble key={msg.id} message={msg} sessionId={session.sessionId} />
         ))}
         {pendingQuestions && (
           <QuestionForm

@@ -314,7 +314,9 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
     [threadId, chatMessages],
   );
 
-  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, isLoading]);
+  const isChatActive = useCairnStore((s) => s.activeSessionId === "chat");
+
+  useEffect(() => { if (isChatActive) messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, isLoading, isChatActive]);
   useEffect(() => { if (chatOpen) inputRef.current?.focus(); }, [chatOpen]);
 
   const handleSend = useCallback(async (text?: string) => {

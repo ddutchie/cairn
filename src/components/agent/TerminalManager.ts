@@ -5,7 +5,7 @@
  * across Agent view navigations because this module is loaded once and
  * retained at module scope.
  *
- * The FitAddon is also stored so AgentTerminalPane can call fit() on resize
+ * The FitAddon is also stored so SessionPane can call fit() on resize
  * and tab switch.
  */
 

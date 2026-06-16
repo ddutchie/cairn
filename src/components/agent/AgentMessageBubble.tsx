@@ -293,12 +293,12 @@ function SubagentMessageRow({ msg, sessionId }: { msg: PiAgentMessage; sessionId
 
 // ── Main bubble ───────────────────────────────────────────────────────────────
 
-interface PiMessageBubbleProps {
+interface AgentMessageBubbleProps {
   message: PiAgentMessage;
   sessionId?: string;
 }
 
-export function PiMessageBubble({ message, sessionId }: PiMessageBubbleProps) {
+export const AgentMessageBubble = React.memo(function AgentMessageBubble({ message, sessionId }: AgentMessageBubbleProps) {
   const isUser   = message.role === "user";
   const isError  = message.role === "error";
   const isSystem = message.role === "system";
@@ -387,4 +387,9 @@ export function PiMessageBubble({ message, sessionId }: PiMessageBubbleProps) {
       </div>
     </div>
   );
-}
+}, (prev, next) => {
+  // Only re-render when the message object or sessionId actually changes.
+  // This prevents cascading re-renders of all previous bubbles when a new
+  // token appends to the last streaming message.
+  return prev.message === next.message && prev.sessionId === next.sessionId;
+});

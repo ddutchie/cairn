@@ -55,7 +55,7 @@ export function buildHighlightStyle(isDark: boolean) {
 
 // ── CM6 base theme ─────────────────────────────────────────────────────────────
 // fontScale mirrors the --font-scale CSS variable so the editor grows/shrinks
-// with the user's font size setting (same as the xterm terminal in AgentTerminalPane).
+// with the user's font size setting (same as the xterm terminal in SessionPane).
 
 export function buildTheme(fontScale = 1) {
   const fontSize = `calc(0.714rem * ${fontScale})`;

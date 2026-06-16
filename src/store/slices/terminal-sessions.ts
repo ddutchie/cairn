@@ -67,7 +67,7 @@ export interface TerminalSession {
   sessionType: "pty" | "pi";
   /** Message history for pi sessions — not used by pty sessions */
   piMessages?: PiAgentMessage[];
-  /** Prompt to send automatically when PiAgentPane first mounts */
+  /** Prompt to send automatically when AgentChatPane first mounts */
   initialPrompt?: string;
   /** Latest token usage from the LLM — updated after each step */
   lastUsage?: { promptTokens: number; completionTokens: number; breakdown?: TokenBreakdown };

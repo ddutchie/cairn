@@ -19,9 +19,16 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { FileDiff, PALETTE_DARK, PALETTE_LIGHT } from "./DiffFile";
 import type { ViewMode } from "./DiffFile";
 
-// ── Constants ─────────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 const POLL_INTERVAL = 5_000;
+
+/** Stable key for a parsed diff file — skips `/dev/null` (new/deleted files). */
+function diffFileKey(file: parseDiff.File, index: number): string {
+  const to   = file.to   && file.to   !== "/dev/null" ? file.to   : null;
+  const from = file.from && file.from !== "/dev/null" ? file.from : null;
+  return to ?? from ?? String(index);
+}
 
 const MODE_LABELS: { mode: ViewMode; label: string }[] = [
   { mode: "unified", label: "Unified" },
@@ -89,7 +96,7 @@ export function DiffViewer({ cwd }: DiffViewerProps) {
   }, []);
 
   const collapseAll = useCallback(() => {
-    setCollapsed(new Set(files.map((f) => f.to ?? f.from ?? "")));
+    setCollapsed(new Set(files.map((f, i) => diffFileKey(f, i))));
   }, [files]);
 
   const expandAll = useCallback(() => setCollapsed(new Set()), []);
@@ -133,7 +140,7 @@ export function DiffViewer({ cwd }: DiffViewerProps) {
 
       {/* Collapse/expand all — single toggle, icon mirrors per-file state */}
       {files.length > 1 && (() => {
-        const allCollapsed = files.every((f) => collapsed.has(f.to ?? f.from ?? ""));
+        const allCollapsed = files.every((f, i) => collapsed.has(diffFileKey(f, i)));
         return (
           <Tooltip content={allCollapsed ? "Expand all" : "Collapse all"} side="bottom">
             <button
@@ -212,7 +219,7 @@ export function DiffViewer({ cwd }: DiffViewerProps) {
       {toolbar}
       <div className="flex-1 overflow-y-auto">
         {files.map((file, fi) => {
-          const fileKey = file.to ?? file.from ?? String(fi);
+          const fileKey = diffFileKey(file, fi);
           return (
             <FileDiff
               key={fileKey}
