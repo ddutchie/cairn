@@ -245,16 +245,18 @@ export function buildIpcMock(): string {
 
     // ── Chat ──────────────────────────────────────────────────
     chat: {
-      threads:       () => Promise.resolve([]),
-      messages:      () => Promise.resolve([]),
-      upsertThread:  noop,
-      addMessage:    noop,
-      deleteThread:  noop,
-      stream:        () => {},
-      abort:         () => {},
-      onToken:       makeListener(),
-      onDone:        makeListener(),
-      onToolCall:    makeListener(),
+      threads:        () => Promise.resolve([]),
+      messages:       () => Promise.resolve([]),
+      upsertThread:   noop,
+      addMessage:     noop,
+      deleteThread:   noop,
+      stream:         () => {},
+      abort:          () => {},
+      onToken:        makeListener(),
+      onDone:         makeListener(),
+      onToolCall:     makeListener(),
+      onToolCallDone: makeListener(),
+      onUsage:        makeListener(),
     },
 
     // ── Knowledge graph ───────────────────────────────────────
