@@ -569,12 +569,21 @@ export function AgentTerminalPane({ isRightPanel = false, chatPrefill = null, on
     }
   }, [activeSessionId, setActiveSession]);
 
+  const prevViewRef = useRef(activeView);
+  const prevChatOpenRef = useRef(chatOpen);
+
   // Default active session to "chat" when opening chat panel outside of agent view
   // or when navigating away from the agent view.
   useEffect(() => {
-    if (activeView !== "agent") {
+    const viewChangedToNonAgent = prevViewRef.current === "agent" && activeView !== "agent";
+    const chatOpenedOutsideAgent = !prevChatOpenRef.current && chatOpen && activeView !== "agent";
+
+    if (viewChangedToNonAgent || chatOpenedOutsideAgent) {
       setActiveSession("chat");
     }
+
+    prevViewRef.current = activeView;
+    prevChatOpenRef.current = chatOpen;
   }, [activeView, chatOpen, setActiveSession]);
 
   // Determine if the pinned tab is active
