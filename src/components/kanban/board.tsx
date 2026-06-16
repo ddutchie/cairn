@@ -351,7 +351,7 @@ export function KanbanBoard() {
       >
         <div ref={boardRef} className="flex-1 flex flex-col min-h-0 w-full overflow-hidden">
           {/* Board / Archive toggle bar */}
-          <div className="flex items-center gap-1 px-4 py-1.5 border-b border-[var(--border)] bg-[var(--surface)] flex-shrink-0">
+          <div className="flex items-center gap-1 px-4 h-9 border-b border-[var(--border)] bg-[var(--surface)] flex-shrink-0">
             <button
               onClick={() => setArchiveViewOpen(false)}
               className={cn(

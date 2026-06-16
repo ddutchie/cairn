@@ -250,7 +250,7 @@ export function FileTree({ project }: FileTreeProps) {
     <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
       {/* Header */}
       {searchActive ? (
-        <div className="flex items-center gap-1.5 px-2 py-1.5 border-b border-[var(--border-subtle)] flex-shrink-0">
+        <div className="flex items-center gap-1.5 px-3 h-9 border-b border-[var(--border)] bg-[var(--surface-2)] flex-shrink-0">
           <Search size={11} className="text-[var(--text-tertiary)] flex-shrink-0" />
           <input
             ref={searchInputRef}
@@ -268,7 +268,7 @@ export function FileTree({ project }: FileTreeProps) {
           </button>
         </div>
       ) : (
-        <div className="flex items-center gap-1.5 px-3 py-2 border-b border-[var(--border-subtle)] flex-shrink-0">
+        <div className="flex items-center gap-1.5 px-3 h-9 border-b border-[var(--border)] bg-[var(--surface-2)] flex-shrink-0">
           <FolderOpen size={12} className="text-[var(--text-tertiary)]" />
           <span className="text-[0.714rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)] truncate flex-1">
             {codeDirectory.split("/").pop() ?? "Files"}

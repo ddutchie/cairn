@@ -239,7 +239,7 @@ export function DashboardView({ note, onBack }: DashboardViewProps) {
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-2.5 px-4 py-2 border-b border-[var(--border)] flex-shrink-0">
+      <div className="flex flex-wrap md:flex-nowrap items-center justify-between gap-2.5 px-4 py-2 md:py-0 md:h-9 border-b border-[var(--border)] flex-shrink-0">
         <div className="flex items-center gap-2 text-xs text-[var(--text-tertiary)]">
           {onBack && (
             <Button

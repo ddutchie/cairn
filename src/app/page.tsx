@@ -48,7 +48,7 @@ import { KanbanBoard } from "@/components/kanban/board";
 import { IdeaFlowView } from "@/components/flow/flow-view";
 import { KnowledgeGraphView } from "@/components/graph/KnowledgeGraphView";
 import { InsightsView } from "@/components/insights/InsightsView";
-import { ChatPanel } from "@/components/chat/chat-panel";
+import { RightPanel } from "@/components/layout/RightPanel";
 import { SearchPanel } from "@/components/search/search-panel";
 import { SettingsView } from "@/components/settings/settings-view";
 import { AgentView } from "@/components/agent/AgentView";
@@ -217,10 +217,8 @@ export default function Home() {
       if (mod && key === "k") { e.preventDefault(); toggleSearch(); }
       else if (mod && e.shiftKey && key.toLowerCase() === "f") { if (activeView !== "agent") { e.preventDefault(); toggleSearch(); } }
       else if (mod && key === "/") {
-        if (activeView !== "agent") {
-          e.preventDefault();
-          if (!hiddenViews.has("chat")) toggleChat();
-        }
+        e.preventDefault();
+        if (!hiddenViews.has("chat")) toggleChat();
       }
       else if (mod && key === "\\") { e.preventDefault(); toggleSidebar(); }
       else if (mod && key === "1") { e.preventDefault(); setView("overview"); }
@@ -267,6 +265,21 @@ export default function Home() {
       window.removeEventListener("cairn:open-chat", handleOpenChat);
     };
   }, [toggleSearch, toggleChat, toggleSidebar, setView, activeProjectId, createNote, chatOpen, hiddenViews, ORDERED_VIEWS, activeView]);
+
+  // Auto-activate Cairn Agent tab and auto-open right panel drawer if we switch to Agent view
+  useEffect(() => {
+    if (activeView === "agent") {
+      const state = useCairnStore.getState();
+      if (!state.chatOpen) {
+        state.toggleChat();
+      }
+      if (state.activeSessionId === null || state.activeSessionId === "chat") {
+        if (state.persistentPiSessionId) {
+          state.setActiveSession(state.persistentPiSessionId);
+        }
+      }
+    }
+  }, [activeView]);
 
   // Still loading
   if (onboardingState === null) {
@@ -357,8 +370,8 @@ export default function Home() {
           </div>
         </div>
 
-        {/* AI Chat panel */}
-        {chatOpen && activeView !== "agent" && <ChatPanel prefill={chatPrefill} onPrefillConsumed={() => setChatPrefill(null)} />}
+        {/* Right panel drawer (hosts both completions Chat and Agent sessions) */}
+        {chatOpen && <RightPanel prefill={chatPrefill} onPrefillConsumed={() => setChatPrefill(null)} />}
 
         {/* Global search overlay */}
         {searchOpen && <SearchPanel />}

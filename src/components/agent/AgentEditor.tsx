@@ -101,7 +101,7 @@ export function AgentEditor() {
     <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
 
       {/* Tab strip */}
-      <div className="flex items-stretch gap-0 border-b border-[var(--border)] bg-[var(--surface)] flex-shrink-0 overflow-x-auto overflow-y-hidden">
+      <div className="flex items-stretch gap-0 h-9 border-b border-[var(--border)] bg-[var(--surface)] flex-shrink-0 overflow-x-auto overflow-y-hidden">
         {openEditorFiles.map((filePath) => {
           const name = filePath.split("/").pop() ?? filePath;
           const isActive = filePath === activeFile;

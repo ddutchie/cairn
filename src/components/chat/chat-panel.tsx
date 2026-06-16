@@ -1,10 +1,9 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
-import { X, Sparkles, PenSquare, History, Pencil, Trash2 } from "lucide-react";
+import { X, PenSquare, History, Pencil, Trash2 } from "lucide-react";
 import { cn, formatRelative } from "@/lib/utils";
 import { useCairnStore } from "@/store";
-import { MIN_CHAT_PANEL_WIDTH, MAX_CHAT_PANEL_WIDTH } from "@/store/slices/ui";
 import { useShallow } from "zustand/react/shallow";
 import { useChatStream } from "@/hooks/useChatStream";
 import { buildGraphContext } from "@/components/graph/graph-ai-utils";
@@ -80,20 +79,19 @@ interface ChatPanelProps {
 
 export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
   const {
-    chatOpen, toggleChat,
+    chatOpen,
     activeProjectId, activeWorkspaceId,
     projects, workspaces,
     addMessage,
     chatMessages, chatThreads, aiConfig,
     createNewThread, deleteThread, renameThread,
-    chatPanelWidth, setChatPanelWidth,
+    chatPanelWidth,
     activeView, graphData, selectedGraphNodeId,
     clearThreadMessages,
     createNote,
     notes, cards,
   } = useCairnStore(useShallow((s) => ({
     chatOpen:            s.chatOpen,
-    toggleChat:          s.toggleChat,
     activeProjectId:     s.activeProjectId,
     activeWorkspaceId:   s.activeWorkspaceId,
     projects:            s.projects,
@@ -106,7 +104,6 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
     deleteThread:        s.deleteThread,
     renameThread:        s.renameThread,
     chatPanelWidth:      s.chatPanelWidth,
-    setChatPanelWidth:   s.setChatPanelWidth,
     activeView:          s.activeView,
     graphData:           s.graphData,
     selectedGraphNodeId: s.selectedGraphNodeId,
@@ -124,9 +121,6 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
   const historyRef     = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef       = useRef<HTMLTextAreaElement>(null);
-
-  const panelRef       = useRef<HTMLElement>(null);
-  const dividerRef     = useRef<HTMLDivElement>(null);
 
   const { isLoading, toolCalls, streamingContent, pendingQuestions, sendStream, stopStream } = useChatStream(threadId);
 
@@ -409,86 +403,18 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
     }
   }, [threadId, input, prefill, handleSend]);
 
-  // ── Drag-to-resize ──────────────────────────────────────────────────────────
-  // Mutates the panel DOM width directly on mousemove (no React state during
-  // drag) for zero-lag resizing, then commits to the store on mouseup.
-  useEffect(() => {
-    const divider = dividerRef.current;
-    const panel   = panelRef.current;
-    if (!divider || !panel) return;
-
-    let dragging = false;
-    let startX   = 0;
-    let startW   = 0;
-
-    function onMouseMove(e: MouseEvent) {
-      if (!dragging) return;
-      // Panel is on the right; dragging left (lower clientX) makes it wider.
-      const next = Math.min(MAX_CHAT_PANEL_WIDTH, Math.max(MIN_CHAT_PANEL_WIDTH, startW - (e.clientX - startX)));
-      panel!.style.width = `${next}px`;
-    }
-
-    function onMouseUp() {
-      if (!dragging) return;
-      dragging = false;
-      document.body.style.cursor     = "";
-      document.body.style.userSelect = "";
-      // Persist final width to store (and localStorage)
-      const finalWidth = panel!.offsetWidth;
-      setChatPanelWidth(finalWidth);
-    }
-
-    function onMouseDown(e: MouseEvent) {
-      dragging = true;
-      startX   = e.clientX;
-      startW   = panel!.offsetWidth;
-      document.body.style.cursor     = "col-resize";
-      document.body.style.userSelect = "none";
-      e.preventDefault();
-    }
-
-    divider.addEventListener("mousedown", onMouseDown);
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup",   onMouseUp);
-
-    return () => {
-      divider.removeEventListener("mousedown", onMouseDown);
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup",   onMouseUp);
-    };
-  // setChatPanelWidth is stable (Zustand action), so omitting from deps is safe.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   const handleNewThread = useCallback(() => {
     if (!activeWorkspaceId) return;
     setThreadId(createNewThread(activeWorkspaceId, activeProjectId ?? undefined).id);
   }, [activeWorkspaceId, activeProjectId, createNewThread]);
 
-
-
-  if (!chatOpen) return null;
-
   return (
-    <aside
-      ref={panelRef}
-      className="fixed inset-0 z-50 md:relative md:inset-auto md:h-auto chat-panel-responsive flex flex-col border-l border-[var(--border)] bg-[var(--surface)] flex-shrink-0 animate-slide-in-right"
-      style={{ "--chat-panel-width": `${chatPanelWidth}px` } as React.CSSProperties}
-    >
-      {/* Drag-to-resize handle — sits on the left edge of the panel */}
-      <div
-        ref={dividerRef}
-        className="absolute left-0 top-0 h-full w-0 flex-shrink-0 cursor-col-resize z-10 select-none hidden md:block"
-        style={{ marginLeft: -3, padding: "0 3px" }}
-        aria-hidden
-      />
-      {/* Header */}
-      <div className="flex items-center gap-2 px-4 h-11 border-b border-[var(--border)] flex-shrink-0">
-        <Sparkles size={13} className="text-[var(--accent)]" />
-        <span className="text-sm font-semibold text-[var(--text-primary)] flex-1">
-          {activeView === "graph" ? "Graph Assistant" : "AI Assistant"}
+    <div className="flex flex-1 flex-col min-h-0 overflow-hidden bg-[var(--surface)]">
+      {/* Sub-header / toolbar */}
+      <div className="flex items-center gap-2 px-3 h-9 border-b border-[var(--border)] bg-[var(--surface-2)] flex-shrink-0">
+        <span className="text-[0.714rem] text-[var(--text-tertiary)] flex-1 truncate">
+          {activeView === "graph" ? "Graph Assistant" : project?.name ?? workspace?.name ?? "AI Assistant"}
         </span>
-        <span className="text-xs text-[var(--text-tertiary)] truncate max-w-24 mr-2">{project?.name ?? workspace?.name}</span>
 
         {activeThread?.lastUsage && (
           <ContextRing
@@ -503,8 +429,8 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
             <Tooltip content="Thread history" side="left">
               <button onClick={() => setHistoryOpen((o) => !o)}
                 className={cn("p-1 rounded transition-colors",
-                  historyOpen ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
-                <History size={13} />
+                  historyOpen ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)]")}>
+                <History size={11} />
               </button>
             </Tooltip>
             {historyOpen && (
@@ -554,41 +480,36 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
                               deleteThread(t.id);
                               if (isActive && activeWorkspaceId) {
                                 const next = createNewThread(activeWorkspaceId, activeProjectId ?? undefined);
-                                setThreadId(next.id);
-                                setHistoryOpen(false);
-                              }
-                            }}
-                            className="p-1.5 rounded text-[var(--text-tertiary)] hover:text-[var(--danger)] transition-colors"
-                            title="Delete thread">
-                            <X size={10} />
-                          </button>
+                                  setThreadId(next.id);
+                                  setHistoryOpen(false);
+                                }
+                              }}
+                              className="p-1.5 rounded text-[var(--text-tertiary)] hover:text-[var(--danger)] transition-colors"
+                              title="Delete thread">
+                              <X size={10} />
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
-        )}
+              )}
+            </div>
+          )}
 
         {messages.length > 0 && (
           <Tooltip content="Clear conversation" side="left">
             <button onClick={handleClear}
-              className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--danger)] hover:bg-[var(--surface-2)] transition-colors">
-              <Trash2 size={13} />
+              className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--danger)] hover:bg-[var(--surface-3)] transition-colors">
+              <Trash2 size={11} />
             </button>
           </Tooltip>
         )}
         <Tooltip content="New chat" side="left">
           <button onClick={handleNewThread}
-            className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors">
-            <PenSquare size={13} />
-          </button>
-        </Tooltip>
-        <Tooltip content="Close chat" side="left">
-          <button onClick={toggleChat} className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors">
-            <X size={13} />
+            className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors">
+            <PenSquare size={11} />
           </button>
         </Tooltip>
       </div>
@@ -648,6 +569,6 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
           )}
         </div>
       </div>
-    </aside>
+    </div>
   );
 }

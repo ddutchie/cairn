@@ -314,7 +314,7 @@ export function NotesView() {
       {/* Notes list */}
       <div className={cn("w-full md:w-56 flex-shrink-0 border-r border-[var(--border)] flex flex-col bg-[var(--surface)]", mobileShowEditor ? "hidden md:flex" : "flex")}>
         {/* Header */}
-        <div className="flex items-center justify-between px-3 py-2.5 border-b border-[var(--border)]">
+        <div className="flex items-center justify-between px-3 h-9 border-b border-[var(--border)] flex-shrink-0">
           <span className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider">Notes</span>
           <div className="flex items-center gap-0.5">
             {aiEnabled && (

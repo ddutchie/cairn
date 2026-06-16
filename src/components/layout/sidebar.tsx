@@ -174,10 +174,10 @@ export function Sidebar() {
         <WorkspaceSwitcher workspace={workspace} onCollapse={toggleSidebar} />
 
         {/* Quick actions */}
-        <div className="flex items-center gap-0.5 px-2 py-1.5 border-b border-[var(--border-subtle)]">
+        <div className="flex items-center gap-0.5 px-2 h-9 border-b border-[var(--border-subtle)] flex-shrink-0">
           <Tooltip content="Search (⌘K)">
             <button onClick={() => { toggleSearch(); closeSidebarOnMobile(); }}
-              className={cn("flex items-center gap-1.5 flex-1 rounded-md px-2 py-1.5 text-xs transition-colors",
+              className={cn("flex items-center gap-1.5 flex-1 rounded-md px-2 py-1 text-xs transition-colors",
                 searchOpen ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
               <Search size={12} /><span>Search</span>
               <span className="ml-auto text-[0.714rem] text-[var(--text-tertiary)] font-mono">⌘K</span>
@@ -186,7 +186,7 @@ export function Sidebar() {
           {!hiddenViews.has("chat") && (
             <Tooltip content="AI Chat (⌘/)">
               <button onClick={() => { toggleChat(); closeSidebarOnMobile(); }}
-                className={cn("p-1.5 rounded-md transition-colors", chatOpen ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
+                className={cn("p-1 rounded-md transition-colors", chatOpen ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
                 <MessageSquare size={13} />
               </button>
             </Tooltip>
