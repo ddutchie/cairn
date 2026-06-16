@@ -1,10 +1,9 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
-import { X, Sparkles, PenSquare, History, Pencil, Trash2 } from "lucide-react";
+import { X, PenSquare, History, Pencil, Trash2 } from "lucide-react";
 import { cn, formatRelative } from "@/lib/utils";
 import { useCairnStore } from "@/store";
-import { MIN_CHAT_PANEL_WIDTH, MAX_CHAT_PANEL_WIDTH } from "@/store/slices/ui";
 import { useShallow } from "zustand/react/shallow";
 import { useChatStream } from "@/hooks/useChatStream";
 import { buildGraphContext } from "@/components/graph/graph-ai-utils";
@@ -80,20 +79,19 @@ interface ChatPanelProps {
 
 export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
   const {
-    chatOpen, toggleChat,
+    chatOpen,
     activeProjectId, activeWorkspaceId,
     projects, workspaces,
     addMessage,
     chatMessages, chatThreads, aiConfig,
     createNewThread, deleteThread, renameThread,
-    chatPanelWidth, setChatPanelWidth,
+    chatPanelWidth,
     activeView, graphData, selectedGraphNodeId,
     clearThreadMessages,
     createNote,
     notes, cards,
   } = useCairnStore(useShallow((s) => ({
     chatOpen:            s.chatOpen,
-    toggleChat:          s.toggleChat,
     activeProjectId:     s.activeProjectId,
     activeWorkspaceId:   s.activeWorkspaceId,
     projects:            s.projects,
@@ -106,7 +104,6 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
     deleteThread:        s.deleteThread,
     renameThread:        s.renameThread,
     chatPanelWidth:      s.chatPanelWidth,
-    setChatPanelWidth:   s.setChatPanelWidth,
     activeView:          s.activeView,
     graphData:           s.graphData,
     selectedGraphNodeId: s.selectedGraphNodeId,

@@ -21,9 +21,7 @@ import { TerminalManager } from "./TerminalManager";
 import { cn } from "@/lib/utils";
 
 const MIN_TREE_WIDTH = 160;
-const MIN_TERMINAL_WIDTH = 280;
 const DEFAULT_TREE_WIDTH = 220;
-const DEFAULT_TERMINAL_WIDTH = 380;
 
 const MIN_BOTTOM_HEIGHT = 80;
 const MAX_BOTTOM_HEIGHT = 600;
