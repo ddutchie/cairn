@@ -135,7 +135,7 @@ export async function generateSummary(
       messages: [{ role: "user", content: SUMMARIZATION_USER_PROMPT(conversationText) }],
       max_tokens: SUMMARY_MAX_TOKENS,
       temperature: 0.1, // deterministic summary
-      // Must stream to prevent proxy connection drop timeouts (e.g. Apigee 55s limit on blocking sync calls returning 504 Gateway Time-out)
+      // Must stream to prevent proxy connection drop timeouts (e.g. gateway/reverse proxy limits on blocking sync calls returning 504 Gateway Time-out)
       stream: true,
     }),
   });
