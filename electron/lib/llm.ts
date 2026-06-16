@@ -65,6 +65,7 @@ export async function callLLM(config: LLMConfig, systemPrompt: string, userPromp
       ],
       max_tokens: 4096,
       temperature: 0.4,
+      // Must stream to prevent proxy connection drop timeouts (e.g. Apigee 55s limit on blocking sync calls returning 504 Gateway Time-out)
       stream: true,
     }),
   });
@@ -185,16 +186,16 @@ function tok(s: string): number {
 export function calculatePromptBreakdown(
   systemPrompt: string | undefined,
   messages: OpenAIMessage[],
-  tools?: any[]
+  tools?: object[]
 ): TokenBreakdown {
   let systemTokens = 0;
   let skillsTokens = 0;
   let toolsTokens = 0;
   let conversationTokens = 0;
   let toolOutputsTokens = 0;
-  let rulesTokens = 0;
-  let mcpTokens = 0;
-  let subagentTokens = 0;
+  const rulesTokens = 0;
+  const mcpTokens = 0;
+  const subagentTokens = 0;
 
   // 1. System Prompt & Skills
   if (systemPrompt) {
@@ -212,12 +213,14 @@ export function calculatePromptBreakdown(
   // 2. Tools (Definitions/Schemas)
   if (tools && tools.length > 0) {
     for (const tool of tools) {
+      const t = tool as Record<string, unknown>;
+      const func = (t.function ?? {}) as Record<string, unknown>;
       const toolStr = JSON.stringify({
         type: "function",
         function: {
-          name: tool.function?.name ?? tool.name ?? "",
-          description: tool.function?.description ?? tool.description ?? "",
-          parameters: tool.function?.parameters ?? tool.parameters ?? {},
+          name: (func.name ?? t.name ?? "") as string,
+          description: (func.description ?? t.description ?? "") as string,
+          parameters: (func.parameters ?? t.parameters ?? {}) as object,
         },
       });
       toolsTokens += tok(toolStr);

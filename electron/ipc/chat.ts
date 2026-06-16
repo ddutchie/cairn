@@ -10,7 +10,7 @@
 import type { BrowserWindow } from "electron";
 import { registerIpcHandle, registerIpcOn, broadcastEvent } from "./registry";
 import type Database from "better-sqlite3";
-import { isLocalEndpoint, streamCompletion, normaliseBaseUrl, type OpenAIMessage, calculatePromptBreakdown, scaleBreakdown, type TokenBreakdown } from "../lib/llm";
+import { isLocalEndpoint, normaliseBaseUrl, type OpenAIMessage, calculatePromptBreakdown, scaleBreakdown, type TokenBreakdown } from "../lib/llm";
 import { TOOLS, buildSystemPrompt, type ChatRequest } from "../lib/tools";
 import { executeTool } from "./chat-executor";
 import { saveCachedConfig, getCachedConfig } from "../lib/config-cache";
@@ -158,7 +158,7 @@ async function runToolLoop(
             stream_options: { include_usage: true },
           }),
         });
-      } catch (err) {
+      } catch (_err) {
         if (signal?.aborted) return { exhausted: true, content: "" };
         return { exhausted: true, content: `Could not reach the AI endpoint at \`${baseUrl}\`. Check your endpoint URL and make sure the server is running.` };
       }
@@ -189,6 +189,7 @@ async function runToolLoop(
             break;
           }
           try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const chunk = JSON.parse(jsonStr) as any;
             if (chunk.usage && onUsage) {
               onUsage(chunk.usage.prompt_tokens ?? 0, chunk.usage.completion_tokens ?? 0);
