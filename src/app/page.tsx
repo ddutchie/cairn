@@ -362,16 +362,19 @@ export default function Home() {
            {activeView === "graph"     && <KnowledgeGraphView />}
            {activeView === "insights"  && <InsightsView />}
            {activeView === "settings"  && <SettingsView />}
-           {/* AgentView stays mounted to preserve terminal sessions and pi agent state.
-               CSS-hidden when inactive so xterm + PiAgentPane refs survive view switches. */}
+           {/* AgentView stays mounted to preserve terminal sessions and agent state.
+               CSS-hidden when inactive so xterm + AgentChatPane refs survive view switches. */}
            <div className={activeView === "agent" ? "contents" : "hidden"}>
              <AgentView />
            </div>
           </div>
         </div>
 
-        {/* Right panel drawer (hosts both completions Chat and Agent sessions) */}
-        {chatOpen && <RightPanel prefill={chatPrefill} onPrefillConsumed={() => setChatPrefill(null)} />}
+        {/* Right panel drawer (hosts both completions Chat and Agent sessions).
+            CSS-hidden instead of unmounted so panel state survives open/close. */}
+        <div className={chatOpen ? "contents" : "hidden"}>
+          <RightPanel prefill={chatPrefill} onPrefillConsumed={() => setChatPrefill(null)} />
+        </div>
 
         {/* Global search overlay */}
         {searchOpen && <SearchPanel />}

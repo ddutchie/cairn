@@ -14,7 +14,7 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { FileTree } from "./FileTree";
 import { AgentEditor } from "./AgentEditor";
-import { AgentTerminalPane } from "./AgentTerminalPane";
+import { SessionPane } from "./SessionPane";
 import { AgentBottomTerminal } from "./AgentBottomTerminal";
 import { DiffViewer } from "./DiffViewer";
 import { TerminalManager } from "./TerminalManager";
@@ -238,7 +238,7 @@ export function AgentView() {
               (mobileTab === "agent" || mobileTab === "terminal") ? "flex" : "hidden"
             )}
           >
-            <AgentTerminalPane />
+            <SessionPane />
           </div>
         )}
       </div>

@@ -4,7 +4,7 @@ import React, { useRef, useEffect } from "react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { MIN_CHAT_PANEL_WIDTH, MAX_CHAT_PANEL_WIDTH } from "@/store/slices/ui";
-import { AgentTerminalPane } from "@/components/agent/AgentTerminalPane";
+import { SessionPane } from "@/components/agent/SessionPane";
 
 interface RightPanelProps {
   prefill?: { text: string; autoSend?: boolean } | null;
@@ -78,7 +78,7 @@ export function RightPanel({ prefill, onPrefillConsumed }: RightPanelProps) {
         style={{ marginLeft: -3, padding: "0 3px" }}
         aria-hidden
       />
-      <AgentTerminalPane isRightPanel={true} chatPrefill={prefill} onPrefillConsumed={onPrefillConsumed} />
+      <SessionPane isRightPanel={true} chatPrefill={prefill} onPrefillConsumed={onPrefillConsumed} />
     </aside>
   );
 }
