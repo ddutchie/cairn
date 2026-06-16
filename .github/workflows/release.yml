@@ -8,6 +8,11 @@ on:
 permissions:
   contents: write
 
+env:
+  ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
+  ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
+  PKG_CACHE_PATH: ${{ github.workspace }}/.cache/pkg
+
 jobs:
   # ── Create the GitHub Release with changelog body ─────────────────────────
   prepare-release:
@@ -51,7 +56,15 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Cache node_modules
+        id: cache-npm
+        uses: actions/cache@v5
+        with:
+          path: node_modules
+          key: npm-deps-${{ runner.os }}-node-22-${{ hashFiles('package-lock.json') }}
+
       - name: Install dependencies
+        if: steps.cache-npm.outputs.cache-hit != 'true'
         run: npm ci
 
       - name: Cache Playwright browsers
@@ -98,17 +111,43 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Cache node_modules and native builds
+        id: cache-npm
+        uses: actions/cache@v5
+        with:
+          path: |
+            node_modules
+            pkg-native
+            vitest-native
+            electron-native
+          key: npm-deps-build-${{ runner.os }}-node-22-${{ hashFiles('package-lock.json') }}
+
       - name: Cache Next.js build
         uses: actions/cache@v5
         with:
           path: .next/cache
-          key: nextjs-mac-${{ hashFiles('package-lock.json') }}
-          restore-keys: nextjs-mac-
+          key: nextjs-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('src/**/*.js', 'src/**/*.jsx', 'src/**/*.ts', 'src/**/*.tsx') }}
+          restore-keys: |
+            nextjs-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
+            nextjs-${{ runner.os }}-
+
+      - name: Cache Electron, Electron Builder, and PKG binaries
+        uses: actions/cache@v5
+        with:
+          path: |
+            .cache/electron
+            .cache/electron-builder
+            .cache/pkg
+          key: electron-builder-pkg-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            electron-builder-pkg-${{ runner.os }}-
 
       - name: Install dependencies
+        if: steps.cache-npm.outputs.cache-hit != 'true'
         run: npm ci
 
       - name: Rebuild native modules
+        if: steps.cache-npm.outputs.cache-hit != 'true'
         run: npm run rebuild
 
       - name: Build & publish (macOS)
@@ -146,17 +185,43 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Cache node_modules and native builds
+        id: cache-npm
+        uses: actions/cache@v5
+        with:
+          path: |
+            node_modules
+            pkg-native
+            vitest-native
+            electron-native
+          key: npm-deps-build-${{ runner.os }}-node-22-${{ hashFiles('package-lock.json') }}
+
       - name: Cache Next.js build
         uses: actions/cache@v5
         with:
           path: .next/cache
-          key: nextjs-win-${{ hashFiles('package-lock.json') }}
-          restore-keys: nextjs-win-
+          key: nextjs-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('src/**/*.js', 'src/**/*.jsx', 'src/**/*.ts', 'src/**/*.tsx') }}
+          restore-keys: |
+            nextjs-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
+            nextjs-${{ runner.os }}-
+
+      - name: Cache Electron, Electron Builder, and PKG binaries
+        uses: actions/cache@v5
+        with:
+          path: |
+            .cache/electron
+            .cache/electron-builder
+            .cache/pkg
+          key: electron-builder-pkg-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            electron-builder-pkg-${{ runner.os }}-
 
       - name: Install dependencies
+        if: steps.cache-npm.outputs.cache-hit != 'true'
         run: npm ci --fetch-retries=5 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000
 
       - name: Rebuild native modules
+        if: steps.cache-npm.outputs.cache-hit != 'true'
         run: npm run rebuild
 
       - name: Build & publish (Windows)
@@ -184,17 +249,43 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Cache node_modules and native builds
+        id: cache-npm
+        uses: actions/cache@v5
+        with:
+          path: |
+            node_modules
+            pkg-native
+            vitest-native
+            electron-native
+          key: npm-deps-build-${{ runner.os }}-node-22-${{ hashFiles('package-lock.json') }}
+
       - name: Cache Next.js build
         uses: actions/cache@v5
         with:
           path: .next/cache
-          key: nextjs-linux-${{ hashFiles('package-lock.json') }}
-          restore-keys: nextjs-linux-
+          key: nextjs-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('src/**/*.js', 'src/**/*.jsx', 'src/**/*.ts', 'src/**/*.tsx') }}
+          restore-keys: |
+            nextjs-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
+            nextjs-${{ runner.os }}-
+
+      - name: Cache Electron, Electron Builder, and PKG binaries
+        uses: actions/cache@v5
+        with:
+          path: |
+            .cache/electron
+            .cache/electron-builder
+            .cache/pkg
+          key: electron-builder-pkg-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            electron-builder-pkg-${{ runner.os }}-
 
       - name: Install dependencies
+        if: steps.cache-npm.outputs.cache-hit != 'true'
         run: npm ci
 
       - name: Rebuild native modules
+        if: steps.cache-npm.outputs.cache-hit != 'true'
         run: npm run rebuild
 
       - name: Build & publish (Linux)
