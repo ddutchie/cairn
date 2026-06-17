@@ -1,8 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
-import { X, PenSquare, History, Pencil, Trash2 } from "lucide-react";
-import { cn, formatRelative } from "@/lib/utils";
+import { Trash2 } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { useChatStream } from "@/hooks/useChatStream";
@@ -84,41 +83,38 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
     projects, workspaces,
     addMessage,
     chatMessages, chatThreads, aiConfig,
-    createNewThread, deleteThread, renameThread,
     chatPanelWidth,
     activeView, graphData, selectedGraphNodeId,
     clearThreadMessages,
     createNote,
     notes, cards,
+    activeChatThreadId, setActiveChatThreadId,
   } = useCairnStore(useShallow((s) => ({
-    chatOpen:            s.chatOpen,
-    activeProjectId:     s.activeProjectId,
-    activeWorkspaceId:   s.activeWorkspaceId,
-    projects:            s.projects,
-    workspaces:          s.workspaces,
-    addMessage:          s.addMessage,
-    chatMessages:        s.chatMessages,
-    chatThreads:         s.chatThreads,
-    aiConfig:            s.aiConfig,
-    createNewThread:     s.createNewThread,
-    deleteThread:        s.deleteThread,
-    renameThread:        s.renameThread,
-    chatPanelWidth:      s.chatPanelWidth,
-    activeView:          s.activeView,
-    graphData:           s.graphData,
-    selectedGraphNodeId: s.selectedGraphNodeId,
-    clearThreadMessages: s.clearThreadMessages,
-    createNote:          s.createNote,
-    notes:               s.notes,
-    cards:               s.cards,
+    chatOpen:              s.chatOpen,
+    activeProjectId:       s.activeProjectId,
+    activeWorkspaceId:     s.activeWorkspaceId,
+    projects:              s.projects,
+    workspaces:            s.workspaces,
+    addMessage:            s.addMessage,
+    chatMessages:          s.chatMessages,
+    chatThreads:           s.chatThreads,
+    aiConfig:              s.aiConfig,
+    chatPanelWidth:        s.chatPanelWidth,
+    activeView:            s.activeView,
+    graphData:             s.graphData,
+    selectedGraphNodeId:   s.selectedGraphNodeId,
+    clearThreadMessages:   s.clearThreadMessages,
+    createNote:            s.createNote,
+    notes:                 s.notes,
+    cards:                 s.cards,
+    activeChatThreadId:    s.activeChatThreadId,
+    setActiveChatThreadId: s.setActiveChatThreadId,
   })));
 
-  const [input, setInput]             = useState("");
-  const [threadId, setThreadId]       = useState<string | null>(null);
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [renamingThreadId, setRenamingThreadId] = useState<string | null>(null);
-  const [renameValue, setRenameValue] = useState("");
-  const historyRef     = useRef<HTMLDivElement>(null);
+  // threadId is driven by the store so the tab bar can switch threads externally
+  const threadId = activeChatThreadId;
+
+  const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef       = useRef<HTMLTextAreaElement>(null);
 
@@ -148,14 +144,6 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
       "Suggest new tags to organize this graph",
     ];
   }, [selectedNode]);
-
-  const projectThreads = useMemo(
-    () => chatThreads
-      .filter((t) => t.projectId === activeProjectId)
-      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-      .slice(0, 15),
-    [chatThreads, activeProjectId],
-  );
 
   const activeThread = useMemo(
     () => chatThreads.find((t) => t.id === threadId),
@@ -295,19 +283,19 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
   useEffect(() => {
     if (!activeWorkspaceId) return;
     if (isLoadingRef.current) return;
+    // Only initialise if no thread is active yet (tab bar may have already set one)
+    if (activeChatThreadId) return;
     const t = useCairnStore.getState().getOrCreateThread(activeWorkspaceId, activeProjectId ?? undefined);
-    setThreadId(t.id);
-  }, [activeWorkspaceId, activeProjectId]);
+    setActiveChatThreadId(t.id);
+  }, [activeWorkspaceId, activeProjectId, activeChatThreadId, setActiveChatThreadId]);
 
-  // Close history on outside click
+  // Also initialise on first mount when activeChatThreadId is already null
   useEffect(() => {
-    if (!historyOpen) return;
-    function handle(e: MouseEvent) {
-      if (historyRef.current && !historyRef.current.contains(e.target as Node)) setHistoryOpen(false);
-    }
-    document.addEventListener("mousedown", handle);
-    return () => document.removeEventListener("mousedown", handle);
-  }, [historyOpen]);
+    if (!activeWorkspaceId || activeChatThreadId) return;
+    const t = useCairnStore.getState().getOrCreateThread(activeWorkspaceId, activeProjectId ?? undefined);
+    setActiveChatThreadId(t.id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const messages = useMemo(
     () => threadId ? chatMessages.filter((m) => m.threadId === threadId) : [],
@@ -405,11 +393,6 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
     }
   }, [threadId, input, prefill, handleSend]);
 
-  const handleNewThread = useCallback(() => {
-    if (!activeWorkspaceId) return;
-    setThreadId(createNewThread(activeWorkspaceId, activeProjectId ?? undefined).id);
-  }, [activeWorkspaceId, activeProjectId, createNewThread]);
-
   return (
     <div className="flex flex-1 flex-col min-h-0 overflow-hidden bg-[var(--surface)]">
       {/* Sub-header / toolbar */}
@@ -426,80 +409,6 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
           />
         )}
 
-        {/* Thread history */}
-        {projectThreads.length > 1 && (
-          <div ref={historyRef} className="relative">
-            <Tooltip content="Thread history" side="left">
-              <button onClick={() => setHistoryOpen((o) => !o)}
-                className={cn("p-1 rounded transition-colors",
-                  historyOpen ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)]")}>
-                <History size={11} />
-              </button>
-            </Tooltip>
-            {historyOpen && (
-              <div className="absolute right-0 top-full mt-1 w-64 z-50 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-2xl overflow-hidden">
-                <div className="px-3 py-2 border-b border-[var(--border)]">
-                  <span className="text-[0.714rem] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">Recent threads</span>
-                </div>
-                <div className="max-h-72 overflow-y-auto">
-                  {projectThreads.map((t) => {
-                    const firstMsg = chatMessages.find((m) => m.threadId === t.id && m.role === "user");
-                    const isActive = t.id === threadId;
-                    return (
-                      <div key={t.id}
-                        className={cn("group flex items-center border-b border-[var(--border-subtle)] last:border-0 transition-colors",
-                          isActive ? "bg-[var(--accent-dim)]" : "hover:bg-[var(--surface-2)]")}>
-                        <button onClick={() => { setThreadId(t.id); setHistoryOpen(false); }}
-                          className="flex-1 text-left px-3 py-2.5 flex flex-col gap-0.5 min-w-0">
-                          {renamingThreadId === t.id ? (
-                            <input
-                              autoFocus
-                              value={renameValue}
-                              onChange={(e) => setRenameValue(e.target.value)}
-                              onClick={(e) => e.stopPropagation()}
-                              onBlur={() => { renameThread(t.id, renameValue); setRenamingThreadId(null); }}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") { renameThread(t.id, renameValue); setRenamingThreadId(null); }
-                                if (e.key === "Escape") setRenamingThreadId(null);
-                                e.stopPropagation();
-                              }}
-                              className="w-full bg-transparent text-[0.786rem] font-medium text-[var(--accent)] outline-none border-b border-[var(--accent)]"
-                            />
-                          ) : (
-                            <span className={cn("text-[0.786rem] truncate font-medium", isActive ? "text-[var(--accent)]" : "text-[var(--text-secondary)]")}>
-                              {t.title ?? (firstMsg?.content.slice(0, 50) ?? "New thread")}{(!t.title && (firstMsg?.content.length ?? 0) > 50) ? "…" : ""}
-                            </span>
-                          )}
-                          <span className="text-[0.714rem] text-[var(--text-tertiary)]">{formatRelative(t.updatedAt)}</span>
-                        </button>
-                        <div className="opacity-0 group-hover:opacity-100 flex items-center flex-shrink-0 mr-1 transition-all">
-                          <button onClick={(e) => { e.stopPropagation(); setRenamingThreadId(t.id); setRenameValue(t.title ?? firstMsg?.content.slice(0, 50) ?? ""); }}
-                            className="p-1.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-                            title="Rename thread">
-                            <Pencil size={10} />
-                          </button>
-                          <button onClick={(e) => {
-                              e.stopPropagation();
-                              deleteThread(t.id);
-                              if (isActive && activeWorkspaceId) {
-                                const next = createNewThread(activeWorkspaceId, activeProjectId ?? undefined);
-                                  setThreadId(next.id);
-                                  setHistoryOpen(false);
-                                }
-                              }}
-                              className="p-1.5 rounded text-[var(--text-tertiary)] hover:text-[var(--danger)] transition-colors"
-                              title="Delete thread">
-                              <X size={10} />
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
 
         {messages.length > 0 && (
           <Tooltip content="Clear conversation" side="left">
@@ -509,12 +418,6 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
             </button>
           </Tooltip>
         )}
-        <Tooltip content="New chat" side="left">
-          <button onClick={handleNewThread}
-            className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors">
-            <PenSquare size={11} />
-          </button>
-        </Tooltip>
       </div>
 
       {/* Messages */}

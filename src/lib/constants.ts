@@ -67,6 +67,17 @@ export const PRIORITY_CSS_COLORS: Record<Priority | string, string> = {
   low:    "var(--text-tertiary)",
 };
 
+/**
+ * CSS variable strings for project status stripe / inline indicators.
+ * Use for inline `style` props where Tailwind isn't suitable.
+ */
+export const STATUS_CSS_COLORS: Record<ProjectStatus | string, string> = {
+  active:    "var(--success)",
+  on_hold:   "var(--warning)",
+  completed: "var(--info)",
+  archived:  "var(--text-tertiary)",
+};
+
 /** Default AI/LLM config values. */
 export const DEFAULT_AI_CONFIG: AIConfig = {
   provider:     "localllm",

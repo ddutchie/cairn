@@ -17,9 +17,9 @@ import "@xterm/xterm/css/xterm.css";
 
 import { useEffect, useRef, useCallback, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { X, MessageSquare, CircleDot, Plus, ChevronDown, Trash2, Bot, History, ArrowRight, Sparkles } from "lucide-react";
+import { X, MessageSquare, CircleDot, Plus, ChevronDown, Trash2, Bot, History, ArrowRight, Sparkles, MessageSquarePlus, Terminal, Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { id } from "@/lib/utils";
+import { id, formatRelative } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { Tooltip } from "@/components/ui/tooltip";
 import { SpawnAgentModal } from "./SpawnAgentModal";
@@ -357,6 +357,173 @@ function AgentEmptyState() {
   );
 }
 
+// ── AIChatTab — AI Chat tab with thread history dropdown ──────────────────────
+
+interface AIChatTabProps {
+  isActive: boolean;
+  onActivate: () => void;
+}
+
+function AIChatTab({ isActive, onActivate }: AIChatTabProps) {
+  const {
+    chatThreads, chatMessages, activeProjectId, activeWorkspaceId,
+    activeChatThreadId, setActiveChatThreadId,
+    createNewThread, deleteThread, renameThread,
+  } = useCairnStore(useShallow((s) => ({
+    chatThreads:           s.chatThreads,
+    chatMessages:          s.chatMessages,
+    activeProjectId:       s.activeProjectId,
+    activeWorkspaceId:     s.activeWorkspaceId,
+    activeChatThreadId:    s.activeChatThreadId,
+    setActiveChatThreadId: s.setActiveChatThreadId,
+    createNewThread:       s.createNewThread,
+    deleteThread:          s.deleteThread,
+    renameThread:          s.renameThread,
+  })));
+
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [renamingId, setRenamingId]     = useState<string | null>(null);
+  const [renameValue, setRenameValue]   = useState("");
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const projectThreads = chatThreads
+    .filter((t) => t.projectId === activeProjectId)
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+    .slice(0, 15);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    if (!dropdownOpen) return;
+    function handleClick(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+        setRenamingId(null);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [dropdownOpen]);
+
+  function handleSwitchThread(threadId: string) {
+    setActiveChatThreadId(threadId);
+    setDropdownOpen(false);
+    setRenamingId(null);
+    onActivate();
+  }
+
+  function handleDeleteThread(e: React.MouseEvent, threadId: string) {
+    e.stopPropagation();
+    deleteThread(threadId);
+    if (activeChatThreadId === threadId && activeWorkspaceId) {
+      const next = createNewThread(activeWorkspaceId, activeProjectId ?? undefined);
+      setActiveChatThreadId(next.id);
+    }
+  }
+
+  return (
+    <div className="relative flex-shrink-0 h-full" ref={dropdownRef}>
+      {/* The tab button */}
+      <button
+        onClick={onActivate}
+        role="tab"
+        aria-selected={isActive}
+        className={cn(
+          "flex items-center gap-1.5 px-3 h-full text-xs font-semibold whitespace-nowrap border-r border-[var(--border)] transition-colors flex-shrink-0",
+          isActive
+            ? "text-[var(--text-primary)] bg-[var(--background)]"
+            : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"
+        )}
+      >
+        <Sparkles size={11} className={cn("flex-shrink-0", isActive ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]")} />
+        <span>AI Chat</span>
+        {/* Thread history chevron */}
+        {projectThreads.length > 1 && (
+          <span
+            role="button"
+            aria-label="Chat thread history"
+            onClick={(e) => { e.stopPropagation(); setDropdownOpen((v) => !v); }}
+            className={cn(
+              "ml-0.5 p-0.5 rounded transition-colors hover:bg-[var(--surface-2)]",
+              dropdownOpen ? "text-[var(--text-primary)]" : "text-[var(--text-tertiary)]"
+            )}
+          >
+            <ChevronDown size={10} />
+          </span>
+        )}
+      </button>
+
+      {/* Thread history dropdown */}
+      {dropdownOpen && (
+        <div className="absolute left-0 top-full z-50 mt-0.5 w-72 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-xl overflow-hidden">
+          <div className="px-3 py-2 border-b border-[var(--border)]">
+            <div className="flex items-center gap-1.5">
+              <History size={10} className="text-[var(--text-tertiary)]" />
+              <span className="text-[0.643rem] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">Chat threads</span>
+            </div>
+          </div>
+          <div className="max-h-72 overflow-y-auto">
+            {projectThreads.map((t) => {
+              const firstMsg = chatMessages.find((m) => m.threadId === t.id && m.role === "user");
+              const isActiveThread = t.id === activeChatThreadId;
+              return (
+                <div
+                  key={t.id}
+                  className={cn(
+                    "group flex items-center border-b border-[var(--border)] last:border-0 transition-colors",
+                    isActiveThread ? "bg-[var(--accent-dim)]" : "hover:bg-[var(--surface-2)]"
+                  )}
+                >
+                  <button
+                    onClick={() => handleSwitchThread(t.id)}
+                    className="flex-1 text-left px-3 py-2 flex flex-col gap-0.5 min-w-0"
+                  >
+                    {renamingId === t.id ? (
+                      <input
+                        autoFocus
+                        value={renameValue}
+                        onChange={(e) => setRenameValue(e.target.value)}
+                        onClick={(e) => e.stopPropagation()}
+                        onBlur={() => { renameThread(t.id, renameValue); setRenamingId(null); }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") { renameThread(t.id, renameValue); setRenamingId(null); }
+                          if (e.key === "Escape") setRenamingId(null);
+                          e.stopPropagation();
+                        }}
+                        className="w-full bg-transparent text-[0.786rem] font-medium text-[var(--accent)] outline-none border-b border-[var(--accent)]"
+                      />
+                    ) : (
+                      <span className={cn("text-[0.714rem] truncate font-medium", isActiveThread ? "text-[var(--accent)]" : "text-[var(--text-primary)]")}>
+                        {t.title ?? (firstMsg?.content.slice(0, 50) ?? "New thread")}{(!t.title && (firstMsg?.content.length ?? 0) > 50) ? "…" : ""}
+                      </span>
+                    )}
+                    <span className="text-[0.607rem] text-[var(--text-tertiary)]">{formatRelative(t.updatedAt)}</span>
+                  </button>
+                  <div className="opacity-0 group-hover:opacity-100 flex items-center flex-shrink-0 mr-1.5 gap-0.5 transition-all">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setRenamingId(t.id); setRenameValue(t.title ?? firstMsg?.content.slice(0, 50) ?? ""); }}
+                      className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+                      title="Rename thread"
+                    >
+                      <Pencil size={10} />
+                    </button>
+                    <button
+                      onClick={(e) => handleDeleteThread(e, t.id)}
+                      className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] transition-colors"
+                      title="Delete thread"
+                    >
+                      <X size={10} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── AgentSessionTab (pinned Cairn Agent tab with history dropdown) ─────────
 
 interface AgentSessionTabProps {
@@ -382,7 +549,7 @@ function AgentSessionTab({ isActive, onActivate }: AgentSessionTabProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const { handleNewSession: _handleNewSession, handleResumeSession: _handleResumeSession, project } = useAgentSessionActions();
+  const { handleResumeSession: _handleResumeSession } = useAgentSessionActions();
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -402,11 +569,6 @@ function AgentSessionTab({ isActive, onActivate }: AgentSessionTabProps) {
       fetchPiSessionHistory(activeProjectId);
     }
   }, [dropdownOpen, activeProjectId, fetchPiSessionHistory]);
-
-  async function handleNewSession() {
-    setDropdownOpen(false);
-    await _handleNewSession();
-  }
 
   async function handleResumeSession(summary: PiSessionSummary) {
     setDropdownOpen(false);
@@ -435,7 +597,7 @@ function AgentSessionTab({ isActive, onActivate }: AgentSessionTabProps) {
       >
         <MessageSquare size={11} className={cn("flex-shrink-0", isActive ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]")} />
         <span className="max-w-[100px] truncate">Cairn Agent</span>
-        {/* History dropdown chevron */}
+        {/* Session history dropdown chevron */}
         <span
           role="button"
           aria-label="Session history"
@@ -449,21 +611,15 @@ function AgentSessionTab({ isActive, onActivate }: AgentSessionTabProps) {
         </span>
       </button>
 
-      {/* History dropdown */}
+      {/* Session history dropdown — resume or delete past sessions */}
       {dropdownOpen && (
         <div className="absolute left-0 top-full z-50 mt-0.5 w-64 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-xl overflow-hidden">
-          {/* New session CTA */}
-          <button
-            onClick={handleNewSession}
-            disabled={!project?.codeDirectory}
-            className="w-full flex items-center gap-2 px-3 py-2.5 text-[0.714rem] font-medium text-[var(--accent)] hover:bg-[var(--surface-2)] transition-colors border-b border-[var(--border)] disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <Plus size={11} />
-            New session
-            {!project?.codeDirectory && <span className="ml-auto text-[var(--text-tertiary)] text-[0.643rem]">No code dir</span>}
-          </button>
-
-          {/* History list */}
+          <div className="px-3 py-2 border-b border-[var(--border)]">
+            <div className="flex items-center gap-1.5">
+              <History size={10} className="text-[var(--text-tertiary)]" />
+              <span className="text-[0.643rem] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">Session history</span>
+            </div>
+          </div>
           <div className="max-h-64 overflow-y-auto">
             {piSessionHistory.length === 0 ? (
               <p className="px-3 py-3 text-[0.714rem] text-[var(--text-tertiary)] text-center">No saved sessions</p>
@@ -530,6 +686,7 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
     toggleChat,
     activeView,
     chatOpen,
+    projects,
   } = useCairnStore(useShallow((s) => ({
     terminalSessions:       s.terminalSessions,
     activeSessionId:        s.activeSessionId,
@@ -541,9 +698,45 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
     toggleChat:             s.toggleChat,
     activeView:             s.activeView,
     chatOpen:               s.chatOpen,
+    projects:              s.projects,
   })));
 
+  // Whether the active project has a codebase — the Cairn Agent (coding agent)
+  // tab, session content, and "New agent session" action are hidden without one.
+  const hasCodeDirectory = !!projects.find((p) => p.id === activeProjectId)?.codeDirectory;
+
   const [spawnOpen, setSpawnOpen] = useState(false);
+  const [newMenuOpen, setNewMenuOpen] = useState(false);
+  const newMenuRef = useRef<HTMLDivElement>(null);
+
+  // Read create-new-thread from the store for the unified + button
+  const createNewThread    = useCairnStore((s) => s.createNewThread);
+  const activeWorkspaceId  = useCairnStore((s) => s.activeWorkspaceId);
+  const { handleNewSession } = useAgentSessionActions();
+
+  // Close the new-item menu on outside click
+  useEffect(() => {
+    if (!newMenuOpen) return;
+    function handleClick(e: MouseEvent) {
+      if (newMenuRef.current && !newMenuRef.current.contains(e.target as Node)) {
+        setNewMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [newMenuOpen]);
+
+  function handleNewChatThread() {
+    if (!activeWorkspaceId) return;
+    setNewMenuOpen(false);
+    createNewThread(activeWorkspaceId, activeProjectId ?? undefined);
+    setActiveSession("chat");
+  }
+
+  async function handleNewAgentSession() {
+    setNewMenuOpen(false);
+    await handleNewSession();
+  }
 
   // Fetch session history on mount and when project changes
   useEffect(() => {
@@ -570,6 +763,18 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
     }
   }, [activeSessionId, setActiveSession]);
 
+  // When the active project has no codebase, the Cairn Agent (coding agent) tab is
+  // hidden. If the active session is the agent sentinel or a pi session, fall back
+  // to chat so the hidden content is never the shown one.
+  useEffect(() => {
+    if (!hasCodeDirectory && activeSessionId !== "chat" && activeSessionId !== null) {
+      const isAgentSession =
+        activeSessionId === "agent" ||
+        (persistentPiSessionId !== null && activeSessionId === persistentPiSessionId);
+      if (isAgentSession) setActiveSession("chat");
+    }
+  }, [hasCodeDirectory, activeSessionId, persistentPiSessionId, setActiveSession]);
+
   const prevViewRef = useRef(activeView);
   const prevChatOpenRef = useRef(chatOpen);
 
@@ -587,8 +792,11 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
     prevChatOpenRef.current = chatOpen;
   }, [activeView, chatOpen, setActiveSession]);
 
-  // Determine if the pinned tab is active
-  const pinnedIsActive = persistentPiSessionId !== null && activeSessionId === persistentPiSessionId;
+  // Determine if the pinned tab is active.
+  // "agent" is a sentinel set when the user clicks the agent tab before any session is created.
+  const pinnedIsActive =
+    activeSessionId === "agent" ||
+    (persistentPiSessionId !== null && activeSessionId === persistentPiSessionId);
 
   return (
     <>
@@ -596,28 +804,25 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
       {/* Tab bar */}
       <div className="flex items-center h-11 border-b border-[var(--border)] overflow-visible relative z-20 flex-shrink-0 bg-[var(--surface)]">
         {/* AI Chat tab (always present) */}
-        <button
-          onClick={() => setActiveSession("chat")}
-          className={cn(
-            "flex items-center gap-1.5 px-3 h-full text-xs font-semibold whitespace-nowrap border-r border-[var(--border)] transition-colors flex-shrink-0",
-            activeSessionId === "chat"
-              ? "text-[var(--text-primary)] bg-[var(--background)]"
-              : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"
-          )}
-        >
-          <Sparkles size={11} className={cn("flex-shrink-0", activeSessionId === "chat" ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]")} />
-          <span>AI Chat</span>
-        </button>
-
-        {/* Always-present Cairn Agent pinned tab */}
-        <AgentSessionTab
-          isActive={pinnedIsActive}
-          onActivate={() => {
-            if (persistentPiSessionId) {
-              setActiveSession(persistentPiSessionId);
-            }
-          }}
+        <AIChatTab
+          isActive={activeSessionId === "chat"}
+          onActivate={() => setActiveSession("chat")}
         />
+
+        {/* Cairn Agent (coding agent) pinned tab — only when the project has a codebase */}
+        {hasCodeDirectory && (
+          <AgentSessionTab
+            isActive={pinnedIsActive}
+            onActivate={() => {
+              if (persistentPiSessionId) {
+                setActiveSession(persistentPiSessionId);
+              } else {
+                // No session yet — switch to agent tab to show empty state
+                setActiveSession("agent");
+              }
+            }}
+          />
+        )}
 
         {/* Scrollable PTY sessions */}
         <div className="flex-1 flex items-center overflow-x-auto min-w-0 h-full">
@@ -632,15 +837,52 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
           ))}
         </div>
 
-        {/* New session button */}
-        <Tooltip content="New session" side="bottom">
-          <button
-            onClick={() => setSpawnOpen(true)}
-            className="flex-shrink-0 px-3 h-full text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors border-l border-[var(--border)] flex items-center justify-center"
-          >
-            <Plus size={12} />
-          </button>
-        </Tooltip>
+        {/* Unified new-item button */}
+        <div ref={newMenuRef} className="relative flex-shrink-0">
+          <Tooltip content="New…" side="bottom">
+            <button
+              id="unified-new-btn"
+              onClick={() => setNewMenuOpen((v) => !v)}
+              className={cn(
+                "px-3 h-11 flex items-center justify-center transition-colors border-l border-[var(--border)]",
+                newMenuOpen
+                  ? "text-[var(--text-primary)] bg-[var(--surface-2)]"
+                  : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]"
+              )}
+            >
+              <Plus size={12} />
+            </button>
+          </Tooltip>
+
+          {newMenuOpen && (
+            <div className="absolute right-0 top-full mt-0.5 w-52 z-50 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-xl overflow-hidden">
+              <button
+                id="new-chat-thread-btn"
+                onClick={handleNewChatThread}
+                className="w-full flex items-center gap-2.5 px-3 py-2.5 text-[0.714rem] text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
+              >
+                <MessageSquarePlus size={13} className="text-[var(--accent)] flex-shrink-0" />
+                <div className="text-left">
+                  <p className="font-medium">New chat thread</p>
+                  <p className="text-[0.643rem] text-[var(--text-tertiary)]">Start a fresh AI conversation</p>
+                </div>
+              </button>
+              {hasCodeDirectory && (
+                <button
+                  id="new-agent-session-btn"
+                  onClick={handleNewAgentSession}
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-[0.714rem] text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors border-t border-[var(--border)]"
+                >
+                  <Terminal size={13} className="text-[var(--accent)] flex-shrink-0" />
+                  <div className="text-left">
+                    <p className="font-medium">New agent session</p>
+                    <p className="text-[0.643rem] text-[var(--text-tertiary)]">Cairn Agent coding session</p>
+                  </div>
+                </button>
+              )}
+            </div>
+          )}
+        </div>
 
         {/* Close panel button (visible only in right panel drawer) */}
         {isRightPanel && (
@@ -663,16 +905,18 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
           <ChatPanel prefill={chatPrefill} onPrefillConsumed={onPrefillConsumed} />
         </div>
 
-        {/* Pinned agent session content */}
-        {persistentSession ? (
-          <div className={pinnedIsActive ? "flex flex-1 min-h-0 overflow-hidden" : "hidden"}>
-            <AgentChatPane session={persistentSession} isActive={pinnedIsActive} />
-          </div>
-        ) : pinnedIsActive ? (
-          <div className="flex-1 min-h-0 overflow-hidden">
-            <AgentEmptyState />
-          </div>
-        ) : null}
+        {/* Pinned agent session content — only when the project has a codebase */}
+        {hasCodeDirectory && (
+          persistentSession ? (
+            <div className={pinnedIsActive ? "flex flex-col flex-1 min-h-0 overflow-hidden" : "hidden"}>
+              <AgentChatPane session={persistentSession} isActive={pinnedIsActive} />
+            </div>
+          ) : pinnedIsActive ? (
+            <div className="flex-1 min-h-0 overflow-hidden">
+              <AgentEmptyState />
+            </div>
+          ) : null
+        )}
 
         {/* PTY sessions */}
         {ptySessions.map((session) => (

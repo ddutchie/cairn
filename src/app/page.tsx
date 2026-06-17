@@ -273,7 +273,9 @@ export default function Home() {
       if (!state.chatOpen) {
         state.toggleChat();
       }
-      if (state.activeSessionId === null || state.activeSessionId === "chat") {
+      // Only auto-activate the Cairn Agent (coding) session when the project has a codebase.
+      const hasCodeDirectory = !!state.projects.find((p) => p.id === state.activeProjectId)?.codeDirectory;
+      if (hasCodeDirectory && (state.activeSessionId === null || state.activeSessionId === "chat")) {
         if (state.persistentPiSessionId) {
           state.setActiveSession(state.persistentPiSessionId);
         }

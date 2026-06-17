@@ -9,11 +9,11 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { ProjectIcon, WORKSPACE_ICONS } from "@/lib/workspace-icons";
 import { cn, formatDate, formatRelative, STATUS_COLORS } from "@/lib/utils";
-import { COLUMN_COLORS, PRIORITY_CSS_COLORS } from "@/lib/constants";
+import { COLUMN_COLORS, PRIORITY_CSS_COLORS, PRIORITY_OPTIONS, PROJECT_STATUS_OPTIONS, STATUS_CSS_COLORS } from "@/lib/constants";
 import { CairnEvents } from "@/lib/events";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { TaskCard, Note, BoardColumn } from "@/types";
+import type { TaskCard, Note, BoardColumn, ProjectStatus, Priority } from "@/types";
 import { useProjectMetrics, type ActivityGroup } from "./project-overview/useProjectMetrics";
 import { ChatInput, SuggestionItem } from "@/components/chat/ChatInput";
 
@@ -53,6 +53,8 @@ export function ProjectOverview() {
   const [editOpen, setEditOpen] = useState(false);
   const [editIcon, setEditIcon] = useState("");
   const [editDesc, setEditDesc] = useState("");
+  const [editStatus, setEditStatus] = useState<ProjectStatus | "">("");
+  const [editPriority, setEditPriority] = useState<Priority | "">("");
   const [codeDirInput, setCodeDirInput] = useState("");
   const popoverRef = useRef<HTMLDivElement>(null);
 
@@ -61,6 +63,8 @@ export function ProjectOverview() {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setEditIcon(project.icon ?? "");
       setEditDesc(project.description ?? "");
+      setEditStatus(project.status);
+      setEditPriority(project.priority);
     }
   }, [editOpen, project]);
 
@@ -88,6 +92,8 @@ export function ProjectOverview() {
     updateProject(project.id, {
       icon: editIcon.trim() || undefined,
       description: editDesc.trim() || undefined,
+      status: editStatus || undefined,
+      priority: editPriority || undefined,
     });
     setEditOpen(false);
   }
@@ -177,6 +183,56 @@ export function ProjectOverview() {
                         rows={3}
                         className="w-full px-2 py-1.5 text-xs rounded-md bg-[var(--surface)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] resize-none"
                       />
+                    </div>
+                    {/* Status */}
+                    <div>
+                      <label className="text-[0.786rem] text-[var(--text-tertiary)] block mb-1">Status</label>
+                      <div className="grid grid-cols-2 gap-1">
+                        {PROJECT_STATUS_OPTIONS.map((s) => (
+                          <button
+                            key={s}
+                            type="button"
+                            onClick={() => setEditStatus(s)}
+                            className={cn(
+                              "flex items-center gap-1.5 px-2 py-1.5 rounded-md text-xs transition-colors capitalize",
+                              editStatus === s
+                                ? "bg-[var(--surface)] ring-1 ring-[var(--accent)] text-[var(--text-primary)]"
+                                : "text-[var(--text-tertiary)] hover:bg-[var(--surface)]"
+                            )}
+                          >
+                            <span
+                              className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                              style={{ background: STATUS_CSS_COLORS[s] ?? "var(--text-tertiary)" }}
+                            />
+                            {s.replace("_", " ")}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {/* Priority */}
+                    <div>
+                      <label className="text-[0.786rem] text-[var(--text-tertiary)] block mb-1">Priority</label>
+                      <div className="grid grid-cols-2 gap-1">
+                        {PRIORITY_OPTIONS.map((p) => (
+                          <button
+                            key={p}
+                            type="button"
+                            onClick={() => setEditPriority(p)}
+                            className={cn(
+                              "flex items-center gap-1.5 px-2 py-1.5 rounded-md text-xs capitalize transition-colors",
+                              editPriority === p
+                                ? "bg-[var(--surface)] ring-1 ring-[var(--accent)] text-[var(--text-primary)]"
+                                : "text-[var(--text-tertiary)] hover:bg-[var(--surface)]"
+                            )}
+                          >
+                            <span
+                              className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                              style={{ background: PRIORITY_CSS_COLORS[p] ?? "var(--text-tertiary)" }}
+                            />
+                            {p}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                     <div className="flex justify-end">
                       <Button variant="accent" size="xs" onClick={handleSaveEdit}>

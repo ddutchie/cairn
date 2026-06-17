@@ -13,8 +13,10 @@ import { ipc, ipcAwait, ipcAwaitResult } from "../ipc";
 export interface ChatSlice {
   chatThreads: ChatThread[];
   chatMessages: ChatMessage[];
+  activeChatThreadId: string | null;
 
   getOrCreateThread: (workspaceId: ID, projectId?: ID) => ChatThread;
+  setActiveChatThreadId: (threadId: string | null) => void;
   addMessage: (
     threadId: ID,
     role: ChatMessage["role"],
@@ -40,6 +42,11 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
 ) => ({
   chatThreads: [],
   chatMessages: [],
+  activeChatThreadId: null,
+
+  setActiveChatThreadId(threadId) {
+    set({ activeChatThreadId: threadId });
+  },
 
   getOrCreateThread(workspaceId, projectId) {
     const existing = get().chatThreads.find(
