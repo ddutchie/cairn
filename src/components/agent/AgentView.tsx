@@ -18,6 +18,7 @@ import { SessionPane } from "./SessionPane";
 import { AgentBottomTerminal } from "./AgentBottomTerminal";
 import { DiffViewer } from "./DiffViewer";
 import { TerminalManager } from "./TerminalManager";
+import { Bot, FolderOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const MIN_TREE_WIDTH = 160;
@@ -30,9 +31,15 @@ const DEFAULT_BOTTOM_HEIGHT = 220;
 type CentreTab = "editor" | "diff";
 
 export function AgentView() {
-  const { activeProjectId, projects } = useCairnStore(useShallow((s) => ({ activeProjectId: s.activeProjectId, projects: s.projects })));
+  const { activeProjectId, projects, updateProject } = useCairnStore(useShallow((s) => ({ activeProjectId: s.activeProjectId, projects: s.projects, updateProject: s.updateProject })));
   const project = projects.find((p) => p.id === activeProjectId) ?? null;
   const codeDirectory = project?.codeDirectory ?? null;
+
+  async function handlePickCodeDir() {
+    if (!project) return;
+    const result = await window.electron?.agent.pickDirectory() as { data: string | null } | undefined;
+    if (result?.data) updateProject(project.id, { codeDirectory: result.data });
+  }
 
   const [centreTab, setCentreTab] = useState<CentreTab>("editor");
   const [mobileTab, setMobileTab] = useState<"agent" | "files" | "editor" | "diff" | "terminal">("agent");
@@ -127,6 +134,38 @@ export function AgentView() {
       window.removeEventListener("mouseup",   onMouseUp);
     };
   }, []);
+
+  // No codebase on this project — show only chat, not the coding-agent workspace.
+  // Chat is provided by the RightPanel drawer (auto-opened on agent view in page.tsx)
+  // on both desktop (side drawer) and mobile (full-screen overlay), so we must NOT
+  // render a SessionPane here — doing so double-mounts ChatPanel/useChatStream and
+  // causes duplicate assistant messages (both onDone subscriptions call addMessage).
+  if (!codeDirectory) {
+    return (
+      <div className="flex flex-1 min-h-0 overflow-hidden bg-[var(--background)]">
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
+          <div className="w-12 h-12 rounded-full bg-[var(--accent-dim)] border border-[color-mix(in_srgb,var(--accent)_20%,transparent)] flex items-center justify-center">
+            <Bot size={20} className="text-[var(--accent)]" />
+          </div>
+          <div className="flex flex-col gap-1.5 max-w-xs">
+            <p className="text-sm font-semibold text-[var(--text-primary)]">No codebase connected</p>
+            <p className="text-xs text-[var(--text-tertiary)]">
+              This project has no code directory. Set one to launch the coding agent workspace. Chat is available in the side panel.
+            </p>
+          </div>
+          {project && (
+            <button
+              onClick={handlePickCodeDir}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--accent)] text-white text-xs font-medium hover:opacity-90 transition-opacity"
+            >
+              <FolderOpen size={12} />
+              Choose folder
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col flex-1 min-h-0 overflow-hidden bg-[var(--background)]">
