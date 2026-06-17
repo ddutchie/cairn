@@ -2,7 +2,6 @@
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { Trash2 } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { useChatStream } from "@/hooks/useChatStream";
@@ -145,14 +144,6 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
       "Suggest new tags to organize this graph",
     ];
   }, [selectedNode]);
-
-  const projectThreads = useMemo(
-    () => chatThreads
-      .filter((t) => t.projectId === activeProjectId)
-      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-      .slice(0, 15),
-    [chatThreads, activeProjectId],
-  );
 
   const activeThread = useMemo(
     () => chatThreads.find((t) => t.id === threadId),
