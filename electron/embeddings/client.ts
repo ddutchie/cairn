@@ -2,7 +2,7 @@ import { app } from "electron";
 import * as fs from "fs";
 import * as http from "http";
 import * as path from "path";
-import { spawn, type ChildProcess } from "child_process";
+import { spawn, type ChildProcess, execSync } from "child_process";
 
 import { findFreePort } from "./port";
 import { NOMIC_MODEL_ID, NOMIC_DIM } from "./types";
@@ -49,8 +49,9 @@ function resolveBinaryPath(): string | null {
 function resolveNodeRunner(): string | null {
   if (!app.isPackaged) {
     try {
-      const nodeBin = require("child_process")
-        .execSync(process.platform === "win32" ? "where node" : "which node")
+      const nodeBin = execSync(
+        process.platform === "win32" ? "where node" : "which node",
+      )
         .toString()
         .trim()
         .split(/\r?\n/)[0];

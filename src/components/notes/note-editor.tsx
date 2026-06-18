@@ -7,8 +7,7 @@ import remarkBreaks from "remark-breaks";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
-import { Pin, PinOff, Calendar, Eye, Pencil, Wand2, Loader2, CheckCircle2, FileDown, ChevronLeft, Sparkles } from "lucide-react";
-import { WikilinkPicker } from "./WikilinkPicker";
+import { Pin, PinOff, Calendar, Eye, Pencil, Wand2, Loader2, CheckCircle2, FileDown, ChevronLeft, Sparkles } from "lucide-react";import { WikilinkPicker } from "./WikilinkPicker";
 import { getActiveWikilink } from "@/lib/wikilink-parser";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -26,7 +25,6 @@ import { MarkdownEditor, type MarkdownEditorHandle } from "./markdown-editor";
 import { remarkCallout, remarkObsidianEmbeds, remarkWikilinks, remarkPromoteDisplayMath, makeLatexPlugins, InlineCode } from "@/lib/markdown/pipeline";
 import { BacklinksPanel, NoteTagBar } from "./BacklinksPanel";
 import { MDPreviewPanel } from "./MDPreviewPanel";
-import { SemanticHubsPanel } from "./SemanticHubsPanel";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { countWords, stripMarkdown } from "./note-editor-utils";
 
@@ -57,18 +55,18 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [mode, setMode] = useState<EditorMode>("write");
-  const [wordCount, setWordCount] = useState(() => countWords(note.content ?? ""));
+  const noteContent0 = note.content ?? "";
+  const [wordCount, setWordCount] = useState(() => countWords(noteContent0));
   const [showSemanticPanel, setShowSemanticPanel] = useState(false);
-  const [semanticContent, setSemanticContent] = useState(note.content ?? "");
+  const noteId = note.id;
+  const [semanticContent, setSemanticContent] = useState(noteContent0);
   const debouncedSemanticContent = useDebouncedValue(semanticContent, 1200);
-  // Reset when switching notes
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setWordCount(countWords(note.content ?? ""));
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setSemanticContent(note.content ?? "");
+    setWordCount(countWords(noteContent0));
+    setSemanticContent(noteContent0);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [note.id]);
+  }, [noteId]);
 
   // ── AI write lock ─────────────────────────────────────────────────────────
   // When the in-app AI or MCP server is actively writing this note, the editor

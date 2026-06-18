@@ -36,36 +36,41 @@ export function BacklinksPanel({
     columns: s.columns,
   })));
   const [open, setOpen] = useState(false);
-  const [semanticHits, setSemanticHits] = useState<SemanticHit[]>([]);
-  const [semanticLoading, setSemanticLoading] = useState(false);
 
   const debouncedSemantic = useDebouncedValue(semanticContent ?? "", 1200);
 
+  type SearchState = { kind: "loading" } | { kind: "results"; hits: SemanticHit[] };
+  const [search, setSearch] = useState<SearchState | null>(null);
+  const trimmedSemanticLength = (semanticContent ?? "").trim().length;
+  const canSearch = semanticEnabled && !!workspaceId && trimmedSemanticLength >= 4;
+
   useEffect(() => {
-    if (!semanticEnabled || !workspaceId || !debouncedSemantic.trim() || debouncedSemantic.trim().length < 4) {
-      setSemanticHits([]);
-      setSemanticLoading(false);
+    if (!canSearch) {
       return;
     }
     let cancelled = false;
-    setSemanticLoading(true);
     void (async () => {
       const api = window.electron?.embeddings;
-      if (!api) { setSemanticLoading(false); return; }
+      if (!api) return;
+      setSearch({ kind: "loading" });
       try {
-        const hits = await api.search(workspaceId, debouncedSemantic, {
+        const hits = await api.search(workspaceId!, debouncedSemantic, {
           queryNoteId: note.id,
           k: 5,
         });
-        if (!cancelled) setSemanticHits(hits);
+        if (!cancelled) setSearch({ kind: "results", hits });
       } catch {
-        if (!cancelled) setSemanticHits([]);
-      } finally {
-        if (!cancelled) setSemanticLoading(false);
+        if (!cancelled) setSearch({ kind: "results", hits: [] });
       }
     })();
-    return () => { cancelled = true; };
-  }, [semanticEnabled, workspaceId, debouncedSemantic, note.id]);
+    return () => {
+      cancelled = true;
+      setSearch(null);
+    };
+  }, [canSearch, debouncedSemantic, note.id, workspaceId]);
+
+  const semanticHits = search?.kind === "results" ? search.hits : [];
+  const semanticLoading = search?.kind === "loading" === true;
 
   const linkedNotes = useMemo(
     () => (note.linkedNoteIds ?? []).map((id) => notes.find((n) => n.id === id)).filter(Boolean) as Note[],
@@ -94,16 +99,22 @@ export function BacklinksPanel({
 
   const semanticCount = semanticEnabled ? semanticHits.length : 0;
   const total = linkedNotes.length + linkedCards.length + wikilinkBacklinks.length + semanticCount;
-  const [autoOpened, setAutoOpened] = useState(false);
+  const hasSemanticActivity = semanticCount > 0 || semanticLoading;
+  const autoOpenedRef = useRef(false);
   useEffect(() => {
-    if ((semanticCount > 0 || semanticLoading) && !autoOpened) {
-      setOpen(true);
-      setAutoOpened(true);
+    if (!hasSemanticActivity) {
+      autoOpenedRef.current = false;
+      return;
     }
-  }, [semanticCount, semanticLoading, autoOpened]);
+    if (!autoOpenedRef.current) {
+      autoOpenedRef.current = true;
+      setOpen(true);
+    }
+  }, [hasSemanticActivity]);
+  const noteId = note.id;
   useEffect(() => {
-    setAutoOpened(false);
-  }, [note.id]);
+    autoOpenedRef.current = false;
+  }, [noteId]);
   if (total === 0 && !semanticLoading && !semanticEnabled) return null;
 
   return (

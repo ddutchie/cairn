@@ -345,7 +345,7 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
         return title.length > maxLen ? title.slice(0, maxLen - 1) + "…" : title;
       });
 
-  }, [graph, selectedNodeId, hoveredNodeId, labelMode, spacing, onNodeClick, fs]);
+  }, [graph, selectedNodeId, hoveredNodeId, labelMode, spacing, onNodeClick, fs, semanticThreshold]);
 
   useEffect(() => { renderTree(); }, [renderTree]);
 
