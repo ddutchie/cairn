@@ -46,13 +46,14 @@ export function useIpcErrorToasts() {
       timers.current.set(id, setTimeout(() => dismiss(id), 5000));
     }
     window.addEventListener("cairn:ipc-error", onIpcError);
+    const timerMap = timers.current;
     return () => {
       window.removeEventListener("cairn:ipc-error", onIpcError);
       // Clear all remaining timers on unmount
-      for (const timer of timers.current.values()) {
+      for (const timer of timerMap.values()) {
         clearTimeout(timer);
       }
-      timers.current.clear();
+      timerMap.clear();
     };
   }, [dismiss]);
 

@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import Database from "better-sqlite3";
 import * as q from "../../db/queries";
-import { newId, ts } from "../../db/utils";
+import { newId } from "../../db/utils";
 import { executeSearchTasks } from "../../shared/read-tools-pure";
 import {
   Snapshot,
@@ -210,7 +210,6 @@ export function update_task(db: Database.Database, snap: Snapshot, args: Record<
 
   // ── clear due date ─────────────────────────────────────────────────────
   if (dueDate === null) {
-    const now = ts();
     db.transaction(() => {
       q.clearCardDueDate(db, cardId as string);
       q.updateCard(db, cardId as string, {
