@@ -1,0 +1,75 @@
+"use client";
+
+import React, { memo } from "react";
+import {
+  Pin, PinOff, Trash2, MoreHorizontal, FileText,
+  Archive, FolderInput, FolderSymlink, LayoutDashboard,
+} from "lucide-react";
+import { cn, formatRelative } from "@/lib/utils";
+import type { Note } from "@/types";
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
+  DropdownMenuItem, DropdownMenuSeparator,
+} from "@/components/ui/dropdown";
+
+export interface NoteListItemProps {
+  note: Note; isActive: boolean; indent?: number;
+  onClick: () => void; onPin: () => void; onDelete: () => void;
+  onArchive: () => void; onMove: () => void; onMoveToFolder: () => void; onReveal: () => void;
+  onDragStart?: (noteId: string) => void;
+  onDragEnd?: () => void;
+}
+
+export const NoteListItem = memo(function NoteListItem({ note, isActive, indent = 0, onClick, onPin, onDelete, onArchive, onMove, onMoveToFolder, onReveal, onDragStart, onDragEnd }: NoteListItemProps) {
+  return (
+    <div onClick={onClick}
+      draggable={!!onDragStart}
+      onDragStart={(e) => { e.stopPropagation(); onDragStart?.(note.id); }}
+      onDragEnd={(e) => { e.stopPropagation(); onDragEnd?.(); }}
+      className={cn("group relative flex flex-col gap-0.5 py-2.5 cursor-pointer transition-colors pr-3",
+        isActive ? "bg-[var(--surface-2)] border-l-2 border-[var(--accent)]" : "hover:bg-[var(--surface-2)] border-l-2 border-transparent")}
+      style={{ paddingLeft: `${12 + indent}px` }}
+    >
+      <div className="flex items-center gap-1.5">
+        {note.isPinned && <Pin size={9} className="text-[var(--accent)] flex-shrink-0" />}
+        {note.type === "dashboard" && <LayoutDashboard size={9} className="text-[var(--text-tertiary)] flex-shrink-0" />}
+        <span className={cn("text-xs font-medium truncate flex-1", isActive ? "text-[var(--text-primary)]" : "text-[var(--text-secondary)]")}>
+          {note.title}
+        </span>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button onClick={(e) => e.stopPropagation()}
+              className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-all">
+              <MoreHorizontal size={11} />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onPin(); }}>
+              {note.isPinned ? <PinOff size={12} /> : <Pin size={12} />}
+              {note.isPinned ? "Unpin" : "Pin"}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onReveal(); }}>
+              <FileText size={12} />Reveal in {window.electron?.platform === "win32" ? "Explorer" : window.electron?.platform === "linux" ? "Files" : "Finder"}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onArchive(); }}>
+              <Archive size={12} />Archive
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onMoveToFolder(); }}>
+              <FolderSymlink size={12} />Move to folder
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onMove(); }}>
+              <FolderInput size={12} />Move to project
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onDelete(); }} className="text-[var(--danger)] hover:text-[var(--danger)]">
+              <Trash2 size={12} />Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+      <span className="text-[0.786rem] text-[var(--text-tertiary)] truncate">{note.contentText.slice(0, 60) || "Empty note"}</span>
+      <span className="text-[0.714rem] text-[var(--text-tertiary)]">{formatRelative(note.updatedAt)}</span>
+    </div>
+  );
+});
