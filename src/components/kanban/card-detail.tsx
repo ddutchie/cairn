@@ -2,95 +2,48 @@
 
 import React, { useState, useMemo } from "react";
 import {
-  Calendar,
-  Tag,
-  FileText,
-  Link,
-  Lock,
-  Trash2,
-  Flag,
-  ExternalLink,
-  User,
-  Archive,
-  Copy,
-  X,
-  ArrowRight,
-  FolderInput,
-  Terminal,
+  Tag, FileText, Link, ExternalLink, X,
 } from "lucide-react";
 import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
+  Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
-import { DatePicker } from "@/components/ui/date-picker";
-import { cn, formatRelative, PRIORITY_COLORS } from "@/lib/utils";
-import type { Priority } from "@/types";
+import { cn } from "@/lib/utils";
 import { SpawnAgentModal } from "@/components/agent/SpawnAgentModal";
 import { MarkdownContent } from "@/components/chat/chat-panel/MarkdownContent";
+import { CardDetailSidebar } from "./card-detail-sidebar";
 
 interface CardDetailModalProps {
   cardId: string;
   onClose: () => void;
 }
 
-const PRIORITY_OPTIONS: Priority[] = ["low", "medium", "high", "urgent"];
-
 export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
   const {
-    cards,
-    columns,
-    projects,
-    notes,
-    updateCard,
-    deleteCard,
-    archiveCard,
-    duplicateCard,
-    unlinkNoteFromCard,
-    moveCardToProject,
-    addCardBlocker,
-    removeCardBlocker,
-    tags,
-    getProjectNotes,
-    linkNoteToCard,
-    setView,
-    activeWorkspaceId,
-    getWorkspaceProjects,
+    cards, columns, projects, notes,
+    updateCard, deleteCard, archiveCard, duplicateCard,
+    unlinkNoteFromCard, moveCardToProject,
+    addCardBlocker, removeCardBlocker,
+    tags, getProjectNotes, linkNoteToCard,
+    setView, activeWorkspaceId, getWorkspaceProjects,
   } = useCairnStore(useShallow((s) => ({
-    cards:               s.cards,
-    columns:             s.columns,
-    projects:            s.projects,
-    notes:               s.notes,
-    updateCard:          s.updateCard,
-    deleteCard:          s.deleteCard,
-    archiveCard:         s.archiveCard,
-    duplicateCard:       s.duplicateCard,
-    unlinkNoteFromCard:  s.unlinkNoteFromCard,
-    moveCardToProject:   s.moveCardToProject,
-    addCardBlocker:      s.addCardBlocker,
-    removeCardBlocker:   s.removeCardBlocker,
-    tags:                s.tags,
-    getProjectNotes:     s.getProjectNotes,
-    linkNoteToCard:      s.linkNoteToCard,
-    setView:             s.setView,
-    activeWorkspaceId:   s.activeWorkspaceId,
+    cards: s.cards, columns: s.columns, projects: s.projects, notes: s.notes,
+    updateCard: s.updateCard, deleteCard: s.deleteCard, archiveCard: s.archiveCard,
+    duplicateCard: s.duplicateCard, unlinkNoteFromCard: s.unlinkNoteFromCard,
+    moveCardToProject: s.moveCardToProject, addCardBlocker: s.addCardBlocker,
+    removeCardBlocker: s.removeCardBlocker, tags: s.tags,
+    getProjectNotes: s.getProjectNotes, linkNoteToCard: s.linkNoteToCard,
+    setView: s.setView, activeWorkspaceId: s.activeWorkspaceId,
     getWorkspaceProjects: s.getWorkspaceProjects,
   })));
 
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const [moveToProjectOpen, setMoveToProjectOpen] = useState(false);
-  const [blockerError, setBlockerError] = useState<string | null>(null);
   const [spawnAgentOpen, setSpawnAgentOpen] = useState(false);
   const [isEditingDesc, setIsEditingDesc] = useState(false);
 
   const card = useMemo(() => cards.find((c) => c.id === cardId), [cards, cardId]);
-  // Derive all dependent data via useMemo — must be called before any conditional return
   const column         = useMemo(() => card ? columns.find((c) => c.id === card.columnId) : undefined, [card, columns]);
   const project        = useMemo(() => card ? projects.find((p) => p.id === card.projectId) : undefined, [card, projects]);
   const projectColumns = useMemo(() => card ? columns.filter((c) => c.projectId === card.projectId).sort((a, b) => a.order - b.order) : [], [card, columns]);
@@ -101,34 +54,12 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
 
   if (!card) return null;
 
-  // Dependency data
   const doneColumnIds = new Set(columns.filter((c) => c.projectId === card.projectId && c.type === "done").map((c) => c.id));
-  const blockerCards = (card.blockedByIds ?? [])
-    .map((id) => cards.find((c) => c.id === id))
-    .filter(Boolean) as typeof cards;
-  // Candidate blockers: same project, not archived, not done, not self, not already a blocker
+  const blockerCards = (card.blockedByIds ?? []).map((id) => cards.find((c) => c.id === id)).filter(Boolean) as typeof cards;
   const candidateBlockers = cards.filter(
-    (c) => c.projectId === card.projectId
-      && c.id !== cardId
-      && !c.archivedAt
-      && !doneColumnIds.has(c.columnId)
-      && !(card.blockedByIds ?? []).includes(c.id)
+    (c) => c.projectId === card.projectId && c.id !== cardId && !c.archivedAt
+      && !doneColumnIds.has(c.columnId) && !(card.blockedByIds ?? []).includes(c.id)
   );
-
-  function handleDelete() {
-    deleteCard(cardId);
-    onClose();
-  }
-
-  function handleArchive() {
-    archiveCard(cardId);
-    onClose();
-  }
-
-  function handleDuplicate() {
-    duplicateCard(cardId);
-    onClose();
-  }
 
   return (
     <>
@@ -160,9 +91,7 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
 
             {/* Description */}
             <div>
-              <label className="block text-xs font-medium text-[var(--text-tertiary)] mb-2 uppercase tracking-wide">
-                Description
-              </label>
+              <label className="block text-xs font-medium text-[var(--text-tertiary)] mb-2 uppercase tracking-wide">Description</label>
               {isEditingDesc ? (
                 <textarea
                   autoFocus
@@ -187,7 +116,7 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
                     if ((e.target as HTMLElement).closest("a, button")) return;
                     setIsEditingDesc(true);
                   }}
-                  className="w-full bg-[var(--surface-2)] border border-[var(--border)] hover:border-[var(--accent)]/40 rounded-lg px-3 py-2.5 text-sm text-[var(--text-secondary)] min-h-[12rem] cursor-pointer transition-colors overflow-y-auto"
+                  className="w-full bg-[var(--surface-2)] border border-[var(--border)] hover:border-[color-mix(in_srgb,var(--accent)_40%,transparent)] rounded-lg px-3 py-2.5 text-sm text-[var(--text-secondary)] min-h-[12rem] cursor-pointer transition-colors overflow-y-auto"
                 >
                   {card.description?.trim() ? (
                     <MarkdownContent content={card.description} />
@@ -197,7 +126,6 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
                 </div>
               )}
             </div>
-
 
             {/* Tags */}
             <div>
@@ -239,53 +167,30 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
                 <FileText size={10} className="inline mr-1" />Linked Notes
               </label>
               <div className="space-y-2">
-                {linkedNotes.map(
-                  (note) =>
-                    note && (
-                      <div
-                        key={note.id}
-                        className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--surface-2)] border border-[var(--border)] group"
-                      >
-                        <FileText size={12} className="text-[var(--text-tertiary)] flex-shrink-0" />
-                        <span className="text-xs text-[var(--text-secondary)] flex-1 truncate">
-                          {note.title}
-                        </span>
-                        <button
-                          onClick={() => setView("notes")}
-                          className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-all"
-                          aria-label="Open note"
-                        >
-                          <ExternalLink size={11} aria-hidden="true" />
-                        </button>
-                        <button
-                          onClick={() => unlinkNoteFromCard(note.id, cardId)}
-                          className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-[var(--text-tertiary)] hover:text-[var(--danger)] transition-all"
-                          aria-label="Unlink note"
-                        >
-                          <X size={11} aria-hidden="true" />
-                        </button>
-                      </div>
-                    )
-                )}
+                {linkedNotes.map((note) => note && (
+                  <div key={note.id} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--surface-2)] border border-[var(--border)] group">
+                    <FileText size={12} className="text-[var(--text-tertiary)] flex-shrink-0" />
+                    <span className="text-xs text-[var(--text-secondary)] flex-1 truncate">{note.title}</span>
+                    <button onClick={() => setView("notes")} className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-all" aria-label="Open note">
+                      <ExternalLink size={11} aria-hidden="true" />
+                    </button>
+                    <button onClick={() => unlinkNoteFromCard(note.id, cardId)} className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-[var(--text-tertiary)] hover:text-[var(--danger)] transition-all" aria-label="Unlink note">
+                      <X size={11} aria-hidden="true" />
+                    </button>
+                  </div>
+                ))}
                 {projectNotes.filter((n) => !card.linkedNoteIds.includes(n.id)).length > 0 && (
                   <details className="group">
                     <summary className="text-xs text-[var(--text-tertiary)] cursor-pointer hover:text-[var(--accent)] transition-colors list-none flex items-center gap-1">
-                      <Link size={10} />
-                      Link a note…
+                      <Link size={10} /> Link a note…
                     </summary>
                     <div className="mt-2 space-y-1 pl-3 border-l border-[var(--border)]">
-                      {projectNotes
-                        .filter((n) => !card.linkedNoteIds.includes(n.id))
-                        .map((note) => (
-                          <button
-                            key={note.id}
-                            onClick={() => linkNoteToCard(note.id, cardId)}
-                            className="flex items-center gap-2 w-full px-2 py-1.5 rounded text-xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors text-left"
-                          >
-                            <FileText size={10} />
-                            {note.title}
-                          </button>
-                        ))}
+                      {projectNotes.filter((n) => !card.linkedNoteIds.includes(n.id)).map((note) => (
+                        <button key={note.id} onClick={() => linkNoteToCard(note.id, cardId)}
+                          className="flex items-center gap-2 w-full px-2 py-1.5 rounded text-xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors text-left">
+                          <FileText size={10} /> {note.title}
+                        </button>
+                      ))}
                     </div>
                   </details>
                 )}
@@ -297,253 +202,30 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
           </div>
 
           {/* Sidebar metadata */}
-          <div className="w-44 flex-shrink-0 border-l border-[var(--border)] px-4 py-4 space-y-4 overflow-y-auto">
-            {/* Priority */}
-            <div>
-              <label className="block text-[0.714rem] font-semibold text-[var(--text-tertiary)] mb-2 uppercase tracking-wider">
-                Priority
-              </label>
-              <div className="space-y-1">
-                {PRIORITY_OPTIONS.map((p) => (
-                  <button
-                    key={p}
-                    onClick={() => updateCard(cardId, { priority: p })}
-                    className={cn(
-                      "flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-xs transition-colors",
-                      card.priority === p
-                        ? "bg-[var(--surface-3)] text-[var(--text-primary)]"
-                        : "text-[var(--text-tertiary)] hover:bg-[var(--surface-2)]"
-                    )}
-                  >
-                    <Flag
-                      size={10}
-                      className={PRIORITY_COLORS[p]}
-                      fill={card.priority === p ? "currentColor" : "none"}
-                    />
-                    {p}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Move to column */}
-            <div>
-              <label htmlFor="card-detail-column" className="block text-[0.714rem] font-semibold text-[var(--text-tertiary)] mb-2 uppercase tracking-wider">
-                <ArrowRight size={10} className="inline mr-0.5" aria-hidden="true" />Column
-              </label>
-              <select
-                id="card-detail-column"
-                value={card.columnId}
-                onChange={(e) => updateCard(cardId, { columnId: e.target.value })}
-                className="w-full px-2 py-1.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-xs text-[var(--text-secondary)] focus:outline-none focus:border-[var(--accent)]"
-              >
-                {projectColumns.map((col) => (
-                  <option key={col.id} value={col.id}>{col.name}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Assignee */}
-            <div>
-              <label className="block text-[0.714rem] font-semibold text-[var(--text-tertiary)] mb-2 uppercase tracking-wider">
-                <User size={10} className="inline mr-0.5" aria-hidden="true" />Assignee
-              </label>
-              <input
-                type="text"
-                defaultValue={card.assignee ?? ""}
-                onBlur={(e) => updateCard(cardId, { assignee: e.target.value || undefined })}
-                placeholder="Unassigned"
-                className="w-full px-2 py-1.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-xs text-[var(--text-secondary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)]"
-              />
-            </div>
-
-            {/* Blocked by */}
-            <div>
-              <label className="block text-[0.714rem] font-semibold text-[var(--text-tertiary)] mb-2 uppercase tracking-wider">
-                <Lock size={10} className="inline mr-0.5" aria-hidden="true" />Blocked By
-              </label>
-
-              {/* Existing blocker chips */}
-              {blockerCards.length > 0 && (
-                <div className="space-y-1 mb-2">
-                  {blockerCards.map((blocker) => {
-                    const blockerCol = columns.find((c) => c.id === blocker.columnId);
-                    const isResolved = !!blocker.archivedAt || doneColumnIds.has(blocker.columnId);
-                    return (
-                      <div
-                        key={blocker.id}
-                        className={cn(
-                          "flex items-center gap-1.5 px-2 py-1.5 rounded-md border text-[0.714rem]",
-                          isResolved
-                            ? "border-[var(--border)] bg-[var(--surface-2)] opacity-50"
-                            : "border-[var(--warning)]/30 bg-[var(--warning)]/5"
-                        )}
-                      >
-                        <Lock size={9} className={isResolved ? "text-[var(--text-tertiary)]" : "text-[var(--warning)]"} />
-                        <span className="flex-1 truncate text-[var(--text-secondary)]" title={blocker.title}>
-                          {blocker.title}
-                        </span>
-                        {blockerCol && (
-                          <span className="text-[var(--text-tertiary)] shrink-0">{blockerCol.name}</span>
-                        )}
-                        <button
-                          onClick={() => removeCardBlocker(cardId, blocker.id)}
-                          className="ml-0.5 text-[var(--text-tertiary)] hover:text-[var(--danger)] transition-colors shrink-0"
-                          title="Remove blocker"
-                        >
-                          <X size={9} />
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* Add blocker picker */}
-              {candidateBlockers.length > 0 && (
-                <select
-                  value=""
-                  onChange={async (e) => {
-                    const blockerCardId = e.target.value;
-                    if (!blockerCardId) return;
-                    setBlockerError(null);
-                    const result = await addCardBlocker(cardId, blockerCardId);
-                    if (result.error) setBlockerError(result.error);
-                    e.target.value = "";
-                  }}
-                  className="w-full px-2 py-1.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[0.714rem] text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)]"
-                >
-                  <option value="">+ Add blocker…</option>
-                  {candidateBlockers.map((c) => {
-                    const col = columns.find((col) => col.id === c.columnId);
-                    return (
-                      <option key={c.id} value={c.id}>
-                        {c.title}{col ? ` (${col.name})` : ""}
-                      </option>
-                    );
-                  })}
-                </select>
-              )}
-
-              {blockerError && (
-                <p className="text-[0.714rem] text-[var(--danger)] mt-1">{blockerError}</p>
-              )}
-
-              {blockerCards.length === 0 && candidateBlockers.length === 0 && (
-                <p className="text-[0.714rem] text-[var(--text-tertiary)]">No other tasks in this project</p>
-              )}
-            </div>
-
-            {/* Due date */}
-            <div>
-              <label className="block text-[0.714rem] font-semibold text-[var(--text-tertiary)] mb-2 uppercase tracking-wider">
-                <Calendar size={10} className="inline mr-0.5" aria-hidden="true" />Due Date
-              </label>
-              <DatePicker
-                value={card.dueDate}
-                onChange={(v) => updateCard(cardId, { dueDate: v })}
-              />
-            </div>
-
-            {/* Meta */}
-            <div className="pt-2 border-t border-[var(--border)] space-y-1">
-              <div className="text-[0.714rem] text-[var(--text-tertiary)]">
-                Created {formatRelative(card.createdAt)}
-              </div>
-              <div className="text-[0.714rem] text-[var(--text-tertiary)]">
-                Updated {formatRelative(card.updatedAt)}
-              </div>
-            </div>
-
-            {/* Actions */}
-            <div className="pt-2 space-y-1.5">
-              <Button
-                variant="ghost"
-                size="xs"
-                className="w-full justify-start text-[var(--accent)] hover:bg-[var(--accent-dim)]"
-                onClick={() => setSpawnAgentOpen(true)}
-              >
-                <Terminal size={10} />
-                Spawn Agent
-              </Button>
-              <Button
-                variant="ghost"
-                size="xs"
-                className="w-full justify-start text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
-                onClick={handleDuplicate}
-              >
-                <Copy size={10} />
-                Duplicate
-              </Button>
-              <Button
-                variant="ghost"
-                size="xs"
-                className="w-full justify-start text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
-                onClick={handleArchive}
-              >
-                <Archive size={10} />
-                Archive
-              </Button>
-              {otherProjects.length > 0 && (
-                <div>
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    className="w-full justify-start text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
-                    onClick={() => setMoveToProjectOpen((o) => !o)}
-                  >
-                    <FolderInput size={10} />
-                    Move to project
-                  </Button>
-                  {moveToProjectOpen && (
-                    <div className="mt-1 space-y-0.5 pl-1 border-l border-[var(--border)]">
-                      {otherProjects.map((p) => (
-                        <button
-                          key={p.id}
-                          onClick={() => { moveCardToProject(cardId, p.id); onClose(); }}
-                          className="w-full text-left px-2 py-1 rounded text-[0.714rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors truncate"
-                        >
-                          {p.name}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-              <div className="border-t border-[var(--border)] pt-1.5">
-                {confirmDelete ? (
-                  <div className="space-y-1">
-                    <p className="text-[0.714rem] text-[var(--text-tertiary)]">Are you sure?</p>
-                    <div className="flex gap-1">
-                      <Button variant="danger" size="xs" onClick={handleDelete}>Delete</Button>
-                      <Button variant="ghost" size="xs" onClick={() => setConfirmDelete(false)}>Cancel</Button>
-                    </div>
-                  </div>
-                ) : (
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    className="w-full justify-start text-[var(--danger)] hover:bg-[var(--danger)]/10"
-                    onClick={() => setConfirmDelete(true)}
-                  >
-                    <Trash2 size={10} />
-                    Delete
-                  </Button>
-                )}
-              </div>
-            </div>
-          </div>
+          <CardDetailSidebar
+            card={card}
+            columns={columns}
+            projectColumns={projectColumns}
+            otherProjects={otherProjects}
+            blockerCards={blockerCards}
+            candidateBlockers={candidateBlockers}
+            doneColumnIds={doneColumnIds}
+            onUpdateCard={updateCard}
+            onAddBlocker={addCardBlocker}
+            onRemoveBlocker={removeCardBlocker}
+            onMoveToProject={(cardId, projectId) => { moveCardToProject(cardId, projectId); onClose(); }}
+            onArchive={() => { archiveCard(cardId); onClose(); }}
+            onDuplicate={() => { duplicateCard(cardId); onClose(); }}
+            onDelete={() => { deleteCard(cardId); onClose(); }}
+            onSpawnAgent={() => setSpawnAgentOpen(true)}
+          />
         </div>
       </DialogContent>
     </Dialog>
 
     {/* Spawn Agent Modal */}
     {spawnAgentOpen && card && (
-      <SpawnAgentModal
-        card={card}
-        open={spawnAgentOpen}
-        onClose={() => setSpawnAgentOpen(false)}
-      />
+      <SpawnAgentModal card={card} open={spawnAgentOpen} onClose={() => setSpawnAgentOpen(false)} />
     )}
     </>
   );
