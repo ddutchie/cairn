@@ -22,7 +22,7 @@ import { ContextRing } from "./ContextRing";
 import { Tooltip } from "@/components/ui/tooltip";
 import { CairnEvents } from "@/lib/events";
 import { resolvePromptContext } from "@/lib/context-resolver";
-import type { TerminalSession } from "@/store/slices/terminal-sessions";
+import type { TerminalSession } from "@/types";
 
 // ── Cairn tool ref extraction ─────────────────────────────────────────────────
 

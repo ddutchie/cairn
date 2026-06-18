@@ -26,7 +26,7 @@ import { SpawnAgentModal } from "./SpawnAgentModal";
 import { TerminalManager } from "./TerminalManager";
 import { AgentChatPane } from "./AgentChatPane";
 import { ChatPanel } from "@/components/chat/chat-panel";
-import type { TerminalSession, PiSessionSummary } from "@/store/slices/terminal-sessions";
+import type { TerminalSession, PiSessionSummary } from "@/types";
 
 // ── Single terminal session mount ─────────────────────────────────────────────
 

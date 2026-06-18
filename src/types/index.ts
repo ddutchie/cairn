@@ -377,3 +377,73 @@ export function isIpcError<T>(result: IpcResult<T>): result is { error: string }
     typeof (result as { error: unknown }).error === "string"
   );
 }
+
+// ── Pi Agent message + session types ─────────────────────────────────────────
+// Moved here from store/slices/terminal-sessions.ts (P5-1 of the cleanup plan)
+// so all domain types live in one place. The slice re-exports them for backwards
+// compatibility.
+
+export interface PiSubagentMessage {
+  /** Unique child session ID */
+  childSessionId: string;
+  /** Messages streamed by the subagent */
+  messages: PiAgentMessage[];
+  /** Whether the subagent is still running */
+  running: boolean;
+  /** Final result returned to the parent */
+  result?: string;
+  /** Latest token usage from the subagent's LLM steps */
+  lastUsage?: { promptTokens: number; completionTokens: number; breakdown?: TokenBreakdown };
+}
+
+export interface PiAgentMessage {
+  id: string;
+  role: "user" | "assistant" | "error" | "system";
+  content: string;
+  /** Tool calls that occurred before or during this assistant message */
+  toolCalls?: {
+    callId: string;
+    name: string;
+    label: string;
+    running: boolean;
+    ok: boolean;
+    output?: string;
+    cairnRef?: { type: "note" | "task"; id: string; title: string };
+    confirmRequired?: boolean;
+  }[];
+  subagents?: PiSubagentMessage[];
+  isStreaming?: boolean;
+  timestamp: string;
+}
+
+export interface TerminalSession {
+  sessionId: string;
+  taskId: string;
+  taskTitle: string;
+  agentId: string;
+  agentName: string;
+  projectId: string;
+  cwd?: string;
+  status: "running" | "exited";
+  exitCode: number | null;
+  spawnedAt: string;
+  sessionType: "pty" | "pi";
+  piMessages?: PiAgentMessage[];
+  initialPrompt?: string;
+  lastUsage?: { promptTokens: number; completionTokens: number; breakdown?: TokenBreakdown };
+  mode?: "plan" | "execute";
+  planNoteId?: string;
+}
+
+export interface PiSessionSummary {
+  id: string;
+  projectId: string;
+  taskTitle: string;
+  taskId: string | null;
+  cwd: string;
+  mode: "plan" | "execute";
+  planNoteId: string | null;
+  status: "running" | "exited";
+  spawnedAt: string;
+  updatedAt: string;
+}

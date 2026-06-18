@@ -8,7 +8,7 @@ import { MessageAvatar, StreamingCursor } from "@/components/chat/chat-panel/mes
 import { CairnRefChip } from "@/components/shared/cairn-ref-chip";
 import { useCairnStore } from "@/store";
 import { ContextRing } from "./ContextRing";
-import type { PiAgentMessage, PiSubagentMessage } from "@/store/slices/terminal-sessions";
+import type { PiAgentMessage, PiSubagentMessage } from "@/types";
 
 // ── Tool output expansion ─────────────────────────────────────────────────────
 
