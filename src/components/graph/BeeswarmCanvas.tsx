@@ -4,10 +4,9 @@ import React, { useMemo, useRef, useState } from "react";
 import * as d3 from "d3";
 import type { SimulationNodeDatum } from "d3";
 import type { GraphNode } from "@/types";
-import { PRIORITY_COLOR, truncateName, CANVAS_PAD } from "./analyticsUtils";
-import { useContainerDims, useScopedData, useFontScale } from "./analyticsHooks";
+import { PRIORITY_COLOR, truncateName, CANVAS_PAD, DAY_MS } from "./analyticsUtils";
+import { useContainerDims, useScopedData, useFontScale, useRelativePointer } from "./analyticsHooks";
 import { CanvasEmptyState, CanvasTooltip, SvgTimeAxis } from "./AnalyticsShared";
-import { DAY_MS } from "./analyticsUtils";
 
 interface Props {
   nodes: GraphNode[];
@@ -23,6 +22,7 @@ export function BeeswarmCanvas({ nodes, onNodeClick }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const fs = useFontScale();
   const dims = useContainerDims(containerRef);
+  const relativePointer = useRelativePointer(containerRef);
   const { activeProjects, scopedCardIds, cards } = useScopedData(nodes);
 
   const [hoveredId, setHoveredId] = useState<string | null>(null);
@@ -99,7 +99,7 @@ export function BeeswarmCanvas({ nodes, onNodeClick }: Props) {
 
         {/* Time axis + today */}
         <SvgTimeAxis
-          xScale={xScale} plotW={plotW} plotH={plotH}
+          xScale={xScale} plotW={plotW}
           padLeft={PAD.left} padTop={PAD.top} padBottom={PAD.bottom}
           bucketMs={DAY_MS} svgHeight={dims.height}
         />
@@ -126,8 +126,8 @@ export function BeeswarmCanvas({ nodes, onNodeClick }: Props) {
               style={{ cursor: "pointer", transition: "fill-opacity 0.1s" }}
               onMouseEnter={(e) => {
                 setHoveredId(c.id);
-                const rect = containerRef.current!.getBoundingClientRect();
-                setTooltip({ x: e.clientX - rect.left, y: e.clientY - rect.top, card: c });
+                const { x, y } = relativePointer(e);
+                setTooltip({ x, y, card: c });
               }}
               onMouseLeave={() => { setHoveredId(null); setTooltip(null); }}
               onClick={() => { if (gn) onNodeClick(gn); }}

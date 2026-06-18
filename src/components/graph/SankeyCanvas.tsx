@@ -5,7 +5,7 @@ import * as d3 from "d3";
 import { sankey, sankeyLinkHorizontal, SankeyNode, SankeyLink } from "d3-sankey";
 import { X } from "lucide-react";
 import type { GraphNode } from "@/types";
-import { PRIORITY_COLOR, truncateName } from "./analyticsUtils";
+import { PRIORITY_COLOR, PRIORITY_WEIGHT, truncateName } from "./analyticsUtils";
 import { useContainerDims, useScopedData, useFontScale } from "./analyticsHooks";
 import { CanvasEmptyState } from "./AnalyticsShared";
 
@@ -79,8 +79,7 @@ export function SankeyCanvas({ nodes, onNodeClick }: Props) {
       const col = columns.find((col) => col.id === c.columnId);
       return col?.type === selectedCol;
     }).sort((a, b) => {
-      const po: Record<string, number> = { urgent: 3, high: 2, medium: 1, low: 0 };
-      return (po[b.priority] ?? 0) - (po[a.priority] ?? 0) || a.title.localeCompare(b.title);
+      return (PRIORITY_WEIGHT[b.priority] ?? 0) - (PRIORITY_WEIGHT[a.priority] ?? 0) || a.title.localeCompare(b.title);
     });
   }, [selectedCol, cards, columns, scopedCardIds]);
 

@@ -5,20 +5,14 @@ import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import type { GraphNode } from "@/types";
+import { PRIORITY_COLOR, PRIORITY_SORT_ORDER } from "./analyticsUtils";
+import { CanvasEmptyState } from "./AnalyticsShared";
 
 interface Props {
   nodes: GraphNode[];
   onNodeClick: (node: GraphNode) => void;
   selectedNodeId: string | null;
 }
-
-const PRIORITY_ORDER = { urgent: 0, high: 1, medium: 2, low: 3 };
-const PRIORITY_COLOR: Record<string, string> = {
-  urgent: "var(--danger)",
-  high:   "var(--warning)",
-  medium: "var(--info)",
-  low:    "var(--success)",
-};
 
 function parseDate(s: string | undefined): Date | null {
   if (!s) return null;
@@ -54,8 +48,8 @@ export function TimelineCanvas({ nodes, onNodeClick, selectedNodeId }: Props) {
       .sort((a, b) => {
         const dateDiff = a.due.getTime() - b.due.getTime();
         if (dateDiff !== 0) return dateDiff;
-        const ap = PRIORITY_ORDER[(a.card?.priority ?? "medium") as keyof typeof PRIORITY_ORDER] ?? 2;
-        const bp = PRIORITY_ORDER[(b.card?.priority ?? "medium") as keyof typeof PRIORITY_ORDER] ?? 2;
+        const ap = PRIORITY_SORT_ORDER[a.card?.priority ?? "medium"] ?? 2;
+        const bp = PRIORITY_SORT_ORDER[b.card?.priority ?? "medium"] ?? 2;
         return ap - bp;
       });
   }, [nodes, cards]);
@@ -70,12 +64,7 @@ export function TimelineCanvas({ nodes, onNodeClick, selectedNodeId }: Props) {
   );
 
   if (timedCards.length === 0 && undatedCards.length === 0) {
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center gap-2">
-        <p className="text-xs text-[var(--text-tertiary)]">No tasks with due dates in this scope.</p>
-        <p className="text-[0.786rem] text-[var(--text-tertiary)] opacity-60">Add due dates to task cards to see them here.</p>
-      </div>
-    );
+    return <CanvasEmptyState message="No tasks with due dates in this scope." />;
   }
 
   const today = new Date();
