@@ -16,7 +16,7 @@ interface DatePickerProps {
 
 export function DatePicker({ value, onChange, placeholder = "Pick a date", className }: DatePickerProps) {
   const [open, setOpen] = useState(false);
-  const [popoverPos, setPopoverPos] = useState({ top: 0, left: 0 });
+  const [popoverPos, setPopoverPos] = useState<{ top: number; left?: number; right?: number }>({ top: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
@@ -54,11 +54,19 @@ export function DatePicker({ value, onChange, placeholder = "Pick a date", class
         onClick={() => {
           const rect = triggerRef.current?.getBoundingClientRect();
           if (rect) {
-            // Position the popover just below the trigger, left-aligned.
-            // Clamp to viewport so it doesn't overflow the right edge.
-            const popoverW = 260; // approximate DayPicker width
-            const left = Math.min(rect.left, window.innerWidth - popoverW - 8);
-            setPopoverPos({ top: rect.bottom + 4, left: Math.max(8, left) });
+            // Position the popover just below the trigger. If there's not enough
+            // room to the right (e.g. sidebar on the right side of a centered
+            // dialog), grow leftward instead — right-align to the trigger.
+            const popoverW = 260;
+            const roomRight = window.innerWidth - rect.right;
+            if (roomRight < popoverW + 8 && rect.left > popoverW + 8) {
+              // Grow leftward: right edge of popover = trigger's right edge
+              setPopoverPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+            } else {
+              // Default: left edge of popover = trigger's left edge, clamped to viewport
+              const left = Math.min(rect.left, window.innerWidth - popoverW - 8);
+              setPopoverPos({ top: rect.bottom + 4, left: Math.max(8, left) });
+            }
           }
           setOpen((o) => !o);
         }}
@@ -92,6 +100,7 @@ export function DatePicker({ value, onChange, placeholder = "Pick a date", class
           style={{
             top: popoverPos.top,
             left: popoverPos.left,
+            right: popoverPos.right,
           }}
         >
           <DayPicker
