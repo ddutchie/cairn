@@ -113,7 +113,7 @@ export function registerFlowHandlers(ctx: DbContext): void {
       }
 
       const resolved = resolveAiConfig(args.config);
-      if ("error" in resolved) return resolved;
+      if ("error" in resolved) return err(resolved.error);
       const { baseUrl, model, apiKey } = resolved;
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -121,6 +121,7 @@ export function registerFlowHandlers(ctx: DbContext): void {
 
       const nodeRow = ctx.db.prepare("SELECT * FROM idea_flow_nodes WHERE id = ?").get(args.nodeId) as DbRow | undefined;
       if (!nodeRow) return err("Node not found");
+      if (nodeRow.type !== "ai_summary") return err("Summarize is only available on ai_summary nodes");
 
       const flowId = nodeRow.flow_id as string;
 

@@ -50,7 +50,7 @@ export const PRIORITY_WEIGHT: Record<string, number> = {
 };
 
 /**
- * Sort key for ascending sort (low → urgent). Convenience for canvases that
+ * Sort key for ascending sort (urgent → low). Convenience for canvases that
  * sort by priority ascending: `arr.sort((a, b) => PRIORITY_SORT_ORDER[a] - PRIORITY_SORT_ORDER[b])`.
  */
 export const PRIORITY_SORT_ORDER: Record<string, number> = {

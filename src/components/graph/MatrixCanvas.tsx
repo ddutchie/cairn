@@ -91,7 +91,11 @@ export function MatrixCanvas({ nodes, onNodeClick, selectedNodeId }: Props) {
   }
 
   if (activeTags.length === 0) {
-    return <CanvasEmptyState message="No tagged items in this scope." />;
+    return (
+      <div className="flex-1 relative">
+        <CanvasEmptyState message="No tagged items in this scope." />
+      </div>
+    );
   }
 
   const maxVal    = Math.max(1, ...matrix.flatMap((row, i) => row.filter((_, j) => i !== j)));

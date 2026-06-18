@@ -49,30 +49,33 @@ export function registerDbHandlers(ctx: DbContext): void {
   // ── Projects ──────────────────────────────────────
   registerIpcHandle("db:project:list", (_e, { workspaceId }) => handle(() => q.getProjects(ctx.db, workspaceId)));
   registerIpcHandle("db:project:create", (_e, args: Parameters<typeof q.createProject>[1] & { withDefaultColumns?: boolean }) => handle(() => {
-    const project = q.createProject(ctx.db, args);
-    // Create default columns atomically in the same handler call
-    if (args.withDefaultColumns) {
-      const columns = DEFAULT_COLUMNS.map((col) =>
-        q.createColumn(ctx.db, {
-          id: q.generateId(),
-          projectId: project.id,
-          workspaceId: project.workspaceId,
-          name: col.name,
-          type: col.type,
-          order: col.order,
-        })
-      );
-      return { project, columns };
-    }
-    return { project, columns: [] };
+    // Wrap project + default columns in a transaction so all columns succeed or none do.
+    return ctx.db.transaction(() => {
+      const project = q.createProject(ctx.db, args);
+      if (args.withDefaultColumns) {
+        const columns = DEFAULT_COLUMNS.map((col) =>
+          q.createColumn(ctx.db, {
+            id: q.generateId(),
+            projectId: project.id,
+            workspaceId: project.workspaceId,
+            name: col.name,
+            type: col.type,
+            order: col.order,
+          })
+        );
+        return { project, columns };
+      }
+      return { project, columns: [] };
+    })();
   }));
   registerIpcHandle("db:project:update", (_e, { id, patch }) => handle(() => q.updateProject(ctx.db, id, patch)));
   registerIpcHandle("db:project:delete", (_e, { id }) => handle(() => {
     const project = q.getProjectById(ctx.db, id);
+    // Delete from DB first so if it fails, the .md files are still intact for recovery.
+    q.deleteProject(ctx.db, id);
     if (project) {
       deleteProjectNotesDir(ctx.workspacePath, project.name);
     }
-    q.deleteProject(ctx.db, id);
   }));
 
   // ── Notes ─────────────────────────────────────────
@@ -233,7 +236,7 @@ export function registerDbHandlers(ctx: DbContext): void {
 
   // ── Reveal assets folder in Finder / Explorer ─────
   registerIpcHandle("app:revealAssets", () => handle(async () => {
-    const assetDir = path.join(ctx.workspacePath, "assets");
+    const assetDir = path.join(ctx.workspacePath, "attachments");
     fs.mkdirSync(assetDir, { recursive: true });
     // shell.openPath returns a Promise<string>; non-empty = error message.
     const errMsg = await shell.openPath(assetDir);

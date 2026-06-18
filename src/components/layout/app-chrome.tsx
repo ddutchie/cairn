@@ -20,7 +20,7 @@ export function UpdateBanner({
 }) {
   if (!version && !downloaded) return null;
   return (
-    <div className="flex items-center gap-3 px-4 py-2 bg-[var(--accent-dim)] border-b border-[var(--accent)]/30 flex-shrink-0">
+    <div className="flex items-center gap-3 px-4 py-2 bg-[var(--accent-dim)] border-b border-[color-mix(in_srgb,var(--accent)_30%,transparent)] flex-shrink-0">
       <Download size={13} className="text-[var(--accent)] shrink-0" />
       <span className="text-xs text-[var(--text-secondary)] flex-1">
         {downloaded
@@ -30,7 +30,7 @@ export function UpdateBanner({
       {downloaded && (
         <button
           onClick={onInstall}
-          className="px-3 py-1 rounded-md text-xs font-medium bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors"
+          className="px-3 py-1 rounded-md text-xs font-medium bg-[var(--accent)] text-[var(--background)] hover:bg-[var(--accent-hover)] transition-colors"
         >
           Restart &amp; install
         </button>
@@ -58,7 +58,7 @@ export function ErrorToasts({
       {toasts.map((toast) => (
         <div
           key={toast.id}
-          className="flex items-start gap-2 px-3 py-2.5 rounded-lg border border-[var(--danger)]/30 bg-[var(--background)] shadow-lg max-w-xs pointer-events-auto"
+          className="flex items-start gap-2 px-3 py-2.5 rounded-lg border border-[color-mix(in_srgb,var(--danger)_30%,transparent)] bg-[var(--background)] shadow-lg max-w-xs pointer-events-auto"
         >
           <AlertCircle size={13} className="text-[var(--danger)] shrink-0 mt-0.5" />
           <span className="text-xs text-[var(--text-secondary)] flex-1 leading-relaxed">{toast.message}</span>

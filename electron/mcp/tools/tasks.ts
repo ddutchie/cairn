@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import Database from "better-sqlite3";
 import * as q from "../../db/queries";
-import { newId } from "../../db/utils";
+import { newId, ts } from "../../db/utils";
 import { executeSearchTasks } from "../../shared/read-tools-pure";
 import {
   Snapshot,
@@ -210,16 +210,27 @@ export function update_task(db: Database.Database, snap: Snapshot, args: Record<
 
   // ── clear due date ─────────────────────────────────────────────────────
   if (dueDate === null) {
-    const updated = q.clearCardDueDate(db, cardId as string);
-    q.updateCard(db, cardId as string, {
-      ...(title !== undefined ? { title } : {}),
-      ...(description !== undefined ? { description } : {}),
-      ...(priority !== undefined ? { priority } : {}),
-      ...(columnId !== undefined ? { columnId } : {}),
-      ...(assignee !== undefined ? { assignee: assignee as string | null } : {}),
-    });
-    insertNotification(db, "update_task", "Task updated", `"${title ?? card.title}" was updated`);
-    return updated;
+    const now = ts();
+    db.transaction(() => {
+      q.clearCardDueDate(db, cardId as string);
+      q.updateCard(db, cardId as string, {
+        ...(title !== undefined ? { title } : {}),
+        ...(description !== undefined ? { description } : {}),
+        ...(priority !== undefined ? { priority } : {}),
+        ...(columnId !== undefined ? { columnId } : {}),
+        ...(assignee !== undefined ? { assignee: assignee as string | null } : {}),
+      });
+      insertNotification(db, "update_task", "Task updated", `"${title ?? card.title}" was updated`);
+    })();
+    const result = q.getCardById(db, cardId as string);
+    // When moving to a done column, clear this card from other tasks' blocked_by_ids
+    if (columnId !== undefined) {
+      const targetCol = snap.columns.find((c) => c.id === columnId);
+      if (targetCol?.type === "done") {
+        q.clearBlockersFromAll(db, [cardId as string]);
+      }
+    }
+    return result ?? { error: "Task not found after update" };
   }
 
   // ── field update ───────────────────────────────────────────────────────

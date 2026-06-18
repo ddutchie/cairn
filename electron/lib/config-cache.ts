@@ -63,6 +63,8 @@ export function saveCachedConfig(type: "ai" | "agent" | "theme" | "fontScale", c
         baseUrl: typeof configRecord.baseUrl === "string" ? configRecord.baseUrl : current.agentConfig?.baseUrl,
         model: typeof configRecord.model === "string" ? configRecord.model : current.agentConfig?.model,
         apiKey: typeof configRecord.apiKey === "string" ? configRecord.apiKey : current.agentConfig?.apiKey,
+        maxSteps: typeof configRecord.maxSteps === "number" ? configRecord.maxSteps : current.agentConfig?.maxSteps,
+        temperature: typeof configRecord.temperature === "number" ? configRecord.temperature : current.agentConfig?.temperature,
         autoApprove: typeof configRecord.autoApprove === "boolean" ? configRecord.autoApprove : current.agentConfig?.autoApprove,
       };
     } else if (type === "theme") {

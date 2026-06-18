@@ -47,24 +47,26 @@ export function registerPdfExportHandler(ctx: DbContext): void {
           webPreferences: { nodeIntegration: false, contextIsolation: true },
         });
 
-        await printWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(fullHtml)}`);
+        try {
+          await printWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(fullHtml)}`);
 
-        const pdfBuffer = await printWin.webContents.printToPDF({
-          printBackground: true,
-          pageSize: "A4",
-          // Margins are defined via @page in the HTML — use "default" so the
-          // CSS @page rule is respected rather than being overridden here.
-          margins: { marginType: "default" },
-        });
+          const pdfBuffer = await printWin.webContents.printToPDF({
+            printBackground: true,
+            pageSize: "A4",
+            // Margins are defined via @page in the HTML — use "default" so the
+            // CSS @page rule is respected rather than being overridden here.
+            margins: { marginType: "default" },
+          });
 
-        printWin.destroy();
+          if (returnBuffer) {
+            return { pdfBase64: pdfBuffer.toString("base64") };
+          }
 
-        if (returnBuffer) {
-          return { pdfBase64: pdfBuffer.toString("base64") };
+          await fs.promises.writeFile(savePath, pdfBuffer);
+          return { filePath: savePath };
+        } finally {
+          printWin.destroy();
         }
-
-        fs.writeFileSync(savePath, pdfBuffer);
-        return { filePath: savePath };
       })
   );
 }

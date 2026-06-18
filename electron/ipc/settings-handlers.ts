@@ -29,7 +29,7 @@ export function registerSettingsHandlers(): void {
     saveCachedConfig("theme", theme);
     return { ok: true };
   }));
-  registerIpcHandle("app:getFontScale", () => handle(() => getCachedConfig().fontScale || null));
+  registerIpcHandle("app:getFontScale", () => handle(() => getCachedConfig().fontScale ?? null));
   registerIpcHandle("app:saveFontScale", (_e, { fontScale }: { fontScale: number }) => handle(() => {
     saveCachedConfig("fontScale", fontScale);
     return { ok: true };

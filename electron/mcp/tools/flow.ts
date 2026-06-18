@@ -98,7 +98,12 @@ export function create_idea_flow_node(db: Database.Database, snap: Snapshot, arg
         targetNodeId: tgt,
         label: edgeDef.label,
       });
-      createdEdges.push({ id: edgeId, source: src, target: tgt, label: edgeDef.label ?? null });
+      // q.createFlowEdge returns null on duplicate (INSERT OR IGNORE);
+      // only include in the response if the edge was actually created.
+      const created = db.prepare("SELECT 1 FROM idea_flow_edges WHERE id = ?").get(edgeId);
+      if (created) {
+        createdEdges.push({ id: edgeId, source: src, target: tgt, label: edgeDef.label ?? null });
+      }
     }
   }
 
@@ -145,7 +150,8 @@ export function delete_idea_flow_node(db: Database.Database, args: Record<string
 export function create_idea_flow_edge(db: Database.Database, args: Record<string, any>) {
   const flowId = getNodeFlowId(db, args.sourceNodeId as string);
   if (!flowId) return { error: "Source node not found" };
-  const targetExists = db.prepare("SELECT 1 FROM idea_flow_nodes WHERE id = ?").get(args.targetNodeId);
+  // Verify target exists AND belongs to the same flow.
+  const targetExists = db.prepare("SELECT 1 FROM idea_flow_nodes WHERE id = ? AND flow_id = ?").get(args.targetNodeId, flowId);
   if (!targetExists) return { error: "Target node not found" };
 
   const edgeId = newId();

@@ -103,9 +103,9 @@ export function ColumnPill({ column, cards, onClick }: { column: BoardColumn; ca
       </div>
       <div className="space-y-0.5">
         {cards.slice(0, 2).map((c) => (
-          <div key={c.id} className="text-[10.5px] text-[var(--text-tertiary)] truncate leading-snug">{c.title}</div>
+          <div key={c.id} className="text-[0.75rem] text-[var(--text-tertiary)] truncate leading-snug">{c.title}</div>
         ))}
-        {cards.length === 0 && <div className="text-[10.5px] text-[var(--text-tertiary)]">—</div>}
+        {cards.length === 0 && <div className="text-[0.75rem] text-[var(--text-tertiary)]">—</div>}
       </div>
     </button>
   );

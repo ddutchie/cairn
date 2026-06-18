@@ -73,7 +73,7 @@ export async function fetchUrlMetadata(url: string): Promise<UrlMetadata> {
   const htmlTitle = html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1];
 
   return {
-    title: (ogTitle ?? htmlTitle ?? "").trim().slice(0, 200),
+    title: (ogTitle ?? htmlTitle ?? parsed.hostname ?? "").trim().slice(0, 200),
     description: (ogDesc ?? "").trim().slice(0, 500),
   };
 }
