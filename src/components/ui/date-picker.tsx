@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { DayPicker, type DayPickerProps } from "react-day-picker";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { format, parse, isValid } from "date-fns";
@@ -16,7 +17,7 @@ interface DatePickerProps {
 
 export function DatePicker({ value, onChange, placeholder = "Pick a date", className }: DatePickerProps) {
   const [open, setOpen] = useState(false);
-  const [popoverPos, setPopoverPos] = useState<{ top: number; left?: number; right?: number }>({ top: 0 });
+  const [popoverPos, setPopoverPos] = useState({ top: 0, left: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
@@ -27,9 +28,13 @@ export function DatePicker({ value, onChange, placeholder = "Pick a date", class
   useEffect(() => {
     if (!open) return;
     function handle(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
+      // Check both the trigger container AND the portal target (document.body).
+      // The calendar popover is portaled to body, so containerRef won't contain it.
+      if (containerRef.current?.contains(e.target as Node)) return;
+      // The popover itself has class "cairn-datepicker-popover" — check if click was inside it.
+      const popoverEl = document.querySelector(".cairn-datepicker-popover");
+      if (popoverEl?.contains(e.target as Node)) return;
+      setOpen(false);
     }
     document.addEventListener("mousedown", handle);
     return () => document.removeEventListener("mousedown", handle);
@@ -45,31 +50,30 @@ export function DatePicker({ value, onChange, placeholder = "Pick a date", class
     onChange(undefined);
   }
 
+  function positionAndOpen() {
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (rect) {
+      const popoverW = 260; // approximate DayPicker width
+      // Default: left edge of popover = trigger's left edge
+      let left = rect.left;
+      // Clamp: if popover would overflow right viewport edge, shift left
+      if (left + popoverW > window.innerWidth - 8) {
+        left = window.innerWidth - popoverW - 8;
+      }
+      // Clamp: never go past left viewport edge
+      if (left < 8) left = 8;
+      setPopoverPos({ top: rect.bottom + 4, left });
+    }
+    setOpen((o) => !o);
+  }
+
   return (
     <div ref={containerRef} className={cn("relative", className)}>
       {/* Trigger button */}
       <button
         ref={triggerRef}
         type="button"
-        onClick={() => {
-          const rect = triggerRef.current?.getBoundingClientRect();
-          if (rect) {
-            // Position the popover just below the trigger. If there's not enough
-            // room to the right (e.g. sidebar on the right side of a centered
-            // dialog), grow leftward instead — right-align to the trigger.
-            const popoverW = 260;
-            const roomRight = window.innerWidth - rect.right;
-            if (roomRight < popoverW + 8 && rect.left > popoverW + 8) {
-              // Grow leftward: right edge of popover = trigger's right edge
-              setPopoverPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
-            } else {
-              // Default: left edge of popover = trigger's left edge, clamped to viewport
-              const left = Math.min(rect.left, window.innerWidth - popoverW - 8);
-              setPopoverPos({ top: rect.bottom + 4, left: Math.max(8, left) });
-            }
-          }
-          setOpen((o) => !o);
-        }}
+        onClick={positionAndOpen}
         className={cn(
           "w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-xs border transition-colors text-left",
           "bg-[var(--surface-2)] border-[var(--border)]",
@@ -92,15 +96,16 @@ export function DatePicker({ value, onChange, placeholder = "Pick a date", class
         )}
       </button>
 
-      {/* Popover — fixed positioning so it escapes overflow-clipped containers
-          (e.g. the card-detail modal sidebar with overflow-y-auto) */}
-      {open && (
+      {/* Popover — rendered via createPortal to document.body so it escapes all
+           parent containing blocks (e.g. Radix Dialog's transform: translate(-50%, -50%)
+           which breaks position:fixed for descendants, and overflow-y-auto which clips
+           absolutely-positioned children). */}
+      {open && createPortal(
         <div
-          className="fixed z-[60] rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl p-2"
+          className="cairn-datepicker-popover fixed z-[100] rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl p-2"
           style={{
-            top: popoverPos.top,
-            left: popoverPos.left,
-            right: popoverPos.right,
+            top: `${popoverPos.top}px`,
+            left: `${popoverPos.left}px`,
           }}
         >
           <DayPicker
@@ -129,13 +134,14 @@ export function DatePicker({ value, onChange, placeholder = "Pick a date", class
               week:        "flex",
               day:         "w-8 h-8 flex items-center justify-center rounded-md text-[0.786rem] text-[var(--text-secondary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)] transition-colors cursor-pointer",
               day_button:  "w-full h-full flex items-center justify-center rounded-md",
-              selected:    "bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] hover:text-white",
+              selected:    "bg-[var(--accent)] text-[var(--background)] hover:bg-[var(--accent-hover)] hover:text-[var(--background)]",
               today:       "font-semibold text-[var(--accent)]",
               outside:     "text-[var(--text-tertiary)] opacity-30",
               disabled:    "opacity-20 cursor-not-allowed",
             }}
           />
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
