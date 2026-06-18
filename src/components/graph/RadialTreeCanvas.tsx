@@ -5,7 +5,7 @@ import * as d3Hierarchy from "d3-hierarchy";
 import * as d3Zoom from "d3-zoom";
 import * as d3Selection from "d3-selection";
 import type { GraphNode, KnowledgeGraph } from "@/types";
-import { resolveCssVar as resolveVar } from "./graphUtils";
+import { resolveCssVar as resolveVar } from "./analyticsUtils";
 import { useFontScale } from "./analyticsHooks";
 
 interface Props {

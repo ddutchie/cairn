@@ -10,10 +10,7 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "sourceMap": true,
-    "paths": {
-      "@shared/*": ["./src/types/*"]
-    }
+    "sourceMap": true
   },
   "include": ["electron/**/*.ts"],
   "exclude": ["node_modules", "dist-electron"]

@@ -1,6 +1,10 @@
 /**
- * editorTheme — shared CM6 theme and highlight style for the Agent editor.
- * Kept in a separate file so FileEditorInner doesn't bloat AgentEditor.tsx.
+ * editorTheme — shared CM6 theme, syntax highlight style, and search panel theme.
+ *
+ * Used by both the agent editor (`src/components/agent/FileEditorInner.tsx`) and
+ * the notes markdown editor (`src/components/notes/markdown-editor.tsx`), so
+ * co-located in `src/lib/` rather than inside `agent/` (P3-3 of the cleanup
+ * plan — the previous cross-feature import was `@/components/agent/editorTheme`).
  */
 
 import { EditorView, lineNumbers } from "@codemirror/view";

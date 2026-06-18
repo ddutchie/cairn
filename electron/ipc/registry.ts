@@ -1,6 +1,28 @@
 import { ipcMain, BrowserWindow } from "electron";
+import type { IpcMainInvokeEvent, IpcMainEvent } from "electron";
 
-export type IpcHandler = (event: unknown, ...args: unknown[]) => unknown;
+/**
+ * Erased storage type for the internal handler/listener maps. Event is `unknown`
+ * here because both `IpcMainInvokeEvent` and `IpcMainEvent` widen to it; concrete
+ * registration signatures ({@link IpcHandleHandler} / {@link IpcOnHandler}) type
+ * the event properly for callers.
+ */
+export type IpcHandler<T extends unknown[] = unknown[]> = (
+  event: unknown,
+  ...args: T
+) => unknown;
+
+/** Handler signature for {@link registerIpcHandle} (ipcMain.handle). */
+export type IpcHandleHandler<T extends unknown[] = unknown[]> = (
+  event: IpcMainInvokeEvent,
+  ...args: T
+) => unknown;
+
+/** Handler signature for {@link registerIpcOn} (ipcMain.on). */
+export type IpcOnHandler<T extends unknown[] = unknown[]> = (
+  event: IpcMainEvent,
+  ...args: T
+) => unknown;
 
 const handlers = new Map<string, IpcHandler>();
 const listeners = new Map<string, IpcHandler>();
@@ -36,9 +58,12 @@ function isWriteChannel(channel: string): boolean {
 /**
  * Register a handler that maps to ipcMain.handle.
  */
-export function registerIpcHandle(channel: string, handler: IpcHandler): void {
+export function registerIpcHandle<T extends unknown[]>(
+  channel: string,
+  handler: IpcHandleHandler<T>
+): void {
   const wrappedHandler = async (event: unknown, ...args: unknown[]) => {
-    const result = await handler(event, ...args);
+    const result = await handler(event as IpcMainInvokeEvent, ...(args as T));
     if (isWriteChannel(channel)) {
       broadcastEvent("db:changed", null);
     }
@@ -51,9 +76,12 @@ export function registerIpcHandle(channel: string, handler: IpcHandler): void {
 /**
  * Register a listener that maps to ipcMain.on.
  */
-export function registerIpcOn(channel: string, handler: IpcHandler): void {
-  listeners.set(channel, handler);
-  ipcMain.on(channel, handler);
+export function registerIpcOn<T extends unknown[]>(
+  channel: string,
+  handler: IpcOnHandler<T>
+): void {
+  listeners.set(channel, handler as IpcHandler);
+  ipcMain.on(channel, handler as IpcHandler);
 }
 
 /**

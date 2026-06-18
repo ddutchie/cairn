@@ -1,5 +1,5 @@
 /**
- * Unit tests for GraphAIPanel pure helpers:
+ * Unit tests for graph-ai-utils pure helpers:
  *   - wikilinkAlreadyExists  — duplicate wikilink guard
  *   - buildGraphContext      — graph snapshot serialiser fed to the AI
  */

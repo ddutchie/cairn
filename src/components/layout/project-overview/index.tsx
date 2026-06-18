@@ -14,7 +14,7 @@ import { CairnEvents } from "@/lib/events";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { TaskCard, Note, BoardColumn, ProjectStatus, Priority } from "@/types";
-import { useProjectMetrics, type ActivityGroup } from "./project-overview/useProjectMetrics";
+import { useProjectMetrics, type ActivityGroup } from "./useProjectMetrics";
 import { ChatInput, SuggestionItem } from "@/components/chat/ChatInput";
 
 export function ProjectOverview() {

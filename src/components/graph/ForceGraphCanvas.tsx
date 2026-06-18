@@ -4,7 +4,7 @@ import React, { useRef, useEffect, useCallback, useState, useMemo } from "react"
 import { ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 import * as d3 from "d3";
 import type { GraphNode, KnowledgeGraph } from "@/types";
-import { resolveCssVar } from "./graphUtils";
+import { resolveCssVar } from "./analyticsUtils";
 import { useFontScale } from "./analyticsHooks";
 
 // react-force-graph-2d is a CommonJS module with no TS types bundled.

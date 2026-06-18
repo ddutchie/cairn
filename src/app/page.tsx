@@ -1,44 +1,12 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Download, X, AlertCircle } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { CairnEvents } from "@/lib/events";
 import { historyManager, ownWriteGuard } from "@/lib/history";
-
-// ── IPC error toast ───────────────────────────────────────────────────────────
-
-interface ErrorToast {
-  id: number;
-  message: string;
-}
-
-let _toastSeq = 0;
-
-function useIpcErrorToasts() {
-  const [toasts, setToasts] = useState<ErrorToast[]>([]);
-  const timers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
-
-  const dismiss = useCallback((id: number) => {
-    clearTimeout(timers.current.get(id));
-    timers.current.delete(id);
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-  }, []);
-
-  useEffect(() => {
-    function onIpcError(e: Event) {
-      const message = (e as CustomEvent<{ message: string }>).detail.message;
-      const id = ++_toastSeq;
-      setToasts((prev) => [...prev.slice(-4), { id, message }]); // keep at most 5
-      timers.current.set(id, setTimeout(() => dismiss(id), 5000));
-    }
-    window.addEventListener("cairn:ipc-error", onIpcError);
-    return () => window.removeEventListener("cairn:ipc-error", onIpcError);
-  }, [dismiss]);
-
-  return { toasts, dismiss };
-}
+import { useIpcErrorToasts } from "@/hooks/useIpcErrorToasts";
 import { TitleBar } from "@/components/layout/title-bar";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
@@ -48,12 +16,12 @@ import { KanbanBoard } from "@/components/kanban/board";
 import { IdeaFlowView } from "@/components/flow/flow-view";
 import { KnowledgeGraphView } from "@/components/graph/KnowledgeGraphView";
 import { InsightsView } from "@/components/insights/InsightsView";
-import { RightPanel } from "@/components/layout/RightPanel";
 import { SearchPanel } from "@/components/search/search-panel";
 import { SettingsView } from "@/components/settings/settings-view";
 import { AgentView } from "@/components/agent/AgentView";
 import { Onboarding } from "@/components/onboarding";
 import { MigrationModal } from "@/components/layout/MigrationModal";
+import { RightPanel } from "@/components/layout/RightPanel";
 
 export default function Home() {
   const {

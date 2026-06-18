@@ -1,12 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import Database from "better-sqlite3";
-import { newId, ts } from "../../db/utils";
+import * as q from "../../db/queries";
+import { newId } from "../../db/utils";
 import { executeSearchTasks } from "../../shared/read-tools-pure";
 import {
   Snapshot,
-  j,
-  j2,
-  toCard,
   getCardVersion,
   insertNotification,
   resolveTagNames
@@ -21,7 +19,8 @@ export function get_task(db: Database.Database, snap: Snapshot, args: Record<str
     priority: card.priority, dueDate: card.dueDate,
     columnId: card.columnId, columnName: col?.name ?? "Unknown", columnType: col?.type ?? "custom",
     linkedNoteIds: card.linkedNoteIds, blockedByIds: card.blockedByIds ?? [],
-    projectId: card.projectId, createdAt: card.createdAt, updatedAt: card.updatedAt, version: (card as any).version ?? 0,
+    projectId: card.projectId, createdAt: card.createdAt, updatedAt: card.updatedAt,
+    version: getCardVersion(db, card.id) ?? 0,
   };
 }
 
@@ -35,24 +34,29 @@ export function create_task(db: Database.Database, snap: Snapshot, args: Record<
   if (!title) return { error: "Task title is required" };
   const col = snap.columns.find((c) => c.id === columnId);
   if (!col) return { error: "Column not found" };
-  const now = ts();
   const cardId = newId();
   const order = snap.cards.filter((c) => c.columnId === columnId).length;
-  
+
   const resolvedFromNameIds = resolveTagNames(db, col.workspaceId, tagNames);
   let resolvedTagIds = Array.isArray(tagIds) ? tagIds as string[] : [];
   if (resolvedFromNameIds.length > 0) {
     resolvedTagIds = Array.from(new Set([...resolvedTagIds, ...resolvedFromNameIds]));
   }
-  db.prepare(`
-    INSERT INTO task_cards (id, column_id, project_id, workspace_id, title, description,
-      tag_ids, priority, due_date, linked_note_ids, "order", created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', ?, ?, ?)
-  `).run(cardId, columnId, projectId, col.workspaceId, title, description ?? null, j(resolvedTagIds), priority, dueDate ?? null, order, now, now);
+  const card = q.createCard(db, {
+    id: cardId,
+    columnId: columnId as string,
+    projectId: projectId as string,
+    workspaceId: col.workspaceId as string,
+    title: title as string,
+    description: description,
+    priority: priority as string,
+    dueDate: dueDate,
+    tagIds: resolvedTagIds,
+    order,
+  });
   const taskProject = snap.projects.find((pr) => pr.id === projectId);
   insertNotification(db, "create_task", "Task created", `"${title}" added to ${taskProject?.name ?? projectId}`);
-  const createdRaw = db.prepare("SELECT * FROM task_cards WHERE id = ?").get(cardId);
-  return toCard(createdRaw);
+  return card;
 }
 
 export function bulk_update_task_status(db: Database.Database, snap: Snapshot, args: Record<string, any>) {
@@ -61,13 +65,12 @@ export function bulk_update_task_status(db: Database.Database, snap: Snapshot, a
   if (!col) return { error: "Column not found" };
   if (!Array.isArray(cardIds) || cardIds.length === 0) return { error: "cardIds must be a non-empty array" };
   const results: Array<{ id: string; ok: boolean; error?: string }> = [];
-  const now = ts();
   for (const id of cardIds) {
     const card = snap.cards.find((c) => c.id === id);
     if (!card) {
       results.push({ id, ok: false, error: "Task not found" });
     } else {
-      db.prepare(`UPDATE task_cards SET column_id = ?, updated_at = ?, version = version + 1 WHERE id = ?`).run(targetColumnId, now, id);
+      q.updateCard(db, id, { columnId: targetColumnId });
       results.push({ id, ok: true });
     }
   }
@@ -76,18 +79,7 @@ export function bulk_update_task_status(db: Database.Database, snap: Snapshot, a
   if (col.type === "done") {
     const movedIds = results.filter((r) => r.ok).map((r) => r.id);
     if (movedIds.length > 0) {
-      const affected = db.prepare(
-        "SELECT id, blocked_by_ids FROM task_cards WHERE blocked_by_ids != '[]'"
-      ).all() as { id: string; blocked_by_ids: string }[];
-      for (const row of affected) {
-        if (movedIds.includes(row.id)) continue; // skip the tasks we just moved
-        const ids: string[] = j2(row.blocked_by_ids);
-        const cleaned = ids.filter((bid) => !movedIds.includes(bid));
-        if (cleaned.length !== ids.length) {
-          db.prepare("UPDATE task_cards SET blocked_by_ids = ?, updated_at = ?, version = version + 1 WHERE id = ?")
-            .run(j(cleaned), now, row.id);
-        }
-      }
+      q.clearBlockersFromAll(db, movedIds);
     }
   }
   const moved = results.filter((r) => r.ok).length;
@@ -102,11 +94,12 @@ export function link_note_to_task(db: Database.Database, snap: Snapshot, args: R
   const card = snap.cards.find((c) => c.id === cardId);
   if (!note) return { error: "Note not found" };
   if (!card) return { error: "Card not found" };
-  const newCardIds = j(Array.from(new Set([...(note.linkedCardIds as string[]), cardId])));
-  const newNoteIds = j(Array.from(new Set([...(card.linkedNoteIds as string[]), noteId])));
-  const now = ts();
-  db.prepare(`UPDATE notes SET linked_card_ids = ?, updated_at = ?, version = version + 1 WHERE id = ?`).run(newCardIds, now, noteId);
-  db.prepare(`UPDATE task_cards SET linked_note_ids = ?, updated_at = ?, version = version + 1 WHERE id = ?`).run(newNoteIds, now, cardId);
+  const newCardIds = Array.from(new Set([...(note.linkedCardIds as string[]), cardId]));
+  const newNoteIds = Array.from(new Set([...(card.linkedNoteIds as string[]), noteId]));
+  db.transaction(() => {
+    q.updateNote(db, noteId as string, { linkedCardIds: newCardIds });
+    q.updateCard(db, cardId as string, { linkedNoteIds: newNoteIds });
+  })();
   insertNotification(db, "link_note_to_task", "Note linked to task", `"${note.title}" linked to "${card.title}"`);
   return { noteId, cardId, linked: true };
 }
@@ -114,60 +107,28 @@ export function link_note_to_task(db: Database.Database, snap: Snapshot, args: R
 export function delete_task(db: Database.Database, snap: Snapshot, args: Record<string, any>) {
   const card = snap.cards.find((c) => c.id === args.cardId);
   if (!card) return { error: "Task not found" };
-  // Clean up this card's ID from any other card's blocked_by_ids
-  const now = ts();
-  const affected = db.prepare(
-    "SELECT id, blocked_by_ids FROM task_cards WHERE blocked_by_ids != '[]' AND id != ?"
-  ).all(args.cardId) as { id: string; blocked_by_ids: string }[];
-  for (const row of affected) {
-    const ids: string[] = j2(row.blocked_by_ids);
-    if (ids.includes(args.cardId as string)) {
-      const updated = ids.filter((bid) => bid !== args.cardId);
-      db.prepare("UPDATE task_cards SET blocked_by_ids = ?, updated_at = ? WHERE id = ?")
-        .run(j(updated), now, row.id);
-    }
-  }
-  db.prepare("DELETE FROM task_cards WHERE id = ?").run(args.cardId);
+  q.deleteCard(db, args.cardId as string); // also cleans blocked_by_ids in other cards
   insertNotification(db, "delete_task", "Task deleted", `"${card.title}" was deleted`);
   return { deleted: true, id: args.cardId, title: card.title };
 }
 
 export function list_ready_tasks(db: Database.Database, snap: Snapshot, args: Record<string, any>) {
-  // Cards that are active, not in a done column, and all blockers are resolved
-  const projectFilter = args.projectId ? "AND tc.project_id = ?" : "";
-  const params = args.projectId ? [args.projectId] : [];
-  const candidates = db.prepare(`
-    SELECT tc.*, bc.type as col_type, bc.name as col_name
-    FROM task_cards tc
-    JOIN board_columns bc ON tc.column_id = bc.id
-    WHERE tc.archived_at IS NULL AND bc.type != 'done' ${projectFilter}
-    ORDER BY tc."order"
-  `).all(...params) as Array<{
-    id: string; title: string; description: string; priority: string;
-    due_date: string; column_id: string; project_id: string;
-    blocked_by_ids: string; col_type: string; col_name: string;
-  }>;
-  // Build a lookup for blocker resolution
-  const allProjectIds = [...new Set(candidates.map((c) => c.project_id))];
-  const allCards = allProjectIds.flatMap((pid) =>
-    db.prepare(`SELECT tc.id, tc.archived_at, tc.blocked_by_ids, bc.type as col_type
-      FROM task_cards tc JOIN board_columns bc ON tc.column_id = bc.id WHERE tc.project_id = ?`
-    ).all(pid) as Array<{ id: string; archived_at: string | null; col_type: string }>
-  );
-  const cardLookup = new Map(allCards.map((c) => [c.id, c]));
-  function isResolvedMcp(blockerId: string): boolean {
-    const b = cardLookup.get(blockerId);
-    if (!b) return true;
-    return b.archived_at !== null || b.col_type === "done";
-  }
-  const ready = candidates.filter((c) => {
-    const ids: string[] = j2(c.blocked_by_ids);
-    return ids.length === 0 || ids.every(isResolvedMcp);
-  });
-  return ready.map((c) => ({
-    id: c.id, title: c.title, priority: c.priority, dueDate: c.due_date,
-    columnId: c.column_id, columnName: c.col_name, projectId: c.project_id,
-    blockedByIds: j2(c.blocked_by_ids),
+  // q.getReadyCards returns active non-done cards with no pending blockers.
+  // We add columnName here (the query helper doesn't include it) so the MCP
+  // surface keeps its existing return shape.
+  const readyCards = q.getReadyCards(db, args.projectId as string | undefined);
+  if (readyCards.length === 0) return [];
+  // Resolve column names from the snapshot (cheap lookup, avoids a JOIN in queries.ts).
+  const colNameById = new Map(snap.columns.map((c) => [c.id, c.name]));
+  return readyCards.map((c) => ({
+    id: c.id,
+    title: c.title,
+    priority: c.priority,
+    dueDate: c.dueDate,
+    columnId: c.columnId,
+    columnName: colNameById.get(c.columnId) ?? "Unknown",
+    projectId: c.projectId,
+    blockedByIds: c.blockedByIds ?? [],
   }));
 }
 
@@ -178,7 +139,7 @@ export function update_task(db: Database.Database, snap: Snapshot, args: Record<
 
   // Must query DB directly for archived cards not in snap
   const _rawCard = snap.cards.find((c) => c.id === cardId)
-    ?? (() => { const r = db.prepare("SELECT * FROM task_cards WHERE id = ?").get(cardId); return r ? toCard(r) : undefined; })();
+    ?? q.getCardById(db, cardId as string);
   const card = _rawCard;
   if (!card) return { error: "Task not found" };
 
@@ -192,22 +153,20 @@ export function update_task(db: Database.Database, snap: Snapshot, args: Record<
   // ── archive / restore ──────────────────────────────────────────────────
   if (archived === true) {
     if (card.archivedAt) return { error: "Task is already archived" };
-    const now = ts();
-    db.prepare("UPDATE task_cards SET archived_at = ?, updated_at = ?, version = version + 1 WHERE id = ?").run(now, now, cardId);
+    const updated = q.updateCard(db, cardId as string, {
+      archivedAt: new Date().toISOString(),
+    });
     insertNotification(db, "update_task", "Task archived", `"${card.title}" was archived`);
-    const updatedRaw = db.prepare("SELECT * FROM task_cards WHERE id = ?").get(cardId);
-    return toCard(updatedRaw);
+    return updated;
   }
   if (archived === false) {
     // Must query DB directly — archived cards are filtered from snap
-    const row = db.prepare("SELECT * FROM task_cards WHERE id = ?").get(cardId);
-    if (!row) return { error: "Task not found" };
-    if (!row.archived_at) return { error: "Task is not archived" };
-    const now = ts();
-    db.prepare("UPDATE task_cards SET archived_at = NULL, updated_at = ?, version = version + 1 WHERE id = ?").run(now, cardId);
-    insertNotification(db, "update_task", "Task restored", `"${row.title as string}" was restored`);
-    const restoredRaw = db.prepare("SELECT * FROM task_cards WHERE id = ?").get(cardId);
-    return toCard(restoredRaw);
+    const dbCard = q.getCardById(db, cardId as string);
+    if (!dbCard) return { error: "Task not found" };
+    if (!dbCard.archivedAt) return { error: "Task is not archived" };
+    const updated = q.restoreCard(db, cardId as string);
+    insertNotification(db, "update_task", "Task restored", `"${dbCard.title}" was restored`);
+    return updated;
   }
 
   // ── block / unblock ────────────────────────────────────────────────────
@@ -230,46 +189,40 @@ export function update_task(db: Database.Database, snap: Snapshot, args: Record<
     if (canReachMcp(blockedBy as string, cardId as string, new Set())) {
       return { error: "Circular dependency detected" };
     }
-    const nowB = ts();
-    const row = db.prepare("SELECT blocked_by_ids FROM task_cards WHERE id = ?").get(cardId) as { blocked_by_ids: string } | undefined;
-    if (!row) return { error: "Task not found in DB" };
-    const ids: string[] = j2(row.blocked_by_ids);
-    if (!ids.includes(blockedBy as string)) {
-      ids.push(blockedBy as string);
-      db.prepare("UPDATE task_cards SET blocked_by_ids = ?, updated_at = ?, version = version + 1 WHERE id = ?").run(j(ids), nowB, cardId);
-    }
+    const updated = q.addCardBlocker(db, cardId as string, blockedBy as string);
     insertNotification(db, "update_task", "Task blocked", `"${card.title}" is now blocked by "${blocker.title}"`);
-    const updatedRaw = db.prepare("SELECT * FROM task_cards WHERE id = ?").get(cardId);
     return {
-      ...toCard(updatedRaw),
+      ...updated,
       cardId,
       blockerCardId: blockedBy,
       blocked: true,
     };
   }
   if (unblockFrom !== undefined) {
-    const nowU = ts();
-    const rowU = db.prepare("SELECT blocked_by_ids FROM task_cards WHERE id = ?").get(cardId) as { blocked_by_ids: string } | undefined;
-    if (!rowU) return { error: "Task not found in DB" };
-    const idsU: string[] = j2(rowU.blocked_by_ids);
-    const updatedIds = idsU.filter((id) => id !== unblockFrom);
-    db.prepare("UPDATE task_cards SET blocked_by_ids = ?, updated_at = ?, version = version + 1 WHERE id = ?").run(j(updatedIds), nowU, cardId);
-    const updatedRaw = db.prepare("SELECT * FROM task_cards WHERE id = ?").get(cardId);
+    const updated = q.removeCardBlocker(db, cardId as string, unblockFrom as string);
     return {
-      ...toCard(updatedRaw),
+      ...updated,
       cardId,
       blockerCardId: unblockFrom,
       unblocked: true,
     };
   }
 
-  // ── field update ───────────────────────────────────────────────────────
-  const now = ts();
-  // assignee uses CASE WHEN instead of COALESCE so it can be explicitly cleared to NULL
-  // by passing an empty string. Sentinel 1 = "update assignee"; 0 = "leave unchanged".
-  const assigneeSentinel = assignee !== undefined ? 1 : 0;
-  const assigneeValue    = assignee !== undefined ? (assignee || null) : null;
+  // ── clear due date ─────────────────────────────────────────────────────
+  if (dueDate === null) {
+    const updated = q.clearCardDueDate(db, cardId as string);
+    q.updateCard(db, cardId as string, {
+      ...(title !== undefined ? { title } : {}),
+      ...(description !== undefined ? { description } : {}),
+      ...(priority !== undefined ? { priority } : {}),
+      ...(columnId !== undefined ? { columnId } : {}),
+      ...(assignee !== undefined ? { assignee: assignee as string | null } : {}),
+    });
+    insertNotification(db, "update_task", "Task updated", `"${title ?? card.title}" was updated`);
+    return updated;
+  }
 
+  // ── field update ───────────────────────────────────────────────────────
   // Resolve tag names to IDs
   let finalTagIds = tagIds != null ? (Array.isArray(tagIds) ? (tagIds as string[]) : [tagIds as string]) : null;
   const resolvedFromNameIds = resolveTagNames(db, card.workspaceId, tagNames);
@@ -278,44 +231,27 @@ export function update_task(db: Database.Database, snap: Snapshot, args: Record<
     finalTagIds = Array.from(new Set([...baseTags, ...resolvedFromNameIds]));
   }
 
-  db.transaction(() => {
-    db.prepare(`
-      UPDATE task_cards SET
-        column_id   = COALESCE(?, column_id),
-        title       = COALESCE(?, title),
-        description = COALESCE(?, description),
-        priority    = COALESCE(?, priority),
-        due_date    = COALESCE(?, due_date),
-        tag_ids     = COALESCE(?, tag_ids),
-        assignee    = CASE WHEN ? = 1 THEN ? ELSE assignee END,
-        updated_at  = ?,
-        version     = version + 1
-      WHERE id = ?
-    `).run(
-      columnId ?? null, title ?? null, description ?? null,
-      priority ?? null, dueDate ?? null,
-      finalTagIds != null ? j(finalTagIds) : null,
-      assigneeSentinel, assigneeValue,
-      now, cardId
-    );
+  const patch: Parameters<typeof q.updateCard>[2] = {};
+  if (columnId !== undefined) patch.columnId = columnId as string;
+  if (title !== undefined) patch.title = title as string;
+  if (description !== undefined) patch.description = description as string;
+  if (priority !== undefined) patch.priority = priority as string;
+  if (dueDate !== undefined) patch.dueDate = dueDate as string;
+  if (finalTagIds !== null) patch.tagIds = finalTagIds;
+  if (assignee !== undefined) patch.assignee = (assignee as string) || null;
+
+  const updated = db.transaction(() => {
+    const card = q.updateCard(db, cardId as string, patch);
     insertNotification(db, "update_task", "Task updated", `"${title ?? card.title}" was updated`);
+    return card;
   })();
+
   // When moving to a done column, clear this card from other tasks' blocked_by_ids
   if (columnId !== undefined) {
     const targetCol = snap.columns.find((c) => c.id === columnId);
     if (targetCol?.type === "done") {
-      const affected = db.prepare(
-        "SELECT id, blocked_by_ids FROM task_cards WHERE blocked_by_ids != '[]' AND id != ?"
-      ).all(cardId) as { id: string; blocked_by_ids: string }[];
-      for (const row of affected) {
-        const ids: string[] = j2(row.blocked_by_ids);
-        if (ids.includes(cardId as string)) {
-          db.prepare("UPDATE task_cards SET blocked_by_ids = ?, updated_at = ?, version = version + 1 WHERE id = ?")
-            .run(j(ids.filter((bid) => bid !== cardId)), now, row.id);
-        }
-      }
+      q.clearBlockersFromAll(db, [cardId as string]);
     }
   }
-  const updatedRaw = db.prepare("SELECT * FROM task_cards WHERE id = ?").get(cardId);
-  return updatedRaw ? toCard(updatedRaw) : { error: "Task not found after update" };
+  return updated ?? { error: "Task not found after update" };
 }

@@ -1,10 +1,29 @@
 /**
- * Cairn — SQLite query helpers
+ * Cairn — SQLite query helpers (single source of truth for all SQL).
  *
  * All reads return TypeScript domain types (from src/types/index.ts).
  * JSON columns are parsed on read and serialised on write.
  *
  * Naming: snake_case columns → camelCase fields in returned objects.
+ *
+ * ── Governance ──────────────────────────────────────────────────────────────
+ * This module is imported by BOTH the Electron main process and the esbuild-
+ * bundled MCP server (see `electron/mcp/tools/codebase.ts`, `tags.ts`,
+ * `projects.ts`, `notes.ts`, `tasks.ts`, `flow.ts`, `dashboards.ts`, `graph.ts`,
+ * and `electron/mcp/db.ts`). It is safe to import from `mcp/tools/*` because the
+ * only ABI-sensitive operation in better-sqlite3 is constructing the `Database`
+ * instance — that happens once in `electron/mcp-server.ts:140`
+ * (`new Database(dbPath, { nativeBinding: MCP_NATIVE_BINDING })`). All
+ * `db.prepare(...).run(...)` calls here execute on that already-constructed
+ * handle regardless of which TS file defines them.
+ *
+ * **Never** construct a `Database` instance in this file. The two bootstrap
+ * sites are `electron/db/client.ts` (Electron ABI, `electron-native/`) and
+ * `electron/mcp-server.ts` (Node 22 ABI, `pkg-native/`).
+ *
+ * For knowledge-graph traversal, see `electron/db/graph-queries.ts` which
+ * exports `getKnowledgeGraph` and `getNeighbours` (also safe to import from
+ * `mcp/tools/*` — see `electron/mcp/tools/graph.ts`).
  */
 
 import type Database from "better-sqlite3";

@@ -381,7 +381,7 @@ export class MobileServer {
         clientSocket.write("\r\n");
         clientSocket.write(head);
 
-        clientSocket.on("error", (err) => {
+        clientSocket.on("error", (err: Error) => {
           console.error("[mobile-server] Dev ws proxy error:", err);
           socket.end();
         });

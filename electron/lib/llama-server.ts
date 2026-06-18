@@ -95,7 +95,7 @@ let serverPort: number | null = null;
 let activeModelId: string | null = null;
 
 // Download state
-const activeRequests = new Map<string, https.ClientRequest>();
+const activeRequests = new Map<string, http.ClientRequest>();
 let isBinaryDownloading = false;
 
 /**

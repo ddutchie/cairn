@@ -12,7 +12,7 @@ import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { search, searchKeymap } from "@codemirror/search";
 import { LanguageDescription } from "@codemirror/language";
 import { languages } from "@codemirror/language-data";
-import { buildTheme, buildHighlightStyle, buildSearchTheme, lineNumbers } from "./editorTheme";
+import { buildTheme, buildHighlightStyle, buildSearchTheme, lineNumbers } from "@/lib/editor-theme";
 
 export interface FileEditorInnerProps {
   filePath: string;

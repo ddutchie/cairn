@@ -90,7 +90,7 @@ export function registerAgentHandlers(db: Database): void {
     handle(() => q.getCodingAgents(db))
   );
 
-  registerIpcHandle("agent:saveCodingAgent", (_e, agent) =>
+  registerIpcHandle("agent:saveCodingAgent", (_e, agent: Parameters<typeof q.saveCodingAgent>[1]) =>
     handle(() => q.saveCodingAgent(db, agent))
   );
 

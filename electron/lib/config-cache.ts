@@ -15,6 +15,8 @@ export interface CachedConfig {
     baseUrl?: string;
     model?: string;
     apiKey?: string;
+    maxSteps?: number;
+    temperature?: number;
     autoApprove?: boolean;
   };
   theme?: string;

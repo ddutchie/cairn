@@ -1,89 +1,14 @@
 "use client";
 
 import React, { useState } from "react";
-import { CheckCircle, Loader2, ChevronDown, ChevronRight, GitBranch, FileText, SquareCheck } from "lucide-react";
+import { CheckCircle, Loader2, ChevronDown, ChevronRight, GitBranch } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { MarkdownContent } from "@/components/chat/chat-panel/MarkdownContent";
 import { MessageAvatar, StreamingCursor } from "@/components/chat/chat-panel/message-ui";
-import { CairnEvents } from "@/lib/events";
+import { CairnRefChip } from "@/components/shared/cairn-ref-chip";
 import { useCairnStore } from "@/store";
 import { ContextRing } from "./ContextRing";
 import type { PiAgentMessage, PiSubagentMessage } from "@/store/slices/terminal-sessions";
-
-// ── Cairn item reference chip ─────────────────────────────────────────────────
-
-const CAIRN_NOTE_ACTIONS: Record<string, string> = {
-  create_note:     "Created note",
-  ensure_note:     "Saved note",
-  update_note:     "Updated note",
-  patch_note:      "Patched note",
-  append_to_note:  "Appended to note",
-  get_note:        "Read note",
-};
-const CAIRN_TASK_ACTIONS: Record<string, string> = {
-  create_task:        "Created task",
-  update_task:        "Updated task",
-  update_task_status: "Moved task",
-  get_task:           "Read task",
-};
-
-function CairnRefChip({ tc }: {
-  tc: { name: string; ok: boolean; cairnRef: { type: "note" | "task"; id: string; title: string } };
-}) {
-  const setView = useCairnStore((s) => s.setView);
-  const isNote = tc.cairnRef.type === "note";
-  const actionLabel = isNote
-    ? (CAIRN_NOTE_ACTIONS[tc.name] ?? "Updated note")
-    : (CAIRN_TASK_ACTIONS[tc.name] ?? "Updated task");
-
-  function handleClick() {
-    if (isNote) {
-      setView("notes");
-      // Defer so NotesView has one render cycle to mount its cairn:select-note listener
-      setTimeout(() => window.dispatchEvent(CairnEvents.selectNote(tc.cairnRef.id)), 50);
-    } else {
-      setView("board");
-      // Defer so KanbanBoard has one render cycle to mount its cairn:open-card listener
-      setTimeout(() => window.dispatchEvent(CairnEvents.openCard(tc.cairnRef.id)), 50);
-    }
-  }
-
-  return (
-    <button
-      onClick={handleClick}
-      className={cn(
-        "flex items-center gap-2 px-2.5 py-1.5 rounded-lg w-fit text-left transition-colors group",
-        "bg-[var(--surface-2)] border border-[var(--border)]",
-        "hover:border-[var(--accent)]/50 hover:bg-[color-mix(in_srgb,var(--accent)_4%,var(--surface-2))]",
-        !tc.ok && "border-[var(--danger)]/30 opacity-60 pointer-events-none",
-      )}
-    >
-      {/* Type icon */}
-      <div className={cn(
-        "w-5 h-5 rounded flex items-center justify-center flex-shrink-0",
-        isNote
-          ? "bg-[color-mix(in_srgb,var(--accent)_12%,transparent)]"
-          : "bg-[color-mix(in_srgb,var(--success,#22c55e)_12%,transparent)]",
-      )}>
-        {isNote
-          ? <FileText size={10} className="text-[var(--accent)]" />
-          : <SquareCheck size={10} className="text-[color-mix(in_srgb,var(--success,#22c55e)_90%,var(--text-primary))]" />
-        }
-      </div>
-
-      {/* Text */}
-      <div className="flex flex-col min-w-0">
-        <span className="text-[0.643rem] text-[var(--text-tertiary)] leading-none mb-0.5">{actionLabel}</span>
-        <span className="text-[0.714rem] font-medium text-[var(--text-primary)] truncate max-w-[200px] leading-none group-hover:text-[var(--accent)] transition-colors">
-          {tc.cairnRef.title}
-        </span>
-      </div>
-
-      {/* Status dot */}
-      <CheckCircle size={9} className={cn("shrink-0 ml-auto", tc.ok ? "text-[var(--accent)]" : "text-[var(--danger)]")} />
-    </button>
-  );
-}
 
 // ── Tool output expansion ─────────────────────────────────────────────────────
 
@@ -173,7 +98,7 @@ function ToolChip({ tc, sessionId }: {
 
   // Cairn write tools get a dedicated linked bubble instead of raw JSON expansion
   if (tc.cairnRef && tc.ok) {
-    return <CairnRefChip tc={{ name: tc.name, ok: tc.ok, cairnRef: tc.cairnRef }} />;
+    return <CairnRefChip toolName={tc.name} cairnRef={tc.cairnRef} ok={tc.ok} />;
   }
 
   const hasOutput = !!tc.output;

@@ -47,6 +47,7 @@ interface PiAgentPromptRequest {
   taskTitle?: string;
   mode?: "plan" | "execute";
   config?: {
+    provider?: string;
     baseUrl?: string;
     model?: string;
     apiKey?: string;
@@ -64,6 +65,7 @@ interface PiAgentApprovePlanRequest {
   cwd: string;
   taskTitle?: string;
   config?: {
+    provider?: string;
     baseUrl?: string;
     model?: string;
     apiKey?: string;

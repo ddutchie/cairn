@@ -1,7 +1,25 @@
 /**
- * Shared utilities for analytics canvas components.
+ * Shared utilities for analytics + Knowledge Graph canvas components.
  * Keep this file free of React imports — pure functions and constants only.
+ *
+ * Consolidated from `analyticsUtils.ts` + the former `graphUtils.ts` (P3-5 of the
+ * cleanup plan): `resolveCssVar` was the only export in `graphUtils.ts` (12 lines)
+ * and is now co-located here so there are 3 graph helper modules instead of 4.
  */
+
+// ── CSS variable resolution (canvas-2D) ─────────────────────────────────────
+
+/**
+ * Resolve a CSS custom property to its computed value (hex/rgb string).
+ * Used by canvas-2D rendering (ForceGraphCanvas, RadialTreeCanvas) which
+ * needs the literal colour string, not a `var(--…)` reference.
+ */
+export function resolveCssVar(varName: string): string {
+  if (typeof document === "undefined") return "#888";
+  return getComputedStyle(document.documentElement)
+    .getPropertyValue(varName.replace(/^var\((.+)\)$/, "$1"))
+    .trim();
+}
 
 // ── Time helpers ──────────────────────────────────────────────────────────────
 
