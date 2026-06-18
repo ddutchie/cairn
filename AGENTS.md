@@ -68,7 +68,7 @@ Shared modules:
 - `analyticsUtils.ts` — `PRIORITY_COLOR`, `CANVAS_PAD`, `truncateName`, `HOUR_MS`, `DAY_MS`, etc.
 - `analyticsHooks.ts` — `useContainerDims`, `useScopedData`, `useFontScale`
 - `AnalyticsShared.tsx` — `<CanvasEmptyState>`, `<CanvasTooltip>`, `<SvgTimeAxis>`
-- `graphUtils.ts` — `resolveCssVar()` for canvas 2D context colour lookups
+- `analyticsUtils.ts` — shared constants (`PRIORITY_COLOR`, `CANVAS_PAD`), `resolveCssVar()` for canvas 2D context colour lookups, `truncateName`
 
 ## Store slices
 

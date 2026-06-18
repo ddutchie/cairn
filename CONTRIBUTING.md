@@ -67,7 +67,7 @@ That's it — `compile:watch` runs in parallel and rebuilds the Electron main pr
 ### Useful commands
 
 ```bash
-npm run type-check        # tsc --noEmit — run this before every commit
+npm run type-check:all    # tsc --noEmit for renderer + electron — run this before every commit
 npm test                  # run all unit tests (vitest)
 npm run test:watch        # watch mode
 npm run test:e2e          # E2E smoke tests (headless Chromium) — run before any UI PR
@@ -93,7 +93,7 @@ cairn/
 ├── electron/               # Electron main process (Node.js, runs in Electron)
 │   ├── main.ts             # Startup: BrowserWindow, IPC registration, file watcher
 │   ├── preload.ts          # contextBridge: window.electron API exposed to renderer
-│   ├── mcp-server.ts       # Standalone MCP binary entry point (inlined SQL only)
+│   ├── mcp-server.ts       # Standalone MCP binary entry point (imports queries.ts helpers)
 │   ├── notes-files.ts      # Note file I/O: read/write/parse .md files
 │   ├── file-watcher.ts     # chokidar watcher → SQLite sync on external .md edits
 │   ├── workspace-config.ts # Read/write workspace-config.json
@@ -104,10 +104,24 @@ cairn/
 │   │   ├── defaults.ts     # DEFAULT_COLUMNS
 │   │   └── utils.ts        # newId(), ts()
 │   ├── ipc/
-│   │   ├── handlers.ts     # All db:* and app:* IPC channels
+│   │   ├── handlers.ts     # Orchestrator — delegates to per-domain registrars below
+│   │   ├── result-helpers.ts # handle(), ok(), err(), DbContext
+│   │   ├── db-handlers.ts  # db:* CRUD channels (workspaces, projects, notes, cards, tags)
+│   │   ├── flow-handlers.ts# db:flow:* channels (incl. AI summarizer BFS)
+│   │   ├── ai-handlers.ts  # ai:* channels (generatePrd, localLLMStatus)
+│   │   ├── llama-handlers.ts# llama:* channels (on-device LLM server)
+│   │   ├── graph-handlers.ts# db:graph:* channels
+│   │   ├── chat-db-handlers.ts# db:chat:* CRUD channels
+│   │   ├── pi-session-handlers.ts# db:piSession:* channels
+│   │   ├── pdf-export.ts   # app:exportNotePdf (uses lib/pdf-template.ts)
+│   │   ├── url-metadata.ts # db:flow:url:fetch (uses lib/url-metadata.ts)
+│   │   ├── mobile-handlers.ts# mobile:* channels
+│   │   ├── migration-handlers.ts # app:*igration* channels
+│   │   ├── settings-handlers.ts # app:{get,save}* settings channels
 │   │   ├── agent.ts        # agent:* IPC channels — PTY spawn, file I/O, git diff
 │   │   ├── chat.ts         # AI chat: runToolLoop + IPC handler
-│   │   └── chat-executor.ts# executeTool — all AI tool implementations
+│   │   ├── chat-executor.ts# executeTool — all AI tool implementations
+│   │   └── registry.ts     # registerIpcHandle/registerIpcOn, isWriteChannel whitelist
 │   ├── lib/
 │   │   ├── llm.ts          # callLLM, streamCompletion
 │   │   ├── tools.ts        # TOOLS definitions, buildSystemPrompt
@@ -115,6 +129,9 @@ cairn/
 │   │   ├── read-tools.ts   # executeReadTool — shared by chat + dashboard bridge
 │   │   └── ...
 │   └── shared/
+│       ├── db-mappers.ts   # Row→domain object mappers (toWorkspace, toProject, toNote, etc.)
+│       ├── notes-io.ts     # Note file I/O helpers (shared across Electron + MCP)
+│       ├── read-tools-pure.ts # executeSearchNotes, executeSearchTasks, executeGetProjectContextPack
 │       └── text-utils.ts   # toSlug, stripMarkdown (no native deps — shared safely)
 │
 ├── src/                    # Next.js renderer (React, runs in BrowserWindow)
@@ -125,20 +142,21 @@ cairn/
 │   │   ├── index.ts        # Zustand store composition + hydration
 │   │   └── slices/         # ui, workspace, board, notes, tags, chat, graph, selectors
 │   ├── components/
-│   │   ├── layout/         # Sidebar, topbar, project overview
+│   │   ├── layout/         # Sidebar, topbar, project overview, app-chrome (UpdateBanner, ErrorToasts)
 │   │   ├── kanban/         # Board, columns, cards, card detail
 │   │   ├── notes/          # Note editor, dashboard view, markdown components
 │   │   ├── flow/           # Idea Flow canvas + node components
-│   │   ├── graph/          # Knowledge Graph + all analytics canvases
+│   │   ├── graph/          # Knowledge Graph + all analytics canvases + shared analytics modules
 │   │   ├── insights/       # InsightsView (analytics hub)
 │   │   ├── agent/          # Agent workspace (PTY + Cairn native agent): PiAgentPane, PiMessageBubble, ContextRing, SpawnAgentModal, file tree, CM6 editor, xterm terminal, diff viewer
-│   │   ├── chat/           # AI chat panel
+│   │   ├── chat/           # AI chat panel (chat-panel/index.tsx + sub-folder)
 │   │   ├── search/         # Global search panel
 │   │   ├── settings/       # Settings sections
-│   │   └── ui/             # Shared primitives: Button, Input, Dialog, Badge, etc.
-│   ├── hooks/              # useChatStream
-│   ├── lib/                # constants, events, utils, storage
-│   └── types/              # All shared TypeScript types
+│   │   ├── shared/         # Cross-feature shared components (e.g. CairnRefChip)
+│   │   └── ui/             # Shared primitives: Button, Input, Dialog, Badge, ModalShell, etc.
+│   ├── hooks/              # useChatStream, useLoadGraph, useIpcErrorToasts
+│   ├── lib/                # constants, events, utils, storage, editor-theme (shared CM6 theme)
+│   └── types/              # All shared TypeScript types (incl. PiAgentMessage, TerminalSession)
 │
 ├── scripts/                # Build utilities (not bundled)
 │   ├── rebuild-native.js   # Rebuilds better-sqlite3 for all three ABIs
@@ -192,7 +210,7 @@ Cairn has two processes that share the same `cairn.db` (SQLite WAL mode):
 
 The agent has access to a curated subset of Cairn's data tools (notes CRUD, task management, idea flow) via the same `executeTool` path used by the AI chat. `ensure_note` is the preferred write tool — idempotent by title, no duplicates. `AgentView` is always mounted (CSS-hidden when inactive) so `PiAgentPane` refs and IPC subscriptions survive view switches.
 
-**MCP server** (`electron/mcp-server.ts`) — a separate compiled binary that external AI agents connect to. Shares the same SQLite database and writes `.md` files directly; the Electron UI refreshes automatically via WAL mtime polling. Has one important constraint: it cannot import from `electron/db/queries.ts` due to the Node ABI boundary — it uses inlined SQL only.
+**MCP server** (`electron/mcp-server.ts`) — a separate compiled binary that external AI agents connect to. Shares the same SQLite database and writes `.md` files directly; the Electron UI refreshes automatically via WAL mtime polling. The MCP tool files in `electron/mcp/tools/*` import query helpers from `electron/db/queries.ts` and `electron/db/graph-queries.ts` — these are the same helpers used by the Electron main process. The only ABI-sensitive operation is constructing the `Database` instance (once, in `mcp-server.ts` via `new Database(dbPath, { nativeBinding })`); after that, all `db.prepare(...).run(...)` calls work on that handle regardless of which TS file defines them.
 
 External `.md` edits (e.g. the user editing a note in another editor) are picked up by a **chokidar file watcher** in the main process, which parses the frontmatter and upserts the SQLite row, then fires `db:changed` to the renderer.
 
@@ -338,7 +356,7 @@ InsightsView
         └── D3 / SVG rendering
 ```
 
-Shared modules live in `src/components/graph/`: `analyticsUtils.ts`, `analyticsHooks.ts`, `AnalyticsShared.tsx`, `graphUtils.ts`.
+Shared modules live in `src/components/graph/`: `analyticsUtils.ts` (constants, `PRIORITY_COLOR`, `resolveCssVar`, `truncateName`, `CANVAS_PAD`), `analyticsHooks.ts` (`useContainerDims`, `useScopedData`, `useFontScale`, `useRelativePointer`, `useNow`), `AnalyticsShared.tsx` (`<CanvasEmptyState>`, `<CanvasTooltip>`, `<SvgTimeAxis>`).
 
 ### Key files
 
@@ -356,7 +374,7 @@ Shared modules live in `src/components/graph/`: `analyticsUtils.ts`, `analyticsH
 | `electron/workspace-config.ts` | Read/write `workspace-config.json`; resolve `cairn.db` path |
 | `electron/notes-files.ts` | Note file I/O: `writeNoteFile` (atomic `.tmp` → rename), `deleteNoteFile`, `parseNoteFile`, `upsertNoteFromFile`, `syncNotesFromDisk` (startup timestamp compare), `cleanStaleTmpFiles` |
 | `electron/file-watcher.ts` | chokidar watcher on workspace root; syncs external `.md` edits to SQLite |
-| `electron/ipc/handlers.ts` | All `db:*` and `app:*` IPC channels; wrapped in `handle()` returning `IpcResult<T>` |
+| `electron/ipc/handlers.ts` | Orchestrator — calls per-domain registrars (`db-handlers`, `flow-handlers`, `ai-handlers`, `llama-handlers`, `graph-handlers`, `chat-db-handlers`, `pi-session-handlers`, `pdf-export`, `url-metadata`, `mobile-handlers`, `migration-handlers`, `settings-handlers`); all wrapped in `handle()` returning `IpcResult<T>` |
 | `electron/ipc/agent.ts` | All `agent:*` IPC channels — PTY spawn/kill, file I/O, git diff, `assertWithinCodeDirectory` |
 | `electron/ipc/chat.ts` | AI chat loop — `runToolLoop` + IPC handler registration |
 | `electron/ipc/chat-executor.ts` | `executeTool` — all AI tool implementations |
@@ -370,19 +388,19 @@ Shared modules live in `src/components/graph/`: `analyticsUtils.ts`, `analyticsH
 | `electron/lib/tools.ts` | `TOOLS` (OpenAI function definitions), `TOOL_LABELS`, `buildSystemPrompt` |
 | `electron/lib/context.ts` | `buildContextResponse` — canonical `get_cairn_context` response |
 | `electron/lib/prd.ts` | `generatePrd` — shared PRD generation logic |
-| `electron/db/queries.ts` | SQLite query helpers (CRUD, search, snapshot, `getProjectById`, `getNoteById`, `getCardById`) |
+| `electron/db/queries.ts` | Single source of truth for all SQL query helpers (CRUD, search, snapshot, `getProjectById`, `getNoteById`, `getCardById`). Imported by both the Electron main process and the MCP server (`electron/mcp/tools/*`) — the only ABI-sensitive operation is `new Database(...)` which happens once in `mcp-server.ts` |
 | `electron/shared/text-utils.ts` | Pure text helpers shared across the process boundary: `toSlug`, `stripMarkdown` |
 | `electron/db/schema.ts` | SQLite DDL + versioned migration runner (`PRAGMA user_version`) |
 | `electron/db/utils.ts` | `newId()` (nanoid), `ts()` — shared ID and timestamp helpers |
 | `electron/db/defaults.ts` | `DEFAULT_COLUMNS` — canonical 5-column board layout |
-| `electron/mcp-server.ts` | Standalone MCP binary; all MCP tools; `getConfigBasePath()` |
+| `electron/mcp-server.ts` | Standalone MCP binary entry point; imports query helpers from `db/queries.ts` (same code as the Electron main process) |
 
 **Renderer**
 
 | File | Purpose |
 |------|---------|
 | `src/store/index.ts` | Zustand store composition + hydration; delegates to domain slices |
-| `src/store/slices/` | Domain slices: `ui` (theme, fontScale, activeView), `workspace`, `board`, `notes`, `tags`, `chat`, `graph`, `selectors` |
+| `src/store/slices/` | Domain slices: `ui` (theme, fontScale, activeView), `workspace`, `board`, `notes`, `tags`, `chat`, `graph`, `selectors`, `coding-agents`, `terminal-sessions` |
 | `src/store/ipc.ts` | Shared `isElectron`, `ipc`, `ipcAwait` helpers; `markOwnNoteWrite` / `isOwnNoteWrite` per-note write map (1.5 s window) used to gate WAL-poller re-hydration |
 | `src/hooks/useChatStream.ts` | AI stream lifecycle hook — subscriptions, loading state, `sendStream` |
 | `src/lib/constants.ts` | Shared constants: `COLUMN_COLORS`, `PRIORITY_OPTIONS`, `DEFAULT_AI_CONFIG`, etc. |
@@ -402,7 +420,7 @@ Shared modules live in `src/components/graph/`: `analyticsUtils.ts`, `analyticsH
 | `src/components/graph/KnowledgeGraphView.tsx` | Graph view — Force-directed and Radial layouts only |
 | `src/components/graph/ForceGraphCanvas.tsx` | Force-directed canvas via `react-force-graph-2d` |
 | `src/components/graph/RadialTreeCanvas.tsx` | Radial hierarchy tree via D3 |
-| `src/components/graph/graphUtils.ts` | `resolveCssVar()` shared by graph canvases |
+| `src/components/graph/analyticsUtils.ts` | Shared constants + pure helpers: `PRIORITY_COLOR`, `PRIORITY_WEIGHT`, `PRIORITY_SORT_ORDER`, `resolveCssVar()`, `truncateName()`, `CANVAS_PAD` |
 | `src/components/agent/AgentView.tsx` | Three-pane layout — drag-resize dividers, Editor/Diff tab bar; always mounted (CSS-hidden when inactive) |
 | `src/components/agent/AgentTerminalPane.tsx` | Session tab strip; branches on `sessionType`: `"pi"` → `PiAgentPane`, `"pty"` → `SessionMount` (xterm.js) |
 | `src/components/agent/PiAgentPane.tsx` | Cairn native agent chat UI — IPC subscriptions, `sendPrompt`, `initialPrompt` effect, context ring |
@@ -415,11 +433,11 @@ Shared modules live in `src/components/graph/`: `analyticsUtils.ts`, `analyticsH
 | `src/components/agent/FileTree.tsx` | Lazy-expanding directory tree; direct `pickDirectory` → `updateProject` |
 | `src/components/agent/TerminalManager.ts` | Module-scope singleton — holds xterm Terminal + FitAddon per session |
 | `src/components/agent/SpawnAgentModal.tsx` | Spawn dialog — optional card, ad-hoc sessions, prompt editor |
-| `src/components/agent/editorTheme.ts` | Shared CM6 `buildTheme(fontScale)` + `buildHighlightStyle(isDark)` + `buildSearchTheme()` — search panel CSS overrides used by both editors |
+| `src/lib/editor-theme.ts` | Shared CM6 `buildTheme(fontScale)` + `buildHighlightStyle(isDark)` + `buildSearchTheme()` — search panel CSS overrides used by both the note editor and agent file editor |
 | `src/components/agent/ImageViewer.tsx` | Image renderer via base64 IPC (avoids `file://` CSP restriction) |
 | `src/components/insights/InsightsView.tsx` | Insights view — hosts all analytics canvases with shared toolbar |
 | `src/components/graph/analyticsUtils.ts` | Shared constants + pure helpers for analytics canvases |
-| `src/components/graph/analyticsHooks.ts` | `useContainerDims`, `useScopedData`, `useFontScale` |
+| `src/components/graph/analyticsHooks.ts` | `useContainerDims`, `useScopedData`, `useFontScale`, `useRelativePointer`, `useNow` |
 | `src/components/graph/AnalyticsShared.tsx` | `<CanvasEmptyState>`, `<CanvasTooltip>`, `<SvgTimeAxis>` |
 | `src/components/graph/RidgelineCanvas.tsx` | Ridgeline (joy plot) activity canvas |
 | `src/components/graph/BeeswarmCanvas.tsx` | Beeswarm time-axis canvas |
@@ -437,7 +455,7 @@ Shared modules live in `src/components/graph/`: `analyticsUtils.ts`, `analyticsH
 
 ### TypeScript
 
-- Run `npm run type-check` before every commit. PRs with type errors will not be merged.
+- Run `npm run type-check:all` before every commit. This checks both the renderer (`tsc --noEmit`) and the Electron main process (`tsc --noEmit -p tsconfig.electron.json`). PRs with type errors will not be merged.
 - Avoid `any` — use specific types or `unknown` with a type guard.
 - All IPC handlers return `IpcResult<T>` (`{ data: T } | { error: string }`). Check `isIpcError()` on the receiving end.
 
@@ -478,8 +496,8 @@ Use `React.memo` on list-item components (`KanbanCard`, `NoteListItem`, `Project
 ### IPC boundary
 
 - Renderer → main: use `ipc()` (fire-and-forget) or `ipcAwait()` (returns `IpcResult<T>`) from `src/store/ipc.ts`.
-- New IPC channels go in `electron/ipc/handlers.ts`, wrapped in the `handle()` helper.
-- `mcp-server.ts` uses **inlined SQL only** — do not import from `queries.ts` there.
+- New IPC channels go in the appropriate per-domain registrar in `electron/ipc/` (e.g. `db-handlers.ts` for `db:*`, `flow-handlers.ts` for `db:flow:*`, etc.), wrapped in the `handle()` helper from `result-helpers.ts`. `handlers.ts` is the orchestrator — add a `registerXxxHandlers(ctx)` call there if creating a new registrar.
+- `electron/db/queries.ts` is the **single source of truth for all SQL**. Both the Electron main process and the MCP server (`electron/mcp/tools/*`) import from it. The only ABI-sensitive operation is constructing the `Database` instance — that happens once in `electron/mcp-server.ts` (`new Database(dbPath, { nativeBinding: MCP_NATIVE_BINDING })`). Never construct a `Database` instance outside `electron/db/client.ts` (Electron) and `mcp-server.ts` (MCP runtime).
 - Use `import * as z from "zod"` (not `import { z }`) in all Electron/MCP files — esbuild quirk.
 - When calling `ipc()` or `ipcAwait()` for a note mutation, also call `markOwnNoteWrite(noteId)` from `src/store/ipc.ts` immediately before — this tells the WAL poller re-hydration path to preserve the in-memory optimistic state for that note rather than overwriting it from the DB snapshot.
 
@@ -526,7 +544,7 @@ The Agent workspace has its own IPC namespace (`agent:*`) entirely separate from
 - **PTY sessions** — spawned in `electron/ipc/agent.ts` via `node-pty`. `node-pty` must be `--external` in esbuild and rebuilt for the Electron ABI via `npm run rebuild`. PTY output streams to the renderer via `ipcMain.emit('agent:data', ...)`.
 - **File I/O security** — every `readFile`, `readDir`, `writeFile`, and `readFileBase64` call goes through `assertWithinCodeDirectory(db, path)` before touching the filesystem. This validates the path against all registered `code_directory` values in the `projects` table. Never skip this check when adding new file IPC handlers.
 - **Renderer terminal** — `TerminalManager` (module-scope singleton) holds `xterm.js` Terminal + FitAddon instances. Sessions survive view navigation because the singleton is never garbage-collected. Font size updates must set `terminal.options.fontSize` and call `fitAddon.fit()` via `requestAnimationFrame` (one frame needed for cell remeasure).
-- **CM6 editor** — one `EditorView` instance per open file, CSS-hidden when inactive. `buildTheme(fontScale)` in `editorTheme.ts` accepts `fontScale` so the editor respects the user's font size setting. CM6 `HighlightStyle.define` requires static colour strings — CSS variables cannot be used there (documented in `editorTheme.ts`). The editor includes a find/replace panel via `@codemirror/search` (`⌘F`); `buildSearchTheme()` must be appended **after** `buildTheme()` in the extensions array to override CM6's default `.cm-button`/`.cm-textfield` gradient styles with Cairn CSS variables.
+- **CM6 editor** — one `EditorView` instance per open file, CSS-hidden when inactive. `buildTheme(fontScale)` in `lib/editor-theme.ts` accepts `fontScale` so the editor respects the user's font size setting. CM6 `HighlightStyle.define` requires static colour strings — CSS variables cannot be used there (documented in `editor-theme.ts`). The editor includes a find/replace panel via `@codemirror/search` (`⌘F`); `buildSearchTheme()` must be appended **after** `buildTheme()` in the extensions array to override CM6's default `.cm-button`/`.cm-textfield` gradient styles with Cairn CSS variables.
 - **File search** — `agent:searchFiles` IPC (registered in `electron/ipc/agent.ts`) recursively walks the `code_directory` for filename matches, triggered by `⌘⇧F` in `FileTree.tsx` via a capture-phase listener that fires before the global `page.tsx` handler. Subject to the same `assertWithinCodeDirectory` security check as all file operations. Returns up to 50 results; skips `node_modules`, `.git`, `.next`, `dist*`, and similar build directories.
 - **`code_directory`** — stored on the `projects` table (migration v10). Set from the Project Overview inline row, not from AgentSettings. Written via the generic `db:project:update` IPC channel.
 
@@ -617,9 +635,8 @@ Launch with `mode: "plan"` to produce a PRD before writing code. Plan Mode restr
 1. Add the Zod schema to `electron/lib/tool-schemas.ts` — `TOOL_SCHEMAS`, and `CHAT_ONLY_TOOLS` if it should be agent/chat only
 2. Add a human-readable `TOOL_LABELS` entry in `electron/lib/tools.ts` (the `TOOLS` array is auto-derived from `TOOL_SCHEMAS`)
 3. Add the executor case to `electron/ipc/chat-executor.ts`
-4. Add the MCP executor case to `electron/mcp-server.ts` (inlined SQL — no `queries.ts` import)
+4. Add the MCP executor case to `electron/mcp/tools/` (the appropriate tool file: `notes.ts`, `tasks.ts`, `flow.ts`, etc. — delegate to `q.*` helpers from `db/queries.ts`)
 5. Add a corresponding query helper to `electron/db/queries.ts` if needed
-6. Update `electron/ipc/tool-parity.test.ts` to include the new tool name in the documented set
 
 > **Consolidation pattern:** prefer extending an existing tool over adding a new one. `update_task` handles archive/restore (`archived: true/false`) and block/unblock (`blockedBy`/`unblockFrom`) in addition to field updates. `upsert_project` handles both create (no `projectId`) and update (with `projectId`). Follow the same pattern to keep the tool surface small.
 
@@ -627,7 +644,7 @@ Launch with `mode: "plan"` to produce a PRD before writing code. Plan Mode restr
 
 1. Add a migration to `electron/db/schema.ts` (new entry in `MIGRATIONS`, increment `SCHEMA_VERSION`)
 2. Add typed query helpers to `electron/db/queries.ts`
-3. Add IPC handlers to `electron/ipc/handlers.ts`
+3. Add IPC handlers to the appropriate per-domain registrar in `electron/ipc/` (e.g. `db-handlers.ts` for `db:*`)
 4. Expose via `window.electron.*` in `electron/preload.ts`
 5. Add corresponding store slice actions in `src/store/slices/`
 
@@ -652,7 +669,6 @@ npm run test:coverage     # coverage report
 | `electron/mcp-server.test.ts` | All MCP tools end-to-end via in-memory SQLite — happy path, edge cases, conflict detection |
 | `electron/ipc/chat-executor.test.ts` | Every tool case in `executeTool` |
 | `electron/ipc/handlers.test.ts` | IPC data layer, `executeReadTool`, `buildContextResponse` |
-| `electron/ipc/tool-parity.test.ts` | Ensures chat and MCP tool response shapes stay in sync (including `version` field parity) |
 | `electron/lib/pi-agent-loop.test.ts` | Agent loop SSE streaming — 8 mock scenarios (real Node HTTP server) + 2 live integration tests |
 
 **Live integration tests** — copy `.env.test.example` (if present) to `.env.test` and set `TEST_LLM_BASE_URL` to run the two live agent loop tests against a real endpoint. The file is gitignored. Without it the live tests are automatically skipped.
@@ -670,7 +686,7 @@ vitest uses a SQLite shim (`vitest-sqlite-shim.cjs`) to ensure the system Node A
 
 1. **Fork** the repo and create a branch from `main`: `git checkout -b your-name/feature-description`
 2. **Make your changes** — follow the conventions above
-3. **Type-check**: `npm run type-check` — must pass with zero errors
+3. **Type-check**: `npm run type-check:all` — must pass with zero errors
 4. **Tests**: `npm test` — must pass
 5. **Commit** with a clear message describing *what* and *why*
 6. **Open a PR** against `main` with:
@@ -680,14 +696,14 @@ vitest uses a SQLite shim (`vitest-sqlite-shim.cjs`) to ensure the system Node A
 
 ### PR checklist
 
-- [ ] `npm run type-check` passes with zero errors
+- [ ] `npm run type-check:all` passes with zero errors
 - [ ] `npm test` passes
 - [ ] `npm run test:e2e` passes (required for UI changes or release PRs)
 - [ ] No raw colour values — CSS variables only (`var(--accent)`, `var(--text-primary)`, etc.)
 - [ ] No `text-[Npx]` pixel font classes — rem equivalents only (`text-[0.714rem]`, `text-xs`, etc.)
 - [ ] New IPC handlers wrapped in `handle()` and return `IpcResult<T>`
 - [ ] New DB migrations appended (not edited) in `schema.ts`
-- [ ] `mcp-server.ts` changes use inlined SQL only — no `import` from `queries.ts`
+- [ ] New SQL goes in `electron/db/queries.ts` — the single source of truth (imported by both Electron main process and MCP server)
 - [ ] Screenshots or recording included for any UI changes
 - [ ] `useCairnStore()` calls use narrow selectors (not full-store subscriptions)
 - [ ] If subscribing to store functions (e.g. `getColumnCards`) ensure raw data (e.g. `cards`) is also in the selector so mutations trigger re-renders

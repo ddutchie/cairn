@@ -16,7 +16,7 @@
 
 ## Checklist
 
-- [ ] `npm run type-check` passes
+- [ ] `npm run type-check:all` passes
 - [ ] `npm run lint` passes
 - [ ] `npm test` passes
 - [ ] `npm run test:e2e` passes (run before merging UI changes or cutting a release)
@@ -24,7 +24,7 @@
 - [ ] No `text-[Npx]` pixel font classes — rem equivalents only (`text-[0.714rem]`, `text-xs`, etc.)
 - [ ] New IPC handlers wrapped in `handle()` and return `IpcResult<T>`
 - [ ] New DB migrations appended (not edited) in `schema.ts`
-- [ ] `mcp-server.ts` changes use inlined SQL only — no import from `queries.ts`
+- [ ] New SQL goes in `electron/db/queries.ts` — single source of truth (imported by both Electron main process and MCP server); never construct a `Database` instance outside `db/client.ts` (Electron) or `mcp-server.ts` (MCP runtime)
 
 ## Notes for reviewer
 
