@@ -6,8 +6,8 @@ export function countWords(md: string): number {
     .replace(/`[^`]*`/g, "")
     .replace(/^#{1,6}\s+/gm, "")
     .replace(/[*_~]/g, "")
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
     .replace(/!\[[^\]]*\]\([^)]+\)/g, "")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
     .replace(/https?:\/\/\S+/g, "")
     .trim();
   if (!text) return 0;

@@ -51,7 +51,7 @@ export function AgentEmptyState() {
               key={summary.id}
               onClick={() => handleResumeSession(summary)}
               className={cn(
-                "w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left transition-colors",
+                "group w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left transition-colors",
                 "hover:bg-[var(--surface-2)] border border-transparent hover:border-[var(--border)]",
                 summary.id === persistentPiSessionId && "bg-[var(--surface-2)] border-[var(--border)]",
               )}

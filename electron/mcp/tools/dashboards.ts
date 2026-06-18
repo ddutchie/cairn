@@ -29,7 +29,7 @@ export function update_dashboard(db: Database.Database, snap: Snapshot, args: Re
   const patch: Parameters<typeof q.updateNote>[2] = {};
   if (title !== undefined) patch.title = title;
   if (html !== undefined) { patch.content = html; patch.contentText = ""; }
-  q.updateNote(db, noteId as string, patch);
+  const updatedNote = q.updateNote(db, noteId as string, patch);
   insertNotification(db, "update_dashboard", "Dashboard updated", `"${title ?? note.title}" was updated`);
-  return { id: noteId, title: (title as string) ?? note.title, updatedAt: note.updatedAt };
+  return { id: noteId, title: updatedNote.title, updatedAt: updatedNote.updatedAt };
 }

@@ -41,6 +41,7 @@ export function MDPreviewPanel({ text, onDismiss }: MDPreviewPanelProps) {
         <span className="text-[0.714rem] font-medium text-[var(--text-tertiary)] uppercase tracking-wide">Preview</span>
         <button
           onClick={onDismiss}
+          aria-label="Close preview"
           className="p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface)] transition-colors"
         >
           <X size={11} />

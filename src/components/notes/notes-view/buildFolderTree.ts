@@ -18,7 +18,8 @@ export function buildFolderTree(notes: Note[]): { rootNotes: Note[]; folders: Fo
       rootNotes.push(note);
       continue;
     }
-    const segments = folder.split("/").filter(Boolean);
+    const normalizedFolder = folder.split("/").filter(Boolean).join("/");
+    const segments = normalizedFolder.split("/");
     let built = "";
     for (const seg of segments) {
       built = built ? `${built}/${seg}` : seg;
@@ -26,7 +27,7 @@ export function buildFolderTree(notes: Note[]): { rootNotes: Note[]; folders: Fo
         folderMap.set(built, { name: seg, path: built, notes: [], children: [] });
       }
     }
-    folderMap.get(folder)!.notes.push(note);
+    folderMap.get(normalizedFolder)!.notes.push(note);
   }
 
   for (const node of folderMap.values()) {

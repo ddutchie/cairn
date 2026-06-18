@@ -38,7 +38,7 @@ export const NoteListItem = memo(function NoteListItem({ note, isActive, indent 
         </span>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button onClick={(e) => e.stopPropagation()}
+            <button aria-label="Note actions" onClick={(e) => e.stopPropagation()}
               className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-all">
               <MoreHorizontal size={11} />
             </button>

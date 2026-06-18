@@ -111,13 +111,8 @@ export function FolderPickerDialog({ folderTree, mode, currentFolder = "", onSel
                 depth={0}
                 mode={mode}
                 addingUnder={addingUnder}
-                newFolderName={newFolderName}
-                newInputRef={newInputRef}
                 onSelect={onSelect}
                 onOpenAdd={openAdd}
-                onNameChange={setNewFolderName}
-                onCreate={handleCreate}
-                onCancel={cancelAdd}
                 inlineInput={inlineInput}
               />
             ))}
@@ -140,13 +135,8 @@ interface FolderPickerNodeProps {
   depth: number;
   mode: "move" | "create";
   addingUnder: string | null;
-  newFolderName: string;
-  newInputRef: React.RefObject<HTMLInputElement | null>;
   onSelect: (folder: string) => void;
   onOpenAdd: (parentPath: string, e: React.MouseEvent) => void;
-  onNameChange: (v: string) => void;
-  onCreate: () => void;
-  onCancel: () => void;
   inlineInput: React.ReactNode;
 }
 
@@ -206,13 +196,8 @@ function FolderPickerNode({
           depth={depth + 1}
           mode={mode}
           addingUnder={addingUnder}
-          newFolderName=""
-          newInputRef={{ current: null }}
           onSelect={onSelect}
           onOpenAdd={onOpenAdd}
-          onNameChange={() => {}}
-          onCreate={() => {}}
-          onCancel={() => {}}
           inlineInput={inlineInput}
         />
       ))}

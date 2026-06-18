@@ -54,6 +54,8 @@ export function DatePicker({ value, onChange, placeholder = "Pick a date", class
     const rect = triggerRef.current?.getBoundingClientRect();
     if (rect) {
       const popoverW = 260; // approximate DayPicker width
+      const popoverH = 340; // approximate DayPicker height
+      const gap = 4;
       // Default: left edge of popover = trigger's left edge
       let left = rect.left;
       // Clamp: if popover would overflow right viewport edge, shift left
@@ -62,7 +64,15 @@ export function DatePicker({ value, onChange, placeholder = "Pick a date", class
       }
       // Clamp: never go past left viewport edge
       if (left < 8) left = 8;
-      setPopoverPos({ top: rect.bottom + 4, left });
+      // Default: open below trigger
+      let top = rect.bottom + gap;
+      // If there is not enough room below, open above the trigger
+      if (top + popoverH > window.innerHeight - 8) {
+        top = rect.top - popoverH - gap;
+      }
+      // Clamp: never extend above the viewport top
+      if (top < 8) top = 8;
+      setPopoverPos({ top, left });
     }
     setOpen((o) => !o);
   }

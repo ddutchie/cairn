@@ -63,13 +63,13 @@ export function AgentSessionTab({ isActive, onActivate }: AgentSessionTabProps) 
   }
 
   return (
-    <div className="relative flex-shrink-0 h-full" ref={dropdownRef}>
+    <div className="relative flex-shrink-0 h-full flex items-center border-r border-[var(--border)]" ref={dropdownRef}>
       <button
         onClick={onActivate}
         role="tab"
         aria-selected={isActive}
         className={cn(
-          "flex items-center gap-1.5 px-3 h-full text-xs font-semibold whitespace-nowrap border-r border-[var(--border)] transition-colors flex-shrink-0",
+          "flex items-center gap-1.5 px-3 h-full text-xs font-semibold whitespace-nowrap transition-colors flex-shrink-0",
           isActive
             ? "text-[var(--text-primary)] bg-[var(--background)]"
             : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"
@@ -77,17 +77,16 @@ export function AgentSessionTab({ isActive, onActivate }: AgentSessionTabProps) 
       >
         <MessageSquare size={11} className={cn("flex-shrink-0", isActive ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]")} />
         <span className="max-w-[100px] truncate">Cairn Agent</span>
-        <span
-          role="button"
-          aria-label="Session history"
-          onClick={(e) => { e.stopPropagation(); setDropdownOpen((v) => !v); }}
-          className={cn(
-            "ml-0.5 p-0.5 rounded transition-colors hover:bg-[var(--surface-2)]",
-            dropdownOpen ? "text-[var(--text-primary)]" : "text-[var(--text-tertiary)]"
-          )}
-        >
-          <ChevronDown size={10} />
-        </span>
+      </button>
+      <button
+        aria-label="Session history"
+        onClick={() => setDropdownOpen((v) => !v)}
+        className={cn(
+          "flex items-center justify-center h-full px-1.5 text-xs transition-colors hover:bg-[var(--surface-2)] border-l border-[var(--border)]",
+          dropdownOpen ? "text-[var(--text-primary)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
+        )}
+      >
+        <ChevronDown size={10} />
       </button>
 
       {dropdownOpen && (
@@ -103,15 +102,17 @@ export function AgentSessionTab({ isActive, onActivate }: AgentSessionTabProps) 
               <p className="px-3 py-3 text-[0.714rem] text-[var(--text-tertiary)] text-center">No saved sessions</p>
             ) : (
               piSessionHistory.map((summary) => (
-                <button
+                <div
                   key={summary.id}
-                  onClick={() => handleResumeSession(summary)}
                   className={cn(
-                    "w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-[var(--surface-2)] transition-colors group",
+                    "flex items-center gap-2 px-3 py-2 text-left hover:bg-[var(--surface-2)] transition-colors group",
                     summary.id === persistentPiSessionId && "bg-[var(--surface-2)]"
                   )}
                 >
-                  <div className="flex-1 min-w-0">
+                  <button
+                    onClick={() => handleResumeSession(summary)}
+                    className="flex-1 min-w-0 text-left"
+                  >
                     <p className="text-[0.714rem] text-[var(--text-primary)] truncate">{summary.taskTitle}</p>
                     <div className="flex items-center gap-1.5 mt-0.5">
                       <span className={cn(
@@ -127,16 +128,15 @@ export function AgentSessionTab({ isActive, onActivate }: AgentSessionTabProps) 
                         <span className="text-[0.607rem] text-[var(--text-tertiary)]">· exited</span>
                       )}
                     </div>
-                  </div>
-                  <span
-                    role="button"
+                  </button>
+                  <button
                     aria-label="Delete session"
                     onClick={(e) => handleDeleteSession(e, summary.id)}
                     className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] transition-all flex-shrink-0"
                   >
                     <Trash2 size={10} />
-                  </span>
-                </button>
+                  </button>
+                </div>
               ))
             )}
           </div>

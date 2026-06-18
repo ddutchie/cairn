@@ -14,14 +14,14 @@ export function ArchivedNoteListItem({ note, onRestore, onDelete }: { note: Note
     <div className="group flex items-center gap-1.5 px-3 py-2">
       <span className="flex-1 text-[0.786rem] text-[var(--text-tertiary)] truncate">{note.title}</span>
       <Tooltip content="Restore note">
-        <button onClick={(e) => { e.stopPropagation(); onRestore(); }}
+        <button aria-label="Restore note" onClick={(e) => { e.stopPropagation(); onRestore(); }}
           className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--accent-dim)] transition-all">
           <ArchiveRestore size={11} />
         </button>
       </Tooltip>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button onClick={(e) => e.stopPropagation()}
+          <button aria-label="More options" onClick={(e) => e.stopPropagation()}
             className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-all">
             <MoreHorizontal size={11} />
           </button>

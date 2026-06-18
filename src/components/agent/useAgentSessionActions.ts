@@ -46,7 +46,9 @@ export function useAgentSessionActions() {
       spawnedAt: now,
       updatedAt: now,
     };
-    try { await window.electron?.piAgent.createSession(summary); } catch { /* ok */ }
+    try { await window.electron?.piAgent.createSession(summary); } catch (e) {
+      console.debug("[useAgentSessionActions] createSession failed:", e);
+    }
     addTerminalSession({
       sessionId, taskId: sessionId, taskTitle: "Ad-hoc session",
       agentId: "cairn-agent", agentName: "Cairn Agent",

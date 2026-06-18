@@ -98,6 +98,7 @@ cairn/
 │   ├── file-watcher.ts     # chokidar watcher → SQLite sync on external .md edits
 │   ├── workspace-config.ts # Read/write workspace-config.json
 │   ├── db/
+│   │   ├── client.ts       # ABI-isolated better-sqlite3 bootstrap
 │   │   ├── schema.ts       # SQLite DDL + versioned migration runner
 │   │   ├── queries.ts      # All typed SQLite query helpers
 │   │   ├── graph-queries.ts# Knowledge Graph relationship queries
