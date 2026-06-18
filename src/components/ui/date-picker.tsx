@@ -16,7 +16,9 @@ interface DatePickerProps {
 
 export function DatePicker({ value, onChange, placeholder = "Pick a date", className }: DatePickerProps) {
   const [open, setOpen] = useState(false);
+  const [popoverPos, setPopoverPos] = useState({ top: 0, left: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   const selected = value ? parse(value, "yyyy-MM-dd", new Date()) : undefined;
   const isValidDate = selected && isValid(selected);
@@ -47,8 +49,19 @@ export function DatePicker({ value, onChange, placeholder = "Pick a date", class
     <div ref={containerRef} className={cn("relative", className)}>
       {/* Trigger button */}
       <button
+        ref={triggerRef}
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          const rect = triggerRef.current?.getBoundingClientRect();
+          if (rect) {
+            // Position the popover just below the trigger, left-aligned.
+            // Clamp to viewport so it doesn't overflow the right edge.
+            const popoverW = 260; // approximate DayPicker width
+            const left = Math.min(rect.left, window.innerWidth - popoverW - 8);
+            setPopoverPos({ top: rect.bottom + 4, left: Math.max(8, left) });
+          }
+          setOpen((o) => !o);
+        }}
         className={cn(
           "w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-xs border transition-colors text-left",
           "bg-[var(--surface-2)] border-[var(--border)]",
@@ -71,9 +84,16 @@ export function DatePicker({ value, onChange, placeholder = "Pick a date", class
         )}
       </button>
 
-      {/* Popover */}
+      {/* Popover — fixed positioning so it escapes overflow-clipped containers
+          (e.g. the card-detail modal sidebar with overflow-y-auto) */}
       {open && (
-        <div className="absolute z-50 mt-1 left-0 rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl p-2">
+        <div
+          className="fixed z-[60] rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl p-2"
+          style={{
+            top: popoverPos.top,
+            left: popoverPos.left,
+          }}
+        >
           <DayPicker
             mode="single"
             selected={isValidDate ? selected : undefined}
