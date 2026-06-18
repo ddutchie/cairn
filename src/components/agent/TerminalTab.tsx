@@ -40,7 +40,7 @@ export function TerminalTab({ session, isActive, onActivate, onClose }: Terminal
             className={cn(
               "flex-shrink-0",
               session.status === "running"
-                ? "text-[var(--success,#22c55e)]"
+                ? "text-[var(--success)]"
                 : "text-[var(--text-tertiary)]"
             )}
           />
