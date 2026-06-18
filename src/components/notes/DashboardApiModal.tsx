@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import { HelpCircle, Copy, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ModalShell } from "@/components/ui/modal-shell";
 
 interface ApiEntry {
   signature: string;
@@ -99,65 +99,52 @@ interface Props {
 
 export function DashboardApiModal({ onClose }: Props) {
   return (
-    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent
-        size="lg"
-        aria-describedby="api-desc"
-        className="max-h-[80vh] flex flex-col overflow-hidden p-0 gap-0 border-[var(--border)] bg-[var(--surface)]"
-      >
-        {/* Header */}
-        <DialogHeader className="flex flex-row items-center justify-start gap-2 px-5 py-3.5 border-b border-[var(--border)] flex-shrink-0">
+    <ModalShell
+      onClose={onClose}
+      size="lg"
+      scrollable
+      title={
+        <>
           <HelpCircle size={13} className="text-[var(--text-tertiary)]" />
-          <DialogTitle className="text-sm font-semibold text-[var(--text-primary)]">
-            window.cairn API
-          </DialogTitle>
-          <span className="text-[0.786rem] text-[var(--text-tertiary)] ml-1">
-            available inside every dashboard
-          </span>
-        </DialogHeader>
-
-        {/* Description helper for accessibility */}
-        <div id="api-desc" className="sr-only">
-          API documentation for window.cairn, available inside every dashboard.
-        </div>
-
-        {/* Entries */}
-        <div className="overflow-y-auto flex-1 divide-y divide-[var(--border)]">
-          {API_ENTRIES.map((entry) => (
-            <div key={entry.signature} className="px-5 py-3.5 group">
-              <div className="flex items-start justify-between gap-3">
-                <code className="text-[0.857rem] font-mono text-[var(--accent)] leading-snug flex-1">
-                  {entry.signature}
-                </code>
-                <CopyButton text={entry.signature} />
-              </div>
-              <p className="text-[0.857rem] text-[var(--text-secondary)] mt-1 leading-relaxed">
-                {entry.description}
-              </p>
-              <p className="text-[0.786rem] text-[var(--text-tertiary)] mt-1 font-mono">
-                → {entry.returns}
-              </p>
+          <span className="text-sm font-semibold text-[var(--text-primary)]">window.cairn API</span>
+          <span className="text-[0.786rem] text-[var(--text-tertiary)] ml-1">available inside every dashboard</span>
+        </>
+      }
+      description="API documentation for window.cairn, available inside every dashboard."
+    >
+      <div className="divide-y divide-[var(--border)]">
+        {API_ENTRIES.map((entry) => (
+          <div key={entry.signature} className="px-5 py-3.5 group">
+            <div className="flex items-start justify-between gap-3">
+              <code className="text-[0.857rem] font-mono text-[var(--accent)] leading-snug flex-1">
+                {entry.signature}
+              </code>
+              <CopyButton text={entry.signature} />
             </div>
-          ))}
-
-          {/* Theme vars note */}
-          <div className="px-5 py-3.5 bg-[var(--surface-2)]">
-            <p className="text-[0.786rem] text-[var(--text-tertiary)] leading-relaxed">
-              <span className="font-semibold text-[var(--text-secondary)]">CSS variables</span>
-              {" "}— all Cairn design tokens are available on{" "}
-              <code className="font-mono text-[var(--accent)]">:root</code> inside the dashboard:{" "}
-              <code className="font-mono">var(--background)</code>,{" "}
-              <code className="font-mono">var(--accent)</code>,{" "}
-              <code className="font-mono">var(--text-primary)</code>,{" "}
-              <code className="font-mono">var(--surface)</code>,{" "}
-              <code className="font-mono">var(--border)</code>, and more.
-              The <code className="font-mono">data-theme</code> attribute on{" "}
-              <code className="font-mono">&lt;html&gt;</code> reflects the active theme
-              so <code className="font-mono">[data-theme=&quot;light&quot;]</code> overrides work.
+            <p className="text-[0.857rem] text-[var(--text-secondary)] mt-1 leading-relaxed">
+              {entry.description}
+            </p>
+            <p className="text-[0.786rem] text-[var(--text-tertiary)] mt-1 font-mono">
+              → {entry.returns}
             </p>
           </div>
+        ))}
+        <div className="px-5 py-3.5 bg-[var(--surface-2)]">
+          <p className="text-[0.786rem] text-[var(--text-tertiary)] leading-relaxed">
+            <span className="font-semibold text-[var(--text-secondary)]">CSS variables</span>
+            {" "}— all Cairn design tokens are available on{" "}
+            <code className="font-mono text-[var(--accent)]">:root</code> inside the dashboard:{" "}
+            <code className="font-mono">var(--background)</code>,{" "}
+            <code className="font-mono">var(--accent)</code>,{" "}
+            <code className="font-mono">var(--text-primary)</code>,{" "}
+            <code className="font-mono">var(--surface)</code>,{" "}
+            <code className="font-mono">var(--border)</code>, and more.
+            The <code className="font-mono">data-theme</code> attribute on{" "}
+            <code className="font-mono">&lt;html&gt;</code> reflects the active theme
+            so <code className="font-mono">[data-theme=&quot;light&quot;]</code> overrides work.
+          </p>
         </div>
-      </DialogContent>
-    </Dialog>
+      </div>
+    </ModalShell>
   );
 }

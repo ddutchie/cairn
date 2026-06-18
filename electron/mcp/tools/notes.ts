@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import Database from "better-sqlite3";
-import { newId, ts } from "../../db/utils";
+import * as q from "../../db/queries";
+import { newId } from "../../db/utils";
 import { stripMarkdown } from "../../shared/text-utils";
 import { executeSearchNotes } from "../../shared/read-tools-pure";
 import {
@@ -11,7 +12,6 @@ import {
   getNoteVersion,
   writeNoteFile,
   deleteNoteFile,
-  j,
   resolveTagNames
 } from "../db";
 
@@ -22,7 +22,7 @@ export function get_note(db: Database.Database, snap: Snapshot, args: Record<str
     id: note.id, title: note.title, content: note.content,
     projectId: note.projectId, isPinned: note.isPinned,
     linkedNoteIds: note.linkedNoteIds, linkedCardIds: note.linkedCardIds,
-    updatedAt: note.updatedAt, version: (note as any).version ?? 0,
+    updatedAt: note.updatedAt, version: getNoteVersion(db, note.id) ?? 0,
   };
 }
 
@@ -39,9 +39,8 @@ export function ensure_note(db: Database.Database, snap: Snapshot, workspacePath
   const existing = snap.notes.find(
     (n) => !n.archivedAt && n.projectId === projectId && n.title === title
   );
-  const now = ts();
   const markdown = (content as string | undefined) ?? "";
-  
+
   const resolvedFromNameIds = resolveTagNames(db, project.workspaceId, tagNames);
   let ensureResolvedTagIds = Array.isArray(ensureTagIds) ? ensureTagIds as string[] : undefined;
   if (resolvedFromNameIds.length > 0) {
@@ -53,13 +52,15 @@ export function ensure_note(db: Database.Database, snap: Snapshot, workspacePath
   lockNote(db, ensureNoteId);
   try {
     if (existing) {
-      const tagIdsJson = ensureResolvedTagIds ? j(ensureResolvedTagIds) : null;
-      const pinnedVal = ensureResolvedIsPinned !== undefined ? (ensureResolvedIsPinned ? 1 : 0) : null;
-      const folderVal = ensureFolder !== undefined ? ensureFolder : null;
       const updatedFolder = ensureFolder ?? (existing.folder as string) ?? "";
       db.transaction(() => {
-        db.prepare(`UPDATE notes SET content = ?, content_text = ?, tag_ids = COALESCE(?, tag_ids), is_pinned = COALESCE(?, is_pinned), folder = COALESCE(?, folder), updated_at = ?, version = version + 1 WHERE id = ?`)
-          .run(markdown, stripMarkdown(markdown), tagIdsJson, pinnedVal, folderVal, now, existing.id);
+        q.updateNote(db, existing.id, {
+          content: markdown,
+          contentText: stripMarkdown(markdown),
+          ...(ensureResolvedTagIds ? { tagIds: ensureResolvedTagIds } : {}),
+          ...(ensureResolvedIsPinned !== undefined ? { isPinned: ensureResolvedIsPinned } : {}),
+          ...(ensureFolder !== undefined ? { folder: ensureFolder } : {}),
+        });
         insertNotification(db, "update_note", "Note updated", `"${title}" was updated (ensure_note)`);
       })();
       writeNoteFile(workspacePath, {
@@ -68,29 +69,37 @@ export function ensure_note(db: Database.Database, snap: Snapshot, workspacePath
         tagIds: ensureResolvedTagIds ?? existing.tagIds as string[], linkedNoteIds: existing.linkedNoteIds as string[],
         linkedCardIds: existing.linkedCardIds as string[], isPinned: ensureResolvedIsPinned ?? existing.isPinned as boolean,
         folder: updatedFolder,
-        createdAt: existing.createdAt as string, updatedAt: now,
+        createdAt: existing.createdAt as string, updatedAt: new Date().toISOString(),
         archivedAt: existing.archivedAt as string | undefined,
         projectName: project.name,
       });
-      return { id: existing.id, title, action: "updated", updatedAt: now };
+      return { id: existing.id, title, action: "updated", updatedAt: new Date().toISOString() };
     } else {
       const newTagIds = ensureResolvedTagIds ?? [];
       const newIsPinned = ensureResolvedIsPinned ?? false;
       const newFolder = ensureFolder ?? "";
-      db.transaction(() => {
-        db.prepare(`
-          INSERT INTO notes (id, project_id, workspace_id, title, content, content_text,
-            tag_ids, linked_note_ids, linked_card_ids, is_pinned, type, folder, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, '[]', '[]', ?, 'note', ?, ?, ?)
-        `).run(ensureNoteId, projectId, project.workspaceId, title, markdown, stripMarkdown(markdown), j(newTagIds), newIsPinned ? 1 : 0, newFolder, now, now);
+      const note = db.transaction(() => {
+        const n = q.createNote(db, {
+          id: ensureNoteId,
+          projectId: projectId as string,
+          workspaceId: project.workspaceId as string,
+          title: title as string,
+          content: markdown,
+          contentText: stripMarkdown(markdown),
+          tagIds: newTagIds,
+          isPinned: newIsPinned,
+          folder: newFolder,
+          type: "note",
+        });
         insertNotification(db, "create_note", "Note created", `"${title}" added to ${project.name}${newFolder ? ` (${newFolder})` : ""} (ensure_note)`);
+        return n;
       })();
       writeNoteFile(workspacePath, {
         id: ensureNoteId, projectId, workspaceId: project.workspaceId, title, content: markdown,
         tagIds: newTagIds, linkedNoteIds: [], linkedCardIds: [], isPinned: newIsPinned,
-        folder: newFolder, createdAt: now, updatedAt: now, projectName: project.name,
+        folder: newFolder, createdAt: note.createdAt, updatedAt: note.updatedAt, projectName: project.name,
       });
-      return { id: ensureNoteId, title, folder: newFolder, action: "created", createdAt: now };
+      return { id: ensureNoteId, title, folder: newFolder, action: "created", createdAt: note.createdAt };
     }
   } finally {
     unlockNote(db, ensureNoteId);
@@ -107,7 +116,6 @@ export function append_to_note(db: Database.Database, snap: Snapshot, workspaceP
       return { error: `Version conflict: note has been modified (expected v${appendExpectedVersion as number}, got v${currentVersion}). Fetch the latest content before retrying.` };
     }
   }
-  const now = ts();
   const existingContent = (note.content as string) ?? "";
   const newContent = existingContent
     ? existingContent + (separator as string) + (appendContent as string)
@@ -115,21 +123,24 @@ export function append_to_note(db: Database.Database, snap: Snapshot, workspaceP
   lockNote(db, noteId as string);
   try {
     const proj = snap.projects.find((p) => p.id === note.projectId);
-    db.transaction(() => {
-      db.prepare(`UPDATE notes SET content = ?, content_text = ?, updated_at = ?, version = version + 1 WHERE id = ?`)
-        .run(newContent, stripMarkdown(newContent), now, noteId);
+    const updated = db.transaction(() => {
+      q.updateNote(db, noteId as string, {
+        content: newContent,
+        contentText: stripMarkdown(newContent),
+      });
       insertNotification(db, "update_note", "Note updated", `Content appended to "${note.title}"`);
+      return q.getNoteById(db, noteId as string);
     })();
     writeNoteFile(workspacePath, {
-      id: noteId, projectId: note.projectId as string, workspaceId: note.workspaceId as string,
+      id: noteId as string, projectId: note.projectId as string, workspaceId: note.workspaceId as string,
       title: note.title as string, content: newContent,
       tagIds: note.tagIds as string[], linkedNoteIds: note.linkedNoteIds as string[],
       linkedCardIds: note.linkedCardIds as string[], isPinned: note.isPinned as boolean,
-      createdAt: note.createdAt as string, updatedAt: now,
+      createdAt: note.createdAt as string, updatedAt: updated?.updatedAt ?? new Date().toISOString(),
       archivedAt: note.archivedAt as string | undefined,
       projectName: proj?.name ?? note.projectId as string,
     });
-    return { id: noteId, title: note.title, updatedAt: now, newLength: newContent.length };
+    return { id: noteId, title: note.title, updatedAt: updated?.updatedAt, newLength: newContent.length };
   } finally {
     unlockNote(db, noteId as string);
   }
@@ -151,26 +162,28 @@ export function patch_note(db: Database.Database, snap: Snapshot, workspacePath:
   const count = existing.split(oldString).length - 1;
   if (count === 0) return { error: "oldString not found in note content" };
   if (count > 1 && !all) return { error: `oldString matches ${count} times — set replaceAll: true to replace all, or provide more surrounding context to make it unique` };
-  const now = ts();
   const newContent = all ? existing.split(oldString).join(replacement) : existing.replace(oldString, replacement);
   lockNote(db, noteId);
   try {
     const proj = snap.projects.find((p) => p.id === note.projectId);
-    db.transaction(() => {
-      db.prepare(`UPDATE notes SET content = ?, content_text = ?, updated_at = ?, version = version + 1 WHERE id = ?`)
-        .run(newContent, stripMarkdown(newContent), now, noteId);
+    const updated = db.transaction(() => {
+      q.updateNote(db, noteId, {
+        content: newContent,
+        contentText: stripMarkdown(newContent),
+      });
       insertNotification(db, "update_note", "Note updated", `Patch applied to "${note.title}"`);
+      return q.getNoteById(db, noteId);
     })();
     writeNoteFile(workspacePath, {
       id: noteId, projectId: note.projectId as string, workspaceId: note.workspaceId as string,
       title: note.title as string, content: newContent,
       tagIds: note.tagIds as string[], linkedNoteIds: note.linkedNoteIds as string[],
       linkedCardIds: note.linkedCardIds as string[], isPinned: note.isPinned as boolean,
-      createdAt: note.createdAt as string, updatedAt: now,
+      createdAt: note.createdAt as string, updatedAt: updated?.updatedAt ?? new Date().toISOString(),
       archivedAt: note.archivedAt as string | undefined,
       projectName: proj?.name ?? note.projectId as string,
     });
-    return { id: noteId, title: note.title, updatedAt: now, replacements: all ? count : 1 };
+    return { id: noteId, title: note.title, updatedAt: updated?.updatedAt, replacements: all ? count : 1 };
   } finally {
     unlockNote(db, noteId);
   }
@@ -180,7 +193,7 @@ export function delete_note(db: Database.Database, snap: Snapshot, workspacePath
   const note = snap.notes.find((n) => n.id === args.noteId);
   if (!note) return { error: "Note not found" };
   const delProj = snap.projects.find((pr) => pr.id === note.projectId);
-  db.prepare("DELETE FROM notes WHERE id = ?").run(args.noteId);
+  q.deleteNote(db, args.noteId as string);
   deleteNoteFile(workspacePath, delProj?.name ?? note.projectId as string, args.noteId as string);
   insertNotification(db, "delete_note", "Note deleted", `"${note.title}" was deleted`);
   return { deleted: true, id: args.noteId, title: note.title };

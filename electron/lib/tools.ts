@@ -7,6 +7,7 @@
 
 import * as z from "zod";
 import { TOOL_SCHEMAS, CHAT_ONLY_TOOLS, AGENT_EXCLUDED_TOOLS } from "./tool-schemas";
+import type { ToolName } from "./tool-schemas";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type ToolArgs = Record<string, any>;

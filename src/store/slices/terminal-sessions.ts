@@ -7,89 +7,21 @@
  * keyed by sessionId.
  */
 
-import type { StateCreator } from "zustand";
+import { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
 
-import type { TokenBreakdown } from "../../types";
+import type {
+  TokenBreakdown,
+  PiAgentMessage,
+  PiSubagentMessage,
+  TerminalSession,
+  PiSessionSummary,
+} from "../../types";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// Re-export for backwards compatibility (consumers may import from either location).
+export type { PiAgentMessage, PiSubagentMessage, TerminalSession, PiSessionSummary };
 
-export interface PiSubagentMessage {
-  /** Unique child session ID */
-  childSessionId: string;
-  /** Messages streamed by the subagent */
-  messages: PiAgentMessage[];
-  /** Whether the subagent is still running */
-  running: boolean;
-  /** Final result returned to the parent */
-  result?: string;
-  /** Latest token usage from the subagent's LLM steps */
-  lastUsage?: { promptTokens: number; completionTokens: number; breakdown?: TokenBreakdown };
-}
-
-export interface PiAgentMessage {
-  id: string;
-  role: "user" | "assistant" | "error" | "system";
-  content: string;
-  /** Tool calls that occurred before or during this assistant message */
-  toolCalls?: {
-    /** Unique key to allow in-place updates (tool name + start timestamp) */
-    callId: string;
-    name: string;
-    label: string;
-    /** true while the tool is executing, false once done */
-    running: boolean;
-    ok: boolean;
-    output?: string;
-    /** Parsed reference for Cairn write tools — renders a linked bubble instead of raw output */
-    cairnRef?: { type: "note" | "task"; id: string; title: string };
-    /** Whether the tool is paused waiting for user confirmation */
-    confirmRequired?: boolean;
-  }[];
-  /** Subagents spawned during this message */
-  subagents?: PiSubagentMessage[];
-  isStreaming?: boolean;
-  timestamp: string;
-}
-
-export interface TerminalSession {
-  sessionId: string;
-  taskId: string;
-  taskTitle: string;
-  agentId: string;
-  agentName: string;
-  projectId: string;
-  cwd?: string;
-  status: "running" | "exited";
-  exitCode: number | null;
-  spawnedAt: string; // ISO string (JSON-safe)
-  /** "pty" = external PTY agent (xterm); "pi" = Cairn native agent (chat UI) */
-  sessionType: "pty" | "pi";
-  /** Message history for pi sessions — not used by pty sessions */
-  piMessages?: PiAgentMessage[];
-  /** Prompt to send automatically when AgentChatPane first mounts */
-  initialPrompt?: string;
-  /** Latest token usage from the LLM — updated after each step */
-  lastUsage?: { promptTokens: number; completionTokens: number; breakdown?: TokenBreakdown };
-  /** Plan mode: "plan" = conversational planning only; "execute" = full agent (default) */
-  mode?: "plan" | "execute";
-  /** Note ID of the PRD produced during plan mode — set once agent calls ensure_note */
-  planNoteId?: string;
-}
-
-/** Summary of a persisted pi agent session — loaded from SQLite for the history dropdown */
-export interface PiSessionSummary {
-  id: string;
-  projectId: string;
-  taskTitle: string;
-  taskId: string | null;
-  cwd: string;
-  mode: "plan" | "execute";
-  planNoteId: string | null;
-  status: "running" | "exited";
-  spawnedAt: string;
-  updatedAt: string;
-}
+// ── Slice ────────────────────────────────────────────────────────────────────
 
 export interface TerminalSessionsSlice {
   terminalSessions: TerminalSession[];

@@ -7,6 +7,7 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import type { GraphNode, GraphNodeType } from "@/types";
 import { nodeTypeColor } from "@/store/slices/graph";
+import { PRIORITY_COLOR, PRIORITY_SORT_ORDER } from "./analyticsUtils";
 
 interface Props {
   nodes: GraphNode[];
@@ -21,7 +22,6 @@ type SortKey = "title" | "type" | "project" | "priority" | "updatedAt";
 type SortDir = "asc" | "desc";
 
 const TYPE_ORDER: GraphNodeType[] = ["project", "note", "card", "tag"];
-const PRIORITY_ORDER: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
 
 export function TableCanvas({ nodes, onNodeClick, selectedNodeId, search, typeFilter }: Props) {
   const { projects, notes, cards, tags } = useCairnStore(useShallow((s) => ({ projects: s.projects, notes: s.notes, cards: s.cards, tags: s.tags })));
@@ -87,7 +87,7 @@ export function TableCanvas({ nodes, onNodeClick, selectedNodeId, search, typeFi
         case "title":    return dir * a.node.title.localeCompare(b.node.title);
         case "type":     return dir * (TYPE_ORDER.indexOf(a.node.type) - TYPE_ORDER.indexOf(b.node.type));
         case "project":  return dir * projectName(a.node.projectId).localeCompare(projectName(b.node.projectId));
-        case "priority": return dir * ((PRIORITY_ORDER[a.priority] ?? 4) - (PRIORITY_ORDER[b.priority] ?? 4));
+        case "priority": return dir * ((PRIORITY_SORT_ORDER[a.priority] ?? 4) - (PRIORITY_SORT_ORDER[b.priority] ?? 4));
         case "updatedAt": return dir * a.updatedAt.localeCompare(b.updatedAt);
         default:         return 0;
       }
@@ -206,10 +206,7 @@ export function TableCanvas({ nodes, onNodeClick, selectedNodeId, search, typeFi
                       <span
                         className="inline-flex items-center gap-1 text-[0.714rem] capitalize"
                         style={{
-                          color: priority === "urgent" ? "var(--danger)"
-                               : priority === "high"   ? "var(--warning)"
-                               : priority === "medium" ? "var(--info)"
-                               : "var(--success)",
+                          color: PRIORITY_COLOR[priority ?? "medium"] ?? PRIORITY_COLOR.medium,
                         }}
                       >
                         <span className="w-1.5 h-1.5 rounded-full" style={{ background: "currentColor" }} />

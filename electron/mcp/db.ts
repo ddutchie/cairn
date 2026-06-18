@@ -1,9 +1,11 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import path from "path";
 import os from "os";
 import fs from "fs";
-import { toWorkspace, toProject, toNote, toColumn, toCard, j, j2, p, b } from "../shared/db-mappers";
+import Database from "better-sqlite3";
+import { toWorkspace, toProject, toNote, toColumn, toCard, toTag, j, j2, p, b } from "../shared/db-mappers";
 import { projectNotesDir, findNoteFilePath, resolveNoteFilePath, writeNoteFile, deleteNoteFile } from "../shared/notes-io";
+import { newId, ts } from "../db/utils";
+import * as q from "../db/queries";
 
 export {
   toWorkspace,
@@ -11,6 +13,7 @@ export {
   toNote,
   toColumn,
   toCard,
+  toTag,
   j,
   j2,
   p,
@@ -117,23 +120,18 @@ export interface Snapshot {
   notes: ReturnType<typeof toNote>[];
   columns: ReturnType<typeof toColumn>[];
   cards: ReturnType<typeof toCard>[];
-  tags: { id: string; workspaceId: string; name: string; color: string }[];
+  // toTag returns { id, workspaceId, name, color } — same 4-field shape every
+  // consumer currently uses. The previous local definition only declared those
+  // four fields explicitly; aliased here so the source of truth is one place.
+  tags: ReturnType<typeof toTag>[];
 }
 
 export function getSnapshot(db: Database.Database): Snapshot {
-  return {
-    workspaces: db.prepare("SELECT * FROM workspaces ORDER BY created_at").all().map(toWorkspace),
-    projects: db.prepare("SELECT * FROM projects ORDER BY created_at").all().map(toProject),
-    notes: db.prepare("SELECT * FROM notes ORDER BY updated_at DESC").all().map(toNote),
-    columns: db.prepare(`SELECT * FROM board_columns ORDER BY "order"`).all().map(toColumn),
-    cards: db.prepare(`SELECT * FROM task_cards ORDER BY "order"`).all().map(toCard),
-    tags: (db.prepare("SELECT * FROM tags ORDER BY name").all() as any[]).map((r) => ({
-      id: r.id as string,
-      workspaceId: r.workspace_id as string,
-      name: r.name as string,
-      color: r.color as string,
-    })),
-  };
+  // Delegate to q.getFullSnapshot — the canonical implementation in queries.ts.
+  // Returns the same shape (workspaces/projects/notes/columns/cards/tags via the
+  // shared toX mappers) — the previous local getSnapshot reimplemented the same
+  // six SELECTs + mappers inline (~14 LOC of duplication).
+  return q.getFullSnapshot(db);
 }
 
 // ── Locks & Notifications ──────────────────────

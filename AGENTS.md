@@ -20,13 +20,13 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - **Alpha variants**: `color-mix(in srgb, var(--token) X%, transparent)` — never hardcode `rgba()`
 - **Font sizes**: use `rem`-based Tailwind classes (`text-xs`, `text-sm`, `text-[0.714rem]`, etc.). Never use `text-[Npx]` — pixel classes don't scale with the font size setting.
 - **Font scaling**: `--font-scale` CSS variable is set on `<html>` inline by `applyFontScale()`. Root `font-size: calc(14px * var(--font-scale))`. SVG `fontSize` attributes must be multiplied by `useFontScale()` from `analyticsHooks.ts`.
-- `mcp-server.ts` uses inlined SQL only (no `queries.ts` import) due to Node ABI boundary
+- **better-sqlite3 ABI**: the only ABI-sensitive operation is constructing the `Database` instance via `new Database(dbPath, { nativeBinding })`. That happens once in `electron/db/client.ts` (Electron ABI, `electron-native/`) for the main process and once in `mcp-server.ts` (Node 22 ABI, `pkg-native/`) for the MCP runtime. Helper functions in `electron/db/queries.ts` and `electron/db/graph-queries.ts` may be imported from `electron/mcp/tools/*` — they run on the already-constructed `db` handle regardless of which TS file defines them (see `electron/mcp/tools/codebase.ts`, which already does `import * as q from "../../db/queries"`). Never construct a `Database` outside those two bootstrap sites.
 
 ## Build
 
 ```bash
-npm run compile   # rebuilds dist-electron/ + dist-mcp/mcp-server.bundle.js
-npx tsc --noEmit  # type-check (always run after changes)
+npm run compile         # rebuilds dist-electron/ + dist-mcp/mcp-server.bundle.js
+npm run type-check:all  # type-check renderer + electron (always run after changes)
 ```
 
 esbuild is stricter than tsc — backticks inside template literals must be unescaped at the template level. Use `import * as z from "zod"` (not `import { z }`) in all Electron files.
@@ -49,7 +49,7 @@ esbuild is stricter than tsc — backticks inside template literals must be unes
 
 **KnowledgeGraphView** (`src/components/graph/KnowledgeGraphView.tsx`) — Force-directed and Radial tree layouts only. Reads from `graphData` store slice (populated by `loadGraph()`). `GraphLayoutMode = "force" | "radial"`.
 
-**InsightsView** (`src/components/insights/InsightsView.tsx`) — hosts all seven analytics canvases. Also calls `loadGraph()` on mount (same as KGV) because canvases scope data via `useScopedData(nodes)` which needs `graphData.nodes` populated. Local `InsightsLayout` type — not stored in the global store.
+**InsightsView** (`src/components/insights/InsightsView.tsx`) — hosts all seven analytics canvases (which live in `src/components/graph/` alongside the KnowledgeGraph canvases and the shared scaffold). Also calls `loadGraph()` on mount (same as KGV) because canvases scope data via `useScopedData(nodes)` which needs `graphData.nodes` populated. Local `InsightsLayout` type — not stored in the global store.
 
 ## Analytics canvas architecture
 
@@ -68,7 +68,7 @@ Shared modules:
 - `analyticsUtils.ts` — `PRIORITY_COLOR`, `CANVAS_PAD`, `truncateName`, `HOUR_MS`, `DAY_MS`, etc.
 - `analyticsHooks.ts` — `useContainerDims`, `useScopedData`, `useFontScale`
 - `AnalyticsShared.tsx` — `<CanvasEmptyState>`, `<CanvasTooltip>`, `<SvgTimeAxis>`
-- `graphUtils.ts` — `resolveCssVar()` for canvas 2D context colour lookups
+- `analyticsUtils.ts` — shared constants (`PRIORITY_COLOR`, `CANVAS_PAD`), `resolveCssVar()` for canvas 2D context colour lookups, `truncateName`
 
 ## Store slices
 
@@ -115,7 +115,7 @@ Notes write to both `.md` files and SQLite simultaneously. Dashboards write to S
 
 ## Key constraints
 
-- Never import from `queries.ts` in `mcp-server.ts` — it crosses the Node ABI boundary
+- Never construct a `Database` instance outside `electron/db/client.ts` (Electron) and `mcp-server.ts` (MCP runtime) — those are the only two ABI bootstrap sites (see "better-sqlite3 ABI" above)
 - All DB writes from renderer go through `ipc()` / `ipcAwait()` to the Electron main process
 - `graphData` is lazy — only populated when `loadGraph(activeWorkspaceId)` is called. Both `KnowledgeGraphView` and `InsightsView` call it on mount.
 - D3 `fontSize` in SVG must always be multiplied by `useFontScale()` — never hardcode px values

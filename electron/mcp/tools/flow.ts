@@ -1,113 +1,66 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import Database from "better-sqlite3";
 import dagre from "@dagrejs/dagre";
+import * as q from "../../db/queries";
 import { newId, ts } from "../../db/utils";
 import { Snapshot, insertNotification } from "../db";
+
+// Small helper: look up a single flow node's presence + flow_id.
+// (q.getFlowNodeById doesn't exist; keeping this local avoids adding API surface
+// to queries.ts purely for MCP-side validation.)
+function getNodeFlowId(db: Database.Database, nodeId: string): string | null {
+  const row = db.prepare("SELECT flow_id FROM idea_flow_nodes WHERE id = ?").get(nodeId) as
+    | { flow_id: string } | undefined;
+  return row?.flow_id ?? null;
+}
 
 export function get_idea_flow(db: Database.Database, snap: Snapshot, args: Record<string, any>) {
   const project = snap.projects.find((p) => p.id === args.projectId);
   if (!project) return { error: "Project not found" };
-  // Get or create the flow
-  const existingFlow = db.prepare("SELECT * FROM idea_flows WHERE project_id = ?").get(args.projectId) as
-    | { id: string; project_id: string; created_at: string; updated_at: string } | undefined;
-  let flowId: string;
-  if (existingFlow) {
-    flowId = existingFlow.id;
-  } else {
-    flowId = newId();
-    const now = ts();
-    db.prepare("INSERT INTO idea_flows (id, project_id, created_at, updated_at) VALUES (?, ?, ?, ?)")
-      .run(flowId, args.projectId, now, now);
-  }
-  const rawNodes = db.prepare("SELECT * FROM idea_flow_nodes WHERE flow_id = ? ORDER BY created_at").all(flowId) as any[];
-  const rawEdges = db.prepare("SELECT * FROM idea_flow_edges WHERE flow_id = ? ORDER BY created_at").all(flowId) as any[];
-  const nodes = rawNodes.map((row) => {
-    let data: Record<string, unknown> = {};
-    try { data = JSON.parse(row.data); } catch { /* empty */ }
-    const node = {
-      id: row.id as string,
-      type: row.type as string,
-      position: { x: row.x as number, y: row.y as number },
-      width: row.width as number | null,
-      height: row.height as number | null,
-      parentId: row.parent_id as string | null,
-      data,
-    };
-    // Resolve note_ref
-    if (node.type === "note_ref" && data.noteId) {
-      const noteRow = db.prepare("SELECT id, title, content_text FROM notes WHERE id = ?").get(data.noteId) as
-        | { id: string; title: string; content_text: string } | undefined;
-      if (noteRow) {
-        return { ...node, data: { ...data, resolvedTitle: noteRow.title, resolvedSnippet: noteRow.content_text?.slice(0, 200) ?? "" } };
-      }
-    }
-    // Resolve task_ref
-    if (node.type === "task_ref" && data.cardId) {
-      const cardRow = db.prepare(`
-        SELECT tc.id, tc.title, tc.priority, bc.name as column_name
-        FROM task_cards tc LEFT JOIN board_columns bc ON tc.column_id = bc.id
-        WHERE tc.id = ?
-      `).get(data.cardId) as { id: string; title: string; priority: string; column_name: string } | undefined;
-      if (cardRow) {
-        return { ...node, data: { ...data, resolvedTitle: cardRow.title, resolvedPriority: cardRow.priority, resolvedColumnName: cardRow.column_name } };
-      }
-    }
-    return node;
-  });
-  const edges = rawEdges.map((row) => ({
-    id: row.id as string,
-    source: row.source_node_id as string,
-    target: row.target_node_id as string,
-    label: row.label as string | null,
-  }));
-  // Build group position map for absolute coord computation
-  const groupPos = new Map<string, { x: number; y: number }>();
-  for (const n of nodes) {
-    if (n.type === "group") groupPos.set(n.id, { x: n.position.x, y: n.position.y });
-  }
 
-  // Enrich nodes with absoluteX/absoluteY (children use relative coords in DB)
-  const enriched = nodes.map((n) => {
-    const parent = n.parentId ? groupPos.get(n.parentId) : undefined;
+  // Delegate the BFS / resolution / spatial summary to the canonical implementation
+  // in queries.ts (q.getResolvedFlow). Adapt the result to the MCP public shape:
+  //   - nodes: { id, type, position: {x,y}, width, height, parentId, data, absoluteX, absoluteY, ...resolved* }
+  //   - edges: { id, source, target, label }
+  //   - spatial: unchanged
+  const resolved = q.getResolvedFlow(db, args.projectId as string);
+
+  const nodes = resolved.nodes.map((n) => {
+    // Pull resolved* fields out of the top-level (where q.getResolvedFlow puts them)
+    // and merge them into data (where MCP consumers expect them).
+    const { resolvedTitle, resolvedSnippet, resolvedPriority, resolvedColumnName, ...rest } = n as any;
+    const resolvedFields: Record<string, unknown> = {};
+    if (resolvedTitle !== undefined) resolvedFields.resolvedTitle = resolvedTitle;
+    if (resolvedSnippet !== undefined) resolvedFields.resolvedSnippet = resolvedSnippet;
+    if (resolvedPriority !== undefined) resolvedFields.resolvedPriority = resolvedPriority;
+    if (resolvedColumnName !== undefined) resolvedFields.resolvedColumnName = resolvedColumnName;
     return {
-      ...n,
-      absoluteX: parent ? parent.x + n.position.x : n.position.x,
-      absoluteY: parent ? parent.y + n.position.y : n.position.y,
+      id: rest.id,
+      type: rest.type,
+      position: { x: rest.x, y: rest.y },
+      width: rest.width ?? null,
+      height: rest.height ?? null,
+      parentId: rest.parentId ?? null,
+      data: { ...rest.data, ...resolvedFields },
+      absoluteX: rest.absoluteX,
+      absoluteY: rest.absoluteY,
     };
   });
 
-  // Spatial summary uses absolute coordinates
-  const contentNodes = enriched.filter((n) => n.type !== "group");
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const n of contentNodes) {
-    const w = n.width ?? 220;
-    const h = n.height ?? 80;
-    minX = Math.min(minX, n.absoluteX);
-    minY = Math.min(minY, n.absoluteY);
-    maxX = Math.max(maxX, n.absoluteX + w);
-    maxY = Math.max(maxY, n.absoluteY + h);
-  }
-  const hasNodes = contentNodes.length > 0;
+  const edges = resolved.edges.map((e) => ({
+    id: e.id,
+    source: e.sourceNodeId,
+    target: e.targetNodeId,
+    label: e.label ?? null,
+  }));
 
-  // Per-group free slots (relative to group top-left)
-  const groupSlots: Record<string, { x: number; y: number }> = {};
-  for (const g of enriched.filter((n) => n.type === "group")) {
-    const children = enriched.filter((n) => n.parentId === g.id);
-    if (children.length === 0) {
-      groupSlots[g.id] = { x: 40, y: 40 };
-    } else {
-      let childMaxY = -Infinity;
-      for (const c of children) childMaxY = Math.max(childMaxY, c.position.y + (c.height ?? 80));
-      groupSlots[g.id] = { x: 40, y: Math.round(childMaxY + 20) };
-    }
-  }
-
-  const spatial = {
-    bounds: hasNodes ? { x: minX, y: minY, width: maxX - minX, height: maxY - minY } : null,
-    nextPosition: hasNodes ? { x: Math.round(minX), y: Math.round(maxY + 120) } : { x: 40, y: 40 },
-    groupSlots,
+  return {
+    flowId: resolved.flowId,
+    projectId: args.projectId,
+    nodes,
+    edges,
+    spatial: resolved.spatial,
   };
-  return { flowId, projectId: args.projectId, nodes: enriched, edges, spatial };
 }
 
 export function create_idea_flow_node(db: Database.Database, snap: Snapshot, args: Record<string, any>) {
@@ -115,115 +68,121 @@ export function create_idea_flow_node(db: Database.Database, snap: Snapshot, arg
   if (!project) return { error: "Project not found" };
   const validTypes = ["idea", "note_ref", "task_ref", "group", "url", "ai_summary"];
   if (!validTypes.includes(args.type as string)) return { error: `Invalid node type. Must be one of: ${validTypes.join(", ")}` };
-  // Get or create flow
-  const existingFlow = db.prepare("SELECT id FROM idea_flows WHERE project_id = ?").get(args.projectId) as { id: string } | undefined;
-  let flowId: string;
-  if (existingFlow) {
-    flowId = existingFlow.id;
-  } else {
-    flowId = newId();
-    const fnow = ts();
-    db.prepare("INSERT INTO idea_flows (id, project_id, created_at, updated_at) VALUES (?, ?, ?, ?)")
-      .run(flowId, args.projectId, fnow, fnow);
-  }
+
+  const flow = q.getOrCreateFlow(db, args.projectId as string);
   const nodeId = newId();
-  const now = ts();
-  const dataJson = JSON.stringify(args.data ?? {});
-  db.prepare(`
-    INSERT INTO idea_flow_nodes (id, flow_id, type, x, y, width, height, parent_id, data, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(nodeId, flowId, args.type, args.x ?? 0, args.y ?? 0, args.width ?? null, args.height ?? null, args.parentId ?? null, dataJson, now, now);
+  const node = q.createFlowNode(db, {
+    id: nodeId,
+    flowId: flow.id,
+    type: args.type as string,
+    x: (args.x ?? 0) as number,
+    y: (args.y ?? 0) as number,
+    width: args.width,
+    height: args.height,
+    parentId: args.parentId,
+    data: args.data ?? {},
+  });
   insertNotification(db, "create_idea_flow_node", "Idea Flow updated", `Added ${args.type} node to flow`);
 
-  // Optionally create edges inline
+  // Optionally create edges inline (the `edges` array on create_idea_flow_node args)
   const createdEdges: { id: string; source: string; target: string; label: string | null }[] = [];
   if (Array.isArray(args.edges)) {
     for (const edgeDef of args.edges as Array<{ targetNodeId?: string; sourceNodeId?: string; label?: string }>) {
-      const edgeId = newId();
-      const edgeNow = ts();
       const src = edgeDef.sourceNodeId ?? nodeId;
       const tgt = edgeDef.targetNodeId ?? nodeId;
-      db.prepare(`
-        INSERT OR IGNORE INTO idea_flow_edges (id, flow_id, source_node_id, target_node_id, label, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).run(edgeId, flowId, src, tgt, edgeDef.label ?? null, edgeNow);
-      const created = db.prepare("SELECT * FROM idea_flow_edges WHERE id = ?").get(edgeId) as any;
-      if (created) createdEdges.push({ id: edgeId, source: src, target: tgt, label: edgeDef.label ?? null });
+      const edgeId = newId();
+      q.createFlowEdge(db, {
+        id: edgeId,
+        flowId: flow.id,
+        sourceNodeId: src,
+        targetNodeId: tgt,
+        label: edgeDef.label,
+      });
+      // q.createFlowEdge returns null on duplicate (INSERT OR IGNORE);
+      // only include in the response if the edge was actually created.
+      const created = db.prepare("SELECT 1 FROM idea_flow_edges WHERE id = ?").get(edgeId);
+      if (created) {
+        createdEdges.push({ id: edgeId, source: src, target: tgt, label: edgeDef.label ?? null });
+      }
     }
   }
 
-  return { id: nodeId, flowId, type: args.type, position: { x: args.x ?? 0, y: args.y ?? 0 }, data: args.data ?? {}, createdAt: now, edges: createdEdges };
+  return {
+    id: nodeId,
+    flowId: flow.id,
+    type: args.type,
+    position: { x: args.x ?? 0, y: args.y ?? 0 },
+    data: args.data ?? {},
+    createdAt: node.createdAt,
+    edges: createdEdges,
+  };
 }
 
 export function update_idea_flow_node(db: Database.Database, args: Record<string, any>) {
-  const existingRow = db.prepare("SELECT * FROM idea_flow_nodes WHERE id = ?").get(args.nodeId) as any;
-  if (!existingRow) return { error: "Node not found" };
-  let existingData: Record<string, unknown> = {};
-  try { existingData = JSON.parse(existingRow.data); } catch { /* empty */ }
-  const mergedData = args.data !== undefined ? { ...existingData, ...(args.data as Record<string, unknown>) } : existingData;
-  const now = ts();
-  db.prepare(`
-    UPDATE idea_flow_nodes SET
-      x          = COALESCE(?, x),
-      y          = COALESCE(?, y),
-      width      = COALESCE(?, width),
-      height     = COALESCE(?, height),
-      data       = ?,
-      updated_at = ?
-    WHERE id = ?
-  `).run(
-    args.x !== undefined ? args.x : null,
-    args.y !== undefined ? args.y : null,
-    args.width !== undefined ? args.width : null,
-    args.height !== undefined ? args.height : null,
-    JSON.stringify(mergedData),
-    now,
-    args.nodeId,
-  );
+  // Existence check (q.updateFlowNode throws on missing — MCP returns { error }).
+  const existing = db.prepare("SELECT data FROM idea_flow_nodes WHERE id = ?").get(args.nodeId) as
+    | { data: string } | undefined;
+  if (!existing) return { error: "Node not found" };
+
+  // Build the patch that q.updateFlowNode expects. The q helper merges data via
+  // { ...existing.data, ...patch.data } itself, so we just pass patch.data.
+  const patch: Parameters<typeof q.updateFlowNode>[2] = {};
+  if (args.x !== undefined) patch.x = args.x;
+  if (args.y !== undefined) patch.y = args.y;
+  if (args.width !== undefined) patch.width = args.width;
+  if (args.height !== undefined) patch.height = args.height;
+  if (args.parentId !== undefined) patch.parentId = args.parentId as string | null;
+  if (args.data !== undefined) patch.data = args.data;
+
+  const updated = q.updateFlowNode(db, args.nodeId as string, patch);
   insertNotification(db, "update_idea_flow_node", "Idea Flow updated", `Node updated`);
-  return { id: args.nodeId, data: mergedData, updatedAt: now };
+  return { id: args.nodeId, data: updated.data, updatedAt: updated.updatedAt };
 }
 
 export function delete_idea_flow_node(db: Database.Database, args: Record<string, any>) {
-  const existingNode = db.prepare("SELECT * FROM idea_flow_nodes WHERE id = ?").get(args.nodeId) as any;
-  if (!existingNode) return { error: "Node not found" };
-  db.prepare("DELETE FROM idea_flow_nodes WHERE id = ?").run(args.nodeId);
+  const exists = db.prepare("SELECT 1 FROM idea_flow_nodes WHERE id = ?").get(args.nodeId);
+  if (!exists) return { error: "Node not found" };
+  q.deleteFlowNode(db, args.nodeId as string); // edges cascade-deleted via FK
   insertNotification(db, "delete_idea_flow_node", "Idea Flow updated", `Node removed from flow`);
   return { deleted: true, id: args.nodeId };
 }
 
 export function create_idea_flow_edge(db: Database.Database, args: Record<string, any>) {
-  const srcNode = db.prepare("SELECT id, flow_id FROM idea_flow_nodes WHERE id = ?").get(args.sourceNodeId) as any;
-  if (!srcNode) return { error: "Source node not found" };
-  const tgtNode = db.prepare("SELECT id FROM idea_flow_nodes WHERE id = ?").get(args.targetNodeId) as any;
-  if (!tgtNode) return { error: "Target node not found" };
+  const flowId = getNodeFlowId(db, args.sourceNodeId as string);
+  if (!flowId) return { error: "Source node not found" };
+  // Verify target exists AND belongs to the same flow.
+  const targetExists = db.prepare("SELECT 1 FROM idea_flow_nodes WHERE id = ? AND flow_id = ?").get(args.targetNodeId, flowId);
+  if (!targetExists) return { error: "Target node not found" };
+
   const edgeId = newId();
-  const now = ts();
-  db.prepare(`
-    INSERT OR IGNORE INTO idea_flow_edges (id, flow_id, source_node_id, target_node_id, label, created_at)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(edgeId, srcNode.flow_id, args.sourceNodeId, args.targetNodeId, args.label ?? null, now);
-  // Check if INSERT OR IGNORE silently skipped (duplicate edge)
-  const created = db.prepare("SELECT * FROM idea_flow_edges WHERE id = ?").get(edgeId) as any;
+  const created = q.createFlowEdge(db, {
+    id: edgeId,
+    flowId,
+    sourceNodeId: args.sourceNodeId as string,
+    targetNodeId: args.targetNodeId as string,
+    label: args.label,
+  });
   if (!created) {
-    const existing = db.prepare("SELECT id FROM idea_flow_edges WHERE flow_id = ? AND source_node_id = ? AND target_node_id = ?")
-      .get(srcNode.flow_id, args.sourceNodeId, args.targetNodeId) as any;
+    // INSERT OR IGNORE skipped — a duplicate edge exists. Find its id.
+    const existing = db.prepare(
+      "SELECT id FROM idea_flow_edges WHERE flow_id = ? AND source_node_id = ? AND target_node_id = ?"
+    ).get(flowId, args.sourceNodeId, args.targetNodeId) as { id: string } | undefined;
     return { id: existing?.id ?? null, source: args.sourceNodeId, target: args.targetNodeId, label: args.label ?? null, note: "Edge already exists" };
   }
   insertNotification(db, "create_idea_flow_edge", "Idea Flow updated", `Nodes connected`);
-  return { id: edgeId, source: args.sourceNodeId, target: args.targetNodeId, label: args.label ?? null, createdAt: now };
+  return { id: edgeId, source: args.sourceNodeId, target: args.targetNodeId, label: args.label ?? null, createdAt: created.createdAt };
 }
 
 export function delete_idea_flow_edge(db: Database.Database, args: Record<string, any>) {
-  const existingEdge = db.prepare("SELECT * FROM idea_flow_edges WHERE id = ?").get(args.edgeId) as any;
-  if (!existingEdge) return { error: "Edge not found" };
-  db.prepare("DELETE FROM idea_flow_edges WHERE id = ?").run(args.edgeId);
+  const exists = db.prepare("SELECT 1 FROM idea_flow_edges WHERE id = ?").get(args.edgeId);
+  if (!exists) return { error: "Edge not found" };
+  q.deleteFlowEdge(db, args.edgeId as string);
   insertNotification(db, "delete_idea_flow_edge", "Idea Flow updated", `Connection removed`);
   return { deleted: true, id: args.edgeId };
 }
 
 export function layout_idea_flow(db: Database.Database, args: Record<string, any>) {
-  const flowRow = db.prepare("SELECT id FROM idea_flows WHERE project_id = ?").get(args.projectId) as any;
+  const flowRow = db.prepare("SELECT id FROM idea_flows WHERE project_id = ?").get(args.projectId) as { id: string } | undefined;
   if (!flowRow) return { arranged: 0 };
   const rawNodes = db.prepare("SELECT * FROM idea_flow_nodes WHERE flow_id = ?").all(flowRow.id) as any[];
   const rawEdges = db.prepare("SELECT * FROM idea_flow_edges WHERE flow_id = ?").all(flowRow.id) as any[];

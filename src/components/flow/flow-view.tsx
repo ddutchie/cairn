@@ -22,7 +22,7 @@ import {
   Panel,
 } from "@xyflow/react";
 
-import { Lightbulb, FileText, CheckSquare, Link2, Sparkles, Plus, Layers, LayoutDashboard } from "lucide-react";
+import { Plus, LayoutDashboard } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import type { IdeaNodeType, ResolvedIdeaFlow } from "@/types";
@@ -39,169 +39,12 @@ import {
   makeAutoLayoutCmd,
   makePromoteToTaskCmd,
 } from "@/lib/commands/flow-commands";
-import { IdeaNode }      from "./nodes/IdeaNode";
-import { NoteRefNode }   from "./nodes/NoteRefNode";
-import { TaskRefNode }   from "./nodes/TaskRefNode";
-import { GroupNode }     from "./nodes/GroupNode";
-import { UrlNode }       from "./nodes/UrlNode";
-import { AiSummaryNode } from "./nodes/AiSummaryNode";
-import { FlowEdge }      from "./edges/FlowEdge";
 import { NodeEditModal } from "./NodeEditModal";
-
 import { applyDagreLayout } from "@/lib/flow-layout";
-
-// ── Group membership helpers ──────────────────────────────────────────────────
-
-/**
- * Given the current React Flow nodes, compute which non-group nodes should
- * belong to which group based on whether the node's center falls inside the
- * group's bounding box. Returns a list of assignments to apply.
- *
- * Groups use absolute position + style width/height.
- * Non-group nodes with an existing parentId have relative positions — we
- * convert to absolute using their current parent's position first.
- */
-function computeGroupAssignments(nodes: Node[]): Array<{
-  nodeId: string;
-  parentId: string | null; // null = remove from group
-  x: number;              // new x to store (relative if parentId set, absolute if not)
-  y: number;
-}> {
-  const groups = nodes.filter((n) => n.type === "group");
-
-  // Build absolute position map for all nodes
-  const absPos = new Map<string, { x: number; y: number }>();
-  // First pass: root nodes (no parentId)
-  for (const n of nodes) {
-    if (!n.parentId) absPos.set(n.id, { x: n.position.x, y: n.position.y });
-  }
-  // Second pass: children — add parent's absolute position
-  for (const n of nodes) {
-    if (n.parentId) {
-      const parent = absPos.get(n.parentId);
-      if (parent) absPos.set(n.id, { x: parent.x + n.position.x, y: parent.y + n.position.y });
-      else absPos.set(n.id, { x: n.position.x, y: n.position.y });
-    }
-  }
-
-  const changes: ReturnType<typeof computeGroupAssignments> = [];
-
-  for (const node of nodes) {
-    if (node.type === "group") continue;
-
-    const abs = absPos.get(node.id);
-    if (!abs) continue;
-    const nodeW = node.measured?.width  ?? 220;
-    const nodeH = node.measured?.height ?? 80;
-    const cx = abs.x + nodeW / 2;
-    const cy = abs.y + nodeH / 2;
-
-    // Find the smallest group whose bounds contain this node's center
-    let bestGroup: Node | null = null;
-    let bestArea = Infinity;
-    for (const g of groups) {
-      const gAbs = absPos.get(g.id)!;
-      const gw = (g.style?.width  as number) ?? 320;
-      const gh = (g.style?.height as number) ?? 200;
-
-      if (cx >= gAbs.x && cx <= gAbs.x + gw && cy >= gAbs.y && cy <= gAbs.y + gh) {
-        const area = gw * gh;
-        if (area < bestArea) { bestArea = area; bestGroup = g; }
-      }
-    }
-
-    const newParentId = bestGroup?.id ?? null;
-    const currentParentId = node.parentId ?? null;
-
-    if (newParentId === currentParentId) continue; // no change
-
-    if (newParentId) {
-      // Convert absolute → relative to new group
-      const gAbs = absPos.get(newParentId)!;
-      changes.push({ nodeId: node.id, parentId: newParentId, x: abs.x - gAbs.x, y: abs.y - gAbs.y });
-    } else {
-      // Leaving group — keep absolute position
-      changes.push({ nodeId: node.id, parentId: null, x: abs.x, y: abs.y });
-    }
-  }
-
-  return changes;
-}
-
-// ── Type registries — defined outside component to prevent remounts ───────────
-
-const EDGE_TYPES = {
-  flow: FlowEdge,
-};
-
-const DEFAULT_EDGE_OPTIONS: Partial<Edge> = {
-  type: "flow",
-};
-
-const NODE_TYPES = {
-  idea:       IdeaNode,
-  note_ref:   NoteRefNode,
-  task_ref:   TaskRefNode,
-  url:        UrlNode,
-  ai_summary: AiSummaryNode,
-  group:      GroupNode,
-};
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function flowNodeToRF(n: ResolvedIdeaFlow["nodes"][number]): Node {
-  const isGroup = n.type === "group";
-  return {
-    id: n.id,
-    type: n.type,
-    position: { x: n.x, y: n.y },
-    ...(n.parentId ? { parentId: n.parentId, extent: "parent" as const } : {}),
-    ...(isGroup ? {
-      style: {
-        width:  n.width  ?? 320,
-        height: n.height ?? 200,
-      },
-      zIndex: -1,
-    } : {}),
-    data: {
-      ...n.data,
-      ...(n.resolvedTitle      ? { resolvedTitle: n.resolvedTitle }           : {}),
-      ...(n.resolvedSnippet    ? { resolvedSnippet: n.resolvedSnippet }       : {}),
-      ...(n.resolvedPriority   ? { resolvedPriority: n.resolvedPriority }     : {}),
-      ...(n.resolvedColumnName ? { resolvedColumnName: n.resolvedColumnName } : {}),
-    },
-  };
-}
-
-function flowEdgeToRF(e: ResolvedIdeaFlow["edges"][number]): Edge {
-  return {
-    id: e.id,
-    source: e.sourceNodeId,
-    target: e.targetNodeId,
-    label: e.label ?? undefined,
-    type: "flow",
-  };
-}
-
-function defaultData(type: IdeaNodeType) {
-  switch (type) {
-    case "idea":       return { title: "New idea", body: "" };
-    case "note_ref":   return { noteId: "" };
-    case "task_ref":   return { cardId: "" };
-    case "url":        return { url: "", title: "", description: "" };
-    case "ai_summary": return { content: "" };
-    case "group":      return { label: "Group", color: "accent" };
-  }
-}
-
-const ADD_NODE_MENU: Array<{ type: IdeaNodeType; label: string; icon: React.ElementType }> = [
-  { type: "idea",       label: "Idea",        icon: Lightbulb   },
-  { type: "note_ref",   label: "Note",         icon: FileText    },
-  { type: "task_ref",   label: "Task",         icon: CheckSquare },
-  { type: "url",        label: "URL",          icon: Link2       },
-  { type: "ai_summary", label: "AI Summary",   icon: Sparkles    },
-  { type: "group",      label: "Group",        icon: Layers      },
-];
+import {
+  NODE_TYPES, EDGE_TYPES, DEFAULT_EDGE_OPTIONS, CONNECTION_LINE_STYLE,
+  flowNodeToRF, flowEdgeToRF, defaultData, ADD_NODE_MENU, computeGroupAssignments,
+} from "./flow-utils";
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -906,7 +749,7 @@ function IdeaFlowCanvas() {
         onPaneContextMenu={onPaneContextMenu}
 
         connectionLineType={ConnectionLineType.Bezier}
-        connectionLineStyle={{ stroke: "#6366f1", strokeWidth: 1.5, opacity: 0.7 }}
+        connectionLineStyle={CONNECTION_LINE_STYLE}
         zoomOnDoubleClick={false}
         zoomOnPinch={true}
         panOnDrag={true}
@@ -954,7 +797,7 @@ function IdeaFlowCanvas() {
           <div className="relative" ref={addMenuRef}>
             <button
               onClick={() => setShowAddMenu((v) => !v)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium shadow-sm bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium shadow-sm bg-[var(--accent)] text-[var(--background)] hover:bg-[var(--accent-hover)] transition-colors"
             >
               <Plus size={13} />
               Add node

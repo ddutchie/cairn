@@ -34,6 +34,7 @@ export interface GraphNode {
     isPinned?: boolean;
     snippet?: string;
     color?: string; // for tags
+    isArchived?: boolean;
   };
 }
 

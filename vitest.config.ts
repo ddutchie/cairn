@@ -11,16 +11,17 @@ export default defineConfig({
     environment: "node",
     include: ["electron/**/*.test.ts", "src/**/*.test.ts"],
     globals: true,
-    // Use the system Node (pkg-native) better-sqlite3 binding.
-    // After `npm run rebuild`, node_modules/ has the Electron ABI; pkg-native/
-    // always has the system Node ABI that vitest (plain Node) requires.
+    // Tell the vitest-sqlite-shim.cjs where to find the system-Node-ABI binary.
+    // vitest-native/ holds the build for the currently-running Node (saved by
+    // `npm run rebuild`); pkg-native/ is Node 22 ABI for the pkg-bundled MCP
+    // binary and would mismatch on Node != 22.
     env: {
-      BETTER_SQLITE3_BINDING: path.resolve(__dirname, "pkg-native/better_sqlite3.node"),
+      BETTER_SQLITE3_BINDING: path.resolve(__dirname, "vitest-native/better_sqlite3.node"),
     },
   },
   resolve: {
     alias: {
-      // Redirect better-sqlite3 so it loads via nativeBinding from pkg-native/
+      // Redirect better-sqlite3 so it loads via nativeBinding from vitest-native/
       "better-sqlite3": path.resolve(__dirname, "vitest-sqlite-shim.cjs"),
       "@": path.resolve(__dirname, "./src"),
     },

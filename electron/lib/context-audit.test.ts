@@ -96,8 +96,8 @@ const PLAN_MODE_ALLOWED = new Set([
   "ensure_note", "ask_questions",
 ]);
 
-const chatOnlySet   = new Set(CHAT_ONLY_TOOLS);
-const agentExcluded = new Set(AGENT_EXCLUDED_TOOLS);
+const chatOnlySet   = new Set<string>(CHAT_ONLY_TOOLS);
+const agentExcluded = new Set<string>(AGENT_EXCLUDED_TOOLS);
 
 function executeDefs(): ToolDef[] {
   const cairn = [...CAIRN_TOOL_NAMES_EXECUTE].map(cairnToolDef);

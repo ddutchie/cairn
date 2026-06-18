@@ -1,44 +1,11 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
-import { Download, X, AlertCircle } from "lucide-react";
+import { useEffect, useState, useRef } from "react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { CairnEvents } from "@/lib/events";
 import { historyManager, ownWriteGuard } from "@/lib/history";
-
-// ── IPC error toast ───────────────────────────────────────────────────────────
-
-interface ErrorToast {
-  id: number;
-  message: string;
-}
-
-let _toastSeq = 0;
-
-function useIpcErrorToasts() {
-  const [toasts, setToasts] = useState<ErrorToast[]>([]);
-  const timers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
-
-  const dismiss = useCallback((id: number) => {
-    clearTimeout(timers.current.get(id));
-    timers.current.delete(id);
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-  }, []);
-
-  useEffect(() => {
-    function onIpcError(e: Event) {
-      const message = (e as CustomEvent<{ message: string }>).detail.message;
-      const id = ++_toastSeq;
-      setToasts((prev) => [...prev.slice(-4), { id, message }]); // keep at most 5
-      timers.current.set(id, setTimeout(() => dismiss(id), 5000));
-    }
-    window.addEventListener("cairn:ipc-error", onIpcError);
-    return () => window.removeEventListener("cairn:ipc-error", onIpcError);
-  }, [dismiss]);
-
-  return { toasts, dismiss };
-}
+import { useIpcErrorToasts } from "@/hooks/useIpcErrorToasts";
 import { TitleBar } from "@/components/layout/title-bar";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
@@ -48,12 +15,13 @@ import { KanbanBoard } from "@/components/kanban/board";
 import { IdeaFlowView } from "@/components/flow/flow-view";
 import { KnowledgeGraphView } from "@/components/graph/KnowledgeGraphView";
 import { InsightsView } from "@/components/insights/InsightsView";
-import { RightPanel } from "@/components/layout/RightPanel";
 import { SearchPanel } from "@/components/search/search-panel";
 import { SettingsView } from "@/components/settings/settings-view";
 import { AgentView } from "@/components/agent/AgentView";
 import { Onboarding } from "@/components/onboarding";
 import { MigrationModal } from "@/components/layout/MigrationModal";
+import { RightPanel } from "@/components/layout/RightPanel";
+import { UpdateBanner, ErrorToasts } from "@/components/layout/app-chrome";
 
 export default function Home() {
   const {
@@ -323,31 +291,12 @@ export default function Home() {
       <TitleBar />
 
       {/* Auto-update banner — shown as soon as we know a version is available or downloaded */}
-      {(updateVersion || updateDownloaded) && (
-        <div className="flex items-center gap-3 px-4 py-2 bg-[var(--accent-dim)] border-b border-[var(--accent)]/30 flex-shrink-0">
-          <Download size={13} className="text-[var(--accent)] shrink-0" />
-          <span className="text-xs text-[var(--text-secondary)] flex-1">
-            {updateDownloaded
-              ? <>Cairn <strong className="text-[var(--text-primary)]">v{updateVersion}</strong> is ready to install.</>
-              : <>Downloading Cairn <strong className="text-[var(--text-primary)]">v{updateVersion}</strong>…</>
-            }
-          </span>
-          {updateDownloaded && (
-            <button
-              onClick={() => window.electron?.updater.install()}
-              className="px-3 py-1 rounded-md text-xs font-medium bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors"
-            >
-              Restart &amp; install
-            </button>
-          )}
-          <button
-            onClick={() => { setUpdateVersion(null); setUpdateDownloaded(false); }}
-            className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-          >
-            <X size={12} />
-          </button>
-        </div>
-      )}
+      <UpdateBanner
+        version={updateVersion}
+        downloaded={updateDownloaded}
+        onInstall={() => window.electron?.updater.install()}
+        onDismiss={() => { setUpdateVersion(null); setUpdateDownloaded(false); }}
+      />
 
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* Left sidebar */}
@@ -386,25 +335,7 @@ export default function Home() {
       <MigrationModal />
 
       {/* IPC error toasts — bottom-right, auto-dismiss after 5s */}
-      {toasts.length > 0 && (
-        <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
-          {toasts.map((toast) => (
-            <div
-              key={toast.id}
-              className="flex items-start gap-2 px-3 py-2.5 rounded-lg border border-[var(--danger)]/30 bg-[var(--background)] shadow-lg max-w-xs pointer-events-auto"
-            >
-              <AlertCircle size={13} className="text-[var(--danger)] shrink-0 mt-0.5" />
-              <span className="text-xs text-[var(--text-secondary)] flex-1 leading-relaxed">{toast.message}</span>
-              <button
-                onClick={() => dismiss(toast.id)}
-                className="p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors shrink-0"
-              >
-                <X size={11} />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
+      <ErrorToasts toasts={toasts} onDismiss={dismiss} />
     </main>
   );
 }

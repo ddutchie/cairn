@@ -14,7 +14,7 @@ import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import { defaultKeymap, indentWithTab, history, historyKeymap } from "@codemirror/commands";
 import { search, searchKeymap } from "@codemirror/search";
-import { buildSearchTheme } from "@/components/agent/editorTheme";
+import { buildSearchTheme } from "@/lib/editor-theme";
 
 // ── Public handle so parent can read selection for AI toolbar ──────────────
 export interface MarkdownEditorHandle {

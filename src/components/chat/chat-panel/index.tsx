@@ -10,11 +10,11 @@ import { ipcAwaitResult } from "@/store/ipc";
 import { resolvePromptContext } from "@/lib/context-resolver";
 
 import { Tooltip } from "@/components/ui/tooltip";
-import { ChatMessageBubble } from "./chat-panel/ChatMessageBubble";
-import { SuggestedPrompts } from "./chat-panel/SuggestedPrompts";
-import { ToolCallIndicator } from "./chat-panel/ToolCallIndicator";
-import { QuestionForm } from "./chat-panel/QuestionForm";
-import { ChatInput, SuggestionItem } from "./ChatInput";
+import { ChatMessageBubble } from "./ChatMessageBubble";
+import { SuggestedPrompts } from "./SuggestedPrompts";
+import { ToolCallIndicator } from "./ToolCallIndicator";
+import { QuestionForm } from "./QuestionForm";
+import { ChatInput, SuggestionItem } from "../ChatInput";
 import { ContextRing } from "@/components/agent/ContextRing";
 
 const GRAPH_SYSTEM_PROMPT = `You are a Knowledge Graph assistant embedded in Cairn, a note-taking and project management app.

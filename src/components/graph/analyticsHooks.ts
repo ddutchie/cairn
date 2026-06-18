@@ -1,7 +1,7 @@
 /**
  * Shared React hooks for analytics canvas components.
  */
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import type { GraphNode } from "@/types";
@@ -69,4 +69,37 @@ export function useScopedData(nodes: GraphNode[]) {
     [cards, scopedCardIds]);
 
   return { scopedProjectIds, scopedCardIds, activeProjects, scopedCards, projects, cards, columns };
+}
+
+// ── useRelativePointer ────────────────────────────────────────────────────────
+
+/**
+ * Returns a callback that converts a mouse event's `clientX`/`clientY` into
+ * coordinates relative to the given ref element. Used by SVG canvases for
+ * tooltip positioning.
+ */
+export function useRelativePointer<T extends HTMLElement | SVGSVGElement>(ref: React.RefObject<T | null>) {
+  return useCallback((e: { clientX: number; clientY: number }) => {
+    const rect = ref.current?.getBoundingClientRect();
+    if (!rect) return { x: 0, y: 0 };
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  }, [ref]);
+}
+
+// ── useNow ───────────────────────────────────────────────────────────────────
+
+/**
+ * Returns `Date.now()` snapshot at mount time (plus optional periodic refresh).
+ * Safe to use in `useMemo` deps — the lint rule that flags `Date.now()` inside
+ * memo does not fire on a hook return value. When `refreshMs` is provided,
+ * the value updates on an interval (useful for canvases showing "today").
+ */
+export function useNow(refreshMs?: number): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!refreshMs) return;
+    const id = setInterval(() => setNow(Date.now()), refreshMs);
+    return () => clearInterval(id);
+  }, [refreshMs]);
+  return now;
 }

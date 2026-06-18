@@ -303,8 +303,8 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 Two processes share a single SQLite database (WAL mode):
 
 - **Renderer** (`src/`) — React/Next.js. All data flows through IPC via `window.electron.*`; never touches the DB or filesystem directly.
-- **Main process** (`electron/`) — Node.js. Owns SQLite, file I/O, AI chat loop, and PTY sessions for coding agents.
-- **MCP server** (`electron/mcp-server.ts`) — self-contained binary; connects external agents to the same DB via WAL polling.
+- **Main process** (`electron/`) — Node.js. Owns SQLite, file I/O, AI chat loop, and PTY sessions for coding agents. IPC handlers are split into per-domain registrars (`db-handlers.ts`, `flow-handlers.ts`, `ai-handlers.ts`, etc.) orchestrated by `handlers.ts`.
+- **MCP server** (`electron/mcp-server.ts`) — self-contained binary; connects external agents to the same DB via WAL polling. SQL query helpers are shared with the Electron main process via `electron/db/queries.ts` (single source of truth).
 
 Notes are plain `.md` files (YAML frontmatter); SQLite is the read/search cache. Writes are atomic (`.tmp` rename). A chokidar watcher syncs external edits at runtime. `notes` and `task_cards` carry a `version` integer; MCP write tools accept `expectedVersion` for conflict detection.
 
@@ -358,7 +358,7 @@ Unit/integration tests (`electron/**/*.test.ts`) cover SQLite queries, file I/O,
 | Tool | Role |
 |------|------|
 | Tailwind CSS v4 | Styling (CSS custom properties; never raw colour names) |
-| Zustand | State management (domain slices: ui, workspace, board, notes, tags, chat, graph) |
+| Zustand | State management (domain slices: ui, workspace, board, notes, tags, chat, graph, selectors, coding-agents, terminal-sessions) |
 | Radix UI | Accessible UI primitives (dialog, dropdown, tooltip, popover, select, context menu) |
 | Lucide React | Icons |
 | cmdk | Command palette |

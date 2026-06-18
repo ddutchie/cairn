@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import type { GraphNode } from "@/types";
+import { CanvasEmptyState } from "./AnalyticsShared";
 
 interface Props {
   nodes: GraphNode[];
@@ -91,8 +92,8 @@ export function MatrixCanvas({ nodes, onNodeClick, selectedNodeId }: Props) {
 
   if (activeTags.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center">
-        <p className="text-xs text-[var(--text-tertiary)]">No tagged items in this scope.</p>
+      <div className="flex-1 relative">
+        <CanvasEmptyState message="No tagged items in this scope." />
       </div>
     );
   }

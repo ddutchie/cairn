@@ -4,8 +4,8 @@ import React, { useMemo, useRef, useEffect, useState, useCallback } from "react"
 import * as d3 from "d3";
 import type { GraphNode } from "@/types";
 import { HOUR_MS, DAY_MS, floorHour, floorDay, truncateName, CANVAS_PAD } from "./analyticsUtils";
-import { useContainerDims, useScopedData, useFontScale } from "./analyticsHooks";
-import { CanvasTooltip, CanvasEmptyState } from "./AnalyticsShared";
+import { useContainerDims, useScopedData, useFontScale, useRelativePointer, useNow } from "./analyticsHooks";
+import { CanvasTooltip, CanvasEmptyState, SvgTimeAxis } from "./AnalyticsShared";
 
 export type RidgelineMode = "ridgeline" | "overlay" | "iso";
 
@@ -42,6 +42,8 @@ export function RidgelineCanvas({ nodes, onNodeClick, mode, view, onViewChange, 
   const svgRef       = useRef<SVGSVGElement>(null);
   const dims = useContainerDims(containerRef);
   const { activeProjects, scopedCardIds, cards } = useScopedData(nodes);
+  const relativePointer = useRelativePointer(svgRef);
+  const now = useNow();
 
   const [hoveredRow,    setHoveredRow]    = useState<string | null>(null);
   const [hoveredBucket, setHoveredBucket] = useState<{
@@ -60,8 +62,6 @@ export function RidgelineCanvas({ nodes, onNodeClick, mode, view, onViewChange, 
       if (s) ts.push(new Date(s).getTime());
     }
     if (ts.length === 0) {
-      // eslint-disable-next-line react-hooks/purity
-      const now = Date.now();
       return { start: now - 7 * DAY_MS, end: now + DAY_MS };
     }
     const minTs = Math.min(...ts);
@@ -69,7 +69,7 @@ export function RidgelineCanvas({ nodes, onNodeClick, mode, view, onViewChange, 
     const span  = Math.max(maxTs - minTs, 2 * DAY_MS);
     const pad   = span * 0.15;
     return { start: minTs - pad, end: maxTs + pad };
-  }, [cards, scopedCardIds]);
+  }, [cards, scopedCardIds, now]);
 
   // Emit the data-driven default up to KGV once cards are loaded
   const emittedRef = useRef(false);
@@ -179,21 +179,7 @@ export function RidgelineCanvas({ nodes, onNodeClick, mode, view, onViewChange, 
     return { lineGen, areaGen, by };
   }
 
-  // ── Ticks via d3.scaleTime ──────────────────────────────────────────────────
-  const ticks = useMemo(() => {
-    const scale = d3.scaleTime()
-      .domain([new Date(view.start), new Date(view.end)])
-      .range([PAD_LEFT, PAD_LEFT + plotW]);
-    const count = Math.max(2, Math.floor(plotW / 100));
-    return scale.ticks(count).map((d) => ({
-      ms:    d.getTime(),
-      x:     xScale(d),
-      label: d3.timeFormat(bucketMs < DAY_MS ? "%b %d %H:%M" : "%b %d")(d),
-    }));
-  }, [view, plotW, xScale, bucketMs]);
-
-  // eslint-disable-next-line react-hooks/purity
-  const todayX    = xScale(new Date(floorDay(Date.now())));
+  const todayX = xScale(new Date(floorDay(now)));
   const showToday = todayX >= PAD_LEFT && todayX <= PAD_LEFT + plotW;
 
   // ── Wheel zoom ──────────────────────────────────────────────────────────────
@@ -203,12 +189,11 @@ export function RidgelineCanvas({ nodes, onNodeClick, mode, view, onViewChange, 
 
   const handleWheel = useCallback((e: WheelEvent) => {
     e.preventDefault();
-    const rect = svgRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const pivot   = msFromX(e.clientX - rect.left);
+    const { x } = relativePointer(e);
+    const pivot   = msFromX(x);
     const notches = Math.max(-3, Math.min(3, e.deltaY / 40));
     applyZoom(Math.pow(1.08, notches), pivot);
-  }, [msFromX, applyZoom]);
+  }, [msFromX, applyZoom, relativePointer]);
 
   useEffect(() => {
     const el = svgRef.current;
@@ -224,9 +209,7 @@ export function RidgelineCanvas({ nodes, onNodeClick, mode, view, onViewChange, 
   }
 
   function handleMouseMove(e: React.MouseEvent<SVGSVGElement>) {
-    const rect = svgRef.current!.getBoundingClientRect();
-    const mx   = e.clientX - rect.left;
-    const my   = e.clientY - rect.top;
+    const { x: mx, y: my } = relativePointer(e);
 
     if (dragRef.current) {
       const dx  = e.clientX - dragRef.current.startX;
@@ -278,7 +261,6 @@ export function RidgelineCanvas({ nodes, onNodeClick, mode, view, onViewChange, 
 
   const lineColor = "var(--text-primary)";
   const fillColor = "var(--background)";
-  const tickColor = "var(--text-primary)";
 
   return (
     <div ref={containerRef} className="flex-1 relative overflow-hidden select-none">
@@ -293,29 +275,17 @@ export function RidgelineCanvas({ nodes, onNodeClick, mode, view, onViewChange, 
         onMouseUp={handleMouseUp}
         onMouseLeave={() => { dragRef.current = null; setHoveredRow(null); setHoveredBucket(null); }}
       >
-        {/* Tick grid */}
-        {ticks.map(({ ms, x, label }) => (
-          <g key={ms}>
-            <line x1={x} y1={PAD_TOP - 6} x2={x} y2={dims.height - PAD_BOTTOM}
-              stroke={tickColor} strokeOpacity={0.06} strokeWidth={1} />
-            <text x={x} y={PAD_TOP - 10} textAnchor="middle"
-              fill={tickColor} fillOpacity={0.3} fontSize={8 * fs}
-              fontFamily="var(--font-mono)">
-              {label}
-            </text>
-          </g>
-        ))}
-
-        {/* Today */}
-        {showToday && (
-          <>
-            <line x1={todayX} y1={PAD_TOP - 4} x2={todayX} y2={dims.height - PAD_BOTTOM}
-              stroke={tickColor} strokeOpacity={0.18} strokeWidth={1} strokeDasharray="3,3" />
-            <text x={todayX} y={PAD_TOP - 10} textAnchor="middle"
-              fill={tickColor} fillOpacity={0.35} fontSize={8 * fs}
-              fontFamily="var(--font-mono)">TODAY</text>
-          </>
-        )}
+        {/* Tick grid + today line */}
+        <SvgTimeAxis
+          xScale={xScale}
+          plotW={plotW}
+          padLeft={PAD_LEFT}
+          padTop={PAD_TOP}
+          padBottom={PAD_BOTTOM}
+          bucketMs={bucketMs}
+          svgHeight={dims.height}
+          showToday={showToday}
+        />
 
         {/* Rows */}
         {renderOrder.map((ri) => {

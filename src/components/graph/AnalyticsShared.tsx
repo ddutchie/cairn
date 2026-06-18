@@ -28,7 +28,6 @@ interface TooltipProps {
   x: number;
   y: number;
   containerW: number;
-  containerH?: number;
   children: React.ReactNode;
   maxW?: number;
 }
@@ -53,7 +52,6 @@ export function CanvasTooltip({ x, y, containerW, maxW = 220, children }: Toolti
 interface TimeAxisProps {
   xScale: d3.ScaleTime<number, number>;
   plotW: number;
-  plotH: number;
   padLeft: number;
   padTop: number;
   padBottom: number;
@@ -65,7 +63,6 @@ interface TimeAxisProps {
 export function SvgTimeAxis({
   xScale,
   plotW,
-  plotH: _plotH,
   padLeft,
   padTop,
   padBottom,
