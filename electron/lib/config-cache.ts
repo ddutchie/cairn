@@ -4,6 +4,11 @@ import path from "path";
 
 const CONFIG_CACHE_FILE = "ai-settings-cache.json";
 
+export interface CachedEmbeddingsConfig {
+  enabled?: boolean;
+  modelId?: string;
+}
+
 export interface CachedConfig {
   aiConfig?: {
     provider?: string;
@@ -19,6 +24,7 @@ export interface CachedConfig {
     temperature?: number;
     autoApprove?: boolean;
   };
+  embeddingsConfig?: CachedEmbeddingsConfig;
   theme?: string;
   fontScale?: number;
 }
@@ -32,7 +38,7 @@ function getCachePath(): string {
   return path.join(userData, CONFIG_CACHE_FILE);
 }
 
-export function saveCachedConfig(type: "ai" | "agent" | "theme" | "fontScale", config: unknown): void {
+export function saveCachedConfig(type: "ai" | "agent" | "embeddings" | "theme" | "fontScale", config: unknown): void {
   try {
     const filePath = getCachePath();
     if (!filePath) return;
@@ -67,6 +73,12 @@ export function saveCachedConfig(type: "ai" | "agent" | "theme" | "fontScale", c
         temperature: typeof configRecord.temperature === "number" ? configRecord.temperature : current.agentConfig?.temperature,
         autoApprove: typeof configRecord.autoApprove === "boolean" ? configRecord.autoApprove : current.agentConfig?.autoApprove,
       };
+    } else if (type === "embeddings" && configRecord) {
+      current.embeddingsConfig = {
+        ...current.embeddingsConfig,
+        enabled: typeof configRecord.enabled === "boolean" ? configRecord.enabled : current.embeddingsConfig?.enabled,
+        modelId: typeof configRecord.modelId === "string" ? configRecord.modelId : current.embeddingsConfig?.modelId,
+      };
     } else if (type === "theme") {
       current.theme = String(config);
     } else if (type === "fontScale") {
@@ -89,4 +101,8 @@ export function getCachedConfig(): CachedConfig {
     console.error("[config-cache] Failed to read config:", err);
   }
   return {};
+}
+
+export function getEmbeddingsSettingsCached(): CachedEmbeddingsConfig {
+  return getCachedConfig().embeddingsConfig ?? {};
 }

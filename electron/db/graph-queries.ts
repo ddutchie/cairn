@@ -14,6 +14,9 @@
  */
 
 import type Database from "better-sqlite3";
+import { getAllEmbeddingsForWorkspace } from "./queries";
+import type { NoteEmbeddingRecord } from "./queries";
+import { cosine, toFloat32 } from "../embeddings/cosine";
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -48,7 +51,8 @@ export type EdgeType =
   | "co-mention"
   | "keyword"
   | "assignee"
-  | "wikilink";
+  | "wikilink"
+  | "semantic";
 
 export interface GraphEdge {
   id: string;
@@ -366,12 +370,13 @@ export function getKnowledgeGraph(
   }
 
   // ── 6. Auto relationships (relationship_cache) ─────────────────────────────
-  if (includeAuto && (wantsEdge("co-mention") || wantsEdge("keyword") || wantsEdge("assignee") || wantsEdge("wikilink"))) {
+  if (includeAuto && (wantsEdge("co-mention") || wantsEdge("keyword") || wantsEdge("assignee") || wantsEdge("wikilink") || wantsEdge("semantic"))) {
     const autoTypes: string[] = [];
     if (wantsEdge("co-mention")) autoTypes.push("co-mention");
     if (wantsEdge("keyword"))    autoTypes.push("keyword");
     if (wantsEdge("assignee"))   autoTypes.push("assignee");
     if (wantsEdge("wikilink"))   autoTypes.push("wikilink");
+    if (wantsEdge("semantic"))   autoTypes.push("semantic");
 
     if (autoTypes.length > 0) {
       const typePlaceholders = autoTypes.map(() => "?").join(",");
@@ -705,4 +710,72 @@ export function invalidateRelationshipCache(
   db.prepare(
     "DELETE FROM relationship_cache WHERE source_id = ? OR target_id = ?"
   ).run(entityId, entityId);
+}
+
+const SEMANTIC_THRESHOLD = 0.78;
+
+/**
+ * Recompute embedding-based semantic edges by cosine-similarity between the
+ * stored `search_document` vectors for this workspace. Output goes to
+ * `relationship_cache` under the `"semantic"` type so the existing pass-6
+ * loader picks it up (no SQL shape change — `type` is free-form TEXT).
+ *
+ * Incremental mode: when `entityIds` is non-empty, only note pairs where at
+ * least one endpoint is in the set are recomputed. Stale `"semantic"` rows for
+ * the changed entities are deleted before re-upserting, mirroring the
+ * `computeAutoRelationships` convention.
+ */
+export function computeSemanticRelationships(
+  db: Database.Database,
+  workspaceId: string,
+  entityIds?: string[]
+): void {
+  const stored = getAllEmbeddingsForWorkspace(db, workspaceId, "search_document");
+  if (stored.length === 0) return;
+
+  const now = Math.floor(Date.now() / 1000);
+  const upsert = db.prepare(`
+    INSERT INTO relationship_cache (source_id, target_id, type, weight, computed_at)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(source_id, target_id, type) DO UPDATE SET
+      weight = excluded.weight,
+      computed_at = excluded.computed_at
+  `);
+  const deleteOld = db.prepare(`
+    DELETE FROM relationship_cache WHERE (source_id = ? OR target_id = ?) AND type = 'semantic'
+  `);
+
+  const vectors = stored.map((r: NoteEmbeddingRecord) => ({
+    id: r.noteId,
+    vec: toFloat32(r.vector),
+  }));
+
+  const fullPool = vectors;
+  let activePool = vectors;
+  let activeIds: Set<string> | null = null;
+  if (entityIds && entityIds.length > 0) {
+    activeIds = new Set(entityIds);
+    activePool = vectors.filter((v) => activeIds!.has(v.id));
+  }
+
+  const tx = db.transaction(() => {
+    if (activeIds) {
+      for (const id of activeIds) deleteOld.run(id, id);
+    } else {
+      const allIds = vectors.map((v) => v.id);
+      for (const id of allIds) deleteOld.run(id, id);
+    }
+    for (const a of activePool) {
+      for (const b of fullPool) {
+        if (a.id >= b.id) continue;
+        const sim = cosine(a.vec, b.vec);
+        if (sim >= SEMANTIC_THRESHOLD) {
+          upsert.run(a.id, b.id, "semantic", Math.round(sim * 100) / 100, now);
+        }
+      }
+    }
+  });
+  tx();
+
+  void fullPool.length;
 }

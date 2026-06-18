@@ -15,6 +15,7 @@ interface Props {
   onBackgroundClick: () => void;
   labelMode: "smart" | "all" | "minimal";
   spacing: number;
+  semanticThreshold?: number;
 }
 
 type HNode = { id: string; title: string; type: string; children?: HNode[] };
@@ -74,11 +75,12 @@ function crossEdgeColor(type: string): string {
     case "note-card":  return resolveVar("--success");
     case "flow-edge":  return resolveVar("--accent");
     case "flow-ref":   return resolveVar("--accent");
+    case "semantic":   return resolveVar("--accent");
     default:           return resolveVar("--accent");
   }
 }
 
-export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgroundClick, labelMode, spacing }: Props) {
+export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgroundClick, labelMode, spacing, semanticThreshold = 1 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const gRef = useRef<SVGGElement>(null);
   const fs = useFontScale();
@@ -134,6 +136,7 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
     // Cross-edge chords — more visible, coloured by type
     const crossEdges = graph.edges.filter(
       (e) => !["project-member", "tag-member"].includes(e.type)
+        && (e.type !== "semantic" || (e.weight ?? 1) > semanticThreshold)
     );
     for (const edge of crossEdges.slice(0, 120)) {
       const sn = treeNodeMap.get(edge.source) as d3Hierarchy.HierarchyPointNode<HNode> | undefined;
@@ -142,7 +145,7 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
       const [x1, y1] = polar2cart(sn.x, sn.y);
       const [x2, y2] = polar2cart(tn.x, tn.y);
       const color = crossEdgeColor(edge.type);
-      const isAuto = ["co-mention", "keyword", "assignee"].includes(edge.type);
+      const isAuto = ["co-mention", "keyword", "assignee", "semantic"].includes(edge.type);
 
       gSel.append("line")
         .attr("x1", x1).attr("y1", y1)

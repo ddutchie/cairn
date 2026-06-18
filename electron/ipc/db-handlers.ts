@@ -19,7 +19,21 @@ import { suppressNextChange } from "../file-watcher";
 import { executeTool as executeMcpTool } from "../mcp/tools";
 import { executeReadTool } from "../lib/read-tools";
 import { DEFAULT_COLUMNS } from "../db/defaults";
-import { invalidateRelationshipCache, computeAutoRelationships } from "../db/graph-queries";
+import { invalidateRelationshipCache, computeAutoRelationships, computeSemanticRelationships } from "../db/graph-queries";
+import { reindexNotes } from "../embeddings/service";
+import { getDefaultModelId as getEmbeddingModelId } from "../embeddings/client";
+import { getEmbeddingsSettingsCached } from "../lib/config-cache";
+
+async function reindexSingleNoteEmbedding(ctx: DbContext, noteId: string, workspaceId: string): Promise<void> {
+  try {
+    const settings = getEmbeddingsSettingsCached();
+    if (!settings?.enabled) return;
+    const model = settings.modelId || getEmbeddingModelId();
+    await reindexNotes(ctx.db, workspaceId, [noteId], model);
+  } catch (e) {
+    console.warn("[embeddings] incremental reindex failed:", e instanceof Error ? e.message : e);
+  }
+}
 
 export function registerDbHandlers(ctx: DbContext): void {
   // ── Full snapshot (hydrate store on app launch) ───
@@ -135,8 +149,16 @@ export function registerDbHandlers(ctx: DbContext): void {
       });
     }
     invalidateRelationshipCache(ctx.db, id);
-    // Incremental recompute — refresh edges for this note without a full scan
-    if (note.workspaceId) computeAutoRelationships(ctx.db, note.workspaceId, [id]);
+    if (note.workspaceId) {
+      computeAutoRelationships(ctx.db, note.workspaceId, [id]);
+      void reindexSingleNoteEmbedding(ctx, id, note.workspaceId).then(() => {
+        try {
+          computeSemanticRelationships(ctx.db, note.workspaceId, [id]);
+        } catch (e) {
+          console.warn("[embeddings] semantic recompute skipped:", e instanceof Error ? e.message : e);
+        }
+      }).catch(() => { /* already warned */ });
+    }
     return note;
   }));
 

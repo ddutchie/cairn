@@ -34,4 +34,9 @@ export function registerSettingsHandlers(): void {
     saveCachedConfig("fontScale", fontScale);
     return { ok: true };
   }));
+  registerIpcHandle("app:getEmbeddingsSettings", () => handle(() => getCachedConfig().embeddingsConfig ?? null));
+  registerIpcHandle("app:saveEmbeddingsSettings", (_e, { config }: { config: Record<string, unknown> }) => handle(() => {
+    saveCachedConfig("embeddings", config);
+    return { ok: true };
+  }));
 }

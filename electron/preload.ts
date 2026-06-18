@@ -491,6 +491,80 @@ const api = {
       setDefault: (modelId: string) => invoke<{ success: boolean }>("llama:server:setDefault", { modelId }),
     }
   },
+  // ── Embeddings (local semantic search + knowledge graph) ────
+  embeddings: {
+    status: () => invoke<{
+      running: boolean;
+      port: number | null;
+      activeModelId: string | null;
+      defaultModelId: string | null;
+      installed: boolean;
+      error: string | null;
+      reindexInProgress: boolean;
+      recomputeInProgress: boolean;
+      lastReindexDone: number;
+      lastReindexTotal: number;
+      lastRecomputeDone: number;
+      lastRecomputeTotal: number;
+    }>("embeddings:status"),
+    stop: () => invoke<void>("embeddings:stop"),
+    reindex: (workspaceId: string, noteIds?: string[], model?: string) => invoke<{
+      indexed: number;
+      skipped: number;
+      total: number;
+    }>("db:embeddings:reindex", { workspaceId, noteIds, model }),
+    search: (workspaceId: string, queryText: string, opts?: {
+      queryNoteId?: string;
+      k?: number;
+      excludeIds?: string[];
+      model?: string;
+    }) => invoke<Array<{ noteId: string; title: string; score: number }>>(
+      "db:embeddings:search",
+      { workspaceId, queryText, ...opts },
+    ),
+    recomputeProjections: (workspaceId: string, model?: string) => invoke<{
+      projected: number;
+      total: number;
+    }>("db:embeddings:recomputeProjections", { workspaceId, model }),
+    models: {
+      list: () => invoke<Array<{
+        id: string;
+        name: string;
+        repo: string;
+        dim: number;
+        maxTokens: number;
+        sizeBytes: number;
+        status: "not_downloaded" | "downloading" | "installed" | "error";
+        downloadProgress: number;
+        downloadSpeed?: string;
+        error?: string;
+      }>>("embeddings:models:list"),
+      install: (modelId: string) => invoke<{ ok: boolean }>("embeddings:models:install", { modelId }),
+      remove: (modelId: string) => invoke<{ ok: boolean }>("embeddings:models:remove", { modelId }),
+      setDefault: (modelId: string) => invoke<{ ok: boolean }>("embeddings:models:setDefault", { modelId }),
+      onProgress: (cb: (e: {
+        modelId: string;
+        status: string;
+        file?: string;
+        progress?: number;
+        loaded?: number;
+        total?: number;
+        error?: string;
+      }) => void) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const handler = (_: any, e: any) => cb(e);
+        ipcRenderer.on("embeddings:download-progress", handler);
+        return () => {
+          ipcRenderer.off("embeddings:download-progress", handler);
+        };
+      },
+    },
+    getSettings: () => invoke<{ enabled: boolean; modelId: string } | null>("app:getEmbeddingsSettings"),
+    saveSettings: (config: { enabled: boolean; modelId: string }) => invoke<{ ok: boolean }>(
+      "app:saveEmbeddingsSettings",
+      { config },
+    ),
+  },
   // ── Mobile Access ────────────────────────────────
   mobile: {
     status: () => invoke<{

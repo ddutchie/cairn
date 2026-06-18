@@ -1261,3 +1261,121 @@ export function getCodebaseFilesByRoot(db: Database.Database, rootPath: string) 
 export function deleteCodebaseFile(db: Database.Database, fileId: string) {
   db.prepare("DELETE FROM codebase_files WHERE id = ?").run(fileId);
 }
+
+// ── Note Embeddings ───────────────────────────
+// Vectors are stored as JSON-in-TEXT (sqlite-vec-bridge shape).
+// All JSON-parse/serialize happens here; callers receive typed objects.
+
+export interface NoteEmbeddingRecord {
+  noteId: string;
+  workspaceId: string;
+  model: string;
+  task: string;
+  contentHash: string;
+  vector: number[];
+  embeddedAt: string;
+  dimX: number | null;
+  dimY: number | null;
+  projStale: number;
+}
+
+interface NoteEmbeddingRow {
+  note_id: string;
+  workspace_id: string;
+  model: string;
+  task: string;
+  content_hash: string;
+  vector: string;
+  embedded_at: string;
+  dim_x: number | null;
+  dim_y: number | null;
+  proj_stale: number;
+}
+
+function toNoteEmbedding(row: NoteEmbeddingRow): NoteEmbeddingRecord {
+  return {
+    noteId: row.note_id,
+    workspaceId: row.workspace_id,
+    model: row.model,
+    task: row.task,
+    contentHash: row.content_hash,
+    vector: JSON.parse(row.vector) as number[],
+    embeddedAt: row.embedded_at,
+    dimX: row.dim_x,
+    dimY: row.dim_y,
+    projStale: row.proj_stale,
+  };
+}
+
+export function upsertNoteEmbedding(
+  db: Database.Database,
+  e: {
+    noteId: string;
+    workspaceId: string;
+    model: string;
+    task: string;
+    contentHash: string;
+    vector: number[];
+  },
+): void {
+  const now = ts();
+  db.prepare(`
+    INSERT INTO note_embeddings
+      (note_id, workspace_id, model, task, content_hash, vector, embedded_at, proj_stale)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+    ON CONFLICT(note_id) DO UPDATE SET
+      workspace_id = excluded.workspace_id,
+      model        = excluded.model,
+      task         = excluded.task,
+      content_hash = excluded.content_hash,
+      vector       = excluded.vector,
+      embedded_at  = excluded.embedded_at,
+      proj_stale   = 1
+  `).run(e.noteId, e.workspaceId, e.model, e.task, e.contentHash, JSON.stringify(e.vector), now);
+}
+
+export function markEmbeddingProjectionFresh(db: Database.Database, noteId: string, x: number, y: number): void {
+  db.prepare(`
+    UPDATE note_embeddings SET dim_x = ?, dim_y = ?, proj_stale = 0 WHERE note_id = ?
+  `).run(x, y, noteId);
+}
+
+export function markAllProjectionsStale(db: Database.Database, workspaceId: string): void {
+  db.prepare("UPDATE note_embeddings SET proj_stale = 1 WHERE workspace_id = ?").run(workspaceId);
+}
+
+export function getNoteEmbedding(db: Database.Database, noteId: string): NoteEmbeddingRecord | null {
+  const row = db.prepare("SELECT * FROM note_embeddings WHERE note_id = ?").get(noteId) as NoteEmbeddingRow | undefined;
+  return row ? toNoteEmbedding(row) : null;
+}
+
+export function getAllEmbeddingsForWorkspace(
+  db: Database.Database,
+  workspaceId: string,
+  task: string,
+): NoteEmbeddingRecord[] {
+  const rows = db.prepare(
+    "SELECT * FROM note_embeddings WHERE workspace_id = ? AND task = ?"
+  ).all(workspaceId, task) as NoteEmbeddingRow[];
+  return rows.map(toNoteEmbedding);
+}
+
+export function getStaleProjectionNoteIds(db: Database.Database, workspaceId: string): string[] {
+  const rows = db.prepare(
+    "SELECT note_id FROM note_embeddings WHERE workspace_id = ? AND proj_stale = 1 AND task = 'search_document'"
+  ).all(workspaceId) as Array<{ note_id: string }>;
+  return rows.map((r) => r.note_id);
+}
+
+export function deleteNoteEmbedding(db: Database.Database, noteId: string): void {
+  db.prepare("DELETE FROM note_embeddings WHERE note_id = ?").run(noteId);
+}
+
+export function pruneOrphanedClusteringRows(db: Database.Database): number {
+  const info = db.prepare("DELETE FROM note_embeddings WHERE task = 'clustering'").run();
+  return info.changes;
+}
+
+export function deleteWorkspaceEmbeddings(db: Database.Database, workspaceId: string): void {
+  db.prepare("DELETE FROM note_embeddings WHERE workspace_id = ?").run(workspaceId);
+}

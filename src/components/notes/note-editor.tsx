@@ -7,7 +7,7 @@ import remarkBreaks from "remark-breaks";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
-import { Pin, PinOff, Calendar, Eye, Pencil, Wand2, Loader2, CheckCircle2, FileDown, ChevronLeft } from "lucide-react";
+import { Pin, PinOff, Calendar, Eye, Pencil, Wand2, Loader2, CheckCircle2, FileDown, ChevronLeft, Sparkles } from "lucide-react";
 import { WikilinkPicker } from "./WikilinkPicker";
 import { getActiveWikilink } from "@/lib/wikilink-parser";
 import { useCairnStore } from "@/store";
@@ -26,6 +26,8 @@ import { MarkdownEditor, type MarkdownEditorHandle } from "./markdown-editor";
 import { remarkCallout, remarkObsidianEmbeds, remarkWikilinks, remarkPromoteDisplayMath, makeLatexPlugins, InlineCode } from "@/lib/markdown/pipeline";
 import { BacklinksPanel, NoteTagBar } from "./BacklinksPanel";
 import { MDPreviewPanel } from "./MDPreviewPanel";
+import { SemanticHubsPanel } from "./SemanticHubsPanel";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { countWords, stripMarkdown } from "./note-editor-utils";
 
 interface NoteEditorProps {
@@ -56,10 +58,15 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
 
   const [mode, setMode] = useState<EditorMode>("write");
   const [wordCount, setWordCount] = useState(() => countWords(note.content ?? ""));
+  const [showSemanticPanel, setShowSemanticPanel] = useState(false);
+  const [semanticContent, setSemanticContent] = useState(note.content ?? "");
+  const debouncedSemanticContent = useDebouncedValue(semanticContent, 1200);
   // Reset when switching notes
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setWordCount(countWords(note.content ?? ""));
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSemanticContent(note.content ?? "");
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [note.id]);
 
@@ -162,6 +169,7 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
       }
 
       pendingContent.current = { noteId: note.id, markdown };
+      setSemanticContent(markdown);
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(() => {
         pendingContent.current = null;
@@ -793,6 +801,19 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
               {note.isPinned ? <PinOff size={13} /> : <Pin size={13} />}
             </button>
           </Tooltip>
+          <Tooltip content={showSemanticPanel ? "Hide semantic hubs" : "Show semantic hubs (similar notes)"}>
+            <button
+              onClick={() => setShowSemanticPanel((v) => !v)}
+              className={cn(
+                "p-1.5 rounded-md transition-colors",
+                showSemanticPanel
+                  ? "text-[var(--accent)] bg-[var(--accent-dim)]"
+                  : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]"
+              )}
+            >
+              <Sparkles size={13} />
+            </button>
+          </Tooltip>
           <span className="text-[0.786rem] text-[var(--text-tertiary)]">
             {wordCount.toLocaleString()} {wordCount === 1 ? "word" : "words"} · {Math.max(1, Math.ceil(wordCount / 200))} min read
           </span>
@@ -838,7 +859,8 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
         />
       )}
 
-      {/* ── Editor / Preview ────────────────────────────────────────────────── */}
+      {/* ── Editor / Preview + Semantic Hubs panel ───────────────────────────── */}
+      <div className="flex flex-1 min-h-0 overflow-hidden">
       <div className="flex-1 min-h-0 overflow-hidden relative">
         {/* AI write lock banner */}
         {isAiWriting && (
@@ -915,8 +937,16 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
         )}
       </div>
 
+      </div>
+
       {/* ── Backlinks panel ─────────────────────────────────────────────────── */}
-      <BacklinksPanel note={note} onOpenCard={() => setView("board")} />
+      <BacklinksPanel
+        note={note}
+        onOpenCard={() => setView("board")}
+        semanticEnabled={showSemanticPanel}
+        semanticContent={debouncedSemanticContent}
+        workspaceId={activeWorkspaceId}
+      />
 
 
 

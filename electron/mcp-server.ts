@@ -22,6 +22,7 @@ import {
   findDbPath,
   findWorkspacePath,
   ensureMcpActiveWritesTable,
+  ensureEmbeddingsTable,
   toWorkspace,
   toProject,
   getSnapshot
@@ -142,6 +143,7 @@ if (require.main === module) {
   db.pragma("foreign_keys = ON");
   db.pragma("journal_mode = WAL");
   ensureMcpActiveWritesTable(db);
+  ensureEmbeddingsTable(db);
   const workspacePath = findWorkspacePath(dbPath);
   process.stderr.write(`[cairn:mcp] Workspace folder: ${workspacePath}\n`);
   const server = buildMcpServer(db, workspacePath);

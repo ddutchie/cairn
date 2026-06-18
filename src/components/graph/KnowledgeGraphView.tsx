@@ -2,7 +2,7 @@
 
 import React, { useEffect, useCallback, useState, useMemo, useRef } from "react";
 import {
-  GitBranch, Circle, RefreshCw, ChevronDown, LayoutGrid, Search, SlidersHorizontal, Type,
+  GitBranch, Circle, RefreshCw, ChevronDown, LayoutGrid, Search, SlidersHorizontal, Type, Network,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
@@ -52,6 +52,7 @@ export function KnowledgeGraphView() {
   const [graphSearch, setGraphSearch] = useState("");
   const [labelMode, setLabelMode] = useState<"smart" | "all" | "minimal">("smart");
   const [spacing, setSpacing] = useState<number>(1.2);
+  const [semanticThreshold, setSemanticThreshold] = useState<number>(1.0);
 
   // ⌘F / Ctrl+F — focus the graph search input
   const graphSearchRef = useRef<HTMLInputElement>(null);
@@ -310,6 +311,31 @@ export function KnowledgeGraphView() {
           </div>
         )}
 
+        {/* Semantic similarity threshold slider */}
+        {(graphLayout === "force" || graphLayout === "radial") && (
+          <div className="flex items-center gap-2 px-2.5 py-1 rounded-md border border-[var(--border)] bg-[var(--surface)]">
+            <Tooltip content="Reveal semantic edges by similarity. 0 = all edges; 1.0 = hide (hard links only).">
+              <div className="flex items-center gap-1.5 text-[var(--text-secondary)] cursor-help">
+                <Network size={11} className="text-[var(--text-tertiary)]" />
+                <span className="text-[0.714rem] select-none font-medium whitespace-nowrap">Semantic</span>
+              </div>
+            </Tooltip>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={semanticThreshold}
+              onChange={(e) => setSemanticThreshold(parseFloat(e.target.value))}
+              className="w-16 h-1 rounded bg-[var(--border)] appearance-none cursor-pointer"
+              style={{ accentColor: "var(--accent)" }}
+            />
+            <span className="text-[0.643rem] text-[var(--text-tertiary)] min-w-[28px] text-right font-mono">
+              {semanticThreshold >= 1 ? "off" : `≥${semanticThreshold.toFixed(2)}`}
+            </span>
+          </div>
+        )}
+
         {/* Search + type toggles — shown for force and radial */}
         {(graphLayout === "force" || graphLayout === "radial") && (
           <>
@@ -420,6 +446,7 @@ export function KnowledgeGraphView() {
               onBackgroundClick={handleBackgroundClick}
               labelMode={labelMode}
               spacing={spacing}
+              semanticThreshold={semanticThreshold}
             />
           )}
 
@@ -431,6 +458,7 @@ export function KnowledgeGraphView() {
               onBackgroundClick={handleBackgroundClick}
               labelMode={labelMode}
               spacing={spacing}
+              semanticThreshold={semanticThreshold}
             />
           )}
 

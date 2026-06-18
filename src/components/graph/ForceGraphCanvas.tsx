@@ -18,6 +18,7 @@ interface Props {
   onBackgroundClick: () => void;
   labelMode: "smart" | "all" | "minimal";
   spacing: number;
+  semanticThreshold?: number;
 }
 
 function hexForType(type: GraphNode["type"]): string {
@@ -43,6 +44,7 @@ function edgeColor(edgeType: string): { color: string; opacity: number; dash: bo
     case "keyword":        return { color: resolveCssVar("--border"),  opacity: 0.4, dash: true  };
     case "assignee":       return { color: resolveCssVar("--border"),  opacity: 0.4, dash: true  };
     case "wikilink":       return { color: resolveCssVar("--accent"),  opacity: 0.75, dash: false };
+    case "semantic":       return { color: resolveCssVar("--accent"),  opacity: 0.5, dash: true  };
     default:               return { color: resolveCssVar("--border"),  opacity: 0.4, dash: false };
   }
 }
@@ -52,7 +54,7 @@ function toAlpha(hex: string, opacity: number): string {
   return hex.replace(/^#/, "#") + a;
 }
 
-export function ForceGraphCanvas({ graph, selectedNodeId, onNodeClick, onBackgroundClick, labelMode, spacing }: Props) {
+export function ForceGraphCanvas({ graph, selectedNodeId, onNodeClick, onBackgroundClick, labelMode, spacing, semanticThreshold = 1 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const fgRef = useRef<ForceGraph2DInstance>(null);
   const [ForceGraph2D, setForceGraph2D] = useState<ForceGraph2DInstance>(null);
@@ -64,11 +66,12 @@ export function ForceGraphCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
   const nodeDegrees = useMemo(() => {
     const degrees: Record<string, number> = {};
     for (const link of graph.edges) {
+      if (link.type === "semantic" && (link.weight ?? 1) <= semanticThreshold) continue;
       degrees[link.source] = (degrees[link.source] ?? 0) + 1;
       degrees[link.target] = (degrees[link.target] ?? 0) + 1;
     }
     return degrees;
-  }, [graph.edges]);
+  }, [graph.edges, semanticThreshold]);
 
   useEffect(() => {
     import("react-force-graph-2d").then((mod) => setForceGraph2D(() => mod.default));
@@ -136,8 +139,14 @@ export function ForceGraphCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
   // Key on stable fingerprints of node/edge IDs — not object identity.
   // This means selectedNodeId changes (which cause re-renders) never invalidate
   // the memo and never hand a new graphData object to the library → no re-simulation.
+  const visibleEdges = useMemo(
+    () => graph.edges.filter(
+      (e) => e.type !== "semantic" || (e.weight ?? 1) > semanticThreshold,
+    ),
+    [graph.edges, semanticThreshold],
+  );
   const nodeFingerprint = graph.nodes.map((n) => n.id).join(",");
-  const edgeFingerprint = graph.edges.map((e) => `${e.source}-${e.target}`).join(",");
+  const edgeFingerprint = visibleEdges.map((e) => `${e.source}-${e.target}`).join(",");
   const fgData = useMemo(() => ({
     nodes: graph.nodes.map((n) => ({
       id: n.id,
@@ -145,7 +154,7 @@ export function ForceGraphCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
       nodeType: n.type,
       val: n.type === "project" ? 3 : n.type === "tag" ? 1.5 : 2,
     })),
-    links: graph.edges.map((e) => ({
+    links: visibleEdges.map((e) => ({
       source: e.source,
       target: e.target,
       edgeType: e.type,

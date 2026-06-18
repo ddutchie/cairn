@@ -31,6 +31,7 @@ import { createTray } from "./lib/tray";
 import { killTrackedBashProcesses } from "./lib/coding-tools/bash";
 import { startMcpNotificationPoller } from "./lib/mcp-poller";
 import { stopServerSync } from "./lib/llama-server";
+import { dispose as disposeEmbeddingsWorker } from "./embeddings/client";
 
 const isDev = !app.isPackaged;
 
@@ -310,6 +311,8 @@ app.on("before-quit", () => {
   killTrackedBashProcesses();
   // Terminate the local llama-server background child process so it doesn't linger
   stopServerSync();
+  // Terminate the embeddings worker child process (HTTP server) so it doesn't linger
+  void disposeEmbeddingsWorker();
 });
 
 app.on("window-all-closed", () => {

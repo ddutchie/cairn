@@ -49,6 +49,7 @@ function isWriteChannel(channel: string): boolean {
     "db:piSession:messages",
     "db:graph:get",
     "db:graph:neighbors",
+    "db:embeddings:search",
     "db:mcpQuery"
   ];
 

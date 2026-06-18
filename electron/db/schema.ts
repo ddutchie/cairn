@@ -404,6 +404,29 @@ const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_codebase_relations_target_name ON codebase_relations(target_name);
     `);
   },
+
+  // v17: Embedding storage for semantic graph + adjacent-notes (JSON-TEXT vector
+  // bridge; the column shape is deliberately sqlite-vec-compatible so the eventual
+  // swap to a vec0 virtual table only needs a column rename, not a rewrite).
+  (db) => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS note_embeddings (
+        note_id        TEXT PRIMARY KEY REFERENCES notes(id) ON DELETE CASCADE,
+        workspace_id   TEXT NOT NULL,
+        model          TEXT NOT NULL,
+        task           TEXT NOT NULL,
+        content_hash   TEXT NOT NULL,
+        vector         TEXT NOT NULL,
+        embedded_at    TEXT NOT NULL,
+        dim_x          REAL,
+        dim_y          REAL,
+        proj_stale     INTEGER NOT NULL DEFAULT 1
+      );
+      CREATE INDEX IF NOT EXISTS idx_emb_workspace ON note_embeddings(workspace_id);
+      CREATE INDEX IF NOT EXISTS idx_emb_proj_stale ON note_embeddings(proj_stale);
+      CREATE INDEX IF NOT EXISTS idx_emb_task ON note_embeddings(task);
+    `);
+  },
 ];
 
 export function applySchema(db: Database.Database): void {
