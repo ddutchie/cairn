@@ -1,0 +1,7 @@
+{
+  "name": "sharp",
+  "version": "0.0.0",
+  "description": "Stub for sharp — Cairn only uses text tokenization, never image processing. Replaces the native sharp module to avoid native compilation on Windows arm64.",
+  "main": "index.js",
+  "type": "module"
+}

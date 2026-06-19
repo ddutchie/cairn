@@ -32,7 +32,8 @@
   },
   "main": "dist-electron/main.js",
   "overrides": {
-    "postcss": "^8.5.10"
+    "postcss": "^8.5.10",
+    "sharp": "file:electron/sharp-stub"
   },
   "dependencies": {
     "@codemirror/search": "^6.7.0",
