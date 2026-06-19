@@ -94,7 +94,7 @@ export function registerEmbeddingsHandlers(ctx: DbContext): void {
       ctx.getWin(),
       (onProgress) => reindexNotes(ctx.db, args.workspaceId, args.noteIds, model, undefined, onProgress),
     ) as ReindexResult;
-    if (result.indexed > 0) {
+    if (result.total > 0) {
       try {
         computeSemanticRelationships(ctx.db, args.workspaceId, args.noteIds);
       } catch (e) {
