@@ -43,7 +43,7 @@ as the MCP server emits them via `electron/mcp-server.ts:50` — `JSON.stringify
 | get_neighbors | 991 | 541 | 450 | 113 | 45 % |
 | get_semantic_neighbors | 35 | 35 | 0 | 0 | 0 % (already minimal) |
 | get_idea_flow | 1393 | 1316 | 77 | 19 | 6 % |
-| **MCP subtotal** | **20,200** | **15,010** | **5,190** | **1,298** | **26 %** |
+| **MCP subtotal** | **20,300** | **14,177** | **6,123** | **1,531** | **30 %** |
 
 ### Chat-only tools (`electron/ipc/chat-executor.ts`)
 
@@ -63,9 +63,9 @@ Only four tools are defined inline in `chat-executor.ts` (`CHAT_ONLY_TOOLS` in
 
 
 The biggest wins came from the three read-heavy tools (knowledge graph,
-neighbours, cairn context) — together they account for 4,055 of the 3,441 bytes
-saved. Write tools already returned small confirmation payloads and were left
-untouched except for `list_ready_tasks`.
+neighbours, cairn context) — together they account for 5,346 of the 6,123 bytes
+saved (~87 %). Write tools already returned small confirmation payloads and were
+left untouched except for `list_ready_tasks`.
 
 ## Optimizations applied
 

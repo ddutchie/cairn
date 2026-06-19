@@ -140,6 +140,7 @@ describe("payload baseline", () => {
     seed(db);
   });
   afterEach(() => {
+    try { db.close(); } catch { /* ignore — already closed */ }
     try { fs.rmSync(wp, { recursive: true, force: true }); } catch { /* ignore */ }
   });
 
@@ -185,6 +186,7 @@ describe("chat-only tool payload baseline", () => {
     seed(db);
   });
   afterEach(() => {
+    try { db.close(); } catch { /* ignore — already closed */ }
     try { fs.rmSync(wp, { recursive: true, force: true }); } catch { /* ignore */ }
   });
 
