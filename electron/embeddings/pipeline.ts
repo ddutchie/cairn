@@ -96,7 +96,7 @@ export async function embed(
   const pipe = await loadPipeline(modelId);
   const prefixed = texts.map((t) => withNomicPrefix(task, t));
 
-  const encoded = await pipe.tokenizer(prefixed);
+  const encoded = await pipe.tokenizer(prefixed, { padding: true, truncation: true });
   const batchSize = encoded.input_ids.dims[0];
   const seqLen = encoded.input_ids.dims[1];
   const total = batchSize * seqLen;
