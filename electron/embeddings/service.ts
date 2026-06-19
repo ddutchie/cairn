@@ -142,7 +142,9 @@ export async function reindexNotes(
   const notes = fetchNotes(db, workspaceId, noteIds);
   let indexed = 0;
   let skipped = 0;
+  let done = 0;
   const total = notes.length;
+  if (total > 0) onProgress?.(done, total);
   for (let i = 0; i < notes.length; i += BATCH_SIZE) {
     const batch = notes.slice(i, i + BATCH_SIZE);
     const todo: Array<{ note: NoteStub; text: string }> = [];
@@ -150,6 +152,8 @@ export async function reindexNotes(
       if (!n.content_text || n.content_text.trim().length === 0) {
         deleteNoteEmbedding(db, n.id);
         skipped++;
+        done++;
+        onProgress?.(done, total);
         continue;
       }
       const text = `${n.title}\n\n${n.content_text}`;
@@ -157,14 +161,13 @@ export async function reindexNotes(
       const existing = getNoteEmbedding(db, n.id);
       if (existing && existing.contentHash === hash && existing.model === model && existing.task === "search_document") {
         skipped++;
+        done++;
+        onProgress?.(done, total);
         continue;
       }
       todo.push({ note: n, text });
     }
-    if (todo.length === 0) {
-      onProgress?.(Math.min(i + BATCH_SIZE, total), total);
-      continue;
-    }
+    if (todo.length === 0) continue;
     const chunkedResults = await Promise.all(
       todo.map((t) => embedChunkedDocument(embed, t.text, "search_document", model)),
     );
@@ -180,8 +183,9 @@ export async function reindexNotes(
         vector,
       });
       indexed++;
+      done++;
+      onProgress?.(done, total);
     }
-    onProgress?.(Math.min(i + BATCH_SIZE, total), total);
   }
   return { indexed, skipped, total };
 }
@@ -269,6 +273,8 @@ export async function recomputeProjections(
     }
   }
   const totalToProcess = missing.length;
+  let done = 0;
+  if (totalToProcess > 0) onProgress?.(done, totalToProcess);
   for (let i = 0; i < missing.length; i += BATCH_SIZE) {
     const batch = missing.slice(i, i + BATCH_SIZE);
     const chunkedResults = await Promise.all(
@@ -285,8 +291,9 @@ export async function recomputeProjections(
         contentHash: hash,
         vector,
       });
+      done++;
+      onProgress?.(done, totalToProcess);
     }
-    onProgress?.(Math.min(i + BATCH_SIZE, totalToProcess), totalToProcess);
   }
   const all = getAllEmbeddingsForWorkspace(db, workspaceId, "search_document");
   return projectExisting(db, all);
