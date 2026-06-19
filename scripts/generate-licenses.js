@@ -44,6 +44,9 @@ const ROLE_MAP = {
   // ── AI ──────────────────────────────────────────────────────────────────────
   "@modelcontextprotocol/sdk":     ["MCP SDK",             "Agent protocol",              "AI"],
   "ai":                            ["Vercel AI SDK",       "AI streaming utilities",      "AI"],
+  "@xenova/transformers":          ["Transformers.js",     "Tokenizer & model loading",   "AI"],
+  "onnxruntime-node":              ["ONNX Runtime",         "Native embedding inference",  "AI"],
+  "umap-js":                       ["UMAP.js",              "Embedding dimensionality reduction", "AI"],
 
   // ── UI ──────────────────────────────────────────────────────────────────────
   "tailwindcss":                   ["Tailwind CSS",        "Styling",                     "UI"],
