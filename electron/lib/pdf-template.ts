@@ -54,9 +54,12 @@ export function buildPdfHtml(title: string, htmlBody: string, theme: PdfTheme = 
 :root {
   --text-primary: ${v.textPrimary};
   --text-secondary: ${v.textSecondary};
+  --surface: ${v.bg};
   --surface-2: ${v.surface2};
   --border: ${v.border};
   --accent: ${v.accent};
+  --code-bg: ${v.codeBg};
+  --code-color: ${v.codeColor};
   --success: ${v.success};
   --warning: ${v.warning};
   --danger: ${v.danger};
@@ -86,7 +89,7 @@ body {
 .prose-cairn em { font-style: italic; }
 .prose-cairn code { font-family: ui-monospace, monospace; font-size: 0.8em; background: var(--surface-2); border: 1px solid var(--border); border-radius: 3px; padding: 0.1em 0.35em; word-break: break-all; }
 /* Code blocks: overflow wraps rather than clips */
-.prose-cairn pre { margin: 0.75rem 0; padding: 0.75rem 1rem; background: ${v.codeBg} !important; color: ${v.codeColor} !important; border: 1px solid var(--border); border-radius: 6px; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word; word-break: break-all; max-width: 100%; }
+.prose-cairn pre { margin: 0.75rem 0; padding: 0.75rem 1rem; background: var(--code-bg) !important; color: var(--code-color) !important; border: 1px solid var(--border); border-radius: 6px; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word; word-break: break-all; max-width: 100%; }
 .prose-cairn pre code { background: none !important; border: none; padding: 0; font-size: 0.8rem; white-space: pre-wrap; word-break: break-all; }
 .prose-cairn ul { list-style: disc; padding-left: 1.5rem; margin: 0.5rem 0; }
 .prose-cairn ol { list-style: decimal; padding-left: 1.5rem; margin: 0.5rem 0; }
@@ -138,25 +141,25 @@ body {
  * resolve, so we force our background with !important to override. */
 .prose-cairn [data-callout] { background: var(--surface-2) !important; }
 .prose-cairn [data-callout-type="note"],
-.prose-cairn [data-callout-type="info"]    { border-left-color: var(--accent); background: ${theme === "dark" ? "#1a1a2e" : "#f0edfb"} !important; }
+.prose-cairn [data-callout-type="info"]    { border-left-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)) !important; }
 .prose-cairn [data-callout-type="note"] > div:first-child,
 .prose-cairn [data-callout-type="info"] > div:first-child    { color: var(--accent); }
-.prose-cairn [data-callout-type="tip"]     { border-left-color: var(--success); background: ${theme === "dark" ? "#13291c" : "#edfaf1"} !important; }
+.prose-cairn [data-callout-type="tip"]     { border-left-color: var(--success); background: color-mix(in srgb, var(--success) 8%, var(--surface)) !important; }
 .prose-cairn [data-callout-type="tip"] > div:first-child     { color: var(--success); }
-.prose-cairn [data-callout-type="warning"] { border-left-color: var(--warning); background: ${theme === "dark" ? "#2a2118" : "#fdf6ed"} !important; }
+.prose-cairn [data-callout-type="warning"] { border-left-color: var(--warning); background: color-mix(in srgb, var(--warning) 8%, var(--surface)) !important; }
 .prose-cairn [data-callout-type="warning"] > div:first-child { color: var(--warning); }
 .prose-cairn [data-callout-type="danger"],
-.prose-cairn [data-callout-type="caution"] { border-left-color: var(--danger); background: ${theme === "dark" ? "#2a1818" : "#fdf0f0"} !important; }
+.prose-cairn [data-callout-type="caution"] { border-left-color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, var(--surface)) !important; }
 .prose-cairn [data-callout-type="danger"] > div:first-child,
 .prose-cairn [data-callout-type="caution"] > div:first-child { color: var(--danger); }
 .prose-cairn [data-callout-type="success"],
 .prose-cairn [data-callout-type="check"],
-.prose-cairn [data-callout-type="done"]    { border-left-color: var(--success); background: ${theme === "dark" ? "#13291c" : "#edfaf1"} !important; }
+.prose-cairn [data-callout-type="done"]    { border-left-color: var(--success); background: color-mix(in srgb, var(--success) 8%, var(--surface)) !important; }
 .prose-cairn [data-callout-type="success"] > div:first-child,
 .prose-cairn [data-callout-type="check"] > div:first-child,
 .prose-cairn [data-callout-type="done"] > div:first-child    { color: var(--success); }
 .prose-cairn [data-callout-type="question"],
-.prose-cairn [data-callout-type="faq"]     { border-left-color: var(--accent); background: ${theme === "dark" ? "#1a1a2e" : "#f0edfb"} !important; }
+.prose-cairn [data-callout-type="faq"]     { border-left-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)) !important; }
 .prose-cairn [data-callout-type="question"] > div:first-child,
 .prose-cairn [data-callout-type="faq"] > div:first-child     { color: var(--accent); }
 .prose-cairn [data-callout-type="quote"],
