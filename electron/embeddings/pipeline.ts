@@ -25,6 +25,7 @@ interface LoadedPipeline {
 
 let _pipeline: LoadedPipeline | null = null;
 let _pipelinePromise: Promise<LoadedPipeline> | null = null;
+let _pipelinePromiseModelId: string | null = null;
 
 export function setCacheDir(dir: string): void {
   env.cacheDir = dir;
@@ -43,7 +44,9 @@ export async function loadPipeline(
   onProgress?: ProgressCallback,
 ): Promise<LoadedPipeline> {
   if (_pipeline && _pipeline.modelId === modelId) return _pipeline;
-  if (_pipelinePromise) return _pipelinePromise;
+  if (_pipelinePromise && _pipelinePromiseModelId === modelId) return _pipelinePromise;
+
+  _pipelinePromiseModelId = modelId;
 
   _pipelinePromise = (async () => {
     onProgress?.({ status: "initiate" });
@@ -78,6 +81,7 @@ export async function loadPipeline(
     return _pipeline;
   })().catch((err) => {
     _pipelinePromise = null;
+    _pipelinePromiseModelId = null;
     throw err;
   });
 
@@ -148,4 +152,5 @@ export async function embed(
 export function resetPipeline(): void {
   _pipeline = null;
   _pipelinePromise = null;
+  _pipelinePromiseModelId = null;
 }

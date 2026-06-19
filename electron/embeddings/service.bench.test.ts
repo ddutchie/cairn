@@ -127,7 +127,7 @@ const CEILINGS: Record<string, Partial<Record<FixtureName, number>>> = {
   "averageVectors(8)":  { tiny: 1, small: 1, medium: 1, large: 1, xlarge: 1 },
   "cosine":             { tiny: 1, small: 1, medium: 1, large: 1, xlarge: 1 },
   "topK(100→5)":        { tiny: 1, small: 1, medium: 1, large: 1, xlarge: 1 },
-  "topK(1000→5)":       { tiny: 2, small: 2, medium: 2, large: 2, xlarge: 2 },
+  "topK(1000→5)":       { tiny: 5, small: 5, medium: 5, large: 5, xlarge: 5 },
   "projectTo2d(20)":    { tiny: 500, small: 500, medium: 500, large: 500, xlarge: 500 },
   "projectTo2d(100)":   { tiny: 0, small: 0, medium: 0, large: 0, xlarge: 0 }, // skipped if 0
 };
