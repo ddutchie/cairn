@@ -28,6 +28,7 @@ interface MarkdownEditorProps {
   initialValue: string;
   onChange: (value: string) => void;
   onSelectionChange?: (sel: { text: string; coords: { top: number; left: number } } | null) => void;
+  onCursorActivity?: (cursorOffset: number) => void;
   placeholder?: string;
   className?: string;
   /** When true, the editor is read-only (used during AI writes). */
@@ -119,7 +120,7 @@ function buildTheme() {
 }
 
 const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(
-  ({ initialValue, onChange, onSelectionChange, placeholder = "Write here…", className, readOnly = false }, ref) => {
+  ({ initialValue, onChange, onSelectionChange, onCursorActivity, placeholder = "Write here…", className, readOnly = false }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const viewRef = useRef<EditorView | null>(null);
     // Compartment allows reconfiguring editability after the editor is created
@@ -161,24 +162,30 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(
         }
 
         // Notify parent of selection changes for AI toolbar positioning
-        if (update.selectionSet && onSelectionChange) {
-          const { from, to } = update.state.selection.main;
-          if (from === to) {
-            onSelectionChange(null);
-            return;
+        if (update.selectionSet) {
+          if (onCursorActivity) {
+            onCursorActivity(update.state.selection.main.head);
           }
-          const text = update.state.sliceDoc(from, to).trim();
-          if (text.length < 3) {
-            onSelectionChange(null);
-            return;
-          }
-          // Only need the vertical position — toolbar centres itself in the window
-          const coordsFrom = update.view.coordsAtPos(from);
-          if (coordsFrom) {
-            onSelectionChange({
-              text,
-              coords: { top: coordsFrom.top, left: 0 },
-            });
+          if (onSelectionChange) {
+            const { from, to } = update.state.selection.main;
+            if (from === to) {
+              onSelectionChange(null);
+              return;
+            }
+            const text = update.state.sliceDoc(from, to).trim();
+            if (text.length < 3) {
+              onSelectionChange(null);
+              return;
+            }
+            const coordsFrom = update.view.coordsAtPos(from);
+            if (coordsFrom) {
+              onSelectionChange({
+                text,
+                coords: { top: coordsFrom.top, left: 0 },
+              });
+            } else {
+              onSelectionChange(null);
+            }
           }
         }
       });

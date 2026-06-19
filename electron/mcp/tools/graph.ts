@@ -3,6 +3,7 @@ import Database from "better-sqlite3";
 import {
   getKnowledgeGraph,
   getNeighbours,
+  getSemanticNeighbors,
   type GraphFilters,
   type EdgeType,
 } from "../../db/graph-queries";
@@ -31,7 +32,6 @@ export function get_neighbors(db: Database.Database, args: Record<string, any>) 
   const { workspaceId, nodeId, depth = 1, edgeTypes } = args;
   if (!workspaceId || !nodeId) return { error: "workspaceId and nodeId are required" };
 
-  // Delegate to the canonical BFS implementation in graph-queries.ts.
   return getNeighbours(
     db,
     workspaceId as string,
@@ -39,4 +39,13 @@ export function get_neighbors(db: Database.Database, args: Record<string, any>) 
     depth as number,
     Array.isArray(edgeTypes) ? edgeTypes as EdgeType[] : undefined,
   );
+}
+
+export function get_semantic_neighbors(db: Database.Database, args: Record<string, any>) {
+  const { noteId, workspaceId } = args;
+  if (!noteId) return { error: "noteId is required" };
+  if (!workspaceId) return { error: "workspaceId is required" };
+  const neighbors = getSemanticNeighbors(db, noteId as string, workspaceId as string);
+  insertNotification(db, "get_semantic_neighbors", "Semantic neighbors retrieved", `${neighbors.length} related notes for ${noteId}`);
+  return { noteId, neighbors };
 }

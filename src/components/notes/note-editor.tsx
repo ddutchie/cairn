@@ -7,8 +7,7 @@ import remarkBreaks from "remark-breaks";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
-import { Pin, PinOff, Calendar, Eye, Pencil, Wand2, Loader2, CheckCircle2, FileDown, ChevronLeft } from "lucide-react";
-import { WikilinkPicker } from "./WikilinkPicker";
+import { Pin, PinOff, Calendar, Eye, Pencil, Wand2, Loader2, CheckCircle2, FileDown, ChevronLeft, Sparkles } from "lucide-react";import { WikilinkPicker } from "./WikilinkPicker";
 import { getActiveWikilink } from "@/lib/wikilink-parser";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -18,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import type { Note } from "@/types";
 import { MermaidDiagram } from "./MermaidDiagram";
 import { TableOfContents, headingSlug } from "./TableOfContents";
+import { findSectionTitleAtOffset, extractSectionTextAtOffset } from "./toc-utils";
 import { CodeBlock } from "./CodeBlock";
 import { Callout } from "./Callout";
 import { MathBlock } from "./MathBlock";
@@ -55,13 +55,19 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [mode, setMode] = useState<EditorMode>("write");
-  const [wordCount, setWordCount] = useState(() => countWords(note.content ?? ""));
-  // Reset when switching notes
+  const noteContent0 = note.content ?? "";
+  const [wordCount, setWordCount] = useState(() => countWords(noteContent0));
+  const [showSemanticPanel, setShowSemanticPanel] = useState(false);
+  const [activeSectionTitle, setActiveSectionTitle] = useState<string | null>(null);
+  const [activeSectionText, setActiveSectionText] = useState<string | null>(null);
+  const noteId = note.id;
+  const [semanticContent, setSemanticContent] = useState(noteContent0);
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setWordCount(countWords(note.content ?? ""));
+    setWordCount(countWords(noteContent0));
+    setSemanticContent(noteContent0);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [note.id]);
+  }, [noteId]);
 
   // ── AI write lock ─────────────────────────────────────────────────────────
   // When the in-app AI or MCP server is actively writing this note, the editor
@@ -162,6 +168,7 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
       }
 
       pendingContent.current = { noteId: note.id, markdown };
+      setSemanticContent(markdown);
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(() => {
         pendingContent.current = null;
@@ -212,13 +219,24 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
     if (titleTimer.current) clearTimeout(titleTimer.current);
     const t = titleRef.current.trim();
     if (!t) {
-      // Revert to last saved title if field is left empty
       setLocalTitle(note.title);
       titleRef.current = note.title;
       return;
     }
     updateNote(note.id, { title: t });
   }, [note.id, note.title, updateNote]);
+
+  const handleCursorActivity = useCallback(
+    (offset: number) => {
+      const title = titleRef.current;
+      const content = editorRef.current?.getView()?.state.doc.toString() ?? "";
+      const section = findSectionTitleAtOffset(title, content, offset);
+      setActiveSectionTitle((prev) => (prev === section ? prev : section));
+      const extracted = extractSectionTextAtOffset(title, content, offset);
+      setActiveSectionText(extracted ? extracted.text : null);
+    },
+    []
+  );
 
   // ── AI toolbar — driven by CodeMirror selection events ────────────────────
   const handleSelectionChange = useCallback(
@@ -793,6 +811,19 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
               {note.isPinned ? <PinOff size={13} /> : <Pin size={13} />}
             </button>
           </Tooltip>
+          <Tooltip content={showSemanticPanel ? "Hide semantic hubs" : "Show semantic hubs (similar notes)"}>
+            <button
+              onClick={() => setShowSemanticPanel((v) => !v)}
+              className={cn(
+                "p-1.5 rounded-md transition-colors",
+                showSemanticPanel
+                  ? "text-[var(--accent)] bg-[var(--accent-dim)]"
+                  : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]"
+              )}
+            >
+              <Sparkles size={13} />
+            </button>
+          </Tooltip>
           <span className="text-[0.786rem] text-[var(--text-tertiary)]">
             {wordCount.toLocaleString()} {wordCount === 1 ? "word" : "words"} · {Math.max(1, Math.ceil(wordCount / 200))} min read
           </span>
@@ -838,7 +869,8 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
         />
       )}
 
-      {/* ── Editor / Preview ────────────────────────────────────────────────── */}
+      {/* ── Editor / Preview + Semantic Hubs panel ───────────────────────────── */}
+      <div className="flex flex-1 min-h-0 overflow-hidden">
       <div className="flex-1 min-h-0 overflow-hidden relative">
         {/* AI write lock banner */}
         {isAiWriting && (
@@ -864,6 +896,7 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
             initialValue={note.content ?? ""}
             onChange={handleContentChange}
             onSelectionChange={handleSelectionChange}
+            onCursorActivity={handleCursorActivity}
             placeholder="Write here…"
             readOnly={isAiWriting}
           />
@@ -915,8 +948,18 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
         )}
       </div>
 
+      </div>
+
       {/* ── Backlinks panel ─────────────────────────────────────────────────── */}
-      <BacklinksPanel note={note} onOpenCard={() => setView("board")} />
+      <BacklinksPanel
+        note={note}
+        onOpenCard={() => setView("board")}
+        semanticEnabled={showSemanticPanel}
+        semanticContent={semanticContent}
+        activeSectionTitle={showSemanticPanel ? activeSectionTitle : null}
+        activeSectionText={showSemanticPanel ? activeSectionText : null}
+        workspaceId={activeWorkspaceId}
+      />
 
 
 

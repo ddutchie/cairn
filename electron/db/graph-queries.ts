@@ -14,6 +14,9 @@
  */
 
 import type Database from "better-sqlite3";
+import { getAllEmbeddingsForWorkspace } from "./queries";
+import type { NoteEmbeddingRecord } from "./queries";
+import { cosine, toFloat32 } from "../embeddings/cosine";
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -48,7 +51,8 @@ export type EdgeType =
   | "co-mention"
   | "keyword"
   | "assignee"
-  | "wikilink";
+  | "wikilink"
+  | "semantic";
 
 export interface GraphEdge {
   id: string;
@@ -56,7 +60,9 @@ export interface GraphEdge {
   target: string;
   type: EdgeType;
   label?: string;
-  weight?: number; // 0–1 for auto edges
+  weight?: number;
+  sourceSectionTitle?: string;
+  targetSectionTitle?: string;
 }
 
 export interface KnowledgeGraph {
@@ -366,17 +372,18 @@ export function getKnowledgeGraph(
   }
 
   // ── 6. Auto relationships (relationship_cache) ─────────────────────────────
-  if (includeAuto && (wantsEdge("co-mention") || wantsEdge("keyword") || wantsEdge("assignee") || wantsEdge("wikilink"))) {
+  if (includeAuto && (wantsEdge("co-mention") || wantsEdge("keyword") || wantsEdge("assignee") || wantsEdge("wikilink") || wantsEdge("semantic"))) {
     const autoTypes: string[] = [];
     if (wantsEdge("co-mention")) autoTypes.push("co-mention");
     if (wantsEdge("keyword"))    autoTypes.push("keyword");
     if (wantsEdge("assignee"))   autoTypes.push("assignee");
     if (wantsEdge("wikilink"))   autoTypes.push("wikilink");
+    if (wantsEdge("semantic"))   autoTypes.push("semantic");
 
     if (autoTypes.length > 0) {
       const typePlaceholders = autoTypes.map(() => "?").join(",");
       const cacheRows = db.prepare(
-        `SELECT source_id, target_id, type, weight
+        `SELECT source_id, target_id, type, weight, source_section_title, target_section_title
          FROM relationship_cache
          WHERE type IN (${typePlaceholders})`
       ).all(...autoTypes) as Row[];
@@ -384,7 +391,6 @@ export function getKnowledgeGraph(
       for (const r of cacheRows) {
         const src = r.source_id as string;
         const tgt = r.target_id as string;
-        // Only include if both endpoints are in the current graph scope
         if (nodeSet.has(src) && nodeSet.has(tgt)) {
           edges.push({
             id: edgeId(r.type as string, src, tgt),
@@ -393,6 +399,8 @@ export function getKnowledgeGraph(
             type: r.type as EdgeType,
             weight: r.weight as number,
             label: r.type as string,
+            sourceSectionTitle: (r.source_section_title as string | null) ?? undefined,
+            targetSectionTitle: (r.target_section_title as string | null) ?? undefined,
           });
         }
       }
@@ -554,16 +562,19 @@ export function computeAutoRelationships(
   ).all(workspaceId) as Row[];
 
   const upsert = db.prepare(`
-    INSERT INTO relationship_cache (source_id, target_id, type, weight, computed_at)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO relationship_cache (source_id, target_id, type, weight, computed_at, source_section_title, target_section_title)
+    VALUES (?, ?, ?, ?, ?, NULL, NULL)
     ON CONFLICT(source_id, target_id, type) DO UPDATE SET
       weight = excluded.weight,
-      computed_at = excluded.computed_at
+      computed_at = excluded.computed_at,
+      source_section_title = NULL,
+      target_section_title = NULL
   `);
 
   const deleteOld = db.prepare(`
     DELETE FROM relationship_cache
-    WHERE source_id = ? OR target_id = ?
+    WHERE (source_id = ? OR target_id = ?)
+      AND type != 'semantic'
   `);
 
   // ── Incremental mode: filter to only entities that need recomputing ────────
@@ -705,4 +716,166 @@ export function invalidateRelationshipCache(
   db.prepare(
     "DELETE FROM relationship_cache WHERE source_id = ? OR target_id = ?"
   ).run(entityId, entityId);
+}
+
+const SEMANTIC_TOP_K = 5;
+const SEMANTIC_TOP_K_FLOOR = 0.55;
+/**
+ * Recompute embedding-based semantic edges by cosine-similarity between the
+ * stored `search_document` vectors for this workspace. Since v18, vectors are
+ * per-section, so one note can have multiple embedding rows. This function
+ * compares all sections across all notes, finds the top-K most-similar
+ * *sections* for each active section, then maps those back to note-pair edges
+ * (keeping the best weight per note pair). Output goes to `relationship_cache`
+ * under the `"semantic"` type so the existing pass-6 loader picks it up.
+ *
+ * Strategy: top-K nearest sections per active section, cosine >= floor 0.55.
+ * Edges are between notes (not sections) — the best section-pair weight wins.
+ * Canonical source<target ordering ensures (a,b) and (b,a) collapse to one row.
+ *
+ * Incremental mode: when `entityIds` is non-empty, only sections belonging to
+ * the active note set are used as query sources; the full pool is still used
+ * as candidates so an edited note can discover new connections.
+ */
+export function computeSemanticRelationships(
+  db: Database.Database,
+  workspaceId: string,
+  entityIds?: string[]
+): void {
+  const stored = getAllEmbeddingsForWorkspace(db, workspaceId, "search_document");
+  if (stored.length === 0) return;
+
+  interface SectionVec {
+    noteId: string;
+    sectionIdx: number;
+    sectionTitle: string;
+    vec: Float32Array;
+  }
+  const fullPool: SectionVec[] = stored.map((r: NoteEmbeddingRecord) => ({
+    noteId: r.noteId,
+    sectionIdx: r.sectionIdx,
+    sectionTitle: r.sectionTitle,
+    vec: toFloat32(r.vector),
+  }));
+
+  const noteIdsInPool = new Set(fullPool.map((s) => s.noteId));
+  if (noteIdsInPool.size < 2) return;
+
+  let activePool: SectionVec[] = fullPool;
+  let activeIds: Set<string> | null = null;
+  if (entityIds && entityIds.length > 0) {
+    activeIds = new Set(entityIds);
+    activePool = fullPool.filter((s) => activeIds!.has(s.noteId));
+  }
+
+  const k = Math.min(SEMANTIC_TOP_K, Math.max(1, noteIdsInPool.size - 1));
+
+  const now = Math.floor(Date.now() / 1000);
+  const upsert = db.prepare(`
+    INSERT INTO relationship_cache (source_id, target_id, type, weight, computed_at, source_section_title, target_section_title)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(source_id, target_id, type) DO UPDATE SET
+      weight = excluded.weight,
+      computed_at = excluded.computed_at,
+      source_section_title = excluded.source_section_title,
+      target_section_title = excluded.target_section_title
+  `);
+  const deleteOld = db.prepare(`
+    DELETE FROM relationship_cache WHERE (source_id = ? OR target_id = ?) AND type = 'semantic'
+  `);
+
+  const tx = db.transaction(() => {
+    if (activeIds) {
+      for (const id of activeIds) deleteOld.run(id, id);
+    } else {
+      for (const id of noteIdsInPool) deleteOld.run(id, id);
+    }
+
+    const bestPerPair = new Map<string, { weight: number; sourceTitle: string; targetTitle: string }>();
+
+    for (const a of activePool) {
+      const scored: Array<{ sec: SectionVec; sim: number }> = [];
+      for (const b of fullPool) {
+        if (a.noteId === b.noteId) continue;
+        const sim = cosine(a.vec, b.vec);
+        if (sim >= SEMANTIC_TOP_K_FLOOR) {
+          scored.push({ sec: b, sim });
+        }
+      }
+      scored.sort((x, y) => y.sim - x.sim);
+      const top = scored.slice(0, k);
+      for (const t of top) {
+        const [srcNote, tgtNote, srcSec, tgtSec] =
+          a.noteId < t.sec.noteId
+            ? [a.noteId, t.sec.noteId, a.sectionTitle, t.sec.sectionTitle]
+            : [t.sec.noteId, a.noteId, t.sec.sectionTitle, a.sectionTitle];
+        const key = `${srcNote}|${tgtNote}`;
+        const ex = bestPerPair.get(key);
+        if (!ex || t.sim > ex.weight) {
+          bestPerPair.set(key, { weight: t.sim, sourceTitle: srcSec, targetTitle: tgtSec });
+        }
+      }
+    }
+
+    for (const [key, val] of bestPerPair) {
+      const [src, tgt] = key.split("|");
+      upsert.run(src, tgt, "semantic", Math.round(val.weight * 100) / 100, now, val.sourceTitle, val.targetTitle);
+    }
+  });
+  tx();
+}
+
+export interface SemanticNeighbor {
+  noteId: string;
+  title: string;
+  weight: number;
+  sourceSectionTitle: string | null;
+  targetSectionTitle: string | null;
+}
+
+export function getSemanticNeighbors(
+  db: Database.Database,
+  noteId: string,
+  workspaceId?: string,
+): SemanticNeighbor[] {
+  const wsClause = workspaceId ? `AND n.workspace_id = ?` : "";
+  const wsParams = workspaceId ? [workspaceId, workspaceId] : [];
+  const rows = db.prepare(`
+    SELECT
+      rc.source_id, rc.target_id, rc.weight,
+      rc.source_section_title, rc.target_section_title,
+      CASE WHEN rc.source_id = ? THEN rc.target_id ELSE rc.source_id END AS other_id,
+      CASE WHEN rc.source_id = ? THEN rc.source_section_title ELSE rc.target_section_title END AS this_section,
+      CASE WHEN rc.source_id = ? THEN rc.target_section_title ELSE rc.source_section_title END AS other_section
+    FROM relationship_cache rc
+    WHERE rc.type = 'semantic'
+      AND (rc.source_id = ? OR rc.target_id = ?)
+    ORDER BY rc.weight DESC
+  `).all(
+    noteId, noteId, noteId, noteId, noteId,
+  ) as Array<{
+    other_id: string;
+    weight: number;
+    this_section: string | null;
+    other_section: string | null;
+  }>;
+
+  if (rows.length === 0) return [];
+
+  const ids = rows.map((r) => r.other_id);
+  const placeholders = ids.map(() => "?").join(",");
+  const titleRows = db.prepare(
+    `SELECT n.id, n.title FROM notes n WHERE n.id IN (${placeholders}) ${wsClause}`,
+  ).all(...ids, ...wsParams) as Array<{ id: string; title: string }>;
+  const titleMap = new Map(titleRows.map((r) => [r.id, r.title] as const));
+
+  return rows
+    .filter((r) => titleMap.has(r.other_id))
+    .map((r) => ({
+      noteId: r.other_id,
+      title: titleMap.get(r.other_id) ?? r.other_id,
+      weight: r.weight,
+      sourceSectionTitle: r.this_section,
+      targetSectionTitle: r.other_section,
+    }));
 }

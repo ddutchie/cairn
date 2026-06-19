@@ -404,6 +404,82 @@ const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_codebase_relations_target_name ON codebase_relations(target_name);
     `);
   },
+
+  // v17: Embedding storage for semantic graph + adjacent-notes (JSON-TEXT vector
+  // bridge; the column shape is deliberately sqlite-vec-compatible so the eventual
+  // swap to a vec0 virtual table only needs a column rename, not a rewrite).
+  (db) => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS note_embeddings (
+        note_id        TEXT PRIMARY KEY REFERENCES notes(id) ON DELETE CASCADE,
+        workspace_id   TEXT NOT NULL,
+        model          TEXT NOT NULL,
+        task           TEXT NOT NULL,
+        content_hash   TEXT NOT NULL,
+        vector         TEXT NOT NULL,
+        embedded_at    TEXT NOT NULL,
+        dim_x          REAL,
+        dim_y          REAL,
+        proj_stale     INTEGER NOT NULL DEFAULT 1
+      );
+      CREATE INDEX IF NOT EXISTS idx_emb_workspace ON note_embeddings(workspace_id);
+      CREATE INDEX IF NOT EXISTS idx_emb_proj_stale ON note_embeddings(proj_stale);
+      CREATE INDEX IF NOT EXISTS idx_emb_task ON note_embeddings(task);
+    `);
+  },
+
+  // v18: Section-based embeddings — one note can have multiple embedding rows,
+  // one per markdown section (## / # header boundary). Adds section_idx + section_title,
+  // changes PK from (note_id) to (note_id, section_idx). Old data is migrated as
+  // section_idx=0, section_title=''. This enables much finer-grained semantic matching
+  // because notes with multiple topics no longer have their embedding diluted by averaging.
+  // Also adds source_section_title / target_section_title to relationship_cache so the
+  // semantic edges can carry which sections matched.
+  (db) => {
+    db.exec(`
+      ALTER TABLE note_embeddings RENAME TO note_embeddings_v17;
+      CREATE TABLE note_embeddings (
+        note_id        TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+        section_idx    INTEGER NOT NULL DEFAULT 0,
+        workspace_id   TEXT NOT NULL,
+        model          TEXT NOT NULL,
+        task           TEXT NOT NULL,
+        section_title  TEXT NOT NULL DEFAULT '',
+        content_hash   TEXT NOT NULL,
+        vector         TEXT NOT NULL,
+        embedded_at    TEXT NOT NULL,
+        dim_x          REAL,
+        dim_y          REAL,
+        proj_stale     INTEGER NOT NULL DEFAULT 1,
+        PRIMARY KEY (note_id, section_idx)
+      );
+      INSERT INTO note_embeddings (note_id, section_idx, workspace_id, model, task, section_title, content_hash, vector, embedded_at, dim_x, dim_y, proj_stale)
+      SELECT note_id, 0, workspace_id, model, task, '', content_hash, vector, embedded_at, dim_x, dim_y, proj_stale
+      FROM note_embeddings_v17;
+      DROP TABLE note_embeddings_v17;
+      CREATE INDEX IF NOT EXISTS idx_emb_workspace ON note_embeddings(workspace_id);
+      CREATE INDEX IF NOT EXISTS idx_emb_proj_stale ON note_embeddings(proj_stale);
+      CREATE INDEX IF NOT EXISTS idx_emb_task ON note_embeddings(task);
+
+      ALTER TABLE relationship_cache ADD COLUMN source_section_title TEXT;
+      ALTER TABLE relationship_cache ADD COLUMN target_section_title TEXT;
+    `);
+  },
+
+  // v19: Failsafe — if v18 ran before the ALTER TABLE statements were added
+  // (the v18 migration was edited after initial deployment), the
+  // source_section_title / target_section_title columns won't exist on
+  // relationship_cache. This migration adds them idempotently.
+  (db) => {
+    const cols = db.prepare("PRAGMA table_info(relationship_cache)").all() as Array<{ name: string }>;
+    const has = (name: string) => cols.some((c) => c.name === name);
+    if (!has("source_section_title")) {
+      db.exec("ALTER TABLE relationship_cache ADD COLUMN source_section_title TEXT");
+    }
+    if (!has("target_section_title")) {
+      db.exec("ALTER TABLE relationship_cache ADD COLUMN target_section_title TEXT");
+    }
+  },
 ];
 
 export function applySchema(db: Database.Database): void {

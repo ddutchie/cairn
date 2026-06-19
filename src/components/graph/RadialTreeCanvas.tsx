@@ -4,7 +4,7 @@ import React, { useRef, useEffect, useCallback, useState } from "react";
 import * as d3Hierarchy from "d3-hierarchy";
 import * as d3Zoom from "d3-zoom";
 import * as d3Selection from "d3-selection";
-import type { GraphNode, KnowledgeGraph } from "@/types";
+import type { GraphNode, GraphEdge, KnowledgeGraph } from "@/types";
 import { resolveCssVar as resolveVar } from "./analyticsUtils";
 import { useFontScale } from "./analyticsHooks";
 
@@ -15,6 +15,7 @@ interface Props {
   onBackgroundClick: () => void;
   labelMode: "smart" | "all" | "minimal";
   spacing: number;
+  semanticThreshold?: number;
 }
 
 type HNode = { id: string; title: string; type: string; children?: HNode[] };
@@ -74,15 +75,18 @@ function crossEdgeColor(type: string): string {
     case "note-card":  return resolveVar("--success");
     case "flow-edge":  return resolveVar("--accent");
     case "flow-ref":   return resolveVar("--accent");
+    case "semantic":   return resolveVar("--accent");
     default:           return resolveVar("--accent");
   }
 }
 
-export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgroundClick, labelMode, spacing }: Props) {
+export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgroundClick, labelMode, spacing, semanticThreshold = 1 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const gRef = useRef<SVGGElement>(null);
   const fs = useFontScale();
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+  const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const labelModeRef = useRef(labelMode);
   const selectedNodeIdRef = useRef(selectedNodeId);
@@ -131,26 +135,89 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
       return [r * Math.cos(angle - Math.PI / 2), r * Math.sin(angle - Math.PI / 2)];
     }
 
+    function showEdgeTooltip(event: MouseEvent, edge: GraphEdge) {
+      const container = containerRef.current;
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+      const srcName = nodeTitleMap.get(edge.source) ?? edge.source;
+      const tgtName = nodeTitleMap.get(edge.target) ?? edge.target;
+      const left = edge.sourceSectionTitle ? `${srcName} › ${edge.sourceSectionTitle}` : srcName;
+      const right = edge.targetSectionTitle ? `${tgtName} › ${edge.targetSectionTitle}` : tgtName;
+      const pct = ((edge.weight ?? 1) * 100).toFixed(0);
+      setTooltip({
+        x: event.clientX - rect.left + 12,
+        y: event.clientY - rect.top + 12,
+        text: `${left} ↔ ${right} · ${pct}%`,
+      });
+    }
+
     // Cross-edge chords — more visible, coloured by type
     const crossEdges = graph.edges.filter(
       (e) => !["project-member", "tag-member"].includes(e.type)
+        && (e.type !== "semantic" || (e.weight ?? 1) >= semanticThreshold)
     );
-    for (const edge of crossEdges.slice(0, 120)) {
+
+    // Prioritise semantic and wikilink edges so they render on top
+    crossEdges.sort((a, b) => {
+      const rank = (t: string) => t === "semantic" ? 0 : t === "wikilink" ? 1 : 2;
+      return rank(a.type) - rank(b.type);
+    });
+
+    const nodeTitleMap = new Map(graph.nodes.map((n) => [n.id, n.title] as const));
+
+    // Build set of connected node IDs for highlight/dim
+    const selId = selectedNodeId;
+    const connectedIds = selId ? new Set<string>() : null;
+    if (connectedIds && selId) {
+      connectedIds.add(selId);
+      for (const e of crossEdges) {
+        if (e.source === selId) connectedIds.add(e.target);
+        if (e.target === selId) connectedIds.add(e.source);
+      }
+    }
+
+    for (const edge of crossEdges) {
       const sn = treeNodeMap.get(edge.source) as d3Hierarchy.HierarchyPointNode<HNode> | undefined;
       const tn = treeNodeMap.get(edge.target) as d3Hierarchy.HierarchyPointNode<HNode> | undefined;
       if (!sn || !tn) continue;
       const [x1, y1] = polar2cart(sn.x, sn.y);
       const [x2, y2] = polar2cart(tn.x, tn.y);
       const color = crossEdgeColor(edge.type);
-      const isAuto = ["co-mention", "keyword", "assignee"].includes(edge.type);
+      const isConnected = selectedNodeId && (edge.source === selectedNodeId || edge.target === selectedNodeId);
+      const isSemantic = edge.type === "semantic";
+      let opacity = isSemantic ? 0.5 : ["co-mention", "keyword", "assignee"].includes(edge.type) ? 0.1 : 0.2;
+      let width = isSemantic ? 1.2 : 0.75;
+      if (selectedNodeId) {
+        if (isConnected) {
+          opacity = 0.85;
+          width = 2;
+        } else {
+          opacity = opacity * 0.12;
+        }
+      }
 
       gSel.append("line")
         .attr("x1", x1).attr("y1", y1)
         .attr("x2", x2).attr("y2", y2)
         .attr("stroke", color)
-        .attr("stroke-width", 0.75)
-        .attr("stroke-opacity", isAuto ? 0.1 : 0.2)
-        .attr("stroke-dasharray", "3,4");
+        .attr("stroke-width", width)
+        .attr("stroke-opacity", opacity)
+        .attr("stroke-dasharray", "3,4")
+        .style("cursor", edge.type === "semantic" ? "pointer" : "default")
+        .on("mouseenter", function(event: MouseEvent) {
+          if (edge.type !== "semantic") return;
+          d3Selection.select(this).attr("stroke-opacity", 1).attr("stroke-width", 3);
+          showEdgeTooltip(event, edge);
+        })
+        .on("mousemove", function(event: MouseEvent) {
+          if (edge.type !== "semantic") return;
+          showEdgeTooltip(event, edge);
+        })
+        .on("mouseleave", function() {
+          if (edge.type !== "semantic") return;
+          d3Selection.select(this).attr("stroke-opacity", opacity).attr("stroke-width", width);
+          setTooltip(null);
+        });
     }
 
     // Radial link path
@@ -169,7 +236,7 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
       .attr("class", "link")
       .attr("fill", "none")
       .attr("stroke", resolveVar("--border"))
-      .attr("stroke-opacity", 0.5)
+      .attr("stroke-opacity", selectedNodeId ? 0.1 : 0.5)
       .attr("stroke-width", 1)
       .attr("d", (d) => radialLinkPath(d as d3Hierarchy.HierarchyPointLink<HNode>));
 
@@ -195,6 +262,7 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
         const nodeId = (d.data as { id: string }).id;
         const baseId = nodeId.includes(":") ? nodeId.split(":")[0] : nodeId;
         setHoveredNodeId(baseId);
+        setTooltip(null);
       })
       .on("mouseleave", () => {
         setHoveredNodeId(null);
@@ -206,6 +274,7 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
       const nodeId = (d.data as { id: string }).id;
       const baseId = nodeId.includes(":") ? nodeId.split(":")[0] : nodeId;
       const isSelected = baseId === selectedNodeId;
+      const isDimmed = !!selectedNodeId && !connectedIds?.has(baseId);
       const color = colorForType(type);
       const sel = d3Selection.select(this);
 
@@ -246,7 +315,7 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
 
         sel.append("circle")
           .attr("r", radius)
-          .attr("fill", (isSelected || isHovered) ? color : color + "aa")
+          .attr("fill", (isSelected || isHovered) ? color : color + (isDimmed ? "30" : "aa"))
           .attr("stroke", (isSelected || isHovered) ? color : "none")
           .attr("stroke-width", (isSelected || isHovered) ? 2 : 0);
 
@@ -254,6 +323,17 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
         sel.append("circle")
           .attr("r", Math.max(radius, 8))
           .attr("fill", "transparent");
+      }
+    });
+
+    // Bring hovered/selected nodes to front (painted last = on top)
+    nodeGroups.each(function(d) {
+      const nodeId = (d.data as { id: string }).id;
+      const baseId = nodeId.includes(":") ? nodeId.split(":")[0] : nodeId;
+      if (baseId === selectedNodeId || baseId === hoveredNodeId) {
+        const el = this as SVGGElement;
+        const parent = el.parentNode;
+        if (parent) parent.appendChild(el);
       }
     });
 
@@ -338,11 +418,14 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
       .text((d) => {
         const title = (d.data as { title: string }).title;
         const type = (d.data as { type: string }).type;
-        const maxLen = type === "project" ? 28 : 22;
+        const nodeId = (d.data as { id: string }).id;
+        const baseId = nodeId.includes(":") ? nodeId.split(":")[0] : nodeId;
+        const isHighlight = baseId === selectedNodeId || baseId === hoveredNodeId;
+        const maxLen = isHighlight ? 60 : type === "project" ? 28 : 22;
         return title.length > maxLen ? title.slice(0, maxLen - 1) + "…" : title;
       });
 
-  }, [graph, selectedNodeId, hoveredNodeId, labelMode, spacing, onNodeClick, fs]);
+  }, [graph, selectedNodeId, hoveredNodeId, labelMode, spacing, onNodeClick, fs, semanticThreshold]);
 
   useEffect(() => { renderTree(); }, [renderTree]);
 
@@ -383,7 +466,7 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
     const svgSel = d3Selection.select(svg);
     svgSel.call(zoom);
     svgSel.call(zoom.transform, d3Zoom.zoomIdentity.translate(width / 2, height / 2));
-    svgSel.on("click.bg", onBackgroundClick);
+    svgSel.on("click.bg", () => { onBackgroundClick(); setTooltip(null); });
 
     return () => {
       svgSel.on(".zoom", null);
@@ -400,8 +483,18 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
   }, [renderTree]);
 
   return (
-    <svg ref={svgRef} className="flex-1 w-full h-full" style={{ background: "transparent" }}>
-      <g ref={gRef} />
-    </svg>
+    <div ref={containerRef} className="flex-1 w-full h-full relative" onMouseLeave={() => setTooltip(null)}>
+      <svg ref={svgRef} className="flex-1 w-full h-full" style={{ background: "transparent" }}>
+        <g ref={gRef} />
+      </svg>
+      {tooltip && (
+        <div
+          className="pointer-events-none absolute z-20 px-3 py-1.5 rounded-md text-xs bg-[var(--surface)] border border-[var(--border)] text-[var(--text-primary)] shadow-lg max-w-[280px] break-words"
+          style={{ left: tooltip.x, top: tooltip.y }}
+        >
+          {tooltip.text}
+        </div>
+      )}
+    </div>
   );
 }

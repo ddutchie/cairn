@@ -18,6 +18,7 @@ interface Props {
   onBackgroundClick: () => void;
   labelMode: "smart" | "all" | "minimal";
   spacing: number;
+  semanticThreshold?: number;
 }
 
 function hexForType(type: GraphNode["type"]): string {
@@ -30,7 +31,8 @@ function hexForType(type: GraphNode["type"]): string {
   return map[type] ?? "#888";
 }
 
-// Edge colour by relationship type
+  // Edge colour by relationship type
+
 function edgeColor(edgeType: string): { color: string; opacity: number; dash: boolean } {
   switch (edgeType) {
     case "note-note":      return { color: resolveCssVar("--info"),    opacity: 0.6, dash: false };
@@ -43,6 +45,7 @@ function edgeColor(edgeType: string): { color: string; opacity: number; dash: bo
     case "keyword":        return { color: resolveCssVar("--border"),  opacity: 0.4, dash: true  };
     case "assignee":       return { color: resolveCssVar("--border"),  opacity: 0.4, dash: true  };
     case "wikilink":       return { color: resolveCssVar("--accent"),  opacity: 0.75, dash: false };
+    case "semantic":       return { color: resolveCssVar("--accent"),  opacity: 0.5, dash: true  };
     default:               return { color: resolveCssVar("--border"),  opacity: 0.4, dash: false };
   }
 }
@@ -52,23 +55,104 @@ function toAlpha(hex: string, opacity: number): string {
   return hex.replace(/^#/, "#") + a;
 }
 
-export function ForceGraphCanvas({ graph, selectedNodeId, onNodeClick, onBackgroundClick, labelMode, spacing }: Props) {
+type FgNode = { id?: string; name?: string; nodeType?: string; x?: number; y?: number };
+
+function drawNode(
+  node: FgNode,
+  ctx: CanvasRenderingContext2D,
+  globalScale: number,
+  fs: number,
+  selectedNodeId: string | null,
+  hoveredNodeId: string | null,
+  connectedNodeIds: Set<string> | null,
+  labelMode: "smart" | "all" | "minimal",
+) {
+  const label = node.name ?? "";
+  const isSelected = node.id === selectedNodeId;
+  const isHovered = node.id === hoveredNodeId;
+  const isDimmed = selectedNodeId !== null && node.id !== null && node.id !== undefined && !connectedNodeIds?.has(node.id);
+  const isProject = node.nodeType === "project";
+  const radius = isProject ? 7 : node.nodeType === "tag" ? 4 : 5.5;
+  const x = node.x ?? 0;
+  const y = node.y ?? 0;
+  const color = hexForType((node.nodeType ?? "note") as GraphNode["type"]);
+
+  if (isSelected || isHovered) {
+    const glowOpacity = isSelected ? 0.08 : 0.04;
+    for (let i = 3; i >= 1; i--) {
+      ctx.beginPath();
+      ctx.arc(x, y, radius + i * 3, 0, 2 * Math.PI);
+      ctx.fillStyle = color + Math.round((glowOpacity / i) * 255).toString(16).padStart(2, "0");
+      ctx.fill();
+    }
+  }
+
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, 2 * Math.PI);
+  ctx.fillStyle = isSelected ? color : color + (isDimmed ? "30" : "bb");
+  ctx.fill();
+
+  if (isSelected) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2 / globalScale;
+    ctx.stroke();
+  }
+
+  let showLabel = false;
+  if (isProject || isSelected || isHovered) {
+    showLabel = true;
+  } else if (labelMode === "all") {
+    showLabel = globalScale >= 0.7;
+  } else if (labelMode === "smart") {
+    showLabel = globalScale >= 1.4;
+  }
+
+  if (showLabel) {
+    const isHighlight = isSelected || isHovered;
+    const screenPx = (isProject ? 11.5 : 10) * fs;
+    const fontSize = screenPx / globalScale;
+    const maxLen = isHighlight ? 60 : isProject ? 24 : 18;
+    const text = label.length > maxLen ? label.slice(0, maxLen - 1) + "…" : label;
+
+    ctx.font = `${(isProject || isHighlight) ? "600 " : ""}${fontSize}px ui-sans-serif, system-ui, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+
+    ctx.strokeStyle = resolveCssVar("--background");
+    ctx.lineWidth = 4 / globalScale;
+    ctx.lineJoin = "round";
+    ctx.strokeText(text, x, y + radius + 4 / globalScale);
+
+    if (isHighlight && !isProject) {
+      ctx.fillStyle = resolveCssVar("--accent");
+    } else {
+      ctx.fillStyle = resolveCssVar(isProject ? "--text-primary" : "--text-secondary");
+    }
+
+    ctx.fillText(text, x, y + radius + 4 / globalScale);
+  }
+}
+
+export function ForceGraphCanvas({ graph, selectedNodeId, onNodeClick, onBackgroundClick, labelMode, spacing, semanticThreshold = 1 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const fgRef = useRef<ForceGraph2DInstance>(null);
   const [ForceGraph2D, setForceGraph2D] = useState<ForceGraph2DInstance>(null);
   const fs = useFontScale();
   const [dims, setDims] = useState({ width: 800, height: 600 });
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+  const [hoveredEdgeText, setHoveredEdgeText] = useState<string | null>(null);
+  const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
 
   // Compute node degrees to dynamically scale individual node repulsion (charge force)
   const nodeDegrees = useMemo(() => {
     const degrees: Record<string, number> = {};
     for (const link of graph.edges) {
+      if (link.type === "semantic" && (link.weight ?? 1) < semanticThreshold) continue;
       degrees[link.source] = (degrees[link.source] ?? 0) + 1;
       degrees[link.target] = (degrees[link.target] ?? 0) + 1;
     }
     return degrees;
-  }, [graph.edges]);
+  }, [graph.edges, semanticThreshold]);
 
   useEffect(() => {
     import("react-force-graph-2d").then((mod) => setForceGraph2D(() => mod.default));
@@ -136,8 +220,14 @@ export function ForceGraphCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
   // Key on stable fingerprints of node/edge IDs — not object identity.
   // This means selectedNodeId changes (which cause re-renders) never invalidate
   // the memo and never hand a new graphData object to the library → no re-simulation.
+  const visibleEdges = useMemo(
+    () => graph.edges.filter(
+      (e) => e.type !== "semantic" || (e.weight ?? 1) >= semanticThreshold,
+    ),
+    [graph.edges, semanticThreshold],
+  );
   const nodeFingerprint = graph.nodes.map((n) => n.id).join(",");
-  const edgeFingerprint = graph.edges.map((e) => `${e.source}-${e.target}`).join(",");
+  const edgeFingerprint = visibleEdges.map((e) => `${e.source}-${e.target}`).join(",");
   const fgData = useMemo(() => ({
     nodes: graph.nodes.map((n) => ({
       id: n.id,
@@ -145,7 +235,7 @@ export function ForceGraphCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
       nodeType: n.type,
       val: n.type === "project" ? 3 : n.type === "tag" ? 1.5 : 2,
     })),
-    links: graph.edges.map((e) => ({
+    links: visibleEdges.map((e) => ({
       source: e.source,
       target: e.target,
       edgeType: e.type,
@@ -153,6 +243,17 @@ export function ForceGraphCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
     })),
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [nodeFingerprint, edgeFingerprint]);
+
+  const connectedNodeIds = useMemo(() => {
+    if (!selectedNodeId) return null;
+    const ids = new Set<string>();
+    ids.add(selectedNodeId);
+    for (const e of visibleEdges) {
+      if (e.source === selectedNodeId) ids.add(e.target);
+      if (e.target === selectedNodeId) ids.add(e.source);
+    }
+    return ids;
+  }, [selectedNodeId, visibleEdges]);
 
   function zoomBy(factor: number) {
     fgRef.current?.zoom(fgRef.current.zoom() * factor, 300);
@@ -170,28 +271,53 @@ export function ForceGraphCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
   }
 
   return (
-    <div ref={containerRef} className="flex-1 overflow-hidden relative">
-      <ForceGraph2D
+    <div
+      ref={containerRef}
+      className="flex-1 overflow-hidden relative"
+      onMouseMove={(e) => {
+        if (hoveredEdgeText) {
+          const rect = e.currentTarget.getBoundingClientRect();
+          setTooltipPos({ x: e.clientX - rect.left + 12, y: e.clientY - rect.top + 12 });
+        }
+      }}
+      onMouseLeave={() => setHoveredEdgeText(null)}
+    >      <ForceGraph2D
         ref={fgRef}
         width={dims.width}
         height={dims.height}
         graphData={fgData}
         nodeId="id"
-        nodeLabel="name"
+        nodeLabel=""
         nodeVal="val"
         nodeColor={(node: { id?: string; nodeType?: string }) => {
-          const base = hexForType((node.nodeType ?? "note") as GraphNode["type"]);
-          return node.id === selectedNodeId ? base : base + "bb";
+          const type = (node.nodeType ?? "note") as GraphNode["type"];
+          const isSelected = node.id === selectedNodeId;
+          const isDimmed = selectedNodeId !== null && node.id !== null && node.id !== undefined && !connectedNodeIds?.has(node.id);
+          const base = hexForType(type);
+          if (isSelected) return base;
+          if (isDimmed) return base + "30";
+          return base + "bb";
         }}
         nodeRelSize={5}
-        linkColor={(link: { edgeType?: string }) => {
+        linkColor={(link: { source?: { id?: string } | string; target?: { id?: string } | string; edgeType?: string }) => {
+          const srcId = typeof link.source === "object" ? link.source?.id : link.source;
+          const tgtId = typeof link.target === "object" ? link.target?.id : link.target;
+          const isConnected = selectedNodeId && (srcId === selectedNodeId || tgtId === selectedNodeId);
           const { color, opacity } = edgeColor(link.edgeType ?? "");
+          if (selectedNodeId) {
+            return isConnected
+              ? toAlpha(color, Math.max(opacity, 0.9))
+              : toAlpha(color, opacity * 0.12);
+          }
           return toAlpha(color, opacity);
         }}
-        linkWidth={(link: { edgeType?: string; weight?: number }) => {
+        linkWidth={(link: { source?: { id?: string } | string; target?: { id?: string } | string; edgeType?: string; weight?: number }) => {
+          const srcId = typeof link.source === "object" ? link.source?.id : link.source;
+          const tgtId = typeof link.target === "object" ? link.target?.id : link.target;
+          const isConnected = selectedNodeId && (srcId === selectedNodeId || tgtId === selectedNodeId);
+          if (isConnected) return 2.5;
           if (link.edgeType === "flow-edge") return 2;
           if (link.edgeType === "wikilink") return 2;
-          // Weight-based thickness for auto-discovered edges (0–1 range)
           if (link.weight != null && link.weight < 1) return 0.5 + link.weight * 1.0;
           return 1;
         }}
@@ -203,88 +329,45 @@ export function ForceGraphCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
         }
         linkDirectionalArrowRelPos={1}
         onNodeClick={handleNodeClick}
-        onBackgroundClick={onBackgroundClick}
+        onBackgroundClick={() => { onBackgroundClick(); setHoveredEdgeText(null); }}
         onNodeHover={(node: { id?: string } | null) => {
           setHoveredNodeId(node ? node.id ?? null : null);
+          setHoveredEdgeText(null);
           if (containerRef.current) {
             containerRef.current.style.cursor = node ? "pointer" : "default";
           }
         }}
+        onLinkHover={(link: { source?: { id?: string; name?: string }; target?: { id?: string; name?: string }; edgeType?: string; weight?: number } | null) => {
+          if (!link || link.edgeType !== "semantic") { setHoveredEdgeText(null); return; }
+          const srcId = typeof link.source === "object" ? link.source?.id ?? "" : "";
+          const tgtId = typeof link.target === "object" ? link.target?.id ?? "" : "";
+          const srcName = typeof link.source === "object" ? link.source?.name ?? "" : "";
+          const tgtName = typeof link.target === "object" ? link.target?.name ?? "" : "";
+          const edge = graph.edges.find((e) =>
+            (e.source === srcId && e.target === tgtId) || (e.source === tgtId && e.target === srcId),
+          );
+          const srcSec = edge?.sourceSectionTitle;
+          const tgtSec = edge?.targetSectionTitle;
+          const left = srcSec ? `${srcName} › ${srcSec}` : srcName;
+          const right = tgtSec ? `${tgtName} › ${tgtSec}` : tgtName;
+          setHoveredEdgeText(`${left} ↔ ${right} · ${((link.weight ?? 1) * 100).toFixed(0)}%`);
+        }}
         nodeCanvasObject={(
-          node: { id?: string; name?: string; nodeType?: string; x?: number; y?: number },
+          node: FgNode,
           ctx: CanvasRenderingContext2D,
           globalScale: number
         ) => {
-          const label = node.name ?? "";
-          const isSelected = node.id === selectedNodeId;
-          const isHovered = node.id === hoveredNodeId;
-          const isProject = node.nodeType === "project";
-          const radius = isProject ? 7 : node.nodeType === "tag" ? 4 : 5.5;
-          const x = node.x ?? 0;
-          const y = node.y ?? 0;
-          const color = hexForType((node.nodeType ?? "note") as GraphNode["type"]);
-
-          // Glow for selected or hovered node
-          if (isSelected || isHovered) {
-            const glowOpacity = isSelected ? 0.08 : 0.04;
-            for (let i = 3; i >= 1; i--) {
-              ctx.beginPath();
-              ctx.arc(x, y, radius + i * 3, 0, 2 * Math.PI);
-              ctx.fillStyle = color + Math.round((glowOpacity / i) * 255).toString(16).padStart(2, "0");
-              ctx.fill();
-            }
-          }
-
-          // Node circle
-          ctx.beginPath();
-          ctx.arc(x, y, radius, 0, 2 * Math.PI);
-          ctx.fillStyle = isSelected ? color : color + "bb";
-          ctx.fill();
-
-          if (isSelected) {
-            ctx.strokeStyle = color;
-            ctx.lineWidth = 2 / globalScale;
-            ctx.stroke();
-          }
-
-          // Smart label density rendering
-          let showLabel = false;
-          if (isProject || isSelected || isHovered) {
-            showLabel = true;
-          } else if (labelMode === "all") {
-            showLabel = globalScale >= 0.7;
-          } else if (labelMode === "smart") {
-            showLabel = globalScale >= 1.4;
-          }
-
-          if (showLabel) {
-            const isHighlight = isSelected || isHovered;
-            const screenPx = (isProject ? 11.5 : 10) * fs;
-            const fontSize = screenPx / globalScale;
-            const maxLen = isProject ? 24 : 18;
-            const text = label.length > maxLen ? label.slice(0, maxLen - 1) + "…" : label;
-
-            ctx.font = `${(isProject || isHighlight) ? "600 " : ""}${fontSize}px ui-sans-serif, system-ui, sans-serif`;
-            ctx.textAlign = "center";
-            ctx.textBaseline = "top";
-
-            // Halo outline behind text for premium legibility over links and nodes
-            ctx.strokeStyle = resolveCssVar("--background");
-            ctx.lineWidth = 4 / globalScale;
-            ctx.lineJoin = "round";
-            ctx.strokeText(text, x, y + radius + 4 / globalScale);
-
-            // Text fill color
-            if (isHighlight && !isProject) {
-              ctx.fillStyle = resolveCssVar("--accent");
-            } else {
-              ctx.fillStyle = resolveCssVar(isProject ? "--text-primary" : "--text-secondary");
-            }
-            
-            ctx.fillText(text, x, y + radius + 4 / globalScale);
-          }
+          if (node.id === selectedNodeId || node.id === hoveredNodeId) return;
+          drawNode(node, ctx, globalScale, fs, selectedNodeId, hoveredNodeId, connectedNodeIds, labelMode);
         }}
         nodeCanvasObjectMode={() => "replace"}
+        onRenderFramePost={(ctx: CanvasRenderingContext2D, globalScale: number) => {
+          for (const node of fgData.nodes) {
+            if (node.id === selectedNodeId || node.id === hoveredNodeId) {
+              drawNode(node, ctx, globalScale, fs, selectedNodeId, hoveredNodeId, connectedNodeIds, labelMode);
+            }
+          }
+        }}
         cooldownTicks={150}
         d3AlphaDecay={0.03}
         d3VelocityDecay={0.4}
@@ -318,6 +401,15 @@ export function ForceGraphCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
         }}
         onEngineStop={() => fgRef.current?.zoomToFit(400, 40)}
       />
+
+      {hoveredEdgeText && (
+        <div
+          className="pointer-events-none absolute z-20 px-3 py-1.5 rounded-md text-xs bg-[var(--surface)] border border-[var(--border)] text-[var(--text-primary)] shadow-lg max-w-[280px] break-words"
+          style={{ left: tooltipPos.x, top: tooltipPos.y }}
+        >
+          {hoveredEdgeText}
+        </div>
+      )}
 
       {/* Zoom controls */}
       <div className="absolute bottom-4 right-4 flex flex-col gap-1">

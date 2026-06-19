@@ -276,7 +276,7 @@ export type GraphNodeType = "project" | "note" | "card" | "tag";
 export type GraphEdgeType =
   | "note-note" | "note-card" | "tag-member" | "project-member"
   | "flow-ref" | "flow-edge" | "co-mention" | "keyword" | "assignee"
-  | "wikilink";
+  | "wikilink" | "semantic";
 
 export interface GraphNode {
   id: ID;
@@ -303,6 +303,8 @@ export interface GraphEdge {
   type: GraphEdgeType;
   label?: string;
   weight?: number;
+  sourceSectionTitle?: string;
+  targetSectionTitle?: string;
 }
 
 export interface KnowledgeGraph {

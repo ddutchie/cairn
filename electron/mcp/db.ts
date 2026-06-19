@@ -146,6 +146,26 @@ export function ensureMcpActiveWritesTable(db: Database.Database): void {
   db.prepare("DELETE FROM mcp_active_writes WHERE started_at < datetime('now', '-30 seconds')").run();
 }
 
+export function ensureEmbeddingsTable(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS note_embeddings (
+      note_id        TEXT PRIMARY KEY REFERENCES notes(id) ON DELETE CASCADE,
+      workspace_id   TEXT NOT NULL,
+      model          TEXT NOT NULL,
+      task           TEXT NOT NULL,
+      content_hash   TEXT NOT NULL,
+      vector         TEXT NOT NULL,
+      embedded_at    TEXT NOT NULL,
+      dim_x          REAL,
+      dim_y          REAL,
+      proj_stale     INTEGER NOT NULL DEFAULT 1
+    );
+    CREATE INDEX IF NOT EXISTS idx_emb_workspace ON note_embeddings(workspace_id);
+    CREATE INDEX IF NOT EXISTS idx_emb_proj_stale ON note_embeddings(proj_stale);
+    CREATE INDEX IF NOT EXISTS idx_emb_task ON note_embeddings(task);
+  `);
+}
+
 export function lockNote(db: Database.Database, noteId: string): void {
   try {
     db.prepare("INSERT OR REPLACE INTO mcp_active_writes (note_id, started_at) VALUES (?, datetime('now'))").run(noteId);

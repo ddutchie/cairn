@@ -1,25 +1,111 @@
 "use client";
 
 import { useState, useMemo, useEffect, useRef } from "react";
-import { Link2, ChevronDown, FileText, Kanban, X, Tag as TagIcon, Plus } from "lucide-react";
+import { Link2, ChevronDown, FileText, Kanban, X, Tag as TagIcon, Plus, Sparkles } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import type { Note, Tag } from "@/types";
+
+interface SemanticHit {
+  noteId: string;
+  title: string;
+  score: number;
+  sectionTitle: string;
+}
 
 export interface BacklinksPanelProps {
   note: Note;
   onOpenCard: () => void;
+  semanticEnabled?: boolean;
+  semanticContent?: string;
+  activeSectionTitle?: string | null;
+  activeSectionText?: string | null;
+  workspaceId?: string | null;
 }
 
-export function BacklinksPanel({ note, onOpenCard }: BacklinksPanelProps) {
+export function BacklinksPanel({
+  note,
+  onOpenCard,
+  semanticEnabled = false,
+  semanticContent,
+  activeSectionTitle,
+  activeSectionText,
+  workspaceId,
+}: BacklinksPanelProps) {
   const { notes, cards, columns } = useCairnStore(useShallow((s) => ({
     notes: s.notes,
     cards: s.cards,
     columns: s.columns,
   })));
   const [open, setOpen] = useState(false);
+
+  const debouncedSemantic = useDebouncedValue(semanticContent ?? "", 1200);
+  const debouncedSectionText = useDebouncedValue(activeSectionText ?? "", 1200);
+
+  type SearchState = { kind: "loading" } | { kind: "results"; hits: SemanticHit[] };
+  const [search, setSearch] = useState<SearchState | null>(null);
+  const [sectionSearch, setSectionSearch] = useState<SearchState | null>(null);
+  const trimmedSemanticLength = (semanticContent ?? "").trim().length;
+  const canSearch = semanticEnabled && !!workspaceId && trimmedSemanticLength >= 4;
+  const canSectionSearch = semanticEnabled && !!workspaceId && !!activeSectionTitle && debouncedSectionText.trim().length >= 20;
+
+  useEffect(() => {
+    const trimmed = debouncedSemantic.trim();
+    if (!canSearch || trimmed.length < 4) {
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const api = window.electron?.embeddings;
+      if (!api) return;
+      setSearch({ kind: "loading" });
+      try {
+        const hits = await api.search(workspaceId!, trimmed, {
+          queryNoteId: note.id,
+          k: 5,
+        });
+        if (!cancelled) setSearch({ kind: "results", hits });
+      } catch {
+        if (!cancelled) setSearch({ kind: "results", hits: [] });
+      }
+    })();
+    return () => {
+      cancelled = true;
+      setSearch(null);
+    };
+  }, [canSearch, debouncedSemantic, note.id, workspaceId]);
+
+  useEffect(() => {
+    if (!canSectionSearch) return;
+    let cancelled = false;
+    void (async () => {
+      const api = window.electron?.embeddings;
+      if (!api) return;
+      setSectionSearch({ kind: "loading" });
+      try {
+        const hits = await api.search(workspaceId!, debouncedSectionText.trim(), {
+          queryNoteId: note.id,
+          k: 3,
+        });
+        if (!cancelled) setSectionSearch({ kind: "results", hits });
+      } catch {
+        if (!cancelled) setSectionSearch({ kind: "results", hits: [] });
+      }
+    })();
+    return () => {
+      cancelled = true;
+      setSectionSearch(null);
+    };
+  }, [canSectionSearch, debouncedSectionText, note.id, workspaceId]);
+
+  const sectionHits = canSectionSearch && sectionSearch?.kind === "results" ? sectionSearch.hits : [];
+  const sectionLoading = canSectionSearch && sectionSearch?.kind === "loading";
+  const sectionNoteIds = new Set(sectionHits.map((h) => h.noteId));
+  const semanticHits = search?.kind === "results" ? search.hits.filter((h) => !sectionNoteIds.has(h.noteId)) : [];
+  const semanticLoading = search?.kind === "loading";
 
   const linkedNotes = useMemo(
     () => (note.linkedNoteIds ?? []).map((id) => notes.find((n) => n.id === id)).filter(Boolean) as Note[],
@@ -46,8 +132,25 @@ export function BacklinksPanel({ note, onOpenCard }: BacklinksPanelProps) {
     });
   }, [note.id, note.title, note.linkedNoteIds, notes]);
 
-  const total = linkedNotes.length + linkedCards.length + wikilinkBacklinks.length;
-  if (total === 0) return null;
+  const semanticCount = semanticEnabled ? semanticHits.length + sectionHits.length : 0;
+  const total = linkedNotes.length + linkedCards.length + wikilinkBacklinks.length + semanticCount;
+  const hasSemanticActivity = semanticCount > 0 || semanticLoading || sectionLoading;
+  const autoOpenedRef = useRef(false);
+  useEffect(() => {
+    if (!hasSemanticActivity) {
+      autoOpenedRef.current = false;
+      return;
+    }
+    if (!autoOpenedRef.current) {
+      autoOpenedRef.current = true;
+      setOpen(true);
+    }
+  }, [hasSemanticActivity]);
+  const noteId = note.id;
+  useEffect(() => {
+    autoOpenedRef.current = false;
+  }, [noteId]);
+  if (total === 0 && !semanticLoading && !semanticEnabled) return null;
 
   return (
     <div className="flex-shrink-0 border-t border-[var(--border)]">
@@ -55,12 +158,86 @@ export function BacklinksPanel({ note, onOpenCard }: BacklinksPanelProps) {
         onClick={() => setOpen((o) => !o)}
         className="w-full flex items-center gap-2 px-6 py-2.5 text-xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)] transition-colors"
       >
-        <Link2 size={11} />
-        <span className="flex-1 text-left">{total} backlink{total !== 1 ? "s" : ""}</span>
+        {semanticCount > 0 ? <Sparkles size={11} className="text-[var(--accent)]" /> : <Link2 size={11} />}
+        <span className="flex-1 text-left">
+          {semanticCount > 0
+            ? `${semanticCount} similar + ${total - semanticCount} backlink${(total - semanticCount) !== 1 ? "s" : ""}`
+            : `${total} backlink${total !== 1 ? "s" : ""}`}
+        </span>
+        {semanticLoading && <span className="text-[0.714rem] animate-pulse">…</span>}
         <ChevronDown size={11} className={cn("transition-transform", open && "rotate-180")} />
       </button>
       {open && (
         <div className="px-6 pb-3 space-y-1">
+          {semanticEnabled && (semanticLoading || semanticHits.length > 0 || (semanticHits.length === 0 && linkedNotes.length === 0 && linkedCards.length === 0 && wikilinkBacklinks.length === 0)) && (
+            <>
+              <div className="flex items-center gap-1.5 mt-1 mb-0.5 text-[0.714rem] text-[var(--accent)]">
+                <Sparkles size={10} />
+                <span className="uppercase tracking-wider font-medium">Semantic</span>
+                {semanticLoading && <span className="text-[var(--text-tertiary)] animate-pulse">searching…</span>}
+              </div>
+              {!semanticLoading && semanticHits.length === 0 && (
+                <div className="px-2 py-1 text-[0.714rem] text-[var(--text-tertiary)]">
+                  No similar notes found. Reindex from Settings → Embeddings to refresh.
+                </div>
+              )}
+              {semanticHits.map((hit) => (
+                <button
+                  key={hit.noteId}
+                  onClick={() => window.dispatchEvent(new CustomEvent("cairn:select-note", { detail: { noteId: hit.noteId } }))}
+                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-[var(--surface-2)] text-xs text-[var(--text-secondary)] transition-colors text-left"
+                >
+                  <Sparkles size={11} className="text-[var(--accent)] flex-shrink-0 opacity-70" />
+                  <div className="flex-1 min-w-0">
+                    <div className="truncate">{hit.title || "Untitled"}</div>
+                    {hit.sectionTitle && (
+                      <div className="truncate text-[0.65rem] text-[var(--accent)] opacity-70 mt-0.5">
+                        {hit.sectionTitle}
+                      </div>
+                    )}
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <div className="flex-1 h-1 rounded-full bg-[var(--surface-3)] overflow-hidden">
+                        <div
+                          className="h-full bg-[var(--accent)] rounded-full transition-all"
+                          style={{ width: `${Math.round(hit.score * 100)}%` }}
+                        />
+                      </div>
+                      <span className="text-[0.65rem] text-[var(--text-tertiary)] font-mono">{hit.score.toFixed(2)}</span>
+                    </div>
+                  </div>
+                </button>
+              ))}
+              {activeSectionTitle && (sectionLoading || sectionHits.length > 0) && (
+                <>
+                  <div className="flex items-center gap-1.5 mt-2 mb-0.5 text-[0.714rem] text-[var(--accent)] opacity-80">
+                    <span className="truncate">Related to &ldquo;{activeSectionTitle}&rdquo;</span>
+                    {sectionLoading && <span className="animate-pulse">…</span>}
+                  </div>
+                  {sectionHits.map((hit) => (
+                    <button
+                      key={hit.noteId}
+                      onClick={() => window.dispatchEvent(new CustomEvent("cairn:select-note", { detail: { noteId: hit.noteId } }))}
+                      className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-[var(--surface-2)] text-xs text-[var(--text-secondary)] transition-colors text-left"
+                    >
+                      <Sparkles size={11} className="text-[var(--accent)] flex-shrink-0 opacity-50" />
+                      <div className="flex-1 min-w-0">
+                        <div className="truncate">{hit.title || "Untitled"}</div>
+                        {hit.sectionTitle && (
+                          <div className="truncate text-[0.65rem] text-[var(--accent)] opacity-60 mt-0.5">
+                            {hit.sectionTitle}
+                          </div>
+                        )}
+                      </div>
+                      <span className="text-[0.65rem] text-[var(--text-tertiary)] font-mono flex-shrink-0">{hit.score.toFixed(2)}</span>
+                    </button>
+                  ))}
+                </>
+              )}
+              {(linkedNotes.length > 0 || linkedCards.length > 0 || wikilinkBacklinks.length > 0) && (
+                <div className="h-px bg-[var(--border)] my-1" />
+              )}
+            </>
+          )}
           {linkedNotes.map((n) => (
             <button
               key={n.id}
