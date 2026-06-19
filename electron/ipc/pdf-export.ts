@@ -13,17 +13,24 @@ import { dialog, BrowserWindow } from "electron";
 import fs from "fs";
 import { registerIpcHandle } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
-import { buildPdfHtml } from "../lib/pdf-template";
+import { buildPdfHtml, type PdfTheme } from "../lib/pdf-template";
+
+/** Strip characters that are invalid in filenames on macOS/Windows. */
+function sanitizeFilename(name: string): string {
+  return name.replace(/[\/\\:*?"<>|]/g, "_").trim() || "untitled";
+}
 
 export function registerPdfExportHandler(ctx: DbContext): void {
   registerIpcHandle(
     "app:exportNotePdf",
     (
       _e,
-      { title, html, options }: { title: string; html: string; options?: { returnBuffer?: boolean } }
+      { title, html, options }: { title: string; html: string; options?: { returnBuffer?: boolean; theme?: PdfTheme } }
     ) =>
       handle(async () => {
         const returnBuffer = options?.returnBuffer ?? false;
+        const theme = options?.theme ?? "light";
+        const safeTitle = sanitizeFilename(title);
 
         let savePath = "";
         if (!returnBuffer) {
@@ -32,14 +39,14 @@ export function registerPdfExportHandler(ctx: DbContext): void {
 
           const { canceled, filePath } = await dialog.showSaveDialog(activeWin, {
             title: "Export Note as PDF",
-            defaultPath: `${title}.pdf`,
+            defaultPath: `${safeTitle}.pdf`,
             filters: [{ name: "PDF Document", extensions: ["pdf"] }],
           });
           if (canceled || !filePath) return null;
           savePath = filePath;
         }
 
-        const fullHtml = buildPdfHtml(title, html);
+        const fullHtml = buildPdfHtml(title, html, theme);
 
         // Open a hidden window, load the HTML, print to PDF, then close
         const printWin = new BrowserWindow({

@@ -86,6 +86,8 @@ export function Callout({ type, title, collapsible, defaultOpen = true, children
 
   return (
     <div
+      data-callout
+      data-callout-type={type}
       className="my-3 rounded-lg border overflow-hidden"
       style={{
         borderColor: `color-mix(in srgb, ${colorVar} 30%, transparent)`,

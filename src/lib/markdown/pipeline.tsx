@@ -29,10 +29,18 @@ export const remarkCallout: RemarkPlugin<[], MdastRoot> = () => (tree) => {
     const calloutType = rawType.trim().toLowerCase();
     const collapsible = modifier === "+" || modifier === "-";
     const defaultOpen = modifier !== "-";
-    const title = restOfFirstLine.trim();
 
-    // Strip the "[!type]\n" prefix from the first text node so the body renders cleanly.
-    const afterDirective = firstValue.slice(firstValue.indexOf("\n") + 1);
+    // `restOfFirstLine` is `[\s\S]*` — i.e. everything after `[!type]modifier`,
+    // which may span multiple lines (e.g. `[!note]\nbody`). The title is only
+    // the first line after the directive; anything after the first `\n` is body
+    // content. When there's no `\n` (e.g. `> [!important]` alone, or
+    // `> [!important] Title` with body on subsequent blockquote lines), the
+    // entire `restOfFirstLine` is the title and there is no inline body — so
+    // the first text node must be emptied to prevent the directive `[!type]`
+    // from leaking into the rendered body.
+    const newlineIdx = restOfFirstLine.indexOf("\n");
+    const title = (newlineIdx === -1 ? restOfFirstLine : restOfFirstLine.slice(0, newlineIdx)).trim();
+    const afterDirective = newlineIdx === -1 ? "" : restOfFirstLine.slice(newlineIdx + 1);
     (firstChild as MdastText).value = afterDirective;
 
     // Tag the blockquote node with hast properties so remark-rehype renders it

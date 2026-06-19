@@ -4,14 +4,46 @@
  * Extracted from the inline `app:exportNotePdf` IPC handler so the styles can be
  * edited in one place and the template is unit-testable in isolation.
  *
- * The PDF is a self-contained light-theme document (regardless of the app's
- * current theme) using the same `prose-cairn` class names the renderer uses,
- * so the resulting PDF visually matches what the user sees in Cairn.
+ * The PDF is a self-contained document using the same `prose-cairn` class names
+ * the renderer uses, so the resulting PDF visually matches what the user sees
+ * in Cairn. Supports both light and dark themes.
  *
  * @param title - document title; scrubbed for HTML injection (we only allow text)
  * @param htmlBody - already-rendered HTML body content (from the markdown pipeline)
+ * @param theme - "light" (default) or "dark"
  */
-export function buildPdfHtml(title: string, htmlBody: string): string {
+export type PdfTheme = "light" | "dark";
+
+const LIGHT_VARS = {
+  bg: "#ffffff",
+  textPrimary: "#1a1917",
+  textSecondary: "#4a4744",
+  surface2: "#f0eeeb",
+  border: "#dddad6",
+  accent: "#6457e8",
+  codeBg: "#f8f7f5",
+  codeColor: "#374151",
+  success: "#16a34a",
+  warning: "#d97706",
+  danger: "#dc2626",
+};
+
+const DARK_VARS = {
+  bg: "#141414",
+  textPrimary: "#e8e4dc",
+  textSecondary: "#9e9a94",
+  surface2: "#1a1a1a",
+  border: "#2a2a2a",
+  accent: "#7c6af7",
+  codeBg: "#1e1e1e",
+  codeColor: "#abb2bf",
+  success: "#98c379",
+  warning: "#e5c07b",
+  danger: "#e06c75",
+};
+
+export function buildPdfHtml(title: string, htmlBody: string, theme: PdfTheme = "light"): string {
+  const v = theme === "dark" ? DARK_VARS : LIGHT_VARS;
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -20,21 +52,25 @@ export function buildPdfHtml(title: string, htmlBody: string): string {
 <style>
 *, *::before, *::after { box-sizing: border-box; }
 :root {
-  --text-primary: #1a1917;
-  --text-secondary: #4a4744;
-  --surface-2: #f0eeeb;
-  --border: #dddad6;
-  --accent: #6457e8;
+  --text-primary: ${v.textPrimary};
+  --text-secondary: ${v.textSecondary};
+  --surface-2: ${v.surface2};
+  --border: ${v.border};
+  --accent: ${v.accent};
+  --success: ${v.success};
+  --warning: ${v.warning};
+  --danger: ${v.danger};
 }
 @page {
   size: A4;
   margin: 2cm 2.2cm;
+${theme === "dark" ? `  background: ${v.bg};` : ""}
 }
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background: #ffffff;
-  color: #1a1917;
+  background: ${v.bg};
+  color: ${v.textPrimary};
   /* Ensure nothing overflows the page width */
   max-width: 100%;
   overflow-x: hidden;
@@ -50,7 +86,7 @@ body {
 .prose-cairn em { font-style: italic; }
 .prose-cairn code { font-family: ui-monospace, monospace; font-size: 0.8em; background: var(--surface-2); border: 1px solid var(--border); border-radius: 3px; padding: 0.1em 0.35em; word-break: break-all; }
 /* Code blocks: overflow wraps rather than clips */
-.prose-cairn pre { margin: 0.75rem 0; padding: 0.75rem 1rem; background: var(--surface-2) !important; color: #374151 !important; border: 1px solid var(--border); border-radius: 6px; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word; word-break: break-all; max-width: 100%; }
+.prose-cairn pre { margin: 0.75rem 0; padding: 0.75rem 1rem; background: ${v.codeBg} !important; color: ${v.codeColor} !important; border: 1px solid var(--border); border-radius: 6px; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word; word-break: break-all; max-width: 100%; }
 .prose-cairn pre code { background: none !important; border: none; padding: 0; font-size: 0.8rem; white-space: pre-wrap; word-break: break-all; }
 .prose-cairn ul { list-style: disc; padding-left: 1.5rem; margin: 0.5rem 0; }
 .prose-cairn ol { list-style: decimal; padding-left: 1.5rem; margin: 0.5rem 0; }
@@ -64,8 +100,69 @@ body {
 .prose-cairn tr:nth-child(even) td { background: var(--surface-2); }
 /* Wikilink chips */
 .wikilink-chip { display: inline-flex; align-items: center; gap: 3px; color: var(--accent); font-size: 0.85em; }
-/* Callout blocks */
-.callout { border-left: 3px solid var(--accent); background: var(--surface-2); padding: 0.5rem 0.75rem; margin: 0.75rem 0; border-radius: 0 4px 4px 0; }
+/* Callout blocks — the React <Callout> component emits inline styles using
+ * color-mix() against CSS vars that don't all exist in this template (e.g.
+ * --success, --warning). We define those vars here and add a stable
+ * [data-callout] selector that overrides the inline styles with print-safe
+ * equivalents, so callouts render with the correct colour per type. */
+.prose-cairn [data-callout] {
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: 6px;
+  margin: 0.75rem 0;
+  overflow: hidden;
+  page-break-inside: avoid;
+}
+/* Hide the header icon span (lucide SVG) in print — it doesn't always render
+ * correctly in printToPDF and the title text is sufficient. */
+.prose-cairn [data-callout] > div:first-child > span:first-child { display: none; }
+.prose-cairn [data-callout] > div:first-child {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 0.786rem;
+  font-weight: 600;
+}
+.prose-cairn [data-callout] > div:last-child {
+  padding: 0 12px 10px;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+/* Hide the collapse chevron — not interactive in a PDF */
+.prose-cairn [data-callout] svg { display: none; }
+/* Per-type accent colours (border-left + header text + tinted background).
+ * The app uses color-mix(in srgb, var(--type-color) 8%, var(--surface));
+ * we approximate that with a pre-computed tint per theme. Inline styles on
+ * the <Callout> div use color-mix() which Chromium printToPDF may not fully
+ * resolve, so we force our background with !important to override. */
+.prose-cairn [data-callout] { background: var(--surface-2) !important; }
+.prose-cairn [data-callout-type="note"],
+.prose-cairn [data-callout-type="info"]    { border-left-color: var(--accent); background: ${theme === "dark" ? "#1a1a2e" : "#f0edfb"} !important; }
+.prose-cairn [data-callout-type="note"] > div:first-child,
+.prose-cairn [data-callout-type="info"] > div:first-child    { color: var(--accent); }
+.prose-cairn [data-callout-type="tip"]     { border-left-color: var(--success); background: ${theme === "dark" ? "#13291c" : "#edfaf1"} !important; }
+.prose-cairn [data-callout-type="tip"] > div:first-child     { color: var(--success); }
+.prose-cairn [data-callout-type="warning"] { border-left-color: var(--warning); background: ${theme === "dark" ? "#2a2118" : "#fdf6ed"} !important; }
+.prose-cairn [data-callout-type="warning"] > div:first-child { color: var(--warning); }
+.prose-cairn [data-callout-type="danger"],
+.prose-cairn [data-callout-type="caution"] { border-left-color: var(--danger); background: ${theme === "dark" ? "#2a1818" : "#fdf0f0"} !important; }
+.prose-cairn [data-callout-type="danger"] > div:first-child,
+.prose-cairn [data-callout-type="caution"] > div:first-child { color: var(--danger); }
+.prose-cairn [data-callout-type="success"],
+.prose-cairn [data-callout-type="check"],
+.prose-cairn [data-callout-type="done"]    { border-left-color: var(--success); background: ${theme === "dark" ? "#13291c" : "#edfaf1"} !important; }
+.prose-cairn [data-callout-type="success"] > div:first-child,
+.prose-cairn [data-callout-type="check"] > div:first-child,
+.prose-cairn [data-callout-type="done"] > div:first-child    { color: var(--success); }
+.prose-cairn [data-callout-type="question"],
+.prose-cairn [data-callout-type="faq"]     { border-left-color: var(--accent); background: ${theme === "dark" ? "#1a1a2e" : "#f0edfb"} !important; }
+.prose-cairn [data-callout-type="question"] > div:first-child,
+.prose-cairn [data-callout-type="faq"] > div:first-child     { color: var(--accent); }
+.prose-cairn [data-callout-type="quote"],
+.prose-cairn [data-callout-type="cite"]    { border-left-color: var(--text-secondary); background: var(--surface-2) !important; }
+.prose-cairn [data-callout-type="quote"] > div:first-child,
+.prose-cairn [data-callout-type="cite"] > div:first-child   { color: var(--text-secondary); }
 /* Page break hints */
 h1, h2, h3 { page-break-after: avoid; }
 pre, blockquote, table { page-break-inside: avoid; }
