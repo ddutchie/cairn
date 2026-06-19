@@ -712,18 +712,27 @@ export function invalidateRelationshipCache(
   ).run(entityId, entityId);
 }
 
-const SEMANTIC_THRESHOLD = 0.78;
-
+const SEMANTIC_TOP_K = 5;
+const SEMANTIC_TOP_K_FLOOR = 0.55;
 /**
  * Recompute embedding-based semantic edges by cosine-similarity between the
  * stored `search_document` vectors for this workspace. Output goes to
  * `relationship_cache` under the `"semantic"` type so the existing pass-6
  * loader picks it up (no SQL shape change — `type` is free-form TEXT).
  *
- * Incremental mode: when `entityIds` is non-empty, only note pairs where at
- * least one endpoint is in the set are recomputed. Stale `"semantic"` rows for
- * the changed entities are deleted before re-upserting, mirroring the
- * `computeAutoRelationships` convention.
+ * Strategy: top-K nearest neighbours per note. Each active note gets up to
+ * {@link SEMANTIC_TOP_K} outgoing edges to its most-similar peers, provided
+ * cosine >= {@link SEMANTIC_TOP_K_FLOOR}. This avoids the previous absolute
+ * threshold (0.78) which only captured near-duplicates and left most notes
+ * disconnected. Edges are deduplicated via canonical source<target ordering
+ * so (a,b) and (b,a) collapse to a single row.
+ *
+ * Incremental mode: when `entityIds` is non-empty, only the active subset's
+ * nearest neighbours are recomputed. Stale `"semantic"` rows for the
+ * changed entities are deleted before re-upserting, mirroring the
+ * `computeAutoRelationships` convention. Other notes' relationships remain
+ * untouched (they may still reference the changed note — those stale edges
+ * are cleaned up on the next full recompute).
  */
 export function computeSemanticRelationships(
   db: Database.Database,
@@ -758,8 +767,9 @@ export function computeSemanticRelationships(
     activePool = vectors.filter((v) => activeIds!.has(v.id));
   }
 
+  const k = Math.min(SEMANTIC_TOP_K, Math.max(1, fullPool.length - 1));
+
   const tx = db.transaction(() => {
-    const seen = new Set<string>();
     if (activeIds) {
       for (const id of activeIds) deleteOld.run(id, id);
     } else {
@@ -767,16 +777,19 @@ export function computeSemanticRelationships(
       for (const id of allIds) deleteOld.run(id, id);
     }
     for (const a of activePool) {
+      const scored: Array<{ id: string; sim: number }> = [];
       for (const b of fullPool) {
         if (a.id === b.id) continue;
-        const [src, tgt] = a.id < b.id ? [a.id, b.id] : [b.id, a.id];
-        const key = `${src}|${tgt}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
         const sim = cosine(a.vec, b.vec);
-        if (sim >= SEMANTIC_THRESHOLD) {
-          upsert.run(src, tgt, "semantic", Math.round(sim * 100) / 100, now);
+        if (sim >= SEMANTIC_TOP_K_FLOOR) {
+          scored.push({ id: b.id, sim });
         }
+      }
+      scored.sort((x, y) => y.sim - x.sim);
+      const top = scored.slice(0, k);
+      for (const t of top) {
+        const [src, tgt] = a.id < t.id ? [a.id, t.id] : [t.id, a.id];
+        upsert.run(src, tgt, "semantic", Math.round(t.sim * 100) / 100, now);
       }
     }
   });

@@ -6,17 +6,15 @@ import {
   createWorkspace,
   createProject,
   createNote,
-  updateNote,
   upsertNoteEmbedding,
-  getAllEmbeddingsForWorkspace,
 } from "./queries";
 import {
   computeSemanticRelationships,
   getKnowledgeGraph,
-  type GraphEdge,
 } from "./graph-queries";
 
-const DIM = 4;
+const TOP_K = 5;
+const FLOOR = 0.55;
 
 function makeDb(): Database.Database {
   const db = new BetterSqlite3(":memory:");
@@ -48,106 +46,140 @@ function upsertEmbedding(
   });
 }
 
-describe("computeSemanticRelationships", () => {
+function semEdges(db: Database.Database) {
+  return getKnowledgeGraph(db, "ws1").edges.filter((e) => e.type === "semantic");
+}
+
+function findEdge(edges: ReturnType<typeof semEdges>, a: string, b: string) {
+  return edges.find(
+    (e) =>
+      (e.source === a && e.target === b) ||
+      (e.source === b && e.target === a),
+  );
+}
+
+describe("computeSemanticRelationships — top-K behaviour", () => {
   let db: Database.Database;
 
   beforeEach(() => {
     db = makeDb();
     seed(db);
-    createNote(db, { id: "n1", projectId: "p1", workspaceId: "ws1", title: "Note A", contentText: "alpha beta" });
-    createNote(db, { id: "n2", projectId: "p1", workspaceId: "ws1", title: "Note B", contentText: "alpha gamma" });
-    createNote(db, { id: "n3", projectId: "p1", workspaceId: "ws1", title: "Note C", contentText: "completely different" });
+    createNote(db, { id: "n1", projectId: "p1", workspaceId: "ws1", title: "A", contentText: "alpha" });
+    createNote(db, { id: "n2", projectId: "p1", workspaceId: "ws1", title: "B", contentText: "beta" });
+    createNote(db, { id: "n3", projectId: "p1", workspaceId: "ws1", title: "C", contentText: "gamma" });
   });
 
   it("creates no edges when embeddings table is empty", () => {
     computeSemanticRelationships(db, "ws1");
-    const graph = getKnowledgeGraph(db, "ws1");
-    const semEdges = graph.edges.filter((e) => e.type === "semantic");
-    expect(semEdges).toHaveLength(0);
+    expect(semEdges(db)).toHaveLength(0);
   });
 
-  it("creates semantic edges for note pairs above threshold (0.78)", () => {
+  it("connects each note to its single peer when only 2 notes exist", () => {
+    upsertEmbedding(db, "n1", vec(1, 0, 0, 0));
+    upsertEmbedding(db, "n2", vec(0.9, 0.44, 0, 0));
+    computeSemanticRelationships(db, "ws1");
+    const edges = semEdges(db);
+    expect(edges).toHaveLength(1);
+    expect(findEdge(edges, "n1", "n2")).toBeDefined();
+  });
+
+  it("respects floor: pairs below 0.55 are NOT connected even if they'd be in top-K", () => {
+    upsertEmbedding(db, "n1", vec(1, 0, 0, 0));
+    upsertEmbedding(db, "n2", vec(0.3, 0.95, 0, 0));
+    computeSemanticRelationships(db, "ws1");
+    expect(semEdges(db)).toHaveLength(0);
+  });
+
+  it("caps each note at TOP_K=5 outgoing edges", () => {
+    for (let i = 1; i <= 8; i++) {
+      const id = "m" + i;
+      createNote(db, {
+        id,
+        projectId: "p1",
+        workspaceId: "ws1",
+        title: "M" + i,
+        contentText: "shared topic " + i,
+      });
+      upsertEmbedding(db, id, vec(1, i * 0.001, 0, 0));
+    }
+
+    computeSemanticRelationships(db, "ws1");
+
+    const edges = semEdges(db);
+    const fromM1 = edges.filter(
+      (e) => e.source === "m1" || e.target === "m1",
+    );
+    expect(fromM1.length).toBeLessThanOrEqual(TOP_K);
+  });
+
+  it("creates edges for pairs with cosine >= 0.55 even if they were below old 0.78 threshold", () => {
     const v1 = vec(1, 0, 0, 0);
-    const v2 = vec(0.95, 0.31, 0, 0);
+    const v2 = vec(0.7, 0.71, 0, 0);
     upsertEmbedding(db, "n1", v1);
     upsertEmbedding(db, "n2", v2);
-
     computeSemanticRelationships(db, "ws1");
-
-    const graph = getKnowledgeGraph(db, "ws1");
-    const semEdges = graph.edges.filter((e) => e.type === "semantic");
-    expect(semEdges.length).toBeGreaterThanOrEqual(1);
-    const edge = semEdges.find((e) =>
-      (e.source === "n1" && e.target === "n2") ||
-      (e.source === "n2" && e.target === "n1"),
-    );
-    expect(edge).toBeDefined();
-    expect(edge!.weight).toBeGreaterThan(0.78);
+    const edges = semEdges(db);
+    expect(edges).toHaveLength(1);
+    const edge = edges[0];
+    expect(edge.weight).toBeGreaterThanOrEqual(FLOOR);
+    expect(edge.weight).toBeLessThan(0.78);
   });
 
-  it("does NOT create edges for dissimilar notes", () => {
-    const v1 = vec(1, 0, 0, 0);
-    const v3 = vec(0, 0, 0, 1);
-    upsertEmbedding(db, "n1", v1);
-    upsertEmbedding(db, "n3", v3);
-
+  it("does not create edges for orthogonal (cosine ≈ 0) notes", () => {
+    upsertEmbedding(db, "n1", vec(1, 0, 0, 0));
+    upsertEmbedding(db, "n3", vec(0, 0, 0, 1));
     computeSemanticRelationships(db, "ws1");
-
-    const graph = getKnowledgeGraph(db, "ws1");
-    const semEdges = graph.edges.filter((e) => e.type === "semantic");
-    expect(semEdges).toHaveLength(0);
+    expect(semEdges(db)).toHaveLength(0);
   });
 
-  it("deduplicates edges (canonical source < target ordering)", () => {
+  it("deduplicates via canonical source<target ordering", () => {
     const v1 = vec(1, 0, 0, 0);
     const v2 = vec(1, 0, 0, 0);
     upsertEmbedding(db, "n1", v1);
     upsertEmbedding(db, "n2", v2);
-
     computeSemanticRelationships(db, "ws1");
-
-    const graph = getKnowledgeGraph(db, "ws1");
-    const semEdges = graph.edges.filter(
+    const edges = semEdges(db).filter(
       (e) =>
         (e.source === "n1" && e.target === "n2") ||
         (e.source === "n2" && e.target === "n1"),
     );
-    expect(semEdges).toHaveLength(1);
+    expect(edges).toHaveLength(1);
   });
 
-  it("supports incremental mode (entityIds filter)", () => {
+  it("incremental mode (entityIds) recomputes only active notes' edges", () => {
     const v1 = vec(1, 0, 0, 0);
-    const v2 = vec(1, 0, 0, 0);
+    const v2 = vec(0.95, 0.31, 0, 0);
     const v3 = vec(0, 0, 0, 1);
     upsertEmbedding(db, "n1", v1);
     upsertEmbedding(db, "n2", v2);
     upsertEmbedding(db, "n3", v3);
-
     computeSemanticRelationships(db, "ws1", ["n1"]);
-
-    const graph = getKnowledgeGraph(db, "ws1");
-    const semEdges = graph.edges.filter((e) => e.type === "semantic");
-    expect(semEdges).toHaveLength(1);
-    expect(semEdges[0].source).toBe("n1");
-    expect(semEdges[0].target).toBe("n2");
+    const edges = semEdges(db);
+    expect(edges).toHaveLength(1);
+    expect(findEdge(edges, "n1", "n2")).toBeDefined();
+    expect(findEdge(edges, "n2", "n3")).toBeUndefined();
   });
 
   it("idempotent: calling twice doesn't duplicate rows", () => {
-    const v1 = vec(1, 0, 0, 0);
-    const v2 = vec(1, 0, 0, 0);
-    upsertEmbedding(db, "n1", v1);
-    upsertEmbedding(db, "n2", v2);
-
+    upsertEmbedding(db, "n1", vec(1, 0, 0, 0));
+    upsertEmbedding(db, "n2", vec(1, 0, 0, 0));
     computeSemanticRelationships(db, "ws1");
     computeSemanticRelationships(db, "ws1");
-
-    const graph = getKnowledgeGraph(db, "ws1");
-    const semEdges = graph.edges.filter(
+    const edges = semEdges(db).filter(
       (e) =>
         (e.source === "n1" && e.target === "n2") ||
         (e.source === "n2" && e.target === "n1"),
     );
-    expect(semEdges).toHaveLength(1);
+    expect(edges).toHaveLength(1);
+  });
+
+  it("produces sorted edges: weights are valid in [0.55, 1.0]", () => {
+    upsertEmbedding(db, "n1", vec(1, 0, 0, 0));
+    upsertEmbedding(db, "n2", vec(0.85, 0.53, 0, 0));
+    computeSemanticRelationships(db, "ws1");
+    const edge = semEdges(db)[0];
+    expect(edge.weight).toBeGreaterThanOrEqual(FLOOR);
+    expect(edge.weight).toBeLessThanOrEqual(1);
   });
 });
 
@@ -163,71 +195,45 @@ describe("getKnowledgeGraph — semantic edge integration", () => {
   });
 
   it("semantic edges appear in graph when includeAuto is true", () => {
-    const va = vec(1, 0, 0, 0);
-    const vb = vec(0.98, 0.2, 0, 0);
-    const vc = vec(0, 0, 0, 1);
-    upsertEmbedding(db, "na", va);
-    upsertEmbedding(db, "nb", vb);
-    upsertEmbedding(db, "nc", vc);
-
+    upsertEmbedding(db, "na", vec(1, 0, 0, 0));
+    upsertEmbedding(db, "nb", vec(0.98, 0.2, 0, 0));
+    upsertEmbedding(db, "nc", vec(0, 0, 0, 1));
     computeSemanticRelationships(db, "ws1");
-
-    const graph = getKnowledgeGraph(db, "ws1", { includeAuto: true });
-    const semEdges = graph.edges.filter((e) => e.type === "semantic");
-    expect(semEdges.length).toBeGreaterThanOrEqual(1);
-
-    const ab = semEdges.find((e) =>
-      (e.source === "na" && e.target === "nb") ||
-      (e.source === "nb" && e.target === "na"),
-    );
-    expect(ab).toBeDefined();
+    const edges = semEdges(db);
+    expect(edges.length).toBeGreaterThanOrEqual(1);
+    expect(findEdge(edges, "na", "nb")).toBeDefined();
   });
 
-  it("semantic edges are filtered out when edgeTypes omits 'semantic'", () => {
-    const va = vec(1, 0, 0, 0);
-    const vb = vec(1, 0, 0, 0);
-    upsertEmbedding(db, "na", va);
-    upsertEmbedding(db, "nb", vb);
-
+  it("semantic edges filtered out when edgeTypes omits 'semantic'", () => {
+    upsertEmbedding(db, "na", vec(1, 0, 0, 0));
+    upsertEmbedding(db, "nb", vec(1, 0, 0, 0));
     computeSemanticRelationships(db, "ws1");
-
     const graph = getKnowledgeGraph(db, "ws1", {
       includeAuto: true,
       edgeTypes: ["note-note", "project-member"],
     });
-    const semEdges = graph.edges.filter((e) => e.type === "semantic");
-    expect(semEdges).toHaveLength(0);
+    expect(graph.edges.filter((e) => e.type === "semantic")).toHaveLength(0);
   });
 
   it("semantic edges absent when includeAuto is false", () => {
-    const va = vec(1, 0, 0, 0);
-    const vb = vec(1, 0, 0, 0);
-    upsertEmbedding(db, "na", va);
-    upsertEmbedding(db, "nb", vb);
-
+    upsertEmbedding(db, "na", vec(1, 0, 0, 0));
+    upsertEmbedding(db, "nb", vec(1, 0, 0, 0));
     computeSemanticRelationships(db, "ws1");
-
     const graph = getKnowledgeGraph(db, "ws1", { includeAuto: false });
-    const semEdges = graph.edges.filter((e) => e.type === "semantic");
-    expect(semEdges).toHaveLength(0);
+    expect(graph.edges.filter((e) => e.type === "semantic")).toHaveLength(0);
   });
 
-  it("semantic edge weight is rounded to 2 decimal places", () => {
-    const va = vec(1, 0, 0, 0);
-    const vb = vec(0.8, 0.6, 0, 0);
-    upsertEmbedding(db, "na", va);
-    upsertEmbedding(db, "nb", vb);
-
+  it("weight rounded to 2 decimal places", () => {
+    upsertEmbedding(db, "na", vec(1, 0, 0, 0));
+    upsertEmbedding(db, "nb", vec(0.8, 0.6, 0, 0));
     computeSemanticRelationships(db, "ws1");
-
-    const graph = getKnowledgeGraph(db, "ws1");
-    const semEdge = graph.edges.find((e) => e.type === "semantic");
-    expect(semEdge).toBeDefined();
-    expect(semEdge!.weight).toBe(Math.round(semEdge!.weight! * 100) / 100);
+    const edge = semEdges(db)[0];
+    expect(edge).toBeDefined();
+    expect(edge.weight).toBe(Math.round(edge.weight! * 100) / 100);
   });
 });
 
-describe("getKnowledgeGraph — semantic threshold filter", () => {
+describe("getKnowledgeGraph — client-side threshold filter", () => {
   let db: Database.Database;
 
   beforeEach(() => {
@@ -242,10 +248,8 @@ describe("getKnowledgeGraph — semantic threshold filter", () => {
     computeSemanticRelationships(db, "ws1");
   });
 
-  it("all semantic edges are returned from DB regardless of weight", () => {
-    const graph = getKnowledgeGraph(db, "ws1");
-    const semEdges = graph.edges.filter((e) => e.type === "semantic");
-    expect(semEdges.length).toBeGreaterThanOrEqual(1);
+  it("all semantic edges returned from DB regardless of weight", () => {
+    expect(semEdges(db).length).toBeGreaterThanOrEqual(1);
   });
 
   it("client-side threshold filter masks edges below cutoff", () => {
@@ -255,11 +259,8 @@ describe("getKnowledgeGraph — semantic threshold filter", () => {
       (e) => e.type !== "semantic" || (e.weight ?? 1) >= threshold,
     );
     const semAbove = visible.filter((e) => e.type === "semantic");
-    const semBelow = graph.edges
-      .filter((e) => e.type === "semantic")
-      .filter((e) => (e.weight ?? 1) < threshold);
-    expect(semAbove.length + semBelow.length).toBe(
-      graph.edges.filter((e) => e.type === "semantic").length,
-    );
+    const allSem = graph.edges.filter((e) => e.type === "semantic");
+    const semBelow = allSem.filter((e) => (e.weight ?? 1) < threshold);
+    expect(semAbove.length + semBelow.length).toBe(allSem.length);
   });
 });
