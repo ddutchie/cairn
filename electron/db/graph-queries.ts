@@ -836,7 +836,10 @@ export interface SemanticNeighbor {
 export function getSemanticNeighbors(
   db: Database.Database,
   noteId: string,
+  workspaceId?: string,
 ): SemanticNeighbor[] {
+  const wsClause = workspaceId ? `AND n.workspace_id = ?` : "";
+  const wsParams = workspaceId ? [workspaceId, workspaceId] : [];
   const rows = db.prepare(`
     SELECT
       rc.source_id, rc.target_id, rc.weight,
@@ -862,15 +865,17 @@ export function getSemanticNeighbors(
   const ids = rows.map((r) => r.other_id);
   const placeholders = ids.map(() => "?").join(",");
   const titleRows = db.prepare(
-    `SELECT id, title FROM notes WHERE id IN (${placeholders})`
-  ).all(...ids) as Array<{ id: string; title: string }>;
+    `SELECT n.id, n.title FROM notes n WHERE n.id IN (${placeholders}) ${wsClause}`,
+  ).all(...ids, ...wsParams) as Array<{ id: string; title: string }>;
   const titleMap = new Map(titleRows.map((r) => [r.id, r.title] as const));
 
-  return rows.map((r) => ({
-    noteId: r.other_id,
-    title: titleMap.get(r.other_id) ?? r.other_id,
-    weight: r.weight,
-    sourceSectionTitle: r.this_section,
-    targetSectionTitle: r.other_section,
-  }));
+  return rows
+    .filter((r) => titleMap.has(r.other_id))
+    .map((r) => ({
+      noteId: r.other_id,
+      title: titleMap.get(r.other_id) ?? r.other_id,
+      weight: r.weight,
+      sourceSectionTitle: r.this_section,
+      targetSectionTitle: r.other_section,
+    }));
 }

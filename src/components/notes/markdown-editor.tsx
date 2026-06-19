@@ -183,6 +183,8 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(
                 text,
                 coords: { top: coordsFrom.top, left: 0 },
               });
+            } else {
+              onSelectionChange(null);
             }
           }
         }

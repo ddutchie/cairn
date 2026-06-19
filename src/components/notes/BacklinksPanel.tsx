@@ -102,10 +102,10 @@ export function BacklinksPanel({
   }, [canSectionSearch, debouncedSectionText, note.id, workspaceId]);
 
   const sectionHits = canSectionSearch && sectionSearch?.kind === "results" ? sectionSearch.hits : [];
-  const sectionLoading = canSectionSearch && sectionSearch?.kind === "loading" === true;
+  const sectionLoading = canSectionSearch && sectionSearch?.kind === "loading";
   const sectionNoteIds = new Set(sectionHits.map((h) => h.noteId));
   const semanticHits = search?.kind === "results" ? search.hits.filter((h) => !sectionNoteIds.has(h.noteId)) : [];
-  const semanticLoading = search?.kind === "loading" === true;
+  const semanticLoading = search?.kind === "loading";
 
   const linkedNotes = useMemo(
     () => (note.linkedNoteIds ?? []).map((id) => notes.find((n) => n.id === id)).filter(Boolean) as Note[],

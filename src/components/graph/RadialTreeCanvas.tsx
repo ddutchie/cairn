@@ -157,7 +157,7 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
         && (e.type !== "semantic" || (e.weight ?? 1) >= semanticThreshold)
     );
 
-    // Prioritise semantic and wikilink edges so they aren't lost in the 120-edge cap
+    // Prioritise semantic and wikilink edges so they render on top
     crossEdges.sort((a, b) => {
       const rank = (t: string) => t === "semantic" ? 0 : t === "wikilink" ? 1 : 2;
       return rank(a.type) - rank(b.type);

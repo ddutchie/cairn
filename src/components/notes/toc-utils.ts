@@ -62,11 +62,11 @@ export function findSectionTitleAtOffset(
   let currentTitle = noteTitle || "Untitled";
   for (const line of lines) {
     const lineEnd = pos + line.length + 1;
-    if (offset < lineEnd) break;
     const m = line.match(/^(#{1,2})\s+(.+)$/);
     if (m) {
       currentTitle = m[2].trim();
     }
+    if (offset < lineEnd) break;
     pos = lineEnd;
   }
   return currentTitle;
@@ -88,13 +88,13 @@ export function extractSectionTextAtOffset(
   let sectionTitle = noteTitle || "Untitled";
   for (let i = 0; i < lines.length; i++) {
     const lineEnd = pos + lines[i].length + 1;
-    if (offset < lineEnd) {
-      sectionStart = i;
-      break;
-    }
     const m = lines[i].match(/^(#{1,2})\s+(.+)$/);
     if (m) {
       sectionTitle = m[2].trim();
+    }
+    if (offset < lineEnd) {
+      sectionStart = i;
+      break;
     }
     pos = lineEnd;
   }

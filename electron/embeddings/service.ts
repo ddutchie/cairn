@@ -302,12 +302,21 @@ export async function recomputeProjections(
   const missing: NoteStub[] = [];
   for (const n of allNotes) {
     const recs = byNote.get(n.id);
-    const text = `${n.title}\n\n${n.content_text}`;
-    const hash = sha256(text);
-    if (!recs || recs.length === 0 || recs.some((r) => r.model !== model || r.contentHash !== hash)) {
-      if (n.content_text && n.content_text.trim().length > 0) {
-        missing.push(n);
-      }
+    const sections = splitIntoSections(n.title, n.content_text);
+    const sectionHashes = sections.map((s) => {
+      const text = `${n.title}\n\n## ${s.title}\n${s.text}`;
+      return sha256(text);
+    });
+    const stale =
+      !recs || recs.length === 0 ||
+      recs.length !== sections.length ||
+      recs.some((r) =>
+        r.model !== model ||
+        r.task !== "search_document" ||
+        !sectionHashes.includes(r.contentHash),
+      );
+    if (stale && n.content_text && n.content_text.trim().length > 0) {
+      missing.push(n);
     }
   }
 

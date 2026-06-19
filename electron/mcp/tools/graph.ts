@@ -42,9 +42,10 @@ export function get_neighbors(db: Database.Database, args: Record<string, any>) 
 }
 
 export function get_semantic_neighbors(db: Database.Database, args: Record<string, any>) {
-  const { noteId } = args;
+  const { noteId, workspaceId } = args;
   if (!noteId) return { error: "noteId is required" };
-  const neighbors = getSemanticNeighbors(db, noteId as string);
+  if (!workspaceId) return { error: "workspaceId is required" };
+  const neighbors = getSemanticNeighbors(db, noteId as string, workspaceId as string);
   insertNotification(db, "get_semantic_neighbors", "Semantic neighbors retrieved", `${neighbors.length} related notes for ${noteId}`);
   return { noteId, neighbors };
 }
