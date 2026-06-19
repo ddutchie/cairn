@@ -24,16 +24,33 @@ import { reindexNotes } from "../embeddings/service";
 import { getDefaultModelId as getEmbeddingModelId } from "../embeddings/client";
 import { getEmbeddingsSettingsCached } from "../lib/config-cache";
 
+const reindexInFlight = new Map<string, Promise<boolean>>();
+
 async function reindexSingleNoteEmbedding(ctx: DbContext, noteId: string, workspaceId: string): Promise<boolean> {
+  const settings = getEmbeddingsSettingsCached();
+  if (!settings?.enabled) return false;
+  const model = settings.modelId || getEmbeddingModelId();
+
+  const existing = reindexInFlight.get(noteId);
+  if (existing) {
+    await existing.catch(() => {});
+  }
+
+  const p = (async () => {
+    try {
+      await reindexNotes(ctx.db, workspaceId, [noteId], model);
+      return true;
+    } catch (e) {
+      console.warn("[embeddings] incremental reindex failed:", e instanceof Error ? e.message : e);
+      return false;
+    }
+  })();
+
+  reindexInFlight.set(noteId, p);
   try {
-    const settings = getEmbeddingsSettingsCached();
-    if (!settings?.enabled) return false;
-    const model = settings.modelId || getEmbeddingModelId();
-    await reindexNotes(ctx.db, workspaceId, [noteId], model);
-    return true;
-  } catch (e) {
-    console.warn("[embeddings] incremental reindex failed:", e instanceof Error ? e.message : e);
-    return false;
+    return await p;
+  } finally {
+    if (reindexInFlight.get(noteId) === p) reindexInFlight.delete(noteId);
   }
 }
 
