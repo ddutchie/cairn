@@ -573,7 +573,8 @@ export function computeAutoRelationships(
 
   const deleteOld = db.prepare(`
     DELETE FROM relationship_cache
-    WHERE source_id = ? OR target_id = ?
+    WHERE (source_id = ? OR target_id = ?)
+      AND type != 'semantic'
   `);
 
   // ── Incremental mode: filter to only entities that need recomputing ────────
