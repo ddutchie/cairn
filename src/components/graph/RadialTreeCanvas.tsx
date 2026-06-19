@@ -138,6 +138,18 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
       (e) => !["project-member", "tag-member"].includes(e.type)
         && (e.type !== "semantic" || (e.weight ?? 1) >= semanticThreshold)
     );
+
+    // Build set of connected node IDs for highlight/dim
+    const selId = selectedNodeId;
+    const connectedIds = selId ? new Set<string>() : null;
+    if (connectedIds && selId) {
+      connectedIds.add(selId);
+      for (const e of crossEdges) {
+        if (e.source === selId) connectedIds.add(e.target);
+        if (e.target === selId) connectedIds.add(e.source);
+      }
+    }
+
     for (const edge of crossEdges.slice(0, 120)) {
       const sn = treeNodeMap.get(edge.source) as d3Hierarchy.HierarchyPointNode<HNode> | undefined;
       const tn = treeNodeMap.get(edge.target) as d3Hierarchy.HierarchyPointNode<HNode> | undefined;
@@ -146,13 +158,24 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
       const [x2, y2] = polar2cart(tn.x, tn.y);
       const color = crossEdgeColor(edge.type);
       const isAuto = ["co-mention", "keyword", "assignee", "semantic"].includes(edge.type);
+      const isConnected = selectedNodeId && (edge.source === selectedNodeId || edge.target === selectedNodeId);
+      let opacity = isAuto ? 0.1 : 0.2;
+      let width = 0.75;
+      if (selectedNodeId) {
+        if (isConnected) {
+          opacity = 0.85;
+          width = 2;
+        } else {
+          opacity = opacity * 0.12;
+        }
+      }
 
       gSel.append("line")
         .attr("x1", x1).attr("y1", y1)
         .attr("x2", x2).attr("y2", y2)
         .attr("stroke", color)
-        .attr("stroke-width", 0.75)
-        .attr("stroke-opacity", isAuto ? 0.1 : 0.2)
+        .attr("stroke-width", width)
+        .attr("stroke-opacity", opacity)
         .attr("stroke-dasharray", "3,4");
     }
 
@@ -172,7 +195,7 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
       .attr("class", "link")
       .attr("fill", "none")
       .attr("stroke", resolveVar("--border"))
-      .attr("stroke-opacity", 0.5)
+      .attr("stroke-opacity", selectedNodeId ? 0.1 : 0.5)
       .attr("stroke-width", 1)
       .attr("d", (d) => radialLinkPath(d as d3Hierarchy.HierarchyPointLink<HNode>));
 
@@ -209,6 +232,7 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
       const nodeId = (d.data as { id: string }).id;
       const baseId = nodeId.includes(":") ? nodeId.split(":")[0] : nodeId;
       const isSelected = baseId === selectedNodeId;
+      const isDimmed = !!selectedNodeId && !connectedIds?.has(baseId);
       const color = colorForType(type);
       const sel = d3Selection.select(this);
 
@@ -249,7 +273,7 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
 
         sel.append("circle")
           .attr("r", radius)
-          .attr("fill", (isSelected || isHovered) ? color : color + "aa")
+          .attr("fill", (isSelected || isHovered) ? color : color + (isDimmed ? "30" : "aa"))
           .attr("stroke", (isSelected || isHovered) ? color : "none")
           .attr("stroke-width", (isSelected || isHovered) ? 2 : 0);
 

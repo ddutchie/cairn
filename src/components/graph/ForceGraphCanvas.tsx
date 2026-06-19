@@ -31,7 +31,8 @@ function hexForType(type: GraphNode["type"]): string {
   return map[type] ?? "#888";
 }
 
-// Edge colour by relationship type
+  // Edge colour by relationship type
+
 function edgeColor(edgeType: string): { color: string; opacity: number; dash: boolean } {
   switch (edgeType) {
     case "note-note":      return { color: resolveCssVar("--info"),    opacity: 0.6, dash: false };
@@ -163,6 +164,17 @@ export function ForceGraphCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [nodeFingerprint, edgeFingerprint]);
 
+  const connectedNodeIds = useMemo(() => {
+    if (!selectedNodeId) return null;
+    const ids = new Set<string>();
+    ids.add(selectedNodeId);
+    for (const e of visibleEdges) {
+      if (e.source === selectedNodeId) ids.add(e.target);
+      if (e.target === selectedNodeId) ids.add(e.source);
+    }
+    return ids;
+  }, [selectedNodeId, visibleEdges]);
+
   function zoomBy(factor: number) {
     fgRef.current?.zoom(fgRef.current.zoom() * factor, 300);
   }
@@ -189,18 +201,34 @@ export function ForceGraphCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
         nodeLabel="name"
         nodeVal="val"
         nodeColor={(node: { id?: string; nodeType?: string }) => {
-          const base = hexForType((node.nodeType ?? "note") as GraphNode["type"]);
-          return node.id === selectedNodeId ? base : base + "bb";
+          const type = (node.nodeType ?? "note") as GraphNode["type"];
+          const isSelected = node.id === selectedNodeId;
+          const isDimmed = selectedNodeId !== null && node.id !== null && node.id !== undefined && !connectedNodeIds?.has(node.id);
+          const base = hexForType(type);
+          if (isSelected) return base;
+          if (isDimmed) return base + "30";
+          return base + "bb";
         }}
         nodeRelSize={5}
-        linkColor={(link: { edgeType?: string }) => {
+        linkColor={(link: { source?: { id?: string } | string; target?: { id?: string } | string; edgeType?: string }) => {
+          const srcId = typeof link.source === "object" ? link.source?.id : link.source;
+          const tgtId = typeof link.target === "object" ? link.target?.id : link.target;
+          const isConnected = selectedNodeId && (srcId === selectedNodeId || tgtId === selectedNodeId);
           const { color, opacity } = edgeColor(link.edgeType ?? "");
+          if (selectedNodeId) {
+            return isConnected
+              ? toAlpha(color, Math.max(opacity, 0.9))
+              : toAlpha(color, opacity * 0.12);
+          }
           return toAlpha(color, opacity);
         }}
-        linkWidth={(link: { edgeType?: string; weight?: number }) => {
+        linkWidth={(link: { source?: { id?: string } | string; target?: { id?: string } | string; edgeType?: string; weight?: number }) => {
+          const srcId = typeof link.source === "object" ? link.source?.id : link.source;
+          const tgtId = typeof link.target === "object" ? link.target?.id : link.target;
+          const isConnected = selectedNodeId && (srcId === selectedNodeId || tgtId === selectedNodeId);
+          if (isConnected) return 2.5;
           if (link.edgeType === "flow-edge") return 2;
           if (link.edgeType === "wikilink") return 2;
-          // Weight-based thickness for auto-discovered edges (0–1 range)
           if (link.weight != null && link.weight < 1) return 0.5 + link.weight * 1.0;
           return 1;
         }}
@@ -227,6 +255,7 @@ export function ForceGraphCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
           const label = node.name ?? "";
           const isSelected = node.id === selectedNodeId;
           const isHovered = node.id === hoveredNodeId;
+          const isDimmed = selectedNodeId !== null && node.id !== null && node.id !== undefined && !connectedNodeIds?.has(node.id);
           const isProject = node.nodeType === "project";
           const radius = isProject ? 7 : node.nodeType === "tag" ? 4 : 5.5;
           const x = node.x ?? 0;
@@ -247,7 +276,7 @@ export function ForceGraphCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
           // Node circle
           ctx.beginPath();
           ctx.arc(x, y, radius, 0, 2 * Math.PI);
-          ctx.fillStyle = isSelected ? color : color + "bb";
+          ctx.fillStyle = isSelected ? color : color + (isDimmed ? "30" : "bb");
           ctx.fill();
 
           if (isSelected) {
