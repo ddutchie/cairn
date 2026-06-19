@@ -151,7 +151,6 @@ export async function reindexNotes(
 
   for (let i = 0; i < notes.length; i += BATCH_SIZE) {
     const batch = notes.slice(i, i + BATCH_SIZE);
-    const todo: SectionToEmbed[] = [];
 
     for (const n of batch) {
       if (!n.content_text || n.content_text.trim().length === 0) {
@@ -165,7 +164,7 @@ export async function reindexNotes(
       const existing = getNoteEmbeddings(db, n.id);
       const existingBySectionIdx = new Map(existing.map((e) => [e.sectionIdx, e]));
 
-      let allSkipped = true;
+      const todo: SectionToEmbed[] = [];
       for (const s of sections) {
         const text = `${n.title}\n\n## ${s.title}\n${s.text}`;
         const hash = sha256(text);
@@ -174,43 +173,34 @@ export async function reindexNotes(
           continue;
         }
         todo.push({ noteId: n.id, idx: s.idx, title: s.title, text, hash });
-        allSkipped = false;
       }
 
       if (sections.length > 0) {
         deleteNoteEmbeddingSections(db, n.id, sections.length);
       }
 
-      if (allSkipped) {
+      if (todo.length === 0) {
         skipped++;
         done++;
         onProgress?.(done, total);
+        continue;
       }
-    }
 
-    if (todo.length === 0) continue;
-    const vectors: number[][] = [];
-    for (const s of todo) {
-      const [v] = await embed([s.text], "search_document", model);
-      vectors.push(v);
-    }
+      for (const s of todo) {
+        const [v] = await embed([s.text], "search_document", model);
+        upsertNoteEmbedding(db, {
+          noteId: s.noteId,
+          sectionIdx: s.idx,
+          sectionTitle: s.title,
+          workspaceId,
+          model,
+          task: "search_document",
+          contentHash: s.hash,
+          vector: v,
+        });
+        indexed++;
+      }
 
-    for (let j = 0; j < todo.length; j++) {
-      const s = todo[j];
-      upsertNoteEmbedding(db, {
-        noteId: s.noteId,
-        sectionIdx: s.idx,
-        sectionTitle: s.title,
-        workspaceId,
-        model,
-        task: "search_document",
-        contentHash: s.hash,
-        vector: vectors[j],
-      });
-      indexed++;
-    }
-
-    for (let j = 0; j < batch.length; j++) {
       done++;
       onProgress?.(done, total);
     }
@@ -327,35 +317,23 @@ export async function recomputeProjections(
 
   for (let i = 0; i < missing.length; i += BATCH_SIZE) {
     const batch = missing.slice(i, i + BATCH_SIZE);
-    const allSections: SectionToEmbed[] = [];
     for (const n of batch) {
       const sections = splitIntoSections(n.title, n.content_text);
+      deleteNoteEmbeddingSections(db, n.id, sections.length);
       for (const s of sections) {
         const text = `${n.title}\n\n## ${s.title}\n${s.text}`;
-        allSections.push({ noteId: n.id, idx: s.idx, title: s.title, text, hash: sha256(text) });
+        const [v] = await embed([text], "search_document", model);
+        upsertNoteEmbedding(db, {
+          noteId: n.id,
+          sectionIdx: s.idx,
+          sectionTitle: s.title,
+          workspaceId,
+          model,
+          task: "search_document",
+          contentHash: sha256(text),
+          vector: v,
+        });
       }
-      deleteNoteEmbeddingSections(db, n.id, sections.length);
-    }
-    if (allSections.length === 0) continue;
-    const vectors: number[][] = [];
-    for (const s of allSections) {
-      const [v] = await embed([s.text], "search_document", model);
-      vectors.push(v);
-    }
-    for (let j = 0; j < allSections.length; j++) {
-      const s = allSections[j];
-      upsertNoteEmbedding(db, {
-        noteId: s.noteId,
-        sectionIdx: s.idx,
-        sectionTitle: s.title,
-        workspaceId,
-        model,
-        task: "search_document",
-        contentHash: s.hash,
-        vector: vectors[j],
-      });
-    }
-    for (let j = 0; j < batch.length; j++) {
       done++;
       onProgress?.(done, totalToProcess);
     }

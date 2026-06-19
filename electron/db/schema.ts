@@ -465,6 +465,21 @@ const MIGRATIONS: Migration[] = [
       ALTER TABLE relationship_cache ADD COLUMN target_section_title TEXT;
     `);
   },
+
+  // v19: Failsafe — if v18 ran before the ALTER TABLE statements were added
+  // (the v18 migration was edited after initial deployment), the
+  // source_section_title / target_section_title columns won't exist on
+  // relationship_cache. This migration adds them idempotently.
+  (db) => {
+    const cols = db.prepare("PRAGMA table_info(relationship_cache)").all() as Array<{ name: string }>;
+    const has = (name: string) => cols.some((c) => c.name === name);
+    if (!has("source_section_title")) {
+      db.exec("ALTER TABLE relationship_cache ADD COLUMN source_section_title TEXT");
+    }
+    if (!has("target_section_title")) {
+      db.exec("ALTER TABLE relationship_cache ADD COLUMN target_section_title TEXT");
+    }
+  },
 ];
 
 export function applySchema(db: Database.Database): void {
