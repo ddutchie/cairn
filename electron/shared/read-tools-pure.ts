@@ -133,7 +133,10 @@ export function executeGetProjectContextPack(snap: CairnSnapshot, args: Args): u
   const openCards = columns
     .filter((col) => col.type !== "done")
     .map((col) => ({
-      columnName: col.name,
+      // `columnName` is dropped — the top-level `project.columns` array already
+      // carries `{id, name, type}`, so the agent can cross-reference when it
+      // needs the human-readable name. `columnType` is kept because tests
+      // assert on it and it's the structural signal (which board phase).
       columnType: col.type,
       columnId: col.id,
       tasks: snap.cards
@@ -151,20 +154,35 @@ export function executeGetProjectContextPack(snap: CairnSnapshot, args: Args): u
         }),
     }))
     .filter((col) => col.tasks.length > 0);
-  const recentActivity = [
-    ...notes.map((n) => ({ type: "note" as const, id: n.id, title: n.title, updatedAt: n.updatedAt })),
-    ...snap.cards
-      .filter((c) => c.projectId === project.id && !c.archivedAt)
-      .map((c) => ({ type: "card" as const, id: c.id, title: c.title, updatedAt: c.updatedAt })),
-  ]
+  // recentActivity intentionally omits `updatedAt` from the emitted shape —
+  // the array order *is* the recency signal (sorted newest-first), and tests
+  // only inspect `id` ordering (mcp-server.test.ts:1317-1326 asserts
+  // `activity.map(a => a.id)` ordering, not the `updatedAt` field itself).
+  // We still sort by `updatedAt` internally; we just don't emit it.
+  const recentActivity = (
+    [
+      ...notes.map((n) => ({ type: "note" as const, id: n.id, title: n.title, updatedAt: n.updatedAt })),
+      ...snap.cards
+        .filter((c) => c.projectId === project.id && !c.archivedAt)
+        .map((c) => ({ type: "card" as const, id: c.id, title: c.title, updatedAt: c.updatedAt })),
+    ] as Array<{ type: "note" | "card"; id: string; title: string; updatedAt: string }>
+  )
     .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-    .slice(0, 10);
+    .slice(0, 10)
+    // Strip `updatedAt` from the emitted shape; keep the sort order.
+    .map(({ type, id, title }) => ({ type, id, title }));
+  // Omit default `status: "active"` / `priority: "medium"` on the project
+  // (agent's `get_cairn_context` conventions document these as defaults).
+  const proj: Record<string, unknown> = {
+    id: project.id, name: project.name,
+  };
+  if (project.description) proj.description = project.description;
+  if (project.status && project.status !== "active") proj.status = project.status;
+  if (project.priority && project.priority !== "medium") proj.priority = project.priority;
+  if (project.dueDate) proj.dueDate = project.dueDate;
+  proj.columns = columns.map((c) => ({ id: c.id, name: c.name, type: c.type }));
   return {
-    project: {
-      id: project.id, name: project.name, description: project.description ?? null,
-      status: project.status, priority: project.priority,
-      columns: columns.map((c) => ({ id: c.id, name: c.name, type: c.type })),
-    },
+    project: proj,
     noteCount: notes.length,
     pinnedNotes,
     openTasks: openCards,

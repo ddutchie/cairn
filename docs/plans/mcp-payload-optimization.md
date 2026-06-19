@@ -33,7 +33,7 @@ as the MCP server emits them via `electron/mcp-server.ts:50` — `JSON.stringify
 | Tool | Before (b) | After (b) | Δb | Δt | % |
 |------|-----------:|----------:|---:|---:|---:|
 | get_cairn_context | 2711 | 1978 | 733 | 183 | 27 % |
-| get_project_context_pack | 3259 | ~3259 | 0 | 0 | 0 % (seed's cards all have descriptions/dates; real-world savings mount up when many cards have none) |
+| get_project_context_pack | 3259 | 2801 | 458 | 115 | 14 % |
 | search_notes | 468 | 388 | 80 | 20 | 17 % |
 | search_tasks | 530 | 500 | 30 | 8 | 6 % |
 | get_note | 2531 | 2531 | 0 | 0 | 0 % (contract fields kept) |
@@ -43,7 +43,7 @@ as the MCP server emits them via `electron/mcp-server.ts:50` — `JSON.stringify
 | get_neighbors | 991 | 541 | 450 | 113 | 45 % |
 | get_semantic_neighbors | 35 | 35 | 0 | 0 | 0 % (already minimal) |
 | get_idea_flow | 1393 | 1316 | 77 | 19 | 6 % |
-| **MCP subtotal** | **20,200** | **15,468** | **4,732** | **1,183** | **23 %** |
+| **MCP subtotal** | **20,200** | **15,010** | **5,190** | **1,298** | **26 %** |
 
 ### Chat-only tools (`electron/ipc/chat-executor.ts`)
 
@@ -183,6 +183,18 @@ metadata that doesn't partition well).
   (400 chars) kept intact — the truncation markers are asserted by
   `mcp-server.test.ts`.
 
+#### Pass 2 — additional `get_project_context_pack` compaction (3259 → 2801 b, -14 %)
+- Drop `updatedAt` from each `recentActivity` entry. The array is still sorted
+  newest-first by `updatedAt` internally, but the field is stripped from the
+  emitted shape (tests only inspect `id` ordering, mcp-server.test.ts:1317-1326).
+  ~40 b × 10 entries = ~400 b saved.
+- Drop `columnName` from each `openTasks` group entry. Tests assert on
+  `columnType`, not `columnName`; the top-level `project.columns` array
+  still carries `{id, name, type}` for cross-reference when the agent
+  needs the human-readable column name.
+- Omit default `status: "active"` / `priority: "medium"` on the top-level
+  `project` object (same convention as `get_cairn_context` pass 1).
+
 ### 7. `list_ready_tasks` — `electron/mcp/tools/tasks.ts`
 - Drop `blockedByIds: []` — by definition, ready tasks have no pending blockers.
 - Omit `dueDate` when null (was `null`).
@@ -216,6 +228,36 @@ metadata that doesn't partition well).
   `cardId` for `get_task`, `columnId` for `create_task`), so the asymmetry
   is actually a feature: the key tells the agent which entity type the
   value refers to (`taskId` ≠ `cardId` ≠ `noteId`).
+
+### 10. Agent loop — drop pretty-printing (`electron/lib/pi-agent-loop.ts:397`)
+
+The chat agent loop previously stringified tool results with
+`JSON.stringify(result, null, 2)` — 2-space indented. The MCP server itself
+emits compact JSON (`electron/mcp-server.ts:50`), so the indent overhead only
+applied to the chat-agent path, not the MCP path.
+
+Switched to `JSON.stringify(result)` (compact). Whitespace was pure overhead
+for an LLM consumer — models tokenize JSON structure regardless of indent,
+and every newline + indent level was a wasted token. Human log readability
+becomes slightly worse but is recoverable via a debug flag if needed.
+
+Measured overhead per tool (compact vs pretty on the seed):
+
+| Tool | Compact (b) | Pretty (b) | Overhead |
+|------|------------:|-----------:|---------:|
+| get_knowledge_graph | 3,109 | 6,349 | +104 % |
+| get_idea_flow | 1,316 | 2,080 | +58 % |
+| list_ready_tasks | 519 | 688 | +33 % |
+| get_project_context_pack | 2,801 | 3,728 | +33 % |
+| get_neighbors | 541 | 710 | +31 % |
+| search_tasks | 500 | 609 | +22 % |
+| get_task | 459 | 524 | +14 % |
+| search_notes | 388 | 461 | +19 % |
+| get_note | 2,531 | 2,568 | +1 % (long content dominates) |
+| **Total** | **14,560** | **20,992** | **+44 %** |
+
+Saved ~1,608 tokens per agent turn cycle (across all tool calls in a turn).
+Bigger than every compaction across passes 1 + 2 combined.
 
 ## Optimisations considered but NOT applied
 

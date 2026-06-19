@@ -394,7 +394,7 @@ async function executeSingleTool(
           name, args,
           undefined,
         );
-        return typeof result === "string" ? result : JSON.stringify(result, null, 2);
+        return typeof result === "string" ? result : JSON.stringify(result);
       }
       throw new Error(`Unknown tool: ${name}`);
     }
