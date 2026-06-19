@@ -58,6 +58,21 @@ function findEdge(edges: ReturnType<typeof semEdges>, a: string, b: string) {
   );
 }
 
+function cosineApprox(a: number[], b: number[]): number {
+  let dot = 0, na = 0, nb = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    na += a[i] * a[i];
+    nb += b[i] * b[i];
+  }
+  const d = Math.sqrt(na) * Math.sqrt(nb);
+  return d === 0 ? 0 : dot / d;
+}
+
+function round2(x: number): number {
+  return Math.round(x * 100) / 100;
+}
+
 describe("computeSemanticRelationships — top-K behaviour", () => {
   let db: Database.Database;
 
@@ -182,6 +197,137 @@ describe("computeSemanticRelationships — top-K behaviour", () => {
     expect(edge.weight).toBeLessThanOrEqual(1);
   });
 });
+
+describe("scenario: topic clusters with realistic cosines", () => {
+  let db: Database.Database;
+
+  beforeEach(() => {
+    db = makeDb();
+    seed(db);
+
+    createNote(db, { id: "react", projectId: "p1", workspaceId: "ws1", title: "React Hooks", contentText: "useState, useEffect" });
+    createNote(db, { id: "vue", projectId: "p1", workspaceId: "ws1", title: "Vue Composables", contentText: "ref, computed" });
+    createNote(db, { id: "svelte", projectId: "p1", workspaceId: "ws1", title: "Svelte Stores", contentText: "writable, derived" });
+    createNote(db, { id: "python", projectId: "p1", workspaceId: "ws1", title: "Python Decorators", contentText: "@app.route" });
+    createNote(db, { id: "ruby", projectId: "p1", workspaceId: "ws1", title: "Ruby Blocks", contentText: "yield, proc" });
+    createNote(db, { id: "pizza", projectId: "p1", workspaceId: "ws1", title: "Pizza Recipe", contentText: "flour, tomato, mozzarella" });
+  });
+
+  it("connects notes within topic clusters, isolates unrelated notes", () => {
+    const react   = vec(1.00, 0.00, 0.00, 0.00);
+    const vue     = vec(0.98, 0.20, 0.00, 0.00);
+    const svelte  = vec(0.88, 0.48, 0.00, 0.00);
+    const python  = vec(0.00, 1.00, 0.00, 0.00);
+    const ruby    = vec(0.00, 0.98, 0.20, 0.00);
+    const pizza   = vec(0.00, 0.00, 0.00, 1.00);
+
+    upsertEmbedding(db, "react", react);
+    upsertEmbedding(db, "vue", vue);
+    upsertEmbedding(db, "svelte", svelte);
+    upsertEmbedding(db, "python", python);
+    upsertEmbedding(db, "ruby", ruby);
+    upsertEmbedding(db, "pizza", pizza);
+
+    computeSemanticRelationships(db, "ws1");
+
+    const edges = semEdges(db);
+
+    const reactVueSim     = cosineApprox(react, vue);
+    const reactSvelteSim  = cosineApprox(react, svelte);
+    const vueSvelteSim    = cosineApprox(vue, svelte);
+    const pythonRubySim   = cosineApprox(python, ruby);
+    const reactPizzaSim   = cosineApprox(react, pizza);
+
+    const expected = [
+      { a: "react",  b: "vue",     w: round2(reactVueSim) },
+      { a: "react",  b: "svelte",  w: round2(reactSvelteSim) },
+      { a: "vue",    b: "svelte",  w: round2(vueSvelteSim) },
+      { a: "python", b: "ruby",    w: round2(pythonRubySim) },
+    ];
+
+    expect(edges).toHaveLength(expected.length);
+
+    for (const ex of expected) {
+      const edge = findEdge(edges, ex.a, ex.b);
+      expect(edge, `expected edge ${ex.a}↔${ex.b}`).toBeDefined();
+      expect(edge!.weight).toBe(ex.w);
+    }
+
+    expect(findEdge(edges, "pizza", "react")).toBeUndefined();
+    expect(findEdge(edges, "pizza", "vue")).toBeUndefined();
+    expect(findEdge(edges, "pizza", "python")).toBeUndefined();
+    expect(findEdge(edges, "pizza", "ruby")).toBeUndefined();
+    expect(findEdge(edges, "react", "python")).toBeUndefined();
+    expect(findEdge(edges, "vue", "ruby")).toBeUndefined();
+    expect(findEdge(edges, "svelte", "python")).toBeUndefined();
+  });
+
+  it("slider threshold hides weaker edges while keeping strong ones", () => {
+    const react   = vec(1.00, 0.00, 0.00, 0.00);
+    const vue     = vec(0.98, 0.20, 0.00, 0.00);
+    const svelte  = vec(0.88, 0.48, 0.00, 0.00);
+    const python  = vec(0.00, 1.00, 0.00, 0.00);
+    const ruby    = vec(0.00, 0.98, 0.20, 0.00);
+
+    upsertEmbedding(db, "react", react);
+    upsertEmbedding(db, "vue", vue);
+    upsertEmbedding(db, "svelte", svelte);
+    upsertEmbedding(db, "python", python);
+    upsertEmbedding(db, "ruby", ruby);
+
+    computeSemanticRelationships(db, "ws1");
+
+    const all = semEdges(db).filter((e) => true);
+
+    const threshold = cosineApprox(react, vue);
+    const reactVueEdge     = all.filter((e) => (e.source === "react" && e.target === "vue")     || (e.source === "vue" && e.target === "react"));
+    const reactSvelteEdge  = all.filter((e) => (e.source === "react" && e.target === "svelte")  || (e.source === "svelte" && e.target === "react"));
+    expect(cosineApprox(react, svelte)).toBeLessThan(threshold);
+    const visible = all.filter((e) => e.type !== "semantic" || (e.weight ?? 1) >= threshold);
+    const visibleBelow = all.filter((e) => e.type !== "semantic" || (e.weight ?? 1) < threshold);
+    expect(reactVueEdge.length).toBe(1);
+    expect(reactSvelteEdge.length).toBe(1);
+    expect(findEdge(visible, "react", "vue")).toBeDefined();
+    expect(findEdge(visibleBelow, "react", "vue")).toBeUndefined();
+    expect(findEdge(visible, "react", "svelte")).toBeUndefined();
+    expect(findEdge(visibleBelow, "react", "svelte")).toBeDefined();
+  });
+
+  it("slider at 1.0 hides all semantic edges (hard links only)", () => {
+    upsertEmbedding(db, "react", vec(1, 0, 0, 0));
+    upsertEmbedding(db, "vue", vec(0.99, 0.14, 0, 0));
+    computeSemanticRelationships(db, "ws1");
+    const all = semEdges(db);
+    expect(all.length).toBe(1);
+    const visibleAtOne = all.filter((e) => (e.weight ?? 1) >= 1.0);
+    expect(visibleAtOne).toHaveLength(0);
+  });
+
+  it("incremental recompute for a single note preserves other clusters' edges", () => {
+    const react  = vec(1.00, 0.00, 0.00, 0.00);
+    const vue    = vec(0.98, 0.20, 0.00, 0.00);
+    const python = vec(0.00, 1.00, 0.00, 0.00);
+    const ruby   = vec(0.00, 0.98, 0.20, 0.00);
+
+    upsertEmbedding(db, "react", react);
+    upsertEmbedding(db, "vue", vue);
+    upsertEmbedding(db, "python", python);
+    upsertEmbedding(db, "ruby", ruby);
+
+    computeSemanticRelationships(db, "ws1");
+    expect(findEdge(semEdges(db), "python", "ruby")).toBeDefined();
+
+    const reactUpdated = vec(0.97, 0.24, 0, 0);
+    upsertEmbedding(db, "react", reactUpdated);
+
+    computeSemanticRelationships(db, "ws1", ["react"]);
+
+    const edges = semEdges(db);
+    expect(findEdge(edges, "python", "ruby")).toBeDefined();
+    expect(findEdge(edges, "react", "vue")).toBeDefined();
+  });
+});
+
 
 describe("getKnowledgeGraph — semantic edge integration", () => {
   let db: Database.Database;
