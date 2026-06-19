@@ -49,24 +49,28 @@ export function getCairnContext(db: Database.Database, snap: Snapshot, _args: Re
   const workspaces = snap.workspaces.map((w) => ({ id: w.id, name: w.name }));
   const projects = snap.projects
     .filter((p) => !p.archivedAt)
-    .map((p) => ({
-      id: p.id, name: p.name, status: p.status, priority: p.priority,
-      workspaceId: p.workspaceId,
-      columns: snap.columns
+    .map((p) => {
+      const proj: Record<string, unknown> = {
+        id: p.id, name: p.name,
+        workspaceId: p.workspaceId,
+      };
+      // Omit default values — conventions list the full enum set.
+      if (p.status !== "active") proj.status = p.status;
+      if (p.priority !== "medium") proj.priority = p.priority;
+      const cols = snap.columns
         .filter((c) => c.projectId === p.id)
         .sort((a, b) => a.order - b.order)
-        .map((c) => ({ id: c.id, name: c.name, type: c.type })),
-    }));
+        .map((c) => ({ id: c.id, name: c.name, type: c.type }));
+      if (cols.length > 0) proj.columns = cols;
+      return proj;
+    });
+  // NOTE: `tools` block was removed — MCP clients enumerate tools via `tools/list`
+  // (mcp-server.ts line 42) and the agent system prompt references them directly.
+  // The static list duplicated ~600 bytes of tool names per call.
   return {
     workspaces,
     projects,
     tags: snap.tags.map((t) => ({ id: t.id, name: t.name, color: t.color, workspaceId: t.workspaceId })),
-    tools: {
-      read:   ["get_cairn_context", "get_project_context_pack", "search_notes", "search_tasks", "get_note", "get_task", "list_ready_tasks"],
-      write:  ["upsert_project", "ensure_note", "append_to_note", "patch_note", "create_task", "update_task", "bulk_update_task_status", "link_note_to_task", "create_dashboard", "update_dashboard", "create_idea_flow_node", "update_idea_flow_node", "create_idea_flow_edge", "create_tag"],
-      delete: ["delete_note", "delete_task", "delete_project", "delete_idea_flow_node", "delete_idea_flow_edge"],
-      ideaFlow: ["get_idea_flow", "create_idea_flow_node", "update_idea_flow_node", "delete_idea_flow_node", "create_idea_flow_edge", "delete_idea_flow_edge", "layout_idea_flow"],
-    },
     conventions: {
       notes: "Raw markdown in 'content'. 'content_text' is auto-derived — do not set manually.",
       dashboards: "Use create_dashboard to create an HTML dashboard rendered in a sandboxed iframe inside Cairn. The 'html' field must be a complete, self-contained HTML document. Use inline CSS and JS only — no external URLs. The window.cairn.query(tool, args) API is available for live data from read-only tools.",

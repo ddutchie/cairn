@@ -34,24 +34,25 @@ export function get_idea_flow(db: Database.Database, snap: Snapshot, args: Recor
     if (resolvedSnippet !== undefined) resolvedFields.resolvedSnippet = resolvedSnippet;
     if (resolvedPriority !== undefined) resolvedFields.resolvedPriority = resolvedPriority;
     if (resolvedColumnName !== undefined) resolvedFields.resolvedColumnName = resolvedColumnName;
-    return {
+    const out: Record<string, unknown> = {
       id: rest.id,
       type: rest.type,
       position: { x: rest.x, y: rest.y },
-      width: rest.width ?? null,
-      height: rest.height ?? null,
-      parentId: rest.parentId ?? null,
       data: { ...rest.data, ...resolvedFields },
       absoluteX: rest.absoluteX,
       absoluteY: rest.absoluteY,
     };
+    if (rest.width != null) out.width = rest.width;
+    if (rest.height != null) out.height = rest.height;
+    if (rest.parentId != null) out.parentId = rest.parentId;
+    return out;
   });
 
   const edges = resolved.edges.map((e) => ({
     id: e.id,
     source: e.sourceNodeId,
     target: e.targetNodeId,
-    label: e.label ?? null,
+    ...(e.label != null ? { label: e.label } : {}),
   }));
 
   return {

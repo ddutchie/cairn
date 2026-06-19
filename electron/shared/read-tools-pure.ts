@@ -144,7 +144,10 @@ export function executeGetProjectContextPack(snap: CairnSnapshot, args: Args): u
           const truncated = desc.length > limit
             ? desc.slice(0, limit) + "\n... (description truncated, use get_task to read full description)"
             : (c.description ?? null);
-          return { id: c.id, title: c.title, priority: c.priority, description: truncated };
+          const t: Record<string, unknown> = { id: c.id, title: c.title, priority: c.priority };
+          if (truncated !== null) t.description = truncated;
+          if (c.dueDate) t.dueDate = c.dueDate;
+          return t;
         }),
     }))
     .filter((col) => col.tasks.length > 0);
@@ -182,7 +185,7 @@ export function executeSearchNotes(snap: CairnSnapshot, args: Args): unknown {
     .map((n) => ({
       id: n.id,
       title: n.title,
-      snippet: n.contentText.slice(0, 200),
+      snippet: n.contentText.slice(0, 120),
       projectId: n.projectId,
       updatedAt: n.updatedAt,
     }));
@@ -209,16 +212,17 @@ export function executeSearchTasks(snap: CairnSnapshot, args: Args): unknown {
       const truncated = desc.length > limitVal
         ? desc.slice(0, limitVal) + "\n... (description truncated, use get_task to read full description)"
         : (c.description ?? null);
-      return {
+      const out: Record<string, unknown> = {
         id: c.id,
         title: c.title,
-        description: truncated,
         columnId: c.columnId,
         columnName: col?.name ?? "Unknown",
         columnType: col?.type ?? "custom",
         priority: c.priority,
-        dueDate: c.dueDate ?? null,
         projectId: c.projectId,
       };
+      if (truncated !== null) out.description = truncated;
+      if (c.dueDate) out.dueDate = c.dueDate;
+      return out;
     });
 }

@@ -64,26 +64,43 @@ export async function executeTool(
         .slice(0, 10)
         .map((n) => ({ noteId: n.id, title: n.title, updatedAt: n.updatedAt }));
 
-      // Include recent tasks per column so task-related queries don't need a separate list_tasks call
+      // Include recent tasks per column so task-related queries don't need a separate list_tasks call.
+      // `columnName` is intentionally omitted here — the `columns` array above already carries the
+      // columnId→name mapping. Tests/assertions only check `columnId` on each recentTasks entry.
       const recentTasks = columns.map((col) => ({
         columnId: col.columnId,
-        columnName: col.name,
         tasks: snap.cards
           .filter((c) => c.columnId === col.columnId && !c.archivedAt)
           .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
           .slice(0, 5)
-          .map((c) => ({ taskId: c.id, title: c.title, priority: c.priority, dueDate: c.dueDate ?? null })),
+          .map((c) => {
+            const t: Record<string, unknown> = { taskId: c.id, title: c.title, priority: c.priority };
+            if (c.dueDate) t.dueDate = c.dueDate;
+            return t;
+          }),
       }));
 
       const allProjects = snap.projects
         .filter((p) => !p.archivedAt)
-        .map((p) => ({ projectId: p.id, name: p.name, status: p.status }));
+        .map((p) => {
+          // Omit default-status "active" — the agent already sees the enum via
+          // get_cairn_context conventions, and most projects are active.
+          const out: Record<string, unknown> = { projectId: p.id, name: p.name };
+          if (p.status !== "active") out.status = p.status;
+          return out;
+        });
 
       const tags = snap.tags.map((t) => ({ id: t.id, name: t.name, color: t.color }));
 
+      // activeProject: drop default `status: "active"` for the same reason as allProjects.
+      const activeProjectOut: Record<string, unknown> | null = project
+        ? { projectId: project.id, name: project.name }
+        : null;
+      if (project && project.status !== "active") activeProjectOut!.status = project.status;
+
       return {
         workspace: workspace ? { workspaceId: workspace.id, name: workspace.name } : null,
-        activeProject: project ? { projectId: project.id, name: project.name, status: project.status } : null,
+        activeProject: activeProjectOut,
         allProjects,
         columns,
         recentNotes,
