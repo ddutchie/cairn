@@ -169,9 +169,12 @@ body {
 /* Page break hints */
 h1, h2, h3 { page-break-after: avoid; }
 pre, blockquote, table { page-break-inside: avoid; }
+/* Note title at top of PDF */
+.pdf-title { font-size: 1.75rem; font-weight: 700; margin: 0 0 1.5rem; color: var(--text-primary); }
 </style>
 </head>
 <body>
+<h1 class="pdf-title">${title.replace(/</g, "&lt;")}</h1>
 <div class="prose-cairn">${htmlBody}</div>
 </body>
 </html>`;
