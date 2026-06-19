@@ -189,8 +189,11 @@ export async function reindexNotes(
     }
 
     if (todo.length === 0) continue;
-    const sectionTexts = todo.map((s) => s.text);
-    const vectors = await embed(sectionTexts, "search_document", model);
+    const vectors: number[][] = [];
+    for (const s of todo) {
+      const [v] = await embed([s.text], "search_document", model);
+      vectors.push(v);
+    }
 
     for (let j = 0; j < todo.length; j++) {
       const s = todo[j];
@@ -334,7 +337,11 @@ export async function recomputeProjections(
       deleteNoteEmbeddingSections(db, n.id, sections.length);
     }
     if (allSections.length === 0) continue;
-    const vectors = await embed(allSections.map((s) => s.text), "search_document", model);
+    const vectors: number[][] = [];
+    for (const s of allSections) {
+      const [v] = await embed([s.text], "search_document", model);
+      vectors.push(v);
+    }
     for (let j = 0; j < allSections.length; j++) {
       const s = allSections[j];
       upsertNoteEmbedding(db, {
