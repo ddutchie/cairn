@@ -40,10 +40,21 @@ function parseArgs(argv: string[]): { port?: number; cacheDir: string; model: st
   return { port, cacheDir, model };
 }
 
+const MAX_EMBED_BODY_BYTES = 1_000_000; // 1 MB
+
 function readBody(req: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
-    req.on("data", (c: Buffer) => chunks.push(c));
+    let total = 0;
+    req.on("data", (c: Buffer) => {
+      total += c.length;
+      if (total > MAX_EMBED_BODY_BYTES) {
+        reject(Object.assign(new Error("payload too large"), { statusCode: 413 }));
+        req.destroy();
+        return;
+      }
+      chunks.push(c);
+    });
     req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
     req.on("error", reject);
   });
@@ -87,13 +98,29 @@ function loadOnce(model: string): Promise<void> {
   return pipelineLoadPromise;
 }
 
+class HttpError extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+  }
+}
+
 async function handleEmbed(
   body: string,
   res: http.ServerResponse,
   configuredModel: string,
 ): Promise<void> {
-  const parsed = JSON.parse(body);
-  const req = EmbedRequest.parse({ ...parsed, model: parsed.model ?? configuredModel });
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    throw new HttpError(400, "invalid JSON body");
+  }
+  const reqParsed = EmbedRequest.safeParse({
+    ...(parsed as Record<string, unknown>),
+    model: (parsed as { model?: unknown })?.model ?? configuredModel,
+  });
+  if (!reqParsed.success) throw new HttpError(400, `invalid embed request: ${reqParsed.error.message}`);
+  const req = reqParsed.data;
   if (req.task !== ("search_document" as NomicTask)
     && req.task !== ("search_query" as NomicTask)
     && req.task !== ("clustering" as NomicTask)) {
@@ -126,7 +153,9 @@ function buildServer(configuredModel: string): http.Server {
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         emit({ kind: "error", msg });
-        sendJson(res, 500, { error: msg });
+        const errAny = e as { statusCode?: number };
+        const status = e instanceof HttpError ? e.status : errAny.statusCode ?? 500;
+        sendJson(res, status, { error: msg });
       }
       return;
     }

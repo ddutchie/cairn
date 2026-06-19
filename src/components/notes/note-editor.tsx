@@ -25,7 +25,6 @@ import { MarkdownEditor, type MarkdownEditorHandle } from "./markdown-editor";
 import { remarkCallout, remarkObsidianEmbeds, remarkWikilinks, remarkPromoteDisplayMath, makeLatexPlugins, InlineCode } from "@/lib/markdown/pipeline";
 import { BacklinksPanel, NoteTagBar } from "./BacklinksPanel";
 import { MDPreviewPanel } from "./MDPreviewPanel";
-import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { countWords, stripMarkdown } from "./note-editor-utils";
 
 interface NoteEditorProps {
@@ -60,7 +59,6 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
   const [showSemanticPanel, setShowSemanticPanel] = useState(false);
   const noteId = note.id;
   const [semanticContent, setSemanticContent] = useState(noteContent0);
-  const debouncedSemanticContent = useDebouncedValue(semanticContent, 1200);
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setWordCount(countWords(noteContent0));
@@ -942,7 +940,7 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
         note={note}
         onOpenCard={() => setView("board")}
         semanticEnabled={showSemanticPanel}
-        semanticContent={debouncedSemanticContent}
+        semanticContent={semanticContent}
         workspaceId={activeWorkspaceId}
       />
 

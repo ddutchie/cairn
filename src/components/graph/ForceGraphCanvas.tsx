@@ -66,7 +66,7 @@ export function ForceGraphCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
   const nodeDegrees = useMemo(() => {
     const degrees: Record<string, number> = {};
     for (const link of graph.edges) {
-      if (link.type === "semantic" && (link.weight ?? 1) <= semanticThreshold) continue;
+      if (link.type === "semantic" && (link.weight ?? 1) < semanticThreshold) continue;
       degrees[link.source] = (degrees[link.source] ?? 0) + 1;
       degrees[link.target] = (degrees[link.target] ?? 0) + 1;
     }
@@ -141,7 +141,7 @@ export function ForceGraphCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
   // the memo and never hand a new graphData object to the library → no re-simulation.
   const visibleEdges = useMemo(
     () => graph.edges.filter(
-      (e) => e.type !== "semantic" || (e.weight ?? 1) > semanticThreshold,
+      (e) => e.type !== "semantic" || (e.weight ?? 1) >= semanticThreshold,
     ),
     [graph.edges, semanticThreshold],
   );

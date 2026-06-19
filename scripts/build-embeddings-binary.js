@@ -8,9 +8,8 @@
  * `node_modules/` (env-injected).
  *
  * Platform-specific binary, emitted in dist-embeddings/:
- *   dist-embeddings/cairn-embeddings       (macOS)
+ *   dist-embeddings/cairn-embeddings       (macOS / Linux)
  *   dist-embeddings/cairn-embeddings.exe   (Windows)
- *   dist-embeddings/cairn-embeddings-linux (Linux)
  *
  * Usage:
  *   node scripts/build-embeddings-binary.js [--mac] [--win] [--linux]
@@ -34,7 +33,7 @@ const platform = process.platform;
 const targets = [];
 if (wantMac   || (!wantMac && !wantWin && !wantLinux && platform === "darwin"))  targets.push({ id: "node22-macos-arm64", out: "cairn-embeddings" });
 if (wantWin   || (!wantMac && !wantWin && !wantLinux && platform === "win32"))   targets.push({ id: "node22-win-x64",     out: "cairn-embeddings.exe" });
-if (wantLinux || (!wantMac && !wantWin && !wantLinux && platform === "linux"))   targets.push({ id: "node22-linux-x64",   out: "cairn-embeddings-linux" });
+if (wantLinux || (!wantMac && !wantWin && !wantLinux && platform === "linux"))   targets.push({ id: "node22-linux-x64",   out: "cairn-embeddings" });
 
 function run(cmd) {
   console.log(`\n> ${cmd}`);

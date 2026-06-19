@@ -7,7 +7,7 @@ import {
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { SettingsGroup, SettingsRow, Toggle } from "./shared";
-import type { Workspace } from "@/types";
+import { useCairnStore } from "@/store";
 
 interface EmbeddingsConfig {
   enabled: boolean;
@@ -76,7 +76,7 @@ export function EmbeddingsSettings() {
   const [reindexResult, setReindexResult] = useState<string>("");
   const [reindexProgress, setReindexProgress] = useState<{ done: number; total: number } | null>(null);
   const [startingWorker, setStartingWorker] = useState(false);
-  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
+  const activeWorkspaceId = useCairnStore((s) => s.activeWorkspaceId);
 
   const refreshQuiet = useCallback(async () => {
     if (!window.electron?.embeddings) return;
@@ -110,9 +110,12 @@ export function EmbeddingsSettings() {
       const e = window.electron;
       if (!e?.embeddings) return;
       const settings = await e.embeddings.getSettings();
-      if (settings) setConfig(settings);
-      const ws = await e.workspace.list() as Workspace[] | undefined;
-      if (ws && ws.length > 0) setActiveWorkspaceId(ws[0].id);
+      if (settings) {
+        setConfig({
+          enabled: settings.enabled ?? false,
+          modelId: settings.modelId ?? DEFAULT_CONFIG.modelId,
+        });
+      }
       await refreshQuiet();
     })();
 
@@ -147,9 +150,14 @@ export function EmbeddingsSettings() {
     setProgressByModel((p) => ({ ...p, [modelId]: { modelId, status: "downloading", progress: 0 } }));
     try {
       await e.models.install(modelId);
-      await refreshQuiet();
     } catch (err) {
       console.error("[embeddings] install failed:", err);
+      setProgressByModel((prev) => {
+        const { [modelId]: _discard, ...rest } = prev;
+        return rest;
+      });
+    } finally {
+      await refreshQuiet();
     }
   };
 
@@ -169,6 +177,9 @@ export function EmbeddingsSettings() {
     if (!e) return;
     try {
       await e.models.setDefault(modelId);
+      const next = { ...config, modelId };
+      setConfig(next);
+      await e.saveSettings(next);
       await refreshQuiet();
     } catch (err) {
       console.error("[embeddings] setDefault failed:", err);

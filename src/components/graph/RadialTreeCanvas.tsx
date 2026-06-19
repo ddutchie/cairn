@@ -136,7 +136,7 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
     // Cross-edge chords — more visible, coloured by type
     const crossEdges = graph.edges.filter(
       (e) => !["project-member", "tag-member"].includes(e.type)
-        && (e.type !== "semantic" || (e.weight ?? 1) > semanticThreshold)
+        && (e.type !== "semantic" || (e.weight ?? 1) >= semanticThreshold)
     );
     for (const edge of crossEdges.slice(0, 120)) {
       const sn = treeNodeMap.get(edge.source) as d3Hierarchy.HierarchyPointNode<HNode> | undefined;

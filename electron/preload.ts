@@ -559,8 +559,8 @@ const api = {
         };
       },
     },
-    getSettings: () => invoke<{ enabled: boolean; modelId: string } | null>("app:getEmbeddingsSettings"),
-    saveSettings: (config: { enabled: boolean; modelId: string }) => invoke<{ ok: boolean }>(
+    getSettings: () => invoke<{ enabled?: boolean; modelId?: string } | null>("app:getEmbeddingsSettings"),
+    saveSettings: (config: { enabled?: boolean; modelId?: string }) => invoke<{ ok: boolean }>(
       "app:saveEmbeddingsSettings",
       { config },
     ),

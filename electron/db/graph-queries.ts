@@ -759,6 +759,7 @@ export function computeSemanticRelationships(
   }
 
   const tx = db.transaction(() => {
+    const seen = new Set<string>();
     if (activeIds) {
       for (const id of activeIds) deleteOld.run(id, id);
     } else {
@@ -767,10 +768,14 @@ export function computeSemanticRelationships(
     }
     for (const a of activePool) {
       for (const b of fullPool) {
-        if (a.id >= b.id) continue;
+        if (a.id === b.id) continue;
+        const [src, tgt] = a.id < b.id ? [a.id, b.id] : [b.id, a.id];
+        const key = `${src}|${tgt}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
         const sim = cosine(a.vec, b.vec);
         if (sim >= SEMANTIC_THRESHOLD) {
-          upsert.run(a.id, b.id, "semantic", Math.round(sim * 100) / 100, now);
+          upsert.run(src, tgt, "semantic", Math.round(sim * 100) / 100, now);
         }
       }
     }

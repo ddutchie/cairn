@@ -175,6 +175,7 @@ function parseStdoutLine(line: string): void {
     case "ready":
       isReady = true;
       if (ev.model) workerModel = ev.model;
+      emitProgress(ev);
       break;
     case "progress":
       emitProgress(ev);
@@ -280,7 +281,7 @@ export async function ensureStarted(): Promise<number> {
         " lastStopTrace:\n" +
         lastStopTrace,
     );
-    await stopWorker();
+    await stopWorker({ force: true });
   }
   startPromise = (async () => {
     const port = await spawnWorker(getDefaultModelId());

@@ -52,6 +52,12 @@ export async function loadPipeline(
           }
         }
       : undefined,
+  }).catch((err) => {
+    if (_loadedModelId === modelId) {
+      _extractor = null;
+      _loadedModelId = null;
+    }
+    throw err;
   });
   _loadedModelId = modelId;
   return _extractor;

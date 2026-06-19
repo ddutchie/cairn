@@ -24,14 +24,16 @@ import { reindexNotes } from "../embeddings/service";
 import { getDefaultModelId as getEmbeddingModelId } from "../embeddings/client";
 import { getEmbeddingsSettingsCached } from "../lib/config-cache";
 
-async function reindexSingleNoteEmbedding(ctx: DbContext, noteId: string, workspaceId: string): Promise<void> {
+async function reindexSingleNoteEmbedding(ctx: DbContext, noteId: string, workspaceId: string): Promise<boolean> {
   try {
     const settings = getEmbeddingsSettingsCached();
-    if (!settings?.enabled) return;
+    if (!settings?.enabled) return false;
     const model = settings.modelId || getEmbeddingModelId();
     await reindexNotes(ctx.db, workspaceId, [noteId], model);
+    return true;
   } catch (e) {
     console.warn("[embeddings] incremental reindex failed:", e instanceof Error ? e.message : e);
+    return false;
   }
 }
 
@@ -151,7 +153,8 @@ export function registerDbHandlers(ctx: DbContext): void {
     invalidateRelationshipCache(ctx.db, id);
     if (note.workspaceId) {
       computeAutoRelationships(ctx.db, note.workspaceId, [id]);
-      void reindexSingleNoteEmbedding(ctx, id, note.workspaceId).then(() => {
+      void reindexSingleNoteEmbedding(ctx, id, note.workspaceId).then((didReindex) => {
+        if (!didReindex) return;
         try {
           computeSemanticRelationships(ctx.db, note.workspaceId, [id]);
         } catch (e) {

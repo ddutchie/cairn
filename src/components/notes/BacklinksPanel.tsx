@@ -45,7 +45,8 @@ export function BacklinksPanel({
   const canSearch = semanticEnabled && !!workspaceId && trimmedSemanticLength >= 4;
 
   useEffect(() => {
-    if (!canSearch) {
+    const trimmed = debouncedSemantic.trim();
+    if (!canSearch || trimmed.length < 4) {
       return;
     }
     let cancelled = false;
@@ -54,7 +55,7 @@ export function BacklinksPanel({
       if (!api) return;
       setSearch({ kind: "loading" });
       try {
-        const hits = await api.search(workspaceId!, debouncedSemantic, {
+        const hits = await api.search(workspaceId!, trimmed, {
           queryNoteId: note.id,
           k: 5,
         });

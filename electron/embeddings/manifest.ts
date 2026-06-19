@@ -82,8 +82,13 @@ export function getEmbeddingModelsManifest(): EmbeddingModelManifestEntry[] {
       maxTokens: def.maxTokens,
       sizeBytes: def.sizeBytes,
       status,
-      downloadProgress: status === "installed" ? 100 : 0,
-      downloadSpeed: undefined,
+      downloadProgress:
+        status === "installed"
+          ? 100
+          : status === "downloading"
+            ? Math.max(0, Math.min(100, stored.downloadProgress ?? 0))
+            : 0,
+      downloadSpeed: status === "downloading" ? stored.downloadSpeed : undefined,
       error: stored.error,
     };
     result.push(entry);

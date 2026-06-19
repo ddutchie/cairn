@@ -7,6 +7,7 @@ import {
   getAllEmbeddingsForWorkspace,
   markEmbeddingProjectionFresh,
   pruneOrphanedClusteringRows,
+  deleteNoteEmbedding,
 } from "../db/queries";
 import type { NoteEmbeddingRecord } from "../db/queries";
 import { embed as clientEmbed } from "./client";
@@ -147,6 +148,7 @@ export async function reindexNotes(
     const todo: Array<{ note: NoteStub; text: string }> = [];
     for (const n of batch) {
       if (!n.content_text || n.content_text.trim().length === 0) {
+        deleteNoteEmbedding(db, n.id);
         skipped++;
         continue;
       }
@@ -203,7 +205,11 @@ export async function searchAdjacent(
   if (!trimmed) return [];
   const queryHash = sha256(`q|${model}|${trimmed}`);
   let queryVec = queryCache.get(queryHash);
-  if (!queryVec) {
+  if (queryVec) {
+    // refresh recency for LRU behaviour
+    queryCache.delete(queryHash);
+    queryCache.set(queryHash, queryVec);
+  } else {
     const { vector } = await embedChunkedDocument(embed, trimmed, "search_query", model);
     queryVec = vector;
     if (queryCache.size >= QUERY_CACHE_MAX) {

@@ -60,11 +60,23 @@ async function withLock<T>(
     });
   })();
   slot.current = p;
+  let failed: unknown = null;
   try {
     return await p as T;
+  } catch (e) {
+    failed = e;
+    throw e;
   } finally {
     slot.setFlag(false);
-    broadcastProgress(win, { modelId: "", status: "done", progress: 100, loaded: 1, total: 1 });
+    if (failed) {
+      broadcastProgress(win, {
+        modelId: "",
+        status: "error",
+        error: failed instanceof Error ? failed.message : String(failed),
+      });
+    } else {
+      broadcastProgress(win, { modelId: "", status: "done", progress: 100, loaded: 1, total: 1 });
+    }
     if (slot.current === p) slot.current = null;
   }
 }
@@ -92,7 +104,10 @@ export function registerEmbeddingsHandlers(ctx: DbContext): void {
     model?: string;
   }) => handle(async () => {
     const model = args.model ?? client.getDefaultModelId() ?? NOMIC_MODEL_ID;
-    const exclude = args.excludeIds ?? (args.queryNoteId ? [args.queryNoteId] : []);
+    const exclude = [
+      ...(args.excludeIds ?? []),
+      ...(args.queryNoteId ? [args.queryNoteId] : []),
+    ];
     return searchAdjacent(
       ctx.db,
       args.workspaceId,
