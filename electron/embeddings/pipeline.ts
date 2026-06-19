@@ -6,8 +6,6 @@ import { withNomicPrefix } from "./nomic";
 
 env.allowLocalModels = false;
 env.useBrowserCache = false;
-env.backends.onnx.wasm.numThreads = 1;
-env.backends.onnx.wasm.proxy = false;
 
 export interface EmbedProgress {
   status: string;
@@ -45,7 +43,7 @@ export async function loadPipeline(
   onProgress?: ProgressCallback,
 ): Promise<LoadedPipeline> {
   if (_pipeline && _pipeline.modelId === modelId) return _pipeline;
-  if (_pipelinePromise && _pipelinePromise === _pipelinePromise) return _pipelinePromise;
+  if (_pipelinePromise) return _pipelinePromise;
 
   _pipelinePromise = (async () => {
     onProgress?.({ status: "initiate" });

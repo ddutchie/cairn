@@ -4,8 +4,6 @@ import * as os from "os";
 
 import { embed, loadPipeline, setCacheDir, isLoaded, loadedModelId, type EmbedProgress } from "./pipeline";
 import { EmbedRequest, NOMIC_MODEL_ID, NOMIC_DIM } from "./types";
-import { withNomicPrefix } from "./nomic";
-import type { NomicTask } from "./types";
 
 interface StdoutEvent {
   kind: "listening" | "ready" | "progress" | "error" | "log";
@@ -121,12 +119,6 @@ async function handleEmbed(
   });
   if (!reqParsed.success) throw new HttpError(400, `invalid embed request: ${reqParsed.error.message}`);
   const req = reqParsed.data;
-  if (req.task !== ("search_document" as NomicTask)
-    && req.task !== ("search_query" as NomicTask)
-    && req.task !== ("clustering" as NomicTask)) {
-    sendJson(res, 400, { error: `invalid task: ${req.task}` });
-    return;
-  }
   await loadOnce(req.model ?? configuredModel);
   const vectors = await embed(req.texts, req.task, req.model ?? configuredModel);
   sendJson(res, 200, { vectors, dim: NOMIC_DIM, model: req.model ?? configuredModel });
@@ -201,4 +193,4 @@ if (require.main === module) {
   run();
 }
 
-export { run, withNomicPrefix };
+export { run };
