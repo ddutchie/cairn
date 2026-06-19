@@ -162,7 +162,7 @@ const api = {
   revealNote: (noteId: string, projectId: string) => invoke("app:revealNote", { noteId, projectId }),
 
   // ── Export note as PDF ────────────────────────
-  exportNotePdf: (title: string, html: string, options?: { returnBuffer?: boolean }) =>
+  exportNotePdf: (title: string, html: string, options?: { returnBuffer?: boolean; theme?: "light" | "dark" }) =>
     invoke<{ filePath?: string; pdfBase64?: string } | null>("app:exportNotePdf", { title, html, options }),
 
   // ── Open a URL in the system default browser ──

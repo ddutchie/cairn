@@ -62,6 +62,12 @@ function removeTmpDir(dir: string) {
   try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
 }
 
+/** Close the SQLite handle and remove the tmp dir. Shared afterEach teardown. */
+function teardown(db: Database.Database, dir: string) {
+  try { db.close(); } catch { /* ignore — already closed */ }
+  removeTmpDir(dir);
+}
+
 /**
  * Seeds a minimal workspace + project + column into the DB.
  * Returns the IDs for use in tests.
@@ -115,7 +121,7 @@ describe("get_cairn_context", () => {
   let wp: string;
 
   beforeEach(() => { db = makeDb(); wp = makeTmpDir(); });
-  afterEach(() => removeTmpDir(wp));
+  afterEach(() => teardown(db, wp));
 
   it("returns workspaces and projects", () => {
     const { workspaceId, projectId } = seedBase(db);
@@ -169,7 +175,7 @@ describe("search_notes", () => {
     createNote(db, { id: "n2", projectId, workspaceId, title: "Beta Notes", content: "second iteration" });
     createNote(db, { id: "n3", projectId: "proj2", workspaceId, title: "Alpha in Other Project", content: "other project content" });
   });
-  afterEach(() => removeTmpDir(wp));
+  afterEach(() => teardown(db, wp));
 
   it("finds by title substring (case-insensitive)", () => {
     const results = executeTool(db, wp, "search_notes", { query: "alpha" }) as Array<{ id: string }>;
@@ -237,7 +243,7 @@ describe("search_tasks", () => {
     createCard(db, { id: "c3", columnId, projectId, workspaceId, title: "Fix signup bug" });
     createCard(db, { id: "c4", columnId: "col2", projectId: "proj2", workspaceId, title: "Fix other issue" });
   });
-  afterEach(() => removeTmpDir(wp));
+  afterEach(() => teardown(db, wp));
 
   it("finds tasks by title substring (case-insensitive)", () => {
     const results = executeTool(db, wp, "search_tasks", { query: "fix" }) as Array<{ id: string }>;
@@ -313,7 +319,7 @@ describe("list_ready_tasks", () => {
     createCard(db, { id: "c3", columnId, projectId, workspaceId, title: "Blocked task" });
     createCard(db, { id: "blocker", columnId, projectId, workspaceId, title: "Blocker" });
   });
-  afterEach(() => removeTmpDir(wp));
+  afterEach(() => teardown(db, wp));
 
   it("excludes tasks in done columns", () => {
     const results = executeTool(db, wp, "list_ready_tasks", { projectId: "proj1" }) as Array<{ id: string }>;
@@ -360,7 +366,7 @@ describe("update_task block / unblock", () => {
     createCard(db, { id: "c2", columnId, projectId, workspaceId, title: "Task 2" });
     createCard(db, { id: "c3", columnId, projectId, workspaceId, title: "Task 3" });
   });
-  afterEach(() => removeTmpDir(wp));
+  afterEach(() => teardown(db, wp));
 
   it("blocks a task and marks it as blocked", () => {
     const result = executeTool(db, wp, "update_task", { cardId: "c1", blockedBy: "c2" }) as Record<string, unknown>;
@@ -426,7 +432,7 @@ describe("get_project_context_pack", () => {
     createCard(db, { id: "c1", columnId, projectId, workspaceId, title: "Open task" });
     createCard(db, { id: "c2", columnId: "col-done", projectId, workspaceId, title: "Done task" });
   });
-  afterEach(() => removeTmpDir(wp));
+  afterEach(() => teardown(db, wp));
 
   it("returns project, noteCount, pinnedNotes, openTasks, recentActivity", () => {
     const result = executeTool(db, wp, "get_project_context_pack", { projectId: "proj1" }) as Record<string, unknown>;
@@ -493,7 +499,7 @@ describe("create_task", () => {
   let wp: string;
 
   beforeEach(() => { db = makeDb(); wp = makeTmpDir(); seedBase(db); });
-  afterEach(() => removeTmpDir(wp));
+  afterEach(() => teardown(db, wp));
 
   it("creates a task and returns id, title, columnId, createdAt", () => {
     const result = executeTool(db, wp, "create_task", { columnId: "col1", projectId: "proj1", title: "New task" }) as Record<string, unknown>;
@@ -527,7 +533,7 @@ describe("delete_task", () => {
     const { workspaceId, projectId, columnId } = seedBase(db);
     createCard(db, { id: "c1", columnId, projectId, workspaceId, title: "To delete" });
   });
-  afterEach(() => removeTmpDir(wp));
+  afterEach(() => teardown(db, wp));
 
   it("deletes the task", () => {
     const result = executeTool(db, wp, "delete_task", { cardId: "c1" }) as Record<string, unknown>;
@@ -559,7 +565,7 @@ describe("delete_note", () => {
   let wp: string;
 
   beforeEach(() => { db = makeDb(); wp = makeTmpDir(); seedBase(db); });
-  afterEach(() => removeTmpDir(wp));
+  afterEach(() => teardown(db, wp));
 
   it("delete_note removes note from search results", () => {
     const { id } = executeTool(db, wp, "ensure_note", { projectId: "proj1", title: "To Delete", content: "delete me" }) as { id: string };
@@ -576,7 +582,7 @@ describe("ensure_note", () => {
   let wp: string;
 
   beforeEach(() => { db = makeDb(); wp = makeTmpDir(); seedBase(db); });
-  afterEach(() => removeTmpDir(wp));
+  afterEach(() => teardown(db, wp));
 
   it("creates when note does not exist — action: created", () => {
     const result = executeTool(db, wp, "ensure_note", { projectId: "proj1", title: "README", content: "Hello" }) as Record<string, unknown>;
@@ -611,7 +617,7 @@ describe("patch_note", () => {
     seedBase(db);
     createNote(db, { id: "n1", projectId: "proj1", workspaceId: "ws1", title: "Patch Test", content: "Hello world" });
   });
-  afterEach(() => removeTmpDir(wp));
+  afterEach(() => teardown(db, wp));
 
   it("replaces old string with new string", () => {
     executeTool(db, wp, "patch_note", { noteId: "n1", oldString: "Hello world", newString: "Goodbye world" });
@@ -643,7 +649,7 @@ describe("bulk_update_task_status", () => {
     createCard(db, { id: "c1", columnId, projectId, workspaceId, title: "T1" });
     createCard(db, { id: "c2", columnId, projectId, workspaceId, title: "T2" });
   });
-  afterEach(() => removeTmpDir(wp));
+  afterEach(() => teardown(db, wp));
 
   it("moves multiple tasks and reports counts", () => {
     const result = executeTool(db, wp, "bulk_update_task_status", { cardIds: ["c1", "c2"], targetColumnId: "col-done" }) as Record<string, unknown>;
@@ -676,7 +682,7 @@ describe("link_note_to_task", () => {
     createNote(db, { id: "n1", projectId, workspaceId, title: "Note" });
     createCard(db, { id: "c1", columnId, projectId, workspaceId, title: "Task" });
   });
-  afterEach(() => removeTmpDir(wp));
+  afterEach(() => teardown(db, wp));
 
   it("links note and task bidirectionally", () => {
     const result = executeTool(db, wp, "link_note_to_task", { noteId: "n1", cardId: "c1" }) as Record<string, unknown>;
@@ -705,7 +711,7 @@ describe("upsert_project", () => {
   let wp: string;
 
   beforeEach(() => { db = makeDb(); wp = makeTmpDir(); });
-  afterEach(() => removeTmpDir(wp));
+  afterEach(() => teardown(db, wp));
 
   it("creates project with default columns when projectId is omitted", () => {
     createWorkspace(db, { id: "ws1", name: "WS" });
@@ -752,7 +758,7 @@ describe("search_notes — multi-match ordering and disambiguation", () => {
     createProject(db, { id: "proj2", workspaceId, name: "Docs" });
     createProject(db, { id: "proj3", workspaceId, name: "Marketing" });
   });
-  afterEach(() => removeTmpDir(wp));
+  afterEach(() => teardown(db, wp));
 
   it("returns all matching notes across projects when no projectId filter", () => {
     // Three notes all containing "authentication" — spread across projects
@@ -870,7 +876,7 @@ describe("search_tasks — multi-match across projects and columns", () => {
     createColumn(db, { id: "col-ip", projectId: "proj1", workspaceId, name: "In Progress", type: "in_progress", order: 1 });
     createColumn(db, { id: "col-done", projectId: "proj1", workspaceId, name: "Done", type: "done", order: 2 });
   });
-  afterEach(() => removeTmpDir(wp));
+  afterEach(() => teardown(db, wp));
 
   it("same task title in two projects — both returned without projectId filter", () => {
     createCard(db, { id: "c-be", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Implement auth" });
@@ -967,7 +973,7 @@ describe("ensure_note — same title across different projects", () => {
     const { workspaceId } = seedBase(db, { projectName: "Project A" });
     createProject(db, { id: "proj2", workspaceId, name: "Project B" });
   });
-  afterEach(() => removeTmpDir(wp));
+  afterEach(() => teardown(db, wp));
 
   it("same title in two different projects creates two separate notes", () => {
     const r1 = executeTool(db, wp, "ensure_note", { projectId: "proj1", title: "README", content: "Project A readme" }) as Record<string, unknown>;
@@ -1023,7 +1029,7 @@ describe("patch_note — multiple occurrences", () => {
     wp = makeTmpDir();
     seedBase(db);
   });
-  afterEach(() => removeTmpDir(wp));
+  afterEach(() => teardown(db, wp));
 
   it("returns error when oldString appears more than once and replaceAll is not set", () => {
     createNote(db, { id: "n1", projectId: "proj1", workspaceId: "ws1", title: "Note",
@@ -1082,7 +1088,7 @@ describe("list_ready_tasks — multi-level blocker chains", () => {
     createCard(db, { id: "c2", columnId, projectId, workspaceId, title: "Mid task" });
     createCard(db, { id: "c3", columnId, projectId, workspaceId, title: "Leaf task" });
   });
-  afterEach(() => removeTmpDir(wp));
+  afterEach(() => teardown(db, wp));
 
   it("c3 is blocked when c2 blocks it and c2 itself is blocked by c1", () => {
     executeTool(db, wp, "update_task", { cardId: "c2", blockedBy: "c1" });
@@ -1157,7 +1163,7 @@ describe("delete_task — blocker reference cleanup across multiple tasks", () =
     executeTool(db, wp, "update_task", { cardId: "blocked-b", blockedBy: "blocker" });
     executeTool(db, wp, "update_task", { cardId: "blocked-c", blockedBy: "blocker" });
   });
-  afterEach(() => removeTmpDir(wp));
+  afterEach(() => teardown(db, wp));
 
   it("deleting a blocker task frees all tasks that were blocked by it", () => {
     executeTool(db, wp, "delete_task", { cardId: "blocker" });
@@ -1192,7 +1198,7 @@ describe("blocker cleanup on move-to-done", () => {
     createCard(db, { id: "blocked", columnId, projectId, workspaceId, title: "Blocked task" });
     executeTool(db, wp, "update_task", { cardId: "blocked", blockedBy: "blocker" });
   });
-  afterEach(() => removeTmpDir(wp));
+  afterEach(() => teardown(db, wp));
 
   it("get_task reports the blocker as pending before it moves to done", () => {
     const task = executeTool(db, wp, "get_task", { cardId: "blocked" }) as Record<string, unknown>;
@@ -1286,7 +1292,7 @@ describe("get_project_context_pack — multiple open columns with tasks", () => 
     createCard(db, { id: "c-review",  columnId: "col-rev",  projectId, workspaceId, title: "Review task" });
     createCard(db, { id: "c-done",    columnId: "col-done", projectId, workspaceId, title: "Done task" });
   });
-  afterEach(() => removeTmpDir(wp));
+  afterEach(() => teardown(db, wp));
 
   it("openTasks includes backlog, in_progress and review columns but not done", () => {
     const result = executeTool(db, wp, "get_project_context_pack", { projectId: "proj1" }) as Record<string, unknown>;

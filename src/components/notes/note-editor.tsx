@@ -7,7 +7,7 @@ import remarkBreaks from "remark-breaks";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
-import { Pin, PinOff, Calendar, Eye, Pencil, Wand2, Loader2, CheckCircle2, FileDown, ChevronLeft, Sparkles } from "lucide-react";import { WikilinkPicker } from "./WikilinkPicker";
+import { Pin, PinOff, Calendar, Eye, Pencil, Wand2, Loader2, CheckCircle2, FileDown, ChevronLeft, Sparkles, Sun, Moon, ChevronDown as Chevron } from "lucide-react";import { WikilinkPicker } from "./WikilinkPicker";
 import { getActiveWikilink } from "@/lib/wikilink-parser";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -600,8 +600,10 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
   }, [activeWorkspaceId, note.id, note.tagIds, createTag, updateNote]);
 
   const [exportState, setExportState] = useState<"idle" | "exporting" | "done">("idle");
-  const handleExportPdf = useCallback(async () => {
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const handleExportPdf = useCallback(async (theme: "light" | "dark" = "light") => {
     if (!proseRef.current) return;
+    setShowExportMenu(false);
     setExportState("exporting");
     try {
       const isElectron = typeof navigator !== "undefined" && navigator.userAgent.includes("Electron");
@@ -610,8 +612,10 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
       const raw = proseRef.current.innerHTML;
       // Post-process HTML to make code blocks print-friendly:
       // CodeBlock uses hardcoded inline styles derived from the active theme.
-      // We parse the captured HTML, rewrite those inline styles to light-palette
-      // values, and remove the Copy button (not useful in a PDF).
+      // For light PDFs: parse the captured HTML, rewrite those inline styles to
+      // light-palette values, and remove the Copy button (not useful in a PDF).
+      // For dark PDFs: the code blocks are already dark-themed, so only strip
+      // the Copy button header.
       const doc = new DOMParser().parseFromString(`<div>${raw}</div>`, "text/html");
       const root = doc.body.firstElementChild!;
 
@@ -621,21 +625,23 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
         const header = block.querySelector<HTMLElement>("div");
         if (!pre) continue;
 
-        // Force light-theme colours on pre and its border container
-        pre.style.background = "#f8f7f5";
-        pre.style.color      = "#374151";
-        block.style.border   = "1px solid #dddad6";
+        if (theme === "light") {
+          // Force light-theme colours on pre and its border container
+          pre.style.background = "#f8f7f5";
+          pre.style.color      = "#374151";
+          block.style.border   = "1px solid #dddad6";
 
-        // Rewrite token span colours from DARK palette → LIGHT palette
-        const DARK_TO_LIGHT: Record<string, string> = {
-          "#c678dd": "#7c3aed", "#e5c07b": "#b45309", "#56b6c2": "#0891b2",
-          "#d19a66": "#c2410c", "#98c379": "#16a34a", "#e06c75": "#dc2626",
-          "#5c6370": "#9ca3af", "#61afef": "#1d4ed8", "#abb2bf": "#374151",
-        };
-        for (const span of pre.querySelectorAll<HTMLElement>("span[style]")) {
-          const c = span.style.color.toLowerCase();
-          // normalise hex shorthand if needed, try direct map
-          if (DARK_TO_LIGHT[c]) span.style.color = DARK_TO_LIGHT[c];
+          // Rewrite token span colours from DARK palette → LIGHT palette
+          const DARK_TO_LIGHT: Record<string, string> = {
+            "#c678dd": "#7c3aed", "#e5c07b": "#b45309", "#56b6c2": "#0891b2",
+            "#d19a66": "#c2410c", "#98c379": "#16a34a", "#e06c75": "#dc2626",
+            "#5c6370": "#9ca3af", "#61afef": "#1d4ed8", "#abb2bf": "#374151",
+          };
+          for (const span of pre.querySelectorAll<HTMLElement>("span[style]")) {
+            const c = span.style.color.toLowerCase();
+            // normalise hex shorthand if needed, try direct map
+            if (DARK_TO_LIGHT[c]) span.style.color = DARK_TO_LIGHT[c];
+          }
         }
 
         // Remove the Copy button header — not useful in print
@@ -645,9 +651,9 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
       const html = root.innerHTML;
 
       if (isElectron && window.electron?.exportNotePdf) {
-        await window.electron.exportNotePdf(note.title, html);
+        await window.electron.exportNotePdf(note.title, html, { theme });
       } else if (isMobile && window.electron?.exportNotePdf) {
-        const result = await window.electron.exportNotePdf(note.title, html, { returnBuffer: true });
+        const result = await window.electron.exportNotePdf(note.title, html, { returnBuffer: true, theme });
         if (result?.pdfBase64) {
           const binStr = atob(result.pdfBase64);
           const len = binStr.length;
@@ -656,7 +662,8 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
             arr[i] = binStr.charCodeAt(i);
           }
           const blob = new Blob([arr], { type: "application/pdf" });
-          const file = new File([blob], `${note.title}.pdf`, { type: "application/pdf" });
+          const safeTitle = note.title.replace(/[\/\\:*?"<>|]/g, "_").trim() || "untitled";
+          const file = new File([blob], `${safeTitle}.pdf`, { type: "application/pdf" });
 
           if (navigator.canShare && navigator.canShare({ files: [file] })) {
             await navigator.share({
@@ -667,7 +674,7 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
             const url = URL.createObjectURL(blob);
             const a = document.createElement("a");
             a.href = url;
-            a.download = `${note.title}.pdf`;
+            a.download = `${safeTitle}.pdf`;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
@@ -778,25 +785,47 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
           ))}
 
           {mode === "read" && (
-            <Tooltip content="Export as PDF">
-              <button
-                onClick={handleExportPdf}
-                disabled={exportState === "exporting"}
-                className={cn(
-                  "flex items-center gap-1.5 px-2 py-1 rounded-md text-xs transition-colors",
-                  exportState === "done"
-                    ? "text-[var(--success)]"
-                    : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] disabled:opacity-50"
-                )}
-              >
-                {exportState === "exporting"
-                  ? <Loader2 size={12} className="animate-spin" />
-                  : exportState === "done"
-                    ? <CheckCircle2 size={12} />
-                    : <FileDown size={12} />}
-                {exportState === "done" ? "Saved" : "PDF"}
-              </button>
-            </Tooltip>
+            <div className="relative">
+              <Tooltip content="Export as PDF">
+                <button
+                  onClick={() => setShowExportMenu((v) => !v)}
+                  disabled={exportState === "exporting"}
+                  className={cn(
+                    "flex items-center gap-1.5 px-2 py-1 rounded-md text-xs transition-colors",
+                    exportState === "done"
+                      ? "text-[var(--success)]"
+                      : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] disabled:opacity-50"
+                  )}
+                >
+                  {exportState === "exporting"
+                    ? <Loader2 size={12} className="animate-spin" />
+                    : exportState === "done"
+                      ? <CheckCircle2 size={12} />
+                      : <FileDown size={12} />}
+                  {exportState === "done" ? "Saved" : "PDF"}
+                  {exportState === "idle" && <Chevron size={10} className="opacity-60" />}
+                </button>
+              </Tooltip>
+              {showExportMenu && exportState === "idle" && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowExportMenu(false)} />
+                  <div className="absolute right-0 top-full mt-1 z-50 min-w-[120px] rounded-md border border-[var(--border)] bg-[var(--surface)] shadow-lg overflow-hidden">
+                    <button
+                      onClick={() => handleExportPdf("light")}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
+                    >
+                      <Sun size={12} /> Light
+                    </button>
+                    <button
+                      onClick={() => handleExportPdf("dark")}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
+                    >
+                      <Moon size={12} /> Dark
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           )}
           <Tooltip content={note.isPinned ? "Unpin note" : "Pin note"}>
             <button

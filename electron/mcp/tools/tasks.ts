@@ -120,16 +120,20 @@ export function list_ready_tasks(db: Database.Database, snap: Snapshot, args: Re
   if (readyCards.length === 0) return [];
   // Resolve column names from the snapshot (cheap lookup, avoids a JOIN in queries.ts).
   const colNameById = new Map(snap.columns.map((c) => [c.id, c.name]));
-  return readyCards.map((c) => ({
-    id: c.id,
-    title: c.title,
-    priority: c.priority,
-    dueDate: c.dueDate,
-    columnId: c.columnId,
-    columnName: colNameById.get(c.columnId) ?? "Unknown",
-    projectId: c.projectId,
-    blockedByIds: c.blockedByIds ?? [],
-  }));
+  return readyCards.map((c) => {
+    const out: Record<string, unknown> = {
+      id: c.id,
+      title: c.title,
+      priority: c.priority,
+      columnId: c.columnId,
+      columnName: colNameById.get(c.columnId) ?? "Unknown",
+      projectId: c.projectId,
+    };
+    // Ready tasks have no pending blockers by definition — omit empty arrays.
+    if (c.dueDate) out.dueDate = c.dueDate;
+    if (Array.isArray(c.blockedByIds) && c.blockedByIds.length > 0) out.blockedByIds = c.blockedByIds;
+    return out;
+  });
 }
 
 export function update_task(db: Database.Database, snap: Snapshot, args: Record<string, any>) {

@@ -19,10 +19,17 @@ export function get_note(db: Database.Database, snap: Snapshot, args: Record<str
   const note = snap.notes.find((n) => n.id === args.noteId);
   if (!note) return { error: "Note not found" };
   return {
-    id: note.id, title: note.title, content: note.content,
-    projectId: note.projectId, isPinned: note.isPinned,
-    linkedNoteIds: note.linkedNoteIds, linkedCardIds: note.linkedCardIds,
-    updatedAt: note.updatedAt, version: getNoteVersion(db, note.id) ?? 0,
+    id: note.id,
+    title: note.title,
+    content: note.content,
+    projectId: note.projectId,
+    isPinned: note.isPinned,
+    // `linkedNoteIds` / `linkedCardIds` are part of the documented get_note
+    // contract — always emitted, even when empty.
+    linkedNoteIds: note.linkedNoteIds,
+    linkedCardIds: note.linkedCardIds,
+    updatedAt: note.updatedAt,
+    version: getNoteVersion(db, note.id) ?? 0,
   };
 }
 
