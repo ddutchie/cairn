@@ -91,10 +91,9 @@ async function embedChunkedDocument(
     return { vector: v, hash };
   }
   const vectors: number[][] = [];
-  for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
-    const batch = chunks.slice(i, i + BATCH_SIZE).map((c) => c.text);
-    const res = await embed(batch, task, model);
-    vectors.push(...res);
+  for (const chunk of chunks) {
+    const [v] = await embed([chunk.text], task, model);
+    vectors.push(v);
   }
   return { vector: averageVectors(vectors), hash };
 }
