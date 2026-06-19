@@ -60,7 +60,9 @@ export interface GraphEdge {
   target: string;
   type: EdgeType;
   label?: string;
-  weight?: number; // 0–1 for auto edges
+  weight?: number;
+  sourceSectionTitle?: string;
+  targetSectionTitle?: string;
 }
 
 export interface KnowledgeGraph {
@@ -381,7 +383,7 @@ export function getKnowledgeGraph(
     if (autoTypes.length > 0) {
       const typePlaceholders = autoTypes.map(() => "?").join(",");
       const cacheRows = db.prepare(
-        `SELECT source_id, target_id, type, weight
+        `SELECT source_id, target_id, type, weight, source_section_title, target_section_title
          FROM relationship_cache
          WHERE type IN (${typePlaceholders})`
       ).all(...autoTypes) as Row[];
@@ -389,7 +391,6 @@ export function getKnowledgeGraph(
       for (const r of cacheRows) {
         const src = r.source_id as string;
         const tgt = r.target_id as string;
-        // Only include if both endpoints are in the current graph scope
         if (nodeSet.has(src) && nodeSet.has(tgt)) {
           edges.push({
             id: edgeId(r.type as string, src, tgt),
@@ -398,6 +399,8 @@ export function getKnowledgeGraph(
             type: r.type as EdgeType,
             weight: r.weight as number,
             label: r.type as string,
+            sourceSectionTitle: (r.source_section_title as string | null) ?? undefined,
+            targetSectionTitle: (r.target_section_title as string | null) ?? undefined,
           });
         }
       }
@@ -559,11 +562,13 @@ export function computeAutoRelationships(
   ).all(workspaceId) as Row[];
 
   const upsert = db.prepare(`
-    INSERT INTO relationship_cache (source_id, target_id, type, weight, computed_at)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO relationship_cache (source_id, target_id, type, weight, computed_at, source_section_title, target_section_title)
+    VALUES (?, ?, ?, ?, ?, NULL, NULL)
     ON CONFLICT(source_id, target_id, type) DO UPDATE SET
       weight = excluded.weight,
-      computed_at = excluded.computed_at
+      computed_at = excluded.computed_at,
+      source_section_title = NULL,
+      target_section_title = NULL
   `);
 
   const deleteOld = db.prepare(`
@@ -716,23 +721,20 @@ const SEMANTIC_TOP_K = 5;
 const SEMANTIC_TOP_K_FLOOR = 0.55;
 /**
  * Recompute embedding-based semantic edges by cosine-similarity between the
- * stored `search_document` vectors for this workspace. Output goes to
- * `relationship_cache` under the `"semantic"` type so the existing pass-6
- * loader picks it up (no SQL shape change — `type` is free-form TEXT).
+ * stored `search_document` vectors for this workspace. Since v18, vectors are
+ * per-section, so one note can have multiple embedding rows. This function
+ * compares all sections across all notes, finds the top-K most-similar
+ * *sections* for each active section, then maps those back to note-pair edges
+ * (keeping the best weight per note pair). Output goes to `relationship_cache`
+ * under the `"semantic"` type so the existing pass-6 loader picks it up.
  *
- * Strategy: top-K nearest neighbours per note. Each active note gets up to
- * {@link SEMANTIC_TOP_K} outgoing edges to its most-similar peers, provided
- * cosine >= {@link SEMANTIC_TOP_K_FLOOR}. This avoids the previous absolute
- * threshold (0.78) which only captured near-duplicates and left most notes
- * disconnected. Edges are deduplicated via canonical source<target ordering
- * so (a,b) and (b,a) collapse to a single row.
+ * Strategy: top-K nearest sections per active section, cosine >= floor 0.55.
+ * Edges are between notes (not sections) — the best section-pair weight wins.
+ * Canonical source<target ordering ensures (a,b) and (b,a) collapse to one row.
  *
- * Incremental mode: when `entityIds` is non-empty, only the active subset's
- * nearest neighbours are recomputed. Stale `"semantic"` rows for the
- * changed entities are deleted before re-upserting, mirroring the
- * `computeAutoRelationships` convention. Other notes' relationships remain
- * untouched (they may still reference the changed note — those stale edges
- * are cleaned up on the next full recompute).
+ * Incremental mode: when `entityIds` is non-empty, only sections belonging to
+ * the active note set are used as query sources; the full pool is still used
+ * as candidates so an edited note can discover new connections.
  */
 export function computeSemanticRelationships(
   db: Database.Database,
@@ -742,58 +744,82 @@ export function computeSemanticRelationships(
   const stored = getAllEmbeddingsForWorkspace(db, workspaceId, "search_document");
   if (stored.length === 0) return;
 
+  interface SectionVec {
+    noteId: string;
+    sectionIdx: number;
+    sectionTitle: string;
+    vec: Float32Array;
+  }
+  const fullPool: SectionVec[] = stored.map((r: NoteEmbeddingRecord) => ({
+    noteId: r.noteId,
+    sectionIdx: r.sectionIdx,
+    sectionTitle: r.sectionTitle,
+    vec: toFloat32(r.vector),
+  }));
+
+  const noteIdsInPool = new Set(fullPool.map((s) => s.noteId));
+  if (noteIdsInPool.size < 2) return;
+
+  let activePool: SectionVec[] = fullPool;
+  let activeIds: Set<string> | null = null;
+  if (entityIds && entityIds.length > 0) {
+    activeIds = new Set(entityIds);
+    activePool = fullPool.filter((s) => activeIds!.has(s.noteId));
+  }
+
+  const k = Math.min(SEMANTIC_TOP_K, Math.max(1, noteIdsInPool.size - 1));
+
   const now = Math.floor(Date.now() / 1000);
   const upsert = db.prepare(`
-    INSERT INTO relationship_cache (source_id, target_id, type, weight, computed_at)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO relationship_cache (source_id, target_id, type, weight, computed_at, source_section_title, target_section_title)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(source_id, target_id, type) DO UPDATE SET
       weight = excluded.weight,
-      computed_at = excluded.computed_at
+      computed_at = excluded.computed_at,
+      source_section_title = excluded.source_section_title,
+      target_section_title = excluded.target_section_title
   `);
   const deleteOld = db.prepare(`
     DELETE FROM relationship_cache WHERE (source_id = ? OR target_id = ?) AND type = 'semantic'
   `);
 
-  const vectors = stored.map((r: NoteEmbeddingRecord) => ({
-    id: r.noteId,
-    vec: toFloat32(r.vector),
-  }));
-
-  const fullPool = vectors;
-  let activePool = vectors;
-  let activeIds: Set<string> | null = null;
-  if (entityIds && entityIds.length > 0) {
-    activeIds = new Set(entityIds);
-    activePool = vectors.filter((v) => activeIds!.has(v.id));
-  }
-
-  const k = Math.min(SEMANTIC_TOP_K, Math.max(1, fullPool.length - 1));
-
   const tx = db.transaction(() => {
     if (activeIds) {
       for (const id of activeIds) deleteOld.run(id, id);
     } else {
-      const allIds = vectors.map((v) => v.id);
-      for (const id of allIds) deleteOld.run(id, id);
+      for (const id of noteIdsInPool) deleteOld.run(id, id);
     }
+
+    const bestPerPair = new Map<string, { weight: number; sourceTitle: string; targetTitle: string }>();
+
     for (const a of activePool) {
-      const scored: Array<{ id: string; sim: number }> = [];
+      const scored: Array<{ sec: SectionVec; sim: number }> = [];
       for (const b of fullPool) {
-        if (a.id === b.id) continue;
+        if (a.noteId === b.noteId) continue;
         const sim = cosine(a.vec, b.vec);
         if (sim >= SEMANTIC_TOP_K_FLOOR) {
-          scored.push({ id: b.id, sim });
+          scored.push({ sec: b, sim });
         }
       }
       scored.sort((x, y) => y.sim - x.sim);
       const top = scored.slice(0, k);
       for (const t of top) {
-        const [src, tgt] = a.id < t.id ? [a.id, t.id] : [t.id, a.id];
-        upsert.run(src, tgt, "semantic", Math.round(t.sim * 100) / 100, now);
+        const [srcNote, tgtNote, srcSec, tgtSec] =
+          a.noteId < t.sec.noteId
+            ? [a.noteId, t.sec.noteId, a.sectionTitle, t.sec.sectionTitle]
+            : [t.sec.noteId, a.noteId, t.sec.sectionTitle, a.sectionTitle];
+        const key = `${srcNote}|${tgtNote}`;
+        const ex = bestPerPair.get(key);
+        if (!ex || t.sim > ex.weight) {
+          bestPerPair.set(key, { weight: t.sim, sourceTitle: srcSec, targetTitle: tgtSec });
+        }
       }
+    }
+
+    for (const [key, val] of bestPerPair) {
+      const [src, tgt] = key.split("|");
+      upsert.run(src, tgt, "semantic", Math.round(val.weight * 100) / 100, now, val.sourceTitle, val.targetTitle);
     }
   });
   tx();
-
-  void fullPool.length;
 }

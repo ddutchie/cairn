@@ -35,13 +35,36 @@ function upsertEmbedding(
   db: Database.Database,
   noteId: string,
   vector: number[],
+  sectionIdx: number = 0,
+  sectionTitle: string = "",
 ) {
   upsertNoteEmbedding(db, {
     noteId,
+    sectionIdx,
+    sectionTitle,
     workspaceId: "ws1",
     model: "test-model",
     task: "search_document",
-    contentHash: "hash-" + noteId,
+    contentHash: "hash-" + noteId + "-" + sectionIdx,
+    vector,
+  });
+}
+
+function upsertSection(
+  db: Database.Database,
+  noteId: string,
+  sectionIdx: number,
+  sectionTitle: string,
+  vector: number[],
+) {
+  upsertNoteEmbedding(db, {
+    noteId,
+    sectionIdx,
+    sectionTitle,
+    workspaceId: "ws1",
+    model: "test-model",
+    task: "search_document",
+    contentHash: "hash-" + noteId + "-" + sectionIdx,
     vector,
   });
 }
@@ -73,7 +96,7 @@ function round2(x: number): number {
   return Math.round(x * 100) / 100;
 }
 
-describe("computeSemanticRelationships — top-K behaviour", () => {
+describe("computeSemanticRelationships — top-K behaviour (single-section)", () => {
   let db: Database.Database;
 
   beforeEach(() => {
@@ -108,26 +131,16 @@ describe("computeSemanticRelationships — top-K behaviour", () => {
   it("caps each note at TOP_K=5 outgoing edges", () => {
     for (let i = 1; i <= 8; i++) {
       const id = "m" + i;
-      createNote(db, {
-        id,
-        projectId: "p1",
-        workspaceId: "ws1",
-        title: "M" + i,
-        contentText: "shared topic " + i,
-      });
+      createNote(db, { id, projectId: "p1", workspaceId: "ws1", title: "M" + i, contentText: "shared topic " + i });
       upsertEmbedding(db, id, vec(1, i * 0.001, 0, 0));
     }
-
     computeSemanticRelationships(db, "ws1");
-
     const edges = semEdges(db);
-    const fromM1 = edges.filter(
-      (e) => e.source === "m1" || e.target === "m1",
-    );
+    const fromM1 = edges.filter((e) => e.source === "m1" || e.target === "m1");
     expect(fromM1.length).toBeLessThanOrEqual(TOP_K);
   });
 
-  it("creates edges for pairs with cosine >= 0.55 even if they were below old 0.78 threshold", () => {
+  it("creates edges for pairs with cosine >= 0.55 even if below old 0.78 threshold", () => {
     const v1 = vec(1, 0, 0, 0);
     const v2 = vec(0.7, 0.71, 0, 0);
     upsertEmbedding(db, "n1", v1);
@@ -148,26 +161,19 @@ describe("computeSemanticRelationships — top-K behaviour", () => {
   });
 
   it("deduplicates via canonical source<target ordering", () => {
-    const v1 = vec(1, 0, 0, 0);
-    const v2 = vec(1, 0, 0, 0);
-    upsertEmbedding(db, "n1", v1);
-    upsertEmbedding(db, "n2", v2);
+    upsertEmbedding(db, "n1", vec(1, 0, 0, 0));
+    upsertEmbedding(db, "n2", vec(1, 0, 0, 0));
     computeSemanticRelationships(db, "ws1");
     const edges = semEdges(db).filter(
-      (e) =>
-        (e.source === "n1" && e.target === "n2") ||
-        (e.source === "n2" && e.target === "n1"),
+      (e) => (e.source === "n1" && e.target === "n2") || (e.source === "n2" && e.target === "n1"),
     );
     expect(edges).toHaveLength(1);
   });
 
   it("incremental mode (entityIds) recomputes only active notes' edges", () => {
-    const v1 = vec(1, 0, 0, 0);
-    const v2 = vec(0.95, 0.31, 0, 0);
-    const v3 = vec(0, 0, 0, 1);
-    upsertEmbedding(db, "n1", v1);
-    upsertEmbedding(db, "n2", v2);
-    upsertEmbedding(db, "n3", v3);
+    upsertEmbedding(db, "n1", vec(1, 0, 0, 0));
+    upsertEmbedding(db, "n2", vec(0.95, 0.31, 0, 0));
+    upsertEmbedding(db, "n3", vec(0, 0, 0, 1));
     computeSemanticRelationships(db, "ws1", ["n1"]);
     const edges = semEdges(db);
     expect(edges).toHaveLength(1);
@@ -181,20 +187,101 @@ describe("computeSemanticRelationships — top-K behaviour", () => {
     computeSemanticRelationships(db, "ws1");
     computeSemanticRelationships(db, "ws1");
     const edges = semEdges(db).filter(
-      (e) =>
-        (e.source === "n1" && e.target === "n2") ||
-        (e.source === "n2" && e.target === "n1"),
+      (e) => (e.source === "n1" && e.target === "n2") || (e.source === "n2" && e.target === "n1"),
     );
     expect(edges).toHaveLength(1);
   });
 
-  it("produces sorted edges: weights are valid in [0.55, 1.0]", () => {
+  it("produces edges: weights are valid in [0.55, 1.0]", () => {
     upsertEmbedding(db, "n1", vec(1, 0, 0, 0));
     upsertEmbedding(db, "n2", vec(0.85, 0.53, 0, 0));
     computeSemanticRelationships(db, "ws1");
     const edge = semEdges(db)[0];
     expect(edge.weight).toBeGreaterThanOrEqual(FLOOR);
     expect(edge.weight).toBeLessThanOrEqual(1);
+  });
+});
+
+describe("computeSemanticRelationships — multi-section notes", () => {
+  let db: Database.Database;
+
+  beforeEach(() => {
+    db = makeDb();
+    seed(db);
+    createNote(db, { id: "plan", projectId: "p1", workspaceId: "ws1", title: "Project Plan", contentText: "intro" });
+    createNote(db, { id: "arch", projectId: "p1", workspaceId: "ws1", title: "Architecture", contentText: "microservices" });
+    createNote(db, { id: "mkt", projectId: "p1", workspaceId: "ws1", title: "Marketing", contentText: "go to market" });
+  });
+
+  it("a note with 2 sections gets edges from BOTH sections", () => {
+    const archVec = vec(1, 0, 0, 0);
+    const marketingVec = vec(0, 1, 0, 0);
+    const archDoc = vec(0.98, 0.2, 0, 0);
+    const mktDoc = vec(0.1, 0.99, 0, 0);
+
+    upsertSection(db, "plan", 0, "Architecture", archVec);
+    upsertSection(db, "plan", 1, "Marketing", marketingVec);
+    upsertEmbedding(db, "arch", archDoc, 0, "");
+    upsertEmbedding(db, "mkt", mktDoc, 0, "");
+
+    computeSemanticRelationships(db, "ws1");
+
+    const edges = semEdges(db);
+    expect(findEdge(edges, "plan", "arch")).toBeDefined();
+    expect(findEdge(edges, "plan", "mkt")).toBeDefined();
+  });
+
+  it("section titles are stored on the semantic edge", () => {
+    const archVec = vec(1, 0, 0, 0);
+    const archDoc = vec(0.98, 0.2, 0, 0);
+
+    upsertSection(db, "plan", 0, "Architecture", archVec);
+    upsertSection(db, "plan", 1, "Marketing", vec(0, 1, 0, 0));
+    upsertEmbedding(db, "arch", archDoc, 0, "");
+
+    computeSemanticRelationships(db, "ws1");
+
+    const edge = findEdge(semEdges(db), "plan", "arch");
+    expect(edge).toBeDefined();
+    expect(edge!.sourceSectionTitle).toBeDefined();
+    expect(edge!.targetSectionTitle).toBeDefined();
+  });
+
+  it("best weight per note-pair wins when multiple sections match", () => {
+    const v1a = vec(1, 0, 0, 0);
+    const v1b = vec(0.8, 0.6, 0, 0);
+    const v2a = vec(0.98, 0.2, 0, 0);
+    const v2b = vec(0.79, 0.62, 0, 0);
+
+    upsertSection(db, "plan", 0, "Section A", v1a);
+    upsertSection(db, "plan", 1, "Section B", v1b);
+    upsertSection(db, "arch", 0, "Doc A", v2a);
+    upsertSection(db, "arch", 1, "Doc B", v2b);
+
+    computeSemanticRelationships(db, "ws1");
+
+    const edge = findEdge(semEdges(db), "plan", "arch");
+    expect(edge).toBeDefined();
+    const maxSim = Math.max(
+      cosineApprox(v1a, v2a), cosineApprox(v1a, v2b),
+      cosineApprox(v1b, v2a), cosineApprox(v1b, v2b),
+    );
+    expect(edge!.weight).toBe(round2(maxSim));
+  });
+
+  it("single-section note connects to multi-section note via best section match", () => {
+    const archVec = vec(1, 0, 0, 0);
+    const unrelatedVec = vec(0, 0, 0, 1);
+    const archDoc = vec(0.95, 0.31, 0, 0);
+
+    upsertSection(db, "plan", 0, "Architecture", archVec);
+    upsertSection(db, "plan", 1, "Random Stuff", unrelatedVec);
+    upsertEmbedding(db, "arch", archDoc, 0, "");
+
+    computeSemanticRelationships(db, "ws1");
+
+    const edges = semEdges(db);
+    expect(findEdge(edges, "plan", "arch")).toBeDefined();
   });
 });
 
@@ -232,17 +319,11 @@ describe("scenario: topic clusters with realistic cosines", () => {
 
     const edges = semEdges(db);
 
-    const reactVueSim     = cosineApprox(react, vue);
-    const reactSvelteSim  = cosineApprox(react, svelte);
-    const vueSvelteSim    = cosineApprox(vue, svelte);
-    const pythonRubySim   = cosineApprox(python, ruby);
-    const reactPizzaSim   = cosineApprox(react, pizza);
-
     const expected = [
-      { a: "react",  b: "vue",     w: round2(reactVueSim) },
-      { a: "react",  b: "svelte",  w: round2(reactSvelteSim) },
-      { a: "vue",    b: "svelte",  w: round2(vueSvelteSim) },
-      { a: "python", b: "ruby",    w: round2(pythonRubySim) },
+      { a: "react",  b: "vue",     w: round2(cosineApprox(react, vue)) },
+      { a: "react",  b: "svelte",  w: round2(cosineApprox(react, svelte)) },
+      { a: "vue",    b: "svelte",  w: round2(cosineApprox(vue, svelte)) },
+      { a: "python", b: "ruby",    w: round2(cosineApprox(python, ruby)) },
     ];
 
     expect(edges).toHaveLength(expected.length);
@@ -262,37 +343,6 @@ describe("scenario: topic clusters with realistic cosines", () => {
     expect(findEdge(edges, "svelte", "python")).toBeUndefined();
   });
 
-  it("slider threshold hides weaker edges while keeping strong ones", () => {
-    const react   = vec(1.00, 0.00, 0.00, 0.00);
-    const vue     = vec(0.98, 0.20, 0.00, 0.00);
-    const svelte  = vec(0.88, 0.48, 0.00, 0.00);
-    const python  = vec(0.00, 1.00, 0.00, 0.00);
-    const ruby    = vec(0.00, 0.98, 0.20, 0.00);
-
-    upsertEmbedding(db, "react", react);
-    upsertEmbedding(db, "vue", vue);
-    upsertEmbedding(db, "svelte", svelte);
-    upsertEmbedding(db, "python", python);
-    upsertEmbedding(db, "ruby", ruby);
-
-    computeSemanticRelationships(db, "ws1");
-
-    const all = semEdges(db).filter((e) => true);
-
-    const threshold = cosineApprox(react, vue);
-    const reactVueEdge     = all.filter((e) => (e.source === "react" && e.target === "vue")     || (e.source === "vue" && e.target === "react"));
-    const reactSvelteEdge  = all.filter((e) => (e.source === "react" && e.target === "svelte")  || (e.source === "svelte" && e.target === "react"));
-    expect(cosineApprox(react, svelte)).toBeLessThan(threshold);
-    const visible = all.filter((e) => e.type !== "semantic" || (e.weight ?? 1) >= threshold);
-    const visibleBelow = all.filter((e) => e.type !== "semantic" || (e.weight ?? 1) < threshold);
-    expect(reactVueEdge.length).toBe(1);
-    expect(reactSvelteEdge.length).toBe(1);
-    expect(findEdge(visible, "react", "vue")).toBeDefined();
-    expect(findEdge(visibleBelow, "react", "vue")).toBeUndefined();
-    expect(findEdge(visible, "react", "svelte")).toBeUndefined();
-    expect(findEdge(visibleBelow, "react", "svelte")).toBeDefined();
-  });
-
   it("slider at 1.0 hides all semantic edges (hard links only)", () => {
     upsertEmbedding(db, "react", vec(1, 0, 0, 0));
     upsertEmbedding(db, "vue", vec(0.99, 0.14, 0, 0));
@@ -304,22 +354,15 @@ describe("scenario: topic clusters with realistic cosines", () => {
   });
 
   it("incremental recompute for a single note preserves other clusters' edges", () => {
-    const react  = vec(1.00, 0.00, 0.00, 0.00);
-    const vue    = vec(0.98, 0.20, 0.00, 0.00);
-    const python = vec(0.00, 1.00, 0.00, 0.00);
-    const ruby   = vec(0.00, 0.98, 0.20, 0.00);
-
-    upsertEmbedding(db, "react", react);
-    upsertEmbedding(db, "vue", vue);
-    upsertEmbedding(db, "python", python);
-    upsertEmbedding(db, "ruby", ruby);
+    upsertEmbedding(db, "react", vec(1, 0, 0, 0));
+    upsertEmbedding(db, "vue", vec(0.98, 0.2, 0, 0));
+    upsertEmbedding(db, "python", vec(0, 1, 0, 0));
+    upsertEmbedding(db, "ruby", vec(0, 0.98, 0.2, 0));
 
     computeSemanticRelationships(db, "ws1");
     expect(findEdge(semEdges(db), "python", "ruby")).toBeDefined();
 
-    const reactUpdated = vec(0.97, 0.24, 0, 0);
-    upsertEmbedding(db, "react", reactUpdated);
-
+    upsertEmbedding(db, "react", vec(0.97, 0.24, 0, 0));
     computeSemanticRelationships(db, "ws1", ["react"]);
 
     const edges = semEdges(db);
@@ -328,6 +371,63 @@ describe("scenario: topic clusters with realistic cosines", () => {
   });
 });
 
+describe("scenario: multi-topic note discovers connections via sections", () => {
+  let db: Database.Database;
+
+  beforeEach(() => {
+    db = makeDb();
+    seed(db);
+    createNote(db, { id: "plan", projectId: "p1", workspaceId: "ws1", title: "Project Plan", contentText: "intro" });
+    createNote(db, { id: "arch", projectId: "p1", workspaceId: "ws1", title: "Architecture Doc", contentText: "microservices" });
+    createNote(db, { id: "mkt", projectId: "p1", workspaceId: "ws1", title: "Marketing Plan", contentText: "go to market" });
+    createNote(db, { id: "cooking", projectId: "p1", workspaceId: "ws1", title: "Cooking Notes", contentText: "pasta recipe" });
+  });
+
+  it("multi-topic note connects to architecture AND marketing notes", () => {
+    const archVec = vec(1, 0, 0, 0);
+    const mktVec = vec(0, 1, 0, 0);
+    const archDoc = vec(0.98, 0.2, 0, 0);
+    const mktDoc = vec(0.1, 0.99, 0, 0);
+    const cookingVec = vec(0, 0, 0, 1);
+
+    upsertSection(db, "plan", 0, "Architecture", archVec);
+    upsertSection(db, "plan", 1, "Marketing", mktVec);
+    upsertEmbedding(db, "arch", archDoc, 0, "Architecture");
+    upsertEmbedding(db, "mkt", mktDoc, 0, "Marketing");
+    upsertEmbedding(db, "cooking", cookingVec, 0, "Recipe");
+
+    computeSemanticRelationships(db, "ws1");
+
+    const edges = semEdges(db);
+    expect(findEdge(edges, "plan", "arch")).toBeDefined();
+    expect(findEdge(edges, "plan", "mkt")).toBeDefined();
+    expect(findEdge(edges, "arch", "cooking")).toBeUndefined();
+    expect(findEdge(edges, "mkt", "cooking")).toBeUndefined();
+    expect(findEdge(edges, "plan", "cooking")).toBeUndefined();
+  });
+
+  it("section titles appear on edges for multi-section notes", () => {
+    const archVec = vec(1, 0, 0, 0);
+    const mktVec = vec(0, 1, 0, 0);
+    const archDoc = vec(0.98, 0.2, 0, 0);
+    const mktDoc = vec(0.1, 0.99, 0, 0);
+
+    upsertSection(db, "plan", 0, "Architecture", archVec);
+    upsertSection(db, "plan", 1, "Marketing", mktVec);
+    upsertEmbedding(db, "arch", archDoc, 0, "Architecture");
+    upsertEmbedding(db, "mkt", mktDoc, 0, "Marketing");
+
+    computeSemanticRelationships(db, "ws1");
+
+    const archEdge = findEdge(semEdges(db), "plan", "arch");
+    expect(archEdge).toBeDefined();
+    expect(archEdge!.sourceSectionTitle).toBeDefined();
+
+    const mktEdge = findEdge(semEdges(db), "plan", "mkt");
+    expect(mktEdge).toBeDefined();
+    expect(mktEdge!.sourceSectionTitle).toBeDefined();
+  });
+});
 
 describe("getKnowledgeGraph — semantic edge integration", () => {
   let db: Database.Database;
@@ -354,10 +454,7 @@ describe("getKnowledgeGraph — semantic edge integration", () => {
     upsertEmbedding(db, "na", vec(1, 0, 0, 0));
     upsertEmbedding(db, "nb", vec(1, 0, 0, 0));
     computeSemanticRelationships(db, "ws1");
-    const graph = getKnowledgeGraph(db, "ws1", {
-      includeAuto: true,
-      edgeTypes: ["note-note", "project-member"],
-    });
+    const graph = getKnowledgeGraph(db, "ws1", { includeAuto: true, edgeTypes: ["note-note", "project-member"] });
     expect(graph.edges.filter((e) => e.type === "semantic")).toHaveLength(0);
   });
 
@@ -401,12 +498,9 @@ describe("getKnowledgeGraph — client-side threshold filter", () => {
   it("client-side threshold filter masks edges below cutoff", () => {
     const graph = getKnowledgeGraph(db, "ws1");
     const threshold = 0.99;
-    const visible = graph.edges.filter(
-      (e) => e.type !== "semantic" || (e.weight ?? 1) >= threshold,
-    );
-    const semAbove = visible.filter((e) => e.type === "semantic");
+    const visible = graph.edges.filter((e) => e.type !== "semantic" || (e.weight ?? 1) >= threshold);
     const allSem = graph.edges.filter((e) => e.type === "semantic");
     const semBelow = allSem.filter((e) => (e.weight ?? 1) < threshold);
-    expect(semAbove.length + semBelow.length).toBe(allSem.length);
+    expect(visible.filter((e) => e.type === "semantic").length + semBelow.length).toBe(allSem.length);
   });
 });

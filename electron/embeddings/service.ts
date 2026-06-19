@@ -3,16 +3,18 @@ import * as crypto from "crypto";
 import type Database from "better-sqlite3";
 import {
   upsertNoteEmbedding,
-  getNoteEmbedding,
+  getNoteEmbeddings,
   getAllEmbeddingsForWorkspace,
   markEmbeddingProjectionFresh,
   pruneOrphanedClusteringRows,
   deleteNoteEmbedding,
+  deleteNoteEmbeddingSections,
 } from "../db/queries";
 import type { NoteEmbeddingRecord } from "../db/queries";
 import { embed as clientEmbed } from "./client";
 import { projectTo2d, normaliseProjection } from "./projection";
-import { topK, toFloat32 } from "./cosine";
+import { toFloat32 } from "./cosine";
+import { splitIntoSections } from "./sections";
 import { NOMIC_MODEL_ID, NOMIC_DIM } from "./types";
 import type { NomicTask } from "./types";
 
@@ -31,16 +33,11 @@ function sha256(s: string): string {
   return crypto.createHash("sha256").update(s, "utf8").digest("hex");
 }
 
-interface TextChunk {
-  text: string;
-  hash: string;
-}
-
-function chunkLongText(text: string): TextChunk[] {
+function chunkLongText(text: string): string[] {
   if (text.length <= CHUNK_CHAR_LIMIT) {
-    return [{ text, hash: sha256(text) }];
+    return [text];
   }
-  const chunks: TextChunk[] = [];
+  const chunks: string[] = [];
   let start = 0;
   while (start < text.length) {
     let end = Math.min(start + CHUNK_CHAR_LIMIT, text.length);
@@ -53,7 +50,7 @@ function chunkLongText(text: string): TextChunk[] {
       if (lastBreak > start + CHUNK_CHAR_LIMIT / 2) end = lastBreak;
     }
     if (end <= start) end = start + 1;
-    chunks.push({ text: text.slice(start, end), hash: sha256(text.slice(start, end)) });
+    chunks.push(text.slice(start, end));
     if (end >= text.length) break;
     const nextStart = end - CHUNK_OVERLAP;
     if (nextStart <= start) break;
@@ -78,24 +75,23 @@ function averageVectors(vectors: number[][]): number[] {
   return out;
 }
 
-async function embedChunkedDocument(
+async function embedSectionText(
   embed: EmbedFn,
   text: string,
   task: NomicTask,
   model: string,
-): Promise<{ vector: number[]; hash: string }> {
+): Promise<number[]> {
   const chunks = chunkLongText(text);
-  const hash = sha256(text);
   if (chunks.length === 1) {
-    const [v] = await embed([chunks[0].text], task, model);
-    return { vector: v, hash };
+    const [v] = await embed([chunks[0]], task, model);
+    return v;
   }
   const vectors: number[][] = [];
   for (const chunk of chunks) {
-    const [v] = await embed([chunk.text], task, model);
+    const [v] = await embed([chunk], task, model);
     vectors.push(v);
   }
-  return { vector: averageVectors(vectors), hash };
+  return averageVectors(vectors);
 }
 
 interface NoteStub {
@@ -126,6 +122,14 @@ export interface ReindexResult {
   total: number;
 }
 
+interface SectionToEmbed {
+  noteId: string;
+  idx: number;
+  title: string;
+  text: string;
+  hash: string;
+}
+
 export async function reindexNotes(
   db: Database.Database,
   workspaceId: string,
@@ -144,9 +148,11 @@ export async function reindexNotes(
   let done = 0;
   const total = notes.length;
   if (total > 0) onProgress?.(done, total);
+
   for (let i = 0; i < notes.length; i += BATCH_SIZE) {
     const batch = notes.slice(i, i + BATCH_SIZE);
-    const todo: Array<{ note: NoteStub; text: string }> = [];
+    const todo: SectionToEmbed[] = [];
+
     for (const n of batch) {
       if (!n.content_text || n.content_text.trim().length === 0) {
         deleteNoteEmbedding(db, n.id);
@@ -155,33 +161,53 @@ export async function reindexNotes(
         onProgress?.(done, total);
         continue;
       }
-      const text = `${n.title}\n\n${n.content_text}`;
-      const hash = sha256(text);
-      const existing = getNoteEmbedding(db, n.id);
-      if (existing && existing.contentHash === hash && existing.model === model && existing.task === "search_document") {
+      const sections = splitIntoSections(n.title, n.content_text);
+      const existing = getNoteEmbeddings(db, n.id);
+      const existingBySectionIdx = new Map(existing.map((e) => [e.sectionIdx, e]));
+
+      let allSkipped = true;
+      for (const s of sections) {
+        const text = `${n.title}\n\n## ${s.title}\n${s.text}`;
+        const hash = sha256(text);
+        const ex = existingBySectionIdx.get(s.idx);
+        if (ex && ex.contentHash === hash && ex.model === model && ex.task === "search_document") {
+          continue;
+        }
+        todo.push({ noteId: n.id, idx: s.idx, title: s.title, text, hash });
+        allSkipped = false;
+      }
+
+      if (sections.length > 0) {
+        deleteNoteEmbeddingSections(db, n.id, sections.length);
+      }
+
+      if (allSkipped) {
         skipped++;
         done++;
         onProgress?.(done, total);
-        continue;
       }
-      todo.push({ note: n, text });
     }
+
     if (todo.length === 0) continue;
-    const chunkedResults = await Promise.all(
-      todo.map((t) => embedChunkedDocument(embed, t.text, "search_document", model)),
-    );
+    const sectionTexts = todo.map((s) => s.text);
+    const vectors = await embed(sectionTexts, "search_document", model);
+
     for (let j = 0; j < todo.length; j++) {
-      const { note } = todo[j];
-      const { vector, hash } = chunkedResults[j];
+      const s = todo[j];
       upsertNoteEmbedding(db, {
-        noteId: note.id,
+        noteId: s.noteId,
+        sectionIdx: s.idx,
+        sectionTitle: s.title,
         workspaceId,
         model,
         task: "search_document",
-        contentHash: hash,
-        vector,
+        contentHash: s.hash,
+        vector: vectors[j],
       });
       indexed++;
+    }
+
+    for (let j = 0; j < batch.length; j++) {
       done++;
       onProgress?.(done, total);
     }
@@ -193,6 +219,7 @@ export interface AdjacentNote {
   noteId: string;
   title: string;
   score: number;
+  sectionTitle: string;
 }
 
 export async function searchAdjacent(
@@ -209,12 +236,10 @@ export async function searchAdjacent(
   const queryHash = sha256(`q|${model}|${trimmed}`);
   let queryVec = queryCache.get(queryHash);
   if (queryVec) {
-    // refresh recency for LRU behaviour
     queryCache.delete(queryHash);
     queryCache.set(queryHash, queryVec);
   } else {
-    const { vector } = await embedChunkedDocument(embed, trimmed, "search_query", model);
-    queryVec = vector;
+    queryVec = await embedSectionText(embed, trimmed, "search_query", model);
     if (queryCache.size >= QUERY_CACHE_MAX) {
       const firstKey = queryCache.keys().next().value;
       if (firstKey) queryCache.delete(firstKey);
@@ -224,25 +249,43 @@ export async function searchAdjacent(
   const stored = getAllEmbeddingsForWorkspace(db, workspaceId, "search_document");
   if (stored.length === 0) return [];
   const query = toFloat32(queryVec);
-  const pool = stored.map((s) => ({
-    noteId: s.noteId,
-    vector: toFloat32(s.vector),
-  }));
   const excludeSet = new Set(excludeIds);
-  const results = topK(query, pool, k, 0, excludeSet);
-  if (results.length === 0) return [];
+
+  const bestPerNote = new Map<string, { noteId: string; score: number; sectionTitle: string }>();
+  for (const s of stored) {
+    if (excludeSet.has(s.noteId)) continue;
+    const sim = cosineDot(query, toFloat32(s.vector));
+    const cur = bestPerNote.get(s.noteId);
+    if (!cur || sim > cur.score) {
+      bestPerNote.set(s.noteId, { noteId: s.noteId, score: sim, sectionTitle: s.sectionTitle });
+    }
+  }
+
+  const sorted = Array.from(bestPerNote.values()).sort((a, b) => b.score - a.score);
+  const top = sorted.slice(0, k);
+  if (top.length === 0) return [];
+
   const idToTitle = new Map<string, string>();
-  const placeholders = results.map(() => "?").join(",");
+  const placeholders = top.map(() => "?").join(",");
   const rows = db.prepare(
     `SELECT id, title FROM notes WHERE id IN (${placeholders})`
-  ).all(...results.map((r) => r.item.noteId)) as Array<{ id: string; title: string }>;
+  ).all(...top.map((r) => r.noteId)) as Array<{ id: string; title: string }>;
   for (const r of rows) idToTitle.set(r.id, r.title);
-  return results.map((r) => ({
-    noteId: r.item.noteId,
-    title: idToTitle.get(r.item.noteId) ?? r.item.noteId,
+  return top.map((r) => ({
+    noteId: r.noteId,
+    title: idToTitle.get(r.noteId) ?? r.noteId,
     score: Math.round(r.score * 1000) / 1000,
+    sectionTitle: r.sectionTitle,
   }));
 }
+
+function cosineDot(a: Float32Array, b: Float32Array): number {
+  let dot = 0;
+  const len = Math.min(a.length, b.length);
+  for (let i = 0; i < len; i++) dot += a[i] * b[i];
+  return dot;
+}
+
 export interface ProjectionResult {
   projected: number;
   total: number;
@@ -256,58 +299,87 @@ export async function recomputeProjections(
   onProgress?: (done: number, total: number) => void,
 ): Promise<ProjectionResult> {
   const existing = getAllEmbeddingsForWorkspace(db, workspaceId, "search_document");
-  const existingMap = new Map(existing.map((e) => [e.noteId, e]));
+  const byNote = new Map<string, NoteEmbeddingRecord[]>();
+  for (const e of existing) {
+    if (!byNote.has(e.noteId)) byNote.set(e.noteId, []);
+    byNote.get(e.noteId)!.push(e);
+  }
+
   const allNotes = fetchNotes(db, workspaceId);
-  const missing: Array<typeof allNotes[number]> = [];
+  const missing: NoteStub[] = [];
   for (const n of allNotes) {
-    const cur = existingMap.get(n.id);
+    const recs = byNote.get(n.id);
     const text = `${n.title}\n\n${n.content_text}`;
     const hash = sha256(text);
-    if (!cur
-      || cur.model !== model
-      || cur.contentHash !== hash) {
+    if (!recs || recs.length === 0 || recs.some((r) => r.model !== model || r.contentHash !== hash)) {
       if (n.content_text && n.content_text.trim().length > 0) {
         missing.push(n);
       }
     }
   }
+
   const totalToProcess = missing.length;
   let done = 0;
   if (totalToProcess > 0) onProgress?.(done, totalToProcess);
+
   for (let i = 0; i < missing.length; i += BATCH_SIZE) {
     const batch = missing.slice(i, i + BATCH_SIZE);
-    const chunkedResults = await Promise.all(
-      batch.map((n) => embedChunkedDocument(embed, `${n.title}\n\n${n.content_text}`, "search_document", model)),
-    );
-    for (let j = 0; j < batch.length; j++) {
-      const n = batch[j];
-      const { vector, hash } = chunkedResults[j];
+    const allSections: SectionToEmbed[] = [];
+    for (const n of batch) {
+      const sections = splitIntoSections(n.title, n.content_text);
+      for (const s of sections) {
+        const text = `${n.title}\n\n## ${s.title}\n${s.text}`;
+        allSections.push({ noteId: n.id, idx: s.idx, title: s.title, text, hash: sha256(text) });
+      }
+      deleteNoteEmbeddingSections(db, n.id, sections.length);
+    }
+    if (allSections.length === 0) continue;
+    const vectors = await embed(allSections.map((s) => s.text), "search_document", model);
+    for (let j = 0; j < allSections.length; j++) {
+      const s = allSections[j];
       upsertNoteEmbedding(db, {
-        noteId: n.id,
+        noteId: s.noteId,
+        sectionIdx: s.idx,
+        sectionTitle: s.title,
         workspaceId,
         model,
         task: "search_document",
-        contentHash: hash,
-        vector,
+        contentHash: s.hash,
+        vector: vectors[j],
       });
+    }
+    for (let j = 0; j < batch.length; j++) {
       done++;
       onProgress?.(done, totalToProcess);
     }
   }
+
   const all = getAllEmbeddingsForWorkspace(db, workspaceId, "search_document");
   return projectExisting(db, all);
 }
 
 function projectExisting(db: Database.Database, records: NoteEmbeddingRecord[]): ProjectionResult {
   if (records.length === 0) return { projected: 0, total: 0 };
-  const vectors = records.map((r) => toFloat32(r.vector));
-  const raw = projectTo2d(vectors);
-  const normalised = normaliseProjection(raw);
-  for (let i = 0; i < records.length; i++) {
-    const p = normalised[i];
-    markEmbeddingProjectionFresh(db, records[i].noteId, p.x, p.y);
+
+  const byNote = new Map<string, number[][]>();
+  for (const r of records) {
+    if (!byNote.has(r.noteId)) byNote.set(r.noteId, []);
+    byNote.get(r.noteId)!.push(r.vector);
   }
-  return { projected: records.length, total: records.length };
+
+  const noteIds = Array.from(byNote.keys());
+  const avgVectors = noteIds.map((id) => {
+    const vecs = byNote.get(id)!;
+    return toFloat32(averageVectors(vecs));
+  });
+
+  const raw = projectTo2d(avgVectors);
+  const normalised = normaliseProjection(raw);
+  for (let i = 0; i < noteIds.length; i++) {
+    const p = normalised[i];
+    markEmbeddingProjectionFresh(db, noteIds[i], p.x, p.y);
+  }
+  return { projected: noteIds.length, total: noteIds.length };
 }
 
 export function getEmbeddingsForClustering(db: Database.Database, workspaceId: string): NoteEmbeddingRecord[] {

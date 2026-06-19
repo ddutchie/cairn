@@ -518,7 +518,7 @@ const api = {
       k?: number;
       excludeIds?: string[];
       model?: string;
-    }) => invoke<Array<{ noteId: string; title: string; score: number }>>(
+    }) => invoke<Array<{ noteId: string; title: string; score: number; sectionTitle: string }>>(
       "db:embeddings:search",
       { workspaceId, queryText, ...opts },
     ),

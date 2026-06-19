@@ -303,6 +303,8 @@ export interface GraphEdge {
   type: GraphEdgeType;
   label?: string;
   weight?: number;
+  sourceSectionTitle?: string;
+  targetSectionTitle?: string;
 }
 
 export interface KnowledgeGraph {

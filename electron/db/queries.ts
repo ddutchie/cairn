@@ -1264,10 +1264,13 @@ export function deleteCodebaseFile(db: Database.Database, fileId: string) {
 
 // ── Note Embeddings ───────────────────────────
 // Vectors are stored as JSON-in-TEXT (sqlite-vec-bridge shape).
+// Since v18, one note can have multiple rows — one per markdown section.
 // All JSON-parse/serialize happens here; callers receive typed objects.
 
 export interface NoteEmbeddingRecord {
   noteId: string;
+  sectionIdx: number;
+  sectionTitle: string;
   workspaceId: string;
   model: string;
   task: string;
@@ -1281,6 +1284,8 @@ export interface NoteEmbeddingRecord {
 
 interface NoteEmbeddingRow {
   note_id: string;
+  section_idx: number;
+  section_title: string;
   workspace_id: string;
   model: string;
   task: string;
@@ -1295,6 +1300,8 @@ interface NoteEmbeddingRow {
 function toNoteEmbedding(row: NoteEmbeddingRow): NoteEmbeddingRecord {
   return {
     noteId: row.note_id,
+    sectionIdx: row.section_idx,
+    sectionTitle: row.section_title,
     workspaceId: row.workspace_id,
     model: row.model,
     task: row.task,
@@ -1311,6 +1318,8 @@ export function upsertNoteEmbedding(
   db: Database.Database,
   e: {
     noteId: string;
+    sectionIdx: number;
+    sectionTitle: string;
     workspaceId: string;
     model: string;
     task: string;
@@ -1321,17 +1330,26 @@ export function upsertNoteEmbedding(
   const now = ts();
   db.prepare(`
     INSERT INTO note_embeddings
-      (note_id, workspace_id, model, task, content_hash, vector, embedded_at, proj_stale)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 1)
-    ON CONFLICT(note_id) DO UPDATE SET
-      workspace_id = excluded.workspace_id,
-      model        = excluded.model,
-      task         = excluded.task,
-      content_hash = excluded.content_hash,
-      vector       = excluded.vector,
-      embedded_at  = excluded.embedded_at,
-      proj_stale   = 1
-  `).run(e.noteId, e.workspaceId, e.model, e.task, e.contentHash, JSON.stringify(e.vector), now);
+      (note_id, section_idx, section_title, workspace_id, model, task, content_hash, vector, embedded_at, proj_stale)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+    ON CONFLICT(note_id, section_idx) DO UPDATE SET
+      section_title = excluded.section_title,
+      workspace_id  = excluded.workspace_id,
+      model         = excluded.model,
+      task          = excluded.task,
+      content_hash  = excluded.content_hash,
+      vector        = excluded.vector,
+      embedded_at   = excluded.embedded_at,
+      proj_stale    = 1
+  `).run(e.noteId, e.sectionIdx, e.sectionTitle, e.workspaceId, e.model, e.task, e.contentHash, JSON.stringify(e.vector), now);
+}
+
+export function deleteNoteEmbeddingSections(db: Database.Database, noteId: string, keepFromIdx?: number): void {
+  if (keepFromIdx !== undefined) {
+    db.prepare("DELETE FROM note_embeddings WHERE note_id = ? AND section_idx >= ?").run(noteId, keepFromIdx);
+  } else {
+    db.prepare("DELETE FROM note_embeddings WHERE note_id = ?").run(noteId);
+  }
 }
 
 export function markEmbeddingProjectionFresh(db: Database.Database, noteId: string, x: number, y: number): void {
@@ -1344,9 +1362,9 @@ export function markAllProjectionsStale(db: Database.Database, workspaceId: stri
   db.prepare("UPDATE note_embeddings SET proj_stale = 1 WHERE workspace_id = ?").run(workspaceId);
 }
 
-export function getNoteEmbedding(db: Database.Database, noteId: string): NoteEmbeddingRecord | null {
-  const row = db.prepare("SELECT * FROM note_embeddings WHERE note_id = ?").get(noteId) as NoteEmbeddingRow | undefined;
-  return row ? toNoteEmbedding(row) : null;
+export function getNoteEmbeddings(db: Database.Database, noteId: string): NoteEmbeddingRecord[] {
+  const rows = db.prepare("SELECT * FROM note_embeddings WHERE note_id = ? ORDER BY section_idx").all(noteId) as NoteEmbeddingRow[];
+  return rows.map(toNoteEmbedding);
 }
 
 export function getAllEmbeddingsForWorkspace(
@@ -1355,14 +1373,14 @@ export function getAllEmbeddingsForWorkspace(
   task: string,
 ): NoteEmbeddingRecord[] {
   const rows = db.prepare(
-    "SELECT * FROM note_embeddings WHERE workspace_id = ? AND task = ?"
+    "SELECT * FROM note_embeddings WHERE workspace_id = ? AND task = ? ORDER BY note_id, section_idx"
   ).all(workspaceId, task) as NoteEmbeddingRow[];
   return rows.map(toNoteEmbedding);
 }
 
 export function getStaleProjectionNoteIds(db: Database.Database, workspaceId: string): string[] {
   const rows = db.prepare(
-    "SELECT note_id FROM note_embeddings WHERE workspace_id = ? AND proj_stale = 1 AND task = 'search_document'"
+    "SELECT DISTINCT note_id FROM note_embeddings WHERE workspace_id = ? AND proj_stale = 1 AND task = 'search_document'"
   ).all(workspaceId) as Array<{ note_id: string }>;
   return rows.map((r) => r.note_id);
 }

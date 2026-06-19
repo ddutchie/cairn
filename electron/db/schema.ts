@@ -427,6 +427,44 @@ const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_emb_task ON note_embeddings(task);
     `);
   },
+
+  // v18: Section-based embeddings — one note can have multiple embedding rows,
+  // one per markdown section (## / # header boundary). Adds section_idx + section_title,
+  // changes PK from (note_id) to (note_id, section_idx). Old data is migrated as
+  // section_idx=0, section_title=''. This enables much finer-grained semantic matching
+  // because notes with multiple topics no longer have their embedding diluted by averaging.
+  // Also adds source_section_title / target_section_title to relationship_cache so the
+  // semantic edges can carry which sections matched.
+  (db) => {
+    db.exec(`
+      ALTER TABLE note_embeddings RENAME TO note_embeddings_v17;
+      CREATE TABLE note_embeddings (
+        note_id        TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+        section_idx    INTEGER NOT NULL DEFAULT 0,
+        workspace_id   TEXT NOT NULL,
+        model          TEXT NOT NULL,
+        task           TEXT NOT NULL,
+        section_title  TEXT NOT NULL DEFAULT '',
+        content_hash   TEXT NOT NULL,
+        vector         TEXT NOT NULL,
+        embedded_at    TEXT NOT NULL,
+        dim_x          REAL,
+        dim_y          REAL,
+        proj_stale     INTEGER NOT NULL DEFAULT 1,
+        PRIMARY KEY (note_id, section_idx)
+      );
+      INSERT INTO note_embeddings (note_id, section_idx, workspace_id, model, task, section_title, content_hash, vector, embedded_at, dim_x, dim_y, proj_stale)
+      SELECT note_id, 0, workspace_id, model, task, '', content_hash, vector, embedded_at, dim_x, dim_y, proj_stale
+      FROM note_embeddings_v17;
+      DROP TABLE note_embeddings_v17;
+      CREATE INDEX IF NOT EXISTS idx_emb_workspace ON note_embeddings(workspace_id);
+      CREATE INDEX IF NOT EXISTS idx_emb_proj_stale ON note_embeddings(proj_stale);
+      CREATE INDEX IF NOT EXISTS idx_emb_task ON note_embeddings(task);
+
+      ALTER TABLE relationship_cache ADD COLUMN source_section_title TEXT;
+      ALTER TABLE relationship_cache ADD COLUMN target_section_title TEXT;
+    `);
+  },
 ];
 
 export function applySchema(db: Database.Database): void {

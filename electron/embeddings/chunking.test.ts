@@ -1,7 +1,7 @@
 /**
- * Tests for the long-document chunking + averaged embedding helpers.
+ * Tests for the long-document chunking helper used by `embedSectionText`.
  *
- * These functions live inside `service.ts` but are not exported. To test them
+ * `chunkLongText` lives inside `service.ts` but is not exported. To test it
  * we re-implement the same logic in a pure form here and assert behavioural
  * invariants. The actual production code is verified by compile + type-check
  * to match the typed signatures; the tests guard against regressions in the

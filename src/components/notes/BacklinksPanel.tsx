@@ -13,6 +13,7 @@ interface SemanticHit {
   noteId: string;
   title: string;
   score: number;
+  sectionTitle: string;
 }
 
 export interface BacklinksPanelProps {
@@ -156,6 +157,11 @@ export function BacklinksPanel({
                   <Sparkles size={11} className="text-[var(--accent)] flex-shrink-0 opacity-70" />
                   <div className="flex-1 min-w-0">
                     <div className="truncate">{hit.title || "Untitled"}</div>
+                    {hit.sectionTitle && (
+                      <div className="truncate text-[0.65rem] text-[var(--accent)] opacity-70 mt-0.5">
+                        {hit.sectionTitle}
+                      </div>
+                    )}
                     <div className="flex items-center gap-1.5 mt-0.5">
                       <div className="flex-1 h-1 rounded-full bg-[var(--surface-3)] overflow-hidden">
                         <div
