@@ -201,7 +201,7 @@ async function spawnWorker(model: string): Promise<number> {
   const nodeRunner = isScript ? resolveNodeRunner() : null;
   const args: string[] = [];
   if (isScript) {
-    args.push("--max-old-space-size=4096");
+    args.push("--max-old-space-size=512");
     if (nodeRunner) args.push(binaryPath);
     else args.push(binaryPath);
   }

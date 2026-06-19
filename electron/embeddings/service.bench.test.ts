@@ -241,48 +241,49 @@ describe("Embeddings pipeline benchmarks", () => {
 
 /**
  * Documented worker timings (measured on Apple M5 Pro, 48 GB RAM,
- * nomic-ai/nomic-embed-text-v1.5 int8 quantized, Node 25, 18 June 2026).
+ * nomic-ai/nomic-embed-text-v1.5 int8 quantized, Node 25, native CPU ONNX,
+ * 18 June 2026).
  *
  *   cold start (model load + first embed):  200 ms       (subsequent calls warm)
- *   short query (~20 chars, search_query):   5.6 ms       (mean, p95=6.3 ms)
- *   small note (~2 KB, search_document):   156 ms       (mean, p95=163 ms)
- *   medium note (~8 KB, search_document):  825 ms       (mean, p95=844 ms)
- *   large note (~32 KB, single call):    6,890 ms       (mean, p95=6,935 ms)
- *   batch of 16 small notes (~32 KB):    2,382 ms       (mean, p95=2,395 ms)
- *   batch of 16 medium notes (~128 KB): 12,643 ms       (mean)
+ *   short query (~20 chars, search_query):   5.0 ms       (mean, p95=8.2 ms)
+ *   small note (~2 KB, search_document):    79 ms       (mean, p95=82 ms)
+ *   medium note (~8 KB, search_document):  462 ms       (mean, p95=468 ms)
+ *   large note (~32 KB, single call):    4,300 ms       (mean, p95=4,308 ms)
+ *   batch of 16 small notes (~32 KB):    1,175 ms       (mean, p95=1,184 ms)
+ *   batch of 16 medium notes (~128 KB):  6,787 ms       (mean)
  *
- * Memory (from `vmmap -summary`):
- *   worker RSS at idle:           17.4 GB      (ONNX runtime pre-allocates large
- *                                                MALLOC_LARGE arenas in 141 regions
- *                                                totaling ~16.7 GB resident — see
- *                                                note below)
- *   peak delta during inference:    +33 MB     (arenas are pre-allocated; peak RSS
- *                                                during a 16-note batch only grew
- *                                                17812 → 17845 MB)
- *   main-process overhead:          54 MB      (HTTP client only — no model loaded)
+ * Previous WASM backend timings (for comparison, same machine):
+ *   small note:  156 ms (native is 2× faster)
+ *   medium note: 825 ms (native is 1.8× faster)
+ *   large note: 6,890 ms (native is 1.6× faster)
+ *
+ * Memory (native CPU backend):
+ *   worker RSS at idle:          444 MB      (model loaded, no inference)
+ *   worker RSS peak (32KB embed): 20 GB      (attention matrix O(seq_len²) × 12
+ *                                             layers; only triggers on unchunked
+ *                                             texts → not hit in production)
+ *   main-process overhead:        54 MB      (HTTP client only — no model loaded)
+ *
+ *   WASM backend idle RSS was 17.4 GB (pre-allocated WebAssembly.Memory arena).
+ *   Native backend idle is 444 MB — a 40× improvement.
+ *
+ *   Production note: service.ts chunks notes at ≤4000 chars before sending to
+ *   the worker (see chunkLongText). A 4 KB chunk (~1000 tokens) uses ~50 MB of
+ *   activation memory. The 20 GB spike only occurs on raw unchunked texts
+ *   (e.g. the benchmark's 32 KB single-call test).
  *
  * Disk:
  *   model download (one-time):    ~131 MB     (config.json + onnx/model_quantized.onnx
  *                                              + tokenizer.json + tokenizer_config.json)
  *   note_embeddings table:        ~3 KB / note   (768-dim JSON-TEXT vector + indices)
  *
- * Known issues:
- *   - The 17 GB idle RSS is far larger than expected for a 131 MB model. ONNX
- *     runtime's arena allocator is reserving tens of GB of virtual address space
- *     even though only ~33 MB is actually touched during inference. This should
- *     be fixable by configuring `ort.env.wasm` or session options to cap the
- *     arena size — see `electron/embeddings/pipeline.ts`. Until fixed, the
- *     worker effectively reserves ~17 GB of physical RAM (problematic on
- *     machines with ≤16 GB).
- *
  * Bottlenecks:
  *   - HTTP round-trip on 127.0.0.1 is <1 ms; wall time is dominated by ONNX
  *     inference inside the worker.
  *   - Notes >4000 chars are chunked (see chunkLongText) and averaged after
- *     L2 normalisation. A single 32 KB /embed call bypasses chunking and
- *     takes ~7 s because nomic silently truncates at 8192 tokens — passing
- *     through chunkLongText first (16 chunks × 4 KB) takes only ~2.5 s
- *     instead. Always prefer the chunked path in the service layer.
+ *     L2 normalisation. Always prefer the chunked path — a single 32 KB
+ *     /embed call takes 4.3 s and peaks at 20 GB, while 8 chunked calls
+ *     of 4 KB each take ~0.8 s total with <1 GB peak.
  *   - UMAP on 100 vectors takes ~2–3 s; on 1000 vectors it's ~30–60 s. For
  *     very large workspaces, consider sampling or a faster reducer
  *     (PCA + k-means) — see `projection.ts` for the swap point.
