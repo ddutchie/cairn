@@ -72,6 +72,7 @@ function readLockfile(): ProjectRootLockfile {
  *  - `@yao-pkg/pkg/node_modules/esbuild` — bundled esbuild copy for pkg, ships
  *                                          prebuilt binaries for build host
  *  - `playwright/node_modules/fsevents` — nested macOS-only fsevents
+ *  - `vite/node_modules/fsevents` — nested macOS-only fsevents (vitest dep)
  */
 const ALLOWED_NATIVE_DEPS = new Set([
   "better-sqlite3",
@@ -86,6 +87,7 @@ const ALLOWED_NATIVE_DEPS = new Set([
   "iconv-corefoundation",
   "@yao-pkg/pkg/node_modules/esbuild",
   "playwright/node_modules/fsevents",
+  "vite/node_modules/fsevents",
 ]);
 
 /**
@@ -100,6 +102,7 @@ const ALLOWED_NATIVE_DEPS = new Set([
 const MACOS_ONLY_DEPS = new Set([
   "fsevents",
   "playwright/node_modules/fsevents",
+  "vite/node_modules/fsevents",
   "iconv-corefoundation",
 ]);
 
