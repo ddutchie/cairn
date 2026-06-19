@@ -9,6 +9,7 @@ import {
   type ReindexResult,
   type ProjectionResult,
 } from "../embeddings/service";
+import { computeSemanticRelationships } from "../db/graph-queries";
 import * as client from "../embeddings/client";
 import * as manifest from "../embeddings/manifest";
 import { NOMIC_MODEL_ID } from "../embeddings/types";
@@ -88,11 +89,19 @@ export function registerEmbeddingsHandlers(ctx: DbContext): void {
     model?: string;
   }) => handle(async () => {
     const model = args.model ?? client.getDefaultModelId() ?? NOMIC_MODEL_ID;
-    return withLock(
+    const result = await withLock(
       reindexSlot,
       ctx.getWin(),
       (onProgress) => reindexNotes(ctx.db, args.workspaceId, args.noteIds, model, undefined, onProgress),
-    ) as Promise<ReindexResult>;
+    ) as ReindexResult;
+    if (result.indexed > 0) {
+      try {
+        computeSemanticRelationships(ctx.db, args.workspaceId, args.noteIds);
+      } catch (e) {
+        console.warn("[embeddings] semantic recompute after reindex failed:", e instanceof Error ? e.message : e);
+      }
+    }
+    return result;
   }));
 
   registerIpcHandle("db:embeddings:search", (_e, args: {
