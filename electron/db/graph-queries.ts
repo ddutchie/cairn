@@ -824,3 +824,53 @@ export function computeSemanticRelationships(
   });
   tx();
 }
+
+export interface SemanticNeighbor {
+  noteId: string;
+  title: string;
+  weight: number;
+  sourceSectionTitle: string | null;
+  targetSectionTitle: string | null;
+}
+
+export function getSemanticNeighbors(
+  db: Database.Database,
+  noteId: string,
+): SemanticNeighbor[] {
+  const rows = db.prepare(`
+    SELECT
+      rc.source_id, rc.target_id, rc.weight,
+      rc.source_section_title, rc.target_section_title,
+      CASE WHEN rc.source_id = ? THEN rc.target_id ELSE rc.source_id END AS other_id,
+      CASE WHEN rc.source_id = ? THEN rc.source_section_title ELSE rc.target_section_title END AS this_section,
+      CASE WHEN rc.source_id = ? THEN rc.target_section_title ELSE rc.source_section_title END AS other_section
+    FROM relationship_cache rc
+    WHERE rc.type = 'semantic'
+      AND (rc.source_id = ? OR rc.target_id = ?)
+    ORDER BY rc.weight DESC
+  `).all(
+    noteId, noteId, noteId, noteId, noteId,
+  ) as Array<{
+    other_id: string;
+    weight: number;
+    this_section: string | null;
+    other_section: string | null;
+  }>;
+
+  if (rows.length === 0) return [];
+
+  const ids = rows.map((r) => r.other_id);
+  const placeholders = ids.map(() => "?").join(",");
+  const titleRows = db.prepare(
+    `SELECT id, title FROM notes WHERE id IN (${placeholders})`
+  ).all(...ids) as Array<{ id: string; title: string }>;
+  const titleMap = new Map(titleRows.map((r) => [r.id, r.title] as const));
+
+  return rows.map((r) => ({
+    noteId: r.other_id,
+    title: titleMap.get(r.other_id) ?? r.other_id,
+    weight: r.weight,
+    sourceSectionTitle: r.this_section,
+    targetSectionTitle: r.other_section,
+  }));
+}

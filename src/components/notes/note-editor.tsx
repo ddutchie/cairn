@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import type { Note } from "@/types";
 import { MermaidDiagram } from "./MermaidDiagram";
 import { TableOfContents, headingSlug } from "./TableOfContents";
+import { findSectionTitleAtOffset, extractSectionTextAtOffset } from "./toc-utils";
 import { CodeBlock } from "./CodeBlock";
 import { Callout } from "./Callout";
 import { MathBlock } from "./MathBlock";
@@ -57,6 +58,8 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
   const noteContent0 = note.content ?? "";
   const [wordCount, setWordCount] = useState(() => countWords(noteContent0));
   const [showSemanticPanel, setShowSemanticPanel] = useState(false);
+  const [activeSectionTitle, setActiveSectionTitle] = useState<string | null>(null);
+  const [activeSectionText, setActiveSectionText] = useState<string | null>(null);
   const noteId = note.id;
   const [semanticContent, setSemanticContent] = useState(noteContent0);
   useEffect(() => {
@@ -216,13 +219,24 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
     if (titleTimer.current) clearTimeout(titleTimer.current);
     const t = titleRef.current.trim();
     if (!t) {
-      // Revert to last saved title if field is left empty
       setLocalTitle(note.title);
       titleRef.current = note.title;
       return;
     }
     updateNote(note.id, { title: t });
   }, [note.id, note.title, updateNote]);
+
+  const handleCursorActivity = useCallback(
+    (offset: number) => {
+      const title = titleRef.current;
+      const content = editorRef.current?.getView()?.state.doc.toString() ?? "";
+      const section = findSectionTitleAtOffset(title, content, offset);
+      setActiveSectionTitle((prev) => (prev === section ? prev : section));
+      const extracted = extractSectionTextAtOffset(title, content, offset);
+      setActiveSectionText(extracted ? extracted.text : null);
+    },
+    []
+  );
 
   // ── AI toolbar — driven by CodeMirror selection events ────────────────────
   const handleSelectionChange = useCallback(
@@ -882,6 +896,7 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
             initialValue={note.content ?? ""}
             onChange={handleContentChange}
             onSelectionChange={handleSelectionChange}
+            onCursorActivity={handleCursorActivity}
             placeholder="Write here…"
             readOnly={isAiWriting}
           />
@@ -941,6 +956,8 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
         onOpenCard={() => setView("board")}
         semanticEnabled={showSemanticPanel}
         semanticContent={semanticContent}
+        activeSectionTitle={showSemanticPanel ? activeSectionTitle : null}
+        activeSectionText={showSemanticPanel ? activeSectionText : null}
         workspaceId={activeWorkspaceId}
       />
 

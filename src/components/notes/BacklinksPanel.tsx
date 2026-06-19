@@ -21,6 +21,8 @@ export interface BacklinksPanelProps {
   onOpenCard: () => void;
   semanticEnabled?: boolean;
   semanticContent?: string;
+  activeSectionTitle?: string | null;
+  activeSectionText?: string | null;
   workspaceId?: string | null;
 }
 
@@ -29,6 +31,8 @@ export function BacklinksPanel({
   onOpenCard,
   semanticEnabled = false,
   semanticContent,
+  activeSectionTitle,
+  activeSectionText,
   workspaceId,
 }: BacklinksPanelProps) {
   const { notes, cards, columns } = useCairnStore(useShallow((s) => ({
@@ -39,11 +43,14 @@ export function BacklinksPanel({
   const [open, setOpen] = useState(false);
 
   const debouncedSemantic = useDebouncedValue(semanticContent ?? "", 1200);
+  const debouncedSectionText = useDebouncedValue(activeSectionText ?? "", 1200);
 
   type SearchState = { kind: "loading" } | { kind: "results"; hits: SemanticHit[] };
   const [search, setSearch] = useState<SearchState | null>(null);
+  const [sectionSearch, setSectionSearch] = useState<SearchState | null>(null);
   const trimmedSemanticLength = (semanticContent ?? "").trim().length;
   const canSearch = semanticEnabled && !!workspaceId && trimmedSemanticLength >= 4;
+  const canSectionSearch = semanticEnabled && !!workspaceId && !!activeSectionTitle && debouncedSectionText.trim().length >= 20;
 
   useEffect(() => {
     const trimmed = debouncedSemantic.trim();
@@ -71,7 +78,33 @@ export function BacklinksPanel({
     };
   }, [canSearch, debouncedSemantic, note.id, workspaceId]);
 
-  const semanticHits = search?.kind === "results" ? search.hits : [];
+  useEffect(() => {
+    if (!canSectionSearch) return;
+    let cancelled = false;
+    void (async () => {
+      const api = window.electron?.embeddings;
+      if (!api) return;
+      setSectionSearch({ kind: "loading" });
+      try {
+        const hits = await api.search(workspaceId!, debouncedSectionText.trim(), {
+          queryNoteId: note.id,
+          k: 3,
+        });
+        if (!cancelled) setSectionSearch({ kind: "results", hits });
+      } catch {
+        if (!cancelled) setSectionSearch({ kind: "results", hits: [] });
+      }
+    })();
+    return () => {
+      cancelled = true;
+      setSectionSearch(null);
+    };
+  }, [canSectionSearch, debouncedSectionText, note.id, workspaceId]);
+
+  const sectionHits = canSectionSearch && sectionSearch?.kind === "results" ? sectionSearch.hits : [];
+  const sectionLoading = canSectionSearch && sectionSearch?.kind === "loading" === true;
+  const sectionNoteIds = new Set(sectionHits.map((h) => h.noteId));
+  const semanticHits = search?.kind === "results" ? search.hits.filter((h) => !sectionNoteIds.has(h.noteId)) : [];
   const semanticLoading = search?.kind === "loading" === true;
 
   const linkedNotes = useMemo(
@@ -99,9 +132,9 @@ export function BacklinksPanel({
     });
   }, [note.id, note.title, note.linkedNoteIds, notes]);
 
-  const semanticCount = semanticEnabled ? semanticHits.length : 0;
+  const semanticCount = semanticEnabled ? semanticHits.length + sectionHits.length : 0;
   const total = linkedNotes.length + linkedCards.length + wikilinkBacklinks.length + semanticCount;
-  const hasSemanticActivity = semanticCount > 0 || semanticLoading;
+  const hasSemanticActivity = semanticCount > 0 || semanticLoading || sectionLoading;
   const autoOpenedRef = useRef(false);
   useEffect(() => {
     if (!hasSemanticActivity) {
@@ -174,6 +207,32 @@ export function BacklinksPanel({
                   </div>
                 </button>
               ))}
+              {activeSectionTitle && (sectionLoading || sectionHits.length > 0) && (
+                <>
+                  <div className="flex items-center gap-1.5 mt-2 mb-0.5 text-[0.714rem] text-[var(--accent)] opacity-80">
+                    <span className="truncate">Related to &ldquo;{activeSectionTitle}&rdquo;</span>
+                    {sectionLoading && <span className="animate-pulse">…</span>}
+                  </div>
+                  {sectionHits.map((hit) => (
+                    <button
+                      key={hit.noteId}
+                      onClick={() => window.dispatchEvent(new CustomEvent("cairn:select-note", { detail: { noteId: hit.noteId } }))}
+                      className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-[var(--surface-2)] text-xs text-[var(--text-secondary)] transition-colors text-left"
+                    >
+                      <Sparkles size={11} className="text-[var(--accent)] flex-shrink-0 opacity-50" />
+                      <div className="flex-1 min-w-0">
+                        <div className="truncate">{hit.title || "Untitled"}</div>
+                        {hit.sectionTitle && (
+                          <div className="truncate text-[0.65rem] text-[var(--accent)] opacity-60 mt-0.5">
+                            {hit.sectionTitle}
+                          </div>
+                        )}
+                      </div>
+                      <span className="text-[0.65rem] text-[var(--text-tertiary)] font-mono flex-shrink-0">{hit.score.toFixed(2)}</span>
+                    </button>
+                  ))}
+                </>
+              )}
               {(linkedNotes.length > 0 || linkedCards.length > 0 || wikilinkBacklinks.length > 0) && (
                 <div className="h-px bg-[var(--border)] my-1" />
               )}

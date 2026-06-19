@@ -335,6 +335,13 @@ export const TOOL_SCHEMAS = {
     }),
   },
 
+  get_semantic_neighbors: {
+    description: "Find notes semantically related to a given note via local embeddings. Returns related notes with similarity scores and matching section titles. Use this to discover connections that keyword search or wikilinks would miss — e.g. notes about similar topics written in different words.",
+    schema: z.object({
+      noteId: sId.describe("The note ID to find semantic neighbors for"),
+    }),
+  },
+
   // ── Tags ──────────────────────────────────────────────────────────────────────
 
   create_tag: {
