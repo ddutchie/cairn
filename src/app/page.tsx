@@ -20,6 +20,7 @@ import { SettingsView } from "@/components/settings/settings-view";
 import { AgentView } from "@/components/agent/AgentView";
 import { Onboarding } from "@/components/onboarding";
 import { MigrationModal } from "@/components/layout/MigrationModal";
+import { ReindexModal } from "@/components/layout/ReindexModal";
 import { RightPanel } from "@/components/layout/RightPanel";
 import { UpdateBanner, ErrorToasts } from "@/components/layout/app-chrome";
 
@@ -333,6 +334,9 @@ export default function Home() {
 
       {/* Migration modal — blocks app when workspace migrations are pending */}
       <MigrationModal />
+
+      {/* Reindex modal — prompts when embedding model changed */}
+      <ReindexModal />
 
       {/* IPC error toasts — bottom-right, auto-dismiss after 5s */}
       <ErrorToasts toasts={toasts} onDismiss={dismiss} />

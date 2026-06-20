@@ -196,6 +196,7 @@ const CAIRN_TOOL_NAMES = new Set([
   "patch_note",
   "append_to_note",
   "search_notes",
+  "semantic_search_notes",
   // ── Tasks ───────────────────────────────────────────────────────────────────
   "get_task",
   "create_task",
@@ -231,6 +232,7 @@ const PLAN_MODE_ALLOWED = new Set([
   "get_active_context", "get_project_context_pack",
   "get_note", "search_notes",
   "get_task", "search_tasks", "list_ready_tasks",
+  "semantic_search_notes",
   // codebase search (read-only)
   "codebase_search_symbols", "codebase_get_symbol_definition",
   "codebase_get_references", "codebase_get_file_symbols",

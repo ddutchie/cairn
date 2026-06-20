@@ -10,7 +10,7 @@
  * The actual ONNX inference is excluded — it runs in a separate worker
  * process (see `electron/embeddings/server.ts`). It can't be benchmarked
  * in vitest without spawning the worker binary, which would require the
- * nomic model to be downloaded (~91 MB) on every CI run. Documented
+ * bge-small model to be downloaded (~33 MB) on every CI run. Documented
  * expected ranges for the worker live at the bottom of this file.
  *
  * Run:
@@ -26,7 +26,7 @@ import { projectTo2d, normaliseProjection } from "./projection";
 
 const CHUNK_CHAR_LIMIT = 4000;
 const CHUNK_OVERLAP = 200;
-const NOMIC_DIM = 768;
+const EMBED_DIM = 384;
 
 function sha256(s: string): string {
   return crypto.createHash("sha256").update(s, "utf8").digest("hex");
@@ -59,15 +59,15 @@ function chunkLongText(text: string): TextChunk[] {
 }
 
 function averageVectors(vectors: number[][]): number[] {
-  if (vectors.length === 0) return new Array(NOMIC_DIM).fill(0);
+  if (vectors.length === 0) return new Array(EMBED_DIM).fill(0);
   if (vectors.length === 1) return vectors[0];
-  const out = new Array<number>(NOMIC_DIM).fill(0);
-  for (const v of vectors) for (let i = 0; i < NOMIC_DIM; i++) out[i] += v[i];
+  const out = new Array<number>(EMBED_DIM).fill(0);
+  for (const v of vectors) for (let i = 0; i < EMBED_DIM; i++) out[i] += v[i];
   let norm = 0;
-  for (let i = 0; i < NOMIC_DIM; i++) norm += out[i] * out[i];
+  for (let i = 0; i < EMBED_DIM; i++) norm += out[i] * out[i];
   norm = Math.sqrt(norm);
   if (norm < 1e-9) return out;
-  for (let i = 0; i < NOMIC_DIM; i++) out[i] = out[i] / norm;
+  for (let i = 0; i < EMBED_DIM; i++) out[i] = out[i] / norm;
   return out;
 }
 
@@ -134,7 +134,7 @@ const CEILINGS: Record<string, Partial<Record<FixtureName, number>>> = {
 
 // ── Random vector helpers ──────────────────────────────────────────────────────
 
-function randVector(dim = NOMIC_DIM): number[] {
+function randVector(dim = EMBED_DIM): number[] {
   const v = new Array<number>(dim);
   for (let i = 0; i < dim; i++) v[i] = Math.random() * 2 - 1;
   let n = 0;
@@ -160,7 +160,7 @@ describe("Embeddings pipeline benchmarks", () => {
     });
   }
 
-  describe("averageVectors (NOMIC_DIM=768)", () => {
+  describe("averageVectors (EMBED_DIM=384)", () => {
     const one = [randVector()];
     const eight = Array.from({ length: 8 }, () => randVector());
 
@@ -177,7 +177,7 @@ describe("Embeddings pipeline benchmarks", () => {
     });
   });
 
-  describe("cosine + topK (NOMIC_DIM=768)", () => {
+  describe("cosine + topK (EMBED_DIM=384)", () => {
     const query = toFloat32(randVector());
 
     it("cosine: single dot-product on normalised vectors", () => {
@@ -209,10 +209,10 @@ describe("Embeddings pipeline benchmarks", () => {
   });
 
   describe("projectTo2d (UMAP)", () => {
-    it("projectTo2d(20 vectors × 768 dim): graph cluster projection", () => {
+    it("projectTo2d(20 vectors × 384 dim): graph cluster projection", () => {
       const vectors = Array.from({ length: 20 }, () => {
-        const v = new Float32Array(NOMIC_DIM);
-        for (let i = 0; i < NOMIC_DIM; i++) v[i] = Math.sin(i * 0.1);
+        const v = new Float32Array(EMBED_DIM);
+        for (let i = 0; i < EMBED_DIM; i++) v[i] = Math.sin(i * 0.1);
         return v;
       });
       const r = bench(() => {
@@ -223,10 +223,10 @@ describe("Embeddings pipeline benchmarks", () => {
       expect(r.p95).toBeLessThan(CEILINGS["projectTo2d(20)"].tiny!);
     });
 
-    it("projectTo2d(100 vectors × 768 dim): large workspace", () => {
+    it("projectTo2d(100 vectors × 384 dim): large workspace", () => {
       const vectors = Array.from({ length: 100 }, (_, k) => {
-        const v = new Float32Array(NOMIC_DIM);
-        for (let i = 0; i < NOMIC_DIM; i++) v[i] = Math.sin(k * 0.05 + i * 0.1);
+        const v = new Float32Array(EMBED_DIM);
+        for (let i = 0; i < EMBED_DIM; i++) v[i] = Math.sin(k * 0.05 + i * 0.1);
         return v;
       });
       const r = bench(() => {
@@ -234,14 +234,14 @@ describe("Embeddings pipeline benchmarks", () => {
         normaliseProjection(raw);
       }, 2);
       console.log(`  [100 vecs] projectTo2d           ${fmt(r)}`);
-      // UMAP on 100×768 is expensive (several seconds); just log, don't fail.
+      // UMAP on 100×384 is expensive (several seconds); just log, don't fail.
     });
   });
 });
 
 /**
  * Documented worker timings (measured on Apple M5 Pro, 48 GB RAM,
- * nomic-ai/nomic-embed-text-v1.5 int8 quantized, Node 25, native CPU ONNX,
+ * bge-small-en-v1.5 int8 quantized, Node 25, native CPU ONNX,
  * 18 June 2026).
  *
  *   cold start (model load + first embed):  200 ms       (subsequent calls warm)
@@ -275,7 +275,7 @@ describe("Embeddings pipeline benchmarks", () => {
  * Disk:
  *   model download (one-time):    ~131 MB     (config.json + onnx/model_quantized.onnx
  *                                              + tokenizer.json + tokenizer_config.json)
- *   note_embeddings table:        ~3 KB / note   (768-dim JSON-TEXT vector + indices)
+ *   note_embeddings table:        ~2 KB / note   (384-dim JSON-TEXT vector + indices)
  *
  * Bottlenecks:
  *   - HTTP round-trip on 127.0.0.1 is <1 ms; wall time is dominated by ONNX

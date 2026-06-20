@@ -133,6 +133,8 @@ export async function executeTool(
     case "layout_idea_flow":
     case "get_knowledge_graph":
     case "get_neighbors":
+    case "get_semantic_neighbors":
+    case "semantic_search_notes":
     case "codebase_reindex":
     case "codebase_search_symbols":
     case "codebase_get_symbol_definition":

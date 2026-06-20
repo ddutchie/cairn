@@ -4,7 +4,7 @@
  *
  * Bundles `electron/embeddings/server.ts` into a self-contained executable
  * using @yao-pkg/pkg. The binary bundles Node 22 + the embeddings server,
- * with @xenova/transformers / onnxruntime-node loaded at runtime from
+ * with @huggingface/transformers / onnxruntime-node loaded at runtime from
  * `node_modules/` (env-injected).
  *
  * Platform-specific binary, emitted in dist-embeddings/:
@@ -61,5 +61,5 @@ for (const target of targets) {
 }
 
 console.log("\n[build-embeddings-binary] Done. Note: onnxruntime-node's native binaries");
-console.log("and the @xenova/transformers model cache must be supplied alongside this");
+console.log("and the @huggingface/transformers model cache must be supplied alongside this");
 console.log("binary (e.g. via electron-builder `asarUnpack` or TRANSFORMERS_CACHE env).");

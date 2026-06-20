@@ -10,9 +10,11 @@ import {
   type ProjectionResult,
 } from "../embeddings/service";
 import { computeSemanticRelationships } from "../db/graph-queries";
+import { getEmbeddingsSettingsCached } from "../lib/config-cache";
+import { getNoteProjections } from "../db/queries";
 import * as client from "../embeddings/client";
 import * as manifest from "../embeddings/manifest";
-import { NOMIC_MODEL_ID } from "../embeddings/types";
+import { EMBED_MODEL_ID } from "../embeddings/types";
 
 interface LockSlot {
   current: Promise<unknown> | null;
@@ -83,12 +85,26 @@ async function withLock<T>(
 }
 
 export function registerEmbeddingsHandlers(ctx: DbContext): void {
+  registerIpcHandle("embeddings:needsReindex", () => handle(async () => {
+    const settings = getEmbeddingsSettingsCached();
+    if (!settings.enabled) return { needed: false, reason: null };
+    const model = settings.modelId ?? client.getDefaultModelId() ?? EMBED_MODEL_ID;
+    const row = ctx.db.prepare(
+      "SELECT DISTINCT model FROM note_embeddings LIMIT 1",
+    ).get() as { model?: string } | undefined;
+    if (!row) return { needed: false, reason: null };
+    if (row.model !== model) {
+      return { needed: true, reason: "model_changed" as const };
+    }
+    return { needed: false, reason: null };
+  }));
+
   registerIpcHandle("db:embeddings:reindex", (_e, args: {
     workspaceId: string;
     noteIds?: string[];
     model?: string;
   }) => handle(async () => {
-    const model = args.model ?? client.getDefaultModelId() ?? NOMIC_MODEL_ID;
+    const model = args.model ?? client.getDefaultModelId() ?? EMBED_MODEL_ID;
     const result = await withLock(
       reindexSlot,
       ctx.getWin(),
@@ -112,7 +128,7 @@ export function registerEmbeddingsHandlers(ctx: DbContext): void {
     excludeIds?: string[];
     model?: string;
   }) => handle(async () => {
-    const model = args.model ?? client.getDefaultModelId() ?? NOMIC_MODEL_ID;
+    const model = args.model ?? client.getDefaultModelId() ?? EMBED_MODEL_ID;
     const exclude = [
       ...(args.excludeIds ?? []),
       ...(args.queryNoteId ? [args.queryNoteId] : []),
@@ -131,7 +147,7 @@ export function registerEmbeddingsHandlers(ctx: DbContext): void {
     workspaceId: string;
     model?: string;
   }) => handle(async () => {
-    const model = args.model ?? client.getDefaultModelId() ?? NOMIC_MODEL_ID;
+    const model = args.model ?? client.getDefaultModelId() ?? EMBED_MODEL_ID;
     return withLock(
       recomputeSlot,
       ctx.getWin(),
@@ -141,12 +157,19 @@ export function registerEmbeddingsHandlers(ctx: DbContext): void {
 
   registerIpcHandle("embeddings:status", () => handle(() => client.getStatus()));
 
+  registerIpcHandle("embeddings:projections", (_e, args: { workspaceId: string }) => handle(() => {
+    const { rows, anyStale } = getNoteProjections(ctx.db, args.workspaceId);
+    const settings = getEmbeddingsSettingsCached();
+    const model = settings.modelId ?? client.getDefaultModelId() ?? EMBED_MODEL_ID;
+    return { rows, anyStale, model };
+  }));
+
   registerIpcHandle("embeddings:stop", () => handle(() => client.stopWorker({ force: true })));
 
   registerIpcHandle("embeddings:models:list", () => handle(() => manifest.getEmbeddingModelsManifest()));
 
   registerIpcHandle("embeddings:models:install", (_e, args: { modelId: string }) => handle(async () => {
-    const modelId = args.modelId ?? NOMIC_MODEL_ID;
+    const modelId = args.modelId ?? EMBED_MODEL_ID;
     manifest.setEmbeddingModelStatus(modelId, "downloading", { progress: 0 });
     broadcastProgress(ctx.getWin(), { modelId, status: "downloading", progress: 0 });
     const off = client.onProgress((ev) => {

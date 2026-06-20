@@ -5,8 +5,8 @@ import * as path from "path";
 import { spawn, type ChildProcess, execSync } from "child_process";
 
 import { findFreePort } from "./port";
-import { NOMIC_MODEL_ID, NOMIC_DIM } from "./types";
-import type { NomicTask, EmbeddingsStatus } from "./types";
+import { EMBED_MODEL_ID, EMBED_DIM } from "./types";
+import type { EmbedTask, EmbeddingsStatus } from "./types";
 import * as manifest from "./manifest";
 
 const MODELS_DIR = manifest.MODELS_DIR;
@@ -68,7 +68,7 @@ function isScriptPath(p: string): boolean {
 }
 
 export function getDefaultModelId(): string {
-  return manifest.readDefaultModelId() ?? NOMIC_MODEL_ID;
+  return manifest.readDefaultModelId() ?? EMBED_MODEL_ID;
 }
 
 interface StdoutEvent {
@@ -140,7 +140,7 @@ export function setLastRecomputeProgress(done: number, total: number): void {
 
 function emitProgress(ev: StdoutEvent): void {
   if (ev.kind !== "progress" && ev.kind !== "ready") return;
-  const modelId = ev.model ?? workerModel ?? NOMIC_MODEL_ID;
+  const modelId = ev.model ?? workerModel ?? EMBED_MODEL_ID;
   for (const l of progressListeners) {
     if (ev.kind === "ready") {
       l({ kind: "ready", modelId });
@@ -348,7 +348,7 @@ export function onProgress(listener: ProgressListener): () => void {
 
 export async function embed(
   texts: string[],
-  task: NomicTask,
+  task: EmbedTask,
   model = getDefaultModelId(),
 ): Promise<number[][]> {
   if (texts.length === 0) return [];
@@ -390,8 +390,8 @@ export async function embed(
       dim: number;
       model: string;
     };
-    if (parsed.dim !== NOMIC_DIM) {
-      throw new Error(`embed: expected dim ${NOMIC_DIM}, got ${parsed.dim}`);
+    if (parsed.dim !== EMBED_DIM) {
+      throw new Error(`embed: expected dim ${EMBED_DIM}, got ${parsed.dim}`);
     }
     return parsed.vectors;
   } finally {

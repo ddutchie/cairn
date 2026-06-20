@@ -15,10 +15,10 @@ import { embed as clientEmbed } from "./client";
 import { projectTo2d, normaliseProjection } from "./projection";
 import { toFloat32 } from "./cosine";
 import { splitIntoSections } from "./sections";
-import { NOMIC_MODEL_ID, NOMIC_DIM } from "./types";
-import type { NomicTask } from "./types";
+import { EMBED_MODEL_ID, EMBED_DIM } from "./types";
+import type { EmbedTask } from "./types";
 
-export type EmbedFn = (texts: string[], task: NomicTask, model?: string) => Promise<number[][]>;
+export type EmbedFn = (texts: string[], task: EmbedTask, model?: string) => Promise<number[][]>;
 
 const defaultEmbed: EmbedFn = (texts, task, model) => clientEmbed(texts, task, model);
 
@@ -60,25 +60,25 @@ function chunkLongText(text: string): string[] {
 }
 
 function averageVectors(vectors: number[][]): number[] {
-  if (vectors.length === 0) return new Array(NOMIC_DIM).fill(0);
+  if (vectors.length === 0) return new Array(EMBED_DIM).fill(0);
   if (vectors.length === 1) return vectors[0];
-  const out = new Array<number>(NOMIC_DIM);
-  for (let i = 0; i < NOMIC_DIM; i++) out[i] = 0;
+  const out = new Array<number>(EMBED_DIM);
+  for (let i = 0; i < EMBED_DIM; i++) out[i] = 0;
   for (const v of vectors) {
-    for (let i = 0; i < NOMIC_DIM; i++) out[i] += v[i];
+    for (let i = 0; i < EMBED_DIM; i++) out[i] += v[i];
   }
   let norm = 0;
-  for (let i = 0; i < NOMIC_DIM; i++) norm += out[i] * out[i];
+  for (let i = 0; i < EMBED_DIM; i++) norm += out[i] * out[i];
   norm = Math.sqrt(norm);
   if (norm < 1e-9) return out;
-  for (let i = 0; i < NOMIC_DIM; i++) out[i] = out[i] / norm;
+  for (let i = 0; i < EMBED_DIM; i++) out[i] = out[i] / norm;
   return out;
 }
 
 async function embedSectionText(
   embed: EmbedFn,
   text: string,
-  task: NomicTask,
+  task: EmbedTask,
   model: string,
 ): Promise<number[]> {
   const chunks = chunkLongText(text);
@@ -134,7 +134,7 @@ export async function reindexNotes(
   db: Database.Database,
   workspaceId: string,
   noteIds: string[] | undefined,
-  model: string = NOMIC_MODEL_ID,
+  model: string = EMBED_MODEL_ID,
   embed: EmbedFn = defaultEmbed,
   onProgress?: (done: number, total: number) => void,
 ): Promise<ReindexResult> {
@@ -221,7 +221,7 @@ export async function searchAdjacent(
   queryText: string,
   k: number = 5,
   excludeIds: string[] = [],
-  model: string = NOMIC_MODEL_ID,
+  model: string = EMBED_MODEL_ID,
   embed: EmbedFn = defaultEmbed,
 ): Promise<AdjacentNote[]> {
   const trimmed = queryText.trim();
@@ -287,7 +287,7 @@ export interface ProjectionResult {
 export async function recomputeProjections(
   db: Database.Database,
   workspaceId: string,
-  model: string = NOMIC_MODEL_ID,
+  model: string = EMBED_MODEL_ID,
   embed: EmbedFn = defaultEmbed,
   onProgress?: (done: number, total: number) => void,
 ): Promise<ProjectionResult> {

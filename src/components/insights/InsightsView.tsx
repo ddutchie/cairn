@@ -3,7 +3,7 @@
 import React, { useCallback, useState, useMemo } from "react";
 import {
   Clock, Grid3x3, Table2, Activity, Workflow, Crosshair, BarChart2,
-  LayoutGrid, ChevronDown, Search, RefreshCw,
+  LayoutGrid, ChevronDown, Search, RefreshCw, Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
@@ -20,18 +20,20 @@ import { RidgelineCanvas, RidgelineMode } from "@/components/graph/RidgelineCanv
 import { SankeyCanvas }    from "@/components/graph/SankeyCanvas";
 import { BeeswarmCanvas }  from "@/components/graph/BeeswarmCanvas";
 import { BulletCanvas }    from "@/components/graph/BulletCanvas";
+import { SemanticMapCanvas } from "@/components/graph/SemanticMapCanvas";
 import { GraphDetailPanel } from "@/components/graph/GraphDetailPanel";
 
-type InsightsLayout = "timeline" | "matrix" | "table" | "ridgeline" | "sankey" | "beeswarm" | "bullet";
+type InsightsLayout = "timeline" | "matrix" | "table" | "ridgeline" | "sankey" | "beeswarm" | "bullet" | "semantic-map";
 
 const LAYOUTS: { key: InsightsLayout; icon: React.ReactNode; label: string; tip: string }[] = [
-  { key: "ridgeline", icon: <Activity  size={12} />, label: "Ridgeline", tip: "Task activity over time"         },
-  { key: "beeswarm",  icon: <Crosshair size={12} />, label: "Beeswarm",  tip: "Task due dates by project"       },
-  { key: "bullet",    icon: <BarChart2 size={12} />, label: "Bullet",    tip: "Project health dashboard"        },
-  { key: "sankey",    icon: <Workflow  size={12} />, label: "Sankey",    tip: "Task flow through pipeline"      },
-  { key: "timeline",  icon: <Clock     size={12} />, label: "Timeline",  tip: "Cards by due date"              },
-  { key: "matrix",    icon: <Grid3x3  size={12} />, label: "Matrix",    tip: "Tag co-occurrence heatmap"       },
-  { key: "table",     icon: <Table2   size={12} />, label: "Table",     tip: "Flat sortable table"             },
+  { key: "ridgeline",    icon: <Activity  size={12} />, label: "Ridgeline",    tip: "Task activity over time"         },
+  { key: "beeswarm",     icon: <Crosshair size={12} />, label: "Beeswarm",     tip: "Task due dates by project"       },
+  { key: "bullet",       icon: <BarChart2 size={12} />, label: "Bullet",       tip: "Project health dashboard"        },
+  { key: "sankey",       icon: <Workflow  size={12} />, label: "Sankey",       tip: "Task flow through pipeline"      },
+  { key: "timeline",     icon: <Clock     size={12} />, label: "Timeline",     tip: "Cards by due date"               },
+  { key: "matrix",       icon: <Grid3x3  size={12} />, label: "Matrix",       tip: "Tag co-occurrence heatmap"       },
+  { key: "table",        icon: <Table2   size={12} />, label: "Table",        tip: "Flat sortable table"              },
+  { key: "semantic-map", icon: <Sparkles size={12} />, label: "Semantic Map", tip: "Notes plotted by embedding similarity (UMAP 2D projection)" },
 ];
 
 const ALL_NODE_TYPES: GraphNodeType[] = ["project", "note", "card", "tag"];
@@ -315,6 +317,9 @@ export function InsightsView() {
           )}
           {layout === "bullet" && (
             <BulletCanvas nodes={allNodes} selectedNodeId={selectedGraphNodeId} onNodeClick={handleNodeClick} />
+          )}
+          {layout === "semantic-map" && (
+            <SemanticMapCanvas nodes={allNodes} selectedNodeId={selectedGraphNodeId} onNodeClick={handleNodeClick} />
           )}
         </div>
 

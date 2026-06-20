@@ -3,7 +3,7 @@ import * as path from "path";
 import * as os from "os";
 
 import { embed, loadPipeline, setCacheDir, isLoaded, loadedModelId, type EmbedProgress } from "./pipeline";
-import { EmbedRequest, NOMIC_MODEL_ID, NOMIC_DIM } from "./types";
+import { EmbedRequest, EMBED_MODEL_ID, EMBED_DIM } from "./types";
 
 interface StdoutEvent {
   kind: "listening" | "ready" | "progress" | "error" | "log";
@@ -24,7 +24,7 @@ function emit(ev: StdoutEvent): void {
 function parseArgs(argv: string[]): { port?: number; cacheDir: string; model: string } {
   let port: number | undefined;
   let cacheDir = path.join(os.homedir(), ".cache", "huggingface");
-  let model = NOMIC_MODEL_ID;
+  let model = EMBED_MODEL_ID;
   for (const arg of argv.slice(2)) {
     if (arg.startsWith("--port=")) {
       const n = Number(arg.slice("--port=".length));
@@ -121,7 +121,7 @@ async function handleEmbed(
   const req = reqParsed.data;
   await loadOnce(req.model ?? configuredModel);
   const vectors = await embed(req.texts, req.task, req.model ?? configuredModel);
-  sendJson(res, 200, { vectors, dim: NOMIC_DIM, model: req.model ?? configuredModel });
+  sendJson(res, 200, { vectors, dim: EMBED_DIM, model: req.model ?? configuredModel });
 }
 
 function buildServer(configuredModel: string): http.Server {

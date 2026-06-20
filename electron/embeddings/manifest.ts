@@ -2,7 +2,7 @@ import { app } from "electron";
 import * as fs from "fs";
 import * as path from "path";
 
-import { NOMIC_MODEL_ID, NOMIC_DIM } from "./types";
+import { EMBED_MODEL_ID, EMBED_DIM } from "./types";
 import type { EmbeddingModelManifestEntry } from "./types";
 
 export const MODELS_DIR = path.join(app.getPath("userData"), "embedding-models");
@@ -19,13 +19,13 @@ export interface SupportedEmbeddingModel {
 }
 
 export const SUPPORTED_EMBEDDING_MODELS: Record<string, SupportedEmbeddingModel> = {
-  [NOMIC_MODEL_ID]: {
-    id: NOMIC_MODEL_ID,
-    name: "Nomic Embed Text v1.5 (int8 quantised)",
-    repo: "nomic-ai/nomic-embed-text-v1.5",
-    dim: NOMIC_DIM,
-    maxTokens: 8192,
-    sizeBytes: 91_000_000,
+  [EMBED_MODEL_ID]: {
+    id: EMBED_MODEL_ID,
+    name: "BGE Small English v1.5 (int8 quantised)",
+    repo: "Xenova/bge-small-en-v1.5",
+    dim: EMBED_DIM,
+    maxTokens: 512,
+    sizeBytes: 33_000_000,
   },
 };
 
@@ -58,6 +58,7 @@ function modelFilesPresent(modelId: string): boolean {
 
 export function getEmbeddingModelsManifest(): EmbeddingModelManifestEntry[] {
   if (!fs.existsSync(MODELS_DIR)) fs.mkdirSync(MODELS_DIR, { recursive: true });
+  pruneOrphanedModels();
   const manifest = readManifestFile();
   let updated = false;
   const result: EmbeddingModelManifestEntry[] = [];
@@ -155,4 +156,68 @@ export function readDefaultModelId(): string | null {
 export function writeDefaultModelId(modelId: string): void {
   if (!fs.existsSync(MODELS_DIR)) fs.mkdirSync(MODELS_DIR, { recursive: true });
   fs.writeFileSync(DEFAULT_MODEL_PATH, JSON.stringify({ defaultModelId: modelId }), "utf8");
+}
+
+/**
+ * Remove model directories and manifest entries for models no longer in
+ * SUPPORTED_EMBEDDING_MODELS. This handles the case where a model swap
+ * (e.g. Nomic → bge-small) leaves the old model's ~131 MB of files
+ * orphaned on disk. Called automatically by getEmbeddingModelsManifest().
+ */
+function pruneOrphanedModels(): void {
+  if (!fs.existsSync(MODELS_DIR)) return;
+  const manifest = readManifestFile();
+  let updated = false;
+
+  // Find org/name directories on disk that aren't in SUPPORTED_EMBEDDING_MODELS
+  for (const org of fs.readdirSync(MODELS_DIR)) {
+    if (org.startsWith(".") || org.endsWith(".json")) continue;
+    const orgDir = path.join(MODELS_DIR, org);
+    if (!fs.statSync(orgDir).isDirectory()) continue;
+    for (const name of fs.readdirSync(orgDir)) {
+      if (name.startsWith(".")) continue;
+      const modelId = `${org}/${name}`;
+      if (SUPPORTED_EMBEDDING_MODELS[modelId]) continue;
+      const modelDir = path.join(orgDir, name);
+      try {
+        const sizeMB = getDirSizeMB(modelDir);
+        fs.rmSync(modelDir, { recursive: true, force: true });
+        console.log(`[embeddings] pruned orphaned model: ${modelId} (${sizeMB} MB)`);
+        updated = true;
+      } catch (e) {
+        console.warn(`[embeddings] failed to prune orphaned model ${modelId}:`, e);
+      }
+    }
+    // Remove empty org dir
+    try {
+      if (fs.existsSync(orgDir) && fs.readdirSync(orgDir).length === 0) {
+        fs.rmSync(orgDir, { recursive: true, force: true });
+      }
+    } catch { /* ignore */ }
+  }
+
+  // Clean stale manifest entries
+  for (const key of Object.keys(manifest)) {
+    if (!SUPPORTED_EMBEDDING_MODELS[key]) {
+      delete manifest[key];
+      updated = true;
+    }
+  }
+
+  if (updated) writeManifestFile(manifest);
+}
+
+function getDirSizeMB(dir: string): number {
+  let total = 0;
+  try {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        total += getDirSizeMB(full);
+      } else {
+        total += fs.statSync(full).size;
+      }
+    }
+  } catch { /* ignore */ }
+  return Math.round(total / 1024 / 1024);
 }

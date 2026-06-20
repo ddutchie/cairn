@@ -508,6 +508,12 @@ const api = {
       lastRecomputeTotal: number;
     }>("embeddings:status"),
     stop: () => invoke<void>("embeddings:stop"),
+    needsReindex: () => invoke<{ needed: boolean; reason: string | null }>("embeddings:needsReindex"),
+    projections: (workspaceId: string) => invoke<{
+      rows: Array<{ noteId: string; dimX: number; dimY: number; projStale: number; embeddedAt: string; model: string }>;
+      anyStale: boolean;
+      model: string;
+    }>("embeddings:projections", { workspaceId }),
     reindex: (workspaceId: string, noteIds?: string[], model?: string) => invoke<{
       indexed: number;
       skipped: number;
