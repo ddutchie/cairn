@@ -1,8 +1,8 @@
-import { AutoTokenizer, env, type PreTrainedTokenizer } from "@xenova/transformers";
+import { AutoTokenizer, env, type PreTrainedTokenizer } from "@huggingface/transformers";
 import * as ort from "onnxruntime-node";
-import type { NomicTask } from "./types";
-import { NOMIC_MODEL_ID, NOMIC_DIM } from "./types";
-import { withNomicPrefix } from "./nomic";
+import type { EmbedTask } from "./types";
+import { EMBED_MODEL_ID, EMBED_DIM } from "./types";
+import { withTaskPrefix } from "./prefix";
 
 env.allowLocalModels = false;
 env.useBrowserCache = false;
@@ -40,7 +40,7 @@ export function loadedModelId(): string | null {
 }
 
 export async function loadPipeline(
-  modelId: string = NOMIC_MODEL_ID,
+  modelId: string = EMBED_MODEL_ID,
   onProgress?: ProgressCallback,
 ): Promise<LoadedPipeline> {
   if (_pipeline && _pipeline.modelId === modelId) return _pipeline;
@@ -90,11 +90,11 @@ export async function loadPipeline(
 
 export async function embed(
   texts: string[],
-  task: NomicTask,
-  modelId: string = NOMIC_MODEL_ID,
+  task: EmbedTask,
+  modelId: string = EMBED_MODEL_ID,
 ): Promise<number[][]> {
   const pipe = await loadPipeline(modelId);
-  const prefixed = texts.map((t) => withNomicPrefix(task, t));
+  const prefixed = texts.map((t) => withTaskPrefix(task, t));
 
   const encoded = await pipe.tokenizer(prefixed, { padding: true, truncation: true });
   const batchSize = encoded.input_ids.dims[0];
@@ -142,8 +142,8 @@ export async function embed(
   }
 
   for (const v of vectors) {
-    if (v.length !== NOMIC_DIM) {
-      throw new Error(`embed: expected dim ${NOMIC_DIM}, got ${v.length}`);
+    if (v.length !== EMBED_DIM) {
+      throw new Error(`embed: expected dim ${EMBED_DIM}, got ${v.length}`);
     }
   }
   return vectors;

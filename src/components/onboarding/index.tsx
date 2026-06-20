@@ -10,6 +10,7 @@ import { StepWorkspaceDetails } from "./StepWorkspaceDetails";
 import { StepAppearance } from "./StepAppearance";
 import { StepAISetup } from "./StepAISetup";
 import { StepMCP } from "./StepMCP";
+import { StepEmbeddings } from "./StepEmbeddings";
 import { StepViews } from "./StepViews";
 import { StepDone } from "./StepDone";
 import type { ToggleableView } from "@/store/slices/ui";
@@ -54,6 +55,10 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
   const [apiKey, setApiKey]       = useState(aiConfig.apiKey || "");
   const [model, setModel]         = useState(aiConfig.model || "gpt-4o-mini");
 
+  // ── Embeddings ───────────────────────────────────────────────────────────────
+  const [embEnabled, setEmbEnabled] = useState(false);
+  const [embModelId, setEmbModelId] = useState("Xenova/bge-small-en-v1.5");
+
   // Pre-populate folder path when skipping the folder-picker step
   useEffect(() => {
     if (initialStep !== "choose-folder") {
@@ -61,6 +66,17 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialStep]);
+
+  // Hydrate embeddings settings if a previous session saved them
+  useEffect(() => {
+    const e = window.electron?.embeddings;
+    if (!e?.getSettings) return;
+    e.getSettings().then((s) => {
+      if (!s) return;
+      if (typeof s.enabled === "boolean") setEmbEnabled(s.enabled);
+      if (typeof s.modelId === "string" && s.modelId) setEmbModelId(s.modelId);
+    }).catch(() => {});
+  }, []);
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
 
@@ -100,6 +116,21 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
       setAgentConfig({ baseUrl, apiKey, model });
     }
     setStep("mcp");
+  }
+
+  async function handleSaveEmbeddings() {
+    const e = window.electron?.embeddings;
+    if (e?.saveSettings) {
+      try {
+        await e.saveSettings({ enabled: embEnabled, modelId: embModelId });
+        if (embEnabled && e.models.setDefault) {
+          await e.models.setDefault(embModelId);
+        }
+      } catch {
+        // Best-effort — wizard shouldn't block on this
+      }
+    }
+    setStep("views");
   }
 
   // ── Routing ───────────────────────────────────────────────────────────────────
@@ -165,7 +196,20 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
     return (
       <StepMCP
         onBack={() => setStep("ai-setup")}
-        onNext={() => setStep("views")}
+        onNext={() => setStep("embeddings")}
+      />
+    );
+  }
+
+  if (step === "embeddings") {
+    return (
+      <StepEmbeddings
+        enabled={embEnabled}
+        modelId={embModelId}
+        onEnabledChange={setEmbEnabled}
+        onModelIdChange={setEmbModelId}
+        onBack={() => setStep("mcp")}
+        onNext={handleSaveEmbeddings}
       />
     );
   }
@@ -175,7 +219,7 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
       <StepViews
         hidden={localHidden}
         onToggle={toggleLocalView}
-        onBack={() => setStep("mcp")}
+        onBack={() => setStep("embeddings")}
         onNext={() => {
           setHiddenViews([...localHidden]);
           setStep("done");

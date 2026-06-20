@@ -251,3 +251,38 @@ export function get_semantic_neighbors(db: Database.Database, args: Record<strin
     }),
   };
 }
+
+export async function search_notes_semantic(db: Database.Database, args: Record<string, any>) {
+  const { workspaceId, query, k } = args;
+  if (!workspaceId) return { error: "workspaceId is required" };
+  if (!query || typeof query !== "string" || !query.trim()) {
+    return { error: "query is required" };
+  }
+  // Dynamic import — service.ts transitively imports manifest.ts which calls
+  // app.getPath("userData") at module load. Deferring avoids requiring the
+  // Electron `app` singleton to be ready at import time (e.g. in MCP tests).
+  const { searchAdjacent } = await import("../../embeddings/service");
+  const { getEmbeddingsSettingsCached } = await import("../../lib/config-cache");
+  const { getDefaultModelId } = await import("../../embeddings/client");
+  const { EMBED_MODEL_ID } = await import("../../embeddings/types");
+  const settings = getEmbeddingsSettingsCached();
+  if (!settings.enabled) {
+    return { error: "Embeddings are not enabled. Enable them in Settings → Embeddings first." };
+  }
+  const model = settings.modelId ?? getDefaultModelId() ?? EMBED_MODEL_ID;
+  const kVal = typeof k === "number" && k > 0 ? Math.min(Math.floor(k), 100) : 5;
+  const results = await searchAdjacent(
+    db,
+    workspaceId as string,
+    query as string,
+    kVal,
+    [],
+    model,
+  );
+  insertNotification(db, "search_notes_semantic", "Semantic search", `query="${String(query).slice(0, 60)}" → ${results.length} hits`);
+  return {
+    query,
+    model,
+    results,
+  };
+}

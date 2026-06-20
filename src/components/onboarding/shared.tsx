@@ -13,11 +13,12 @@ export type OnboardingStep =
   | "appearance"
   | "ai-setup"
   | "mcp"
+  | "embeddings"
   | "views"
   | "done";
 
 /** Steps that show the progress dots (post-workspace steps only). */
-export const PROGRESS_STEPS: OnboardingStep[] = ["appearance", "ai-setup", "mcp", "views", "done"];
+export const PROGRESS_STEPS: OnboardingStep[] = ["appearance", "ai-setup", "mcp", "embeddings", "views", "done"];
 
 // ── Font scale options ────────────────────────────────────────────────────────
 

@@ -52,7 +52,7 @@ interface ProgressEvent {
   error?: string;
 }
 
-const DEFAULT_CONFIG: EmbeddingsConfig = { enabled: false, modelId: "nomic-ai/nomic-embed-text-v1.5" };
+const DEFAULT_CONFIG: EmbeddingsConfig = { enabled: false, modelId: "Xenova/bge-small-en-v1.5" };
 
 export function EmbeddingsSettings() {
   const [config, setConfig] = useState<EmbeddingsConfig>(DEFAULT_CONFIG);

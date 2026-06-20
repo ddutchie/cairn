@@ -3,7 +3,7 @@
  * breaking again when a new native module — one that compiles at install time
  * or ships platform-specific `.node` binaries — is pulled in transitively.
  *
- * `sharp` was the original offender: `@xenova/transformers` depends on it,
+ * `sharp` was the original offender: `@huggingface/transformers` depends on it,
  * there is no prebuilt win32-arm64 binary, and `node-gyp rebuild` failed on
  * GitHub Actions runners that lack the MSVC toolchain. Cairn only uses text
  * tokenization, so sharp is stubbed via the npm `overrides` field.
@@ -64,7 +64,9 @@ function readLockfile(): ProjectRootLockfile {
  *  - `esbuild`            — ships prebuilt per-platform binaries
  *  - `fsevents`           — macOS-only ("os": ["darwin"]); does not run on Win
  *  - `node-pty`           — ships prebuilt binaries incl. win32-arm64
- *  - `onnxruntime-node`   — ships prebuilt binaries incl. win32-arm64
+ *  - `onnxruntime-node`   — ships prebuilt binaries; darwin-x64 dropped in
+ *                           1.24+ (macOS now arm64-only — darwin-x64 build
+ *                           target was dropped from electron-builder.yml)
  *  - `protobufjs`         — `postinstall` builds protoc-cli fallbacks; not a
  *                           native module, pure JS, safe on every platform
  *  - `unrs-resolver`      — ships prebuilt per-platform binaries
@@ -118,9 +120,10 @@ describe("native deps guard", () => {
       expect(existsSync(path.join(ROOT, "electron/sharp-stub/package.json"))).toBe(true);
     });
 
-    it("stub exports null so transformers.js skips image processing", async () => {
+    it("stub exports a truthy value so transformers.js image module passes its else-if check", async () => {
       const stub = await import("./sharp-stub/index.js");
-      expect(stub.default).toBeNull();
+      expect(typeof stub.default).toBe("function");
+      expect(stub.default).not.toBeNull();
     });
   });
 
@@ -128,7 +131,7 @@ describe("native deps guard", () => {
     const lock = readLockfile();
     const pkgs = lock.packages ?? {};
 
-    const nativePackages = Object.entries(pkgs)
+    const _nativePackages = Object.entries(pkgs)
       .filter(([name, info]) => {
         if (!name) return false; // skip root ""
         if (!info.hasInstallScript && !info.gypfile) return false;

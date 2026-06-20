@@ -1362,6 +1362,48 @@ export function markAllProjectionsStale(db: Database.Database, workspaceId: stri
   db.prepare("UPDATE note_embeddings SET proj_stale = 1 WHERE workspace_id = ?").run(workspaceId);
 }
 
+export interface NoteProjectionRow {
+  noteId: string;
+  dimX: number;
+  dimY: number;
+  projStale: number;
+  embeddedAt: string;
+  model: string;
+}
+
+export function getNoteProjections(
+  db: Database.Database,
+  workspaceId: string,
+): { rows: NoteProjectionRow[]; anyStale: boolean } {
+  const raw = db.prepare(`
+    SELECT note_id, dim_x, dim_y, proj_stale, embedded_at, model
+    FROM note_embeddings
+    WHERE workspace_id = ? AND section_idx = 0
+  `).all(workspaceId) as Array<{
+    note_id: string;
+    dim_x: number | null;
+    dim_y: number | null;
+    proj_stale: number;
+    embedded_at: string;
+    model: string;
+  }>;
+  let anyStale = false;
+  const rows: NoteProjectionRow[] = [];
+  for (const r of raw) {
+    if (r.proj_stale) anyStale = true;
+    if (r.dim_x === null || r.dim_y === null) continue;
+    rows.push({
+      noteId: r.note_id,
+      dimX: r.dim_x,
+      dimY: r.dim_y,
+      projStale: r.proj_stale,
+      embeddedAt: r.embedded_at,
+      model: r.model,
+    });
+  }
+  return { rows, anyStale };
+}
+
 export function getNoteEmbeddings(db: Database.Database, noteId: string): NoteEmbeddingRecord[] {
   const rows = db.prepare("SELECT * FROM note_embeddings WHERE note_id = ? ORDER BY section_idx").all(noteId) as NoteEmbeddingRow[];
   return rows.map(toNoteEmbedding);

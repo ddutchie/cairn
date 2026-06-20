@@ -1,10 +1,10 @@
 import * as z from "zod";
 
-export type NomicTask = "search_document" | "search_query" | "clustering";
+export type EmbedTask = "search_document" | "search_query" | "clustering";
 
-export const NOMIC_MODEL_ID = "nomic-ai/nomic-embed-text-v1.5";
+export const EMBED_MODEL_ID = "Xenova/bge-small-en-v1.5";
 
-export const NOMIC_DIM = 768;
+export const EMBED_DIM = 384;
 
 export const EmbedRequest = z.object({
   texts: z.array(z.string()).min(1).max(64),
@@ -34,7 +34,7 @@ export interface EmbeddingRecord {
   noteId: string;
   workspaceId: string;
   model: string;
-  task: NomicTask;
+  task: EmbedTask;
   contentHash: string;
   vector: number[];
   embeddedAt: string;
@@ -83,5 +83,5 @@ export interface EmbeddingsConfig {
 
 export const DEFAULT_EMBEDDINGS_CONFIG: EmbeddingsConfig = {
   enabled: false,
-  modelId: NOMIC_MODEL_ID,
+  modelId: EMBED_MODEL_ID,
 };

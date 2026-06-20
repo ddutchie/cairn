@@ -73,9 +73,9 @@ describe("query vector cache (LRU)", () => {
   });
 
   it("derives keys deterministically from model + query text", () => {
-    const k1 = queryHash("nomic-ai/nomic-embed-text-v1.5", "hello world");
-    const k2 = queryHash("nomic-ai/nomic-embed-text-v1.5", "hello world");
-    const k3 = queryHash("nomic-ai/nomic-embed-text-v1.5", "hello world!");
+    const k1 = queryHash("Xenova/bge-small-en-v1.5", "hello world");
+    const k2 = queryHash("Xenova/bge-small-en-v1.5", "hello world");
+    const k3 = queryHash("Xenova/bge-small-en-v1.5", "hello world!");
     const k4 = queryHash("other-model", "hello world");
     expect(k1).toBe(k2);
     expect(k1).not.toBe(k3);
