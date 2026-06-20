@@ -22,7 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Create GitHub Release
+      - name: Create GitHub Release (draft)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -30,15 +30,23 @@ jobs:
           FILE="changelogs/${TAG}.md"
           PRERELEASE=""
           if [[ "$TAG" == *"-"* ]]; then PRERELEASE="--prerelease"; fi
+          # Always create as draft. After CI finishes building the DMG/installer,
+          # the developer downloads it, smoke-tests the actual packaged app,
+          # then promotes the release to public + latest so auto-update picks it up:
+          #   gh release edit v2.1.x --draft=false
+          # This prevents shipping a broken build (e.g. v2.1.4 umap-js crash) to
+          # auto-update users before anyone has opened the actual .app.
           if [ -f "$FILE" ]; then
             gh release create "$TAG" \
               --title "Cairn ${TAG}" \
               --notes-file "$FILE" \
+              --draft \
               $PRERELEASE
           else
             gh release create "$TAG" \
               --title "Cairn ${TAG}" \
               --notes "No changelog found for ${TAG}." \
+              --draft \
               $PRERELEASE
           fi
 
@@ -165,7 +173,7 @@ jobs:
           npm run smoke-test
           node scripts/build-mcp-binary.js --mac
           chmod +x dist-mcp/cairn-mcp dist-mcp/cairn-mcp-x64
-          npx electron-builder --mac --publish always
+          npx electron-builder --mac --publish onTagOrDraft
 
   # ── Windows ───────────────────────────────────────────────────────────────
   build-win:
@@ -233,7 +241,7 @@ jobs:
           npm run compile
           npm run smoke-test
           node scripts/build-mcp-binary.js --win
-          npx electron-builder --win --publish always
+          npx electron-builder --win --publish onTagOrDraft
 
   # ── Linux ─────────────────────────────────────────────────────────────────
   build-linux:
@@ -298,4 +306,4 @@ jobs:
           npm run smoke-test
           node scripts/build-mcp-binary.js --linux
           chmod +x dist-mcp/cairn-mcp-linux
-          npx electron-builder --linux --publish always
+          npx electron-builder --linux --publish onTagOrDraft
