@@ -129,9 +129,10 @@ export function StepEmbeddings({
             className={cn(
               "flex items-center justify-between px-3 py-2 rounded-lg border transition-colors",
               enabled
-                ? "border-[var(--accent)]/40 bg-[var(--accent-dim)]"
+                ? "bg-[var(--accent-dim)]"
                 : "border-[var(--border)] bg-[var(--surface-2)]"
             )}
+            style={enabled ? { borderColor: "color-mix(in srgb, var(--accent) 40%, transparent)" } : undefined}
           >
             <span className="text-xs font-medium text-[var(--text-primary)]">
               {enabled ? "Enabled" : "Disabled"}
@@ -175,7 +176,7 @@ export function StepEmbeddings({
                       <button
                         type="button"
                         onClick={() => void handleInstall(model.id)}
-                        className="text-xs px-2 py-1 rounded bg-[var(--accent)] text-white hover:opacity-90 flex items-center gap-1"
+                        className="text-xs px-2 py-1 rounded bg-[var(--accent)] text-[var(--surface)] hover:opacity-90 flex items-center gap-1"
                       >
                         <Download className="w-3 h-3" />
                         Download (~{fmtSize(model.sizeBytes)})

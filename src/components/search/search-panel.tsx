@@ -170,8 +170,12 @@ export function SearchPanel() {
       semanticTimer.current = setTimeout(async () => {
         const e = window.electron?.embeddings;
         if (!e?.search) return;
+        // Capture the query at request time so we can discard stale responses
+        // if the user types more before the async search resolves.
+        const requestQuery = trimmed;
         try {
-          const hits: SemanticHit[] = await e.search(activeWorkspaceId, trimmed, { k: 20 });
+          const hits: SemanticHit[] = await e.search(activeWorkspaceId, requestQuery, { k: 20 });
+          if (query.trim() !== requestQuery) return;
           const storeNotes = notes;
           const scoreMap = new Map<string, number>();
           const enriched: SearchResult[] = [];
@@ -227,12 +231,18 @@ export function SearchPanel() {
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setFocused((f) => Math.min(f + 1, filtered.length - 1));
+      setFocused((f) => Math.min(f + 1, (noteResults.length + taskResults.length) - 1));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setFocused((f) => Math.max(f - 1, 0));
-    } else if (e.key === "Enter" && filtered[focused]) {
-      handleSelect(filtered[focused]);
+    } else if (e.key === "Enter") {
+      // Focus order matches UI order: notes first, then tasks.
+      if (focused < noteResults.length && noteResults[focused]) {
+        handleSelect(noteResults[focused]);
+      } else if (focused >= noteResults.length) {
+        const taskIdx = focused - noteResults.length;
+        if (taskResults[taskIdx]) handleSelect(taskResults[taskIdx]);
+      }
     } else if (e.key === "Escape") {
       toggleSearch();
     }

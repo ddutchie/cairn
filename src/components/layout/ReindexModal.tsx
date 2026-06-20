@@ -47,16 +47,18 @@ export function ReindexModal() {
     if (!electron?.embeddings?.models?.onProgress) return;
     const unsub = electron.embeddings.models.onProgress((ev: ProgressEvent) => {
       if (ev.status === "progress" && typeof ev.loaded === "number" && typeof ev.total === "number") {
+        if (phase !== "running") return;
         setProgress({ done: ev.loaded, total: ev.total });
       } else if (ev.status === "done") {
         setPhase((prev) => (prev === "running" ? "done" : prev));
       } else if (ev.status === "error") {
+        if (phase !== "running") return;
         setError(ev.error ?? "Unknown error");
         setPhase("error");
       }
     });
     return () => { unsub(); };
-  }, []);
+  }, [phase]);
 
   const handleReindex = useCallback(async () => {
     const electron = window.electron;
@@ -177,7 +179,7 @@ export function ReindexModal() {
               </button>
               <button
                 onClick={handleReindex}
-                className="px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors"
+                className="px-4 py-2 rounded-lg text-sm font-medium text-[var(--surface)] transition-colors"
                 style={{ background: "var(--accent)" }}
               >
                 Reindex Now
@@ -187,7 +189,7 @@ export function ReindexModal() {
           {(phase === "done" || phase === "error") && (
             <button
               onClick={handleDismiss}
-              className="px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors"
+              className="px-4 py-2 rounded-lg text-sm font-medium text-[var(--surface)] transition-colors"
               style={{ background: "var(--accent)" }}
             >
               Continue

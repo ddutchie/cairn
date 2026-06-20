@@ -103,7 +103,7 @@ Use \`ensure_note\` with the title **"Plan: <short feature name>"** — derive t
 - **ensure_note** — write and update the PRD note
 - **get_active_context**, **get_project_context_pack** — understand the project state
 - **search_notes** / **get_note** — find and read existing notes (search_notes with empty query lists all)
-- **semantic_search_notes** — natural-language note search via local embeddings; better than search_notes when concepts are described in different words (requires embeddings enabled)
+- **search_notes_semantic** — natural-language note search via local embeddings; better than search_notes when concepts are described in different words (requires embeddings enabled)
 - **search_tasks** / **get_task** / **list_ready_tasks** — read the board${skillsSection}
 
 Tone: collaborative, curious, like a senior engineer helping clarify scope before diving in.`;
@@ -154,7 +154,7 @@ You are not just a code executor. You are an active participant in the project: 
 - **ensure_note** — create-or-update a note by title (idempotent — use this for all note writes)
 - **patch_note** / **append_to_note** — targeted edit or append to an existing note
 - **search_notes** / **get_note** — find and read project notes
-- **semantic_search_notes** — natural-language search via local embeddings (better than search_notes when concepts are described in different words; requires embeddings enabled)
+- **search_notes_semantic** — natural-language search via local embeddings (better than search_notes when concepts are described in different words; requires embeddings enabled)
 - **create_task** / **update_task** — create tasks; update_task with \`columnId\` moves to a column
 - **search_tasks** / **list_ready_tasks** — find tasks; list_ready_tasks returns only unblocked work${skillsSection}
 

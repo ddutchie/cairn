@@ -343,12 +343,12 @@ export const TOOL_SCHEMAS = {
     }),
   },
 
-  semantic_search_notes: {
+  search_notes_semantic: {
     description: "Semantic search over notes using local embeddings. Sends a natural-language query, embeds it, and returns matching notes ranked by cosine similarity. Use this when keyword search (search_notes) would miss conceptually related notes — e.g. querying 'auth flow' should find notes titled 'Login pipeline'. Requires embeddings to be enabled and indexed. Returns noteId, title, score (0–1), sectionTitle for each match.",
     schema: z.object({
       workspaceId: sId,
       query:      sStr.describe("Natural-language query"),
-      k:          z.number().optional().describe("Max results (default: 5)"),
+      k:          z.number().int().positive().max(100).optional().describe("Max results (default: 5, max: 100)"),
     }),
   },
 

@@ -19,7 +19,7 @@ export const TOOL_LABELS: Record<string, (args: ToolArgs) => string> = {
   get_active_context:         () => "Reading active context",
   get_note:               () => "Reading note",
   search_notes:           (a) => `Searching notes for "${a.query}"`,
-  semantic_search_notes:  (a) => `Semantic search for "${a.query}"`,
+  search_notes_semantic:  (a) => `Semantic search for "${a.query}"`,
   search_tasks:           (a) => `Searching tasks for "${a.query}"`,
   get_task:               () => "Reading task",
   ensure_note:            (a) => `Ensuring note "${a.title}"`,
@@ -128,7 +128,7 @@ Call get_active_context first to get IDs (projectId, columnId, workspaceId). Nev
 - Use the optional \`folder\` parameter for subfolders, e.g. \`folder="Research/Papers"\`.
 - Use patch_note for targeted edits, append_to_note to add content without replacing.
 - search_notes with an empty query returns all notes in a project.
-- semantic_search_notes uses local embeddings for natural-language queries — better than search_notes when concepts are described in different words. Requires embeddings enabled.
+- search_notes_semantic uses local embeddings for natural-language queries — better than search_notes when concepts are described in different words. Requires embeddings enabled.
 - You can pass \`tagNames\` (array of strings) to automatically resolve or create tags case-insensitively, avoiding separate tag creation calls.
 
 ## Tasks

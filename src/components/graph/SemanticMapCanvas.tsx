@@ -255,7 +255,7 @@ export function SemanticMapCanvas({ nodes, onNodeClick, selectedNodeId }: Props)
               type="button"
               onClick={handleRecompute}
               disabled={recomputing}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[var(--accent)] text-white text-xs font-medium hover:opacity-90 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[var(--accent)] text-[var(--surface)] text-xs font-medium hover:opacity-90 disabled:opacity-50"
             >
               <RefreshCw size={12} className={cn(recomputing && "animate-spin")} />
               {anyStale ? "Recompute projections" : "Compute projections"}

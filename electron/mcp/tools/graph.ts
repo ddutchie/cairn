@@ -252,7 +252,7 @@ export function get_semantic_neighbors(db: Database.Database, args: Record<strin
   };
 }
 
-export async function semantic_search_notes(db: Database.Database, args: Record<string, any>) {
+export async function search_notes_semantic(db: Database.Database, args: Record<string, any>) {
   const { workspaceId, query, k } = args;
   if (!workspaceId) return { error: "workspaceId is required" };
   if (!query || typeof query !== "string" || !query.trim()) {
@@ -270,15 +270,16 @@ export async function semantic_search_notes(db: Database.Database, args: Record<
     return { error: "Embeddings are not enabled. Enable them in Settings → Embeddings first." };
   }
   const model = settings.modelId ?? getDefaultModelId() ?? EMBED_MODEL_ID;
+  const kVal = typeof k === "number" && k > 0 ? Math.min(Math.floor(k), 100) : 5;
   const results = await searchAdjacent(
     db,
     workspaceId as string,
     query as string,
-    typeof k === "number" && k > 0 ? k : 5,
+    kVal,
     [],
     model,
   );
-  insertNotification(db, "semantic_search_notes", "Semantic search", `query="${String(query).slice(0, 60)}" → ${results.length} hits`);
+  insertNotification(db, "search_notes_semantic", "Semantic search", `query="${String(query).slice(0, 60)}" → ${results.length} hits`);
   return {
     query,
     model,

@@ -89,11 +89,13 @@ export function registerEmbeddingsHandlers(ctx: DbContext): void {
     const settings = getEmbeddingsSettingsCached();
     if (!settings.enabled) return { needed: false, reason: null };
     const model = settings.modelId ?? client.getDefaultModelId() ?? EMBED_MODEL_ID;
+    // Check for any row whose model doesn't match the current configured model.
+    // Using WHERE model != ? returns a row only if a mismatch exists, regardless
+    // of how many distinct models are stored (handles partial reindex states).
     const row = ctx.db.prepare(
-      "SELECT DISTINCT model FROM note_embeddings LIMIT 1",
-    ).get() as { model?: string } | undefined;
-    if (!row) return { needed: false, reason: null };
-    if (row.model !== model) {
+      "SELECT 1 FROM note_embeddings WHERE model != ? LIMIT 1",
+    ).get(model) as { 1?: number } | undefined;
+    if (row) {
       return { needed: true, reason: "model_changed" as const };
     }
     return { needed: false, reason: null };

@@ -173,12 +173,27 @@ function pruneOrphanedModels(): void {
   for (const org of fs.readdirSync(MODELS_DIR)) {
     if (org.startsWith(".") || org.endsWith(".json")) continue;
     const orgDir = path.join(MODELS_DIR, org);
-    if (!fs.statSync(orgDir).isDirectory()) continue;
+    // Use lstatSync to avoid following symlinks — a symlinked org dir could
+    // point outside MODELS_DIR, and fs.rmSync(recursive) would follow it.
+    let orgStat: fs.Stats;
+    try {
+      orgStat = fs.lstatSync(orgDir);
+    } catch {
+      continue;
+    }
+    if (!orgStat.isDirectory() || orgStat.isSymbolicLink()) continue;
     for (const name of fs.readdirSync(orgDir)) {
       if (name.startsWith(".")) continue;
       const modelId = `${org}/${name}`;
       if (SUPPORTED_EMBEDDING_MODELS[modelId]) continue;
       const modelDir = path.join(orgDir, name);
+      // Validate resolved path stays within MODELS_DIR to prevent accidental
+      // deletion of directories outside the cache root via path traversal.
+      const resolved = path.resolve(modelDir);
+      if (!resolved.startsWith(MODELS_DIR + path.sep) && resolved !== MODELS_DIR) {
+        console.warn(`[embeddings] skipping orphan prune for ${modelId}: resolved path outside MODELS_DIR`);
+        continue;
+      }
       try {
         const sizeMB = getDirSizeMB(modelDir);
         fs.rmSync(modelDir, { recursive: true, force: true });
@@ -205,6 +220,13 @@ function pruneOrphanedModels(): void {
   }
 
   if (updated) writeManifestFile(manifest);
+
+  // Reset default model ID if it's no longer supported (e.g. after a model swap)
+  const defaultId = readDefaultModelId();
+  if (defaultId && !SUPPORTED_EMBEDDING_MODELS[defaultId]) {
+    writeDefaultModelId(EMBED_MODEL_ID);
+    console.log(`[embeddings] reset default model from ${defaultId} to ${EMBED_MODEL_ID}`);
+  }
 }
 
 function getDirSizeMB(dir: string): number {

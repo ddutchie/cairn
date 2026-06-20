@@ -134,7 +134,7 @@ export async function executeTool(
     case "get_knowledge_graph":
     case "get_neighbors":
     case "get_semantic_neighbors":
-    case "semantic_search_notes":
+    case "search_notes_semantic":
     case "codebase_reindex":
     case "codebase_search_symbols":
     case "codebase_get_symbol_definition":
