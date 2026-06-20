@@ -145,7 +145,7 @@ export function StepEmbeddings({
             >
               <span
                 className={cn(
-                  "absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-all",
+                  "absolute top-0.5 w-4 h-4 rounded-full bg-[var(--accent-fg,#fff)] shadow-sm transition-all",
                   enabled ? "left-[18px]" : "left-0.5"
                 )}
               />

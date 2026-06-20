@@ -288,20 +288,22 @@ export function SearchPanel() {
             </button>
           )}
           <Tooltip content={embeddingsReady ? (semanticMode ? "Semantic search on" : "Enable semantic search") : "Enable embeddings in Settings to use semantic search"}>
-            <button
-              type="button"
-              onClick={toggleSemantic}
-              disabled={!embeddingsReady}
-              className={cn(
-                "flex items-center justify-center w-7 h-7 rounded-md border transition-colors",
-                semanticMode && embeddingsReady
-                  ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
-                  : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)]",
-                !embeddingsReady && "opacity-40 cursor-not-allowed"
-              )}
-            >
-              <Sparkles size={13} />
-            </button>
+            <span className={cn(!embeddingsReady && "cursor-not-allowed")}>
+              <button
+                type="button"
+                onClick={toggleSemantic}
+                disabled={!embeddingsReady}
+                className={cn(
+                  "flex items-center justify-center w-7 h-7 rounded-md border transition-colors",
+                  semanticMode && embeddingsReady
+                    ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
+                    : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)]",
+                  !embeddingsReady && "opacity-40 cursor-not-allowed"
+                )}
+              >
+                <Sparkles size={13} />
+              </button>
+            </span>
           </Tooltip>
           <kbd className="text-[0.714rem] text-[var(--text-tertiary)] bg-[var(--surface-2)] border border-[var(--border)] rounded px-1.5 py-0.5 font-mono">
             ESC
