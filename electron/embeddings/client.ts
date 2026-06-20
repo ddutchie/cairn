@@ -71,6 +71,37 @@ export function getDefaultModelId(): string {
   return manifest.readDefaultModelId() ?? EMBED_MODEL_ID;
 }
 
+/**
+ * Resolve the embeddings model to use, given the user's configured preferences.
+ *
+ * Why this exists: the persisted cache (`ai-settings-cache.json`) and
+ * `default-model.json` can both reference a model id that is no longer in
+ * `SUPPORTED_EMBEDDING_MODELS` — typically after a model swap (e.g. Nomic →
+ * bge-small in v2.1.4). `pruneOrphanedModels()` resets `default-model.json`
+ * but does NOT touch the renderer-facing cache (different file, different
+ * purpose, lazily re-read). Without this validator, IPC handlers were
+ * forwarding the stale nomic id to the embeddings server, which then tried
+ * to load the just-pruned onnx files and crashed with
+ * "Load model ... File doesn't exist".
+ *
+ * Returns the first candidate that is in `SUPPORTED_EMBEDDING_MODELS`,
+ * falling back to `EMBED_MODEL_ID` if none match. Callers (IPC handlers)
+ * should compare the resolved id to the cached value and persist the
+ * correction back to the cache + `default-model.json` when they differ —
+ * otherwise the renderer will keep shipping the stale id on the next call.
+ *
+ * Resolution order convention: explicit caller arg → cached modelId →
+ * stored default → EMBED_MODEL_ID.
+ */
+export function resolveEmbeddingModelId(
+  ...candidates: Array<string | null | undefined>
+): string {
+  for (const c of candidates) {
+    if (c && manifest.SUPPORTED_EMBEDDING_MODELS[c]) return c;
+  }
+  return EMBED_MODEL_ID;
+}
+
 interface StdoutEvent {
   kind: "listening" | "ready" | "progress" | "error" | "log";
   port?: number;

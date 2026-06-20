@@ -10,7 +10,7 @@ import {
   type ProjectionResult,
 } from "../embeddings/service";
 import { computeSemanticRelationships } from "../db/graph-queries";
-import { getEmbeddingsSettingsCached } from "../lib/config-cache";
+import { getEmbeddingsSettingsCached, saveCachedConfig } from "../lib/config-cache";
 import { getNoteProjections } from "../db/queries";
 import * as client from "../embeddings/client";
 import * as manifest from "../embeddings/manifest";
@@ -84,11 +84,46 @@ async function withLock<T>(
   }
 }
 
+/**
+ * Resolve the active embeddings model id and self-heal the persisted cache
+ * when it diverges from a model still in `SUPPORTED_EMBEDDING_MODELS`.
+ *
+ * Self-heal matters: the renderer reads `embeddings.modelId` from the cache
+ * and ships it on every reindex / recompute call. If the cached id is stale
+ * (e.g. nomic after the v2.1.4 model swap), the renderer would keep forwarding
+ * a model the embeddings server can no longer load — even though the
+ * server-side default had been correctly reset by `pruneOrphanedModels()`.
+ * Writing the corrected value back to the cache stops the renderer from ever
+ * seeing the stale id again.
+ *
+ * `explicit` (caller-supplied arg, e.g. from a UI settings page) wins if it's
+ * supported; otherwise the cached value is tried; then the stored default;
+ * finally `EMBED_MODEL_ID`.
+ */
+function resolveModelId(explicit?: string | null): string {
+  const settings = getEmbeddingsSettingsCached();
+  const modelId = client.resolveEmbeddingModelId(
+    explicit,
+    settings.modelId,
+    client.getDefaultModelId(),
+  );
+  if (settings.modelId !== modelId) {
+    console.log(
+      `[embeddings] self-healing stale cached modelId: ` +
+        `${settings.modelId ?? "(none)"} → ${modelId}`,
+    );
+    saveCachedConfig("embeddings", { modelId });
+    manifest.writeDefaultModelId(modelId);
+  }
+  return modelId;
+}
+
 export function registerEmbeddingsHandlers(ctx: DbContext): void {
   registerIpcHandle("embeddings:needsReindex", () => handle(async () => {
     const settings = getEmbeddingsSettingsCached();
     if (!settings.enabled) return { needed: false, reason: null };
-    const model = settings.modelId ?? client.getDefaultModelId() ?? EMBED_MODEL_ID;
+    // Self-heal so a stale cached modelId can't mask a real mismatch.
+    const model = resolveModelId(settings.modelId);
     // Check for any row whose model doesn't match the current configured model.
     // Using WHERE model != ? returns a row only if a mismatch exists, regardless
     // of how many distinct models are stored (handles partial reindex states).
@@ -106,7 +141,7 @@ export function registerEmbeddingsHandlers(ctx: DbContext): void {
     noteIds?: string[];
     model?: string;
   }) => handle(async () => {
-    const model = args.model ?? client.getDefaultModelId() ?? EMBED_MODEL_ID;
+    const model = resolveModelId(args.model);
     const result = await withLock(
       reindexSlot,
       ctx.getWin(),
@@ -130,7 +165,7 @@ export function registerEmbeddingsHandlers(ctx: DbContext): void {
     excludeIds?: string[];
     model?: string;
   }) => handle(async () => {
-    const model = args.model ?? client.getDefaultModelId() ?? EMBED_MODEL_ID;
+    const model = resolveModelId(args.model);
     const exclude = [
       ...(args.excludeIds ?? []),
       ...(args.queryNoteId ? [args.queryNoteId] : []),
@@ -149,7 +184,7 @@ export function registerEmbeddingsHandlers(ctx: DbContext): void {
     workspaceId: string;
     model?: string;
   }) => handle(async () => {
-    const model = args.model ?? client.getDefaultModelId() ?? EMBED_MODEL_ID;
+    const model = resolveModelId(args.model);
     return withLock(
       recomputeSlot,
       ctx.getWin(),
@@ -161,8 +196,7 @@ export function registerEmbeddingsHandlers(ctx: DbContext): void {
 
   registerIpcHandle("embeddings:projections", (_e, args: { workspaceId: string }) => handle(() => {
     const { rows, anyStale } = getNoteProjections(ctx.db, args.workspaceId);
-    const settings = getEmbeddingsSettingsCached();
-    const model = settings.modelId ?? client.getDefaultModelId() ?? EMBED_MODEL_ID;
+    const model = resolveModelId();
     return { rows, anyStale, model };
   }));
 

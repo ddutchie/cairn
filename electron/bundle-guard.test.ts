@@ -5,8 +5,7 @@
  * dist-electron/embeddings-server.bundle.js) does not contain any `require()`
  * calls for packages that aren't either:
  *   - Node.js built-ins (fs, path, crypto, node:*, …)
- *   - Allowlisted externals that ship separately (electron, better-sqlite3,
- *     node-pty, @huggingface/transformers, onnxruntime-node)
+ *   - Allowlisted externals that ship separately or are otherwise tolerated
  *
  * Any other `require()` means esbuild left an import unresolved (because the
  * package was marked `--external` by mistake, or the import was dynamic and
@@ -17,6 +16,11 @@
  * This test was added after v2.1.4 shipped with `umap-js` marked
  * `--external` — the projection module required it at runtime and the
  * packaged app crashed on launch.
+ *
+ * The drift checks below additionally guard against the inverse mistake:
+ * declaring `--external:foo` in package.json but never shipping `foo` in
+ * electron-builder.yml. Each allowlisted external is classified so the test
+ * knows exactly where it is allowed to appear.
  */
 import { describe, it, expect } from "vitest";
 import * as fs from "fs";
@@ -27,31 +31,67 @@ const ROOT = path.resolve(__dirname, "..");
 const BUNDLES = [
   "dist-electron/main.js",
   "dist-electron/embeddings-server.bundle.js",
-];
+] as const;
+
+/* ──────────────────────────────────────────────────────────────────────── *
+ * Allowlist classification
+ *
+ * Every entry must be in exactly one group below. The groups drive both the
+ * "no un-allowed requires" test and the "is it actually shipped?" drift test.
+ * ──────────────────────────────────────────────────────────────────────── */
 
 /**
- * Packages that esbuild is intentionally told to leave external.
- * They must be shipped separately via electron-builder.yml or be Node built-ins.
+ * Provided by the Electron runtime itself — never needs shipping.
  */
-const ALLOWED_EXTERNALS = new Set([
-  // Native runtime modules — shipped via electron-builder "files" + asarUnpack
-  "better-sqlite3",
-  "node-pty",
-  // Electron itself — provided by the runtime
+const RUNTIME_PROVIDED = new Set([
   "electron",
-  // Heavy runtime deps — kept external so they don't bloat the bundle;
-  //   resolve from node_modules at runtime in dev, and from app.asar in prod
-  "@huggingface/transformers",
-  "onnxruntime-node",
-  // Optional transitive dep of js-yaml (via gray-matter) — wrapped in
-  // try/catch in source, so its absence is non-fatal.
+]);
+
+/**
+ * Transitive deps of bundled libraries (e.g. gray-matter → js-yaml → esprima)
+ * that the source code wraps in `try { require(...) } catch {}` so their
+ * absence is non-fatal. These never need to ship.
+ */
+const OPTIONAL_TRANSITIVE = new Set([
   "esprima",
 ]);
 
 /**
+ * Used only by the embeddings-server worker subprocess, never by the Electron
+ * main bundle. The worker (`embeddings-server.bundle.js`) has its own runtime
+ * resolution path (injected via `TRANSFORMERS_CACHE` / `pkg.config.js`), so
+ * these packages MUST NOT be listed in electron-builder.yml either — otherwise
+ * we'd bloat the main app with packages no main-bundle code can resolve.
+ */
+const SUBPROCESS_ONLY = new Set([
+  "@huggingface/transformers",
+  "onnxruntime-node",
+]);
+
+/**
+ * Native runtime modules — MUST be shipped via electron-builder.yml `files`
+ * and `asarUnpack` so the packaged app can load them.
+ */
+const SHIPPED_NATIVE = new Set([
+  "better-sqlite3",
+  "node-pty",
+]);
+
+/**
+ * The full allowlist. Union of the four groups above. Any `require()` in any
+ * bundle that isn't in this set (or a Node built-in) fails the test.
+ */
+const ALLOWED_EXTERNALS = new Set<string>([
+  ...RUNTIME_PROVIDED,
+  ...OPTIONAL_TRANSITIVE,
+  ...SUBPROCESS_ONLY,
+  ...SHIPPED_NATIVE,
+]);
+
+/* ──────────────────────────────────────────────────────────────────────── *
  * Node.js built-in module names (with and without the "node:" prefix).
  * Generated from the Node 22 module list.
- */
+ * ──────────────────────────────────────────────────────────────────────── */
 const NODE_BUILTINS = new Set([
   "assert", "async_hooks", "buffer", "child_process", "cluster", "console",
   "constants", "crypto", "dgram", "diagnostics_channel", "dns", "domain",
@@ -73,6 +113,10 @@ const NODE_BUILTINS = new Set([
   "node:v8", "node:vm", "node:wasi", "node:worker_threads", "node:zlib",
 ]);
 
+/* ──────────────────────────────────────────────────────────────────────── *
+ * Parsing helpers
+ * ──────────────────────────────────────────────────────────────────────── */
+
 /** Regex to find `require("...")` calls in CJS bundle output. */
 const REQUIRE_RE = /require\("([^"]+)"\)/g;
 
@@ -85,6 +129,43 @@ function extractRequires(bundlePath: string): string[] {
   }
   return [...new Set(matches)];
 }
+
+/**
+ * Parse all `--external:<pkg>` flags from the `compile` script in package.json.
+ * Returns the set of package names that esbuild is told to leave external.
+ */
+function parseEsbuildExternals(): Set<string> {
+  const pkgPath = path.join(ROOT, "package.json");
+  const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+  const compileCmd = pkg.scripts?.compile ?? "";
+  const re = /--external:([^\s]+)/g;
+  const out = new Set<string>();
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(compileCmd)) !== null) out.add(m[1]);
+  return out;
+}
+
+/**
+ * Parse the names of packages that electron-builder.yml actually ships from
+ * `node_modules/` — i.e. all `node_modules/<pkg>` paths in `files:` and
+ * `asarUnpack:`, ignoring negation patterns. Handles scoped packages
+ * (`@scope/name`) in addition to bare names (`better-sqlite3`).
+ */
+function parseShippedPackages(): Set<string> {
+  const ymlPath = path.join(ROOT, "electron-builder.yml");
+  const yml = fs.readFileSync(ymlPath, "utf8");
+  // Match either @scope/name or plain name after `node_modules/`.
+  // Stop at `/`, `*`, `!`, whitespace, or end of token.
+  const re = /node_modules\/(@[a-z0-9_-]+\/[a-z0-9_-]+|[a-z0-9_-]+)/gi;
+  const out = new Set<string>();
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(yml)) !== null) out.add(m[1]);
+  return out;
+}
+
+/* ──────────────────────────────────────────────────────────────────────── *
+ * Tests
+ * ──────────────────────────────────────────────────────────────────────── */
 
 describe("bundle self-containment guard", () => {
   for (const bundleRel of BUNDLES) {
@@ -109,4 +190,65 @@ describe("bundle self-containment guard", () => {
       });
     });
   }
+});
+
+describe("allowlist drift checks", () => {
+  const esbuildExternals = parseEsbuildExternals();
+  const shipped = parseShippedPackages();
+
+  it("every --external flag in package.json compile script is in ALLOWED_EXTERNALS", () => {
+    const drift = [...esbuildExternals].filter((x) => !ALLOWED_EXTERNALS.has(x));
+    expect(
+      drift,
+      "package.json \`compile\` script declares \`--external:<pkg>\` but <pkg> isn't in any allowlist group in bundle-guard.test.ts. Either add the package to the appropriate group (RUNTIME_PROVIDED / OPTIONAL_TRANSITIVE / SUBPROCESS_ONLY / SHIPPED_NATIVE) or remove the \`--external\` flag (and let esbuild bundle it in).\n  Untracked externals:\n    - " + drift.join("\n    - "),
+    ).toHaveLength(0);
+  });
+
+  it("every SHIPPED_NATIVE external actually ships via electron-builder.yml", () => {
+    const missing = [...SHIPPED_NATIVE].filter((x) => !shipped.has(x));
+    expect(
+      missing,
+      "ALLOWED_EXTERNALS lists these as SHIPPED_NATIVE (so they must be in node_modules when the Electron app is packaged) but electron-builder.yml \`files\`/\`asarUnpack\` doesn't include them. Add a \`node_modules/<pkg>/**/*\` entry.\n  Missing:\n    - " + missing.join("\n    - "),
+    ).toHaveLength(0);
+  });
+
+  it("every SUBPROCESS_ONLY external is NOT shipped via electron-builder.yml", () => {
+    const leaks = [...SUBPROCESS_ONLY].filter((x) => shipped.has(x));
+    expect(
+      leaks,
+      "These are classified SUBPROCESS_ONLY (used solely by the embeddings worker, which resolves them via its own node_modules/pkg runtime) but electron-builder.yml \`files\`/\`asarUnpack\` is shipping them too. Shipping them in the main Electron app is either wasted space or a sign of misclassification — they shouldn't be on main-bundle disk.\n  Leaks:\n    - " + leaks.join("\n    - "),
+    ).toHaveLength(0);
+  });
+
+  it("SUBPROCESS_ONLY externals never appear in the Electron main bundle requires", () => {
+    const mainPath = path.join(ROOT, "dist-electron/main.js");
+    if (!fs.existsSync(mainPath)) return;
+    const mainReqs = new Set(extractRequires(mainPath));
+    const leaks = [...SUBPROCESS_ONLY].filter((x) => mainReqs.has(x));
+    expect(
+      leaks,
+      "dist-electron/main.js \`require()\`s a package marked SUBPROCESS_ONLY. These packages are not shipped with the Electron app (they only live in the embeddings worker) — the main bundle must not import them. If a main-bundle module genuinely needs them, reclassify as SHIPPED_NATIVE and verify they ship in electron-builder.yml.\n  Leaks:\n    - " + leaks.join("\n    - "),
+    ).toHaveLength(0);
+  });
+
+  it("no allowlisted external is silently duplicated across groups", () => {
+    const groups = [
+      ["RUNTIME_PROVIDED", RUNTIME_PROVIDED],
+      ["OPTIONAL_TRANSITIVE", OPTIONAL_TRANSITIVE],
+      ["SUBPROCESS_ONLY", SUBPROCESS_ONLY],
+      ["SHIPPED_NATIVE", SHIPPED_NATIVE],
+    ] as const;
+    const seen = new Map<string, string>();
+    const dupes: string[] = [];
+    for (const [name, set] of groups) {
+      for (const pkg of set) {
+        if (seen.has(pkg)) dupes.push(`${pkg} (${seen.get(pkg)} + ${name})`);
+        else seen.set(pkg, name);
+      }
+    }
+    expect(
+      dupes,
+      "An allowlisted external appears in more than one group — pick the one that most accurately describes its lifecycle and delete the rest.\n  Duplicates:\n    - " + dupes.join("\n    - "),
+    ).toHaveLength(0);
+  });
 });

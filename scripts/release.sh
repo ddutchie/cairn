@@ -46,7 +46,12 @@ fi
 
 echo "Changelog found: $CHANGELOG"
 
-# 5. Bump version (this updates package.json and creates a git tag)
+# 5. Run the pre-release gate (compile + type-check + lint + tests + e2e).
+#    Pass --skip-e2e only on urgent hotfixes with no UI changes.
+echo "Running pre-release checks..."
+./scripts/pre-release-check.sh
+
+# 6. Bump version (this updates package.json and creates a git tag)
 echo "Bumping version ($VERSION_TYPE)..."
 NEW_VERSION=$(npm version $VERSION_TYPE -m "Release v%s")
 
@@ -55,7 +60,7 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# 6. Push changes and tags
+# 7. Push changes and tags
 echo "Pushing $NEW_VERSION to GitHub..."
 git push origin $CURRENT_BRANCH --tags
 

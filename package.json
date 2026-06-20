@@ -5,9 +5,10 @@
   "author": "Cairn",
   "private": true,
   "scripts": {
-    "test": "vitest run",
+    "test": "npm run compile && vitest run",
+    "test:fast": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
+    "test:coverage": "npm run compile && vitest run --coverage",
     "dev": "node scripts/generate-licenses.js && concurrently -n next,esbuild,electron -c cyan,magenta,yellow \"next dev\" \"npm run compile:watch\" \"wait-on http://localhost:3000 dist-electron/main.js && node scripts/electron-dev.js\"",
     "compile:watch": "esbuild electron/main.ts electron/preload.ts --bundle --platform=node --target=node22 --external:electron --external:better-sqlite3 --external:node-pty --external:@huggingface/transformers --external:onnxruntime-node --outdir=dist-electron --format=cjs --watch",
     "build:mac": "node scripts/build.js --mac",
@@ -27,6 +28,7 @@
     "mcp": "node dist-mcp/mcp-server.bundle.js",
     "smoke-test": "node scripts/smoke-test.js",
     "test:e2e": "playwright test",
+    "test:bundle": "npm run compile && vitest run electron/bundle-guard.test.ts electron/native-deps-guard.test.ts",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:headed": "playwright test --headed"
   },

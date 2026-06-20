@@ -18,7 +18,7 @@
 
 - [ ] `npm run type-check:all` passes
 - [ ] `npm run lint` passes
-- [ ] `npm test` passes
+- [ ] `npm test` passes (runs `npm run compile` first so `electron/bundle-guard.test.ts` actually executes — `npm run test:bundle` to run just that)
 - [ ] `npm run test:e2e` passes (run before merging UI changes or cutting a release)
 - [ ] No hardcoded colours — CSS variables only (`var(--accent)`, `var(--text-primary)`, etc.)
 - [ ] No `text-[Npx]` pixel font classes — rem equivalents only (`text-[0.714rem]`, `text-xs`, etc.)
@@ -27,6 +27,7 @@
 - [ ] New SQL goes in `electron/db/queries.ts` — single source of truth (imported by both Electron main process and MCP server); never construct a `Database` instance outside `db/client.ts` (Electron) or `mcp-server.ts` (MCP runtime)
 - [ ] New `dependencies` or `devDependencies` added to `ROLE_MAP` in `scripts/generate-licenses.js` and `licenses.json` regenerated
 - [ ] New MCP tools registered in `electron/mcp/tools/index.ts` dispatch + `electron/lib/tool-schemas.ts` Zod schema
+- [ ] If you added/removed a `--external:<pkg>` flag in the `compile` script: updated the appropriate allowlist group (`RUNTIME_PROVIDED` / `OPTIONAL_TRANSITIVE` / `SUBPROCESS_ONLY` / `SHIPPED_NATIVE`) in `electron/bundle-guard.test.ts` and (if `SHIPPED_NATIVE`) shipped the package via `electron-builder.yml`
 
 ## Notes for reviewer
 

@@ -49,11 +49,19 @@ function modelFilesPresent(modelId: string): boolean {
   if (!org || !name) return false;
   const nested = path.join(MODELS_DIR, org, name);
   if (!fs.existsSync(nested)) return false;
-  const hasConfig = fs.existsSync(path.join(nested, "config.json"));
+  // Only require the files `pipeline.ts` actually loads:
+  //   - tokenizer.json — needed by AutoTokenizer.from_pretrained()
+  //   - onnx/model_quantized.onnx — loaded directly via ort.InferenceSession
+  // We intentionally do NOT require config.json — the current loader only
+  // fetches tokenizer files via `AutoTokenizer.from_pretrained`, so config.json
+  // never lands on disk. Requiring it (as the original check did) made the
+  // manifest report "not_downloaded" forever, surfacing as an Install button
+  // next to a model that was actually fully functional.
+  const hasTokenizer = fs.existsSync(path.join(nested, "tokenizer.json"));
   const onnxDir = path.join(nested, "onnx");
   const hasOnnx = fs.existsSync(onnxDir)
     && fs.readdirSync(onnxDir).some((f) => f.endsWith(".onnx"));
-  return hasConfig && hasOnnx;
+  return hasTokenizer && hasOnnx;
 }
 
 export function getEmbeddingModelsManifest(): EmbeddingModelManifestEntry[] {
