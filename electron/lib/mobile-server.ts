@@ -397,6 +397,25 @@ export class MobileServer {
       console.log(`[mobile-server] Exposing Cairn at http://0.0.0.0:${this.settings.port}`);
     });
 
+    // Handle listen errors gracefully — without this, EADDRINUSE (port already
+    // taken, typically by a zombie Cairn process from a previous launch) or
+    // EACCES (privileged port) throws an uncaught exception that crashes the
+    // whole app in production. Instead, log a clear message so the user can
+    // kill the other process or change the port in mobile settings. We then
+    // mark the server stopped so the rest of the app continues normally.
+    this.server.on("error", (err: NodeJS.ErrnoException) => {
+      if (err.code === "EADDRINUSE") {
+        console.error(
+          `[mobile-server] Port ${this.settings.port} is already in use. ` +
+            `Another Cairn process may still be running — kill it (lsof -i :${this.settings.port}) ` +
+            `or pick a different port in Settings > Mobile Access. Mobile server disabled.`,
+        );
+      } else {
+        console.error(`[mobile-server] Failed to listen on port ${this.settings.port}:`, err.message);
+      }
+      this.stop();
+    });
+
     setMobileBroadcastCallback((channel, payload) => this.broadcastToMobile(channel, payload));
   }
 

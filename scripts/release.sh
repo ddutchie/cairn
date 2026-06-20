@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 # Cairn release script
 # Usage: ./scripts/release.sh [patch|minor|major]
@@ -54,11 +55,6 @@ echo "Running pre-release checks..."
 # 6. Bump version (this updates package.json and creates a git tag)
 echo "Bumping version ($VERSION_TYPE)..."
 NEW_VERSION=$(npm version $VERSION_TYPE -m "Release v%s")
-
-if [ $? -ne 0 ]; then
-    echo "Error: npm version failed."
-    exit 1
-fi
 
 # 7. Push changes and tags
 echo "Pushing $NEW_VERSION to GitHub..."
