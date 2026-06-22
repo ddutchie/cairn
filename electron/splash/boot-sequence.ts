@@ -197,12 +197,6 @@ export async function runBootSequence(
         label: "Starting embeddings engine…",
         pct: 0,
       });
-      try {
-        await runtime.ensureStarted();
-      } catch (err) {
-        console.warn("[boot] Runtime startup failed:", err instanceof Error ? err.message : err);
-        errors.push(`Runtime startup: ${err instanceof Error ? err.message : String(err)}`);
-      }
 
       // Resolve model id with self-heal (same logic as the IPC handler).
       const model = resolveEmbeddingModelId(
@@ -215,6 +209,49 @@ export async function runBootSequence(
         );
         saveCachedConfig("embeddings", { modelId: model });
         manifest.writeDefaultModelId(model);
+      }
+
+      try {
+        await runtime.ensureStarted();
+
+        // Verify the embedding model is actually installed. If not,
+        // download it now so search and semantic features work immediately.
+        const models = await runtime.listEmbeddingModels();
+        const modelEntry = models.find((m) => m.id === model);
+        if (modelEntry && modelEntry.status !== "installed") {
+          splash.progress({
+            step: "reindex",
+            label: `Downloading embedding model…`,
+            detail: modelEntry.name,
+            pct: 0,
+          });
+
+          // Subscribe to download progress
+          const off = runtime.onProgress((ev) => {
+            if (ev.kind === "progress" && ev.modelId === model) {
+              const pct = ev.total && ev.total > 0 && ev.loaded
+                ? Math.round((ev.loaded / ev.total) * 100)
+                : ev.progress ?? 0;
+              const loadedMB = ev.loaded ? (ev.loaded / 1024 / 1024).toFixed(1) : "";
+              const totalMB = ev.total ? (ev.total / 1024 / 1024).toFixed(1) : "";
+              splash.progress({
+                step: "reindex",
+                label: "Downloading embedding model…",
+                detail: totalMB ? `${loadedMB} / ${totalMB} MB` : `${pct}%`,
+                pct,
+              });
+            }
+          });
+
+          try {
+            await runtime.installEmbeddingModel(model);
+          } finally {
+            off();
+          }
+        }
+      } catch (err) {
+        console.warn("[boot] Runtime startup / model install failed:", err instanceof Error ? err.message : err);
+        errors.push(`Runtime startup: ${err instanceof Error ? err.message : String(err)}`);
       }
 
       // Check for any embedding rows with a mismatched model.
