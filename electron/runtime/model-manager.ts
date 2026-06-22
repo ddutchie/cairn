@@ -54,8 +54,9 @@ export interface DownloadResult {
  * Compute SHA256 hash of a file. Returns hex lowercase or null on error.
  */
 export function computeFileSha256(filePath: string): string | null {
+  let fd: number | null = null;
   try {
-    const fd = fs.openSync(filePath, "r");
+    fd = fs.openSync(filePath, "r");
     const hash = crypto.createHash("sha256");
     const buf = Buffer.alloc(64 * 1024);
     let bytesRead: number;
@@ -63,10 +64,13 @@ export function computeFileSha256(filePath: string): string | null {
       bytesRead = fs.readSync(fd, buf, 0, buf.length, null);
       if (bytesRead > 0) hash.update(buf.subarray(0, bytesRead));
     } while (bytesRead > 0);
-    fs.closeSync(fd);
     return hash.digest("hex");
   } catch {
     return null;
+  } finally {
+    if (fd !== null) {
+      try { fs.closeSync(fd); } catch { /* ignore */ }
+    }
   }
 }
 
@@ -111,7 +115,9 @@ export function readManifest(manifestPath: string): Record<string, ManifestEntry
 export function writeManifest(manifestPath: string, manifest: Record<string, ManifestEntry>): void {
   try {
     fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
-    fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), "utf8");
+    const tmpPath = manifestPath + ".tmp";
+    fs.writeFileSync(tmpPath, JSON.stringify(manifest, null, 2), "utf8");
+    fs.renameSync(tmpPath, manifestPath);
   } catch (e) {
     console.error("[model-manager] Failed to write manifest:", e);
   }

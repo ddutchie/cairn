@@ -249,6 +249,7 @@ async function run(): Promise<void> {
       try {
         const body = await readBody(req);
         const { modelId, useMirror } = JSON.parse(body) as { modelId: string; useMirror?: boolean };
+        if (!modelId) { sendJson(res, 400, { error: "modelId is required" }); return; }
         await llamaAdapter.installModel(modelId, useMirror);
         sendJson(res, 200, { success: true });
       } catch (e) {
@@ -260,6 +261,7 @@ async function run(): Promise<void> {
       try {
         const body = await readBody(req);
         const { modelId } = JSON.parse(body) as { modelId: string };
+        if (!modelId) { sendJson(res, 400, { error: "modelId is required" }); return; }
         llamaAdapter.removeModel(modelId);
         sendJson(res, 200, { success: true });
       } catch (e) {
@@ -279,8 +281,12 @@ async function run(): Promise<void> {
       return;
     }
     if (req.method === "POST" && req.url === "/v1/llm/server/stop") {
-      await llamaAdapter.stop();
-      sendJson(res, 200, { success: true });
+      try {
+        await llamaAdapter.stop();
+        sendJson(res, 200, { success: true });
+      } catch (e) {
+        sendJson(res, 500, { error: e instanceof Error ? e.message : String(e) });
+      }
       return;
     }
     if (req.method === "GET" && req.url === "/v1/llm/server/status") {
@@ -345,7 +351,8 @@ async function run(): Promise<void> {
           body,
         });
         // Pipe the response directly to support streaming (stream: true)
-        res.writeHead(proxyRes.status, { "Content-Type": "application/json" });
+        const contentType = proxyRes.headers.get("content-type") ?? "application/json";
+        res.writeHead(proxyRes.status, { "Content-Type": contentType });
         if (proxyRes.body) {
           Readable.fromWeb(proxyRes.body).pipe(res);
         } else {

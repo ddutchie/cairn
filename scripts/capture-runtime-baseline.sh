@@ -49,7 +49,7 @@ echo "Cairn version: $(node -p 'require("./package.json").version' 2>/dev/null |
 echo "" >> "$OUT"
 
 section "1. PROCESS SNAPSHOT (RSS in KB, %MEM, %CPU, CMD)"
-ps aux | grep -iE "cairn|llama|embed|onnx|transformers|runtime-server|Electron" \
+ps aux | grep -iE "cairn|llama|embed|onnx|transformers|runtime-server|Cairn Helper|Cairn.app" \
   | grep -v grep \
   | grep -v "opencode" \
   | grep -v "capture-runtime" \
@@ -57,7 +57,7 @@ ps aux | grep -iE "cairn|llama|embed|onnx|transformers|runtime-server|Electron" 
   | tee -a "$OUT" || echo "(no matching processes)" | tee -a "$OUT"
 
 section "2. RSS SUMMARY PER PROCESS FAMILY"
-for fam in "Electron Helper" "runtime-server" "llama-server" "cairn-mcp" "node.*runtime-server"; do
+for fam in "Cairn Helper" "runtime-server" "llama-server" "cairn-mcp" "node.*runtime-server"; do
   rss=$(ps aux | grep -iE "$fam" | grep -v grep | awk '{sum+=$6} END {print sum}')
   if [ -n "$rss" ] && [ "$rss" != "0" ]; then
     echo "  $fam: $(( rss / 1024 )) MB" | tee -a "$OUT"
@@ -65,7 +65,7 @@ for fam in "Electron Helper" "runtime-server" "llama-server" "cairn-mcp" "node.*
 done
 
 section "3. TOTAL RSS (all Cairn-related)"
-total_rss=$(ps aux | grep -iE "cairn|llama|Electron|runtime-server" | grep -v grep | grep -v "opencode" | awk '{sum+=$6} END {print sum}')
+total_rss=$(ps aux | grep -iE "cairn|llama|Cairn Helper|Cairn.app|runtime-server" | grep -v grep | grep -v "opencode" | awk '{sum+=$6} END {print sum}')
 echo "  Total: $(( ${total_rss:-0} / 1024 )) MB" | tee -a "$OUT"
 
 section "4. ON-DISK FOOTPRINT"
@@ -132,7 +132,7 @@ for d in "${USERDATA_DIRS[@]:-$USERDATA}"; do
 done
 if [ -n "$RUNTIME_PORT" ]; then
   echo "  /health response:" | tee -a "$OUT"
-  curl -s "http://127.0.0.1:$RUNTIME_PORT/health" 2>/dev/null | python3 -m json.tool 2>/dev/null | sed 's/^/    /' | tee -a "$OUT" || echo "    (failed to reach runtime)" | tee -a "$OUT"
+  curl -s --max-time 5 "http://127.0.0.1:$RUNTIME_PORT/health" 2>/dev/null | python3 -m json.tool 2>/dev/null | sed 's/^/    /' | tee -a "$OUT" || echo "    (failed to reach runtime)" | tee -a "$OUT"
 else
   echo "  (runtime port file not found — runtime may not be running)" | tee -a "$OUT"
 fi
