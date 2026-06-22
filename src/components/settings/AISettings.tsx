@@ -98,8 +98,11 @@ export function AISettings() {
 
   useEffect(() => {
     if (typeof window !== "undefined" && window.electron && window.electron.runtime) {
-      refreshLlamaState();
-      handleCheckForUpdates();
+      // Defer initial state fetch to avoid setState-in-effect cascade
+      Promise.resolve().then(() => {
+        refreshLlamaState();
+        handleCheckForUpdates();
+      });
 
       // Listen to download progress
       const unsub = window.electron.runtime.llm.onProgress((event) => {
