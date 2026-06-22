@@ -402,7 +402,7 @@ export function EmbeddingsSettings() {
                   )}
 
                   {model.status === "error" && model.error && (
-                    <div className="text-xs text-[var(--error)]">{model.error}</div>
+                    <div className="text-xs text-[var(--danger)]">{model.error}</div>
                   )}
                 </div>
               );

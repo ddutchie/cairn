@@ -47,7 +47,7 @@ export function TagsSettings() {
               {/* Color swatch — click to open palette */}
               <button
                 onClick={() => setColorPickerId(colorPickerId === tag.id ? null : tag.id)}
-                className="w-3.5 h-3.5 rounded-full flex-shrink-0 ring-1 ring-black/20 hover:ring-2 hover:ring-[var(--accent)] transition-all"
+                className="w-3.5 h-3.5 rounded-full flex-shrink-0 ring-1 ring-[color-mix(in_srgb,var(--text-primary)_20%,transparent)] hover:ring-2 hover:ring-[var(--accent)] transition-all"
                 style={{ backgroundColor: tag.color }}
                 title="Change color"
               />
@@ -63,7 +63,7 @@ export function TagsSettings() {
                       <button
                         key={color}
                         onClick={() => { updateTag(tag.id, { color }); setColorPickerId(null); }}
-                        className="w-5 h-5 rounded-full ring-1 ring-black/20 hover:scale-110 transition-transform"
+                        className="w-5 h-5 rounded-full ring-1 ring-[color-mix(in_srgb,var(--text-primary)_20%,transparent)] hover:scale-110 transition-transform"
                         style={{ backgroundColor: color }}
                         title={color}
                       />

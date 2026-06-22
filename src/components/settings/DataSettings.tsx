@@ -58,7 +58,7 @@ export function DataSettings({
 
       <SettingsRow label="Assets folder" description="Open the folder containing all pasted images">
         <Button variant="default" size="sm" onClick={() => window.electron?.revealAssets()}>
-          <FolderOpen size={12} /> Show in Finder
+          <FolderOpen size={12} /> {window.electron?.platform === "darwin" ? "Show in Finder" : window.electron?.platform === "win32" ? "Show in Explorer" : "Open folder"}
         </Button>
       </SettingsRow>
 

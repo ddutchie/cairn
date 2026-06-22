@@ -41,7 +41,13 @@ export function GeneralSettings() {
               updateWorkspace(workspace.id, { name });
             }
           }}
-          onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur();
+            if (e.key === "Escape") {
+              e.currentTarget.value = workspace?.name ?? "Personal";
+              e.currentTarget.blur();
+            }
+          }}
         />
       </SettingsRow>
       <SettingsRow label="Theme" description="Choose light, dark, or follow your system setting">

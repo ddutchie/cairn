@@ -309,7 +309,7 @@ function SkillsPreviewSection() {
               className={cn(
                 "px-3 py-1 text-xs rounded-md transition-colors capitalize",
                 mode === m
-                  ? "bg-[var(--accent)] text-white font-medium"
+                  ? "bg-[var(--accent)] text-[var(--background)] font-medium"
                   : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
               )}
             >

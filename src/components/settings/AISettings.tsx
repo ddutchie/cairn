@@ -285,6 +285,7 @@ export function AISettings() {
           <Toggle
             checked={aiEnabled ?? true}
             onChange={(v) => updateAIConfig({ aiEnabled: v })}
+            label="Enable inline AI"
           />
         </SettingsRow>
         {([
@@ -294,7 +295,7 @@ export function AISettings() {
           const visible = !hiddenViews.has(view);
           return (
             <SettingsRow key={view} label={label} description={description}>
-              <Toggle checked={visible} onChange={() => toggleViewVisibility(view)} />
+              <Toggle checked={visible} onChange={() => toggleViewVisibility(view)} label={label} />
             </SettingsRow>
           );
         })}
@@ -371,7 +372,7 @@ export function AISettings() {
                       </span>
                       <button
                         onClick={handleStopServer}
-                        className="px-2.5 py-1 text-xs border border-red-500/30 text-red-500 hover:bg-red-500/10 rounded transition-colors cursor-pointer"
+                        className="px-2.5 py-1 text-xs border border-[color-mix(in_srgb,var(--danger)_30%,transparent)] text-[var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] rounded transition-colors cursor-pointer"
                       >
                         Stop Server
                       </button>
@@ -387,7 +388,7 @@ export function AISettings() {
                             const firstInstalled = llamaModels.find(m => m.status === "installed");
                             if (firstInstalled) handleStartServer(firstInstalled.id);
                           }}
-                          className="px-2.5 py-1 text-xs bg-[var(--accent)] text-white hover:bg-[var(--accent-dim)] hover:text-[var(--accent)] rounded transition-all font-medium cursor-pointer"
+                          className="px-2.5 py-1 text-xs bg-[var(--accent)] text-[var(--background)] hover:bg-[var(--accent-dim)] hover:text-[var(--accent)] rounded transition-all font-medium cursor-pointer"
                         >
                           Start Server
                         </button>
@@ -424,7 +425,7 @@ export function AISettings() {
                         </span>
                         <button
                           onClick={handleInstallBinary}
-                          className="px-2.5 py-1 bg-[var(--accent)] text-white hover:bg-[var(--accent-dim)] hover:text-[var(--accent)] rounded font-semibold transition-all text-[0.65rem] cursor-pointer shadow-sm"
+                          className="px-2.5 py-1 bg-[var(--accent)] text-[var(--background)] hover:bg-[var(--accent-dim)] hover:text-[var(--accent)] rounded font-semibold transition-all text-[0.65rem] cursor-pointer shadow-sm"
                         >
                           Upgrade Engine
                         </button>
@@ -454,7 +455,7 @@ export function AISettings() {
                   </div>
                   <div>
                     <select
-                      value={aiConfig.contextLimit > 32768 ? 16384 : aiConfig.contextLimit || 16384}
+                      value={aiConfig.contextLimit || 16384}
                       onChange={(e) => updateAIConfig({ contextLimit: parseInt(e.target.value, 10) })}
                       className="px-2.5 py-1 text-[0.714rem] rounded-md bg-[var(--surface-3)] border border-[var(--border)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] cursor-pointer"
                     >
@@ -462,6 +463,9 @@ export function AISettings() {
                       <option value={8192}>8,192 tokens (Standard)</option>
                       <option value={16384}>16,384 tokens (Recommended)</option>
                       <option value={32768}>32,768 tokens (Heavy VRAM)</option>
+                      {aiConfig.contextLimit && ![4096, 8192, 16384, 32768].includes(aiConfig.contextLimit) && (
+                        <option value={aiConfig.contextLimit}>Custom: {aiConfig.contextLimit.toLocaleString()} tokens</option>
+                      )}
                     </select>
                   </div>
                 </div>
@@ -480,7 +484,7 @@ export function AISettings() {
                   </div>
                   <div className="w-full h-1.5 bg-[var(--surface-1)] rounded-full overflow-hidden border border-[var(--border)]">
                     <div
-                      className="h-full bg-gradient-to-r from-[var(--accent)] to-indigo-500 rounded-full transition-all duration-300"
+                      className="h-full bg-gradient-to-r from-[var(--accent)] to-[var(--accent)] rounded-full transition-all duration-300"
                       style={{ width: `${binaryProgress.progress}%` }}
                     />
                   </div>
@@ -514,19 +518,19 @@ export function AISettings() {
                       </div>
                       <div className="w-full h-1.5 bg-[var(--surface-1)] rounded-full overflow-hidden border border-[var(--border)]">
                         <div
-                          className="h-full bg-gradient-to-r from-[var(--accent)] to-indigo-500 rounded-full transition-all duration-300"
+                          className="h-full bg-gradient-to-r from-[var(--accent)] to-[var(--accent)] rounded-full transition-all duration-300"
                           style={{ width: `${binaryProgress.progress}%` }}
                         />
                       </div>
                       {binaryProgress.error && (
-                        <p className="text-[0.65rem] text-red-400 font-mono">Error: {binaryProgress.error}</p>
+                        <p className="text-[0.65rem] text-[var(--danger)] font-mono">Error: {binaryProgress.error}</p>
                       )}
                     </div>
                   ) : (
                     <div className="flex gap-3 flex-wrap">
                       <button
                         onClick={handleInstallBinary}
-                        className="px-3.5 py-1.5 text-xs bg-[var(--accent)] text-white hover:bg-[var(--accent-dim)] hover:text-[var(--accent)] rounded font-semibold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
+                        className="px-3.5 py-1.5 text-xs bg-[var(--accent)] text-[var(--background)] hover:bg-[var(--accent-dim)] hover:text-[var(--accent)] rounded font-semibold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
                       >
                         <RefreshCw size={11} />
                         1-Click Install Local Engine
@@ -624,8 +628,8 @@ export function AISettings() {
                                 className={cn(
                                   "p-1.5 rounded border transition-colors cursor-pointer",
                                   isDefault
-                                    ? "border-amber-500/30 bg-amber-500/10 text-amber-400"
-                                    : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-amber-500/20 hover:text-amber-400"
+                                    ? "border-[color-mix(in_srgb,var(--warning)_30%,transparent)] bg-[color-mix(in_srgb,var(--warning)_10%,transparent)] text-[var(--warning)]"
+                                    : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[color-mix(in_srgb,var(--warning)_20%,transparent)] hover:text-[var(--warning)]"
                                 )}
                                 title={isDefault ? "Current default startup model" : "Set as default startup model"}
                               >
@@ -639,7 +643,7 @@ export function AISettings() {
                                 disabled={isActive}
                                 onClick={() => handleRemoveModel(model.id)}
                                 className={cn(
-                                  "p-1.5 rounded border border-red-500/20 text-red-400 hover:bg-red-500/10 transition-colors",
+                                  "p-1.5 rounded border border-[color-mix(in_srgb,var(--danger)_20%,transparent)] text-[var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] transition-colors",
                                   isActive ? "opacity-30 cursor-not-allowed" : "cursor-pointer"
                                 )}
                                 title={isActive ? "Cannot delete model currently loaded in the active server." : "Delete downloaded weights"}
@@ -651,7 +655,7 @@ export function AISettings() {
                             {/* Main Action buttons */}
                             {isInstalled ? (
                               isActive ? (
-                                <span className="text-[0.65rem] bg-[var(--accent)] text-white px-2 py-1 rounded font-medium shadow-sm">
+                                <span className="text-[0.65rem] bg-[var(--accent)] text-[var(--background)] px-2 py-1 rounded font-medium shadow-sm">
                                   Running &amp; Locked
                                 </span>
                               ) : (
@@ -665,14 +669,14 @@ export function AISettings() {
                             ) : isDownloading ? (
                               <button
                                 onClick={() => handleRemoveModel(model.id)}
-                                className="px-2 py-1 text-xs border border-[var(--border)] text-[var(--text-tertiary)] hover:border-red-500/20 hover:text-red-400 rounded transition-colors cursor-pointer"
+                                className="px-2 py-1 text-xs border border-[var(--border)] text-[var(--text-tertiary)] hover:border-[color-mix(in_srgb,var(--danger)_20%,transparent)] hover:text-[var(--danger)] rounded transition-colors cursor-pointer"
                               >
                                 Cancel
                               </button>
                             ) : (
                               <button
                                 onClick={() => handleInstallModel(model.id)}
-                                className="px-2.5 py-1 text-xs bg-[var(--accent)] text-white hover:bg-[var(--accent-dim)] hover:text-[var(--accent)] rounded font-medium transition-all cursor-pointer"
+                                className="px-2.5 py-1 text-xs bg-[var(--accent)] text-[var(--background)] hover:bg-[var(--accent-dim)] hover:text-[var(--accent)] rounded font-medium transition-all cursor-pointer"
                               >
                                 Download (~{(model.sizeBytes / 1024 / 1024 / 1024).toFixed(1)} GB)
                               </button>
@@ -685,7 +689,7 @@ export function AISettings() {
                           <div className="mt-3.5 space-y-1.5">
                             <div className="flex justify-between text-[0.65rem]">
                               <span className="text-[var(--text-secondary)] font-medium flex items-center gap-1.5">
-                                <span className="w-1.5 h-1.5 bg-yellow-500 rounded-full animate-ping" />
+                      <span className="w-1.5 h-1.5 bg-[var(--warning)] rounded-full animate-ping" />
                                 Downloading...
                               </span>
                               <span className="text-[var(--text-tertiary)] font-mono">
@@ -694,7 +698,7 @@ export function AISettings() {
                             </div>
                             <div className="w-full h-1.5 bg-[var(--surface-1)] rounded-full overflow-hidden border border-[var(--border)]">
                               <div
-                                className="h-full bg-gradient-to-r from-[var(--accent)] to-indigo-500 rounded-full transition-all duration-300"
+                                className="h-full bg-gradient-to-r from-[var(--accent)] to-[var(--accent)] rounded-full transition-all duration-300"
                                 style={{ width: `${dl.progress}%` }}
                               />
                             </div>
@@ -712,7 +716,7 @@ export function AISettings() {
                 {llamaModels.some(m => m.status === "installed" && m.id !== serverStatus.activeModelId) && (
                   <button
                     onClick={handleClearInactive}
-                    className="text-red-400 hover:underline flex items-center gap-1 cursor-pointer"
+                    className="text-[var(--danger)] hover:underline flex items-center gap-1 cursor-pointer"
                   >
                     Clear Inactive Models
                   </button>

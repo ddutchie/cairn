@@ -12,11 +12,12 @@ import type { ToggleableView } from "@/store/slices/ui";
 import { cn } from "@/lib/utils";
 import { SettingsGroup } from "./shared";
 
-function Toggle({ on, disabled, onClick }: { on: boolean; disabled?: boolean; onClick?: () => void }) {
+function Toggle({ on, disabled, onClick, ariaLabel }: { on: boolean; disabled?: boolean; onClick?: () => void; ariaLabel?: string }) {
   return (
     <button
       role="switch"
       aria-checked={on}
+      aria-label={ariaLabel}
       onClick={onClick}
       disabled={disabled}
       className={cn(
@@ -26,7 +27,7 @@ function Toggle({ on, disabled, onClick }: { on: boolean; disabled?: boolean; on
       )}
     >
       <span
-        className="absolute top-0.5 bottom-0.5 aspect-square rounded-full bg-white shadow-sm transition-[left,right] duration-200"
+        className="absolute top-0.5 bottom-0.5 aspect-square rounded-full bg-[var(--surface)] shadow-sm transition-[left,right] duration-200"
         style={on ? { right: "0.125rem", left: "auto" } : { left: "0.125rem", right: "auto" }}
       />
     </button>
@@ -68,7 +69,7 @@ export function ViewVisibilitySettings() {
               <p className="text-[0.714rem] text-[var(--text-tertiary)]">Always visible</p>
             </div>
           </div>
-          <Toggle on disabled />
+            <Toggle on disabled ariaLabel="Always visible" />
         </div>
       ))}
 
@@ -87,7 +88,7 @@ export function ViewVisibilitySettings() {
                 <p className="text-[0.714rem] text-[var(--text-tertiary)]">{description}</p>
               </div>
             </div>
-            <Toggle on={visible} onClick={() => toggleViewVisibility(view)} />
+            <Toggle on={visible} onClick={() => toggleViewVisibility(view)} ariaLabel={`Toggle ${label}`} />
           </div>
         );
       })}
