@@ -47,6 +47,7 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
     activeView,
     chatOpen,
     projects,
+    setActiveChatThreadId,
   } = useCairnStore(useShallow((s) => ({
     terminalSessions: s.terminalSessions,
     activeSessionId: s.activeSessionId,
@@ -59,6 +60,7 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
     activeView: s.activeView,
     chatOpen: s.chatOpen,
     projects: s.projects,
+    setActiveChatThreadId: s.setActiveChatThreadId,
   })));
 
   const hasCodeDirectory = !!projects.find((p) => p.id === activeProjectId)?.codeDirectory;
@@ -85,7 +87,8 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
   function handleNewChatThread() {
     if (!activeWorkspaceId) return;
     setNewMenuOpen(false);
-    createNewThread(activeWorkspaceId, activeProjectId ?? undefined);
+    const thread = createNewThread(activeWorkspaceId, activeProjectId ?? undefined);
+    setActiveChatThreadId(thread.id);
     setActiveSession("chat");
   }
 

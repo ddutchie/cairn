@@ -276,15 +276,32 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
 
 
 
-  // Initialise / switch thread.
-  // Reads getOrCreateThread directly from the store snapshot (stable, no ref
-  // needed) so the effect only re-runs when the workspace/project identity
-  // changes. Never switches while a stream is in-flight.
+  // Initialise / switch thread when the project changes.
+  // When the user switches projects, the active chat thread should follow —
+  // if the current thread belongs to a different project, find or create one
+  // scoped to the new project. Never switches while a stream is in-flight.
+  const prevProjectIdRef = useRef<string | null | undefined>(activeProjectId);
   useEffect(() => {
     if (!activeWorkspaceId) return;
     if (isLoadingRef.current) return;
-    // Only initialise if no thread is active yet (tab bar may have already set one)
-    if (activeChatThreadId) return;
+
+    // Check if the project actually changed (not just a re-render)
+    const prevProject = prevProjectIdRef.current;
+    prevProjectIdRef.current = activeProjectId;
+    if (prevProject === activeProjectId) {
+      // Project didn't change — only initialise if no thread is active yet
+      if (activeChatThreadId) return;
+    } else {
+      // Project changed — check if the current thread still matches
+      if (activeChatThreadId) {
+        const currentThread = useCairnStore.getState().chatThreads.find(
+          (t) => t.id === activeChatThreadId,
+        );
+        // Keep the thread if it matches the new project or is workspace-scoped
+        if (currentThread && currentThread.projectId === activeProjectId) return;
+      }
+    }
+
     const t = useCairnStore.getState().getOrCreateThread(activeWorkspaceId, activeProjectId ?? undefined);
     setActiveChatThreadId(t.id);
   }, [activeWorkspaceId, activeProjectId, activeChatThreadId, setActiveChatThreadId]);

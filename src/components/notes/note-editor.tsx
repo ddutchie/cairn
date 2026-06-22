@@ -6,6 +6,7 @@ import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
+import rehypeRaw from "rehype-raw";
 import "katex/dist/katex.min.css";
 import { Pin, PinOff, Calendar, Eye, Pencil, Wand2, Loader2, CheckCircle2, FileDown, ChevronLeft, Sparkles, Sun, Moon, ChevronDown as Chevron } from "lucide-react";import { WikilinkPicker } from "./WikilinkPicker";
 import { getActiveWikilink } from "@/lib/wikilink-parser";
@@ -1003,7 +1004,7 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
                 <div className="prose-cairn" ref={proseRef}>
                    <ReactMarkdown
                      remarkPlugins={[remarkGfm, remarkBreaks, remarkMath, remarkPromoteDisplayMath, remarkCallout, remarkObsidianEmbeds, remarkWikilinks]}
-                     rehypePlugins={[rehypeCaptureLatex, rehypeKatex, rehypeMergedPass]}
+                      rehypePlugins={[rehypeRaw, rehypeCaptureLatex, rehypeKatex, rehypeMergedPass]}
                      urlTransform={urlTransform}
                      components={mdComponents}
                    >

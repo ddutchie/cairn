@@ -4,6 +4,7 @@ import React, { useMemo } from "react";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
+import rehypeRaw from "rehype-raw";
 import { MermaidDiagram } from "@/components/notes/MermaidDiagram";
 import { CodeBlock } from "@/components/notes/CodeBlock";
 import { useCairnStore } from "@/store";
@@ -97,6 +98,7 @@ export function MarkdownContent({ content, isUser }: { content: string; isUser?:
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm, remarkBreaks]}
+      rehypePlugins={[rehypeRaw]}
       urlTransform={(url) => url.startsWith("cairn://") ? url : defaultUrlTransform(url)}
       components={{
         p: ({ children }) => <p className="mb-1.5 last:mb-0 leading-relaxed break-words">{children}</p>,

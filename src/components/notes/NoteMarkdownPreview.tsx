@@ -15,6 +15,7 @@ import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
+import rehypeRaw from "rehype-raw";
 import "katex/dist/katex.min.css";
 import { MermaidDiagram } from "./MermaidDiagram";
 import { CodeBlock } from "./CodeBlock";
@@ -44,7 +45,7 @@ export function NoteMarkdownPreview({ content, className }: NoteMarkdownPreviewP
     <div className={`prose-cairn px-6 py-5 overflow-y-auto h-full ${className ?? ""}`}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkBreaks, remarkMath, remarkPromoteDisplayMath, remarkCallout, remarkObsidianEmbeds]}
-        rehypePlugins={[rehypeCaptureLatex, rehypeKatex, rehypeMergedPass]}
+        rehypePlugins={[rehypeRaw, rehypeCaptureLatex, rehypeKatex, rehypeMergedPass]}
         urlTransform={urlTransform}
         components={({
           mark({ children }: React.HTMLAttributes<HTMLElement> & ExtraProps) {
