@@ -536,7 +536,7 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
         );
       }
       if (href) {
-        const isExternal = /^(https?:|mailto:|asset:)/.test(href) || href.startsWith("//");
+        const isExternal = /^(https?:|\/\/)/.test(href);
         if (isExternal) {
           return (
             <a
