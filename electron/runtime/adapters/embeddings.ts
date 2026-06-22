@@ -84,7 +84,9 @@ export class EmbeddingsAdapter implements ModelManagingAdapter {
       const entry = manifest[id] ?? { status: "not_downloaded" as const, downloadProgress: 0 };
       // Check if files exist and verify checksum
       let status = entry.status;
-      if (this.modelFilesPresent(id)) {
+      if (status === "downloading") {
+        // Don't verify during download — the file is incomplete
+      } else if (this.modelFilesPresent(id)) {
         if (status !== "installed") {
           // Files exist but manifest not marked — verify and update
           const onnxPath = path.join(this._cacheDir, id, def.meta.filename);

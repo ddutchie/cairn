@@ -99,7 +99,7 @@ export function StepEmbeddings({
   const isDownloading =
     model?.status === "downloading" ||
     (progress?.modelId === model?.id &&
-      progress?.status === "downloading" &&
+      (progress?.status === "downloading" || progress?.status === "progress") &&
       (progress?.progress ?? 0) < 100);
   const isInstalled = model?.status === "installed";
   const pct = Math.round(progress?.progress ?? model?.downloadProgress ?? 0);

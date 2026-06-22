@@ -321,7 +321,7 @@ export function EmbeddingsSettings() {
             <div className="text-xs font-medium text-[var(--text-secondary)] uppercase tracking-wider">Models</div>
             {models.map((model) => {
               const prog = progressByModel[model.id];
-              const isDownloading = model.status === "downloading" || (prog?.status === "downloading" && (prog?.progress ?? 0) < 100);
+              const isDownloading = model.status === "downloading" || (prog && (prog.status === "downloading" || prog.status === "progress") && (prog.progress ?? 0) < 100);
               const isInstalled = model.status === "installed";
               const isActive = status.running && status.activeModelId === model.id;
               const isDefault = status.defaultModelId === model.id;
