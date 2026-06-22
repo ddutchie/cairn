@@ -7,9 +7,20 @@ import { useShallow } from "zustand/react/shallow";
 import { SettingsGroup } from "./shared";
 
 const PALETTE = [
-  "#6366f1", "#8b5cf6", "#a855f7", "#ec4899", "#f43f5e",
-  "#ef4444", "#f97316", "#eab308", "#22c55e", "#14b8a6",
-  "#06b6d4", "#3b82f6", "#64748b", "#78716c",
+  { color: "#6366f1", name: "Indigo" },
+  { color: "#8b5cf6", name: "Violet" },
+  { color: "#a855f7", name: "Purple" },
+  { color: "#ec4899", name: "Pink" },
+  { color: "#f43f5e", name: "Rose" },
+  { color: "#ef4444", name: "Red" },
+  { color: "#f97316", name: "Orange" },
+  { color: "#eab308", name: "Yellow" },
+  { color: "#22c55e", name: "Green" },
+  { color: "#14b8a6", name: "Teal" },
+  { color: "#06b6d4", name: "Cyan" },
+  { color: "#3b82f6", name: "Blue" },
+  { color: "#64748b", name: "Slate" },
+  { color: "#78716c", name: "Stone" },
 ];
 
 export function TagsSettings() {
@@ -25,8 +36,15 @@ export function TagsSettings() {
     function handle(e: MouseEvent) {
       if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) setColorPickerId(null);
     }
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setColorPickerId(null);
+    }
     document.addEventListener("mousedown", handle);
-    return () => document.removeEventListener("mousedown", handle);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handle);
+      document.removeEventListener("keydown", handleKey);
+    };
   }, [colorPickerId]);
 
   return (
@@ -59,13 +77,14 @@ export function TagsSettings() {
                   className="absolute left-0 top-full mt-1 z-50 p-2 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] shadow-2xl"
                 >
                   <div className="grid grid-cols-7 gap-1.5">
-                    {PALETTE.map((color) => (
+                    {PALETTE.map(({ color, name }) => (
                       <button
                         key={color}
                         onClick={() => { updateTag(tag.id, { color }); setColorPickerId(null); }}
                         className="w-5 h-5 rounded-full ring-1 ring-[color-mix(in_srgb,var(--text-primary)_20%,transparent)] hover:scale-110 transition-transform"
                         style={{ backgroundColor: color }}
-                        title={color}
+                        title={name}
+                        aria-label={`Set color to ${name}`}
                       />
                     ))}
                   </div>
