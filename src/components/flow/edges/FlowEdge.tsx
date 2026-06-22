@@ -85,6 +85,7 @@ export function FlowEdge({
               padding: 0,
             }}
             title="Delete connection"
+            aria-label="Delete connection"
           >
             <X size={8} strokeWidth={2.5} />
           </button>

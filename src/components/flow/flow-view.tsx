@@ -22,7 +22,7 @@ import {
   Panel,
 } from "@xyflow/react";
 
-import { Plus, LayoutDashboard } from "lucide-react";
+import { Plus, LayoutDashboard, Lightbulb } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import type { IdeaNodeType, ResolvedIdeaFlow } from "@/types";
@@ -782,6 +782,18 @@ function IdeaFlowCanvas() {
             nodeStrokeWidth={0}
             maskColor="color-mix(in srgb, var(--text-primary) 6%, transparent)"
           />
+        )}
+
+        {nodes.length === 0 && (
+          <Panel position="top-center">
+            <div className="flex flex-col items-center gap-2 px-6 py-5 rounded-xl bg-[var(--surface)] border border-[var(--border)] shadow-sm pointer-events-none">
+              <Lightbulb size={20} className="text-[var(--text-tertiary)] opacity-50" />
+              <p className="text-sm font-medium text-[var(--text-secondary)]">Your Idea Flow is empty</p>
+              <p className="text-xs text-[var(--text-tertiary)] text-center max-w-xs">
+                Double-click the canvas or use &ldquo;Add node&rdquo; to start capturing ideas.
+              </p>
+            </div>
+          </Panel>
         )}
 
         <Panel position="top-right">

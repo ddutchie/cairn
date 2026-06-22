@@ -119,12 +119,33 @@ export function KnowledgeGraphView() {
     const q = graphSearch.trim().toLowerCase();
     if (!q || (graphLayout !== "force" && graphLayout !== "radial")) return filteredGraph;
 
-    // First pass: nodes whose title matches
+    // Build a map of tag-member edges so we can find nodes by tag name
+    const tagNameMap = new Map<string, string>();
+    for (const n of graphData.nodes) {
+      if (n.type === "tag") tagNameMap.set(n.id, n.title.toLowerCase());
+    }
+    const tagMemberEdges = graphData.edges.filter((e) => e.type === "tag-member");
+
+    // First pass: nodes whose title, snippet, or tag name matches
     const matchingIds = new Set(
       filteredGraph.nodes
-        .filter((n) => n.title.toLowerCase().includes(q))
+        .filter((n) => {
+          if (n.title.toLowerCase().includes(q)) return true;
+          if (n.meta?.snippet && n.meta.snippet.toLowerCase().includes(q)) return true;
+          // Check if any tag attached to this node matches
+          const tagIds = tagMemberEdges.filter((e) => e.source === n.id).map((e) => e.target);
+          if (tagIds.some((tid) => tagNameMap.get(tid)?.includes(q))) return true;
+          return false;
+        })
         .map((n) => n.id)
     );
+
+    // Also match tag nodes themselves by name
+    for (const n of filteredGraph.nodes) {
+      if (n.type === "tag" && n.title.toLowerCase().includes(q)) {
+        matchingIds.add(n.id);
+      }
+    }
 
     // Second pass: also include parent projects of any matching node,
     // so radial hierarchy builder always has a bucket for matched children,
@@ -144,7 +165,7 @@ export function KnowledgeGraphView() {
       (e) => nodeIdSet.has(e.source) && nodeIdSet.has(e.target)
     );
     return { nodes, edges };
-  }, [filteredGraph, graphSearch, graphLayout]);
+  }, [filteredGraph, graphSearch, graphLayout, graphData.nodes, graphData.edges]);
 
   const filteredNodes = searchedGraph.nodes;
   const filteredEdges = searchedGraph.edges;

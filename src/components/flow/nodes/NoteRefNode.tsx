@@ -47,8 +47,9 @@ export const NoteRefNode = memo(function NoteRefNode({ data, selected, isConnect
           {hasNote && (
             <button
               onClick={handleOpen}
-              className="nodrag p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors"
+              className="nodrag p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
               title="Open note"
+              aria-label="Open note"
             >
               <ExternalLink size={11} />
             </button>

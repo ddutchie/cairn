@@ -46,8 +46,9 @@ export const TaskRefNode = memo(function TaskRefNode({ data, selected, isConnect
           {hasCard && (
             <button
               onClick={handleOpen}
-              className="nodrag p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors"
+              className="nodrag p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
               title="Open board"
+              aria-label="Open board"
             >
               <ExternalLink size={11} />
             </button>

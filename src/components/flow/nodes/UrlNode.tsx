@@ -41,8 +41,9 @@ export const UrlNode = memo(function UrlNode({ data, selected, isConnectable }: 
           {d.url && (
             <button
               onClick={handleOpen}
-              className="nodrag p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors shrink-0"
+              className="nodrag p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
               title="Open link"
+              aria-label="Open link"
             >
               <ExternalLink size={11} />
             </button>

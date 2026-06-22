@@ -357,9 +357,10 @@ function GroupEditor({
             <button
               key={c.value}
               title={c.label}
+              aria-label={`Set color to ${c.label}`}
               onClick={() => onColorChange(c.value)}
               className={cn(
-                "w-6 h-6 rounded-full border-2 transition-transform hover:scale-110",
+                "w-6 h-6 rounded-full border-2 transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]",
                 color === c.value ? "border-[var(--text-primary)] scale-110" : "border-transparent"
               )}
               style={{ background: c.swatch }}
