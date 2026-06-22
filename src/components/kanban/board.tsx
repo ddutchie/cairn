@@ -364,6 +364,12 @@ export function KanbanBoard() {
             >
               <Kanban size={11} />
               Board
+              {activeProjectId && (() => {
+                const count = columns.reduce((n, col) => n + getColumnCards(col.id).length, 0);
+                return count > 0 ? (
+                  <span className="ml-0.5 px-1.5 py-0.5 rounded-full text-[0.643rem] bg-[var(--surface-3)] text-[var(--text-tertiary)]">{count}</span>
+                ) : null;
+              })()}
             </button>
             <button
               onClick={() => setArchiveViewOpen(true)}

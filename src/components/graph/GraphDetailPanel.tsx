@@ -26,6 +26,7 @@ interface LinkEntry {
 export function GraphDetailPanel({ node, onClose }: Props) {
   const [linksExpanded, setLinksExpanded] = useState(true);
   const [linkedExpanded, setLinkedExpanded] = useState(true);
+  const [showAllSemantic, setShowAllSemantic] = useState(false);
   const { setView, setActiveProject, projects, notes, cards, columns, graphData, setSelectedGraphNode } = useCairnStore(useShallow((s) => ({
     setView:             s.setView,
     setActiveProject:    s.setActiveProject,
@@ -322,7 +323,7 @@ export function GraphDetailPanel({ node, onClose }: Props) {
                 <span className="text-[0.643rem] opacity-60">{semanticLinks.length}</span>
               </div>
               <div className="space-y-0.5">
-                {semanticLinks.slice(0, 10).map((link) => (
+                {(showAllSemantic ? semanticLinks : semanticLinks.slice(0, 10)).map((link) => (
                   <button
                     key={link.noteId}
                     onClick={() => selectNode(link.noteId)}
@@ -337,6 +338,14 @@ export function GraphDetailPanel({ node, onClose }: Props) {
                     )}
                   </button>
                 ))}
+                {semanticLinks.length > 10 && (
+                  <button
+                    onClick={() => setShowAllSemantic((v) => !v)}
+                    className="flex items-center gap-0.5 w-full px-2 py-1 text-[0.643rem] text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors text-left"
+                  >
+                    {showAllSemantic ? "Show less" : `+${semanticLinks.length - 10} more`}
+                  </button>
+                )}
               </div>
             </div>
           )}
@@ -355,6 +364,25 @@ export function GraphDetailPanel({ node, onClose }: Props) {
           >
             <ExternalLink size={12} />
             Open in {typeLabel === "Task" ? "Board" : typeLabel}
+          </button>
+        </div>
+      )}
+      {node.type === "tag" && (
+        <div className="border-t border-[var(--border)] p-3">
+          <button
+            onClick={() => {
+              const targetProjectId = node.projectId ?? null;
+              if (targetProjectId) setActiveProject(targetProjectId);
+              setView("notes");
+              onClose();
+            }}
+            className={cn(
+              "flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-md text-xs font-medium transition-colors",
+              "bg-[var(--accent-dim)] text-[var(--accent)] hover:bg-[var(--accent)] hover:text-white"
+            )}
+          >
+            <ExternalLink size={12} />
+            Browse tagged notes
           </button>
         </div>
       )}

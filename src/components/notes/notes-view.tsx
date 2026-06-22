@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import {
   FileText, Plus, Search, Wand2,
   LayoutDashboard, FolderPlus,
-  ChevronDown, ChevronRight, Trash2,
+  ChevronDown, ChevronRight, Trash2, X,
 } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -292,7 +292,15 @@ export function NotesView() {
             <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]" />
             <input ref={filterInputRef} type="text" value={filter} onChange={(e) => setFilter(e.target.value)}
               placeholder="Filter notes..."
-              className="w-full pl-7 pr-2 py-1.5 text-xs rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)]" />
+              className="w-full pl-7 pr-7 py-1.5 text-xs rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)]" />
+            {filter && (
+              <button
+                onClick={() => setFilter("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors"
+              >
+                <X size={12} />
+              </button>
+            )}
           </div>
           {projectTags.length > 0 && (
             <div className="flex flex-wrap gap-1 mt-1.5">

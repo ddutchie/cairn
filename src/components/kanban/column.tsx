@@ -240,18 +240,23 @@ export function KanbanColumn({
             />
           ) : (
             <span
-              className="text-xs font-semibold text-[var(--text-secondary)] flex-1 truncate cursor-default"
+              className="text-xs font-semibold text-[var(--text-secondary)] flex-1 truncate cursor-text"
               onDoubleClick={() => setRenaming(true)}
+              title="Double-click to rename"
             >
               {column.name}
             </span>
           )}
-          <span className={cn(
-            "text-[0.786rem] flex-shrink-0 font-mono",
-            atLimit ? "text-[var(--warning)]" : "text-[var(--text-tertiary)]"
-          )}>
+          <button
+            onClick={() => { setLimitValue(String(column.cardLimit ?? "")); setLimitDialogOpen(true); }}
+            className={cn(
+              "text-[0.786rem] flex-shrink-0 font-mono hover:text-[var(--accent)] transition-colors cursor-pointer",
+              atLimit ? "text-[var(--warning)]" : "text-[var(--text-tertiary)]"
+            )}
+            title="Set WIP limit"
+          >
             {column.cardLimit ? `${cards.length}/${column.cardLimit}` : cards.length}
-          </span>
+          </button>
           <Tooltip content={atLimit ? "WIP limit reached" : "Add card"}>
             <Button
               variant="ghost" size="icon"
@@ -339,7 +344,7 @@ export function KanbanColumn({
                   className="flex items-center gap-1.5 w-full px-1 py-1 text-[10.5px] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
                 >
                   {showArchived ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
-                  {archivedCards.length} archived
+                  {archivedCards.length} archived{archivedCards.length !== 1 ? "" : ""}
                 </button>
                 {showArchived && (
                   <div className="space-y-1.5 mt-1">
@@ -348,7 +353,7 @@ export function KanbanColumn({
                         key={card.id}
                         className="flex items-center gap-2 px-2 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] opacity-60"
                       >
-                        <span className="flex-1 text-[0.786rem] text-[var(--text-secondary)] truncate">{card.title}</span>
+                        <span className="flex-1 text-[0.786rem] text-[var(--text-secondary)] truncate" title={card.title}>{card.title}</span>
                         <Tooltip content="Restore card">
                           <button
                             onClick={() => onRestoreCard(card.id)}

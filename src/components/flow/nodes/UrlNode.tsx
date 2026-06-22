@@ -36,7 +36,7 @@ export const UrlNode = memo(function UrlNode({ data, selected, isConnectable }: 
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 min-w-0">
             <Link2 size={12} className="text-[var(--text-tertiary)] shrink-0" />
-            <span className="text-[0.714rem] text-[var(--text-tertiary)] truncate">{hostname || "URL"}</span>
+            <span className="text-[0.714rem] text-[var(--text-tertiary)] truncate" title={d.url}>{hostname || "URL"}</span>
           </div>
           {d.url && (
             <button

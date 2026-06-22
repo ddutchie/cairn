@@ -112,7 +112,7 @@ export function useProjectMetrics(projectId: string | null): ProjectMetrics | nu
   };
   const hasAnyCategorised = Object.values(priorityCounts).some((n) => n > 0);
 
-  const pinnedNotes = notes.filter((n) => n.isPinned);
+  const pinnedNotes = notes.filter((n) => n.isPinned).slice(0, 4);
   const recentNotes = notes.filter((n) => !n.isPinned).slice(0, 5);
 
   const projectTags = project.tagIds.map((tid) => getTagById(tid)).filter(Boolean) as import("@/types").Tag[];

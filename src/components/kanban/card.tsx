@@ -3,9 +3,10 @@
 import React, { useState } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Archive, Calendar, ChevronDown, ChevronUp, FileText, Lock, Pencil, Trash2 } from "lucide-react";
+import { Archive, Calendar, ChevronDown, ChevronUp, FileText, Lock, Pencil, Trash2, User } from "lucide-react";
 import { cn, formatDate, getDueDateStatus } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip } from "@/components/ui/tooltip";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -67,6 +68,7 @@ export const KanbanCard = React.memo(function KanbanCard({ card, onClick, isDrag
   };
 
   const tags = card.tagIds.slice(0, 3).map((id) => getTagById(id)).filter(Boolean);
+  const extraTags = card.tagIds.slice(3).map((id) => getTagById(id)).filter(Boolean);
   const extraTagCount = Math.max(0, card.tagIds.length - 3);
 
   const description = card.description?.trim() || "";
@@ -128,8 +130,8 @@ export const KanbanCard = React.memo(function KanbanCard({ card, onClick, isDrag
               </button>
             )}
 
-            {/* Footer — due dates / blockers / linked notes */}
-            {(card.dueDate || card.linkedNoteIds.length > 0 || isBlocked) && (
+            {/* Footer — due dates / blockers / assignee / linked notes */}
+            {(card.dueDate || card.linkedNoteIds.length > 0 || isBlocked || card.assignee) && (
               <div className="flex items-center gap-2 pt-1.5 border-t border-[var(--border-subtle)]">
                 {isBlocked && (
                   <span className="flex items-center gap-1 text-[0.714rem] text-[var(--warning)] font-medium">
@@ -153,6 +155,12 @@ export const KanbanCard = React.memo(function KanbanCard({ card, onClick, isDrag
                     </span>
                   );
                 })()}
+                {card.assignee && (
+                  <span className="flex items-center gap-1 text-[0.714rem] text-[var(--text-tertiary)]" title={card.assignee}>
+                    <User size={10} />
+                    <span className="truncate max-w-[4rem]">{card.assignee}</span>
+                  </span>
+                )}
                 {card.linkedNoteIds.length > 0 && (
                   <span className="flex items-center gap-1 text-[0.714rem] text-[var(--text-tertiary)] ml-auto">
                     <FileText size={11} />
@@ -174,9 +182,11 @@ export const KanbanCard = React.memo(function KanbanCard({ card, onClick, isDrag
                     )
                 )}
                 {extraTagCount > 0 && (
-                  <span className="text-[0.643rem] text-[var(--text-tertiary)] self-center px-0.5">
-                    +{extraTagCount}
-                  </span>
+                  <Tooltip content={extraTags.map((t) => t?.name).filter(Boolean).join(", ")}>
+                    <span className="text-[0.643rem] text-[var(--text-tertiary)] self-center px-0.5 cursor-default">
+                      +{extraTagCount}
+                    </span>
+                  </Tooltip>
                 )}
               </div>
             )}

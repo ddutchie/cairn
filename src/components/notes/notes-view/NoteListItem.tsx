@@ -7,6 +7,8 @@ import {
 } from "lucide-react";
 import { cn, formatRelative } from "@/lib/utils";
 import type { Note } from "@/types";
+import { Badge } from "@/components/ui/badge";
+import { useCairnStore } from "@/store";
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
   DropdownMenuItem, DropdownMenuSeparator,
@@ -21,6 +23,9 @@ export interface NoteListItemProps {
 }
 
 export const NoteListItem = memo(function NoteListItem({ note, isActive, indent = 0, onClick, onPin, onDelete, onArchive, onMove, onMoveToFolder, onReveal, onDragStart, onDragEnd }: NoteListItemProps) {
+  const getTagById = useCairnStore((s) => s.getTagById);
+  const tags = note.tagIds.slice(0, 3).map((id) => getTagById(id)).filter(Boolean);
+
   return (
     <div onClick={onClick}
       draggable={!!onDragStart}
@@ -69,7 +74,12 @@ export const NoteListItem = memo(function NoteListItem({ note, isActive, indent 
         </DropdownMenu>
       </div>
       <span className="text-[0.786rem] text-[var(--text-tertiary)] truncate">{note.contentText.slice(0, 60) || "Empty note"}</span>
-      <span className="text-[0.714rem] text-[var(--text-tertiary)]">{formatRelative(note.updatedAt)}</span>
+      <div className="flex items-center gap-1.5">
+        <span className="text-[0.714rem] text-[var(--text-tertiary)]">{formatRelative(note.updatedAt)}</span>
+        {tags.length > 0 && tags.map((tag) => tag && (
+          <Badge key={tag.id} color={tag.color} size="xs">{tag.name}</Badge>
+        ))}
+      </div>
     </div>
   );
 });
