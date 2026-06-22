@@ -65,6 +65,13 @@ check("better-sqlite3 — require + open :memory: (skipped on ABI mismatch)", ()
       console.log("     (ABI mismatch — Electron build, skipping load check)");
       return; // not a failure
     }
+    // On Linux, loading an Electron-ABI .node with plain Node can fail with
+    // "cannot open shared object file" (missing Electron's shared libs) instead
+    // of a NODE_MODULE_VERSION error. This is expected after @electron/rebuild.
+    if (err.message.includes("cannot open shared object file")) {
+      console.log("     (shared lib mismatch — Electron build, skipping load check)");
+      return; // not a failure
+    }
     throw err;
   }
 });
