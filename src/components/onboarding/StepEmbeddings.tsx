@@ -54,21 +54,21 @@ export function StepEmbeddings({
   const refresh = useCallback(async () => {
     const rt = window.electron?.runtime;
     if (!rt) return;
-    try {
-      const [mr, st] = await Promise.all([
-        rt.embeddings.models(),
-        rt.embeddings.status(),
-      ]);
-      const m = mr.models as unknown as ModelEntry[];
+    const [mrRes, stRes] = await Promise.allSettled([
+      rt.embeddings.models(),
+      rt.embeddings.status(),
+    ]);
+    if (mrRes.status === "fulfilled") {
+      const m = mrRes.value.models as unknown as ModelEntry[];
       setModels(m);
-      const defaultId = st.defaultModelId ?? m[0]?.id ?? DEFAULT_MODEL_ID;
+      const defaultId = (stRes.status === "fulfilled" ? stRes.value.defaultModelId : undefined) ?? m[0]?.id ?? DEFAULT_MODEL_ID;
       if (!modelId || !m.some((x) => x.id === modelId)) {
         onModelIdChange(defaultId);
       }
-      setReady(true);
-    } catch {
-      setReady(true);
     }
+    if (mrRes.status === "rejected") console.warn("[embeddings] models() failed:", mrRes.reason);
+    if (stRes.status === "rejected") console.warn("[embeddings] status() failed:", stRes.reason);
+    setReady(true);
   }, [modelId, onModelIdChange]);
 
   useEffect(() => {

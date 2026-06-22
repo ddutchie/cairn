@@ -80,12 +80,12 @@ export function EmbeddingsSettings() {
 
   const refreshQuiet = useCallback(async () => {
     if (!window.electron?.runtime) return;
-    try {
-      const [s, mr] = await Promise.all([
-        window.electron.runtime.embeddings.status(),
-        window.electron.runtime.embeddings.models(),
-      ]);
-      const m = mr.models as unknown as ModelEntry[];
+    const [sRes, mrRes] = await Promise.allSettled([
+      window.electron.runtime.embeddings.status(),
+      window.electron.runtime.embeddings.models(),
+    ]);
+    if (sRes.status === "fulfilled") {
+      const s = sRes.value;
       setStatus(s);
       const active = s.reindexInProgress || s.recomputeInProgress;
       setReindexing(active);
@@ -96,15 +96,22 @@ export function EmbeddingsSettings() {
       } else {
         setReindexProgress(null);
       }
+      const defaultId = s.defaultModelId;
+      if (defaultId && (!config.modelId || !models.some((x) => x.id === config.modelId))) {
+        setConfig((c) => ({ ...c, modelId: defaultId }));
+      }
+    }
+    if (mrRes.status === "fulfilled") {
+      const m = mrRes.value.models as unknown as ModelEntry[];
       setModels(m);
-      const defaultId = s.defaultModelId ?? m[0]?.id;
+      const defaultId = sRes.status === "fulfilled" ? sRes.value.defaultModelId : m[0]?.id;
       if (defaultId && (!config.modelId || !m.some((x) => x.id === config.modelId))) {
         setConfig((c) => ({ ...c, modelId: defaultId }));
       }
-    } catch {
-      // ignore — IPC not ready in dev
     }
-  }, [config.modelId]);
+    if (sRes.status === "rejected") console.warn("[embeddings] status() failed:", sRes.reason);
+    if (mrRes.status === "rejected") console.warn("[embeddings] models() failed:", mrRes.reason);
+  }, [config.modelId, models]);
 
   useEffect(() => {
     void (async () => {
@@ -153,10 +160,10 @@ export function EmbeddingsSettings() {
       await rt.embeddings.install(modelId);
     } catch (err) {
       console.error("[embeddings] install failed:", err);
-      setProgressByModel((prev) => {
-        const { [modelId]: _discard, ...rest } = prev;
-        return rest;
-      });
+      setProgressByModel((prev) => ({
+        ...prev,
+        [modelId]: { modelId, status: "error", error: err instanceof Error ? err.message : String(err) },
+      }));
     } finally {
       await refreshQuiet();
     }
