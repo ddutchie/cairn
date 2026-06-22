@@ -445,8 +445,8 @@ function IdeaFlowCanvas() {
   // ── Double-click node → edit ──────────────────────────────────
 
   const onNodeDoubleClick: NodeMouseHandler = useCallback((_e, node) => {
-    // ai_summary nodes are generator-only — no edit modal
-    if (node.type === "ai_summary") return;
+    // Group nodes are not editable via modal
+    if (node.type === "group") return;
     setEditTarget({ nodeId: node.id, type: node.type as IdeaNodeType, data: node.data as Record<string, unknown> });
   }, []);
 
@@ -517,8 +517,8 @@ function IdeaFlowCanvas() {
       ...(isGroup ? { style: { width, height }, zIndex: -1 } : {}),
     };
     setNodes((ns) => [...ns, rfNode]);
-    // ai_summary and group nodes need no edit modal on creation
-    if (type !== "ai_summary" && type !== "group") {
+    // Group nodes need no edit modal on creation
+    if (type !== "group") {
       setEditTarget({ nodeId: created.id, type, data: data as Record<string, unknown> });
     }
     setShowAddMenu(false);
@@ -718,8 +718,8 @@ function IdeaFlowCanvas() {
       onDoubleClick={(e) => {
         // Desktop: double-click on the pane to add an idea node
         if ((e.target as HTMLElement).classList.contains("react-flow__pane")) {
-          const n = nodeCountRef.current;
-          addNode("idea", 80 + (n % 5) * 240, 80 + Math.floor(n / 5) * 180);
+          const flowPos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+          addNode("idea", flowPos.x, flowPos.y);
         }
       }}
       onTouchStart={onPaneTouchStart}
@@ -742,7 +742,7 @@ function IdeaFlowCanvas() {
         onNodeDoubleClick={onNodeDoubleClick}
         onNodeClick={isTouchDevice ? (_e, node) => {
           // Mobile: single tap on a node opens edit modal (no double-tap needed)
-          if (node.type === "ai_summary") return;
+          if (node.type === "group") return;
           setEditTarget({ nodeId: node.id, type: node.type as IdeaNodeType, data: node.data as Record<string, unknown> });
         } : undefined}
         onPaneClick={() => { setShowAddMenu(false); setContextMenu(null); }}

@@ -16,7 +16,7 @@ export function FlowEdge({
   targetX, targetY, targetPosition,
   selected,
 }: EdgeProps) {
-  const { setEdges } = useReactFlow();
+  const { deleteElements } = useReactFlow();
   const [hovered, setHovered] = useState(false);
 
   const [edgePath, labelX, labelY] = getBezierPath({
@@ -26,9 +26,8 @@ export function FlowEdge({
 
   const onDelete = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
-    setEdges((eds) => eds.filter((edge) => edge.id !== id));
-    window.electron?.flow.edge.delete(id);
-  }, [id, setEdges]);
+    deleteElements({ edges: [{ id }] });
+  }, [id, deleteElements]);
 
   const showButton = selected || hovered;
 
@@ -38,7 +37,7 @@ export function FlowEdge({
         id={id}
         path={edgePath}
         style={{
-          stroke: "#6366f1",
+          stroke: "var(--accent)",
           strokeWidth: selected ? 2 : 1.5,
           opacity: selected || hovered ? 1 : 0.6,
           cursor: "pointer",

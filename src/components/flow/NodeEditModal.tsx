@@ -322,10 +322,10 @@ function UrlEditor({
 
 const GROUP_COLORS: Array<{ value: string; label: string; swatch: string }> = [
   { value: "accent",  label: "Blue",   swatch: "var(--accent)" },
-  { value: "purple",  label: "Purple", swatch: "rgb(139,92,246)" },
-  { value: "green",   label: "Green",  swatch: "rgb(34,197,94)" },
-  { value: "orange",  label: "Orange", swatch: "rgb(249,115,22)" },
-  { value: "red",     label: "Red",    swatch: "rgb(239,68,68)" },
+  { value: "purple",  label: "Purple", swatch: "color-mix(in srgb, var(--accent) 60%, transparent)" },
+  { value: "green",   label: "Green",  swatch: "var(--success)" },
+  { value: "orange",  label: "Orange", swatch: "var(--warning)" },
+  { value: "red",     label: "Red",    swatch: "var(--danger)" },
 ];
 
 function GroupEditor({
