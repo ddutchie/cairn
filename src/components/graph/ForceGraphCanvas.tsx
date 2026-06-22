@@ -330,6 +330,12 @@ export function ForceGraphCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
         linkDirectionalArrowRelPos={1}
         onNodeClick={handleNodeClick}
         onBackgroundClick={() => { onBackgroundClick(); setHoveredEdgeText(null); }}
+        onLinkClick={(link: { source?: { id?: string } | string; target?: { id?: string } | string; edgeType?: string }) => {
+          if (link.edgeType !== "semantic") return;
+          const tgtId = typeof link.target === "object" ? link.target?.id : link.target;
+          const found = graph.nodes.find((n) => n.id === tgtId);
+          if (found) onNodeClick(found);
+        }}
         onNodeHover={(node: { id?: string } | null) => {
           setHoveredNodeId(node ? node.id ?? null : null);
           setHoveredEdgeText(null);

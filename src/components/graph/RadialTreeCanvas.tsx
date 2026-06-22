@@ -204,6 +204,12 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
         .attr("stroke-opacity", opacity)
         .attr("stroke-dasharray", "3,4")
         .style("cursor", edge.type === "semantic" ? "pointer" : "default")
+        .on("click", function(event: MouseEvent) {
+          if (edge.type !== "semantic") return;
+          event.stopPropagation();
+          const found = graph.nodes.find((n) => n.id === edge.target);
+          if (found) onNodeClick(found);
+        })
         .on("mouseenter", function(event: MouseEvent) {
           if (edge.type !== "semantic") return;
           d3Selection.select(this).attr("stroke-opacity", 1).attr("stroke-width", 3);

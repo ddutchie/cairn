@@ -405,7 +405,7 @@ export function KnowledgeGraphView() {
 
         {/* Stats + Recompute — pinned to right */}
         <span className="ml-auto flex items-center gap-2 text-[0.786rem] text-[var(--text-tertiary)]">
-          {`${filteredNodes.length} nodes · ${filteredEdges.length} edges`}
+          {`${filteredNodes.length} nodes · ${filteredEdges.filter((e) => e.type !== "semantic" || (e.weight ?? 1) >= semanticThreshold).length} edges`}
           <Tooltip content="Recompute auto-relationships">
             <button
               onClick={handleRecompute}
@@ -435,7 +435,9 @@ export function KnowledgeGraphView() {
           )}
 
           {!graphLoading && !graphError && filteredNodes.length === 0 && (
-            <EmptyState />
+            graphData.nodes.length === 0
+              ? <EmptyState />
+              : <FilteredEmptyState />
           )}
 
           {!graphError && filteredNodes.length > 0 && graphLayout === "force" && (
@@ -501,6 +503,22 @@ function EmptyState() {
         <h3 className="text-sm font-medium text-[var(--text-primary)]">No connections yet</h3>
         <p className="text-xs text-[var(--text-tertiary)] max-w-xs">
           Link notes to tasks, tag your content, or draw connections in the Idea Flow canvas to see them here.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function FilteredEmptyState() {
+  return (
+    <div className="flex flex-col items-center justify-center flex-1 gap-4 text-center p-8">
+      <div className="w-16 h-16 rounded-full bg-[var(--surface-2)] flex items-center justify-center">
+        <Search size={28} className="text-[var(--text-tertiary)]" />
+      </div>
+      <div className="space-y-1">
+        <h3 className="text-sm font-medium text-[var(--text-primary)]">No nodes match your filters</h3>
+        <p className="text-xs text-[var(--text-tertiary)] max-w-xs">
+          Try adjusting your search query, project filter, or node type toggles.
         </p>
       </div>
     </div>

@@ -7,6 +7,7 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import type { GraphNode } from "@/types";
 import { nodeTypeColor } from "@/store/slices/graph";
+import { CairnEvents } from "@/lib/events";
 import { extractWikiLinks } from "@/components/notes/toc-utils";
 import { NoteMarkdownPreview } from "@/components/notes/NoteMarkdownPreview";
 
@@ -132,9 +133,9 @@ export function GraphDetailPanel({ node, onClose }: Props) {
             const card = cards.find((c) => c.id === cardId);
             const col = card ? columns.find((c) => c.id === card.columnId) : undefined;
             if (col) {
-              window.dispatchEvent(new CustomEvent("cairn:scroll-to-column", { detail: { columnId: col.id } }));
+              window.dispatchEvent(CairnEvents.scrollToColumn(col.id));
             }
-            window.dispatchEvent(new CustomEvent("cairn:open-card", { detail: { cardId } }));
+            window.dispatchEvent(CairnEvents.openCard(cardId));
           });
         }
         break;
