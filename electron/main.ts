@@ -32,6 +32,9 @@ import { killTrackedBashProcesses } from "./lib/coding-tools/bash";
 import { startMcpNotificationPoller } from "./lib/mcp-poller";
 import { stopServerSync } from "./lib/llama-server";
 import { dispose as disposeEmbeddingsWorker } from "./embeddings/client";
+import * as runtime from "./runtime/client";
+import { BootSplash } from "./splash/bootsplash";
+import { runBootSequence } from "./splash/boot-sequence";
 
 const isDev = !app.isPackaged;
 
@@ -115,6 +118,7 @@ function createWindow(): BrowserWindow {
     height: 900,
     minWidth: 900,
     minHeight: 600,
+    show: false,
     titleBarStyle: isWin ? "hidden" : "hiddenInset",
     ...(isWin && {
       titleBarOverlay: {
@@ -173,10 +177,6 @@ app.whenReady().then(async () => {
   const initialDbPath = getDbPathForWorkspace(initialWorkspacePath);
   const initialDb = initDb(initialDbPath);
 
-  // Recover any notes written to disk but missing from SQLite (e.g. due to
-  // a fire-and-forget IPC race or unexpected shutdown).
-  syncNotesFromDisk(initialDb, initialWorkspacePath);
-
   // ── Mutable context — swapped in reinitialise() without relaunching ──
   // getWin is a lazy getter so it works even though win is assigned after ctx.
   let _win: import("electron").BrowserWindow | null = null;
@@ -186,12 +186,67 @@ app.whenReady().then(async () => {
     getWin: () => _win,
   };
 
+  // Register IPC handlers before boot sequence (boot calls reindexNotes,
+  // runAllPendingMigrations, etc. which need handler-level model resolution).
   registerIpcHandlers(ctx);
   registerAgentHandlers(ctx.db);
   registerPiAgentHandler(ctx);
 
+  // ── Splash + boot sequence ────────────────────────────────────────────
+  // Create the splash window immediately so the user sees something while
+  // update check, migrations, reindex, and notes sync run. The main window
+  // is only created after the boot sequence completes (or errors).
+  const splash = new BootSplash();
+  splash.create();
+
+  // Resolve workspace ID from DB (may not exist on first launch / onboarding).
+  const wsRow = initialDb.prepare(
+    "SELECT id FROM workspaces ORDER BY created_at LIMIT 1",
+  ).get() as { id?: string } | undefined;
+  const workspaceId = wsRow?.id ?? "";
+
+  let bootErrors: string[] = [];
+  try {
+    const result = await runBootSequence(splash, {
+      db: initialDb,
+      workspacePath: initialWorkspacePath,
+      workspaceId,
+      isDev,
+    });
+    bootErrors = result.errors;
+  } catch (err) {
+    bootErrors.push(err instanceof Error ? err.message : String(err));
+  }
+
+  // ── Create main window ─────────────────────────────────────────────────
   const win = createWindow();
   _win = win;
+
+  // Close splash only after the main window has finished loading its first
+  // page and a minimum display time has elapsed. The main window is created
+  // hidden (show: false) so only the splash is visible during boot. Once the
+  // renderer has painted, we show the main window and close the splash.
+  const MIN_SPLASH_MS = 3000;
+  const splashOpenedAt = Date.now();
+  const closeSplash = () => {
+    const elapsed = Date.now() - splashOpenedAt;
+    const delay = Math.max(0, MIN_SPLASH_MS - elapsed);
+    setTimeout(() => {
+      // Notify splash to fill to 100% before closing, so the progress bar
+      // completes instead of vanishing mid-cycle.
+      splash.progress({ step: "done", label: "Ready", pct: 100 });
+      setTimeout(() => {
+        win.show();
+        splash.close();
+      }, 200);
+    }, delay);
+  };
+  win.webContents.once("did-finish-load", () => {
+    closeSplash();
+  });
+  setTimeout(() => {
+    closeSplash();
+  }, 6000);
 
   // ── File watcher for external .md edits ──────────────────────────────
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -236,26 +291,29 @@ app.whenReady().then(async () => {
   }
 
   // ── Auto-updater (prod only) ──────────────────────────────────────────
+  // The initial update check runs in the boot sequence (above). Here we only
+  // register the event handlers for the in-app notification UI and set up the
+  // 4-hour poller for updates released during the session.
   if (!isDev) {
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
 
     autoUpdater.on("update-available", (info) => {
-      win.webContents.send("updater:update-available", {
+      if (!win.isDestroyed()) win.webContents.send("updater:update-available", {
         version: info.version,
         releaseNotes: info.releaseNotes ?? null,
       });
     });
 
     autoUpdater.on("update-downloaded", () => {
-      win.webContents.send("updater:update-downloaded");
+      if (!win.isDestroyed()) win.webContents.send("updater:update-downloaded");
     });
 
     autoUpdater.on("error", (err) => {
       console.error("[updater]", err.message);
     });
 
-    autoUpdater.checkForUpdates().catch(() => {});
+    // Poll for updates every 4 hours (initial check was done in boot sequence).
     setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), 4 * 60 * 60 * 1000);
   }
 
@@ -313,6 +371,8 @@ app.on("before-quit", () => {
   stopServerSync();
   // Terminate the embeddings worker child process (HTTP server) so it doesn't linger
   void disposeEmbeddingsWorker();
+  // Terminate the unified runtime process (embeddings + LLM proxy)
+  runtime.stopRuntimeSync();
 });
 
 app.on("window-all-closed", () => {

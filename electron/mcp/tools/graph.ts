@@ -258,31 +258,54 @@ export async function search_notes_semantic(db: Database.Database, args: Record<
   if (!query || typeof query !== "string" || !query.trim()) {
     return { error: "query is required" };
   }
-  // Dynamic import — service.ts transitively imports manifest.ts which calls
-  // app.getPath("userData") at module load. Deferring avoids requiring the
-  // Electron `app` singleton to be ready at import time (e.g. in MCP tests).
+  // The standalone MCP server has no Electron dependency, so it can't import
+  // `embeddings/client.ts` (which calls `app.getPath("userData")` at module
+  // top-level). Instead we call the unified runtime's HTTP API directly via
+  // `embedViaRuntime`. If Cairn isn't running and the runtime can't be
+  // spawned, we fall back to a graceful error message.
+  const { embedViaRuntime } = await import("../../runtime/port-discovery");
   const { searchAdjacent } = await import("../../embeddings/service");
   const { getEmbeddingsSettingsCached } = await import("../../lib/config-cache");
-  const { getDefaultModelId } = await import("../../embeddings/client");
   const { EMBED_MODEL_ID } = await import("../../embeddings/types");
+
   const settings = getEmbeddingsSettingsCached();
   if (!settings.enabled) {
     return { error: "Embeddings are not enabled. Enable them in Settings → Embeddings first." };
   }
-  const model = settings.modelId ?? getDefaultModelId() ?? EMBED_MODEL_ID;
+  const model = settings.modelId ?? EMBED_MODEL_ID;
   const kVal = typeof k === "number" && k > 0 ? Math.min(Math.floor(k), 100) : 5;
-  const results = await searchAdjacent(
-    db,
-    workspaceId as string,
-    query as string,
-    kVal,
-    [],
-    model,
-  );
-  insertNotification(db, "search_notes_semantic", "Semantic search", `query="${String(query).slice(0, 60)}" → ${results.length} hits`);
-  return {
-    query,
-    model,
-    results,
+
+  // Build an embed function that calls the runtime HTTP API.
+  // Returns null when the runtime is unreachable — searchAdjacent would
+  // receive null vectors and we catch that before calling it.
+  const embedFn = async (texts: string[], task: import("../../embeddings/types").EmbedTask): Promise<number[][]> => {
+    const vectors = await embedViaRuntime(texts, task, model);
+    if (vectors === null) {
+      throw new Error(
+        "Embeddings runtime is not available. Start the Cairn app to enable semantic search.",
+      );
+    }
+    return vectors;
   };
+
+  try {
+    const results = await searchAdjacent(
+      db,
+      workspaceId as string,
+      query as string,
+      kVal,
+      [],
+      model,
+      embedFn,
+    );
+    insertNotification(db, "search_notes_semantic", "Semantic search", `query="${String(query).slice(0, 60)}" → ${results.length} hits`);
+    return {
+      query,
+      model,
+      results,
+    };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { error: msg };
+  }
 }

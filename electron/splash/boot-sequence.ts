@@ -1,0 +1,296 @@
+/**
+ * Cairn — Boot sequence orchestrator
+ *
+ * Runs the pre-app startup steps sequentially, reporting progress to the
+ * splash window. Each step is wrapped in try/catch so a failure in one step
+ * doesn't block the others — the app still boots even if reindex fails.
+ *
+ * Steps:
+ *   1. Update check (prod only) — autoUpdater.checkForUpdates()
+ *   2. Workspace migrations — checkMigrations + runAllPendingMigrations
+ *   3. Embeddings reindex — if model changed, reindexNotes
+ *   4. Notes sync — syncNotesFromDisk
+ *
+ * After all steps complete (or error), the caller destroys the splash
+ * and creates the main window.
+ */
+import { autoUpdater } from "electron-updater";
+import type Database from "better-sqlite3";
+
+import { BootSplash } from "./bootsplash";
+import { checkMigrations, runAllPendingMigrations } from "../migrations";
+import { reindexNotes } from "../embeddings/service";
+import { getEmbeddingsSettingsCached } from "../lib/config-cache";
+import { resolveEmbeddingModelId, getDefaultModelId } from "../embeddings/client";
+import * as manifest from "../embeddings/manifest";
+import { syncNotesFromDisk } from "../notes-files";
+import { computeSemanticRelationships } from "../db/graph-queries";
+import { saveCachedConfig } from "../lib/config-cache";
+import * as runtime from "../runtime/client";
+
+export interface BootContext {
+  db: Database.Database;
+  workspacePath: string;
+  workspaceId: string;
+  isDev: boolean;
+}
+
+export interface BootResult {
+  updateInstalled: boolean;
+  migrationsRan: number;
+  reindexed: boolean;
+  notesSynced: number;
+  errors: string[];
+}
+
+export async function runBootSequence(
+  splash: BootSplash,
+  ctx: BootContext,
+): Promise<BootResult> {
+  const errors: string[] = [];
+  let updateInstalled = false;
+  let migrationsRan = 0;
+  let reindexed = false;
+  let notesSynced = 0;
+
+  // ── Step 1: Update check (prod only) ──────────────────────────────────
+  // Block the boot until the update is downloaded and installed. This
+  // ensures the main window never opens with a known-broken build — the
+  // update heals the app before any potentially crashing renderer code
+  // runs. To avoid the splash appearing frozen during the ~172 MB
+  // download, we pipe live download-progress events to the splash UI.
+  if (!ctx.isDev) {
+    try {
+      splash.progress({ step: "update", label: "Checking for updates…", pct: 10 });
+      const result = await autoUpdater.checkForUpdates();
+      // electron-updater always returns `updateInfo` (truthy) even when no
+      // update is available — only proceed when `isUpdateAvailable` is true.
+      // Without this check, running the same version locally as the published
+      // release would stall on "Downloading update v2.1.6…" for 300s.
+      if (result && result.isUpdateAvailable && result.updateInfo) {
+        const version = result.updateInfo.version;
+        splash.progress({
+          step: "update",
+          label: `Downloading update v${version}…`,
+          detail: "Starting download",
+          pct: 15,
+        });
+
+        // Pipe live download progress to the splash so the user sees a
+        // moving progress bar instead of a frozen "Downloading…" label.
+        const progressHandler = (p: { percent: number; transferred: number; total: number; bytesPerSecond: number }) => {
+          const pct = Math.round(p.percent);
+          const transferredMB = (p.transferred / 1024 / 1024).toFixed(1);
+          const totalMB = (p.total / 1024 / 1024).toFixed(1);
+          const speedMB = (p.bytesPerSecond / 1024 / 1024).toFixed(1);
+          splash.progress({
+            step: "update",
+            label: `Downloading update v${version}…`,
+            detail: `${transferredMB} / ${totalMB} MB (${speedMB} MB/s)`,
+            pct: 15 + Math.floor(pct * 0.80), // map 0-100% download to 15-95% boot
+          });
+        };
+        autoUpdater.on("download-progress", progressHandler);
+
+        let cleanupDownloaded: (() => void) | undefined;
+        let cleanupError: (() => void) | undefined;
+
+        try {
+          // Wait for the download to complete. electron-updater emits
+          // 'update-downloaded' when ready. autoDownload is true (set in
+          // main.ts), so the download starts automatically after
+          // checkForUpdates resolves.
+          await new Promise<void>((resolve, reject) => {
+            const timeout = setTimeout(() => {
+              reject(new Error("update download timed out after 300s"));
+            }, 300_000);
+
+            const onDownloaded = () => {
+              clearTimeout(timeout);
+              splash.progress({
+                step: "update",
+                label: `Installing v${version}…`,
+                detail: "The app will restart automatically",
+                pct: 100,
+              });
+              updateInstalled = true;
+              // quitAndInstall restarts the app — the boot sequence will
+              // run again on next launch (finding no update).
+              autoUpdater.quitAndInstall();
+              // The app quits here, so resolve is technically unreachable.
+              resolve();
+            };
+
+            const onError = (err: Error) => {
+              clearTimeout(timeout);
+              reject(err);
+            };
+
+            autoUpdater.once("update-downloaded", onDownloaded);
+            autoUpdater.once("error", onError);
+            // Store refs so the finally block can deregister them if the
+            // timeout fires before the download completes — otherwise
+            // quitAndInstall() could fire unexpectedly later.
+            cleanupDownloaded = () => autoUpdater.off("update-downloaded", onDownloaded);
+            cleanupError = () => autoUpdater.off("error", onError);
+          });
+        } finally {
+          autoUpdater.off("download-progress", progressHandler);
+          cleanupDownloaded?.();
+          cleanupError?.();
+        }
+      }
+    } catch (err) {
+      // Network error, update server down, download timeout, etc. —
+      // don't block the boot entirely. Better to try launching the app
+      // (which may work fine) than to leave the user stuck on splash.
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn("[boot] Update check failed:", msg);
+      errors.push(`Update check: ${msg}`);
+    }
+    splash.stepDone("Update check");
+  }
+
+  // ── Step 2: Workspace migrations ──────────────────────────────────────
+  try {
+    splash.progress({ step: "migrations", label: "Checking migrations…", pct: 0 });
+    const pending = checkMigrations(ctx.workspacePath).filter((m) => m.needed);
+
+    if (pending.length > 0) {
+      splash.progress({
+        step: "migrations",
+        label: `Running ${pending.length} migration${pending.length > 1 ? "s" : ""}…`,
+        pct: 0,
+      });
+
+      migrationsRan = await runAllPendingMigrations(
+        ctx.workspacePath,
+        (migrationId, pct, msg) => {
+          splash.progress({
+            step: "migrations",
+            label: `Migrating: ${migrationId}`,
+            detail: msg,
+            pct,
+          });
+        },
+      );
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[boot] Migration failed:", msg);
+    errors.push(`Migration: ${msg}`);
+  }
+  splash.stepDone("Migrations");
+
+  // ── Step 3: Embeddings reindex ────────────────────────────────────────
+  try {
+    splash.progress({ step: "reindex", label: "Checking embeddings…", pct: 0 });
+    const settings = getEmbeddingsSettingsCached();
+
+    if (settings.enabled) {
+      // Start the unified runtime process so embeddings are immediately
+      // available for search and semantic features. Without this, the runtime
+      // only starts lazily when an embed call happens — which means the first
+      // search after app launch fails until the user toggles embeddings off/on.
+      splash.progress({
+        step: "reindex",
+        label: "Starting embeddings engine…",
+        pct: 0,
+      });
+      try {
+        await runtime.ensureStarted();
+      } catch (err) {
+        console.warn("[boot] Runtime startup failed:", err instanceof Error ? err.message : err);
+        errors.push(`Runtime startup: ${err instanceof Error ? err.message : String(err)}`);
+      }
+
+      // Resolve model id with self-heal (same logic as the IPC handler).
+      const model = resolveEmbeddingModelId(
+        settings.modelId,
+        getDefaultModelId(),
+      );
+      if (settings.modelId !== model) {
+        console.log(
+          `[boot] self-healing stale modelId: ${settings.modelId ?? "(none)"} → ${model}`,
+        );
+        saveCachedConfig("embeddings", { modelId: model });
+        manifest.writeDefaultModelId(model);
+      }
+
+      // Check for any embedding rows with a mismatched model.
+      const row = ctx.db.prepare(
+        "SELECT 1 FROM note_embeddings WHERE model != ? LIMIT 1",
+      ).get(model) as { 1?: number } | undefined;
+
+      if (row) {
+        splash.progress({
+          step: "reindex",
+          label: "Re-indexing notes with new model…",
+          detail: "This may take a moment",
+          pct: 0,
+        });
+
+        const result = await reindexNotes(
+          ctx.db,
+          ctx.workspaceId,
+          undefined,
+          model,
+          undefined,
+          (done, total) => {
+            const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+            splash.progress({
+              step: "reindex",
+              label: "Re-indexing notes…",
+              detail: `${done} / ${total} notes`,
+              pct,
+            });
+          },
+        );
+        reindexed = result.indexed > 0;
+
+        if (result.total > 0) {
+          try {
+            computeSemanticRelationships(ctx.db, ctx.workspaceId, undefined);
+          } catch (e) {
+            console.warn("[boot] semantic recompute failed:", e instanceof Error ? e.message : e);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[boot] Embeddings reindex failed:", msg);
+    errors.push(`Reindex: ${msg}`);
+  }
+  splash.stepDone("Embeddings");
+
+  // ── Step 4: Notes sync ─────────────────────────────────────────────────
+  try {
+    splash.progress({
+      step: "notes-sync",
+      label: "Syncing notes…",
+      pct: 50,
+    });
+
+    // syncNotesFromDisk is synchronous but potentially slow for large
+    // workspaces. We run it in a microtask to let the splash paint.
+    await new Promise<void>((resolve) => {
+      setImmediate(() => {
+        syncNotesFromDisk(ctx.db, ctx.workspacePath);
+        resolve();
+      });
+    });
+
+    notesSynced = 1; // syncNotesFromDisk doesn't return a count
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[boot] Notes sync failed:", msg);
+    errors.push(`Notes sync: ${msg}`);
+  }
+  splash.stepDone("Notes sync");
+
+  // ── Done ──────────────────────────────────────────────────────────────
+  splash.progress({ step: "done", label: "Ready", pct: 100 });
+
+  return { updateInstalled, migrationsRan, reindexed, notesSynced, errors };
+}

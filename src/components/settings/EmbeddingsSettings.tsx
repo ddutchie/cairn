@@ -79,12 +79,13 @@ export function EmbeddingsSettings() {
   const activeWorkspaceId = useCairnStore((s) => s.activeWorkspaceId);
 
   const refreshQuiet = useCallback(async () => {
-    if (!window.electron?.embeddings) return;
+    if (!window.electron?.runtime) return;
     try {
-      const [s, m] = await Promise.all([
-        window.electron.embeddings.status(),
-        window.electron.embeddings.models.list(),
+      const [s, mr] = await Promise.all([
+        window.electron.runtime.embeddings.status(),
+        window.electron.runtime.embeddings.models(),
       ]);
+      const m = mr.models as unknown as ModelEntry[];
       setStatus(s);
       const active = s.reindexInProgress || s.recomputeInProgress;
       setReindexing(active);
@@ -119,7 +120,7 @@ export function EmbeddingsSettings() {
       await refreshQuiet();
     })();
 
-    const off = window.electron?.embeddings?.models.onProgress((ev) => {
+    const off = window.electron?.runtime?.embeddings.onProgress((ev) => {
       if (!ev.modelId) {
         if (ev.status === "progress" && typeof ev.loaded === "number" && typeof ev.total === "number") {
           setReindexProgress({ done: ev.loaded, total: ev.total });
@@ -145,11 +146,11 @@ export function EmbeddingsSettings() {
   }, [refreshQuiet]);
 
   const handleInstall = async (modelId: string) => {
-    const e = window.electron?.embeddings;
-    if (!e) return;
+    const rt = window.electron?.runtime;
+    if (!rt) return;
     setProgressByModel((p) => ({ ...p, [modelId]: { modelId, status: "downloading", progress: 0 } }));
     try {
-      await e.models.install(modelId);
+      await rt.embeddings.install(modelId);
     } catch (err) {
       console.error("[embeddings] install failed:", err);
       setProgressByModel((prev) => {
@@ -162,10 +163,10 @@ export function EmbeddingsSettings() {
   };
 
   const handleRemove = async (modelId: string) => {
-    const e = window.electron?.embeddings;
-    if (!e) return;
+    const rt = window.electron?.runtime;
+    if (!rt) return;
     try {
-      await e.models.remove(modelId);
+      await rt.embeddings.remove(modelId);
       await refreshQuiet();
     } catch (err) {
       console.error("[embeddings] remove failed:", err);
@@ -173,13 +174,13 @@ export function EmbeddingsSettings() {
   };
 
   const handleSetDefault = async (modelId: string) => {
-    const e = window.electron?.embeddings;
-    if (!e) return;
+    const e = window.electron;
+    if (!e?.embeddings || !e.runtime) return;
     try {
-      await e.models.setDefault(modelId);
+      await e.runtime.embeddings.setDefault(modelId);
       const next = { ...config, modelId };
       setConfig(next);
-      await e.saveSettings(next);
+      await e.embeddings.saveSettings(next);
       await refreshQuiet();
     } catch (err) {
       console.error("[embeddings] setDefault failed:", err);
@@ -188,20 +189,30 @@ export function EmbeddingsSettings() {
 
   const handleToggleEnabled = async (enabled: boolean) => {
     const e = window.electron?.embeddings;
-    if (!e) return;
+    const rt = window.electron?.runtime;
+    if (!e || (enabled && !rt)) return;
     const next = { ...config, enabled };
     setConfig(next);
     await e.saveSettings(next);
-    if (enabled && !status.running) {
-      setStartingWorker(false);
+    if (enabled) {
+      setStartingWorker(true);
+      try {
+        // Ensure the unified runtime process is spawned and healthy
+        await rt?.embeddings.ensureStarted();
+        await refreshQuiet();
+      } catch (err) {
+        console.error("[embeddings] failed to start runtime:", err);
+      } finally {
+        setStartingWorker(false);
+      }
     }
   };
 
   const handleStop = async () => {
-    const e = window.electron?.embeddings;
-    if (!e) return;
+    const rt = window.electron?.runtime;
+    if (!rt) return;
     try {
-      await e.stop();
+      await rt.stop();
       await refreshQuiet();
     } catch (err) {
       console.error("[embeddings] stop failed:", err);

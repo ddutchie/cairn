@@ -152,4 +152,15 @@ if (require.main === module) {
     process.stderr.write(`[cairn:mcp] Fatal: ${err}\n`);
     process.exit(1);
   });
+
+  // Clean up any spawned runtime process on shutdown
+  const cleanup = () => {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { disposeSpawnedRuntime } = require("./runtime/port-discovery");
+      disposeSpawnedRuntime();
+    } catch { /* ignore */ }
+  };
+  process.on("SIGTERM", () => { cleanup(); process.exit(0); });
+  process.on("SIGINT", () => { cleanup(); process.exit(0); });
 }

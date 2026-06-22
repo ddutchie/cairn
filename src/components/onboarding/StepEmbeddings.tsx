@@ -52,13 +52,14 @@ export function StepEmbeddings({
   const [ready, setReady] = useState(false);
 
   const refresh = useCallback(async () => {
-    const e = window.electron?.embeddings;
-    if (!e) return;
+    const rt = window.electron?.runtime;
+    if (!rt) return;
     try {
-      const [m, st] = await Promise.all([
-        e.models.list(),
-        e.status(),
+      const [mr, st] = await Promise.all([
+        rt.embeddings.models(),
+        rt.embeddings.status(),
       ]);
+      const m = mr.models as unknown as ModelEntry[];
       setModels(m);
       const defaultId = st.defaultModelId ?? m[0]?.id ?? DEFAULT_MODEL_ID;
       if (!modelId || !m.some((x) => x.id === modelId)) {
@@ -73,7 +74,7 @@ export function StepEmbeddings({
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void refresh();
-    const off = window.electron?.embeddings?.models.onProgress((ev) => {
+    const off = window.electron?.runtime?.embeddings.onProgress((ev) => {
       setProgress(ev);
       if (ev.status === "installed" || ev.status === "ready") {
         void refresh();
@@ -83,11 +84,11 @@ export function StepEmbeddings({
   }, [refresh]);
 
   async function handleInstall(id: string) {
-    const e = window.electron?.embeddings;
-    if (!e) return;
+    const rt = window.electron?.runtime;
+    if (!rt) return;
     setProgress({ modelId: id, status: "downloading", progress: 0 });
     try {
-      await e.models.install(id);
+      await rt.embeddings.install(id);
       await refresh();
     } catch (err) {
       setProgress({ modelId: id, status: "error", error: String(err) });

@@ -11,7 +11,6 @@ import {
   deleteNoteEmbeddingSections,
 } from "../db/queries";
 import type { NoteEmbeddingRecord } from "../db/queries";
-import { embed as clientEmbed } from "./client";
 import { projectTo2d, normaliseProjection } from "./projection";
 import { toFloat32 } from "./cosine";
 import { splitIntoSections } from "./sections";
@@ -20,7 +19,10 @@ import type { EmbedTask } from "./types";
 
 export type EmbedFn = (texts: string[], task: EmbedTask, model?: string) => Promise<number[][]>;
 
-const defaultEmbed: EmbedFn = (texts, task, model) => clientEmbed(texts, task, model);
+const defaultEmbed: EmbedFn = async (texts, task, model) => {
+  const { embed: runtimeEmbed } = await import("../runtime/client");
+  return runtimeEmbed(texts, task, model);
+};
 
 const BATCH_SIZE = 16;
 const CHUNK_CHAR_LIMIT = 4000;

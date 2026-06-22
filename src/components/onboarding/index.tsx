@@ -120,11 +120,12 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
 
   async function handleSaveEmbeddings() {
     const e = window.electron?.embeddings;
+    const rt = window.electron?.runtime;
     if (e?.saveSettings) {
       try {
         await e.saveSettings({ enabled: embEnabled, modelId: embModelId });
-        if (embEnabled && e.models.setDefault) {
-          await e.models.setDefault(embModelId);
+        if (embEnabled && rt?.embeddings.setDefault) {
+          await rt.embeddings.setDefault(embModelId);
         }
       } catch {
         // Best-effort — wizard shouldn't block on this

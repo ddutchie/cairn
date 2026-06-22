@@ -571,6 +571,112 @@ const api = {
       { config },
     ),
   },
+  // ── Unified Runtime (embeddings + LLM) ───────────
+  runtime: {
+    status: () => invoke<{
+      embeddings: { healthy: boolean; model: string | null; loaded: boolean };
+      llm: { healthy: boolean; model: string | null; loaded: boolean; port: number | null };
+    }>("runtime:status"),
+    stop: () => invoke<{ ok: boolean }>("runtime:stop"),
+    onProgress: (cb: (e: {
+      modelId: string;
+      status: string;
+      file?: string;
+      progress?: number;
+      loaded?: number;
+      total?: number;
+    }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: any) => cb(e);
+      ipcRenderer.on("runtime:download-progress", handler);
+      return () => {
+        ipcRenderer.off("runtime:download-progress", handler);
+      };
+    },
+    embeddings: {
+      status: () => invoke<{
+        running: boolean;
+        port: number | null;
+        activeModelId: string | null;
+        defaultModelId: string | null;
+        installed: boolean;
+        error: string | null;
+        reindexInProgress: boolean;
+        recomputeInProgress: boolean;
+        lastReindexDone: number;
+        lastReindexTotal: number;
+        lastRecomputeDone: number;
+        lastRecomputeTotal: number;
+      }>("runtime:embeddings:status"),
+      ensureStarted: () => invoke<{ ok: boolean }>("runtime:embeddings:ensureStarted"),
+      models: () => invoke<{ models: Array<Record<string, unknown>> }>("runtime:embeddings:models"),
+      install: (modelId: string) => invoke<{ ok: boolean }>("runtime:embeddings:install", { modelId }),
+      remove: (modelId: string) => invoke<{ ok: boolean }>("runtime:embeddings:remove", { modelId }),
+      setDefault: (modelId: string) => invoke<{ ok: boolean }>("runtime:embeddings:setDefault", { modelId }),
+      onProgress: (cb: (e: {
+        modelId: string;
+        status: string;
+        file?: string;
+        progress?: number;
+        loaded?: number;
+        total?: number;
+        error?: string;
+      }) => void) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const handler = (_: any, e: any) => cb(e);
+        ipcRenderer.on("runtime:download-progress", handler);
+        return () => {
+          ipcRenderer.off("runtime:download-progress", handler);
+        };
+      },
+    },
+    llm: {
+      models: () => invoke<{ models: Array<Record<string, unknown>> }>("runtime:llm:models"),
+      install: (modelId: string, useMirror?: boolean) => invoke<{ ok: boolean }>("runtime:llm:install", { modelId, useMirror }),
+      remove: (modelId: string) => invoke<{ ok: boolean }>("runtime:llm:remove", { modelId }),
+      clearInactive: () => invoke<{ ok: boolean }>("runtime:llm:clearInactive"),
+      onProgress: (cb: (e: {
+        modelId: string;
+        progress: number;
+        speed?: string;
+        loaded: number;
+        total: number;
+        status: string;
+        error?: string;
+      }) => void) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const handler = (_: any, e: any) => cb(e);
+        ipcRenderer.on("runtime:download-progress", handler);
+        return () => {
+          ipcRenderer.off("runtime:download-progress", handler);
+        };
+      },
+      binary: {
+        install: () => invoke<{ ok: boolean }>("runtime:llm:binary:install"),
+        checkForUpdates: () => invoke<{ updateAvailable: boolean; currentVersion: string | null; latestVersion: string | null }>("runtime:llm:checkUpdate"),
+        onProgress: (cb: (e: { progress: number; speed?: string; status: string; error?: string }) => void) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const handler = (_: any, e: any) => cb(e);
+          ipcRenderer.on("runtime:binary-progress", handler);
+          return () => {
+            ipcRenderer.off("runtime:binary-progress", handler);
+          };
+        },
+      },
+      server: {
+        start: (modelId: string, contextLimit?: number) => invoke<{ port: number }>("runtime:llm:start", { modelId, contextLimit }),
+        stop: () => invoke<{ ok: boolean }>("runtime:llm:stop"),
+        status: () => invoke<{
+          running: boolean;
+          port: number | null;
+          activeModelId: string | null;
+          defaultModelId: string | null;
+          binaryInstalled: boolean;
+        }>("runtime:llm:status"),
+        setDefault: (modelId: string) => invoke<{ ok: boolean }>("runtime:llm:server:setDefault", { modelId }),
+      },
+    },
+  },
   // ── Mobile Access ────────────────────────────────
   mobile: {
     status: () => invoke<{

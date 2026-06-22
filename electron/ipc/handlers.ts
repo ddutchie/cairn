@@ -36,6 +36,7 @@ import { registerAiHandlers } from "./ai-handlers";
 import { registerLlamaHandlers } from "./llama-handlers";
 import { registerGraphHandlers } from "./graph-handlers";
 import { registerEmbeddingsHandlers } from "./embeddings-handlers";
+import { registerRuntimeHandlers } from "./runtime-handlers";
 import { registerChatHandler } from "./chat";
 import { registerPdfExportHandler } from "./pdf-export";
 import { registerUrlMetadataHandler } from "./url-metadata";
@@ -60,6 +61,7 @@ export function registerIpcHandlers(ctx: DbContext): void {
   registerLlamaHandlers(ctx);
   registerGraphHandlers(ctx);
   registerEmbeddingsHandlers(ctx);
+  registerRuntimeHandlers(ctx);
 }
 
 /**

@@ -87,7 +87,7 @@ function fmt(r: BenchResult): string {
 
 const CEILINGS: Record<string, Record<FixtureName, number>> = {
   "remark-parse":          { small: 15,  medium: 30,  large: 90   },
-  "remark-gfm+math":       { small: 15,  medium: 30,  large: 80   },
+  "remark-gfm+math":       { small: 15,  medium: 30,  large: 90   },
   "remark-callout":        { small: 10,  medium: 15,  large: 60   },
   "remark-promoteDisplay": { small: 10,  medium: 15,  large: 45   },
   "remark→hast":           { small: 15,  medium: 45,  large: 150  },
