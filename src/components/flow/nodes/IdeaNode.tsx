@@ -43,7 +43,7 @@ export const IdeaNode = memo(function IdeaNode({ id, data, selected, isConnectab
           )}
         </div>
         {d.body && (
-          <p className="mt-1.5 text-[0.786rem] text-[var(--text-tertiary)] leading-relaxed line-clamp-3 break-words pl-5">
+          <p className="mt-1.5 text-[0.786rem] text-[var(--text-tertiary)] leading-relaxed line-clamp-3 break-words pl-5 whitespace-pre-wrap">
             {d.body}
           </p>
         )}

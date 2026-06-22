@@ -111,7 +111,7 @@ export function NodeEditModal({ nodeId, type, data, onSave, onClose }: NodeEditM
             </button>
             <button
               onClick={handleSave}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors"
+              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--accent)] text-[var(--background)] hover:bg-[var(--accent-hover)] transition-colors"
             >
               Save
             </button>

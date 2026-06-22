@@ -100,7 +100,7 @@ export const AiSummaryNode = memo(function AiSummaryNode({ id, data, selected, i
           </p>
         ) : hasContent ? (
           <div className="text-[0.786rem] text-[var(--text-secondary)] leading-relaxed break-words max-h-64 overflow-y-auto nodrag">
-            <NoteMarkdownPreview content={d.content!} className="!px-0 !py-0" />
+            <NoteMarkdownPreview content={d.content!} className="!px-0 !py-0 !overflow-visible !h-auto" />
           </div>
         ) : (
           <p className="text-[0.786rem] text-[var(--text-tertiary)] leading-relaxed italic">
