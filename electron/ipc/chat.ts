@@ -14,6 +14,8 @@ import { isLocalEndpoint, normaliseBaseUrl, type OpenAIMessage, calculatePromptB
 import { TOOLS, buildSystemPrompt, type ChatRequest } from "../lib/tools";
 import { executeTool } from "./chat-executor";
 import { saveCachedConfig, getCachedConfig } from "../lib/config-cache";
+import { iterSseData } from "../lib/sse";
+import { traceTool } from "../lib/tool-trace";
 
 // Track one AbortController per renderer webContents ID
 const abortControllers = new Map<number, AbortController>();
@@ -171,52 +173,47 @@ async function runToolLoop(
       const reader = response.body?.getReader();
       if (!reader) return { exhausted: true, content: "No response stream" };
 
-      const decoder = new TextDecoder();
       let contentBuffer = "";
       const toolCallBuffers: Map<number, { id: string; name: string; args: string }> = new Map();
-      let streamDone = false;
 
-      while (!streamDone) {
-        if (signal?.aborted) break;
-        const { done, value } = await reader.read();
-        if (done) break;
-        for (const line of decoder.decode(value, { stream: true }).split("\n")) {
-          const trimmed = line.trim();
-          if (!trimmed.startsWith("data:")) continue;
-          const jsonStr = trimmed.slice(5).trim();
-          if (jsonStr === "[DONE]") {
-            streamDone = true;
-            break;
+      for await (const jsonStr of iterSseData(reader, signal ?? undefined)) {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const chunk = JSON.parse(jsonStr) as any;
+          if (chunk.usage && onUsage) {
+            onUsage(chunk.usage.prompt_tokens ?? 0, chunk.usage.completion_tokens ?? 0);
           }
-          try {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const chunk = JSON.parse(jsonStr) as any;
-            if (chunk.usage && onUsage) {
-              onUsage(chunk.usage.prompt_tokens ?? 0, chunk.usage.completion_tokens ?? 0);
-            }
-            const delta = chunk.choices?.[0]?.delta;
-            if (!delta) continue;
+          const delta = chunk.choices?.[0]?.delta;
+          if (!delta) continue;
 
-            if (delta.content) {
-              contentBuffer += delta.content;
-              accumulatedContent += delta.content;
-              if (onToken) onToken(delta.content);
-            }
+          if (delta.content) {
+            contentBuffer += delta.content;
+            accumulatedContent += delta.content;
+            if (onToken) onToken(delta.content);
+          }
 
-            if (delta.tool_calls) {
-              for (const tc of delta.tool_calls) {
-                const idx: number = tc.index ?? 0;
-                if (!toolCallBuffers.has(idx)) {
-                  toolCallBuffers.set(idx, { id: tc.id ?? "", name: tc.function?.name ?? "", args: "" });
-                }
-                const buf = toolCallBuffers.get(idx)!;
-                if (tc.id) buf.id = tc.id;
-                if (tc.function?.name) buf.name = tc.function.name;
-                if (tc.function?.arguments) buf.args += tc.function.arguments;
+          if (delta.tool_calls) {
+            for (const tc of delta.tool_calls) {
+              const idx: number = tc.index ?? 0;
+              if (!toolCallBuffers.has(idx)) {
+                toolCallBuffers.set(idx, { id: tc.id ?? "", name: tc.function?.name ?? "", args: "" });
               }
+              const buf = toolCallBuffers.get(idx)!;
+              if (tc.id) buf.id = tc.id;
+              if (tc.function?.name) buf.name = tc.function.name;
+              if (tc.function?.arguments) buf.args += tc.function.arguments;
             }
-          } catch { /* skip malformed SSE lines */ }
-        }
+          }
+        } catch { /* skip malformed SSE JSON line */ }
+      }
+
+      // Dev trace: per-tool assembled arguments.
+      for (const [idx, buf] of toolCallBuffers.entries()) {
+        traceTool("sse-args", {
+          toolIndex: idx,
+          toolName: buf.name,
+          arguments: buf.args,
+        });
       }
 
       if (signal?.aborted) return { exhausted: true, content: "" };
@@ -246,8 +243,35 @@ async function runToolLoop(
 
     messages.push(assistantMsg);
     for (const call of assistantMsg.tool_calls) {
-      let args: Record<string, unknown> = {};
-      try { args = JSON.parse(call.function.arguments); } catch { args = {}; }
+      let args: Record<string, unknown>;
+      let parseError: string | null = null;
+      try {
+        args = JSON.parse(call.function.arguments) as Record<string, unknown>;
+        traceTool("parse", {
+          toolName: call.function.name,
+          title: typeof args.title === "string" ? args.title : "",
+          content: typeof args.content === "string" ? args.content : "",
+          rawArguments: call.function.arguments,
+        });
+      } catch (err) {
+        parseError = `Malformed tool-call arguments JSON from model: ${(err as Error).message}`;
+        args = {};
+      }
+
+      // Surface the chip so the UI shows the tool happening, then fail
+      // with a descriptive error so the model can re-issue — never run
+      // a tool with destructured args.
+      if (parseError) {
+        emitToolCall({ tool: call.function.name, label: call.function.name, args: {} });
+        emitToolCallDone?.({ tool: call.function.name });
+        messages.push({
+          role: "tool",
+          tool_call_id: call.id,
+          content: JSON.stringify({ error: parseError }),
+        });
+        continue;
+      }
+
       let result: unknown;
       try {
         result = await executeTool(db, req, workspacePath, { baseUrl, model, apiKey, provider: provider as "openai" | "localllm" }, call.function.name, args, emitToolCall, getWin, emitToolCallDone);

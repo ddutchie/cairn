@@ -2,7 +2,7 @@
 import Database from "better-sqlite3";
 import * as q from "../../db/queries";
 import { newId } from "../../db/utils";
-import { stripMarkdown } from "../../shared/text-utils";
+import { stripMarkdown, normalizeNoteTitle } from "../../shared/text-utils";
 import { executeSearchNotes } from "../../shared/read-tools-pure";
 import {
   Snapshot,
@@ -14,6 +14,7 @@ import {
   deleteNoteFile,
   resolveTagNames
 } from "../db";
+import { traceTool } from "../../lib/tool-trace";
 
 export function get_note(db: Database.Database, snap: Snapshot, args: Record<string, any>) {
   const note = snap.notes.find((n) => n.id === args.noteId);
@@ -43,9 +44,15 @@ export function ensure_note(db: Database.Database, snap: Snapshot, workspacePath
   const { projectId, title, content, tagIds: ensureTagIds, tagNames, isPinned: ensureIsPinned } = args;
   const project = snap.projects.find((p) => p.id === projectId);
   if (!project) return { error: "Project not found" };
+  const matchTitle = normalizeNoteTitle(title as string);
   const existing = snap.notes.find(
-    (n) => !n.archivedAt && n.projectId === projectId && n.title === title
+    (n) => !n.archivedAt && n.projectId === projectId && normalizeNoteTitle(n.title as string) === matchTitle
   );
+  traceTool("lookup", {
+    toolName: "ensure_note",
+    requestedTitle: typeof title === "string" ? title : "",
+    matchedId: existing?.id ?? "none",
+  });
   const markdown = (content as string | undefined) ?? "";
 
   const resolvedFromNameIds = resolveTagNames(db, project.workspaceId, tagNames);
