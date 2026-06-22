@@ -69,7 +69,6 @@ export function SemanticMapCanvas({ nodes, onNodeClick, selectedNodeId }: Props)
   const [loading, setLoading] = useState(true);
   const [recomputing, setRecomputing] = useState(false);
   const [recomputeProgress, setRecomputeProgress] = useState<{ done: number; total: number } | null>(null);
-  const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [tooltip, setTooltip] = useState<{ x: number; y: number; note: PlottedNote } | null>(null);
@@ -206,11 +205,6 @@ export function SemanticMapCanvas({ nodes, onNodeClick, selectedNodeId }: Props)
     (e.target as Element).releasePointerCapture?.(e.pointerId);
   }, []);
 
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    setZoom((z) => Math.max(0.3, Math.min(5, z * delta)));
-  }, []);
-
   function handleRecompute() {
     const e = window.electron?.embeddings;
     if (!e?.recomputeProjections || !activeWorkspaceId) return;
@@ -246,8 +240,8 @@ export function SemanticMapCanvas({ nodes, onNodeClick, selectedNodeId }: Props)
           <p className="text-xs text-[var(--text-tertiary)] leading-relaxed mb-4">
             {projections.length === 0
               ? anyStale
-                ? "Existing embeddings need to be projected to 2D. This runs UMAP locally — no model downloads, no network calls."
-                : "Enable embeddings in Settings, index your notes, then compute UMAP projections to see them plotted by semantic similarity."
+                ? "Existing embeddings need to be projected to 2D. This runs locally — no model downloads, no network calls."
+                : "Enable embeddings in Settings, index your notes, then compute projections to see them plotted by semantic similarity."
               : "Try widening the project filter or reindexing notes for the selected projects."}
           </p>
           {projections.length === 0 && (anyStale || activeWorkspaceId) && (
@@ -264,7 +258,7 @@ export function SemanticMapCanvas({ nodes, onNodeClick, selectedNodeId }: Props)
           {recomputeProgress && (
             <div className="mt-4 space-y-1 text-left">
               <div className="flex justify-between text-[0.65rem] text-[var(--text-tertiary)]">
-                <span>Running UMAP…</span>
+                <span>Computing projections…</span>
                 <span className="font-mono">
                   {recomputeProgress.done}/{recomputeProgress.total}
                   {recomputeProgress.total > 0
@@ -302,7 +296,6 @@ export function SemanticMapCanvas({ nodes, onNodeClick, selectedNodeId }: Props)
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerLeave={onPointerUp}
-      onWheel={handleWheel}
     >
       <svg width={dims.width} height={dims.height} style={{ display: "block" }}>
         <defs>
@@ -313,7 +306,7 @@ export function SemanticMapCanvas({ nodes, onNodeClick, selectedNodeId }: Props)
         </defs>
         <rect x={0} y={0} width={dims.width} height={dims.height} fill="url(#sem-gradient-bg)" />
 
-        <g transform={`translate(${pan.x},${pan.y}) scale(${zoom})`}>
+        <g transform={`translate(${pan.x},${pan.y})`}>
           {/* Axes hints */}
           <line
             x1={xScale.range()[0]} y1={yScale(0)} x2={xScale.range()[1]} y2={yScale(0)}
@@ -392,26 +385,17 @@ export function SemanticMapCanvas({ nodes, onNodeClick, selectedNodeId }: Props)
         )}
       </svg>
 
-      {/* Zoom controls */}
+      {/* Recompute control */}
       <div className="absolute top-3 right-3 flex items-center gap-1 bg-[var(--surface)] border border-[var(--border)] rounded-md p-0.5">
         <button
-          onClick={() => setZoom((z) => Math.max(0.3, z / 1.2))}
-          className="w-7 h-7 flex items-center justify-center text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] rounded"
-        >−</button>
-        <span className="text-[0.65rem] text-[var(--text-tertiary)] font-mono w-9 text-center">{Math.round(zoom * 100)}%</span>
-        <button
-          onClick={() => setZoom((z) => Math.min(5, z * 1.2))}
-          className="w-7 h-7 flex items-center justify-center text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] rounded"
-        >+</button>
-        <button
-          onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}
+          onClick={() => setPan({ x: 0, y: 0 })}
           className="w-7 h-7 flex items-center justify-center text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] rounded text-[0.7rem]"
           title="Reset view"
         >⟲</button>
         <button
           onClick={handleRecompute}
           disabled={recomputing}
-          title="Recompute projections (UMAP)"
+          title="Recompute projections"
           className="w-7 h-7 flex items-center justify-center text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--surface-2)] rounded disabled:opacity-50"
         >
           <RefreshCw size={12} className={cn(recomputing && "animate-spin")} />
@@ -426,7 +410,7 @@ export function SemanticMapCanvas({ nodes, onNodeClick, selectedNodeId }: Props)
       {recomputeProgress && (
         <div className="absolute bottom-3 left-3 right-3 max-w-md mx-auto bg-[var(--surface)] border border-[var(--border)] rounded-md p-2 space-y-1">
           <div className="flex justify-between text-[0.65rem] text-[var(--text-tertiary)]">
-            <span>Recomputing UMAP projections…</span>
+            <span>Recomputing projections…</span>
             <span className="font-mono">
               {recomputeProgress.done}/{recomputeProgress.total}
               {recomputeProgress.total > 0
@@ -456,9 +440,6 @@ export function SemanticMapCanvas({ nodes, onNodeClick, selectedNodeId }: Props)
           {tooltip.note.projectName && (
             <p className="text-[0.7rem] text-[var(--text-tertiary)] mt-0.5">in {tooltip.note.projectName}</p>
           )}
-          <p className="text-[0.65rem] text-[var(--text-tertiary)] font-mono mt-1 opacity-70">
-            {tooltip.note.model}
-          </p>
         </CanvasTooltip>
       )}
     </div>

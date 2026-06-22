@@ -719,7 +719,7 @@ export function invalidateRelationshipCache(
 }
 
 const SEMANTIC_TOP_K = 5;
-const SEMANTIC_TOP_K_FLOOR = 0.55;
+const SEMANTIC_TOP_K_FLOOR = 0.60;
 /**
  * Recompute embedding-based semantic edges by cosine-similarity between the
  * stored `search_document` vectors for this workspace. Since v18, vectors are
