@@ -207,7 +207,14 @@ export function Sidebar() {
           </div>
 
           <div className="space-y-0.5 px-1">
-            {projects.map((project) => (
+            {(() => {
+              // Pre-compute card counts per project to avoid O(projects × cards) in the map
+              const openCardCountByProject = new Map<string, number>();
+              for (const c of cards) {
+                if (c.archivedAt) continue;
+                openCardCountByProject.set(c.projectId, (openCardCountByProject.get(c.projectId) ?? 0) + 1);
+              }
+              return projects.map((project) => (
               <ProjectItem
                 key={project.id}
                 project={project}
@@ -219,12 +226,12 @@ export function Sidebar() {
                 onSelectView={(view) => { setActiveProject(project.id); setView(view); closeSidebarOnMobile(); }}
                 onRename={(name) => updateProject(project.id, { name })}
                 onDelete={() => deleteProject(project.id)}
-                openCardCount={cards.filter((c) => c.projectId === project.id && !c.archivedAt).length}
+                openCardCount={openCardCountByProject.get(project.id) ?? 0}
                 hiddenViews={hiddenViews}
                 visibleNavItems={visibleNavItems}
               />
-            ))}
-
+            ));
+            })()}
             {creatingProject && (
               <ProjectCreateForm
                 value={newProjectName}

@@ -73,7 +73,9 @@ export function GraphDetailPanel({ node, onClose }: Props) {
       dedupedWiki.push(l);
     }
 
-    // Semantic edges (both directions), sorted by weight desc
+    // Semantic edges (both directions), sorted by weight desc, deduped by
+    // noteId (multiple edges can reference the same note — keep highest weight).
+    const semanticSeen = new Set<string>();
     const semantic: LinkEntry[] = graphData.edges
       .filter((e) => e.type === "semantic" && (e.source === node.id || e.target === node.id))
       .map((e) => {
@@ -87,7 +89,12 @@ export function GraphDetailPanel({ node, onClose }: Props) {
           targetSectionTitle: e.targetSectionTitle,
         };
       })
-      .sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0));
+      .sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0))
+      .filter((l) => {
+        if (semanticSeen.has(l.noteId)) return false;
+        semanticSeen.add(l.noteId);
+        return true;
+      });
 
     return { wikiLinks: dedupedWiki, semanticLinks: semantic };
   }, [node, notes, graphData.edges]);
@@ -126,16 +133,20 @@ export function GraphDetailPanel({ node, onClose }: Props) {
       case "note":     setView("notes"); break;
       case "card":
         setView("board");
-        // Defer until after the board mounts and registers its event listeners
+        // Defer until after the board mounts and registers its event listeners.
+        // Double rAF: first frame lets React commit the DOM + run useEffects,
+        // second frame dispatches events so listeners are guaranteed mounted.
         {
           const cardId = node.id;
           requestAnimationFrame(() => {
-            const card = cards.find((c) => c.id === cardId);
-            const col = card ? columns.find((c) => c.id === card.columnId) : undefined;
-            if (col) {
-              window.dispatchEvent(CairnEvents.scrollToColumn(col.id));
-            }
-            window.dispatchEvent(CairnEvents.openCard(cardId));
+            requestAnimationFrame(() => {
+              const card = cards.find((c) => c.id === cardId);
+              const col = card ? columns.find((c) => c.id === card.columnId) : undefined;
+              if (col) {
+                window.dispatchEvent(CairnEvents.scrollToColumn(col.id));
+              }
+              window.dispatchEvent(CairnEvents.openCard(cardId));
+            });
           });
         }
         break;
@@ -358,7 +369,7 @@ export function GraphDetailPanel({ node, onClose }: Props) {
             onClick={navigateTo}
             className={cn(
               "flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-md text-xs font-medium transition-colors",
-              "bg-[var(--accent-dim)] text-[var(--accent)] hover:bg-[var(--accent)] hover:text-white"
+              "bg-[var(--accent-dim)] text-[var(--accent)] hover:bg-[var(--accent)] hover:text-[var(--background)]"
             )}
           >
             <ExternalLink size={12} />
@@ -380,7 +391,7 @@ export function GraphDetailPanel({ node, onClose }: Props) {
             }}
             className={cn(
               "flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-md text-xs font-medium transition-colors",
-              "bg-[var(--accent-dim)] text-[var(--accent)] hover:bg-[var(--accent)] hover:text-white"
+              "bg-[var(--accent-dim)] text-[var(--accent)] hover:bg-[var(--accent)] hover:text-[var(--background)]"
             )}
           >
             <ExternalLink size={12} />

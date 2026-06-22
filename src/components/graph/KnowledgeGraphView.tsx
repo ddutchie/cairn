@@ -14,13 +14,12 @@ import { GraphDetailPanel } from "./GraphDetailPanel";
 import { ForceGraphCanvas } from "./ForceGraphCanvas";
 import { RadialTreeCanvas } from "./RadialTreeCanvas";
 import { Tooltip } from "@/components/ui/tooltip";
-import { resolveCssVar } from "./analyticsUtils";
 
 const EDGE_LEGEND: Array<{ label: string; color: string; dash: boolean }> = [
-  { label: "Linked",   color: resolveCssVar("--accent"),  dash: false },
-  { label: "Wikilink", color: resolveCssVar("--accent"),  dash: false },
-  { label: "Semantic", color: resolveCssVar("--accent"),  dash: true  },
-  { label: "Co-mention", color: resolveCssVar("--border"), dash: true },
+  { label: "Linked",   color: "var(--accent)",  dash: false },
+  { label: "Wikilink", color: "var(--accent)",  dash: false },
+  { label: "Semantic", color: "var(--accent)",  dash: true  },
+  { label: "Co-mention", color: "var(--border)", dash: true },
 ];
 
 export function KnowledgeGraphView() {
@@ -65,11 +64,13 @@ export function KnowledgeGraphView() {
   });
   const [spacing, setSpacing] = useState<number>(() => {
     if (typeof localStorage === "undefined") return 1.2;
-    return parseFloat(localStorage.getItem("kg-spacing") || "1.2");
+    const v = parseFloat(localStorage.getItem("kg-spacing") || "1.2");
+    return isFinite(v) ? v : 1.2;
   });
   const [semanticThreshold, setSemanticThreshold] = useState<number>(() => {
     if (typeof localStorage === "undefined") return 1.0;
-    return parseFloat(localStorage.getItem("kg-semantic-threshold") || "1.0");
+    const v = parseFloat(localStorage.getItem("kg-semantic-threshold") || "1.0");
+    return isFinite(v) ? v : 1.0;
   });
 
   // Persist graph prefs to localStorage
@@ -124,7 +125,14 @@ export function KnowledgeGraphView() {
     for (const n of graphData.nodes) {
       if (n.type === "tag") tagNameMap.set(n.id, n.title.toLowerCase());
     }
-    const tagMemberEdges = graphData.edges.filter((e) => e.type === "tag-member");
+    // Pre-compute node → tag IDs map to avoid O(nodes × edges) scan
+    const nodeTagIds = new Map<string, string[]>();
+    for (const e of graphData.edges) {
+      if (e.type !== "tag-member") continue;
+      const arr = nodeTagIds.get(e.source);
+      if (arr) arr.push(e.target);
+      else nodeTagIds.set(e.source, [e.target]);
+    }
 
     // First pass: nodes whose title, snippet, or tag name matches
     const matchingIds = new Set(
@@ -133,7 +141,7 @@ export function KnowledgeGraphView() {
           if (n.title.toLowerCase().includes(q)) return true;
           if (n.meta?.snippet && n.meta.snippet.toLowerCase().includes(q)) return true;
           // Check if any tag attached to this node matches
-          const tagIds = tagMemberEdges.filter((e) => e.source === n.id).map((e) => e.target);
+          const tagIds = nodeTagIds.get(n.id) ?? [];
           if (tagIds.some((tid) => tagNameMap.get(tid)?.includes(q))) return true;
           return false;
         })

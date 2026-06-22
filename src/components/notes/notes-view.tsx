@@ -306,6 +306,7 @@ export function NotesView() {
             {filter && (
               <button
                 onClick={() => setFilter("")}
+                aria-label="Clear filter"
                 className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors"
               >
                 <X size={12} />

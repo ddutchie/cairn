@@ -104,6 +104,7 @@ export function DataSettings({
               value={resetConfirm}
               onChange={(e) => setResetConfirm(e.target.value)}
               autoFocus
+              aria-label="Type DELETE to confirm deletion"
               className="w-full text-xs bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:border-[var(--danger)]"
             />
             <div className="flex justify-end gap-2">

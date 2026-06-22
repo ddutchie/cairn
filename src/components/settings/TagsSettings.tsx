@@ -65,6 +65,7 @@ export function TagsSettings() {
               {/* Color swatch — click to open palette */}
               <button
                 onClick={() => setColorPickerId(colorPickerId === tag.id ? null : tag.id)}
+                aria-label="Change tag color"
                 className="w-3.5 h-3.5 rounded-full flex-shrink-0 ring-1 ring-[color-mix(in_srgb,var(--text-primary)_20%,transparent)] hover:ring-2 hover:ring-[var(--accent)] transition-all"
                 style={{ backgroundColor: tag.color }}
                 title="Change color"

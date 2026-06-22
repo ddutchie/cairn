@@ -61,13 +61,16 @@ export function Toggle({
   checked,
   onChange,
   label,
+  id,
 }: {
   checked: boolean;
   onChange: (v: boolean) => void;
   label?: string;
+  id?: string;
 }) {
   return (
     <button
+      id={id}
       onClick={() => onChange(!checked)}
       className={cn(
         "relative inline-flex h-5 w-9 items-center rounded-full transition-colors",

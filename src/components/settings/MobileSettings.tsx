@@ -116,7 +116,7 @@ export function MobileSettings() {
               <div className="text-sm font-mono text-[var(--text-primary)] select-all selection:bg-[var(--accent)] selection:text-[var(--background)]">
                 {status.url}
               </div>
-              <p className="text-[10px] text-[var(--text-tertiary)] max-w-sm">
+              <p className="text-[0.714rem] text-[var(--text-tertiary)] max-w-sm">
                 Make sure your mobile device is connected to the same Wi-Fi network as this computer.
               </p>
             </div>
@@ -130,7 +130,7 @@ export function MobileSettings() {
                   className="w-32 h-32 object-contain"
                   style={{ imageRendering: "pixelated" }}
                 />
-                <span className="text-[10px] text-[var(--text-tertiary)] font-medium mt-1">Scan to connect</span>
+                <span className="text-[0.714rem] text-[var(--text-tertiary)] font-medium mt-1">Scan to connect</span>
               </div>
             )}
           </div>

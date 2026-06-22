@@ -144,8 +144,8 @@ export const KanbanCard = React.memo(function KanbanCard({ card, onClick, isDrag
                   return (
                     <span className={cn(
                       "flex items-center gap-1 text-[0.714rem] font-medium rounded px-1 py-0.5",
-                      status === "overdue" && "text-[var(--danger)] bg-[var(--danger)]/10",
-                      status === "today" && "text-[var(--warning)] bg-[var(--warning)]/10",
+                      status === "overdue" && "text-[var(--danger)] bg-[color-mix(in_srgb,var(--danger)_10%,transparent)]",
+                      status === "today" && "text-[var(--warning)] bg-[color-mix(in_srgb,var(--warning)_10%,transparent)]",
                       status === "upcoming" && "text-[var(--text-tertiary)]",
                     )}>
                       <Calendar size={11} />
