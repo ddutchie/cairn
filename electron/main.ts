@@ -201,8 +201,10 @@ app.whenReady().then(async () => {
 
   // Emit real progress for the pre-boot work that happens between splash
   // creation and runBootSequence. Without these events the splash sits at
-  // 0% with "Starting…" until the first boot step fires.
-  splash.progress({ step: "migrations", label: "Opening database…", pct: 3 });
+  // 0% with "Starting…" until the first boot step fires. We intentionally
+  // omit pct — boot-sequence.ts owns the full 0-100% range and sending a
+  //数值 here would cause a backwards jump when migrations starts at 0%.
+  splash.progress({ step: "migrations", label: "Opening database…" });
 
   // Resolve workspace ID from DB (may not exist on first launch / onboarding).
   const wsRow = initialDb.prepare(
@@ -210,7 +212,7 @@ app.whenReady().then(async () => {
   ).get() as { id?: string } | undefined;
   const workspaceId = wsRow?.id ?? "";
 
-  splash.progress({ step: "migrations", label: "Registering handlers…", pct: 6 });
+  splash.progress({ step: "migrations", label: "Registering handlers…" });
 
   let bootErrors: string[] = [];
   try {

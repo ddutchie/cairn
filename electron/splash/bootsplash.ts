@@ -25,7 +25,7 @@ export interface SplashProgress {
   step: SplashStep;
   label: string;
   detail?: string;
-  pct: number;
+  pct?: number;
 }
 
 const SPLASH_WIDTH = 400;
@@ -277,7 +277,12 @@ function buildSplashHtml(iconDataUrl: string | null): string {
 
     labelEl.textContent = data.label || data.step;
     detailEl.textContent = data.detail || '';
-    fillEl.style.width = (data.pct || 0) + '%';
+    // Only update the progress bar when pct is explicitly provided. This
+    // lets pre-boot events (main.ts) update the label without resetting
+    // the bar to 0% before boot-sequence.ts takes over with real values.
+    if (typeof data.pct === 'number') {
+      fillEl.style.width = data.pct + '%';
+    }
   });
 
   ipcRenderer.on('splash:step-done', function(_event, data) {
