@@ -1,5 +1,6 @@
 import * as fs from "fs";
 import * as path from "path";
+import * as https from "https";
 
 import { AutoTokenizer, env, type PreTrainedTokenizer } from "@huggingface/transformers";
 import * as ort from "onnxruntime-node";
@@ -345,8 +346,22 @@ export class EmbeddingsAdapter implements ModelManagingAdapter {
           : undefined,
       });
 
-      const modelPath = `${this._cacheDir}/${modelId}/onnx/model_quantized.onnx`;
-      const session = await ort.InferenceSession.create(modelPath, {
+      const def = SUPPORTED_EMBEDDING_MODELS[modelId];
+      const onnxPath = path.join(this._cacheDir, modelId, def.meta.filename);
+      if (!fs.existsSync(onnxPath)) {
+        const url = `https://huggingface.co/${modelId}/resolve/main/${def.meta.filename}`;
+        await this.downloadFile(url, onnxPath, (loaded, total) => {
+          onProgress?.({
+            status: "progress",
+            file: def.meta.filename,
+            loaded,
+            total,
+            progress: total > 0 ? Math.round((loaded / total) * 100) : 0,
+          });
+        });
+      }
+
+      const session = await ort.InferenceSession.create(onnxPath, {
         executionProviders: ["cpu"],
         graphOptimizationLevel: "all",
         enableCpuMemArena: false,
@@ -363,6 +378,46 @@ export class EmbeddingsAdapter implements ModelManagingAdapter {
     });
 
     return this._pipelinePromise;
+  }
+
+  private downloadFile(url: string, dest: string, onProgress?: (loaded: number, total: number) => void): Promise<void> {
+    return new Promise((resolve, reject) => {
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      const file = fs.createWriteStream(dest);
+      const req = https.get(url, (res) => {
+        if (res.statusCode === 302 || res.statusCode === 301) {
+          file.close();
+          fs.unlinkSync(dest);
+          const redirectUrl = res.headers.location;
+          if (!redirectUrl) { reject(new Error("Redirect without location")); return; }
+          this.downloadFile(redirectUrl, dest, onProgress).then(resolve).catch(reject);
+          return;
+        }
+        if (res.statusCode !== 200) {
+          file.close();
+          fs.unlinkSync(dest);
+          reject(new Error(`Download failed: HTTP ${res.statusCode} for ${url}`));
+          return;
+        }
+        const total = parseInt(res.headers["content-length"] ?? "0", 10);
+        let loaded = 0;
+        res.on("data", (chunk: Buffer) => {
+          loaded += chunk.length;
+          onProgress?.(loaded, total);
+        });
+        res.pipe(file);
+        file.on("finish", () => { file.close(); resolve(); });
+        file.on("error", (err) => {
+          fs.unlinkSync(dest);
+          reject(err);
+        });
+      });
+      req.on("error", (err) => {
+        file.close();
+        if (fs.existsSync(dest)) fs.unlinkSync(dest);
+        reject(err);
+      });
+    });
   }
 
   resetPipeline(): void {
