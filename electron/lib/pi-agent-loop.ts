@@ -31,6 +31,8 @@ import {
 import { executeTool } from "../ipc/chat-executor";
 import type { ChatRequest, ToolArgs } from "./tools";
 import type { SkillMeta } from "./skills";
+import { iterSseData } from "./sse";
+import { traceTool } from "./tool-trace";
 
 // ── LLM config ───────────────────────────────────────────────────────────────
 
@@ -542,78 +544,74 @@ export async function runAgentLoop(
     const reader = response.body?.getReader();
     if (!reader) { callbacks.onError("No response stream"); return; }
 
-    const decoder = new TextDecoder();
     let contentBuffer = "";
     const toolCallBuffers: Map<number, { id: string; name: string; args: string }> = new Map();
     // callId assigned per tool during streaming — reused at execution time
     const streamCallIds: Map<number, string> = new Map();
     let toolsReadyFired = false;
-    let streamDone = false;
 
-    while (!streamDone) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      for (const line of decoder.decode(value, { stream: true }).split("\n")) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith("data:")) continue;
-        const jsonStr = trimmed.slice(5).trim();
-        if (jsonStr === "[DONE]") {
-          streamDone = true;
-          break;
+    for await (const jsonStr of iterSseData(reader, signal)) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const chunk = JSON.parse(jsonStr) as any;
+
+        // Usage chunk — sent as the final SSE chunk when stream_options.include_usage is set.
+        if (chunk.usage) {
+          const pt = chunk.usage.prompt_tokens ?? 0;
+          const ct = chunk.usage.completion_tokens ?? 0;
+          session.lastPromptTokens = pt;
+          let breakdown: TokenBreakdown | undefined;
+          try {
+            const rawBreakdown = calculatePromptBreakdown(systemPrompt, contextMessages, allTools);
+            breakdown = scaleBreakdown(rawBreakdown, pt);
+          } catch (err) {
+            console.error("[pi-agent] failed to calculate breakdown:", err);
+          }
+          callbacks.onUsage(pt, ct, breakdown);
         }
-        try {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const chunk = JSON.parse(jsonStr) as any;
 
-          // Usage chunk — sent as the final SSE chunk when stream_options.include_usage is set.
-          if (chunk.usage) {
-            const pt = chunk.usage.prompt_tokens ?? 0;
-            const ct = chunk.usage.completion_tokens ?? 0;
-            session.lastPromptTokens = pt;
-            let breakdown: TokenBreakdown | undefined;
-            try {
-              const rawBreakdown = calculatePromptBreakdown(systemPrompt, contextMessages, allTools);
-              breakdown = scaleBreakdown(rawBreakdown, pt);
-            } catch (err) {
-              console.error("[pi-agent] failed to calculate breakdown:", err);
+        const delta = chunk.choices?.[0]?.delta;
+        if (!delta) continue;
+
+        if (delta.content) {
+          contentBuffer += delta.content;
+          callbacks.onToken(delta.content);
+        }
+
+        if (delta.tool_calls) {
+          for (const tc of delta.tool_calls) {
+            const idx: number = tc.index ?? 0;
+            const isNew = !toolCallBuffers.has(idx);
+            if (isNew) {
+              toolCallBuffers.set(idx, { id: tc.id ?? "", name: tc.function?.name ?? "", args: "" });
             }
-            callbacks.onUsage(pt, ct, breakdown);
-          }
+            const buf = toolCallBuffers.get(idx)!;
+            if (tc.id) buf.id = tc.id;
+            if (tc.function?.name) buf.name = tc.function.name;
+            if (tc.function?.arguments) buf.args += tc.function.arguments;
 
-          const delta = chunk.choices?.[0]?.delta;
-          if (!delta) continue;
-
-          if (delta.content) {
-            contentBuffer += delta.content;
-            callbacks.onToken(delta.content);
-          }
-
-          if (delta.tool_calls) {
-            for (const tc of delta.tool_calls) {
-              const idx: number = tc.index ?? 0;
-              const isNew = !toolCallBuffers.has(idx);
-              if (isNew) {
-                toolCallBuffers.set(idx, { id: tc.id ?? "", name: tc.function?.name ?? "", args: "" });
+            // Fire pending chip as soon as we see the tool name during streaming
+            if (isNew && buf.name) {
+              if (!toolsReadyFired) {
+                callbacks.onToolsReady();
+                toolsReadyFired = true;
               }
-              const buf = toolCallBuffers.get(idx)!;
-              if (tc.id) buf.id = tc.id;
-              if (tc.function?.name) buf.name = tc.function.name;
-              if (tc.function?.arguments) buf.args += tc.function.arguments;
-
-              // Fire pending chip as soon as we see the tool name during streaming
-              if (isNew && buf.name) {
-                if (!toolsReadyFired) {
-                  callbacks.onToolsReady();
-                  toolsReadyFired = true;
-                }
-                const callId = `${buf.name}:${Date.now()}:${idx}`;
-                streamCallIds.set(idx, callId);
-                callbacks.onToolPending(buf.name, callId);
-              }
+              const callId = `${buf.name}:${Date.now()}:${idx}`;
+              streamCallIds.set(idx, callId);
+              callbacks.onToolPending(buf.name, callId);
             }
           }
-        } catch { /* skip malformed SSE lines */ }
-      }
+        }
+      } catch { /* skip malformed SSE JSON line */ }
+    }
+
+    // Dev trace: per-tool assembled arguments.
+    for (const [idx, buf] of toolCallBuffers.entries()) {
+      traceTool("sse-args", {
+        toolIndex: idx,
+        toolName: buf.name,
+        arguments: buf.args,
+      });
     }
 
     // ── No tool calls → turn complete ─────────────────────────────────────
@@ -650,8 +648,22 @@ export async function runAgentLoop(
     type ToolOutcome = { tcIdx: number; tc: ToolCallSpec; ok: boolean; resultContent: string; pendingCallId?: string };
 
     const toolPromises: Promise<ToolOutcome>[] = toolCalls.map(async (tc, tcIdx): Promise<ToolOutcome> => {
-      let args: ToolArgs = {};
-      try { args = JSON.parse(tc.function.arguments) as ToolArgs; } catch { args = {}; }
+      // Parse tool arguments. Never run a tool with destructured args — surface
+      // the parse error so the model can re-issue the call.
+      let args: ToolArgs;
+      let parseError: string | null = null;
+      try {
+        args = JSON.parse(tc.function.arguments) as ToolArgs;
+        traceTool("parse", {
+          toolName: tc.function.name,
+          title: typeof (args as Record<string, unknown>).title === "string" ? (args as Record<string, unknown>).title as string : "",
+          content: typeof (args as Record<string, unknown>).content === "string" ? (args as Record<string, unknown>).content as string : "",
+          rawArguments: tc.function.arguments,
+        });
+      } catch (err) {
+        parseError = `malformed tool-call arguments JSON from model: ${(err as Error).message}`;
+        args = {};
+      }
 
       const label = CODING_LABELS[tc.function.name]?.(args) ?? tc.function.name;
       const pendingCallId = streamCallIds.get(tcIdx);
@@ -666,6 +678,13 @@ export async function runAgentLoop(
 
       let resultContent: string = "";
       let ok = true;
+
+      if (parseError) {
+        ok = false;
+        resultContent = `Error: ${parseError}`;
+        callbacks.onToolEnd(tc.function.name, label, ok, resultContent, pendingCallId);
+        return { tcIdx, tc, ok, resultContent, pendingCallId };
+      }
 
       if (llmConfig.autoApprove === false) {
         const callKey = pendingCallId || tc.id;

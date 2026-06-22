@@ -53,6 +53,10 @@ export async function runBootSequence(
   let reindexed = false;
   let notesSynced = 0;
 
+  // Emit a real progress event immediately so the splash doesn't sit at
+  // "Registering handlers…" (sent by main.ts) until the first step fires.
+  splash.progress({ step: "migrations", label: "Preparing workspace…", pct: 8 });
+
   // ── Step 1: Update check (prod only) ──────────────────────────────────
   // Block the boot until the update is downloaded and installed. This
   // ensures the main window never opens with a known-broken build — the
@@ -306,7 +310,7 @@ export async function runBootSequence(
     splash.progress({
       step: "notes-sync",
       label: "Syncing notes…",
-      pct: 50,
+      pct: 0,
     });
 
     // syncNotesFromDisk is synchronous but potentially slow for large
@@ -318,6 +322,11 @@ export async function runBootSequence(
       });
     });
 
+    splash.progress({
+      step: "notes-sync",
+      label: "Syncing notes…",
+      pct: 100,
+    });
     notesSynced = 1; // syncNotesFromDisk doesn't return a count
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -327,7 +336,8 @@ export async function runBootSequence(
   splash.stepDone("Notes sync");
 
   // ── Done ──────────────────────────────────────────────────────────────
-  splash.progress({ step: "done", label: "Ready", pct: 100 });
+  // The final "Ready" / 100% progress event is sent by main.ts in
+  // closeSplash() — after the main window has finished loading.
 
   return { updateInstalled, migrationsRan, reindexed, notesSynced, errors };
 }

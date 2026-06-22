@@ -100,6 +100,7 @@ export function MobileSettings() {
         <Toggle
           checked={status.running}
           onChange={handleToggleAccess}
+          label="Local network access"
         />
       </SettingsRow>
 
@@ -112,24 +113,24 @@ export function MobileSettings() {
                 <Link size={13} />
                 Connection URL
               </div>
-              <div className="text-sm font-mono text-[var(--text-primary)] select-all selection:bg-[var(--accent)] selection:text-white">
+              <div className="text-sm font-mono text-[var(--text-primary)] select-all selection:bg-[var(--accent)] selection:text-[var(--background)]">
                 {status.url}
               </div>
-              <p className="text-[10px] text-[var(--text-tertiary)] max-w-sm">
+              <p className="text-[0.714rem] text-[var(--text-tertiary)] max-w-sm">
                 Make sure your mobile device is connected to the same Wi-Fi network as this computer.
               </p>
             </div>
 
             {/* QR Code Container */}
             {status.qrCode && (
-              <div className="flex flex-col items-center justify-center p-2 rounded-lg bg-white border border-[var(--border)] shadow-sm self-center md:self-end">
+              <div className="flex flex-col items-center justify-center p-2 rounded-lg bg-[var(--surface)] border border-[var(--border)] shadow-sm self-center md:self-end">
                 <img
                   src={status.qrCode}
                   alt="Connection QR Code"
                   className="w-32 h-32 object-contain"
                   style={{ imageRendering: "pixelated" }}
                 />
-                <span className="text-[10px] text-gray-500 font-medium mt-1">Scan to connect</span>
+                <span className="text-[0.714rem] text-[var(--text-tertiary)] font-medium mt-1">Scan to connect</span>
               </div>
             )}
           </div>
@@ -141,7 +142,7 @@ export function MobileSettings() {
             <div className="flex items-center justify-between">
               <div>
                 <div className="flex items-center gap-1.5 text-xs font-semibold text-[var(--text-primary)]">
-                  <Shield size={13} className="text-emerald-500" />
+                  <Shield size={13} className="text-[var(--success)]" />
                   PIN Code Authentication
                 </div>
                 <p className="text-[10px] text-[var(--text-tertiary)] mt-0.5 max-w-xs">
@@ -153,6 +154,7 @@ export function MobileSettings() {
                 onChange={async (checked) => {
                   await handleToggleAuth(checked);
                 }}
+                label="PIN Code Authentication"
               />
             </div>
 

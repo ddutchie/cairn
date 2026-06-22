@@ -3,14 +3,16 @@ import { cn } from "@/lib/utils";
 
 interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
   color?: string;
+  size?: "sm" | "xs";
 }
 
-export function Badge({ className, color, children, style, ...props }: BadgeProps) {
+export function Badge({ className, color, size = "sm", children, style, ...props }: BadgeProps) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[0.786rem] font-medium",
-        "border",
+        "inline-flex items-center gap-1 rounded border",
+        size === "sm" && "px-1.5 py-0.5 text-[0.786rem] font-medium",
+        size === "xs" && "px-1 py-0.5 text-[0.643rem] font-medium",
         className
       )}
       style={{
@@ -23,7 +25,10 @@ export function Badge({ className, color, children, style, ...props }: BadgeProp
     >
       {color && (
         <span
-          className="inline-block w-1.5 h-1.5 rounded-full flex-shrink-0"
+          className={cn(
+            "inline-block rounded-full flex-shrink-0",
+            size === "sm" ? "w-1.5 h-1.5" : "w-1 h-1"
+          )}
           style={{ backgroundColor: color }}
         />
       )}

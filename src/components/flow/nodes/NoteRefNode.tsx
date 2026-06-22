@@ -16,7 +16,9 @@ export interface NoteRefNodeData {
 export const NoteRefNode = memo(function NoteRefNode({ data, selected, isConnectable }: NodeProps) {
   const d = data as unknown as NoteRefNodeData;
   const setView = useCairnStore((s) => s.setView);
+  const isLinked = Boolean(d.noteId);
   const hasNote = Boolean(d.noteId && d.resolvedTitle);
+  const isDangling = isLinked && !hasNote;
 
   function handleOpen(e: React.MouseEvent) {
     e.stopPropagation();
@@ -45,8 +47,9 @@ export const NoteRefNode = memo(function NoteRefNode({ data, selected, isConnect
           {hasNote && (
             <button
               onClick={handleOpen}
-              className="nodrag p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors"
+              className="nodrag p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
               title="Open note"
+              aria-label="Open note"
             >
               <ExternalLink size={11} />
             </button>
@@ -63,6 +66,8 @@ export const NoteRefNode = memo(function NoteRefNode({ data, selected, isConnect
               </p>
             )}
           </>
+        ) : isDangling ? (
+          <p className="mt-1 text-[0.786rem] text-[var(--danger)] italic">Linked note not found</p>
         ) : (
           <p className="mt-1 text-[0.786rem] text-[var(--text-tertiary)] italic">No note linked</p>
         )}

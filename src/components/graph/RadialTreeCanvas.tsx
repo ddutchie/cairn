@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useRef, useEffect, useCallback, useState } from "react";
+import { ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 import * as d3Hierarchy from "d3-hierarchy";
 import * as d3Zoom from "d3-zoom";
 import * as d3Selection from "d3-selection";
@@ -83,6 +84,7 @@ function crossEdgeColor(type: string): string {
 export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgroundClick, labelMode, spacing, semanticThreshold = 1 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const gRef = useRef<SVGGElement>(null);
+  const zoomRef = useRef<d3Zoom.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
   const fs = useFontScale();
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
@@ -204,6 +206,12 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
         .attr("stroke-opacity", opacity)
         .attr("stroke-dasharray", "3,4")
         .style("cursor", edge.type === "semantic" ? "pointer" : "default")
+        .on("click", function(event: MouseEvent) {
+          if (edge.type !== "semantic") return;
+          event.stopPropagation();
+          const found = graph.nodes.find((n) => n.id === edge.target);
+          if (found) onNodeClick(found);
+        })
         .on("mouseenter", function(event: MouseEvent) {
           if (edge.type !== "semantic") return;
           d3Selection.select(this).attr("stroke-opacity", 1).attr("stroke-width", 3);
@@ -299,10 +307,12 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
       } else {
         const radius = type === "project" ? 7 : type === "tag" ? 3.5 : 4.5;
         const isHovered = baseId === hoveredNodeId;
+        // Highlight sibling tag nodes sharing the same baseId
+        const isTagSibling = nodeId !== baseId && (baseId === selectedNodeId || baseId === hoveredNodeId);
 
-        // Glow for selected or hovered
-        if (isSelected || isHovered) {
-          const glowOpacity = isSelected ? 0.15 : 0.08;
+        // Glow for selected, hovered, or tag siblings
+        if (isSelected || isHovered || isTagSibling) {
+          const glowOpacity = isSelected ? 0.15 : isTagSibling ? 0.06 : 0.08;
           sel.append("circle")
             .attr("r", radius + 6)
             .attr("fill", color)
@@ -327,10 +337,15 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
     });
 
     // Bring hovered/selected nodes to front (painted last = on top)
+    // Also highlight sibling tag nodes sharing the same baseId
     nodeGroups.each(function(d) {
       const nodeId = (d.data as { id: string }).id;
       const baseId = nodeId.includes(":") ? nodeId.split(":")[0] : nodeId;
-      if (baseId === selectedNodeId || baseId === hoveredNodeId) {
+      const isHighlighted = baseId === selectedNodeId || baseId === hoveredNodeId;
+      const isTagSibling = nodeId.includes(":") && (
+        baseId === selectedNodeId || baseId === hoveredNodeId
+      );
+      if (isHighlighted || isTagSibling) {
         const el = this as SVGGElement;
         const parent = el.parentNode;
         if (parent) parent.appendChild(el);
@@ -442,7 +457,6 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
       .on("zoom", (event) => {
         const transform = event.transform;
         d3Selection.select(g).attr("transform", transform);
-
         // Dynamically adjust label visibility based on zoom scale k at 60 FPS
          d3Selection.select(g).selectAll("text")
            .style("opacity", (d: unknown) => {
@@ -467,6 +481,8 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
     svgSel.call(zoom);
     svgSel.call(zoom.transform, d3Zoom.zoomIdentity.translate(width / 2, height / 2));
     svgSel.on("click.bg", () => { onBackgroundClick(); setTooltip(null); });
+
+    zoomRef.current = zoom;
 
     return () => {
       svgSel.on(".zoom", null);
@@ -495,6 +511,36 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
           {tooltip.text}
         </div>
       )}
+
+      {/* Zoom controls */}
+      <div className="absolute bottom-4 right-4 flex flex-col gap-1">
+        <button
+          onClick={() => zoomRef.current?.scaleBy(d3Selection.select(svgRef.current) as never, 1.4)}
+          title="Zoom in"
+          className="w-7 h-7 flex items-center justify-center rounded-md bg-[var(--surface)] border border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors shadow-sm"
+        >
+          <ZoomIn size={13} />
+        </button>
+        <button
+          onClick={() => zoomRef.current?.scaleBy(d3Selection.select(svgRef.current) as never, 1 / 1.4)}
+          title="Zoom out"
+          className="w-7 h-7 flex items-center justify-center rounded-md bg-[var(--surface)] border border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors shadow-sm"
+        >
+          <ZoomOut size={13} />
+        </button>
+        <button
+          onClick={() => {
+            if (!zoomRef.current || !svgRef.current) return;
+            const w = svgRef.current.clientWidth || 800;
+            const h = svgRef.current.clientHeight || 600;
+            d3Selection.select(svgRef.current).call(zoomRef.current.transform, d3Zoom.zoomIdentity.translate(w / 2, h / 2));
+          }}
+          title="Fit"
+          className="w-7 h-7 flex items-center justify-center rounded-md bg-[var(--surface)] border border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors shadow-sm"
+        >
+          <Maximize2 size={13} />
+        </button>
+      </div>
     </div>
   );
 }

@@ -49,7 +49,7 @@ export function Sidebar() {
     workspaces, getWorkspaceProjects,
     setActiveProject, setView, toggleSearch, toggleChat,
     createProject, updateProject, deleteProject,
-    chatOpen, searchOpen,
+    cards, chatOpen, searchOpen,
     hiddenViews,
   } = useCairnStore(useShallow((s) => ({
     sidebarCollapsed:    s.sidebarCollapsed,
@@ -66,6 +66,7 @@ export function Sidebar() {
     createProject:       s.createProject,
     updateProject:       s.updateProject,
     deleteProject:       s.deleteProject,
+    cards:               s.cards,
     chatOpen:            s.chatOpen,
     searchOpen:          s.searchOpen,
     hiddenViews:         s.hiddenViews,
@@ -206,7 +207,14 @@ export function Sidebar() {
           </div>
 
           <div className="space-y-0.5 px-1">
-            {projects.map((project) => (
+            {(() => {
+              // Pre-compute card counts per project to avoid O(projects × cards) in the map
+              const openCardCountByProject = new Map<string, number>();
+              for (const c of cards) {
+                if (c.archivedAt) continue;
+                openCardCountByProject.set(c.projectId, (openCardCountByProject.get(c.projectId) ?? 0) + 1);
+              }
+              return projects.map((project) => (
               <ProjectItem
                 key={project.id}
                 project={project}
@@ -218,11 +226,12 @@ export function Sidebar() {
                 onSelectView={(view) => { setActiveProject(project.id); setView(view); closeSidebarOnMobile(); }}
                 onRename={(name) => updateProject(project.id, { name })}
                 onDelete={() => deleteProject(project.id)}
+                openCardCount={openCardCountByProject.get(project.id) ?? 0}
                 hiddenViews={hiddenViews}
                 visibleNavItems={visibleNavItems}
               />
-            ))}
-
+            ));
+            })()}
             {creatingProject && (
               <ProjectCreateForm
                 value={newProjectName}
@@ -275,11 +284,12 @@ interface ProjectItemProps {
   activeView: string;
   onSelectView: (view: "overview" | "notes" | "board" | "flow" | "graph" | "chat" | "agent") => void;
   onRename: (name: string) => void; onDelete: () => void;
+  openCardCount: number;
   hiddenViews: Set<string>;
   visibleNavItems: ViewNavItem[];
 }
 
-function ProjectItem({ project, isActive, isExpanded, onToggleExpand, onSelectProject, activeView, onSelectView, onRename, onDelete, hiddenViews: _hiddenViews, visibleNavItems }: ProjectItemProps) {
+function ProjectItem({ project, isActive, isExpanded, onToggleExpand, onSelectProject, activeView, onSelectView, onRename, onDelete, openCardCount, hiddenViews: _hiddenViews, visibleNavItems }: ProjectItemProps) {
   const [renaming, setRenaming]             = useState(false);
   const [renameValue, setRenameValue]       = useState(project.name);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -335,6 +345,9 @@ function ProjectItem({ project, isActive, isExpanded, onToggleExpand, onSelectPr
             <button onClick={onSelectProject} className="flex items-center gap-1.5 flex-1 min-w-0 text-left">
               <ProjectIcon name={project.icon} size={13} className="text-[var(--text-tertiary)] flex-shrink-0" />
               <span className="text-xs font-medium truncate flex-1">{project.name}</span>
+              {openCardCount > 0 && (
+                <span className="text-[0.714rem] text-[var(--text-tertiary)] tabular-nums">{openCardCount}</span>
+              )}
               {project.dueDate && <DueDateDot dueDate={project.dueDate} />}
             </button>
           )}

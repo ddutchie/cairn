@@ -36,15 +36,21 @@ export function SettingsRow({
   description?: string;
   children: React.ReactNode;
 }) {
+  const id = React.useId();
   return (
     <div className="flex items-start justify-between gap-6 py-3 border-b border-[var(--border-subtle)]">
       <div className="flex-1 min-w-0">
-        <div className="text-sm text-[var(--text-secondary)]">{label}</div>
+        <label htmlFor={id} className="text-sm text-[var(--text-secondary)] cursor-default">{label}</label>
         {description && (
           <div className="text-xs text-[var(--text-tertiary)] mt-0.5 leading-relaxed">{description}</div>
         )}
       </div>
-      <div className="flex-shrink-0">{children}</div>
+      <div className="flex-shrink-0">
+        {/* Inject id into the first form-control child if it accepts it */}
+        {React.isValidElement(children)
+          ? React.cloneElement(children as React.ReactElement<{ id?: string }>, { id })
+          : children}
+      </div>
     </div>
   );
 }
@@ -54,13 +60,17 @@ export function SettingsRow({
 export function Toggle({
   checked,
   onChange,
+  label,
+  id,
 }: {
   checked: boolean;
   onChange: (v: boolean) => void;
   label?: string;
+  id?: string;
 }) {
   return (
     <button
+      id={id}
       onClick={() => onChange(!checked)}
       className={cn(
         "relative inline-flex h-5 w-9 items-center rounded-full transition-colors",
@@ -68,6 +78,7 @@ export function Toggle({
       )}
       role="switch"
       aria-checked={checked}
+      aria-label={label}
     >
       <span
         className={cn(

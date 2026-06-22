@@ -27,6 +27,7 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
+import { NoteMarkdownPreview } from "@/components/notes/NoteMarkdownPreview";
 import { KanbanColumn } from "./column";
 import { KanbanCard } from "./card";
 import { CardDetailModal } from "./card-detail";
@@ -363,6 +364,12 @@ export function KanbanBoard() {
             >
               <Kanban size={11} />
               Board
+              {activeProjectId && (() => {
+                const count = columns.reduce((n, col) => n + getColumnCards(col.id).length, 0);
+                return count > 0 ? (
+                  <span className="ml-0.5 px-1.5 py-0.5 rounded-full text-[0.643rem] bg-[var(--surface-3)] text-[var(--text-tertiary)]">{count}</span>
+                ) : null;
+              })()}
             </button>
             <button
               onClick={() => setArchiveViewOpen(true)}
@@ -480,7 +487,9 @@ export function KanbanBoard() {
                             >
                               <span className="text-xs font-medium text-[var(--text-primary)] leading-snug line-clamp-2">{card.title}</span>
                               {card.description && (
-                                <p className="text-[0.714rem] text-[var(--text-tertiary)] line-clamp-2">{card.description}</p>
+                                <div className="text-[0.714rem] text-[var(--text-tertiary)] line-clamp-2">
+                                  <NoteMarkdownPreview content={card.description} className="!px-0 !py-0" />
+                                </div>
                               )}
                               <div className="flex items-center gap-1.5 mt-auto pt-1">
                                 {col && (

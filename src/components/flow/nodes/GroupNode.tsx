@@ -11,12 +11,12 @@ export interface GroupNodeData {
 }
 
 // Map semantic color names to CSS variable pairs (background tint + border)
-const COLOR_MAP: Record<string, { bg: string; border: string; text: string }> = {
-  accent:  { bg: "var(--accent-dim)",                    border: "var(--accent)",   text: "var(--accent)" },
-  purple:  { bg: "color-mix(in srgb, var(--accent) 8%, transparent)",   border: "color-mix(in srgb, var(--accent) 40%, transparent)",   text: "var(--accent)" },
-  green:   { bg: "color-mix(in srgb, var(--success) 8%, transparent)",  border: "color-mix(in srgb, var(--success) 40%, transparent)",  text: "var(--success)" },
-  orange:  { bg: "color-mix(in srgb, var(--warning) 8%, transparent)",  border: "color-mix(in srgb, var(--warning) 40%, transparent)",  text: "var(--warning)" },
-  red:     { bg: "color-mix(in srgb, var(--danger) 8%, transparent)",   border: "color-mix(in srgb, var(--danger) 40%, transparent)",   text: "var(--danger)" },
+const COLOR_MAP: Record<string, { bg: string; border: string; borderIdle: string; text: string }> = {
+  accent:  { bg: "var(--accent-dim)",                    border: "var(--accent)",   borderIdle: "color-mix(in srgb, var(--accent) 20%, transparent)",   text: "var(--accent)" },
+  purple:  { bg: "color-mix(in srgb, var(--accent) 8%, transparent)",   border: "color-mix(in srgb, var(--accent) 40%, transparent)",  borderIdle: "color-mix(in srgb, var(--accent) 20%, transparent)",  text: "var(--accent)" },
+  green:   { bg: "color-mix(in srgb, var(--success) 8%, transparent)",  border: "color-mix(in srgb, var(--success) 40%, transparent)", borderIdle: "color-mix(in srgb, var(--success) 20%, transparent)", text: "var(--success)" },
+  orange:  { bg: "color-mix(in srgb, var(--warning) 8%, transparent)",  border: "color-mix(in srgb, var(--warning) 40%, transparent)", borderIdle: "color-mix(in srgb, var(--warning) 20%, transparent)", text: "var(--warning)" },
+  red:     { bg: "color-mix(in srgb, var(--danger) 8%, transparent)",   border: "color-mix(in srgb, var(--danger) 40%, transparent)",  borderIdle: "color-mix(in srgb, var(--danger) 20%, transparent)",  text: "var(--danger)" },
 };
 
 const DEFAULT_COLOR = COLOR_MAP.accent;
@@ -41,7 +41,7 @@ export const GroupNode = memo(function GroupNode({ data, selected }: NodeProps) 
         )}
         style={{
           background: colors.bg,
-          borderColor: selected ? colors.border : colors.border.replace("0.4", "0.2"),
+          borderColor: selected ? colors.border : colors.borderIdle,
         }}
       >
         {/* Header label — top-left, inside the group */}

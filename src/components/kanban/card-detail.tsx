@@ -9,11 +9,13 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip } from "@/components/ui/tooltip";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
+import { CairnEvents } from "@/lib/events";
 import { SpawnAgentModal } from "@/components/agent/SpawnAgentModal";
-import { MarkdownContent } from "@/components/chat/chat-panel/MarkdownContent";
+import { NoteMarkdownPreview } from "@/components/notes/NoteMarkdownPreview";
 import { CardDetailSidebar } from "./card-detail-sidebar";
 
 interface CardDetailModalProps {
@@ -119,7 +121,7 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
                   className="w-full bg-[var(--surface-2)] border border-[var(--border)] hover:border-[color-mix(in_srgb,var(--accent)_40%,transparent)] rounded-lg px-3 py-2.5 text-sm text-[var(--text-secondary)] min-h-[12rem] cursor-pointer transition-colors overflow-y-auto"
                 >
                   {card.description?.trim() ? (
-                    <MarkdownContent content={card.description} />
+                    <NoteMarkdownPreview content={card.description} className="!px-3 !py-2.5" />
                   ) : (
                     <span className="text-[var(--text-tertiary)] italic">Add a description…</span>
                   )}
@@ -170,13 +172,17 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
                 {linkedNotes.map((note) => note && (
                   <div key={note.id} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--surface-2)] border border-[var(--border)] group">
                     <FileText size={12} className="text-[var(--text-tertiary)] flex-shrink-0" />
-                    <span className="text-xs text-[var(--text-secondary)] flex-1 truncate">{note.title}</span>
-                    <button onClick={() => setView("notes")} className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-all" aria-label="Open note">
-                      <ExternalLink size={11} aria-hidden="true" />
-                    </button>
-                    <button onClick={() => unlinkNoteFromCard(note.id, cardId)} className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-[var(--text-tertiary)] hover:text-[var(--danger)] transition-all" aria-label="Unlink note">
-                      <X size={11} aria-hidden="true" />
-                    </button>
+                    <span className="text-xs text-[var(--text-secondary)] flex-1 truncate" title={note.title}>{note.title}</span>
+                    <Tooltip content="Open note">
+                      <button onClick={() => { setView("notes"); window.dispatchEvent(CairnEvents.selectNote(note.id)); }} className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-all" aria-label="Open note">
+                        <ExternalLink size={11} aria-hidden="true" />
+                      </button>
+                    </Tooltip>
+                    <Tooltip content="Unlink note">
+                      <button onClick={() => unlinkNoteFromCard(note.id, cardId)} className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-[var(--text-tertiary)] hover:text-[var(--danger)] transition-all" aria-label="Unlink note">
+                        <X size={11} aria-hidden="true" />
+                      </button>
+                    </Tooltip>
                   </div>
                 ))}
                 {projectNotes.filter((n) => !card.linkedNoteIds.includes(n.id)).length > 0 && (

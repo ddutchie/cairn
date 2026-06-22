@@ -17,7 +17,9 @@ export interface TaskRefNodeData {
 export const TaskRefNode = memo(function TaskRefNode({ data, selected, isConnectable }: NodeProps) {
   const d = data as unknown as TaskRefNodeData;
   const setView = useCairnStore((s) => s.setView);
+  const isLinked = Boolean(d.cardId);
   const hasCard = Boolean(d.cardId && d.resolvedTitle);
+  const isDangling = isLinked && !hasCard;
 
   function handleOpen(e: React.MouseEvent) {
     e.stopPropagation();
@@ -44,8 +46,9 @@ export const TaskRefNode = memo(function TaskRefNode({ data, selected, isConnect
           {hasCard && (
             <button
               onClick={handleOpen}
-              className="nodrag p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors"
+              className="nodrag p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
               title="Open board"
+              aria-label="Open board"
             >
               <ExternalLink size={11} />
             </button>
@@ -72,6 +75,8 @@ export const TaskRefNode = memo(function TaskRefNode({ data, selected, isConnect
               )}
             </div>
           </>
+        ) : isDangling ? (
+          <p className="mt-1 text-[0.786rem] text-[var(--danger)] italic">Linked task not found</p>
         ) : (
           <p className="mt-1 text-[0.786rem] text-[var(--text-tertiary)] italic">No task linked</p>
         )}

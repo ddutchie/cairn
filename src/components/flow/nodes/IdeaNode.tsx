@@ -36,14 +36,15 @@ export const IdeaNode = memo(function IdeaNode({ id, data, selected, isConnectab
             <button
               onClick={(e) => { e.stopPropagation(); d.onPromote!(id); }}
               title="Promote to task"
-              className="nodrag shrink-0 p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors"
+              aria-label="Promote to task"
+              className="nodrag shrink-0 p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
             >
               <CheckSquare size={11} />
             </button>
           )}
         </div>
         {d.body && (
-          <p className="mt-1.5 text-[0.786rem] text-[var(--text-tertiary)] leading-relaxed line-clamp-3 break-words pl-5">
+          <p className="mt-1.5 text-[0.786rem] text-[var(--text-tertiary)] leading-relaxed line-clamp-3 break-words pl-5 whitespace-pre-wrap">
             {d.body}
           </p>
         )}

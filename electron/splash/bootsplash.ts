@@ -2,16 +2,8 @@
  * Cairn — Boot splash screen
  *
  * Shows a branded splash window immediately on app launch, before the main
- * window is created. The splash displays progress for:
- *
- *   1. Update check (prod only — skipped in dev)
- *   2. DB migration (workspace-level migrations)
- *   3. Embeddings reindex (if model changed)
- *   4. Notes sync (recover notes on disk missing from SQLite)
- *
- * When all steps complete, the caller destroys the splash and creates the
- * main window. This replaces the old approach of showing ReindexModal and
- * MigrationModal as overlays after the main window loaded.
+ * window is created. Progress is driven entirely by real boot events from
+ * main.ts and boot-sequence.ts — no ambient cycle, no fake progress.
  *
  * The HTML is embedded as a string literal so esbuild bundles it into
  * main.js — no external file to copy. The Cairn icon is loaded at runtime
@@ -33,7 +25,7 @@ export interface SplashProgress {
   step: SplashStep;
   label: string;
   detail?: string;
-  pct: number;
+  pct?: number;
 }
 
 const SPLASH_WIDTH = 400;
@@ -247,52 +239,6 @@ function buildSplashHtml(iconDataUrl: string | null): string {
 
   const doneSteps = [];
 
-  // ── Ambient messages ────────────────────────────────────────────────
-  // Shown while the real boot steps are instant (common in dev: no update,
-  // no migrations, no reindex). Cycles through these with a slowly creeping
-  // progress bar so the splash feels alive. When a real boot step fires
-  // (via splash:progress), the ambient cycle stops and real progress takes
-  // over.
-  const ambientMessages = [
-    'Initializing workspace',
-    'Organizing thoughts',
-    'Connecting ideas',
-    'Warming up the knowledge graph',
-    'Calibrating semantic search',
-    'Loading workspace',
-  ];
-  var ambientIndex = 0;
-  var ambientPct = 0;
-  var ambientActive = true;
-  var ambientTimer = null;
-
-  function startAmbient() {
-    ambientActive = true;
-    labelEl.textContent = ambientMessages[0];
-    ambientTimer = setInterval(function() {
-      // Creep toward 95% — never reach 100% on ambient (that's reserved
-      // for the "done" signal). Slows down as it approaches the cap so
-      // it doesn't look stuck at 90%.
-      var remaining = 95 - ambientPct;
-      var increment = Math.max(0.5, remaining * 0.04 + Math.random() * 2);
-      ambientPct = Math.min(ambientPct + increment, 95);
-      fillEl.style.width = ambientPct + '%';
-      if (ambientPct >= 25 && ambientIndex < 1) { ambientIndex = 1; labelEl.textContent = ambientMessages[1]; }
-      else if (ambientPct >= 45 && ambientIndex < 2) { ambientIndex = 2; labelEl.textContent = ambientMessages[2]; }
-      else if (ambientPct >= 60 && ambientIndex < 3) { ambientIndex = 3; labelEl.textContent = ambientMessages[3]; }
-      else if (ambientPct >= 75 && ambientIndex < 4) { ambientIndex = 4; labelEl.textContent = ambientMessages[4]; }
-      else if (ambientPct >= 88 && ambientIndex < 5) { ambientIndex = 5; labelEl.textContent = ambientMessages[5]; }
-    }, 250);
-  }
-
-  function stopAmbient() {
-    if (!ambientActive) return;
-    ambientActive = false;
-    if (ambientTimer) clearInterval(ambientTimer);
-  }
-
-  startAmbient();
-
   function addDoneStep(label) {
     if (doneSteps.includes(label)) return;
     doneSteps.push(label);
@@ -320,11 +266,7 @@ function buildSplashHtml(iconDataUrl: string | null): string {
     errorEl.style.display = 'none';
     spinnerEl.classList.remove('hidden');
 
-    // Real boot step — stop ambient cycle and use real progress.
-    stopAmbient();
-
     if (data.step === 'done') {
-      stopAmbient();
       labelEl.textContent = 'Ready';
       detailEl.textContent = '';
       spinnerEl.classList.add('hidden');
@@ -335,16 +277,19 @@ function buildSplashHtml(iconDataUrl: string | null): string {
 
     labelEl.textContent = data.label || data.step;
     detailEl.textContent = data.detail || '';
-    fillEl.style.width = (data.pct || 0) + '%';
+    // Only update the progress bar when pct is explicitly provided. This
+    // lets pre-boot events (main.ts) update the label without resetting
+    // the bar to 0% before boot-sequence.ts takes over with real values.
+    if (typeof data.pct === 'number') {
+      fillEl.style.width = data.pct + '%';
+    }
   });
 
   ipcRenderer.on('splash:step-done', function(_event, data) {
     if (data.label) addDoneStep(data.label);
-    // Don't reset to 0% — let ambient or next step drive the bar.
   });
 
   ipcRenderer.on('splash:error', function(_event, data) {
-    stopAmbient();
     errorEl.textContent = data.message || 'An error occurred';
     errorEl.style.display = 'block';
     spinnerEl.classList.add('hidden');

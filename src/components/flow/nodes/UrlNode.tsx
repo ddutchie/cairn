@@ -36,13 +36,14 @@ export const UrlNode = memo(function UrlNode({ data, selected, isConnectable }: 
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 min-w-0">
             <Link2 size={12} className="text-[var(--text-tertiary)] shrink-0" />
-            <span className="text-[0.714rem] text-[var(--text-tertiary)] truncate">{hostname || "URL"}</span>
+            <span className="text-[0.714rem] text-[var(--text-tertiary)] truncate" title={d.url}>{hostname || "URL"}</span>
           </div>
           {d.url && (
             <button
               onClick={handleOpen}
-              className="nodrag p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors shrink-0"
+              className="nodrag p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
               title="Open link"
+              aria-label="Open link"
             >
               <ExternalLink size={11} />
             </button>

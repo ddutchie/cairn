@@ -111,7 +111,7 @@ export function NodeEditModal({ nodeId, type, data, onSave, onClose }: NodeEditM
             </button>
             <button
               onClick={handleSave}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors"
+              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--accent)] text-[var(--background)] hover:bg-[var(--accent-hover)] transition-colors"
             >
               Save
             </button>
@@ -322,10 +322,10 @@ function UrlEditor({
 
 const GROUP_COLORS: Array<{ value: string; label: string; swatch: string }> = [
   { value: "accent",  label: "Blue",   swatch: "var(--accent)" },
-  { value: "purple",  label: "Purple", swatch: "rgb(139,92,246)" },
-  { value: "green",   label: "Green",  swatch: "rgb(34,197,94)" },
-  { value: "orange",  label: "Orange", swatch: "rgb(249,115,22)" },
-  { value: "red",     label: "Red",    swatch: "rgb(239,68,68)" },
+  { value: "purple",  label: "Purple", swatch: "color-mix(in srgb, var(--accent) 60%, transparent)" },
+  { value: "green",   label: "Green",  swatch: "var(--success)" },
+  { value: "orange",  label: "Orange", swatch: "var(--warning)" },
+  { value: "red",     label: "Red",    swatch: "var(--danger)" },
 ];
 
 function GroupEditor({
@@ -357,9 +357,10 @@ function GroupEditor({
             <button
               key={c.value}
               title={c.label}
+              aria-label={`Set color to ${c.label}`}
               onClick={() => onColorChange(c.value)}
               className={cn(
-                "w-6 h-6 rounded-full border-2 transition-transform hover:scale-110",
+                "w-6 h-6 rounded-full border-2 transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]",
                 color === c.value ? "border-[var(--text-primary)] scale-110" : "border-transparent"
               )}
               style={{ background: c.swatch }}

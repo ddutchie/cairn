@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Trash2, Download, CheckCircle, FolderOpen } from "lucide-react";
+import { Trash2, Download, CheckCircle, FolderOpen, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { useCairnStore } from "@/store";
@@ -16,19 +16,26 @@ export function DataSettings({
 }) {
   const { workspaces, projects, notes, columns, cards, tags } = useCairnStore(useShallow((s) => ({ workspaces: s.workspaces, projects: s.projects, notes: s.notes, columns: s.columns, cards: s.cards, tags: s.tags })));
   const [exportDone, setExportDone] = useState(false);
+  const [exportError, setExportError] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
+  const [resetConfirm, setResetConfirm] = useState("");
 
   function handleExport() {
-    const data = { workspaces, projects, notes, columns, cards, tags, exportedAt: new Date().toISOString() };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `cairn-export-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    setExportDone(true);
-    setTimeout(() => setExportDone(false), 3000);
+    try {
+      setExportError(false);
+      const data = { workspaces, projects, notes, columns, cards, tags, exportedAt: new Date().toISOString() };
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `cairn-export-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setExportDone(true);
+      setTimeout(() => setExportDone(false), 3000);
+    } catch {
+      setExportError(true);
+    }
   }
 
   async function handleReset() {
@@ -58,13 +65,15 @@ export function DataSettings({
 
       <SettingsRow label="Assets folder" description="Open the folder containing all pasted images">
         <Button variant="default" size="sm" onClick={() => window.electron?.revealAssets()}>
-          <FolderOpen size={12} /> Show in Finder
+          <FolderOpen size={12} /> {window.electron?.platform === "darwin" ? "Show in Finder" : window.electron?.platform === "win32" ? "Show in Explorer" : "Open folder"}
         </Button>
       </SettingsRow>
 
       <SettingsRow label="Export data" description="Download your data as cairn-data.json">
         <Button variant="default" size="sm" onClick={handleExport}>
-          {exportDone ? (
+          {exportError ? (
+            <><AlertCircle size={12} className="text-[var(--danger)]" /> Failed</>
+          ) : exportDone ? (
             <><CheckCircle size={12} className="text-[var(--success)]" /> Exported</>
           ) : (
             <><Download size={12} /> Export</>
@@ -78,7 +87,7 @@ export function DataSettings({
         </Button>
       </SettingsRow>
 
-      <Dialog open={resetOpen} onOpenChange={setResetOpen}>
+      <Dialog open={resetOpen} onOpenChange={(v) => { setResetOpen(v); if (!v) setResetConfirm(""); }}>
         <DialogContent size="sm">
           <DialogHeader>
             <DialogTitle>Reset all data?</DialogTitle>
@@ -87,11 +96,22 @@ export function DataSettings({
             <p className="text-sm text-[var(--text-secondary)]">
               This will wipe all local data including notes, tasks, and projects. This cannot be undone.
             </p>
+            <p className="text-xs text-[var(--text-tertiary)]">
+              Type <strong className="text-[var(--danger)]">DELETE</strong> to confirm:
+            </p>
+            <input
+              type="text"
+              value={resetConfirm}
+              onChange={(e) => setResetConfirm(e.target.value)}
+              autoFocus
+              aria-label="Type DELETE to confirm deletion"
+              className="w-full text-xs bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:border-[var(--danger)]"
+            />
             <div className="flex justify-end gap-2">
               <DialogClose asChild>
                 <Button variant="ghost" size="sm">Cancel</Button>
               </DialogClose>
-              <Button variant="danger" size="sm" onClick={handleReset}>
+              <Button variant="danger" size="sm" onClick={handleReset} disabled={resetConfirm !== "DELETE"}>
                 <Trash2 size={12} /> Wipe all data
               </Button>
             </div>
