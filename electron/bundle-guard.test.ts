@@ -31,6 +31,7 @@ const ROOT = path.resolve(__dirname, "..");
 const BUNDLES = [
   "dist-electron/main.js",
   "dist-electron/embeddings-server.bundle.js",
+  "dist-electron/runtime-server.bundle.js",
 ] as const;
 
 /* ──────────────────────────────────────────────────────────────────────── *
@@ -57,13 +58,13 @@ const OPTIONAL_TRANSITIVE = new Set([
 ]);
 
 /**
- * Used only by the embeddings-server worker subprocess, never by the Electron
- * main bundle. The worker (`embeddings-server.bundle.js`) has its own runtime
- * resolution path (injected via `TRANSFORMERS_CACHE` / `pkg.config.js`), so
- * these packages MUST NOT be listed in electron-builder.yml either — otherwise
- * we'd bloat the main app with packages no main-bundle code can resolve.
+ * Used by the unified runtime server subprocess, which runs as an
+ * ELECTRON_RUN_AS_NODE child of Electron. These packages MUST be shipped
+ * via electron-builder.yml because the runtime-server resolves them from
+ * the app's node_modules at runtime. They must NOT appear in the Electron
+ * main bundle requires (main.js) — only in runtime-server.bundle.js.
  */
-const SUBPROCESS_ONLY = new Set([
+const RUNTIME_SHIPPED = new Set([
   "@huggingface/transformers",
   "onnxruntime-node",
 ]);
@@ -78,13 +79,13 @@ const SHIPPED_NATIVE = new Set([
 ]);
 
 /**
- * The full allowlist. Union of the four groups above. Any `require()` in any
+ * The full allowlist. Union of the groups above. Any `require()` in any
  * bundle that isn't in this set (or a Node built-in) fails the test.
  */
 const ALLOWED_EXTERNALS = new Set<string>([
   ...RUNTIME_PROVIDED,
   ...OPTIONAL_TRANSITIVE,
-  ...SUBPROCESS_ONLY,
+  ...RUNTIME_SHIPPED,
   ...SHIPPED_NATIVE,
 ]);
 
@@ -212,22 +213,22 @@ describe("allowlist drift checks", () => {
     ).toHaveLength(0);
   });
 
-  it("every SUBPROCESS_ONLY external is NOT shipped via electron-builder.yml", () => {
-    const leaks = [...SUBPROCESS_ONLY].filter((x) => shipped.has(x));
+  it("every RUNTIME_SHIPPED external ships via electron-builder.yml", () => {
+    const missing = [...RUNTIME_SHIPPED].filter((x) => !shipped.has(x));
     expect(
-      leaks,
-      "These are classified SUBPROCESS_ONLY (used solely by the embeddings worker, which resolves them via its own node_modules/pkg runtime) but electron-builder.yml \`files\`/\`asarUnpack\` is shipping them too. Shipping them in the main Electron app is either wasted space or a sign of misclassification — they shouldn't be on main-bundle disk.\n  Leaks:\n    - " + leaks.join("\n    - "),
+      missing,
+      "These are classified RUNTIME_SHIPPED (used by the runtime-server subprocess which runs as ELECTRON_RUN_AS_NODE) but electron-builder.yml `files`/`asarUnpack` doesn't include them. Add a `node_modules/<pkg>/**/*` entry.\n  Missing:\n    - " + missing.join("\n    - "),
     ).toHaveLength(0);
   });
 
-  it("SUBPROCESS_ONLY externals never appear in the Electron main bundle requires", () => {
+  it("RUNTIME_SHIPPED externals never appear in the Electron main bundle requires", () => {
     const mainPath = path.join(ROOT, "dist-electron/main.js");
     if (!fs.existsSync(mainPath)) return;
     const mainReqs = new Set(extractRequires(mainPath));
-    const leaks = [...SUBPROCESS_ONLY].filter((x) => mainReqs.has(x));
+    const leaks = [...RUNTIME_SHIPPED].filter((x) => mainReqs.has(x));
     expect(
       leaks,
-      "dist-electron/main.js \`require()\`s a package marked SUBPROCESS_ONLY. These packages are not shipped with the Electron app (they only live in the embeddings worker) — the main bundle must not import them. If a main-bundle module genuinely needs them, reclassify as SHIPPED_NATIVE and verify they ship in electron-builder.yml.\n  Leaks:\n    - " + leaks.join("\n    - "),
+      "dist-electron/main.js `require()`s a package marked RUNTIME_SHIPPED. These packages are only for the runtime-server subprocess — the main bundle must not import them directly. If a main-bundle module genuinely needs them, reclassify as SHIPPED_NATIVE and verify they ship in electron-builder.yml.\n  Leaks:\n    - " + leaks.join("\n    - "),
     ).toHaveLength(0);
   });
 
@@ -235,7 +236,7 @@ describe("allowlist drift checks", () => {
     const groups = [
       ["RUNTIME_PROVIDED", RUNTIME_PROVIDED],
       ["OPTIONAL_TRANSITIVE", OPTIONAL_TRANSITIVE],
-      ["SUBPROCESS_ONLY", SUBPROCESS_ONLY],
+      ["RUNTIME_SHIPPED", RUNTIME_SHIPPED],
       ["SHIPPED_NATIVE", SHIPPED_NATIVE],
     ] as const;
     const seen = new Map<string, string>();

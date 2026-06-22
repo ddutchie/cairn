@@ -43,9 +43,9 @@ export function ReindexModal() {
   }, []);
 
   useEffect(() => {
-    const electron = window.electron;
-    if (!electron?.embeddings?.models?.onProgress) return;
-    const unsub = electron.embeddings.models.onProgress((ev: ProgressEvent) => {
+    const e = window.electron;
+    if (!e?.embeddings?.models?.onProgress) return;
+    const unsub = e.embeddings.models.onProgress((ev: ProgressEvent) => {
       if (ev.status === "progress" && typeof ev.loaded === "number" && typeof ev.total === "number") {
         if (phase !== "running") return;
         setProgress({ done: ev.loaded, total: ev.total });

@@ -127,14 +127,14 @@ export function SearchPanel() {
   // Probe embeddings availability once per panel open (cheap IPC)
   useEffect(() => {
     if (!searchOpen) return;
-    const e = window.electron?.embeddings;
-    if (!e?.status) return;
+    const rt = window.electron?.runtime;
+    if (!rt?.embeddings?.status) return;
     let cancelled = false;
-    e.status()
+    rt.embeddings.status()
       .then((st) => {
         if (cancelled) return;
-        // Enable the toggle if embeddings are enabled, model installed, and at least one note is indexed
-        setEmbeddingsReady(Boolean(st.installed && st.activeModelId));
+        // Enable the toggle if runtime is running with an embedding model loaded
+        setEmbeddingsReady(Boolean(st.running && st.defaultModelId));
       })
       .catch(() => setEmbeddingsReady(false));
     return () => { cancelled = true; };

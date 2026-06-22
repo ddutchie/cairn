@@ -120,7 +120,7 @@ export function SemanticMapCanvas({ nodes, onNodeClick, selectedNodeId }: Props)
 
   // Subscribe to recompute progress broadcasts
   useEffect(() => {
-    const off = window.electron?.embeddings?.models?.onProgress((ev) => {
+    const off = window.electron?.runtime?.embeddings?.onProgress((ev) => {
       if (ev.modelId || ev.status === "downloading") return;
       if (ev.status === "progress" && typeof ev.loaded === "number" && typeof ev.total === "number") {
         setRecomputeProgress({ done: ev.loaded, total: ev.total });

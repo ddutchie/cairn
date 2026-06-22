@@ -32,6 +32,7 @@ import { killTrackedBashProcesses } from "./lib/coding-tools/bash";
 import { startMcpNotificationPoller } from "./lib/mcp-poller";
 import { stopServerSync } from "./lib/llama-server";
 import { dispose as disposeEmbeddingsWorker } from "./embeddings/client";
+import * as runtime from "./runtime/client";
 import { BootSplash } from "./splash/bootsplash";
 import { runBootSequence } from "./splash/boot-sequence";
 
@@ -370,6 +371,8 @@ app.on("before-quit", () => {
   stopServerSync();
   // Terminate the embeddings worker child process (HTTP server) so it doesn't linger
   void disposeEmbeddingsWorker();
+  // Terminate the unified runtime process (embeddings + LLM proxy)
+  runtime.stopRuntimeSync();
 });
 
 app.on("window-all-closed", () => {

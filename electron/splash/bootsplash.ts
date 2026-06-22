@@ -298,7 +298,21 @@ function buildSplashHtml(iconDataUrl: string | null): string {
     doneSteps.push(label);
     var row = document.createElement('div');
     row.className = 'done-row';
-    row.innerHTML = '<svg class="checkmark" viewBox="0 0 14 14"><path d="M2 7l3.5 3.5L12 3" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>' + label;
+    var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'checkmark');
+    svg.setAttribute('viewBox', '0 0 14 14');
+    var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', 'M2 7l3.5 3.5L12 3');
+    path.setAttribute('stroke', 'currentColor');
+    path.setAttribute('stroke-width', '2');
+    path.setAttribute('fill', 'none');
+    path.setAttribute('stroke-linecap', 'round');
+    path.setAttribute('stroke-linejoin', 'round');
+    svg.appendChild(path);
+    row.appendChild(svg);
+    var span = document.createElement('span');
+    span.textContent = label;
+    row.appendChild(span);
     doneListEl.appendChild(row);
   }
 

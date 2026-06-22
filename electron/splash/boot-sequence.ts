@@ -26,6 +26,7 @@ import * as manifest from "../embeddings/manifest";
 import { syncNotesFromDisk } from "../notes-files";
 import { computeSemanticRelationships } from "../db/graph-queries";
 import { saveCachedConfig } from "../lib/config-cache";
+import * as runtime from "../runtime/client";
 
 export interface BootContext {
   db: Database.Database;
@@ -53,6 +54,11 @@ export async function runBootSequence(
   let notesSynced = 0;
 
   // ── Step 1: Update check (prod only) ──────────────────────────────────
+  // Block the boot until the update is downloaded and installed. This
+  // ensures the main window never opens with a known-broken build — the
+  // update heals the app before any potentially crashing renderer code
+  // runs. To avoid the splash appearing frozen during the ~172 MB
+  // download, we pipe live download-progress events to the splash UI.
   if (!ctx.isDev) {
     try {
       splash.progress({ step: "update", label: "Checking for updates…", pct: 10 });
@@ -62,42 +68,78 @@ export async function runBootSequence(
         splash.progress({
           step: "update",
           label: `Downloading update v${version}…`,
-          detail: "Auto-installing on download complete",
-          pct: 30,
+          detail: "Starting download",
+          pct: 15,
         });
 
-        // Wait for the download to complete. electron-updater emits
-        // 'update-downloaded' when ready. If autoDownload is true (default),
-        // the download starts automatically after checkForUpdates resolves.
-        await new Promise<void>((resolve, reject) => {
-          const timeout = setTimeout(() => {
-            reject(new Error("update download timed out after 120s"));
-          }, 120_000);
-
-          autoUpdater.once("update-downloaded", () => {
-            clearTimeout(timeout);
-            splash.progress({
-              step: "update",
-              label: `Installing v${version}…`,
-              detail: "The app will restart automatically",
-              pct: 100,
-            });
-            updateInstalled = true;
-            // quitAndInstall restarts the app — the boot sequence will
-            // run again on next launch (finding no update).
-            autoUpdater.quitAndInstall();
-            // The app quits here, so resolve is technically unreachable.
-            resolve();
+        // Pipe live download progress to the splash so the user sees a
+        // moving progress bar instead of a frozen "Downloading…" label.
+        const progressHandler = (p: { percent: number; transferred: number; total: number; bytesPerSecond: number }) => {
+          const pct = Math.round(p.percent);
+          const transferredMB = (p.transferred / 1024 / 1024).toFixed(1);
+          const totalMB = (p.total / 1024 / 1024).toFixed(1);
+          const speedMB = (p.bytesPerSecond / 1024 / 1024).toFixed(1);
+          splash.progress({
+            step: "update",
+            label: `Downloading update v${version}…`,
+            detail: `${transferredMB} / ${totalMB} MB (${speedMB} MB/s)`,
+            pct: 15 + Math.floor(pct * 0.80), // map 0-100% download to 15-95% boot
           });
+        };
+        autoUpdater.on("download-progress", progressHandler);
 
-          autoUpdater.once("error", (err) => {
-            clearTimeout(timeout);
-            reject(err);
+        let cleanupDownloaded: (() => void) | undefined;
+        let cleanupError: (() => void) | undefined;
+
+        try {
+          // Wait for the download to complete. electron-updater emits
+          // 'update-downloaded' when ready. autoDownload is true (set in
+          // main.ts), so the download starts automatically after
+          // checkForUpdates resolves.
+          await new Promise<void>((resolve, reject) => {
+            const timeout = setTimeout(() => {
+              reject(new Error("update download timed out after 300s"));
+            }, 300_000);
+
+            const onDownloaded = () => {
+              clearTimeout(timeout);
+              splash.progress({
+                step: "update",
+                label: `Installing v${version}…`,
+                detail: "The app will restart automatically",
+                pct: 100,
+              });
+              updateInstalled = true;
+              // quitAndInstall restarts the app — the boot sequence will
+              // run again on next launch (finding no update).
+              autoUpdater.quitAndInstall();
+              // The app quits here, so resolve is technically unreachable.
+              resolve();
+            };
+
+            const onError = (err: Error) => {
+              clearTimeout(timeout);
+              reject(err);
+            };
+
+            autoUpdater.once("update-downloaded", onDownloaded);
+            autoUpdater.once("error", onError);
+            // Store refs so the finally block can deregister them if the
+            // timeout fires before the download completes — otherwise
+            // quitAndInstall() could fire unexpectedly later.
+            cleanupDownloaded = () => autoUpdater.off("update-downloaded", onDownloaded);
+            cleanupError = () => autoUpdater.off("error", onError);
           });
-        });
+        } finally {
+          autoUpdater.off("download-progress", progressHandler);
+          cleanupDownloaded?.();
+          cleanupError?.();
+        }
       }
     } catch (err) {
-      // Network error, update server down, etc. — don't block the boot.
+      // Network error, update server down, download timeout, etc. —
+      // don't block the boot entirely. Better to try launching the app
+      // (which may work fine) than to leave the user stuck on splash.
       const msg = err instanceof Error ? err.message : String(err);
       console.warn("[boot] Update check failed:", msg);
       errors.push(`Update check: ${msg}`);
@@ -142,6 +184,22 @@ export async function runBootSequence(
     const settings = getEmbeddingsSettingsCached();
 
     if (settings.enabled) {
+      // Start the unified runtime process so embeddings are immediately
+      // available for search and semantic features. Without this, the runtime
+      // only starts lazily when an embed call happens — which means the first
+      // search after app launch fails until the user toggles embeddings off/on.
+      splash.progress({
+        step: "reindex",
+        label: "Starting embeddings engine…",
+        pct: 0,
+      });
+      try {
+        await runtime.ensureStarted();
+      } catch (err) {
+        console.warn("[boot] Runtime startup failed:", err instanceof Error ? err.message : err);
+        errors.push(`Runtime startup: ${err instanceof Error ? err.message : String(err)}`);
+      }
+
       // Resolve model id with self-heal (same logic as the IPC handler).
       const model = resolveEmbeddingModelId(
         settings.modelId,

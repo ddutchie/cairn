@@ -34,15 +34,13 @@ export function AISettings() {
     port: number | null;
     activeModelId: string | null;
     defaultModelId: string | null;
-    installed: boolean;
-    error: string | null;
+    binaryInstalled: boolean;
   }>({
     running: false,
     port: null,
     activeModelId: null,
     defaultModelId: null,
-    installed: true,
-    error: null
+    binaryInstalled: true,
   });
 
   const [downloadProgresses, setDownloadProgresses] = useState<Record<string, { progress: number; speed?: string; status: string; error?: string }>>({});
@@ -56,10 +54,10 @@ export function AISettings() {
   } | null>(null);
 
   async function handleCheckForUpdates() {
-    if (!window.electron || !window.electron.llama) return;
+    if (!window.electron || !window.electron.runtime) return;
     setUpdateCheck({ loading: true, result: null, error: null });
     try {
-      const res = await window.electron.llama.binary.checkForUpdates();
+      const res = await window.electron.runtime.llm.binary.checkForUpdates();
       setUpdateCheck({ loading: false, result: res, error: null });
     } catch (e) {
       console.error("Failed to check for updates:", e);
@@ -72,12 +70,12 @@ export function AISettings() {
   }
 
   async function refreshLlamaState() {
-    if (typeof window === "undefined" || !window.electron || !window.electron.llama) return;
+    if (typeof window === "undefined" || !window.electron || !window.electron.runtime) return;
     setIsRefreshing(true);
     try {
-      const list = await window.electron.llama.models.list();
+      const { models: list } = await window.electron.runtime.llm.models();
       setLlamaModels(list);
-      const status = await window.electron.llama.server.status();
+      const status = await window.electron.runtime.llm.server.status();
       setServerStatus(status);
     } catch (e) {
       console.error("Failed to fetch llama state:", e);
@@ -87,11 +85,11 @@ export function AISettings() {
   }
 
   async function refreshLlamaStateQuiet() {
-    if (typeof window === "undefined" || !window.electron || !window.electron.llama) return;
+    if (typeof window === "undefined" || !window.electron || !window.electron.runtime) return;
     try {
-      const list = await window.electron.llama.models.list();
+      const { models: list } = await window.electron.runtime.llm.models();
       setLlamaModels(list);
-      const status = await window.electron.llama.server.status();
+      const status = await window.electron.runtime.llm.server.status();
       setServerStatus(status);
     } catch (e) {
       console.error("Failed to fetch llama state:", e);
@@ -99,17 +97,16 @@ export function AISettings() {
   }
 
   useEffect(() => {
-    if (typeof window !== "undefined" && window.electron && window.electron.llama) {
+    if (typeof window !== "undefined" && window.electron && window.electron.runtime) {
       refreshLlamaState();
       handleCheckForUpdates();
 
       // Listen to download progress
-      const unsub = window.electron.llama.models.onProgress((event) => {
+      const unsub = window.electron.runtime.llm.onProgress((event) => {
         setDownloadProgresses((prev) => ({
           ...prev,
           [event.modelId]: {
-            progress: event.progress,
-            speed: event.speed,
+            progress: event.progress ?? 0,
             status: event.status,
             error: event.error
           }
@@ -119,7 +116,7 @@ export function AISettings() {
       });
 
       // Listen to binary installer progress
-      const unsubBinary = window.electron.llama.binary.onProgress((event) => {
+      const unsubBinary = window.electron.runtime.llm.binary.onProgress((event) => {
         setBinaryProgress(event);
         if (event.status === "installed") {
           refreshLlamaStateQuiet();
@@ -135,21 +132,19 @@ export function AISettings() {
   }, []);
 
   async function handleStartServer(modelId: string) {
-    if (!window.electron || !window.electron.llama) return;
+    if (!window.electron || !window.electron.runtime) return;
     try {
-      setServerStatus((prev) => ({ ...prev, error: null }));
-      await window.electron.llama.server.start(modelId, aiConfig.contextLimit);
+      await window.electron.runtime.llm.server.start(modelId, aiConfig.contextLimit);
       await refreshLlamaState();
     } catch (e) {
       console.error("Failed to start llama server:", e);
-      setServerStatus((prev) => ({ ...prev, error: e instanceof Error ? e.message : String(e) }));
     }
   }
 
   async function handleSetDefaultModel(modelId: string) {
-    if (!window.electron || !window.electron.llama) return;
+    if (!window.electron || !window.electron.runtime) return;
     try {
-      await window.electron.llama.server.setDefault(modelId);
+      await window.electron.runtime.llm.server.setDefault(modelId);
       await refreshLlamaState();
     } catch (e) {
       console.error("Failed to set default model:", e);
@@ -157,9 +152,9 @@ export function AISettings() {
   }
 
   async function handleStopServer() {
-    if (!window.electron || !window.electron.llama) return;
+    if (!window.electron || !window.electron.runtime) return;
     try {
-      await window.electron.llama.server.stop();
+      await window.electron.runtime.llm.server.stop();
       await refreshLlamaState();
     } catch (e) {
       console.error("Failed to stop llama server:", e);
@@ -167,14 +162,14 @@ export function AISettings() {
   }
 
   async function handleInstallModel(modelId: string) {
-    if (!window.electron || !window.electron.llama) return;
+    if (!window.electron || !window.electron.runtime) return;
     try {
       // Optimistic progress
       setDownloadProgresses((prev) => ({
         ...prev,
         [modelId]: { progress: 0, status: "downloading" }
       }));
-      await window.electron.llama.models.install(modelId, useMirror);
+      await window.electron.runtime.llm.install(modelId, useMirror);
       await refreshLlamaState();
     } catch (e) {
       console.error("Failed to trigger install:", e);
@@ -182,9 +177,9 @@ export function AISettings() {
   }
 
   async function handleRemoveModel(modelId: string) {
-    if (!window.electron || !window.electron.llama) return;
+    if (!window.electron || !window.electron.runtime) return;
     try {
-      await window.electron.llama.models.remove(modelId);
+      await window.electron.runtime.llm.remove(modelId);
       setDownloadProgresses((prev) => {
         const next = { ...prev };
         delete next[modelId];
@@ -198,9 +193,9 @@ export function AISettings() {
   }
 
   async function handleClearInactive() {
-    if (!window.electron || !window.electron.llama) return;
+    if (!window.electron || !window.electron.runtime) return;
     try {
-      await window.electron.llama.models.clearInactive();
+      await window.electron.runtime.llm.clearInactive();
       await refreshLlamaState();
     } catch (e) {
       console.error("Failed to clear inactive models:", e);
@@ -208,10 +203,10 @@ export function AISettings() {
   }
 
   async function handleInstallBinary() {
-    if (!window.electron || !window.electron.llama) return;
+    if (!window.electron || !window.electron.runtime) return;
     try {
       setBinaryProgress({ progress: 0, status: "fetching_release" });
-      await window.electron.llama.binary.install();
+      await window.electron.runtime.llm.binary.install();
       await refreshLlamaState();
       await handleCheckForUpdates(); // Refresh version info to show "Up to date"
     } catch (e) {
@@ -400,7 +395,7 @@ export function AISettings() {
               </div>
 
               {/* Llama Engine Version / Update status */}
-              {serverStatus.installed && (
+              {serverStatus.binaryInstalled && (
                 <div className="flex items-center justify-between text-[0.714rem] text-[var(--text-secondary)] border-b border-[var(--border-subtle)] pb-4 pt-1">
                   <div className="flex items-center gap-2">
                     <span className="font-semibold text-[var(--text-primary)]">Llama Engine:</span>
@@ -448,7 +443,7 @@ export function AISettings() {
               )}
 
               {/* Local Context Limit Row */}
-              {serverStatus.installed && (
+              {serverStatus.binaryInstalled && (
                 <div className="flex items-center justify-between text-[0.714rem] text-[var(--text-secondary)] border-b border-[var(--border-subtle)] pb-4 pt-1">
                   <div className="flex flex-col gap-0.5">
                     <span className="font-semibold text-[var(--text-primary)]">Local Context Limit:</span>
@@ -469,7 +464,7 @@ export function AISettings() {
                 </div>
               )}
 
-              {serverStatus.installed && binaryProgress && (
+              {serverStatus.binaryInstalled && binaryProgress && (
                 <div className="bg-[var(--surface-3)] p-3 rounded-lg border border-[var(--border)] mb-4 space-y-2">
                   <div className="flex justify-between text-[0.714rem]">
                     <span className="text-[var(--text-primary)] font-medium capitalize flex items-center gap-1.5">
@@ -493,7 +488,7 @@ export function AISettings() {
               )}
 
               {/* Automated 1-Click Engine Downloader Card */}
-              {!serverStatus.installed && (
+              {!serverStatus.binaryInstalled && (
                 <div className="bg-[color-mix(in_srgb,var(--accent)_8%,transparent)] border border-[color-mix(in_srgb,var(--accent)_30%,transparent)] rounded-lg p-5 space-y-4">
                   <div className="flex items-center gap-2 text-[var(--accent)] font-semibold text-xs">
                     <Cpu size={14} className={binaryProgress?.status === "downloading" || binaryProgress?.status === "extracting" ? "animate-spin" : ""} />
@@ -557,11 +552,7 @@ export function AISettings() {
               )}
 
               {/* Server Error Log if any */}
-              {serverStatus.error && (
-                <div className="bg-red-500/5 border border-red-500/20 text-red-400 p-3.5 rounded-lg text-[0.786rem] font-mono whitespace-pre-wrap max-h-36 overflow-y-auto">
-                  {serverStatus.error}
-                </div>
-              )}
+              {/* Note: runtime status doesn't surface error string; errors are shown via download progress */}
 
               {/* Model Quantization Manager */}
               <div className="space-y-3">
@@ -614,11 +605,11 @@ export function AISettings() {
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="text-xs font-semibold text-[var(--text-primary)]">{model.name}</span>
                               <span className="text-[0.65rem] text-[var(--text-tertiary)] font-mono">
-                                {model.repo} · {model.quant}
+                                {model.repo} · {model.meta?.quant}
                               </span>
                             </div>
                             <p className="text-[0.714rem] text-[var(--text-secondary)]">
-                              File: <code className="bg-[var(--surface-1)] px-1 py-0.5 rounded font-mono text-[0.65rem]">{model.filename}</code>
+                                File: <code className="bg-[var(--surface-1)] px-1 py-0.5 rounded font-mono text-[0.65rem]">{model.meta?.filename}</code>
                             </p>
                           </div>
 
