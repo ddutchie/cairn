@@ -199,11 +199,18 @@ app.whenReady().then(async () => {
   const splash = new BootSplash();
   splash.create();
 
+  // Emit real progress for the pre-boot work that happens between splash
+  // creation and runBootSequence. Without these events the splash sits at
+  // 0% with "Starting…" until the first boot step fires.
+  splash.progress({ step: "migrations", label: "Opening database…", pct: 3 });
+
   // Resolve workspace ID from DB (may not exist on first launch / onboarding).
   const wsRow = initialDb.prepare(
     "SELECT id FROM workspaces ORDER BY created_at LIMIT 1",
   ).get() as { id?: string } | undefined;
   const workspaceId = wsRow?.id ?? "";
+
+  splash.progress({ step: "migrations", label: "Registering handlers…", pct: 6 });
 
   let bootErrors: string[] = [];
   try {
@@ -222,24 +229,17 @@ app.whenReady().then(async () => {
   const win = createWindow();
   _win = win;
 
-  // Close splash only after the main window has finished loading its first
-  // page and a minimum display time has elapsed. The main window is created
-  // hidden (show: false) so only the splash is visible during boot. Once the
-  // renderer has painted, we show the main window and close the splash.
-  const MIN_SPLASH_MS = 3000;
-  const splashOpenedAt = Date.now();
+  // Close splash after the main window has finished loading its first page.
+  // The main window is created hidden (show: false) so only the splash is
+  // visible during boot. Once the renderer has painted, we send the final
+  // "Ready" progress, wait 200ms for the CSS transition to animate, then
+  // show the main window and close the splash.
   const closeSplash = () => {
-    const elapsed = Date.now() - splashOpenedAt;
-    const delay = Math.max(0, MIN_SPLASH_MS - elapsed);
+    splash.progress({ step: "done", label: "Ready", pct: 100 });
     setTimeout(() => {
-      // Notify splash to fill to 100% before closing, so the progress bar
-      // completes instead of vanishing mid-cycle.
-      splash.progress({ step: "done", label: "Ready", pct: 100 });
-      setTimeout(() => {
-        win.show();
-        splash.close();
-      }, 200);
-    }, delay);
+      win.show();
+      splash.close();
+    }, 200);
   };
   win.webContents.once("did-finish-load", () => {
     closeSplash();
