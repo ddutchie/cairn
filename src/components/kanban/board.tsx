@@ -27,6 +27,7 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
+import { NoteMarkdownPreview } from "@/components/notes/NoteMarkdownPreview";
 import { KanbanColumn } from "./column";
 import { KanbanCard } from "./card";
 import { CardDetailModal } from "./card-detail";
@@ -480,7 +481,9 @@ export function KanbanBoard() {
                             >
                               <span className="text-xs font-medium text-[var(--text-primary)] leading-snug line-clamp-2">{card.title}</span>
                               {card.description && (
-                                <p className="text-[0.714rem] text-[var(--text-tertiary)] line-clamp-2">{card.description}</p>
+                                <div className="text-[0.714rem] text-[var(--text-tertiary)] line-clamp-2">
+                                  <NoteMarkdownPreview content={card.description} className="!px-0 !py-0" />
+                                </div>
                               )}
                               <div className="flex items-center gap-1.5 mt-auto pt-1">
                                 {col && (

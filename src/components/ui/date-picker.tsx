@@ -112,6 +112,7 @@ export function DatePicker({ value, onChange, placeholder = "Pick a date", class
            absolutely-positioned children). */}
       {open && createPortal(
         <div
+          data-dialog-portal
           className="cairn-datepicker-popover fixed z-[100] rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl p-2"
           style={{
             top: `${popoverPos.top}px`,

@@ -1,11 +1,9 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import remarkBreaks from "remark-breaks";
 import licensesData from "@/generated/licenses.json";
 import { SettingsGroup } from "./shared";
+import { NoteMarkdownPreview } from "@/components/notes/NoteMarkdownPreview";
 
 export function AboutSection() {
   const [licensesOpen, setLicensesOpen] = useState(false);
@@ -39,10 +37,8 @@ export function AboutSection() {
               <span className="text-[var(--text-tertiary)]">{changelogOpen ? "▲" : "▼"}</span>
             </button>
             {changelogOpen && (
-              <div className="border-t border-[var(--border)] px-4 py-3 prose-cairn max-h-96 overflow-y-auto">
-                <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
-                  {changelog}
-                </ReactMarkdown>
+              <div className="border-t border-[var(--border)] max-h-96 overflow-y-auto">
+                <NoteMarkdownPreview content={changelog} className="!py-3" />
               </div>
             )}
           </div>

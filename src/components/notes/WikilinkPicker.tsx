@@ -117,6 +117,7 @@ export function WikilinkPicker({
   const content = (
     <div
       data-wikilink-picker
+      data-dialog-portal
       className="fixed z-[9999] w-72 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-xl py-1 overflow-y-auto"
       style={{ top, left, maxHeight: PICKER_HEIGHT }}
     >

@@ -5,6 +5,7 @@ import { Handle, Position, type NodeProps, useReactFlow } from "@xyflow/react";
 import { Sparkles, Loader2, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
+import { NoteMarkdownPreview } from "@/components/notes/NoteMarkdownPreview";
 
 export interface AiSummaryNodeData {
   content?: string;
@@ -98,9 +99,9 @@ export const AiSummaryNode = memo(function AiSummaryNode({ id, data, selected, i
             {errorMsg}
           </p>
         ) : hasContent ? (
-          <p className="text-[0.786rem] text-[var(--text-secondary)] leading-relaxed break-words whitespace-pre-wrap">
-            {d.content}
-          </p>
+          <div className="text-[0.786rem] text-[var(--text-secondary)] leading-relaxed break-words max-h-64 overflow-y-auto nodrag">
+            <NoteMarkdownPreview content={d.content!} className="!px-0 !py-0" />
+          </div>
         ) : (
           <p className="text-[0.786rem] text-[var(--text-tertiary)] leading-relaxed italic">
             Connect to nodes, then hit Generate.

@@ -87,7 +87,19 @@ body {
   font-size: 1rem;
   line-height: 1.6;
   overflow: hidden;
-  height: 100dvh;
+}
+
+/*
+ * Radix modal Dialog sets `body { pointer-events: none }` while open, and
+ * re-enables pointer events only on its own Content. Anything portaled to
+ * document.body as a sibling of the dialog (e.g. the DatePicker popover via
+ * [data-dialog-portal]) therefore inherits pointer-events: none and silently
+ * swallows every click/hover. Per the CSS spec, descendants can override a
+ * parent's pointer-events: none, so this rule restores interactivity for
+ * portaled children that opt in with the data attribute.
+ */
+[data-dialog-portal] {
+  pointer-events: auto;
 }
 
 /* ── Scrollbar ───────────────────────────────────────── */

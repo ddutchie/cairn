@@ -13,7 +13,7 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
 import { SpawnAgentModal } from "@/components/agent/SpawnAgentModal";
-import { MarkdownContent } from "@/components/chat/chat-panel/MarkdownContent";
+import { NoteMarkdownPreview } from "@/components/notes/NoteMarkdownPreview";
 import { CardDetailSidebar } from "./card-detail-sidebar";
 
 interface CardDetailModalProps {
@@ -119,7 +119,7 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
                   className="w-full bg-[var(--surface-2)] border border-[var(--border)] hover:border-[color-mix(in_srgb,var(--accent)_40%,transparent)] rounded-lg px-3 py-2.5 text-sm text-[var(--text-secondary)] min-h-[12rem] cursor-pointer transition-colors overflow-y-auto"
                 >
                   {card.description?.trim() ? (
-                    <MarkdownContent content={card.description} />
+                    <NoteMarkdownPreview content={card.description} className="!px-3 !py-2.5" />
                   ) : (
                     <span className="text-[var(--text-tertiary)] italic">Add a description…</span>
                   )}

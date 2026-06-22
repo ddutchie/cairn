@@ -177,7 +177,7 @@ export function getKnowledgeGraph(
         meta: {
           tagIds: parseJson(n.tag_ids),
           isPinned: n.is_pinned === 1,
-          snippet: (n.content_text as string || "").slice(0, 120),
+          snippet: (n.content_text as string || "").slice(0, 600),
         },
       });
     }
@@ -232,7 +232,7 @@ export function getKnowledgeGraph(
           priority: c.priority,
           assignee: c.assignee,
           tagIds: parseJson(c.tag_ids),
-          snippet: (c.description as string || "").slice(0, 120),
+          snippet: (c.description as string || "").slice(0, 600),
           isArchived: !!(c.archived_at),
         },
       });

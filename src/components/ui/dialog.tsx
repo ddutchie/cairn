@@ -18,6 +18,7 @@ export function DialogContent({
   children,
   size = "md",
   "aria-describedby": ariaDescribedBy,
+  onInteractOutside: consumerOnInteractOutside,
   ...props
 }: DialogContentProps) {
   return (
@@ -25,6 +26,19 @@ export function DialogContent({
       <RadixDialog.Overlay className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 animate-fade-in" />
       <RadixDialog.Content
         aria-describedby={ariaDescribedBy ?? undefined}
+        onInteractOutside={(e) => {
+          // Allow portaled children (e.g. DatePicker popover) to receive clicks
+          // without dismissing the dialog. These are portaled to document.body
+          // as siblings of Dialog.Content, so Radix treats them as "outside".
+          // Radix dispatches a CustomEvent; the real DOM node lives at
+          // event.detail.target, NOT event.target.
+          const target = (e as CustomEvent).detail?.target as Node | null;
+          if (target instanceof Element && target.closest("[data-dialog-portal]")) {
+            e.preventDefault();
+            return;
+          }
+          consumerOnInteractOutside?.(e);
+        }}
         className={cn(
           "fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50",
           "bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-2xl",
