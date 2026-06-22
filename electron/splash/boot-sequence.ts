@@ -63,7 +63,11 @@ export async function runBootSequence(
     try {
       splash.progress({ step: "update", label: "Checking for updates…", pct: 10 });
       const result = await autoUpdater.checkForUpdates();
-      if (result && result.updateInfo) {
+      // electron-updater always returns `updateInfo` (truthy) even when no
+      // update is available — only proceed when `isUpdateAvailable` is true.
+      // Without this check, running the same version locally as the published
+      // release would stall on "Downloading update v2.1.6…" for 300s.
+      if (result && result.isUpdateAvailable && result.updateInfo) {
         const version = result.updateInfo.version;
         splash.progress({
           step: "update",
