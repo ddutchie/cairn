@@ -14,6 +14,14 @@ import { GraphDetailPanel } from "./GraphDetailPanel";
 import { ForceGraphCanvas } from "./ForceGraphCanvas";
 import { RadialTreeCanvas } from "./RadialTreeCanvas";
 import { Tooltip } from "@/components/ui/tooltip";
+import { resolveCssVar } from "./analyticsUtils";
+
+const EDGE_LEGEND: Array<{ label: string; color: string; dash: boolean }> = [
+  { label: "Linked",   color: resolveCssVar("--accent"),  dash: false },
+  { label: "Wikilink", color: resolveCssVar("--accent"),  dash: false },
+  { label: "Semantic", color: resolveCssVar("--accent"),  dash: true  },
+  { label: "Co-mention", color: resolveCssVar("--border"), dash: true },
+];
 
 export function KnowledgeGraphView() {
   const {
@@ -49,10 +57,25 @@ export function KnowledgeGraphView() {
   const [projectDropdownOpen, setProjectDropdownOpen] = useState(false);
   const [labelDropdownOpen, setLabelDropdownOpen] = useState(false);
   const [recomputing, setRecomputing] = useState(false);
+  const [recomputeSeconds, setRecomputeSeconds] = useState(0);
   const [graphSearch, setGraphSearch] = useState("");
-  const [labelMode, setLabelMode] = useState<"smart" | "all" | "minimal">("smart");
-  const [spacing, setSpacing] = useState<number>(1.2);
-  const [semanticThreshold, setSemanticThreshold] = useState<number>(1.0);
+  const [labelMode, setLabelMode] = useState<"smart" | "all" | "minimal">(() => {
+    if (typeof localStorage === "undefined") return "smart";
+    return (localStorage.getItem("kg-label-mode") as "smart" | "all" | "minimal") || "smart";
+  });
+  const [spacing, setSpacing] = useState<number>(() => {
+    if (typeof localStorage === "undefined") return 1.2;
+    return parseFloat(localStorage.getItem("kg-spacing") || "1.2");
+  });
+  const [semanticThreshold, setSemanticThreshold] = useState<number>(() => {
+    if (typeof localStorage === "undefined") return 1.0;
+    return parseFloat(localStorage.getItem("kg-semantic-threshold") || "1.0");
+  });
+
+  // Persist graph prefs to localStorage
+  useEffect(() => { localStorage.setItem("kg-label-mode", labelMode); }, [labelMode]);
+  useEffect(() => { localStorage.setItem("kg-spacing", String(spacing)); }, [spacing]);
+  useEffect(() => { localStorage.setItem("kg-semantic-threshold", String(semanticThreshold)); }, [semanticThreshold]);
 
   // ⌘F / Ctrl+F — focus the graph search input
   const graphSearchRef = useRef<HTMLInputElement>(null);
@@ -138,8 +161,14 @@ export function KnowledgeGraphView() {
   async function handleRecompute() {
     if (!activeWorkspaceId) return;
     setRecomputing(true);
-    await recomputeGraphRelationships(activeWorkspaceId);
-    setRecomputing(false);
+    setRecomputeSeconds(0);
+    const timer = setInterval(() => setRecomputeSeconds((s) => s + 1), 1000);
+    try {
+      await recomputeGraphRelationships(activeWorkspaceId);
+    } finally {
+      clearInterval(timer);
+      setRecomputing(false);
+    }
   }
 
   const ALL_NODE_TYPES: GraphNodeType[] = ["project", "note", "card", "tag"];
@@ -406,13 +435,14 @@ export function KnowledgeGraphView() {
         {/* Stats + Recompute — pinned to right */}
         <span className="ml-auto flex items-center gap-2 text-[0.786rem] text-[var(--text-tertiary)]">
           {`${filteredNodes.length} nodes · ${filteredEdges.filter((e) => e.type !== "semantic" || (e.weight ?? 1) >= semanticThreshold).length} edges`}
-          <Tooltip content="Recompute auto-relationships">
+          <Tooltip content={recomputing ? `Recomputing… (${recomputeSeconds}s)` : "Recompute auto-relationships"}>
             <button
               onClick={handleRecompute}
               disabled={recomputing}
               className="flex items-center gap-1 px-1.5 py-1 rounded border border-[var(--border)] text-[var(--text-tertiary)] hover:bg-[var(--surface-2)] transition-colors disabled:opacity-50"
             >
               <RefreshCw size={11} className={recomputing ? "animate-spin" : ""} />
+              {recomputing && <span className="text-[0.714rem] tabular-nums">{recomputeSeconds}s</span>}
             </button>
           </Tooltip>
         </span>
@@ -429,8 +459,10 @@ export function KnowledgeGraphView() {
           )}
 
           {graphError && (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <span className="text-xs text-[var(--danger)]">{graphError}</span>
+            <div className="absolute inset-0 flex items-center justify-center bg-[var(--background)]/80 z-10">
+              <div className="px-4 py-3 rounded-lg bg-[var(--surface)] border border-[var(--border)] shadow-lg">
+                <span className="text-xs text-[var(--danger)]">{graphError}</span>
+              </div>
             </div>
           )}
 
@@ -467,16 +499,35 @@ export function KnowledgeGraphView() {
 
           {/* Node type legend — only shown in graph modes */}
           {filteredNodes.length > 0 && (graphLayout === "force" || graphLayout === "radial") && (
-            <div className="absolute bottom-4 left-4 flex items-center gap-3 px-3 py-2 rounded-lg bg-[var(--surface)]/90 border border-[var(--border)] backdrop-blur-sm">
-              {ALL_NODE_TYPES.filter((t) => graphFilters.nodeTypes.includes(t)).map((t) => (
-                <div key={t} className="flex items-center gap-1.5">
-                  <span
-                    className="w-2.5 h-2.5 rounded-full"
-                    style={{ background: nodeTypeColor(t) }}
-                  />
-                  <span className="text-[0.786rem] capitalize text-[var(--text-tertiary)]">{t}</span>
-                </div>
-              ))}
+            <div className="absolute bottom-4 left-4 flex flex-col gap-2">
+              <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-[var(--surface)]/90 border border-[var(--border)] backdrop-blur-sm">
+                {ALL_NODE_TYPES.filter((t) => graphFilters.nodeTypes.includes(t)).map((t) => (
+                  <div key={t} className="flex items-center gap-1.5">
+                    <span
+                      className="w-2.5 h-2.5 rounded-full"
+                      style={{ background: nodeTypeColor(t) }}
+                    />
+                    <span className="text-[0.786rem] capitalize text-[var(--text-tertiary)]">{t}</span>
+                  </div>
+                ))}
+              </div>
+              {/* Edge type legend */}
+              <div className="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-[var(--surface)]/90 border border-[var(--border)] backdrop-blur-sm">
+                {EDGE_LEGEND.map(({ label, color, dash }) => (
+                  <div key={label} className="flex items-center gap-1.5">
+                    {dash ? (
+                      <svg width="16" height="4" className="flex-shrink-0">
+                        <line x1="0" y1="2" x2="16" y2="2" stroke={color} strokeWidth="1.5" strokeDasharray="2,2" />
+                      </svg>
+                    ) : (
+                      <svg width="16" height="4" className="flex-shrink-0">
+                        <line x1="0" y1="2" x2="16" y2="2" stroke={color} strokeWidth="1.5" />
+                      </svg>
+                    )}
+                    <span className="text-[0.786rem] text-[var(--text-tertiary)]">{label}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>

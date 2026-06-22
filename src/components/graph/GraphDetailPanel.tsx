@@ -178,6 +178,9 @@ export function GraphDetailPanel({ node, onClose }: Props) {
             {typeIcon}
             {typeLabel}
           </span>
+          {project && node.type !== "project" && (
+            <span className="text-[0.714rem] text-[var(--text-tertiary)] truncate">in {project.name}</span>
+          )}
         </div>
         <button
           onClick={onClose}
@@ -194,11 +197,6 @@ export function GraphDetailPanel({ node, onClose }: Props) {
           <h3 className="text-sm font-semibold text-[var(--text-primary)] leading-snug">
             {node.title}
           </h3>
-          {project && node.type !== "project" && (
-            <p className="mt-0.5 text-xs text-[var(--text-tertiary)]">
-              in {project.name}
-            </p>
-          )}
         </div>
 
         {/* Snippet */}
@@ -250,7 +248,7 @@ export function GraphDetailPanel({ node, onClose }: Props) {
                 className="flex items-center gap-1.5 w-full px-2 py-1.5 rounded-md text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors text-left group disabled:opacity-40 disabled:cursor-default"
               >
                 <Kanban size={11} className="text-[var(--text-tertiary)] flex-shrink-0 group-hover:text-[var(--accent)] transition-colors" />
-                <span className="truncate">{item.title}</span>
+                <span className="truncate" title={item.title}>{item.title}</span>
               </button>
             );
           })}
@@ -276,7 +274,7 @@ export function GraphDetailPanel({ node, onClose }: Props) {
                 className="flex items-center gap-1.5 w-full px-2 py-1.5 rounded-md text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors text-left group disabled:opacity-40 disabled:cursor-default"
               >
                 <FileText size={11} className="text-[var(--text-tertiary)] flex-shrink-0 group-hover:text-[var(--accent)] transition-colors" />
-                <span className="truncate">{item.title}</span>
+                <span className="truncate" title={item.title}>{item.title}</span>
               </button>
             );
           })}
@@ -308,7 +306,7 @@ export function GraphDetailPanel({ node, onClose }: Props) {
                     className="flex items-center gap-1.5 w-full px-2 py-1.5 rounded-md text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors text-left group"
                   >
                     <FileText size={11} className="text-[var(--text-tertiary)] flex-shrink-0 group-hover:text-[var(--accent)] transition-colors" />
-                    <span className="truncate">{link.title}</span>
+                    <span className="truncate" title={link.title}>{link.title}</span>
                   </button>
                 ))}
               </div>
@@ -331,7 +329,7 @@ export function GraphDetailPanel({ node, onClose }: Props) {
                     className="flex items-center gap-1.5 w-full px-2 py-1.5 rounded-md text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors text-left group"
                   >
                     <Sparkles size={11} className="text-[var(--text-tertiary)] flex-shrink-0 group-hover:text-[var(--accent)] transition-colors" />
-                    <span className="truncate flex-1">{link.title}</span>
+                    <span className="truncate flex-1" title={link.title}>{link.title}</span>
                     {link.weight !== undefined && (
                       <span className="text-[0.643rem] text-[var(--text-tertiary)] flex-shrink-0">
                         {Math.round(link.weight * 100)}
@@ -375,6 +373,9 @@ export function GraphDetailPanel({ node, onClose }: Props) {
               const targetProjectId = node.projectId ?? null;
               if (targetProjectId) setActiveProject(targetProjectId);
               setView("notes");
+              requestAnimationFrame(() => {
+                window.dispatchEvent(CairnEvents.filterByTag(node.id));
+              });
               onClose();
             }}
             className={cn(

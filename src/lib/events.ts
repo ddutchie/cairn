@@ -18,4 +18,7 @@ export const CairnEvents = {
   /** Opens the chat panel and pre-fills the input with the given text, optionally sending it automatically. */
   openChat: (prefill: string, autoSend?: boolean) =>
     new CustomEvent("cairn:open-chat", { detail: { prefill, autoSend } }),
+  /** Navigates to notes view and applies a tag filter. */
+  filterByTag: (tagId: string) =>
+    new CustomEvent("cairn:filter-by-tag", { detail: { tagId } }),
 };

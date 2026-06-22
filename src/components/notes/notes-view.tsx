@@ -227,6 +227,16 @@ export function NotesView() {
     return () => window.removeEventListener("cairn:select-note", handler);
   }, []);
 
+  // Deep-link from graph: filter by tag
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { tagId } = (e as CustomEvent).detail;
+      setActiveTagId(tagId);
+    };
+    window.addEventListener("cairn:filter-by-tag", handler);
+    return () => window.removeEventListener("cairn:filter-by-tag", handler);
+  }, []);
+
   const handleDelete = useCallback((noteId: string) => {
     deleteNote(noteId);
     setDeleteNoteId(null);
