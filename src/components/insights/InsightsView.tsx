@@ -33,7 +33,7 @@ const LAYOUTS: { key: InsightsLayout; icon: React.ReactNode; label: string; tip:
   { key: "timeline",     icon: <Clock     size={12} />, label: "Timeline",     tip: "Cards by due date"               },
   { key: "matrix",       icon: <Grid3x3  size={12} />, label: "Matrix",       tip: "Tag co-occurrence heatmap"       },
   { key: "table",        icon: <Table2   size={12} />, label: "Table",        tip: "Flat sortable table"              },
-  { key: "semantic-map", icon: <Sparkles size={12} />, label: "Semantic Map", tip: "Notes plotted by embedding similarity (UMAP 2D projection)" },
+  { key: "semantic-map", icon: <Sparkles size={12} />, label: "Semantic", tip: "Notes plotted by semantic similarity" },
 ];
 
 const ALL_NODE_TYPES: GraphNodeType[] = ["project", "note", "card", "tag"];

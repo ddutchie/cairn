@@ -535,6 +535,50 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
           </a>
         );
       }
+      if (href) {
+        const isExternal = /^(https?:|mailto:|asset:)/.test(href) || href.startsWith("//");
+        if (isExternal) {
+          return (
+            <a
+              {...(props as React.AnchorHTMLAttributes<HTMLAnchorElement>)}
+              href={href}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(e) => {
+                e.preventDefault();
+                const el = (window as { electron?: { openExternal?: (u: string) => void } }).electron;
+                if (el?.openExternal) el.openExternal(href);
+                else window.open(href, "_blank");
+              }}
+            >
+              {children}
+            </a>
+          );
+        }
+        const stripped = href.replace(/^\.?\//, "").replace(/\.md$/i, "").replace(/^[./]+/, "");
+        const target = notes.find(
+          (n) =>
+            n.title.toLowerCase() === stripped.toLowerCase() ||
+            n.title.toLowerCase() === stripped.replace(/[-_]/g, " ").toLowerCase() ||
+            n.id === stripped,
+        );
+        return (
+          <a
+            {...(props as React.AnchorHTMLAttributes<HTMLAnchorElement>)}
+            href={href}
+            title={target ? `Open: ${target.title}` : href}
+            style={target ? { color: "var(--accent)", textDecoration: "none" } : undefined}
+            onClick={(e) => {
+              e.preventDefault();
+              if (target) {
+                window.dispatchEvent(new CustomEvent("cairn:select-note", { detail: { noteId: target.id } }));
+              }
+            }}
+          >
+            {children}
+          </a>
+        );
+      }
       return <a href={href} {...(props as React.AnchorHTMLAttributes<HTMLAnchorElement>)}>{children}</a>;
     },
     section({ children, ...props }: React.HTMLAttributes<HTMLElement> & ExtraProps) {
