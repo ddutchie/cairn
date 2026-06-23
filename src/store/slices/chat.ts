@@ -4,7 +4,7 @@
 
 import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
-import type { ChatThread, ChatMessage, ChatToolCallRecord, PendingAction, ID } from "@/types";
+import type { ChatThread, ChatMessage, ChatToolCallRecord, PendingAction, ID, TokenBreakdown } from "@/types";
 import { id, now } from "@/lib/utils";
 import { ipc, ipcAwait, ipcAwaitResult } from "../ipc";
 
@@ -23,7 +23,8 @@ export interface ChatSlice {
     content: string,
     contextRefs?: ChatMessage["contextRefs"],
     toolCalls?: ChatToolCallRecord[],
-    actions?: ChatMessage["actions"]
+    actions?: ChatMessage["actions"],
+    reasoning?: string,
   ) => ChatMessage;
   confirmAction: (action: PendingAction) => void;
   deleteThread: (threadId: ID) => void;
@@ -31,7 +32,12 @@ export interface ChatSlice {
   createNewThread: (workspaceId: ID, projectId?: ID) => ChatThread;
   compactChatThread: (threadId: ID) => Promise<void>;
   clearThreadMessages: (threadId: ID) => Promise<void>;
-  setThreadUsage: (threadId: ID, usage: { promptTokens: number; completionTokens: number } | undefined) => void;
+  setThreadUsage: (threadId: ID, usage: {
+    promptTokens: number;
+    completionTokens: number;
+    reasoningTokens?: number;
+    breakdown?: TokenBreakdown;
+  } | undefined) => void;
 }
 
 // ── Slice creator ─────────────────────────────────────────────────────────────
@@ -70,12 +76,13 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
     return thread;
   },
 
-  addMessage(threadId, role, content, contextRefs, toolCalls, actions) {
+  addMessage(threadId, role, content, contextRefs, toolCalls, actions, reasoning) {
     const msg: ChatMessage = {
       id: id(),
       threadId,
       role,
       content,
+      reasoning: reasoning || undefined,
       contextRefs,
       toolCalls: toolCalls && toolCalls.length > 0 ? toolCalls : undefined,
       actions: actions && actions.length > 0 ? actions : undefined,

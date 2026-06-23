@@ -10,6 +10,10 @@ interface ContextRingProps {
   promptTokens: number;
   contextLimit: number;
   breakdown?: TokenBreakdown;
+  /** Total completion tokens for this turn (answer + reasoning, if any). */
+  completionTokens?: number;
+  /** Subset of completionTokens spent on reasoning/thinking. 0/undefined if the model didn't split. */
+  reasoningTokens?: number;
   /** Ring diameter in px. Default 16. */
   size?: number;
   /** Stroke width in px. Default 2. */
@@ -20,6 +24,8 @@ export function ContextRing({
   promptTokens,
   contextLimit,
   breakdown,
+  completionTokens,
+  reasoningTokens,
   size = 16,
   stroke = 2,
 }: ContextRingProps) {
@@ -45,6 +51,9 @@ export function ContextRing({
   const subagent = breakdown?.subagentDefinitions ?? 0;
   const toolOutputs = breakdown?.toolOutputs ?? 0;
   const conversation = breakdown?.conversation ?? Math.max(0, promptTokens - system - toolOutputs);
+
+  const thinkingTokens = reasoningTokens ?? 0;
+  const answerTokens = Math.max(0, (completionTokens ?? 0) - thinkingTokens);
 
   const categories = [
     { label: "System prompt", count: system, color: "var(--muted-fg)" },
@@ -162,6 +171,30 @@ export function ContextRing({
               );
             })}
           </div>
+
+          {/* Output breakdown — only shown after the first turn completes */}
+          {typeof completionTokens === "number" && completionTokens > 0 && (
+            <div className="mt-3 pt-3 border-t border-[var(--border)] space-y-1.5">
+              <div className="text-[0.714rem] font-semibold text-[var(--text-primary)] mb-1">Output</div>
+              <div className="flex items-center justify-between text-[0.714rem]">
+                <span className="text-[var(--text-secondary)]">Answer</span>
+                <span className="font-mono text-[var(--text-primary)] font-medium">{formatTokenCount(answerTokens)}</span>
+              </div>
+              {thinkingTokens > 0 && (
+                <div className="flex items-center justify-between text-[0.714rem]">
+                  <span className="flex items-center gap-1.5 text-[var(--text-secondary)]">
+                    <div className="w-2.5 h-2.5 rounded-sm opacity-90" style={{ backgroundColor: "var(--accent)" }} />
+                    Thinking
+                  </span>
+                  <span className="font-mono text-[var(--text-primary)] font-medium">{formatTokenCount(thinkingTokens)}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between text-[0.714rem]">
+                <span className="text-[var(--text-tertiary)]">Total</span>
+                <span className="font-mono text-[var(--text-tertiary)]">{formatTokenCount(completionTokens)}</span>
+              </div>
+            </div>
+          )}
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>

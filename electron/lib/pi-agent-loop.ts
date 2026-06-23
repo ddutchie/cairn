@@ -60,7 +60,7 @@ export interface AgentLLMConfig {
 // ── Message types ─────────────────────────────────────────────────────────────
 
 export interface AgentUserMessage    { role: "user";      content: string }
-export interface AgentAssistantMsg   { role: "assistant"; content: string | null; tool_calls?: ToolCallSpec[] }
+export interface AgentAssistantMsg   { role: "assistant"; content: string | null; reasoning?: string; tool_calls?: ToolCallSpec[] }
 export interface AgentToolResultMsg  { role: "tool";      tool_call_id: string; content: string }
 
 export type AgentMessage =
@@ -118,6 +118,8 @@ const CODING_LABELS: Record<string, (args: ToolArgs) => string> = {
 
 export interface AgentLoopCallbacks {
   onToken:         (delta: string) => void;
+  /** Streams reasoning/thinking deltas (Claude's thinking_delta, OpenAI's delta.reasoning). Absent for non-reasoning models. */
+  onThought?:      (delta: string) => void;
   onToolsReady:    () => void;
   /** Fired during SSE streaming as soon as a tool call name is first seen.
    *  The chip should appear in "pending" state immediately — before execution. */
@@ -127,7 +129,7 @@ export interface AgentLoopCallbacks {
   /** callId links back to the same chip created by onToolPending / updated by onToolStart. */
   onToolEnd:       (name: string, label: string, ok: boolean, output: string, callId?: string) => void;
   onStepStart:     () => void;
-  onUsage:         (promptTokens: number, completionTokens: number, breakdown?: TokenBreakdown) => void;
+  onUsage:         (promptTokens: number, completionTokens: number, reasoningTokens: number, breakdown?: TokenBreakdown) => void;
   onDone:          () => void;
   onError:         (message: string) => void;
   /** Fired when a tool call needs user confirmation before execution. */
@@ -545,6 +547,7 @@ export async function runAgentLoop(
     if (!reader) { callbacks.onError("No response stream"); return; }
 
     let contentBuffer = "";
+    let reasoningBuffer = "";
     const toolCallBuffers: Map<number, { id: string; name: string; args: string }> = new Map();
     // callId assigned per tool during streaming — reused at execution time
     const streamCallIds: Map<number, string> = new Map();
@@ -559,6 +562,7 @@ export async function runAgentLoop(
         if (chunk.usage) {
           const pt = chunk.usage.prompt_tokens ?? 0;
           const ct = chunk.usage.completion_tokens ?? 0;
+          const rt = chunk.usage.completion_tokens_details?.reasoning_tokens ?? 0;
           session.lastPromptTokens = pt;
           let breakdown: TokenBreakdown | undefined;
           try {
@@ -567,7 +571,7 @@ export async function runAgentLoop(
           } catch (err) {
             console.error("[pi-agent] failed to calculate breakdown:", err);
           }
-          callbacks.onUsage(pt, ct, breakdown);
+          callbacks.onUsage(pt, ct, rt, breakdown);
         }
 
         const delta = chunk.choices?.[0]?.delta;
@@ -576,6 +580,13 @@ export async function runAgentLoop(
         if (delta.content) {
           contentBuffer += delta.content;
           callbacks.onToken(delta.content);
+        }
+
+        // Reasoning / thinking stream (Claude thinking_delta, OpenAI delta.reasoning).
+        // Not merged into content or tool-call JSON; surfaced as a separate panel.
+        if (delta.reasoning) {
+          reasoningBuffer += delta.reasoning;
+          callbacks.onThought?.(delta.reasoning);
         }
 
         if (delta.tool_calls) {
@@ -616,7 +627,7 @@ export async function runAgentLoop(
 
     // ── No tool calls → turn complete ─────────────────────────────────────
     if (toolCallBuffers.size === 0) {
-      session.messages.push({ role: "assistant", content: contentBuffer });
+      session.messages.push({ role: "assistant", content: contentBuffer, reasoning: reasoningBuffer || undefined });
       callbacks.onDone();
       return;
     }
@@ -633,6 +644,7 @@ export async function runAgentLoop(
     session.messages.push({
       role: "assistant",
       content: contentBuffer || null,
+      reasoning: reasoningBuffer || undefined,
       tool_calls: toolCalls,
     });
 

@@ -93,6 +93,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   // Actions — stable Zustand references, never trigger re-renders
   const addPiMessage             = useCairnStore((s) => s.addPiMessage);
   const appendPiToken            = useCairnStore((s) => s.appendPiToken);
+  const appendPiThought          = useCairnStore((s) => s.appendPiThought);
   const finalisePiMessage        = useCairnStore((s) => s.finalisePiMessage);
   const addPiToolCall             = useCairnStore((s) => s.addPiToolCall);
   const clearPiMessages          = useCairnStore((s) => s.clearPiMessages);
@@ -177,13 +178,18 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       appendPiToken(sessionId, e.delta);
     });
 
+    const unsubThought = electron.piAgent.onThought?.((e) => {
+      if (e.sessionId !== sessionId) return;
+      appendPiThought(sessionId, e.delta);
+    });
+
     const unsubUsage = electron.piAgent.onUsage((e) => {
       if (e.sessionId === sessionId) {
         // Parent step — update the parent ring
-        updatePiUsage(sessionId, e.promptTokens, e.completionTokens);
+        updatePiUsage(sessionId, e.promptTokens, e.completionTokens, e.reasoningTokens ?? 0);
       } else if (e.sessionId.startsWith(`${sessionId}:sub:`)) {
         // Subagent step — update usage on the subagent inline block, not the parent ring
-        updatePiSubagentUsage(sessionId, e.sessionId, e.promptTokens, e.completionTokens);
+        updatePiSubagentUsage(sessionId, e.sessionId, e.promptTokens, e.completionTokens, e.reasoningTokens ?? 0);
       }
     });
 
@@ -246,6 +252,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
         id: m.id,
         role: m.role,
         content: m.content,
+        reasoning: m.reasoning ?? null,
         toolCalls: m.toolCalls ?? null,
         subagents: m.subagents ?? null,
         timestamp: m.timestamp,
@@ -272,6 +279,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
           id: m.id,
           role: m.role,
           content: m.content,
+          reasoning: m.reasoning ?? null,
           toolCalls: m.toolCalls ?? null,
           subagents: m.subagents ?? null,
           timestamp: m.timestamp,
@@ -389,6 +397,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
     return () => {
       unsubToken();
+      unsubThought?.();
       unsubUsage();
       unsubToolsReady();
       unsubTool();
@@ -610,6 +619,8 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
             promptTokens={session.lastUsage.promptTokens}
             contextLimit={agentConfig.contextLimit ?? 128000}
             breakdown={session.lastUsage.breakdown}
+            completionTokens={session.lastUsage.completionTokens}
+            reasoningTokens={session.lastUsage.reasoningTokens}
           />
         )}
         <Tooltip content="Clear conversation" side="left">

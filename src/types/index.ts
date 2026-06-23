@@ -137,10 +137,29 @@ export interface ChatThread {
   title?: string;
   createdAt: string;
   updatedAt: string;
-  lastUsage?: { promptTokens: number; completionTokens: number; breakdown?: TokenBreakdown };
+  lastUsage?: {
+    promptTokens: number;
+    completionTokens: number;
+    /** Subset of completion_tokens produced by the model's reasoning/thinking step. 0 if the model didn't split. */
+    reasoningTokens?: number;
+    breakdown?: TokenBreakdown;
+  };
 }
 
 export type ChatRole = "user" | "assistant" | "system";
+
+/**
+ * Streaming token-usage shape mirrored from the OpenAI chat/completions spec.
+ * `reasoningTokens` is the subset of `completionTokens` spent on chain-of-thought
+ * reasoning; absent when the model doesn't split reasoning from content.
+ */
+export interface CompletionUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens?: number;
+  reasoningTokens?: number;
+  breakdown?: TokenBreakdown;
+}
 
 export interface LinkedContextReference {
   type: "note" | "task" | "project" | "search_result";
@@ -166,6 +185,13 @@ export interface ChatMessage {
   threadId: ID;
   role: ChatRole;
   content: string;
+  /**
+   * Reasoning / thinking text emitted by the model during generation (Claude's
+   * thinking_delta, OpenAI-style delta.reasoning). Persisted so past messages
+   * retain an expandable Thinking panel in the bubble; intentionally stripped
+   * from compaction summaries. Empty for models that don't expose reasoning.
+   */
+  reasoning?: string;
   /** Entities cited in or used to produce this message */
   contextRefs?: LinkedContextReference[];
   /** Tool calls made during this assistant turn — persisted so they remain visible after streaming ends */
@@ -395,13 +421,15 @@ export interface PiSubagentMessage {
   /** Final result returned to the parent */
   result?: string;
   /** Latest token usage from the subagent's LLM steps */
-  lastUsage?: { promptTokens: number; completionTokens: number; breakdown?: TokenBreakdown };
+  lastUsage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: TokenBreakdown };
 }
 
 export interface PiAgentMessage {
   id: string;
   role: "user" | "assistant" | "error" | "system";
   content: string;
+  /** Same semantics as {@link ChatMessage.reasoning}. */
+  reasoning?: string;
   /** Tool calls that occurred before or during this assistant message */
   toolCalls?: {
     callId: string;
@@ -432,7 +460,7 @@ export interface TerminalSession {
   sessionType: "pty" | "pi";
   piMessages?: PiAgentMessage[];
   initialPrompt?: string;
-  lastUsage?: { promptTokens: number; completionTokens: number; breakdown?: TokenBreakdown };
+  lastUsage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: TokenBreakdown };
   mode?: "plan" | "execute";
   planNoteId?: string;
 }

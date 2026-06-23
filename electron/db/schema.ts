@@ -480,6 +480,21 @@ const MIGRATIONS: Migration[] = [
       db.exec("ALTER TABLE relationship_cache ADD COLUMN target_section_title TEXT");
     }
   },
+
+  // v20: Persist reasoning / thinking text on chat messages so the
+  // collapsible "Thinking" panel survives app restarts. Mirrors v14's
+  // approach for tool_calls. Also covers pi_agent_messages so terminal
+  // agent sessions retain their thinking across restarts too.
+  (db) => {
+    const chatCols = db.prepare("PRAGMA table_info(chat_messages)").all() as { name: string }[];
+    if (!chatCols.some((c) => c.name === "reasoning")) {
+      db.exec("ALTER TABLE chat_messages ADD COLUMN reasoning TEXT");
+    }
+    const piCols = db.prepare("PRAGMA table_info(pi_agent_messages)").all() as { name: string }[];
+    if (!piCols.some((c) => c.name === "reasoning")) {
+      db.exec("ALTER TABLE pi_agent_messages ADD COLUMN reasoning TEXT");
+    }
+  },
 ];
 
 export function applySchema(db: Database.Database): void {

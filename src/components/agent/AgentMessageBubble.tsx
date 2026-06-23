@@ -5,6 +5,7 @@ import { CheckCircle, Loader2, ChevronDown, ChevronRight, GitBranch } from "luci
 import { cn } from "@/lib/utils";
 import { MarkdownContent } from "@/components/chat/chat-panel/MarkdownContent";
 import { MessageAvatar, StreamingCursor } from "@/components/chat/chat-panel/message-ui";
+import { ThinkingPanel } from "@/components/chat/chat-panel/ThinkingPanel";
 import { CairnRefChip } from "@/components/shared/cairn-ref-chip";
 import { useCairnStore } from "@/store";
 import { ContextRing } from "./ContextRing";
@@ -153,6 +154,8 @@ function SubagentBlock({ sub }: { sub: PiSubagentMessage }) {
             promptTokens={sub.lastUsage.promptTokens}
             contextLimit={contextLimit}
             breakdown={sub.lastUsage.breakdown}
+            completionTokens={sub.lastUsage.completionTokens}
+            reasoningTokens={sub.lastUsage.reasoningTokens}
             size={12}
             stroke={1.5}
           />
@@ -187,11 +190,19 @@ function SubagentBlock({ sub }: { sub: PiSubagentMessage }) {
 function SubagentMessageRow({ msg, sessionId }: { msg: PiAgentMessage; sessionId?: string }) {
   const hasTools = (msg.toolCalls?.length ?? 0) > 0;
   const hasContent = msg.content.length > 0;
+  const hasReasoning = !!msg.reasoning;
 
   return (
     <div className="flex gap-1.5 items-start">
       <MessageAvatar role="bot" size="sm" />
       <div className="flex-1 min-w-0 flex flex-col gap-0.5">
+        {hasReasoning && (
+          <ThinkingPanel
+            text={msg.reasoning!}
+            streaming={!!msg.isStreaming}
+            companionContent={msg.content}
+          />
+        )}
         {hasTools && (
           <div className="flex flex-col gap-0.5">
             {msg.toolCalls!.map((tc, i) => (
@@ -199,7 +210,7 @@ function SubagentMessageRow({ msg, sessionId }: { msg: PiAgentMessage; sessionId
             ))}
           </div>
         )}
-        {!hasContent && msg.isStreaming && !hasTools && (
+        {!hasContent && msg.isStreaming && !hasTools && !hasReasoning && (
           <div className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] w-fit">
             <Loader2 size={8} className="text-[var(--accent)] animate-spin shrink-0" />
             <span className="text-[0.643rem] text-[var(--text-tertiary)]">Thinking…</span>
@@ -269,11 +280,21 @@ export const AgentMessageBubble = React.memo(function AgentMessageBubble({ messa
   const hasContent  = message.content.length > 0;
   const hasTools    = (message.toolCalls?.length ?? 0) > 0;
   const hasSubagents = (message.subagents?.length ?? 0) > 0;
+  const hasReasoning = !!message.reasoning;
 
   return (
     <div className="flex gap-2 items-start">
       <MessageAvatar role="bot" size="md" />
       <div className="flex-1 min-w-0 flex flex-col gap-1">
+
+        {/* Reasoning / thinking panel — collapsible */}
+        {hasReasoning && (
+          <ThinkingPanel
+            text={message.reasoning!}
+            streaming={!!message.isStreaming}
+            companionContent={message.content}
+          />
+        )}
 
         {/* Markdown content with animated cursor when streaming */}
         {hasContent && (
@@ -302,8 +323,8 @@ export const AgentMessageBubble = React.memo(function AgentMessageBubble({ messa
         ))}
 
 
-        {/* "Thinking…" spinner — only when streaming with no content or tools yet */}
-        {!hasContent && message.isStreaming && !hasTools && !hasSubagents && (
+        {/* "Thinking…" spinner — only when streaming with no content/tools/reasoning yet */}
+        {!hasContent && message.isStreaming && !hasTools && !hasSubagents && !hasReasoning && (
           <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] w-fit">
             <Loader2 size={9} className="text-[var(--accent)] animate-spin shrink-0" />
             <span className="text-[0.714rem] text-[var(--text-tertiary)]">Thinking…</span>

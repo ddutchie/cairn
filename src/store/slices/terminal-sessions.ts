@@ -39,6 +39,8 @@ export interface TerminalSessionsSlice {
   addPiMessage: (sessionId: string, msg: PiAgentMessage) => void;
   /** Append a token delta to the last streaming assistant message */
   appendPiToken: (sessionId: string, delta: string) => void;
+  /** Append a reasoning/thinking delta to the last streaming assistant message */
+  appendPiThought: (sessionId: string, delta: string) => void;
   /** Finalise the streaming assistant message (isStreaming → false) */
   finalisePiMessage: (sessionId: string) => void;
   /** Ensure a streaming assistant message exists — creates one if the last message is not streaming */
@@ -52,7 +54,7 @@ export interface TerminalSessionsSlice {
   /** Clear message history for a pi session */
   clearPiMessages: (sessionId: string) => void;
   /** Update token usage for a session after a step completes */
-  updatePiUsage: (sessionId: string, promptTokens: number, completionTokens: number, breakdown?: TokenBreakdown) => void;
+  updatePiUsage: (sessionId: string, promptTokens: number, completionTokens: number, reasoningTokens: number, breakdown?: TokenBreakdown) => void;
   /** Register a new subagent on the last streaming assistant message */
   addPiSubagent: (sessionId: string, childSessionId: string) => void;
   /** Append a token to a subagent's last streaming message */
@@ -66,7 +68,7 @@ export interface TerminalSessionsSlice {
   /** Mark a subagent as done and store its result */
   completePiSubagent: (sessionId: string, childSessionId: string, result: string) => void;
   /** Update token usage on an inline subagent block */
-  updatePiSubagentUsage: (sessionId: string, childSessionId: string, promptTokens: number, completionTokens: number, breakdown?: TokenBreakdown) => void;
+  updatePiSubagentUsage: (sessionId: string, childSessionId: string, promptTokens: number, completionTokens: number, reasoningTokens: number, breakdown?: TokenBreakdown) => void;
   /** Start a new step in a subagent (finalise current message) */
   stepPiSubagent: (sessionId: string, childSessionId: string) => void;
   /** Set the mode for a pi session and optionally record the plan note ID */
@@ -168,6 +170,39 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
               id: `stream-${Date.now()}`,
               role: "assistant" as const,
               content: delta,
+              isStreaming: true,
+              timestamp: new Date().toISOString(),
+            },
+          ],
+        };
+      }),
+    }));
+  },
+
+  appendPiThought(sessionId, delta) {
+    set((s) => ({
+      terminalSessions: s.terminalSessions.map((t) => {
+        if (t.sessionId !== sessionId) return t;
+        const msgs = t.piMessages ?? [];
+        const last = msgs[msgs.length - 1];
+        if (last?.isStreaming) {
+          return {
+            ...t,
+            piMessages: [
+              ...msgs.slice(0, -1),
+              { ...last, reasoning: (last.reasoning ?? "") + delta },
+            ],
+          };
+        }
+        return {
+          ...t,
+          piMessages: [
+            ...msgs,
+            {
+              id: `stream-${Date.now()}`,
+              role: "assistant" as const,
+              content: "",
+              reasoning: delta,
               isStreaming: true,
               timestamp: new Date().toISOString(),
             },
@@ -313,11 +348,11 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
     }));
   },
 
-  updatePiUsage(sessionId, promptTokens, completionTokens, breakdown) {
+  updatePiUsage(sessionId, promptTokens, completionTokens, reasoningTokens, breakdown) {
     set((s) => ({
       terminalSessions: s.terminalSessions.map((t) =>
         t.sessionId === sessionId
-          ? { ...t, lastUsage: { promptTokens, completionTokens, breakdown } }
+          ? { ...t, lastUsage: { promptTokens, completionTokens, reasoningTokens, breakdown } }
           : t
       ),
     }));
@@ -489,7 +524,7 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
     }));
   },
 
-  updatePiSubagentUsage(sessionId, childSessionId, promptTokens, completionTokens, breakdown) {
+  updatePiSubagentUsage(sessionId, childSessionId, promptTokens, completionTokens, reasoningTokens, breakdown) {
     set((s) => ({
       terminalSessions: s.terminalSessions.map((t) => {
         if (t.sessionId !== sessionId) return t;
@@ -499,7 +534,7 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
             const subIdx = (msg.subagents ?? []).findIndex((sa) => sa.childSessionId === childSessionId);
             if (subIdx === -1) return msg;
             const newSubagents = [...msg.subagents!];
-            newSubagents[subIdx] = { ...newSubagents[subIdx], lastUsage: { promptTokens, completionTokens, breakdown } };
+            newSubagents[subIdx] = { ...newSubagents[subIdx], lastUsage: { promptTokens, completionTokens, reasoningTokens, breakdown } };
             return { ...msg, subagents: newSubagents };
           }),
         };

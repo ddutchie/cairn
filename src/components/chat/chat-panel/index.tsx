@@ -118,7 +118,7 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef       = useRef<HTMLTextAreaElement>(null);
 
-  const { isLoading, toolCalls, streamingContent, pendingQuestions, sendStream, stopStream } = useChatStream(threadId);
+  const { isLoading, toolCalls, streamingContent, streamingThought, pendingQuestions, sendStream, stopStream } = useChatStream(threadId);
 
   const project   = useMemo(() => projects.find((p) => p.id === activeProjectId),   [projects, activeProjectId]);
   const workspace = useMemo(() => workspaces.find((w) => w.id === activeWorkspaceId), [workspaces, activeWorkspaceId]);
@@ -423,6 +423,8 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
             promptTokens={activeThread.lastUsage.promptTokens}
             contextLimit={aiConfig.contextLimit ?? 128000}
             breakdown={activeThread.lastUsage.breakdown}
+            completionTokens={activeThread.lastUsage.completionTokens}
+            reasoningTokens={activeThread.lastUsage.reasoningTokens}
           />
         )}
 
@@ -463,7 +465,7 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
             disabled={isLoading && !pendingQuestions}
           />
         )}
-        {isLoading && <ToolCallIndicator toolCalls={toolCalls} streamingContent={streamingContent} />}
+        {isLoading && <ToolCallIndicator toolCalls={toolCalls} streamingContent={streamingContent} streamingThought={streamingThought} />}
         <div ref={messagesEndRef} />
       </div>
 
