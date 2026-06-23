@@ -72,6 +72,13 @@ interface ToolCallSpec {
   id: string;
   type: "function";
   function: { name: string; arguments: string };
+  /**
+   * Gemini 3.x thought signature — opaque blob returned by the model on
+   * tool-call parts when thinking is enabled. Must be round-tripped back
+   * on subsequent requests so the model can resume its reasoning state.
+   * Other providers ignore this field.
+   */
+  thought_signature?: string;
 }
 
 // ── Per-session infrastructure context ───────────────────────────────────────
@@ -554,7 +561,7 @@ export async function runAgentLoop(
 
     let contentBuffer = "";
     let reasoningBuffer = "";
-    const toolCallBuffers: Map<number, { id: string; name: string; args: string }> = new Map();
+    const toolCallBuffers: Map<number, { id: string; name: string; args: string; thought_signature?: string }> = new Map();
     // callId assigned per tool during streaming — reused at execution time
     const streamCallIds: Map<number, string> = new Map();
     let toolsReadyFired = false;
@@ -606,6 +613,8 @@ export async function runAgentLoop(
             if (tc.id) buf.id = tc.id;
             if (tc.function?.name) buf.name = tc.function.name;
             if (tc.function?.arguments) buf.args += tc.function.arguments;
+            // Gemini 3.x thought signature — opaque blob to round-trip back.
+            if (tc.thought_signature) buf.thought_signature = tc.thought_signature;
 
             // Fire pending chip as soon as we see the tool name during streaming
             if (isNew && buf.name) {
@@ -645,6 +654,7 @@ export async function runAgentLoop(
         id: buf.id,
         type: "function" as const,
         function: { name: buf.name, arguments: buf.args },
+        ...(buf.thought_signature ? { thought_signature: buf.thought_signature } : {}),
       }));
 
     session.messages.push({

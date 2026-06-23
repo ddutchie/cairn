@@ -38,6 +38,13 @@ export type OpenAIMessage = {
     id: string;
     type: "function";
     function: { name: string; arguments: string };
+    /**
+     * Gemini 3.x thought signature — opaque blob returned by the model on
+     * tool-call parts when thinking is enabled. Must be round-tripped back
+     * on subsequent requests so the model can resume its reasoning state.
+     * Other providers ignore this field.
+     */
+    thought_signature?: string;
   }>;
 };
 

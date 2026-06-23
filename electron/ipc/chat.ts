@@ -188,7 +188,7 @@ async function runToolLoop(
       if (!reader) return { exhausted: true, content: "No response stream", reasoning: "" };
 
       let contentBuffer = "";
-      const toolCallBuffers: Map<number, { id: string; name: string; args: string }> = new Map();
+      const toolCallBuffers: Map<number, { id: string; name: string; args: string; thought_signature?: string }> = new Map();
 
       for await (const jsonStr of iterSseData(reader, signal ?? undefined)) {
         try {
@@ -228,6 +228,8 @@ async function runToolLoop(
               if (tc.id) buf.id = tc.id;
               if (tc.function?.name) buf.name = tc.function.name;
               if (tc.function?.arguments) buf.args += tc.function.arguments;
+              // Gemini 3.x thought signature — opaque blob to round-trip back.
+              if (tc.thought_signature) buf.thought_signature = tc.thought_signature;
             }
           }
         } catch { /* skip malformed SSE JSON line */ }
@@ -251,6 +253,7 @@ async function runToolLoop(
               id: buf.id,
               type: "function" as const,
               function: { name: buf.name, arguments: buf.args },
+              ...(buf.thought_signature ? { thought_signature: buf.thought_signature } : {}),
             }))
         : undefined;
 
