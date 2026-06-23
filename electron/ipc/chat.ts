@@ -403,7 +403,7 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
     let reasoningTokens = 0;
     let lastBreakdown: TokenBreakdown | undefined = undefined;
     const addUsage = (pt: number, ct: number, rt?: number) => {
-      promptTokens += pt;
+      promptTokens = pt;
       completionTokens += ct;
       if (typeof rt === "number") reasoningTokens += rt;
       try {
