@@ -118,7 +118,7 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef       = useRef<HTMLTextAreaElement>(null);
 
-  const { isLoading, toolCalls, streamingContent, pendingQuestions, sendStream, stopStream } = useChatStream(threadId);
+  const { isLoading, toolCalls, streamingContent, streamingThought, pendingQuestions, sendStream, stopStream } = useChatStream(threadId);
 
   const project   = useMemo(() => projects.find((p) => p.id === activeProjectId),   [projects, activeProjectId]);
   const workspace = useMemo(() => workspaces.find((w) => w.id === activeWorkspaceId), [workspaces, activeWorkspaceId]);
@@ -276,15 +276,38 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
 
 
 
-  // Initialise / switch thread.
-  // Reads getOrCreateThread directly from the store snapshot (stable, no ref
-  // needed) so the effect only re-runs when the workspace/project identity
-  // changes. Never switches while a stream is in-flight.
+  // Initialise / switch thread when the project changes.
+  // When the user switches projects, the active chat thread should follow —
+  // if the current thread belongs to a different project, find or create one
+  // scoped to the new project. Never switches while a stream is in-flight.
+  const prevProjectIdRef = useRef<string | null | undefined>(activeProjectId);
+  const prevWorkspaceIdRef = useRef<string | null | undefined>(activeWorkspaceId);
   useEffect(() => {
     if (!activeWorkspaceId) return;
     if (isLoadingRef.current) return;
-    // Only initialise if no thread is active yet (tab bar may have already set one)
-    if (activeChatThreadId) return;
+
+    const prevProject = prevProjectIdRef.current;
+    const prevWorkspace = prevWorkspaceIdRef.current;
+    prevProjectIdRef.current = activeProjectId;
+    prevWorkspaceIdRef.current = activeWorkspaceId;
+
+    // Workspace changed — invalidate the active thread regardless of project match
+    if (prevWorkspace !== activeWorkspaceId) {
+      // Fall through to getOrCreateThread below
+    } else if (prevProject === activeProjectId) {
+      // Neither changed — only initialise if no thread is active yet
+      if (activeChatThreadId) return;
+    } else {
+      // Project changed — check if the current thread still matches
+      if (activeChatThreadId) {
+        const currentThread = useCairnStore.getState().chatThreads.find(
+          (t) => t.id === activeChatThreadId,
+        );
+        // Keep the thread if it matches the new project or is workspace-scoped
+        if (currentThread && currentThread.projectId === activeProjectId) return;
+      }
+    }
+
     const t = useCairnStore.getState().getOrCreateThread(activeWorkspaceId, activeProjectId ?? undefined);
     setActiveChatThreadId(t.id);
   }, [activeWorkspaceId, activeProjectId, activeChatThreadId, setActiveChatThreadId]);
@@ -406,6 +429,8 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
             promptTokens={activeThread.lastUsage.promptTokens}
             contextLimit={aiConfig.contextLimit ?? 128000}
             breakdown={activeThread.lastUsage.breakdown}
+            completionTokens={activeThread.lastUsage.completionTokens}
+            reasoningTokens={activeThread.lastUsage.reasoningTokens}
           />
         )}
 
@@ -446,7 +471,7 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
             disabled={isLoading && !pendingQuestions}
           />
         )}
-        {isLoading && <ToolCallIndicator toolCalls={toolCalls} streamingContent={streamingContent} />}
+        {isLoading && <ToolCallIndicator toolCalls={toolCalls} streamingContent={streamingContent} streamingThought={streamingThought} />}
         <div ref={messagesEndRef} />
       </div>
 

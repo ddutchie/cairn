@@ -109,6 +109,7 @@ async function runSession(
     llmConfig,
     {
       onToken:        (delta) => send("pi-agent:token",      { sessionId, delta }),
+      onThought:      (delta) => send("pi-agent:thought",    { sessionId, delta }),
       onToolsReady:   ()      => send("pi-agent:tools-ready", { sessionId }),
       onToolPending:  (name, callId) => send("pi-agent:tool", { sessionId, name, label: name, callId, status: "pending" }),
       onToolStart:    (name, label, callId) => send("pi-agent:tool", { sessionId, name, label, callId, status: "start" }),
@@ -128,7 +129,7 @@ async function runSession(
         }
       },
       onStepStart:    () => send("pi-agent:step",  { sessionId }),
-      onUsage:        (promptTokens, completionTokens, breakdown) => send("pi-agent:usage", { sessionId, promptTokens, completionTokens, breakdown }),
+      onUsage:        (promptTokens, completionTokens, reasoningTokens, breakdown) => send("pi-agent:usage", { sessionId, promptTokens, completionTokens, reasoningTokens, breakdown }),
       onRetry:        (attempt, maxRetries, delayMs, error) => send("pi-agent:retry", { sessionId, attempt, maxRetries, delayMs, error }),
       transformContext: session.compactionTransformer,
       onDone: () => {

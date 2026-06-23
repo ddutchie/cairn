@@ -83,29 +83,43 @@ async function runToolLoop(
   signal?: AbortSignal,
   getWin?: () => BrowserWindow | null,
   provider?: string,
-  onUsage?: (pt: number, ct: number) => void,
+  onUsage?: (pt: number, ct: number, rt?: number) => void,
   emitToolCallDone?: (e: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void,
   onToken?: (delta: string) => void,
-): Promise<{ exhausted: true; content: string } | { exhausted: false; content: string }> {
+  onThought?: (delta: string) => void,
+): Promise<{ exhausted: true; content: string; reasoning: string } | { exhausted: false; content: string; reasoning: string }> {
   const maxSteps    = req.config?.maxSteps    ?? 20;
   const temperature = req.config?.temperature ?? 0.3;
   let accumulatedContent = "";
+  let accumulatedReasoning = "";
 
   for (let round = 0; round < maxSteps; round++) {
-    if (signal?.aborted) return { exhausted: true, content: "" };
-    
-    let assistantMsg: OpenAIMessage;
+    if (signal?.aborted) return { exhausted: true, content: "", reasoning: accumulatedReasoning };
+
+    let assistantMsg: OpenAIMessage & { reasoning?: string };
     
     if (provider === "localllm") {
       try {
         const { callLocalLLMChat } = await import("../lib/local-llm");
         const res = await callLocalLLMChat(messages, TOOLS);
         const choice = res.choices?.[0];
-        if (!choice) return { exhausted: true, content: "No response from local Llama on-device model." };
+        if (!choice) return { exhausted: true, content: "No response from local Llama on-device model.", reasoning: "" };
         if (res.usage && onUsage) {
-          onUsage(res.usage.prompt_tokens ?? 0, res.usage.completion_tokens ?? 0);
+          onUsage(
+            res.usage.prompt_tokens ?? 0,
+            res.usage.completion_tokens ?? 0,
+            res.usage.completion_tokens_details?.reasoning_tokens ?? 0,
+          );
         }
-        assistantMsg = choice.message as OpenAIMessage;
+        const rawMsg = choice.message as OpenAIMessage & { reasoning?: string };
+        if (rawMsg.reasoning) {
+          accumulatedReasoning += rawMsg.reasoning;
+          if (onThought) onThought(rawMsg.reasoning);
+        }
+        // Strip reasoning before assigning — it must not enter the messages
+        // array that gets re-sent to the API on subsequent rounds.
+        const { reasoning: _r, ...msgWithoutReasoning } = rawMsg;
+        assistantMsg = msgWithoutReasoning;
 
         // Self-Healing Parser for On-Device XML-style tool calls and tokenizers
         if (assistantMsg.content && assistantMsg.content.includes("<|tool_call>call:")) {
@@ -138,7 +152,7 @@ async function runToolLoop(
           if (onToken) onToken(assistantMsg.content);
         }
       } catch (err) {
-        return { exhausted: true, content: `Local LLM Engine error: ${String(err)}` };
+        return { exhausted: true, content: `Local LLM Engine error: ${String(err)}`, reasoning: accumulatedReasoning };
       }
     } else {
       let response: Response;
@@ -161,27 +175,31 @@ async function runToolLoop(
           }),
         });
       } catch (_err) {
-        if (signal?.aborted) return { exhausted: true, content: "" };
-        return { exhausted: true, content: `Could not reach the AI endpoint at \`${baseUrl}\`. Check your endpoint URL and make sure the server is running.` };
+        if (signal?.aborted) return { exhausted: true, content: "", reasoning: accumulatedReasoning };
+        return { exhausted: true, content: `Could not reach the AI endpoint at \`${baseUrl}\`. Check your endpoint URL and make sure the server is running.`, reasoning: "" };
       }
 
       if (!response.ok) {
         const errText = await response.text().catch(() => response.statusText);
-        return { exhausted: true, content: `AI endpoint error (${response.status}): ${errText.slice(0, 300)}` };
+        return { exhausted: true, content: `AI endpoint error (${response.status}): ${errText.slice(0, 300)}`, reasoning: "" };
       }
 
       const reader = response.body?.getReader();
-      if (!reader) return { exhausted: true, content: "No response stream" };
+      if (!reader) return { exhausted: true, content: "No response stream", reasoning: "" };
 
       let contentBuffer = "";
-      const toolCallBuffers: Map<number, { id: string; name: string; args: string }> = new Map();
+      const toolCallBuffers: Map<number, { id: string; name: string; args: string; thought_signature?: string }> = new Map();
 
       for await (const jsonStr of iterSseData(reader, signal ?? undefined)) {
         try {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const chunk = JSON.parse(jsonStr) as any;
           if (chunk.usage && onUsage) {
-            onUsage(chunk.usage.prompt_tokens ?? 0, chunk.usage.completion_tokens ?? 0);
+            onUsage(
+              chunk.usage.prompt_tokens ?? 0,
+              chunk.usage.completion_tokens ?? 0,
+              chunk.usage.completion_tokens_details?.reasoning_tokens ?? 0,
+            );
           }
           const delta = chunk.choices?.[0]?.delta;
           if (!delta) continue;
@@ -190,6 +208,14 @@ async function runToolLoop(
             contentBuffer += delta.content;
             accumulatedContent += delta.content;
             if (onToken) onToken(delta.content);
+          }
+
+          // Reasoning / thinking stream (Claude thinking_delta, OpenAI delta.reasoning).
+          // Models that don't expose reasoning text simply never emit this field —
+          // the panel stays hidden. Reasoning is NOT merged into content/tool JSON.
+          if (delta.reasoning) {
+            accumulatedReasoning += delta.reasoning;
+            if (onThought) onThought(delta.reasoning);
           }
 
           if (delta.tool_calls) {
@@ -202,6 +228,8 @@ async function runToolLoop(
               if (tc.id) buf.id = tc.id;
               if (tc.function?.name) buf.name = tc.function.name;
               if (tc.function?.arguments) buf.args += tc.function.arguments;
+              // Gemini 3.x thought signature — opaque blob to round-trip back.
+              if (tc.thought_signature) buf.thought_signature = tc.thought_signature;
             }
           }
         } catch { /* skip malformed SSE JSON line */ }
@@ -216,7 +244,7 @@ async function runToolLoop(
         });
       }
 
-      if (signal?.aborted) return { exhausted: true, content: "" };
+      if (signal?.aborted) return { exhausted: true, content: "", reasoning: accumulatedReasoning };
 
       const toolCalls = toolCallBuffers.size > 0
         ? Array.from(toolCallBuffers.entries())
@@ -225,12 +253,17 @@ async function runToolLoop(
               id: buf.id,
               type: "function" as const,
               function: { name: buf.name, arguments: buf.args },
+              ...(buf.thought_signature ? { thought_signature: buf.thought_signature } : {}),
             }))
         : undefined;
 
       assistantMsg = {
-        role: "assistant",
+        role: "assistant" as const,
         content: contentBuffer || null,
+        // Note: reasoning is intentionally NOT included here. It is
+        // accumulated separately in `accumulatedReasoning` and returned
+        // to the caller for UI/persistence. Sending it back to the API
+        // would violate both OpenAI and Anthropic message schemas.
         tool_calls: toolCalls,
       };
     }
@@ -238,7 +271,7 @@ async function runToolLoop(
     // No tool calls — model is ready to produce its final reply
     if (!assistantMsg.tool_calls?.length) {
       messages.push(assistantMsg);
-      return { exhausted: false, content: accumulatedContent };
+      return { exhausted: false, content: accumulatedContent, reasoning: accumulatedReasoning };
     }
 
     messages.push(assistantMsg);
@@ -285,6 +318,7 @@ async function runToolLoop(
   return {
     exhausted: true,
     content: "I reached the maximum number of steps for this request. Any actions taken so far have been saved — check your board and notes. Try breaking the request into smaller steps.",
+    reasoning: accumulatedReasoning,
   };
 }
 
@@ -366,17 +400,19 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
 
     let promptTokens = 0;
     let completionTokens = 0;
+    let reasoningTokens = 0;
     let lastBreakdown: TokenBreakdown | undefined = undefined;
-    const addUsage = (pt: number, ct: number) => {
+    const addUsage = (pt: number, ct: number, rt?: number) => {
       promptTokens += pt;
       completionTokens += ct;
+      if (typeof rt === "number") reasoningTokens += rt;
       try {
         const rawBreakdown = calculatePromptBreakdown(buildSystemPrompt(req), messages, TOOLS);
         lastBreakdown = scaleBreakdown(rawBreakdown, promptTokens);
       } catch (err) {
         console.error("[chat] failed to calculate breakdown:", err);
       }
-      send("chat:usage", { promptTokens, completionTokens, breakdown: lastBreakdown });
+      send("chat:usage", { promptTokens, completionTokens, reasoningTokens, breakdown: lastBreakdown });
     };
 
     const loopResult = await runToolLoop(
@@ -385,7 +421,10 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
       emitToolCallDone,
       (delta) => {
         send("chat:token", { delta });
-      }
+      },
+      (delta) => {
+        send("chat:thought", { delta });
+      },
     );
 
     abortControllers.delete(event.sender.id);
@@ -399,10 +438,10 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
     }
 
     if (abortCtrl.signal.aborted) {
-      send("chat:done", { content: "", contextRefs: [], usage: promptTokens > 0 ? { promptTokens, completionTokens, breakdown: lastBreakdown } : undefined });
+      send("chat:done", { content: "", reasoning: loopResult.reasoning, contextRefs: [], usage: promptTokens > 0 ? { promptTokens, completionTokens, reasoningTokens, breakdown: lastBreakdown } : undefined });
       return;
     }
 
-    send("chat:done", { content: loopResult.content, contextRefs: [], usage: promptTokens > 0 ? { promptTokens, completionTokens, breakdown: lastBreakdown } : undefined });
+    send("chat:done", { content: loopResult.content, reasoning: loopResult.reasoning, contextRefs: [], usage: promptTokens > 0 ? { promptTokens, completionTokens, reasoningTokens, breakdown: lastBreakdown } : undefined });
   });
 }

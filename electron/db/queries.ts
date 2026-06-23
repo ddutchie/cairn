@@ -534,13 +534,13 @@ export function getChatMessages(db: Database.Database, threadId: string) {
 }
 
 export function addChatMessage(db: Database.Database, m: {
-  id: string; threadId: string; role: string; content: string; contextRefs?: unknown; toolCalls?: unknown;
+  id: string; threadId: string; role: string; content: string; contextRefs?: unknown; toolCalls?: unknown; reasoning?: string;
 }) {
   const now = ts();
   db.prepare(`
-    INSERT INTO chat_messages (id, thread_id, role, content, context_refs, tool_calls, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(m.id, m.threadId, m.role, m.content, m.contextRefs ? JSON.stringify(m.contextRefs) : null, m.toolCalls ? JSON.stringify(m.toolCalls) : null, now);
+    INSERT INTO chat_messages (id, thread_id, role, content, context_refs, tool_calls, reasoning, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(m.id, m.threadId, m.role, m.content, m.contextRefs ? JSON.stringify(m.contextRefs) : null, m.toolCalls ? JSON.stringify(m.toolCalls) : null, m.reasoning ?? null, now);
   return toChatMessage(db.prepare("SELECT * FROM chat_messages WHERE id = ?").get(m.id));
 }
 
@@ -952,6 +952,7 @@ export interface PiMessageRow {
   sessionId: string;
   role: "user" | "assistant" | "error" | "system";
   content: string;
+  reasoning: string | null;
   toolCalls: unknown[] | null;
   subagents: unknown[] | null;
   timestamp: string;
@@ -965,6 +966,7 @@ function toPiMessage(row: any): PiMessageRow {
     sessionId: row.session_id as string,
     role:      row.role as "user" | "assistant" | "error" | "system",
     content:   row.content as string,
+    reasoning: (row.reasoning as string | null) ?? null,
     toolCalls: row.tool_calls ? JSON.parse(row.tool_calls as string) : null,
     subagents: row.subagents ? JSON.parse(row.subagents as string) : null,
     timestamp: row.timestamp as string,
@@ -974,17 +976,19 @@ function toPiMessage(row: any): PiMessageRow {
 
 export function upsertPiMessage(
   db: Database.Database,
-  msg: { id: string; sessionId: string; role: "user" | "assistant" | "error" | "system"; content: string; toolCalls?: unknown[] | null; subagents?: unknown[] | null; timestamp: string; order: number },
+  msg: { id: string; sessionId: string; role: "user" | "assistant" | "error" | "system"; content: string; reasoning?: string | null; toolCalls?: unknown[] | null; subagents?: unknown[] | null; timestamp: string; order: number },
 ) {
   db.prepare(`
-    INSERT INTO pi_agent_messages (id, session_id, role, content, tool_calls, subagents, timestamp, "order")
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO pi_agent_messages (id, session_id, role, content, reasoning, tool_calls, subagents, timestamp, "order")
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       content    = excluded.content,
+      reasoning  = excluded.reasoning,
       tool_calls = excluded.tool_calls,
       subagents  = excluded.subagents
   `).run(
     msg.id, msg.sessionId, msg.role, msg.content,
+    msg.reasoning ?? null,
     msg.toolCalls ? JSON.stringify(msg.toolCalls) : null,
     msg.subagents ? JSON.stringify(msg.subagents) : null,
     msg.timestamp, msg.order,
@@ -994,7 +998,7 @@ export function upsertPiMessage(
 export function savePiMessages(
   db: Database.Database,
   sessionId: string,
-  messages: Array<{ id: string; role: "user" | "assistant" | "error" | "system"; content: string; toolCalls?: unknown[] | null; subagents?: unknown[] | null; timestamp: string }>,
+  messages: Array<{ id: string; role: "user" | "assistant" | "error" | "system"; content: string; reasoning?: string | null; toolCalls?: unknown[] | null; subagents?: unknown[] | null; timestamp: string }>,
 ) {
   const save = db.transaction(() => {
     db.prepare("DELETE FROM pi_agent_messages WHERE session_id = ?").run(sessionId);

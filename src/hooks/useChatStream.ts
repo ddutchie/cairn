@@ -55,6 +55,8 @@ export interface UseChatStreamResult {
   isLoading: boolean;
   toolCalls: ChatToolCall[];
   streamingContent: string;
+  /** Reasoning / thinking text streamed live from the model. Cleared on done. */
+  streamingThought: string;
   /** Non-null when the agent has called ask_questions — cleared on submit or done. */
   pendingQuestions: PendingQuestion[] | null;
   sendStream: (req: ChatStreamRequest) => void;
@@ -69,6 +71,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
   const [isLoading, setIsLoading]               = useState(false);
   const [toolCalls, setToolCalls]               = useState<ChatToolCall[]>([]);
   const [streamingContent, setStreamingContent] = useState("");
+  const [streamingThought, setStreamingThought] = useState("");
   const [pendingQuestions, setPendingQuestions] = useState<PendingQuestion[] | null>(null);
 
   const threadIdRef  = useRef<string | null>(null);
@@ -121,7 +124,11 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
       setStreamingContent((prev) => prev + e.delta);
     });
 
-    const unsubDone = (electron.chat.onDone as (cb: (e: { content: string; contextRefs: unknown[]; error?: string; usage?: { promptTokens: number; completionTokens: number; breakdown?: TokenBreakdown } }) => void) => () => void)((e) => {
+    const unsubThought = electron.chat.onThought?.((e) => {
+      setStreamingThought((prev) => prev + e.delta);
+    });
+
+    const unsubDone = (electron.chat.onDone as (cb: (e: { content: string; reasoning?: string; contextRefs: unknown[]; error?: string; usage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: TokenBreakdown } }) => void) => () => void)((e) => {
       const tid = threadIdRef.current;
       // Mark any still-running tool as done before persisting.
       const finalToolCalls = toolCallsRef.current.map((tc) =>
@@ -131,12 +138,13 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
         const capturedActions = pendingActionsRef.current;
         pendingActionsRef.current = [];
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        addMessage(tid, "assistant", e.content, e.contextRefs as any, finalToolCalls, capturedActions);
+        addMessage(tid, "assistant", e.content, e.contextRefs as any, finalToolCalls, capturedActions, e.reasoning);
         if (e.usage) {
           setThreadUsage(tid, e.usage);
         }
       }
       setStreamingContent("");
+      setStreamingThought("");
       setIsLoading(false);
       setToolCalls([]);
       toolCallsRef.current = [];
@@ -145,7 +153,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
       // the user submits their answers. It is cleared in sendStream() instead.
     });
 
-    const unsubUsage = (electron.chat.onUsage as (cb: (e: { promptTokens: number; completionTokens: number; breakdown?: TokenBreakdown }) => void) => () => void)((e) => {
+    const unsubUsage = (electron.chat.onUsage as (cb: (e: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: TokenBreakdown }) => void) => () => void)((e) => {
       const tid = threadIdRef.current;
       if (tid) {
         setThreadUsage(tid, e);
@@ -156,6 +164,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
       unsubTool();
       unsubToolDone?.();
       unsubToken();
+      unsubThought?.();
       unsubDone();
       unsubUsage();
     };
@@ -172,6 +181,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
     if (threadId) {
       setThreadUsage(threadId, undefined);
     }
+    setStreamingThought("");
     window.electron?.chat.stream(req);
   }
 
@@ -182,6 +192,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
     toolCallsRef.current = [];
     pendingActionsRef.current = [];
     setStreamingContent("");
+    setStreamingThought("");
     // Keep pendingQuestions — user may still want to answer after stopping
   }
 
@@ -189,5 +200,5 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
     setPendingQuestions(null);
   }
 
-  return { isLoading, toolCalls, streamingContent, pendingQuestions, sendStream, stopStream, clearQuestions };
+  return { isLoading, toolCalls, streamingContent, streamingThought, pendingQuestions, sendStream, stopStream, clearQuestions };
 }

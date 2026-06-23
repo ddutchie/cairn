@@ -5,6 +5,7 @@ import { FileText, Kanban, FolderOpen, Search, Copy, Check, RotateCcw, CheckCirc
 import { cn, formatRelative } from "@/lib/utils";
 import { MarkdownContent } from "./MarkdownContent";
 import { ActionsList } from "./ActionsList";
+import { ThinkingPanel } from "./ThinkingPanel";
 import { MessageAvatar } from "./message-ui";
 import { CairnRefChip } from "@/components/shared/cairn-ref-chip";
 import type { ChatMessage, LinkedContextReference, ChatToolCallRecord } from "@/types";
@@ -67,6 +68,9 @@ export const ChatMessageBubble = React.memo(function ChatMessageBubble({ message
               <ChatToolCallChip key={i} tc={tc} />
             ))}
           </div>
+        )}
+        {!isUser && message.reasoning && (
+          <ThinkingPanel text={message.reasoning} />
         )}
         <div className={cn("px-3 py-2.5 rounded-xl text-xs leading-relaxed max-w-full",
           isUser ? "bg-[var(--accent)] text-white rounded-tr-sm" : "bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-secondary)] rounded-tl-sm")}>

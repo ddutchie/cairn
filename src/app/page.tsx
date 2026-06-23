@@ -102,12 +102,14 @@ export default function Home() {
               // Load messages for the latest session
               const rows = await window.electron.piAgent.getMessages(latest.id) as Array<{
                 id: string; role: "user" | "assistant" | "error"; content: string;
+                reasoning: string | null;
                 toolCalls: unknown[] | null; subagents: unknown[] | null; timestamp: string;
               }>;
               const piMessages = rows.map((r) => ({
                 id: r.id,
                 role: r.role,
                 content: r.content,
+                reasoning: r.reasoning ?? undefined,
                 toolCalls: r.toolCalls ?? undefined,
                 subagents: r.subagents ?? undefined,
                 timestamp: r.timestamp,

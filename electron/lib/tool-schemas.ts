@@ -348,7 +348,7 @@ export const TOOL_SCHEMAS = {
     schema: z.object({
       workspaceId: sId,
       query:      sStr.describe("Natural-language query"),
-      k:          z.number().int().positive().max(100).optional().describe("Max results (default: 5, max: 100)"),
+      k:          z.number().int().min(1).max(100).optional().describe("Max results (default: 5, max: 100)"),
     }),
   },
 

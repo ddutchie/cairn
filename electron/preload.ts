@@ -114,9 +114,15 @@ const api = {
       ipcRenderer.on("chat:token", handler);
       return () => ipcRenderer.off("chat:token", handler);
     },
-    onDone: (cb: (e: { content: string; contextRefs: unknown[]; error?: string }) => void) => {
+    onThought: (cb: (e: { delta: string }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { content: string; contextRefs: unknown[]; error?: string }) => cb(e);
+      const handler = (_: any, e: { delta: string }) => cb(e);
+      ipcRenderer.on("chat:thought", handler);
+      return () => ipcRenderer.off("chat:thought", handler);
+    },
+    onDone: (cb: (e: { content: string; reasoning?: string; contextRefs: unknown[]; error?: string; usage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: unknown } }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { content: string; reasoning?: string; contextRefs: unknown[]; error?: string }) => cb(e);
       ipcRenderer.on("chat:done", handler);
       return () => ipcRenderer.off("chat:done", handler);
     },
@@ -132,9 +138,9 @@ const api = {
       ipcRenderer.on("chat:tool-call-done", handler);
       return () => ipcRenderer.off("chat:tool-call-done", handler);
     },
-    onUsage: (cb: (e: { promptTokens: number; completionTokens: number }) => void) => {
+    onUsage: (cb: (e: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: unknown }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { promptTokens: number; completionTokens: number }) => cb(e);
+      const handler = (_: any, e: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: unknown }) => cb(e);
       ipcRenderer.on("chat:usage", handler);
       return () => ipcRenderer.off("chat:usage", handler);
     },
@@ -320,6 +326,12 @@ const api = {
       ipcRenderer.on("pi-agent:token", handler);
       return () => ipcRenderer.off("pi-agent:token", handler);
     },
+    onThought: (cb: (e: { sessionId: string; delta: string }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { sessionId: string; delta: string }) => cb(e);
+      ipcRenderer.on("pi-agent:thought", handler);
+      return () => ipcRenderer.off("pi-agent:thought", handler);
+    },
     onTool: (cb: (e: { sessionId: string; name: string; label: string; callId?: string; status: "pending" | "start" | "end"; ok?: boolean; output?: string }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const handler = (_: any, e: { sessionId: string; name: string; label: string; callId?: string; status: "pending" | "start" | "end"; ok?: boolean; output?: string }) => cb(e);
@@ -350,9 +362,9 @@ const api = {
       ipcRenderer.on("pi-agent:step", handler);
       return () => ipcRenderer.off("pi-agent:step", handler);
     },
-    onUsage: (cb: (e: { sessionId: string; promptTokens: number; completionTokens: number }) => void) => {
+    onUsage: (cb: (e: { sessionId: string; promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: unknown }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { sessionId: string; promptTokens: number; completionTokens: number }) => cb(e);
+      const handler = (_: any, e: { sessionId: string; promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: unknown }) => cb(e);
       ipcRenderer.on("pi-agent:usage", handler);
       return () => ipcRenderer.off("pi-agent:usage", handler);
     },
