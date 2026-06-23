@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { ChevronDown, Brain } from "lucide-react";
 import { MarkdownContent } from "./MarkdownContent";
 
@@ -36,6 +36,7 @@ export const ThinkingPanel = React.memo(function ThinkingPanel({
 }: ThinkingPanelProps) {
   const [open, setOpen] = useState(streaming);
   const [userOverride, setUserOverride] = useState(false);
+  const hadTextRef = useRef(Boolean(text));
 
   // Auto-collapse when companion content starts streaming.
   useEffect(() => {
@@ -45,12 +46,14 @@ export const ThinkingPanel = React.memo(function ThinkingPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [streaming, companionContent, userOverride]);
 
-  // Re-expand when a new reasoning stream begins (text went from empty to non-empty).
+  // Re-expand only on the empty → non-empty transition (new reasoning stream).
   useEffect(() => {
-    if (streaming && text && !userOverride) {
+    const hadText = hadTextRef.current;
+    hadTextRef.current = Boolean(text);
+    if (streaming && text && !hadText && !userOverride) {
       setOpen(true);
     }
-  }, [text, streaming, userOverride, open]);
+  }, [text, streaming, userOverride]);
 
   // Reset user override when text is cleared (new turn).
   useEffect(() => {
