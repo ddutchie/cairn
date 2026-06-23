@@ -42,7 +42,8 @@ export const ThinkingPanel = React.memo(function ThinkingPanel({
     if (streaming && companionContent && !userOverride && open) {
       setOpen(false);
     }
-  }, [streaming, companionContent, userOverride, open]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [streaming, companionContent, userOverride]);
 
   // Re-expand when a new reasoning stream begins (text went from empty to non-empty).
   useEffect(() => {
@@ -88,7 +89,7 @@ export const ThinkingPanel = React.memo(function ThinkingPanel({
         />
       </button>
       {open && (
-        <div className="px-3 py-2 border-t border-[var(--border)]/50 text-[0.786rem] leading-relaxed text-[var(--text-tertiary)] max-h-[300px] overflow-y-auto">
+        <div className="px-3 py-2 border-t text-[0.786rem] leading-relaxed text-[var(--text-tertiary)] max-h-[300px] overflow-y-auto" style={{ borderTopColor: "color-mix(in srgb, var(--border) 50%, transparent)" }}>
           <MarkdownContent content={text} />
           {streaming && open && (
             <span className="inline-block w-0.5 h-3 bg-[var(--accent)] animate-pulse ml-0.5 align-middle" />

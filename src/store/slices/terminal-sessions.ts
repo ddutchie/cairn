@@ -221,7 +221,8 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
         if (!last?.isStreaming) return t;
         // Drop empty tool-free messages entirely rather than leaving blank bubbles.
         // This happens when a loop step does only tool calls with no surrounding text.
-        if (!last.content && !(last.toolCalls?.length) && !(last.subagents?.length)) {
+        // Preserve messages that have reasoning text (reasoning-only turns).
+        if (!last.content && !last.reasoning && !(last.toolCalls?.length) && !(last.subagents?.length)) {
           return { ...t, piMessages: msgs.slice(0, -1) };
         }
         // Force any still-running tool chips to done so they never stay as spinners

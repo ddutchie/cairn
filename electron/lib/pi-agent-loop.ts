@@ -459,7 +459,13 @@ export async function runAgentLoop(
 
     // Build messages array — apply context pruning.
     // systemPrompt passes as `system:` in the request body (not as a user message).
-    const contextMessages = await pruner([...session.messages]);
+    const contextMessages = (await pruner([...session.messages])).map((m) => {
+      if (m.role === "assistant" && "reasoning" in m) {
+        const { reasoning: _r, ...rest } = m;
+        return rest;
+      }
+      return m;
+    });
 
     // ── Stream assistant response ─────────────────────────────────────────
     const headers: Record<string, string> = { "Content-Type": "application/json" };

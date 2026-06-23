@@ -111,7 +111,15 @@ async function runToolLoop(
             res.usage.completion_tokens_details?.reasoning_tokens ?? 0,
           );
         }
-        assistantMsg = choice.message as OpenAIMessage & { reasoning?: string };
+        const rawMsg = choice.message as OpenAIMessage & { reasoning?: string };
+        if (rawMsg.reasoning) {
+          accumulatedReasoning += rawMsg.reasoning;
+          if (onThought) onThought(rawMsg.reasoning);
+        }
+        // Strip reasoning before assigning — it must not enter the messages
+        // array that gets re-sent to the API on subsequent rounds.
+        const { reasoning: _r, ...msgWithoutReasoning } = rawMsg;
+        assistantMsg = msgWithoutReasoning;
 
         // Self-Healing Parser for On-Device XML-style tool calls and tokenizers
         if (assistantMsg.content && assistantMsg.content.includes("<|tool_call>call:")) {
@@ -143,12 +151,8 @@ async function runToolLoop(
           accumulatedContent += assistantMsg.content;
           if (onToken) onToken(assistantMsg.content);
         }
-        if (assistantMsg.reasoning) {
-          accumulatedReasoning += assistantMsg.reasoning;
-          if (onThought) onThought(assistantMsg.reasoning);
-        }
       } catch (err) {
-        return { exhausted: true, content: `Local LLM Engine error: ${String(err)}`, reasoning: "" };
+        return { exhausted: true, content: `Local LLM Engine error: ${String(err)}`, reasoning: accumulatedReasoning };
       }
     } else {
       let response: Response;
@@ -184,7 +188,6 @@ async function runToolLoop(
       if (!reader) return { exhausted: true, content: "No response stream", reasoning: "" };
 
       let contentBuffer = "";
-      let reasoningBuffer = "";
       const toolCallBuffers: Map<number, { id: string; name: string; args: string }> = new Map();
 
       for await (const jsonStr of iterSseData(reader, signal ?? undefined)) {
@@ -211,7 +214,6 @@ async function runToolLoop(
           // Models that don't expose reasoning text simply never emit this field —
           // the panel stays hidden. Reasoning is NOT merged into content/tool JSON.
           if (delta.reasoning) {
-            reasoningBuffer += delta.reasoning;
             accumulatedReasoning += delta.reasoning;
             if (onThought) onThought(delta.reasoning);
           }
@@ -255,9 +257,10 @@ async function runToolLoop(
       assistantMsg = {
         role: "assistant" as const,
         content: contentBuffer || null,
-        // Keep reasoning on the assistant message so later send-to-model
-        // turns in this run don't drop it from message history.
-        reasoning: reasoningBuffer || undefined,
+        // Note: reasoning is intentionally NOT included here. It is
+        // accumulated separately in `accumulatedReasoning` and returned
+        // to the caller for UI/persistence. Sending it back to the API
+        // would violate both OpenAI and Anthropic message schemas.
         tool_calls: toolCalls,
       };
     }
