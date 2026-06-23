@@ -466,7 +466,16 @@ export async function runAgentLoop(
 
     // Build messages array — apply context pruning.
     // systemPrompt passes as `system:` in the request body (not as a user message).
-    const contextMessages = (await pruner([...session.messages])).map((m) => {
+    // Strip reasoning before the pruner so custom context transforms cannot
+    // access thinking text. The post-pruner map is a safety net.
+    const stripped = session.messages.map((m) => {
+      if (m.role === "assistant" && "reasoning" in m) {
+        const { reasoning: _r, ...rest } = m;
+        return rest;
+      }
+      return m;
+    });
+    const contextMessages = (await pruner(stripped)).map((m) => {
       if (m.role === "assistant" && "reasoning" in m) {
         const { reasoning: _r, ...rest } = m;
         return rest;

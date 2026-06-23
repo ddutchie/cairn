@@ -281,15 +281,21 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
   // if the current thread belongs to a different project, find or create one
   // scoped to the new project. Never switches while a stream is in-flight.
   const prevProjectIdRef = useRef<string | null | undefined>(activeProjectId);
+  const prevWorkspaceIdRef = useRef<string | null | undefined>(activeWorkspaceId);
   useEffect(() => {
     if (!activeWorkspaceId) return;
     if (isLoadingRef.current) return;
 
-    // Check if the project actually changed (not just a re-render)
     const prevProject = prevProjectIdRef.current;
+    const prevWorkspace = prevWorkspaceIdRef.current;
     prevProjectIdRef.current = activeProjectId;
-    if (prevProject === activeProjectId) {
-      // Project didn't change — only initialise if no thread is active yet
+    prevWorkspaceIdRef.current = activeWorkspaceId;
+
+    // Workspace changed — invalidate the active thread regardless of project match
+    if (prevWorkspace !== activeWorkspaceId) {
+      // Fall through to getOrCreateThread below
+    } else if (prevProject === activeProjectId) {
+      // Neither changed — only initialise if no thread is active yet
       if (activeChatThreadId) return;
     } else {
       // Project changed — check if the current thread still matches

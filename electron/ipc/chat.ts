@@ -438,7 +438,7 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
     }
 
     if (abortCtrl.signal.aborted) {
-      send("chat:done", { content: "", reasoning: "", contextRefs: [], usage: promptTokens > 0 ? { promptTokens, completionTokens, reasoningTokens, breakdown: lastBreakdown } : undefined });
+      send("chat:done", { content: "", reasoning: loopResult.reasoning, contextRefs: [], usage: promptTokens > 0 ? { promptTokens, completionTokens, reasoningTokens, breakdown: lastBreakdown } : undefined });
       return;
     }
 

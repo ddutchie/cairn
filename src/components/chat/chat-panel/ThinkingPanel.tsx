@@ -46,14 +46,15 @@ export const ThinkingPanel = React.memo(function ThinkingPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [streaming, companionContent, userOverride]);
 
-  // Re-expand only on the empty → non-empty transition (new reasoning stream).
+  // Re-expand only on the empty → non-empty transition (new reasoning stream),
+  // but only if the answer hasn't started streaming yet.
   useEffect(() => {
     const hadText = hadTextRef.current;
     hadTextRef.current = Boolean(text);
-    if (streaming && text && !hadText && !userOverride) {
+    if (streaming && text && !hadText && !userOverride && !companionContent) {
       setOpen(true);
     }
-  }, [text, streaming, userOverride]);
+  }, [text, streaming, userOverride, companionContent]);
 
   // Reset user override when text is cleared (new turn).
   useEffect(() => {

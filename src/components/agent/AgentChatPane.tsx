@@ -22,7 +22,7 @@ import { ContextRing } from "./ContextRing";
 import { Tooltip } from "@/components/ui/tooltip";
 import { CairnEvents } from "@/lib/events";
 import { resolvePromptContext } from "@/lib/context-resolver";
-import type { TerminalSession } from "@/types";
+import type { TerminalSession, TokenBreakdown } from "@/types";
 
 // ── Cairn tool ref extraction ─────────────────────────────────────────────────
 
@@ -104,6 +104,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   const updatePiSubagentToolCall = useCairnStore((s) => s.updatePiSubagentToolCall);
   const addPiSubagent            = useCairnStore((s) => s.addPiSubagent);
   const appendPiSubagentToken    = useCairnStore((s) => s.appendPiSubagentToken);
+  const appendPiSubagentThought  = useCairnStore((s) => s.appendPiSubagentThought);
   const _finalisePiSubagentMessage = useCairnStore((s) => s.finalisePiSubagentMessage);
   const addPiSubagentToolCall    = useCairnStore((s) => s.addPiSubagentToolCall);
   const completePiSubagent       = useCairnStore((s) => s.completePiSubagent);
@@ -186,10 +187,10 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     const unsubUsage = electron.piAgent.onUsage((e) => {
       if (e.sessionId === sessionId) {
         // Parent step — update the parent ring
-        updatePiUsage(sessionId, e.promptTokens, e.completionTokens, e.reasoningTokens ?? 0);
+        updatePiUsage(sessionId, e.promptTokens, e.completionTokens, e.reasoningTokens ?? 0, e.breakdown as TokenBreakdown | undefined);
       } else if (e.sessionId.startsWith(`${sessionId}:sub:`)) {
         // Subagent step — update usage on the subagent inline block, not the parent ring
-        updatePiSubagentUsage(sessionId, e.sessionId, e.promptTokens, e.completionTokens, e.reasoningTokens ?? 0);
+        updatePiSubagentUsage(sessionId, e.sessionId, e.promptTokens, e.completionTokens, e.reasoningTokens ?? 0, e.breakdown as TokenBreakdown | undefined);
       }
     });
 
@@ -303,6 +304,11 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       appendPiSubagentToken(sessionId, e.sessionId, e.delta);
     });
 
+    const unsubSubThought = electron.piAgent.onThought?.((e) => {
+      if (!e.sessionId.startsWith(`${sessionId}:sub:`)) return;
+      appendPiSubagentThought(sessionId, e.sessionId, e.delta);
+    });
+
     // Keyed by callId (not tool name) so parallel calls to the same tool resolve correctly.
     const activeSubCallIds = new Set<string>();
 
@@ -406,6 +412,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       unsubError();
       unsubSubagent();
       unsubSubToken();
+      unsubSubThought();
       unsubSubTool();
       unsubSubStep();
       unsubPlanNote();

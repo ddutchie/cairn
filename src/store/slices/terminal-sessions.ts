@@ -59,6 +59,8 @@ export interface TerminalSessionsSlice {
   addPiSubagent: (sessionId: string, childSessionId: string) => void;
   /** Append a token to a subagent's last streaming message */
   appendPiSubagentToken: (sessionId: string, childSessionId: string, delta: string) => void;
+  /** Append a reasoning/thought delta to a subagent's last streaming message */
+  appendPiSubagentThought: (sessionId: string, childSessionId: string, delta: string) => void;
   /** Finalise the last streaming message in a subagent */
   finalisePiSubagentMessage: (sessionId: string, childSessionId: string) => void;
   /** Add a tool call to a subagent's last streaming message */
@@ -400,6 +402,40 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
                 id: `sub-stream-${Date.now()}`,
                 role: "assistant" as const,
                 content: delta,
+                isStreaming: true,
+                timestamp: new Date().toISOString(),
+              }];
+            }
+            const newSubagents = [...msg.subagents!];
+            newSubagents[subIdx] = { ...sub, messages: newSubMsgs };
+            return { ...msg, subagents: newSubagents };
+          }),
+        };
+      }),
+    }));
+  },
+
+  appendPiSubagentThought(sessionId, childSessionId, delta) {
+    set((s) => ({
+      terminalSessions: s.terminalSessions.map((t) => {
+        if (t.sessionId !== sessionId) return t;
+        return {
+          ...t,
+          piMessages: (t.piMessages ?? []).map((msg) => {
+            const subIdx = (msg.subagents ?? []).findIndex((sa) => sa.childSessionId === childSessionId);
+            if (subIdx === -1) return msg;
+            const sub = msg.subagents![subIdx];
+            const subMsgs = sub.messages;
+            const lastSub = subMsgs[subMsgs.length - 1];
+            let newSubMsgs: PiAgentMessage[];
+            if (lastSub?.isStreaming) {
+              newSubMsgs = [...subMsgs.slice(0, -1), { ...lastSub, reasoning: (lastSub.reasoning ?? "") + delta }];
+            } else {
+              newSubMsgs = [...subMsgs, {
+                id: `sub-stream-${Date.now()}`,
+                role: "assistant" as const,
+                content: "",
+                reasoning: delta,
                 isStreaming: true,
                 timestamp: new Date().toISOString(),
               }];
