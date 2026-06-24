@@ -88,7 +88,7 @@ async function runToolLoop(
   onToken?: (delta: string) => void,
   onThought?: (delta: string) => void,
 ): Promise<{ exhausted: true; content: string; reasoning: string } | { exhausted: false; content: string; reasoning: string }> {
-  const maxSteps    = req.config?.maxSteps    ?? 20;
+  const maxSteps    = req.config?.maxSteps    ?? 30;
   const temperature = req.config?.temperature ?? 0.3;
   let accumulatedContent = "";
   let accumulatedReasoning = "";

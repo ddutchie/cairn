@@ -468,7 +468,7 @@ export async function checkLLMBinaryUpdate(): Promise<{
   currentVersion: string | null;
   latestVersion: string | null;
 }> {
-  return runtimeFetch("/v1/llm/binary/check-update");
+  return runtimeFetch("/v1/llm/binary/check-update", { method: "POST" });
 }
 
 export async function installLLMBinary(): Promise<void> {

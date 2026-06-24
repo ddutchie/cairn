@@ -169,6 +169,10 @@ export interface PiAgentSession {
   abortCtrl: AbortController;
   /** Most recent prompt_tokens count from the last onUsage callback. Updated each turn. */
   lastPromptTokens?: number;
+  /** Accumulated completion tokens across all rounds in the current turn. */
+  totalCompletionTokens?: number;
+  /** Accumulated reasoning tokens across all rounds in the current turn. */
+  totalReasoningTokens?: number;
   /**
    * Compaction transformer for this session. Stored here so the cachedSummary
    * inside it survives across multiple pi-agent:prompt calls on the same session.
@@ -456,6 +460,9 @@ export async function runAgentLoop(
     ?? buildSlidingWindowPruner(session, contextWindow);
 
   let steps = 0;
+  // Reset per-turn accumulators
+  session.totalCompletionTokens = 0;
+  session.totalReasoningTokens = 0;
 
   while (steps < maxSteps) {
     if (signal.aborted) { callbacks.onDone(); return; }
@@ -586,6 +593,10 @@ export async function runAgentLoop(
           const ct = chunk.usage.completion_tokens ?? 0;
           const rt = chunk.usage.completion_tokens_details?.reasoning_tokens ?? 0;
           session.lastPromptTokens = pt;
+          // Accumulate completion + reasoning across rounds (total output for the turn).
+          // Prompt tokens are last-round only (= current context window usage).
+          session.totalCompletionTokens = (session.totalCompletionTokens ?? 0) + ct;
+          session.totalReasoningTokens = (session.totalReasoningTokens ?? 0) + rt;
           let breakdown: TokenBreakdown | undefined;
           try {
             const rawBreakdown = calculatePromptBreakdown(systemPrompt, contextMessages, allTools);
@@ -593,7 +604,7 @@ export async function runAgentLoop(
           } catch (err) {
             console.error("[pi-agent] failed to calculate breakdown:", err);
           }
-          callbacks.onUsage(pt, ct, rt, breakdown);
+          callbacks.onUsage(pt, session.totalCompletionTokens ?? 0, session.totalReasoningTokens ?? 0, breakdown);
         }
 
         const delta = chunk.choices?.[0]?.delta;
