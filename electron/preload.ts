@@ -184,7 +184,6 @@ const api = {
     },
     /** Listener on the pop-out page: received when main window requests pop-in. */
     onChatRequestPopIn: (cb: () => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const handler = () => cb();
       ipcRenderer.on("chat:requestPopIn", handler);
       return () => ipcRenderer.off("chat:requestPopIn", handler);
