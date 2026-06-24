@@ -118,6 +118,8 @@ export function NotesView() {
       divider.removeEventListener("mousedown", onMouseDown);
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
     };
   }, [setNotesSidebarWidth]);
 

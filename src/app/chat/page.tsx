@@ -28,6 +28,9 @@ export default function ChatPopoutPage() {
         if (state?.threadId) {
           setActiveChatThreadId(state.threadId);
         }
+        if (state?.activeProjectId != null) {
+          useCairnStore.setState({ activeProjectId: state.activeProjectId });
+        }
       }
 
       setReady(true);
@@ -41,6 +44,7 @@ export default function ChatPopoutPage() {
       threadId: state.activeChatThreadId as string | null,
       chatThreads: state.chatThreads as unknown[],
       chatMessages: state.chatMessages as unknown[],
+      activeProjectId: state.activeProjectId as string | null,
     });
   }, []);
 

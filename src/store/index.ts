@@ -19,7 +19,8 @@ import type {
 import { storage } from "@/lib/storage";
 import { historyManager } from "@/lib/history";
 import { isOwnNoteWrite } from "./ipc";
-import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KEY, ACTIVE_PROJECT_KEY, CHAT_PANEL_WIDTH_KEY } from "@/lib/constants";
+import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KEY, ACTIVE_PROJECT_KEY, CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY } from "@/lib/constants";
+import { MIN_NOTES_SIDEBAR_WIDTH, MAX_NOTES_SIDEBAR_WIDTH } from "./slices/ui";
 
 // ── Slice imports ─────────────────────────────────────────────────────────────
 import { createUISlice } from "./slices/ui";
@@ -205,6 +206,11 @@ export const useCairnStore = create<CairnStore>()(
       const savedChatWidth = storage.get<number>(CHAT_PANEL_WIDTH_KEY);
       if (savedChatWidth) {
         a[0]({ chatPanelWidth: Math.min(MAX_CHAT_PANEL_WIDTH, Math.max(MIN_CHAT_PANEL_WIDTH, savedChatWidth)) });
+      }
+
+      const savedNotesWidth = storage.get<number>(NOTES_SIDEBAR_WIDTH_KEY);
+      if (savedNotesWidth) {
+        a[0]({ notesSidebarWidth: Math.min(MAX_NOTES_SIDEBAR_WIDTH, Math.max(MIN_NOTES_SIDEBAR_WIDTH, savedNotesWidth)) });
       }
 
       const saved = loadPersisted();

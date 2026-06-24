@@ -30,6 +30,7 @@ let pendingChatState: {
   threadId: string | null;
   chatThreads: unknown[];
   chatMessages: unknown[];
+  activeProjectId: string | null;
 } | null = null;
 
 let popoutWindow: BrowserWindow | null = null;
@@ -133,6 +134,7 @@ export function registerChatPopoutHandlers(): void {
     threadId: string | null;
     chatThreads: unknown[];
     chatMessages: unknown[];
+    activeProjectId: string | null;
   }) => {
     mainWindowWebContentsId = event.sender.id;
     chatParticipants.add(event.sender.id);
@@ -143,10 +145,13 @@ export function registerChatPopoutHandlers(): void {
 
   // Pop-out page signals it is ready — register as participant, return stored state
   ipcMain.handle("chat:popoutReady", (event) => {
+    if (event.sender.id !== popoutWindow?.webContents.id) {
+      return { threadId: null, chatThreads: [], chatMessages: [], activeProjectId: null };
+    }
     chatParticipants.add(event.sender.id);
     const state = pendingChatState;
     pendingChatState = null;
-    return state ?? { threadId: null, chatThreads: [], chatMessages: [] };
+    return state ?? { threadId: null, chatThreads: [], chatMessages: [], activeProjectId: null };
   });
 
   // Main window requests the pop-out to come back (clicked placeholder button)
@@ -162,7 +167,11 @@ export function registerChatPopoutHandlers(): void {
     threadId: string | null;
     chatThreads: unknown[];
     chatMessages: unknown[];
+    activeProjectId: string | null;
   }) => {
+    if (event.sender.id !== popoutWindow?.webContents.id) {
+      return { ok: false };
+    }
     const senderId = event.sender.id;
     // Find the main window by its tracked webContents ID (not BrowserWindow.id)
     const mainWin = findMainWindow();

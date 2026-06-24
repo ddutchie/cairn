@@ -439,6 +439,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
       threadId: state.activeChatThreadId as string | null,
       chatThreads: state.chatThreads as unknown[],
       chatMessages: state.chatMessages as unknown[],
+      activeProjectId: state.activeProjectId as string | null,
     });
   }, []);
 
@@ -460,7 +461,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
                 {projects.map((p) => (
                   <button
                     key={p.id}
-                    onClick={() => { setActiveProject(p.id); setProjectOpen(false); }}
+                    onClick={() => { if (isLoadingRef.current) return; setActiveProject(p.id); setProjectOpen(false); }}
                     className={`w-full text-left px-3 py-2 text-[0.714rem] transition-colors ${
                       p.id === activeProjectId
                         ? "text-[var(--accent)] bg-[var(--surface-2)]"

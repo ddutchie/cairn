@@ -150,18 +150,21 @@ const api = {
       threadId: string | null;
       chatThreads: unknown[];
       chatMessages: unknown[];
+      activeProjectId: string | null;
     }) => invoke<{ ok: boolean }>("chat:popOut", payload),
     /** Called by pop-out page: signals readiness, returns stored chat state. */
     popoutReady: () => invoke<{
       threadId: string | null;
       chatThreads: unknown[];
       chatMessages: unknown[];
+      activeProjectId: string | null;
     }>("chat:popoutReady"),
     /** Called by pop-out page: sends final state back, closes window. */
     popIn: (payload: {
       threadId: string | null;
       chatThreads: unknown[];
       chatMessages: unknown[];
+      activeProjectId: string | null;
     }) => invoke<{ ok: boolean }>("chat:popIn", payload),
     /** Called by main window: asks the pop-out to return (relayed via main process). */
     requestPopIn: () => invoke<{ ok: boolean }>("chat:requestPopIn"),
@@ -170,6 +173,7 @@ const api = {
       threadId: string | null;
       chatThreads: unknown[];
       chatMessages: unknown[];
+      activeProjectId: string | null;
     }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const handler = (_: any, payload: any) => cb(payload);

@@ -147,14 +147,17 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
   }, [activeView, chatOpen, setActiveSession]);
 
   // ── Pop-out chat ────────────────────────────────────────────────────────────────
-  const handlePopOut = useCallback(() => {
+  const handlePopOut = useCallback(async () => {
     const state = useCairnStore.getState();
-    window.electron?.chat.popOut({
+    const result = await window.electron?.chat.popOut({
       threadId: state.activeChatThreadId,
       chatThreads: state.chatThreads,
       chatMessages: state.chatMessages,
+      activeProjectId: state.activeProjectId,
     });
-    setChatPoppedOut(true);
+    if (result?.ok) {
+      setChatPoppedOut(true);
+    }
   }, [setChatPoppedOut]);
 
   const handlePopIn = useCallback(() => {
@@ -174,6 +177,9 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
       }
       if (payload.threadId) {
         useCairnStore.getState().setActiveChatThreadId(payload.threadId);
+      }
+      if (payload.activeProjectId != null) {
+        useCairnStore.setState({ activeProjectId: payload.activeProjectId });
       }
       setChatPoppedOut(false);
     });

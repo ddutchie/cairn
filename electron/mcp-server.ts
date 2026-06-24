@@ -11,7 +11,7 @@
 
 import http from "http";
 import Database from "better-sqlite3";
-import type { ZodTypeAny } from "zod";
+import * as z from "zod";
 import { TOOL_SCHEMAS, CHAT_ONLY_TOOLS } from "./lib/tool-schemas";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
@@ -41,7 +41,7 @@ function buildMcpServer(db: Database.Database, workspacePath: string): McpServer
   const chatOnlySet = new Set<string>(CHAT_ONLY_TOOLS);
   for (const [name, { description, schema }] of Object.entries(TOOL_SCHEMAS)) {
     if (chatOnlySet.has(name)) continue;
-    server.tool(name, description, schema.shape as Record<string, ZodTypeAny>,
+    server.tool(name, description, schema.shape as Record<string, z.ZodTypeAny>,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       async (args: Record<string, any>) => {
         const result = await executeTool(db, workspacePath, name, args);
