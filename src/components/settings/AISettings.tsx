@@ -860,58 +860,58 @@ export function AISettings() {
                 </div>
               </div>
             </SettingsRow>
-
-            {/* Max Steps */}
-            <SettingsRow
-              label="Max steps"
-              description="Tool-call rounds the chat can take per message. Increase for complex multi-tool tasks."
-            >
-              <div className="flex flex-col gap-1.5 items-end">
-                <div className="relative">
-                  <Footprints size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]" />
-                  <input
-                    type="number"
-                    min={1}
-                    max={1000}
-                    value={aiConfig.maxSteps ?? 30}
-                    onChange={(e) => {
-                      const v = parseInt(e.target.value, 10);
-                      if (!isNaN(v) && v >= 1 && v <= 1000) updateAIConfig({ maxSteps: v });
-                    }}
-                    className="pl-7 pr-3 py-1.5 text-xs w-24 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
-                  />
-                </div>
-                <div className="flex gap-1.5">
-                  {([10, 20, 30, 50] as const).map((n) => (
-                    <button
-                      key={n}
-                      onClick={() => updateAIConfig({ maxSteps: n })}
-                      className={cn(
-                        "px-2 py-1 text-[0.714rem] rounded border transition-colors",
-                        (aiConfig.maxSteps ?? 30) === n
-                          ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
-                          : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]"
-                      )}
-                    >
-                      {n}
-                    </button>
-                  ))}
-                  <button
-                    onClick={() => updateAIConfig({ maxSteps: 1000 })}
-                    className={cn(
-                      "px-2 py-1 text-[0.714rem] rounded border transition-colors",
-                      (aiConfig.maxSteps ?? 30) === 1000
-                        ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
-                        : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]"
-                    )}
-                  >
-                    ∞
-                  </button>
-                </div>
-              </div>
-            </SettingsRow>
           </>
         )}
+
+        {/* Max Steps — applies to all providers */}
+        <SettingsRow
+          label="Max steps"
+          description="Tool-call rounds the chat can take per message. Increase for complex multi-tool tasks."
+        >
+          <div className="flex flex-col gap-1.5 items-end">
+            <div className="relative">
+              <Footprints size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]" />
+              <input
+                type="number"
+                min={1}
+                max={1000}
+                value={aiConfig.maxSteps ?? 30}
+                onChange={(e) => {
+                  const v = parseInt(e.target.value, 10);
+                  if (!isNaN(v) && v >= 1 && v <= 1000) updateAIConfig({ maxSteps: v });
+                }}
+                className="pl-7 pr-3 py-1.5 text-xs w-24 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
+              />
+            </div>
+            <div className="flex gap-1.5">
+              {([10, 20, 30, 50] as const).map((n) => (
+                <button
+                  key={n}
+                  onClick={() => updateAIConfig({ maxSteps: n })}
+                  className={cn(
+                    "px-2 py-1 text-[0.714rem] rounded border transition-colors",
+                    (aiConfig.maxSteps ?? 30) === n
+                      ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
+                      : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]"
+                  )}
+                >
+                  {n}
+                </button>
+              ))}
+              <button
+                onClick={() => updateAIConfig({ maxSteps: 1000 })}
+                className={cn(
+                  "px-2 py-1 text-[0.714rem] rounded border transition-colors",
+                  (aiConfig.maxSteps ?? 30) === 1000
+                    ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
+                    : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]"
+                )}
+              >
+                ∞
+              </button>
+            </div>
+          </div>
+        </SettingsRow>
 
         {/* General Connection Status */}
         <div className="flex items-center gap-3 pt-1 text-xs">
