@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { Footprints, Thermometer, Layers } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // ── Layout helpers ────────────────────────────
@@ -87,5 +88,87 @@ export function Toggle({
         )}
       />
     </button>
+  );
+}
+
+// ── Stepper settings row ───────────────────────
+
+export type StepperIcon = "footprints" | "thermometer" | "layers";
+
+const ICON_MAP: Record<StepperIcon, React.ComponentType<{ size?: number; className?: string }>> = {
+  footprints: Footprints,
+  thermometer: Thermometer,
+  layers: Layers,
+};
+
+/**
+ * A SettingsRow with an icon-prefixed number input and preset quick-buttons.
+ * Used for maxSteps, temperature, and contextLimit across AISettings and AgentSettings.
+ */
+export function StepperSettingsRow({
+  label,
+  description,
+  icon,
+  value,
+  onChange,
+  presets,
+  min,
+  max,
+  step,
+  inputWidth = "w-24",
+  formatPreset,
+}: {
+  label: string;
+  description?: string;
+  icon: StepperIcon;
+  value: number;
+  onChange: (v: number) => void;
+  presets: readonly number[];
+  min: number;
+  max: number;
+  step?: number;
+  inputWidth?: string;
+  formatPreset?: (n: number) => string;
+}) {
+  const Icon = ICON_MAP[icon];
+  return (
+    <SettingsRow label={label} description={description}>
+      <div className="flex flex-col gap-1.5 items-end">
+        <div className="relative">
+          <Icon size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]" />
+          <input
+            type="number"
+            min={min}
+            max={max}
+            step={step}
+            value={value}
+            onChange={(e) => {
+              const v = step && step < 1 ? parseFloat(e.target.value) : parseInt(e.target.value, 10);
+              if (!isNaN(v) && v >= min && v <= max) onChange(v);
+            }}
+            className={cn(
+              "pl-7 pr-3 py-1.5 text-xs rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]",
+              inputWidth,
+            )}
+          />
+        </div>
+        <div className="flex gap-1.5">
+          {presets.map((n) => (
+            <button
+              key={n}
+              onClick={() => onChange(n)}
+              className={cn(
+                "px-2 py-1 text-[0.714rem] rounded border transition-colors",
+                value === n
+                  ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
+                  : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]"
+              )}
+            >
+              {formatPreset ? formatPreset(n) : n}
+            </button>
+          ))}
+        </div>
+      </div>
+    </SettingsRow>
   );
 }
