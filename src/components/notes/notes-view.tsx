@@ -10,6 +10,7 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { MIN_NOTES_SIDEBAR_WIDTH, MAX_NOTES_SIDEBAR_WIDTH } from "@/store/slices/ui";
 import { Tooltip } from "@/components/ui/tooltip";
 import { NoteEditor } from "./note-editor";
 import { DashboardView } from "./dashboard-view";
@@ -38,6 +39,8 @@ export function NotesView() {
     getWorkspaceProjects,
     notes: allNotes,
     aiConfig,
+    notesSidebarWidth,
+    setNotesSidebarWidth,
   } = useCairnStore(useShallow((s) => ({
     activeProjectId:         s.activeProjectId,
     activeWorkspaceId:       s.activeWorkspaceId,
@@ -55,6 +58,8 @@ export function NotesView() {
     getWorkspaceProjects:    s.getWorkspaceProjects,
     notes:                   s.notes,
     aiConfig:                s.aiConfig,
+    notesSidebarWidth:       s.notesSidebarWidth,
+    setNotesSidebarWidth:    s.setNotesSidebarWidth,
   })));
   const aiEnabled = aiConfig.aiEnabled ?? true;
 
@@ -68,6 +73,53 @@ export function NotesView() {
   const [deleteNoteId, setDeleteNoteId]         = useState<string | null>(null);
   const [newFolderOpen, setNewFolderOpen]        = useState(false);
   const [mobileShowEditor, setMobileShowEditor] = useState(false);
+
+  // ── Resizable sidebar ──────────────────────────────────────────────────────────
+  const sidebarRef = useRef<HTMLDivElement>(null);
+  const sidebarDividerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const divider = sidebarDividerRef.current;
+    const panel = sidebarRef.current;
+    if (!divider || !panel) return;
+
+    let dragging = false;
+    let startX = 0;
+    let startW = 0;
+
+    function onMouseMove(e: MouseEvent) {
+      if (!dragging) return;
+      const next = Math.min(MAX_NOTES_SIDEBAR_WIDTH, Math.max(MIN_NOTES_SIDEBAR_WIDTH, startW + (e.clientX - startX)));
+      panel!.style.width = `${next}px`;
+    }
+
+    function onMouseUp() {
+      if (!dragging) return;
+      dragging = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      setNotesSidebarWidth(panel!.offsetWidth);
+    }
+
+    function onMouseDown(e: MouseEvent) {
+      dragging = true;
+      startX = e.clientX;
+      startW = panel!.offsetWidth;
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+      e.preventDefault();
+    }
+
+    divider.addEventListener("mousedown", onMouseDown);
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+
+    return () => {
+      divider.removeEventListener("mousedown", onMouseDown);
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+  }, [setNotesSidebarWidth]);
 
   // folder → collapsed state; true = collapsed, undefined/false = open
   const [collapsedFolders, setCollapsedFolders]  = useState<Record<string, boolean>>({});
@@ -272,7 +324,7 @@ export function NotesView() {
   return (
     <div className="flex flex-1 min-h-0 overflow-hidden">
       {/* Notes list */}
-      <div className={cn("w-full md:w-56 flex-shrink-0 border-r border-[var(--border)] flex flex-col bg-[var(--surface)]", mobileShowEditor ? "hidden md:flex" : "flex")}>
+      <div ref={sidebarRef} className={cn("flex-shrink-0 border-r border-[var(--border)] flex flex-col bg-[var(--surface)] relative", mobileShowEditor ? "hidden md:flex" : "flex")} style={{ width: `${notesSidebarWidth}px` }}>
         {/* Header */}
         <div className="flex items-center justify-between px-3 h-9 border-b border-[var(--border)] flex-shrink-0">
           <span className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider">Notes</span>
@@ -449,6 +501,14 @@ export function NotesView() {
             <Plus size={12} /><span className="text-xs">New note</span>
           </Button>
         </div>
+
+        {/* Drag-to-resize handle — sits on the right edge of the sidebar */}
+        <div
+          ref={sidebarDividerRef}
+          className="absolute right-0 top-0 h-full w-0 flex-shrink-0 cursor-col-resize z-10 select-none hidden md:block"
+          style={{ marginRight: -3, padding: "0 3px" }}
+          aria-hidden
+        />
       </div>
 
       {/* Editor pane */}

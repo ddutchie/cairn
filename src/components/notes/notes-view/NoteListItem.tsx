@@ -8,6 +8,7 @@ import {
 import { cn, formatRelative } from "@/lib/utils";
 import type { Note } from "@/types";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip } from "@/components/ui/tooltip";
 import { useCairnStore } from "@/store";
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
@@ -38,9 +39,11 @@ export const NoteListItem = memo(function NoteListItem({ note, isActive, indent 
       <div className="flex items-center gap-1.5">
         {note.isPinned && <Pin size={9} className="text-[var(--accent)] flex-shrink-0" />}
         {note.type === "dashboard" && <LayoutDashboard size={9} className="text-[var(--text-tertiary)] flex-shrink-0" />}
-        <span className={cn("text-xs font-medium truncate flex-1", isActive ? "text-[var(--text-primary)]" : "text-[var(--text-secondary)]")}>
-          {note.title}
-        </span>
+        <Tooltip content={note.title}>
+          <span className={cn("text-xs font-medium truncate flex-1", isActive ? "text-[var(--text-primary)]" : "text-[var(--text-secondary)]")}>
+            {note.title}
+          </span>
+        </Tooltip>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button aria-label="Note actions" onClick={(e) => e.stopPropagation()}

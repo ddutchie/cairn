@@ -114,3 +114,6 @@ export const ACTIVE_PROJECT_KEY = "active-project";
 
 /** localStorage key for the persisted chat panel width (px). */
 export const CHAT_PANEL_WIDTH_KEY = "chatPanelWidth";
+
+/** localStorage key for the persisted notes sidebar width (px). */
+export const NOTES_SIDEBAR_WIDTH_KEY = "notesSidebarWidth";
