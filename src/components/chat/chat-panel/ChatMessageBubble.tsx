@@ -72,6 +72,18 @@ export const ChatMessageBubble = React.memo(function ChatMessageBubble({ message
         {!isUser && message.reasoning && (
           <ThinkingPanel text={message.reasoning} />
         )}
+        {message.images && message.images.length > 0 && (
+          <div className={cn("flex flex-wrap gap-2", isUser && "justify-end")}>
+            {message.images.map((img, i) => (
+              <img
+                key={i}
+                src={img.url}
+                alt={img.name}
+                className="max-w-[200px] max-h-[200px] rounded-lg border border-[var(--border)] object-cover"
+              />
+            ))}
+          </div>
+        )}
         <div className={cn("px-3 py-2.5 rounded-xl text-xs leading-relaxed max-w-full",
           isUser ? "bg-[var(--accent)] text-white rounded-tr-sm" : "bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-secondary)] rounded-tl-sm")}>
           <MarkdownContent content={message.content} isUser={isUser} />

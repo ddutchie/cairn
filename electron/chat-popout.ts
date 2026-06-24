@@ -140,26 +140,29 @@ export function registerChatPopoutHandlers(): void {
     chatParticipants.add(event.sender.id);
     pendingChatState = payload;
     createChatPopoutWindow();
-    return { ok: true };
+    return { data: { ok: true } };
   });
 
   // Pop-out page signals it is ready — register as participant, return stored state
   ipcMain.handle("chat:popoutReady", (event) => {
     if (event.sender.id !== popoutWindow?.webContents.id) {
-      return { threadId: null, chatThreads: [], chatMessages: [], activeProjectId: null };
+      return { data: { threadId: null, chatThreads: [], chatMessages: [], activeProjectId: null } };
     }
     chatParticipants.add(event.sender.id);
     const state = pendingChatState;
     pendingChatState = null;
-    return state ?? { threadId: null, chatThreads: [], chatMessages: [], activeProjectId: null };
+    return { data: state ?? { threadId: null, chatThreads: [], chatMessages: [], activeProjectId: null } };
   });
 
   // Main window requests the pop-out to come back (clicked placeholder button)
-  ipcMain.handle("chat:requestPopIn", () => {
+  ipcMain.handle("chat:requestPopIn", (event) => {
+    if (event.sender.id !== mainWindowWebContentsId) {
+      return { data: { ok: false } };
+    }
     if (popoutWindow && !popoutWindow.isDestroyed()) {
       popoutWindow.webContents.send("chat:requestPopIn");
     }
-    return { ok: true };
+    return { data: { ok: true } };
   });
 
   // Pop-out window requests pop-in: send final state to main window, close
@@ -170,7 +173,7 @@ export function registerChatPopoutHandlers(): void {
     activeProjectId: string | null;
   }) => {
     if (event.sender.id !== popoutWindow?.webContents.id) {
-      return { ok: false };
+      return { data: { ok: false } };
     }
     const senderId = event.sender.id;
     // Find the main window by its tracked webContents ID (not BrowserWindow.id)
@@ -180,6 +183,6 @@ export function registerChatPopoutHandlers(): void {
     }
     closeChatPopoutWindow();
     chatParticipants.delete(senderId);
-    return { ok: true };
+    return { data: { ok: true } };
   });
 }

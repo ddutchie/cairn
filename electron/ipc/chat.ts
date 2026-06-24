@@ -386,10 +386,35 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
       return;
     }
 
+    // Check if the model supports vision before including images
+    const modelLc = (model ?? "").toLowerCase();
+    const supportsVision = provider !== "localllm" && (
+      modelLc.includes("vision") ||
+      modelLc.includes("gpt-4o") ||
+      modelLc.startsWith("claude-3") ||
+      modelLc.startsWith("claude-sonnet-4") ||
+      modelLc.includes("gemini")
+    );
+
+    if (req.images?.length && !supportsVision) {
+      req.message = "[Images omitted — model does not support vision]\n\n" + req.message;
+      req.images = undefined;
+    }
+
+    const userMessage: OpenAIMessage = req.images?.length
+      ? ({
+          role: "user",
+          content: [
+            { type: "text", text: req.message },
+            ...req.images.map((img) => ({ type: "image_url", image_url: { url: img.dataUrl } })),
+          ],
+        } as unknown as OpenAIMessage)
+      : { role: "user", content: req.message };
+
     const messages: OpenAIMessage[] = [
       { role: "system", content: buildSystemPrompt(req) },
       ...(req.history ?? []).map((m) => ({ role: m.role, content: m.content })),
-      { role: "user", content: req.message },
+      userMessage,
     ];
 
     const emitToolCall = (e: { tool: string; label: string; args: Record<string, unknown> }) => {

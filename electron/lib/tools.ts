@@ -94,6 +94,7 @@ export interface ChatRequest {
   history?: Array<{ role: "user" | "assistant" | "system"; content: string }>;
   config?: { baseUrl?: string; model?: string; apiKey?: string; maxSteps?: number; temperature?: number };
   systemPrompt?: string;
+  images?: Array<{ name: string; dataUrl: string }>;
 }
 
 export function buildSystemPrompt(req: ChatRequest): string {

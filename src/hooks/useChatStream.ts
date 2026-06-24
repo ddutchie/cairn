@@ -49,6 +49,8 @@ export interface ChatStreamRequest {
     temperature?: number;
   };
   systemPrompt?: string;
+  /** Images attached to the current user message (base64 data URLs) */
+  images?: Array<{ name: string; dataUrl: string }>;
 }
 
 export interface UseChatStreamResult {
