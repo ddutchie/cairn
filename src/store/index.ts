@@ -209,7 +209,7 @@ export const useCairnStore = create<CairnStore>()(
       }
 
       const savedNotesWidth = storage.get<number>(NOTES_SIDEBAR_WIDTH_KEY);
-      if (savedNotesWidth) {
+      if (savedNotesWidth != null) {
         a[0]({ notesSidebarWidth: Math.min(MAX_NOTES_SIDEBAR_WIDTH, Math.max(MIN_NOTES_SIDEBAR_WIDTH, savedNotesWidth)) });
       }
 
@@ -317,6 +317,11 @@ export const useCairnStore = create<CairnStore>()(
       const savedChatWidth = storage.get<number>(CHAT_PANEL_WIDTH_KEY);
       if (savedChatWidth) {
         set({ chatPanelWidth: Math.min(MAX_CHAT_PANEL_WIDTH, Math.max(MIN_CHAT_PANEL_WIDTH, savedChatWidth)) });
+      }
+
+      const savedNotesWidth = storage.get<number>(NOTES_SIDEBAR_WIDTH_KEY);
+      if (savedNotesWidth != null) {
+        set({ notesSidebarWidth: Math.min(MAX_NOTES_SIDEBAR_WIDTH, Math.max(MIN_NOTES_SIDEBAR_WIDTH, savedNotesWidth)) });
       }
 
       const snap = (await window.electron!.snapshot()) as PersistedState;
