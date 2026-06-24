@@ -421,7 +421,7 @@ export function AgentSettings() {
 
   function updateAgent(patch: Partial<typeof agentConfig>) {
     setAgentConfig(patch);
-    if (patch.baseUrl !== undefined) {
+    if (patch.baseUrl !== undefined || patch.apiKey !== undefined) {
       resetModelsAgent();
     }
   }

@@ -225,7 +225,7 @@ export function AISettings() {
 
   function updateAIConfig(patch: Partial<typeof aiConfig>) {
     setAIConfig(patch);
-    if (patch.baseUrl !== undefined) {
+    if (patch.baseUrl !== undefined || patch.apiKey !== undefined) {
       resetModels();
     }
   }

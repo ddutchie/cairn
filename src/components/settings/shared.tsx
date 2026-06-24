@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { Footprints, Thermometer, Layers } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -131,6 +131,24 @@ export function StepperSettingsRow({
   formatPreset?: (n: number) => string;
 }) {
   const Icon = ICON_MAP[icon];
+  const [draft, setDraft] = useState(String(value));
+  const blurringRef = useRef(false);
+
+  useEffect(() => {
+    if (!blurringRef.current) setDraft(String(value));
+  }, [value]);
+
+  function commit(raw: string) {
+    const v = step && step < 1 ? parseFloat(raw) : parseInt(raw, 10);
+    if (!isNaN(v)) {
+      const clamped = Math.max(min, Math.min(max, v));
+      onChange(clamped);
+      setDraft(String(clamped));
+    } else {
+      setDraft(String(value));
+    }
+  }
+
   return (
     <SettingsRow label={label} description={description}>
       <div className="flex flex-col gap-1.5 items-end">
@@ -141,10 +159,15 @@ export function StepperSettingsRow({
             min={min}
             max={max}
             step={step}
-            value={value}
-            onChange={(e) => {
-              const v = step && step < 1 ? parseFloat(e.target.value) : parseInt(e.target.value, 10);
-              if (!isNaN(v) && v >= min && v <= max) onChange(v);
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={() => {
+              blurringRef.current = true;
+              commit(draft);
+              requestAnimationFrame(() => { blurringRef.current = false; });
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
             }}
             className={cn(
               "pl-7 pr-3 py-1.5 text-xs rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]",

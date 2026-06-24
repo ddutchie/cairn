@@ -53,15 +53,23 @@ export function useEndpointConfig(): UseEndpointConfigResult {
   const [testError, setTestError] = useState("");
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
+  const abortRef = React.useRef<AbortController | null>(null);
+  const resetTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchModels = useCallback(async (baseUrl: string, apiKey: string) => {
+    if (abortRef.current) abortRef.current.abort();
+    if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
+    const ac = new AbortController();
+    abortRef.current = ac;
+
     setModelsLoading(true);
+    setTestState("testing");
     try {
       const url = (baseUrl || "https://api.openai.com").replace(/\/+$/, "").replace(/\/v1$/, "");
       const headers: Record<string, string> = {};
       if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
 
-      const res = await fetch(`${url}/v1/models`, { headers });
+      const res = await fetch(`${url}/v1/models`, { headers, signal: ac.signal });
       if (!res.ok) throw new Error(`${res.status}`);
 
       const data = await res.json();
@@ -72,15 +80,19 @@ export function useEndpointConfig(): UseEndpointConfigResult {
         })
         .sort();
 
+      if (ac.signal.aborted) return;
       setAvailableModels(ids);
       setTestState("ok");
     } catch (err) {
+      if (ac.signal.aborted) return;
       setTestState("error");
       setTestError(err instanceof Error ? err.message : "Failed to fetch models");
       setAvailableModels([]);
     } finally {
-      setModelsLoading(false);
-      setTimeout(() => setTestState("idle"), 5000);
+      if (!ac.signal.aborted) {
+        setModelsLoading(false);
+        resetTimerRef.current = setTimeout(() => setTestState("idle"), 5000);
+      }
     }
   }, []);
 
