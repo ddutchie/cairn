@@ -339,12 +339,18 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   const handleAttachImages = useCallback(async (files: File[]) => {
     const imageItems: Array<{ name: string; dataUrl: string }> = [];
     for (const file of files) {
-      const dataUrl = await new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.readAsDataURL(file);
-      });
-      imageItems.push({ name: file.name, dataUrl });
+      try {
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = () => reject(new Error(`Failed to read ${file.name}`));
+          reader.onabort = () => reject(new Error(`Read aborted for ${file.name}`));
+          reader.readAsDataURL(file);
+        });
+        imageItems.push({ name: file.name, dataUrl });
+      } catch (err) {
+        console.error("[chat] Skipping unreadable image:", err);
+      }
     }
     setPendingImages((prev) => [...prev, ...imageItems]);
   }, []);

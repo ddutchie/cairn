@@ -386,6 +386,21 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
       return;
     }
 
+    // Check if the model supports vision before including images
+    const modelLc = (model ?? "").toLowerCase();
+    const supportsVision = provider !== "localllm" && (
+      modelLc.includes("vision") ||
+      modelLc.includes("gpt-4o") ||
+      modelLc.startsWith("claude-3") ||
+      modelLc.startsWith("claude-sonnet-4") ||
+      modelLc.includes("gemini")
+    );
+
+    if (req.images?.length && !supportsVision) {
+      req.message = "[Images omitted — model does not support vision]\n\n" + req.message;
+      req.images = undefined;
+    }
+
     const userMessage: OpenAIMessage = req.images?.length
       ? ({
           role: "user",

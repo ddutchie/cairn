@@ -155,7 +155,10 @@ export function registerChatPopoutHandlers(): void {
   });
 
   // Main window requests the pop-out to come back (clicked placeholder button)
-  ipcMain.handle("chat:requestPopIn", () => {
+  ipcMain.handle("chat:requestPopIn", (event) => {
+    if (event.sender.id !== mainWindowWebContentsId) {
+      return { data: { ok: false } };
+    }
     if (popoutWindow && !popoutWindow.isDestroyed()) {
       popoutWindow.webContents.send("chat:requestPopIn");
     }

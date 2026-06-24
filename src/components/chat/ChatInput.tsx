@@ -286,7 +286,7 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
                 />
                 <button
                   onClick={() => onRemoveImage?.(i)}
-                  className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-[var(--danger)] text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-[var(--danger)] text-[var(--surface)] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                 >
                   <X size={10} />
                 </button>
