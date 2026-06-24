@@ -9,6 +9,7 @@
 
 import type { BrowserWindow } from "electron";
 import { registerIpcHandle, registerIpcOn, broadcastEvent } from "./registry";
+import { broadcastToChat } from "../chat-popout";
 import type Database from "better-sqlite3";
 import { isLocalEndpoint, normaliseBaseUrl, type OpenAIMessage, calculatePromptBreakdown, scaleBreakdown, type TokenBreakdown } from "../lib/llm";
 import { TOOLS, buildSystemPrompt, type ChatRequest } from "../lib/tools";
@@ -374,6 +375,7 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
 
     const send = (ch: string, payload: unknown) => {
       if (!event.sender.isDestroyed()) event.sender.send(ch, payload);
+      broadcastToChat(ch, payload, event.sender.id);
     };
 
     if (provider !== "localllm" && !apiKey && !isLocalEndpointUrl) {

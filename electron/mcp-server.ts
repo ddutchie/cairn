@@ -11,11 +11,11 @@
 
 import http from "http";
 import Database from "better-sqlite3";
+import * as z from "zod";
+import { TOOL_SCHEMAS, CHAT_ONLY_TOOLS } from "./lib/tool-schemas";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import * as z from "zod";
-import { TOOL_SCHEMAS, CHAT_ONLY_TOOLS } from "./lib/tool-schemas";
 
 import {
   MCP_NATIVE_BINDING,

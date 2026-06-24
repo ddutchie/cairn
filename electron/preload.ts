@@ -144,6 +144,54 @@ const api = {
       ipcRenderer.on("chat:usage", handler);
       return () => ipcRenderer.off("chat:usage", handler);
     },
+    // ── Pop-out window ──────────────────────────
+    /** Called by main window: sends current chat state, triggers window creation. */
+    popOut: (payload: {
+      threadId: string | null;
+      chatThreads: unknown[];
+      chatMessages: unknown[];
+      activeProjectId: string | null;
+    }) => invoke<{ ok: boolean }>("chat:popOut", payload),
+    /** Called by pop-out page: signals readiness, returns stored chat state. */
+    popoutReady: () => invoke<{
+      threadId: string | null;
+      chatThreads: unknown[];
+      chatMessages: unknown[];
+      activeProjectId: string | null;
+    }>("chat:popoutReady"),
+    /** Called by pop-out page: sends final state back, closes window. */
+    popIn: (payload: {
+      threadId: string | null;
+      chatThreads: unknown[];
+      chatMessages: unknown[];
+      activeProjectId: string | null;
+    }) => invoke<{ ok: boolean }>("chat:popIn", payload),
+    /** Called by main window: asks the pop-out to return (relayed via main process). */
+    requestPopIn: () => invoke<{ ok: boolean }>("chat:requestPopIn"),
+    /** Listener on the main window: received when pop-in completes with final state. */
+    onChatPoppedIn: (cb: (payload: {
+      threadId: string | null;
+      chatThreads: unknown[];
+      chatMessages: unknown[];
+      activeProjectId: string | null;
+    }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, payload: any) => cb(payload);
+      ipcRenderer.on("chat:poppedIn", handler);
+      return () => ipcRenderer.off("chat:poppedIn", handler);
+    },
+    /** Listener on the main window: pop-out closed unexpectedly (e.g. Cmd+W). */
+    onChatPoppedOutClosed: (cb: () => void) => {
+      const handler = () => cb();
+      ipcRenderer.on("chat:poppedOutClosed", handler);
+      return () => ipcRenderer.off("chat:poppedOutClosed", handler);
+    },
+    /** Listener on the pop-out page: received when main window requests pop-in. */
+    onChatRequestPopIn: (cb: () => void) => {
+      const handler = () => cb();
+      ipcRenderer.on("chat:requestPopIn", handler);
+      return () => ipcRenderer.off("chat:requestPopIn", handler);
+    },
   },
 
   // ── Knowledge Graph ───────────────────────────

@@ -4,6 +4,7 @@ import React, { memo } from "react";
 import { ChevronDown, ChevronRight, Folder, FolderOpen, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Note } from "@/types";
+import { Tooltip } from "@/components/ui/tooltip";
 import { NoteListItem } from "./NoteListItem";
 import type { FolderNode } from "./buildFolderTree";
 
@@ -60,7 +61,9 @@ export const FolderTreeNode = memo(function FolderTreeNode({
         {isCollapsed
           ? <Folder size={12} className="text-[var(--text-tertiary)] flex-shrink-0" />
           : <FolderOpen size={12} className="text-[var(--accent)] flex-shrink-0" />}
-        <span className="text-[0.786rem] font-medium text-[var(--text-secondary)] flex-1 truncate">{node.name}</span>
+        <Tooltip content={node.name}>
+          <span className="text-[0.786rem] font-medium text-[var(--text-secondary)] flex-1 truncate">{node.name}</span>
+        </Tooltip>
         <button
           onClick={(e) => { e.stopPropagation(); onCreateInFolder(node.path); }}
           className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--accent-dim)] transition-all"

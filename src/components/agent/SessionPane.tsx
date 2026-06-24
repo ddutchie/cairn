@@ -13,8 +13,9 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { X, Plus, MessageSquarePlus, Terminal } from "lucide-react";
+import { X, Plus, MessageSquarePlus, Terminal, ExternalLink, ArrowLeftFromLine } from "lucide-react";
 import { useCairnStore } from "@/store";
+import type { ChatThread, ChatMessage } from "@/types";
 import { cn } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
 import { SpawnAgentModal } from "./SpawnAgentModal";
@@ -48,6 +49,8 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
     chatOpen,
     projects,
     setActiveChatThreadId,
+    chatPoppedOut,
+    setChatPoppedOut,
   } = useCairnStore(useShallow((s) => ({
     terminalSessions: s.terminalSessions,
     activeSessionId: s.activeSessionId,
@@ -61,6 +64,8 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
     chatOpen: s.chatOpen,
     projects: s.projects,
     setActiveChatThreadId: s.setActiveChatThreadId,
+    chatPoppedOut: s.chatPoppedOut,
+    setChatPoppedOut: s.setChatPoppedOut,
   })));
 
   const hasCodeDirectory = !!projects.find((p) => p.id === activeProjectId)?.codeDirectory;
@@ -140,6 +145,56 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
     prevViewRef.current = activeView;
     prevChatOpenRef.current = chatOpen;
   }, [activeView, chatOpen, setActiveSession]);
+
+  // ── Pop-out chat ────────────────────────────────────────────────────────────────
+  const handlePopOut = useCallback(async () => {
+    const state = useCairnStore.getState();
+    const result = await window.electron?.chat.popOut({
+      threadId: state.activeChatThreadId,
+      chatThreads: state.chatThreads,
+      chatMessages: state.chatMessages,
+      activeProjectId: state.activeProjectId,
+    });
+    if (result?.ok) {
+      setChatPoppedOut(true);
+    }
+  }, [setChatPoppedOut]);
+
+  const handlePopIn = useCallback(() => {
+    window.electron?.chat.requestPopIn();
+  }, []);
+
+  // Listen for pop-in final state from the main process
+  useEffect(() => {
+    const electron = window.electron;
+    if (!electron?.chat.onChatPoppedIn) return;
+    const unsub = electron.chat.onChatPoppedIn((payload) => {
+      if (payload.chatThreads) {
+        useCairnStore.setState({
+          chatThreads: payload.chatThreads as ChatThread[],
+          chatMessages: payload.chatMessages as ChatMessage[],
+        });
+      }
+      if (payload.threadId) {
+        useCairnStore.getState().setActiveChatThreadId(payload.threadId);
+      }
+      if (payload.activeProjectId != null) {
+        useCairnStore.setState({ activeProjectId: payload.activeProjectId });
+      }
+      setChatPoppedOut(false);
+    });
+    return () => { unsub?.(); };
+  }, [setChatPoppedOut]);
+
+  // Pop-out window closed unexpectedly (e.g. Cmd+W)
+  useEffect(() => {
+    const electron = window.electron;
+    if (!electron?.chat.onChatPoppedOutClosed) return;
+    const unsub = electron.chat.onChatPoppedOutClosed(() => {
+      setChatPoppedOut(false);
+    });
+    return () => { unsub?.(); };
+  }, [setChatPoppedOut]);
 
   const pinnedIsActive =
     activeSessionId === "agent" ||
@@ -228,21 +283,47 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
         </div>
 
         {isRightPanel && (
-          <Tooltip content="Close panel (⌘/)" side="bottom">
-            <button
-              onClick={toggleChat}
-              className="flex-shrink-0 px-3 h-full text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors border-l border-[var(--border)] flex items-center justify-center"
-            >
-              <X size={12} />
-            </button>
-          </Tooltip>
+          <>
+            {activeSessionId === "chat" && !chatPoppedOut && (
+              <Tooltip content="Pop out chat window" side="bottom">
+                <button
+                  onClick={handlePopOut}
+                  className="flex-shrink-0 px-3 h-full text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--surface-2)] transition-colors border-l border-[var(--border)] flex items-center justify-center"
+                >
+                  <ExternalLink size={11} />
+                </button>
+              </Tooltip>
+            )}
+            <Tooltip content="Close panel (⌘/)" side="bottom">
+              <button
+                onClick={toggleChat}
+                className="flex-shrink-0 px-3 h-full text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors border-l border-[var(--border)] flex items-center justify-center"
+              >
+                <X size={12} />
+              </button>
+            </Tooltip>
+          </>
         )}
       </div>
 
       {/* Session content — CSS-hidden instead of unmounted */}
       <div className="flex-1 min-h-0 flex flex-col overflow-hidden bg-[var(--background)]">
         <div className={activeSessionId === "chat" ? "flex flex-1 flex-col min-h-0 overflow-hidden" : "hidden"}>
-          <ChatPanel prefill={chatPrefill} onPrefillConsumed={onPrefillConsumed} />
+          {chatPoppedOut ? (
+            <div className="flex flex-col items-center justify-center flex-1 gap-2 text-center px-6">
+              <ExternalLink size={20} className="text-[var(--text-tertiary)]" />
+              <p className="text-xs text-[var(--text-secondary)]">Chat is in a pop-out window</p>
+              <button
+                onClick={handlePopIn}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[0.714rem] text-[var(--text-primary)] bg-[var(--surface-3)] hover:bg-[var(--surface-4)] transition-colors"
+              >
+                <ArrowLeftFromLine size={11} />
+                Pop in
+              </button>
+            </div>
+          ) : (
+            <ChatPanel prefill={chatPrefill} onPrefillConsumed={onPrefillConsumed} />
+          )}
         </div>
 
         {hasCodeDirectory && (

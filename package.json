@@ -28,7 +28,7 @@
     "mcp": "node dist-mcp/mcp-server.bundle.js",
     "smoke-test": "node scripts/smoke-test.js",
     "test:e2e": "playwright test",
-    "test:bundle": "npm run compile && vitest run electron/bundle-guard.test.ts electron/native-deps-guard.test.ts",
+    "test:bundle": "npm run compile && vitest run electron/bundle-guard.test.ts electron/native-deps-guard.test.ts electron/mcp-server.test.ts",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:headed": "playwright test --headed"
   },

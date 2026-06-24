@@ -35,6 +35,7 @@ import { dispose as disposeEmbeddingsWorker } from "./embeddings/client";
 import * as runtime from "./runtime/client";
 import { BootSplash } from "./splash/bootsplash";
 import { runBootSequence } from "./splash/boot-sequence";
+import { registerChatPopoutHandlers } from "./chat-popout";
 
 const isDev = !app.isPackaged;
 
@@ -191,6 +192,7 @@ app.whenReady().then(async () => {
   registerIpcHandlers(ctx);
   registerAgentHandlers(ctx.db);
   registerPiAgentHandler(ctx);
+  registerChatPopoutHandlers();
 
   // ── Splash + boot sequence ────────────────────────────────────────────
   // Create the splash window immediately so the user sees something while
