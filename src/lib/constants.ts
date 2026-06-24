@@ -84,7 +84,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
   baseUrl:      "https://api.openai.com",
   model:        "gpt-4o-mini",
   apiKey:       "",
-  maxSteps:     20,
+  maxSteps:     30,
   temperature:  0.3,
   contextLimit: 128000,
   aiEnabled:    true,

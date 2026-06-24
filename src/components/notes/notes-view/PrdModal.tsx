@@ -96,7 +96,7 @@ export function PrdModal({ projectId, workspaceId, onClose }: PrdModalProps) {
         baseUrl:     aiConfig.baseUrl     || "https://api.openai.com",
         model:       aiConfig.model       || "gpt-4o-mini",
         apiKey:      aiConfig.apiKey      || "",
-        maxSteps:    aiConfig.maxSteps    ?? 20,
+        maxSteps:    aiConfig.maxSteps    ?? 30,
         temperature: aiConfig.temperature ?? 0.3,
       },
       systemPrompt: buildPrdSystemPrompt(projectId),

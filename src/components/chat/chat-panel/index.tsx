@@ -379,7 +379,7 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
         baseUrl:     aiConfig.baseUrl     || undefined,
         model:       aiConfig.model       || undefined,
         apiKey:      aiConfig.apiKey      || undefined,
-        maxSteps:    aiConfig.maxSteps    ?? 20,
+        maxSteps:    aiConfig.maxSteps    ?? 30,
         temperature: aiConfig.temperature ?? 0.3,
       },
       systemPrompt,
