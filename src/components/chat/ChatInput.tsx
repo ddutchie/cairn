@@ -411,6 +411,7 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
                     isOverview ? "w-8 h-8 rounded-xl" : "w-7 h-7"
                   )}
                 >
+                  {/* eslint-disable-next-line jsx-a11y/alt-text -- lucide icon component, not <img> */}
                   <Image size={isOverview ? 13 : 12} />
                 </button>
               </Tooltip>
