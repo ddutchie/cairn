@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
-import { Trash2 } from "lucide-react";
+import { Trash2, ChevronDown, ArrowLeftFromLine } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { useChatStream } from "@/hooks/useChatStream";
@@ -74,9 +74,10 @@ const CHAT_SLASH_COMMANDS = [
 interface ChatPanelProps {
   prefill?: { text: string; autoSend?: boolean } | null;
   onPrefillConsumed?: () => void;
+  popoutMode?: boolean;
 }
 
-export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
+export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelProps = {}) {
   const {
     chatOpen,
     activeProjectId, activeWorkspaceId,
@@ -89,6 +90,7 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
     createNote,
     notes, cards,
     activeChatThreadId, setActiveChatThreadId,
+    setActiveProject,
   } = useCairnStore(useShallow((s) => ({
     chatOpen:              s.chatOpen,
     activeProjectId:       s.activeProjectId,
@@ -109,6 +111,7 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
     cards:                 s.cards,
     activeChatThreadId:    s.activeChatThreadId,
     setActiveChatThreadId: s.setActiveChatThreadId,
+    setActiveProject:      s.setActiveProject,
   })));
 
   // threadId is driven by the store so the tab bar can switch threads externally
@@ -117,6 +120,8 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef       = useRef<HTMLTextAreaElement>(null);
+  const projectRef     = useRef<HTMLDivElement>(null);
+  const [projectOpen, setProjectOpen] = useState(false);
 
   const { isLoading, toolCalls, streamingContent, streamingThought, pendingQuestions, sendStream, stopStream } = useChatStream(threadId);
 
@@ -416,13 +421,63 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
     }
   }, [threadId, input, prefill, handleSend]);
 
+  // ── Popout mode: close project dropdown on outside click ──
+  useEffect(() => {
+    if (!popoutMode || !projectOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (projectRef.current && !projectRef.current.contains(e.target as Node)) {
+        setProjectOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [popoutMode, projectOpen]);
+
+  const handlePopIn = useCallback(async () => {
+    const state = useCairnStore.getState();
+    await window.electron?.chat.popIn({
+      threadId: state.activeChatThreadId as string | null,
+      chatThreads: state.chatThreads as unknown[],
+      chatMessages: state.chatMessages as unknown[],
+    });
+  }, []);
+
   return (
     <div className="flex flex-1 flex-col min-h-0 overflow-hidden bg-[var(--surface)]">
       {/* Sub-header / toolbar */}
       <div className="flex items-center gap-2 px-3 h-9 border-b border-[var(--border)] bg-[var(--surface-2)] flex-shrink-0">
-        <span className="text-[0.714rem] text-[var(--text-tertiary)] flex-1 truncate">
-          {activeView === "graph" ? "Graph Assistant" : project?.name ?? workspace?.name ?? "AI Assistant"}
-        </span>
+        {popoutMode ? (
+          <div ref={projectRef} className="relative flex-1">
+            <button
+              onClick={() => setProjectOpen((v) => !v)}
+              className="flex items-center gap-1.5 text-[0.714rem] font-semibold text-[var(--text-primary)] hover:text-[var(--accent)] transition-colors"
+            >
+              {project?.name ?? "Chat"}
+              <ChevronDown size={10} className="text-[var(--text-tertiary)]" />
+            </button>
+            {projectOpen && (
+              <div className="absolute left-0 top-full mt-0.5 w-48 z-50 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-xl overflow-hidden">
+                {projects.map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => { setActiveProject(p.id); setProjectOpen(false); }}
+                    className={`w-full text-left px-3 py-2 text-[0.714rem] transition-colors ${
+                      p.id === activeProjectId
+                        ? "text-[var(--accent)] bg-[var(--surface-2)]"
+                        : "text-[var(--text-primary)] hover:bg-[var(--surface-2)]"
+                    }`}
+                  >
+                    {p.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <span className="text-[0.714rem] text-[var(--text-tertiary)] flex-1 truncate">
+            {activeView === "graph" ? "Graph Assistant" : project?.name ?? workspace?.name ?? "AI Assistant"}
+          </span>
+        )}
 
         {activeThread?.lastUsage && (
           <ContextRing
@@ -440,6 +495,15 @@ export function ChatPanel({ prefill, onPrefillConsumed }: ChatPanelProps = {}) {
             <button onClick={handleClear}
               className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--danger)] hover:bg-[var(--surface-3)] transition-colors">
               <Trash2 size={11} />
+            </button>
+          </Tooltip>
+        )}
+
+        {popoutMode && (
+          <Tooltip content="Return chat to main window" side="left">
+            <button onClick={handlePopIn}
+              className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors">
+              <ArrowLeftFromLine size={11} />
             </button>
           </Tooltip>
         )}

@@ -143,6 +143,10 @@ export interface UISlice extends AppUIState {
   notesSidebarWidth: number;
   setNotesSidebarWidth: (width: number) => void;
 
+  // Pop-out chat
+  chatPoppedOut: boolean;
+  setChatPoppedOut: (popped: boolean) => void;
+
   // Navigation / selections
   setActiveWorkspace: (id: ID) => void;
   setActiveProject: (id: ID | null) => void;
@@ -173,6 +177,7 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
   hiddenViews: new Set<ToggleableView>(),
   chatPanelWidth: DEFAULT_CHAT_PANEL_WIDTH,
   notesSidebarWidth: DEFAULT_NOTES_SIDEBAR_WIDTH,
+  chatPoppedOut: false,
 
   // ── AI config ──────────────────────────────────
   setAIConfig(patch) {
@@ -251,6 +256,11 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
     const clamped = Math.min(MAX_NOTES_SIDEBAR_WIDTH, Math.max(MIN_NOTES_SIDEBAR_WIDTH, width));
     set({ notesSidebarWidth: clamped });
     storage.set(NOTES_SIDEBAR_WIDTH_KEY, clamped);
+  },
+
+  // ── Pop-out chat ───────────────────────────────
+  setChatPoppedOut(popped) {
+    set({ chatPoppedOut: popped });
   },
 
   // ── Selections ─────────────────────────────────
