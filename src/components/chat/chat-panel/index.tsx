@@ -118,6 +118,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   const threadId = activeChatThreadId;
 
   const [input, setInput] = useState("");
+  const [pendingImages, setPendingImages] = useState<Array<{ name: string; dataUrl: string }>>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef       = useRef<HTMLTextAreaElement>(null);
   const projectRef     = useRef<HTMLDivElement>(null);
@@ -335,25 +336,50 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   useEffect(() => { if (isChatActive) messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, isLoading, isChatActive]);
   useEffect(() => { if (chatOpen) inputRef.current?.focus(); }, [chatOpen]);
 
+  const handleAttachImages = useCallback(async (files: File[]) => {
+    const imageItems: Array<{ name: string; dataUrl: string }> = [];
+    for (const file of files) {
+      const dataUrl = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.readAsDataURL(file);
+      });
+      imageItems.push({ name: file.name, dataUrl });
+    }
+    setPendingImages((prev) => [...prev, ...imageItems]);
+  }, []);
+
+  const handleRemoveImage = useCallback((index: number) => {
+    setPendingImages((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
   const handleSend = useCallback(async (text?: string) => {
     const content = text ?? input.trim();
-    if (!content || !threadId) return;
+    if ((!content || !content.trim()) && pendingImages.length === 0) return;
+    if (!threadId) return;
 
     const trimmed = content.trim();
-    if (trimmed === "/compact" || trimmed === "/ compact") {
-      setInput("");
-      useCairnStore.getState().compactChatThread(threadId);
-      return;
-    }
+    if (!pendingImages.length) {
+      if (trimmed === "/compact" || trimmed === "/ compact") {
+        setInput("");
+        useCairnStore.getState().compactChatThread(threadId);
+        return;
+      }
 
-    if (trimmed === "/archive-chat" || trimmed === "/archive" || trimmed === "/ archive-chat" || trimmed === "/ archive") {
-      setInput("");
-      handleArchiveChat();
-      return;
+      if (trimmed === "/archive-chat" || trimmed === "/archive" || trimmed === "/ archive-chat" || trimmed === "/ archive") {
+        setInput("");
+        handleArchiveChat();
+        return;
+      }
     }
 
     setInput("");
-    addMessage(threadId, "user", content);
+
+    const imagesToSend = pendingImages.length > 0 ? pendingImages : undefined;
+    const imageUrls = pendingImages.map((img) => ({ url: img.dataUrl, name: img.name }));
+    setPendingImages([]);
+
+    addMessage(threadId, "user", content, undefined, undefined, undefined, undefined, imageUrls);
 
     // Resolve context references and append to prompt payload
     const store = useCairnStore.getState();
@@ -388,8 +414,9 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
         temperature: aiConfig.temperature ?? 0.3,
       },
       systemPrompt,
+      images: imagesToSend?.map((img) => ({ name: img.name, dataUrl: img.dataUrl })),
     });
-  }, [input, threadId, addMessage, sendStream, activeProjectId, activeWorkspaceId, messages, aiConfig, activeView, graphData, selectedNode, handleArchiveChat, project]);
+  }, [input, threadId, addMessage, sendStream, activeProjectId, activeWorkspaceId, messages, aiConfig, activeView, graphData, selectedNode, handleArchiveChat, project, pendingImages]);
 
   const handleRetry = useCallback((content: string) => {
     handleSend(content);
@@ -553,6 +580,9 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
           placeholder={activeView === "graph" ? "Ask about your knowledge graph…" : "Ask about your project…"}
           commands={CHAT_SLASH_COMMANDS}
           suggestions={mentionSuggestions}
+          pendingImages={pendingImages}
+          onRemoveImage={handleRemoveImage}
+          onAttachImages={handleAttachImages}
         />
         <div className="flex items-center justify-between mt-1.5 px-0.5">
           <p className="text-[0.714rem] text-[var(--text-tertiary)]">

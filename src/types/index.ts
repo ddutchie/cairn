@@ -200,6 +200,8 @@ export interface ChatMessage {
   pendingAction?: PendingAction;
   /** Suggested connection actions for graph assistant */
   actions?: SuggestedAction[];
+  /** Images attached to this message (stored in workspace attachments/) */
+  images?: Array<{ url: string; name: string }>;
   createdAt: string;
 }
 

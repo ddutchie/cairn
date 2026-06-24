@@ -25,6 +25,7 @@ export interface ChatSlice {
     toolCalls?: ChatToolCallRecord[],
     actions?: ChatMessage["actions"],
     reasoning?: string,
+    images?: ChatMessage["images"],
   ) => ChatMessage;
   confirmAction: (action: PendingAction) => void;
   deleteThread: (threadId: ID) => void;
@@ -76,7 +77,7 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
     return thread;
   },
 
-  addMessage(threadId, role, content, contextRefs, toolCalls, actions, reasoning) {
+  addMessage(threadId, role, content, contextRefs, toolCalls, actions, reasoning, images) {
     const msg: ChatMessage = {
       id: id(),
       threadId,
@@ -86,6 +87,7 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
       contextRefs,
       toolCalls: toolCalls && toolCalls.length > 0 ? toolCalls : undefined,
       actions: actions && actions.length > 0 ? actions : undefined,
+      images: images && images.length > 0 ? images : undefined,
       createdAt: now(),
     };
     set((s) => ({

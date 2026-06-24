@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useRef, useEffect, useState, useMemo } from "react";
-import { Send, Square, Sparkles, FileText, CheckSquare, FileCode } from "lucide-react";
+import { Send, Square, Sparkles, FileText, CheckSquare, FileCode, Image, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
 
@@ -32,6 +32,10 @@ interface ChatInputProps {
   commands?: SlashCommand[];
   suggestions?: SuggestionItem[];
   onSearchSuggestions?: (query: string) => Promise<SuggestionItem[]>;
+  /** Images attached but not yet sent — shown as thumbnail strip */
+  pendingImages?: Array<{ name: string; dataUrl: string }>;
+  onRemoveImage?: (index: number) => void;
+  onAttachImages?: (files: File[]) => void;
 }
 
 export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
@@ -50,11 +54,15 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
       commands = [],
       suggestions = [],
       onSearchSuggestions,
+      pendingImages,
+      onRemoveImage,
+      onAttachImages,
     },
     ref
   ) => {
     const internalRef = useRef<HTMLTextAreaElement>(null);
     const resolvedRef = (ref as React.RefObject<HTMLTextAreaElement>) || internalRef;
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [activeIndex, setActiveIndex] = useState(0);
@@ -186,6 +194,34 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
       }
     }, [autoFocus, resolvedRef]);
 
+    const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      const items = e.clipboardData.items;
+      const imageFiles: File[] = [];
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.type.startsWith("image/")) {
+          const file = item.getAsFile();
+          if (file) imageFiles.push(file);
+        }
+      }
+      if (imageFiles.length > 0) {
+        e.preventDefault();
+        onAttachImages?.(imageFiles);
+      }
+    };
+
+    const handleAttachClick = () => {
+      fileInputRef.current?.click();
+    };
+
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files;
+      if (files && files.length > 0) {
+        onAttachImages?.(Array.from(files));
+      }
+      e.target.value = "";
+    };
+
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       const listLength = trigger?.type === "command" ? filteredCommands.length : filteredSuggestions.length;
       if (showSuggestions && listLength > 0 && trigger) {
@@ -228,6 +264,37 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
 
     return (
       <div className="relative w-full">
+        {/* Hidden file input for image attachment */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          onChange={handleFileChange}
+          className="hidden"
+        />
+
+        {/* Image preview strip */}
+        {pendingImages && pendingImages.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-2">
+            {pendingImages.map((img, i) => (
+              <div key={i} className="relative group">
+                <img
+                  src={img.dataUrl}
+                  alt={img.name}
+                  className="w-16 h-16 object-cover rounded-lg border border-[var(--border)]"
+                />
+                <button
+                  onClick={() => onRemoveImage?.(i)}
+                  className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-[var(--danger)] text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  <X size={10} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Autocomplete suggestions */}
         {showSuggestions && trigger && (
           <div className="absolute bottom-full left-0 right-0 mb-1.5 z-50 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-2xl overflow-hidden max-h-56 overflow-y-auto animate-in fade-in slide-in-from-bottom-2 duration-150">
@@ -319,6 +386,7 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
               onChange(e.target.value);
               checkTrigger();
             }}
+            onPaste={handlePaste}
             onKeyDown={handleKeyDown}
             onKeyUp={checkTrigger}
             onSelect={checkTrigger}
@@ -331,7 +399,22 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
             )}
           />
 
-          <div className="flex items-center gap-2 flex-shrink-0 self-center">
+          <div className="flex items-center gap-1.5 flex-shrink-0 self-center">
+            {!isLoading && (
+              <Tooltip content="Attach image" side="left">
+                <button
+                  onClick={handleAttachClick}
+                  type="button"
+                  disabled={disabled}
+                  className={cn(
+                    "flex-shrink-0 rounded-lg text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--surface-3)] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-all duration-200",
+                    isOverview ? "w-8 h-8 rounded-xl" : "w-7 h-7"
+                  )}
+                >
+                  <Image size={isOverview ? 13 : 12} />
+                </button>
+              </Tooltip>
+            )}
             {isLoading && onStop ? (
               <Tooltip content="Stop generation" side="left">
                 <button
@@ -349,7 +432,7 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
               <Tooltip content="Send (Enter)" side="left">
                 <button
                   onClick={onSubmit}
-                  disabled={disabled || !value.trim()}
+                  disabled={disabled || (!value.trim() && (!pendingImages || pendingImages.length === 0))}
                   type="button"
                   className={cn(
                     "flex-shrink-0 rounded-lg bg-[var(--accent)] text-white hover:bg-[color-mix(in srgb,var(--accent)_90%,black)] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95 shadow-md shadow-[var(--accent)]/10",

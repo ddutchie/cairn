@@ -386,10 +386,20 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
       return;
     }
 
+    const userMessage: OpenAIMessage = req.images?.length
+      ? ({
+          role: "user",
+          content: [
+            { type: "text", text: req.message },
+            ...req.images.map((img) => ({ type: "image_url", image_url: { url: img.dataUrl } })),
+          ],
+        } as unknown as OpenAIMessage)
+      : { role: "user", content: req.message };
+
     const messages: OpenAIMessage[] = [
       { role: "system", content: buildSystemPrompt(req) },
       ...(req.history ?? []).map((m) => ({ role: m.role, content: m.content })),
-      { role: "user", content: req.message },
+      userMessage,
     ];
 
     const emitToolCall = (e: { tool: string; label: string; args: Record<string, unknown> }) => {
