@@ -17,22 +17,18 @@ function resolveConfig(
   config: { baseUrl?: string; model?: string; apiKey?: string } | undefined,
   cacheKey: "ai" | "agent"
 ): { error: string } | LLMConfig {
-  let reqConfig = config;
-  if (!reqConfig?.apiKey) {
-    const cached = cacheKey === "ai" ? getCachedConfig().aiConfig : getCachedConfig().agentConfig;
-    if (cached?.apiKey) {
-      reqConfig = {
-        ...reqConfig,
-        baseUrl: reqConfig?.baseUrl || cached.baseUrl || "",
-        model: reqConfig?.model || cached.model || "",
-        apiKey: cached.apiKey,
-      };
-    }
-  }
+  const cached = cacheKey === "ai" ? getCachedConfig().aiConfig : getCachedConfig().agentConfig;
 
-  const baseUrl = normaliseBaseUrl(reqConfig?.baseUrl || "https://api.openai.com");
-  const model = reqConfig?.model || "gpt-4o-mini";
-  const apiKey = reqConfig?.apiKey || "";
+  // Merge request config with cached config, always merging cached values if not provided.
+  const mergedConfig = {
+    baseUrl: config?.baseUrl || cached?.baseUrl || "",
+    model: config?.model || cached?.model || "",
+    apiKey: config?.apiKey || cached?.apiKey || "",
+  };
+
+  const baseUrl = normaliseBaseUrl(mergedConfig.baseUrl || "https://api.openai.com");
+  const model = mergedConfig.model || "gpt-4o-mini";
+  const apiKey = mergedConfig.apiKey || "";
   const isLocal = isLocalEndpoint(baseUrl);
   if (!apiKey && !isLocal) {
     const sectionName = cacheKey === "ai" ? "Settings → AI & Chat" : "Settings";

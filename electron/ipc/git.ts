@@ -49,10 +49,26 @@ function isPathWithinCwd(cwd: string, filePath: string): boolean {
   }
 }
 
+function isSafePathspec(file: string): boolean {
+  if (path.isAbsolute(file)) return false;
+  const normalized = path.normalize(file);
+  if (normalized.startsWith("..") || normalized.includes("..")) return false;
+  return true;
+}
+
 function git(args: string[], cwd: string, timeout = 15_000): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile("git", args, { cwd, encoding: "utf-8", timeout }, (error, stdout, stderr) => {
+    const maxBuffer = 20 * 1024 * 1024; // 20MB
+    execFile("git", args, { cwd, encoding: "utf-8", timeout, maxBuffer }, (error, stdout, stderr) => {
       if (error) {
+        if (
+          error.code === "ERR_CHILD_PROCESS_MAX_BUFFER_OUT" ||
+          (error as { code?: number | string }).code === "ENOBUFS" ||
+          error.message?.includes("maxBuffer exceeded")
+        ) {
+          reject(new Error("Git command output exceeded maximum buffer size limit (diff too large)"));
+          return;
+        }
         const errStatus = (error as { code?: number | string }).code;
         const stderrTrimmed = (stderr ?? "").trim();
         const stdoutTrimmed = (stdout ?? "").trim();
@@ -66,7 +82,8 @@ function git(args: string[], cwd: string, timeout = 15_000): Promise<string> {
 
 function gitSafe(args: string[], cwd: string, timeout = 15_000): Promise<{ stdout: string; stderr: string; status: number | null }> {
   return new Promise((resolve) => {
-    execFile("git", args, { cwd, encoding: "utf-8", timeout }, (error, stdout, stderr) => {
+    const maxBuffer = 20 * 1024 * 1024; // 20MB
+    execFile("git", args, { cwd, encoding: "utf-8", timeout, maxBuffer }, (error, stdout, stderr) => {
       const code = error ? (error as { code?: number | string }).code : 0;
       const status = typeof code === "number" ? code : (error ? 1 : 0);
       resolve({
@@ -84,25 +101,27 @@ export function registerGitHandlers(db: Database): void {
     handle(async () => {
       assertWithinCodeDirectory(db, cwd);
       const branch = (await gitSafe(["rev-parse", "--abbrev-ref", "HEAD"], cwd)).stdout || "HEAD";
-      const porcelain = await git(["status", "--porcelain"], cwd);
-      const lines = porcelain ? porcelain.split("\n").filter(Boolean) : [];
+      const porcelain = await git(["status", "--porcelain=v1", "-z"], cwd);
+      const parts = porcelain ? porcelain.split("\0") : [];
       const staged: Array<{ path: string; status: string }> = [];
       const unstaged: Array<{ path: string; status: string }> = [];
       const untracked: Array<{ path: string; status: string }> = [];
-      for (const line of lines) {
-        const x = line[0];
-        const y = line[1];
-        let filePath = line.slice(2).trim();
-
-        // 1. Handle staged renames: "old_path -> new_path"
-        if (filePath.includes(" -> ")) {
-          const parts = filePath.split(" -> ");
-          filePath = parts[parts.length - 1].trim();
+      let i = 0;
+      while (i < parts.length) {
+        const entry = parts[i];
+        if (!entry) {
+          i++;
+          continue;
         }
+        const x = entry[0];
+        const y = entry[1];
+        let filePath = entry.slice(3);
 
-        // 2. Strip git's escaping double quotes if spaces or special chars are present
-        if (filePath.startsWith('"') && filePath.endsWith('"')) {
-          filePath = filePath.slice(1, -1);
+        // If it's a rename (R) or copy (C), the next NUL-separated part is the new path.
+        if (x === "R" || x === "C") {
+          i++;
+          const newPath = parts[i] || "";
+          filePath = newPath;
         }
 
         if (x === "?" && y === "?") {
@@ -115,6 +134,7 @@ export function registerGitHandlers(db: Database): void {
             unstaged.push({ path: filePath, status: x + y });
           }
         }
+        i++;
       }
       const aheadBehind = await gitSafe(["rev-list", "--count", "--left-right", `${branch}@{upstream}...HEAD`], cwd);
       const hasUpstream = aheadBehind.status === 0 && aheadBehind.stdout !== "";
@@ -153,8 +173,13 @@ export function registerGitHandlers(db: Database): void {
     handle(async () => {
       assertWithinCodeDirectory(db, cwd);
       if (all) {
-        await git(["add", "-A"], cwd);
+        await git(["add", "--", "."], cwd);
       } else if (files && files.length > 0) {
+        for (const file of files) {
+          if (!isSafePathspec(file)) {
+            throw new Error(`Access denied: invalid file pathspec: ${file}`);
+          }
+        }
         await git(["add", "--", ...files], cwd);
       }
       return { ok: true };
@@ -166,8 +191,13 @@ export function registerGitHandlers(db: Database): void {
     handle(async () => {
       assertWithinCodeDirectory(db, cwd);
       if (all) {
-        await git(["reset", "HEAD"], cwd);
+        await git(["reset", "HEAD", "--", "."], cwd);
       } else if (files && files.length > 0) {
+        for (const file of files) {
+          if (!isSafePathspec(file)) {
+            throw new Error(`Access denied: invalid file pathspec: ${file}`);
+          }
+        }
         await git(["reset", "HEAD", "--", ...files], cwd);
       }
       return { ok: true };
@@ -179,7 +209,7 @@ export function registerGitHandlers(db: Database): void {
     handle(async () => {
       assertWithinCodeDirectory(db, cwd);
       if (autoStage) {
-        await git(["add", "-A"], cwd);
+        await git(["add", "--", "."], cwd);
       }
       const fullMessage = body ? `${message}\n\n${body}` : message;
       await git(["commit", "-m", fullMessage], cwd, 30_000);
@@ -205,7 +235,11 @@ export function registerGitHandlers(db: Database): void {
   registerIpcHandle("git:log", (_e, { cwd, count = 20 }: { cwd: string; count?: number }) =>
     handle(async () => {
       assertWithinCodeDirectory(db, cwd);
-      const output = await git(["log", `--max-count=${count}`, "--format=%H|%an|%ai|%s"], cwd);
+      let clampedCount = 20;
+      if (typeof count === "number" && Number.isFinite(count)) {
+        clampedCount = Math.max(1, Math.min(100, count));
+      }
+      const output = await git(["log", `--max-count=${clampedCount}`, "--format=%H|%an|%ai|%s"], cwd);
       if (!output) return [];
       return output.split("\n").filter(Boolean).map((line) => {
         const [hash, author, date, ...rest] = line.split("|");
