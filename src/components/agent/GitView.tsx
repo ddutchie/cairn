@@ -72,6 +72,7 @@ export function GitView({ cwd }: GitViewProps) {
   const [pushing, setPushing] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [generatingPrDesc, setGeneratingPrDesc] = useState(false);
+  const [prStatus, setPrStatus] = useState<{ url: string | null; state: string | null; title: string | null } | null>(null);
   const [commitSubject, setCommitSubject] = useState("");
   const [commitBody, setCommitBody] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -112,11 +113,22 @@ export function GitView({ cwd }: GitViewProps) {
     } catch { /* log fetch is best-effort */ }
   }, [cwd]);
 
+  const fetchPrStatus = useCallback(async () => {
+    if (!window.electron?.git) return;
+    try {
+      const status = await window.electron.git.prStatus(cwd);
+      setPrStatus(status);
+    } catch {
+      setPrStatus(null);
+    }
+  }, [cwd]);
+
   const refresh = useCallback(() => {
     setLoading(true);
     fetchStatus();
     fetchLog();
-  }, [fetchStatus, fetchLog]);
+    fetchPrStatus();
+  }, [fetchStatus, fetchLog, fetchPrStatus]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -196,6 +208,7 @@ export function GitView({ cwd }: GitViewProps) {
     try {
       await window.electron.git.push(cwd, true);
       await fetchStatus();
+      await fetchPrStatus();
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -292,6 +305,7 @@ export function GitView({ cwd }: GitViewProps) {
       setShowPrForm(false);
       setPrTitle("");
       setPrBody("");
+      fetchPrStatus();
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -328,17 +342,23 @@ export function GitView({ cwd }: GitViewProps) {
             </div>
           )}
           <div className="flex-1" />
-          {(Number(status.ahead) > 0 || !status.hasUpstream) && (
+          <button
+            onClick={handlePush}
+            disabled={pushing}
+            className="px-2 py-0.5 rounded text-[0.65rem] font-semibold text-[var(--accent)] hover:bg-[var(--accent)] hover:text-white border border-[var(--accent)] transition-colors disabled:opacity-50"
+          >
+            <ArrowUp size={10} className="inline mr-0.5" />
+            {pushing ? "Pushing..." : "Push"}
+          </button>
+          {prStatus && (
             <button
-              onClick={handlePush}
-              disabled={pushing}
-              className="px-2 py-0.5 rounded text-[0.65rem] font-semibold text-[var(--accent)] hover:bg-[var(--accent)] hover:text-white border border-[var(--accent)] transition-colors disabled:opacity-50"
+              onClick={() => { if (prStatus.url) window.electron?.openExternal(prStatus.url); }}
+              className="px-2 py-0.5 rounded text-[0.65rem] font-semibold text-[var(--accent)] hover:bg-[var(--accent)] hover:text-white border border-[var(--accent)] transition-colors"
             >
-              <ArrowUp size={10} className="inline mr-0.5" />
-              {pushing ? "Pushing..." : "Push"}
+              View PR ({prStatus.state})
             </button>
           )}
-          {status.hasUpstream && Number(status.ahead) === 0 && !hasChanges && status.branch !== status.defaultBranch && (
+          {!prStatus && status.hasUpstream && Number(status.ahead) === 0 && !hasChanges && status.branch !== status.defaultBranch && (
             <button
               onClick={() => { setShowPrForm((v) => !v); setPrUrl(null); }}
               className="px-2 py-0.5 rounded text-[0.65rem] font-semibold text-[var(--accent)] hover:bg-[var(--accent)] hover:text-white border border-[var(--accent)] transition-colors"

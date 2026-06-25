@@ -267,6 +267,33 @@ export function registerGitHandlers(db: Database): void {
     })
   );
 
+  // ── git prStatus (check if a PR exists for the current branch) ───────────
+  registerIpcHandle("git:prStatus", (_e, { cwd }: { cwd: string }) =>
+    handle(() => {
+      assertWithinCodeDirectory(db, cwd);
+      const check = spawnSync("gh", ["--version"], { encoding: "utf-8", timeout: 5_000 });
+      if (check.error || check.status !== 0) {
+        return null;
+      }
+      const branch = gitSafe(["rev-parse", "--abbrev-ref", "HEAD"], cwd).stdout;
+      if (!branch) return null;
+      const result = spawnSync("gh", ["pr", "view", branch, "--json", "url,state,title"], { cwd, encoding: "utf-8", timeout: 10_000 });
+      if (result.error || result.status !== 0) {
+        return null;
+      }
+      try {
+        const parsed = JSON.parse(result.stdout);
+        return {
+          url: parsed.url || null,
+          state: parsed.state || null,
+          title: parsed.title || null,
+        };
+      } catch {
+        return null;
+      }
+    })
+  );
+
   // ── git stash / stash pop ───────────────────────────────────────────────
   registerIpcHandle("git:stash", (_e, { cwd, action }: { cwd: string; action: "push" | "pop" | "list" }) =>
     handle(() => {
