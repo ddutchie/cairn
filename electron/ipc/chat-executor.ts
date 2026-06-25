@@ -63,7 +63,7 @@ export async function executeTool(
         .filter((n) => !n.archivedAt && (!project || n.projectId === project.id))
         .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
         .slice(0, 10)
-        .map((n) => ({ noteId: n.id, title: n.title, updatedAt: n.updatedAt }));
+        .map((n) => ({ noteId: n.id, title: n.title, folder: n.folder ?? "", updatedAt: n.updatedAt }));
 
       // Include recent tasks per column so task-related queries don't need a separate list_tasks call.
       // `columnName` is intentionally omitted here — the `columns` array above already carries the
