@@ -8,6 +8,26 @@
 
 import { contextBridge, ipcRenderer } from "electron";
 
+// ── Inline types for the git API (not shared with the renderer bundle) ──────
+
+interface GitStatusEntry {
+  path: string;
+  status: string;
+}
+
+interface GitUntrackedEntry {
+  path: string;
+}
+
+interface GitStatus {
+  branch: string;
+  ahead: string;
+  behind: string;
+  staged: GitStatusEntry[];
+  unstaged: GitStatusEntry[];
+  untracked: GitUntrackedEntry[];
+}
+
 // Helper: invoke an IPC channel and unwrap the IpcResult<T> wrapper.
 // All handlers return { data: T } | { error: string } via the handle() helper.
 // We unwrap here so callers receive T directly (or a rejected promise on error).
@@ -354,6 +374,20 @@ const api = {
       ipcRenderer.on("agent:exit", handler);
       return () => ipcRenderer.off("agent:exit", handler);
     },
+  },
+
+  // ── Git operations (Agent Git tab) ────────────
+  git: {
+    status:   (cwd: string) => invoke<GitStatus>("git:status", { cwd }),
+    branches: (cwd: string) => invoke<{ current: string; branches: Array<{ name: string; current: boolean }> }>("git:branches", { cwd }),
+    checkout: (cwd: string, branch: string, create?: boolean) => invoke<{ branch: string }>("git:checkout", { cwd, branch, create }),
+    stage:    (cwd: string, opts?: { files?: string[]; all?: boolean }) => invoke<{ ok: boolean }>("git:stage", { cwd, ...opts }),
+    unstage:  (cwd: string, opts?: { files?: string[]; all?: boolean }) => invoke<{ ok: boolean }>("git:unstage", { cwd, ...opts }),
+    commit:   (cwd: string, message: string, body?: string, autoStage?: boolean) => invoke<{ hash: string; message: string }>("git:commit", { cwd, message, body, autoStage }),
+    push:     (cwd: string, setUpstream?: boolean) => invoke<{ branch: string }>("git:push", { cwd, setUpstream }),
+    log:      (cwd: string, count?: number) => invoke<Array<{ hash: string; author: string; date: string; subject: string }>>("git:log", { cwd, count }),
+    diff:     (cwd: string, staged?: boolean) => invoke<string>("git:diff", { cwd, staged }),
+    stash:    (cwd: string, action: "push" | "pop" | "list") => invoke<unknown>("git:stash", { cwd, action }),
   },
 
   // ── Cairn native agent (pi) ───────────────────
