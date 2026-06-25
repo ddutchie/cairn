@@ -23,6 +23,8 @@ interface GitStatusData {
   branch: string;
   ahead: string;
   behind: string;
+  hasUpstream: boolean;
+  defaultBranch: string;
   staged: GitFileEntry[];
   unstaged: GitFileEntry[];
   untracked: GitFileEntry[];
@@ -274,6 +276,16 @@ export function GitView({ cwd }: GitViewProps) {
           <div className="flex-1" />
           {Number(status.ahead) > 0 && (
             <button
+              onClick={handlePush}
+              disabled={pushing}
+              className="px-2 py-0.5 rounded text-[0.65rem] font-semibold text-[var(--accent)] hover:bg-[var(--accent)] hover:text-white border border-[var(--accent)] transition-colors disabled:opacity-50"
+            >
+              <ArrowUp size={10} className="inline mr-0.5" />
+              {pushing ? "Pushing..." : "Push"}
+            </button>
+          )}
+          {status.hasUpstream && Number(status.ahead) === 0 && status.branch !== status.defaultBranch && (
+            <button
               onClick={() => { setShowPrForm((v) => !v); setPrUrl(null); }}
               className="px-2 py-0.5 rounded text-[0.65rem] font-semibold text-[var(--accent)] hover:bg-[var(--accent)] hover:text-white border border-[var(--accent)] transition-colors"
             >
@@ -497,15 +509,6 @@ export function GitView({ cwd }: GitViewProps) {
                 disabled={!commitSubject.trim() || committing}
               >
                 {committing ? "Committing..." : "Commit"}
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={handlePush}
-                disabled={pushing}
-              >
-                <ArrowUp size={11} />
-                {pushing ? "Pushing..." : "Push"}
               </Button>
             </div>
           </div>

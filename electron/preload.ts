@@ -19,6 +19,8 @@ interface GitStatus {
   branch: string;
   ahead: string;
   behind: string;
+  hasUpstream: boolean;
+  defaultBranch: string;
   staged: GitStatusEntry[];
   unstaged: GitStatusEntry[];
   untracked: GitStatusEntry[];

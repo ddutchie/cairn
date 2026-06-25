@@ -74,8 +74,10 @@ export function registerGitHandlers(db: Database): void {
         }
       }
       const aheadBehind = gitSafe(["rev-list", "--count", "--left-right", `${branch}@{upstream}...HEAD`], cwd);
+      const hasUpstream = aheadBehind.status === 0 && aheadBehind.stdout !== "";
       const [ahead = "0", behind = "0"] = aheadBehind.stdout ? aheadBehind.stdout.split("\t") : ["0", "0"];
-      return { branch, ahead, behind, staged, unstaged, untracked };
+      const defaultBranch = gitSafe(["rev-parse", "--abbrev-ref", "origin/HEAD"], cwd).stdout.replace("origin/", "").trim() || "main";
+      return { branch, ahead, behind, hasUpstream, defaultBranch, staged, unstaged, untracked };
     })
   );
 
