@@ -199,6 +199,20 @@ export function registerGitHandlers(db: Database): void {
     })
   );
 
+  // ── git diffBranch (diff of current branch against a base branch) ──────
+  registerIpcHandle("git:diffBranch", (_e, { cwd, baseBranch }: { cwd: string; baseBranch: string }) =>
+    handle(() => {
+      assertWithinCodeDirectory(db, cwd);
+      const args = ["diff", `origin/${baseBranch}...HEAD`, "--unified=3"];
+      const result = gitSafe(args, cwd);
+      if (result.status !== 0) {
+        const fallback = gitSafe(["diff", `${baseBranch}...HEAD`, "--unified=3"], cwd);
+        return fallback.stdout || "";
+      }
+      return result.stdout || "";
+    })
+  );
+
   // ── git diffFile (stat + full diff for one file) ───────────────────────
   registerIpcHandle("git:diffFile", (_e, { cwd, filePath, staged }: { cwd: string; filePath: string; staged?: boolean }) =>
     handle(() => {

@@ -71,6 +71,7 @@ export function GitView({ cwd }: GitViewProps) {
   const [committing, setCommitting] = useState(false);
   const [pushing, setPushing] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [generatingPrDesc, setGeneratingPrDesc] = useState(false);
   const [commitSubject, setCommitSubject] = useState("");
   const [commitBody, setCommitBody] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -245,6 +246,32 @@ export function GitView({ cwd }: GitViewProps) {
     setLoadingFile(null);
   }
 
+  async function handleGeneratePrDesc() {
+    if (!window.electron?.git || !window.electron?.ai || !status) return;
+    setGeneratingPrDesc(true);
+    setError(null);
+    try {
+      const baseBranch = status.defaultBranch || "main";
+      const diff = await window.electron.git.diffBranch(cwd, baseBranch);
+      if (!diff) {
+        setError(`No committed changes on this branch relative to ${baseBranch} to generate description from.`);
+        return;
+      }
+      const config = {
+        baseUrl: agentConfig.baseUrl,
+        model: agentConfig.model,
+        apiKey: agentConfig.apiKey,
+      };
+      const result = await window.electron.ai.generatePrDescription({ diff, config });
+      setPrTitle(result.title);
+      setPrBody(result.description);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setGeneratingPrDesc(false);
+    }
+  }
+
   async function handleCreatePr() {
     if (!window.electron?.git) return;
     if (!prTitle.trim()) return;
@@ -344,6 +371,16 @@ export function GitView({ cwd }: GitViewProps) {
             className="w-full rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-sm px-3 py-1.5 font-mono focus:outline-none resize-y"
           />
           <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={handleGeneratePrDesc}
+              disabled={generatingPrDesc || !status}
+            >
+              <Sparkles size={11} className={cn(generatingPrDesc && "animate-pulse")} />
+              {generatingPrDesc ? "Generating..." : "Generate Description"}
+            </Button>
+            <div className="flex-1" />
             <Button size="sm" onClick={handleCreatePr} disabled={!prTitle.trim() || creatingPr}>
               {creatingPr ? "Creating..." : "Create PR"}
             </Button>

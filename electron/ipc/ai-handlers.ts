@@ -108,4 +108,47 @@ export function registerAiHandlers(ctx: DbContext): void {
       return { subject, body };
     });
   });
+
+  // ── AI PR description generation ──────────────────
+  registerIpcHandle("ai:generatePrDescription", async (_e, args: {
+    diff: string;
+    config: { baseUrl: string; model: string; apiKey: string };
+  }) => {
+    let reqConfig = args.config;
+    if (!reqConfig?.apiKey) {
+      const cached = getCachedConfig().agentConfig;
+      if (cached?.apiKey) {
+        reqConfig = {
+          ...reqConfig,
+          baseUrl: reqConfig?.baseUrl || cached.baseUrl || "",
+          model: reqConfig?.model || cached.model || "",
+          apiKey: cached.apiKey,
+        };
+      }
+    }
+
+    const baseUrl = normaliseBaseUrl(reqConfig?.baseUrl || "https://api.openai.com");
+    const model = reqConfig?.model || "gpt-4o-mini";
+    const apiKey = reqConfig?.apiKey || "";
+    const isLocal = isLocalEndpoint(baseUrl);
+    if (!apiKey && !isLocal) {
+      return err("AI is not configured. Add an API key in Settings.");
+    }
+    const llmConfig: LLMConfig = { baseUrl, model, apiKey };
+
+    return handle(async () => {
+      const systemPrompt = "You are an expert at writing clear, detailed pull request descriptions. "
+        + "Based on the provided git diff, generate a professional pull request title and a detailed markdown description. "
+        + "The description should include: Summary of changes, Context/Why, and Key changes list. "
+        + "Respond in this format:\n\nTITLE\n<title>\n\nDESCRIPTION\n<markdown description>\n\n";
+
+      const userPrompt = `Generate a PR description for the following branch diff:\n\n${args.diff.slice(0, 8000)}`;
+      const result = await callLLM(llmConfig, systemPrompt, userPrompt);
+      const titleMatch = result.match(/TITLE\n(.+?)(?:\n|$)/);
+      const descMatch = result.match(/DESCRIPTION\n([\s\S]*?)$/);
+      const title = titleMatch?.[1]?.trim() ?? "Pull Request";
+      const description = descMatch?.[1]?.trim() ?? "";
+      return { title, description };
+    });
+  });
 }
