@@ -119,6 +119,7 @@ export function GitView({ cwd }: GitViewProps) {
   }, [fetchStatus, fetchLog]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     refresh();
     pollRef.current = setInterval(fetchStatus, 10_000);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
@@ -131,6 +132,7 @@ export function GitView({ cwd }: GitViewProps) {
     if (!status) return;
     const hasUnstaged = status.unstaged.length > 0 || status.untracked.length > 0;
     if (status.staged.length > 0 && !hasUnstaged && expandedSection !== "staged") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setExpandedSection("staged");
     }
   }, [status, expandedSection]);
