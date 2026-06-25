@@ -183,6 +183,25 @@ export function registerGitHandlers(db: Database): void {
     })
   );
 
+  // ── git diffFile (stat + full diff for one file) ───────────────────────
+  registerIpcHandle("git:diffFile", (_e, { cwd, filePath, staged }: { cwd: string; filePath: string; staged?: boolean }) =>
+    handle(() => {
+      assertWithinCodeDirectory(db, cwd);
+      const statArgs = staged
+        ? ["diff", "--cached", "--numstat", "--", filePath]
+        : ["diff", "HEAD", "--numstat", "--", filePath];
+      const statSafe = gitSafe(statArgs, cwd);
+      const match = statSafe.stdout.match(/^(\d+)\s+(\d+)/);
+      const added = match ? Number(match[1]) : 0;
+      const deleted = match ? Number(match[2]) : 0;
+      const diffArgs = staged
+        ? ["diff", "--cached", "--unified=10", "--", filePath]
+        : ["diff", "HEAD", "--unified=10", "--", filePath];
+      const safe = gitSafe(diffArgs, cwd);
+      return { stat: { added, deleted }, diff: safe.stdout || "" };
+    })
+  );
+
   // ── git stash / stash pop ───────────────────────────────────────────────
   registerIpcHandle("git:stash", (_e, { cwd, action }: { cwd: string; action: "push" | "pop" | "list" }) =>
     handle(() => {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useEffect, useCallback, useRef } from "react";
-import { RefreshCw, GitBranch, GitCommit, ArrowUp, Sparkles, Plus, Minus, File, Check, X, ChevronRight, ChevronDown } from "lucide-react";
+import { RefreshCw, GitBranch, GitCommit, ArrowUp, Sparkles, Plus, Minus, File, Check, X, ChevronRight, ChevronDown, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -72,6 +72,9 @@ export function GitView({ cwd }: GitViewProps) {
   const [commitBody, setCommitBody] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [expandedSection, setExpandedSection] = useState<"staged" | "unstaged" | "untracked" | null>("unstaged");
+  const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
+  const [fileDiffs, setFileDiffs] = useState<Record<string, { added: number; deleted: number; diff: string }>>({});
+  const [loadingFile, setLoadingFile] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchStatus = useCallback(async () => {
@@ -193,6 +196,27 @@ export function GitView({ cwd }: GitViewProps) {
     }
   }
 
+  async function handleToggleFile(path: string, staged: boolean) {
+    if (!window.electron?.git) return;
+    setExpandedFiles((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) {
+        next.delete(path);
+        return next;
+      }
+      next.add(path);
+      return next;
+    });
+    if (!fileDiffs[path]) {
+      setLoadingFile(path);
+      try {
+        const result = await window.electron.git.diffFile(cwd, path, staged);
+        setFileDiffs((prev) => ({ ...prev, [path]: { ...result.stat, diff: result.diff } }));
+      } catch { /* ignore */ }
+      setLoadingFile(null);
+    }
+  }
+
   const stagedCount = status?.staged.length ?? 0;
   const unstagedCount = (status?.unstaged.length ?? 0) + (status?.untracked.length ?? 0);
   const hasChanges = stagedCount > 0 || unstagedCount > 0;
@@ -283,6 +307,11 @@ export function GitView({ cwd }: GitViewProps) {
                     onAction={() => handleUnstage([file.path])}
                     actionLabel="-"
                     actionColor="var(--danger)"
+                    stat={fileDiffs[file.path]}
+                    diff={fileDiffs[file.path]?.diff ?? ""}
+                    expanded={expandedFiles.has(file.path)}
+                    loading={loadingFile === file.path}
+                    onToggle={() => handleToggleFile(file.path, true)}
                   />
                 ))}
               </FileSection>
@@ -312,6 +341,11 @@ export function GitView({ cwd }: GitViewProps) {
                     onAction={() => handleStage([file.path])}
                     actionLabel="+"
                     actionColor="var(--success)"
+                    stat={fileDiffs[file.path]}
+                    diff={fileDiffs[file.path]?.diff ?? ""}
+                    expanded={expandedFiles.has(file.path)}
+                    loading={loadingFile === file.path}
+                    onToggle={() => handleToggleFile(file.path, false)}
                   />
                 ))}
               </FileSection>
@@ -341,6 +375,11 @@ export function GitView({ cwd }: GitViewProps) {
                     onAction={() => handleStage([file.path])}
                     actionLabel="+"
                     actionColor="var(--success)"
+                    stat={fileDiffs[file.path]}
+                    diff={fileDiffs[file.path]?.diff ?? ""}
+                    expanded={expandedFiles.has(file.path)}
+                    loading={loadingFile === file.path}
+                    onToggle={() => handleToggleFile(file.path, false)}
                   />
                 ))}
               </FileSection>
@@ -462,31 +501,91 @@ function FileSection({
 
 function FileRow({
   path, status, onAction, actionLabel, actionColor,
+  stat, diff, expanded, loading, onToggle,
 }: {
   path: string;
   status: string;
   onAction: () => void;
   actionLabel: string;
   actionColor: string;
+  stat?: { added: number; deleted: number };
+  diff: string;
+  expanded: boolean;
+  loading: boolean;
+  onToggle: () => void;
 }) {
+  const hasDiffStats = stat && (stat.added > 0 || stat.deleted > 0);
   return (
-    <div className="flex items-center gap-2 px-6 py-1.5 hover:bg-[var(--surface-2)] transition-colors group">
-      <button
-        onClick={onAction}
-        className="w-4 h-4 rounded flex items-center justify-center text-[0.65rem] font-bold opacity-0 group-hover:opacity-100 transition-opacity hover:scale-110"
-        style={{ color: actionColor, backgroundColor: `${actionColor}15` }}
-        title={actionLabel === "+" ? "Stage" : "Unstage"}
+    <>
+      <div
+        className="flex items-center gap-2 px-6 py-1.5 hover:bg-[var(--surface-2)] transition-colors group cursor-pointer"
+        onClick={onToggle}
       >
-        {actionLabel}
-      </button>
-      <File size={9} className="text-[var(--text-tertiary)] flex-shrink-0 opacity-50" />
-      <span className="text-[0.714rem] text-[var(--text-primary)] font-mono truncate flex-1">{path}</span>
-      <span
-        className="text-[0.65rem] font-mono px-1.5 py-0.5 rounded flex-shrink-0"
-        style={{ color: statusColor(status), backgroundColor: `${statusColor(status)}10` }}
-      >
-        {statusLabel(status)}
-      </span>
+        <button
+          onClick={(e) => { e.stopPropagation(); onAction(); }}
+          className="w-4 h-4 rounded flex items-center justify-center text-[0.65rem] font-bold opacity-0 group-hover:opacity-100 transition-opacity hover:scale-110"
+          style={{ color: actionColor, backgroundColor: `${actionColor}15` }}
+          title={actionLabel === "+" ? "Stage" : "Unstage"}
+        >
+          {actionLabel}
+        </button>
+        <File size={9} className="text-[var(--text-tertiary)] flex-shrink-0 opacity-50" />
+        <span className="text-[0.714rem] text-[var(--text-primary)] font-mono truncate flex-1">{path}</span>
+        {hasDiffStats && (
+          <span className="text-[0.65rem] font-mono flex-shrink-0 space-x-1">
+            <span className="text-[var(--success)]">+{stat.added}</span>
+            <span className="text-[var(--danger)]">-{stat.deleted}</span>
+          </span>
+        )}
+        {loading && (
+          <RefreshCw size={10} className="animate-spin text-[var(--text-tertiary)]" />
+        )}
+        <span
+          className="text-[0.65rem] font-mono px-1.5 py-0.5 rounded flex-shrink-0"
+          style={{ color: statusColor(status), backgroundColor: `${statusColor(status)}10` }}
+        >
+          {statusLabel(status)}
+        </span>
+      </div>
+      {expanded && (
+        <Inlinediff diff={diff} loading={loading} />
+      )}
+    </>
+  );
+}
+
+function Inlinediff({ diff, loading }: { diff: string; loading: boolean }) {
+  if (loading) {
+    return (
+      <div className="px-10 py-2 text-[0.65rem] text-[var(--text-tertiary)]">
+        Loading diff...
+      </div>
+    );
+  }
+  if (!diff) {
+    return (
+      <div className="px-10 py-2 text-[0.65rem] text-[var(--text-tertiary)]">
+        Binary or empty file
+      </div>
+    );
+  }
+  const lines = diff.split("\n");
+  return (
+    <div className="px-10 py-1 overflow-x-auto">
+      <pre className="text-[0.65rem] font-mono leading-relaxed">
+        {lines.slice(4).map((line, i) => {
+          let color = "var(--text-primary)";
+          if (line.startsWith("+")) color = "var(--success)";
+          else if (line.startsWith("-")) color = "var(--danger)";
+          else if (line.startsWith("@")) color = "var(--accent)";
+          return (
+            <span key={i} style={{ color }}>
+              {line}
+              {"\n"}
+            </span>
+          );
+        })}
+      </pre>
     </div>
   );
 }
