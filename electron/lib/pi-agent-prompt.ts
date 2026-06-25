@@ -123,7 +123,7 @@ function buildExecuteModePrompt(ctx: PiAgentPromptContext): string {
     : "";
 
   const taskSection = ctx.taskTitle
-    ? `\n\nThe active task is **"${ctx.taskTitle}"**. Your first tool call must be \`get_active_context\` to obtain column IDs, then immediately move this task to the **In Progress** column via \`update_task\` (pass \`columnId\`). When your work is complete, move it to **Review** (or **Done** if it is fully resolved).`
+    ? `\n\nThe active task is **"${ctx.taskTitle}"**. If you don't already have column IDs in context from earlier this session, call \`get_active_context\` to obtain them, then immediately move this task to the **In Progress** column via \`update_task\` (pass \`columnId\`). When your work is complete, move it to **Review** (or **Done** if it is fully resolved).`
     : "";
 
   const skillsSection = ctx.skillsXml
@@ -162,8 +162,8 @@ You are not just a code executor. You are an active participant in the project: 
 
 You MUST follow this workflow on every session — it is not optional:
 
-**1. Orient (first thing)**
-Call \`get_active_context\` to get column IDs and project state.
+**1. Orient (first thing, once per session)**
+Call \`get_active_context\` to get column IDs and project state. The IDs are stable for the session — you do not need to call it again before each write.
 If there is an active task, immediately move it to In Progress with \`update_task\` (pass \`columnId\`).
 
 **2. Document as you go**

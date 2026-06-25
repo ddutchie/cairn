@@ -114,11 +114,10 @@ export function buildSystemPrompt(req: ChatRequest): string {
   - **Code Blocks**: Specify the language (e.g., typescript) for syntax highlighting.
   - **Standard Formatting**: Bold, italic, bulleted/numbered lists, and links.
 
-## Getting context
-Call get_active_context first to get IDs (projectId, columnId, workspaceId). Never ask the user for IDs.
+## Getting IDs
+IDs (workspaceId, projectId, columnId) are stable for the app session. Call get_active_context once at the start of a session (or after a project change) to obtain them, then reuse them. Never ask the user for IDs.
 
 ## Instructions
-- Call get_active_context before any write operation
 - For write operations call the tool directly — no confirmation needed
 - After a write, briefly confirm what you did
 - Use **bold** for key items, bullet lists for multiple items
