@@ -15,17 +15,13 @@ interface GitStatusEntry {
   status: string;
 }
 
-interface GitUntrackedEntry {
-  path: string;
-}
-
 interface GitStatus {
   branch: string;
   ahead: string;
   behind: string;
   staged: GitStatusEntry[];
   unstaged: GitStatusEntry[];
-  untracked: GitUntrackedEntry[];
+  untracked: GitStatusEntry[];
 }
 
 // Helper: invoke an IPC channel and unwrap the IpcResult<T> wrapper.
@@ -226,6 +222,8 @@ const api = {
   // ── AI helpers ────────────────────────────────
   ai: {
     generatePrd: (args: unknown) => invoke<{ id: string; title: string; projectId: string } | { error: string }>("ai:generatePrd", args),
+    generateCommitMessage: (args: { diff: string; config: { baseUrl: string; model: string; apiKey: string } }) =>
+      invoke<{ subject: string; body: string }>("ai:generateCommitMessage", args),
     localLLMStatus: () => invoke<{ available: boolean; reason?: string }>("ai:localLLMStatus"),
   },
 

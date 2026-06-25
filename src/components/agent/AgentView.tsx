@@ -17,6 +17,7 @@ import { AgentEditor } from "./AgentEditor";
 import { SessionPane } from "./SessionPane";
 import { AgentBottomTerminal } from "./AgentBottomTerminal";
 import { DiffViewer } from "./DiffViewer";
+import { GitView } from "./GitView";
 import { TerminalManager } from "./TerminalManager";
 import { Bot, FolderOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -28,7 +29,7 @@ const MIN_BOTTOM_HEIGHT = 80;
 const MAX_BOTTOM_HEIGHT = 600;
 const DEFAULT_BOTTOM_HEIGHT = 220;
 
-type CentreTab = "editor" | "diff";
+type CentreTab = "editor" | "diff" | "git";
 
 export function AgentView() {
   const { activeProjectId, projects, updateProject } = useCairnStore(useShallow((s) => ({ activeProjectId: s.activeProjectId, projects: s.projects, updateProject: s.updateProject })));
@@ -42,7 +43,7 @@ export function AgentView() {
   }
 
   const [centreTab, setCentreTab] = useState<CentreTab>("editor");
-  const [mobileTab, setMobileTab] = useState<"agent" | "files" | "editor" | "diff" | "terminal">("agent");
+  const [mobileTab, setMobileTab] = useState<"agent" | "files" | "editor" | "diff" | "git" | "terminal">("agent");
   // Bottom terminal height lives in React state so AgentBottomTerminal re-renders with the new height
   const [bottomHeight, setBottomHeight] = useState(DEFAULT_BOTTOM_HEIGHT);
 
@@ -254,6 +255,19 @@ export function AgentView() {
                 Diff
               </button>
             )}
+            {codeDirectory && (
+              <button
+                onClick={() => setCentreTab("git")}
+                className={cn(
+                  "px-2.5 py-1 rounded text-xs font-semibold transition-colors",
+                  centreTab === "git"
+                    ? "text-[var(--text-primary)] bg-[var(--surface-2)]"
+                    : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
+                )}
+              >
+                Git
+              </button>
+            )}
           </div>
 
           {/* Editor content */}
@@ -265,6 +279,13 @@ export function AgentView() {
           {codeDirectory && (
             <div className={cn("flex-1 min-h-0 overflow-hidden flex flex-col", centreTab !== "diff" && "md:hidden", mobileTab !== "diff" && "max-md:hidden")}>
               <DiffViewer cwd={codeDirectory} />
+            </div>
+          )}
+
+          {/* Git content */}
+          {codeDirectory && (
+            <div className={cn("flex-1 min-h-0 overflow-hidden flex flex-col", centreTab !== "git" && "md:hidden", mobileTab !== "git" && "max-md:hidden")}>
+              <GitView cwd={codeDirectory} />
             </div>
           )}
         </div>

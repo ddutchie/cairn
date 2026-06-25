@@ -59,13 +59,13 @@ export function registerGitHandlers(db: Database): void {
       const lines = porcelain ? porcelain.split("\n").filter(Boolean) : [];
       const staged: Array<{ path: string; status: string }> = [];
       const unstaged: Array<{ path: string; status: string }> = [];
-      const untracked: Array<{ path: string }> = [];
+      const untracked: Array<{ path: string; status: string }> = [];
       for (const line of lines) {
         const x = line[0];
         const y = line[1];
         const filePath = line.slice(2).trim();
         if (x === "?" && y === "?") {
-          untracked.push({ path: filePath });
+          untracked.push({ path: filePath, status: "??" });
         } else if (x !== " ") {
           staged.push({ path: filePath, status: x + y });
         }
