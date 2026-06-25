@@ -63,7 +63,19 @@ export function registerGitHandlers(db: Database): void {
       for (const line of lines) {
         const x = line[0];
         const y = line[1];
-        const filePath = line.slice(2).trim();
+        let filePath = line.slice(2).trim();
+
+        // 1. Handle staged renames: "old_path -> new_path"
+        if (filePath.includes(" -> ")) {
+          const parts = filePath.split(" -> ");
+          filePath = parts[parts.length - 1].trim();
+        }
+
+        // 2. Strip git's escaping double quotes if spaces or special chars are present
+        if (filePath.startsWith('"') && filePath.endsWith('"')) {
+          filePath = filePath.slice(1, -1);
+        }
+
         if (x === "?" && y === "?") {
           untracked.push({ path: filePath, status: "??" });
         } else {
