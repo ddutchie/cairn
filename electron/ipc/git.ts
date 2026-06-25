@@ -50,6 +50,7 @@ function isPathWithinCwd(cwd: string, filePath: string): boolean {
 }
 
 function isSafePathspec(file: string): boolean {
+  if (file.startsWith(":")) return false;
   if (path.isAbsolute(file)) return false;
   const normalized = path.normalize(file);
   if (normalized.startsWith("..") || normalized.includes("..")) return false;
@@ -62,7 +63,7 @@ function git(args: string[], cwd: string, timeout = 15_000): Promise<string> {
     execFile("git", args, { cwd, encoding: "utf-8", timeout, maxBuffer }, (error, stdout, stderr) => {
       if (error) {
         if (
-          error.code === "ERR_CHILD_PROCESS_MAX_BUFFER_OUT" ||
+          error.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER" ||
           (error as { code?: number | string }).code === "ENOBUFS" ||
           error.message?.includes("maxBuffer exceeded")
         ) {
@@ -115,13 +116,11 @@ export function registerGitHandlers(db: Database): void {
         }
         const x = entry[0];
         const y = entry[1];
-        let filePath = entry.slice(3);
+        const filePath = entry.slice(3);
 
-        // If it's a rename (R) or copy (C), the next NUL-separated part is the new path.
+        // If it's a rename (R) or copy (C), consume the next NUL-separated part (the source path) without overriding filePath.
         if (x === "R" || x === "C") {
           i++;
-          const newPath = parts[i] || "";
-          filePath = newPath;
         }
 
         if (x === "?" && y === "?") {
@@ -162,6 +161,13 @@ export function registerGitHandlers(db: Database): void {
   registerIpcHandle("git:checkout", (_e, { cwd, branch, create }: { cwd: string; branch: string; create?: boolean }) =>
     handle(async () => {
       assertWithinCodeDirectory(db, cwd);
+      if (branch.startsWith("-")) {
+        throw new Error(`Invalid branch name: ${branch}`);
+      }
+      const checkBranch = await gitSafe(["check-ref-format", "--branch", branch], cwd);
+      if (checkBranch.status !== 0) {
+        throw new Error(`Invalid branch name: ${branch}`);
+      }
       const args = create ? ["checkout", "-b", branch] : ["checkout", branch];
       await git(args, cwd);
       return { branch };
@@ -280,7 +286,7 @@ export function registerGitHandlers(db: Database): void {
   registerIpcHandle("git:diffFile", (_e, { cwd, filePath, staged }: { cwd: string; filePath: string; staged?: boolean }) =>
     handle(async () => {
       assertWithinCodeDirectory(db, cwd);
-      if (!isPathWithinCwd(cwd, filePath)) {
+      if (!isSafePathspec(filePath) || !isPathWithinCwd(cwd, filePath)) {
         throw new Error(`Access denied: path is outside the code directory: ${filePath}`);
       }
 
