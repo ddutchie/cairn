@@ -78,6 +78,11 @@ export function GitView({ cwd }: GitViewProps) {
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
   const [fileDiffs, setFileDiffs] = useState<Record<string, { added: number; deleted: number; diff: string }>>({});
   const [loadingFile, setLoadingFile] = useState<string | null>(null);
+
+  // A file can appear in BOTH staged and unstaged sections (e.g. status "MM").
+  // Key diffs/expanded/loading by section+path so the two sections don't
+  // clobber each other's state.
+  const diffKey = (path: string, staged: boolean) => `${staged ? "s" : "u"}:${path}`;
   const [creatingPr, setCreatingPr] = useState(false);
   const [prTitle, setPrTitle] = useState("");
   const [prBody, setPrBody] = useState("");
@@ -89,6 +94,7 @@ export function GitView({ cwd }: GitViewProps) {
     if (!window.electron?.git) return;
     try {
       const s = await window.electron.git.status(cwd);
+      console.log("[GitView] status received", { staged: s.staged, unstaged: s.unstaged, untracked: s.untracked });
       setStatus(s);
       setError(null);
     } catch (e) {
@@ -117,6 +123,17 @@ export function GitView({ cwd }: GitViewProps) {
     pollRef.current = setInterval(fetchStatus, 10_000);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [refresh, fetchStatus]);
+
+  // Auto-expand the staged section when there are staged files but nothing
+  // unstaged/untracked — otherwise the user sees an empty unstaged section
+  // and has to manually expand "Staged" to find their changes.
+  useEffect(() => {
+    if (!status) return;
+    const hasUnstaged = status.unstaged.length > 0 || status.untracked.length > 0;
+    if (status.staged.length > 0 && !hasUnstaged && expandedSection !== "staged") {
+      setExpandedSection("staged");
+    }
+  }, [status, expandedSection]);
 
   // Clear commit form after successful commit
   function clearForm() {
@@ -211,19 +228,22 @@ export function GitView({ cwd }: GitViewProps) {
 
   async function handleToggleFile(path: string, staged: boolean) {
     if (!window.electron?.git) return;
+    const key = diffKey(path, staged);
     // If collapsing, just remove from expanded set
-    if (expandedFiles.has(path)) {
-      setExpandedFiles((prev) => { const n = new Set(prev); n.delete(path); return n; });
+    if (expandedFiles.has(key)) {
+      setExpandedFiles((prev) => { const n = new Set(prev); n.delete(key); return n; });
       return;
     }
     // Expanding — add to expanded + fetch diff
-    setExpandedFiles((prev) => { const n = new Set(prev); n.add(path); return n; });
-    setLoadingFile(path);
+    setExpandedFiles((prev) => { const n = new Set(prev); n.add(key); return n; });
+    setLoadingFile(key);
     try {
       const result = await window.electron.git.diffFile(cwd, path, staged);
-      setFileDiffs((prev) => ({ ...prev, [path]: { ...result.stat, diff: result.diff } }));
-    } catch {
-      setFileDiffs((prev) => ({ ...prev, [path]: { added: 0, deleted: 0, diff: "" } }));
+      console.log("[GitView] diffFile", { cwd, path, staged, key, diffLen: (result as { diff?: string }).diff?.length, stat: result.stat });
+      setFileDiffs((prev) => ({ ...prev, [key]: { ...result.stat, diff: result.diff } }));
+    } catch (e) {
+      console.warn("[GitView] diffFile failed", { path, staged, key, error: e });
+      setFileDiffs((prev) => ({ ...prev, [key]: { added: 0, deleted: 0, diff: "" } }));
     }
     setLoadingFile(null);
   }
@@ -396,7 +416,9 @@ export function GitView({ cwd }: GitViewProps) {
                   </button>
                 }
               >
-                {status.staged.map((file) => (
+                {status.staged.map((file) => {
+                  const key = diffKey(file.path, true);
+                  return (
                   <FileRow
                     key={file.path}
                     path={file.path}
@@ -404,13 +426,14 @@ export function GitView({ cwd }: GitViewProps) {
                     onAction={() => handleUnstage([file.path])}
                     actionLabel="-"
                     actionColor="var(--danger)"
-                    stat={fileDiffs[file.path]}
-                    rawDiff={fileDiffs[file.path]?.diff ?? ""}
-                    expanded={expandedFiles.has(file.path)}
-                    loading={loadingFile === file.path}
+                    stat={fileDiffs[key]}
+                    rawDiff={fileDiffs[key]?.diff ?? ""}
+                    expanded={expandedFiles.has(key)}
+                    loading={loadingFile === key}
                     onToggle={() => handleToggleFile(file.path, true)}
                   />
-                ))}
+                  );
+                })}
               </FileSection>
             )}
 
@@ -430,7 +453,9 @@ export function GitView({ cwd }: GitViewProps) {
                   </button>
                 }
               >
-                {status.unstaged.map((file) => (
+                {status.unstaged.map((file) => {
+                  const key = diffKey(file.path, false);
+                  return (
                   <FileRow
                     key={file.path}
                     path={file.path}
@@ -438,13 +463,14 @@ export function GitView({ cwd }: GitViewProps) {
                     onAction={() => handleStage([file.path])}
                     actionLabel="+"
                     actionColor="var(--success)"
-                    stat={fileDiffs[file.path]}
-                    rawDiff={fileDiffs[file.path]?.diff ?? ""}
-                    expanded={expandedFiles.has(file.path)}
-                    loading={loadingFile === file.path}
+                    stat={fileDiffs[key]}
+                    rawDiff={fileDiffs[key]?.diff ?? ""}
+                    expanded={expandedFiles.has(key)}
+                    loading={loadingFile === key}
                     onToggle={() => handleToggleFile(file.path, false)}
                   />
-                ))}
+                  );
+                })}
               </FileSection>
             )}
 
@@ -464,7 +490,9 @@ export function GitView({ cwd }: GitViewProps) {
                   </button>
                 }
               >
-                {status.untracked.map((file) => (
+                {status.untracked.map((file) => {
+                  const key = diffKey(file.path, false);
+                  return (
                   <FileRow
                     key={file.path}
                     path={file.path}
@@ -472,13 +500,14 @@ export function GitView({ cwd }: GitViewProps) {
                     onAction={() => handleStage([file.path])}
                     actionLabel="+"
                     actionColor="var(--success)"
-                    stat={fileDiffs[file.path]}
-                    rawDiff={fileDiffs[file.path]?.diff ?? ""}
-                    expanded={expandedFiles.has(file.path)}
-                    loading={loadingFile === file.path}
+                    stat={fileDiffs[key]}
+                    rawDiff={fileDiffs[key]?.diff ?? ""}
+                    expanded={expandedFiles.has(key)}
+                    loading={loadingFile === key}
                     onToggle={() => handleToggleFile(file.path, false)}
                   />
-                ))}
+                  );
+                })}
               </FileSection>
             )}
           </div>
@@ -650,8 +679,9 @@ function Inlinediff({ rawDiff, loading }: { rawDiff: string; loading: boolean })
   const palette = isDark ? PALETTE_DARK : PALETTE_LIGHT;
 
   const parsed = useMemo(() => {
+    console.log("[Inlinediff] parse", { rawDiffLen: rawDiff.length, rawDiffHead: rawDiff.slice(0, 60) });
     if (!rawDiff) return [];
-    try { return parseDiff(rawDiff); } catch { return []; }
+    try { return parseDiff(rawDiff); } catch (e) { console.warn("[Inlinediff] parseDiff failed", e); return []; }
   }, [rawDiff]);
 
   if (loading) {
