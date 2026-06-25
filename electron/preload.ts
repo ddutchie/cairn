@@ -387,6 +387,7 @@ const api = {
     diff:     (cwd: string, staged?: boolean) => invoke<string>("git:diff", { cwd, staged }),
     diffFile: (cwd: string, filePath: string, staged?: boolean) => invoke<{ stat: { added: number; deleted: number }; diff: string }>("git:diffFile", { cwd, filePath, staged }),
     stash:    (cwd: string, action: "push" | "pop" | "list") => invoke<unknown>("git:stash", { cwd, action }),
+    createPr: (cwd: string, opts: { title: string; body?: string; base?: string }) => invoke<{ url: string; branch: string }>("git:createPr", { cwd, ...opts }),
   },
 
   // ── Cairn native agent (pi) ───────────────────

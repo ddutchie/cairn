@@ -202,6 +202,28 @@ export function registerGitHandlers(db: Database): void {
     })
   );
 
+  // ── git createPr ─────────────────────────────────────────────────────────
+  registerIpcHandle("git:createPr", (_e, { cwd, title, body, base }: { cwd: string; title: string; body?: string; base?: string }) =>
+    handle(() => {
+      assertWithinCodeDirectory(db, cwd);
+      const branch = git(["rev-parse", "--abbrev-ref", "HEAD"], cwd);
+      const check = spawnSync("gh", ["--version"], { encoding: "utf-8", timeout: 5_000 });
+      if (check.error || check.status !== 0) {
+        throw new Error("GitHub CLI (`gh`) is not installed or not in PATH. Install it from https://cli.github.com/ to create PRs.");
+      }
+      const ghArgs = ["pr", "create", "--title", title, "--head", branch];
+      if (body) ghArgs.push("--body", body);
+      if (base) ghArgs.push("--base", base);
+      const result = spawnSync("gh", ghArgs, { cwd, encoding: "utf-8", timeout: 30_000 });
+      if (result.error) throw result.error;
+      if (result.status !== 0) {
+        throw new Error((result.stderr ?? "").trim() || (result.stdout ?? "").trim() || "gh pr create failed");
+      }
+      const url = (result.stdout ?? "").trim();
+      return { url, branch };
+    })
+  );
+
   // ── git stash / stash pop ───────────────────────────────────────────────
   registerIpcHandle("git:stash", (_e, { cwd, action }: { cwd: string; action: "push" | "pop" | "list" }) =>
     handle(() => {

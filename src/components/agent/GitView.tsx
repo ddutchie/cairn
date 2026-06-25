@@ -75,6 +75,11 @@ export function GitView({ cwd }: GitViewProps) {
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
   const [fileDiffs, setFileDiffs] = useState<Record<string, { added: number; deleted: number; diff: string }>>({});
   const [loadingFile, setLoadingFile] = useState<string | null>(null);
+  const [creatingPr, setCreatingPr] = useState(false);
+  const [prTitle, setPrTitle] = useState("");
+  const [prBody, setPrBody] = useState("");
+  const [showPrForm, setShowPrForm] = useState(false);
+  const [prUrl, setPrUrl] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchStatus = useCallback(async () => {
@@ -217,6 +222,27 @@ export function GitView({ cwd }: GitViewProps) {
     }
   }
 
+  async function handleCreatePr() {
+    if (!window.electron?.git) return;
+    if (!prTitle.trim()) return;
+    setCreatingPr(true);
+    setError(null);
+    try {
+      const result = await window.electron.git.createPr(cwd, {
+        title: prTitle.trim(),
+        body: prBody.trim() || undefined,
+      });
+      setPrUrl(result.url);
+      setShowPrForm(false);
+      setPrTitle("");
+      setPrBody("");
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setCreatingPr(false);
+    }
+  }
+
   const stagedCount = status?.staged.length ?? 0;
   const unstagedCount = (status?.unstaged.length ?? 0) + (status?.untracked.length ?? 0);
   const hasChanges = stagedCount > 0 || unstagedCount > 0;
@@ -246,12 +272,63 @@ export function GitView({ cwd }: GitViewProps) {
             </div>
           )}
           <div className="flex-1" />
+          {Number(status.ahead) > 0 && (
+            <button
+              onClick={() => { setShowPrForm((v) => !v); setPrUrl(null); }}
+              className="px-2 py-0.5 rounded text-[0.65rem] font-semibold text-[var(--accent)] hover:bg-[var(--accent)] hover:text-white border border-[var(--accent)] transition-colors"
+            >
+              {showPrForm ? "Cancel" : "Create PR"}
+            </button>
+          )}
           <button
             onClick={refresh}
             className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors"
             title="Refresh"
           >
             <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
+          </button>
+        </div>
+      )}
+
+      {/* ── PR form ──────────────────────────────────────────────────────── */}
+      {showPrForm && (
+        <div className="border-b border-[var(--border)] px-4 py-3 space-y-2 bg-[var(--surface-2)] flex-shrink-0">
+          <input
+            value={prTitle}
+            onChange={(e) => setPrTitle(e.target.value)}
+            placeholder="PR title"
+            className="w-full rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-sm px-3 py-1.5 font-mono focus:outline-none"
+          />
+          <textarea
+            value={prBody}
+            onChange={(e) => setPrBody(e.target.value)}
+            placeholder="PR description (optional)"
+            rows={4}
+            className="w-full rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-sm px-3 py-1.5 font-mono focus:outline-none resize-y"
+          />
+          <div className="flex items-center gap-2">
+            <Button size="sm" onClick={handleCreatePr} disabled={!prTitle.trim() || creatingPr}>
+              {creatingPr ? "Creating..." : "Create PR"}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* ── PR success ────────────────────────────────────────────────────── */}
+      {prUrl && (
+        <div className="flex items-center gap-2 px-4 py-2 bg-[color-mix(in_srgb,var(--success)_8%,transparent)] border-b border-[var(--border)] flex-shrink-0">
+          <Check size={11} className="text-[var(--success)] flex-shrink-0" />
+          <span className="text-[0.714rem] text-[var(--text-primary)] flex-1 truncate">
+            PR created: {prUrl}
+          </span>
+          <button
+            onClick={() => { window.electron?.openExternal(prUrl); }}
+            className="text-[0.65rem] text-[var(--accent)] hover:underline flex-shrink-0"
+          >
+            Open
+          </button>
+          <button onClick={() => setPrUrl(null)} className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]">
+            <X size={11} />
           </button>
         </div>
       )}
