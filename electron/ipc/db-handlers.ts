@@ -102,6 +102,7 @@ export function registerDbHandlers(ctx: DbContext): void {
     })();
   }));
   registerIpcHandle("db:project:update", (_e, { id, patch }) => handle(() => q.updateProject(ctx.db, id, patch)));
+  registerIpcHandle("db:project:updateSettings", (_e, { id, settings }: { id: string; settings: Record<string, unknown> }) => handle(() => q.updateProjectSettings(ctx.db, id, settings)));
   registerIpcHandle("db:project:delete", (_e, { id }) => handle(() => {
     const project = q.getProjectById(ctx.db, id);
     // Delete from DB first so if it fails, the .md files are still intact for recovery.

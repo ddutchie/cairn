@@ -11,6 +11,7 @@ import {
   Terminal,
   Smartphone,
   Network,
+  FolderGit2,
 } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -24,8 +25,9 @@ import { AboutSection } from "./AboutSection";
 import { AgentSettings } from "./AgentSettings";
 import { MobileSettings } from "./MobileSettings";
 import { EmbeddingsSettings } from "./EmbeddingsSettings";
+import { ProjectSettingsSection } from "./ProjectSettings";
 
-type SettingsSection = "general" | "ai" | "embeddings" | "agents" | "mobile" | "data" | "about" | "shortcuts" | "tags";
+type SettingsSection = "general" | "ai" | "embeddings" | "agents" | "project" | "mobile" | "data" | "about" | "shortcuts" | "tags";
 
 export function SettingsView() {
   const [section, setSection] = useState<SettingsSection>("general");
@@ -40,6 +42,7 @@ export function SettingsView() {
           { id: "ai" as const, label: "AI & Chat", icon: Bot },
           { id: "embeddings" as const, label: "Embeddings", icon: Network },
           { id: "agents" as const, label: "Coding Agents", icon: Terminal },
+          { id: "project" as const, label: "Project", icon: FolderGit2 },
           { id: "mobile" as const, label: "Mobile Access", icon: Smartphone },
           { id: "tags" as const, label: "Tags", icon: Tag },
           { id: "shortcuts" as const, label: "Shortcuts", icon: Keyboard },
@@ -77,6 +80,7 @@ export function SettingsView() {
           {section === "ai" && <AISettings />}
           {section === "embeddings" && <EmbeddingsSettings />}
           {section === "agents" && <AgentSettings />}
+          {section === "project" && <ProjectSettingsSection />}
           {section === "mobile" && <MobileSettings />}
           {section === "tags" && <TagsSettings />}
           {section === "shortcuts" && <ShortcutsSettings />}

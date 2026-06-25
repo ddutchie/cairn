@@ -10,7 +10,7 @@ export interface CairnSnapshot {
   projects: Array<{
     id: string; workspaceId: string; name: string; description?: string;
     status: string; priority: string; dueDate?: string; archivedAt?: string;
-    tagIds: string[]; createdAt: string; updatedAt: string;
+    tagIds: string[]; projectSettings: Record<string, unknown>; createdAt: string; updatedAt: string;
   }>;
   notes: Array<{
     id: string; projectId: string; workspaceId: string; title: string;

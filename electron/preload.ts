@@ -37,6 +37,7 @@ const api = {
     list:   (workspaceId?: string) => invoke("db:project:list", { workspaceId }),
     create: (args: unknown) => invoke("db:project:create", args),
     update: (id: string, patch: unknown) => invoke("db:project:update", { id, patch }),
+    updateSettings: (id: string, settings: unknown) => invoke("db:project:updateSettings", { id, settings }),
     delete: (id: string) => invoke("db:project:delete", { id }),
   },
 

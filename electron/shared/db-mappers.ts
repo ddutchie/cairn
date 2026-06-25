@@ -48,6 +48,11 @@ export function toWorkspace(row: any) {
 }
 
 export function toProject(row: any) {
+  const raw = row.project_settings as string | undefined;
+  let projectSettings: Record<string, unknown> = {};
+  if (raw) {
+    try { projectSettings = JSON.parse(raw); } catch { projectSettings = {}; }
+  }
   return {
     id: row.id as string,
     workspaceId: row.workspace_id as string,
@@ -59,6 +64,7 @@ export function toProject(row: any) {
     dueDate: row.due_date as string | undefined,
     tagIds: p(row.tag_ids) as string[],
     codeDirectory: row.code_directory as string | null ?? null,
+    projectSettings,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
     archivedAt: row.archived_at as string | undefined,
