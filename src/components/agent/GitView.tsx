@@ -94,7 +94,6 @@ export function GitView({ cwd }: GitViewProps) {
     if (!window.electron?.git) return;
     try {
       const s = await window.electron.git.status(cwd);
-      console.log("[GitView] status received", { staged: s.staged, unstaged: s.unstaged, untracked: s.untracked });
       setStatus(s);
       setError(null);
     } catch (e) {
@@ -239,10 +238,8 @@ export function GitView({ cwd }: GitViewProps) {
     setLoadingFile(key);
     try {
       const result = await window.electron.git.diffFile(cwd, path, staged);
-      console.log("[GitView] diffFile", { cwd, path, staged, key, diffLen: (result as { diff?: string }).diff?.length, stat: result.stat });
       setFileDiffs((prev) => ({ ...prev, [key]: { ...result.stat, diff: result.diff } }));
-    } catch (e) {
-      console.warn("[GitView] diffFile failed", { path, staged, key, error: e });
+    } catch {
       setFileDiffs((prev) => ({ ...prev, [key]: { added: 0, deleted: 0, diff: "" } }));
     }
     setLoadingFile(null);
@@ -679,9 +676,8 @@ function Inlinediff({ rawDiff, loading }: { rawDiff: string; loading: boolean })
   const palette = isDark ? PALETTE_DARK : PALETTE_LIGHT;
 
   const parsed = useMemo(() => {
-    console.log("[Inlinediff] parse", { rawDiffLen: rawDiff.length, rawDiffHead: rawDiff.slice(0, 60) });
     if (!rawDiff) return [];
-    try { return parseDiff(rawDiff); } catch (e) { console.warn("[Inlinediff] parseDiff failed", e); return []; }
+    try { return parseDiff(rawDiff); } catch { return []; }
   }, [rawDiff]);
 
   if (loading) {

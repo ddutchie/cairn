@@ -37,13 +37,13 @@ function git(args: string[], cwd: string, timeout = 15_000): string {
     const stdout = (result.stdout ?? "").trim();
     throw new Error(stderr || stdout || `git ${args[0]} failed (exit ${result.status})`);
   }
-  return (result.stdout ?? "").trim();
+  return (result.stdout ?? "").trimEnd();
 }
 
 function gitSafe(args: string[], cwd: string, timeout = 15_000): { stdout: string; stderr: string; status: number | null } {
   const result = spawnSync("git", args, { cwd, encoding: "utf-8", timeout });
   return {
-    stdout: (result.stdout ?? "").trim(),
+    stdout: (result.stdout ?? "").trimEnd(),
     stderr: (result.stderr ?? "").trim(),
     status: result.status,
   };
@@ -64,17 +64,17 @@ export function registerGitHandlers(db: Database): void {
         const x = line[0];
         const y = line[1];
         const filePath = line.slice(2).trim();
-        console.log("[git:status] parse", JSON.stringify({ line, x, y, filePath, xCode: x.charCodeAt(0), yCode: y.charCodeAt(0) }));
         if (x === "?" && y === "?") {
           untracked.push({ path: filePath, status: "??" });
-        } else if (x !== " ") {
-          staged.push({ path: filePath, status: x + y });
-        }
-        if (y !== " ") {
-          unstaged.push({ path: filePath, status: x + y });
+        } else {
+          if (x !== " ") {
+            staged.push({ path: filePath, status: x + y });
+          }
+          if (y !== " ") {
+            unstaged.push({ path: filePath, status: x + y });
+          }
         }
       }
-      console.log("[git:status] result", JSON.stringify({ staged, unstaged, untracked }));
       const aheadBehind = gitSafe(["rev-list", "--count", "--left-right", `${branch}@{upstream}...HEAD`], cwd);
       const hasUpstream = aheadBehind.status === 0 && aheadBehind.stdout !== "";
       const [ahead = "0", behind = "0"] = aheadBehind.stdout ? aheadBehind.stdout.split("\t") : ["0", "0"];
@@ -205,35 +205,17 @@ export function registerGitHandlers(db: Database): void {
 
       let diff: string;
       if (staged) {
-        const d = gitSafe(["diff", "--cached", "--unified=10", "--", filePath], cwd);
-        // Diagnostics: what does git actually see?
-        const toplevel = gitSafe(["rev-parse", "--show-toplevel"], cwd);
-        const stagedNames = gitSafe(["diff", "--cached", "--name-status"], cwd);
-        const indexEntry = gitSafe(["ls-files", "--stage", "--", filePath], cwd);
-        const headBlob = gitSafe(["rev-parse", "HEAD:" + filePath], cwd);
-        console.log("[git:diffFile] staged", {
-          filePath, stat: statSafe.stdout, diffStatus: d.status, diffLen: d.stdout.length, diffHead: d.stdout.slice(0, 80), stderr: d.stderr,
-          toplevel: toplevel.stdout,
-          stagedNames: stagedNames.stdout,
-          indexEntry: indexEntry.stdout,
-          headBlob: headBlob.stdout,
-        });
-        diff = d.stdout;
+        diff = gitSafe(["diff", "--cached", "--unified=10", "--", filePath], cwd).stdout;
       } else {
         const r = gitSafe(["diff", "HEAD", "--unified=10", "--", filePath], cwd);
-        console.log("[git:diffFile] unstaged", { filePath, stat: statSafe.stdout, diffStatus: r.status, diffLen: r.stdout.length, diffHead: r.stdout.slice(0, 80), stderr: r.stderr });
         diff = r.stdout || "";
         // If empty, file might be untracked — diff against /dev/null
         if (!diff) {
           const untracked = gitSafe(["diff", "--no-index", "--unified=10", "/dev/null", filePath], cwd);
-          console.log("[git:diffFile] untracked fallback", { filePath, diffStatus: untracked.status, diffLen: untracked.stdout.length, diffHead: untracked.stdout.slice(0, 80), stderr: untracked.stderr });
           diff = untracked.stdout || "";
         }
       }
-      console.log("[git:diffFile] return", { filePath, staged, added, deleted, finalDiffLen: diff.length });
-      // TEMP DEBUG: include git debug info in the result so it's visible in renderer console
-      const porcelain = gitSafe(["status", "--porcelain", "--", filePath], cwd);
-      return { stat: { added, deleted }, diff: diff || "", _debug: { statRaw: statSafe.stdout, diffStatus: staged ? gitSafe(["diff", "--cached", "--unified=10", "--", filePath], cwd).status : 0, porcelain: porcelain.stdout, cwd } };
+      return { stat: { added, deleted }, diff: diff || "" };
     })
   );
 
