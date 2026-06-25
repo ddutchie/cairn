@@ -345,7 +345,7 @@ export function GitView({ cwd }: GitViewProps) {
           <button
             onClick={handlePush}
             disabled={pushing}
-            className="px-2 py-0.5 rounded text-[0.65rem] font-semibold text-[var(--accent)] hover:bg-[var(--accent)] hover:text-white border border-[var(--accent)] transition-colors disabled:opacity-50"
+            className="px-2 py-0.5 rounded text-[0.65rem] font-semibold text-[var(--accent)] hover:bg-[var(--accent)] hover:text-[var(--on-accent)] border border-[var(--accent)] transition-colors disabled:opacity-50"
           >
             <ArrowUp size={10} className="inline mr-0.5" />
             {pushing ? "Pushing..." : "Push"}
@@ -353,7 +353,7 @@ export function GitView({ cwd }: GitViewProps) {
           {prStatus && (
             <button
               onClick={() => { if (prStatus.url) window.electron?.openExternal(prStatus.url); }}
-              className="px-2 py-0.5 rounded text-[0.65rem] font-semibold text-[var(--accent)] hover:bg-[var(--accent)] hover:text-white border border-[var(--accent)] transition-colors"
+              className="px-2 py-0.5 rounded text-[0.65rem] font-semibold text-[var(--accent)] hover:bg-[var(--accent)] hover:text-[var(--on-accent)] border border-[var(--accent)] transition-colors"
             >
               View PR ({prStatus.state})
             </button>
@@ -361,7 +361,7 @@ export function GitView({ cwd }: GitViewProps) {
           {!prStatus && status.hasUpstream && Number(status.ahead) === 0 && !hasChanges && status.branch !== status.defaultBranch && (
             <button
               onClick={() => { setShowPrForm((v) => !v); setPrUrl(null); }}
-              className="px-2 py-0.5 rounded text-[0.65rem] font-semibold text-[var(--accent)] hover:bg-[var(--accent)] hover:text-white border border-[var(--accent)] transition-colors"
+              className="px-2 py-0.5 rounded text-[0.65rem] font-semibold text-[var(--accent)] hover:bg-[var(--accent)] hover:text-[var(--on-accent)] border border-[var(--accent)] transition-colors"
             >
               {showPrForm ? "Cancel" : "Create PR"}
             </button>
@@ -697,7 +697,7 @@ function FileRow({
         <button
           onClick={(e) => { e.stopPropagation(); onAction(); }}
           className="w-4 h-4 rounded flex items-center justify-center text-[0.65rem] font-bold opacity-0 group-hover:opacity-100 transition-opacity hover:scale-110"
-          style={{ color: actionColor, backgroundColor: `${actionColor}15` }}
+          style={{ color: actionColor, backgroundColor: `color-mix(in srgb, ${actionColor} 15%, transparent)` }}
           title={actionLabel === "+" ? "Stage" : "Unstage"}
         >
           {actionLabel}
@@ -715,7 +715,7 @@ function FileRow({
         )}
         <span
           className="text-[0.65rem] font-mono px-1.5 py-0.5 rounded flex-shrink-0"
-          style={{ color: statusColor(status), backgroundColor: `${statusColor(status)}10` }}
+          style={{ color: statusColor(status), backgroundColor: `color-mix(in srgb, ${statusColor(status)} 10%, transparent)` }}
         >
           {statusLabel(status)}
         </span>

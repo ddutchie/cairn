@@ -31,7 +31,7 @@ type SettingsSection = "general" | "ai" | "embeddings" | "agents" | "project" | 
 
 export function SettingsView() {
   const [section, setSection] = useState<SettingsSection>("general");
-  const { workspaces, projects, notes, cards } = useCairnStore(useShallow((s) => ({ workspaces: s.workspaces, projects: s.projects, notes: s.notes, cards: s.cards })));
+  const { workspaces, projects, notes, cards, activeProjectId } = useCairnStore(useShallow((s) => ({ workspaces: s.workspaces, projects: s.projects, notes: s.notes, cards: s.cards, activeProjectId: s.activeProjectId })));
 
   return (
     <div className="flex flex-col md:flex-row flex-1 min-h-0 overflow-hidden">
@@ -80,7 +80,7 @@ export function SettingsView() {
           {section === "ai" && <AISettings />}
           {section === "embeddings" && <EmbeddingsSettings />}
           {section === "agents" && <AgentSettings />}
-          {section === "project" && <ProjectSettingsSection />}
+          {section === "project" && <ProjectSettingsSection key={activeProjectId ?? "no-project"} />}
           {section === "mobile" && <MobileSettings />}
           {section === "tags" && <TagsSettings />}
           {section === "shortcuts" && <ShortcutsSettings />}

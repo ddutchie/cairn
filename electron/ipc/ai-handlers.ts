@@ -13,6 +13,34 @@ import { generatePrd } from "../lib/prd";
 import { callLLM, isLocalEndpoint, normaliseBaseUrl, type LLMConfig } from "../lib/llm";
 import { saveCachedConfig, getCachedConfig } from "../lib/config-cache";
 
+function resolveConfig(
+  config: { baseUrl?: string; model?: string; apiKey?: string } | undefined,
+  cacheKey: "ai" | "agent"
+): { error: string } | LLMConfig {
+  let reqConfig = config;
+  if (!reqConfig?.apiKey) {
+    const cached = cacheKey === "ai" ? getCachedConfig().aiConfig : getCachedConfig().agentConfig;
+    if (cached?.apiKey) {
+      reqConfig = {
+        ...reqConfig,
+        baseUrl: reqConfig?.baseUrl || cached.baseUrl || "",
+        model: reqConfig?.model || cached.model || "",
+        apiKey: cached.apiKey,
+      };
+    }
+  }
+
+  const baseUrl = normaliseBaseUrl(reqConfig?.baseUrl || "https://api.openai.com");
+  const model = reqConfig?.model || "gpt-4o-mini";
+  const apiKey = reqConfig?.apiKey || "";
+  const isLocal = isLocalEndpoint(baseUrl);
+  if (!apiKey && !isLocal) {
+    const sectionName = cacheKey === "ai" ? "Settings → AI & Chat" : "Settings";
+    return { error: `AI is not configured. Add an API key in ${sectionName}, or use a local endpoint.` };
+  }
+  return { baseUrl, model, apiKey };
+}
+
 export function registerAiHandlers(ctx: DbContext): void {
   registerIpcHandle("ai:localLLMStatus", async () => {
     return handle(async () => {
@@ -37,32 +65,16 @@ export function registerAiHandlers(ctx: DbContext): void {
       });
     }
 
-    let reqConfig: { baseUrl?: string; model?: string; apiKey?: string } = args.config;
-    if (!reqConfig?.apiKey) {
-      const cached = getCachedConfig().aiConfig;
-      if (cached?.apiKey) {
-        reqConfig = {
-          ...reqConfig,
-          baseUrl: reqConfig?.baseUrl || cached.baseUrl,
-          model: reqConfig?.model || cached.model,
-          apiKey: cached.apiKey,
-        };
-      }
+    const resolved = resolveConfig(args.config, "ai");
+    if ("error" in resolved) {
+      return err(resolved.error);
     }
 
-    const baseUrl = normaliseBaseUrl(reqConfig?.baseUrl || "https://api.openai.com");
-    const model = reqConfig?.model || "gpt-4o-mini";
-    const apiKey = reqConfig?.apiKey || "";
-    const isLocal = isLocalEndpoint(baseUrl);
-    if (!apiKey && !isLocal) {
-      return err("AI is not configured. Add an API key in Settings → AI & Chat, or use a local endpoint.");
-    }
-    const llmConfig = { baseUrl, model, apiKey };
     return handle(() => generatePrd(ctx.db, ctx.workspacePath, {
       projectId: args.projectId,
       title: args.title,
       requirements: args.requirements,
-    }, llmConfig));
+    }, resolved));
   });
 
   // ── AI commit message generation ──────────────────
@@ -70,27 +82,10 @@ export function registerAiHandlers(ctx: DbContext): void {
     diff: string;
     config: { baseUrl: string; model: string; apiKey: string };
   }) => {
-    let reqConfig = args.config;
-    if (!reqConfig?.apiKey) {
-      const cached = getCachedConfig().agentConfig;
-      if (cached?.apiKey) {
-        reqConfig = {
-          ...reqConfig,
-          baseUrl: reqConfig?.baseUrl || cached.baseUrl || "",
-          model: reqConfig?.model || cached.model || "",
-          apiKey: cached.apiKey,
-        };
-      }
+    const resolved = resolveConfig(args.config, "agent");
+    if ("error" in resolved) {
+      return err(resolved.error);
     }
-
-    const baseUrl = normaliseBaseUrl(reqConfig?.baseUrl || "https://api.openai.com");
-    const model = reqConfig?.model || "gpt-4o-mini";
-    const apiKey = reqConfig?.apiKey || "";
-    const isLocal = isLocalEndpoint(baseUrl);
-    if (!apiKey && !isLocal) {
-      return err("AI is not configured. Add an API key in Settings.");
-    }
-    const llmConfig: LLMConfig = { baseUrl, model, apiKey };
 
     return handle(async () => {
       const systemPrompt = "You are an expert at writing clear, concise git commit messages. "
@@ -100,7 +95,7 @@ export function registerAiHandlers(ctx: DbContext): void {
         + "Use types: feat, fix, refactor, chore, docs, style, test, perf.";
 
       const userPrompt = `Generate a commit message for the following diff:\n\n${args.diff.slice(0, 8000)}`;
-      const result = await callLLM(llmConfig, systemPrompt, userPrompt);
+      const result = await callLLM(resolved, systemPrompt, userPrompt);
       const subjectMatch = result.match(/SUBJECT\n(.+?)(?:\n|$)/);
       const bodyMatch = result.match(/BODY\n([\s\S]*?)$/);
       const subject = subjectMatch?.[1]?.trim() ?? "Update";
@@ -114,27 +109,10 @@ export function registerAiHandlers(ctx: DbContext): void {
     diff: string;
     config: { baseUrl: string; model: string; apiKey: string };
   }) => {
-    let reqConfig = args.config;
-    if (!reqConfig?.apiKey) {
-      const cached = getCachedConfig().agentConfig;
-      if (cached?.apiKey) {
-        reqConfig = {
-          ...reqConfig,
-          baseUrl: reqConfig?.baseUrl || cached.baseUrl || "",
-          model: reqConfig?.model || cached.model || "",
-          apiKey: cached.apiKey,
-        };
-      }
+    const resolved = resolveConfig(args.config, "agent");
+    if ("error" in resolved) {
+      return err(resolved.error);
     }
-
-    const baseUrl = normaliseBaseUrl(reqConfig?.baseUrl || "https://api.openai.com");
-    const model = reqConfig?.model || "gpt-4o-mini";
-    const apiKey = reqConfig?.apiKey || "";
-    const isLocal = isLocalEndpoint(baseUrl);
-    if (!apiKey && !isLocal) {
-      return err("AI is not configured. Add an API key in Settings.");
-    }
-    const llmConfig: LLMConfig = { baseUrl, model, apiKey };
 
     return handle(async () => {
       const systemPrompt = "You are an expert at writing clear, detailed pull request descriptions. "
@@ -143,7 +121,7 @@ export function registerAiHandlers(ctx: DbContext): void {
         + "Respond in this format:\n\nTITLE\n<title>\n\nDESCRIPTION\n<markdown description>\n\n";
 
       const userPrompt = `Generate a PR description for the following branch diff:\n\n${args.diff.slice(0, 8000)}`;
-      const result = await callLLM(llmConfig, systemPrompt, userPrompt);
+      const result = await callLLM(resolved, systemPrompt, userPrompt);
       const titleMatch = result.match(/TITLE\n(.+?)(?:\n|$)/);
       const descMatch = result.match(/DESCRIPTION\n([\s\S]*?)$/);
       const title = titleMatch?.[1]?.trim() ?? "Pull Request";

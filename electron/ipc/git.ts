@@ -1,11 +1,4 @@
-/**
- * Cairn — Git IPC handlers for the Agent Git tab.
- *
- * All operations are scoped to a `cwd` (project code directory) and run
- * `git` subprocesses via `child_process.spawnSync`.
- */
-
-import { spawnSync } from "child_process";
+import { execFile } from "child_process";
 import fs from "fs";
 import path from "path";
 import { registerIpcHandle } from "./registry";
@@ -16,46 +9,82 @@ function assertWithinCodeDirectory(db: Database, cwd: string): void {
   if (!cwd || !fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) {
     throw new Error(`Not a valid directory: ${cwd}`);
   }
-  const normalised = path.resolve(cwd);
+  const normalised = fs.realpathSync(cwd);
   const codeDirs = db
     .prepare("SELECT code_directory FROM projects WHERE code_directory IS NOT NULL")
     .all() as { code_directory: string }[];
   const allowed = codeDirs.some(({ code_directory }) => {
-    const dir = path.resolve(code_directory);
-    return normalised === dir || normalised.startsWith(dir + path.sep);
+    try {
+      if (!fs.existsSync(code_directory)) return false;
+      const dir = fs.realpathSync(code_directory);
+      return normalised === dir || normalised.startsWith(dir + path.sep);
+    } catch {
+      return false;
+    }
   });
   if (!allowed) {
     throw new Error(`Directory is outside any registered code directory: ${cwd}`);
   }
 }
 
-function git(args: string[], cwd: string, timeout = 15_000): string {
-  const result = spawnSync("git", args, { cwd, encoding: "utf-8", timeout });
-  if (result.error) throw result.error;
-  if (result.status !== 0) {
-    const stderr = (result.stderr ?? "").trim();
-    const stdout = (result.stdout ?? "").trim();
-    throw new Error(stderr || stdout || `git ${args[0]} failed (exit ${result.status})`);
+function isPathWithinCwd(cwd: string, filePath: string): boolean {
+  try {
+    const canonicalCwd = fs.realpathSync(cwd);
+    const absolutePath = path.isAbsolute(filePath)
+      ? path.resolve(filePath)
+      : path.resolve(cwd, filePath);
+
+    let existingPath = absolutePath;
+    while (existingPath && !fs.existsSync(existingPath)) {
+      const parent = path.dirname(existingPath);
+      if (parent === existingPath) break;
+      existingPath = parent;
+    }
+
+    const canonicalPath = fs.realpathSync(existingPath);
+    const relative = path.relative(canonicalCwd, canonicalPath);
+    return !relative.startsWith("..") && !path.isAbsolute(relative);
+  } catch {
+    return false;
   }
-  return (result.stdout ?? "").trimEnd();
 }
 
-function gitSafe(args: string[], cwd: string, timeout = 15_000): { stdout: string; stderr: string; status: number | null } {
-  const result = spawnSync("git", args, { cwd, encoding: "utf-8", timeout });
-  return {
-    stdout: (result.stdout ?? "").trimEnd(),
-    stderr: (result.stderr ?? "").trim(),
-    status: result.status,
-  };
+function git(args: string[], cwd: string, timeout = 15_000): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile("git", args, { cwd, encoding: "utf-8", timeout }, (error, stdout, stderr) => {
+      if (error) {
+        const errStatus = (error as { code?: number | string }).code;
+        const stderrTrimmed = (stderr ?? "").trim();
+        const stdoutTrimmed = (stdout ?? "").trim();
+        reject(new Error(stderrTrimmed || stdoutTrimmed || error.message || `git ${args[0]} failed (exit ${errStatus})`));
+      } else {
+        resolve((stdout ?? "").trimEnd());
+      }
+    });
+  });
+}
+
+function gitSafe(args: string[], cwd: string, timeout = 15_000): Promise<{ stdout: string; stderr: string; status: number | null }> {
+  return new Promise((resolve) => {
+    execFile("git", args, { cwd, encoding: "utf-8", timeout }, (error, stdout, stderr) => {
+      const code = error ? (error as { code?: number | string }).code : 0;
+      const status = typeof code === "number" ? code : (error ? 1 : 0);
+      resolve({
+        stdout: (stdout ?? "").trimEnd(),
+        stderr: (stderr ?? "").trim(),
+        status,
+      });
+    });
+  });
 }
 
 export function registerGitHandlers(db: Database): void {
   // ── git status ──────────────────────────────────────────────────────────
   registerIpcHandle("git:status", (_e, { cwd }: { cwd: string }) =>
-    handle(() => {
+    handle(async () => {
       assertWithinCodeDirectory(db, cwd);
-      const branch = gitSafe(["rev-parse", "--abbrev-ref", "HEAD"], cwd).stdout || "HEAD";
-      const porcelain = git(["status", "--porcelain"], cwd);
+      const branch = (await gitSafe(["rev-parse", "--abbrev-ref", "HEAD"], cwd)).stdout || "HEAD";
+      const porcelain = await git(["status", "--porcelain"], cwd);
       const lines = porcelain ? porcelain.split("\n").filter(Boolean) : [];
       const staged: Array<{ path: string; status: string }> = [];
       const unstaged: Array<{ path: string; status: string }> = [];
@@ -87,20 +116,20 @@ export function registerGitHandlers(db: Database): void {
           }
         }
       }
-      const aheadBehind = gitSafe(["rev-list", "--count", "--left-right", `${branch}@{upstream}...HEAD`], cwd);
+      const aheadBehind = await gitSafe(["rev-list", "--count", "--left-right", `${branch}@{upstream}...HEAD`], cwd);
       const hasUpstream = aheadBehind.status === 0 && aheadBehind.stdout !== "";
-      const [ahead = "0", behind = "0"] = aheadBehind.stdout ? aheadBehind.stdout.split("\t") : ["0", "0"];
-      const defaultBranch = gitSafe(["rev-parse", "--abbrev-ref", "origin/HEAD"], cwd).stdout.replace("origin/", "").trim() || "main";
+      const [behind = "0", ahead = "0"] = aheadBehind.stdout ? aheadBehind.stdout.split("\t") : ["0", "0"];
+      const defaultBranch = (await gitSafe(["rev-parse", "--abbrev-ref", "origin/HEAD"], cwd)).stdout.replace("origin/", "").trim() || "main";
       return { branch, ahead, behind, hasUpstream, defaultBranch, staged, unstaged, untracked };
     })
   );
 
   // ── git branches ─────────────────────────────────────────────────────────
   registerIpcHandle("git:branches", (_e, { cwd }: { cwd: string }) =>
-    handle(() => {
+    handle(async () => {
       assertWithinCodeDirectory(db, cwd);
-      const current = git(["rev-parse", "--abbrev-ref", "HEAD"], cwd);
-      const output = git(["branch", "-a"], cwd);
+      const current = await git(["rev-parse", "--abbrev-ref", "HEAD"], cwd);
+      const output = await git(["branch", "-a"], cwd);
       const branches = output.split("\n").filter(Boolean).map((line) => ({
         name: line.replace(/^\*?\s*/, "").trim(),
         current: line.startsWith("*"),
@@ -111,22 +140,22 @@ export function registerGitHandlers(db: Database): void {
 
   // ── git checkout / create branch ─────────────────────────────────────────
   registerIpcHandle("git:checkout", (_e, { cwd, branch, create }: { cwd: string; branch: string; create?: boolean }) =>
-    handle(() => {
+    handle(async () => {
       assertWithinCodeDirectory(db, cwd);
       const args = create ? ["checkout", "-b", branch] : ["checkout", branch];
-      git(args, cwd);
+      await git(args, cwd);
       return { branch };
     })
   );
 
   // ── git stage ────────────────────────────────────────────────────────────
   registerIpcHandle("git:stage", (_e, { cwd, files, all }: { cwd: string; files?: string[]; all?: boolean }) =>
-    handle(() => {
+    handle(async () => {
       assertWithinCodeDirectory(db, cwd);
       if (all) {
-        git(["add", "-A"], cwd);
+        await git(["add", "-A"], cwd);
       } else if (files && files.length > 0) {
-        git(["add", "--", ...files], cwd);
+        await git(["add", "--", ...files], cwd);
       }
       return { ok: true };
     })
@@ -134,12 +163,12 @@ export function registerGitHandlers(db: Database): void {
 
   // ── git unstage ──────────────────────────────────────────────────────────
   registerIpcHandle("git:unstage", (_e, { cwd, files, all }: { cwd: string; files?: string[]; all?: boolean }) =>
-    handle(() => {
+    handle(async () => {
       assertWithinCodeDirectory(db, cwd);
       if (all) {
-        git(["reset", "HEAD"], cwd);
+        await git(["reset", "HEAD"], cwd);
       } else if (files && files.length > 0) {
-        git(["reset", "HEAD", "--", ...files], cwd);
+        await git(["reset", "HEAD", "--", ...files], cwd);
       }
       return { ok: true };
     })
@@ -147,36 +176,36 @@ export function registerGitHandlers(db: Database): void {
 
   // ── git commit ───────────────────────────────────────────────────────────
   registerIpcHandle("git:commit", (_e, { cwd, message, body, autoStage }: { cwd: string; message: string; body?: string; autoStage?: boolean }) =>
-    handle(() => {
+    handle(async () => {
       assertWithinCodeDirectory(db, cwd);
       if (autoStage) {
-        git(["add", "-A"], cwd);
+        await git(["add", "-A"], cwd);
       }
       const fullMessage = body ? `${message}\n\n${body}` : message;
-      git(["commit", "-m", fullMessage], cwd, 30_000);
-      const hash = git(["rev-parse", "HEAD"], cwd).slice(0, 12);
+      await git(["commit", "-m", fullMessage], cwd, 30_000);
+      const hash = (await git(["rev-parse", "HEAD"], cwd)).slice(0, 12);
       return { hash, message };
     })
   );
 
   // ── git push ─────────────────────────────────────────────────────────────
   registerIpcHandle("git:push", (_e, { cwd, setUpstream }: { cwd: string; setUpstream?: boolean }) =>
-    handle(() => {
+    handle(async () => {
       assertWithinCodeDirectory(db, cwd);
-      const branch = git(["rev-parse", "--abbrev-ref", "HEAD"], cwd);
+      const branch = await git(["rev-parse", "--abbrev-ref", "HEAD"], cwd);
       const args = ["push"];
       if (setUpstream) args.push("-u", "origin", branch);
       else args.push("origin", branch);
-      git(args, cwd, 60_000);
+      await git(args, cwd, 60_000);
       return { branch };
     })
   );
 
   // ── git log ──────────────────────────────────────────────────────────────
   registerIpcHandle("git:log", (_e, { cwd, count = 20 }: { cwd: string; count?: number }) =>
-    handle(() => {
+    handle(async () => {
       assertWithinCodeDirectory(db, cwd);
-      const output = git(["log", `--max-count=${count}`, "--format=%H|%an|%ai|%s"], cwd);
+      const output = await git(["log", `--max-count=${count}`, "--format=%H|%an|%ai|%s"], cwd);
       if (!output) return [];
       return output.split("\n").filter(Boolean).map((line) => {
         const [hash, author, date, ...rest] = line.split("|");
@@ -187,12 +216,12 @@ export function registerGitHandlers(db: Database): void {
 
   // ── git diff (for commit message generation) ───────────────────────────
   registerIpcHandle("git:diff", (_e, { cwd, staged }: { cwd: string; staged?: boolean }) =>
-    handle(() => {
+    handle(async () => {
       assertWithinCodeDirectory(db, cwd);
       const args = staged ? ["diff", "--cached", "--unified=3"] : ["diff", "HEAD", "--unified=3"];
-      const result = gitSafe(args, cwd);
+      const result = await gitSafe(args, cwd);
       if (result.status !== 0) {
-        const fallback = gitSafe(["diff", "--cached", "--unified=3"], cwd);
+        const fallback = await gitSafe(["diff", "--cached", "--unified=3"], cwd);
         return fallback.stdout || "";
       }
       return result.stdout || "";
@@ -201,12 +230,12 @@ export function registerGitHandlers(db: Database): void {
 
   // ── git diffBranch (diff of current branch against a base branch) ──────
   registerIpcHandle("git:diffBranch", (_e, { cwd, baseBranch }: { cwd: string; baseBranch: string }) =>
-    handle(() => {
+    handle(async () => {
       assertWithinCodeDirectory(db, cwd);
       const args = ["diff", `origin/${baseBranch}...HEAD`, "--unified=3"];
-      const result = gitSafe(args, cwd);
+      const result = await gitSafe(args, cwd);
       if (result.status !== 0) {
-        const fallback = gitSafe(["diff", `${baseBranch}...HEAD`, "--unified=3"], cwd);
+        const fallback = await gitSafe(["diff", `${baseBranch}...HEAD`, "--unified=3"], cwd);
         return fallback.stdout || "";
       }
       return result.stdout || "";
@@ -215,70 +244,114 @@ export function registerGitHandlers(db: Database): void {
 
   // ── git diffFile (stat + full diff for one file) ───────────────────────
   registerIpcHandle("git:diffFile", (_e, { cwd, filePath, staged }: { cwd: string; filePath: string; staged?: boolean }) =>
-    handle(() => {
+    handle(async () => {
       assertWithinCodeDirectory(db, cwd);
-      // For untracked files (staged=false), git diff HEAD returns empty because
-      // the file isn't in HEAD. Use --no-index to diff against /dev/null.
-      const statSafe = gitSafe(
-        staged
-          ? ["diff", "--cached", "--numstat", "--", filePath]
-          : ["diff", "HEAD", "--numstat", "--", filePath],
-        cwd,
-      );
-      const match = statSafe.stdout.match(/^(\d+)\s+(\d+)/);
+      if (!isPathWithinCwd(cwd, filePath)) {
+        throw new Error(`Access denied: path is outside the code directory: ${filePath}`);
+      }
+
+      let diff: string;
+      let statStdout = "";
+      if (staged) {
+        statStdout = (await gitSafe(["diff", "--cached", "--numstat", "--", filePath], cwd)).stdout;
+        diff = (await gitSafe(["diff", "--cached", "--unified=10", "--", filePath], cwd)).stdout;
+      } else {
+        const r = await gitSafe(["diff", "HEAD", "--unified=10", "--", filePath], cwd);
+        diff = r.stdout || "";
+        if (diff) {
+          statStdout = (await gitSafe(["diff", "HEAD", "--numstat", "--", filePath], cwd)).stdout;
+        } else {
+          // If empty, file might be untracked — diff against /dev/null
+          const untracked = await gitSafe(["diff", "--no-index", "--unified=10", "--", "/dev/null", filePath], cwd);
+          diff = untracked.stdout || "";
+          if (diff) {
+            statStdout = (await gitSafe(["diff", "--no-index", "--numstat", "--", "/dev/null", filePath], cwd)).stdout;
+          }
+        }
+      }
+      const match = statStdout.match(/^(\d+)\s+(\d+)/);
       const added = match ? Number(match[1]) : 0;
       const deleted = match ? Number(match[2]) : 0;
 
-      let diff: string;
-      if (staged) {
-        diff = gitSafe(["diff", "--cached", "--unified=10", "--", filePath], cwd).stdout;
-      } else {
-        const r = gitSafe(["diff", "HEAD", "--unified=10", "--", filePath], cwd);
-        diff = r.stdout || "";
-        // If empty, file might be untracked — diff against /dev/null
-        if (!diff) {
-          const untracked = gitSafe(["diff", "--no-index", "--unified=10", "/dev/null", filePath], cwd);
-          diff = untracked.stdout || "";
-        }
-      }
       return { stat: { added, deleted }, diff: diff || "" };
     })
   );
 
   // ── git createPr ─────────────────────────────────────────────────────────
   registerIpcHandle("git:createPr", (_e, { cwd, title, body, base }: { cwd: string; title: string; body?: string; base?: string }) =>
-    handle(() => {
+    handle(async () => {
       assertWithinCodeDirectory(db, cwd);
-      const branch = git(["rev-parse", "--abbrev-ref", "HEAD"], cwd);
-      const check = spawnSync("gh", ["--version"], { encoding: "utf-8", timeout: 5_000 });
-      if (check.error || check.status !== 0) {
+      const branch = await git(["rev-parse", "--abbrev-ref", "HEAD"], cwd);
+      let hasGh = false;
+      try {
+        await new Promise<void>((resolve, reject) => {
+          execFile("gh", ["--version"], { timeout: 5_000 }, (err) => {
+            if (err) reject(err);
+            else resolve();
+          });
+        });
+        hasGh = true;
+      } catch {
+        hasGh = false;
+      }
+      if (!hasGh) {
         throw new Error("GitHub CLI (`gh`) is not installed or not in PATH. Install it from https://cli.github.com/ to create PRs.");
       }
       const ghArgs = ["pr", "create", "--title", title, "--head", branch];
       if (body) ghArgs.push("--body", body);
       if (base) ghArgs.push("--base", base);
-      const result = spawnSync("gh", ghArgs, { cwd, encoding: "utf-8", timeout: 30_000 });
-      if (result.error) throw result.error;
+      const result = await new Promise<{ stdout: string; stderr: string; status: number | null }>((resolve) => {
+        execFile("gh", ghArgs, { cwd, encoding: "utf-8", timeout: 30_000 }, (error, stdout, stderr) => {
+          const code = error ? (error as { code?: number | string }).code : 0;
+          const status = typeof code === "number" ? code : (error ? 1 : 0);
+          resolve({
+            stdout: stdout ?? "",
+            stderr: stderr ?? "",
+            status,
+          });
+        });
+      });
       if (result.status !== 0) {
-        throw new Error((result.stderr ?? "").trim() || (result.stdout ?? "").trim() || "gh pr create failed");
+        throw new Error(result.stderr.trim() || result.stdout.trim() || "gh pr create failed");
       }
-      const url = (result.stdout ?? "").trim();
+      const url = result.stdout.trim();
       return { url, branch };
     })
   );
 
   // ── git prStatus (check if a PR exists for the current branch) ───────────
   registerIpcHandle("git:prStatus", (_e, { cwd }: { cwd: string }) =>
-    handle(() => {
+    handle(async () => {
       assertWithinCodeDirectory(db, cwd);
-      const check = spawnSync("gh", ["--version"], { encoding: "utf-8", timeout: 5_000 });
-      if (check.error || check.status !== 0) {
+      let hasGh = false;
+      try {
+        await new Promise<void>((resolve, reject) => {
+          execFile("gh", ["--version"], { timeout: 5_000 }, (err) => {
+            if (err) reject(err);
+            else resolve();
+          });
+        });
+        hasGh = true;
+      } catch {
+        hasGh = false;
+      }
+      if (!hasGh) {
         return null;
       }
-      const branch = gitSafe(["rev-parse", "--abbrev-ref", "HEAD"], cwd).stdout;
+      const branch = (await gitSafe(["rev-parse", "--abbrev-ref", "HEAD"], cwd)).stdout;
       if (!branch) return null;
-      const result = spawnSync("gh", ["pr", "view", branch, "--json", "url,state,title"], { cwd, encoding: "utf-8", timeout: 10_000 });
-      if (result.error || result.status !== 0) {
+      const result = await new Promise<{ stdout: string; stderr: string; status: number | null }>((resolve) => {
+        execFile("gh", ["pr", "view", branch, "--json", "url,state,title"], { cwd, encoding: "utf-8", timeout: 10_000 }, (error, stdout, stderr) => {
+          const code = error ? (error as { code?: number | string }).code : 0;
+          const status = typeof code === "number" ? code : (error ? 1 : 0);
+          resolve({
+            stdout: stdout ?? "",
+            stderr: stderr ?? "",
+            status,
+          });
+        });
+      });
+      if (result.status !== 0) {
         return null;
       }
       try {
@@ -296,13 +369,17 @@ export function registerGitHandlers(db: Database): void {
 
   // ── git stash / stash pop ───────────────────────────────────────────────
   registerIpcHandle("git:stash", (_e, { cwd, action }: { cwd: string; action: "push" | "pop" | "list" }) =>
-    handle(() => {
+    handle(async () => {
       assertWithinCodeDirectory(db, cwd);
+      const allowedActions = ["push", "pop", "list"];
+      if (!allowedActions.includes(action)) {
+        throw new Error(`Invalid stash action: ${action}`);
+      }
       if (action === "list") {
-        const output = git(["stash", "list"], cwd);
+        const output = await git(["stash", "list"], cwd);
         return output ? output.split("\n").filter(Boolean) : [];
       }
-      git(["stash", action], cwd);
+      await git(["stash", action], cwd);
       return { ok: true };
     })
   );

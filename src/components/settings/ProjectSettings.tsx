@@ -37,19 +37,35 @@ export function ProjectSettingsSection() {
   async function save() {
     setSaving(true);
     try {
-      await window.electron?.project.updateSettings(activeProject.id, settings);
-      updateProject(activeProject.id, { projectSettings: settings as unknown as Record<string, unknown> });
+      const payload = {
+        prTemplate: settings.prTemplate ?? null,
+        defaultBranch: settings.defaultBranch ?? null,
+        autoStageOnCommit: settings.autoStageOnCommit ?? null,
+      };
+      await window.electron?.project.updateSettings(activeProject.id, payload);
+      updateProject(activeProject.id, { projectSettings: payload as unknown as Record<string, unknown> });
     } finally {
       setSaving(false);
     }
   }
 
   function reset() {
-    const cleared: ProjectSettings = {};
-    setSettings(cleared);
+    setSettings({
+      prTemplate: undefined,
+      defaultBranch: undefined,
+      autoStageOnCommit: undefined,
+    });
   }
 
-  const hasChanges = JSON.stringify(settings) !== JSON.stringify(activeProject?.projectSettings ?? {});
+  const getNormalizedSettings = (s: ProjectSettings): ProjectSettings => {
+    return {
+      prTemplate: s.prTemplate || undefined,
+      defaultBranch: s.defaultBranch || undefined,
+      autoStageOnCommit: s.autoStageOnCommit || undefined,
+    };
+  };
+
+  const hasChanges = JSON.stringify(getNormalizedSettings(settings)) !== JSON.stringify(getNormalizedSettings((activeProject?.projectSettings as ProjectSettings) ?? {}));
 
   return (
     <div className="space-y-8">
