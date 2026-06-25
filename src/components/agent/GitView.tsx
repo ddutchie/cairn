@@ -1,12 +1,13 @@
 "use client";
 
-import { useMemo, useState, useEffect, useCallback, useRef } from "react";
-import { RefreshCw, GitBranch, GitCommit, ArrowUp, Sparkles, Plus, Minus, File, Check, X, ChevronRight, ChevronDown, FileText } from "lucide-react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { RefreshCw, GitBranch, GitCommit, ArrowUp, Sparkles, File, Check, X, ChevronRight, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
-import type { ProjectSettings } from "@/types";
+import parseDiff from "parse-diff";
+import { UnifiedFile, PALETTE_DARK, PALETTE_LIGHT } from "./DiffFile";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -127,6 +128,8 @@ export function GitView({ cwd }: GitViewProps) {
     if (!window.electron?.git) return;
     try {
       await window.electron.git.stage(cwd, paths ? { files: paths } : { all: true });
+      setFileDiffs({});       // clear cached diffs — staging changes them
+      setExpandedFiles(new Set());
       await fetchStatus();
     } catch (e) {
       setError((e as Error).message);
@@ -137,6 +140,8 @@ export function GitView({ cwd }: GitViewProps) {
     if (!window.electron?.git) return;
     try {
       await window.electron.git.unstage(cwd, paths ? { files: paths } : { all: true });
+      setFileDiffs({});       // clear cached diffs — unstaging changes them
+      setExpandedFiles(new Set());
       await fetchStatus();
     } catch (e) {
       setError((e as Error).message);
@@ -154,6 +159,8 @@ export function GitView({ cwd }: GitViewProps) {
         true,
       );
       clearForm();
+      setFileDiffs({});
+      setExpandedFiles(new Set());
       await fetchStatus();
       await fetchLog();
     } catch (e) {
@@ -185,7 +192,6 @@ export function GitView({ cwd }: GitViewProps) {
       const diff = await window.electron.git.diff(cwd, true);
       if (!diff) {
         setError("No staged changes to generate a commit message from. Stage some files first.");
-        setGenerating(false);
         return;
       }
       const config = {
@@ -205,23 +211,21 @@ export function GitView({ cwd }: GitViewProps) {
 
   async function handleToggleFile(path: string, staged: boolean) {
     if (!window.electron?.git) return;
-    setExpandedFiles((prev) => {
-      const next = new Set(prev);
-      if (next.has(path)) {
-        next.delete(path);
-        return next;
-      }
-      next.add(path);
-      return next;
-    });
-    if (!fileDiffs[path]) {
-      setLoadingFile(path);
-      try {
-        const result = await window.electron.git.diffFile(cwd, path, staged);
-        setFileDiffs((prev) => ({ ...prev, [path]: { ...result.stat, diff: result.diff } }));
-      } catch { /* ignore */ }
-      setLoadingFile(null);
+    // If collapsing, just remove from expanded set
+    if (expandedFiles.has(path)) {
+      setExpandedFiles((prev) => { const n = new Set(prev); n.delete(path); return n; });
+      return;
     }
+    // Expanding — add to expanded + fetch diff
+    setExpandedFiles((prev) => { const n = new Set(prev); n.add(path); return n; });
+    setLoadingFile(path);
+    try {
+      const result = await window.electron.git.diffFile(cwd, path, staged);
+      setFileDiffs((prev) => ({ ...prev, [path]: { ...result.stat, diff: result.diff } }));
+    } catch {
+      setFileDiffs((prev) => ({ ...prev, [path]: { added: 0, deleted: 0, diff: "" } }));
+    }
+    setLoadingFile(null);
   }
 
   async function handleCreatePr() {
@@ -230,6 +234,10 @@ export function GitView({ cwd }: GitViewProps) {
     setCreatingPr(true);
     setError(null);
     try {
+      // Push any pending commits first so the PR includes everything
+      try {
+        await window.electron.git.push(cwd, false);
+      } catch { /* may already be up to date */ }
       const result = await window.electron.git.createPr(cwd, {
         title: prTitle.trim(),
         body: prBody.trim() || undefined,
@@ -274,7 +282,7 @@ export function GitView({ cwd }: GitViewProps) {
             </div>
           )}
           <div className="flex-1" />
-          {Number(status.ahead) > 0 && (
+          {(Number(status.ahead) > 0 || !status.hasUpstream) && (
             <button
               onClick={handlePush}
               disabled={pushing}
@@ -284,7 +292,7 @@ export function GitView({ cwd }: GitViewProps) {
               {pushing ? "Pushing..." : "Push"}
             </button>
           )}
-          {status.hasUpstream && Number(status.ahead) === 0 && status.branch !== status.defaultBranch && (
+          {status.hasUpstream && Number(status.ahead) === 0 && !hasChanges && status.branch !== status.defaultBranch && (
             <button
               onClick={() => { setShowPrForm((v) => !v); setPrUrl(null); }}
               className="px-2 py-0.5 rounded text-[0.65rem] font-semibold text-[var(--accent)] hover:bg-[var(--accent)] hover:text-white border border-[var(--accent)] transition-colors"
@@ -397,7 +405,7 @@ export function GitView({ cwd }: GitViewProps) {
                     actionLabel="-"
                     actionColor="var(--danger)"
                     stat={fileDiffs[file.path]}
-                    diff={fileDiffs[file.path]?.diff ?? ""}
+                    rawDiff={fileDiffs[file.path]?.diff ?? ""}
                     expanded={expandedFiles.has(file.path)}
                     loading={loadingFile === file.path}
                     onToggle={() => handleToggleFile(file.path, true)}
@@ -431,7 +439,7 @@ export function GitView({ cwd }: GitViewProps) {
                     actionLabel="+"
                     actionColor="var(--success)"
                     stat={fileDiffs[file.path]}
-                    diff={fileDiffs[file.path]?.diff ?? ""}
+                    rawDiff={fileDiffs[file.path]?.diff ?? ""}
                     expanded={expandedFiles.has(file.path)}
                     loading={loadingFile === file.path}
                     onToggle={() => handleToggleFile(file.path, false)}
@@ -465,7 +473,7 @@ export function GitView({ cwd }: GitViewProps) {
                     actionLabel="+"
                     actionColor="var(--success)"
                     stat={fileDiffs[file.path]}
-                    diff={fileDiffs[file.path]?.diff ?? ""}
+                    rawDiff={fileDiffs[file.path]?.diff ?? ""}
                     expanded={expandedFiles.has(file.path)}
                     loading={loadingFile === file.path}
                     onToggle={() => handleToggleFile(file.path, false)}
@@ -581,7 +589,7 @@ function FileSection({
 
 function FileRow({
   path, status, onAction, actionLabel, actionColor,
-  stat, diff, expanded, loading, onToggle,
+  stat, rawDiff, expanded, loading, onToggle,
 }: {
   path: string;
   status: string;
@@ -589,7 +597,7 @@ function FileRow({
   actionLabel: string;
   actionColor: string;
   stat?: { added: number; deleted: number };
-  diff: string;
+  rawDiff: string;
   expanded: boolean;
   loading: boolean;
   onToggle: () => void;
@@ -628,13 +636,24 @@ function FileRow({
         </span>
       </div>
       {expanded && (
-        <Inlinediff diff={diff} loading={loading} />
+        <Inlinediff rawDiff={rawDiff} loading={loading} />
       )}
     </>
   );
 }
 
-function Inlinediff({ diff, loading }: { diff: string; loading: boolean }) {
+function Inlinediff({ rawDiff, loading }: { rawDiff: string; loading: boolean }) {
+  const isDark =
+    typeof document !== "undefined"
+      ? document.documentElement.getAttribute("data-theme") !== "light"
+      : true;
+  const palette = isDark ? PALETTE_DARK : PALETTE_LIGHT;
+
+  const parsed = useMemo(() => {
+    if (!rawDiff) return [];
+    try { return parseDiff(rawDiff); } catch { return []; }
+  }, [rawDiff]);
+
   if (loading) {
     return (
       <div className="px-10 py-2 text-[0.65rem] text-[var(--text-tertiary)]">
@@ -642,30 +661,24 @@ function Inlinediff({ diff, loading }: { diff: string; loading: boolean }) {
       </div>
     );
   }
-  if (!diff) {
+  if (parsed.length === 0) {
     return (
       <div className="px-10 py-2 text-[0.65rem] text-[var(--text-tertiary)]">
-        Binary or empty file
+        No diff content
       </div>
     );
   }
-  const lines = diff.split("\n");
   return (
-    <div className="px-10 py-1 overflow-x-auto">
-      <pre className="text-[0.65rem] font-mono leading-relaxed">
-        {lines.slice(4).map((line, i) => {
-          let color = "var(--text-primary)";
-          if (line.startsWith("+")) color = "var(--success)";
-          else if (line.startsWith("-")) color = "var(--danger)";
-          else if (line.startsWith("@")) color = "var(--accent)";
-          return (
-            <span key={i} style={{ color }}>
-              {line}
-              {"\n"}
-            </span>
-          );
-        })}
-      </pre>
+    <div className="border-y border-[var(--border-subtle)]">
+      {parsed.map((file, i) => (
+        <UnifiedFile
+          key={file.to ?? file.from ?? i}
+          file={file}
+          palette={palette}
+          changesOnly={false}
+          hunkTop={0}
+        />
+      ))}
     </div>
   );
 }

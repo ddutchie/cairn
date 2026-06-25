@@ -103,7 +103,7 @@ function ln(change: Change, side: "old" | "new"): number | "" {
 
 // ── Unified file view ─────────────────────────────────────────────────────────
 
-function UnifiedFile({ file, palette, changesOnly, hunkTop }: { file: File; palette: Palette; changesOnly: boolean; hunkTop: number }) {
+export function UnifiedFile({ file, palette, changesOnly, hunkTop }: { file: File; palette: Palette; changesOnly: boolean; hunkTop: number }) {
   const filename = file.to ?? file.from ?? "unknown";
   const lang = langFrom(filename);
   return (

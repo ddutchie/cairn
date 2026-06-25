@@ -189,18 +189,31 @@ export function registerGitHandlers(db: Database): void {
   registerIpcHandle("git:diffFile", (_e, { cwd, filePath, staged }: { cwd: string; filePath: string; staged?: boolean }) =>
     handle(() => {
       assertWithinCodeDirectory(db, cwd);
-      const statArgs = staged
-        ? ["diff", "--cached", "--numstat", "--", filePath]
-        : ["diff", "HEAD", "--numstat", "--", filePath];
-      const statSafe = gitSafe(statArgs, cwd);
+      // For untracked files (staged=false), git diff HEAD returns empty because
+      // the file isn't in HEAD. Use --no-index to diff against /dev/null.
+      const statSafe = gitSafe(
+        staged
+          ? ["diff", "--cached", "--numstat", "--", filePath]
+          : ["diff", "HEAD", "--numstat", "--", filePath],
+        cwd,
+      );
       const match = statSafe.stdout.match(/^(\d+)\s+(\d+)/);
       const added = match ? Number(match[1]) : 0;
       const deleted = match ? Number(match[2]) : 0;
-      const diffArgs = staged
-        ? ["diff", "--cached", "--unified=10", "--", filePath]
-        : ["diff", "HEAD", "--unified=10", "--", filePath];
-      const safe = gitSafe(diffArgs, cwd);
-      return { stat: { added, deleted }, diff: safe.stdout || "" };
+
+      let diff: string;
+      if (staged) {
+        diff = gitSafe(["diff", "--cached", "--unified=10", "--", filePath], cwd).stdout;
+      } else {
+        const r = gitSafe(["diff", "HEAD", "--unified=10", "--", filePath], cwd);
+        diff = r.stdout || "";
+        // If empty, file might be untracked — diff against /dev/null
+        if (!diff) {
+          const untracked = gitSafe(["diff", "--no-index", "--unified=10", "/dev/null", filePath], cwd);
+          diff = untracked.stdout || "";
+        }
+      }
+      return { stat: { added, deleted }, diff: diff || "" };
     })
   );
 
