@@ -81,14 +81,15 @@ function handle<T>(fn: () => T | Promise<T>): Promise<{ data: T } | { error: str
     .catch((err: unknown) => ({ error: String(err) }));
 }
 
-function execGit(args: string[], cwd: string, timeout = 10_000): Promise<{ stdout: string; error?: Error | null; status: number }> {
+function execGit(args: string[], cwd: string, timeout = 10_000): Promise<{ stdout: string; stderr: string; error?: Error | null; status: number }> {
   return new Promise((resolve) => {
     const maxBuffer = 20 * 1024 * 1024; // 20MB
-    execFile("git", args, { cwd, encoding: "utf-8", timeout, maxBuffer }, (error, stdout, _stderr) => {
+    execFile("git", args, { cwd, encoding: "utf-8", timeout, maxBuffer }, (error, stdout, stderr) => {
       const code = error ? (error as { code?: number | string }).code : 0;
       const status = typeof code === "number" ? code : (error ? 1 : 0);
       resolve({
         stdout: stdout ?? "",
+        stderr: stderr ?? "",
         error,
         status,
       });
@@ -224,6 +225,9 @@ export function registerAgentHandlers(db: Database): void {
 
   registerIpcHandle("agent:gitDiff", (_e, { cwd }: { cwd: string }) =>
     handle(async () => {
+      // Validate cwd is within project code directory boundaries
+      assertWithinCodeDirectory(db, cwd);
+
       // Validate cwd exists and is a directory
       try {
         const stat = await fs.promises.stat(cwd);
@@ -244,7 +248,8 @@ export function registerAgentHandlers(db: Database): void {
         trackedResult = await execGit(["diff", "--cached", "--unified=3"], cwd);
       }
       if (trackedResult.status !== 0) {
-        throw trackedResult.error || new Error(`git diff failed with exit code ${trackedResult.status}`);
+        const errMsg = trackedResult.stderr.trim() || (trackedResult.error ? trackedResult.error.message : `git diff failed with exit code ${trackedResult.status}`);
+        throw new Error(errMsg);
       }
       if (trackedResult.stdout) parts.push(trackedResult.stdout.trim());
 
@@ -257,7 +262,8 @@ export function registerAgentHandlers(db: Database): void {
         cwd
       );
       if (untrackedResult.status !== 0) {
-        throw untrackedResult.error || new Error(`git ls-files failed with exit code ${untrackedResult.status}`);
+        const errMsg = untrackedResult.stderr.trim() || (untrackedResult.error ? untrackedResult.error.message : `git ls-files failed with exit code ${untrackedResult.status}`);
+        throw new Error(errMsg);
       }
 
       const untrackedFiles = (untrackedResult.stdout ?? "")
@@ -344,12 +350,14 @@ export function registerAgentHandlers(db: Database): void {
     taskTitle: string;
   }) => {
     return handle(async () => {
-      // Security: validate cwd on all platforms
-      if (!isSafePath(payload.cwd)) {
-        throw new Error(`Invalid cwd path: ${payload.cwd}`);
+      // Security: assert project code directory boundaries and validate cwd
+      assertWithinCodeDirectory(db, payload.cwd);
+      try {
+        const stat = await fs.promises.stat(payload.cwd);
+        if (!stat.isDirectory()) throw new Error(`cwd is not a directory: ${payload.cwd}`);
+      } catch {
+        throw new Error(`cwd is not a directory: ${payload.cwd}`);
       }
-      const stat = fs.statSync(payload.cwd);
-      if (!stat.isDirectory()) throw new Error(`cwd is not a directory: ${payload.cwd}`);
 
       // Load agent config
       const agent = q.getCodingAgentById(db, payload.agentId);
@@ -359,7 +367,9 @@ export function registerAgentHandlers(db: Database): void {
       if (!isSafePath(agent.binaryPath)) {
         throw new Error(`Unsafe binaryPath: ${agent.binaryPath}`);
       }
-      if (!fs.existsSync(agent.binaryPath)) {
+      try {
+        await fs.promises.access(agent.binaryPath, fs.constants.F_OK);
+      } catch {
         throw new Error(`Agent binary not found: ${agent.binaryPath}`);
       }
 
@@ -476,9 +486,13 @@ export function registerAgentHandlers(db: Database): void {
 
   registerIpcHandle("agent:spawnShell", async (event, payload: { cwd: string }) => {
     return handle(async () => {
-      if (!isSafePath(payload.cwd)) throw new Error(`Invalid cwd: ${payload.cwd}`);
-      const stat = fs.statSync(payload.cwd);
-      if (!stat.isDirectory()) throw new Error(`cwd is not a directory: ${payload.cwd}`);
+      assertWithinCodeDirectory(db, payload.cwd);
+      try {
+        const stat = await fs.promises.stat(payload.cwd);
+        if (!stat.isDirectory()) throw new Error(`cwd is not a directory: ${payload.cwd}`);
+      } catch {
+        throw new Error(`cwd is not a directory: ${payload.cwd}`);
+      }
 
       const defaultShell = process.platform === "win32"
         ? (process.env.COMSPEC || "cmd.exe")
