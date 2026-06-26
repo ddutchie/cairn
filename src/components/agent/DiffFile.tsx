@@ -68,7 +68,7 @@ function langFrom(filename: string): string | null {
 
 // ── Highlighted line ──────────────────────────────────────────────────────────
 
-function HL({ content, lang, palette }: { content: string; lang: string | null; palette: Palette }) {
+const HL = React.memo(function HL({ content, lang, palette }: { content: string; lang: string | null; palette: Palette }) {
   const tokens = useMemo(() => {
     if (!lang || !content) return null;
     try {
@@ -81,7 +81,7 @@ function HL({ content, lang, palette }: { content: string; lang: string | null; 
       {tokens ? tokens.map((n, i) => renderHast(n, palette, String(i))) : content}
     </code>
   );
-}
+});
 
 // ── View mode type ────────────────────────────────────────────────────────────
 
@@ -103,7 +103,7 @@ function ln(change: Change, side: "old" | "new"): number | "" {
 
 // ── Unified file view ─────────────────────────────────────────────────────────
 
-export function UnifiedFile({ file, palette, changesOnly, hunkTop }: { file: File; palette: Palette; changesOnly: boolean; hunkTop: number }) {
+export const UnifiedFile = React.memo(function UnifiedFile({ file, palette, changesOnly, hunkTop }: { file: File; palette: Palette; changesOnly: boolean; hunkTop: number }) {
   const filename = file.to ?? file.from ?? "unknown";
   const lang = langFrom(filename);
   return (
@@ -162,7 +162,7 @@ export function UnifiedFile({ file, palette, changesOnly, hunkTop }: { file: Fil
       })}
     </>
   );
-}
+});
 
 // ── Split file view ───────────────────────────────────────────────────────────
 
@@ -190,11 +190,12 @@ function buildSplitRows(changes: Change[]): SplitRow[] {
   return rows;
 }
 
-function SplitFile({ file, palette, hunkTop }: { file: File; palette: Palette; hunkTop: number }) {
+export const SplitFile = React.memo(function SplitFile({ file, palette, hunkTop }: { file: File; palette: Palette; hunkTop: number }) {
   const filename = file.to ?? file.from ?? "unknown";
   const lang = langFrom(filename);
   const addBg = "color-mix(in srgb, var(--success, #22c55e) 10%, transparent)";
   const delBg = "color-mix(in srgb, var(--danger) 10%, transparent)";
+  const splitRows = useMemo(() => file.chunks.map((chunk) => buildSplitRows(chunk.changes)), [file]);
   return (
     <>
       {file.chunks.map((chunk, ci) => (
@@ -205,7 +206,7 @@ function SplitFile({ file, palette, hunkTop }: { file: File; palette: Palette; h
           >
             {chunk.content}
           </div>
-          {buildSplitRows(chunk.changes).map((row, ri) => {
+          {splitRows[ci].map((row, ri) => {
             const oldContent = row.old ? row.old.content.slice(1) : "";
             const newContent = row.new ? row.new.content.slice(1) : "";
             const oldBg = row.old?.type === "del" ? delBg : undefined;
@@ -243,11 +244,11 @@ function SplitFile({ file, palette, hunkTop }: { file: File; palette: Palette; h
       ))}
     </>
   );
-}
+});
 
 // ── FileDiff — file header + collapsible content ──────────────────────────────
 
-export function FileDiff({ file, collapsed, onToggle, mode, palette }: {
+export const FileDiff = React.memo(function FileDiff({ file, collapsed, onToggle, mode, palette }: {
   file: File;
   collapsed: boolean;
   onToggle: () => void;
@@ -259,8 +260,8 @@ export function FileDiff({ file, collapsed, onToggle, mode, palette }: {
     ? `${file.from} → ${filename}`
     : filename;
 
-  const additions = file.chunks.reduce((s, c) => s + c.changes.filter((ch) => ch.type === "add").length, 0);
-  const deletions = file.chunks.reduce((s, c) => s + c.changes.filter((ch) => ch.type === "del").length, 0);
+  const additions = useMemo(() => file.chunks.reduce((s, c) => s + c.changes.filter((ch) => ch.type === "add").length, 0), [file]);
+  const deletions = useMemo(() => file.chunks.reduce((s, c) => s + c.changes.filter((ch) => ch.type === "del").length, 0), [file]);
 
   const headerRef = useRef<HTMLButtonElement>(null);
   const [hunkTop, setHunkTop] = useState(32);
@@ -299,4 +300,4 @@ export function FileDiff({ file, collapsed, onToggle, mode, palette }: {
       )}
     </div>
   );
-}
+});

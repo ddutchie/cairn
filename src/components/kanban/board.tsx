@@ -33,23 +33,20 @@ import { KanbanCard } from "./card";
 import { CardDetailModal } from "./card-detail";
 import type { TaskCard, BoardColumn } from "@/types";
 
-const ZONE_H = 56;
+const ZONE_H = 36;
+const ZONE_W = 128;
+const ZONE_GAP = 6;
 
-// ── Zone helpers — no component state deps, safe at module scope ──────────────
-
-function computeZoneRect(el: HTMLDivElement | null): { top: number; left: number; width: number } | null {
-  const r = el?.getBoundingClientRect();
-  if (!r) return null;
-  return { top: r.top, left: r.left, width: r.width };
-}
-
-function getZoneHit(clientX: number, clientY: number, rect: { top: number; left: number; width: number }): "archive" | "delete" | null {
-  const { top, left, width } = rect;
-  const bottom = top + ZONE_H;
-  const mid    = left + width / 2;
-  if (clientY < top || clientY > bottom) return null;
-  if (clientX < left || clientX > left + width) return null;
-  return clientX < mid ? "archive" : "delete";
+function getZoneHit(clientX: number, clientY: number): "archive" | "delete" | null {
+  const zoneTop = window.innerHeight - ZONE_H - 12;
+  if (clientY < zoneTop || clientY > zoneTop + ZONE_H) return null;
+  const totalW = ZONE_W * 2 + ZONE_GAP;
+  const zoneLeft = (window.innerWidth - totalW) / 2;
+  const archiveLeft = zoneLeft;
+  const deleteLeft = zoneLeft + ZONE_W + ZONE_GAP;
+  if (clientX >= archiveLeft && clientX < archiveLeft + ZONE_W) return "archive";
+  if (clientX >= deleteLeft && clientX < deleteLeft + ZONE_W) return "delete";
+  return null;
 }
 
 export function KanbanBoard() {
@@ -125,10 +122,6 @@ export function KanbanBoard() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  // Portal zone rects — computed from the board container when drag starts
-  const boardRef    = useRef<HTMLDivElement>(null);
-  const [zoneRect, setZoneRect] = useState<{ top: number; left: number; width: number } | null>(null);
-
   const columns = activeProjectId ? getProjectColumns(activeProjectId) : [];
 
   const sensors = useSensors(
@@ -141,16 +134,16 @@ export function KanbanBoard() {
   function handleDragStart(event: DragStartEvent) {
     const col  = event.active.data.current?.column as BoardColumn | undefined;
     const card = event.active.data.current?.card   as TaskCard    | undefined;
-    if (col)       { setActiveColumn(col); setZoneRect(null); }
-    else if (card) { setActiveCard(card);  setZoneRect(computeZoneRect(boardScrollRef.current)); }
+    if (col)       { setActiveColumn(col); }
+    else if (card) { setActiveCard(card); }
   }
 
   function handleDragMove(event: DragMoveEvent) {
-    if (!activeCard || !zoneRect) { setHoverZone(null); return; }
+    if (!activeCard) { setHoverZone(null); return; }
     const init = event.activatorEvent as PointerEvent;
     const x = init.clientX + event.delta.x;
     const y = init.clientY + event.delta.y;
-    const zone = getZoneHit(x, y, zoneRect);
+    const zone = getZoneHit(x, y);
     setHoverZone(zone);
     // Clear column/card drop highlight while hovering an action zone
     if (zone) setOverId(null);
@@ -158,6 +151,13 @@ export function KanbanBoard() {
 
   function handleDragOver(event: DragOverEvent) {
     setOverId(event.over?.id as string ?? null);
+  }
+
+  function handleDragCancel() {
+    setActiveCard(null);
+    setActiveColumn(null);
+    setOverId(null);
+    setHoverZone(null);
   }
 
   function handleDragEnd(event: DragEndEvent) {
@@ -168,17 +168,15 @@ export function KanbanBoard() {
     const init  = event.activatorEvent as PointerEvent;
     const dropX = init.clientX + event.delta.x;
     const dropY = init.clientY + event.delta.y;
-    const rect  = zoneRect;
 
     setActiveCard(null);
     setActiveColumn(null);
     setOverId(null);
     setHoverZone(null);
-    setZoneRect(null);
 
     // ── Action zones ──────────────────────────────────────────────────────
-    if (draggedCard && rect) {
-      const zone = getZoneHit(dropX, dropY, rect);
+    if (draggedCard) {
+      const zone = getZoneHit(dropX, dropY);
       if (zone === "archive") {
         archiveCard(draggedCard.id);
         return;
@@ -277,59 +275,64 @@ export function KanbanBoard() {
     );
   }
 
-  // Portal action zones — rendered into document.body, positioned over the board top edge
-  const actionZonesPortal = activeCard && zoneRect && typeof document !== "undefined"
+  // Portal action zones — rendered into document.body, positioned at the
+  // bottom of the viewport so content never shifts and the drop target is
+  // always visible without scrolling.
+  const actionZonesPortal = activeCard && typeof document !== "undefined"
     ? createPortal(
         <div
           style={{
             position: "fixed",
-            top: zoneRect.top,
-            left: zoneRect.left,
-            width: zoneRect.width,
+            bottom: 12,
+            left: 0,
+            right: 0,
             height: ZONE_H,
             display: "flex",
+            justifyContent: "center",
+            gap: ZONE_GAP,
             zIndex: 9999,
-            pointerEvents: "none", // visual only — drop detected via hit-test in handleDragEnd
+            pointerEvents: "none",
           }}
         >
-          {/* Archive half */}
+          {/* Archive button */}
           <div
             style={{
-              width: "50%",
+              width: ZONE_W,
+              height: ZONE_H,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              gap: 8,
-              fontSize: 13,
+              gap: 6,
+              fontSize: "0.875rem",
               fontWeight: 500,
-              background: hoverZone === "archive" ? "color-mix(in srgb, var(--warning) 22%, transparent)" : "color-mix(in srgb, var(--warning) 8%, transparent)",
-              color: hoverZone === "archive" ? "var(--warning)" : "color-mix(in srgb, var(--warning) 50%, transparent)",
-              borderBottom: `1px solid color-mix(in srgb, var(--warning) ${hoverZone === "archive" ? "45%" : "20%"}, transparent)`,
-              transition: "background 0.15s, color 0.15s, border-color 0.15s",
+              borderRadius: "6px 0 0 6px",
+              background: hoverZone === "archive" ? "var(--warning)" : "color-mix(in srgb, var(--warning) 85%, transparent)",
+              color: "var(--surface)",
+              transition: "background 0.15s",
             }}
           >
             <Archive size={14} />
             Archive
           </div>
-          {/* Delete half */}
+          {/* Delete button */}
           <div
             style={{
-              width: "50%",
+              width: ZONE_W,
+              height: ZONE_H,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              gap: 8,
-              fontSize: 13,
+              gap: 6,
+              fontSize: "0.875rem",
               fontWeight: 500,
+              borderRadius: "0 6px 6px 0",
               background: deleteFlashing
-                ? "color-mix(in srgb, var(--danger) 40%, transparent)"
+                ? "var(--danger)"
                 : hoverZone === "delete"
-                ? "color-mix(in srgb, var(--danger) 22%, transparent)"
-                : "color-mix(in srgb, var(--danger) 8%, transparent)",
-              color: hoverZone === "delete" || deleteFlashing ? "var(--danger)" : "color-mix(in srgb, var(--danger) 50%, transparent)",
-              borderBottom: `1px solid color-mix(in srgb, var(--danger) ${hoverZone === "delete" ? "45%" : "20%"}, transparent)`,
-              borderLeft: "1px solid color-mix(in srgb, var(--danger) 15%, transparent)",
-              transition: "background 0.15s, color 0.15s, border-color 0.15s",
+                ? "var(--danger)"
+                : "color-mix(in srgb, var(--danger) 85%, transparent)",
+              color: "var(--surface)",
+              transition: "background 0.15s",
             }}
           >
             <Trash2 size={14} />
@@ -349,8 +352,9 @@ export function KanbanBoard() {
         onDragMove={handleDragMove}
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
+        onDragCancel={handleDragCancel}
       >
-        <div ref={boardRef} className="flex-1 flex flex-col min-h-0 w-full overflow-hidden">
+        <div className="flex-1 flex flex-col min-h-0 w-full overflow-hidden">
           {/* Board / Archive toggle bar */}
           <div className="flex items-center gap-1 px-4 h-9 border-b border-[var(--border)] bg-[var(--surface)] flex-shrink-0">
             <button
@@ -547,8 +551,7 @@ export function KanbanBoard() {
           {!archiveViewOpen && <SortableContext items={columns.map((c) => c.id)} strategy={horizontalListSortingStrategy}>
             <div
               ref={boardScrollRef}
-              className="flex-1 flex gap-3 overflow-x-auto p-5 min-h-0 transition-all duration-200"
-              style={{ paddingTop: activeCard ? ZONE_H + 20 : 20 }}
+              className="flex-1 flex gap-3 overflow-x-auto p-5 min-h-0"
             >
               {columns.map((column) => {
                 const allCards = getColumnCards(column.id);
