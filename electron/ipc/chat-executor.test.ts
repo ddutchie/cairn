@@ -436,16 +436,24 @@ describe("ensure_note", () => {
     expect(result.action).toBe("updated");
   });
 
-  it("preserves content on update when content argument is omitted", async () => {
+  it("preserves content on update when content argument is omitted but clears it when content is empty string", async () => {
     const db = makeDb();
     seed(db);
+    // 1. Omitted content case
     await exec(db, "ensure_note", { projectId: "proj1", title: "README", content: "initial content" });
-    const result = await exec(db, "ensure_note", { projectId: "proj1", title: "README", folder: "new_folder" }) as Record<string, unknown>;
-    expect(result.action).toBe("updated");
-    expect(result.folder).toBe("new_folder");
+    const result1 = await exec(db, "ensure_note", { projectId: "proj1", title: "README", folder: "new_folder" }) as Record<string, unknown>;
+    expect(result1.action).toBe("updated");
+    expect(result1.folder).toBe("new_folder");
     
-    const note = await exec(db, "get_note", { noteId: result.id }) as Record<string, unknown>;
-    expect(note.content).toBe("initial content");
+    const note1 = await exec(db, "get_note", { noteId: result1.id }) as Record<string, unknown>;
+    expect(note1.content).toBe("initial content");
+
+    // 2. Empty string content case
+    const result2 = await exec(db, "ensure_note", { projectId: "proj1", title: "README", content: "" }) as Record<string, unknown>;
+    expect(result2.action).toBe("updated");
+
+    const note2 = await exec(db, "get_note", { noteId: result2.id }) as Record<string, unknown>;
+    expect(note2.content).toBe("");
   });
 
 

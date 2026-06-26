@@ -54,8 +54,6 @@ export function ensure_note(db: Database.Database, snap: Snapshot, workspacePath
     requestedTitle: typeof title === "string" ? title : "",
     matchedId: existing?.id ?? "none",
   });
-  const markdown = content !== undefined ? (content as string) : (existing?.content as string | undefined) ?? "";
-
   const resolvedFromNameIds = resolveTagNames(db, project.workspaceId, tagNames);
   let ensureResolvedTagIds = Array.isArray(ensureTagIds) ? ensureTagIds as string[] : undefined;
   if (resolvedFromNameIds.length > 0) {
@@ -68,10 +66,10 @@ export function ensure_note(db: Database.Database, snap: Snapshot, workspacePath
   try {
     if (existing) {
       const updatedFolder = ensureFolder ?? (existing.folder as string) ?? "";
+      let updatedNote: any;
       db.transaction(() => {
-        q.updateNote(db, existing.id, {
-          content: markdown,
-          contentText: stripMarkdown(markdown),
+        updatedNote = q.updateNote(db, existing.id, {
+          ...(content !== undefined ? { content, contentText: stripMarkdown(content as string) } : {}),
           ...(ensureResolvedTagIds ? { tagIds: ensureResolvedTagIds } : {}),
           ...(ensureResolvedIsPinned !== undefined ? { isPinned: ensureResolvedIsPinned } : {}),
           ...(ensureFolder !== undefined ? { folder: ensureFolder } : {}),
@@ -80,19 +78,20 @@ export function ensure_note(db: Database.Database, snap: Snapshot, workspacePath
       })();
       writeNoteFile(workspacePath, {
         id: existing.id, projectId, workspaceId: existing.workspaceId as string,
-        title: existing.title as string, content: markdown,
-        tagIds: ensureResolvedTagIds ?? existing.tagIds as string[], linkedNoteIds: existing.linkedNoteIds as string[],
-        linkedCardIds: existing.linkedCardIds as string[], isPinned: ensureResolvedIsPinned ?? existing.isPinned as boolean,
-        folder: updatedFolder,
-        createdAt: existing.createdAt as string, updatedAt: new Date().toISOString(),
+        title: existing.title as string, content: updatedNote.content,
+        tagIds: updatedNote.tagIds, linkedNoteIds: updatedNote.linkedNoteIds,
+        linkedCardIds: updatedNote.linkedCardIds, isPinned: updatedNote.isPinned,
+        folder: updatedNote.folder,
+        createdAt: existing.createdAt as string, updatedAt: updatedNote.updatedAt,
         archivedAt: existing.archivedAt as string | undefined,
         projectName: project.name,
       });
-      return { id: existing.id, title, folder: updatedFolder, action: "updated", updatedAt: new Date().toISOString() };
+      return { id: existing.id, title, folder: updatedNote.folder, action: "updated", updatedAt: updatedNote.updatedAt };
     } else {
       const newTagIds = ensureResolvedTagIds ?? [];
       const newIsPinned = ensureResolvedIsPinned ?? false;
       const newFolder = ensureFolder ?? "";
+      const markdown = (content as string | undefined) ?? "";
       const note = db.transaction(() => {
         const n = q.createNote(db, {
           id: ensureNoteId,
