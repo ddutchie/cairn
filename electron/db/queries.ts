@@ -149,6 +149,11 @@ export function updateProjectSettings(db: Database.Database, projectId: string, 
     try { return JSON.parse(row.project_settings); } catch { return {}; }
   })();
   const merged = { ...existing, ...patch };
+  for (const key of Object.keys(patch)) {
+    if (patch[key] === null || patch[key] === undefined) {
+      delete merged[key];
+    }
+  }
   const now = ts();
   db.prepare("UPDATE projects SET project_settings = ?, updated_at = ? WHERE id = ?").run(
     JSON.stringify(merged), now, projectId,

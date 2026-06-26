@@ -38,12 +38,18 @@ export function ProjectSettingsSection() {
     setSaving(true);
     try {
       const payload = {
-        prTemplate: settings.prTemplate ?? null,
-        defaultBranch: settings.defaultBranch ?? null,
-        autoStageOnCommit: settings.autoStageOnCommit ?? null,
+        prTemplate: settings.prTemplate !== undefined ? settings.prTemplate : null,
+        defaultBranch: settings.defaultBranch !== undefined ? settings.defaultBranch : null,
+        autoStageOnCommit: settings.autoStageOnCommit !== undefined ? settings.autoStageOnCommit : null,
       };
       await window.electron?.project.updateSettings(activeProject.id, payload);
-      updateProject(activeProject.id, { projectSettings: payload as unknown as Record<string, unknown> });
+      
+      const cleanProjectSettings: ProjectSettings = {};
+      if (payload.prTemplate !== null) cleanProjectSettings.prTemplate = payload.prTemplate;
+      if (payload.defaultBranch !== null) cleanProjectSettings.defaultBranch = payload.defaultBranch;
+      if (payload.autoStageOnCommit !== null) cleanProjectSettings.autoStageOnCommit = payload.autoStageOnCommit;
+
+      updateProject(activeProject.id, { projectSettings: cleanProjectSettings as unknown as Record<string, unknown> });
     } finally {
       setSaving(false);
     }
@@ -61,7 +67,7 @@ export function ProjectSettingsSection() {
     return {
       prTemplate: s.prTemplate || undefined,
       defaultBranch: s.defaultBranch || undefined,
-      autoStageOnCommit: s.autoStageOnCommit || undefined,
+      autoStageOnCommit: s.autoStageOnCommit !== undefined ? s.autoStageOnCommit : undefined,
     };
   };
 
@@ -115,7 +121,7 @@ export function ProjectSettingsSection() {
             id="autoStageOnCommit"
             type="checkbox"
             checked={settings.autoStageOnCommit ?? false}
-            onChange={(e) => update("autoStageOnCommit", e.target.checked || undefined)}
+            onChange={(e) => update("autoStageOnCommit", e.target.checked)}
             className="w-4 h-4 rounded border-[var(--border)] bg-[var(--surface-2)] text-[var(--accent)] accent-[var(--accent)] cursor-pointer"
           />
         </SettingsRow>
