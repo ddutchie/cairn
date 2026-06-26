@@ -32,11 +32,11 @@ import { KanbanCard } from "./card";
 import { CardDetailModal } from "./card-detail";
 import type { TaskCard, BoardColumn } from "@/types";
 
-const TITLE_BAR_H = 36;
-
-function getZoneHit(clientX: number, clientY: number, barTop: number, archiveRect: DOMRect | null, deleteRect: DOMRect | null): "archive" | "delete" | null {
-  if (archiveRect && clientX >= archiveRect.left && clientX <= archiveRect.right && clientY >= barTop && clientY <= barTop + TITLE_BAR_H) return "archive";
-  if (deleteRect && clientX >= deleteRect.left && clientX <= deleteRect.right && clientY >= barTop && clientY <= barTop + TITLE_BAR_H) return "delete";
+function getZoneHit(clientX: number, clientY: number, barRect: DOMRect | null, archiveRect: DOMRect | null, deleteRect: DOMRect | null): "archive" | "delete" | null {
+  if (!barRect) return null;
+  if (clientY < barRect.top || clientY > barRect.bottom) return null;
+  if (archiveRect && clientX >= archiveRect.left && clientX <= archiveRect.right) return "archive";
+  if (deleteRect && clientX >= deleteRect.left && clientX <= deleteRect.right) return "delete";
   return null;
 }
 
@@ -148,10 +148,10 @@ export function KanbanBoard() {
     if (!activeCard) { return; }
     const p = livePointer.current;
     if (!p) return;
-    const barTop = titleBarRef.current?.getBoundingClientRect().top ?? 0;
+    const barRect = titleBarRef.current?.getBoundingClientRect() ?? null;
     const archive = archiveBtnRef.current?.getBoundingClientRect() ?? null;
     const del = deleteBtnRef.current?.getBoundingClientRect() ?? null;
-    const zone = getZoneHit(p.x, p.y, barTop, archive, del);
+    const zone = getZoneHit(p.x, p.y, barRect, archive, del);
     if (zone !== hoverZoneRef.current) {
       hoverZoneRef.current = zone;
       applyZoneHighlight(zone);
@@ -180,9 +180,40 @@ export function KanbanBoard() {
     const drop = livePointer.current;
     const dropX = drop?.x ?? 0;
     const dropY = drop?.y ?? 0;
-    const barTop = titleBarRef.current?.getBoundingClientRect().top ?? 0;
+    const barRect = titleBarRef.current?.getBoundingClientRect() ?? null;
     const archive = archiveBtnRef.current?.getBoundingClientRect() ?? null;
     const del = deleteBtnRef.current?.getBoundingClientRect() ?? null;
+
+    // Check action zones before clearing drag state — the delete flash
+    // needs activeCard to stay truthy so the zone buttons remain mounted.
+    if (draggedCard) {
+      const zone = getZoneHit(dropX, dropY, barRect, archive, del);
+      if (zone === "archive") {
+        setActiveCard(null);
+        setActiveColumn(null);
+        setOverId(null);
+        hoverZoneRef.current = null;
+        applyZoneHighlight(null);
+        livePointer.current = null;
+        archiveCard(draggedCard.id);
+        return;
+      }
+      if (zone === "delete") {
+        setDeleteFlashing(true);
+        applyZoneHighlight("delete");
+        setTimeout(() => {
+          setDeleteFlashing(false);
+          setActiveCard(null);
+          setActiveColumn(null);
+          setOverId(null);
+          hoverZoneRef.current = null;
+          applyZoneHighlight(null);
+          livePointer.current = null;
+          deleteCard(draggedCard.id);
+        }, 300);
+        return;
+      }
+    }
 
     setActiveCard(null);
     setActiveColumn(null);
@@ -190,23 +221,6 @@ export function KanbanBoard() {
     hoverZoneRef.current = null;
     applyZoneHighlight(null);
     livePointer.current = null;
-
-    // ── Action zones ──────────────────────────────────────────────────────
-    if (draggedCard) {
-      const zone = getZoneHit(dropX, dropY, barTop, archive, del);
-      if (zone === "archive") {
-        archiveCard(draggedCard.id);
-        return;
-      }
-      if (zone === "delete") {
-        setDeleteFlashing(true);
-        setTimeout(() => {
-          setDeleteFlashing(false);
-          deleteCard(draggedCard.id);
-        }, 300);
-        return;
-      }
-    }
 
     if (!over || active.id === over.id) return;
 
