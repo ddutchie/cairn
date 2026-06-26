@@ -8,6 +8,7 @@ import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
 import parseDiff from "parse-diff";
 import { UnifiedFile, PALETTE_DARK, PALETTE_LIGHT } from "./DiffFile";
+import type { ProjectSettings } from "@/types";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -61,8 +62,10 @@ function statusColor(s: string): string {
 // ── GitView ─────────────────────────────────────────────────────────────────
 
 export function GitView({ cwd }: GitViewProps) {
-  const { agentConfig } = useCairnStore(useShallow((s) => ({
+  const { agentConfig, activeProjectId, projects } = useCairnStore(useShallow((s) => ({
     agentConfig: s.agentConfig,
+    activeProjectId: s.activeProjectId,
+    projects: s.projects,
   })));
 
   const [status, setStatus] = useState<GitStatusData | null>(null);
@@ -277,7 +280,41 @@ export function GitView({ cwd }: GitViewProps) {
         model: agentConfig.model,
         apiKey: agentConfig.apiKey,
       };
-      const result = await window.electron.ai.generatePrDescription({ diff, config });
+
+      const project = projects.find((p) => p.id === activeProjectId) ?? null;
+      const projectSettings = project?.projectSettings as ProjectSettings | undefined;
+      let template = "";
+
+      if (projectSettings?.useRepoPrTemplate) {
+        // Explicitly prefer repository template
+        if (window.electron?.agent) {
+          try {
+            const pathSeparator = window.electron.platform === "win32" ? "\\" : "/";
+            const templatePath = `${cwd}${pathSeparator}.github${pathSeparator}PULL_REQUEST_TEMPLATE.md`;
+            template = await window.electron.agent.readFile(templatePath);
+          } catch {
+            // Fallback to empty if not found
+          }
+        }
+      } else {
+        // Use custom settings template (if set), otherwise fall back to repository template
+        template = projectSettings?.prTemplate || "";
+        if (!template && window.electron?.agent) {
+          try {
+            const pathSeparator = window.electron.platform === "win32" ? "\\" : "/";
+            const templatePath = `${cwd}${pathSeparator}.github${pathSeparator}PULL_REQUEST_TEMPLATE.md`;
+            template = await window.electron.agent.readFile(templatePath);
+          } catch {
+            // Ignore
+          }
+        }
+      }
+
+      const result = await window.electron.ai.generatePrDescription({ 
+        diff, 
+        config, 
+        template: template || undefined 
+      });
       setPrTitle(result.title);
       setPrBody(result.description);
     } catch (e) {

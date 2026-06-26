@@ -146,6 +146,7 @@ export function registerAiHandlers(ctx: DbContext): void {
   registerIpcHandle("ai:generatePrDescription", async (_e, args: {
     diff: string;
     config: { baseUrl: string; model: string; apiKey: string };
+    template?: string;
   }) => {
     const resolved = resolveConfig(args.config, "agent");
     if ("error" in resolved) {
@@ -155,7 +156,9 @@ export function registerAiHandlers(ctx: DbContext): void {
     return handle(async () => {
       const systemPrompt = "You are an expert at writing clear, detailed pull request descriptions. "
         + "Based on the provided git diff, generate a professional pull request title and a detailed markdown description. "
-        + "The description should include: Summary of changes, Context/Why, and Key changes list. "
+        + (args.template
+            ? `You MUST format the DESCRIPTION using this markdown template:\n\n${args.template}\n\n`
+            : "The description should include: Summary of changes, Context/Why, and Key changes list. ")
         + "Respond in this format:\n\nTITLE\n<title>\n\nDESCRIPTION\n<markdown description>\n\n";
 
       const userPrompt = `Generate a PR description for the following branch diff:\n\n${args.diff.slice(0, 8000)}`;

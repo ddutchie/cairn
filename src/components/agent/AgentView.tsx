@@ -19,8 +19,9 @@ import { AgentBottomTerminal } from "./AgentBottomTerminal";
 import { DiffViewer } from "./DiffViewer";
 import { GitView } from "./GitView";
 import { TerminalManager } from "./TerminalManager";
-import { Bot, FolderOpen } from "lucide-react";
+import { Bot, FolderOpen, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ProjectSettingsModal } from "./ProjectSettingsModal";
 
 const MIN_TREE_WIDTH = 160;
 const DEFAULT_TREE_WIDTH = 220;
@@ -46,6 +47,7 @@ export function AgentView() {
   const [mobileTab, setMobileTab] = useState<"agent" | "files" | "editor" | "diff" | "git" | "terminal">("agent");
   // Bottom terminal height lives in React state so AgentBottomTerminal re-renders with the new height
   const [bottomHeight, setBottomHeight] = useState(DEFAULT_BOTTOM_HEIGHT);
+  const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
 
   // DOM refs for the resizable tree pane — mutated directly,
   // never stored in React state, so no re-render occurs during drag.
@@ -171,31 +173,40 @@ export function AgentView() {
   return (
     <div className="flex flex-col flex-1 min-h-0 overflow-hidden bg-[var(--background)]">
       {/* Mobile Tab Selector */}
-      <div className="md:hidden flex items-center gap-0.5 px-2 py-1.5 border-b border-[var(--border)] bg-[var(--surface)] overflow-x-auto scrollbar-none flex-shrink-0">
-        {[
-          { id: "agent" as const, label: "Agent Console" },
-          { id: "files" as const, label: "Files" },
-          { id: "editor" as const, label: "Editor" },
-          ...(codeDirectory ? [{ id: "diff" as const, label: "Diff" }] : []),
-          ...(codeDirectory ? [{ id: "git" as const, label: "Git" }] : []),
-          ...(codeDirectory ? [{ id: "terminal" as const, label: "Terminal" }] : []),
-        ].map((t) => (
-          <button
-            key={t.id}
-            onClick={() => {
-              setMobileTab(t.id);
-              setTimeout(() => TerminalManager.fitAll(), 50);
-            }}
-            className={cn(
-              "px-3 py-1 rounded-md text-[0.786rem] font-medium transition-colors whitespace-nowrap",
-              mobileTab === t.id
-                ? "text-[var(--text-primary)] bg-[var(--surface-2)]"
-                : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
+      <div className="md:hidden flex items-center justify-between px-2 py-1.5 border-b border-[var(--border)] bg-[var(--surface)] flex-shrink-0">
+        <div className="flex-1 flex items-center gap-0.5 overflow-x-auto scrollbar-none">
+          {[
+            { id: "agent" as const, label: "Agent Console" },
+            { id: "files" as const, label: "Files" },
+            { id: "editor" as const, label: "Editor" },
+            ...(codeDirectory ? [{ id: "diff" as const, label: "Diff" }] : []),
+            ...(codeDirectory ? [{ id: "git" as const, label: "Git" }] : []),
+            ...(codeDirectory ? [{ id: "terminal" as const, label: "Terminal" }] : []),
+          ].map((t) => (
+            <button
+              key={t.id}
+              onClick={() => {
+                setMobileTab(t.id);
+                setTimeout(() => TerminalManager.fitAll(), 50);
+              }}
+              className={cn(
+                "px-3 py-1 rounded-md text-[0.786rem] font-medium transition-colors whitespace-nowrap",
+                mobileTab === t.id
+                  ? "text-[var(--text-primary)] bg-[var(--surface-2)]"
+                  : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
+              )}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <button
+          onClick={() => setProjectSettingsOpen(true)}
+          className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors flex items-center justify-center ml-2 flex-shrink-0"
+          title="Project Settings"
+        >
+          <Settings size={14} />
+        </button>
       </div>
 
       {/* ── Main layout row ── */}
@@ -269,6 +280,13 @@ export function AgentView() {
                 Git
               </button>
             )}
+            <button
+              onClick={() => setProjectSettingsOpen(true)}
+              className="ml-auto p-1.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors flex items-center justify-center"
+              title="Project Settings"
+            >
+              <Settings size={14} />
+            </button>
           </div>
 
           {/* Editor content */}
@@ -320,6 +338,9 @@ export function AgentView() {
           </div>
         </>
       )}
+
+      {/* Project settings modal */}
+      <ProjectSettingsModal open={projectSettingsOpen} onClose={() => setProjectSettingsOpen(false)} />
 
     </div>
   );

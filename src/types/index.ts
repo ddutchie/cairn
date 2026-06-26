@@ -31,6 +31,7 @@ export interface ProjectSettings {
   prTemplate?: string;
   defaultBranch?: string;
   autoStageOnCommit?: boolean;
+  useRepoPrTemplate?: boolean;
 }
 
 export interface Project {

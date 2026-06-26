@@ -23,7 +23,14 @@ import { ImageViewer } from "./ImageViewer";
 // ── AgentEditor ───────────────────────────────────────────────────────────────
 
 export function AgentEditor() {
-  const { openEditorFiles, activeEditorFile, closeEditorFile, setActiveEditorFile } = useCairnStore(useShallow((s) => ({ openEditorFiles: s.openEditorFiles, activeEditorFile: s.activeEditorFile, closeEditorFile: s.closeEditorFile, setActiveEditorFile: s.setActiveEditorFile })));
+  const { openEditorFiles, activeEditorFile, closeEditorFile, setActiveEditorFile, activeProjectId, projects } = useCairnStore(useShallow((s) => ({
+    openEditorFiles: s.openEditorFiles,
+    activeEditorFile: s.activeEditorFile,
+    closeEditorFile: s.closeEditorFile,
+    setActiveEditorFile: s.setActiveEditorFile,
+    activeProjectId: s.activeProjectId,
+    projects: s.projects,
+  })));
 
   // Dirty state per file path
   const [dirtyFiles, setDirtyFiles] = useState<Set<string>>(new Set());
@@ -96,6 +103,9 @@ export function AgentEditor() {
   const activeFile = activeEditorFile ?? openEditorFiles[0];
   const isMarkdown = (p: string) => p.endsWith(".md") || p.endsWith(".mdx");
   const isImage = (p: string) => /\.(png|jpe?g|gif|webp|svg|bmp|ico|avif|tiff?)$/i.test(p);
+
+  const activeProject = projects.find((p) => p.id === activeProjectId);
+  const projectRoot = activeProject?.codeDirectory ?? undefined;
 
   return (
     <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
@@ -205,7 +215,11 @@ export function AgentEditor() {
                   {/* Markdown preview */}
                   {inPreview && (
                     <div className="absolute inset-0 overflow-y-auto">
-                      <NoteMarkdownPreview content={previewContent[filePath] ?? ""} />
+                      <NoteMarkdownPreview
+                        content={previewContent[filePath] ?? ""}
+                        filePath={filePath}
+                        projectRoot={projectRoot}
+                      />
                     </div>
                   )}
                 </>

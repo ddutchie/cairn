@@ -226,7 +226,7 @@ const api = {
     generatePrd: (args: unknown) => invoke<{ id: string; title: string; projectId: string }>("ai:generatePrd", args),
     generateCommitMessage: (args: { diff: string; config: { baseUrl: string; model: string; apiKey: string } }) =>
       invoke<{ subject: string; body: string }>("ai:generateCommitMessage", args),
-    generatePrDescription: (args: { diff: string; config: { baseUrl: string; model: string; apiKey: string } }) =>
+    generatePrDescription: (args: { diff: string; config: { baseUrl: string; model: string; apiKey: string }; template?: string }) =>
       invoke<{ title: string; description: string }>("ai:generatePrDescription", args),
     localLLMStatus: () => invoke<{ available: boolean; reason?: string }>("ai:localLLMStatus"),
   },
