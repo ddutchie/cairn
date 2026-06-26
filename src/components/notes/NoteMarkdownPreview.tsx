@@ -61,9 +61,7 @@ function MarkdownImage({ src, alt, title, filePath, projectRoot, ...props }: Mar
     }
 
     if (/^(https?|data):/i.test(src)) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setResolvedSrc(src);
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setError(false);
       return;
     }
@@ -128,9 +126,7 @@ function MarkdownImage({ src, alt, title, filePath, projectRoot, ...props }: Mar
           setError(true);
         });
     } else {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setResolvedSrc(src);
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setError(false);
     }
 

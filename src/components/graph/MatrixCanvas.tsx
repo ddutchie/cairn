@@ -54,7 +54,6 @@ export function MatrixCanvas({ nodes, onNodeClick, selectedNodeId }: Props) {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setPinnedCell(null);
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setHoveredCell(null);
   }, [activeTagsKey]);
 
