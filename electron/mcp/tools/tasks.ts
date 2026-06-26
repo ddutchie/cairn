@@ -7,18 +7,25 @@ import {
   Snapshot,
   getCardVersion,
   insertNotification,
-  resolveTagNames
+  lockNote,
+  resolveTagNames,
+  unlockNote,
+  writeNoteFile
 } from "../db";
 
 export function get_task(db: Database.Database, snap: Snapshot, args: Record<string, any>) {
   const card = snap.cards.find((c) => c.id === args.cardId);
   if (!card) return { error: "Task not found" };
   const col = snap.columns.find((c) => c.id === card.columnId);
+  const blockingCardIds = snap.cards
+    .filter((c) => Array.isArray(c.blockedByIds) && c.blockedByIds.includes(card.id))
+    .map((c) => c.id);
   return {
     id: card.id, title: card.title, description: card.description,
     priority: card.priority, dueDate: card.dueDate,
     columnId: card.columnId, columnName: col?.name ?? "Unknown", columnType: col?.type ?? "custom",
     linkedNoteIds: card.linkedNoteIds, blockedByIds: card.blockedByIds ?? [],
+    blockingCardIds,
     projectId: card.projectId, createdAt: card.createdAt, updatedAt: card.updatedAt,
     version: getCardVersion(db, card.id) ?? 0,
   };
@@ -88,20 +95,75 @@ export function bulk_update_task_status(db: Database.Database, snap: Snapshot, a
   return { moved, failed, targetColumnId, targetColumnName: col.name };
 }
 
-export function link_note_to_task(db: Database.Database, snap: Snapshot, args: Record<string, any>) {
+function applyNoteLinkChange(
+  db: Database.Database,
+  snap: Snapshot,
+  workspacePath: string,
+  args: { noteId: string; cardId: string },
+  transform: {
+    nextCardIds: (cur: string[]) => string[];
+    nextNoteIds: (cur: string[]) => string[];
+    notificationType: string;
+    notificationMsg: (noteTitle: string, cardTitle: string) => string;
+    resultKey: "linked" | "unlinked";
+  }
+) {
   const { noteId, cardId } = args;
   const note = snap.notes.find((n) => n.id === noteId);
   const card = snap.cards.find((c) => c.id === cardId);
   if (!note) return { error: "Note not found" };
   if (!card) return { error: "Card not found" };
-  const newCardIds = Array.from(new Set([...(note.linkedCardIds as string[]), cardId]));
-  const newNoteIds = Array.from(new Set([...(card.linkedNoteIds as string[]), noteId]));
-  db.transaction(() => {
-    q.updateNote(db, noteId as string, { linkedCardIds: newCardIds });
-    q.updateCard(db, cardId as string, { linkedNoteIds: newNoteIds });
-  })();
-  insertNotification(db, "link_note_to_task", "Note linked to task", `"${note.title}" linked to "${card.title}"`);
-  return { noteId, cardId, linked: true };
+  const newCardIds = transform.nextCardIds((note.linkedCardIds as string[]) ?? []);
+  const newNoteIds = transform.nextNoteIds((card.linkedNoteIds as string[]) ?? []);
+  lockNote(db, noteId);
+  let updatedNote: any;
+  try {
+    updatedNote = db.transaction(() => {
+      const u = q.updateNote(db, noteId, { linkedCardIds: newCardIds });
+      q.updateCard(db, cardId, { linkedNoteIds: newNoteIds });
+      return u;
+    })();
+  } finally {
+    unlockNote(db, noteId);
+  }
+  const proj = snap.projects.find((p) => p.id === note.projectId);
+  writeNoteFile(workspacePath, {
+    id: noteId, projectId: note.projectId as string, workspaceId: note.workspaceId as string,
+    title: note.title as string, content: updatedNote?.content ?? note.content as string,
+    tagIds: note.tagIds as string[], linkedNoteIds: note.linkedNoteIds as string[],
+    linkedCardIds: newCardIds, isPinned: note.isPinned as boolean,
+    createdAt: note.createdAt as string, updatedAt: updatedNote?.updatedAt ?? new Date().toISOString(),
+    archivedAt: note.archivedAt as string | undefined,
+    projectName: proj?.name ?? note.projectId as string,
+    folder: (note.folder as string) ?? "",
+  });
+  insertNotification(
+    db,
+    transform.notificationType,
+    transform.notificationType === "link_note_to_task" ? "Note linked to task" : "Note unlinked from task",
+    transform.notificationMsg(note.title as string, card.title as string),
+  );
+  return { noteId, cardId, [transform.resultKey]: true };
+}
+
+export function link_note_to_task(db: Database.Database, snap: Snapshot, workspacePath: string, args: Record<string, any>) {
+  return applyNoteLinkChange(db, snap, workspacePath, args as { noteId: string; cardId: string }, {
+    nextCardIds: (cur) => Array.from(new Set([...cur, args.cardId as string])),
+    nextNoteIds: (cur) => Array.from(new Set([...cur, args.noteId as string])),
+    notificationType: "link_note_to_task",
+    notificationMsg: (noteTitle, cardTitle) => `"${noteTitle}" linked to "${cardTitle}"`,
+    resultKey: "linked",
+  });
+}
+
+export function unlink_note_from_task(db: Database.Database, snap: Snapshot, workspacePath: string, args: Record<string, any>) {
+  return applyNoteLinkChange(db, snap, workspacePath, args as { noteId: string; cardId: string }, {
+    nextCardIds: (cur) => cur.filter((id) => id !== args.cardId as string),
+    nextNoteIds: (cur) => cur.filter((id) => id !== args.noteId as string),
+    notificationType: "unlink_note_from_task",
+    notificationMsg: (noteTitle, cardTitle) => `"${noteTitle}" unlinked from "${cardTitle}"`,
+    resultKey: "unlinked",
+  });
 }
 
 export function delete_task(db: Database.Database, snap: Snapshot, args: Record<string, any>) {

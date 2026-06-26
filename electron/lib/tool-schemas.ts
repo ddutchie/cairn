@@ -60,9 +60,11 @@ export const TOOL_SCHEMAS = {
   search_notes: {
     description: "Search notes by text query. Empty query returns all notes.",
     schema: z.object({
-      query:     sStr,
-      projectId: sIdOpt,
-      limit:     z.number().optional().default(10),
+      query:        sStr,
+      projectId:    sIdOpt,
+      limit:        z.number().optional().default(10),
+      offset:       z.number().int().nonnegative().optional().default(0).describe("Pagination offset (default 0)"),
+      updatedAfter: z.iso.datetime({ offset: true }).optional().describe("ISO datetime string filter to find notes updated after this date"),
     }),
   },
 
@@ -84,11 +86,11 @@ export const TOOL_SCHEMAS = {
   // ── Notes ────────────────────────────────────────────────────────────────────
 
   ensure_note: {
-    description: "Create-or-update a note by title+projectId. Idempotent — safe to call repeatedly.",
+    description: "Create-or-update a note by title+projectId. Idempotent — safe to call repeatedly. Content is optional; if omitted on update, existing content is preserved.",
     schema: z.object({
       projectId: sId,
       title:     sStr,
-      content:   sStrOpt,
+      content:   sStrOpt.describe("Markdown content. If omitted on update, existing content is preserved."),
       tagIds:    sTagIds,
       tagNames:  sTagNames,
       isPinned:  sBoolOpt,
@@ -118,6 +120,29 @@ export const TOOL_SCHEMAS = {
   delete_note: {
     description: "Permanently delete a note. Cannot be undone.",
     schema: z.object({ noteId: sId }),
+  },
+
+  rename_note: {
+    description: "Safely rename a note and update all incoming wikilink references in other notes to keep links intact.",
+    schema: z.object({
+      noteId:   sId,
+      newTitle: sStr.describe("The new title for the note"),
+    }),
+  },
+
+  bulk_move_notes: {
+    description: "Move multiple notes to a subfolder at once.",
+    schema: z.object({
+      noteIds: z.array(z.string()).describe("IDs of the notes to move"),
+      folder:  sStr.describe("Subfolder path. Empty = project root."),
+    }),
+  },
+
+  list_folders: {
+    description: "List all folders defined inside the notes of a project.",
+    schema: z.object({
+      projectId: sId,
+    }),
   },
 
   // ── Tasks ─────────────────────────────────────────────────────────────────────
@@ -169,6 +194,14 @@ export const TOOL_SCHEMAS = {
 
   link_note_to_task: {
     description: "Bidirectionally link a note and a task card.",
+    schema: z.object({
+      noteId: sId,
+      cardId: sId,
+    }),
+  },
+
+  unlink_note_from_task: {
+    description: "Bidirectionally remove a link between a note and a task card.",
     schema: z.object({
       noteId: sId,
       cardId: sId,

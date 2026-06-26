@@ -121,8 +121,11 @@ export async function executeTool(
     case "delete_task":
     case "bulk_update_task_status":
     case "link_note_to_task":
+    case "unlink_note_from_task":
     case "create_task":
     case "list_ready_tasks":
+    case "list_folders":
+    case "bulk_move_notes":
     case "upsert_project":
     case "delete_project":
     case "create_tag":
@@ -169,6 +172,16 @@ export async function executeTool(
       }
     }
     case "patch_note": {
+      const win = getWin?.() ?? null;
+      const noteId = args.noteId as string;
+      aiWriteLock.lock(noteId, win);
+      try {
+        return executeMcpTool(db, workspacePath, name, args);
+      } finally {
+        aiWriteLock.unlock(noteId, win);
+      }
+    }
+    case "rename_note": {
       const win = getWin?.() ?? null;
       const noteId = args.noteId as string;
       aiWriteLock.lock(noteId, win);
@@ -261,7 +274,7 @@ export async function executeTool(
     
     // For note tools, the result contains ID and title.
     const isNote = [
-      "get_note", "ensure_note", "patch_note", "append_to_note"
+      "get_note", "ensure_note", "patch_note", "append_to_note", "rename_note"
     ].includes(name);
     
     // For task tools, the result contains ID and title.

@@ -145,6 +145,15 @@ describe("get_task", () => {
     const result = await exec(db, "get_task", { cardId: "nope" }) as Record<string, unknown>;
     expect(result).toHaveProperty("error");
   });
+
+  it("returns blockingCardIds when other cards are blocked by this task", async () => {
+    const db = makeDb();
+    seed(db);
+    createCard(db, { id: "card2", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Task Two", order: 1 });
+    db.prepare("UPDATE task_cards SET blocked_by_ids = '[\"card1\"]' WHERE id = 'card2'").run();
+    const result = await exec(db, "get_task", { cardId: "card1" }) as Record<string, unknown>;
+    expect(result.blockingCardIds).toContain("card2");
+  });
 });
 
 // ── get_note ──────────────────────────────────────────────────────────────────
@@ -333,6 +342,43 @@ describe("link_note_to_task", () => {
   });
 });
 
+describe("unlink_note_from_task", () => {
+  it("unlinks note and card bidirectionally", async () => {
+    const db = makeDb();
+    seed(db);
+    // Link them first
+    await exec(db, "link_note_to_task", { noteId: "note1", cardId: "card1" });
+    
+    // Check they are linked in DB
+    const notePre = await exec(db, "get_note", { noteId: "note1" }) as Record<string, unknown>;
+    expect(notePre.linkedCardIds).toContain("card1");
+    
+    const taskPre = await exec(db, "get_task", { cardId: "card1" }) as Record<string, unknown>;
+    expect(taskPre.linkedNoteIds).toContain("note1");
+
+    // Unlink
+    const result = await exec(db, "unlink_note_from_task", { noteId: "note1", cardId: "card1" }) as Record<string, unknown>;
+    expect(result.unlinked).toBe(true);
+
+    // Verify unlinked
+    const notePost = await exec(db, "get_note", { noteId: "note1" }) as Record<string, unknown>;
+    expect(notePost.linkedCardIds).not.toContain("card1");
+    
+    const taskPost = await exec(db, "get_task", { cardId: "card1" }) as Record<string, unknown>;
+    expect(taskPost.linkedNoteIds).not.toContain("note1");
+  });
+
+  it("returns { error } for missing note or task", async () => {
+    const db = makeDb();
+    seed(db);
+    const result1 = await exec(db, "unlink_note_from_task", { noteId: "nope", cardId: "card1" }) as Record<string, unknown>;
+    expect(result1).toHaveProperty("error");
+
+    const result2 = await exec(db, "unlink_note_from_task", { noteId: "note1", cardId: "nope" }) as Record<string, unknown>;
+    expect(result2).toHaveProperty("error");
+  });
+});
+
 // ── unknown tool ──────────────────────────────────────────────────────────────
 
 describe("unknown tool", () => {
@@ -436,6 +482,27 @@ describe("ensure_note", () => {
     expect(result.action).toBe("updated");
   });
 
+  it("preserves content on update when content argument is omitted but clears it when content is empty string", async () => {
+    const db = makeDb();
+    seed(db);
+    // 1. Omitted content case
+    await exec(db, "ensure_note", { projectId: "proj1", title: "README", content: "initial content" });
+    const result1 = await exec(db, "ensure_note", { projectId: "proj1", title: "README", folder: "new_folder" }) as Record<string, unknown>;
+    expect(result1.action).toBe("updated");
+    expect(result1.folder).toBe("new_folder");
+    
+    const note1 = await exec(db, "get_note", { noteId: result1.id }) as Record<string, unknown>;
+    expect(note1.content).toBe("initial content");
+
+    // 2. Empty string content case
+    const result2 = await exec(db, "ensure_note", { projectId: "proj1", title: "README", content: "" }) as Record<string, unknown>;
+    expect(result2.action).toBe("updated");
+
+    const note2 = await exec(db, "get_note", { noteId: result2.id }) as Record<string, unknown>;
+    expect(note2.content).toBe("");
+  });
+
+
   it("only one note exists after two ensure calls with same title", async () => {
     const db = makeDb();
     seed(db);
@@ -468,6 +535,95 @@ describe("ensure_note", () => {
     seed(db);
     const result = await exec(db, "ensure_note", { projectId: "nope", title: "X" }) as Record<string, unknown>;
     expect(result).toHaveProperty("error");
+  });
+});
+
+describe("rename_note", () => {
+  it("renames a note and rewrites wikilinks in other notes", async () => {
+    const db = makeDb();
+    seed(db);
+    // Create note2 which links to note1
+    createNote(db, { id: "note2", projectId: "proj1", workspaceId: "ws1", title: "Note Two", content: "Links to [[My Note]]", contentText: "Links to [[My Note]]" });
+
+    // Rename note1 ("My Note") to "New Title"
+    const result = await exec(db, "rename_note", { noteId: "note1", newTitle: "New Title" }) as Record<string, unknown>;
+    expect(result.title).toBe("New Title");
+    expect(result.action).toBe("renamed");
+
+    // Verify note1 title changed
+    const note1 = await exec(db, "get_note", { noteId: "note1" }) as Record<string, unknown>;
+    expect(note1.title).toBe("New Title");
+
+    // Verify note2's wikilink rewritten to [[New Title]]
+    const note2 = await exec(db, "get_note", { noteId: "note2" }) as Record<string, unknown>;
+    expect(note2.content).toBe("Links to [[New Title]]");
+  });
+});
+
+describe("bulk_move_notes", () => {
+  it("moves multiple notes to a folder", async () => {
+    const db = makeDb();
+    seed(db);
+    createNote(db, { id: "note2", projectId: "proj1", workspaceId: "ws1", title: "Note Two", content: "hello", contentText: "hello" });
+
+    const result = await exec(db, "bulk_move_notes", { noteIds: ["note1", "note2"], folder: "Archive/Old" }) as Record<string, unknown>;
+    expect(result.moved).toBe(2);
+
+    const note1 = await exec(db, "get_note", { noteId: "note1" }) as Record<string, unknown>;
+    expect(note1.folder).toBe("Archive/Old");
+
+    const note2 = await exec(db, "get_note", { noteId: "note2" }) as Record<string, unknown>;
+    expect(note2.folder).toBe("Archive/Old");
+  });
+});
+
+describe("list_folders", () => {
+  it("returns unique folders inside a project", async () => {
+    const db = makeDb();
+    seed(db);
+    await exec(db, "ensure_note", { projectId: "proj1", title: "Folder A note", folder: "Folder A" });
+    await exec(db, "ensure_note", { projectId: "proj1", title: "Folder B note", folder: "Folder B" });
+    await exec(db, "ensure_note", { projectId: "proj1", title: "Folder A another note", folder: "Folder A" });
+
+    const result = await exec(db, "list_folders", { projectId: "proj1" }) as Record<string, unknown>;
+    expect(result.folders as string[]).toContain("Folder A");
+    expect(result.folders as string[]).toContain("Folder B");
+    expect((result.folders as string[])).toHaveLength(2);
+  });
+});
+
+describe("search_notes advanced parameters", () => {
+  it("supports offset pagination", async () => {
+    const db = makeDb();
+    seed(db);
+    createNote(db, { id: "note2", projectId: "proj1", workspaceId: "ws1", title: "Note Two", content: "hello", contentText: "hello" });
+    createNote(db, { id: "note3", projectId: "proj1", workspaceId: "ws1", title: "Note Three", content: "hello", contentText: "hello" });
+    // Deterministic updated_at: note3 newest, note1 oldest
+    db.prepare("UPDATE notes SET updated_at = '2023-01-01T00:00:00.000Z' WHERE id = 'note1'").run();
+    db.prepare("UPDATE notes SET updated_at = '2024-01-01T00:00:00.000Z' WHERE id = 'note2'").run();
+    db.prepare("UPDATE notes SET updated_at = '2025-01-01T00:00:00.000Z' WHERE id = 'note3'").run();
+
+    const page1 = await exec(db, "search_notes", { query: "hello", limit: 1, offset: 0 }) as Array<Record<string, unknown>>;
+    expect(page1.map((r) => r.id)).toEqual(["note3"]);
+
+    const page2 = await exec(db, "search_notes", { query: "hello", limit: 1, offset: 1 }) as Array<Record<string, unknown>>;
+    expect(page2.map((r) => r.id)).toEqual(["note2"]);
+
+    const page3 = await exec(db, "search_notes", { query: "hello", limit: 2, offset: 1 }) as Array<Record<string, unknown>>;
+    expect(page3.map((r) => r.id)).toEqual(["note2", "note1"]);
+  });
+
+  it("filters notes by updatedAfter", async () => {
+    const db = makeDb();
+    seed(db);
+    
+    createNote(db, { id: "note2", projectId: "proj1", workspaceId: "ws1", title: "Old Note", content: "hello", contentText: "hello" });
+    db.prepare("UPDATE notes SET updated_at = '2020-01-01T00:00:00.000Z' WHERE id = 'note2'").run();
+
+    const results = await exec(db, "search_notes", { query: "hello", updatedAfter: "2025-01-01T00:00:00.000Z" }) as Array<Record<string, unknown>>;
+    const ids = results.map(r => r.id);
+    expect(ids).toContain("note1");
+    expect(ids).not.toContain("note2");
   });
 });
 

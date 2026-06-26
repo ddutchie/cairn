@@ -191,15 +191,19 @@ export function executeGetProjectContextPack(snap: CairnSnapshot, args: Args): u
 }
 
 export function executeSearchNotes(snap: CairnSnapshot, args: Args): unknown {
-  const { query, projectId, limit = 10 } = args;
+  const { query, projectId, limit = 10, offset = 0, updatedAfter } = args;
   const qr = String(query).toLowerCase();
-  return snap.notes
-    .filter((n) => {
-      if (n.archivedAt) return false;
-      if (projectId && n.projectId !== projectId) return false;
-      return n.title.toLowerCase().includes(qr) || n.contentText.toLowerCase().includes(qr);
-    })
-    .slice(0, limit)
+  const updatedAfterMs = updatedAfter ? new Date(updatedAfter).getTime() : undefined;
+  const matches = snap.notes.filter((n) => {
+    if (n.archivedAt) return false;
+    if (projectId && n.projectId !== projectId) return false;
+    if (updatedAfterMs !== undefined && new Date(n.updatedAt).getTime() < updatedAfterMs) return false;
+    return n.title.toLowerCase().includes(qr) || n.contentText.toLowerCase().includes(qr);
+  });
+  // Sort by updatedAt DESC to ensure stable pagination ordering
+  matches.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  return matches
+    .slice(offset, offset + limit)
     .map((n) => ({
       id: n.id,
       title: n.title,
