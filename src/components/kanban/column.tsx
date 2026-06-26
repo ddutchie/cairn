@@ -204,7 +204,7 @@ export function KanbanColumn({
         ref={setSortableRef}
         style={style}
         className={cn(
-          "flex flex-col w-56 rounded-xl border flex-shrink-0 transition-colors duration-150",
+          "flex flex-col w-56 rounded-xl border flex-shrink-0 h-full transition-colors duration-150",
           isDragOver
             ? "border-[var(--accent)]/50 bg-[var(--accent-dim)]"
             : isHighlighted
@@ -323,7 +323,7 @@ export function KanbanColumn({
 
         {/* Cards */}
         <SortableContext items={cards.map((c) => c.id)} strategy={verticalListSortingStrategy}>
-          <div ref={setDropRef} className="flex-1 overflow-y-auto p-2 space-y-2 min-h-[48px]">
+          <div ref={setDropRef} className={cn("flex-1 overflow-y-auto p-2 space-y-2 min-h-[48px]", isDragOver && "min-h-[120px]")}>
             {cards.map((card) => (
               <KanbanCard key={card.id} card={card} onClick={() => onCardClick(card.id)} />
             ))}

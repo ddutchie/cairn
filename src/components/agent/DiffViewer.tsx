@@ -11,7 +11,7 @@
  *     changes  — unified but context lines hidden (adds/deletes only)
  */
 
-import { useMemo, useState, useEffect, useCallback, useRef } from "react";
+import { useMemo, useState, useEffect, useCallback, useRef, useDeferredValue } from "react";
 import parseDiff from "parse-diff";
 import { Copy, Check, RefreshCw, FolderGit2, ChevronRight, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -58,6 +58,10 @@ export function DiffViewer({ cwd }: DiffViewerProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const isMounted = useRef(true);
 
+  // Defers the diff text so that parseDiff + re-render runs at lower priority,
+  // keeping the UI responsive while typing, scrolling, or interacting.
+  const deferredDiffText = useDeferredValue(diffText);
+
   const fetchDiff = useCallback(async () => {
     if (!window.electron) return;
     setLoading(true);
@@ -83,9 +87,9 @@ export function DiffViewer({ cwd }: DiffViewerProps) {
   }, [fetchDiff]);
 
   const files = useMemo(() => {
-    if (!diffText) return [];
-    try { return parseDiff(diffText); } catch { return []; }
-  }, [diffText]);
+    if (!deferredDiffText) return [];
+    try { return parseDiff(deferredDiffText); } catch { return []; }
+  }, [deferredDiffText]);
 
   const toggleCollapse = useCallback((key: string) => {
     setCollapsed((prev) => {
@@ -224,8 +228,9 @@ export function DiffViewer({ cwd }: DiffViewerProps) {
             <FileDiff
               key={fileKey}
               file={file}
+              fileKey={fileKey}
               collapsed={collapsed.has(fileKey)}
-              onToggle={() => toggleCollapse(fileKey)}
+              onToggle={toggleCollapse}
               mode={mode}
               palette={palette}
             />

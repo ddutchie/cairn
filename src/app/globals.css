@@ -538,4 +538,27 @@ input[type="url"] {
 }
 
 
+/* ── Kanban drag drop zones ─────────────────────────────────────────────────── */
 
+.zone-archive {
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+}
+.zone-archive:hover {
+  background: color-mix(in srgb, var(--warning) 22%, transparent);
+}
+.zone-delete {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+.zone-delete:hover {
+  background: color-mix(in srgb, var(--danger) 22%, transparent);
+}
+.zone-archive.zone-active {
+  background: var(--warning);
+  color: #1a1a1a;
+}
+.zone-delete.zone-active {
+  background: var(--danger);
+  color: #fff;
+}

@@ -152,6 +152,7 @@ export function append_to_note(db: Database.Database, snap: Snapshot, workspaceP
       createdAt: note.createdAt as string, updatedAt: updated?.updatedAt ?? new Date().toISOString(),
       archivedAt: note.archivedAt as string | undefined,
       projectName: proj?.name ?? note.projectId as string,
+      folder: (note.folder as string) ?? "",
     });
     return { id: noteId, title: note.title, updatedAt: updated?.updatedAt, newLength: newContent.length };
   } finally {
@@ -195,6 +196,7 @@ export function patch_note(db: Database.Database, snap: Snapshot, workspacePath:
       createdAt: note.createdAt as string, updatedAt: updated?.updatedAt ?? new Date().toISOString(),
       archivedAt: note.archivedAt as string | undefined,
       projectName: proj?.name ?? note.projectId as string,
+      folder: (note.folder as string) ?? "",
     });
     return { id: noteId, title: note.title, updatedAt: updated?.updatedAt, replacements: all ? count : 1 };
   } finally {
