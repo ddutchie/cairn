@@ -58,8 +58,12 @@ execSync(`npm rebuild better-sqlite3`, { stdio: "inherit", cwd: root });
 copyBinary(path.join(root, "vitest-native", "better_sqlite3.node"), `vitest Node ${process.version} (ABI ${currentNodeVersion})`);
 
 // Step 2: Build for Electron ABI
-run("npx @electron/rebuild -f better-sqlite3");
+const rebuildBin = process.platform === "win32"
+  ? path.join(root, "node_modules", ".bin", "electron-rebuild.cmd")
+  : path.join(root, "node_modules", ".bin", "electron-rebuild");
+
+run(`"${rebuildBin}" -f -o better-sqlite3`);
 copyBinary(path.join(root, "electron-native", "better_sqlite3_electron.node"), "Electron");
-run("npx @electron/rebuild -f node-pty");
+run(`"${rebuildBin}" -f -o node-pty`);
 
 console.log("\nNative rebuild complete.");
