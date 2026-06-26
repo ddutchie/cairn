@@ -94,7 +94,12 @@ export interface ChatRequest {
   history?: Array<{
     role: "user" | "assistant" | "system" | "tool";
     content: string | null;
-    tool_calls?: any[];
+    tool_calls?: Array<{
+      id: string;
+      type: "function";
+      function: { name: string; arguments: string };
+      thought_signature?: string;
+    }>;
     tool_call_id?: string;
     name?: string;
   }>;

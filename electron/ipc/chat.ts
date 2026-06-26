@@ -415,7 +415,7 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
     const messages: OpenAIMessage[] = [
       { role: "system", content: buildSystemPrompt(req) },
       ...(req.history ?? []).map((m) => {
-        const out: any = { role: m.role, content: m.content };
+        const out: OpenAIMessage = { role: m.role, content: m.content };
         if (m.tool_calls) out.tool_calls = m.tool_calls;
         if (m.tool_call_id) out.tool_call_id = m.tool_call_id;
         if (m.name) out.name = m.name;

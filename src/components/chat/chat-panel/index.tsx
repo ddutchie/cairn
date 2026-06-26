@@ -410,7 +410,11 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
       const history: Array<{
         role: string;
         content: string | null;
-        tool_calls?: any[];
+        tool_calls?: Array<{
+          id: string;
+          type: "function";
+          function: { name: string; arguments: string };
+        }>;
         tool_call_id?: string;
         name?: string;
       }> = [];
