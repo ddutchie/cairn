@@ -18,7 +18,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useCairnStore } from "@/store";
-import type { SuggestedAction, TokenBreakdown } from "@/types";
+import type { SuggestedAction, TokenBreakdown, ChatHistoryEntry } from "@/types";
 
 export interface ChatToolCall {
   tool: string;
@@ -42,17 +42,7 @@ export interface ChatStreamRequest {
   threadId: string;
   projectId: string | null | undefined;
   workspaceId: string | null | undefined;
-  history: Array<{
-    role: string;
-    content: string | null;
-    tool_calls?: Array<{
-      id: string;
-      type: "function";
-      function: { name: string; arguments: string };
-    }>;
-    tool_call_id?: string;
-    name?: string;
-  }>;
+  history: ChatHistoryEntry[];
   config: {
     provider?: string;
     baseUrl?: string;
@@ -131,9 +121,17 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
 
     const unsubToolDone = electron.chat.onToolCallDone?.((e) => {
       setToolCalls((prev) => {
-        const lastIdx = [...prev].reverse().findIndex((tc) => tc.tool === e.tool);
-        if (lastIdx === -1) return prev;
-        const idx = prev.length - 1 - lastIdx;
+        let idx = -1;
+        if (e.callId) {
+          idx = prev.findIndex((tc) => tc.callId === e.callId);
+        }
+        if (idx === -1) {
+          const lastIdx = [...prev].reverse().findIndex((tc) => tc.tool === e.tool);
+          if (lastIdx !== -1) {
+            idx = prev.length - 1 - lastIdx;
+          }
+        }
+        if (idx === -1) return prev;
         const updated = [...prev];
         updated[idx] = { ...updated[idx], cairnRef: e.cairnRef, output: e.output };
         toolCallsRef.current = updated;

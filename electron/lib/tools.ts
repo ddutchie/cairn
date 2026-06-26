@@ -86,23 +86,25 @@ export const TOOLS = (Object.entries(TOOL_SCHEMAS) as [ToolName, (typeof TOOL_SC
 void CHAT_ONLY_TOOLS;
 
 
+export interface ChatHistoryEntry {
+  role: "user" | "assistant" | "system" | "tool";
+  content: string | null;
+  tool_calls?: Array<{
+    id: string;
+    type: "function";
+    function: { name: string; arguments: string };
+    thought_signature?: string;
+  }>;
+  tool_call_id?: string;
+  name?: string;
+}
+
 export interface ChatRequest {
   message: string;
   threadId: string;
   projectId?: string;
   workspaceId?: string;
-  history?: Array<{
-    role: "user" | "assistant" | "system" | "tool";
-    content: string | null;
-    tool_calls?: Array<{
-      id: string;
-      type: "function";
-      function: { name: string; arguments: string };
-      thought_signature?: string;
-    }>;
-    tool_call_id?: string;
-    name?: string;
-  }>;
+  history?: ChatHistoryEntry[];
   config?: { baseUrl?: string; model?: string; apiKey?: string; maxSteps?: number; temperature?: number };
   systemPrompt?: string;
   images?: Array<{ name: string; dataUrl: string }>;

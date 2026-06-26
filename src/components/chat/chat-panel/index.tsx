@@ -9,6 +9,8 @@ import { buildGraphContext } from "@/components/graph/graph-ai-utils";
 import { ipcAwaitResult } from "@/store/ipc";
 import { resolvePromptContext } from "@/lib/context-resolver";
 
+import type { ChatHistoryEntry } from "@/types";
+
 import { Tooltip } from "@/components/ui/tooltip";
 import { ChatMessageBubble } from "./ChatMessageBubble";
 import { SuggestedPrompts } from "./SuggestedPrompts";
@@ -407,17 +409,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
     }
 
     const formatChatHistory = (msgs: typeof messages) => {
-      const history: Array<{
-        role: string;
-        content: string | null;
-        tool_calls?: Array<{
-          id: string;
-          type: "function";
-          function: { name: string; arguments: string };
-        }>;
-        tool_call_id?: string;
-        name?: string;
-      }> = [];
+      const history: ChatHistoryEntry[] = [];
       msgs.slice(-40).forEach((m) => {
         if (m.role === "user") {
           history.push({

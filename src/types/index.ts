@@ -191,6 +191,18 @@ export type SuggestedAction =
   | { type: "link_note_card"; noteId: string; noteTitle: string; cardId: string; cardTitle: string; reason: string }
   | { type: "add_tag";        nodeId: string; nodeTitle: string; nodeType: "note" | "card"; tagName: string; reason: string };
 
+export interface ChatHistoryEntry {
+  role: string;
+  content: string | null;
+  tool_calls?: Array<{
+    id: string;
+    type: "function";
+    function: { name: string; arguments: string };
+  }>;
+  tool_call_id?: string;
+  name?: string;
+}
+
 export interface ChatMessage {
   id: ID;
   threadId: ID;
