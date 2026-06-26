@@ -109,7 +109,8 @@ export const KanbanCard = React.memo(function KanbanCard({ card, onClick, isDrag
                 ref={descRef}
                 className={cn(
                   "text-[0.786rem] text-[var(--text-tertiary)] leading-relaxed",
-                  expanded ? "max-h-48 overflow-y-auto pr-1" : "line-clamp-2"
+                  "[&_.prose-cairn]:!py-0 [&_.prose-cairn_p]:!my-0",
+                  expanded ? "max-h-80 overflow-y-auto pr-1" : "max-h-10 overflow-hidden"
                 )}
               >
                 <NoteMarkdownPreview content={description} className="!px-0 !py-0" />

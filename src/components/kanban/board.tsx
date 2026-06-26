@@ -559,7 +559,7 @@ export function KanbanBoard() {
                     })
                   : allCards;
                 return (
-                  <div key={column.id} ref={(el) => { columnRefs.current[column.id] = el; }} className="flex-shrink-0">
+                  <div key={column.id} ref={(el) => { columnRefs.current[column.id] = el; }} className="flex-shrink-0 self-stretch">
                     <KanbanColumn
                       column={column}
                       cards={filteredCards}
