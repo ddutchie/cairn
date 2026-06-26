@@ -37,6 +37,51 @@ function resolveConfig(
   return { baseUrl, model, apiKey };
 }
 
+function cleanOutput(text: string): string {
+  let cleaned = text.trim();
+  if (cleaned.startsWith("```")) {
+    cleaned = cleaned.replace(/^```[a-zA-Z]*\n/, "").replace(/```$/, "").trim();
+  }
+  return cleaned;
+}
+
+function parseLLMResponse(
+  result: string,
+  headers: { primary: string; secondary: string },
+  fallbacks: { primary: string; secondary: string }
+): { primary: string; secondary: string } {
+  const cleaned = cleanOutput(result);
+
+  const primaryRegex = new RegExp(`(?:${headers.primary})(?:\\b|:|\\n|\\*\\*|#)*\\s*\\n?([\\s\\S]*?)(?:\\n\\s*(?:${headers.secondary})|$)`, "i");
+  const secondaryRegex = new RegExp(`(?:${headers.secondary})(?:\\b|:|\\n|\\*\\*|#)*\\s*\\n?([\\s\\S]*)$`, "i");
+
+  const primaryMatch = cleaned.match(primaryRegex);
+  const secondaryMatch = cleaned.match(secondaryRegex);
+
+  let primaryVal = primaryMatch?.[1]?.trim() ?? "";
+  let secondaryVal = secondaryMatch?.[1]?.trim() ?? "";
+
+  if (primaryVal) {
+    primaryVal = primaryVal.replace(/^[:*#\s]+/, "").split("\n")[0].trim();
+  }
+  if (secondaryVal) {
+    secondaryVal = secondaryVal.replace(/^[:*#\s]+/, "").trim();
+  }
+
+  if (!primaryVal && !secondaryVal) {
+    const lines = cleaned.split("\n").filter(l => l.trim() !== "");
+    if (lines.length > 0) {
+      primaryVal = lines[0].replace(/^(subject|title|commit|pr)[:*#\s]*/i, "").trim();
+      secondaryVal = lines.slice(1).join("\n").replace(/^(body|description)[:*#\s]*/i, "").trim();
+    }
+  }
+
+  return {
+    primary: primaryVal || fallbacks.primary,
+    secondary: secondaryVal || fallbacks.secondary,
+  };
+}
+
 export function registerAiHandlers(ctx: DbContext): void {
   registerIpcHandle("ai:localLLMStatus", async () => {
     return handle(async () => {
@@ -92,11 +137,8 @@ export function registerAiHandlers(ctx: DbContext): void {
 
       const userPrompt = `Generate a commit message for the following diff:\n\n${args.diff.slice(0, 8000)}`;
       const result = await callLLM(resolved, systemPrompt, userPrompt);
-      const subjectMatch = result.match(/SUBJECT\n(.+?)(?:\n|$)/);
-      const bodyMatch = result.match(/BODY\n([\s\S]*?)$/);
-      const subject = subjectMatch?.[1]?.trim() ?? "Update";
-      const body = bodyMatch?.[1]?.trim() ?? "";
-      return { subject, body };
+      const parsed = parseLLMResponse(result, { primary: "SUBJECT", secondary: "BODY" }, { primary: "Update", secondary: "" });
+      return { subject: parsed.primary, body: parsed.secondary };
     });
   });
 
@@ -118,11 +160,8 @@ export function registerAiHandlers(ctx: DbContext): void {
 
       const userPrompt = `Generate a PR description for the following branch diff:\n\n${args.diff.slice(0, 8000)}`;
       const result = await callLLM(resolved, systemPrompt, userPrompt);
-      const titleMatch = result.match(/TITLE\n(.+?)(?:\n|$)/);
-      const descMatch = result.match(/DESCRIPTION\n([\s\S]*?)$/);
-      const title = titleMatch?.[1]?.trim() ?? "Pull Request";
-      const description = descMatch?.[1]?.trim() ?? "";
-      return { title, description };
+      const parsed = parseLLMResponse(result, { primary: "TITLE", secondary: "DESCRIPTION" }, { primary: "Pull Request", secondary: "" });
+      return { title: parsed.primary, description: parsed.secondary };
     });
   });
 }

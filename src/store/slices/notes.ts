@@ -209,16 +209,19 @@ export const createNotesSlice: StateCreator<CairnStore, [], [], NotesSlice> = (
   async generatePrd(projectId, title, requirements) {
     if (!isElectron() || !window.electron) return { error: "Not in Electron" };
     const { aiConfig } = get();
-    const result = await window.electron.ai.generatePrd({
-      projectId,
-      title,
-      requirements,
-      config: {
-        baseUrl: aiConfig.baseUrl || "https://api.openai.com",
-        model: aiConfig.model || "gpt-4o-mini",
-        apiKey: aiConfig.apiKey || "",
-      },
-    });
-    if (result && "error" in result) return { error: result.error };
+    try {
+      await window.electron.ai.generatePrd({
+        projectId,
+        title,
+        requirements,
+        config: {
+          baseUrl: aiConfig.baseUrl || "https://api.openai.com",
+          model: aiConfig.model || "gpt-4o-mini",
+          apiKey: aiConfig.apiKey || "",
+        },
+      });
+    } catch (e: unknown) {
+      return { error: e instanceof Error ? e.message : "Failed to generate PRD" };
+    }
   },
 });

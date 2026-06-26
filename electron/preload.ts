@@ -223,7 +223,7 @@ const api = {
 
   // ── AI helpers ────────────────────────────────
   ai: {
-    generatePrd: (args: unknown) => invoke<{ id: string; title: string; projectId: string } | { error: string }>("ai:generatePrd", args),
+    generatePrd: (args: unknown) => invoke<{ id: string; title: string; projectId: string }>("ai:generatePrd", args),
     generateCommitMessage: (args: { diff: string; config: { baseUrl: string; model: string; apiKey: string } }) =>
       invoke<{ subject: string; body: string }>("ai:generateCommitMessage", args),
     generatePrDescription: (args: { diff: string; config: { baseUrl: string; model: string; apiKey: string } }) =>
