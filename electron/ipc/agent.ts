@@ -238,8 +238,8 @@ export function registerAgentHandlers(db: Database): void {
         // No HEAD yet — show only what's staged
         trackedResult = await execGit(["diff", "--cached", "--unified=3"], cwd);
       }
-      if (trackedResult.error && typeof (trackedResult.error as { code?: unknown }).code === "string") {
-        throw trackedResult.error;
+      if (trackedResult.status !== 0) {
+        throw trackedResult.error || new Error(`git diff failed with exit code ${trackedResult.status}`);
       }
       if (trackedResult.stdout) parts.push(trackedResult.stdout.trim());
 
@@ -251,8 +251,8 @@ export function registerAgentHandlers(db: Database): void {
         ["ls-files", "--others", "--exclude-standard"],
         cwd
       );
-      if (untrackedResult.error && typeof (untrackedResult.error as { code?: unknown }).code === "string") {
-        throw untrackedResult.error;
+      if (untrackedResult.status !== 0) {
+        throw untrackedResult.error || new Error(`git ls-files failed with exit code ${untrackedResult.status}`);
       }
       if (untrackedResult.status === 0) {
         const untrackedFiles = (untrackedResult.stdout ?? "")
