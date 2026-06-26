@@ -36,11 +36,9 @@ function tagColor(color: string | undefined | null, index: number): string {
   return FALLBACK_COLORS[index % FALLBACK_COLORS.length];
 }
 
-// Fixed constants — no JS measurement needed
-const CELL_MIN = 44;   // px — minimum cell size
-const CELL_MAX = 80;   // px — maximum cell size
-const LABEL_W  = 140;  // px — row label column
-const HEADER_H = 80;   // px — angled header row height
+// Fixed constants for cell size clamps/rem-based scaling
+const DEFAULT_CELL_MIN = 44;
+const DEFAULT_CELL_MAX = 80;
 
 export function MatrixCanvas({ nodes, onNodeClick, selectedNodeId }: Props) {
   const { tags, notes, cards } = useCairnStore(useShallow((s) => ({ tags: s.tags, notes: s.notes, cards: s.cards })));
@@ -100,20 +98,22 @@ export function MatrixCanvas({ nodes, onNodeClick, selectedNodeId }: Props) {
 
   const maxVal    = Math.max(1, ...matrix.flatMap((row, i) => row.filter((_, j) => i !== j)));
   const tagColors = activeTags.map((t, i) => tagColor(t.color, i));
-  const panelCell = pinnedCell ?? (hoveredCell !== null && hoveredCell.r !== hoveredCell.c ? hoveredCell : null);
+
+  // Fix bounds checks to prevent TypeError crashes when filtering tag list shrinks
+  const panelCell = pinnedCell && pinnedCell.r < activeTags.length && pinnedCell.c < activeTags.length
+    ? pinnedCell
+    : (hoveredCell !== null && hoveredCell.r !== hoveredCell.c && hoveredCell.r < activeTags.length && hoveredCell.c < activeTags.length ? hoveredCell : null);
   const panelItems = panelCell ? itemsWithBothTags(activeTags[panelCell.r].id, activeTags[panelCell.c].id) : [];
 
-  // Cell size: clamp between CELL_MIN and CELL_MAX using a CSS container-query-like
-  // approach — we set --cell as an inline CSS variable on the matrix wrapper using
-  // a calc() that scales with the number of tags and the PANEL width.
-  // The formula: available ≈ (100cqw - LABEL_W) / tagCount, clamped.
-  // Since cqw isn't universally reliable in inline styles, we compute once at render
-  // time from a stable value: the grid intrinsically sizes to CELL_MIN initially,
-  // and CSS handles the rest via min()/max() in the grid template.
   const n = activeTags.length;
-  // The grid template uses CSS clamp so the browser handles sizing natively.
-  // We only need LABEL_W as a JS constant for the header margin.
-  const cellTemplate = `clamp(${CELL_MIN}px, calc((100cqw - ${LABEL_W}px) / ${n}), ${CELL_MAX}px)`;
+
+  // Dynamic parameters based on tag density to maximize screen utilization
+  const cellMin = n > 20 ? 24 : n > 10 ? 32 : 44;
+  const cellMax = n > 20 ? 36 : n > 10 ? 48 : 80;
+  const maxLabelLen = n > 20 ? 8 : n > 10 ? 10 : 14;
+  const headerHeight = "5.5rem";
+  const labelWidth = "minmax(6rem, 10rem)";
+  const cellTemplate = `clamp(${cellMin}px, calc((100cqw - 10rem) / ${n}), ${cellMax}px)`;
 
   function handleCellClick(r: number, c: number) {
     if (r === c || matrix[r][c] === 0) return;
@@ -124,63 +124,88 @@ export function MatrixCanvas({ nodes, onNodeClick, selectedNodeId }: Props) {
     hoveredCell !== null && (r === hoveredCell.r || c === hoveredCell.c);
 
   return (
-    <div className="flex-1 overflow-hidden min-h-0 flex">
+    <div className="flex-1 overflow-hidden min-h-0 flex flex-col lg:flex-row">
       {/* Scrollable matrix area — container query context */}
       <div
-        className="flex-1 overflow-auto px-6 py-6 flex items-start justify-center"
+        className="flex-1 overflow-auto px-6 py-6 flex items-start"
         style={{ containerType: "inline-size" } as React.CSSProperties}
       >
-        <div className="flex-shrink-0">
-
-          {/* Column headers — angled labels */}
-          <div className="flex" style={{ marginLeft: LABEL_W }}>
-            {activeTags.map((tag, c) => (
-              <div
-                key={tag.id}
-                style={{
-                  // Use the same clamp formula so header cells match grid cells exactly
-                  width: `clamp(${CELL_MIN}px, calc((100cqw - ${LABEL_W}px) / ${n}), ${CELL_MAX}px)`,
-                  height: HEADER_H,
-                  flexShrink: 0,
-                }}
-                className={cn(
-                  "relative flex items-end justify-center pb-2 transition-opacity duration-150",
-                  hoveredCell !== null && hoveredCell.c !== c ? "opacity-30" : "opacity-100"
-                )}
-              >
-                <span
-                  className="w-1.5 h-1.5 rounded-full absolute bottom-2 left-1/2 -translate-x-1/2"
-                  style={{ background: tagColors[c] }}
-                />
-                <div
-                  className="absolute bottom-6 left-1/2 origin-bottom-left"
-                  style={{ transform: "rotate(-45deg) translateX(-50%)" }}
-                >
-                  <span className="text-[0.643rem] font-medium text-[var(--text-secondary)] uppercase tracking-wide whitespace-nowrap">
-                    {tag.name.length > 14 ? tag.name.slice(0, 13) + "…" : tag.name}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Grid body — CSS handles cell sizing natively */}
+        {/* mx-auto allows centering when there is extra space, and aligns to start when overflowing */}
+        <div className="flex-shrink-0 mx-auto">
+          
+          {/* Single CSS Grid Layout to synchronize column/row sticky offsets natively */}
           <div
-            className="rounded-lg overflow-hidden"
+            className="rounded-lg"
             style={{
               boxShadow: "0 0 0 1px var(--border)",
               display: "grid",
-              gridTemplateColumns: `${LABEL_W}px repeat(${n}, ${cellTemplate})`,
+              gridTemplateColumns: `${labelWidth} repeat(${n}, ${cellTemplate})`,
             }}
           >
+            {/* Top-left corner cell */}
+            <div
+              style={{
+                height: headerHeight,
+                position: "sticky",
+                top: 0,
+                left: 0,
+                zIndex: 30,
+                background: "var(--surface)",
+              }}
+              className="border-b border-r border-[var(--border)] rounded-tl-lg"
+            />
+
+            {/* Column headers — angled labels */}
+            {activeTags.map((tag, c) => {
+              const fontSizeClass = n > 20 ? "text-[0.55rem]" : n > 10 ? "text-[0.6rem]" : "text-[0.643rem]";
+              return (
+                <div
+                  key={`header-${tag.id}`}
+                  style={{
+                    height: headerHeight,
+                    position: "sticky",
+                    top: 0,
+                    zIndex: 20,
+                    background: "var(--surface)",
+                  }}
+                  className={cn(
+                    "relative flex items-end justify-center pb-2 border-b border-r border-[var(--border)] transition-opacity duration-150",
+                    hoveredCell !== null && hoveredCell.c !== c ? "opacity-30" : "opacity-100",
+                    c === n - 1 && "rounded-tr-lg"
+                  )}
+                >
+                  <span
+                    className="w-1.5 h-1.5 rounded-full absolute bottom-2 left-1/2 -translate-x-1/2"
+                    style={{ background: tagColors[c] }}
+                  />
+                  <div
+                    className="absolute bottom-6 left-1/2 origin-bottom-left"
+                    style={{ transform: "rotate(-45deg) translateX(-50%)" }}
+                  >
+                    <span className={cn("font-medium text-[var(--text-secondary)] uppercase tracking-wide whitespace-nowrap", fontSizeClass)}>
+                      {tag.name.length > maxLabelLen ? tag.name.slice(0, maxLabelLen - 1) + "…" : tag.name}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Grid rows */}
             {activeTags.map((rowTag, r) => (
               <React.Fragment key={rowTag.id}>
                 {/* Row label */}
                 <div
-                  style={{ height: `clamp(${CELL_MIN}px, calc((100cqw - ${LABEL_W}px) / ${n}), ${CELL_MAX}px)` }}
+                  style={{
+                    height: `clamp(${cellMin}px, calc((100cqw - 10rem) / ${n}), ${cellMax}px)`,
+                    position: "sticky",
+                    left: 0,
+                    zIndex: 10,
+                    background: "var(--surface)",
+                  }}
                   className={cn(
-                    "flex items-center px-3 border-b border-r border-[var(--border)] bg-[var(--surface)] transition-opacity duration-150",
-                    hoveredCell && hoveredCell.r !== r ? "opacity-30" : "opacity-100"
+                    "flex items-center px-3 border-b border-r border-[var(--border)] transition-opacity duration-150",
+                    hoveredCell && hoveredCell.r !== r ? "opacity-30" : "opacity-100",
+                    r === n - 1 && "rounded-bl-lg"
                   )}
                 >
                   <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 mr-2" style={{ background: tagColors[r] }} />
@@ -208,6 +233,9 @@ export function MatrixCanvas({ nodes, onNodeClick, selectedNodeId }: Props) {
                     cellBg = "transparent";
                   }
 
+                  // Hide numbers inside the cells for dense layouts unless hovered
+                  const showValue = val > 0 && (n <= 20 || isHov);
+
                   return (
                     <div
                       key={colTag.id}
@@ -220,6 +248,7 @@ export function MatrixCanvas({ nodes, onNodeClick, selectedNodeId }: Props) {
                         "flex items-center justify-center border-b border-r border-[var(--border)] transition-colors duration-100",
                         !isDiag && val > 0 && "cursor-pointer",
                         axisHl && !isHov && !isDiag && "brightness-125",
+                        r === n - 1 && c === n - 1 && "rounded-br-lg"
                       )}
                       onMouseEnter={() => setHoveredCell({ r, c })}
                       onMouseLeave={() => setHoveredCell(null)}
@@ -231,17 +260,21 @@ export function MatrixCanvas({ nodes, onNodeClick, selectedNodeId }: Props) {
                       {isDiag ? (
                         <div className="flex flex-col items-center gap-0.5">
                           <div className="w-3 rounded-full" style={{ height: 2, background: tagColors[r], opacity: 0.8 }} />
-                          <span className="text-[0.643rem] font-semibold tabular-nums" style={{ color: tagColors[r], opacity: 0.9 }}>
-                            {val}
-                          </span>
+                          {showValue && (
+                            <span className="text-[0.643rem] font-semibold tabular-nums" style={{ color: tagColors[r], opacity: 0.9 }}>
+                              {val}
+                            </span>
+                          )}
                         </div>
                       ) : (
-                        <span className={cn(
-                          "text-[0.714rem] font-mono tabular-nums select-none",
-                          val > 0 ? "text-[var(--text-primary)] font-semibold" : "text-[var(--text-tertiary)] opacity-20"
-                        )}>
-                          {val > 0 ? val : "·"}
-                        </span>
+                        showValue ? (
+                          <span className={cn(
+                            "text-[0.714rem] font-mono tabular-nums select-none",
+                            "text-[var(--text-primary)] font-semibold"
+                          )}>
+                            {val}
+                          </span>
+                        ) : null
                       )}
                     </div>
                   );
@@ -266,7 +299,7 @@ export function MatrixCanvas({ nodes, onNodeClick, selectedNodeId }: Props) {
       </div>
 
       {/* Detail panel — always rendered to prevent layout shift */}
-      <div className="w-72 flex-shrink-0 border-l border-[var(--border)] bg-[var(--surface)] flex flex-col overflow-hidden">
+      <div className="h-64 lg:h-auto lg:w-72 flex-shrink-0 border-t lg:border-t-0 lg:border-l border-[var(--border)] bg-[var(--surface)] flex flex-col overflow-hidden">
         {panelItems.length > 0 && panelCell ? (
           <>
             <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)]">
