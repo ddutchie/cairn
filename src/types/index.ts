@@ -27,6 +27,13 @@ export interface Workspace {
 export type ProjectStatus = "active" | "on_hold" | "completed" | "archived";
 export type Priority = "low" | "medium" | "high" | "urgent";
 
+export interface ProjectSettings {
+  prTemplate?: string;
+  defaultBranch?: string;
+  autoStageOnCommit?: boolean;
+  useRepoPrTemplate?: boolean;
+}
+
 export interface Project {
   id: ID;
   workspaceId: ID;
@@ -38,6 +45,7 @@ export interface Project {
   dueDate?: string;
   tagIds: ID[];
   codeDirectory: string | null;
+  projectSettings?: ProjectSettings;
   createdAt: string;
   updatedAt: string;
   archivedAt?: string;

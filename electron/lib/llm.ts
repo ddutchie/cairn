@@ -16,11 +16,23 @@ export function normaliseBaseUrl(raw: string): string {
 
 /** Returns true if the given base URL points to a local server. */
 export function isLocalEndpoint(baseUrl: string): boolean {
-  return (
-    baseUrl.includes("localhost") ||
-    baseUrl.includes("127.0.0.1") ||
-    baseUrl.includes("0.0.0.0")
-  );
+  try {
+    let urlString = baseUrl.trim();
+    if (!/^https?:\/\//i.test(urlString)) {
+      urlString = "http://" + urlString;
+    }
+    const parsed = new URL(urlString);
+    const host = parsed.hostname.toLowerCase();
+    return (
+      host === "localhost" ||
+      host === "127.0.0.1" ||
+      host === "0.0.0.0" ||
+      host === "[::1]" ||
+      host === "::1"
+    );
+  } catch {
+    return false;
+  }
 }
 
 export interface LLMConfig {

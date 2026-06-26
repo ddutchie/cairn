@@ -89,6 +89,7 @@ export const createWorkspaceSlice: StateCreator<
       priority: "medium",
       tagIds: [],
       codeDirectory: null,
+      projectSettings: {},
       createdAt: now(),
       updatedAt: now(),
     };

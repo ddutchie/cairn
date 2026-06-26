@@ -8,7 +8,7 @@
  * No note mutation, no TOC, no scroll-container ref dependency.
  */
 
-import React, { useMemo } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import ReactMarkdown, { type ExtraProps } from "react-markdown";
 import { urlTransform } from "@/lib/utils";
 import remarkGfm from "remark-gfm";
@@ -28,9 +28,137 @@ import { remarkCallout, remarkObsidianEmbeds, remarkPromoteDisplayMath, makeLate
 interface NoteMarkdownPreviewProps {
   content: string;
   className?: string;
+  filePath?: string;
+  projectRoot?: string;
 }
 
-export function NoteMarkdownPreview({ content, className }: NoteMarkdownPreviewProps) {
+interface MarkdownImageProps extends Omit<React.ImgHTMLAttributes<HTMLImageElement>, "src"> {
+  src?: string;
+  filePath?: string;
+  projectRoot?: string;
+}
+
+function safeDecodeURIComponent(str: string): string {
+  try {
+    return decodeURIComponent(str);
+  } catch {
+    return str;
+  }
+}
+
+function MarkdownImage({ src, alt, title, filePath, projectRoot, ...props }: MarkdownImageProps) {
+  const [resolvedSrc, setResolvedSrc] = useState<string | undefined>(undefined);
+  const [error, setError] = useState<boolean>(false);
+
+  useEffect(() => {
+    let active = true;
+
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setResolvedSrc(undefined);
+
+    if (!src) {
+      return;
+    }
+
+    if (/^(https?|data):/i.test(src)) {
+      setResolvedSrc(src);
+      setError(false);
+      return;
+    }
+
+    const isWindowsAbsolute = /^[a-zA-Z]:[/\\]/.test(src) || src.startsWith("\\\\");
+    let absolutePath = "";
+
+    if (src.toLowerCase().startsWith("file:")) {
+      const pathPart = src.substring(5).replace(/^\/{1,3}/, "");
+      const hasDriveLetter = /^[a-zA-Z]:/.test(pathPart);
+      absolutePath = (!hasDriveLetter && !pathPart.startsWith("/")) ? "/" + pathPart : pathPart;
+      absolutePath = safeDecodeURIComponent(absolutePath);
+    } else if (isWindowsAbsolute) {
+      absolutePath = src;
+    } else if (src.startsWith("/")) {
+      if (projectRoot) {
+        const cleanSrc = src.substring(1);
+        const separator = projectRoot.includes("\\") ? "\\" : "/";
+        const rootParts = projectRoot.split(separator);
+        const relParts = safeDecodeURIComponent(cleanSrc).split(/[/\\]/);
+        for (const part of relParts) {
+          if (part === "." || part === "") continue;
+          if (part === "..") {
+            if (rootParts.length > 0) rootParts.pop();
+          } else {
+            rootParts.push(part);
+          }
+        }
+        absolutePath = rootParts.join(separator);
+      } else {
+        absolutePath = src;
+      }
+    } else {
+      if (filePath) {
+        const separator = filePath.includes("\\") ? "\\" : "/";
+        const dirParts = filePath.split(separator);
+        dirParts.pop();
+
+        const relParts = safeDecodeURIComponent(src).split(/[/\\]/);
+        for (const part of relParts) {
+          if (part === "." || part === "") continue;
+          if (part === "..") {
+            if (dirParts.length > 0) dirParts.pop();
+          } else {
+            dirParts.push(part);
+          }
+        }
+        absolutePath = dirParts.join(separator);
+      }
+    }
+
+    if (absolutePath && window.electron) {
+      window.electron.agent.readFileBase64(absolutePath)
+        .then((dataUrl: string) => {
+          if (!active) return;
+          setResolvedSrc(dataUrl);
+          setError(false);
+        })
+        .catch((err) => {
+          if (!active) return;
+          console.error("Failed to read image as base64:", absolutePath, err);
+          setError(true);
+        });
+    } else {
+      setResolvedSrc(src);
+      setError(false);
+    }
+
+    return () => {
+      active = false;
+    };
+  }, [src, filePath, projectRoot]);
+
+  if (error) {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs text-[var(--danger)] border border-[color-mix(in_srgb,_var(--danger)_30%,_transparent)] bg-[color-mix(in_srgb,_var(--danger)_10%,_transparent)] px-2 py-1 rounded">
+        Failed to load image: {alt || src}
+      </span>
+    );
+  }
+
+  if (!resolvedSrc) {
+    return <span className="inline-block w-4 h-4 rounded animate-pulse bg-[var(--surface-2)]" />;
+  }
+
+  return (
+    <img
+      src={resolvedSrc}
+      alt={alt}
+      title={title}
+      className="max-w-full h-auto rounded my-2 border border-[var(--border)]"
+      {...props}
+    />
+  );
+}
+
+export function NoteMarkdownPreview({ content, className, filePath, projectRoot }: NoteMarkdownPreviewProps) {
   const { rehypeCaptureLatex, rehypeMergedPass } = useMemo(() => makeLatexPlugins(), []);
 
   if (!content.trim()) {
@@ -73,6 +201,9 @@ export function NoteMarkdownPreview({ content, className }: NoteMarkdownPreviewP
           },
           blockquote({ children }: React.BlockquoteHTMLAttributes<HTMLElement> & ExtraProps) {
             return <blockquote className="border-l-2 border-[var(--border)] pl-4 text-[var(--text-secondary)] my-3">{children}</blockquote>;
+          },
+          img({ src, alt, title, ...props }: React.ImgHTMLAttributes<HTMLImageElement> & ExtraProps) {
+            return <MarkdownImage src={typeof src === "string" ? src : undefined} alt={alt} title={title} filePath={filePath} projectRoot={projectRoot} {...props} />;
           },
           pre({ children }: React.HTMLAttributes<HTMLPreElement> & ExtraProps) {
             const child = Array.isArray(children) ? children[0] : children;

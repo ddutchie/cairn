@@ -495,6 +495,14 @@ const MIGRATIONS: Migration[] = [
       db.exec("ALTER TABLE pi_agent_messages ADD COLUMN reasoning TEXT");
     }
   },
+
+  // v21: Per-project agent settings — PR template, git defaults, etc.
+  (db) => {
+    const cols = db.prepare("PRAGMA table_info(projects)").all() as { name: string }[];
+    if (!cols.some((c) => c.name === "project_settings")) {
+      db.exec("ALTER TABLE projects ADD COLUMN project_settings TEXT NOT NULL DEFAULT '{}'");
+    }
+  },
 ];
 
 export function applySchema(db: Database.Database): void {

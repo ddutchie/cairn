@@ -10,7 +10,7 @@ export interface CairnSnapshot {
   projects: Array<{
     id: string; workspaceId: string; name: string; description?: string;
     status: string; priority: string; dueDate?: string; archivedAt?: string;
-    tagIds: string[]; createdAt: string; updatedAt: string;
+    tagIds: string[]; projectSettings: Record<string, unknown>; createdAt: string; updatedAt: string;
   }>;
   notes: Array<{
     id: string; projectId: string; workspaceId: string; title: string;
@@ -128,7 +128,7 @@ export function executeGetProjectContextPack(snap: CairnSnapshot, args: Args): u
       const truncated = content.length > limit
         ? content.slice(0, limit) + "\n\n... (content truncated, use get_note to read full note)"
         : content;
-      return { id: n.id, title: n.title, content: truncated };
+      return { id: n.id, title: n.title, folder: n.folder ?? "", content: truncated };
     });
   const openCards = columns
     .filter((col) => col.type !== "done")
@@ -205,6 +205,7 @@ export function executeSearchNotes(snap: CairnSnapshot, args: Args): unknown {
       title: n.title,
       snippet: n.contentText.slice(0, 120),
       projectId: n.projectId,
+      folder: n.folder ?? "",
       updatedAt: n.updatedAt,
     }));
 }

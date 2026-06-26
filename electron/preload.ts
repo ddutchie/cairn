@@ -8,6 +8,24 @@
 
 import { contextBridge, ipcRenderer } from "electron";
 
+// ── Inline types for the git API (not shared with the renderer bundle) ──────
+
+interface GitStatusEntry {
+  path: string;
+  status: string;
+}
+
+interface GitStatus {
+  branch: string;
+  ahead: string;
+  behind: string;
+  hasUpstream: boolean;
+  defaultBranch: string;
+  staged: GitStatusEntry[];
+  unstaged: GitStatusEntry[];
+  untracked: GitStatusEntry[];
+}
+
 // Helper: invoke an IPC channel and unwrap the IpcResult<T> wrapper.
 // All handlers return { data: T } | { error: string } via the handle() helper.
 // We unwrap here so callers receive T directly (or a rejected promise on error).
@@ -37,6 +55,7 @@ const api = {
     list:   (workspaceId?: string) => invoke("db:project:list", { workspaceId }),
     create: (args: unknown) => invoke("db:project:create", args),
     update: (id: string, patch: unknown) => invoke("db:project:update", { id, patch }),
+    updateSettings: (id: string, settings: unknown) => invoke("db:project:updateSettings", { id, settings }),
     delete: (id: string) => invoke("db:project:delete", { id }),
   },
 
@@ -204,7 +223,11 @@ const api = {
 
   // ── AI helpers ────────────────────────────────
   ai: {
-    generatePrd: (args: unknown) => invoke<{ id: string; title: string; projectId: string } | { error: string }>("ai:generatePrd", args),
+    generatePrd: (args: unknown) => invoke<{ id: string; title: string; projectId: string }>("ai:generatePrd", args),
+    generateCommitMessage: (args: { diff: string; config: { baseUrl: string; model: string; apiKey: string } }) =>
+      invoke<{ subject: string; body: string }>("ai:generateCommitMessage", args),
+    generatePrDescription: (args: { diff: string; config: { baseUrl: string; model: string; apiKey: string }; template?: string }) =>
+      invoke<{ title: string; description: string }>("ai:generatePrDescription", args),
     localLLMStatus: () => invoke<{ available: boolean; reason?: string }>("ai:localLLMStatus"),
   },
 
@@ -353,6 +376,24 @@ const api = {
       ipcRenderer.on("agent:exit", handler);
       return () => ipcRenderer.off("agent:exit", handler);
     },
+  },
+
+  // ── Git operations (Agent Git tab) ────────────
+  git: {
+    status:   (cwd: string) => invoke<GitStatus>("git:status", { cwd }),
+    branches: (cwd: string) => invoke<{ current: string; branches: Array<{ name: string; current: boolean }> }>("git:branches", { cwd }),
+    checkout: (cwd: string, branch: string, create?: boolean) => invoke<{ branch: string }>("git:checkout", { cwd, branch, create }),
+    stage:    (cwd: string, opts?: { files?: string[]; all?: boolean }) => invoke<{ ok: boolean }>("git:stage", { cwd, ...opts }),
+    unstage:  (cwd: string, opts?: { files?: string[]; all?: boolean }) => invoke<{ ok: boolean }>("git:unstage", { cwd, ...opts }),
+    commit:   (cwd: string, message: string, body?: string, autoStage?: boolean) => invoke<{ hash: string; message: string }>("git:commit", { cwd, message, body, autoStage }),
+    push:     (cwd: string, setUpstream?: boolean) => invoke<{ branch: string }>("git:push", { cwd, setUpstream }),
+    log:      (cwd: string, count?: number) => invoke<Array<{ hash: string; author: string; date: string; subject: string }>>("git:log", { cwd, count }),
+    diff:     (cwd: string, staged?: boolean) => invoke<string>("git:diff", { cwd, staged }),
+    diffBranch: (cwd: string, baseBranch: string) => invoke<string>("git:diffBranch", { cwd, baseBranch }),
+    diffFile: (cwd: string, filePath: string, staged?: boolean) => invoke<{ stat: { added: number; deleted: number }; diff: string }>("git:diffFile", { cwd, filePath, staged }),
+    stash:    (cwd: string, action: "push" | "pop" | "list") => invoke<unknown>("git:stash", { cwd, action }),
+    createPr: (cwd: string, opts: { title: string; body?: string; base?: string }) => invoke<{ url: string; branch: string }>("git:createPr", { cwd, ...opts }),
+    prStatus: (cwd: string) => invoke<{ url: string | null; state: string | null; title: string | null } | null>("git:prStatus", { cwd }),
   },
 
   // ── Cairn native agent (pi) ───────────────────

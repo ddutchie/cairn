@@ -24,7 +24,6 @@ import { AboutSection } from "./AboutSection";
 import { AgentSettings } from "./AgentSettings";
 import { MobileSettings } from "./MobileSettings";
 import { EmbeddingsSettings } from "./EmbeddingsSettings";
-
 type SettingsSection = "general" | "ai" | "embeddings" | "agents" | "mobile" | "data" | "about" | "shortcuts" | "tags";
 
 export function SettingsView() {

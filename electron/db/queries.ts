@@ -90,8 +90,8 @@ export function createProject(db: Database.Database, p: {
 }) {
   const now = ts();
   db.prepare(`
-    INSERT INTO projects (id, workspace_id, name, description, icon, status, priority, tag_ids, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, '[]', ?, ?)
+    INSERT INTO projects (id, workspace_id, name, description, icon, status, priority, tag_ids, project_settings, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, '[]', '{}', ?, ?)
   `).run(p.id, p.workspaceId, p.name, p.description ?? null, p.icon ?? null,
          p.status ?? "active", p.priority ?? "medium", now, now);
   return toProject(db.prepare("SELECT * FROM projects WHERE id = ?").get(p.id));
@@ -140,6 +140,25 @@ export function deleteProject(db: Database.Database, id: string) {
 export function getProjectById(db: Database.Database, id: string) {
   const row = db.prepare("SELECT * FROM projects WHERE id = ?").get(id);
   return row ? toProject(row) : null;
+}
+
+export function updateProjectSettings(db: Database.Database, projectId: string, patch: Record<string, unknown>) {
+  const row = db.prepare("SELECT project_settings FROM projects WHERE id = ?").get(projectId) as { project_settings: string } | undefined;
+  if (!row) return null;
+  const existing: Record<string, unknown> = (() => {
+    try { return JSON.parse(row.project_settings); } catch { return {}; }
+  })();
+  const merged = { ...existing, ...patch };
+  for (const key of Object.keys(patch)) {
+    if (patch[key] === null || patch[key] === undefined) {
+      delete merged[key];
+    }
+  }
+  const now = ts();
+  db.prepare("UPDATE projects SET project_settings = ?, updated_at = ? WHERE id = ?").run(
+    JSON.stringify(merged), now, projectId,
+  );
+  return toProject(db.prepare("SELECT * FROM projects WHERE id = ?").get(projectId));
 }
 
 // ── Notes ─────────────────────────────────────

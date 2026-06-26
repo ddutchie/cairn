@@ -35,7 +35,7 @@ export interface NotesSlice {
   /** Reveal the note's .md file in the OS file explorer. No-op outside Electron. */
   revealNote: (noteId: ID, projectId: ID) => void;
   /** Generate a PRD note via the AI. Returns { error } on failure. */
-  generatePrd: (projectId: ID, title: string, requirements: string) => Promise<{ error: string } | void>;
+  generatePrd: (projectId: ID, title: string, requirements: string) => Promise<unknown>;
 }
 
 // ── Slice creator ─────────────────────────────────────────────────────────────
@@ -209,16 +209,19 @@ export const createNotesSlice: StateCreator<CairnStore, [], [], NotesSlice> = (
   async generatePrd(projectId, title, requirements) {
     if (!isElectron() || !window.electron) return { error: "Not in Electron" };
     const { aiConfig } = get();
-    const result = await window.electron.ai.generatePrd({
-      projectId,
-      title,
-      requirements,
-      config: {
-        baseUrl: aiConfig.baseUrl || "https://api.openai.com",
-        model: aiConfig.model || "gpt-4o-mini",
-        apiKey: aiConfig.apiKey || "",
-      },
-    });
-    if (result && "error" in result) return { error: result.error };
+    try {
+      return await window.electron.ai.generatePrd({
+        projectId,
+        title,
+        requirements,
+        config: {
+          baseUrl: aiConfig.baseUrl || "https://api.openai.com",
+          model: aiConfig.model || "gpt-4o-mini",
+          apiKey: aiConfig.apiKey || "",
+        },
+      });
+    } catch (e: unknown) {
+      return { error: e instanceof Error ? e.message : "Failed to generate PRD" };
+    }
   },
 });

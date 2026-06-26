@@ -24,6 +24,7 @@ export function get_note(db: Database.Database, snap: Snapshot, args: Record<str
     title: note.title,
     content: note.content,
     projectId: note.projectId,
+    folder: (note.folder as string) ?? "",
     isPinned: note.isPinned,
     // `linkedNoteIds` / `linkedCardIds` are part of the documented get_note
     // contract — always emitted, even when empty.
@@ -87,7 +88,7 @@ export function ensure_note(db: Database.Database, snap: Snapshot, workspacePath
         archivedAt: existing.archivedAt as string | undefined,
         projectName: project.name,
       });
-      return { id: existing.id, title, action: "updated", updatedAt: new Date().toISOString() };
+      return { id: existing.id, title, folder: updatedFolder, action: "updated", updatedAt: new Date().toISOString() };
     } else {
       const newTagIds = ensureResolvedTagIds ?? [];
       const newIsPinned = ensureResolvedIsPinned ?? false;
