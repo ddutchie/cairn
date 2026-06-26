@@ -381,7 +381,7 @@ export function GitView({ cwd }: GitViewProps) {
           <div className="flex-1" />
           <button
             onClick={handlePush}
-            disabled={pushing}
+            disabled={pushing || !status || (status.hasUpstream && Number(status.ahead) === 0)}
             className="px-2 py-0.5 rounded text-[0.65rem] font-semibold text-[var(--accent)] hover:bg-[var(--accent)] hover:text-[var(--on-accent)] border border-[var(--accent)] transition-colors disabled:opacity-50"
           >
             <ArrowUp size={10} className="inline mr-0.5" />
