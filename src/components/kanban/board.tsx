@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { createPortal } from "react-dom";
 import {
   DndContext,
   DragOverlay,
@@ -33,32 +32,12 @@ import { KanbanCard } from "./card";
 import { CardDetailModal } from "./card-detail";
 import type { TaskCard, BoardColumn } from "@/types";
 
-const ZONE_H = 36;
-const ZONE_W = 128;
-const ZONE_GAP = 6;
+const TITLE_BAR_H = 36;
 
-function getZoneHit(clientX: number, clientY: number): "archive" | "delete" | null {
-  const zoneTop = window.innerHeight - ZONE_H - 12;
-  if (clientY < zoneTop || clientY > zoneTop + ZONE_H) return null;
-  const totalW = ZONE_W * 2 + ZONE_GAP;
-  const zoneLeft = (window.innerWidth - totalW) / 2;
-  const archiveLeft = zoneLeft;
-  const deleteLeft = zoneLeft + ZONE_W + ZONE_GAP;
-  if (clientX >= archiveLeft && clientX < archiveLeft + ZONE_W) return "archive";
-  if (clientX >= deleteLeft && clientX < deleteLeft + ZONE_W) return "delete";
+function getZoneHit(clientX: number, clientY: number, barTop: number, archiveRect: DOMRect | null, deleteRect: DOMRect | null): "archive" | "delete" | null {
+  if (archiveRect && clientX >= archiveRect.left && clientX <= archiveRect.right && clientY >= barTop && clientY <= barTop + TITLE_BAR_H) return "archive";
+  if (deleteRect && clientX >= deleteRect.left && clientX <= deleteRect.right && clientY >= barTop && clientY <= barTop + TITLE_BAR_H) return "delete";
   return null;
-}
-
-function pointerCoords(event: { activatorEvent: Event | null }): { x: number; y: number } | null {
-  const e = event.activatorEvent;
-  if (!e) return null;
-  if (e instanceof TouchEvent) {
-    const t = e.changedTouches[0] ?? e.touches[0];
-    if (!t) return null;
-    return { x: t.clientX, y: t.clientY };
-  }
-  const pe = e as PointerEvent | MouseEvent;
-  return { x: pe.clientX, y: pe.clientY };
 }
 
 export function KanbanBoard() {
@@ -105,7 +84,6 @@ export function KanbanBoard() {
   const [detailCardId, setDetailCardId]     = useState<string | null>(null);
   const [overId, setOverId]                 = useState<string | null>(null);
   const [deleteFlashing, setDeleteFlashing] = useState(false);
-  const [hoverZone, setHoverZone]           = useState<"archive" | "delete" | null>(null);
 
   // Board filter — ⌘F / Ctrl+F toggles and focuses
   const [boardFilter, setBoardFilter]       = useState("");
@@ -150,15 +128,34 @@ export function KanbanBoard() {
     else if (card) { setActiveCard(card); }
   }
 
-  function handleDragMove(event: DragMoveEvent) {
-    if (!activeCard) { setHoverZone(null); return; }
-    const origin = pointerCoords(event);
-    if (!origin) { return; }
-    const x = origin.x + event.delta.x;
-    const y = origin.y + event.delta.y;
-    const zone = getZoneHit(x, y);
-    setHoverZone(zone);
-    // Clear column/card drop highlight while hovering an action zone
+  const hoverZoneRef = useRef<"archive" | "delete" | null>(null);
+  const dragOverlayRef = useRef<HTMLDivElement | null>(null);
+
+  function applyZoneHighlight(zone: "archive" | "delete" | null) {
+    const a = archiveBtnRef.current;
+    const d = deleteBtnRef.current;
+    if (a) a.classList.toggle("zone-active", zone === "archive");
+    if (d) d.classList.toggle("zone-active", zone === "delete");
+    const ov = dragOverlayRef.current;
+    if (ov) {
+      ov.classList.toggle("ring-2", !!zone);
+      ov.classList.toggle("ring-[var(--warning)]", zone === "archive");
+      ov.classList.toggle("ring-[var(--danger)]", zone === "delete");
+    }
+  }
+
+  function handleDragMove(_event: DragMoveEvent) {
+    if (!activeCard) { return; }
+    const p = livePointer.current;
+    if (!p) return;
+    const barTop = titleBarRef.current?.getBoundingClientRect().top ?? 0;
+    const archive = archiveBtnRef.current?.getBoundingClientRect() ?? null;
+    const del = deleteBtnRef.current?.getBoundingClientRect() ?? null;
+    const zone = getZoneHit(p.x, p.y, barTop, archive, del);
+    if (zone !== hoverZoneRef.current) {
+      hoverZoneRef.current = zone;
+      applyZoneHighlight(zone);
+    }
     if (zone) setOverId(null);
   }
 
@@ -170,26 +167,33 @@ export function KanbanBoard() {
     setActiveCard(null);
     setActiveColumn(null);
     setOverId(null);
-    setHoverZone(null);
+    hoverZoneRef.current = null;
+    applyZoneHighlight(null);
+    livePointer.current = null;
   }
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     const draggedCard = active.data.current?.card as TaskCard | undefined;
 
-    // Compute final pointer position before clearing state
-    const origin = pointerCoords(event);
-    const dropX = origin ? origin.x + event.delta.x : 0;
-    const dropY = origin ? origin.y + event.delta.y : 0;
+    // Use the last known live pointer position (tracked via window listener).
+    const drop = livePointer.current;
+    const dropX = drop?.x ?? 0;
+    const dropY = drop?.y ?? 0;
+    const barTop = titleBarRef.current?.getBoundingClientRect().top ?? 0;
+    const archive = archiveBtnRef.current?.getBoundingClientRect() ?? null;
+    const del = deleteBtnRef.current?.getBoundingClientRect() ?? null;
 
     setActiveCard(null);
     setActiveColumn(null);
     setOverId(null);
-    setHoverZone(null);
+    hoverZoneRef.current = null;
+    applyZoneHighlight(null);
+    livePointer.current = null;
 
     // ── Action zones ──────────────────────────────────────────────────────
     if (draggedCard) {
-      const zone = getZoneHit(dropX, dropY);
+      const zone = getZoneHit(dropX, dropY, barTop, archive, del);
       if (zone === "archive") {
         archiveCard(draggedCard.id);
         return;
@@ -256,6 +260,30 @@ export function KanbanBoard() {
   // Deep-link: scroll to column
   const columnRefs     = useRef<Record<string, HTMLDivElement | null>>({});
   const boardScrollRef = useRef<HTMLDivElement | null>(null);
+  const titleBarRef = useRef<HTMLDivElement | null>(null);
+  const archiveBtnRef = useRef<HTMLButtonElement | null>(null);
+  const deleteBtnRef = useRef<HTMLButtonElement | null>(null);
+  const livePointer = useRef<{ x: number; y: number } | null>(null);
+
+  // Track real pointer position via window listener during drag — dnd-kit's
+  // event.delta doesn't account for auto-scroll, so we can't rely on
+  // activatorEvent + delta for screen coordinates.
+  useEffect(() => {
+    if (!activeCard) { livePointer.current = null; return; }
+    function onPointerMove(e: PointerEvent) {
+      livePointer.current = { x: e.clientX, y: e.clientY };
+    }
+    function onTouchMove(e: TouchEvent) {
+      const t = e.touches[0];
+      if (t) livePointer.current = { x: t.clientX, y: t.clientY };
+    }
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("touchmove", onTouchMove);
+    return () => {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("touchmove", onTouchMove);
+    };
+  }, [activeCard]);
   const [highlightedColumnId, setHighlightedColumnId] = useState<string | null>(null);
 
   const scrollToColumn = useCallback((columnId: string) => {
@@ -288,73 +316,7 @@ export function KanbanBoard() {
     );
   }
 
-  // Portal action zones — rendered into document.body, positioned at the
-  // bottom of the viewport so content never shifts and the drop target is
-  // always visible without scrolling.
-  const actionZonesPortal = activeCard && typeof document !== "undefined"
-    ? createPortal(
-        <div
-          style={{
-            position: "fixed",
-            bottom: 12,
-            left: 0,
-            right: 0,
-            height: ZONE_H,
-            display: "flex",
-            justifyContent: "center",
-            gap: ZONE_GAP,
-            zIndex: 9999,
-            pointerEvents: "none",
-          }}
-        >
-          {/* Archive button */}
-          <div
-            style={{
-              width: ZONE_W,
-              height: ZONE_H,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 6,
-              fontSize: "0.875rem",
-              fontWeight: 500,
-              borderRadius: "6px 0 0 6px",
-              background: hoverZone === "archive" ? "var(--warning)" : "color-mix(in srgb, var(--warning) 85%, transparent)",
-              color: "var(--surface)",
-              transition: "background 0.15s",
-            }}
-          >
-            <Archive size={14} />
-            Archive
-          </div>
-          {/* Delete button */}
-          <div
-            style={{
-              width: ZONE_W,
-              height: ZONE_H,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 6,
-              fontSize: "0.875rem",
-              fontWeight: 500,
-              borderRadius: "0 6px 6px 0",
-              background: deleteFlashing
-                ? "var(--danger)"
-                : hoverZone === "delete"
-                ? "var(--danger)"
-                : "color-mix(in srgb, var(--danger) 85%, transparent)",
-              color: "var(--surface)",
-              transition: "background 0.15s",
-            }}
-          >
-            <Trash2 size={14} />
-            Delete
-          </div>
-        </div>,
-        document.body
-      )
-    : null;
+  // No more portal — action zones are rendered inline in the title bar.
 
   return (
     <>
@@ -369,7 +331,7 @@ export function KanbanBoard() {
       >
         <div className="flex-1 flex flex-col min-h-0 w-full overflow-hidden">
           {/* Board / Archive toggle bar */}
-          <div className="flex items-center gap-1 px-4 h-9 border-b border-[var(--border)] bg-[var(--surface)] flex-shrink-0">
+          <div ref={titleBarRef} className="flex items-center gap-1 px-4 h-9 border-b border-[var(--border)] bg-[var(--surface)] flex-shrink-0">
             <button
               onClick={() => setArchiveViewOpen(false)}
               className={cn(
@@ -406,6 +368,31 @@ export function KanbanBoard() {
                 ) : null;
               })()}
             </button>
+
+            {/* Drop zones — shown alongside toggle buttons during card drag */}
+            {activeCard && (
+              <div className="flex items-center gap-1 ml-auto">
+                <button
+                  ref={archiveBtnRef}
+                  type="button"
+                  className="zone-archive flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors"
+                >
+                  <Archive size={11} />
+                  Archive
+                </button>
+                <button
+                  ref={deleteBtnRef}
+                  type="button"
+                  className={cn(
+                    "zone-delete flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors",
+                    deleteFlashing && "zone-active"
+                  )}
+                >
+                  <Trash2 size={11} />
+                  Delete
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Filter bar — shown when ⌘F is pressed */}
@@ -619,11 +606,12 @@ export function KanbanBoard() {
           </SortableContext>}
         </div>
 
-        {actionZonesPortal}
-
         <DragOverlay>
           {activeCard && (
-            <div className="rotate-2 opacity-90">
+            <div
+              ref={dragOverlayRef}
+              className="rotate-2 opacity-90 rounded-lg"
+            >
               <KanbanCard card={activeCard} isDragging onClick={() => {}} />
             </div>
           )}
