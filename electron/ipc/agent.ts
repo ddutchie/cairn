@@ -22,7 +22,7 @@ import { registerIpcHandle } from "./registry";
 import fs from "fs";
 import path from "path";
 import os from "os";
-import { spawnSync } from "child_process";
+import { execFile } from "child_process";
 import type { Database } from "better-sqlite3";
 import * as nodePty from "node-pty";
 import * as q from "../db/queries";
@@ -40,26 +40,64 @@ export function isSafePath(p: string): boolean {
   return SAFE_PATH_RE.test(p) || SAFE_PATH_WIN_RE.test(p);
 }
 
+async function getRealPath(p: string, isWrite = false): Promise<string> {
+  // If the path exists:
+  try {
+    const stat = await fs.promises.lstat(p);
+    if (isWrite && stat.isSymbolicLink()) {
+      throw new Error(`Symlinks are not allowed for write paths: ${p}`);
+    }
+    return await fs.promises.realpath(p);
+  } catch (err: unknown) {
+    if ((err as { code?: string }).code !== "ENOENT") {
+      throw err;
+    }
+  }
+  // If it doesn't exist:
+  const parent = path.dirname(p);
+  try {
+    const parentStat = await fs.promises.lstat(parent);
+    if (isWrite && parentStat.isSymbolicLink()) {
+      throw new Error(`Parent directory cannot be a symlink for write paths: ${parent}`);
+    }
+    const realParent = await fs.promises.realpath(parent);
+    return path.join(realParent, path.basename(p));
+  } catch (err: unknown) {
+    if ((err as { code?: string }).code !== "ENOENT") {
+      throw err;
+    }
+  }
+  return path.resolve(p);
+}
+
 /**
  * Assert that `filePath` is safe and confined to one of the registered project
  * code directories. Throws if either check fails, which causes handle() to
  * return { error: "..." } to the renderer without crashing the main process.
  */
-function assertWithinCodeDirectory(db: Database, filePath: string): void {
+async function assertWithinCodeDirectory(db: Database, filePath: string, isWrite = false): Promise<string> {
   if (!isSafePath(filePath)) {
     throw new Error(`Unsafe path: ${filePath}`);
   }
-  const normalised = path.resolve(filePath);
+  const normalised = await getRealPath(filePath, isWrite);
   const codeDirs = db
     .prepare("SELECT code_directory FROM projects WHERE code_directory IS NOT NULL")
     .all() as { code_directory: string }[];
-  const allowed = codeDirs.some(({ code_directory }) => {
-    const dir = path.resolve(code_directory);
-    return normalised === dir || normalised.startsWith(dir + path.sep);
-  });
+  const checkAllowed = await Promise.all(
+    codeDirs.map(async ({ code_directory }) => {
+      try {
+        const dir = await fs.promises.realpath(code_directory);
+        return normalised === dir || normalised.startsWith(dir + path.sep);
+      } catch {
+        return false;
+      }
+    })
+  );
+  const allowed = checkAllowed.some((val) => val === true);
   if (!allowed) {
     throw new Error(`Path is outside any registered code directory: ${filePath}`);
   }
+  return normalised;
 }
 
 // ── Session map ───────────────────────────────────────────────────────────────
@@ -79,6 +117,22 @@ function handle<T>(fn: () => T | Promise<T>): Promise<{ data: T } | { error: str
     .then(() => fn())
     .then((data) => ({ data }))
     .catch((err: unknown) => ({ error: String(err) }));
+}
+
+function execGit(args: string[], cwd: string, timeout = 10_000): Promise<{ stdout: string; stderr: string; error?: Error | null; status: number }> {
+  return new Promise((resolve) => {
+    const maxBuffer = 20 * 1024 * 1024; // 20MB
+    execFile("git", args, { cwd, encoding: "utf-8", timeout, maxBuffer }, (error, stdout, stderr) => {
+      const code = error ? (error as { code?: number | string }).code : 0;
+      const status = typeof code === "number" ? code : (error ? 1 : 0);
+      resolve({
+        stdout: stdout ?? "",
+        stderr: stderr ?? "",
+        error,
+        status,
+      });
+    });
+  });
 }
 
 // ── Register handlers ─────────────────────────────────────────────────────────
@@ -108,9 +162,9 @@ export function registerAgentHandlers(db: Database): void {
   // ── File system ──────────────────────────────────────────────────────────
 
   registerIpcHandle("agent:readDir", (_e, { dirPath }: { dirPath: string }) =>
-    handle(() => {
-      assertWithinCodeDirectory(db, dirPath);
-      const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    handle(async () => {
+      const realPath = await assertWithinCodeDirectory(db, dirPath);
+      const entries = await fs.promises.readdir(realPath, { withFileTypes: true });
       return entries
         .filter((e) => !e.name.startsWith("."))
         .sort((a, b) => {
@@ -121,23 +175,23 @@ export function registerAgentHandlers(db: Database): void {
         .map((e) => ({
           name: e.name,
           type: e.isDirectory() ? "dir" : "file",
-          path: path.join(dirPath, e.name),
+          path: path.join(realPath, e.name),
         }));
     })
   );
 
   registerIpcHandle("agent:searchFiles", (_e, { dirPath, query }: { dirPath: string; query: string }) =>
-    handle(() => {
-      assertWithinCodeDirectory(db, dirPath);
+    handle(async () => {
+      const realPath = await assertWithinCodeDirectory(db, dirPath);
       const q = query.toLowerCase();
       const results: { name: string; path: string; relativePath: string }[] = [];
       const SKIP_DIRS = new Set(["node_modules", ".git", ".next", "dist", "dist-electron", "dist-mcp", "dist-app", "out", ".cache", "coverage", "__pycache__", ".venv", "venv"]);
       const MAX_RESULTS = 50;
 
-      function walk(dir: string, relDir: string) {
+      async function walk(dir: string, relDir: string) {
         if (results.length >= MAX_RESULTS) return;
         let entries: fs.Dirent[];
-        try { entries = fs.readdirSync(dir, { withFileTypes: true }); }
+        try { entries = await fs.promises.readdir(dir, { withFileTypes: true }); }
         catch { return; }
         for (const e of entries) {
           if (results.length >= MAX_RESULTS) return;
@@ -145,7 +199,7 @@ export function registerAgentHandlers(db: Database): void {
           const fullPath = path.join(dir, e.name);
           const relPath = relDir ? `${relDir}/${e.name}` : e.name;
           if (e.isDirectory()) {
-            if (!SKIP_DIRS.has(e.name)) walk(fullPath, relPath);
+            if (!SKIP_DIRS.has(e.name)) await walk(fullPath, relPath);
           } else {
             if (e.name.toLowerCase().includes(q)) {
               results.push({ name: e.name, path: fullPath, relativePath: relPath });
@@ -154,23 +208,23 @@ export function registerAgentHandlers(db: Database): void {
         }
       }
 
-      walk(dirPath, "");
+      await walk(realPath, "");
       return results;
     })
   );
 
   registerIpcHandle("agent:readFile", (_e, { filePath }: { filePath: string }) =>
-    handle(() => {
-      assertWithinCodeDirectory(db, filePath);
-      return fs.readFileSync(filePath, "utf-8");
+    handle(async () => {
+      const realPath = await assertWithinCodeDirectory(db, filePath);
+      return fs.promises.readFile(realPath, "utf-8");
     })
   );
 
   registerIpcHandle("agent:readFileBase64", (_e, { filePath }: { filePath: string }) =>
-    handle(() => {
-      assertWithinCodeDirectory(db, filePath);
-      const buf = fs.readFileSync(filePath);
-      const ext = path.extname(filePath).slice(1).toLowerCase();
+    handle(async () => {
+      const realPath = await assertWithinCodeDirectory(db, filePath);
+      const buf = await fs.promises.readFile(realPath);
+      const ext = path.extname(realPath).slice(1).toLowerCase();
       const mime =
         ext === "svg" ? "image/svg+xml" :
         ext === "jpg" || ext === "jpeg" ? "image/jpeg" :
@@ -187,17 +241,17 @@ export function registerAgentHandlers(db: Database): void {
   );
 
   registerIpcHandle("agent:writeFile", (_e, { filePath, content }: { filePath: string; content: string }) =>
-    handle(() => {
-      assertWithinCodeDirectory(db, filePath);
-      fs.writeFileSync(filePath, content, "utf-8");
+    handle(async () => {
+      const realPath = await assertWithinCodeDirectory(db, filePath, true);
+      await fs.promises.writeFile(realPath, content, "utf-8");
     })
   );
 
   registerIpcHandle("agent:validateDirectory", (_e, { dirPath }: { dirPath: string }) =>
-    handle(() => {
+    handle(async () => {
       if (!isSafePath(dirPath)) return false;
       try {
-        const stat = fs.statSync(dirPath);
+        const stat = await fs.promises.stat(dirPath);
         return stat.isDirectory();
       } catch {
         return false;
@@ -208,25 +262,32 @@ export function registerAgentHandlers(db: Database): void {
   // ── Git diff ─────────────────────────────────────────────────────────────
 
   registerIpcHandle("agent:gitDiff", (_e, { cwd }: { cwd: string }) =>
-    handle(() => {
-      // Validate cwd exists and is a directory
-      if (!fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) {
-        throw new Error(`Not a directory: ${cwd}`);
+    handle(async () => {
+      // Validate cwd is within project code directory boundaries and get real path
+      const realPath = await assertWithinCodeDirectory(db, cwd);
+
+      // Validate realPath exists and is a directory
+      try {
+        const stat = await fs.promises.stat(realPath);
+        if (!stat.isDirectory()) {
+          throw new Error(`Not a directory: ${realPath}`);
+        }
+      } catch {
+        throw new Error(`Not a directory: ${realPath}`);
       }
 
       const parts: string[] = [];
 
       // ── 1. Tracked changes: staged + unstaged vs HEAD ────────────────────
       // Falls back to --cached only if HEAD doesn't exist yet (initial repo).
-      let trackedResult = spawnSync("git", ["diff", "HEAD", "--unified=3"], {
-        cwd, encoding: "utf-8", timeout: 10_000,
-      });
-      if (trackedResult.error) throw trackedResult.error;
+      let trackedResult = await execGit(["diff", "HEAD", "--unified=3"], realPath);
       if (trackedResult.status !== 0) {
         // No HEAD yet — show only what's staged
-        trackedResult = spawnSync("git", ["diff", "--cached", "--unified=3"], {
-          cwd, encoding: "utf-8", timeout: 10_000,
-        });
+        trackedResult = await execGit(["diff", "--cached", "--unified=3"], realPath);
+      }
+      if (trackedResult.status !== 0) {
+        const errMsg = trackedResult.stderr.trim() || (trackedResult.error ? trackedResult.error.message : `git diff failed with exit code ${trackedResult.status}`);
+        throw new Error(errMsg);
       }
       if (trackedResult.stdout) parts.push(trackedResult.stdout.trim());
 
@@ -234,47 +295,65 @@ export function registerAgentHandlers(db: Database): void {
       // git diff HEAD misses files that have never been git-added.
       // We enumerate them and synthesise a unified diff header so the
       // renderer's parse-diff library handles them identically to real hunks.
-      const untrackedResult = spawnSync(
-        "git", ["ls-files", "--others", "--exclude-standard"],
-        { cwd, encoding: "utf-8", timeout: 10_000 },
+      const untrackedResult = await execGit(
+        ["ls-files", "-z", "--others", "--exclude-standard"],
+        realPath
       );
-      if (!untrackedResult.error && untrackedResult.status === 0) {
-        const untrackedFiles = (untrackedResult.stdout ?? "")
-          .split("\n")
-          .map((f) => f.trim())
-          .filter(Boolean);
+      if (untrackedResult.status !== 0) {
+        const errMsg = untrackedResult.stderr.trim() || (untrackedResult.error ? untrackedResult.error.message : `git ls-files failed with exit code ${untrackedResult.status}`);
+        throw new Error(errMsg);
+      }
 
-        for (const relPath of untrackedFiles) {
-          const absPath = path.join(cwd, relPath);
-          let content: string;
+      const untrackedFiles = (untrackedResult.stdout ?? "")
+        .split("\0")
+        .filter(Boolean);
+
+      const CONCURRENCY = 10;
+      const readResults: ({ relPath: string; content: string } | null)[] = [];
+      for (let i = 0; i < untrackedFiles.length; i += CONCURRENCY) {
+        const chunk = untrackedFiles.slice(i, i + CONCURRENCY);
+        const chunkPromises = chunk.map(async (relPath) => {
+          const absPath = path.join(realPath, relPath);
           try {
-            content = fs.readFileSync(absPath, "utf-8");
+            const stat = await fs.promises.lstat(absPath);
+            if (!stat.isFile() || stat.size > 1024 * 1024) {
+              return null; // non-regular file or oversized (>1MB) — skip
+            }
+            const content = await fs.promises.readFile(absPath, "utf-8");
+            return { relPath, content };
           } catch {
-            continue; // binary or unreadable — skip
+            return null; // binary or unreadable — skip
           }
+        });
+        const chunkResults = await Promise.all(chunkPromises);
+        readResults.push(...chunkResults);
+      }
 
-          // Synthesise a unified diff:
-          //   diff --git a/<file> b/<file>
-          //   new file mode 100644
-          //   --- /dev/null
-          //   +++ b/<file>
-          //   @@ -0,0 +1,N @@
-          //   +<each line>
-          const lines = content.split("\n");
-          // Drop trailing empty string from trailing newline
-          if (lines[lines.length - 1] === "") lines.pop();
-          const hunk = lines.map((l) => `+${l}`).join("\n");
-          const synth = [
-            `diff --git a/${relPath} b/${relPath}`,
-            `new file mode 100644`,
-            `index 0000000..0000000`,
-            `--- /dev/null`,
-            `+++ b/${relPath}`,
-            `@@ -0,0 +1,${lines.length} @@`,
-            hunk,
-          ].join("\n");
-          parts.push(synth);
-        }
+      for (const res of readResults) {
+        if (!res) continue;
+        const { relPath, content } = res;
+
+        // Synthesise a unified diff:
+        //   diff --git a/<file> b/<file>
+        //   new file mode 100644
+        //   --- /dev/null
+        //   +++ b/<file>
+        //   @@ -0,0 +1,N @@
+        //   +<each line>
+        const lines = content.split("\n");
+        // Drop trailing empty string from trailing newline
+        if (lines[lines.length - 1] === "") lines.pop();
+        const hunk = lines.map((l) => `+${l}`).join("\n");
+        const synth = [
+          `diff --git a/${relPath} b/${relPath}`,
+          `new file mode 100644`,
+          `index 0000000..0000000`,
+          `--- /dev/null`,
+          `+++ b/${relPath}`,
+          `@@ -0,0 +1,${lines.length} @@`,
+          hunk,
+        ].join("\n");
+        parts.push(synth);
       }
 
       return parts.join("\n").trim();
@@ -312,12 +391,14 @@ export function registerAgentHandlers(db: Database): void {
     taskTitle: string;
   }) => {
     return handle(async () => {
-      // Security: validate cwd on all platforms
-      if (!isSafePath(payload.cwd)) {
-        throw new Error(`Invalid cwd path: ${payload.cwd}`);
+      // Security: assert project code directory boundaries and validate cwd
+      const realCwd = await assertWithinCodeDirectory(db, payload.cwd);
+      try {
+        const stat = await fs.promises.stat(realCwd);
+        if (!stat.isDirectory()) throw new Error(`cwd is not a directory: ${payload.cwd}`);
+      } catch {
+        throw new Error(`cwd is not a directory: ${payload.cwd}`);
       }
-      const stat = fs.statSync(payload.cwd);
-      if (!stat.isDirectory()) throw new Error(`cwd is not a directory: ${payload.cwd}`);
 
       // Load agent config
       const agent = q.getCodingAgentById(db, payload.agentId);
@@ -327,7 +408,9 @@ export function registerAgentHandlers(db: Database): void {
       if (!isSafePath(agent.binaryPath)) {
         throw new Error(`Unsafe binaryPath: ${agent.binaryPath}`);
       }
-      if (!fs.existsSync(agent.binaryPath)) {
+      try {
+        await fs.promises.access(agent.binaryPath, fs.constants.F_OK);
+      } catch {
         throw new Error(`Agent binary not found: ${agent.binaryPath}`);
       }
 
@@ -403,7 +486,7 @@ export function registerAgentHandlers(db: Database): void {
         name: "xterm-256color",
         cols: 120,
         rows: 30,
-        cwd: payload.cwd,
+        cwd: realCwd,
         env: process.env as Record<string, string>,
       });
 
@@ -444,9 +527,13 @@ export function registerAgentHandlers(db: Database): void {
 
   registerIpcHandle("agent:spawnShell", async (event, payload: { cwd: string }) => {
     return handle(async () => {
-      if (!isSafePath(payload.cwd)) throw new Error(`Invalid cwd: ${payload.cwd}`);
-      const stat = fs.statSync(payload.cwd);
-      if (!stat.isDirectory()) throw new Error(`cwd is not a directory: ${payload.cwd}`);
+      const realCwd = await assertWithinCodeDirectory(db, payload.cwd);
+      try {
+        const stat = await fs.promises.stat(realCwd);
+        if (!stat.isDirectory()) throw new Error(`cwd is not a directory: ${payload.cwd}`);
+      } catch {
+        throw new Error(`cwd is not a directory: ${payload.cwd}`);
+      }
 
       const defaultShell = process.platform === "win32"
         ? (process.env.COMSPEC || "cmd.exe")
@@ -462,41 +549,59 @@ export function registerAgentHandlers(db: Database): void {
       const attempts: SpawnAttempt[] = [];
 
       if (process.platform === "win32") {
-        attempts.push({ shell: defaultShell, cwd: payload.cwd, label: `default shell in cwd (${payload.cwd})` });
+        attempts.push({ shell: defaultShell, cwd: realCwd, label: `default shell in cwd (${payload.cwd})` });
         attempts.push({ shell: defaultShell, cwd: homeDir, label: `default shell in homedir (${homeDir})` });
         if (defaultShell !== "cmd.exe") {
-          attempts.push({ shell: "cmd.exe", cwd: payload.cwd, label: `cmd.exe in cwd (${payload.cwd})` });
+          attempts.push({ shell: "cmd.exe", cwd: realCwd, label: `cmd.exe in cwd (${payload.cwd})` });
           attempts.push({ shell: "cmd.exe", cwd: homeDir, label: `cmd.exe in homedir (${homeDir})` });
         }
-        attempts.push({ shell: "powershell.exe", cwd: payload.cwd, label: `powershell.exe in cwd (${payload.cwd})` });
+        attempts.push({ shell: "powershell.exe", cwd: realCwd, label: `powershell.exe in cwd (${payload.cwd})` });
         attempts.push({ shell: "powershell.exe", cwd: homeDir, label: `powershell.exe in homedir (${homeDir})` });
       } else {
-        attempts.push({ shell: defaultShell, cwd: payload.cwd, label: `default shell in cwd (${payload.cwd})` });
+        attempts.push({ shell: defaultShell, cwd: realCwd, label: `default shell in cwd (${payload.cwd})` });
         attempts.push({ shell: defaultShell, cwd: homeDir, label: `default shell in homedir (${homeDir})` });
         if (defaultShell !== "/bin/zsh") {
-          attempts.push({ shell: "/bin/zsh", cwd: payload.cwd, label: `/bin/zsh in cwd (${payload.cwd})` });
+          attempts.push({ shell: "/bin/zsh", cwd: realCwd, label: `/bin/zsh in cwd (${payload.cwd})` });
           attempts.push({ shell: "/bin/zsh", cwd: homeDir, label: `/bin/zsh in homedir (${homeDir})` });
         }
         if (defaultShell !== "/bin/bash") {
-          attempts.push({ shell: "/bin/bash", cwd: payload.cwd, label: `/bin/bash in cwd (${payload.cwd})` });
+          attempts.push({ shell: "/bin/bash", cwd: realCwd, label: `/bin/bash in cwd (${payload.cwd})` });
           attempts.push({ shell: "/bin/bash", cwd: homeDir, label: `/bin/bash in homedir (${homeDir})` });
         }
         if (defaultShell !== "/bin/sh") {
-          attempts.push({ shell: "/bin/sh", cwd: payload.cwd, label: `/bin/sh in cwd (${payload.cwd})` });
+          attempts.push({ shell: "/bin/sh", cwd: realCwd, label: `/bin/sh in cwd (${payload.cwd})` });
           attempts.push({ shell: "/bin/sh", cwd: homeDir, label: `/bin/sh in homedir (${homeDir})` });
         }
+      }
+
+      // Filter out any attempt whose cwd is outside the project boundaries
+      const filterChecks = await Promise.all(
+        attempts.map(async (attempt) => {
+          try {
+            await assertWithinCodeDirectory(db, attempt.cwd);
+            return true;
+          } catch {
+            return false;
+          }
+        })
+      );
+      const filteredAttempts = attempts.filter((_, idx) => filterChecks[idx]);
+
+      if (filteredAttempts.length === 0) {
+        throw new Error("No allowed shell spawn directory found within project boundaries.");
       }
 
       let pty;
       let lastError: Error | null = null;
 
-      for (const attempt of attempts) {
+      for (const attempt of filteredAttempts) {
         try {
+          const resolvedAttemptCwd = await getRealPath(attempt.cwd);
           pty = nodePty.spawn(attempt.shell, [], {
             name: "xterm-256color",
             cols: 120,
             rows: 30,
-            cwd:  attempt.cwd,
+            cwd:  resolvedAttemptCwd,
             env:  process.env as Record<string, string>,
           });
           console.log(`[agent] Successfully spawned ${attempt.label}`);
