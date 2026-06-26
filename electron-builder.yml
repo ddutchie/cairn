@@ -35,6 +35,11 @@ files:
   - electron/sharp-stub/**/*
   # Exclude everything else in node_modules
   - "!node_modules/!(better-sqlite3|bindings|file-uri-to-path|electron-updater|node-pty|@huggingface|onnxruntime-node|onnxruntime-common|sharp|umap-js)/**"
+  # Exclude source code, tests, and build intermediates from native modules to reduce size and signing overhead
+  - "!node_modules/{better-sqlite3,node-pty}/{src,deps,docs,test,tests,obj,*.vcxproj,*.sln,*.vcxproj.filters}/**/*"
+  - "!node_modules/{better-sqlite3,node-pty}/build/Release/*.{obj,pdb,lib,iobj,ipdb,tlog}"
+  - "!node_modules/onnxruntime-node/src/**/*"
+  - "!node_modules/onnxruntime-node/dist/src/**/*"
 
 # Unpack from asar — native .node files and anything that needs real filesystem paths
 asarUnpack:
@@ -77,6 +82,7 @@ win:
     - target: nsis
       arch: [x64, arm64]
   icon: build-resources/icon.ico
+  rfc3161TimeStampServer: "http://timestamp.digicert.com"
 
 nsis:
   oneClick: false
