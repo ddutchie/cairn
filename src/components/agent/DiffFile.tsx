@@ -193,7 +193,7 @@ function buildSplitRows(changes: Change[]): SplitRow[] {
 export const SplitFile = React.memo(function SplitFile({ file, palette, hunkTop }: { file: File; palette: Palette; hunkTop: number }) {
   const filename = file.to ?? file.from ?? "unknown";
   const lang = langFrom(filename);
-  const addBg = "color-mix(in srgb, var(--success, #22c55e) 10%, transparent)";
+  const addBg = "color-mix(in srgb, var(--success) 10%, transparent)";
   const delBg = "color-mix(in srgb, var(--danger) 10%, transparent)";
   const splitRows = useMemo(() => file.chunks.map((chunk) => buildSplitRows(chunk.changes)), [file]);
   return (
@@ -248,10 +248,11 @@ export const SplitFile = React.memo(function SplitFile({ file, palette, hunkTop 
 
 // ── FileDiff — file header + collapsible content ──────────────────────────────
 
-export const FileDiff = React.memo(function FileDiff({ file, collapsed, onToggle, mode, palette }: {
+export const FileDiff = React.memo(function FileDiff({ file, fileKey, collapsed, onToggle, mode, palette }: {
   file: File;
+  fileKey: string;
   collapsed: boolean;
-  onToggle: () => void;
+  onToggle: (key: string) => void;
   mode: ViewMode;
   palette: Palette;
 }) {
@@ -278,7 +279,7 @@ export const FileDiff = React.memo(function FileDiff({ file, collapsed, onToggle
     <div className="border-b border-[var(--border)]">
       <button
         ref={headerRef}
-        onClick={onToggle}
+        onClick={() => onToggle(fileKey)}
         className="w-full flex items-center gap-2 px-3 py-1.5 bg-[var(--surface)] hover:bg-[var(--surface-2)] transition-colors sticky top-0 z-10 text-left border-b border-[var(--border-subtle)]"
       >
         {collapsed

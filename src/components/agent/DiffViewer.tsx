@@ -228,8 +228,9 @@ export function DiffViewer({ cwd }: DiffViewerProps) {
             <FileDiff
               key={fileKey}
               file={file}
+              fileKey={fileKey}
               collapsed={collapsed.has(fileKey)}
-              onToggle={() => toggleCollapse(fileKey)}
+              onToggle={toggleCollapse}
               mode={mode}
               palette={palette}
             />

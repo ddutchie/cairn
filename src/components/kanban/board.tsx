@@ -49,6 +49,18 @@ function getZoneHit(clientX: number, clientY: number): "archive" | "delete" | nu
   return null;
 }
 
+function pointerCoords(event: { activatorEvent: Event | null }): { x: number; y: number } | null {
+  const e = event.activatorEvent;
+  if (!e) return null;
+  if (e instanceof TouchEvent) {
+    const t = e.changedTouches[0] ?? e.touches[0];
+    if (!t) return null;
+    return { x: t.clientX, y: t.clientY };
+  }
+  const pe = e as PointerEvent | MouseEvent;
+  return { x: pe.clientX, y: pe.clientY };
+}
+
 export function KanbanBoard() {
   const {
     activeProjectId,
@@ -140,9 +152,10 @@ export function KanbanBoard() {
 
   function handleDragMove(event: DragMoveEvent) {
     if (!activeCard) { setHoverZone(null); return; }
-    const init = event.activatorEvent as PointerEvent;
-    const x = init.clientX + event.delta.x;
-    const y = init.clientY + event.delta.y;
+    const origin = pointerCoords(event);
+    if (!origin) { return; }
+    const x = origin.x + event.delta.x;
+    const y = origin.y + event.delta.y;
     const zone = getZoneHit(x, y);
     setHoverZone(zone);
     // Clear column/card drop highlight while hovering an action zone
@@ -165,9 +178,9 @@ export function KanbanBoard() {
     const draggedCard = active.data.current?.card as TaskCard | undefined;
 
     // Compute final pointer position before clearing state
-    const init  = event.activatorEvent as PointerEvent;
-    const dropX = init.clientX + event.delta.x;
-    const dropY = init.clientY + event.delta.y;
+    const origin = pointerCoords(event);
+    const dropX = origin ? origin.x + event.delta.x : 0;
+    const dropY = origin ? origin.y + event.delta.y : 0;
 
     setActiveCard(null);
     setActiveColumn(null);
