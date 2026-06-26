@@ -637,7 +637,7 @@ export async function runAgentLoop(
             if (tc.thought_signature) buf.thought_signature = tc.thought_signature;
 
             // Fire pending chip as soon as we see the tool name during streaming
-            if (isNew && buf.name) {
+            if (buf.name && !streamCallIds.has(idx)) {
               if (!toolsReadyFired) {
                 callbacks.onToolsReady();
                 toolsReadyFired = true;
@@ -701,12 +701,13 @@ export async function runAgentLoop(
       let args: ToolArgs;
       let parseError: string | null = null;
       try {
-        args = JSON.parse(tc.function.arguments) as ToolArgs;
+        const rawArgs = tc.function.arguments?.trim() || "{}";
+        args = JSON.parse(rawArgs) as ToolArgs;
         traceTool("parse", {
           toolName: tc.function.name,
           title: typeof (args as Record<string, unknown>).title === "string" ? (args as Record<string, unknown>).title as string : "",
           content: typeof (args as Record<string, unknown>).content === "string" ? (args as Record<string, unknown>).content as string : "",
-          rawArguments: tc.function.arguments,
+          rawArguments: tc.function.arguments || "",
         });
       } catch (err) {
         parseError = `malformed tool-call arguments JSON from model: ${(err as Error).message}`;
