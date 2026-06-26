@@ -82,7 +82,6 @@ win:
     - target: nsis
       arch: [x64, arm64]
   icon: build-resources/icon.ico
-  rfc3161TimeStampServer: "http://timestamp.digicert.com"
 
 nsis:
   oneClick: false
