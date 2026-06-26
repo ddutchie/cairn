@@ -40,26 +40,52 @@ export function isSafePath(p: string): boolean {
   return SAFE_PATH_RE.test(p) || SAFE_PATH_WIN_RE.test(p);
 }
 
+function getRealPath(p: string, isWrite = false): string {
+  // If the path exists:
+  if (fs.existsSync(p)) {
+    if (isWrite && fs.lstatSync(p).isSymbolicLink()) {
+      throw new Error(`Symlinks are not allowed for write paths: ${p}`);
+    }
+    return fs.realpathSync(p);
+  }
+  // If it doesn't exist:
+  const parent = path.dirname(p);
+  if (fs.existsSync(parent)) {
+    if (isWrite && fs.lstatSync(parent).isSymbolicLink()) {
+      throw new Error(`Parent directory cannot be a symlink for write paths: ${parent}`);
+    }
+    const realParent = fs.realpathSync(parent);
+    return path.join(realParent, path.basename(p));
+  }
+  return path.resolve(p);
+}
+
 /**
  * Assert that `filePath` is safe and confined to one of the registered project
  * code directories. Throws if either check fails, which causes handle() to
  * return { error: "..." } to the renderer without crashing the main process.
  */
-function assertWithinCodeDirectory(db: Database, filePath: string): void {
+function assertWithinCodeDirectory(db: Database, filePath: string, isWrite = false): string {
   if (!isSafePath(filePath)) {
     throw new Error(`Unsafe path: ${filePath}`);
   }
-  const normalised = path.resolve(filePath);
+  const normalised = getRealPath(filePath, isWrite);
   const codeDirs = db
     .prepare("SELECT code_directory FROM projects WHERE code_directory IS NOT NULL")
     .all() as { code_directory: string }[];
   const allowed = codeDirs.some(({ code_directory }) => {
-    const dir = path.resolve(code_directory);
-    return normalised === dir || normalised.startsWith(dir + path.sep);
+    try {
+      if (!fs.existsSync(code_directory)) return false;
+      const dir = fs.realpathSync(code_directory);
+      return normalised === dir || normalised.startsWith(dir + path.sep);
+    } catch {
+      return false;
+    }
   });
   if (!allowed) {
     throw new Error(`Path is outside any registered code directory: ${filePath}`);
   }
+  return normalised;
 }
 
 // ── Session map ───────────────────────────────────────────────────────────────
@@ -125,8 +151,8 @@ export function registerAgentHandlers(db: Database): void {
 
   registerIpcHandle("agent:readDir", (_e, { dirPath }: { dirPath: string }) =>
     handle(async () => {
-      assertWithinCodeDirectory(db, dirPath);
-      const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
+      const realPath = assertWithinCodeDirectory(db, dirPath);
+      const entries = await fs.promises.readdir(realPath, { withFileTypes: true });
       return entries
         .filter((e) => !e.name.startsWith("."))
         .sort((a, b) => {
@@ -137,14 +163,14 @@ export function registerAgentHandlers(db: Database): void {
         .map((e) => ({
           name: e.name,
           type: e.isDirectory() ? "dir" : "file",
-          path: path.join(dirPath, e.name),
+          path: path.join(realPath, e.name),
         }));
     })
   );
 
   registerIpcHandle("agent:searchFiles", (_e, { dirPath, query }: { dirPath: string; query: string }) =>
     handle(async () => {
-      assertWithinCodeDirectory(db, dirPath);
+      const realPath = assertWithinCodeDirectory(db, dirPath);
       const q = query.toLowerCase();
       const results: { name: string; path: string; relativePath: string }[] = [];
       const SKIP_DIRS = new Set(["node_modules", ".git", ".next", "dist", "dist-electron", "dist-mcp", "dist-app", "out", ".cache", "coverage", "__pycache__", ".venv", "venv"]);
@@ -170,23 +196,23 @@ export function registerAgentHandlers(db: Database): void {
         }
       }
 
-      await walk(dirPath, "");
+      await walk(realPath, "");
       return results;
     })
   );
 
   registerIpcHandle("agent:readFile", (_e, { filePath }: { filePath: string }) =>
     handle(async () => {
-      assertWithinCodeDirectory(db, filePath);
-      return fs.promises.readFile(filePath, "utf-8");
+      const realPath = assertWithinCodeDirectory(db, filePath);
+      return fs.promises.readFile(realPath, "utf-8");
     })
   );
 
   registerIpcHandle("agent:readFileBase64", (_e, { filePath }: { filePath: string }) =>
     handle(async () => {
-      assertWithinCodeDirectory(db, filePath);
-      const buf = await fs.promises.readFile(filePath);
-      const ext = path.extname(filePath).slice(1).toLowerCase();
+      const realPath = assertWithinCodeDirectory(db, filePath);
+      const buf = await fs.promises.readFile(realPath);
+      const ext = path.extname(realPath).slice(1).toLowerCase();
       const mime =
         ext === "svg" ? "image/svg+xml" :
         ext === "jpg" || ext === "jpeg" ? "image/jpeg" :
@@ -204,8 +230,8 @@ export function registerAgentHandlers(db: Database): void {
 
   registerIpcHandle("agent:writeFile", (_e, { filePath, content }: { filePath: string; content: string }) =>
     handle(async () => {
-      assertWithinCodeDirectory(db, filePath);
-      await fs.promises.writeFile(filePath, content, "utf-8");
+      const realPath = assertWithinCodeDirectory(db, filePath, true);
+      await fs.promises.writeFile(realPath, content, "utf-8");
     })
   );
 
@@ -225,27 +251,27 @@ export function registerAgentHandlers(db: Database): void {
 
   registerIpcHandle("agent:gitDiff", (_e, { cwd }: { cwd: string }) =>
     handle(async () => {
-      // Validate cwd is within project code directory boundaries
-      assertWithinCodeDirectory(db, cwd);
+      // Validate cwd is within project code directory boundaries and get real path
+      const realPath = assertWithinCodeDirectory(db, cwd);
 
-      // Validate cwd exists and is a directory
+      // Validate realPath exists and is a directory
       try {
-        const stat = await fs.promises.stat(cwd);
+        const stat = await fs.promises.stat(realPath);
         if (!stat.isDirectory()) {
-          throw new Error(`Not a directory: ${cwd}`);
+          throw new Error(`Not a directory: ${realPath}`);
         }
       } catch {
-        throw new Error(`Not a directory: ${cwd}`);
+        throw new Error(`Not a directory: ${realPath}`);
       }
 
       const parts: string[] = [];
 
       // ── 1. Tracked changes: staged + unstaged vs HEAD ────────────────────
       // Falls back to --cached only if HEAD doesn't exist yet (initial repo).
-      let trackedResult = await execGit(["diff", "HEAD", "--unified=3"], cwd);
+      let trackedResult = await execGit(["diff", "HEAD", "--unified=3"], realPath);
       if (trackedResult.status !== 0) {
         // No HEAD yet — show only what's staged
-        trackedResult = await execGit(["diff", "--cached", "--unified=3"], cwd);
+        trackedResult = await execGit(["diff", "--cached", "--unified=3"], realPath);
       }
       if (trackedResult.status !== 0) {
         const errMsg = trackedResult.stderr.trim() || (trackedResult.error ? trackedResult.error.message : `git diff failed with exit code ${trackedResult.status}`);
@@ -259,7 +285,7 @@ export function registerAgentHandlers(db: Database): void {
       // renderer's parse-diff library handles them identically to real hunks.
       const untrackedResult = await execGit(
         ["ls-files", "--others", "--exclude-standard"],
-        cwd
+        realPath
       );
       if (untrackedResult.status !== 0) {
         const errMsg = untrackedResult.stderr.trim() || (untrackedResult.error ? untrackedResult.error.message : `git ls-files failed with exit code ${untrackedResult.status}`);
@@ -276,8 +302,12 @@ export function registerAgentHandlers(db: Database): void {
       for (let i = 0; i < untrackedFiles.length; i += CONCURRENCY) {
         const chunk = untrackedFiles.slice(i, i + CONCURRENCY);
         const chunkPromises = chunk.map(async (relPath) => {
-          const absPath = path.join(cwd, relPath);
+          const absPath = path.join(realPath, relPath);
           try {
+            const stat = await fs.promises.lstat(absPath);
+            if (!stat.isFile() || stat.size > 1024 * 1024) {
+              return null; // non-regular file or oversized (>1MB) — skip
+            }
             const content = await fs.promises.readFile(absPath, "utf-8");
             return { relPath, content };
           } catch {
@@ -351,9 +381,9 @@ export function registerAgentHandlers(db: Database): void {
   }) => {
     return handle(async () => {
       // Security: assert project code directory boundaries and validate cwd
-      assertWithinCodeDirectory(db, payload.cwd);
+      const realCwd = assertWithinCodeDirectory(db, payload.cwd);
       try {
-        const stat = await fs.promises.stat(payload.cwd);
+        const stat = await fs.promises.stat(realCwd);
         if (!stat.isDirectory()) throw new Error(`cwd is not a directory: ${payload.cwd}`);
       } catch {
         throw new Error(`cwd is not a directory: ${payload.cwd}`);
@@ -445,7 +475,7 @@ export function registerAgentHandlers(db: Database): void {
         name: "xterm-256color",
         cols: 120,
         rows: 30,
-        cwd: payload.cwd,
+        cwd: realCwd,
         env: process.env as Record<string, string>,
       });
 
@@ -486,9 +516,9 @@ export function registerAgentHandlers(db: Database): void {
 
   registerIpcHandle("agent:spawnShell", async (event, payload: { cwd: string }) => {
     return handle(async () => {
-      assertWithinCodeDirectory(db, payload.cwd);
+      const realCwd = assertWithinCodeDirectory(db, payload.cwd);
       try {
-        const stat = await fs.promises.stat(payload.cwd);
+        const stat = await fs.promises.stat(realCwd);
         if (!stat.isDirectory()) throw new Error(`cwd is not a directory: ${payload.cwd}`);
       } catch {
         throw new Error(`cwd is not a directory: ${payload.cwd}`);
@@ -508,41 +538,56 @@ export function registerAgentHandlers(db: Database): void {
       const attempts: SpawnAttempt[] = [];
 
       if (process.platform === "win32") {
-        attempts.push({ shell: defaultShell, cwd: payload.cwd, label: `default shell in cwd (${payload.cwd})` });
+        attempts.push({ shell: defaultShell, cwd: realCwd, label: `default shell in cwd (${payload.cwd})` });
         attempts.push({ shell: defaultShell, cwd: homeDir, label: `default shell in homedir (${homeDir})` });
         if (defaultShell !== "cmd.exe") {
-          attempts.push({ shell: "cmd.exe", cwd: payload.cwd, label: `cmd.exe in cwd (${payload.cwd})` });
+          attempts.push({ shell: "cmd.exe", cwd: realCwd, label: `cmd.exe in cwd (${payload.cwd})` });
           attempts.push({ shell: "cmd.exe", cwd: homeDir, label: `cmd.exe in homedir (${homeDir})` });
         }
-        attempts.push({ shell: "powershell.exe", cwd: payload.cwd, label: `powershell.exe in cwd (${payload.cwd})` });
+        attempts.push({ shell: "powershell.exe", cwd: realCwd, label: `powershell.exe in cwd (${payload.cwd})` });
         attempts.push({ shell: "powershell.exe", cwd: homeDir, label: `powershell.exe in homedir (${homeDir})` });
       } else {
-        attempts.push({ shell: defaultShell, cwd: payload.cwd, label: `default shell in cwd (${payload.cwd})` });
+        attempts.push({ shell: defaultShell, cwd: realCwd, label: `default shell in cwd (${payload.cwd})` });
         attempts.push({ shell: defaultShell, cwd: homeDir, label: `default shell in homedir (${homeDir})` });
         if (defaultShell !== "/bin/zsh") {
-          attempts.push({ shell: "/bin/zsh", cwd: payload.cwd, label: `/bin/zsh in cwd (${payload.cwd})` });
+          attempts.push({ shell: "/bin/zsh", cwd: realCwd, label: `/bin/zsh in cwd (${payload.cwd})` });
           attempts.push({ shell: "/bin/zsh", cwd: homeDir, label: `/bin/zsh in homedir (${homeDir})` });
         }
         if (defaultShell !== "/bin/bash") {
-          attempts.push({ shell: "/bin/bash", cwd: payload.cwd, label: `/bin/bash in cwd (${payload.cwd})` });
+          attempts.push({ shell: "/bin/bash", cwd: realCwd, label: `/bin/bash in cwd (${payload.cwd})` });
           attempts.push({ shell: "/bin/bash", cwd: homeDir, label: `/bin/bash in homedir (${homeDir})` });
         }
         if (defaultShell !== "/bin/sh") {
-          attempts.push({ shell: "/bin/sh", cwd: payload.cwd, label: `/bin/sh in cwd (${payload.cwd})` });
+          attempts.push({ shell: "/bin/sh", cwd: realCwd, label: `/bin/sh in cwd (${payload.cwd})` });
           attempts.push({ shell: "/bin/sh", cwd: homeDir, label: `/bin/sh in homedir (${homeDir})` });
         }
+      }
+
+      // Filter out any attempt whose cwd is outside the project boundaries
+      const filteredAttempts = attempts.filter((attempt) => {
+        try {
+          assertWithinCodeDirectory(db, attempt.cwd);
+          return true;
+        } catch {
+          return false;
+        }
+      });
+
+      if (filteredAttempts.length === 0) {
+        throw new Error("No allowed shell spawn directory found within project boundaries.");
       }
 
       let pty;
       let lastError: Error | null = null;
 
-      for (const attempt of attempts) {
+      for (const attempt of filteredAttempts) {
         try {
+          const resolvedAttemptCwd = getRealPath(attempt.cwd);
           pty = nodePty.spawn(attempt.shell, [], {
             name: "xterm-256color",
             cols: 120,
             rows: 30,
-            cwd:  attempt.cwd,
+            cwd:  resolvedAttemptCwd,
             env:  process.env as Record<string, string>,
           });
           console.log(`[agent] Successfully spawned ${attempt.label}`);
