@@ -84,11 +84,11 @@ export const TOOL_SCHEMAS = {
   // ── Notes ────────────────────────────────────────────────────────────────────
 
   ensure_note: {
-    description: "Create-or-update a note by title+projectId. Idempotent — safe to call repeatedly.",
+    description: "Create-or-update a note by title+projectId. Idempotent — safe to call repeatedly. Content is optional; if omitted on update, existing content is preserved.",
     schema: z.object({
       projectId: sId,
       title:     sStr,
-      content:   sStrOpt,
+      content:   sStrOpt.describe("Markdown content. If omitted on update, existing content is preserved."),
       tagIds:    sTagIds,
       tagNames:  sTagNames,
       isPinned:  sBoolOpt,

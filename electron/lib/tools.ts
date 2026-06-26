@@ -137,8 +137,8 @@ IDs (workspaceId, projectId, columnId) are stable for the app session. Call get_
 - Keep responses concise and actionable
 
 ## Notes
-- Use ensure_note to create or update notes — it is idempotent and safe to call repeatedly.
-- Use the optional \`folder\` parameter for subfolders, e.g. \`folder="Research/Papers"\`.
+- Use ensure_note to create or update notes — it is idempotent and safe to call repeatedly. Omitting the \`content\` parameter on update preserves the note's existing content.
+- Use the optional \`folder\` parameter for subfolders, e.g. \`folder="Research/Papers"\` (can be used with ensure_note to move notes without overwriting content).
 - Use patch_note for targeted edits, append_to_note to add content without replacing.
 - search_notes with an empty query returns all notes in a project.
 - search_notes_semantic uses local embeddings for natural-language queries — better than search_notes when concepts are described in different words. Requires embeddings enabled.

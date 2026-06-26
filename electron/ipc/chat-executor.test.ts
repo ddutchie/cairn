@@ -436,6 +436,19 @@ describe("ensure_note", () => {
     expect(result.action).toBe("updated");
   });
 
+  it("preserves content on update when content argument is omitted", async () => {
+    const db = makeDb();
+    seed(db);
+    await exec(db, "ensure_note", { projectId: "proj1", title: "README", content: "initial content" });
+    const result = await exec(db, "ensure_note", { projectId: "proj1", title: "README", folder: "new_folder" }) as Record<string, unknown>;
+    expect(result.action).toBe("updated");
+    expect(result.folder).toBe("new_folder");
+    
+    const note = await exec(db, "get_note", { noteId: result.id }) as Record<string, unknown>;
+    expect(note.content).toBe("initial content");
+  });
+
+
   it("only one note exists after two ensure calls with same title", async () => {
     const db = makeDb();
     seed(db);

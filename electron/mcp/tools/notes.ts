@@ -54,7 +54,7 @@ export function ensure_note(db: Database.Database, snap: Snapshot, workspacePath
     requestedTitle: typeof title === "string" ? title : "",
     matchedId: existing?.id ?? "none",
   });
-  const markdown = (content as string | undefined) ?? "";
+  const markdown = content !== undefined ? (content as string) : (existing?.content as string | undefined) ?? "";
 
   const resolvedFromNameIds = resolveTagNames(db, project.workspaceId, tagNames);
   let ensureResolvedTagIds = Array.isArray(ensureTagIds) ? ensureTagIds as string[] : undefined;
