@@ -225,7 +225,12 @@ export function registerAgentHandlers(db: Database): void {
   registerIpcHandle("agent:gitDiff", (_e, { cwd }: { cwd: string }) =>
     handle(async () => {
       // Validate cwd exists and is a directory
-      if (!fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) {
+      try {
+        const stat = await fs.promises.stat(cwd);
+        if (!stat.isDirectory()) {
+          throw new Error(`Not a directory: ${cwd}`);
+        }
+      } catch {
         throw new Error(`Not a directory: ${cwd}`);
       }
 
@@ -254,13 +259,17 @@ export function registerAgentHandlers(db: Database): void {
       if (untrackedResult.status !== 0) {
         throw untrackedResult.error || new Error(`git ls-files failed with exit code ${untrackedResult.status}`);
       }
-      if (untrackedResult.status === 0) {
-        const untrackedFiles = (untrackedResult.stdout ?? "")
-          .split("\n")
-          .map((f) => f.trim())
-          .filter(Boolean);
 
-        const readPromises = untrackedFiles.map(async (relPath) => {
+      const untrackedFiles = (untrackedResult.stdout ?? "")
+        .split("\n")
+        .map((f) => f.trim())
+        .filter(Boolean);
+
+      const CONCURRENCY = 10;
+      const readResults: ({ relPath: string; content: string } | null)[] = [];
+      for (let i = 0; i < untrackedFiles.length; i += CONCURRENCY) {
+        const chunk = untrackedFiles.slice(i, i + CONCURRENCY);
+        const chunkPromises = chunk.map(async (relPath) => {
           const absPath = path.join(cwd, relPath);
           try {
             const content = await fs.promises.readFile(absPath, "utf-8");
@@ -269,34 +278,35 @@ export function registerAgentHandlers(db: Database): void {
             return null; // binary or unreadable — skip
           }
         });
-        const readResults = await Promise.all(readPromises);
+        const chunkResults = await Promise.all(chunkPromises);
+        readResults.push(...chunkResults);
+      }
 
-        for (const res of readResults) {
-          if (!res) continue;
-          const { relPath, content } = res;
+      for (const res of readResults) {
+        if (!res) continue;
+        const { relPath, content } = res;
 
-          // Synthesise a unified diff:
-          //   diff --git a/<file> b/<file>
-          //   new file mode 100644
-          //   --- /dev/null
-          //   +++ b/<file>
-          //   @@ -0,0 +1,N @@
-          //   +<each line>
-          const lines = content.split("\n");
-          // Drop trailing empty string from trailing newline
-          if (lines[lines.length - 1] === "") lines.pop();
-          const hunk = lines.map((l) => `+${l}`).join("\n");
-          const synth = [
-            `diff --git a/${relPath} b/${relPath}`,
-            `new file mode 100644`,
-            `index 0000000..0000000`,
-            `--- /dev/null`,
-            `+++ b/${relPath}`,
-            `@@ -0,0 +1,${lines.length} @@`,
-            hunk,
-          ].join("\n");
-          parts.push(synth);
-        }
+        // Synthesise a unified diff:
+        //   diff --git a/<file> b/<file>
+        //   new file mode 100644
+        //   --- /dev/null
+        //   +++ b/<file>
+        //   @@ -0,0 +1,N @@
+        //   +<each line>
+        const lines = content.split("\n");
+        // Drop trailing empty string from trailing newline
+        if (lines[lines.length - 1] === "") lines.pop();
+        const hunk = lines.map((l) => `+${l}`).join("\n");
+        const synth = [
+          `diff --git a/${relPath} b/${relPath}`,
+          `new file mode 100644`,
+          `index 0000000..0000000`,
+          `--- /dev/null`,
+          `+++ b/${relPath}`,
+          `@@ -0,0 +1,${lines.length} @@`,
+          hunk,
+        ].join("\n");
+        parts.push(synth);
       }
 
       return parts.join("\n").trim();
