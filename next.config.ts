@@ -9,6 +9,11 @@ const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_APP_VERSION: version,
   },
+  typescript: {
+    // Type checking is already handled in CI via 'npm run type-check:all'.
+    // Disabling it during build speeds up packaging and avoids random TSC hangs on CI.
+    ignoreBuildErrors: true,
+  },
   // Static export for Electron — the main process loads index.html directly.
   // Only applied when building for Electron; web dev mode stays as-is.
   ...(isElectronBuild && {
