@@ -36,10 +36,6 @@ function tagColor(color: string | undefined | null, index: number): string {
   return FALLBACK_COLORS[index % FALLBACK_COLORS.length];
 }
 
-// Fixed constants for cell size clamps/rem-based scaling
-const DEFAULT_CELL_MIN = 44;
-const DEFAULT_CELL_MAX = 80;
-
 export function MatrixCanvas({ nodes, onNodeClick, selectedNodeId }: Props) {
   const { tags, notes, cards } = useCairnStore(useShallow((s) => ({ tags: s.tags, notes: s.notes, cards: s.cards })));
   const [hoveredCell, setHoveredCell] = useState<{ r: number; c: number } | null>(null);
