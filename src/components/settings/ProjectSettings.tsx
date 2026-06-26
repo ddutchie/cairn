@@ -29,12 +29,21 @@ export function ProjectSettingsSection({ showHeader = true }: ProjectSettingsSec
   const [repoTemplateExists, setRepoTemplateExists] = useState(false);
 
   useEffect(() => {
+    const currentProjectId = activeProject?.id;
     if (activeProject?.codeDirectory && window.electron?.agent) {
       const pathSeparator = window.electron.platform === "win32" ? "\\" : "/";
       const templatePath = `${activeProject.codeDirectory}${pathSeparator}.github${pathSeparator}PULL_REQUEST_TEMPLATE.md`;
       window.electron.agent.readFile(templatePath)
-        .then(() => setRepoTemplateExists(true))
-        .catch(() => setRepoTemplateExists(false));
+        .then(() => {
+          if (activeProject?.id === currentProjectId) {
+            setRepoTemplateExists(true);
+          }
+        })
+        .catch(() => {
+          if (activeProject?.id === currentProjectId) {
+            setRepoTemplateExists(false);
+          }
+        });
     } else {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setRepoTemplateExists(false);

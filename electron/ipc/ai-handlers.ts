@@ -39,6 +39,14 @@ function resolveConfig(
 
 function cleanOutput(text: string): string {
   let cleaned = text.trim();
+
+  // Detect and extract fenced block anywhere containing commit/PR keywords
+  const fencedRegex = /```(?:[a-zA-Z]*\n)?([\s\S]*?(?:subject|body|title|description)[\s\S]*)```/i;
+  const match = cleaned.match(fencedRegex);
+  if (match) {
+    return match[1].trim();
+  }
+
   if (cleaned.startsWith("```")) {
     cleaned = cleaned.replace(/^```[a-zA-Z]*\n/, "").replace(/```$/, "").trim();
   }

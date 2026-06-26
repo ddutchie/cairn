@@ -35,7 +35,7 @@ export interface NotesSlice {
   /** Reveal the note's .md file in the OS file explorer. No-op outside Electron. */
   revealNote: (noteId: ID, projectId: ID) => void;
   /** Generate a PRD note via the AI. Returns { error } on failure. */
-  generatePrd: (projectId: ID, title: string, requirements: string) => Promise<{ error: string } | void>;
+  generatePrd: (projectId: ID, title: string, requirements: string) => Promise<unknown>;
 }
 
 // ── Slice creator ─────────────────────────────────────────────────────────────
@@ -210,7 +210,7 @@ export const createNotesSlice: StateCreator<CairnStore, [], [], NotesSlice> = (
     if (!isElectron() || !window.electron) return { error: "Not in Electron" };
     const { aiConfig } = get();
     try {
-      await window.electron.ai.generatePrd({
+      return await window.electron.ai.generatePrd({
         projectId,
         title,
         requirements,

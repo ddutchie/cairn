@@ -274,6 +274,13 @@ export function registerGitHandlers(db: Database): void {
   registerIpcHandle("git:diffBranch", (_e, { cwd, baseBranch }: { cwd: string; baseBranch: string }) =>
     handle(async () => {
       assertWithinCodeDirectory(db, cwd);
+      if (baseBranch.startsWith("-")) {
+        throw new Error(`Invalid branch name: ${baseBranch}`);
+      }
+      const checkBranch = await gitSafe(["check-ref-format", "--branch", baseBranch], cwd);
+      if (checkBranch.status !== 0) {
+        throw new Error(`Invalid branch name: ${baseBranch}`);
+      }
       const args = ["diff", `origin/${baseBranch}...HEAD`, "--unified=3"];
       const result = await gitSafe(args, cwd);
       if (result.status !== 0) {

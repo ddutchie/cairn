@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -50,6 +50,14 @@ export function MatrixCanvas({ nodes, onNodeClick, selectedNodeId }: Props) {
     return tags.filter((t) => used.has(t.id));
   }, [tags, notes, cards, scopedEntityIds]);
 
+  const activeTagsKey = useMemo(() => activeTags.map((t) => t.id).join(","), [activeTags]);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPinnedCell(null);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setHoveredCell(null);
+  }, [activeTagsKey]);
+
   const matrix = useMemo(() => {
     const n = activeTags.length;
     const m: number[][] = Array.from({ length: n }, () => new Array(n).fill(0));
@@ -98,7 +106,7 @@ export function MatrixCanvas({ nodes, onNodeClick, selectedNodeId }: Props) {
   // Fix bounds checks to prevent TypeError crashes when filtering tag list shrinks
   const panelCell = pinnedCell && pinnedCell.r < activeTags.length && pinnedCell.c < activeTags.length
     ? pinnedCell
-    : (hoveredCell !== null && hoveredCell.r !== hoveredCell.c && hoveredCell.r < activeTags.length && hoveredCell.c < activeTags.length ? hoveredCell : null);
+    : (hoveredCell !== null && hoveredCell.r < activeTags.length && hoveredCell.c < activeTags.length ? hoveredCell : null);
   const panelItems = panelCell ? itemsWithBothTags(activeTags[panelCell.r].id, activeTags[panelCell.c].id) : [];
 
   const n = activeTags.length;
@@ -112,7 +120,7 @@ export function MatrixCanvas({ nodes, onNodeClick, selectedNodeId }: Props) {
   const cellTemplate = `clamp(${cellMin}px, calc((100cqw - 10rem) / ${n}), ${cellMax}px)`;
 
   function handleCellClick(r: number, c: number) {
-    if (r === c || matrix[r][c] === 0) return;
+    if (matrix[r][c] === 0) return;
     setPinnedCell(pinnedCell?.r === r && pinnedCell?.c === c ? null : { r, c });
   }
 
@@ -229,8 +237,9 @@ export function MatrixCanvas({ nodes, onNodeClick, selectedNodeId }: Props) {
                     cellBg = "transparent";
                   }
 
-                  // Hide numbers inside the cells for dense layouts unless hovered
-                  const showValue = val > 0 && (n <= 20 || isHov);
+                  const isPinned = pinnedCell?.r === r && pinnedCell?.c === c;
+                  // Hide numbers inside the cells for dense layouts unless hovered, pinned, or pointer is not hovering
+                  const showValue = val > 0 && (n <= 20 || isHov || isPinned || hoveredCell === null);
 
                   return (
                     <div

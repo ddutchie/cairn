@@ -38,19 +38,32 @@ interface MarkdownImageProps extends Omit<React.ImgHTMLAttributes<HTMLImageEleme
   projectRoot?: string;
 }
 
+function safeDecodeURIComponent(str: string): string {
+  try {
+    return decodeURIComponent(str);
+  } catch {
+    return str;
+  }
+}
+
 function MarkdownImage({ src, alt, title, filePath, projectRoot, ...props }: MarkdownImageProps) {
   const [resolvedSrc, setResolvedSrc] = useState<string | undefined>(undefined);
   const [error, setError] = useState<boolean>(false);
 
   useEffect(() => {
+    let active = true;
+
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setResolvedSrc(undefined);
+
     if (!src) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setResolvedSrc(undefined);
       return;
     }
 
-    if (/^(https?|data|file):/i.test(src)) {
+    if (/^(https?|data):/i.test(src)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setResolvedSrc(src);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setError(false);
       return;
     }
@@ -58,14 +71,19 @@ function MarkdownImage({ src, alt, title, filePath, projectRoot, ...props }: Mar
     const isWindowsAbsolute = /^[a-zA-Z]:[/\\]/.test(src) || src.startsWith("\\\\");
     let absolutePath = "";
 
-    if (isWindowsAbsolute) {
+    if (src.toLowerCase().startsWith("file:")) {
+      const pathPart = src.substring(5).replace(/^\/{1,3}/, "");
+      const hasDriveLetter = /^[a-zA-Z]:/.test(pathPart);
+      absolutePath = (!hasDriveLetter && !pathPart.startsWith("/")) ? "/" + pathPart : pathPart;
+      absolutePath = safeDecodeURIComponent(absolutePath);
+    } else if (isWindowsAbsolute) {
       absolutePath = src;
     } else if (src.startsWith("/")) {
       if (projectRoot) {
         const cleanSrc = src.substring(1);
         const separator = projectRoot.includes("\\") ? "\\" : "/";
         const rootParts = projectRoot.split(separator);
-        const relParts = decodeURIComponent(cleanSrc).split(/[/\\]/);
+        const relParts = safeDecodeURIComponent(cleanSrc).split(/[/\\]/);
         for (const part of relParts) {
           if (part === "." || part === "") continue;
           if (part === "..") {
@@ -84,7 +102,7 @@ function MarkdownImage({ src, alt, title, filePath, projectRoot, ...props }: Mar
         const dirParts = filePath.split(separator);
         dirParts.pop();
 
-        const relParts = decodeURIComponent(src).split(/[/\\]/);
+        const relParts = safeDecodeURIComponent(src).split(/[/\\]/);
         for (const part of relParts) {
           if (part === "." || part === "") continue;
           if (part === "..") {
@@ -100,22 +118,30 @@ function MarkdownImage({ src, alt, title, filePath, projectRoot, ...props }: Mar
     if (absolutePath && window.electron) {
       window.electron.agent.readFileBase64(absolutePath)
         .then((dataUrl: string) => {
+          if (!active) return;
           setResolvedSrc(dataUrl);
           setError(false);
         })
         .catch((err) => {
+          if (!active) return;
           console.error("Failed to read image as base64:", absolutePath, err);
           setError(true);
         });
     } else {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setResolvedSrc(src);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setError(false);
     }
+
+    return () => {
+      active = false;
+    };
   }, [src, filePath, projectRoot]);
 
   if (error) {
     return (
-      <span className="inline-flex items-center gap-1 text-xs text-[var(--danger)] border border-[color-mix(in srgb, var(--danger) 30%, transparent)] bg-[color-mix(in srgb, var(--danger) 10%, transparent)] px-2 py-1 rounded">
+      <span className="inline-flex items-center gap-1 text-xs text-[var(--danger)] border border-[color-mix(in_srgb,_var(--danger)_30%,_transparent)] bg-[color-mix(in_srgb,_var(--danger)_10%,_transparent)] px-2 py-1 rounded">
         Failed to load image: {alt || src}
       </span>
     );

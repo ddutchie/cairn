@@ -204,6 +204,7 @@ export function AgentView() {
           onClick={() => setProjectSettingsOpen(true)}
           className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors flex items-center justify-center ml-2 flex-shrink-0"
           title="Project Settings"
+          aria-label="Project Settings"
         >
           <Settings size={14} />
         </button>
@@ -284,6 +285,7 @@ export function AgentView() {
               onClick={() => setProjectSettingsOpen(true)}
               className="ml-auto p-1.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors flex items-center justify-center"
               title="Project Settings"
+              aria-label="Project Settings"
             >
               <Settings size={14} />
             </button>
