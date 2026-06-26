@@ -22,7 +22,7 @@ import { registerIpcHandle } from "./registry";
 import fs from "fs";
 import path from "path";
 import os from "os";
-import { spawnSync } from "child_process";
+import { execFile } from "child_process";
 import type { Database } from "better-sqlite3";
 import * as nodePty from "node-pty";
 import * as q from "../db/queries";
@@ -81,6 +81,21 @@ function handle<T>(fn: () => T | Promise<T>): Promise<{ data: T } | { error: str
     .catch((err: unknown) => ({ error: String(err) }));
 }
 
+function execGit(args: string[], cwd: string, timeout = 10_000): Promise<{ stdout: string; error?: Error | null; status: number }> {
+  return new Promise((resolve) => {
+    const maxBuffer = 20 * 1024 * 1024; // 20MB
+    execFile("git", args, { cwd, encoding: "utf-8", timeout, maxBuffer }, (error, stdout, _stderr) => {
+      const code = error ? (error as { code?: number | string }).code : 0;
+      const status = typeof code === "number" ? code : (error ? 1 : 0);
+      resolve({
+        stdout: stdout ?? "",
+        error,
+        status,
+      });
+    });
+  });
+}
+
 // ── Register handlers ─────────────────────────────────────────────────────────
 
 export function registerAgentHandlers(db: Database): void {
@@ -108,9 +123,9 @@ export function registerAgentHandlers(db: Database): void {
   // ── File system ──────────────────────────────────────────────────────────
 
   registerIpcHandle("agent:readDir", (_e, { dirPath }: { dirPath: string }) =>
-    handle(() => {
+    handle(async () => {
       assertWithinCodeDirectory(db, dirPath);
-      const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+      const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
       return entries
         .filter((e) => !e.name.startsWith("."))
         .sort((a, b) => {
@@ -127,17 +142,17 @@ export function registerAgentHandlers(db: Database): void {
   );
 
   registerIpcHandle("agent:searchFiles", (_e, { dirPath, query }: { dirPath: string; query: string }) =>
-    handle(() => {
+    handle(async () => {
       assertWithinCodeDirectory(db, dirPath);
       const q = query.toLowerCase();
       const results: { name: string; path: string; relativePath: string }[] = [];
       const SKIP_DIRS = new Set(["node_modules", ".git", ".next", "dist", "dist-electron", "dist-mcp", "dist-app", "out", ".cache", "coverage", "__pycache__", ".venv", "venv"]);
       const MAX_RESULTS = 50;
 
-      function walk(dir: string, relDir: string) {
+      async function walk(dir: string, relDir: string) {
         if (results.length >= MAX_RESULTS) return;
         let entries: fs.Dirent[];
-        try { entries = fs.readdirSync(dir, { withFileTypes: true }); }
+        try { entries = await fs.promises.readdir(dir, { withFileTypes: true }); }
         catch { return; }
         for (const e of entries) {
           if (results.length >= MAX_RESULTS) return;
@@ -145,7 +160,7 @@ export function registerAgentHandlers(db: Database): void {
           const fullPath = path.join(dir, e.name);
           const relPath = relDir ? `${relDir}/${e.name}` : e.name;
           if (e.isDirectory()) {
-            if (!SKIP_DIRS.has(e.name)) walk(fullPath, relPath);
+            if (!SKIP_DIRS.has(e.name)) await walk(fullPath, relPath);
           } else {
             if (e.name.toLowerCase().includes(q)) {
               results.push({ name: e.name, path: fullPath, relativePath: relPath });
@@ -154,22 +169,22 @@ export function registerAgentHandlers(db: Database): void {
         }
       }
 
-      walk(dirPath, "");
+      await walk(dirPath, "");
       return results;
     })
   );
 
   registerIpcHandle("agent:readFile", (_e, { filePath }: { filePath: string }) =>
-    handle(() => {
+    handle(async () => {
       assertWithinCodeDirectory(db, filePath);
-      return fs.readFileSync(filePath, "utf-8");
+      return fs.promises.readFile(filePath, "utf-8");
     })
   );
 
   registerIpcHandle("agent:readFileBase64", (_e, { filePath }: { filePath: string }) =>
-    handle(() => {
+    handle(async () => {
       assertWithinCodeDirectory(db, filePath);
-      const buf = fs.readFileSync(filePath);
+      const buf = await fs.promises.readFile(filePath);
       const ext = path.extname(filePath).slice(1).toLowerCase();
       const mime =
         ext === "svg" ? "image/svg+xml" :
@@ -187,17 +202,17 @@ export function registerAgentHandlers(db: Database): void {
   );
 
   registerIpcHandle("agent:writeFile", (_e, { filePath, content }: { filePath: string; content: string }) =>
-    handle(() => {
+    handle(async () => {
       assertWithinCodeDirectory(db, filePath);
-      fs.writeFileSync(filePath, content, "utf-8");
+      await fs.promises.writeFile(filePath, content, "utf-8");
     })
   );
 
   registerIpcHandle("agent:validateDirectory", (_e, { dirPath }: { dirPath: string }) =>
-    handle(() => {
+    handle(async () => {
       if (!isSafePath(dirPath)) return false;
       try {
-        const stat = fs.statSync(dirPath);
+        const stat = await fs.promises.stat(dirPath);
         return stat.isDirectory();
       } catch {
         return false;
@@ -208,7 +223,7 @@ export function registerAgentHandlers(db: Database): void {
   // ── Git diff ─────────────────────────────────────────────────────────────
 
   registerIpcHandle("agent:gitDiff", (_e, { cwd }: { cwd: string }) =>
-    handle(() => {
+    handle(async () => {
       // Validate cwd exists and is a directory
       if (!fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) {
         throw new Error(`Not a directory: ${cwd}`);
@@ -218,15 +233,13 @@ export function registerAgentHandlers(db: Database): void {
 
       // ── 1. Tracked changes: staged + unstaged vs HEAD ────────────────────
       // Falls back to --cached only if HEAD doesn't exist yet (initial repo).
-      let trackedResult = spawnSync("git", ["diff", "HEAD", "--unified=3"], {
-        cwd, encoding: "utf-8", timeout: 10_000,
-      });
-      if (trackedResult.error) throw trackedResult.error;
+      let trackedResult = await execGit(["diff", "HEAD", "--unified=3"], cwd);
       if (trackedResult.status !== 0) {
         // No HEAD yet — show only what's staged
-        trackedResult = spawnSync("git", ["diff", "--cached", "--unified=3"], {
-          cwd, encoding: "utf-8", timeout: 10_000,
-        });
+        trackedResult = await execGit(["diff", "--cached", "--unified=3"], cwd);
+      }
+      if (trackedResult.error && typeof (trackedResult.error as { code?: unknown }).code === "string") {
+        throw trackedResult.error;
       }
       if (trackedResult.stdout) parts.push(trackedResult.stdout.trim());
 
@@ -234,24 +247,33 @@ export function registerAgentHandlers(db: Database): void {
       // git diff HEAD misses files that have never been git-added.
       // We enumerate them and synthesise a unified diff header so the
       // renderer's parse-diff library handles them identically to real hunks.
-      const untrackedResult = spawnSync(
-        "git", ["ls-files", "--others", "--exclude-standard"],
-        { cwd, encoding: "utf-8", timeout: 10_000 },
+      const untrackedResult = await execGit(
+        ["ls-files", "--others", "--exclude-standard"],
+        cwd
       );
-      if (!untrackedResult.error && untrackedResult.status === 0) {
+      if (untrackedResult.error && typeof (untrackedResult.error as { code?: unknown }).code === "string") {
+        throw untrackedResult.error;
+      }
+      if (untrackedResult.status === 0) {
         const untrackedFiles = (untrackedResult.stdout ?? "")
           .split("\n")
           .map((f) => f.trim())
           .filter(Boolean);
 
-        for (const relPath of untrackedFiles) {
+        const readPromises = untrackedFiles.map(async (relPath) => {
           const absPath = path.join(cwd, relPath);
-          let content: string;
           try {
-            content = fs.readFileSync(absPath, "utf-8");
+            const content = await fs.promises.readFile(absPath, "utf-8");
+            return { relPath, content };
           } catch {
-            continue; // binary or unreadable — skip
+            return null; // binary or unreadable — skip
           }
+        });
+        const readResults = await Promise.all(readPromises);
+
+        for (const res of readResults) {
+          if (!res) continue;
+          const { relPath, content } = res;
 
           // Synthesise a unified diff:
           //   diff --git a/<file> b/<file>
