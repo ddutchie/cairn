@@ -186,7 +186,8 @@ export function registerGitHandlers(db: Database): void {
             throw new Error(`Access denied: invalid file pathspec: ${file}`);
           }
         }
-        await git(["add", "--", ...files], cwd);
+        const literalFiles = files.map((file) => `:(literal)${file}`);
+        await git(["add", "--", ...literalFiles], cwd);
       }
       return { ok: true };
     })
@@ -204,7 +205,8 @@ export function registerGitHandlers(db: Database): void {
             throw new Error(`Access denied: invalid file pathspec: ${file}`);
           }
         }
-        await git(["reset", "HEAD", "--", ...files], cwd);
+        const literalFiles = files.map((file) => `:(literal)${file}`);
+        await git(["reset", "HEAD", "--", ...literalFiles], cwd);
       }
       return { ok: true };
     })
@@ -292,14 +294,15 @@ export function registerGitHandlers(db: Database): void {
 
       let diff: string;
       let statStdout = "";
+      const literalFilePath = `:(literal)${filePath}`;
       if (staged) {
-        statStdout = (await gitSafe(["diff", "--cached", "--numstat", "--", filePath], cwd)).stdout;
-        diff = (await gitSafe(["diff", "--cached", "--unified=10", "--", filePath], cwd)).stdout;
+        statStdout = (await gitSafe(["diff", "--cached", "--numstat", "--", literalFilePath], cwd)).stdout;
+        diff = (await gitSafe(["diff", "--cached", "--unified=10", "--", literalFilePath], cwd)).stdout;
       } else {
-        const r = await gitSafe(["diff", "HEAD", "--unified=10", "--", filePath], cwd);
+        const r = await gitSafe(["diff", "HEAD", "--unified=10", "--", literalFilePath], cwd);
         diff = r.stdout || "";
         if (diff) {
-          statStdout = (await gitSafe(["diff", "HEAD", "--numstat", "--", filePath], cwd)).stdout;
+          statStdout = (await gitSafe(["diff", "HEAD", "--numstat", "--", literalFilePath], cwd)).stdout;
         } else {
           // If empty, file might be untracked — diff against /dev/null
           const untracked = await gitSafe(["diff", "--no-index", "--unified=10", "--", "/dev/null", filePath], cwd);
