@@ -598,9 +598,19 @@ describe("search_notes advanced parameters", () => {
     seed(db);
     createNote(db, { id: "note2", projectId: "proj1", workspaceId: "ws1", title: "Note Two", content: "hello", contentText: "hello" });
     createNote(db, { id: "note3", projectId: "proj1", workspaceId: "ws1", title: "Note Three", content: "hello", contentText: "hello" });
+    // Deterministic updated_at: note3 newest, note1 oldest
+    db.prepare("UPDATE notes SET updated_at = '2023-01-01T00:00:00.000Z' WHERE id = 'note1'").run();
+    db.prepare("UPDATE notes SET updated_at = '2024-01-01T00:00:00.000Z' WHERE id = 'note2'").run();
+    db.prepare("UPDATE notes SET updated_at = '2025-01-01T00:00:00.000Z' WHERE id = 'note3'").run();
 
-    const results = await exec(db, "search_notes", { query: "hello", limit: 2, offset: 1 }) as Array<Record<string, unknown>>;
-    expect(results).toHaveLength(2);
+    const page1 = await exec(db, "search_notes", { query: "hello", limit: 1, offset: 0 }) as Array<Record<string, unknown>>;
+    expect(page1.map((r) => r.id)).toEqual(["note3"]);
+
+    const page2 = await exec(db, "search_notes", { query: "hello", limit: 1, offset: 1 }) as Array<Record<string, unknown>>;
+    expect(page2.map((r) => r.id)).toEqual(["note2"]);
+
+    const page3 = await exec(db, "search_notes", { query: "hello", limit: 2, offset: 1 }) as Array<Record<string, unknown>>;
+    expect(page3.map((r) => r.id)).toEqual(["note2", "note1"]);
   });
 
   it("filters notes by updatedAfter", async () => {

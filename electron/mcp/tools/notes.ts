@@ -219,41 +219,53 @@ export function rename_note(db: Database.Database, snap: Snapshot, workspacePath
   if (!note) return { error: "Note not found" };
   const project = snap.projects.find((p) => p.id === note.projectId);
 
-  const updatedNote = db.transaction(() => {
-    // 1. Update the note itself in DB
-    const u = q.updateNote(db, noteId, { title: newTitle });
+  // Reject title collisions within the same project before updating.
+  const normalizedNew = normalizeNoteTitle(newTitle);
+  const collision = snap.notes.some(
+    (n) => n.id !== noteId && !n.archivedAt && n.projectId === note.projectId && normalizeNoteTitle(n.title as string) === normalizedNew
+  );
+  if (collision) return { error: `A note with the title "${newTitle}" already exists in this project` };
 
-    // 2. Rewrite wikilinks inside other notes in DB
-    const oldLink = `[[${note.title}]]`;
-    const newLink = `[[${newTitle}]]`;
-    for (const otherNote of snap.notes) {
-      if (otherNote.id === noteId) continue;
-      if (otherNote.content && otherNote.content.includes(oldLink)) {
-        const newContent = otherNote.content.split(oldLink).join(newLink);
-        q.updateNote(db, otherNote.id, { content: newContent, contentText: stripMarkdown(newContent) });
-        const otherProj = snap.projects.find((p) => p.id === otherNote.projectId);
-        writeNoteFile(workspacePath, {
-          id: otherNote.id,
-          projectId: otherNote.projectId,
-          workspaceId: otherNote.workspaceId as string,
-          title: otherNote.title as string,
-          content: newContent,
-          tagIds: otherNote.tagIds as string[],
-          linkedNoteIds: otherNote.linkedNoteIds as string[],
-          linkedCardIds: otherNote.linkedCardIds as string[],
-          isPinned: otherNote.isPinned as boolean,
-          folder: (otherNote.folder as string) ?? "",
-          createdAt: otherNote.createdAt as string,
-          updatedAt: new Date().toISOString(),
-          archivedAt: otherNote.archivedAt as string | undefined,
-          projectName: otherProj?.name ?? otherNote.projectId as string,
-        });
-      }
+  // Collect notes whose wikilinks need rewriting before the DB transaction.
+  const oldLink = `[[${note.title}]]`;
+  const newLink = `[[${newTitle}]]`;
+  const linkedNotes = snap.notes.filter(
+    (n) => n.id !== noteId && n.content && n.content.includes(oldLink)
+  );
+
+  const updatedNote = db.transaction(() => {
+    const u = q.updateNote(db, noteId, { title: newTitle });
+    for (const otherNote of linkedNotes) {
+      const newContent = otherNote.content.split(oldLink).join(newLink);
+      q.updateNote(db, otherNote.id, { content: newContent, contentText: stripMarkdown(newContent) });
     }
     return u;
   })();
 
-  // 3. Write note file to disk (writeNoteFile renames/moves the path dynamically if title changes)
+  // Write files to disk after the transaction commits — a failure here
+  // won't roll back SQLite while leaving files half-changed.
+  for (const otherNote of linkedNotes) {
+    const newContent = otherNote.content.split(oldLink).join(newLink);
+    const otherProj = snap.projects.find((p) => p.id === otherNote.projectId);
+    writeNoteFile(workspacePath, {
+      id: otherNote.id,
+      projectId: otherNote.projectId,
+      workspaceId: otherNote.workspaceId as string,
+      title: otherNote.title as string,
+      content: newContent,
+      tagIds: otherNote.tagIds as string[],
+      linkedNoteIds: otherNote.linkedNoteIds as string[],
+      linkedCardIds: otherNote.linkedCardIds as string[],
+      isPinned: otherNote.isPinned as boolean,
+      folder: (otherNote.folder as string) ?? "",
+      createdAt: otherNote.createdAt as string,
+      updatedAt: new Date().toISOString(),
+      archivedAt: otherNote.archivedAt as string | undefined,
+      projectName: otherProj?.name ?? otherNote.projectId as string,
+    });
+  }
+
+  // Write note file to disk (writeNoteFile renames/moves the path dynamically if title changes)
   writeNoteFile(workspacePath, {
     id: note.id,
     projectId: note.projectId,

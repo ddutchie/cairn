@@ -63,8 +63,8 @@ export const TOOL_SCHEMAS = {
       query:        sStr,
       projectId:    sIdOpt,
       limit:        z.number().optional().default(10),
-      offset:       z.number().optional().default(0).describe("Pagination offset (default 0)"),
-      updatedAfter: z.string().optional().describe("ISO datetime string filter to find notes updated after this date"),
+      offset:       z.number().int().nonnegative().optional().default(0).describe("Pagination offset (default 0)"),
+      updatedAfter: z.iso.datetime({ offset: true }).optional().describe("ISO datetime string filter to find notes updated after this date"),
     }),
   },
 
