@@ -80,12 +80,12 @@ async function runToolLoop(
   model: string,
   apiKey: string,
   messages: OpenAIMessage[],
-  emitToolCall: (e: { tool: string; label: string; args: Record<string, unknown> }) => void,
+  emitToolCall: (e: { tool: string; label: string; args: Record<string, unknown>; callId?: string }) => void,
   signal?: AbortSignal,
   getWin?: () => BrowserWindow | null,
   provider?: string,
   onUsage?: (pt: number, ct: number, rt?: number) => void,
-  emitToolCallDone?: (e: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void,
+  emitToolCallDone?: (e: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; output?: string; callId?: string }) => void,
   onToken?: (delta: string) => void,
   onThought?: (delta: string) => void,
 ): Promise<{ exhausted: true; content: string; reasoning: string } | { exhausted: false; content: string; reasoning: string }> {
@@ -280,12 +280,13 @@ async function runToolLoop(
       let args: Record<string, unknown>;
       let parseError: string | null = null;
       try {
-        args = JSON.parse(call.function.arguments) as Record<string, unknown>;
+        const rawArgs = call.function.arguments?.trim() || "{}";
+        args = JSON.parse(rawArgs) as Record<string, unknown>;
         traceTool("parse", {
           toolName: call.function.name,
           title: typeof args.title === "string" ? args.title : "",
           content: typeof args.content === "string" ? args.content : "",
-          rawArguments: call.function.arguments,
+          rawArguments: call.function.arguments || "",
         });
       } catch (err) {
         parseError = `Malformed tool-call arguments JSON from model: ${(err as Error).message}`;
@@ -296,8 +297,8 @@ async function runToolLoop(
       // with a descriptive error so the model can re-issue — never run
       // a tool with destructured args.
       if (parseError) {
-        emitToolCall({ tool: call.function.name, label: call.function.name, args: {} });
-        emitToolCallDone?.({ tool: call.function.name });
+        emitToolCall({ tool: call.function.name, label: call.function.name, args: {}, callId: call.id });
+        emitToolCallDone?.({ tool: call.function.name, callId: call.id });
         messages.push({
           role: "tool",
           tool_call_id: call.id,
@@ -308,7 +309,7 @@ async function runToolLoop(
 
       let result: unknown;
       try {
-        result = await executeTool(db, req, workspacePath, { baseUrl, model, apiKey, provider: provider as "openai" | "localllm" }, call.function.name, args, emitToolCall, getWin, emitToolCallDone);
+        result = await executeTool(db, req, workspacePath, { baseUrl, model, apiKey, provider: provider as "openai" | "localllm" }, call.function.name, args, emitToolCall, getWin, emitToolCallDone, call.id);
       } catch (toolErr) {
         result = { error: `Tool "${call.function.name}" failed: ${String(toolErr)}` };
       }
@@ -413,15 +414,21 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
 
     const messages: OpenAIMessage[] = [
       { role: "system", content: buildSystemPrompt(req) },
-      ...(req.history ?? []).map((m) => ({ role: m.role, content: m.content })),
+      ...(req.history ?? []).map((m) => {
+        const out: any = { role: m.role, content: m.content };
+        if (m.tool_calls) out.tool_calls = m.tool_calls;
+        if (m.tool_call_id) out.tool_call_id = m.tool_call_id;
+        if (m.name) out.name = m.name;
+        return out;
+      }),
       userMessage,
     ];
 
-    const emitToolCall = (e: { tool: string; label: string; args: Record<string, unknown> }) => {
+    const emitToolCall = (e: { tool: string; label: string; args: Record<string, unknown>; callId?: string }) => {
       send("chat:tool-call", e);
     };
 
-    const emitToolCallDone = (e: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => {
+    const emitToolCallDone = (e: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; output?: string; callId?: string }) => {
       send("chat:tool-call-done", e);
     };
 

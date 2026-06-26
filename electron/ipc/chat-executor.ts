@@ -27,11 +27,12 @@ export async function executeTool(
   llmConfig: LLMConfig,
   name: string,
   args: ToolArgs,
-  emit?: (event: { tool: string; label: string; args: Record<string, unknown> }) => void,
+  emit?: (event: { tool: string; label: string; args: Record<string, unknown>; callId?: string }) => void,
   getWin?: () => BrowserWindow | null,
-  emitDone?: (event: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void,
+  emitDone?: (event: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; output?: string; callId?: string }) => void,
+  callId?: string,
 ): Promise<unknown> {
-  emit?.({ tool: name, label: TOOL_LABELS[name]?.(args) ?? name, args });
+  emit?.({ tool: name, label: TOOL_LABELS[name]?.(args) ?? name, args, callId });
   const snap = q.getFullSnapshot(db) as CairnSnapshot;
 
   const result = await (async () => {
@@ -276,7 +277,7 @@ export async function executeTool(
   }
 
   if (emitDone) {
-    emitDone({ tool: name, cairnRef });
+    emitDone({ tool: name, cairnRef, output: JSON.stringify(result), callId });
   }
 
   return result;

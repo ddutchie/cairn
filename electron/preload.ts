@@ -145,15 +145,15 @@ const api = {
       ipcRenderer.on("chat:done", handler);
       return () => ipcRenderer.off("chat:done", handler);
     },
-    onToolCall: (cb: (e: { tool: string; label: string; args: Record<string, unknown> }) => void) => {
+    onToolCall: (cb: (e: { tool: string; label: string; args: Record<string, unknown>; callId?: string }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { tool: string; label: string; args: Record<string, unknown> }) => cb(e);
+      const handler = (_: any, e: { tool: string; label: string; args: Record<string, unknown>; callId?: string }) => cb(e);
       ipcRenderer.on("chat:tool-call", handler);
       return () => ipcRenderer.off("chat:tool-call", handler);
     },
-    onToolCallDone: (cb: (e: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void) => {
+    onToolCallDone: (cb: (e: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; output?: string; callId?: string }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => cb(e);
+      const handler = (_: any, e: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; output?: string; callId?: string }) => cb(e);
       ipcRenderer.on("chat:tool-call-done", handler);
       return () => ipcRenderer.off("chat:tool-call-done", handler);
     },

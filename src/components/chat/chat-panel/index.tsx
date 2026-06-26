@@ -406,11 +406,61 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
       systemPrompt = `## Context\n- **Date:** ${date}\n\n${GRAPH_SYSTEM_PROMPT}\n\n--- CURRENT GRAPH SNAPSHOT ---\n${graphContext}`;
     }
 
+    const formatChatHistory = (msgs: typeof messages) => {
+      const history: Array<{
+        role: string;
+        content: string | null;
+        tool_calls?: any[];
+        tool_call_id?: string;
+        name?: string;
+      }> = [];
+      msgs.slice(-40).forEach((m) => {
+        if (m.role === "user") {
+          history.push({
+            role: "user",
+            content: m.content || "",
+          });
+        } else if (m.role === "assistant") {
+          const toolCalls = m.toolCalls?.filter((tc) => tc.callId && tc.args);
+          if (toolCalls && toolCalls.length > 0) {
+            history.push({
+              role: "assistant",
+              content: m.content || null,
+              tool_calls: toolCalls.map((tc) => ({
+                id: tc.callId!,
+                type: "function" as const,
+                function: { name: tc.tool, arguments: tc.args! }
+              }))
+            });
+            toolCalls.forEach((tc) => {
+              history.push({
+                role: "tool",
+                tool_call_id: tc.callId!,
+                name: tc.tool,
+                content: tc.output || "{}"
+              });
+            });
+          } else {
+            history.push({
+              role: "assistant",
+              content: m.content || null,
+            });
+          }
+        } else if (m.role === "system") {
+          history.push({
+            role: "system",
+            content: m.content || "",
+          });
+        }
+      });
+      return history;
+    };
+
     sendStream({
       message: resolvedMessage, threadId,
       projectId: activeProjectId,
       workspaceId: activeWorkspaceId,
-      history: messages.slice(-40).map((m) => ({ role: m.role, content: m.content })),
+      history: formatChatHistory(messages),
       config: {
         provider:    aiConfig.provider    || "openai",
         baseUrl:     aiConfig.baseUrl     || undefined,

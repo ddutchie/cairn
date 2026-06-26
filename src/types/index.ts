@@ -180,6 +180,9 @@ export interface ChatToolCallRecord {
   tool: string;
   label: string;
   cairnRef?: { type: "note" | "task"; id: ID; title: string };
+  callId?: string;
+  args?: string;      // JSON arguments string
+  output?: string;    // JSON output string
 }
 
 export type SuggestedAction =

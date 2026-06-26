@@ -91,7 +91,13 @@ export interface ChatRequest {
   threadId: string;
   projectId?: string;
   workspaceId?: string;
-  history?: Array<{ role: "user" | "assistant" | "system"; content: string }>;
+  history?: Array<{
+    role: "user" | "assistant" | "system" | "tool";
+    content: string | null;
+    tool_calls?: any[];
+    tool_call_id?: string;
+    name?: string;
+  }>;
   config?: { baseUrl?: string; model?: string; apiKey?: string; maxSteps?: number; temperature?: number };
   systemPrompt?: string;
   images?: Array<{ name: string; dataUrl: string }>;

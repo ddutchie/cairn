@@ -26,6 +26,9 @@ export interface ChatToolCall {
   /** "running" = currently executing; "done" = completed this turn */
   status: "running" | "done";
   cairnRef?: { type: "note" | "task"; id: string; title: string };
+  callId?: string;
+  args?: string;
+  output?: string;
 }
 
 export interface PendingQuestion {
@@ -39,7 +42,13 @@ export interface ChatStreamRequest {
   threadId: string;
   projectId: string | null | undefined;
   workspaceId: string | null | undefined;
-  history: Array<{ role: string; content: string }>;
+  history: Array<{
+    role: string;
+    content: string | null;
+    tool_calls?: any[];
+    tool_call_id?: string;
+    name?: string;
+  }>;
   config: {
     provider?: string;
     baseUrl?: string;
@@ -103,7 +112,13 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
           const updated = prev.map((tc) =>
             tc.status === "running" ? { ...tc, status: "done" as const } : tc
           );
-          const next = [...updated, { tool: e.tool, label: e.label, status: "running" as const }];
+          const next = [...updated, {
+            tool: e.tool,
+            label: e.label,
+            status: "running" as const,
+            callId: e.callId,
+            args: e.args ? JSON.stringify(e.args) : undefined
+          }];
           toolCallsRef.current = next;
           return next;
         });
@@ -116,7 +131,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
         if (lastIdx === -1) return prev;
         const idx = prev.length - 1 - lastIdx;
         const updated = [...prev];
-        updated[idx] = { ...updated[idx], cairnRef: e.cairnRef };
+        updated[idx] = { ...updated[idx], cairnRef: e.cairnRef, output: e.output };
         toolCallsRef.current = updated;
         return updated;
       });
