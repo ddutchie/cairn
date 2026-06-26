@@ -32,6 +32,9 @@ export const TOOL_LABELS: Record<string, (args: ToolArgs) => string> = {
   upsert_project:         (a) => a.projectId ? `Updating project "${a.projectId}"` : `Creating project "${a.name}"`,
   delete_project:         (a) => `Deleting project "${a.projectId}"`,
   delete_note:            () => "Deleting note",
+  rename_note:            (a) => `Renaming note to "${a.newTitle}"`,
+  bulk_move_notes:        (a) => `Moving ${(a.noteIds as string[])?.length ?? 0} notes`,
+  list_folders:           () => "Listing subfolders",
   delete_task:            () => "Deleting task",
   generate_prd:           (a) => `Generating PRD "${a.title}"`,
   spawn_tasks_from_note:  () => "Spawning tasks from note",
@@ -139,9 +142,12 @@ IDs (workspaceId, projectId, columnId) are stable for the app session. Call get_
 
 ## Notes
 - Use ensure_note to create or update notes — it is idempotent and safe to call repeatedly. Omitting the \`content\` parameter on update preserves the note's existing content.
+- Use \`rename_note\` to safely change a note's title. This automatically renames the physical file and updates inbound wikilink references in other notes to keep links intact.
+- Use \`bulk_move_notes\` to move multiple notes to a subfolder at once.
+- Use \`list_folders\` to list all unique folder paths currently used in a project.
 - Use the optional \`folder\` parameter for subfolders, e.g. \`folder="Research/Papers"\` (can be used with ensure_note to move notes without overwriting content).
 - Use patch_note for targeted edits, append_to_note to add content without replacing.
-- search_notes with an empty query returns all notes in a project.
+- search_notes with an empty query returns all notes in a project. It supports \`offset\` for pagination and \`updatedAfter\` (ISO timestamp) to find recently updated notes.
 - search_notes_semantic uses local embeddings for natural-language queries — better than search_notes when concepts are described in different words. Requires embeddings enabled.
 - You can pass \`tagNames\` (array of strings) to automatically resolve or create tags case-insensitively, avoiding separate tag creation calls.
 

@@ -538,6 +538,85 @@ describe("ensure_note", () => {
   });
 });
 
+describe("rename_note", () => {
+  it("renames a note and rewrites wikilinks in other notes", async () => {
+    const db = makeDb();
+    seed(db);
+    // Create note2 which links to note1
+    createNote(db, { id: "note2", projectId: "proj1", workspaceId: "ws1", title: "Note Two", content: "Links to [[My Note]]", contentText: "Links to [[My Note]]" });
+
+    // Rename note1 ("My Note") to "New Title"
+    const result = await exec(db, "rename_note", { noteId: "note1", newTitle: "New Title" }) as Record<string, unknown>;
+    expect(result.title).toBe("New Title");
+    expect(result.action).toBe("renamed");
+
+    // Verify note1 title changed
+    const note1 = await exec(db, "get_note", { noteId: "note1" }) as Record<string, unknown>;
+    expect(note1.title).toBe("New Title");
+
+    // Verify note2's wikilink rewritten to [[New Title]]
+    const note2 = await exec(db, "get_note", { noteId: "note2" }) as Record<string, unknown>;
+    expect(note2.content).toBe("Links to [[New Title]]");
+  });
+});
+
+describe("bulk_move_notes", () => {
+  it("moves multiple notes to a folder", async () => {
+    const db = makeDb();
+    seed(db);
+    createNote(db, { id: "note2", projectId: "proj1", workspaceId: "ws1", title: "Note Two", content: "hello", contentText: "hello" });
+
+    const result = await exec(db, "bulk_move_notes", { noteIds: ["note1", "note2"], folder: "Archive/Old" }) as Record<string, unknown>;
+    expect(result.moved).toBe(2);
+
+    const note1 = await exec(db, "get_note", { noteId: "note1" }) as Record<string, unknown>;
+    expect(note1.folder).toBe("Archive/Old");
+
+    const note2 = await exec(db, "get_note", { noteId: "note2" }) as Record<string, unknown>;
+    expect(note2.folder).toBe("Archive/Old");
+  });
+});
+
+describe("list_folders", () => {
+  it("returns unique folders inside a project", async () => {
+    const db = makeDb();
+    seed(db);
+    await exec(db, "ensure_note", { projectId: "proj1", title: "Folder A note", folder: "Folder A" });
+    await exec(db, "ensure_note", { projectId: "proj1", title: "Folder B note", folder: "Folder B" });
+    await exec(db, "ensure_note", { projectId: "proj1", title: "Folder A another note", folder: "Folder A" });
+
+    const result = await exec(db, "list_folders", { projectId: "proj1" }) as Record<string, unknown>;
+    expect(result.folders as string[]).toContain("Folder A");
+    expect(result.folders as string[]).toContain("Folder B");
+    expect((result.folders as string[])).toHaveLength(2);
+  });
+});
+
+describe("search_notes advanced parameters", () => {
+  it("supports offset pagination", async () => {
+    const db = makeDb();
+    seed(db);
+    createNote(db, { id: "note2", projectId: "proj1", workspaceId: "ws1", title: "Note Two", content: "hello", contentText: "hello" });
+    createNote(db, { id: "note3", projectId: "proj1", workspaceId: "ws1", title: "Note Three", content: "hello", contentText: "hello" });
+
+    const results = await exec(db, "search_notes", { query: "hello", limit: 2, offset: 1 }) as Array<Record<string, unknown>>;
+    expect(results).toHaveLength(2);
+  });
+
+  it("filters notes by updatedAfter", async () => {
+    const db = makeDb();
+    seed(db);
+    
+    createNote(db, { id: "note2", projectId: "proj1", workspaceId: "ws1", title: "Old Note", content: "hello", contentText: "hello" });
+    db.prepare("UPDATE notes SET updated_at = '2020-01-01T00:00:00.000Z' WHERE id = 'note2'").run();
+
+    const results = await exec(db, "search_notes", { query: "hello", updatedAfter: "2025-01-01T00:00:00.000Z" }) as Array<Record<string, unknown>>;
+    const ids = results.map(r => r.id);
+    expect(ids).toContain("note1");
+    expect(ids).not.toContain("note2");
+  });
+});
+
 // ── append_to_note ────────────────────────────────────────────────────────────
 
 describe("append_to_note", () => {

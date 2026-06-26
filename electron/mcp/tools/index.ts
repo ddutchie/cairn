@@ -3,7 +3,7 @@ import { getSnapshot } from "../db";
 import { getCairnContext, getProjectContextPack, DASHBOARD_CONSTANTS, IDEA_FLOW_RULES } from "./metadata";
 import { create_tag } from "./tags";
 import { upsert_project, delete_project } from "./projects";
-import { get_note, search_notes, ensure_note, append_to_note, patch_note, delete_note } from "./notes";
+import { get_note, search_notes, ensure_note, append_to_note, patch_note, delete_note, rename_note, bulk_move_notes, list_folders } from "./notes";
 import { get_task, search_tasks, create_task, bulk_update_task_status, link_note_to_task, unlink_note_from_task, delete_task, list_ready_tasks, update_task } from "./tasks";
 import { create_dashboard, update_dashboard } from "./dashboards";
 import {
@@ -100,6 +100,15 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
 
     case "patch_note":
       return patch_note(db, snap, workspacePath, args);
+
+    case "rename_note":
+      return rename_note(db, snap, workspacePath, args);
+
+    case "bulk_move_notes":
+      return bulk_move_notes(db, snap, workspacePath, args);
+
+    case "list_folders":
+      return list_folders(db, snap, args);
 
     case "get_idea_flow":
       return get_idea_flow(db, snap, args);
