@@ -121,6 +121,7 @@ export async function executeTool(
     case "delete_task":
     case "bulk_update_task_status":
     case "link_note_to_task":
+    case "unlink_note_from_task":
     case "create_task":
     case "list_ready_tasks":
     case "upsert_project":

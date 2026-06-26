@@ -175,6 +175,14 @@ export const TOOL_SCHEMAS = {
     }),
   },
 
+  unlink_note_from_task: {
+    description: "Bidirectionally remove a link between a note and a task card.",
+    schema: z.object({
+      noteId: sId,
+      cardId: sId,
+    }),
+  },
+
   list_ready_tasks: {
     description: "Return only unblocked, active tasks — tasks with no pending blockers and not in a done column. Use this to find work that can start right now.",
     schema: z.object({

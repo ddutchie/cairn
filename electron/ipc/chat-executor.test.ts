@@ -145,6 +145,15 @@ describe("get_task", () => {
     const result = await exec(db, "get_task", { cardId: "nope" }) as Record<string, unknown>;
     expect(result).toHaveProperty("error");
   });
+
+  it("returns blockingCardIds when other cards are blocked by this task", async () => {
+    const db = makeDb();
+    seed(db);
+    createCard(db, { id: "card2", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Task Two", order: 1 });
+    db.prepare("UPDATE task_cards SET blocked_by_ids = '[\"card1\"]' WHERE id = 'card2'").run();
+    const result = await exec(db, "get_task", { cardId: "card1" }) as Record<string, unknown>;
+    expect(result.blockingCardIds).toContain("card2");
+  });
 });
 
 // ── get_note ──────────────────────────────────────────────────────────────────
@@ -330,6 +339,43 @@ describe("link_note_to_task", () => {
     seed(db);
     const result = await exec(db, "link_note_to_task", { noteId: "nope", cardId: "card1" }) as Record<string, unknown>;
     expect(result).toHaveProperty("error");
+  });
+});
+
+describe("unlink_note_from_task", () => {
+  it("unlinks note and card bidirectionally", async () => {
+    const db = makeDb();
+    seed(db);
+    // Link them first
+    await exec(db, "link_note_to_task", { noteId: "note1", cardId: "card1" });
+    
+    // Check they are linked in DB
+    const notePre = await exec(db, "get_note", { noteId: "note1" }) as Record<string, unknown>;
+    expect(notePre.linkedCardIds).toContain("card1");
+    
+    const taskPre = await exec(db, "get_task", { cardId: "card1" }) as Record<string, unknown>;
+    expect(taskPre.linkedNoteIds).toContain("note1");
+
+    // Unlink
+    const result = await exec(db, "unlink_note_from_task", { noteId: "note1", cardId: "card1" }) as Record<string, unknown>;
+    expect(result.unlinked).toBe(true);
+
+    // Verify unlinked
+    const notePost = await exec(db, "get_note", { noteId: "note1" }) as Record<string, unknown>;
+    expect(notePost.linkedCardIds).not.toContain("card1");
+    
+    const taskPost = await exec(db, "get_task", { cardId: "card1" }) as Record<string, unknown>;
+    expect(taskPost.linkedNoteIds).not.toContain("note1");
+  });
+
+  it("returns { error } for missing note or task", async () => {
+    const db = makeDb();
+    seed(db);
+    const result1 = await exec(db, "unlink_note_from_task", { noteId: "nope", cardId: "card1" }) as Record<string, unknown>;
+    expect(result1).toHaveProperty("error");
+
+    const result2 = await exec(db, "unlink_note_from_task", { noteId: "note1", cardId: "nope" }) as Record<string, unknown>;
+    expect(result2).toHaveProperty("error");
   });
 });
 

@@ -36,6 +36,7 @@ export const TOOL_LABELS: Record<string, (args: ToolArgs) => string> = {
   generate_prd:           (a) => `Generating PRD "${a.title}"`,
   spawn_tasks_from_note:  () => "Spawning tasks from note",
   link_note_to_task:      () => "Linking note to task",
+  unlink_note_from_task:   () => "Unlinking note from task",
   get_idea_flow:          () => "Reading Idea Flow",
   create_idea_flow_node:  (a) => `Adding ${(a.type as string) ?? "node"} to Idea Flow`,
   update_idea_flow_node:  () => "Updating Idea Flow node",
@@ -148,6 +149,7 @@ IDs (workspaceId, projectId, columnId) are stable for the app session. Call get_
 - Use update_task with \`columnId\` to move a task to a different column.
 - Use list_ready_tasks to find unblocked work; use search_tasks with an empty query to list all tasks.
 - Use update_task with \`blockedBy\` to add a blocker, \`unblockFrom\` to remove one. Blockers auto-clear when moved to done or archived.
+- Use \`link_note_to_task\` to link a note and a task card, and \`unlink_note_from_task\` to remove that connection.
 - You can pass \`tagNames\` (array of strings) to automatically resolve or create tags case-insensitively.
 
 ## Dashboards
