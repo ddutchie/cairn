@@ -80,13 +80,13 @@ jobs:
         run: npm ci
 
       - name: Cache Playwright browsers
-         id: playwright-cache
-         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
-         with:
-           path: ~/.cache/ms-playwright
-           key: playwright-chromium-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}
-           restore-keys: |
-             playwright-chromium-${{ runner.os }}-${{ runner.arch }}-
+        id: playwright-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            playwright-chromium-${{ runner.os }}-${{ runner.arch }}-
 
       # Install browser binary only on cache miss — the binary is what's cached
       - name: Install Playwright Chromium binary
