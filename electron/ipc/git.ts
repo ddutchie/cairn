@@ -10,7 +10,10 @@ function getExecEnv() {
   if (process.platform === "darwin") {
     const extraPaths = ["/opt/homebrew/bin", "/usr/local/bin"];
     const currentPath = env.PATH || "";
-    env.PATH = extraPaths.concat(currentPath.split(path.delimiter)).join(path.delimiter);
+    env.PATH = extraPaths
+      .concat(currentPath.split(path.delimiter))
+      .filter(Boolean)
+      .join(path.delimiter);
   }
   return env;
 }

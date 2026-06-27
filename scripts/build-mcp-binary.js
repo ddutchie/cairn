@@ -33,7 +33,12 @@ const wantLinux = args.includes("--linux");
 // Default to current platform
 const platform = process.platform;
 const targets = [];
-if (wantMac   || (!wantMac && !wantWin && !wantLinux && platform === "darwin"))  targets.push({ id: "node24-macos-arm64",  out: "cairn-mcp" });
+if (wantMac) {
+  targets.push({ id: "node24-macos-arm64",  out: "cairn-mcp" });
+} else if (!wantWin && !wantLinux && platform === "darwin") {
+  const arch = process.arch === "x64" ? "x64" : "arm64";
+  targets.push({ id: `node24-macos-${arch}`, out: "cairn-mcp" });
+}
 if (wantWin   || (!wantMac && !wantWin && !wantLinux && platform === "win32"))   targets.push({ id: "node24-win-x64",      out: "cairn-mcp.exe" });
 if (wantLinux || (!wantMac && !wantWin && !wantLinux && platform === "linux"))   targets.push({ id: "node24-linux-x64",    out: "cairn-mcp-linux" });
 
