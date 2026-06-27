@@ -5,6 +5,16 @@ import { registerIpcHandle } from "./registry";
 import { handle } from "./result-helpers";
 import type { Database } from "better-sqlite3";
 
+function getExecEnv() {
+  const env = { ...process.env };
+  if (process.platform === "darwin") {
+    const extraPaths = ["/opt/homebrew/bin", "/usr/local/bin"];
+    const currentPath = env.PATH || "";
+    env.PATH = extraPaths.concat(currentPath.split(path.delimiter)).join(path.delimiter);
+  }
+  return env;
+}
+
 function assertWithinCodeDirectory(db: Database, cwd: string): void {
   if (!cwd || !fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) {
     throw new Error(`Not a valid directory: ${cwd}`);
@@ -60,7 +70,7 @@ function isSafePathspec(file: string): boolean {
 function git(args: string[], cwd: string, timeout = 15_000): Promise<string> {
   return new Promise((resolve, reject) => {
     const maxBuffer = 20 * 1024 * 1024; // 20MB
-    execFile("git", args, { cwd, encoding: "utf-8", timeout, maxBuffer }, (error, stdout, stderr) => {
+    execFile("git", args, { cwd, encoding: "utf-8", timeout, maxBuffer, env: getExecEnv() }, (error, stdout, stderr) => {
       if (error) {
         if (
           error.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER" ||
@@ -84,7 +94,7 @@ function git(args: string[], cwd: string, timeout = 15_000): Promise<string> {
 function gitSafe(args: string[], cwd: string, timeout = 15_000): Promise<{ stdout: string; stderr: string; status: number | null }> {
   return new Promise((resolve) => {
     const maxBuffer = 20 * 1024 * 1024; // 20MB
-    execFile("git", args, { cwd, encoding: "utf-8", timeout, maxBuffer }, (error, stdout, stderr) => {
+    execFile("git", args, { cwd, encoding: "utf-8", timeout, maxBuffer, env: getExecEnv() }, (error, stdout, stderr) => {
       const code = error ? (error as { code?: number | string }).code : 0;
       const status = typeof code === "number" ? code : (error ? 1 : 0);
       resolve({
@@ -335,7 +345,7 @@ export function registerGitHandlers(db: Database): void {
       let hasGh = false;
       try {
         await new Promise<void>((resolve, reject) => {
-          execFile("gh", ["--version"], { timeout: 5_000 }, (err) => {
+          execFile("gh", ["--version"], { timeout: 5_000, env: getExecEnv() }, (err) => {
             if (err) reject(err);
             else resolve();
           });
@@ -351,7 +361,7 @@ export function registerGitHandlers(db: Database): void {
       if (body) ghArgs.push("--body", body);
       if (base) ghArgs.push("--base", base);
       const result = await new Promise<{ stdout: string; stderr: string; status: number | null }>((resolve) => {
-        execFile("gh", ghArgs, { cwd, encoding: "utf-8", timeout: 30_000 }, (error, stdout, stderr) => {
+        execFile("gh", ghArgs, { cwd, encoding: "utf-8", timeout: 30_000, env: getExecEnv() }, (error, stdout, stderr) => {
           const code = error ? (error as { code?: number | string }).code : 0;
           const status = typeof code === "number" ? code : (error ? 1 : 0);
           resolve({
@@ -376,7 +386,7 @@ export function registerGitHandlers(db: Database): void {
       let hasGh = false;
       try {
         await new Promise<void>((resolve, reject) => {
-          execFile("gh", ["--version"], { timeout: 5_000 }, (err) => {
+          execFile("gh", ["--version"], { timeout: 5_000, env: getExecEnv() }, (err) => {
             if (err) reject(err);
             else resolve();
           });
@@ -391,7 +401,7 @@ export function registerGitHandlers(db: Database): void {
       const branch = (await gitSafe(["rev-parse", "--abbrev-ref", "HEAD"], cwd)).stdout;
       if (!branch) return null;
       const result = await new Promise<{ stdout: string; stderr: string; status: number | null }>((resolve) => {
-        execFile("gh", ["pr", "view", branch, "--json", "url,state,title"], { cwd, encoding: "utf-8", timeout: 10_000 }, (error, stdout, stderr) => {
+        execFile("gh", ["pr", "view", branch, "--json", "url,state,title"], { cwd, encoding: "utf-8", timeout: 10_000, env: getExecEnv() }, (error, stdout, stderr) => {
           const code = error ? (error as { code?: number | string }).code : 0;
           const status = typeof code === "number" ? code : (error ? 1 : 0);
           resolve({
