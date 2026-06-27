@@ -93,7 +93,7 @@ export function UnifiedChatPanel({ prefill, onPrefillConsumed }: UnifiedChatPane
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
     };
-  }, [setChatPanelWidth, setChatPanelResizing]);
+  }, [setChatPanelWidth, setChatPanelResizing, activeView]);
 
   const isCenterMode = activeView === "chat";
 

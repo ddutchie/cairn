@@ -285,11 +285,12 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
       activeProjectId: projects[0]?.id ?? null,
       activeView: "overview",
       activePreviewItem: null,
+      lastContentView: "overview",
     });
   },
 
   setActiveProject(projId) {
-    set({ activeProjectId: projId, activeView: "overview", activePreviewItem: null });
+    set({ activeProjectId: projId, activeView: "overview", activePreviewItem: null, lastContentView: "overview" });
     if (projId) storage.set(ACTIVE_PROJECT_KEY, projId);
   },
 

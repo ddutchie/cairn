@@ -132,10 +132,12 @@ export function Sidebar() {
   return (
     <>
       {/* Mobile backdrop */}
-      <div
-        className="fixed inset-0 bg-black/40 z-30 md:hidden animate-fade-in"
-        onClick={toggleSidebar}
-      />
+      {!sidebarCollapsed && (
+        <div
+          className="fixed inset-0 bg-[color-mix(in_srgb,var(--background)_40%,transparent)] z-30 md:hidden animate-fade-in"
+          onClick={toggleSidebar}
+        />
+      )}
       <aside
         className={cn(
           "fixed inset-y-0 left-0 z-40 flex flex-col border-r border-[var(--border)] bg-[var(--surface)] flex-shrink-0 overflow-hidden md:static md:translate-x-0 transition-all duration-300 ease-in-out relative",

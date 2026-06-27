@@ -78,19 +78,19 @@ export function CairnRefChip({ toolName, cairnRef, ok = true }: {
       className={cn(
         "flex items-center gap-2 px-2.5 py-1.5 rounded-lg w-fit text-left transition-colors group",
         "bg-[var(--surface-2)] border border-[var(--border)]",
-        "hover:border-[var(--accent)]/50 hover:bg-[color-mix(in_srgb,var(--accent)_4%,var(--surface-2))]",
-        !ok && "border-[var(--danger)]/30 opacity-60 pointer-events-none",
+        "hover:border-[color-mix(in_srgb,var(--accent)_50%,transparent)] hover:bg-[color-mix(in_srgb,var(--accent)_4%,var(--surface-2))]",
+        !ok && "border-[color-mix(in_srgb,var(--danger)_30%,transparent)] opacity-60 pointer-events-none",
       )}
     >
       <div className={cn(
         "w-5 h-5 rounded flex items-center justify-center flex-shrink-0",
         isNote
           ? "bg-[color-mix(in_srgb,var(--accent)_12%,transparent)]"
-          : "bg-[color-mix(in_srgb,var(--success,#22c55e)_12%,transparent)]",
+          : "bg-[color-mix(in_srgb,var(--success)_12%,transparent)]",
       )}>
         {isNote
           ? <FileText size={10} className="text-[var(--accent)]" />
-          : <SquareCheck size={10} className="text-[color-mix(in_srgb,var(--success,#22c55e)_90%,var(--text-primary))]" />
+          : <SquareCheck size={10} className="text-[color-mix(in_srgb,var(--success)_90%,var(--text-primary))]" />
         }
       </div>
 

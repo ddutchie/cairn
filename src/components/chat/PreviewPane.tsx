@@ -77,22 +77,6 @@ export function PreviewPane() {
   const note = type === "note" ? notes.find((n) => n.id === id) : null;
   const card = type === "task" ? cards.find((c) => c.id === id) : null;
 
-  if (type === "note" && !note) {
-    return (
-      <aside className="w-80 border-l border-[var(--border)] bg-[var(--surface)] flex flex-col items-center justify-center p-6 text-center text-xs text-[var(--text-tertiary)]">
-        Note not found or deleted.
-      </aside>
-    );
-  }
-
-  if (type === "task" && !card) {
-    return (
-      <aside className="w-80 border-l border-[var(--border)] bg-[var(--surface)] flex flex-col items-center justify-center p-6 text-center text-xs text-[var(--text-tertiary)]">
-        Task card not found or deleted.
-      </aside>
-    );
-  }
-
   function handleGoToSection() {
     if (type === "note" && note) {
       setView("notes");
@@ -113,7 +97,7 @@ export function PreviewPane() {
       {/* Drag-to-resize handle */}
       <div
         ref={dividerRef}
-        className="absolute left-0 top-0 h-full w-1 cursor-col-resize z-40 select-none hover:bg-[var(--accent)]/50 transition-colors"
+        className="absolute left-0 top-0 h-full w-1 cursor-col-resize z-40 select-none hover:bg-[color-mix(in_srgb,var(--accent)_50%,transparent)] transition-colors"
         style={{ marginLeft: -2 }}
         aria-hidden
       />
@@ -124,7 +108,7 @@ export function PreviewPane() {
           {type === "note" ? (
             <FileText size={13} className="text-[var(--accent)]" />
           ) : (
-            <Kanban size={13} className="text-[var(--success,#22c55e)]" />
+            <Kanban size={13} className="text-[var(--success)]" />
           )}
           <span className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider">
             {type === "note" ? "Note Preview" : "Task Preview"}
@@ -132,17 +116,20 @@ export function PreviewPane() {
         </div>
 
         <div className="flex items-center gap-1.5">
-          <Button
-            variant="ghost"
-            size="xs"
-            onClick={handleGoToSection}
-            className="flex items-center gap-1 text-[0.714rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
-          >
-            <ExternalLink size={11} />
-            Go to {type === "note" ? "Notes" : "Board"}
-          </Button>
-
-          <div className="w-px h-3 bg-[var(--border)] my-1" />
+          {(note || card) && (
+            <>
+              <Button
+                variant="ghost"
+                size="xs"
+                onClick={handleGoToSection}
+                className="flex items-center gap-1 text-[0.714rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
+              >
+                <ExternalLink size={11} />
+                Go to {type === "note" ? "Notes" : "Board"}
+              </Button>
+              <div className="w-px h-3 bg-[var(--border)] my-1" />
+            </>
+          )}
 
           <button
             onClick={() => setActivePreviewItem(null)}
@@ -156,13 +143,25 @@ export function PreviewPane() {
 
       {/* Pane content */}
       <div className="flex-1 min-h-0 overflow-hidden flex flex-col bg-[var(--background)]">
-        {type === "note" && note && (
-          <div className="flex-1 min-h-0 overflow-auto">
-            <NoteEditor note={note} />
-          </div>
+        {type === "note" && (
+          note ? (
+            <div className="flex-1 min-h-0 overflow-auto">
+              <NoteEditor note={note} />
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center flex-1 p-6 text-center text-xs text-[var(--text-tertiary)]">
+              Note not found or deleted.
+            </div>
+          )
         )}
-        {type === "task" && card && (
-          <CardDetailPanel cardId={card.id} onClose={() => setActivePreviewItem(null)} />
+        {type === "task" && (
+          card ? (
+            <CardDetailPanel key={card.id} cardId={card.id} onClose={() => setActivePreviewItem(null)} />
+          ) : (
+            <div className="flex flex-col items-center justify-center flex-1 p-6 text-center text-xs text-[var(--text-tertiary)]">
+              Task card not found or deleted.
+            </div>
+          )
         )}
       </div>
     </aside>
