@@ -20,7 +20,7 @@ const root = path.resolve(__dirname, "..");
 const releasePath = path.join(root, "node_modules", "better-sqlite3", "build", "Release", "better_sqlite3.node");
 
 // The Node version baked into the pkg binary — must match PKG_NODE_TARGET in build scripts
-const PKG_NODE_VERSION = "22";
+const PKG_NODE_VERSION = "24";
 
 function run(cmd) {
   console.log(`\n> ${cmd}`);
@@ -33,7 +33,7 @@ function copyBinary(dest, label) {
   console.log(`Copied ${label} binary → ${path.relative(root, dest)}`);
 }
 
-// Step 1: Build/download better-sqlite3 for pkg-bundled Node 22 ABI.
+// Step 1: Build/download better-sqlite3 for pkg-bundled Node 24 ABI.
 // Must run from the better-sqlite3 directory so prebuild-install reads its
 // own package.json (not ours) when resolving the GitHub release URL.
 // On Windows, .bin/ contains a bash shebang script — use the .cmd wrapper instead.

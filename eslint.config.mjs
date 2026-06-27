@@ -1,6 +1,23 @@
 import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
+import fs from "fs";
+import { fileURLToPath } from "url";
+import path from "path";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+let reactVersion = "19.2.7";
+try {
+  const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, "package.json"), "utf8"));
+  const reactDep = pkg.dependencies?.react || pkg.devDependencies?.react;
+  if (reactDep) {
+    reactVersion = reactDep.replace(/^[^0-9]+/, "");
+  }
+} catch {
+  // fallback
+}
 
 const eslintConfig = defineConfig([
   ...nextVitals,
@@ -28,6 +45,11 @@ const eslintConfig = defineConfig([
         argsIgnorePattern: "^_",
         caughtErrorsIgnorePattern: "^_",
       }],
+    },
+    settings: {
+      react: {
+        version: reactVersion,
+      },
     },
   },
   // Override default ignores of eslint-config-next.

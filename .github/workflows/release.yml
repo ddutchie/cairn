@@ -20,7 +20,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          persist-credentials: false
 
       - name: Create GitHub Release (draft)
         env:
@@ -57,19 +59,21 @@ jobs:
     needs: prepare-release
 
     steps:
-      - uses: actions/checkout@v6
-
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
-          node-version: 22
+          persist-credentials: false
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 24
           cache: npm
 
       - name: Cache node_modules
         id: cache-npm
-        uses: actions/cache@v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: node_modules
-          key: npm-deps-${{ runner.os }}-node-22-${{ hashFiles('package-lock.json') }}
+          key: npm-deps-${{ runner.os }}-${{ runner.arch }}-node-24-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
         if: steps.cache-npm.outputs.cache-hit != 'true'
@@ -77,12 +81,12 @@ jobs:
 
       - name: Cache Playwright browsers
         id: playwright-cache
-        uses: actions/cache@v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-chromium-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          key: playwright-chromium-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}
           restore-keys: |
-            playwright-chromium-${{ runner.os }}-
+            playwright-chromium-${{ runner.os }}-${{ runner.arch }}-
 
       # Install browser binary only on cache miss — the binary is what's cached
       - name: Install Playwright Chromium binary
@@ -99,7 +103,7 @@ jobs:
 
       - name: Upload Playwright report
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: playwright-report
           path: playwright-report/
@@ -112,43 +116,45 @@ jobs:
     needs: [prepare-release, smoke-e2e]
 
     steps:
-      - uses: actions/checkout@v6
-
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
-          node-version: 22
+          persist-credentials: false
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 24
           cache: npm
 
       - name: Cache node_modules and native builds
         id: cache-npm
-        uses: actions/cache@v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: |
             node_modules
             pkg-native
             vitest-native
             electron-native
-          key: npm-deps-build-${{ runner.os }}-node-22-${{ hashFiles('package-lock.json') }}
+          key: npm-deps-build-${{ runner.os }}-${{ runner.arch }}-node-24-${{ hashFiles('package-lock.json') }}
 
       - name: Cache Next.js build
-        uses: actions/cache@v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: .next/cache
-          key: nextjs-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('src/**/*.js', 'src/**/*.jsx', 'src/**/*.ts', 'src/**/*.tsx') }}
+          key: nextjs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('src/**/*.js', 'src/**/*.jsx', 'src/**/*.ts', 'src/**/*.tsx') }}
           restore-keys: |
-            nextjs-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
-            nextjs-${{ runner.os }}-
+            nextjs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}-
+            nextjs-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Cache Electron, Electron Builder, and PKG binaries
-        uses: actions/cache@v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: |
             .cache/electron
             .cache/electron-builder
             .cache/pkg
-          key: electron-builder-pkg-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          key: electron-builder-pkg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}
           restore-keys: |
-            electron-builder-pkg-${{ runner.os }}-
+            electron-builder-pkg-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Install dependencies
         if: steps.cache-npm.outputs.cache-hit != 'true'
@@ -186,47 +192,49 @@ jobs:
       GYP_MSVS_VERSION: 2022
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          persist-credentials: false
 
       - name: Exclude workspace from Windows Defender
         run: Set-MpPreference -ExclusionPath ${{ github.workspace }}
         shell: powershell
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       - name: Cache node_modules and native builds
         id: cache-npm
-        uses: actions/cache@v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: |
             node_modules
             pkg-native
             vitest-native
             electron-native
-          key: npm-deps-build-${{ runner.os }}-node-22-${{ hashFiles('package-lock.json') }}
+          key: npm-deps-build-${{ runner.os }}-${{ runner.arch }}-node-24-${{ hashFiles('package-lock.json') }}
 
       - name: Cache Next.js build
-        uses: actions/cache@v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: .next/cache
-          key: nextjs-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('src/**/*.js', 'src/**/*.jsx', 'src/**/*.ts', 'src/**/*.tsx') }}
+          key: nextjs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('src/**/*.js', 'src/**/*.jsx', 'src/**/*.ts', 'src/**/*.tsx') }}
           restore-keys: |
-            nextjs-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
-            nextjs-${{ runner.os }}-
+            nextjs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}-
+            nextjs-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Cache Electron, Electron Builder, and PKG binaries
-        uses: actions/cache@v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: |
             .cache/electron
             .cache/electron-builder
             .cache/pkg
-          key: electron-builder-pkg-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          key: electron-builder-pkg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}
           restore-keys: |
-            electron-builder-pkg-${{ runner.os }}-
+            electron-builder-pkg-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Install dependencies
         if: steps.cache-npm.outputs.cache-hit != 'true'
@@ -255,43 +263,45 @@ jobs:
     needs: [prepare-release, smoke-e2e]
 
     steps:
-      - uses: actions/checkout@v6
-
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
-          node-version: 22
+          persist-credentials: false
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 24
           cache: npm
 
       - name: Cache node_modules and native builds
         id: cache-npm
-        uses: actions/cache@v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: |
             node_modules
             pkg-native
             vitest-native
             electron-native
-          key: npm-deps-build-${{ runner.os }}-node-22-${{ hashFiles('package-lock.json') }}
+          key: npm-deps-build-${{ runner.os }}-${{ runner.arch }}-node-24-${{ hashFiles('package-lock.json') }}
 
       - name: Cache Next.js build
-        uses: actions/cache@v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: .next/cache
-          key: nextjs-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('src/**/*.js', 'src/**/*.jsx', 'src/**/*.ts', 'src/**/*.tsx') }}
+          key: nextjs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('src/**/*.js', 'src/**/*.jsx', 'src/**/*.ts', 'src/**/*.tsx') }}
           restore-keys: |
-            nextjs-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
-            nextjs-${{ runner.os }}-
+            nextjs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}-
+            nextjs-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Cache Electron, Electron Builder, and PKG binaries
-        uses: actions/cache@v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: |
             .cache/electron
             .cache/electron-builder
             .cache/pkg
-          key: electron-builder-pkg-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          key: electron-builder-pkg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}
           restore-keys: |
-            electron-builder-pkg-${{ runner.os }}-
+            electron-builder-pkg-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Install dependencies
         if: steps.cache-npm.outputs.cache-hit != 'true'
