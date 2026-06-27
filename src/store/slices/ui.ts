@@ -147,6 +147,17 @@ export interface UISlice extends AppUIState {
   chatPoppedOut: boolean;
   setChatPoppedOut: (popped: boolean) => void;
 
+  // Active preview item for chat-centric layout
+  activePreviewItem: { type: "note" | "task"; id: ID } | null;
+  setActivePreviewItem: (item: { type: "note" | "task"; id: ID } | null) => void;
+
+  // Chat panel resizing state
+  chatPanelResizing: boolean;
+  setChatPanelResizing: (resizing: boolean) => void;
+
+  // Last content view before entering chat or search mode
+  lastContentView: AppUIState["lastContentView"];
+
   // Navigation / selections
   setActiveWorkspace: (id: ID) => void;
   setActiveProject: (id: ID | null) => void;
@@ -169,6 +180,9 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
   sidebarCollapsed: false,
   chatOpen: false,
   searchOpen: false,
+  activePreviewItem: null,
+  chatPanelResizing: false,
+  lastContentView: "overview",
 
   aiConfig: DEFAULT_AI_CONFIG,
   agentConfig: DEFAULT_AGENT_CONFIG,
@@ -270,16 +284,29 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
       activeWorkspaceId: wsId,
       activeProjectId: projects[0]?.id ?? null,
       activeView: "overview",
+      activePreviewItem: null,
     });
   },
 
   setActiveProject(projId) {
-    set({ activeProjectId: projId, activeView: "overview" });
+    set({ activeProjectId: projId, activeView: "overview", activePreviewItem: null });
     if (projId) storage.set(ACTIVE_PROJECT_KEY, projId);
   },
 
   setView(view) {
-    set({ activeView: view });
+    if (view !== "chat" && view !== "search") {
+      set({ activeView: view, lastContentView: view as AppUIState["lastContentView"] });
+    } else {
+      set({ activeView: view });
+    }
+  },
+
+  setActivePreviewItem(item) {
+    set({ activePreviewItem: item });
+  },
+
+  setChatPanelResizing(resizing) {
+    set({ chatPanelResizing: resizing });
   },
 
   toggleSidebar() {

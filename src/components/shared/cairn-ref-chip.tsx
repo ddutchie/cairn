@@ -49,20 +49,26 @@ export function CairnRefChip({ toolName, cairnRef, ok = true }: {
   ok?: boolean;
 }) {
   const setView = useCairnStore((s) => s.setView);
+  const activeView = useCairnStore((s) => s.activeView);
+  const setActivePreviewItem = useCairnStore((s) => s.setActivePreviewItem);
   const isNote = cairnRef.type === "note";
   const actionLabel = isNote
     ? (CAIRN_NOTE_ACTIONS[toolName] ?? "Updated note")
     : (CAIRN_TASK_ACTIONS[toolName] ?? "Updated task");
 
   function handleClick() {
-    if (isNote) {
-      setView("notes");
-      // Defer so NotesView has one render cycle to mount its cairn:select-note listener
-      setTimeout(() => window.dispatchEvent(CairnEvents.selectNote(cairnRef.id)), 50);
+    if (activeView === "chat") {
+      setActivePreviewItem({ type: cairnRef.type, id: cairnRef.id });
     } else {
-      setView("board");
-      // Defer so KanbanBoard has one render cycle to mount its cairn:open-card listener
-      setTimeout(() => window.dispatchEvent(CairnEvents.openCard(cairnRef.id)), 50);
+      if (isNote) {
+        setView("notes");
+        // Defer so NotesView has one render cycle to mount its cairn:select-note listener
+        setTimeout(() => window.dispatchEvent(CairnEvents.selectNote(cairnRef.id)), 50);
+      } else {
+        setView("board");
+        // Defer so KanbanBoard has one render cycle to mount its cairn:open-card listener
+        setTimeout(() => window.dispatchEvent(CairnEvents.openCard(cairnRef.id)), 50);
+      }
     }
   }
 

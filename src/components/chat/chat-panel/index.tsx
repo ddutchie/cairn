@@ -18,6 +18,7 @@ import { ToolCallIndicator } from "./ToolCallIndicator";
 import { QuestionForm } from "./QuestionForm";
 import { ChatInput, SuggestionItem } from "../ChatInput";
 import { ContextRing } from "@/components/agent/ContextRing";
+import { cn } from "@/lib/utils";
 
 const GRAPH_SYSTEM_PROMPT = `You are a Knowledge Graph assistant embedded in Cairn, a note-taking and project management app.
 
@@ -591,36 +592,38 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3 min-h-0">
-        {messages.length === 0
-          ? (
-              <SuggestedPrompts
-                onSend={handleSend}
-                disabled={isLoading || !threadId}
-                prompts={activeView === "graph" ? graphPrompts : undefined}
-                subTitle={activeView === "graph" ? "Ask me to analyze your graph, suggest missing links, wikilinks, or tags." : undefined}
-              />
-            )
-          : messages.map((message) => (
-              <ChatMessageBubble
-                key={message.id}
-                message={message}
-                onRetry={!isLoading ? handleRetry : undefined}
-              />
-            ))
-        }
-        {pendingQuestions && (
-          <QuestionForm
-            questions={pendingQuestions}
-            onSubmit={(text) => handleSend(text)}
-            disabled={isLoading && !pendingQuestions}
-          />
-        )}
-        {isLoading && <ToolCallIndicator toolCalls={toolCalls} streamingContent={streamingContent} streamingThought={streamingThought} />}
-        <div ref={messagesEndRef} />
+        <div className={cn("space-y-3", activeView === "chat" && "max-w-3xl mx-auto w-full px-4")}>
+          {messages.length === 0
+            ? (
+                <SuggestedPrompts
+                  onSend={handleSend}
+                  disabled={isLoading || !threadId}
+                  prompts={activeView === "graph" ? graphPrompts : undefined}
+                  subTitle={activeView === "graph" ? "Ask me to analyze your graph, suggest missing links, wikilinks, or tags." : undefined}
+                />
+              )
+            : messages.map((message) => (
+                <ChatMessageBubble
+                  key={message.id}
+                  message={message}
+                  onRetry={!isLoading ? handleRetry : undefined}
+                />
+              ))
+          }
+          {pendingQuestions && (
+            <QuestionForm
+              questions={pendingQuestions}
+              onSubmit={(text) => handleSend(text)}
+              disabled={isLoading && !pendingQuestions}
+            />
+          )}
+          {isLoading && <ToolCallIndicator toolCalls={toolCalls} streamingContent={streamingContent} streamingThought={streamingThought} />}
+          <div ref={messagesEndRef} />
+        </div>
       </div>
 
       {/* Input */}
-      <div className="border-t border-[var(--border)] p-3 flex-shrink-0">
+      <div className={cn("border-t border-[var(--border)] p-3 flex-shrink-0", activeView === "chat" && "border-t-0 bg-transparent p-6 max-w-3xl mx-auto w-full")}>
         <ChatInput
           ref={inputRef}
           value={input}
@@ -635,6 +638,8 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
           pendingImages={pendingImages}
           onRemoveImage={handleRemoveImage}
           onAttachImages={handleAttachImages}
+          variant={activeView === "chat" ? "overview" : "default"}
+          showSparkles={activeView === "chat"}
         />
         <div className="flex items-center justify-between mt-1.5 px-0.5">
           <p className="text-[0.714rem] text-[var(--text-tertiary)]">

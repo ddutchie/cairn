@@ -184,9 +184,9 @@ export function Topbar() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={toggleChat}
+              onClick={activeView === "chat" ? () => setView("overview") : toggleChat}
               className={cn(
-                chatOpen && "text-[var(--accent)] bg-[var(--accent-dim)]"
+                (chatOpen || activeView === "chat") && "text-[var(--accent)] bg-[var(--accent-dim)]"
               )}
             >
               <MessageSquare size={13} />

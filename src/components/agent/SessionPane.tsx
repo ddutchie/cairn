@@ -13,7 +13,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { X, Plus, MessageSquarePlus, Terminal, ExternalLink, ArrowLeftFromLine } from "lucide-react";
+import { X, Plus, MessageSquarePlus, Terminal, ExternalLink, ArrowLeftFromLine, Maximize2, Minimize2 } from "lucide-react";
 import { useCairnStore } from "@/store";
 import type { ChatThread, ChatMessage } from "@/types";
 import { cn } from "@/lib/utils";
@@ -51,6 +51,8 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
     setActiveChatThreadId,
     chatPoppedOut,
     setChatPoppedOut,
+    setView,
+    lastContentView,
   } = useCairnStore(useShallow((s) => ({
     terminalSessions: s.terminalSessions,
     activeSessionId: s.activeSessionId,
@@ -66,6 +68,8 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
     setActiveChatThreadId: s.setActiveChatThreadId,
     chatPoppedOut: s.chatPoppedOut,
     setChatPoppedOut: s.setChatPoppedOut,
+    setView: s.setView,
+    lastContentView: s.lastContentView,
   })));
 
   const hasCodeDirectory = !!projects.find((p) => p.id === activeProjectId)?.codeDirectory;
@@ -163,6 +167,13 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
   const handlePopIn = useCallback(() => {
     window.electron?.chat.requestPopIn();
   }, []);
+
+  const handleClosePanel = useCallback(() => {
+    if (!isRightPanel) {
+      setView(lastContentView);
+    }
+    toggleChat();
+  }, [isRightPanel, setView, lastContentView, toggleChat]);
 
   // Listen for pop-in final state from the main process
   useEffect(() => {
@@ -282,28 +293,48 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
           )}
         </div>
 
-        {isRightPanel && (
-          <>
-            {activeSessionId === "chat" && !chatPoppedOut && (
-              <Tooltip content="Pop out chat window" side="bottom">
-                <button
-                  onClick={handlePopOut}
-                  className="flex-shrink-0 px-3 h-full text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--surface-2)] transition-colors border-l border-[var(--border)] flex items-center justify-center"
-                >
-                  <ExternalLink size={11} />
-                </button>
-              </Tooltip>
-            )}
-            <Tooltip content="Close panel (⌘/)" side="bottom">
+        {/* Header Actions */}
+        <div className="flex items-center h-full">
+          {activeSessionId === "chat" && !chatPoppedOut && (
+            <Tooltip content="Pop out chat window" side="bottom">
               <button
-                onClick={toggleChat}
-                className="flex-shrink-0 px-3 h-full text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors border-l border-[var(--border)] flex items-center justify-center"
+                onClick={handlePopOut}
+                className="flex-shrink-0 px-3 h-full text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--surface-2)] transition-colors border-l border-[var(--border)] flex items-center justify-center"
               >
-                <X size={12} />
+                <ExternalLink size={11} />
               </button>
             </Tooltip>
-          </>
-        )}
+          )}
+
+          {isRightPanel ? (
+            <Tooltip content="Expand to central view" side="bottom">
+              <button
+                onClick={() => setView("chat")}
+                className="flex-shrink-0 px-3 h-full text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--surface-2)] transition-colors border-l border-[var(--border)] flex items-center justify-center"
+              >
+                <Maximize2 size={11} />
+              </button>
+            </Tooltip>
+          ) : (
+            <Tooltip content="Collapse to sidebar (⌘/)" side="bottom">
+              <button
+                onClick={() => setView(lastContentView)}
+                className="flex-shrink-0 px-3 h-full text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--surface-2)] transition-colors border-l border-[var(--border)] flex items-center justify-center"
+              >
+                <Minimize2 size={11} />
+              </button>
+            </Tooltip>
+          )}
+
+          <Tooltip content="Close panel (⌘/)" side="bottom">
+            <button
+              onClick={handleClosePanel}
+              className="flex-shrink-0 px-3 h-full text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors border-l border-[var(--border)] flex items-center justify-center"
+            >
+              <X size={12} />
+            </button>
+          </Tooltip>
+        </div>
       </div>
 
       {/* Session content — CSS-hidden instead of unmounted */}
