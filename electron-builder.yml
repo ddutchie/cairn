@@ -55,8 +55,9 @@ asarUnpack:
   - node_modules/node-pty/**/*
   - node_modules/onnxruntime-node/**/*
 
-# Rebuild native modules against Electron's Node version
-npmRebuild: true
+# Native modules are pre-rebuilt by `npm run rebuild` — skip the redundant
+# electron-builder rebuild during packaging to save time and avoid ABI mismatches.
+npmRebuild: false
 
 mac:
   category: public.app-category.productivity

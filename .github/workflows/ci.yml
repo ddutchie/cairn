@@ -22,7 +22,7 @@ jobs:
 
       - name: Cache node_modules
         id: cache-npm
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: node_modules
           key: npm-deps-${{ runner.os }}-node-22-${{ hashFiles('package-lock.json') }}
@@ -52,7 +52,7 @@ jobs:
 
       - name: Cache node_modules
         id: cache-npm
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: node_modules
           key: npm-deps-${{ runner.os }}-node-22-${{ hashFiles('package-lock.json') }}
@@ -79,7 +79,7 @@ jobs:
 
       - name: Cache node_modules and vitest-native
         id: cache-npm
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             node_modules
@@ -118,13 +118,13 @@ jobs:
 
       - name: Cache node_modules
         id: cache-npm
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: node_modules
           key: npm-deps-${{ runner.os }}-node-22-${{ hashFiles('package-lock.json') }}
 
       - name: Cache Next.js build
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: .next/cache
           key: nextjs-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('src/**/*.js', 'src/**/*.jsx', 'src/**/*.ts', 'src/**/*.tsx') }}
@@ -161,7 +161,7 @@ jobs:
 
       - name: Cache node_modules
         id: cache-npm
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: node_modules
           key: npm-deps-${{ runner.os }}-node-22-${{ hashFiles('package-lock.json') }}
@@ -172,7 +172,7 @@ jobs:
 
       - name: Cache Playwright browsers
         id: playwright-cache
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-chromium-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
@@ -191,7 +191,7 @@ jobs:
 
       - name: Upload Playwright report
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: playwright-report
           path: playwright-report/
