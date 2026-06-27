@@ -1,11 +1,12 @@
 "use client";
 
-import { FileText, Kanban, Workflow, MessageSquare, Check } from "lucide-react";
+import React, { useState } from "react";
+import { FileText, Kanban, Workflow, MessageSquare, Check, HelpCircle } from "lucide-react";
 import { Shell, NavRow } from "./shared";
 
 interface Props {
   onBack: () => void;
-  onComplete: () => void;
+  onComplete: (startTour: boolean) => void;
 }
 
 const FEATURE_CARDS = [
@@ -36,6 +37,8 @@ const FEATURE_CARDS = [
 ];
 
 export function StepDone({ onBack, onComplete }: Props) {
+  const [startTour, setStartTour] = useState(true);
+
   return (
     <Shell step="done">
       <div className="w-full max-w-md flex flex-col gap-5">
@@ -62,9 +65,26 @@ export function StepDone({ onBack, onComplete }: Props) {
           ))}
         </div>
 
+        {/* Start quick app tour checkbox */}
+        <label className="flex items-center gap-2.5 px-4 py-3 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] cursor-pointer hover:border-[var(--accent)]/30 transition-all select-none">
+          <input
+            type="checkbox"
+            checked={startTour}
+            onChange={(e) => setStartTour(e.target.checked)}
+            className="w-4 h-4 rounded border-[var(--border)] text-[var(--accent)] focus:ring-[var(--accent)] bg-[var(--surface)] cursor-pointer"
+          />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-medium text-[var(--text-primary)] flex items-center gap-1.5">
+              <HelpCircle size={13} className="text-[var(--accent)]" />
+              Start a quick interactive app tour on launch
+            </p>
+            <p className="text-[0.65rem] text-[var(--text-tertiary)] mt-0.5">Recommended for new users to learn the workspace</p>
+          </div>
+        </label>
+
         <NavRow
           onBack={onBack}
-          onNext={onComplete}
+          onNext={() => onComplete(startTour)}
           nextLabel="Open Cairn"
           nextIcon={<Check size={13} />}
         />

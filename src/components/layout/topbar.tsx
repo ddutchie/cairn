@@ -152,7 +152,7 @@ export function Topbar() {
           </div>
 
           {/* Desktop tabs view selector */}
-          <nav className="hidden sm:flex items-center gap-0.5 ml-2 overflow-x-auto scrollbar-none flex-nowrap shrink">
+          <nav data-tutorial="view-tabs" className="hidden sm:flex items-center gap-0.5 ml-2 overflow-x-auto scrollbar-none flex-nowrap shrink">
             {VIEW_TABS.filter((tab) => !hiddenViews.has(tab.id as "board" | "flow" | "agent")).map((tab) => {
               const Icon = tab.icon;
               return (
@@ -184,6 +184,7 @@ export function Topbar() {
         {!hiddenViews.has("chat") && (
           <Tooltip content="AI Chat (⌘/)">
             <Button
+              data-tutorial="chat-toggle"
               variant="ghost"
               size="sm"
               onClick={activeView === "chat" ? () => setView(lastContentView) : toggleChat}

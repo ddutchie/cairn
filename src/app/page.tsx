@@ -21,6 +21,8 @@ import { AgentView } from "@/components/agent/AgentView";
 import { Onboarding } from "@/components/onboarding";
 import { UnifiedChatPanel } from "@/components/chat/UnifiedChatPanel";
 import { UpdateBanner, ErrorToasts } from "@/components/layout/app-chrome";
+import { NewFeatureModal } from "@/components/layout/NewFeatureModal";
+import { AppTutorial } from "@/components/tutorial/AppTutorial";
 import { cn } from "@/lib/utils";
 
 export default function Home() {
@@ -291,7 +293,12 @@ export default function Home() {
         <div className="flex flex-1 min-h-0">
           <Onboarding
             initialStep={initialStep}
-            onComplete={() => setOnboardingState(false)}
+            onComplete={(startTour) => {
+              setOnboardingState(false);
+              if (startTour) {
+                useCairnStore.getState().setTutorialActive(true);
+              }
+            }}
           />
         </div>
       </main>
@@ -352,6 +359,12 @@ export default function Home() {
 
       {/* IPC error toasts — bottom-right, auto-dismiss after 5s */}
       <ErrorToasts toasts={toasts} onDismiss={dismiss} />
+
+      {/* New Feature Modal (shows on launch if unseen features exist) */}
+      <NewFeatureModal />
+
+      {/* Interactive App Tutorial Overlay */}
+      <AppTutorial />
     </main>
   );
 }

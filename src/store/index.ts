@@ -25,7 +25,7 @@ import { MIN_NOTES_SIDEBAR_WIDTH, MAX_NOTES_SIDEBAR_WIDTH } from "./slices/ui";
 // ── Slice imports ─────────────────────────────────────────────────────────────
 import { createUISlice } from "./slices/ui";
 import type { UISlice, AIConfig, AgentConfig, Theme, ToggleableView } from "./slices/ui";
-import { applyTheme, THEME_KEY, applyFontScale, FONT_SCALE_KEY, DEFAULT_FONT_SCALE, HIDDEN_VIEWS_KEY, MIN_CHAT_PANEL_WIDTH, MAX_CHAT_PANEL_WIDTH } from "./slices/ui";
+import { applyTheme, THEME_KEY, applyFontScale, FONT_SCALE_KEY, DEFAULT_FONT_SCALE, HIDDEN_VIEWS_KEY, SEEN_FEATURES_KEY, MIN_CHAT_PANEL_WIDTH, MAX_CHAT_PANEL_WIDTH } from "./slices/ui";
 import type { FontScale } from "./slices/ui";
 import { createWorkspaceSlice } from "./slices/workspace";
 import type { WorkspaceSlice } from "./slices/workspace";
@@ -203,6 +203,11 @@ export const useCairnStore = create<CairnStore>()(
         a[0]({ hiddenViews: new Set(savedHidden) });
       }
 
+      const savedSeenFeatures = storage.get<string[]>(SEEN_FEATURES_KEY);
+      if (savedSeenFeatures) {
+        a[0]({ seenFeatures: savedSeenFeatures });
+      }
+
       const savedChatWidth = storage.get<number>(CHAT_PANEL_WIDTH_KEY);
       if (savedChatWidth) {
         a[0]({ chatPanelWidth: Math.min(MAX_CHAT_PANEL_WIDTH, Math.max(MIN_CHAT_PANEL_WIDTH, savedChatWidth)) });
@@ -312,6 +317,11 @@ export const useCairnStore = create<CairnStore>()(
       const savedHidden = storage.get<ToggleableView[]>(HIDDEN_VIEWS_KEY);
       if (savedHidden) {
         set({ hiddenViews: new Set(savedHidden) });
+      }
+
+      const savedSeenFeatures = storage.get<string[]>(SEEN_FEATURES_KEY);
+      if (savedSeenFeatures) {
+        set({ seenFeatures: savedSeenFeatures });
       }
 
       const savedChatWidth = storage.get<number>(CHAT_PANEL_WIDTH_KEY);

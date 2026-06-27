@@ -18,7 +18,7 @@ import type { ToggleableView } from "@/store/slices/ui";
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 interface Props {
-  onComplete: () => void;
+  onComplete: (startTour: boolean) => void;
   /** Where to enter the wizard. Defaults to "choose-folder". */
   initialStep?: OnboardingStep;
 }
