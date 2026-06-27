@@ -265,9 +265,37 @@ export function GitView({ cwd }: GitViewProps) {
 
   async function handleDiscard(paths: string[]) {
     if (!window.electron?.git) return;
-    const confirmMessage = paths.length === 1
-      ? `Are you sure you want to discard unstaged changes in ${paths[0]}? This cannot be undone.`
-      : `Are you sure you want to discard unstaged changes in these ${paths.length} files? This cannot be undone.`;
+
+    let confirmMessage = "";
+    if (paths.length === 1) {
+      const p = paths[0];
+      const isStaged = status?.staged.some((f) => f.path === p);
+      const isUnstaged = status?.unstaged.some((f) => f.path === p);
+      const isUntracked = status?.untracked.some((f) => f.path === p);
+
+      if (isUntracked) {
+        confirmMessage = `Are you sure you want to delete the untracked file ${p}? This cannot be undone.`;
+      } else if (isStaged && isUnstaged) {
+        confirmMessage = `Are you sure you want to discard unstaged changes in ${p}? Staged changes will be preserved.`;
+      } else if (isStaged) {
+        confirmMessage = `Are you sure you want to discard staged changes in ${p}? This will revert the file to its HEAD state.`;
+      } else {
+        confirmMessage = `Are you sure you want to discard changes in ${p}? This cannot be undone.`;
+      }
+    } else {
+      const containsUntracked = paths.some(p => status?.untracked.some(f => f.path === p));
+      const containsStaged = paths.some(p => status?.staged.some(f => f.path === p));
+      const containsUnstaged = paths.some(p => status?.unstaged.some(f => f.path === p));
+
+      if (containsUntracked && !containsStaged && !containsUnstaged) {
+        confirmMessage = `Are you sure you want to delete these ${paths.length} untracked files? This cannot be undone.`;
+      } else if (containsStaged && containsUnstaged) {
+        confirmMessage = `Are you sure you want to discard unstaged changes in these ${paths.length} files? Staged changes in partially staged files will be preserved.`;
+      } else {
+        confirmMessage = `Are you sure you want to discard changes in these ${paths.length} files? This cannot be undone.`;
+      }
+    }
+
     if (!window.confirm(confirmMessage)) return;
 
     setLoading(true);
