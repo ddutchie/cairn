@@ -207,15 +207,17 @@ export function GitView({ cwd }: GitViewProps) {
     prevStagedCountRef.current = stagedCount;
   }, [status]);
 
-  const handleCheckout = useCallback(async (branch: string, create = false) => {
-    if (!window.electron?.git) return;
+  const handleCheckout = useCallback(async (branch: string, create = false): Promise<boolean> => {
+    if (!window.electron?.git) return false;
     setLoading(true);
     setError(null);
     try {
       await window.electron.git.checkout(cwd, branch, create);
       await refresh();
+      return true;
     } catch (e) {
       setError((e as Error).message);
+      return false;
     } finally {
       setLoading(false);
     }
@@ -224,9 +226,11 @@ export function GitView({ cwd }: GitViewProps) {
   const handleCreateBranch = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newBranchName.trim()) return;
-    await handleCheckout(newBranchName.trim(), true);
-    setNewBranchOpen(false);
-    setNewBranchName("");
+    const success = await handleCheckout(newBranchName.trim(), true);
+    if (success) {
+      setNewBranchOpen(false);
+      setNewBranchName("");
+    }
   }, [newBranchName, handleCheckout]);
 
   // Clear commit form after successful commit
@@ -262,8 +266,8 @@ export function GitView({ cwd }: GitViewProps) {
   async function handleDiscard(paths: string[]) {
     if (!window.electron?.git) return;
     const confirmMessage = paths.length === 1
-      ? `Are you sure you want to discard all changes in ${paths[0]}? This cannot be undone.`
-      : `Are you sure you want to discard all changes in these ${paths.length} files? This cannot be undone.`;
+      ? `Are you sure you want to discard unstaged changes in ${paths[0]}? This cannot be undone.`
+      : `Are you sure you want to discard unstaged changes in these ${paths.length} files? This cannot be undone.`;
     if (!window.confirm(confirmMessage)) return;
 
     setLoading(true);

@@ -443,17 +443,25 @@ export function registerGitHandlers(db: Database): void {
       }
 
       const fullPath = path.resolve(cwd, filePath);
+      const literalFile = `:(literal)${filePath}`;
 
       // Check status to see if it is staged or untracked
-      const statusResult = await gitSafe(["status", "--porcelain=v1", "-z", "--", filePath], cwd);
-      const output = statusResult.stdout;
+      let statusResult = await gitSafe(["status", "--porcelain=v1", "-z", "--", literalFile], cwd);
+      let output = statusResult.stdout;
 
-      if (output) {
+      if (output && output.length >= 2) {
         const x = output[0];
-        if (x !== " " && x !== "?") {
-          // File is staged or partially staged, reset it first.
-          const literalFile = `:(literal)${filePath}`;
+        const y = output[1];
+        const isStaged = x !== " " && x !== "?";
+        const isUnstaged = y !== " " && y !== "?";
+        const isPartiallyStaged = isStaged && isUnstaged;
+
+        if (isStaged && !isPartiallyStaged) {
+          // File is staged only (not partially staged), reset it first.
           await git(["reset", "HEAD", "--", literalFile], cwd);
+          // Re-run status check after reset so the decision below is based on the updated state
+          statusResult = await gitSafe(["status", "--porcelain=v1", "-z", "--", literalFile], cwd);
+          output = statusResult.stdout;
         }
       }
 
@@ -464,7 +472,7 @@ export function registerGitHandlers(db: Database): void {
         }
       } else {
         // Tracked file: checkout/restore it
-        await git(["checkout", "--", filePath], cwd);
+        await git(["checkout", "--", literalFile], cwd);
       }
 
       return { ok: true };
