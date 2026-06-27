@@ -3,7 +3,7 @@
  * Cairn — MCP binary builder
  *
  * Compiles the MCP server into a self-contained executable using
- * @yao-pkg/pkg. The binary bundles Node 22 and the mcp-server.bundle.js,
+ * @yao-pkg/pkg. The binary bundles Node 24 and the mcp-server.bundle.js,
  * with better-sqlite3's native .node file embedded as an asset.
  *
  * The binary is platform-specific and produced in dist-mcp/:
@@ -33,13 +33,13 @@ const wantLinux = args.includes("--linux");
 // Default to current platform
 const platform = process.platform;
 const targets = [];
-if (wantMac   || (!wantMac && !wantWin && !wantLinux && platform === "darwin"))  targets.push({ id: "node22-macos-arm64",  out: "cairn-mcp" });
-if (wantWin   || (!wantMac && !wantWin && !wantLinux && platform === "win32"))   targets.push({ id: "node22-win-x64",      out: "cairn-mcp.exe" });
-if (wantLinux || (!wantMac && !wantWin && !wantLinux && platform === "linux"))   targets.push({ id: "node22-linux-x64",    out: "cairn-mcp-linux" });
+if (wantMac   || (!wantMac && !wantWin && !wantLinux && platform === "darwin"))  targets.push({ id: "node24-macos-arm64",  out: "cairn-mcp" });
+if (wantWin   || (!wantMac && !wantWin && !wantLinux && platform === "win32"))   targets.push({ id: "node24-win-x64",      out: "cairn-mcp.exe" });
+if (wantLinux || (!wantMac && !wantWin && !wantLinux && platform === "linux"))   targets.push({ id: "node24-linux-x64",    out: "cairn-mcp-linux" });
 
 // CI: explicit flags add all relevant arches
 if (wantMac) {
-  targets.push({ id: "node22-macos-x64", out: "cairn-mcp-x64" });
+  targets.push({ id: "node24-macos-x64", out: "cairn-mcp-x64" });
 }
 
 function run(cmd) {

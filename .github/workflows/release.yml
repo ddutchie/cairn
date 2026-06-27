@@ -61,7 +61,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       - name: Cache node_modules
@@ -69,7 +69,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: node_modules
-          key: npm-deps-${{ runner.os }}-node-22-${{ hashFiles('package-lock.json') }}
+          key: npm-deps-${{ runner.os }}-node-24-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
         if: steps.cache-npm.outputs.cache-hit != 'true'
@@ -116,7 +116,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       - name: Cache node_modules and native builds
@@ -128,7 +128,7 @@ jobs:
             pkg-native
             vitest-native
             electron-native
-          key: npm-deps-build-${{ runner.os }}-node-22-${{ hashFiles('package-lock.json') }}
+          key: npm-deps-build-${{ runner.os }}-node-24-${{ hashFiles('package-lock.json') }}
 
       - name: Cache Next.js build
         uses: actions/cache@v6
@@ -194,7 +194,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       - name: Cache node_modules and native builds
@@ -206,7 +206,7 @@ jobs:
             pkg-native
             vitest-native
             electron-native
-          key: npm-deps-build-${{ runner.os }}-node-22-${{ hashFiles('package-lock.json') }}
+          key: npm-deps-build-${{ runner.os }}-node-24-${{ hashFiles('package-lock.json') }}
 
       - name: Cache Next.js build
         uses: actions/cache@v6
@@ -259,7 +259,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       - name: Cache node_modules and native builds
@@ -271,7 +271,7 @@ jobs:
             pkg-native
             vitest-native
             electron-native
-          key: npm-deps-build-${{ runner.os }}-node-22-${{ hashFiles('package-lock.json') }}
+          key: npm-deps-build-${{ runner.os }}-node-24-${{ hashFiles('package-lock.json') }}
 
       - name: Cache Next.js build
         uses: actions/cache@v6
