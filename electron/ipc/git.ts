@@ -433,4 +433,42 @@ export function registerGitHandlers(db: Database): void {
       return { ok: true };
     })
   );
+
+  // ── git discard (discard changes in a file) ─────────────────────────────
+  registerIpcHandle("git:discard", (_e, { cwd, filePath }: { cwd: string; filePath: string }) =>
+    handle(async () => {
+      assertWithinCodeDirectory(db, cwd);
+      if (!isSafePathspec(filePath) || !isPathWithinCwd(cwd, filePath)) {
+        throw new Error(`Access denied: path is outside the code directory: ${filePath}`);
+      }
+
+      const fullPath = path.resolve(cwd, filePath);
+
+      // Check status to see if it is staged or untracked
+      const statusResult = await gitSafe(["status", "--porcelain=v1", "-z", "--", filePath], cwd);
+      const output = statusResult.stdout;
+
+      if (output) {
+        const x = output[0];
+        if (x !== " " && x !== "?") {
+          // File is staged or partially staged, reset it first.
+          const literalFile = `:(literal)${filePath}`;
+          await git(["reset", "HEAD", "--", literalFile], cwd);
+        }
+      }
+
+      if (output && output.startsWith("??")) {
+        // Untracked file: delete it
+        if (fs.existsSync(fullPath)) {
+          fs.rmSync(fullPath, { force: true, recursive: true });
+        }
+      } else {
+        // Tracked file: checkout/restore it
+        await git(["checkout", "--", filePath], cwd);
+      }
+
+      return { ok: true };
+    })
+  );
 }
+

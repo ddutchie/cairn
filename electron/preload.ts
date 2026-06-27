@@ -394,6 +394,7 @@ const api = {
     stash:    (cwd: string, action: "push" | "pop" | "list") => invoke<unknown>("git:stash", { cwd, action }),
     createPr: (cwd: string, opts: { title: string; body?: string; base?: string }) => invoke<{ url: string; branch: string }>("git:createPr", { cwd, ...opts }),
     prStatus: (cwd: string) => invoke<{ url: string | null; state: string | null; title: string | null } | null>("git:prStatus", { cwd }),
+    discard:  (cwd: string, filePath: string) => invoke<{ ok: boolean }>("git:discard", { cwd, filePath }),
   },
 
   // ── Cairn native agent (pi) ───────────────────

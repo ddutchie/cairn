@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { RefreshCw, GitBranch, GitCommit, ArrowUp, Sparkles, File, Check, X, ChevronRight, ChevronDown } from "lucide-react";
+import { RefreshCw, GitBranch, GitCommit, ArrowUp, Sparkles, File, Check, X, ChevronRight, ChevronDown, GitPullRequest, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -9,6 +9,21 @@ import { Button } from "@/components/ui/button";
 import parseDiff from "parse-diff";
 import { UnifiedFile, PALETTE_DARK, PALETTE_LIGHT } from "./DiffFile";
 import type { ProjectSettings } from "@/types";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuLabel,
+} from "@/components/ui/dropdown";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Tooltip } from "@/components/ui/tooltip";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -79,7 +94,14 @@ export function GitView({ cwd }: GitViewProps) {
   const [commitSubject, setCommitSubject] = useState("");
   const [commitBody, setCommitBody] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [expandedSection, setExpandedSection] = useState<"staged" | "unstaged" | "untracked" | null>("unstaged");
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+    staged: false,
+    unstaged: true,
+    untracked: true,
+  });
+  const toggleSection = useCallback((section: string) => {
+    setExpandedSections((prev) => ({ ...prev, [section]: !prev[section] }));
+  }, []);
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
   const [fileDiffs, setFileDiffs] = useState<Record<string, { added: number; deleted: number; diff: string }>>({});
   const [loadingFile, setLoadingFile] = useState<string | null>(null);
@@ -94,6 +116,14 @@ export function GitView({ cwd }: GitViewProps) {
   const [showPrForm, setShowPrForm] = useState(false);
   const [prUrl, setPrUrl] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const prevHasUnstagedRef = useRef<boolean | null>(null);
+  const prevStagedCountRef = useRef<number | null>(null);
+
+  // Branch switcher states
+  const [branches, setBranches] = useState<Array<{ name: string; current: boolean }>>([]);
+  const [branchSearch, setBranchSearch] = useState("");
+  const [newBranchOpen, setNewBranchOpen] = useState(false);
+  const [newBranchName, setNewBranchName] = useState("");
 
   const fetchStatus = useCallback(async () => {
     if (!window.electron?.git) return;
@@ -106,6 +136,14 @@ export function GitView({ cwd }: GitViewProps) {
     } finally {
       setLoading(false);
     }
+  }, [cwd]);
+
+  const fetchBranches = useCallback(async () => {
+    if (!window.electron?.git) return;
+    try {
+      const res = await window.electron.git.branches(cwd);
+      setBranches(res.branches);
+    } catch { /* best-effort */ }
   }, [cwd]);
 
   const fetchLog = useCallback(async () => {
@@ -131,7 +169,8 @@ export function GitView({ cwd }: GitViewProps) {
     fetchStatus();
     fetchLog();
     fetchPrStatus();
-  }, [fetchStatus, fetchLog, fetchPrStatus]);
+    fetchBranches();
+  }, [fetchStatus, fetchLog, fetchPrStatus, fetchBranches]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -146,11 +185,49 @@ export function GitView({ cwd }: GitViewProps) {
   useEffect(() => {
     if (!status) return;
     const hasUnstaged = status.unstaged.length > 0 || status.untracked.length > 0;
-    if (status.staged.length > 0 && !hasUnstaged && expandedSection !== "staged") {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setExpandedSection("staged");
+    const stagedCount = status.staged.length;
+
+    // Transition condition: staged count became > 0, and unstaged count became 0
+    const transitionToAllStaged =
+      stagedCount > 0 &&
+      !hasUnstaged &&
+      (prevHasUnstagedRef.current === true || prevStagedCountRef.current === 0);
+
+    // Initial load condition: first time we get status, staged > 0, unstaged is 0
+    const isInitialLoadAllStaged =
+      prevHasUnstagedRef.current === null &&
+      stagedCount > 0 &&
+      !hasUnstaged;
+
+    if (transitionToAllStaged || isInitialLoadAllStaged) {
+      setExpandedSections((prev) => ({ ...prev, staged: true }));
     }
-  }, [status, expandedSection]);
+
+    prevHasUnstagedRef.current = hasUnstaged;
+    prevStagedCountRef.current = stagedCount;
+  }, [status]);
+
+  const handleCheckout = useCallback(async (branch: string, create = false) => {
+    if (!window.electron?.git) return;
+    setLoading(true);
+    setError(null);
+    try {
+      await window.electron.git.checkout(cwd, branch, create);
+      await refresh();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }, [cwd, refresh]);
+
+  const handleCreateBranch = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newBranchName.trim()) return;
+    await handleCheckout(newBranchName.trim(), true);
+    setNewBranchOpen(false);
+    setNewBranchName("");
+  }, [newBranchName, handleCheckout]);
 
   // Clear commit form after successful commit
   function clearForm() {
@@ -181,6 +258,34 @@ export function GitView({ cwd }: GitViewProps) {
       setError((e as Error).message);
     }
   }
+
+  async function handleDiscard(paths: string[]) {
+    if (!window.electron?.git) return;
+    const confirmMessage = paths.length === 1
+      ? `Are you sure you want to discard all changes in ${paths[0]}? This cannot be undone.`
+      : `Are you sure you want to discard all changes in these ${paths.length} files? This cannot be undone.`;
+    if (!window.confirm(confirmMessage)) return;
+
+    setLoading(true);
+    setError(null);
+    try {
+      for (const p of paths) {
+        await window.electron.git.discard(cwd, p);
+      }
+      setFileDiffs({});
+      setExpandedFiles(new Set());
+      await fetchStatus();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const filteredBranches = useMemo(() => {
+    if (!branchSearch) return branches;
+    return branches.filter((b) => b.name.toLowerCase().includes(branchSearch.toLowerCase()));
+  }, [branches, branchSearch]);
 
   async function handleCommit() {
     if (!commitSubject.trim() || !window.electron?.git) return;
@@ -360,10 +465,61 @@ export function GitView({ cwd }: GitViewProps) {
       {/* ── Branch bar ──────────────────────────────────────────────────── */}
       {status && (
         <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--border)] bg-[var(--surface-2)] flex-shrink-0">
-          <div className="flex items-center gap-1.5">
-            <GitBranch size={12} className="text-[var(--accent)]" />
-            <span className="text-xs font-semibold text-[var(--text-primary)] font-mono">{status.branch}</span>
-          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="flex items-center gap-1.5 px-2 py-1 rounded text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors border border-[var(--border)] bg-[var(--surface-2)] shadow-sm cursor-pointer">
+                <GitBranch size={12} className="text-[var(--accent)]" />
+                <span className="font-mono truncate max-w-[120px]">{status.branch}</span>
+                <ChevronDown size={10} className="text-[var(--text-tertiary)]" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-56 max-h-[300px] overflow-y-auto flex flex-col">
+              <DropdownMenuLabel className="flex items-center justify-between pb-1">
+                <span>Branches</span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setNewBranchOpen(true);
+                  }}
+                  className="text-[0.65rem] text-[var(--accent)] hover:underline normal-case font-normal cursor-pointer"
+                >
+                  New Branch
+                </button>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <div className="px-2 py-1.5">
+                <input
+                  type="text"
+                  placeholder="Filter branches..."
+                  value={branchSearch}
+                  onChange={(e) => setBranchSearch(e.target.value)}
+                  onClick={(e) => e.stopPropagation()}
+                  className="w-full text-xs px-2 py-1 border border-[var(--border)] rounded bg-[var(--surface)] text-[var(--text-primary)] focus:outline-none"
+                />
+              </div>
+              <DropdownMenuSeparator />
+              <div className="overflow-y-auto max-h-[180px] flex-1">
+                {filteredBranches.map((b) => (
+                  <DropdownMenuItem
+                    key={b.name}
+                    onClick={() => handleCheckout(b.name)}
+                    className="flex items-center justify-between font-mono text-xs"
+                  >
+                    <span className={cn("truncate flex-1", b.current && "font-bold text-[var(--accent)]")}>
+                      {b.name}
+                    </span>
+                    {b.current && <Check size={12} className="text-[var(--accent)] flex-shrink-0" />}
+                  </DropdownMenuItem>
+                ))}
+                {filteredBranches.length === 0 && (
+                  <div className="px-2.5 py-1.5 text-xs text-[var(--text-tertiary)] italic">
+                    No branches found
+                  </div>
+                )}
+              </div>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
           {(Number(status.ahead) > 0 || Number(status.behind) > 0) && (
             <div className="flex items-center gap-2 text-[0.65rem] text-[var(--text-tertiary)]">
               {Number(status.ahead) > 0 && (
@@ -379,37 +535,50 @@ export function GitView({ cwd }: GitViewProps) {
             </div>
           )}
           <div className="flex-1" />
-          <button
-            onClick={handlePush}
-            disabled={pushing || !status || (status.hasUpstream && Number(status.ahead) === 0)}
-            className="px-2 py-0.5 rounded text-[0.65rem] font-semibold text-[var(--accent)] hover:bg-[var(--accent)] hover:text-[var(--on-accent)] border border-[var(--accent)] transition-colors disabled:opacity-50"
-          >
-            <ArrowUp size={10} className="inline mr-0.5" />
-            {pushing ? "Pushing..." : "Push"}
-          </button>
-          {prStatus && (
+          <Tooltip content="Push committed changes to remote repository">
             <button
-              onClick={() => { if (prStatus.url) window.electron?.openExternal(prStatus.url); }}
-              className="px-2 py-0.5 rounded text-[0.65rem] font-semibold text-[var(--accent)] hover:bg-[var(--accent)] hover:text-[var(--on-accent)] border border-[var(--accent)] transition-colors"
+              onClick={handlePush}
+              disabled={pushing || !status || (status.hasUpstream && Number(status.ahead) === 0)}
+              className="px-2 py-0.5 rounded text-[0.65rem] font-semibold text-[var(--accent)] hover:bg-[var(--accent)] hover:text-[var(--on-accent)] border border-[var(--accent)] transition-colors disabled:opacity-50 cursor-pointer"
             >
-              View PR ({prStatus.state})
+              <ArrowUp size={10} className="inline mr-0.5" />
+              {pushing ? "Pushing..." : "Push"}
             </button>
+          </Tooltip>
+          {prStatus && (
+            <Tooltip content={prStatus.title || "Open pull request in browser"}>
+              <button
+                onClick={() => { if (prStatus.url) window.electron?.openExternal(prStatus.url); }}
+                className="flex items-center gap-1 px-2 py-0.5 rounded text-[0.65rem] font-semibold text-[var(--accent)] hover:bg-[var(--accent)] hover:text-[var(--on-accent)] border border-[var(--accent)] transition-colors cursor-pointer"
+              >
+                <GitPullRequest size={10} />
+                <span>
+                  {prStatus.url?.match(/pull\/(\d+)/)?.[1]
+                    ? `#${prStatus.url.match(/pull\/(\d+)/)?.[1]}`
+                    : "PR"}
+                  {prStatus.state ? ` (${prStatus.state.toLowerCase()})` : ""}
+                </span>
+              </button>
+            </Tooltip>
           )}
           {!prStatus && status.hasUpstream && Number(status.ahead) === 0 && !hasChanges && status.branch !== status.defaultBranch && (
-            <button
-              onClick={() => { setShowPrForm((v) => !v); setPrUrl(null); }}
-              className="px-2 py-0.5 rounded text-[0.65rem] font-semibold text-[var(--accent)] hover:bg-[var(--accent)] hover:text-[var(--on-accent)] border border-[var(--accent)] transition-colors"
-            >
-              {showPrForm ? "Cancel" : "Create PR"}
-            </button>
+            <Tooltip content={showPrForm ? "Close pull request creation form" : "Create pull request on GitHub"}>
+              <button
+                onClick={() => { setShowPrForm((v) => !v); setPrUrl(null); }}
+                className="px-2 py-0.5 rounded text-[0.65rem] font-semibold text-[var(--accent)] hover:bg-[var(--accent)] hover:text-[var(--on-accent)] border border-[var(--accent)] transition-colors cursor-pointer"
+              >
+                {showPrForm ? "Cancel" : "Create PR"}
+              </button>
+            </Tooltip>
           )}
-          <button
-            onClick={refresh}
-            className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors"
-            title="Refresh"
-          >
-            <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
-          </button>
+          <Tooltip content="Refresh git status and recent commits">
+            <button
+              onClick={refresh}
+              className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors cursor-pointer"
+            >
+              <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
+            </button>
+          </Tooltip>
         </div>
       )}
 
@@ -456,7 +625,7 @@ export function GitView({ cwd }: GitViewProps) {
           </span>
           <button
             onClick={() => { window.electron?.openExternal(prUrl); }}
-            className="text-[0.65rem] text-[var(--accent)] hover:underline flex-shrink-0"
+            className="text-[0.65rem] text-[var(--accent)] hover:underline flex-shrink-0 hover:scale-102"
           >
             Open
           </button>
@@ -498,33 +667,36 @@ export function GitView({ cwd }: GitViewProps) {
               <FileSection
                 label="Staged"
                 count={status.staged.length}
-                expanded={expandedSection === "staged"}
-                onToggle={() => setExpandedSection(expandedSection === "staged" ? null : "staged")}
+                expanded={expandedSections.staged}
+                onToggle={() => toggleSection("staged")}
                 action={
-                  <button
-                    onClick={() => handleUnstage()}
-                    className="text-[0.65rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] px-2 py-0.5 rounded hover:bg-[var(--surface-3)] transition-colors"
-                  >
-                    Unstage all
-                  </button>
+                  <Tooltip content="Unstage all currently staged changes">
+                    <button
+                      onClick={() => handleUnstage()}
+                      className="text-[0.65rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] px-2 py-0.5 rounded hover:bg-[var(--surface-3)] transition-colors cursor-pointer"
+                    >
+                      Unstage all
+                    </button>
+                  </Tooltip>
                 }
               >
                 {status.staged.map((file) => {
                   const key = diffKey(file.path, true);
                   return (
-                  <FileRow
-                    key={file.path}
-                    path={file.path}
-                    status={file.status}
-                    onAction={() => handleUnstage([file.path])}
-                    actionLabel="-"
-                    actionColor="var(--danger)"
-                    stat={fileDiffs[key]}
-                    rawDiff={fileDiffs[key]?.diff ?? ""}
-                    expanded={expandedFiles.has(key)}
-                    loading={loadingFile === key}
-                    onToggle={() => handleToggleFile(file.path, true)}
-                  />
+                    <FileRow
+                      key={file.path}
+                      path={file.path}
+                      status={file.status}
+                      onAction={() => handleUnstage([file.path])}
+                      onDiscard={() => handleDiscard([file.path])}
+                      actionLabel="-"
+                      actionColor="var(--danger)"
+                      stat={fileDiffs[key]}
+                      rawDiff={fileDiffs[key]?.diff ?? ""}
+                      expanded={expandedFiles.has(key)}
+                      loading={loadingFile === key}
+                      onToggle={() => handleToggleFile(file.path, true)}
+                    />
                   );
                 })}
               </FileSection>
@@ -535,33 +707,46 @@ export function GitView({ cwd }: GitViewProps) {
               <FileSection
                 label="Modified"
                 count={status.unstaged.length}
-                expanded={expandedSection === "unstaged"}
-                onToggle={() => setExpandedSection(expandedSection === "unstaged" ? null : "unstaged")}
+                expanded={expandedSections.unstaged}
+                onToggle={() => toggleSection("unstaged")}
                 action={
-                  <button
-                    onClick={() => handleStage(status.unstaged.map((f) => f.path))}
-                    className="text-[0.65rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] px-2 py-0.5 rounded hover:bg-[var(--surface-3)] transition-colors"
-                  >
-                    Stage all
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <Tooltip content="Discard all unstaged changes in modified files">
+                      <button
+                        onClick={() => handleDiscard(status.unstaged.map((f) => f.path))}
+                        className="text-[0.65rem] text-[var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] px-2 py-0.5 rounded transition-colors cursor-pointer"
+                      >
+                        Discard all
+                      </button>
+                    </Tooltip>
+                    <Tooltip content="Stage all modified files">
+                      <button
+                        onClick={() => handleStage(status.unstaged.map((f) => f.path))}
+                        className="text-[0.65rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] px-2 py-0.5 rounded hover:bg-[var(--surface-3)] transition-colors cursor-pointer"
+                      >
+                        Stage all
+                      </button>
+                    </Tooltip>
+                  </div>
                 }
               >
                 {status.unstaged.map((file) => {
                   const key = diffKey(file.path, false);
                   return (
-                  <FileRow
-                    key={file.path}
-                    path={file.path}
-                    status={file.status}
-                    onAction={() => handleStage([file.path])}
-                    actionLabel="+"
-                    actionColor="var(--success)"
-                    stat={fileDiffs[key]}
-                    rawDiff={fileDiffs[key]?.diff ?? ""}
-                    expanded={expandedFiles.has(key)}
-                    loading={loadingFile === key}
-                    onToggle={() => handleToggleFile(file.path, false)}
-                  />
+                    <FileRow
+                      key={file.path}
+                      path={file.path}
+                      status={file.status}
+                      onAction={() => handleStage([file.path])}
+                      onDiscard={() => handleDiscard([file.path])}
+                      actionLabel="+"
+                      actionColor="var(--success)"
+                      stat={fileDiffs[key]}
+                      rawDiff={fileDiffs[key]?.diff ?? ""}
+                      expanded={expandedFiles.has(key)}
+                      loading={loadingFile === key}
+                      onToggle={() => handleToggleFile(file.path, false)}
+                    />
                   );
                 })}
               </FileSection>
@@ -572,33 +757,46 @@ export function GitView({ cwd }: GitViewProps) {
               <FileSection
                 label="Untracked"
                 count={status.untracked.length}
-                expanded={expandedSection === "untracked"}
-                onToggle={() => setExpandedSection(expandedSection === "untracked" ? null : "untracked")}
+                expanded={expandedSections.untracked}
+                onToggle={() => toggleSection("untracked")}
                 action={
-                  <button
-                    onClick={() => handleStage(status.untracked.map((f) => f.path))}
-                    className="text-[0.65rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] px-2 py-0.5 rounded hover:bg-[var(--surface-3)] transition-colors"
-                  >
-                    Stage all
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <Tooltip content="Permanently delete all untracked files">
+                      <button
+                        onClick={() => handleDiscard(status.untracked.map((f) => f.path))}
+                        className="text-[0.65rem] text-[var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] px-2 py-0.5 rounded transition-colors cursor-pointer"
+                      >
+                        Clean all
+                      </button>
+                    </Tooltip>
+                    <Tooltip content="Stage all untracked files">
+                      <button
+                        onClick={() => handleStage(status.untracked.map((f) => f.path))}
+                        className="text-[0.65rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] px-2 py-0.5 rounded hover:bg-[var(--surface-3)] transition-colors cursor-pointer"
+                      >
+                        Stage all
+                      </button>
+                    </Tooltip>
+                  </div>
                 }
               >
                 {status.untracked.map((file) => {
                   const key = diffKey(file.path, false);
                   return (
-                  <FileRow
-                    key={file.path}
-                    path={file.path}
-                    status={file.status}
-                    onAction={() => handleStage([file.path])}
-                    actionLabel="+"
-                    actionColor="var(--success)"
-                    stat={fileDiffs[key]}
-                    rawDiff={fileDiffs[key]?.diff ?? ""}
-                    expanded={expandedFiles.has(key)}
-                    loading={loadingFile === key}
-                    onToggle={() => handleToggleFile(file.path, false)}
-                  />
+                    <FileRow
+                      key={file.path}
+                      path={file.path}
+                      status={file.status}
+                      onAction={() => handleStage([file.path])}
+                      onDiscard={() => handleDiscard([file.path])}
+                      actionLabel="+"
+                      actionColor="var(--success)"
+                      stat={fileDiffs[key]}
+                      rawDiff={fileDiffs[key]?.diff ?? ""}
+                      expanded={expandedFiles.has(key)}
+                      loading={loadingFile === key}
+                      onToggle={() => handleToggleFile(file.path, false)}
+                    />
                   );
                 })}
               </FileSection>
@@ -623,23 +821,29 @@ export function GitView({ cwd }: GitViewProps) {
               className="w-full rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-sm px-3 py-1.5 font-mono focus:outline-none resize-y"
             />
             <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={handleGenerate}
-                disabled={generating || stagedCount === 0}
-              >
-                <Sparkles size={11} className={cn(generating && "animate-pulse")} />
-                {generating ? "Generating..." : "Generate"}
-              </Button>
+              <Tooltip content="Generate AI commit message based on staged changes">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={handleGenerate}
+                  disabled={generating || stagedCount === 0}
+                  className="cursor-pointer"
+                >
+                  <Sparkles size={11} className={cn(generating && "animate-pulse")} />
+                  {generating ? "Generating..." : "Generate"}
+                </Button>
+              </Tooltip>
               <div className="flex-1" />
-              <Button
-                size="sm"
-                onClick={handleCommit}
-                disabled={!commitSubject.trim() || committing}
-              >
-                {committing ? "Committing..." : "Commit"}
-              </Button>
+              <Tooltip content="Commit staged changes to local repository branch">
+                <Button
+                  size="sm"
+                  onClick={handleCommit}
+                  disabled={!commitSubject.trim() || committing}
+                  className="cursor-pointer"
+                >
+                  {committing ? "Committing..." : "Commit"}
+                </Button>
+              </Tooltip>
             </div>
           </div>
         )}
@@ -668,6 +872,36 @@ export function GitView({ cwd }: GitViewProps) {
           </div>
         )}
       </div>
+
+      {/* ── New Branch Dialog ──────────────────────────────────────────────── */}
+      <Dialog open={newBranchOpen} onOpenChange={setNewBranchOpen}>
+        <DialogContent size="sm">
+          <DialogHeader>
+            <DialogTitle>Create New Branch</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleCreateBranch} className="p-4 space-y-4">
+            <div className="space-y-2">
+              <label htmlFor="branch-name" className="text-xs text-[var(--text-secondary)]">Branch Name</label>
+              <input
+                id="branch-name"
+                value={newBranchName}
+                onChange={(e) => setNewBranchName(e.target.value)}
+                placeholder="e.g. feature/my-new-feature"
+                className="w-full rounded border border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-primary)] text-sm px-3 py-1.5 font-mono focus:outline-none"
+                autoFocus
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="ghost" size="sm" onClick={() => setNewBranchOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" size="sm" disabled={!newBranchName.trim()}>
+                Create & Checkout
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -693,17 +927,16 @@ function FileSection({
         {expanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
         <span className="text-[0.65rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)]">{label}</span>
         <span className="text-[0.65rem] text-[var(--text-tertiary)] opacity-60">{count}</span>
-        {!expanded && action && <div className="ml-auto">{action}</div>}
+        {action && (
+          <div className="ml-auto flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+            {action}
+          </div>
+        )}
       </div>
       {expanded && (
-        <>
-          <div className="divide-y divide-[var(--border-subtle)]">{children}</div>
-          {action && (
-            <div className="flex justify-end px-4 py-1 border-b border-[var(--border-subtle)]">
-              {action}
-            </div>
-          )}
-        </>
+        <div className="divide-y divide-[var(--border-subtle)] border-b border-[var(--border-subtle)]">
+          {children}
+        </div>
       )}
     </div>
   );
@@ -711,7 +944,7 @@ function FileSection({
 
 function FileRow({
   path, status, onAction, actionLabel, actionColor,
-  stat, rawDiff, expanded, loading, onToggle,
+  stat, rawDiff, expanded, loading, onToggle, onDiscard,
 }: {
   path: string;
   status: string;
@@ -723,6 +956,7 @@ function FileRow({
   expanded: boolean;
   loading: boolean;
   onToggle: () => void;
+  onDiscard: () => void;
 }) {
   const hasDiffStats = stat && (stat.added > 0 || stat.deleted > 0);
   return (
@@ -731,14 +965,26 @@ function FileRow({
         className="flex items-center gap-2 px-6 py-1.5 hover:bg-[var(--surface-2)] transition-colors group cursor-pointer"
         onClick={onToggle}
       >
-        <button
-          onClick={(e) => { e.stopPropagation(); onAction(); }}
-          className="w-4 h-4 rounded flex items-center justify-center text-[0.65rem] font-bold opacity-0 group-hover:opacity-100 transition-opacity hover:scale-110"
-          style={{ color: actionColor, backgroundColor: `color-mix(in srgb, ${actionColor} 15%, transparent)` }}
-          title={actionLabel === "+" ? "Stage" : "Unstage"}
-        >
-          {actionLabel}
-        </button>
+        <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
+          <Tooltip content={actionLabel === "+" ? "Stage changes in this file" : "Unstage changes in this file"}>
+            <button
+              onClick={onAction}
+              className="w-4 h-4 rounded flex items-center justify-center text-[0.65rem] font-bold hover:scale-110 transition-transform cursor-pointer"
+              style={{ color: actionColor, backgroundColor: `color-mix(in srgb, ${actionColor} 15%, transparent)` }}
+            >
+              {actionLabel}
+            </button>
+          </Tooltip>
+          <Tooltip content="Discard all changes in this file">
+            <button
+              onClick={onDiscard}
+              className="w-4 h-4 rounded flex items-center justify-center text-[var(--danger)] hover:scale-110 transition-transform cursor-pointer"
+              style={{ backgroundColor: `color-mix(in srgb, var(--danger) 15%, transparent)` }}
+            >
+              <RotateCcw size={10} />
+            </button>
+          </Tooltip>
+        </div>
         <File size={9} className="text-[var(--text-tertiary)] flex-shrink-0 opacity-50" />
         <span className="text-[0.714rem] text-[var(--text-primary)] font-mono truncate flex-1">{path}</span>
         {hasDiffStats && (
