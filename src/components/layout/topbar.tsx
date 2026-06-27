@@ -40,6 +40,7 @@ export function Topbar() {
     projects,
     hiddenViews,
     toggleSidebar,
+    lastContentView,
   } = useCairnStore(useShallow((s) => ({
     activeWorkspaceId: s.activeWorkspaceId,
     activeProjectId:   s.activeProjectId,
@@ -51,6 +52,7 @@ export function Topbar() {
     projects:          s.projects,
     hiddenViews:       s.hiddenViews,
     toggleSidebar:     s.toggleSidebar,
+    lastContentView:   s.lastContentView,
   })));
 
   const workspace = useMemo(
@@ -184,9 +186,9 @@ export function Topbar() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={toggleChat}
+              onClick={activeView === "chat" ? () => setView(lastContentView) : toggleChat}
               className={cn(
-                chatOpen && "text-[var(--accent)] bg-[var(--accent-dim)]"
+                (chatOpen || activeView === "chat") && "text-[var(--accent)] bg-[var(--accent-dim)]"
               )}
             >
               <MessageSquare size={13} />

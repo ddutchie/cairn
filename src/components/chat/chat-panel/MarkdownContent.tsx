@@ -79,13 +79,15 @@ function preprocessMarkdown(
 
 /** Markdown renderer for assistant chat messages */
 export function MarkdownContent({ content, isUser }: { content: string; isUser?: boolean }) {
-  const { notes, cards, projects, activeProjectId, setView, openEditorFile } = useCairnStore(useShallow((s) => ({
+  const { notes, cards, projects, activeProjectId, setView, openEditorFile, activeView, setActivePreviewItem } = useCairnStore(useShallow((s) => ({
     notes: s.notes,
     cards: s.cards,
     projects: s.projects,
     activeProjectId: s.activeProjectId,
     setView: s.setView,
     openEditorFile: s.openEditorFile,
+    activeView: s.activeView,
+    setActivePreviewItem: s.setActivePreviewItem,
   })));
 
   const activeProject = useMemo(() => projects.find((p) => p.id === activeProjectId), [projects, activeProjectId]);
@@ -147,8 +149,12 @@ export function MarkdownContent({ content, isUser }: { content: string; isUser?:
               <button
                 type="button"
                 onClick={() => {
-                  setView("notes");
-                  setTimeout(() => window.dispatchEvent(CairnEvents.selectNote(noteId)), 50);
+                  if (activeView === "chat") {
+                    setActivePreviewItem({ type: "note", id: noteId });
+                  } else {
+                    setView("notes");
+                    setTimeout(() => window.dispatchEvent(CairnEvents.selectNote(noteId)), 50);
+                  }
                 }}
                 className={linkClass}
               >
@@ -162,8 +168,12 @@ export function MarkdownContent({ content, isUser }: { content: string; isUser?:
               <button
                 type="button"
                 onClick={() => {
-                  setView("board");
-                  setTimeout(() => window.dispatchEvent(CairnEvents.openCard(cardId)), 50);
+                  if (activeView === "chat") {
+                    setActivePreviewItem({ type: "task", id: cardId });
+                  } else {
+                    setView("board");
+                    setTimeout(() => window.dispatchEvent(CairnEvents.openCard(cardId)), 50);
+                  }
                 }}
                 className={linkClass}
               >

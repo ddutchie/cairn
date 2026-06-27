@@ -57,6 +57,7 @@ export function ProjectOverview() {
     const text = chatInput.trim();
     if (!text) return;
     setChatInput("");
+    setView("chat");
     window.dispatchEvent(CairnEvents.openChat(text, true));
   }
 

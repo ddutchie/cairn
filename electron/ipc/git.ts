@@ -433,4 +433,103 @@ export function registerGitHandlers(db: Database): void {
       return { ok: true };
     })
   );
+
+  // ── git discard (discard changes in a file) ─────────────────────────────
+  registerIpcHandle("git:discard", (_e, { cwd, filePath }: { cwd: string; filePath: string }) =>
+    handle(async () => {
+      assertWithinCodeDirectory(db, cwd);
+      if (!isSafePathspec(filePath) || !isPathWithinCwd(cwd, filePath)) {
+        throw new Error(`Access denied: path is outside the code directory: ${filePath}`);
+      }
+
+      const fullPath = path.resolve(cwd, filePath);
+      const literalFile = `:(literal)${filePath}`;
+
+      // Check status to see if it is staged or untracked
+      let statusResult = await gitSafe(["status", "--porcelain=v1", "-z", "--", literalFile], cwd);
+      let output = statusResult.stdout;
+
+      let x = " ";
+      let y = " ";
+      let srcPath = "";
+
+      if (output) {
+        const parts = output.split("\0");
+        const entry = parts[0];
+        if (entry && entry.length >= 3) {
+          x = entry[0];
+          y = entry[1];
+          if (x === "R" || x === "C") {
+            srcPath = parts[1] || "";
+          }
+        }
+      }
+
+      const isStaged = x !== " " && x !== "?";
+      const isUnstaged = y !== " " && y !== "?";
+      const isPartiallyStaged = isStaged && isUnstaged;
+
+      if (isStaged && !isPartiallyStaged) {
+        // File is staged only (not partially staged), reset it first.
+        await git(["reset", "HEAD", "--", literalFile], cwd);
+        if (srcPath) {
+          await git(["reset", "HEAD", "--", `:(literal)${srcPath}`], cwd);
+        }
+        // Re-run status check after reset so the decision below is based on the updated state
+        statusResult = await gitSafe(["status", "--porcelain=v1", "-z", "--", literalFile], cwd);
+        output = statusResult.stdout;
+
+        x = " ";
+        y = " ";
+        if (output) {
+          const parts = output.split("\0");
+          const entry = parts[0];
+          if (entry && entry.length >= 3) {
+            x = entry[0];
+            y = entry[1];
+          }
+        }
+      }
+
+      if (x === "?" && y === "?") {
+        // Untracked file: delete it
+        if (fs.existsSync(fullPath)) {
+          fs.rmSync(fullPath, { force: true, recursive: true });
+        }
+      } else {
+        // Tracked file: checkout/restore it
+        await git(["checkout", "--", literalFile], cwd);
+      }
+
+      if (srcPath) {
+        const fullSrcPath = path.resolve(cwd, srcPath);
+        const literalSrcFile = `:(literal)${srcPath}`;
+
+        const srcStatusResult = await gitSafe(["status", "--porcelain=v1", "-z", "--", literalSrcFile], cwd);
+        const srcOutput = srcStatusResult.stdout;
+        let sx = " ";
+        let sy = " ";
+
+        if (srcOutput) {
+          const parts = srcOutput.split("\0");
+          const entry = parts[0];
+          if (entry && entry.length >= 3) {
+            sx = entry[0];
+            sy = entry[1];
+          }
+        }
+
+        if (sx === "?" && sy === "?") {
+          if (fs.existsSync(fullSrcPath)) {
+            fs.rmSync(fullSrcPath, { force: true, recursive: true });
+          }
+        } else {
+          await git(["checkout", "--", literalSrcFile], cwd);
+        }
+      }
+
+      return { ok: true };
+    })
+  );
 }
+

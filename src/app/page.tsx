@@ -19,8 +19,9 @@ import { SearchPanel } from "@/components/search/search-panel";
 import { SettingsView } from "@/components/settings/settings-view";
 import { AgentView } from "@/components/agent/AgentView";
 import { Onboarding } from "@/components/onboarding";
-import { RightPanel } from "@/components/layout/RightPanel";
+import { UnifiedChatPanel } from "@/components/chat/UnifiedChatPanel";
 import { UpdateBanner, ErrorToasts } from "@/components/layout/app-chrome";
+import { cn } from "@/lib/utils";
 
 export default function Home() {
   const {
@@ -36,6 +37,9 @@ export default function Home() {
     createNote,
     activeProjectId,
     hiddenViews,
+    chatPanelWidth,
+    chatPanelResizing,
+    lastContentView,
   } = useCairnStore(useShallow((s) => ({
     hydrate:             s.hydrate,
     hydrateFromElectron: s.hydrateFromElectron,
@@ -49,6 +53,9 @@ export default function Home() {
     createNote:          s.createNote,
     activeProjectId:     s.activeProjectId,
     hiddenViews:         s.hiddenViews,
+    chatPanelWidth:      s.chatPanelWidth,
+    chatPanelResizing:   s.chatPanelResizing,
+    lastContentView:     s.lastContentView,
   })));
   // All navigable views in shortcut order; overview=⌘1, notes=⌘2, then visible extras
   const ORDERED_VIEWS = (["board", "flow", "agent", "graph", "insights"] as const).filter(
@@ -187,7 +194,13 @@ export default function Home() {
       else if (mod && e.shiftKey && key.toLowerCase() === "f") { if (activeView !== "agent") { e.preventDefault(); toggleSearch(); } }
       else if (mod && key === "/") {
         e.preventDefault();
-        if (!hiddenViews.has("chat")) toggleChat();
+        if (!hiddenViews.has("chat")) {
+          if (activeView === "chat") {
+            setView(lastContentView);
+          } else {
+            toggleChat();
+          }
+        }
       }
       else if (mod && key === "\\") { e.preventDefault(); toggleSidebar(); }
       else if (mod && key === "1") { e.preventDefault(); setView("overview"); }
@@ -233,7 +246,7 @@ export default function Home() {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("cairn:open-chat", handleOpenChat);
     };
-  }, [toggleSearch, toggleChat, toggleSidebar, setView, activeProjectId, createNote, chatOpen, hiddenViews, ORDERED_VIEWS, activeView]);
+  }, [toggleSearch, toggleChat, toggleSidebar, setView, activeProjectId, createNote, chatOpen, hiddenViews, ORDERED_VIEWS, activeView, lastContentView]);
 
   // Auto-activate Cairn Agent tab and auto-open right panel drawer if we switch to Agent view
   useEffect(() => {
@@ -304,29 +317,34 @@ export default function Home() {
         <Sidebar />
 
         {/* Main content area */}
-        <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
+        <div
+          className={cn(
+            "flex flex-col flex-1 min-w-0 overflow-hidden",
+            !chatPanelResizing && "transition-[margin-right] duration-300 ease-in-out"
+          )}
+          style={{
+            marginRight: (activeView !== "chat" && chatOpen) ? `${chatPanelWidth}px` : "0px",
+          }}
+        >
           <Topbar />
           <div className="flex flex-1 min-h-0 overflow-hidden">
-            {activeView === "overview"  && <ProjectOverview />}
-            {activeView === "notes"     && <NotesView />}
-            {activeView === "board"     && <KanbanBoard />}
-            {activeView === "flow"      && <IdeaFlowView />}
-           {activeView === "graph"     && <KnowledgeGraphView />}
-           {activeView === "insights"  && <InsightsView />}
-           {activeView === "settings"  && <SettingsView />}
+            {lastContentView === "overview"  && <ProjectOverview />}
+            {lastContentView === "notes"     && <NotesView />}
+            {lastContentView === "board"     && <KanbanBoard />}
+            {lastContentView === "flow"      && <IdeaFlowView />}
+           {lastContentView === "graph"     && <KnowledgeGraphView />}
+           {lastContentView === "insights"  && <InsightsView />}
+           {lastContentView === "settings"  && <SettingsView />}
            {/* AgentView stays mounted to preserve terminal sessions and agent state.
                CSS-hidden when inactive so xterm + AgentChatPane refs survive view switches. */}
-           <div className={activeView === "agent" ? "contents" : "hidden"}>
+           <div className={lastContentView === "agent" ? "contents" : "hidden"}>
              <AgentView />
            </div>
           </div>
         </div>
 
-        {/* Right panel drawer (hosts both completions Chat and Agent sessions).
-            CSS-hidden instead of unmounted so panel state survives open/close. */}
-        <div className={chatOpen ? "contents" : "hidden"}>
-          <RightPanel prefill={chatPrefill} onPrefillConsumed={() => setChatPrefill(null)} />
-        </div>
+        {/* Unified Chat Panel (sidebar, center, or popout depending on state) */}
+        <UnifiedChatPanel prefill={chatPrefill} onPrefillConsumed={() => setChatPrefill(null)} />
 
         {/* Global search overlay */}
         {searchOpen && <SearchPanel />}
