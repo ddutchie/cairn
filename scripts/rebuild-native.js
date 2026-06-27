@@ -64,6 +64,39 @@ const rebuildBin = process.platform === "win32"
 
 run(`"${rebuildBin}" -f -o better-sqlite3`);
 copyBinary(path.join(root, "electron-native", "better_sqlite3_electron.node"), "Electron");
-run(`"${rebuildBin}" -f -o node-pty`);
+// Step 3: Rebuild node-pty for Electron ABI
+// On Windows GHA runners, node-pty compilation via MSVC can hang indefinitely.
+// Wrap with a timeout and retry once.
+const NODE_PTY_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+const NODE_PTY_MAX_RETRIES = 2;
+
+function rebuildNodePty() {
+  const cmd = `"${rebuildBin}" -f -o node-pty`;
+  for (let attempt = 1; attempt <= NODE_PTY_MAX_RETRIES; attempt++) {
+    console.log(`\n> ${cmd}  (attempt ${attempt}/${NODE_PTY_MAX_RETRIES})`);
+    try {
+      execSync(cmd, {
+        stdio: "inherit",
+        cwd: root,
+        timeout: NODE_PTY_TIMEOUT_MS,
+      });
+      return; // success
+    } catch (err) {
+      const timedOut = err.killed || (err.signal === "SIGTERM");
+      if (timedOut && attempt < NODE_PTY_MAX_RETRIES) {
+        console.warn(`\n⚠ node-pty rebuild timed out after ${NODE_PTY_TIMEOUT_MS / 1000}s — retrying...`);
+        // Clean up any stale build artifacts before retry
+        const nodePtyBuild = path.join(root, "node_modules", "node-pty", "build");
+        try { fs.rmSync(nodePtyBuild, { recursive: true, force: true }); } catch {}
+      } else if (timedOut) {
+        throw new Error(`node-pty rebuild timed out after ${NODE_PTY_MAX_RETRIES} attempts`);
+      } else {
+        throw err;
+      }
+    }
+  }
+}
+
+rebuildNodePty();
 
 console.log("\nNative rebuild complete.");

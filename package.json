@@ -18,7 +18,7 @@
     "compile:watch": "concurrently -n main,embeddings,runtime \"esbuild electron/main.ts electron/preload.ts --bundle --platform=node --target=node22 --external:electron --external:better-sqlite3 --external:node-pty --external:@huggingface/transformers --external:onnxruntime-node --outdir=dist-electron --format=cjs --watch\" \"esbuild electron/embeddings/server.ts --bundle --platform=node --target=node22 --external:@huggingface/transformers --external:onnxruntime-node --outfile=dist-electron/embeddings-server.bundle.js --format=cjs --watch\" \"esbuild electron/runtime/server.ts --bundle --platform=node --target=node22 --external:@huggingface/transformers --external:onnxruntime-node --outfile=dist-electron/runtime-server.bundle.js --format=cjs --watch\"",
     "build:embeddings-binary": "node scripts/build-embeddings-binary.js",
     "generate-tray-icon": "node scripts/generate-tray-icon.js",
-    "postinstall": "electron-builder install-app-deps",
+    "postinstall": "node -e \"if(!process.env.CI){require('child_process').execSync('electron-builder install-app-deps',{stdio:'inherit'})}else{console.log('Skipping install-app-deps in CI (handled by npm run rebuild)')}\"",
     "rebuild": "node scripts/rebuild-native.js",
     "build:mcp-binary": "node scripts/build-mcp-binary.js",
     "lint": "eslint",
