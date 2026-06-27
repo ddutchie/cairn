@@ -89,21 +89,27 @@ describe("createUISlice", () => {
 
     // Set a baseline
     state.setView("board");
+    state.setActivePreviewItem({ type: "note", id: "note-1" });
     expect(state.activeView).toBe("board");
     expect(state.lastContentView).toBe("board");
+    expect(state.activePreviewItem).toEqual({ type: "note", id: "note-1" });
 
     // Set active project
     state.setActiveProject("p1");
     expect(state.activeView).toBe("overview");
     expect(state.lastContentView).toBe("overview");
+    expect(state.activePreviewItem).toBeNull();
 
-    // Navigate back to board
+    // Navigate back to board and set a preview item
     state.setView("board");
+    state.setActivePreviewItem({ type: "task", id: "card-1" });
     expect(state.lastContentView).toBe("board");
+    expect(state.activePreviewItem).toEqual({ type: "task", id: "card-1" });
 
     // Set active workspace
     state.setActiveWorkspace("w2");
     expect(state.activeView).toBe("overview");
     expect(state.lastContentView).toBe("overview");
+    expect(state.activePreviewItem).toBeNull();
   });
 });
