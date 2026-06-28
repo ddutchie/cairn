@@ -201,7 +201,9 @@ export function Sidebar() {
             sidebarCollapsed ? "opacity-0 pointer-events-none absolute inset-x-0 top-0 h-0 overflow-hidden" : "opacity-100"
           )}
         >
-          <WorkspaceSwitcher workspace={workspace} onCollapse={toggleSidebar} />
+          <div data-tutorial="workspace-switcher">
+            <WorkspaceSwitcher workspace={workspace} onCollapse={toggleSidebar} />
+          </div>
 
           {/* Quick actions */}
           <div className="flex items-center gap-0.5 px-2 h-9 border-b border-[var(--border-subtle)] flex-shrink-0">
@@ -224,7 +226,7 @@ export function Sidebar() {
           </div>
 
           {/* Projects list */}
-          <nav className="flex-1 overflow-y-auto py-2 min-h-0">
+          <nav data-tutorial="projects-list" className="flex-1 overflow-y-auto py-2 min-h-0">
             <div className="flex items-center justify-between px-3 mb-1">
               <span className="text-[0.714rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)]">Projects</span>
               <Tooltip content="New project">

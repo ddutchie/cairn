@@ -18,14 +18,14 @@ import type {
 } from "@/types";
 import { storage } from "@/lib/storage";
 import { historyManager } from "@/lib/history";
-import { isOwnNoteWrite } from "./ipc";
+import { isOwnNoteWrite, isAiNoteWrite } from "./ipc";
 import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KEY, ACTIVE_PROJECT_KEY, CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY } from "@/lib/constants";
 import { MIN_NOTES_SIDEBAR_WIDTH, MAX_NOTES_SIDEBAR_WIDTH } from "./slices/ui";
 
 // ── Slice imports ─────────────────────────────────────────────────────────────
 import { createUISlice } from "./slices/ui";
 import type { UISlice, AIConfig, AgentConfig, Theme, ToggleableView } from "./slices/ui";
-import { applyTheme, THEME_KEY, applyFontScale, FONT_SCALE_KEY, DEFAULT_FONT_SCALE, HIDDEN_VIEWS_KEY, MIN_CHAT_PANEL_WIDTH, MAX_CHAT_PANEL_WIDTH } from "./slices/ui";
+import { applyTheme, THEME_KEY, applyFontScale, FONT_SCALE_KEY, DEFAULT_FONT_SCALE, HIDDEN_VIEWS_KEY, SEEN_FEATURES_KEY, MIN_CHAT_PANEL_WIDTH, MAX_CHAT_PANEL_WIDTH } from "./slices/ui";
 import type { FontScale } from "./slices/ui";
 import { createWorkspaceSlice } from "./slices/workspace";
 import type { WorkspaceSlice } from "./slices/workspace";
@@ -203,6 +203,11 @@ export const useCairnStore = create<CairnStore>()(
         a[0]({ hiddenViews: new Set(savedHidden) });
       }
 
+      const savedSeenFeatures = storage.get<string[]>(SEEN_FEATURES_KEY);
+      if (savedSeenFeatures) {
+        a[0]({ seenFeatures: savedSeenFeatures });
+      }
+
       const savedChatWidth = storage.get<number>(CHAT_PANEL_WIDTH_KEY);
       if (savedChatWidth) {
         a[0]({ chatPanelWidth: Math.min(MAX_CHAT_PANEL_WIDTH, Math.max(MIN_CHAT_PANEL_WIDTH, savedChatWidth)) });
@@ -314,6 +319,11 @@ export const useCairnStore = create<CairnStore>()(
         set({ hiddenViews: new Set(savedHidden) });
       }
 
+      const savedSeenFeatures = storage.get<string[]>(SEEN_FEATURES_KEY);
+      if (savedSeenFeatures) {
+        set({ seenFeatures: savedSeenFeatures });
+      }
+
       const savedChatWidth = storage.get<number>(CHAT_PANEL_WIDTH_KEY);
       if (savedChatWidth) {
         set({ chatPanelWidth: Math.min(MAX_CHAT_PANEL_WIDTH, Math.max(MIN_CHAT_PANEL_WIDTH, savedChatWidth)) });
@@ -334,10 +344,14 @@ export const useCairnStore = create<CairnStore>()(
       // Merge snapshot notes: preserve any note that was recently written by
       // the user (within the own-write window) so we don't overwrite optimistic
       // state with a stale snapshot triggered by the WAL poller.
+      //
+      // Exception: notes the AI just wrote (chat executor / MCP) always take the
+      // snapshot content — the AI's edit isn't in our in-memory copy, so keeping
+      // the local version would hide it from the open editor.
       const snapNotes: Note[] = snap.notes ?? [];
       const mergedNotes = isRefresh
         ? snapNotes.map((sn) => {
-            if (isOwnNoteWrite(sn.id)) {
+            if (isOwnNoteWrite(sn.id) && !isAiNoteWrite(sn.id)) {
               return current.notes.find((cn) => cn.id === sn.id) ?? sn;
             }
             return sn;

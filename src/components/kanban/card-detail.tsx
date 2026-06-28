@@ -174,7 +174,7 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
                     <FileText size={12} className="text-[var(--text-tertiary)] flex-shrink-0" />
                     <span className="text-xs text-[var(--text-secondary)] flex-1 truncate" title={note.title}>{note.title}</span>
                     <Tooltip content="Open note">
-                      <button onClick={() => { setView("notes"); window.dispatchEvent(CairnEvents.selectNote(note.id)); }} className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-all" aria-label="Open note">
+                      <button onClick={() => { setView("notes"); setTimeout(() => window.dispatchEvent(CairnEvents.selectNote(note.id)), 50); }} className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-all" aria-label="Open note">
                         <ExternalLink size={11} aria-hidden="true" />
                       </button>
                     </Tooltip>

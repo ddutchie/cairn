@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
-import { DEFAULT_WORKSPACE_ICON } from "@/lib/workspace-icons";
+import { DEFAULT_WORKSPACE_ICON, DEFAULT_PROJECT_ICON } from "@/lib/workspace-icons";
 import type { OnboardingStep } from "./shared";
 import { StepChooseFolder } from "./StepChooseFolder";
 import { StepWorkspaceDetails } from "./StepWorkspaceDetails";
@@ -12,13 +12,14 @@ import { StepAISetup } from "./StepAISetup";
 import { StepMCP } from "./StepMCP";
 import { StepEmbeddings } from "./StepEmbeddings";
 import { StepViews } from "./StepViews";
+import { StepCreateProject } from "./StepCreateProject";
 import { StepDone } from "./StepDone";
 import type { ToggleableView } from "@/store/slices/ui";
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 interface Props {
-  onComplete: () => void;
+  onComplete: (startTour: boolean) => void;
   /** Where to enter the wizard. Defaults to "choose-folder". */
   initialStep?: OnboardingStep;
 }
@@ -26,7 +27,7 @@ interface Props {
 // ── Onboarding wizard ─────────────────────────────────────────────────────────
 
 export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props) {
-  const { createWorkspace, selectAndInitWorkspace, initWorkspacePath, getWorkspacePath, theme, setTheme, fontScale, setFontScale, aiConfig, setAIConfig, setAgentConfig, hiddenViews, setHiddenViews } = useCairnStore(useShallow((s) => ({ createWorkspace: s.createWorkspace, selectAndInitWorkspace: s.selectAndInitWorkspace, initWorkspacePath: s.initWorkspacePath, getWorkspacePath: s.getWorkspacePath, theme: s.theme, setTheme: s.setTheme, fontScale: s.fontScale, setFontScale: s.setFontScale, aiConfig: s.aiConfig, setAIConfig: s.setAIConfig, setAgentConfig: s.setAgentConfig, hiddenViews: s.hiddenViews, setHiddenViews: s.setHiddenViews })));
+  const { createWorkspace, selectAndInitWorkspace, initWorkspacePath, getWorkspacePath, theme, setTheme, fontScale, setFontScale, aiConfig, setAIConfig, setAgentConfig, hiddenViews, setHiddenViews, createProject, setActiveProject, activeWorkspaceId } = useCairnStore(useShallow((s) => ({ createWorkspace: s.createWorkspace, selectAndInitWorkspace: s.selectAndInitWorkspace, initWorkspacePath: s.initWorkspacePath, getWorkspacePath: s.getWorkspacePath, theme: s.theme, setTheme: s.setTheme, fontScale: s.fontScale, setFontScale: s.setFontScale, aiConfig: s.aiConfig, setAIConfig: s.setAIConfig, setAgentConfig: s.setAgentConfig, hiddenViews: s.hiddenViews, setHiddenViews: s.setHiddenViews, createProject: s.createProject, setActiveProject: s.setActiveProject, activeWorkspaceId: s.activeWorkspaceId })));
 
   // ── Wizard step ──────────────────────────────────────────────────────────────
   const [step, setStep] = useState<OnboardingStep>(initialStep);
@@ -46,6 +47,25 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
       if (next.has(view)) { next.delete(view); } else { next.add(view); }
       return next;
     });
+  }
+
+  // ── First project ───────────────────────────────────────────────────────────
+  const [projectName, setProjectName] = useState("");
+  const [projectIcon, setProjectIcon] = useState(DEFAULT_PROJECT_ICON);
+  const [creatingProject, setCreatingProject] = useState(false);
+
+  async function handleCreateProject(e: React.FormEvent) {
+    e.preventDefault();
+    const trimmed = projectName.trim();
+    if (!trimmed || creatingProject || !activeWorkspaceId) return;
+    setCreatingProject(true);
+    try {
+      const proj = await createProject(activeWorkspaceId, trimmed, projectIcon);
+      setActiveProject(proj.id);
+      setStep("done");
+    } finally {
+      setCreatingProject(false);
+    }
   }
 
   // ── AI ───────────────────────────────────────────────────────────────────────
@@ -223,8 +243,23 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
         onBack={() => setStep("embeddings")}
         onNext={() => {
           setHiddenViews([...localHidden]);
-          setStep("done");
+          setStep("create-project");
         }}
+      />
+    );
+  }
+
+  if (step === "create-project") {
+    return (
+      <StepCreateProject
+        name={projectName}
+        icon={projectIcon}
+        submitting={creatingProject}
+        onBack={() => setStep("views")}
+        onNameChange={setProjectName}
+        onIconChange={setProjectIcon}
+        onSubmit={handleCreateProject}
+        onSkip={() => setStep("done")}
       />
     );
   }
@@ -232,7 +267,7 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
   // step === "done"
   return (
     <StepDone
-      onBack={() => setStep("views")}
+      onBack={() => setStep("create-project")}
       onComplete={onComplete}
     />
   );

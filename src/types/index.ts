@@ -383,6 +383,9 @@ export interface AppUIState {
   activePreviewItem: { type: "note" | "task"; id: ID } | null;
   chatPanelResizing: boolean;
   lastContentView: "overview" | "notes" | "board" | "flow" | "graph" | "insights" | "settings" | "agent";
+  seenFeatures: string[];
+  tutorialActive: boolean;
+  tutorialStepIndex: number;
 }
 
 // ── MCP / Chat Tool Shared Return Types ──────────

@@ -565,6 +565,7 @@ export function KanbanBoard() {
           {!archiveViewOpen && <SortableContext items={columns.map((c) => c.id)} strategy={horizontalListSortingStrategy}>
             <div
               ref={boardScrollRef}
+              data-tutorial="kanban-columns"
               className="flex-1 flex gap-3 overflow-x-auto p-5 min-h-0"
             >
               {columns.map((column) => {

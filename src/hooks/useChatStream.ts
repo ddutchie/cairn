@@ -170,6 +170,25 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
       pendingActionsRef.current = [];
       // Do NOT clear pendingQuestions here — the form must stay visible until
       // the user submits their answers. It is cleared in sendStream() instead.
+
+      // Force-refresh the store so AI-written changes (notes, tasks, etc.) are
+      // immediately visible. The db:changed event from the chat tool writes is
+      // suppressed by the ownWriteGuard (touched by the chat IPC call), so we
+      // must explicitly re-hydrate here.
+      // Only trigger for tools that actually persist state — exclude read-only
+      // tools (get_*/list_*/search_*) and suggestion-only tools that stage
+      // pendingActionsRef without writing to the DB.
+      const hasPersistedWrite = finalToolCalls.some((tc) => {
+        const name = tc.tool;
+        if (name.startsWith("get_") || name.startsWith("list_") || name.startsWith("search_")) return false;
+        if (name === "suggest_connections" || name === "ask_questions") return false;
+        return true;
+      });
+      if (hasPersistedWrite) {
+        useCairnStore.getState().hydrateFromElectron(true).catch((err) => {
+          console.error("[useChatStream] post-write hydrate failed", err);
+        });
+      }
     });
 
     const unsubUsage = (electron.chat.onUsage as (cb: (e: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: TokenBreakdown }) => void) => () => void)((e) => {

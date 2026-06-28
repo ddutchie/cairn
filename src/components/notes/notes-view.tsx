@@ -514,7 +514,7 @@ export function NotesView() {
       </div>
 
       {/* Editor pane */}
-      <div className={cn("flex-1 min-w-0 flex flex-col overflow-hidden", mobileShowEditor ? "flex" : "hidden md:flex")}>
+      <div data-tutorial="notes-editor" className={cn("flex-1 min-w-0 flex flex-col overflow-hidden", mobileShowEditor ? "flex" : "hidden md:flex")}>
         {activeNote ? (
           activeNote.type === "dashboard"
             ? <DashboardView note={activeNote} onBack={() => setMobileShowEditor(false)} />

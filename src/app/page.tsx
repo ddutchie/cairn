@@ -5,6 +5,7 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { CairnEvents } from "@/lib/events";
 import { historyManager, ownWriteGuard } from "@/lib/history";
+import { markAiNoteWriteStarted, markAiNoteWriteEnded, hasRecentAiNoteWrite } from "@/store/ipc";
 import { useIpcErrorToasts } from "@/hooks/useIpcErrorToasts";
 import { TitleBar } from "@/components/layout/title-bar";
 import { Sidebar } from "@/components/layout/sidebar";
@@ -21,9 +22,20 @@ import { AgentView } from "@/components/agent/AgentView";
 import { Onboarding } from "@/components/onboarding";
 import { UnifiedChatPanel } from "@/components/chat/UnifiedChatPanel";
 import { UpdateBanner, ErrorToasts } from "@/components/layout/app-chrome";
+import { NewFeatureModal } from "@/components/layout/NewFeatureModal";
+import { AppTutorial } from "@/components/tutorial/AppTutorial";
 import { cn } from "@/lib/utils";
+import { NEW_FEATURES_REGISTRY } from "@/lib/new-features-registry";
 
 export default function Home() {
+  const [pendingTutorial, setPendingTutorial] = useState(false);
+
+  const handleNewFeatureModalClose = () => {
+    if (pendingTutorial) {
+      setPendingTutorial(false);
+      useCairnStore.getState().setTutorialActive(true);
+    }
+  };
   const {
     hydrate,
     hydrateFromElectron,
@@ -82,6 +94,14 @@ export default function Home() {
 
   // IPC error toasts
   const { toasts, dismiss } = useIpcErrorToasts();
+
+  // Expose the Zustand store on window for E2E automation (Playwright reads
+  // window.__cairnStore — see tests/e2e/smoke.test.ts). Harmless read-only
+  // handle; only used to drive navigation in tests.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    (window as unknown as { __cairnStoreRef?: typeof useCairnStore }).__cairnStoreRef = useCairnStore;
+  }, []);
 
   useEffect(() => {
     const electron = window.electron;
@@ -148,12 +168,27 @@ export default function Home() {
         }
       });
 
+      // Track AI note writes (in-app chat executor + standalone MCP server) so
+      // the db:changed handler below knows to re-hydrate and accept the AI's
+      // content for those notes, overriding the own-write guard.
+      const unsubAiStart = electron.onAiWriteStarted(({ noteId }) => {
+        markAiNoteWriteStarted(noteId);
+      });
+      const unsubAiEnd = electron.onAiWriteEnded(({ noteId }) => {
+        markAiNoteWriteEnded(noteId);
+      });
+
       // Register db:changed listener synchronously so React gets the cleanup fn
       const unsubDb = electron.onDbChanged(() => {
         // Own writes are already reflected in Zustand via optimistic updates —
         // re-hydrating from SQLite would race against in-flight IPC and overwrite
         // the optimistic state with stale content. Skip hydration entirely.
-        if (ownWriteGuard.isOwnWrite()) return;
+        //
+        // Exception: if the AI (chat executor or MCP) just wrote a note, the
+        // surrounding chat IPC also touched ownWriteGuard — but those changes
+        // are NOT in Zustand, so we must hydrate to surface them in the open
+        // editor. A recent AI note write overrides the own-write skip.
+        if (ownWriteGuard.isOwnWrite() && !hasRecentAiNoteWrite()) return;
         // Don't re-hydrate (and potentially reset onboardingState) while the
         // onboarding wizard is still in progress — folder selection and workspace
         // creation trigger db:changed but the wizard handles its own state.
@@ -171,6 +206,8 @@ export default function Home() {
 
       return () => {
         unsubDb();
+        unsubAiStart();
+        unsubAiEnd();
         unsubAvailable();
         unsubDownloaded();
       };
@@ -291,7 +328,28 @@ export default function Home() {
         <div className="flex flex-1 min-h-0">
           <Onboarding
             initialStep={initialStep}
-            onComplete={() => setOnboardingState(false)}
+            onComplete={(startTour) => {
+              hydrateFromElectron().then(() => {
+                setOnboardingState(false);
+                if (startTour) {
+                  const state = useCairnStore.getState();
+                  // Match NewFeatureModal's gating: only unseen features from the latest
+                  // registry version defer the tour. Older unseen entries are ignored.
+                  const latestVersion = NEW_FEATURES_REGISTRY.length > 0
+                    ? NEW_FEATURES_REGISTRY[NEW_FEATURES_REGISTRY.length - 1].version
+                    : null;
+                  const hasUnseenLatest = latestVersion !== null
+                    && NEW_FEATURES_REGISTRY.some(
+                      (f) => f.version === latestVersion && !state.seenFeatures.includes(f.id)
+                    );
+                  if (hasUnseenLatest) {
+                    setPendingTutorial(true);
+                  } else {
+                    state.setTutorialActive(true);
+                  }
+                }
+              });
+            }}
           />
         </div>
       </main>
@@ -352,6 +410,12 @@ export default function Home() {
 
       {/* IPC error toasts — bottom-right, auto-dismiss after 5s */}
       <ErrorToasts toasts={toasts} onDismiss={dismiss} />
+
+      {/* New Feature Modal (shows on launch if unseen features exist) */}
+      <NewFeatureModal onClose={handleNewFeatureModalClose} />
+
+      {/* Interactive App Tutorial Overlay */}
+      <AppTutorial />
     </main>
   );
 }

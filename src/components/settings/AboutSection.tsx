@@ -4,11 +4,28 @@ import React, { useState, useEffect } from "react";
 import licensesData from "@/generated/licenses.json";
 import { SettingsGroup } from "./shared";
 import { NoteMarkdownPreview } from "@/components/notes/NoteMarkdownPreview";
+import { NewFeatureModal } from "@/components/layout/NewFeatureModal";
+import { useCairnStore } from "@/store";
+import { useShallow } from "zustand/react/shallow";
+import { Play, Sparkles } from "lucide-react";
 
 export function AboutSection() {
   const [licensesOpen, setLicensesOpen] = useState(false);
   const [changelogOpen, setChangelogOpen] = useState(true);
   const [changelog, setChangelog] = useState<string | null>(null);
+  const [forceNewFeatures, setForceNewFeatures] = useState(false);
+
+  const { setTutorialActive, setView } = useCairnStore(
+    useShallow((s) => ({
+      setTutorialActive: s.setTutorialActive,
+      setView: s.setView,
+    }))
+  );
+
+  const handleStartTutorial = () => {
+    setView("overview");
+    setTutorialActive(true);
+  };
   const { stackByCategory, allLicenses } = licensesData as typeof licensesData & {
     stackByCategory: { category: string; entries: typeof licensesData.stack }[];
   };
@@ -25,6 +42,28 @@ export function AboutSection() {
         <p className="text-xs leading-relaxed text-[var(--text-tertiary)]">
           Local-first notes and kanban in one place. Notes are saved as Markdown files in a folder you choose; project and task data lives in SQLite alongside them. No accounts, no cloud. An embedded MCP server lets AI agents read and write your workspace directly.
         </p>
+
+        {/* Interactive help controls */}
+        <div className="grid grid-cols-2 gap-3 py-1">
+          <button
+            onClick={handleStartTutorial}
+            className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors cursor-pointer"
+          >
+            <Play size={13} className="text-[var(--accent)]" />
+            <span>Replay App Tour</span>
+          </button>
+          <button
+            onClick={() => setForceNewFeatures(true)}
+            className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors cursor-pointer"
+          >
+            <Sparkles size={13} className="text-[var(--accent)] animate-pulse" />
+            <span>What&apos;s New</span>
+          </button>
+        </div>
+
+        {forceNewFeatures && (
+          <NewFeatureModal forceOpen={true} onClose={() => setForceNewFeatures(false)} />
+        )}
 
         {/* Latest changelog */}
         {changelog && (

@@ -12,7 +12,7 @@
  */
 
 import { test, expect, type Page, type ConsoleMessage } from "@playwright/test";
-import { buildIpcMock } from "../fixtures/ipc-mock";
+import { buildIpcMock, NOTE_1 } from "../fixtures/ipc-mock";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -72,6 +72,19 @@ async function goToView(page: Page, view: string): Promise<void> {
   }, view);
   // Give React one animation frame to commit + any async effects to kick off
   await page.waitForTimeout(300);
+}
+
+/**
+ * Dismiss the "What's New" feature modal if it's open on boot. The fixture has
+ * an empty seenFeatures list, so the modal appears and would overlay the app.
+ * Idempotent — a no-op if the modal isn't present.
+ */
+async function dismissNewFeatureModal(page: Page): Promise<void> {
+  const doneBtn = page.getByRole("button", { name: "Done" });
+  if (await doneBtn.count()) {
+    await doneBtn.first().click().catch(() => {});
+    await page.waitForTimeout(200);
+  }
 }
 
 /** Attach the cairn store reference to window so smoke tests can call setView. */
@@ -187,5 +200,72 @@ test.describe("Cairn smoke tests", () => {
     // The fixture project "Test Project" should appear somewhere in the sidebar
     const projectLabel = page.getByText("Test Project");
     await expect(projectLabel.first()).toBeVisible({ timeout: 5_000 });
+  });
+
+  // ── AI write-lock push events ─────────────────────────────────────────────
+  // Drives the preload push flow (onAiWriteStarted/onAiWriteEnded) via the mock's
+  // window.__cairnEmit bridge and asserts the note editor's read-only banner
+  // toggles. This exercises the real consumer in note-editor.tsx end-to-end.
+
+  test("note editor shows AI-write banner on onAiWriteStarted and clears on onAiWriteEnded", async () => {
+    // Dismiss the "What's New" modal if it's covering the app on boot.
+    await dismissNewFeatureModal(page);
+
+    // Open the Notes view — the single fixture note auto-opens in the editor.
+    await goToView(page, "notes");
+    // Wait for the note editor container to mount (it subscribes to the
+    // AI-write events on mount).
+    await page.waitForSelector('[data-tutorial="notes-editor"]', { timeout: 10_000 });
+    await page.waitForTimeout(300);
+
+    const banner = page.getByText("AI is editing this note…");
+
+    // Not editing yet — banner absent.
+    await expect(banner).toHaveCount(0);
+
+    // Emit the start event for the open note's ID via the mock bridge.
+    const startedSubscribers = await page.evaluate((noteId) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (window as any).__cairnEmit?.("onAiWriteStarted", { noteId });
+    }, NOTE_1);
+    // Both the global page.tsx handler and the note editor must be subscribed.
+    expect(startedSubscribers).toBeGreaterThanOrEqual(2);
+
+    // Banner appears.
+    await expect(banner).toBeVisible({ timeout: 5_000 });
+
+    // Emit the end event — banner clears.
+    await page.evaluate((noteId) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (window as any).__cairnEmit?.("onAiWriteEnded", { noteId });
+    }, NOTE_1);
+
+    await expect(banner).toHaveCount(0, { timeout: 5_000 });
+  });
+
+  test("AI-write banner ignores events for a different note", async () => {
+    await dismissNewFeatureModal(page);
+    await goToView(page, "notes");
+    await page.waitForSelector('[data-tutorial="notes-editor"]', { timeout: 10_000 });
+    await page.waitForTimeout(300);
+
+    const banner = page.getByText("AI is editing this note…");
+    await expect(banner).toHaveCount(0);
+
+    // Emit a start event for an unrelated note ID — the open editor must ignore it.
+    await page.evaluate(() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (window as any).__cairnEmit?.("onAiWriteStarted", { noteId: "some-other-note" });
+    });
+
+    // Give React a moment; the banner must NOT appear.
+    await page.waitForTimeout(300);
+    await expect(banner).toHaveCount(0);
+
+    // Clean up the registry entry so it can't influence later assertions.
+    await page.evaluate(() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (window as any).__cairnEmit?.("onAiWriteEnded", { noteId: "some-other-note" });
+    });
   });
 });

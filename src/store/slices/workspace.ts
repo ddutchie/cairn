@@ -23,7 +23,7 @@ export interface WorkspaceSlice {
     patch: Partial<Pick<Workspace, "name" | "description" | "icon">>
   ) => void;
 
-  createProject: (workspaceId: ID, name: string) => Promise<Project>;
+  createProject: (workspaceId: ID, name: string, icon?: string) => Promise<Project>;
   updateProject: (id: ID, patch: Partial<Project>) => void;
   archiveProject: (id: ID) => void;
   deleteProject: (id: ID) => void;
@@ -80,11 +80,12 @@ export const createWorkspaceSlice: StateCreator<
   },
 
   // ── Projects ───────────────────────────────────
-  async createProject(workspaceId, name) {
+  async createProject(workspaceId, name, icon) {
     const proj: Project = {
       id: id(),
       workspaceId,
       name,
+      ...(icon ? { icon } : {}),
       status: "active",
       priority: "medium",
       tagIds: [],

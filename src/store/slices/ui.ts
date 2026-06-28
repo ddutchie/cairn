@@ -14,6 +14,7 @@ import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KE
 export type ToggleableView = "board" | "flow" | "agent" | "graph" | "insights" | "chat";
 
 export const HIDDEN_VIEWS_KEY = "hiddenViews";
+export const SEEN_FEATURES_KEY = "seenFeatures";
 
 
 
@@ -158,6 +159,16 @@ export interface UISlice extends AppUIState {
   // Last content view before entering chat or search mode
   lastContentView: AppUIState["lastContentView"];
 
+  // Seen features for What's New modal
+  seenFeatures: string[];
+  markFeatureAsSeen: (id: string) => void;
+
+  // App tutorial state
+  tutorialActive: boolean;
+  tutorialStepIndex: number;
+  setTutorialActive: (active: boolean) => void;
+  setTutorialStepIndex: (index: number) => void;
+
   // Navigation / selections
   setActiveWorkspace: (id: ID) => void;
   setActiveProject: (id: ID | null) => void;
@@ -183,6 +194,9 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
   activePreviewItem: null,
   chatPanelResizing: false,
   lastContentView: "overview",
+  seenFeatures: [],
+  tutorialActive: false,
+  tutorialStepIndex: 0,
 
   aiConfig: DEFAULT_AI_CONFIG,
   agentConfig: DEFAULT_AGENT_CONFIG,
@@ -320,5 +334,21 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
 
   toggleSearch() {
     set((s) => ({ searchOpen: !s.searchOpen }));
+  },
+
+  markFeatureAsSeen(id) {
+    set((s) => {
+      const next = s.seenFeatures.includes(id) ? s.seenFeatures : [...s.seenFeatures, id];
+      storage.set(SEEN_FEATURES_KEY, next);
+      return { seenFeatures: next };
+    });
+  },
+
+  setTutorialActive(active) {
+    set({ tutorialActive: active, tutorialStepIndex: 0 });
+  },
+
+  setTutorialStepIndex(index) {
+    set({ tutorialStepIndex: index });
   },
 });
