@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import { Sparkles, ChevronLeft, ChevronRight, Check } from "lucide-react";
 import { ModalShell } from "@/components/ui/modal-shell";
-import { NEW_FEATURES_REGISTRY } from "@/lib/new-features-registry";
+import { NEW_FEATURES_REGISTRY, getUnseenLatestFeatures } from "@/lib/new-features-registry";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 
@@ -23,14 +23,10 @@ export function NewFeatureModal({ forceOpen = false, onClose }: Props) {
   // Determine which features to highlight.
   // If forceOpen (e.g. from Settings), show all features in the registry.
   // Otherwise, show only unseen features belonging to the latest version.
-  const featuresToShow = React.useMemo(() => {
-    if (forceOpen) {
-      return NEW_FEATURES_REGISTRY;
-    }
-    if (NEW_FEATURES_REGISTRY.length === 0) return [];
-    const latestVersion = NEW_FEATURES_REGISTRY[NEW_FEATURES_REGISTRY.length - 1].version;
-    return NEW_FEATURES_REGISTRY.filter((f) => f.version === latestVersion && !seenFeatures.includes(f.id));
-  }, [forceOpen, seenFeatures]);
+  const featuresToShow = React.useMemo(
+    () => getUnseenLatestFeatures(NEW_FEATURES_REGISTRY, seenFeatures, forceOpen),
+    [forceOpen, seenFeatures],
+  );
 
   const [activeIdx, setActiveIdx] = useState(0);
   const [prevFeaturesLength, setPrevFeaturesLength] = useState(featuresToShow.length);

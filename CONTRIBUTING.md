@@ -661,7 +661,20 @@ Tests live next to the code they cover under `electron/`:
 npm test                  # run all tests
 npm run test:watch        # watch mode — great for TDD
 npm run test:coverage     # coverage report
+npm run test:unit         # node project only (store/lib/electron logic)
+npm run test:component    # component project only (React + jsdom)
 ```
+
+vitest runs **two projects** (see `vitest.config.ts`):
+
+- **`node`** — the default fast suite for store slices, pure libs, and the
+  electron/MCP layer. Runs in the `node` environment with the native SQLite
+  shim. Matches `**/*.test.ts` (and `src/**/*.test.tsx`), excluding component tests.
+- **`component`** — React component tests rendered in **jsdom** via
+  `@testing-library/react`. Matches `src/**/*.component.test.tsx` and loads
+  `vitest.setup.components.ts` (jest-dom matchers + auto-cleanup). Use these for
+  presentational behavior (disabled states, ARIA attributes, click handlers).
+  Store-connected components can mock `@/store` with `vi.mock`.
 
 | Test file | What it covers |
 |-----------|---------------|

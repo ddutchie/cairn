@@ -25,7 +25,7 @@ import { UpdateBanner, ErrorToasts } from "@/components/layout/app-chrome";
 import { NewFeatureModal } from "@/components/layout/NewFeatureModal";
 import { AppTutorial } from "@/components/tutorial/AppTutorial";
 import { cn } from "@/lib/utils";
-import { NEW_FEATURES_REGISTRY } from "@/lib/new-features-registry";
+import { NEW_FEATURES_REGISTRY, getUnseenLatestFeatures } from "@/lib/new-features-registry";
 
 export default function Home() {
   const [pendingTutorial, setPendingTutorial] = useState(false);
@@ -333,15 +333,13 @@ export default function Home() {
                 setOnboardingState(false);
                 if (startTour) {
                   const state = useCairnStore.getState();
-                  // Match NewFeatureModal's gating: only unseen features from the latest
-                  // registry version defer the tour. Older unseen entries are ignored.
-                  const latestVersion = NEW_FEATURES_REGISTRY.length > 0
-                    ? NEW_FEATURES_REGISTRY[NEW_FEATURES_REGISTRY.length - 1].version
-                    : null;
-                  const hasUnseenLatest = latestVersion !== null
-                    && NEW_FEATURES_REGISTRY.some(
-                      (f) => f.version === latestVersion && !state.seenFeatures.includes(f.id)
-                    );
+                  // Match NewFeatureModal's gating: only unseen features from the
+                  // latest registry version defer the tour (older unseen entries
+                  // are ignored). Shared pure gate keeps both call sites in sync.
+                  const hasUnseenLatest = getUnseenLatestFeatures(
+                    NEW_FEATURES_REGISTRY,
+                    state.seenFeatures,
+                  ).length > 0;
                   if (hasUnseenLatest) {
                     setPendingTutorial(true);
                   } else {
