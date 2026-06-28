@@ -1,18 +1,23 @@
 /**
  * OAuth 2.1 for remote MCP servers.
  *
- * Some remote MCP servers (Figma, Linear, Notion, GitHub, …) gate access behind
- * an authorization page rather than a static API key. The MCP SDK implements the
- * full client side of the spec (authorization-server discovery, dynamic client
- * registration, PKCE, token exchange + refresh, retry-on-401); we provide:
+ * Some remote MCP servers (Canva, Figma, Linear, Notion, GitHub, …) gate access
+ * behind an authorization page rather than a static API key. The MCP SDK
+ * implements the full client side of the spec (authorization-server discovery,
+ * dynamic client registration, PKCE, token exchange + refresh, retry-on-401);
+ * we provide:
  *
  *   - {@link KeychainOAuthProvider} — an SDK `OAuthClientProvider` whose client
  *     registration, PKCE verifier, and tokens are persisted *encrypted* in the
  *     OS keychain via the secure store. Nothing OAuth-related is written to
  *     SQLite, and no token is ever exposed to the renderer.
- *   - A pending-authorization registry keyed by the OAuth `state` parameter, so
- *     the `cairn://oauth/callback` deep link can be routed back to the in-flight
- *     attempt that started it.
+ *   - A loopback redirect listener ({@link startServerAuth} uses
+ *     `oauth-loopback.ts`) bound to `http://127.0.0.1:<port>/callback`. This is
+ *     the default redirect because most authorization servers reject custom URI
+ *     schemes at `/authorize` (Canva, Google, …).
+ *   - A `cairn://oauth/callback` deep-link fallback (pending-authorization
+ *     registry keyed by the OAuth `state`) for when the loopback listener can't
+ *     bind or a provider prefers the custom scheme.
  *   - {@link startServerAuth} / {@link completeServerAuth} — the orchestration
  *     the IPC layer calls to begin a sign-in and to finish it from the callback.
  *
@@ -33,8 +38,14 @@ import type {
 } from "@modelcontextprotocol/sdk/shared/auth.js";
 import * as secrets from "./secure-store";
 import { randomUUID } from "crypto";
+import { startLoopbackListener, type LoopbackListener } from "./oauth-loopback";
 
-/** The OAuth redirect target. Registered as an OS protocol in main.ts. */
+/**
+ * Default OAuth redirect target — the `cairn://` custom scheme, registered as an
+ * OS protocol in main.ts. Used as a fallback; most providers (Canva, Google, …)
+ * reject custom schemes at `/authorize` and require the loopback redirect
+ * instead, so {@link startServerAuth} prefers loopback by default.
+ */
 export const OAUTH_REDIRECT_URI = "cairn://oauth/callback";
 /** Custom protocol scheme Cairn registers for deep links. */
 export const DEEP_LINK_SCHEME = "cairn";
@@ -93,6 +104,7 @@ export interface OAuthServerConfig {
  */
 export class KeychainOAuthProvider implements OAuthClientProvider {
   private _state: string;
+  private _redirectUri: string;
 
   constructor(
     private readonly serverId: string,
@@ -100,18 +112,21 @@ export class KeychainOAuthProvider implements OAuthClientProvider {
     private readonly scope?: string,
     /** Inject a fixed state for deterministic callback routing; defaults random. */
     state?: string,
+    /** Redirect URI to advertise (loopback or custom scheme). Defaults to cairn://. */
+    redirectUri?: string,
   ) {
     this._state = state ?? randomUUID();
+    this._redirectUri = redirectUri ?? OAUTH_REDIRECT_URI;
   }
 
   get redirectUrl(): string {
-    return OAUTH_REDIRECT_URI;
+    return this._redirectUri;
   }
 
   get clientMetadata(): OAuthClientMetadata {
     return {
       client_name: `Cairn — ${this.serverName}`,
-      redirect_uris: [OAUTH_REDIRECT_URI],
+      redirect_uris: [this._redirectUri],
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
       token_endpoint_auth_method: "none",
@@ -181,10 +196,16 @@ export function isOAuthServer(cfg: { authMode?: "none" | "oauth" }): boolean {
 /**
  * Build an OAuth provider for a server. A fresh `state` is generated unless one
  * is supplied (used when re-binding to a pending attempt is not needed — normal
- * connect/refresh paths don't need a stable state).
+ * connect/refresh paths don't need a stable state). `redirectUri` overrides the
+ * advertised redirect (loopback URL for the interactive flow; defaults cairn://).
  */
-export function makeProvider(cfg: OAuthServerConfig, serverName: string, state?: string): KeychainOAuthProvider {
-  return new KeychainOAuthProvider(cfg.id, serverName, cfg.scope, state);
+export function makeProvider(
+  cfg: OAuthServerConfig,
+  serverName: string,
+  state?: string,
+  redirectUri?: string,
+): KeychainOAuthProvider {
+  return new KeychainOAuthProvider(cfg.id, serverName, cfg.scope, state, redirectUri);
 }
 
 function makeOAuthTransport(cfg: OAuthServerConfig, provider: OAuthClientProvider) {
@@ -236,30 +257,109 @@ export type AuthStartResult =
   | { status: "already_authorized" }
   | { status: "error"; error: string };
 
+/** Notified when a loopback-completed sign-in finishes (success or failure). */
+export type AuthCompletionListener = (result: AuthCompleteResult) => void;
+
 /**
- * Begin an OAuth sign-in for a server. Constructs an OAuth-enabled transport and
- * attempts to connect: the SDK performs discovery + (if needed) dynamic client
- * registration, then either succeeds (already have valid tokens) or calls the
- * provider's `redirectToAuthorization` (opening the browser) and throws
- * `UnauthorizedError`. In the redirect case we stash the attempt keyed by the
- * provider's `state` for {@link completeServerAuth} to resume.
+ * Begin an OAuth sign-in for a server. Prefers the RFC 8252 loopback redirect
+ * (`http://127.0.0.1:<port>/callback`) because most authorization servers reject
+ * custom URI schemes at `/authorize`; falls back to the `cairn://` deep link
+ * only if the loopback listener cannot be started.
+ *
+ * Loopback path: a one-shot HTTP listener is started, the provider advertises
+ * its URL as the redirect, and the SDK performs discovery + (if needed) dynamic
+ * client registration. On the first connect the SDK either succeeds (valid
+ * tokens already) or opens the browser and throws `UnauthorizedError`; we then
+ * await the loopback callback, exchange the code, and invoke `onComplete`.
+ *
+ * @param onComplete  Called when a loopback flow finishes (the deep-link flow
+ *   instead routes its completion through {@link completeServerAuth}). Lets the
+ *   IPC layer forward the same `tools:oauthCallback` event for both paths.
  */
 export async function startServerAuth(
   cfg: OAuthServerConfig,
   serverName: string,
+  onComplete?: AuthCompletionListener,
 ): Promise<AuthStartResult> {
   sweepPending();
+  // Drop any earlier in-flight attempt for this server before starting a new one.
+  cancelPendingForServer(cfg.id);
+
+  let listener: LoopbackListener | null = null;
+  try {
+    listener = await startLoopbackListener();
+  } catch {
+    // Loopback couldn't bind; fall back to the cairn:// deep-link flow.
+    return startServerAuthDeepLink(cfg, serverName);
+  }
+
+  // The loopback port changes every attempt, so a client registration saved with
+  // a previous redirect URI no longer applies — clear it so DCR re-registers with
+  // the current loopback URL. (Tokens are kept; they may still be valid.)
+  secrets.deleteSecret("mcp", cfg.id, KEY_CLIENT_INFO);
+  secrets.deleteSecret("mcp", cfg.id, KEY_VERIFIER);
+
+  const provider = makeProvider(cfg, serverName, undefined, listener.redirectUri);
+  const transport = makeOAuthTransport(cfg, provider);
+  const client = new Client({ name: "cairn", version: "1.0.0" }, { capabilities: {} });
+
+  try {
+    await client.connect(transport);
+    // Connected without a redirect → existing tokens were valid.
+    listener.close();
+    await client.close().catch(() => {});
+    return { status: "already_authorized" };
+  } catch (e) {
+    if (!(e instanceof UnauthorizedError)) {
+      listener.close();
+      await client.close().catch(() => {});
+      return { status: "error", error: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
+  // Browser opened. Await the loopback callback off the critical path, then
+  // exchange the code and notify the caller. We return "redirected" immediately
+  // so the UI can show a waiting state.
+  void (async () => {
+    try {
+      const cb = await listener.waitForCallback;
+      await transport.finishAuth(cb.code);
+      await client.connect(transport).catch(() => {
+        /* tokens already persisted; a flaky re-connect shouldn't fail sign-in */
+      });
+      await client.close().catch(() => {});
+      onComplete?.({ status: "authorized", serverId: cfg.id });
+    } catch (e) {
+      await client.close().catch(() => {});
+      onComplete?.({
+        status: "error",
+        serverId: cfg.id,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+  })();
+
+  return { status: "redirected" };
+}
+
+/**
+ * Legacy `cairn://` deep-link sign-in path. Constructs an OAuth transport with
+ * the custom-scheme redirect and stashes the attempt keyed by `state` for
+ * {@link completeServerAuth} to resume from the deep link.
+ */
+async function startServerAuthDeepLink(
+  cfg: OAuthServerConfig,
+  serverName: string,
+): Promise<AuthStartResult> {
   const provider = makeProvider(cfg, serverName);
   const transport = makeOAuthTransport(cfg, provider);
   const client = new Client({ name: "cairn", version: "1.0.0" }, { capabilities: {} });
   try {
     await client.connect(transport);
-    // Connected without a redirect → existing tokens were valid.
     await client.close().catch(() => {});
     return { status: "already_authorized" };
   } catch (e) {
     if (e instanceof UnauthorizedError) {
-      // Browser was opened; wait for the deep-link callback.
       pending.set(provider.state(), {
         serverId: cfg.id,
         provider,

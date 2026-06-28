@@ -12,6 +12,7 @@
 
 import { registerIpcHandle } from "./registry";
 import { handle } from "./result-helpers";
+import { broadcastEvent } from "./registry";
 import type { Database } from "better-sqlite3";
 import * as q from "../db/queries";
 import { newId } from "../db/utils";
@@ -129,9 +130,10 @@ export function registerToolsHandlers(db: Database): void {
   );
 
   // ── MCP OAuth ──────────────────────────────────────────────────────────────
-  // Begin sign-in: opens the system browser; resolves once the redirect has
-  // been triggered (the cairn://oauth/callback deep link completes it later) or
-  // immediately if valid tokens already exist.
+  // Begin sign-in: opens the system browser; resolves once the redirect has been
+  // triggered. Completion arrives via either the loopback listener (default) or
+  // the cairn://oauth/callback deep link; both forward a tools:oauthCallback
+  // event to the renderer so Settings can refresh the connection state.
   registerIpcHandle("tools:startMcpAuth", (_e, { id }: { id: string }) =>
     handle(() => {
       const server = q.getMcpServerById(db, id);
@@ -140,6 +142,7 @@ export function registerToolsHandlers(db: Database): void {
       return mcpOauth.startServerAuth(
         { id: server.id, baseUrl: server.baseUrl, transport: server.transport, scope: server.oauthScope },
         server.name,
+        (result) => broadcastEvent("tools:oauthCallback", result),
       );
     })
   );

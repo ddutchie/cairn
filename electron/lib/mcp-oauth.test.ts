@@ -101,6 +101,13 @@ describe("KeychainOAuthProvider", () => {
     expect(new KeychainOAuthProvider("s", "n", "read:x").clientMetadata.scope).toBe("read:x");
   });
 
+  it("advertises a loopback redirect URI when one is supplied", () => {
+    const loopback = "http://127.0.0.1:53682/callback";
+    const p = new KeychainOAuthProvider("srv1", "My Server", undefined, "st", loopback);
+    expect(p.redirectUrl).toBe(loopback);
+    expect(p.clientMetadata.redirect_uris).toEqual([loopback]);
+  });
+
   it("round-trips tokens, client info, and verifier via the keychain", () => {
     const p = new KeychainOAuthProvider("srv1", "My Server");
 
