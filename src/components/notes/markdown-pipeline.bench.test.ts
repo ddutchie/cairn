@@ -51,6 +51,13 @@ type FixtureName = keyof typeof fixtures;
 // ── Pipeline stages (exact mirrors of note-editor.tsx) ────────────────────────
 
 // ── Benchmark harness ─────────────────────────────────────────────────────────
+//
+// Each `it` runs the stage under test for many iterations, so its *total* wall
+// time (not just per-iteration p95) can exceed vitest's default 5s timeout on
+// slow/contended CI runners — the failure mode seen on GitHub shared runners.
+// We give the whole suite a generous explicit timeout below (BENCH_TIMEOUT_MS)
+// and keep iteration counts modest so a stable p95 is reached quickly.
+const BENCH_TIMEOUT_MS = 30_000;
 
 interface BenchResult {
   mean: number;
@@ -61,7 +68,7 @@ interface BenchResult {
   iterations: number;
 }
 
-function bench(fn: () => void, iterations = 100): BenchResult {
+function bench(fn: () => void, iterations = 60): BenchResult {
   for (let i = 0; i < Math.min(10, iterations); i++) fn(); // warmup
   const times: number[] = [];
   for (let i = 0; i < iterations; i++) {
@@ -116,13 +123,12 @@ describe("Markdown pipeline benchmarks", () => {
     const md = fixtures[fixtureName];
 
     describe(`fixture: ${fixtureName} (${md.length} chars)`, () => {
-
       // ── Stage 1: remark-parse only ───────────────────────────────────────
       it("remark-parse: string → mdast", () => {
         const r = bench(() => unified().use(remarkParse).parse(md));
         console.log(`  [${fixtureName}] remark-parse          ${fmt(r)}`);
         expect(r.p95).toBeLessThan(CEILINGS["remark-parse"][fixtureName]);
-      });
+      }, BENCH_TIMEOUT_MS);
 
       // ── Stage 2: remark-gfm + remark-math ───────────────────────────────
       // Note: .parse() only runs the parser; transforms run during .runSync().
@@ -131,7 +137,7 @@ describe("Markdown pipeline benchmarks", () => {
         const r = bench(() => remarkProcessor.runSync(remarkProcessor.parse(md)));
         console.log(`  [${fixtureName}] remark-gfm+math       ${fmt(r)}`);
         expect(r.p95).toBeLessThan(CEILINGS["remark-gfm+math"][fixtureName]);
-      });
+      }, BENCH_TIMEOUT_MS);
 
       // ── Stage 3: remarkCallout transformer ───────────────────────────────
       // Input: mdast after remark-gfm+math. Clone once, run N times.
@@ -141,7 +147,7 @@ describe("Markdown pipeline benchmarks", () => {
         const r = bench(() => transformer(structuredClone(mdast)));
         console.log(`  [${fixtureName}] remark-callout        ${fmt(r)}`);
         expect(r.p95).toBeLessThan(CEILINGS["remark-callout"][fixtureName]);
-      });
+      }, BENCH_TIMEOUT_MS);
 
       // ── Stage 4: remarkPromoteDisplayMath transformer ────────────────────
       it("remarkPromoteDisplayMath plugin", () => {
@@ -150,7 +156,7 @@ describe("Markdown pipeline benchmarks", () => {
         const r = bench(() => transformer(structuredClone(mdast)));
         console.log(`  [${fixtureName}] remark-promoteDisplay ${fmt(r)}`);
         expect(r.p95).toBeLessThan(CEILINGS["remark-promoteDisplay"][fixtureName]);
-      });
+      }, BENCH_TIMEOUT_MS);
 
       // ── Stage 5: remark-rehype (mdast → hast) ───────────────────────────
       // Input: fully transformed mdast (callout + promoteDisplay applied).
@@ -160,7 +166,7 @@ describe("Markdown pipeline benchmarks", () => {
         const r = bench(() => toHast.runSync(structuredClone(mdast) as any));
         console.log(`  [${fixtureName}] remark→hast           ${fmt(r)}`);
         expect(r.p95).toBeLessThan(CEILINGS["remark→hast"][fixtureName]);
-      });
+      }, BENCH_TIMEOUT_MS);
 
       // ── Stage 6: rehypeCaptureLatex ──────────────────────────────────────
       // Input: hast after remark-rehype (before rehype-katex).
@@ -172,7 +178,7 @@ describe("Markdown pipeline benchmarks", () => {
         const r = bench(() => transformer(structuredClone(preKatexHast)));
         console.log(`  [${fixtureName}] rehype-captureLatex   ${fmt(r)}`);
         expect(r.p95).toBeLessThan(CEILINGS["rehype-captureLatex"][fixtureName]);
-      });
+      }, BENCH_TIMEOUT_MS);
 
       // ── Stage 7: rehype-katex ────────────────────────────────────────────
       // Input: hast after captureLatex (so latexBlocks is populated),
@@ -190,7 +196,7 @@ describe("Markdown pipeline benchmarks", () => {
         }, 50);
         console.log(`  [${fixtureName}] rehype-katex          ${fmt(r)}`);
         expect(r.p95).toBeLessThan(CEILINGS["rehype-katex"][fixtureName]);
-      });
+      }, BENCH_TIMEOUT_MS);
 
       // ── Stage 8: rehypeMergedPass (tagLatex + ==highlights==) ───────────
       // Input: hast after rehype-katex (katex-display spans present).
@@ -204,7 +210,7 @@ describe("Markdown pipeline benchmarks", () => {
         const r = bench(() => transformer(structuredClone(postKatexHast)));
         console.log(`  [${fixtureName}] rehype-mergedPass     ${fmt(r)}`);
         expect(r.p95).toBeLessThan(CEILINGS["rehype-mergedPass"][fixtureName]);
-      });
+      }, BENCH_TIMEOUT_MS);
 
       // ── Full pipeline ────────────────────────────────────────────────────
       // Times the complete string → final hast path as ReactMarkdown runs it.
@@ -224,7 +230,7 @@ describe("Markdown pipeline benchmarks", () => {
         const r = bench(() => processor.runSync(processor.parse(md)), 50);
         console.log(`  [${fixtureName}] FULL PIPELINE         ${fmt(r)}`);
         expect(r.p95).toBeLessThan(CEILINGS["full-pipeline"][fixtureName]);
-      });
+      }, BENCH_TIMEOUT_MS);
     });
   }
 });

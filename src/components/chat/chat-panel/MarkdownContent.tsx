@@ -97,6 +97,19 @@ export function MarkdownContent({ content, isUser }: { content: string; isUser?:
     return preprocessMarkdown(content, notes, cards, cwd);
   }, [content, notes, cards, cwd]);
 
+  // The user bubble has an accent (purple) background with white text. Block
+  // elements below must read white there instead of the dark surface tokens
+  // (which are only legible on the assistant/surface bubble).
+  const strongColor = isUser ? "text-white" : "text-[var(--text-primary)]";
+  const headingColor = isUser ? "text-white" : "text-[var(--text-primary)]";
+  const listColor = isUser ? "text-white" : "text-[var(--text-secondary)]";
+  const codeClass = isUser
+    ? "bg-white/20 text-white"
+    : "bg-[var(--surface-3)] text-[var(--text-primary)]";
+  const quoteClass = isUser
+    ? "border-white/40 text-white/80"
+    : "border-[var(--accent)] text-[var(--text-tertiary)]";
+
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm, remarkBreaks]}
@@ -104,14 +117,14 @@ export function MarkdownContent({ content, isUser }: { content: string; isUser?:
       urlTransform={(url) => url.startsWith("cairn://") ? url : defaultUrlTransform(url)}
       components={{
         p: ({ children }) => <p className="mb-1.5 last:mb-0 leading-relaxed break-words">{children}</p>,
-        strong: ({ children }) => <strong className="font-semibold text-[var(--text-primary)]">{children}</strong>,
+        strong: ({ children }) => <strong className={`font-semibold ${strongColor}`}>{children}</strong>,
         em: ({ children }) => <em className="italic opacity-80">{children}</em>,
-        ul: ({ children }) => <ul className="my-1.5 pl-4 list-disc space-y-0.5 text-[var(--text-secondary)]">{children}</ul>,
-        ol: ({ children }) => <ol className="my-1.5 pl-4 list-decimal space-y-0.5 text-[var(--text-secondary)]">{children}</ol>,
+        ul: ({ children }) => <ul className={`my-1.5 pl-4 list-disc space-y-0.5 ${listColor}`}>{children}</ul>,
+        ol: ({ children }) => <ol className={`my-1.5 pl-4 list-decimal space-y-0.5 ${listColor}`}>{children}</ol>,
         li: ({ children }) => <li className="leading-relaxed break-words">{children}</li>,
-        h1: ({ children }) => <h1 className="font-semibold text-[var(--text-primary)] text-sm mt-2 mb-1">{children}</h1>,
-        h2: ({ children }) => <h2 className="font-semibold text-[var(--text-primary)] text-sm mt-2 mb-1">{children}</h2>,
-        h3: ({ children }) => <h3 className="font-medium text-[var(--text-primary)] mt-1.5 mb-0.5">{children}</h3>,
+        h1: ({ children }) => <h1 className={`font-semibold ${headingColor} text-sm mt-2 mb-1`}>{children}</h1>,
+        h2: ({ children }) => <h2 className={`font-semibold ${headingColor} text-sm mt-2 mb-1`}>{children}</h2>,
+        h3: ({ children }) => <h3 className={`font-medium ${headingColor} mt-1.5 mb-0.5`}>{children}</h3>,
         pre: ({ children }) => {
           const child = Array.isArray(children) ? children[0] : children;
           const code = child as React.ReactElement<{ className?: string; children?: React.ReactNode }>;
@@ -125,13 +138,13 @@ export function MarkdownContent({ content, isUser }: { content: string; isUser?:
           // Fenced blocks handled by `pre` above — this only runs for inline code
           if (className?.startsWith("language-")) return <>{children}</>;
           return (
-            <code className="px-1 py-0.5 rounded bg-[var(--surface-3)] font-mono text-[0.786rem] text-[var(--text-primary)] break-all">
+            <code className={`px-1 py-0.5 rounded font-mono text-[0.786rem] break-all ${codeClass}`}>
               {children}
             </code>
           );
         },
         blockquote: ({ children }) => (
-          <blockquote className="border-l-2 border-[var(--accent)] pl-2.5 my-1.5 text-[var(--text-tertiary)] italic">
+          <blockquote className={`border-l-2 pl-2.5 my-1.5 italic ${quoteClass}`}>
             {children}
           </blockquote>
         ),

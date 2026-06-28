@@ -79,8 +79,14 @@ function getAppVersion(): string {
   }
 }
 
-function buildSplashHtml(iconDataUrl: string | null): string {
+function buildSplashHtml(iconDataUrl: string | null, colors: Record<string, string>): string {
   const version = getAppVersion();
+  // Bake the resolved theme palette into the initial CSS so the splash paints
+  // with the correct (light or dark) colors on first frame — no dark flash
+  // before the post-load `splash:theme` IPC override arrives.
+  const initialVars = Object.keys(colors)
+    .map((key) => `    --splash-${key}: ${colors[key]};`)
+    .join("\n");
   const logoHtml = iconDataUrl
     ? `<img src="${iconDataUrl}" width="64" height="64" alt="Cairn" />`
     : `<div style="width:64px;height:64px;border-radius:12px;background:var(--splash-accent);display:flex;align-items:center;justify-content:center;font-size:1.5rem;font-weight:700;color:var(--splash-background);">C</div>`;
@@ -103,13 +109,8 @@ function buildSplashHtml(iconDataUrl: string | null): string {
     display: flex; flex-direction: column;
     align-items: center; justify-content: center;
     padding: 48px 32px;
-    --splash-text: #e8e8e8;
-    --splash-text-dim: #666;
-    --splash-accent: #8b7bd8;
-    --splash-progress-bg: #222;
-    --splash-success: #22c55e;
-    --splash-error: #ef4444;
-    --splash-background: #0d0d0d;
+${initialVars}
+    background: var(--splash-background);
   }
   .logo {
     width: 64px; height: 64px;
@@ -310,34 +311,36 @@ function buildSplashHtml(iconDataUrl: string | null): string {
 }
 
 function getThemeColors(): Record<string, string> {
+  // Mirrors the app's real design tokens in src/app/globals.css so the splash
+  // matches the window that follows it (light branch = [data-theme="light"]).
+  const light: Record<string, string> = {
+    text: "#1a1917",          // --text-primary (light)
+    "text-dim": "#9e9a94",    // --text-tertiary (light)
+    accent: "#6457e8",        // --accent (light)
+    "progress-bg": "#f0eeeb", // --surface-2 (light)
+    success: "#22c55e",
+    error: "#ef4444",
+    background: "#f5f4f1",    // --background (light)
+  };
+  const dark: Record<string, string> = {
+    text: "#e8e4dc",          // --text-primary (dark)
+    "text-dim": "#66635f",    // --text-tertiary (dark)
+    accent: "#7c6af7",        // --accent (dark)
+    "progress-bg": "#1a1a1a", // --surface-2 (dark)
+    success: "#22c55e",
+    error: "#ef4444",
+    background: "#0d0d0d",    // --background (dark)
+  };
   try {
     const themeFile = path.join(app.getPath("userData"), "theme.json");
     if (fs.existsSync(themeFile)) {
       const t = JSON.parse(fs.readFileSync(themeFile, "utf8")).theme;
-      if (t === "light") {
-        return {
-          text: "#1a1a1a",
-          "text-dim": "#888",
-          accent: "#6366f1",
-          "progress-bg": "#e0e0e0",
-          success: "#22c55e",
-          error: "#ef4444",
-          background: "#f5f4f1",
-        };
-      }
+      if (t === "light") return light;
     }
   } catch {
     // ignore — use dark defaults
   }
-  return {
-    text: "#e8e8e8",
-    "text-dim": "#666",
-    accent: "#8b7bd8",
-    "progress-bg": "#222",
-    success: "#22c55e",
-    error: "#ef4444",
-    background: "#0d0d0d",
-  };
+  return dark;
 }
 
 export class BootSplash {
@@ -364,7 +367,7 @@ export class BootSplash {
 
     this.win.loadURL(
       "data:text/html;charset=utf-8," +
-        encodeURIComponent(buildSplashHtml(getIconDataUrl())),
+        encodeURIComponent(buildSplashHtml(getIconDataUrl(), colors)),
     );
 
     this.win.webContents.on("did-finish-load", () => {
