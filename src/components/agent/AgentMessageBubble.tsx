@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { CheckCircle, Loader2, ChevronDown, ChevronRight, GitBranch } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, prettifyToolLabel } from "@/lib/utils";
 import { MarkdownContent } from "@/components/chat/chat-panel/MarkdownContent";
 import { MessageAvatar, StreamingCursor } from "@/components/chat/chat-panel/message-ui";
 import { ThinkingPanel } from "@/components/chat/chat-panel/ThinkingPanel";
@@ -67,7 +67,7 @@ function ToolChip({ tc, sessionId }: {
       <div className="flex items-center gap-2 px-2.5 py-1 rounded-md bg-[color-mix(in_srgb,var(--warning,#f59e0b)_8%,transparent)] border border-[color-mix(in_srgb,var(--warning,#f59e0b)_30%,transparent)] w-fit flex-wrap mt-0.5 mb-0.5">
         <span className="text-[0.714rem] font-medium text-[var(--warning,#f59e0b)] flex items-center gap-1.5 shrink-0">
           <Loader2 size={9} className="animate-spin shrink-0" />
-          Confirm: {tc.label}
+          Confirm: {prettifyToolLabel(tc.label)}
         </span>
         <div className="flex items-center gap-1.5 ml-2">
           <button
@@ -92,7 +92,7 @@ function ToolChip({ tc, sessionId }: {
     return (
       <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] w-fit">
         <Loader2 size={9} className="text-[var(--accent)] animate-spin shrink-0" />
-        <span className="text-[0.714rem] text-[var(--text-secondary)]">{tc.label}</span>
+        <span className="text-[0.714rem] text-[var(--text-secondary)]">{prettifyToolLabel(tc.label)}</span>
       </div>
     );
   }
@@ -115,7 +115,7 @@ function ToolChip({ tc, sessionId }: {
         )}
       >
         <CheckCircle size={9} className={cn("shrink-0", tc.ok ? "text-[var(--accent)]" : "text-[var(--danger)]")} />
-        <span className="text-[0.714rem] text-[var(--text-secondary)]">{tc.label}</span>
+        <span className="text-[0.714rem] text-[var(--text-secondary)]">{prettifyToolLabel(tc.label)}</span>
         {hasOutput && (
           expanded
             ? <ChevronDown size={9} className="text-[var(--text-tertiary)] shrink-0 ml-0.5" />

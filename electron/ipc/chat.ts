@@ -14,7 +14,7 @@ import type Database from "better-sqlite3";
 import { isLocalEndpoint, normaliseBaseUrl, type OpenAIMessage, calculatePromptBreakdown, scaleBreakdown, type TokenBreakdown } from "../lib/llm";
 import { TOOLS, buildSystemPrompt, type ChatRequest } from "../lib/tools";
 import { executeTool } from "./chat-executor";
-import { getExternalToolDefs, executeExternalTool, isExternalToolName } from "../lib/external-tools";
+import { getExternalToolDefs, executeExternalTool, isExternalToolName, externalToolLabel } from "../lib/external-tools";
 import { saveCachedConfig, getCachedConfig } from "../lib/config-cache";
 import { iterSseData } from "../lib/sse";
 import { traceTool } from "../lib/tool-trace";
@@ -301,7 +301,7 @@ async function runToolLoop(
       // with a descriptive error so the model can re-issue — never run
       // a tool with destructured args.
       if (parseError) {
-        emitToolCall({ tool: call.function.name, label: call.function.name, args: {}, callId: call.id });
+        emitToolCall({ tool: call.function.name, label: externalToolLabel(call.function.name, db), args: {}, callId: call.id });
         emitToolCallDone?.({ tool: call.function.name, callId: call.id });
         messages.push({
           role: "tool",
@@ -315,7 +315,7 @@ async function runToolLoop(
       try {
         if (isExternalToolName(call.function.name)) {
           // MCP server / custom service tool — route to the external executor.
-          emitToolCall({ tool: call.function.name, label: call.function.name, args, callId: call.id });
+          emitToolCall({ tool: call.function.name, label: externalToolLabel(call.function.name, db), args, callId: call.id });
           const output = await executeExternalTool(db, req.workspaceId ?? "", req.projectId ?? "", call.function.name, args);
           emitToolCallDone?.({ tool: call.function.name, output, callId: call.id });
           result = output;

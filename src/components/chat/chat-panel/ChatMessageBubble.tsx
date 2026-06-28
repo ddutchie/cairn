@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { FileText, Kanban, FolderOpen, Search, Copy, Check, RotateCcw, CheckCircle } from "lucide-react";
-import { cn, formatRelative } from "@/lib/utils";
+import { cn, formatRelative, prettifyToolLabel } from "@/lib/utils";
 import { MarkdownContent } from "./MarkdownContent";
 import { ActionsList } from "./ActionsList";
 import { ThinkingPanel } from "./ThinkingPanel";
@@ -15,7 +15,7 @@ function ChatToolCallChip({ tc }: { tc: ChatToolCallRecord }) {
     return (
       <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--surface-2)] border border-[var(--border)] w-fit">
         <CheckCircle size={10} className="text-[var(--accent)] shrink-0" />
-        <span className="text-[0.786rem] text-[var(--text-secondary)]">{tc.label}</span>
+        <span className="text-[0.786rem] text-[var(--text-secondary)]">{prettifyToolLabel(tc.label)}</span>
       </div>
     );
   }

@@ -12,6 +12,25 @@ export function id(): string {
   return nanoid(12);
 }
 
+/**
+ * Defensive renderer-side fallback for tool-call chip labels. The main process
+ * already emits friendly labels (e.g. "Canva · Search designs"), but a raw
+ * namespaced id can still reach the UI via a transient "pending" chip or a
+ * historical message saved before labelling existed. This strips the
+ * `mcp__<id>__` / `svc__<id>__` prefix and prettifies the remaining tool name:
+ *   "mcp__BZfTDDlqAOoB__search-designs" → "Search designs".
+ * Anything that isn't a raw namespaced id is returned unchanged.
+ */
+export function prettifyToolLabel(label: string): string {
+  if (typeof label !== "string") return label;
+  // Only rewrite when it actually looks like a raw namespaced id with a tool part.
+  const match = /^(?:mcp|svc)__.+?__(.+)$/.exec(label);
+  if (!match || !match[1]) return label;
+  const tool = match[1].replace(/[_.\-]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!tool) return label;
+  return tool.charAt(0).toUpperCase() + tool.slice(1);
+}
+
 export function now(): string {
   return new Date().toISOString();
 }

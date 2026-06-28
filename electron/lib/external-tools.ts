@@ -203,3 +203,41 @@ export async function executeExternalTool(
 
   return `Error: "${name}" is not an external tool`;
 }
+
+// ── Display labels ──────────────────────────────────────────────────────────
+
+/**
+ * Turn a raw tool name into a friendly chip label. Snake_case / kebab-case /
+ * dotted segments become spaced, capitalised words:
+ *   "search-designs" → "Search designs", "create_issue" → "Create issue".
+ */
+export function prettifyToolName(toolName: string): string {
+  const words = toolName.replace(/[_.\-]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!words) return toolName;
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/**
+ * Human-readable label for an external (MCP / service) tool call, used for the
+ * UI chip instead of the raw namespaced id (e.g. "mcp__BZfTDDlqAOoB__search-designs").
+ *
+ * Resolves the owning server/service display name from the DB when available so
+ * the chip reads e.g. "Canva · Search designs"; falls back to just the
+ * prettified tool name (or the raw name for anything non-external).
+ */
+export function externalToolLabel(name: string, db?: Database.Database): string {
+  const mcpParsed = mcpClient.parseToolName(name);
+  if (mcpParsed) {
+    const pretty = prettifyToolName(mcpParsed.toolName);
+    const server = db ? q.getMcpServerById(db, mcpParsed.serverId) : null;
+    return server?.name ? `${server.name} · ${pretty}` : pretty;
+  }
+  const svcParsed = services.parseServiceToolName(name);
+  if (svcParsed) {
+    const pretty = prettifyToolName(svcParsed.toolName);
+    const svc = db ? q.getCustomServiceById(db, svcParsed.serviceId) : null;
+    return svc?.name ? `${svc.name} · ${pretty}` : pretty;
+  }
+  return name;
+}
+

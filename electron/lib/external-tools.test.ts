@@ -6,7 +6,7 @@ vi.mock("electron", () => ({
   safeStorage: { isEncryptionAvailable: () => false },
 }));
 
-import { resolveAttachedToolIds, isExternalToolName } from "./external-tools";
+import { resolveAttachedToolIds, isExternalToolName, prettifyToolName, externalToolLabel } from "./external-tools";
 
 describe("external-tools scoping", () => {
   it("collects enabled attachments by type", () => {
@@ -57,5 +57,37 @@ describe("external-tools routing guard", () => {
     expect(isExternalToolName("svc__s1__call")).toBe(true);
     expect(isExternalToolName("read")).toBe(false);
     expect(isExternalToolName("create_task")).toBe(false);
+  });
+});
+
+describe("prettifyToolName", () => {
+  it("spaces and capitalises kebab/snake/dotted names", () => {
+    expect(prettifyToolName("search-designs")).toBe("Search designs");
+    expect(prettifyToolName("create_issue")).toBe("Create issue");
+    expect(prettifyToolName("get.user.profile")).toBe("Get user profile");
+  });
+  it("collapses repeated separators and trims", () => {
+    expect(prettifyToolName("a__b--c")).toBe("A b c");
+  });
+  it("returns the original for an empty result", () => {
+    expect(prettifyToolName("")).toBe("");
+  });
+});
+
+describe("externalToolLabel", () => {
+  // No db → falls back to the prettified tool name.
+  it("strips the namespace and prettifies the mcp tool name (no db)", () => {
+    expect(externalToolLabel("mcp__BZfTDDlqAOoB__search-designs")).toBe("Search designs");
+  });
+  it("strips the namespace and prettifies the service tool name (no db)", () => {
+    expect(externalToolLabel("svc__abc123__list_invoices")).toBe("List invoices");
+  });
+  it("keeps tool names that themselves contain the separator", () => {
+    // parseToolName splits on the FIRST separator only.
+    expect(externalToolLabel("mcp__srv1__weird__tool")).toBe("Weird tool");
+  });
+  it("returns non-external names unchanged", () => {
+    expect(externalToolLabel("create_task")).toBe("create_task");
+    expect(externalToolLabel("read")).toBe("read");
   });
 });

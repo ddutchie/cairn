@@ -262,7 +262,7 @@ const PLAN_MODE_ALLOWED = new Set([
 // ── Fetch all tool definitions (coding + Cairn subset) ────────────────────────
 
 import { TOOLS as ALL_CAIRN_TOOLS } from "./tools";
-import { getExternalToolDefs, executeExternalTool, isExternalToolName } from "./external-tools";
+import { getExternalToolDefs, executeExternalTool, isExternalToolName, externalToolLabel } from "./external-tools";
 
 function getAllToolDefs(
   mode: "plan" | "execute" = "execute",
@@ -762,7 +762,9 @@ export async function runAgentLoop(
         args = {};
       }
 
-      const label = CODING_LABELS[tc.function.name]?.(args) ?? tc.function.name;
+      const label = isExternalToolName(tc.function.name)
+        ? externalToolLabel(tc.function.name, toolCtx.db)
+        : (CODING_LABELS[tc.function.name]?.(args) ?? tc.function.name);
       const pendingCallId = streamCallIds.get(tcIdx);
       callbacks.onToolStart(tc.function.name, label, pendingCallId);
 
