@@ -16,6 +16,7 @@ import type { Database } from "better-sqlite3";
 import * as q from "../db/queries";
 import { newId } from "../db/utils";
 import * as secrets from "../lib/secure-store";
+import * as mcpClient from "../lib/mcp-client";
 
 type SaveMcpArgs = Omit<Parameters<typeof q.saveMcpServer>[1], "id"> & { id?: string };
 type SaveServiceArgs = Omit<Parameters<typeof q.saveCustomService>[1], "id"> & { id?: string };
@@ -34,6 +35,21 @@ export function registerToolsHandlers(db: Database): void {
     handle(() => {
       q.deleteMcpServer(db, id);
       secrets.deleteToolSecrets(id); // purge any keychain credentials
+      void mcpClient.dispose(id); // drop any live connection
+    })
+  );
+
+  // Settings "test connection": connect + listTools, then disconnect.
+  registerIpcHandle("tools:testMcp", (_e, { id }: { id: string }) =>
+    handle(() => {
+      const server = q.getMcpServerById(db, id);
+      if (!server) throw new Error("MCP server not found");
+      return mcpClient.testConnection({
+        id: server.id,
+        baseUrl: server.baseUrl,
+        transport: server.transport,
+        headers: server.headers,
+      });
     })
   );
 

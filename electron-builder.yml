@@ -33,8 +33,16 @@ files:
   - node_modules/sharp/**/*
   - node_modules/umap-js/**/*
   - electron/sharp-stub/**/*
+  # MCP SDK JSON-schema validator (ajv) — esbuild leaves ajv's dynamic codegen
+  # requires external, so ajv + ajv-formats + their transitive deps must ship.
+  - node_modules/ajv/**/*
+  - node_modules/ajv-formats/**/*
+  - node_modules/fast-deep-equal/**/*
+  - node_modules/fast-uri/**/*
+  - node_modules/json-schema-traverse/**/*
+  - node_modules/require-from-string/**/*
   # Exclude everything else in node_modules
-  - "!node_modules/!(better-sqlite3|bindings|file-uri-to-path|electron-updater|node-pty|@huggingface|onnxruntime-node|onnxruntime-common|sharp|umap-js)/**"
+  - "!node_modules/!(better-sqlite3|bindings|file-uri-to-path|electron-updater|node-pty|@huggingface|onnxruntime-node|onnxruntime-common|sharp|umap-js|ajv|ajv-formats|fast-deep-equal|fast-uri|json-schema-traverse|require-from-string)/**"
   # Exclude source code, tests, and build intermediates from native modules to reduce size and signing overhead
   - "!node_modules/{better-sqlite3,node-pty}/{src,deps,docs,test,tests,obj,*.vcxproj,*.sln,*.vcxproj.filters}/**/*"
   - "!node_modules/{better-sqlite3,node-pty}/build/Release/*.{obj,pdb,lib,iobj,ipdb,tlog}"

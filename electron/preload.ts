@@ -404,6 +404,11 @@ const api = {
     saveMcpServer: (server: Partial<McpServerConfig>) =>
       invoke<McpServerConfig>("tools:saveMcpServer", server),
     deleteMcpServer: (id: string) => invoke("tools:deleteMcpServer", { id }),
+    testMcp: (id: string) =>
+      invoke<{ ok: boolean; toolCount?: number; toolNames?: string[]; error?: string }>(
+        "tools:testMcp",
+        { id }
+      ),
 
     listServices: (workspaceId: string) =>
       invoke<CustomServiceConfig[]>("tools:listServices", { workspaceId }),
