@@ -139,14 +139,21 @@ export async function getExternalToolDefs(
 ): Promise<OpenAIToolDef[]> {
   const { mcpServers, customServices } = loadScopedConfigs(db, workspaceId, projectId);
 
-  const mcpDefs = (
-    await Promise.all(
-      mcpServers.map(async (s) => {
-        const defs = await mcpClient.listTools(toRuntimeConfig(s));
-        return filterDisabledMcpDefs(defs, s.disabledTools ?? []);
-      })
-    )
-  ).flat();
+  // Query each in-scope server independently so one unreachable / failing server
+  // can't hide the tools of the healthy servers (or the custom services below).
+  // mcpClient.listTools already degrades to [] internally, but allSettled also
+  // guards toRuntimeConfig / filterDisabledMcpDefs against an unexpected throw.
+  const mcpResults = await Promise.allSettled(
+    mcpServers.map(async (s) => {
+      const defs = await mcpClient.listTools(toRuntimeConfig(s));
+      return filterDisabledMcpDefs(defs, s.disabledTools ?? []);
+    })
+  );
+  const mcpDefs = mcpResults.flatMap((r, i) => {
+    if (r.status === "fulfilled") return r.value;
+    console.error(`[external-tools] skipping MCP server ${mcpServers[i]?.id}:`, r.reason);
+    return [];
+  });
 
   const svcDefs = customServices.map((s) =>
     services.serviceToOpenAI({

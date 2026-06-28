@@ -36,7 +36,7 @@ function ToolOutputPanel({ name, output }: { name: string; output: string }) {
             key={i}
             className={cn(
               "px-2 py-px leading-5 whitespace-pre-wrap break-all",
-              line.type === "add"    && "bg-[color-mix(in_srgb,var(--success,#22c55e)_10%,transparent)] text-[color-mix(in_srgb,var(--success,#22c55e)_90%,var(--text-primary))]",
+              line.type === "add"    && "bg-[color-mix(in_srgb,var(--success)_10%,transparent)] text-[color-mix(in_srgb,var(--success)_90%,var(--text-primary))]",
               line.type === "remove" && "bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] text-[color-mix(in_srgb,var(--danger)_80%,var(--text-primary))]",
               line.type === "context" && "text-[var(--text-tertiary)]",
             )}

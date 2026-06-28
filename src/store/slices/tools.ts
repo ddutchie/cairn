@@ -116,12 +116,25 @@ export const createToolsSlice: StateCreator<CairnStore, [], [], ToolsSlice> = (s
   },
 
   async setMcpToolEnabled(serverId, toolName, enabled) {
+    if (typeof window === "undefined" || !window.electron?.tools) return;
     const server = get().mcpServers.find((m) => m.id === serverId);
     if (!server) return;
+    // Derive from the latest in-memory disabledTools and update state
+    // synchronously, so rapid successive toggles each see the freshest array
+    // (rather than a snapshot captured before an in-flight save resolves).
     const current = new Set(server.disabledTools ?? []);
     if (enabled) current.delete(toolName);
     else current.add(toolName);
-    await get().saveMcpServer({ ...server, disabledTools: [...current] });
+    const next: McpServerConfig = { ...server, disabledTools: [...current] };
+    set((s) => ({ mcpServers: s.mcpServers.map((m) => (m.id === serverId ? next : m)) }));
+    // Persist directly (not via saveMcpServer, whose resolve replaces the whole
+    // record) so a slow/out-of-order response can't clobber a newer toggle.
+    try {
+      await window.electron.tools.saveMcpServer(next);
+    } catch (err) {
+      console.error("[tools] setMcpToolEnabled error", err);
+      if (get().activeWorkspaceId) get().fetchTools(get().activeWorkspaceId!);
+    }
   },
 
   async saveCustomService(service) {
