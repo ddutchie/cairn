@@ -36,7 +36,7 @@ export const createToolsSlice: StateCreator<CairnStore, [], [], ToolsSlice> = (s
   toolAttachments: [],
 
   async fetchTools(workspaceId) {
-    if (typeof window === "undefined" || !window.electron) return;
+    if (typeof window === "undefined" || !window.electron?.tools) return;
     try {
       const [mcpServers, customServices] = await Promise.all([
         window.electron.tools.listMcpServers(workspaceId) as Promise<McpServerConfig[]>,
@@ -51,7 +51,7 @@ export const createToolsSlice: StateCreator<CairnStore, [], [], ToolsSlice> = (s
   },
 
   async saveMcpServer(server) {
-    if (typeof window === "undefined" || !window.electron) return;
+    if (typeof window === "undefined" || !window.electron?.tools) return;
     const saved = await window.electron.tools.saveMcpServer(server) as McpServerConfig;
     set((s) => ({
       mcpServers: s.mcpServers.some((m) => m.id === saved.id)
@@ -61,7 +61,7 @@ export const createToolsSlice: StateCreator<CairnStore, [], [], ToolsSlice> = (s
   },
 
   async deleteMcpServer(id) {
-    if (typeof window === "undefined" || !window.electron) return;
+    if (typeof window === "undefined" || !window.electron?.tools) return;
     const prev = get().mcpServers;
     set({ mcpServers: prev.filter((m) => m.id !== id) });
     try {
@@ -73,7 +73,7 @@ export const createToolsSlice: StateCreator<CairnStore, [], [], ToolsSlice> = (s
   },
 
   async saveCustomService(service) {
-    if (typeof window === "undefined" || !window.electron) return;
+    if (typeof window === "undefined" || !window.electron?.tools) return;
     const saved = await window.electron.tools.saveService(service) as CustomServiceConfig;
     set((s) => ({
       customServices: s.customServices.some((c) => c.id === saved.id)
@@ -83,7 +83,7 @@ export const createToolsSlice: StateCreator<CairnStore, [], [], ToolsSlice> = (s
   },
 
   async deleteCustomService(id) {
-    if (typeof window === "undefined" || !window.electron) return;
+    if (typeof window === "undefined" || !window.electron?.tools) return;
     const prev = get().customServices;
     set({ customServices: prev.filter((c) => c.id !== id) });
     try {
@@ -95,7 +95,7 @@ export const createToolsSlice: StateCreator<CairnStore, [], [], ToolsSlice> = (s
   },
 
   async fetchToolAttachments(projectId) {
-    if (typeof window === "undefined" || !window.electron) return;
+    if (typeof window === "undefined" || !window.electron?.tools) return;
     try {
       const toolAttachments = await window.electron.tools.listAttachments(projectId) as ToolAttachment[];
       // Guard against a late response overwriting a newer active project.
@@ -107,7 +107,7 @@ export const createToolsSlice: StateCreator<CairnStore, [], [], ToolsSlice> = (s
   },
 
   async setToolAttachment(projectId, toolType, toolId, enabled) {
-    if (typeof window === "undefined" || !window.electron) return;
+    if (typeof window === "undefined" || !window.electron?.tools) return;
     const next: ToolAttachment = { projectId, toolType, toolId, enabled };
     set((s) => ({
       toolAttachments: s.toolAttachments.some((a) => a.toolType === toolType && a.toolId === toolId && a.projectId === projectId)
@@ -123,7 +123,7 @@ export const createToolsSlice: StateCreator<CairnStore, [], [], ToolsSlice> = (s
   },
 
   async clearToolAttachment(projectId, toolType, toolId) {
-    if (typeof window === "undefined" || !window.electron) return;
+    if (typeof window === "undefined" || !window.electron?.tools) return;
     set((s) => ({
       toolAttachments: s.toolAttachments.filter(
         (a) => !(a.toolType === toolType && a.toolId === toolId && a.projectId === projectId),
