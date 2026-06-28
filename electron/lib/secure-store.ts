@@ -126,6 +126,12 @@ export function setSecret(toolType: ToolKind, toolId: string, key: string, value
       "Secret storage is unavailable on this system (OS keychain/encryption not accessible). Cannot store credentials securely."
     );
   }
+  // Refuse to encrypt an unfilled placeholder (e.g. "<API_KEY>" or
+  // "Bearer <API_KEY>"). Storing it would let the literal token reach the wire
+  // later if it slipped past resolveSecrets. Treat it as "no secret provided".
+  if (isPlaceholder(value) || containsPlaceholder(value)) {
+    throw new Error("Refusing to store a placeholder secret value — enter a real credential.");
+  }
   const ref = secretRef(toolType, toolId, key);
   const store = readStore();
   store[ref] = safeStorage.encryptString(value).toString("base64");
@@ -169,7 +175,11 @@ function getSecretByRef(ref: string): string | null {
   const cipher = store[ref];
   if (!cipher) return null;
   try {
-    return safeStorage.decryptString(Buffer.from(cipher, "base64"));
+    const decrypted = safeStorage.decryptString(Buffer.from(cipher, "base64"));
+    // Defensive: a placeholder must never round-trip out of the store, even if
+    // an older build managed to persist one. Drop it rather than forward it.
+    if (isPlaceholder(decrypted) || containsPlaceholder(decrypted)) return null;
+    return decrypted;
   } catch {
     console.error("[secure-store] failed to decrypt secret ref");
     return null;

@@ -443,6 +443,19 @@ export interface GraphFilters {
 }
 
 // ── App UI State (not persisted) ──────────────
+/** Deep-linkable Settings view sections. */
+export type SettingsSection =
+  | "general"
+  | "ai"
+  | "embeddings"
+  | "agents"
+  | "tools"
+  | "mobile"
+  | "data"
+  | "about"
+  | "shortcuts"
+  | "tags";
+
 export interface AppUIState {
   activeWorkspaceId: ID | null;
   activeProjectId: ID | null;

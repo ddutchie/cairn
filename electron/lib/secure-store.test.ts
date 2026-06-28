@@ -66,8 +66,14 @@ describe("secure-store persistence round-trip", () => {
     expect(store.hasSecret("mcp", "t1", "Authorization")).toBe(false);
   });
 
-  it("never persists the plaintext value on disk", () => {
-    store.setSecret("service", "t1", "X-Api-Key", "super-secret-123");
+  it("refuses to store an unfilled placeholder value", () => {
+    expect(() => store.setSecret("mcp", "t1", "Authorization", "Bearer <API_KEY>")).toThrow(/placeholder/i);
+    expect(() => store.setSecret("service", "t1", "X-Api-Key", "YOUR_API_KEY")).toThrow(/placeholder/i);
+    expect(store.hasSecret("mcp", "t1", "Authorization")).toBe(false);
+    expect(store.hasSecret("service", "t1", "X-Api-Key")).toBe(false);
+  });
+
+  it("never persists the plaintext value on disk", () => {    store.setSecret("service", "t1", "X-Api-Key", "super-secret-123");
     const onDisk = JSON.stringify(virtualFiles);
     expect(onDisk).not.toContain("super-secret-123");
     expect(onDisk).toContain("secret://service:t1/X-Api-Key");

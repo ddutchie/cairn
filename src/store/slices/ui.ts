@@ -4,7 +4,7 @@
 
 import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
-import type { ID, AppUIState } from "@/types";
+import type { ID, AppUIState, SettingsSection } from "@/types";
 import { storage } from "@/lib/storage";
 import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KEY, ACTIVE_PROJECT_KEY, CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY } from "@/lib/constants";
 
@@ -160,8 +160,8 @@ export interface UISlice extends AppUIState {
   lastContentView: AppUIState["lastContentView"];
 
   /** Optional target section for the Settings view (consumed once on open). */
-  settingsSection: string | null;
-  setSettingsSection: (section: string | null) => void;
+  settingsSection: SettingsSection | null;
+  setSettingsSection: (section: SettingsSection | null) => void;
 
   // Seen features for What's New modal
   seenFeatures: string[];

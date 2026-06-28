@@ -150,18 +150,45 @@ export function registerToolsHandlers(db: Database): void {
   registerIpcHandle(
     "secrets:set",
     (_e, { toolType, toolId, key, value }: { toolType: secrets.ToolKind; toolId: string; key: string; value: string }) =>
-      handle(() => secrets.setSecret(toolType, toolId, key, value))
+      handle(() => {
+        assertSecretIdentity(toolType, toolId, key);
+        return secrets.setSecret(toolType, toolId, key, value);
+      })
   );
 
   registerIpcHandle(
     "secrets:has",
     (_e, { toolType, toolId, key }: { toolType: secrets.ToolKind; toolId: string; key: string }) =>
-      handle(() => secrets.hasSecret(toolType, toolId, key))
+      handle(() => {
+        assertSecretIdentity(toolType, toolId, key);
+        return secrets.hasSecret(toolType, toolId, key);
+      })
   );
 
   registerIpcHandle(
     "secrets:delete",
     (_e, { toolType, toolId, key }: { toolType: secrets.ToolKind; toolId: string; key: string }) =>
-      handle(() => secrets.deleteSecret(toolType, toolId, key))
+      handle(() => {
+        assertSecretIdentity(toolType, toolId, key);
+        return secrets.deleteSecret(toolType, toolId, key);
+      })
   );
+}
+
+/**
+ * Validate the tool identity supplied by the renderer before any keychain
+ * mutation. This is a desktop app with a single trusted renderer, so there is
+ * no per-renderer ownership boundary to enforce — but a malformed payload must
+ * never create a junk ref or address the wrong tool kind's namespace.
+ */
+function assertSecretIdentity(toolType: string, toolId: string, key: string): void {
+  if (toolType !== "mcp" && toolType !== "service") {
+    throw new Error(`Invalid secret toolType: ${String(toolType)}`);
+  }
+  if (typeof toolId !== "string" || !toolId.trim()) {
+    throw new Error("Invalid secret toolId");
+  }
+  if (typeof key !== "string" || !key.trim()) {
+    throw new Error("Invalid secret key");
+  }
 }

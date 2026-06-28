@@ -26,7 +26,7 @@ import { AgentSettings } from "./AgentSettings";
 import { MobileSettings } from "./MobileSettings";
 import { EmbeddingsSettings } from "./EmbeddingsSettings";
 import { ToolsSettings } from "./ToolsSettings";
-type SettingsSection = "general" | "ai" | "embeddings" | "agents" | "tools" | "mobile" | "data" | "about" | "shortcuts" | "tags";
+import type { SettingsSection } from "@/types";
 
 export function SettingsView() {
   const { workspaces, projects, notes, cards, settingsSection, setSettingsSection } = useCairnStore(useShallow((s) => ({ workspaces: s.workspaces, projects: s.projects, notes: s.notes, cards: s.cards, settingsSection: s.settingsSection, setSettingsSection: s.setSettingsSection })));
@@ -35,7 +35,7 @@ export function SettingsView() {
   // the initial section, then clear the request so it doesn't override manual
   // navigation later. Consumed once at mount.
   const [section, setSection] = useState<SettingsSection>(
-    () => (settingsSection as SettingsSection | null) ?? "general",
+    () => settingsSection ?? "general",
   );
   React.useEffect(() => {
     if (settingsSection) setSettingsSection(null);
