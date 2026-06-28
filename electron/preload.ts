@@ -8,6 +8,25 @@
 
 import { contextBridge, ipcRenderer } from "electron";
 
+// Local structural types for the external-tools namespace. The renderer's
+// canonical types live in src/types; electron's rootDir excludes src, so we
+// mirror the shapes here (kept in sync by the IPC return types).
+interface McpServerConfig {
+  id: string; workspaceId: string; name: string; description?: string;
+  transport: "sse" | "http"; baseUrl: string; headers?: Record<string, string>;
+  enabled: boolean; source: string; communityId?: string; version?: string;
+  createdAt: string; updatedAt: string;
+}
+interface CustomServiceConfig {
+  id: string; workspaceId: string; name: string; description?: string;
+  apiUrl: string; method: "GET" | "POST" | "PUT" | "DELETE"; headers?: Record<string, string>;
+  toolDefinition: string; responseKeys?: string[]; apiKeyUrl?: string;
+  enabled: boolean; source: string; communityId?: string; version?: string;
+  createdAt: string; updatedAt: string;
+}
+interface ToolAttachment {
+  projectId: string; toolType: "mcp" | "service"; toolId: string; enabled: boolean;
+}
 // ── Inline types for the git API (not shared with the renderer bundle) ──────
 
 interface GitStatusEntry {
@@ -376,6 +395,26 @@ const api = {
       ipcRenderer.on("agent:exit", handler);
       return () => ipcRenderer.off("agent:exit", handler);
     },
+  },
+
+  // ── External tools (MCP servers + custom HTTP services) ───────
+  tools: {
+    listMcpServers: (workspaceId: string) =>
+      invoke<McpServerConfig[]>("tools:listMcpServers", { workspaceId }),
+    saveMcpServer: (server: Partial<McpServerConfig>) =>
+      invoke<McpServerConfig>("tools:saveMcpServer", server),
+    deleteMcpServer: (id: string) => invoke("tools:deleteMcpServer", { id }),
+
+    listServices: (workspaceId: string) =>
+      invoke<CustomServiceConfig[]>("tools:listServices", { workspaceId }),
+    saveService: (service: Partial<CustomServiceConfig>) =>
+      invoke<CustomServiceConfig>("tools:saveService", service),
+    deleteService: (id: string) => invoke("tools:deleteService", { id }),
+
+    listAttachments: (projectId: string) =>
+      invoke<ToolAttachment[]>("tools:listAttachments", { projectId }),
+    setAttachment: (a: ToolAttachment) => invoke<ToolAttachment>("tools:setAttachment", a),
+    clearAttachment: (a: Omit<ToolAttachment, "enabled">) => invoke("tools:clearAttachment", a),
   },
 
   // ── Git operations (Agent Git tab) ────────────

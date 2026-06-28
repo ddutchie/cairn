@@ -83,6 +83,65 @@ export function toCodingAgent(row: any) {
   };
 }
 
+/** Parse a JSON object column, falling back to {} on null/invalid. */
+function pObj(v: string | null | undefined): Record<string, string> {
+  if (!v) return {};
+  try {
+    const parsed = JSON.parse(v);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+export function toMcpServer(row: any) {
+  return {
+    id: row.id as string,
+    workspaceId: row.workspace_id as string,
+    name: row.name as string,
+    description: (row.description ?? undefined) as string | undefined,
+    transport: (row.transport ?? "http") as "sse" | "http",
+    baseUrl: row.base_url as string,
+    headers: pObj(row.headers),
+    enabled: row.enabled === 1,
+    source: (row.source ?? "manual") as "manual" | "community" | "ai-builder",
+    communityId: (row.community_id ?? undefined) as string | undefined,
+    version: (row.version ?? undefined) as string | undefined,
+    createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string,
+  };
+}
+
+export function toCustomService(row: any) {
+  return {
+    id: row.id as string,
+    workspaceId: row.workspace_id as string,
+    name: row.name as string,
+    description: (row.description ?? undefined) as string | undefined,
+    apiUrl: row.api_url as string,
+    method: (row.method ?? "GET") as "GET" | "POST" | "PUT" | "DELETE",
+    headers: pObj(row.headers),
+    toolDefinition: row.tool_definition as string,
+    responseKeys: j2(row.response_keys),
+    apiKeyUrl: (row.api_key_url ?? undefined) as string | undefined,
+    enabled: row.enabled === 1,
+    source: (row.source ?? "manual") as "manual" | "community" | "ai-builder",
+    communityId: (row.community_id ?? undefined) as string | undefined,
+    version: (row.version ?? undefined) as string | undefined,
+    createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string,
+  };
+}
+
+export function toToolAttachment(row: any) {
+  return {
+    projectId: row.project_id as string,
+    toolType: row.tool_type as "mcp" | "service",
+    toolId: row.tool_id as string,
+    enabled: row.enabled === 1,
+  };
+}
+
 export function toNote(row: any) {
   return {
     id: row.id as string,

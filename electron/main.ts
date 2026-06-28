@@ -21,6 +21,7 @@ import { loadMobileSettings, startMobileServer, stopMobileServer } from "./lib/m
 import { initDb } from "./db/client";
 import { registerIpcHandlers, registerAppHandlers } from "./ipc/handlers";
 import { registerAgentHandlers } from "./ipc/agent";
+import { registerToolsHandlers } from "./ipc/tools";
 import { registerGitHandlers } from "./ipc/git";
 import { registerPiAgentHandler } from "./ipc/pi-agent";
 import { readWorkspaceConfig, getDbPathForWorkspace } from "./workspace-config";
@@ -192,6 +193,7 @@ app.whenReady().then(async () => {
   // runAllPendingMigrations, etc. which need handler-level model resolution).
   registerIpcHandlers(ctx);
   registerAgentHandlers(ctx.db);
+  registerToolsHandlers(ctx.db);
   registerGitHandlers(ctx.db);
   registerPiAgentHandler(ctx);
   registerChatPopoutHandlers();
