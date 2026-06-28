@@ -17,6 +17,7 @@ import * as q from "../db/queries";
 import { newId } from "../db/utils";
 import * as secrets from "../lib/secure-store";
 import * as mcpClient from "../lib/mcp-client";
+import * as services from "../lib/custom-services";
 
 type SaveMcpArgs = Omit<Parameters<typeof q.saveMcpServer>[1], "id"> & { id?: string };
 type SaveServiceArgs = Omit<Parameters<typeof q.saveCustomService>[1], "id"> & { id?: string };
@@ -67,6 +68,27 @@ export function registerToolsHandlers(db: Database): void {
       q.deleteCustomService(db, id);
       secrets.deleteToolSecrets(id); // purge any keychain credentials
     })
+  );
+
+  // Settings dry-run for a service.
+  registerIpcHandle(
+    "tools:testService",
+    (_e, { id, sampleArgs }: { id: string; sampleArgs?: Record<string, unknown> }) =>
+      handle(() => {
+        const svc = q.getCustomServiceById(db, id);
+        if (!svc) throw new Error("Service not found");
+        return services.testService(
+          {
+            id: svc.id,
+            apiUrl: svc.apiUrl,
+            method: svc.method,
+            headers: svc.headers,
+            toolDefinition: svc.toolDefinition,
+            responseKeys: svc.responseKeys,
+          },
+          sampleArgs ?? {}
+        );
+      })
   );
 
   // ── Per-project attachments ──────────────────────────────────────────────

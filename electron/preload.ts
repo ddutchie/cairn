@@ -415,6 +415,11 @@ const api = {
     saveService: (service: Partial<CustomServiceConfig>) =>
       invoke<CustomServiceConfig>("tools:saveService", service),
     deleteService: (id: string) => invoke("tools:deleteService", { id }),
+    testService: (id: string, sampleArgs?: Record<string, unknown>) =>
+      invoke<{ ok: boolean; status?: number; preview?: string; error?: string }>(
+        "tools:testService",
+        { id, sampleArgs }
+      ),
 
     listAttachments: (projectId: string) =>
       invoke<ToolAttachment[]>("tools:listAttachments", { projectId }),
