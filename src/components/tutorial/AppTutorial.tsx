@@ -93,10 +93,10 @@ export function AppTutorial() {
     stepKey: currentStep?.selector ?? "",
   });
 
-  // Track the step index history for direction-aware skipping
-  useEffect(() => {
+  const goToStep = useCallback((next: number) => {
     prevIndexRef.current = tutorialStepIndex;
-  }, [tutorialStepIndex]);
+    setTutorialStepIndex(next);
+  }, [tutorialStepIndex, setTutorialStepIndex]);
 
   const handleFinish = useCallback(() => {
     setTutorialActive(false);
@@ -115,7 +115,7 @@ export function AppTutorial() {
     }
 
     if (tutorialStepIndex < TUTORIAL_STEPS.length - 1) {
-      setTutorialStepIndex(tutorialStepIndex + 1);
+      goToStep(tutorialStepIndex + 1);
     } else {
       handleFinish();
     }
@@ -123,7 +123,7 @@ export function AppTutorial() {
 
   const handleBack = () => {
     if (tutorialStepIndex > 0) {
-      setTutorialStepIndex(tutorialStepIndex - 1);
+      goToStep(tutorialStepIndex - 1);
     }
   };
 
@@ -152,13 +152,13 @@ export function AppTutorial() {
           const goingBack = tutorialStepIndex < prevIndexRef.current;
           if (goingBack) {
             if (tutorialStepIndex > 0) {
-              setTutorialStepIndex(tutorialStepIndex - 1);
+              goToStep(tutorialStepIndex - 1);
             } else {
               handleFinish();
             }
           } else {
             if (tutorialStepIndex < TUTORIAL_STEPS.length - 1) {
-              setTutorialStepIndex(tutorialStepIndex + 1);
+              goToStep(tutorialStepIndex + 1);
             } else {
               handleFinish();
             }
@@ -169,7 +169,7 @@ export function AppTutorial() {
 
     timeoutId = window.setTimeout(checkAvailability, 250);
     return () => clearTimeout(timeoutId);
-  }, [tutorialActive, tutorialStepIndex, currentStep, handleFinish, setTutorialStepIndex]);
+  }, [tutorialActive, tutorialStepIndex, currentStep, handleFinish, goToStep]);
 
   // Effect to handle switching views on step changes
   useEffect(() => {
@@ -188,7 +188,7 @@ export function AppTutorial() {
     prevStepKey.stepKey !== stepKey
   ) {
     setPrevStepKey({ tutorialActive, stepKey });
-    if ((!tutorialActive || !currentStep) && targetRect !== null) {
+    if (targetRect !== null) {
       setTargetRect(null);
     }
   }

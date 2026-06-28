@@ -50,8 +50,10 @@ export function NewFeatureModal({ forceOpen = false, onClose }: Props) {
 
   if (!isOpen || featuresToShow.length === 0) return null;
 
-  const currentFeature = featuresToShow[activeIdx];
-  const isLast = activeIdx === featuresToShow.length - 1;
+  // Clamp activeIdx to a valid index in case the list shrank without triggering the reset above
+  const safeActiveIdx = Math.min(activeIdx, featuresToShow.length - 1);
+  const currentFeature = featuresToShow[safeActiveIdx];
+  const isLast = safeActiveIdx === featuresToShow.length - 1;
 
   const handleNext = () => {
     if (!isLast) {

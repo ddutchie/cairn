@@ -175,7 +175,16 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
       // immediately visible. The db:changed event from the chat tool writes is
       // suppressed by the ownWriteGuard (touched by the chat IPC call), so we
       // must explicitly re-hydrate here.
-      if (finalToolCalls.length > 0) {
+      // Only trigger for tools that actually persist state — exclude read-only
+      // tools (get_*/list_*/search_*) and suggestion-only tools that stage
+      // pendingActionsRef without writing to the DB.
+      const hasPersistedWrite = finalToolCalls.some((tc) => {
+        const name = tc.tool;
+        if (name.startsWith("get_") || name.startsWith("list_") || name.startsWith("search_")) return false;
+        if (name === "suggest_connections" || name === "ask_questions") return false;
+        return true;
+      });
+      if (hasPersistedWrite) {
         useCairnStore.getState().hydrateFromElectron(true);
       }
     });

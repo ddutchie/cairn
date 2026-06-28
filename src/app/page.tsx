@@ -307,8 +307,16 @@ export default function Home() {
                 setOnboardingState(false);
                 if (startTour) {
                   const state = useCairnStore.getState();
-                  const unseen = NEW_FEATURES_REGISTRY.some((f) => !state.seenFeatures.includes(f.id));
-                  if (unseen) {
+                  // Match NewFeatureModal's gating: only unseen features from the latest
+                  // registry version defer the tour. Older unseen entries are ignored.
+                  const latestVersion = NEW_FEATURES_REGISTRY.length > 0
+                    ? NEW_FEATURES_REGISTRY[NEW_FEATURES_REGISTRY.length - 1].version
+                    : null;
+                  const hasUnseenLatest = latestVersion !== null
+                    && NEW_FEATURES_REGISTRY.some(
+                      (f) => f.version === latestVersion && !state.seenFeatures.includes(f.id)
+                    );
+                  if (hasUnseenLatest) {
                     setPendingTutorial(true);
                   } else {
                     state.setTutorialActive(true);
