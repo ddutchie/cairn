@@ -39,26 +39,73 @@ import * as runtime from "./runtime/client";
 import { BootSplash } from "./splash/bootsplash";
 import { runBootSequence } from "./splash/boot-sequence";
 import { registerChatPopoutHandlers } from "./chat-popout";
+import { DEEP_LINK_SCHEME, parseOAuthCallback, completeServerAuth } from "./lib/mcp-oauth";
 
 const isDev = !app.isPackaged;
+
+// ── Deep-link (cairn://) registration + OAuth callback routing ───────────────
+// Used by the remote-MCP OAuth flow: the authorization server redirects to
+// cairn://oauth/callback?code=…&state=…, which the OS hands back to us as either
+// an open-url event (macOS) or a process argv entry (Windows/Linux).
+if (isDev && process.platform === "win32" && process.argv.length >= 2) {
+  // In dev on Windows the executable is electron.exe with our entry script as
+  // argv[1]; the launcher must be registered with that path so the OS can
+  // re-invoke us for a deep link.
+  app.setAsDefaultProtocolClient(DEEP_LINK_SCHEME, process.execPath, [path.resolve(process.argv[1])]);
+} else {
+  app.setAsDefaultProtocolClient(DEEP_LINK_SCHEME);
+}
+
+/** Find the first cairn:// deep link in a process argv array, if any. */
+function deepLinkFromArgv(argv: string[]): string | null {
+  return argv.find((a) => typeof a === "string" && a.startsWith(`${DEEP_LINK_SCHEME}://`)) ?? null;
+}
+
+/** Buffer for a deep link that arrives before the renderer is ready. */
+let _pendingDeepLink: string | null = null;
+
+/** Route a cairn:// deep link. Currently only OAuth callbacks are handled. */
+async function handleDeepLink(rawUrl: string): Promise<void> {
+  const cb = parseOAuthCallback(rawUrl);
+  if (!cb) return;
+  const win = BrowserWindow.getAllWindows()[0] ?? null;
+  if (win) {
+    if (win.isMinimized()) win.restore();
+    win.focus();
+  }
+  const result = await completeServerAuth(cb);
+  // Tell the renderer how it went so Settings can refresh the connection state.
+  win?.webContents.send("tools:oauthCallback", result);
+}
 
 const gotTheLock = app.requestSingleInstanceLock();
 
 if (!gotTheLock) {
   app.quit();
 } else {
-  app.on("second-instance", () => {
-    // Someone tried to run a second instance, we should focus our window.
-    // However, since app.whenReady() is already running, we might need a reference to the main window.
-    // Given the architecture, we could store a reference to the main window globally or
-    // use a singleton pattern, but here we can try to find the window.
+  app.on("second-instance", (_event, argv) => {
+    // Focus the existing window, and pick up a deep link passed on the relaunch
+    // argv (Windows/Linux delivery path for cairn://…).
     const allWindows = BrowserWindow.getAllWindows();
     if (allWindows.length > 0) {
       if (allWindows[0].isMinimized()) allWindows[0].restore();
       allWindows[0].focus();
     }
+    const link = deepLinkFromArgv(argv);
+    if (link) void handleDeepLink(link);
   });
 }
+
+// macOS delivers deep links via open-url (can fire before whenReady on cold
+// start, so buffer until a window exists).
+app.on("open-url", (event, url) => {
+  event.preventDefault();
+  if (BrowserWindow.getAllWindows().length === 0) {
+    _pendingDeepLink = url;
+  } else {
+    void handleDeepLink(url);
+  }
+});
 
 app.setName("Cairn");
 
@@ -253,6 +300,11 @@ app.whenReady().then(async () => {
   };
   win.webContents.once("did-finish-load", () => {
     closeSplash();
+    // Flush any deep link that arrived during boot (macOS open-url cold start,
+    // or a cairn:// URL in our own launch argv on Windows/Linux).
+    const coldLink = _pendingDeepLink ?? deepLinkFromArgv(process.argv);
+    _pendingDeepLink = null;
+    if (coldLink) void handleDeepLink(coldLink);
   });
   setTimeout(() => {
     closeSplash();

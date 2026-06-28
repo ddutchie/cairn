@@ -390,6 +390,10 @@ export function buildIpcMock(opts?: { needsWorkspaceSetup?: boolean }): string {
       listAttachments: () => Promise.resolve([]),
       setAttachment:   noop,
       clearAttachment: noop,
+      startMcpAuth:    () => Promise.resolve({ status: "already_authorized" }),
+      mcpAuthStatus:   () => Promise.resolve({ connected: false }),
+      signOutMcp:      noop,
+      onOauthCallback: makeListener("tools.onOauthCallback"),
     },
 
     // ── Secrets (OS keychain) ─────────────────────────────────

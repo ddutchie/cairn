@@ -30,6 +30,27 @@ export interface OpenAIToolDef {
   function: { name: string; description: string; parameters: Record<string, unknown> };
 }
 
+/** Map a stored MCP server config to the runtime config the client needs. */
+function toRuntimeConfig(s: {
+  id: string;
+  baseUrl: string;
+  transport: "sse" | "http";
+  headers?: Record<string, string>;
+  authMode?: "none" | "oauth";
+  oauthScope?: string;
+  name?: string;
+}): mcpClient.McpServerRuntimeConfig {
+  return {
+    id: s.id,
+    baseUrl: s.baseUrl,
+    transport: s.transport,
+    headers: s.headers,
+    authMode: s.authMode,
+    oauthScope: s.oauthScope,
+    name: s.name,
+  };
+}
+
 // ── Scoping (pure) ────────────────────────────────────────────────────────────
 
 interface AttachmentRow {
@@ -106,9 +127,7 @@ export async function getExternalToolDefs(
 
   const mcpDefs = (
     await Promise.all(
-      mcpServers.map((s) =>
-        mcpClient.listTools({ id: s.id, baseUrl: s.baseUrl, transport: s.transport, headers: s.headers })
-      )
+      mcpServers.map((s) => mcpClient.listTools(toRuntimeConfig(s)))
     )
   ).flat();
 
@@ -156,7 +175,7 @@ export async function executeExternalTool(
       return `Error: MCP server ${mcpParsed.serverId} is not enabled/attached for this project`;
     }
     return mcpClient.callTool(
-      { id: server.id, baseUrl: server.baseUrl, transport: server.transport, headers: server.headers },
+      toRuntimeConfig(server),
       name,
       args
     );

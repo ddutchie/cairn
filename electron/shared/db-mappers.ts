@@ -103,6 +103,8 @@ export function toMcpServer(row: any) {
     transport: (row.transport ?? "http") as "sse" | "http",
     baseUrl: row.base_url as string,
     headers: pObj(row.headers),
+    authMode: (row.auth_mode ?? "none") as "none" | "oauth",
+    oauthScope: (row.oauth_scope ?? undefined) as string | undefined,
     enabled: row.enabled === 1,
     source: (row.source ?? "manual") as "manual" | "community" | "ai-builder",
     communityId: (row.community_id ?? undefined) as string | undefined,

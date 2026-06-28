@@ -144,6 +144,14 @@ export interface McpServerConfig {
   baseUrl: string;
   /** Header values may be literal or a "secret://" ref. */
   headers?: Record<string, string>;
+  /**
+   * Authentication mode. "none" = static headers only (default). "oauth" =
+   * SDK-driven OAuth 2.1 flow; client registration + tokens live in the OS
+   * keychain, never in SQLite.
+   */
+  authMode?: "none" | "oauth";
+  /** Optional requested OAuth scope string (space-delimited). */
+  oauthScope?: string;
   enabled: boolean;
   source: ToolSource;
   /** Set when installed from the community registry. */

@@ -23,6 +23,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { resolveSecrets } from "./secure-store";
+import { isOAuthServer, makeProvider } from "./mcp-oauth";
 
 /** Namespacing prefix so MCP tools never collide with built-ins or each other. */
 const NS_PREFIX = "mcp__";
@@ -101,6 +102,12 @@ export interface McpServerRuntimeConfig {
   /** "http" = streamable-HTTP, "sse" = legacy SSE. */
   transport: "http" | "sse";
   headers?: Record<string, string>;
+  /** "oauth" routes the connection through the SDK OAuth provider. */
+  authMode?: "none" | "oauth";
+  /** Optional requested OAuth scope. */
+  oauthScope?: string;
+  /** Display name, used to label the OAuth client registration. */
+  name?: string;
 }
 
 // ── Connection manager ───────────────────────────────────────────────────────
@@ -122,11 +129,29 @@ const conns = new Map<string, Conn>();
  * be torn down and rebuilt rather than silently reused.
  */
 function configSignature(cfg: McpServerRuntimeConfig): string {
-  return JSON.stringify({ baseUrl: cfg.baseUrl, transport: cfg.transport, headers: cfg.headers ?? {} });
+  return JSON.stringify({
+    baseUrl: cfg.baseUrl,
+    transport: cfg.transport,
+    headers: cfg.headers ?? {},
+    authMode: cfg.authMode ?? "none",
+    oauthScope: cfg.oauthScope ?? "",
+  });
 }
 
 function makeTransport(cfg: McpServerRuntimeConfig) {
   const url = new URL(cfg.baseUrl);
+  // OAuth servers connect via the SDK provider, which injects (and refreshes)
+  // the bearer token from the keychain. Static headers are not used here.
+  if (isOAuthServer(cfg)) {
+    const provider = makeProvider(
+      { id: cfg.id, baseUrl: cfg.baseUrl, transport: cfg.transport, scope: cfg.oauthScope },
+      cfg.name ?? cfg.id,
+    );
+    if (cfg.transport === "sse") {
+      return new SSEClientTransport(url, { authProvider: provider });
+    }
+    return new StreamableHTTPClientTransport(url, { authProvider: provider });
+  }
   // Resolve secret refs → real values only at connect time, in the main process.
   const headers = resolveSecrets(cfg.headers ?? {});
   const requestInit = Object.keys(headers).length > 0 ? { headers } : undefined;

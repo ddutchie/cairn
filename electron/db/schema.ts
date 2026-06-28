@@ -560,6 +560,20 @@ const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_tool_attachments_tool     ON tool_attachments(tool_id);
     `);
   },
+
+  // v23: OAuth for remote MCP servers. auth_mode 'none' keeps the existing
+  // static-header behaviour; 'oauth' drives the SDK OAuth flow. oauth_scope is
+  // an optional requested scope string. OAuth client registration + tokens are
+  // NOT stored here — they live encrypted in the OS keychain (secure store).
+  (db) => {
+    const cols = db.prepare("PRAGMA table_info(mcp_servers)").all() as { name: string }[];
+    if (!cols.some((c) => c.name === "auth_mode")) {
+      db.exec("ALTER TABLE mcp_servers ADD COLUMN auth_mode TEXT NOT NULL DEFAULT 'none'");
+    }
+    if (!cols.some((c) => c.name === "oauth_scope")) {
+      db.exec("ALTER TABLE mcp_servers ADD COLUMN oauth_scope TEXT");
+    }
+  },
 ];
 
 export function applySchema(db: Database.Database): void {

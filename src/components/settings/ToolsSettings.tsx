@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Plus, Trash2, Check, Server, Globe, Sparkles, Loader2, CheckCircle, XCircle } from "lucide-react";
+import { Plus, Trash2, Check, Server, Globe, Sparkles, Loader2, CheckCircle, XCircle, LogIn, LogOut } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
@@ -135,6 +135,85 @@ function TestButton({ onTest }: { onTest: () => Promise<TestState> }) {
     </div>
   );
 }
+// ── MCP OAuth sign-in control ────────────────────────────────────────────────
+
+function McpAuthButton({ serverId }: { serverId: string }) {
+  const [connected, setConnected] = useState<boolean | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    const r = await window.electron?.tools.mcpAuthStatus(serverId);
+    setConnected(r?.connected ?? false);
+  }, [serverId]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void refresh();
+    // Refresh when an OAuth callback for this server completes.
+    const off = window.electron?.tools.onOauthCallback((e) => {
+      if (e.serverId && e.serverId !== serverId) return;
+      setBusy(false);
+      if (e.status === "authorized") {
+        setError(null);
+        void refresh();
+      } else if (e.status === "error") {
+        setError(e.error ?? "Sign-in failed");
+      }
+    });
+    return () => { off?.(); };
+  }, [serverId, refresh]);
+
+  const signIn = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await window.electron?.tools.startMcpAuth(serverId);
+      if (r?.status === "already_authorized") {
+        setBusy(false);
+        void refresh();
+      } else if (r?.status === "error") {
+        setBusy(false);
+        setError(r.error ?? "Sign-in failed");
+      }
+      // "redirected": browser opened; wait for onOauthCallback to flip busy off.
+    } catch (err) {
+      setBusy(false);
+      setError(err instanceof Error ? err.message : "Sign-in failed");
+    }
+  }, [serverId, refresh]);
+
+  const signOut = useCallback(async () => {
+    await window.electron?.tools.signOutMcp(serverId);
+    setError(null);
+    void refresh();
+  }, [serverId, refresh]);
+
+  return (
+    <div className="flex items-center gap-2">
+      {connected ? (
+        <>
+          <span className="flex items-center gap-1 text-[0.714rem] text-[var(--success)]">
+            <CheckCircle size={12} /> Connected
+          </span>
+          <Button variant="outline" size="sm" onClick={() => void signOut()}>
+            <LogOut size={12} /> Sign out
+          </Button>
+        </>
+      ) : (
+        <Button variant="outline" size="sm" disabled={busy} onClick={() => void signIn()}>
+          {busy ? <Loader2 size={12} className="animate-spin" /> : <LogIn size={12} />}
+          {busy ? "Waiting for browser…" : "Sign in"}
+        </Button>
+      )}
+      {error && (
+        <span className="flex items-center gap-1 text-[0.714rem] text-[var(--danger)] truncate max-w-[14rem]" title={error}>
+          <XCircle size={12} /> {error}
+        </span>
+      )}
+    </div>
+  );
+}
 
 // ── MCP server form ────────────────────────────────────────────────────────────
 
@@ -151,6 +230,8 @@ function McpForm({
   const [description, setDescription] = useState(initial?.description ?? "");
   const [baseUrl, setBaseUrl] = useState(initial?.baseUrl ?? "");
   const [transport, setTransport] = useState<"sse" | "http">(initial?.transport ?? "http");
+  const [authMode, setAuthMode] = useState<"none" | "oauth">(initial?.authMode ?? "none");
+  const [oauthScope, setOauthScope] = useState(initial?.oauthScope ?? "");
   const [rows, setRows] = useState<HeaderRow[]>(headersToRows(initial?.headers));
 
   const valid = name.trim().length > 0 && /^https?:\/\//.test(baseUrl.trim());
@@ -186,10 +267,39 @@ function McpForm({
           ))}
         </div>
       </div>
-      <HeaderEditor rows={rows} onChange={setRows} />
+      <div>
+        <label className={labelCls}>Authentication</label>
+        <div className="inline-flex rounded border border-[var(--border)] overflow-hidden">
+          {(["none", "oauth"] as const).map((m) => (
+            <button
+              key={m}
+              onClick={() => setAuthMode(m)}
+              className={cn(
+                "px-3 py-1 text-xs transition-colors",
+                authMode === m ? "bg-[var(--accent)] text-[var(--accent-fg)]" : "text-[var(--text-secondary)] hover:bg-[var(--surface-3)]"
+              )}
+            >
+              {m === "none" ? "Headers / API key" : "OAuth"}
+            </button>
+          ))}
+        </div>
+        {authMode === "oauth" && (
+          <p className="mt-1 text-[0.714rem] text-[var(--text-tertiary)]">
+            Sign in via your browser after saving. Tokens are stored in your OS keychain.
+          </p>
+        )}
+      </div>
+      {authMode === "oauth" ? (
+        <div>
+          <label className={labelCls}>Scope (optional)</label>
+          <input value={oauthScope} onChange={(e) => setOauthScope(e.target.value)} placeholder="e.g. read:tools" className={cn(inputCls, "font-mono")} />
+        </div>
+      ) : (
+        <HeaderEditor rows={rows} onChange={setRows} />
+      )}
       <div className="flex justify-end gap-2 pt-1">
         <Button variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>
-        <Button size="sm" disabled={!valid} onClick={() => onSave({ id: initial?.id, name: name.trim(), description: description.trim() || undefined, baseUrl: baseUrl.trim(), transport, enabled: initial?.enabled ?? false, source: initial?.source ?? "manual" }, rows)}>
+        <Button size="sm" disabled={!valid} onClick={() => onSave({ id: initial?.id, name: name.trim(), description: description.trim() || undefined, baseUrl: baseUrl.trim(), transport, authMode, oauthScope: authMode === "oauth" ? (oauthScope.trim() || undefined) : undefined, enabled: initial?.enabled ?? false, source: initial?.source ?? "manual" }, authMode === "oauth" ? [] : rows)}>
           <Check size={12} /> Save server
         </Button>
       </div>
@@ -495,13 +605,17 @@ export function ToolsSettings() {
               onEdit={() => setEditingMcp(server.id)}
               onDelete={() => deleteMcpServer(server.id)}
             >
-              <TestButton
-                onTest={async () => {
-                  const r = await window.electron?.tools.testMcp(server.id);
-                  if (r?.ok) return { status: "ok", detail: `${r.toolCount ?? 0} tools` };
-                  return { status: "error", detail: r?.error ?? "Failed" };
-                }}
-              />
+              {server.authMode === "oauth" ? (
+                <McpAuthButton serverId={server.id} />
+              ) : (
+                <TestButton
+                  onTest={async () => {
+                    const r = await window.electron?.tools.testMcp(server.id);
+                    if (r?.ok) return { status: "ok", detail: `${r.toolCount ?? 0} tools` };
+                    return { status: "error", detail: r?.error ?? "Failed" };
+                  }}
+                />
+              )}
             </ToolRow>
           )
         )}

@@ -895,6 +895,7 @@ export function setProjectCodeDirectory(db: Database.Database, projectId: string
 interface McpServerInput {
   id: string; workspaceId: string; name: string; description?: string;
   transport: "sse" | "http"; baseUrl: string; headers?: Record<string, string>;
+  authMode?: "none" | "oauth"; oauthScope?: string;
   enabled: boolean; source: string; communityId?: string; version?: string;
 }
 
@@ -911,14 +912,16 @@ export function getMcpServerById(db: Database.Database, id: string) {
 export function saveMcpServer(db: Database.Database, s: McpServerInput) {
   const now = ts();
   db.prepare(`
-    INSERT INTO mcp_servers (id, workspace_id, name, description, transport, base_url, headers, enabled, source, community_id, version, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO mcp_servers (id, workspace_id, name, description, transport, base_url, headers, auth_mode, oauth_scope, enabled, source, community_id, version, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       name        = excluded.name,
       description = excluded.description,
       transport   = excluded.transport,
       base_url    = excluded.base_url,
       headers     = excluded.headers,
+      auth_mode   = excluded.auth_mode,
+      oauth_scope = excluded.oauth_scope,
       enabled     = excluded.enabled,
       source      = excluded.source,
       community_id= excluded.community_id,
@@ -926,7 +929,8 @@ export function saveMcpServer(db: Database.Database, s: McpServerInput) {
       updated_at  = excluded.updated_at
   `).run(
     s.id, s.workspaceId, s.name, s.description ?? null, s.transport, s.baseUrl,
-    j(s.headers ?? {}), s.enabled ? 1 : 0, s.source, s.communityId ?? null, s.version ?? null, now, now,
+    j(s.headers ?? {}), s.authMode ?? "none", s.oauthScope ?? null,
+    s.enabled ? 1 : 0, s.source, s.communityId ?? null, s.version ?? null, now, now,
   );
   return getMcpServerById(db, s.id)!;
 }

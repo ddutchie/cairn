@@ -187,6 +187,43 @@ function getSecretByRef(ref: string): string | null {
 }
 
 /**
+ * Read the decrypted value behind a tool's named secret. Main-process only —
+ * there is intentionally no renderer-facing equivalent. Returns null if unset
+ * or undecryptable. Used by the OAuth provider to read token/client-info blobs.
+ */
+export function getSecretValue(toolType: ToolKind, toolId: string, key: string): string | null {
+  return getSecretByRef(secretRef(toolType, toolId, key));
+}
+
+/**
+ * Store a structured JSON blob (e.g. OAuth tokens or client registration) for a
+ * tool. Unlike {@link setSecret}, this does NOT run placeholder validation — the
+ * value is an opaque serialized object, not a header literal. Main-process only.
+ */
+export function setToolJson(toolType: ToolKind, toolId: string, key: string, value: unknown): void {
+  if (!isAvailable()) {
+    throw new Error(
+      "Secret storage is unavailable on this system (OS keychain/encryption not accessible). Cannot store credentials securely."
+    );
+  }
+  const ref = secretRef(toolType, toolId, key);
+  const store = readStore();
+  store[ref] = safeStorage.encryptString(JSON.stringify(value)).toString("base64");
+  writeStore(store);
+}
+
+/** Read and parse a JSON blob stored via {@link setToolJson}. Null if absent/invalid. */
+export function getToolJson<T = unknown>(toolType: ToolKind, toolId: string, key: string): T | null {
+  const raw = getSecretByRef(secretRef(toolType, toolId, key));
+  if (raw === null) return null;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Resolve a headers map for an outbound request: any value that is a secret
  * reference token is replaced with its decrypted value. Literal values pass
  * through untouched. Unresolved refs are dropped (header omitted) so we never

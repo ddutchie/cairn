@@ -18,6 +18,7 @@ import { newId } from "../db/utils";
 import * as secrets from "../lib/secure-store";
 import * as mcpClient from "../lib/mcp-client";
 import * as services from "../lib/custom-services";
+import * as mcpOauth from "../lib/mcp-oauth";
 
 type SaveMcpArgs = Omit<Parameters<typeof q.saveMcpServer>[1], "id"> & { id?: string };
 type SaveServiceArgs = Omit<Parameters<typeof q.saveCustomService>[1], "id"> & { id?: string };
@@ -72,7 +73,8 @@ export function registerToolsHandlers(db: Database): void {
   registerIpcHandle("tools:deleteMcpServer", (_e, { id }: { id: string }) =>
     handle(() => {
       q.deleteMcpServer(db, id);
-      secrets.deleteToolSecrets("mcp", id); // purge any keychain credentials
+      mcpOauth.cancelPendingForServer(id); // drop any in-flight OAuth attempt
+      secrets.deleteToolSecrets("mcp", id); // purge keychain credentials + OAuth tokens
       void mcpClient.dispose(id); // drop any live connection
     })
   );
@@ -87,7 +89,40 @@ export function registerToolsHandlers(db: Database): void {
         baseUrl: server.baseUrl,
         transport: server.transport,
         headers: server.headers,
+        authMode: server.authMode,
+        oauthScope: server.oauthScope,
+        name: server.name,
       });
+    })
+  );
+
+  // ── MCP OAuth ──────────────────────────────────────────────────────────────
+  // Begin sign-in: opens the system browser; resolves once the redirect has
+  // been triggered (the cairn://oauth/callback deep link completes it later) or
+  // immediately if valid tokens already exist.
+  registerIpcHandle("tools:startMcpAuth", (_e, { id }: { id: string }) =>
+    handle(() => {
+      const server = q.getMcpServerById(db, id);
+      if (!server) throw new Error("MCP server not found");
+      if (server.authMode !== "oauth") throw new Error("Server is not configured for OAuth");
+      return mcpOauth.startServerAuth(
+        { id: server.id, baseUrl: server.baseUrl, transport: server.transport, scope: server.oauthScope },
+        server.name,
+      );
+    })
+  );
+
+  // Whether the server currently holds OAuth tokens (i.e. is "connected").
+  registerIpcHandle("tools:mcpAuthStatus", (_e, { id }: { id: string }) =>
+    handle(() => ({ connected: mcpOauth.hasTokens(id) }))
+  );
+
+  // Sign out: forget tokens/registration and drop any live connection.
+  registerIpcHandle("tools:signOutMcp", (_e, { id }: { id: string }) =>
+    handle(() => {
+      mcpOauth.signOut(id);
+      mcpOauth.cancelPendingForServer(id);
+      void mcpClient.dispose(id);
     })
   );
 

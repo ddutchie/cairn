@@ -425,6 +425,24 @@ const api = {
       invoke<ToolAttachment[]>("tools:listAttachments", { projectId }),
     setAttachment: (a: ToolAttachment) => invoke<ToolAttachment>("tools:setAttachment", a),
     clearAttachment: (a: Omit<ToolAttachment, "enabled">) => invoke("tools:clearAttachment", a),
+
+    // OAuth (remote MCP servers gated behind an authorization page).
+    startMcpAuth: (id: string) =>
+      invoke<{ status: "redirected" | "already_authorized" | "error"; error?: string }>(
+        "tools:startMcpAuth",
+        { id }
+      ),
+    mcpAuthStatus: (id: string) => invoke<{ connected: boolean }>("tools:mcpAuthStatus", { id }),
+    signOutMcp: (id: string) => invoke("tools:signOutMcp", { id }),
+    /** Fires when a cairn://oauth/callback deep link finishes a sign-in. */
+    onOauthCallback: (
+      cb: (e: { status: string; serverId?: string; error?: string }) => void
+    ) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { status: string; serverId?: string; error?: string }) => cb(e);
+      ipcRenderer.on("tools:oauthCallback", handler);
+      return () => ipcRenderer.off("tools:oauthCallback", handler);
+    },
   },
 
   // ── Secrets (OS keychain). No get() by design — renderer only learns set/not-set.

@@ -498,6 +498,20 @@ describe("MCP server queries", () => {
     expect(getMcpServers(db, "ws1")).toHaveLength(0);
     expect(getToolAttachments(db, "p1")).toHaveLength(0);
   });
+
+  it("defaults authMode to 'none' and round-trips oauth fields", () => {
+    saveMcpServer(db, { id: "m1", workspaceId: "ws1", name: "Plain", transport: "http", baseUrl: "https://a", enabled: true, source: "manual" });
+    expect(getMcpServerById(db, "m1")?.authMode).toBe("none");
+    expect(getMcpServerById(db, "m1")?.oauthScope).toBeUndefined();
+
+    saveMcpServer(db, {
+      id: "m2", workspaceId: "ws1", name: "Figma", transport: "http", baseUrl: "https://mcp.figma.com/mcp",
+      enabled: true, source: "manual", authMode: "oauth", oauthScope: "read:files",
+    });
+    const figma = getMcpServerById(db, "m2");
+    expect(figma?.authMode).toBe("oauth");
+    expect(figma?.oauthScope).toBe("read:files");
+  });
 });
 
 // ── External tools: custom services ──────────────────────────────────────────
