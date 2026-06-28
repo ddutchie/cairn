@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { Sparkles, ChevronLeft, ChevronRight, Check } from "lucide-react";
 import { ModalShell } from "@/components/ui/modal-shell";
 import { NEW_FEATURES_REGISTRY } from "@/lib/new-features-registry";
@@ -20,9 +20,6 @@ export function NewFeatureModal({ forceOpen = false, onClose }: Props) {
     }))
   );
 
-  const [isOpen, setIsOpen] = useState(false);
-  const [activeIdx, setActiveIdx] = useState(0);
-
   // Determine which features to highlight.
   // If forceOpen (e.g. from Settings), show all features in the registry.
   // Otherwise, show only unseen features belonging to the latest version.
@@ -35,17 +32,21 @@ export function NewFeatureModal({ forceOpen = false, onClose }: Props) {
     return NEW_FEATURES_REGISTRY.filter((f) => f.version === latestVersion && !seenFeatures.includes(f.id));
   }, [forceOpen, seenFeatures]);
 
-  useEffect(() => {
-    if (forceOpen) {
-      setIsOpen(true);
+  const [activeIdx, setActiveIdx] = useState(0);
+  const [prevFeaturesLength, setPrevFeaturesLength] = useState(featuresToShow.length);
+
+  // Derive the open state from props/seen-features rather than syncing via setState in an effect.
+  // The modal is open when forced by the parent, or when there are unseen features in the latest version.
+  // Closing happens by marking features as seen (which empties featuresToShow) or the parent flipping forceOpen.
+  const isOpen = forceOpen || featuresToShow.length > 0;
+
+  // Reset the active index when the feature list changes (adjust during render to avoid cascading renders)
+  if (prevFeaturesLength !== featuresToShow.length) {
+    setPrevFeaturesLength(featuresToShow.length);
+    if (activeIdx !== 0) {
       setActiveIdx(0);
-    } else if (featuresToShow.length > 0) {
-      setIsOpen(true);
-      setActiveIdx(0);
-    } else {
-      setIsOpen(false);
     }
-  }, [forceOpen, featuresToShow.length]);
+  }
 
   if (!isOpen || featuresToShow.length === 0) return null;
 
@@ -71,7 +72,6 @@ export function NewFeatureModal({ forceOpen = false, onClose }: Props) {
     featuresToShow.forEach((f) => {
       markFeatureAsSeen(f.id);
     });
-    setIsOpen(false);
     if (onClose) {
       onClose();
     }

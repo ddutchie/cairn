@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { ChevronLeft, ChevronRight, X, Sparkles } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -80,25 +80,60 @@ export function AppTutorial() {
     }))
   );
 
+  const currentStep = TUTORIAL_STEPS[tutorialStepIndex];
+
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const [tooltipPos, setTooltipPos] = useState({ top: 0, left: 0 });
   const [tutorialOpenedChat, setTutorialOpenedChat] = useState(false);
   const prevIndexRef = useRef(tutorialStepIndex);
-
-  const currentStep = TUTORIAL_STEPS[tutorialStepIndex];
+  const [prevTutorialActive, setPrevTutorialActive] = useState(tutorialActive);
+  const [prevStepKey, setPrevStepKey] = useState<{ tutorialActive: boolean; stepKey: string }>({
+    tutorialActive,
+    stepKey: currentStep?.selector ?? "",
+  });
 
   // Track the step index history for direction-aware skipping
   useEffect(() => {
     prevIndexRef.current = tutorialStepIndex;
   }, [tutorialStepIndex]);
 
-  // Reset chat opening flag when tutorial concludes
-  useEffect(() => {
-    if (!tutorialActive) {
+  const handleFinish = useCallback(() => {
+    setTutorialActive(false);
+    // Close chat if we opened it for the tutorial
+    if (chatOpen && tutorialOpenedChat) {
+      toggleChat();
+    }
+    setTutorialOpenedChat(false);
+  }, [chatOpen, tutorialOpenedChat, toggleChat, setTutorialActive]);
+
+  const handleNext = () => {
+    // Custom trigger action for final steps (e.g. toggle chat panel to show toggle element)
+    if (tutorialStepIndex === TUTORIAL_STEPS.length - 2 && !chatOpen) {
+      setTutorialOpenedChat(true);
+      toggleChat();
+    }
+
+    if (tutorialStepIndex < TUTORIAL_STEPS.length - 1) {
+      setTutorialStepIndex(tutorialStepIndex + 1);
+    } else {
+      handleFinish();
+    }
+  };
+
+  const handleBack = () => {
+    if (tutorialStepIndex > 0) {
+      setTutorialStepIndex(tutorialStepIndex - 1);
+    }
+  };
+
+  // Reset chat opening flag when tutorial concludes (adjust during render to avoid cascading renders in an effect)
+  if (prevTutorialActive !== tutorialActive) {
+    setPrevTutorialActive(tutorialActive);
+    if (!tutorialActive && tutorialOpenedChat) {
       setTutorialOpenedChat(false);
     }
-  }, [tutorialActive]);
+  }
 
   // Skip steps dynamically if the target elements aren't present in the DOM
   useEffect(() => {
@@ -134,7 +169,7 @@ export function AppTutorial() {
 
     timeoutId = window.setTimeout(checkAvailability, 250);
     return () => clearTimeout(timeoutId);
-  }, [tutorialActive, tutorialStepIndex, currentStep]);
+  }, [tutorialActive, tutorialStepIndex, currentStep, handleFinish, setTutorialStepIndex]);
 
   // Effect to handle switching views on step changes
   useEffect(() => {
@@ -145,10 +180,22 @@ export function AppTutorial() {
     }
   }, [tutorialActive, tutorialStepIndex, activeView, setView, currentStep]);
 
+  // Clear the target rect when the tutorial becomes inactive or the step changes
+  // (adjust during render to avoid cascading renders from setState in an effect)
+  const stepKey = currentStep?.selector ?? "";
+  if (
+    prevStepKey.tutorialActive !== tutorialActive ||
+    prevStepKey.stepKey !== stepKey
+  ) {
+    setPrevStepKey({ tutorialActive, stepKey });
+    if ((!tutorialActive || !currentStep) && targetRect !== null) {
+      setTargetRect(null);
+    }
+  }
+
   // Effect to handle real-time position tracking of the target element
   useEffect(() => {
     if (!tutorialActive || !currentStep) {
-      setTargetRect(null);
       return;
     }
 
@@ -237,35 +284,6 @@ export function AppTutorial() {
   }, [targetRect, currentStep]);
 
   if (!tutorialActive || !currentStep) return null;
-
-  const handleNext = () => {
-    // Custom trigger action for final steps (e.g. toggle chat panel to show toggle element)
-    if (tutorialStepIndex === TUTORIAL_STEPS.length - 2 && !chatOpen) {
-      setTutorialOpenedChat(true);
-      toggleChat();
-    }
-
-    if (tutorialStepIndex < TUTORIAL_STEPS.length - 1) {
-      setTutorialStepIndex(tutorialStepIndex + 1);
-    } else {
-      handleFinish();
-    }
-  };
-
-  const handleBack = () => {
-    if (tutorialStepIndex > 0) {
-      setTutorialStepIndex(tutorialStepIndex - 1);
-    }
-  };
-
-  const handleFinish = () => {
-    setTutorialActive(false);
-    // Close chat if we opened it for the tutorial
-    if (chatOpen && tutorialOpenedChat) {
-      toggleChat();
-    }
-    setTutorialOpenedChat(false);
-  };
 
   // Build the clip-path cutout polygon.
   // We create a cutout hole at targetRect coordinates.
