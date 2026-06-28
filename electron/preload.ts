@@ -608,6 +608,48 @@ const api = {
     },
   },
 
+  // ── AI Tool Builder (streaming builder session) ───────────────
+  toolBuilder: {
+    /** Send a builder prompt (and optionally a user-supplied secret). Fire-and-forget. */
+    prompt: (req: { sessionId: string; workspaceId: string; message: string; secret?: { header: string; value: string } }) =>
+      ipcRenderer.send("tool-builder:prompt", req),
+    /** Abort the current in-flight builder turn. */
+    abort: (sessionId: string) => ipcRenderer.send("tool-builder:abort", { sessionId }),
+    /** Destroy a builder session (clears its in-memory state + temp secrets). */
+    end: (sessionId: string) => ipcRenderer.send("tool-builder:end", { sessionId }),
+
+    onToken: (cb: (e: { sessionId: string; delta: string }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { sessionId: string; delta: string }) => cb(e);
+      ipcRenderer.on("tool-builder:token", handler);
+      return () => ipcRenderer.off("tool-builder:token", handler);
+    },
+    onStep: (cb: (e: { sessionId: string; name: string; args: Record<string, unknown> }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { sessionId: string; name: string; args: Record<string, unknown> }) => cb(e);
+      ipcRenderer.on("tool-builder:step", handler);
+      return () => ipcRenderer.off("tool-builder:step", handler);
+    },
+    onProbeHost: (cb: (e: { sessionId: string; host: string }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { sessionId: string; host: string }) => cb(e);
+      ipcRenderer.on("tool-builder:probe-host", handler);
+      return () => ipcRenderer.off("tool-builder:probe-host", handler);
+    },
+    onProposal: (cb: (e: { sessionId: string; toolType: "service" | "mcp"; config: unknown }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { sessionId: string; toolType: "service" | "mcp"; config: unknown }) => cb(e);
+      ipcRenderer.on("tool-builder:proposal", handler);
+      return () => ipcRenderer.off("tool-builder:proposal", handler);
+    },
+    onDone: (cb: (e: { sessionId: string; error?: string; aborted?: boolean }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { sessionId: string; error?: string; aborted?: boolean }) => cb(e);
+      ipcRenderer.on("tool-builder:done", handler);
+      return () => ipcRenderer.off("tool-builder:done", handler);
+    },
+  },
+
   // ── On-Device Llama Server ───────────────
   llama: {
     models: {
