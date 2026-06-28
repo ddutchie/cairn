@@ -1,0 +1,61 @@
+import { describe, it, expect, vi } from "vitest";
+
+// external-tools imports mcp-client + custom-services (→ secure-store → electron).
+vi.mock("electron", () => ({
+  app: { isReady: () => false, getPath: () => "/tmp" },
+  safeStorage: { isEncryptionAvailable: () => false },
+}));
+
+import { resolveAttachedToolIds, isExternalToolName } from "./external-tools";
+
+describe("external-tools scoping", () => {
+  it("collects enabled attachments by type", () => {
+    const { mcp, service } = resolveAttachedToolIds([
+      { projectId: "p1", toolType: "mcp", toolId: "m1", enabled: true },
+      { projectId: "p1", toolType: "service", toolId: "s1", enabled: true },
+      { projectId: "p1", toolType: "mcp", toolId: "m2", enabled: true },
+    ]);
+    expect([...mcp].sort()).toEqual(["m1", "m2"]);
+    expect([...service]).toEqual(["s1"]);
+  });
+
+  it("merges global + project rows (union of enables)", () => {
+    const { mcp } = resolveAttachedToolIds([
+      { projectId: "__global__", toolType: "mcp", toolId: "global1", enabled: true },
+      { projectId: "p1", toolType: "mcp", toolId: "proj1", enabled: true },
+    ]);
+    expect([...mcp].sort()).toEqual(["global1", "proj1"]);
+  });
+
+  it("an explicit disabled row suppresses a tool even if another row enables it", () => {
+    // Global-on but project-off → suppressed.
+    const { mcp } = resolveAttachedToolIds([
+      { projectId: "__global__", toolType: "mcp", toolId: "m1", enabled: true },
+      { projectId: "p1", toolType: "mcp", toolId: "m1", enabled: false },
+    ]);
+    expect(mcp.has("m1")).toBe(false);
+  });
+
+  it("ignores disabled-only rows", () => {
+    const { mcp, service } = resolveAttachedToolIds([
+      { projectId: "p1", toolType: "mcp", toolId: "m1", enabled: false },
+    ]);
+    expect(mcp.size).toBe(0);
+    expect(service.size).toBe(0);
+  });
+
+  it("returns empty sets for no rows", () => {
+    const { mcp, service } = resolveAttachedToolIds([]);
+    expect(mcp.size).toBe(0);
+    expect(service.size).toBe(0);
+  });
+});
+
+describe("external-tools routing guard", () => {
+  it("recognises mcp + svc prefixes, rejects built-ins", () => {
+    expect(isExternalToolName("mcp__srv1__search")).toBe(true);
+    expect(isExternalToolName("svc__s1__call")).toBe(true);
+    expect(isExternalToolName("read")).toBe(false);
+    expect(isExternalToolName("create_task")).toBe(false);
+  });
+});

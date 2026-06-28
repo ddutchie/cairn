@@ -14,6 +14,7 @@ import type Database from "better-sqlite3";
 import { isLocalEndpoint, normaliseBaseUrl, type OpenAIMessage, calculatePromptBreakdown, scaleBreakdown, type TokenBreakdown } from "../lib/llm";
 import { TOOLS, buildSystemPrompt, type ChatRequest } from "../lib/tools";
 import { executeTool } from "./chat-executor";
+import { getExternalToolDefs, executeExternalTool, isExternalToolName } from "../lib/external-tools";
 import { saveCachedConfig, getCachedConfig } from "../lib/config-cache";
 import { iterSseData } from "../lib/sse";
 import { traceTool } from "../lib/tool-trace";
@@ -88,9 +89,12 @@ async function runToolLoop(
   emitToolCallDone?: (e: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; output?: string; callId?: string }) => void,
   onToken?: (delta: string) => void,
   onThought?: (delta: string) => void,
+  extraTools: typeof TOOLS = [],
 ): Promise<{ exhausted: true; content: string; reasoning: string } | { exhausted: false; content: string; reasoning: string }> {
   const maxSteps    = req.config?.maxSteps    ?? 30;
   const temperature = req.config?.temperature ?? 0.3;
+  // Built-in tools + any external tools (MCP servers / custom services) in scope.
+  const combinedTools = extraTools.length > 0 ? [...TOOLS, ...extraTools] : TOOLS;
   let accumulatedContent = "";
   let accumulatedReasoning = "";
 
@@ -102,7 +106,7 @@ async function runToolLoop(
     if (provider === "localllm") {
       try {
         const { callLocalLLMChat } = await import("../lib/local-llm");
-        const res = await callLocalLLMChat(messages, TOOLS);
+        const res = await callLocalLLMChat(messages, combinedTools);
         const choice = res.choices?.[0];
         if (!choice) return { exhausted: true, content: "No response from local Llama on-device model.", reasoning: "" };
         if (res.usage && onUsage) {
@@ -167,7 +171,7 @@ async function runToolLoop(
           body: JSON.stringify({
             model,
             messages,
-            tools: TOOLS,
+            tools: combinedTools,
             tool_choice: "auto",
             max_tokens: 4096,
             temperature,
@@ -309,11 +313,19 @@ async function runToolLoop(
 
       let result: unknown;
       try {
-        result = await executeTool(db, req, workspacePath, { baseUrl, model, apiKey, provider: provider as "openai" | "localllm" }, call.function.name, args, emitToolCall, getWin, emitToolCallDone, call.id);
+        if (isExternalToolName(call.function.name)) {
+          // MCP server / custom service tool — route to the external executor.
+          emitToolCall({ tool: call.function.name, label: call.function.name, args, callId: call.id });
+          const output = await executeExternalTool(db, call.function.name, args);
+          emitToolCallDone?.({ tool: call.function.name, output, callId: call.id });
+          result = output;
+        } else {
+          result = await executeTool(db, req, workspacePath, { baseUrl, model, apiKey, provider: provider as "openai" | "localllm" }, call.function.name, args, emitToolCall, getWin, emitToolCallDone, call.id);
+        }
       } catch (toolErr) {
         result = { error: `Tool "${call.function.name}" failed: ${String(toolErr)}` };
       }
-      messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
+      messages.push({ role: "tool", tool_call_id: call.id, content: typeof result === "string" ? result : JSON.stringify(result) });
     }
   }
 
@@ -436,12 +448,23 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
     let completionTokens = 0;
     let reasoningTokens = 0;
     let lastBreakdown: TokenBreakdown | undefined = undefined;
+
+    // Assemble external tool defs (MCP servers + custom services) in scope for
+    // this workspace/project. Failures degrade to no external tools.
+    let externalDefs: typeof TOOLS = [];
+    try {
+      externalDefs = (await getExternalToolDefs(db, req.workspaceId ?? "", req.projectId ?? "")) as typeof TOOLS;
+    } catch (err) {
+      console.error("[chat] failed to assemble external tools:", err);
+    }
+    const allTools = externalDefs.length > 0 ? [...TOOLS, ...externalDefs] : TOOLS;
+
     const addUsage = (pt: number, ct: number, rt?: number) => {
       promptTokens = pt;
       completionTokens += ct;
       if (typeof rt === "number") reasoningTokens += rt;
       try {
-        const rawBreakdown = calculatePromptBreakdown(buildSystemPrompt(req), messages, TOOLS);
+        const rawBreakdown = calculatePromptBreakdown(buildSystemPrompt(req), messages, allTools);
         lastBreakdown = scaleBreakdown(rawBreakdown, promptTokens);
       } catch (err) {
         console.error("[chat] failed to calculate breakdown:", err);
@@ -459,6 +482,7 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
       (delta) => {
         send("chat:thought", { delta });
       },
+      externalDefs,
     );
 
     abortControllers.delete(event.sender.id);
