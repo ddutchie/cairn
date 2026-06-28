@@ -10,7 +10,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   ChevronRight, ChevronDown, FolderOpen, Folder,
-  FileText, FileCode, FileJson, Settings, AlertCircle, Search, X,
+  FileText, FileCode, FileJson, Settings, AlertCircle, Search, X, RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
@@ -54,7 +54,9 @@ function TreeNode({ entry, depth, activePath, onFileClick }: TreeNodeProps) {
 
   const toggle = useCallback(async () => {
     if (entry.type !== "dir") return;
-    if (!expanded && children === null) {
+    // Re-read on every expand so externally-added/removed files show up — the
+    // listing is otherwise cached in `children` for the node's lifetime.
+    if (!expanded) {
       setLoading(true);
       setLoadError(null);
       try {
@@ -67,7 +69,7 @@ function TreeNode({ entry, depth, activePath, onFileClick }: TreeNodeProps) {
       }
     }
     setExpanded((v) => !v);
-  }, [entry, expanded, children]);
+  }, [entry, expanded]);
 
   const isActive = activePath === entry.path;
   const indent = depth * 12;
@@ -145,6 +147,10 @@ export function FileTree({ project }: FileTreeProps) {
   const { activeEditorFile, openEditorFile, updateProject } = useCairnStore(useShallow((s) => ({ activeEditorFile: s.activeEditorFile, openEditorFile: s.openEditorFile, updateProject: s.updateProject })));
   const [rootEntries, setRootEntries] = useState<DirEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Bumped to force-remount tree nodes (clearing their cached `children`) on
+  // a manual refresh — see refresh().
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
 
   // File search mode
   const [searchActive, setSearchActive] = useState(false);
@@ -163,6 +169,34 @@ export function FileTree({ project }: FileTreeProps) {
       ?.then((entries) => setRootEntries(entries))
       .catch((e: unknown) => setError(String(e)));
   }, [codeDirectory]);
+
+  // Manual refresh: re-read the root listing and remount all nodes (bumping
+  // refreshKey resets each TreeNode's cached `children`), picking up any files
+  // added/removed externally since the tree was first read.
+  const refresh = useCallback(async () => {
+    if (!codeDirectory) return;
+    setRefreshing(true);
+    setError(null);
+    try {
+      const entries = await window.electron?.agent.readDir(codeDirectory) as DirEntry[] | undefined;
+      if (entries) setRootEntries(entries);
+      setRefreshKey((k) => k + 1);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setRefreshing(false);
+    }
+  }, [codeDirectory]);
+
+  // Auto-refresh when the Agent's GitView detects a change in the working-tree
+  // file set (e.g. a new untracked file). Piggybacks on GitView's git-status
+  // poll so the tree stays fresh without its own watcher.
+  useEffect(() => {
+    if (!codeDirectory) return;
+    function onFilesChanged() { void refresh(); }
+    window.addEventListener("cairn:agent-files-changed", onFilesChanged);
+    return () => window.removeEventListener("cairn:agent-files-changed", onFilesChanged);
+  }, [codeDirectory, refresh]);
 
   // ⌘⇧F / Ctrl+⇧F — toggle file search
   useEffect(() => {
@@ -274,6 +308,15 @@ export function FileTree({ project }: FileTreeProps) {
             {codeDirectory.split("/").pop() ?? "Files"}
           </span>
           <button
+            onClick={refresh}
+            disabled={refreshing}
+            className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors disabled:opacity-50"
+            title="Refresh"
+            aria-label="Refresh file tree"
+          >
+            <RefreshCw size={11} className={refreshing ? "animate-spin" : undefined} />
+          </button>
+          <button
             onClick={() => { setSearchActive(true); setTimeout(() => searchInputRef.current?.focus(), 0); }}
             className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
             title="Search files (⌘⇧F)"
@@ -321,7 +364,7 @@ export function FileTree({ project }: FileTreeProps) {
           <>
             {rootEntries.map((entry) => (
               <TreeNode
-                key={entry.path}
+                key={`${refreshKey}:${entry.path}`}
                 entry={entry}
                 depth={0}
                 activePath={activeEditorFile}

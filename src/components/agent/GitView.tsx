@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
+import { CairnEvents } from "@/lib/events";
 import parseDiff from "parse-diff";
 import { UnifiedFile, PALETTE_DARK, PALETTE_LIGHT } from "./DiffFile";
 import type { ProjectSettings } from "@/types";
@@ -118,6 +119,10 @@ export function GitView({ cwd }: GitViewProps) {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const prevHasUnstagedRef = useRef<boolean | null>(null);
   const prevStagedCountRef = useRef<number | null>(null);
+  // Signature of the working-tree file set (path+status across all sections).
+  // When it changes between status polls we notify the FileTree to refresh so
+  // externally added/removed files appear without a manual refresh.
+  const prevFileSigRef = useRef<string | null>(null);
 
   // Branch switcher states
   const [branches, setBranches] = useState<Array<{ name: string; current: boolean }>>([]);
@@ -131,6 +136,16 @@ export function GitView({ cwd }: GitViewProps) {
       const s = await window.electron.git.status(cwd);
       setStatus(s);
       setError(null);
+      // Notify the FileTree when the working-tree file set changes (e.g. a new
+      // untracked file appeared) so it can refresh its directory listing.
+      const sig = [...s.staged, ...s.unstaged, ...s.untracked]
+        .map((f) => `${f.status}:${f.path}`)
+        .sort()
+        .join("|");
+      if (prevFileSigRef.current !== null && prevFileSigRef.current !== sig) {
+        window.dispatchEvent(CairnEvents.agentFilesChanged());
+      }
+      prevFileSigRef.current = sig;
     } catch (e) {
       setError((e as Error).message);
     } finally {
