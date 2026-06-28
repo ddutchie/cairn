@@ -63,19 +63,32 @@ function deepLinkFromArgv(argv: string[]): string | null {
 
 /** Buffer for a deep link that arrives before the renderer is ready. */
 let _pendingDeepLink: string | null = null;
+/** True once the main window's renderer has finished loading (listeners attached). */
+let _rendererReady = false;
 
 /** Route a cairn:// deep link. Currently only OAuth callbacks are handled. */
 async function handleDeepLink(rawUrl: string): Promise<void> {
   const cb = parseOAuthCallback(rawUrl);
   if (!cb) return;
   const win = BrowserWindow.getAllWindows()[0] ?? null;
-  if (win) {
-    if (win.isMinimized()) win.restore();
-    win.focus();
+  // If the renderer isn't ready to receive the result event yet, buffer the raw
+  // link and let the post-load flush replay it through this same path.
+  if (!win || !_rendererReady) {
+    _pendingDeepLink = rawUrl;
+    return;
   }
+  if (win.isMinimized()) win.restore();
+  win.focus();
   const result = await completeServerAuth(cb);
   // Tell the renderer how it went so Settings can refresh the connection state.
-  win?.webContents.send("tools:oauthCallback", result);
+  win.webContents.send("tools:oauthCallback", result);
+}
+
+/** Flush any buffered deep link once the renderer is ready. */
+function flushPendingDeepLink(): void {
+  const link = _pendingDeepLink ?? deepLinkFromArgv(process.argv);
+  _pendingDeepLink = null;
+  if (link) void handleDeepLink(link);
 }
 
 const gotTheLock = app.requestSingleInstanceLock();
@@ -97,14 +110,10 @@ if (!gotTheLock) {
 }
 
 // macOS delivers deep links via open-url (can fire before whenReady on cold
-// start, so buffer until a window exists).
+// start; handleDeepLink buffers until the renderer is ready).
 app.on("open-url", (event, url) => {
   event.preventDefault();
-  if (BrowserWindow.getAllWindows().length === 0) {
-    _pendingDeepLink = url;
-  } else {
-    void handleDeepLink(url);
-  }
+  void handleDeepLink(url);
 });
 
 app.setName("Cairn");
@@ -300,11 +309,12 @@ app.whenReady().then(async () => {
   };
   win.webContents.once("did-finish-load", () => {
     closeSplash();
-    // Flush any deep link that arrived during boot (macOS open-url cold start,
-    // or a cairn:// URL in our own launch argv on Windows/Linux).
-    const coldLink = _pendingDeepLink ?? deepLinkFromArgv(process.argv);
-    _pendingDeepLink = null;
-    if (coldLink) void handleDeepLink(coldLink);
+    // Renderer is now loaded and its IPC listeners (incl. onOauthCallback) are
+    // attached — safe to deliver any deep link that arrived during boot
+    // (macOS open-url cold start, or a cairn:// URL in our own launch argv on
+    // Windows/Linux).
+    _rendererReady = true;
+    flushPendingDeepLink();
   });
   setTimeout(() => {
     closeSplash();

@@ -60,6 +60,23 @@ function looksLikeBareCredential(name: string, value: string): boolean {
   return false;
 }
 
+/**
+ * True if a save changes a field that invalidates previously-issued OAuth state
+ * (tokens / dynamic client registration) for the same server id — the endpoint
+ * or auth configuration it points at.
+ */
+function oauthConfigChanged(
+  prev: { baseUrl: string; transport: string; authMode?: string; oauthScope?: string },
+  next: { baseUrl?: string; transport?: string; authMode?: string; oauthScope?: string },
+): boolean {
+  return (
+    (next.baseUrl !== undefined && next.baseUrl !== prev.baseUrl) ||
+    (next.transport !== undefined && next.transport !== prev.transport) ||
+    (next.authMode !== undefined && (next.authMode ?? "none") !== (prev.authMode ?? "none")) ||
+    (next.oauthScope !== undefined && (next.oauthScope ?? "") !== (prev.oauthScope ?? ""))
+  );
+}
+
 export function registerToolsHandlers(db: Database): void {
   // ── MCP servers ──────────────────────────────────────────────────────────
   registerIpcHandle("tools:listMcpServers", (_e, { workspaceId }: { workspaceId: string }) =>
@@ -67,7 +84,22 @@ export function registerToolsHandlers(db: Database): void {
   );
 
   registerIpcHandle("tools:saveMcpServer", (_e, server: SaveMcpArgs) =>
-    handle(() => q.saveMcpServer(db, { ...server, id: server.id ?? newId(), headers: sanitizeHeaders(server.headers) }))
+    handle(() => {
+      const id = server.id ?? newId();
+      // On edit, if any connection/auth-relevant field changed, the stored OAuth
+      // artefacts (tokens + client registration) no longer apply — they were
+      // issued for the old authorization server / config. Clear them so the id
+      // only preserves OAuth state when the auth config is unchanged.
+      if (server.id) {
+        const prev = q.getMcpServerById(db, server.id);
+        if (prev && oauthConfigChanged(prev, server)) {
+          mcpOauth.signOut(id);
+          mcpOauth.cancelPendingForServer(id);
+          void mcpClient.dispose(id);
+        }
+      }
+      return q.saveMcpServer(db, { ...server, id, headers: sanitizeHeaders(server.headers) });
+    })
   );
 
   registerIpcHandle("tools:deleteMcpServer", (_e, { id }: { id: string }) =>

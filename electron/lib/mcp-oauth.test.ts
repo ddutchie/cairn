@@ -71,6 +71,12 @@ describe("parseOAuthCallback", () => {
     expect(parseOAuthCallback("cairn://oauth/other?code=a&state=b")).toBeNull();
   });
 
+  it("rejects deeper routes that merely end with oauth/callback", () => {
+    expect(parseOAuthCallback("cairn://evil/oauth/callback?code=a&state=b")).toBeNull();
+    expect(parseOAuthCallback("cairn://oauth/oauth/callback?code=a&state=b")).toBeNull();
+    expect(parseOAuthCallback("cairn:///deep/oauth/callback?code=a&state=b")).toBeNull();
+  });
+
   it("rejects missing code or state", () => {
     expect(parseOAuthCallback("cairn://oauth/callback?code=a")).toBeNull();
     expect(parseOAuthCallback("cairn://oauth/callback?state=b")).toBeNull();

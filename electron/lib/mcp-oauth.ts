@@ -65,9 +65,12 @@ export function parseOAuthCallback(rawUrl: string): OAuthCallback | null {
   } catch {
     return null;
   }
-  // Accept either host="oauth" path="/callback" or path containing oauth/callback.
+  // Accept only the two documented forms, exactly:
+  //   cairn://oauth/callback   → host="oauth"  pathname="/callback"   → "oauth/callback"
+  //   cairn:///oauth/callback  → host=""       pathname="/oauth/callback" → "/oauth/callback"
+  // Reject any deeper route that merely ends with oauth/callback.
   const path = `${url.host}${url.pathname}`.replace(/\/+$/, "");
-  if (!/^oauth\/callback$/.test(path) && !/oauth\/callback$/.test(path)) return null;
+  if (path !== "oauth/callback" && path !== "/oauth/callback") return null;
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
   if (!code || !state) return null;
