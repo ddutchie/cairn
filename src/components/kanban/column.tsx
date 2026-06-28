@@ -19,6 +19,7 @@ import {
 import { KanbanCard } from "./card";
 import type { BoardColumn, TaskCard } from "@/types";
 import { COLUMN_COLORS } from "@/lib/constants";
+import { parseWipLimit, isAtWipLimit } from "./column-utils";
 
 interface NewCardData {
   title: string;
@@ -68,7 +69,7 @@ export function KanbanColumn({
   } = useSortable({ id: column.id, data: { column } });
 
   const accent = COLUMN_COLORS[column.type] ?? COLUMN_COLORS.custom;
-  const atLimit = column.cardLimit != null && column.cardLimit > 0 && cards.length >= column.cardLimit;
+  const atLimit = isAtWipLimit(column.cardLimit, cards.length);
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -161,8 +162,7 @@ export function KanbanColumn({
               onChange={(e) => setLimitValue(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
-                  const n = parseInt(limitValue, 10);
-                  onSetLimit(limitValue.trim() === "" ? null : (isNaN(n) || n < 1 ? null : n));
+                  onSetLimit(parseWipLimit(limitValue));
                   setLimitDialogOpen(false);
                 }
                 if (e.key === "Escape") setLimitDialogOpen(false);
@@ -187,8 +187,7 @@ export function KanbanColumn({
                 <Button
                   variant="accent" size="sm"
                   onClick={() => {
-                    const n = parseInt(limitValue, 10);
-                    onSetLimit(limitValue.trim() === "" ? null : (isNaN(n) || n < 1 ? null : n));
+                    onSetLimit(parseWipLimit(limitValue));
                     setLimitDialogOpen(false);
                   }}
                 >

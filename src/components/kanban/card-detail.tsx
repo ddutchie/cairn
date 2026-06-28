@@ -17,6 +17,7 @@ import { CairnEvents } from "@/lib/events";
 import { SpawnAgentModal } from "@/components/agent/SpawnAgentModal";
 import { NoteMarkdownPreview } from "@/components/notes/NoteMarkdownPreview";
 import { CardDetailSidebar } from "./card-detail-sidebar";
+import { computeDoneColumnIds, computeCandidateBlockers } from "./card-detail-utils";
 
 interface CardDetailModalProps {
   cardId: string;
@@ -56,12 +57,9 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
 
   if (!card) return null;
 
-  const doneColumnIds = new Set(columns.filter((c) => c.projectId === card.projectId && c.type === "done").map((c) => c.id));
+  const doneColumnIds = computeDoneColumnIds(columns, card.projectId);
   const blockerCards = (card.blockedByIds ?? []).map((id) => cards.find((c) => c.id === id)).filter(Boolean) as typeof cards;
-  const candidateBlockers = cards.filter(
-    (c) => c.projectId === card.projectId && c.id !== cardId && !c.archivedAt
-      && !doneColumnIds.has(c.columnId) && !(card.blockedByIds ?? []).includes(c.id)
-  );
+  const candidateBlockers = computeCandidateBlockers(cards, card, doneColumnIds);
 
   return (
     <>
