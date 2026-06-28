@@ -417,6 +417,15 @@ const api = {
     clearAttachment: (a: Omit<ToolAttachment, "enabled">) => invoke("tools:clearAttachment", a),
   },
 
+  // ── Secrets (OS keychain). No get() by design — renderer only learns set/not-set.
+  secrets: {
+    available: () => invoke<boolean>("secrets:available"),
+    set: (toolId: string, key: string, value: string) =>
+      invoke<string>("secrets:set", { toolId, key, value }),
+    has: (toolId: string, key: string) => invoke<boolean>("secrets:has", { toolId, key }),
+    delete: (toolId: string, key: string) => invoke("secrets:delete", { toolId, key }),
+  },
+
   // ── Git operations (Agent Git tab) ────────────
   git: {
     status:   (cwd: string) => invoke<GitStatus>("git:status", { cwd }),

@@ -15,6 +15,7 @@ import { handle } from "./result-helpers";
 import type { Database } from "better-sqlite3";
 import * as q from "../db/queries";
 import { newId } from "../db/utils";
+import * as secrets from "../lib/secure-store";
 
 type SaveMcpArgs = Omit<Parameters<typeof q.saveMcpServer>[1], "id"> & { id?: string };
 type SaveServiceArgs = Omit<Parameters<typeof q.saveCustomService>[1], "id"> & { id?: string };
@@ -30,7 +31,10 @@ export function registerToolsHandlers(db: Database): void {
   );
 
   registerIpcHandle("tools:deleteMcpServer", (_e, { id }: { id: string }) =>
-    handle(() => q.deleteMcpServer(db, id))
+    handle(() => {
+      q.deleteMcpServer(db, id);
+      secrets.deleteToolSecrets(id); // purge any keychain credentials
+    })
   );
 
   // ── Custom HTTP services ─────────────────────────────────────────────────
@@ -43,7 +47,10 @@ export function registerToolsHandlers(db: Database): void {
   );
 
   registerIpcHandle("tools:deleteService", (_e, { id }: { id: string }) =>
-    handle(() => q.deleteCustomService(db, id))
+    handle(() => {
+      q.deleteCustomService(db, id);
+      secrets.deleteToolSecrets(id); // purge any keychain credentials
+    })
   );
 
   // ── Per-project attachments ──────────────────────────────────────────────
@@ -57,5 +64,29 @@ export function registerToolsHandlers(db: Database): void {
 
   registerIpcHandle("tools:clearAttachment", (_e, a: Parameters<typeof q.clearToolAttachment>[1]) =>
     handle(() => q.clearToolAttachment(db, a))
+  );
+
+  // ── Secrets (OS keychain) ────────────────────────────────────────────────
+  // NOTE: there is intentionally NO "secrets:get" — the renderer can only learn
+  // whether a secret is set, set a new value, or delete one. Decryption happens
+  // only in the main process at tool-execution time (resolveSecrets).
+  registerIpcHandle("secrets:available", () => handle(() => secrets.isAvailable()));
+
+  registerIpcHandle(
+    "secrets:set",
+    (_e, { toolId, key, value }: { toolId: string; key: string; value: string }) =>
+      handle(() => secrets.setSecret(toolId, key, value))
+  );
+
+  registerIpcHandle(
+    "secrets:has",
+    (_e, { toolId, key }: { toolId: string; key: string }) =>
+      handle(() => secrets.hasSecret(toolId, key))
+  );
+
+  registerIpcHandle(
+    "secrets:delete",
+    (_e, { toolId, key }: { toolId: string; key: string }) =>
+      handle(() => secrets.deleteSecret(toolId, key))
   );
 }
