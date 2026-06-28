@@ -9,15 +9,21 @@
  *
  * Overview is ⌘1 and Notes is ⌘2, so views start at `base` (3). Shortcuts past
  * ⌘9 are dropped (empty string) since there's no single-digit key for them.
+ *
+ * The modifier symbol matches the platform: ⌘ on macOS, Ctrl elsewhere — the
+ * page.tsx shortcut handler accepts both `metaKey` and `ctrlKey`, so the label
+ * must reflect whichever the user actually presses.
  */
 export function buildShortcutMap(
   visibleNavItems: Array<{ view: string }>,
   base = 3,
+  isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform),
 ): Map<string, string> {
   const map = new Map<string, string>();
+  const prefix = isMac ? "\u2318" : "Ctrl+";
   visibleNavItems.forEach((item, idx) => {
     const num = idx + base;
-    map.set(item.view, num <= 9 ? `\u2318${num}` : "");
+    map.set(item.view, num <= 9 ? `${prefix}${num}` : "");
   });
   return map;
 }
@@ -49,8 +55,11 @@ export type DueDateSeverity = "danger" | "warning" | null;
  */
 export function dueDateSeverity(dueDate: string, now: number = Date.now()): DueDateSeverity {
   const due = new Date(dueDate).getTime();
+  // Any timestamp strictly before now is overdue. Checking this first avoids
+  // Math.ceil rounding a small negative diff (e.g. earlier today) up to -0,
+  // which would otherwise slip through to the 7-day "warning" branch.
+  if (due < now) return "danger";
   const diffDays = Math.ceil((due - now) / (1000 * 60 * 60 * 24));
-  if (diffDays < 0) return "danger";
   if (diffDays <= 7) return "warning";
   return null;
 }

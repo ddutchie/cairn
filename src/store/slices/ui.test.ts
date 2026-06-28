@@ -4,7 +4,9 @@ import { createUISlice, SEEN_FEATURES_KEY } from "./ui";
 
 // Mock the persistence layer so we can assert markFeatureAsSeen's storage
 // contract (node project has no window, so storage.set is otherwise a no-op).
-const storageSet = vi.fn();
+// The spy lives in vi.hoisted() because vi.mock() is hoisted above normal
+// declarations and its factory closes over storageSet.
+const { storageSet } = vi.hoisted(() => ({ storageSet: vi.fn() }));
 vi.mock("@/lib/storage", () => ({
   storage: {
     get: vi.fn(() => null),

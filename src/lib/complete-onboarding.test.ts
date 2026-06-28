@@ -20,17 +20,18 @@ const feat = (id: string, version: string): NewFeature => ({
   highlights: [],
 });
 
-function makeDeps(overrides: Partial<CompleteOnboardingDeps> = {}): {
+function makeDeps(overrides: Partial<CompleteOnboardingDeps> & { seenFeatures?: string[] } = {}): {
   deps: CompleteOnboardingDeps;
 } {
+  const { seenFeatures, ...rest } = overrides;
   const deps: CompleteOnboardingDeps = {
     hydrateFromElectron: vi.fn(async () => {}),
     setOnboardingState: vi.fn(),
     setPendingTutorial: vi.fn(),
     setTutorialActive: vi.fn(),
-    seenFeatures: [],
+    getSeenFeatures: () => seenFeatures ?? [],
     registry: [feat("v1.0-a", "v1.0")],
-    ...overrides,
+    ...rest,
   };
   return { deps };
 }

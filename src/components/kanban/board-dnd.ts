@@ -64,8 +64,20 @@ export function resolveCardDrop(
   }
 
   // No-op: the card is already occupying the resolved slot.
+  //  - Card-target drop: the resolved index already holds the dragged card.
+  //  - Column-body drop (append to end): the dragged card is already the last
+  //    card of the same column, so appending wouldn't move it. The card-target
+  //    guard below can't catch this because targetIndex == length (one past the
+  //    end), where the lookup is always undefined.
+  const sameColumn = draggedCard.columnId === targetColumnId;
+  if (sameColumn && isOverColumn) {
+    const colCards = getColumnCards(targetColumnId);
+    if (colCards[colCards.length - 1]?.id === draggedCard.id) {
+      return null;
+    }
+  }
   if (
-    draggedCard.columnId === targetColumnId &&
+    sameColumn &&
     getColumnCards(targetColumnId)[targetIndex]?.id === draggedCard.id
   ) {
     return null;

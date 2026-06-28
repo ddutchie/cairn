@@ -12,9 +12,14 @@
  * - Otherwise the parsed integer.
  */
 export function parseWipLimit(raw: string): number | null {
-  if (raw.trim() === "") return null;
-  const n = parseInt(raw, 10);
-  if (isNaN(n) || n < 1) return null;
+  const trimmed = raw.trim();
+  if (trimmed === "") return null;
+  // Only accept a whole positive integer string in its entirety — parseInt
+  // would silently truncate "3.5" → 3 or "1e3" → 1, saving a value the user
+  // never typed.
+  if (!/^\d+$/.test(trimmed)) return null;
+  const n = Number(trimmed);
+  if (n < 1) return null;
   return n;
 }
 

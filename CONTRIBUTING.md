@@ -669,7 +669,8 @@ vitest runs **two projects** (see `vitest.config.ts`):
 
 - **`node`** — the default fast suite for store slices, pure libs, and the
   electron/MCP layer. Runs in the `node` environment with the native SQLite
-  shim. Matches `**/*.test.ts` (and `src/**/*.test.tsx`), excluding component tests.
+  shim. Matches `electron/**/*.test.ts`, `src/**/*.test.ts`, and
+  `src/**/*.test.tsx`, excluding component tests (`src/**/*.component.test.tsx`).
 - **`component`** — React component tests rendered in **jsdom** via
   `@testing-library/react`. Matches `src/**/*.component.test.tsx` and loads
   `vitest.setup.components.ts` (jest-dom matchers + auto-cleanup). Use these for

@@ -105,4 +105,12 @@ describe("mergeSemanticResults", () => {
     const keyword = [r("a", "note")];
     expect(mergeSemanticResults(keyword, [])).toEqual(keyword);
   });
+
+  it("dedupes repeated semantic hits against each other", () => {
+    // Two semantic hits share id "c"; only the first should be appended.
+    const keyword = [r("a", "note")];
+    const semantic = [r("c", "note"), r("c", "note"), r("d", "note")];
+    const merged = mergeSemanticResults(keyword, semantic);
+    expect(merged.map((x) => x.id)).toEqual(["a", "c", "d"]);
+  });
 });

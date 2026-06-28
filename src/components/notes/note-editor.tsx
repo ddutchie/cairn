@@ -432,7 +432,11 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
     const idx = checkboxes.indexOf(el);
     if (idx === -1) return;
     const next = toggleCheckboxInSource(note.content ?? "", idx);
-    if (next !== (note.content ?? "")) updateNote(note.id, { content: next });
+    if (next !== (note.content ?? "")) {
+      // Keep contentText in sync with content (matching the save flow above) so
+      // derived plain-text state doesn't go stale after a preview toggle.
+      updateNote(note.id, { content: next, contentText: stripMarkdown(next) });
+    }
   }, [note.id, note.content, updateNote]);
 
   // Extracted from JSX so ReactMarkdown receives a stable object reference

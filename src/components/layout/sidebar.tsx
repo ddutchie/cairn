@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   FileText, Kanban, Settings, Search, MessageSquare,
   ChevronDown, ChevronRight, Plus, MoreHorizontal,
@@ -416,15 +416,16 @@ function ProjectItem({ project, isActive, isExpanded, onToggleExpand, onSelectPr
 }
 
 function DueDateDot({ dueDate }: { dueDate: string }) {
-  const { severity, diffDays, dueDateLabel } = useMemo(() => {
-    const due = new Date(dueDate);
-    return {
-      severity: dueDateSeverity(dueDate),
-      // eslint-disable-next-line react-hooks/purity
-      diffDays: Math.ceil((due.getTime() - Date.now()) / (1000 * 60 * 60 * 24)),
-      dueDateLabel: due.toLocaleDateString(),
-    };
-  }, [dueDate]);
+  // Computed on every render rather than memoised on `dueDate` alone: a memo
+  // keyed only by dueDate would freeze Date.now() at first render, so the
+  // severity/diffDays/label would go stale as wall-clock time advances while
+  // the app stays open (e.g. a "due in 1 day" item never ticking to overdue).
+  const due = new Date(dueDate);
+  // eslint-disable-next-line react-hooks/purity
+  const now = Date.now();
+  const severity = dueDateSeverity(dueDate, now);
+  const diffDays = Math.ceil((due.getTime() - now) / (1000 * 60 * 60 * 24));
+  const dueDateLabel = due.toLocaleDateString();
   if (severity === "danger") return (
     <Tooltip content={`Overdue — due ${dueDateLabel}`} side="right">
       <span className="w-1.5 h-1.5 rounded-full bg-[var(--danger)] flex-shrink-0" />

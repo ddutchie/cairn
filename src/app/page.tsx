@@ -336,7 +336,7 @@ export default function Home() {
                 setOnboardingState,
                 setPendingTutorial,
                 setTutorialActive: state.setTutorialActive,
-                seenFeatures: state.seenFeatures,
+                getSeenFeatures: () => useCairnStore.getState().seenFeatures,
                 registry: NEW_FEATURES_REGISTRY,
               });
             }}
@@ -348,15 +348,18 @@ export default function Home() {
 
   // Main app
   // Top offset for fixed-position chrome (the chat panel): the title bar
-  // occupies 41px (40px + 1px bottom border), plus the 36px (h-9) update banner
-  // when it's visible. The chat panel anchors to this so it never overlaps the
-  // banner's download button and its header aligns with the Topbar.
+  // occupies 41px (40px + 1px bottom border, both font-scale-independent), plus
+  // the update banner when visible. The banner is `h-9` (2.25rem) in
+  // app-chrome.tsx, so we add the SAME rem-based height here — a hard-coded px
+  // value would drift from the banner's real size under applyFontScale() /
+  // --font-scale root sizing. The chat panel anchors to this so it never
+  // overlaps the banner's download button and aligns with the Topbar.
   const updateBannerVisible = !!(updateVersion || updateDownloaded);
-  const chromeTop = 41 + (updateBannerVisible ? 36 : 0);
+  const chromeTop = updateBannerVisible ? "calc(41px + 2.25rem)" : "41px";
   return (
     <main
       className="flex flex-col h-dvh w-screen overflow-hidden bg-[var(--background)]"
-      style={{ "--chrome-top": `${chromeTop}px` } as React.CSSProperties}
+      style={{ "--chrome-top": chromeTop } as React.CSSProperties}
     >
       {/* Electron title bar — draggable, clears macOS traffic lights */}
       <TitleBar />

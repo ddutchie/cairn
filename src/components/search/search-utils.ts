@@ -59,7 +59,11 @@ export function mergeSemanticResults(
   const seen = new Set(keyword.map((r) => r.id));
   const merged = [...keyword];
   for (const s of semantic) {
-    if (!seen.has(s.id)) merged.push(s);
+    if (seen.has(s.id)) continue;
+    // Track each semantic id as it's accepted so a later semantic hit with the
+    // same id is deduped against earlier semantic ones, not just the keyword set.
+    seen.add(s.id);
+    merged.push(s);
   }
   return merged;
 }

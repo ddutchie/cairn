@@ -13,6 +13,11 @@
 
 import { test, expect, type Page, type ConsoleMessage } from "@playwright/test";
 import { buildIpcMock, NOTE_1 } from "../fixtures/ipc-mock";
+import { NEW_FEATURES_REGISTRY, getUnseenLatestFeatures } from "../../src/lib/new-features-registry";
+
+// Derive the latest-release feature from the registry rather than hard-coding a
+// specific entry — these assertions then stay valid as new releases are added.
+const LATEST_FEATURE = getUnseenLatestFeatures(NEW_FEATURES_REGISTRY, [])[0];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -292,7 +297,7 @@ test.describe("What's New modal", () => {
       // The fixture starts with no seen features, so the latest release modal shows.
       await expect(p.getByRole("heading", { name: /What's New in Cairn/i })).toBeVisible({ timeout: 10_000 });
       // The latest registry feature title is rendered.
-      await expect(p.getByText("Interactive Workspace Tour & Highlights")).toBeVisible();
+      await expect(p.getByText(LATEST_FEATURE.title)).toBeVisible();
     } finally {
       await p.context().close();
     }
@@ -315,7 +320,7 @@ test.describe("What's New modal", () => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         return (window as any).__cairnStore?.getState?.()?.seenFeatures ?? [];
       });
-      expect(seen).toContain("v2.3.2-onboarding-tour");
+      expect(seen).toContain(LATEST_FEATURE.id);
 
       // Navigating around does not re-open it (gate is empty now).
       await p.evaluate(() => {
@@ -337,7 +342,7 @@ test.describe("What's New modal", () => {
     // Pre-seed seenFeatures in localStorage before the app boots. The storage
     // layer prefixes keys with "cairn:v1:" (see src/lib/storage.ts).
     await p.addInitScript({
-      content: `localStorage.setItem("cairn:v1:seenFeatures", JSON.stringify(["v2.3.2-onboarding-tour"]));`,
+      content: `localStorage.setItem("cairn:v1:seenFeatures", JSON.stringify([${JSON.stringify(LATEST_FEATURE.id)}]));`,
     });
     try {
       await p.goto("/");

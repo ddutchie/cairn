@@ -19,7 +19,7 @@ describe("buildShortcutMap", () => {
   const items = (n: number) => Array.from({ length: n }, (_, i) => ({ view: `v${i}` }));
 
   it("assigns ⌘3, ⌘4, … starting at the default base", () => {
-    const map = buildShortcutMap(items(3));
+    const map = buildShortcutMap(items(3), 3, true);
     expect(map.get("v0")).toBe("⌘3");
     expect(map.get("v1")).toBe("⌘4");
     expect(map.get("v2")).toBe("⌘5");
@@ -27,19 +27,25 @@ describe("buildShortcutMap", () => {
 
   it("drops shortcuts past ⌘9 (empty string)", () => {
     // base 3 + 7 items → ⌘3..⌘9, then the 8th would be ⌘10 → "".
-    const map = buildShortcutMap(items(8));
+    const map = buildShortcutMap(items(8), 3, true);
     expect(map.get("v6")).toBe("⌘9"); // index 6 → 9
     expect(map.get("v7")).toBe("");   // index 7 → 10 → dropped
   });
 
   it("respects a custom base", () => {
-    const map = buildShortcutMap(items(2), 1);
+    const map = buildShortcutMap(items(2), 1, true);
     expect(map.get("v0")).toBe("⌘1");
     expect(map.get("v1")).toBe("⌘2");
   });
 
+  it("uses Ctrl on non-macOS platforms", () => {
+    const map = buildShortcutMap(items(2), 3, false);
+    expect(map.get("v0")).toBe("Ctrl+3");
+    expect(map.get("v1")).toBe("Ctrl+4");
+  });
+
   it("returns an empty map for no items", () => {
-    expect(buildShortcutMap([]).size).toBe(0);
+    expect(buildShortcutMap([], 3, true).size).toBe(0);
   });
 });
 
@@ -82,6 +88,12 @@ describe("dueDateSeverity", () => {
   it("returns 'danger' for a past due date", () => {
     expect(dueDateSeverity(daysFromNow(-1), NOW)).toBe("danger");
     expect(dueDateSeverity(daysFromNow(-30), NOW)).toBe("danger");
+  });
+
+  it("returns 'danger' for a due date earlier today (overdue, not warning)", () => {
+    // A small negative diff used to round to -0 via Math.ceil and slip into the
+    // 7-day "warning" branch — overdue items must always be "danger".
+    expect(dueDateSeverity(daysFromNow(-0.1), NOW)).toBe("danger");
   });
 
   it("returns 'warning' for due today and within 7 days", () => {

@@ -30,6 +30,12 @@ describe("toggleCheckboxInSource — list-item checkboxes", () => {
     const src = "- [ ] parent\n  - [ ] child";
     expect(toggleCheckboxInSource(src, 1)).toBe("- [ ] parent\n  - [x] child");
   });
+
+  it("toggles only the marker checkbox, not literal [x] text later on the line", () => {
+    // The marker box must flip; the literal "[x]" inside the item text must not.
+    const src = "- [ ] see the [x] in this text";
+    expect(toggleCheckboxInSource(src, 0)).toBe("- [x] see the [x] in this text");
+  });
 });
 
 describe("toggleCheckboxInSource — table-cell checkboxes", () => {
@@ -59,6 +65,17 @@ describe("toggleCheckboxInSource — table-cell checkboxes", () => {
   it("does not treat the delimiter row as a checkbox", () => {
     const out = toggleCheckboxInSource(table, 0);
     expect(out.split("\n")[1]).toBe("| --- | --- |");
+  });
+
+  it("ignores non-cell-leading checkbox text when indexing cells", () => {
+    // Only the cell-leading `[ ]` renders as a checkbox (mirrors
+    // renderCellWithCheckboxes); the mid-cell literal "[ ]" must not consume an
+    // index or be toggled.
+    const row = "| [ ] | note [ ] here | [ ] |";
+    // index 0 → first cell-leading box; index 1 → the THIRD cell's leading box
+    // (the literal mid-text box in cell 2 is skipped entirely).
+    expect(toggleCheckboxInSource(row, 0)).toBe("| [x] | note [ ] here | [ ] |");
+    expect(toggleCheckboxInSource(row, 1)).toBe("| [ ] | note [ ] here | [x] |");
   });
 });
 

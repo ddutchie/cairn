@@ -47,12 +47,30 @@ function makeView(doc: string, cursor: number): EditorView {
   return new EditorView({ state, parent: el });
 }
 
-/** Simulate the Enter binding firing at the current selection. */
+/**
+ * Dispatch a real keydown against the editor's content DOM so the event flows
+ * through CodeMirror's installed keymap handler — exercising the actual binding
+ * order (markdown commands before defaultKeymap) rather than calling the
+ * commands directly. Returns whether the keymap handled (preventDefault'd) it.
+ */
+function dispatchKey(v: EditorView, key: string): boolean {
+  v.focus();
+  const event = new KeyboardEvent("keydown", {
+    key,
+    code: key,
+    bubbles: true,
+    cancelable: true,
+  });
+  v.contentDOM.dispatchEvent(event);
+  return event.defaultPrevented;
+}
+
+/** Simulate the Enter binding firing at the current selection via the keymap. */
 function pressEnter(v: EditorView): boolean {
-  return insertNewlineContinueMarkup(v);
+  return dispatchKey(v, "Enter");
 }
 function pressBackspace(v: EditorView): boolean {
-  return deleteMarkupBackward(v);
+  return dispatchKey(v, "Backspace");
 }
 
 describe("ordered-list continuation", () => {
@@ -105,10 +123,12 @@ describe("breaking the list (the reported bug)", () => {
 });
 
 describe("non-list context falls through", () => {
-  it("returns false outside list markup so the default newline runs", () => {
+  it("inserts a plain newline outside list markup (defaultKeymap fallthrough)", () => {
     const doc = "plain paragraph";
     view = makeView(doc, doc.length);
-    // Outside a list the markdown command declines, letting defaultKeymap handle it.
-    expect(insertNewlineContinueMarkup(view)).toBe(false);
+    // Outside a list the markdown command declines, so the Enter keybinding
+    // falls through to defaultKeymap, which inserts a newline.
+    expect(pressEnter(view)).toBe(true);
+    expect(view.state.doc.toString()).toBe("plain paragraph\n");
   });
 });

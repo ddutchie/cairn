@@ -320,8 +320,8 @@ function getThemeColors(): Record<string, string> {
     "text-dim": "#9e9a94",    // --text-tertiary (light)
     accent: "#6457e8",        // --accent (light)
     "progress-bg": "#f0eeeb", // --surface-2 (light)
-    success: "#22c55e",
-    error: "#ef4444",
+    success: "#1a9e68",       // --success (light)
+    error: "#dc2626",         // --danger (light)
     background: "#f5f4f1",    // --background (light)
   };
   const dark: Record<string, string> = {
@@ -329,8 +329,8 @@ function getThemeColors(): Record<string, string> {
     "text-dim": "#66635f",    // --text-tertiary (dark)
     accent: "#7c6af7",        // --accent (dark)
     "progress-bg": "#1a1a1a", // --surface-2 (dark)
-    success: "#22c55e",
-    error: "#ef4444",
+    success: "#3ecf8e",       // --success (dark)
+    error: "#ef4444",         // --danger (dark)
     background: "#0d0d0d",    // --background (dark)
   };
   try {

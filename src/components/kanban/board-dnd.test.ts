@@ -104,6 +104,22 @@ describe("resolveCardDrop", () => {
     expect(resolveCardDrop(cols, get, card("d", "done"), "d")).toBeNull();
   });
 
+  it("returns null when the last card is dropped on its own column body", () => {
+    // todo = [a, b, c]. Dropping c (already last) onto the todo COLUMN appends
+    // to the end — i.e. exactly where it already is. The card-target guard
+    // can't see this (targetIndex == length, lookup is undefined), so the
+    // column-body guard must catch it to avoid a no-op move/timestamp bump.
+    expect(resolveCardDrop(columns, getColumnCards, card("c", "todo"), "todo")).toBeNull();
+  });
+
+  it("still moves a non-last card dropped on its own column body to the end", () => {
+    // Dropping a (todo[0], not last) onto the todo column appends to the end.
+    // The column-body branch uses the full column length (3), so this is a real
+    // move, not a no-op.
+    const drop = resolveCardDrop(columns, getColumnCards, card("a", "todo"), "todo");
+    expect(drop).toEqual({ targetColumnId: "todo", targetIndex: 3 });
+  });
+
   it("appends to an empty target column", () => {
     const cols = [col("todo"), col("empty")];
     const get = (id: string) => (id === "todo" ? [card("a", "todo")] : []);

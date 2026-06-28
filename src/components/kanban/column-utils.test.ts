@@ -30,8 +30,13 @@ describe("parseWipLimit", () => {
     expect(parseWipLimit(" 12 ")).toBe(12);
   });
 
-  it("truncates a trailing-garbage numeric string like parseInt", () => {
-    expect(parseWipLimit("3 cards")).toBe(3);
+  it("rejects trailing-garbage / non-integer strings (must not truncate like parseInt)", () => {
+    // parseInt would silently accept these and save a value the user never
+    // typed; parseWipLimit must reject anything that isn't a whole integer.
+    expect(parseWipLimit("3 cards")).toBeNull();
+    expect(parseWipLimit("3.5")).toBeNull();
+    expect(parseWipLimit("1e3")).toBeNull();
+    expect(parseWipLimit("0x10")).toBeNull();
   });
 });
 

@@ -14,8 +14,14 @@ export interface CompleteOnboardingDeps {
   setPendingTutorial: (v: boolean) => void;
   /** Activate the interactive tour immediately. */
   setTutorialActive: (v: boolean) => void;
-  /** Feature ids the user has already seen (for tour gating). */
-  seenFeatures: string[];
+  /**
+   * Reads the feature ids the user has already seen (for tour gating).
+   *
+   * MUST be a getter, not a captured snapshot: `hydrateFromElectron()` can
+   * refresh `seenFeatures` from the backend, so reading a value captured before
+   * the flow started would gate the tour on stale data.
+   */
+  getSeenFeatures: () => string[];
   /** The "What's New" feature registry (for tour gating). */
   registry: NewFeature[];
 }
@@ -40,8 +46,9 @@ export async function completeOnboarding(
   await deps.hydrateFromElectron();
   deps.setOnboardingState(false);
   if (!startTour) return;
+  // Read seenFeatures AFTER hydration so the gate reflects the refreshed store.
   const hasUnseenLatest =
-    getUnseenLatestFeatures(deps.registry, deps.seenFeatures).length > 0;
+    getUnseenLatestFeatures(deps.registry, deps.getSeenFeatures()).length > 0;
   if (hasUnseenLatest) {
     deps.setPendingTutorial(true);
   } else {
