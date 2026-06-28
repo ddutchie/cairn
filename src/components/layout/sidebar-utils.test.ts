@@ -13,6 +13,7 @@ import {
   buildShortcutMap,
   countOpenCardsByProject,
   dueDateSeverity,
+  dueDateDiffDays,
 } from "./sidebar-utils";
 
 describe("buildShortcutMap", () => {
@@ -105,5 +106,25 @@ describe("dueDateSeverity", () => {
   it("returns null for due dates more than 7 days away", () => {
     expect(dueDateSeverity(daysFromNow(8), NOW)).toBeNull();
     expect(dueDateSeverity(daysFromNow(60), NOW)).toBeNull();
+  });
+});
+
+describe("dueDateDiffDays", () => {
+  it("returns 0 for a deadline later the same calendar day (Due today)", () => {
+    // Build `now` at local noon so a few hours later is still the same day in
+    // the local timezone (the helper compares local calendar dates).
+    const now = new Date(2026, 5, 15, 12, 0, 0).getTime();
+    const laterToday = new Date(2026, 5, 15, 18, 30, 0).toISOString();
+    // Math.ceil of the ~6.5h fraction would round up to 1 ("Due in 1 day");
+    // same-calendar-day detection must yield 0 → "Due today".
+    expect(dueDateDiffDays(laterToday, now)).toBe(0);
+  });
+
+  it("returns whole days for future deadlines on later calendar days", () => {
+    const now = new Date(2026, 5, 15, 12, 0, 0).getTime();
+    const tomorrow = new Date(2026, 5, 16, 12, 0, 0).toISOString();
+    const inThree = new Date(2026, 5, 18, 12, 0, 0).toISOString();
+    expect(dueDateDiffDays(tomorrow, now)).toBe(1);
+    expect(dueDateDiffDays(inThree, now)).toBe(3);
   });
 });

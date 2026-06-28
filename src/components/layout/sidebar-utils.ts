@@ -63,3 +63,20 @@ export function dueDateSeverity(dueDate: string, now: number = Date.now()): DueD
   if (diffDays <= 7) return "warning";
   return null;
 }
+
+/**
+ * Whole-day countdown from `now` to a due date, used for the "Due in N days"
+ * label. A deadline later *today* is 0 days away, but `Math.ceil` of a small
+ * positive fraction rounds up to 1 ("Due in 1 day"); detect the same calendar
+ * day first and return 0 before falling back to the ceiling calculation.
+ */
+export function dueDateDiffDays(dueDate: string, now: number = Date.now()): number {
+  const due = new Date(dueDate);
+  const nowDate = new Date(now);
+  const sameCalendarDay =
+    due.getFullYear() === nowDate.getFullYear() &&
+    due.getMonth() === nowDate.getMonth() &&
+    due.getDate() === nowDate.getDate();
+  if (sameCalendarDay) return 0;
+  return Math.ceil((due.getTime() - now) / (1000 * 60 * 60 * 24));
+}

@@ -19,7 +19,7 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { WorkspaceSwitcher } from "./sidebar/WorkspaceSwitcher";
 import { ProjectCreateForm } from "./sidebar/ProjectCreateForm";
-import { buildShortcutMap, countOpenCardsByProject, dueDateSeverity } from "./sidebar-utils";
+import { buildShortcutMap, countOpenCardsByProject, dueDateSeverity, dueDateDiffDays } from "./sidebar-utils";
 import type { Project } from "@/types";
 
 // ── View nav config ───────────────────────────────────────────────────────────
@@ -424,7 +424,7 @@ function DueDateDot({ dueDate }: { dueDate: string }) {
   // eslint-disable-next-line react-hooks/purity
   const now = Date.now();
   const severity = dueDateSeverity(dueDate, now);
-  const diffDays = Math.ceil((due.getTime() - now) / (1000 * 60 * 60 * 24));
+  const diffDays = dueDateDiffDays(dueDate, now);
   const dueDateLabel = due.toLocaleDateString();
   if (severity === "danger") return (
     <Tooltip content={`Overdue — due ${dueDateLabel}`} side="right">

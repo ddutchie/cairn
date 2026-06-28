@@ -18,7 +18,10 @@
   --accent: #7c6af7;
   --accent-hover: #9281ff;
   --accent-dim: rgba(124, 106, 247, 0.15);
-  --accent-fg: #ffffff;
+  /* Dark accent (#7c6af7) is too light for white text at small sizes (only
+     3.99:1, fails AA). A near-black foreground reaches 4.75:1. Light theme
+     keeps #ffffff (5.16:1 on its darker accent). */
+  --accent-fg: #16082e;
   --muted: #666360;
   --muted-fg: #a09c96;
   --text-primary: #e8e4dc;
