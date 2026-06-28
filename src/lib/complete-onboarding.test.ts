@@ -22,48 +22,43 @@ const feat = (id: string, version: string): NewFeature => ({
 
 function makeDeps(overrides: Partial<CompleteOnboardingDeps> = {}): {
   deps: CompleteOnboardingDeps;
-  calls: string[];
 } {
-  const calls: string[] = [];
   const deps: CompleteOnboardingDeps = {
-    hydrateFromElectron: vi.fn(async () => { calls.push("hydrate"); }),
-    setOnboardingState: vi.fn(() => { calls.push("exit"); }),
-    setPendingTutorial: vi.fn(() => { calls.push("pendingTutorial"); }),
-    setTutorialActive: vi.fn(() => { calls.push("tutorialActive"); }),
+    hydrateFromElectron: vi.fn(async () => {}),
+    setOnboardingState: vi.fn(),
+    setPendingTutorial: vi.fn(),
+    setTutorialActive: vi.fn(),
     seenFeatures: [],
     registry: [feat("v1.0-a", "v1.0")],
     ...overrides,
   };
-  return { deps, calls };
+  return { deps };
 }
 
 describe("completeOnboarding", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("hydrates from the backend before exiting onboarding (the core fix)", async () => {
-    const { deps, calls } = makeDeps();
-    await completeOnboarding(false, deps);
+  it("hydrates from the backend and only then exits onboarding (the core fix)", async () => {
+    // Control hydrate's resolution so we can prove setOnboardingState is GATED
+    // on it — not merely that the final recorded order happens to be right.
+    let resolveHydrate!: () => void;
+    const hydrateFromElectron = vi.fn(
+      () => new Promise<void>((resolve) => { resolveHydrate = resolve; }),
+    );
+    const { deps } = makeDeps({ hydrateFromElectron });
+
+    // Start the flow but do NOT await — hydrate is still pending.
+    const done = completeOnboarding(false, deps);
+    await Promise.resolve(); // flush any microtasks up to the first await
 
     expect(deps.hydrateFromElectron).toHaveBeenCalledTimes(1);
-    expect(deps.setOnboardingState).toHaveBeenCalledWith(false);
-    // Ordering matters: hydrate must resolve BEFORE onboarding is dismissed,
-    // otherwise the main app renders with an empty store (no projects).
-    expect(calls.indexOf("hydrate")).toBeLessThan(calls.indexOf("exit"));
-  });
+    // Onboarding must NOT be dismissed while hydration is in flight, otherwise
+    // the main app renders against an empty store (no projects on first run).
+    expect(deps.setOnboardingState).not.toHaveBeenCalled();
 
-  it("awaits a slow hydrate before dismissing onboarding", async () => {
-    let resolved = false;
-    const { deps } = makeDeps({
-      hydrateFromElectron: vi.fn(async () => {
-        await new Promise((r) => setTimeout(r, 10));
-        resolved = true;
-      }),
-    });
-
-    await completeOnboarding(false, deps);
-
-    // setOnboardingState only runs after the awaited hydrate settled.
-    expect(resolved).toBe(true);
+    // Resolve hydration; the dismiss should now run.
+    resolveHydrate();
+    await done;
     expect(deps.setOnboardingState).toHaveBeenCalledWith(false);
   });
 
@@ -94,11 +89,26 @@ describe("completeOnboarding", () => {
     expect(deps.setPendingTutorial).not.toHaveBeenCalled();
   });
 
-  it("still hydrates and exits when starting the tour", async () => {
-    const { deps, calls } = makeDeps({ registry: [feat("v9.9-new", "v9.9")] });
-    await completeOnboarding(true, deps);
+  it("gates exit AND tour start on hydration when starting the tour", async () => {
+    let resolveHydrate!: () => void;
+    const hydrateFromElectron = vi.fn(
+      () => new Promise<void>((resolve) => { resolveHydrate = resolve; }),
+    );
+    // seenFeatures empty + unseen latest → tour is deferred via setPendingTutorial.
+    const { deps } = makeDeps({ hydrateFromElectron, registry: [feat("v9.9-new", "v9.9")] });
+
+    const done = completeOnboarding(true, deps);
+    await Promise.resolve();
 
     expect(deps.hydrateFromElectron).toHaveBeenCalledTimes(1);
-    expect(calls.indexOf("hydrate")).toBeLessThan(calls.indexOf("exit"));
+    // Nothing past the await should have run while hydration is pending.
+    expect(deps.setOnboardingState).not.toHaveBeenCalled();
+    expect(deps.setPendingTutorial).not.toHaveBeenCalled();
+    expect(deps.setTutorialActive).not.toHaveBeenCalled();
+
+    resolveHydrate();
+    await done;
+    expect(deps.setOnboardingState).toHaveBeenCalledWith(false);
+    expect(deps.setPendingTutorial).toHaveBeenCalledWith(true);
   });
 });
