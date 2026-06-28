@@ -10,7 +10,12 @@
 import React, { useEffect, useRef, useImperativeHandle, forwardRef } from "react";
 import { EditorView, ViewUpdate, keymap, placeholder as cmPlaceholder } from "@codemirror/view";
 import { EditorState, Compartment } from "@codemirror/state";
-import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
+import {
+  markdown,
+  markdownLanguage,
+  insertNewlineContinueMarkup,
+  deleteMarkupBackward,
+} from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import { defaultKeymap, indentWithTab, history, historyKeymap } from "@codemirror/commands";
 import { search, searchKeymap } from "@codemirror/search";
@@ -243,7 +248,18 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(
         doc: initialValue,
         extensions: [
           history(),
-          keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab, ...searchKeymap]),
+          keymap.of([
+            // Markdown-aware list continuation + renumbering. Must precede
+            // defaultKeymap so its Enter/Backspace bindings take priority;
+            // both commands return false outside markdown markup and fall
+            // through to the default newline/delete behaviour.
+            { key: "Enter", run: insertNewlineContinueMarkup },
+            { key: "Backspace", run: deleteMarkupBackward },
+            ...defaultKeymap,
+            ...historyKeymap,
+            indentWithTab,
+            ...searchKeymap,
+          ]),
           markdown({
             base: markdownLanguage,
             codeLanguages: languages,

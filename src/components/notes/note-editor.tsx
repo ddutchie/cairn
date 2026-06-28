@@ -27,7 +27,7 @@ import { MarkdownEditor, type MarkdownEditorHandle } from "./markdown-editor";
 import { remarkCallout, remarkObsidianEmbeds, remarkWikilinks, remarkPromoteDisplayMath, makeLatexPlugins, InlineCode } from "@/lib/markdown/pipeline";
 import { BacklinksPanel, NoteTagBar } from "./BacklinksPanel";
 import { MDPreviewPanel } from "./MDPreviewPanel";
-import { countWords, stripMarkdown } from "./note-editor-utils";
+import { countWords, stripMarkdown, toggleCheckboxInSource } from "./note-editor-utils";
 
 interface NoteEditorProps {
   note: Note;
@@ -35,6 +35,45 @@ interface NoteEditorProps {
 }
 
 type EditorMode = "write" | "read";
+
+/**
+ * Render a table cell's children, converting any leading `[ ]` / `[x]` token
+ * into a clickable checkbox. GFM table cells only parse inline content, so
+ * remark-gfm never emits checkbox nodes inside `<td>`/`<th>` — we recover them
+ * here so table task-lists are interactive like list task-items.
+ *
+ * Only the first text child is inspected (the token must lead the cell, mirroring
+ * GFM task-list semantics: `| [x] done | …`). Toggle wiring maps the rendered
+ * checkbox back to source order via toggleCheckboxInSource().
+ */
+function renderCellWithCheckboxes(
+  children: React.ReactNode,
+  onToggle: (el: HTMLInputElement) => void
+): React.ReactNode {
+  const arr = React.Children.toArray(children);
+  if (arr.length === 0) return children;
+
+  const first = arr[0];
+  if (typeof first !== "string") return children;
+
+  const m = first.match(/^\s*\[([ xX])\]\s?/);
+  if (!m) return children;
+
+  const checked = m[1] !== " ";
+  const rest = first.slice(m[0].length);
+  return (
+    <>
+      <input
+        type="checkbox"
+        defaultChecked={checked}
+        className="cursor-pointer accent-[var(--accent)] w-3.5 h-3.5 relative top-[1px] mr-1"
+        onChange={(e) => onToggle(e.currentTarget)}
+      />
+      {rest}
+      {arr.slice(1)}
+    </>
+  );
+}
 
 export function NoteEditor({ note, onBack }: NoteEditorProps) {
   const { updateNote, aiConfig, activeProjectId, getProjectColumns, tags, createTag, getTagById, activeWorkspaceId, setView, notes, projects } = useCairnStore(useShallow((s) => ({
@@ -380,6 +419,22 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
   }, [note.id, activeProjectId, getProjectColumns, aiConfig]);
 
   // ── Stable ReactMarkdown component overrides ──────────────────────────────
+  // Toggle the Nth checkbox (document order) in the raw markdown source.
+  // Shared by both list-item checkboxes and table-cell checkboxes so their
+  // indices map to a single source-order scan. `el` is the clicked input;
+  // its index among all `.prose-cairn` checkboxes equals the source index.
+  const toggleCheckbox = useCallback((el: HTMLInputElement) => {
+    const root = el.closest(".prose-cairn");
+    if (!root) return;
+    const checkboxes = Array.from(
+      root.querySelectorAll<HTMLInputElement>("input[type='checkbox']")
+    );
+    const idx = checkboxes.indexOf(el);
+    if (idx === -1) return;
+    const next = toggleCheckboxInSource(note.content ?? "", idx);
+    if (next !== (note.content ?? "")) updateNote(note.id, { content: next });
+  }, [note.id, note.content, updateNote]);
+
   // Extracted from JSX so ReactMarkdown receives a stable object reference
   // across renders. Only recreated when the note or updateNote changes.
   // previewScrollRef is a stable ref so it doesn't need to be in deps.
@@ -454,24 +509,7 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
           type="checkbox"
           defaultChecked={checked}
           className="cursor-pointer accent-[var(--accent)] w-3.5 h-3.5 relative top-[1px]"
-          onChange={(e) => {
-            const checkboxes = Array.from(
-              e.currentTarget.closest(".prose-cairn")!
-                .querySelectorAll<HTMLInputElement>("input[type='checkbox']")
-            );
-            const idx = checkboxes.indexOf(e.currentTarget);
-            if (idx === -1) return;
-            const lines = (note.content ?? "").split("\n");
-            let found = 0;
-            const next = lines.map((line) => {
-              if (/^(\s*[-*+]\s+)\[([ xX])\]/.test(line)) {
-                if (found === idx) { found++; return line.replace(/\[([ xX])\]/, e.currentTarget.checked ? "[x]" : "[ ]"); }
-                found++;
-              }
-              return line;
-            }).join("\n");
-            updateNote(note.id, { content: next });
-          }}
+          onChange={(e) => toggleCheckbox(e.currentTarget)}
         />
       );
     },
@@ -629,9 +667,16 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
         </div>
       );
     },
+    td({ children, style }: { children?: React.ReactNode; style?: React.CSSProperties }) {
+      return <td style={style}>{renderCellWithCheckboxes(children, toggleCheckbox)}</td>;
+    },
+    th({ children, style }: { children?: React.ReactNode; style?: React.CSSProperties }) {
+      return <th style={style}>{renderCellWithCheckboxes(children, toggleCheckbox)}</th>;
+    },
   // previewScrollRef is a stable React ref — no need to list it as a dep
-  // notes is needed for wikilink resolution
-  }), [note.id, note.content, updateNote, notes]) as import("react-markdown").Components;
+  // notes is needed for wikilink resolution; toggleCheckbox carries the
+  // note id/content/updateNote closure for checkbox source-toggling.
+  }), [notes, toggleCheckbox]) as import("react-markdown").Components;
 
   const handleToggleTag = useCallback((tagId: string) => {
     const has = note.tagIds.includes(tagId);
