@@ -170,13 +170,28 @@ export function buildIpcMock(): string {
   // No-op that returns a resolved promise (used for write calls)
   const noop = () => Promise.resolve(null);
 
-  // Minimal event-listener registry for push channels (onDbChanged, etc.)
-  function makeListener() {
+  // Event-listener registry for push channels (onDbChanged, onAiWriteStarted…).
+  //
+  // Each channel keeps a live Set of registered callbacks. Tests can drive the
+  // preload push flow by calling window.__cairnEmit(channel, payload), which
+  // invokes every registered callback for that channel — mirroring how the real
+  // electron/preload.ts forwards ipcRenderer events to subscribers.
+  const __listeners = {};
+  function makeListener(channel) {
+    if (!__listeners[channel]) __listeners[channel] = new Set();
     return (cb) => {
-      // Register — return an unsubscribe fn
-      return () => {};
+      __listeners[channel].add(cb);
+      // Return an unsubscribe fn, matching the preload contract.
+      return () => { __listeners[channel].delete(cb); };
     };
   }
+  // Test bridge: emit a payload to all subscribers of a channel.
+  window.__cairnEmit = (channel, payload) => {
+    const set = __listeners[channel];
+    if (!set) return 0;
+    for (const cb of set) cb(payload);
+    return set.size;
+  };
 
   window.electron = {
     // ── Boot sequence ────────────────────────────────────────
@@ -252,11 +267,11 @@ export function buildIpcMock(): string {
       deleteThread:   noop,
       stream:         () => {},
       abort:          () => {},
-      onToken:        makeListener(),
-      onDone:         makeListener(),
-      onToolCall:     makeListener(),
-      onToolCallDone: makeListener(),
-      onUsage:        makeListener(),
+      onToken:        makeListener("chat.onToken"),
+      onDone:         makeListener("chat.onDone"),
+      onToolCall:     makeListener("chat.onToolCall"),
+      onToolCallDone: makeListener("chat.onToolCallDone"),
+      onUsage:        makeListener("chat.onUsage"),
     },
 
     // ── Knowledge graph ───────────────────────────────────────
@@ -289,19 +304,19 @@ export function buildIpcMock(): string {
 
     // ── Auto-updater ──────────────────────────────────────────
     updater: {
-      onUpdateAvailable: makeListener(),
-      onUpdateDownloaded: makeListener(),
+      onUpdateAvailable: makeListener("updater.onUpdateAvailable"),
+      onUpdateDownloaded: makeListener("updater.onUpdateDownloaded"),
       install: noop,
     },
 
     // ── Push events ───────────────────────────────────────────
-    onDbChanged:               makeListener(),
-    onMcpUnreadCount:          makeListener(),
+    onDbChanged:               makeListener("onDbChanged"),
+    onMcpUnreadCount:          makeListener("onMcpUnreadCount"),
     markMcpNotificationsRead:  noop,
 
     // ── AI write-lock events (note editor + db:changed override) ──
-    onAiWriteStarted:          makeListener(),
-    onAiWriteEnded:            makeListener(),
+    onAiWriteStarted:          makeListener("onAiWriteStarted"),
+    onAiWriteEnded:            makeListener("onAiWriteEnded"),
 
     // ── Dashboard live query bridge ───────────────────────────
     mcpQuery: (_tool, _args) => Promise.resolve(null),
@@ -325,8 +340,8 @@ export function buildIpcMock(): string {
       resize:           noop,
       spawnShell:       () => Promise.resolve({ sessionId: "mock-shell-session" }),
       kill:             () => Promise.resolve(),
-      onData:           makeListener(),
-      onExit:           makeListener(),
+      onData:           makeListener("agent.onData"),
+      onExit:           makeListener("agent.onExit"),
     },
 
     // ── Cairn native agent (pi) ───────────────────────────────────────────────
@@ -342,17 +357,17 @@ export function buildIpcMock(): string {
       deleteSession:  noop,
       getMessages:    () => Promise.resolve([]),
       saveMessages:   noop,
-      onToken:        makeListener(),
-      onTool:         makeListener(),
-      onDone:         makeListener(),
-      onError:        makeListener(),
-      onToolsReady:   makeListener(),
-      onStep:         makeListener(),
-      onUsage:        makeListener(),
-      onSubagent:     makeListener(),
-      onPlanNote:     makeListener(),
-      onNoteUpdated:  makeListener(),
-      onModeChange:   makeListener(),
+      onToken:        makeListener("piAgent.onToken"),
+      onTool:         makeListener("piAgent.onTool"),
+      onDone:         makeListener("piAgent.onDone"),
+      onError:        makeListener("piAgent.onError"),
+      onToolsReady:   makeListener("piAgent.onToolsReady"),
+      onStep:         makeListener("piAgent.onStep"),
+      onUsage:        makeListener("piAgent.onUsage"),
+      onSubagent:     makeListener("piAgent.onSubagent"),
+      onPlanNote:     makeListener("piAgent.onPlanNote"),
+      onNoteUpdated:  makeListener("piAgent.onNoteUpdated"),
+      onModeChange:   makeListener("piAgent.onModeChange"),
     },
   };
 })();

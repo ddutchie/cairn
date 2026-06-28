@@ -95,6 +95,14 @@ export default function Home() {
   // IPC error toasts
   const { toasts, dismiss } = useIpcErrorToasts();
 
+  // Expose the Zustand store on window for E2E automation (Playwright reads
+  // window.__cairnStore — see tests/e2e/smoke.test.ts). Harmless read-only
+  // handle; only used to drive navigation in tests.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    (window as unknown as { __cairnStoreRef?: typeof useCairnStore }).__cairnStoreRef = useCairnStore;
+  }, []);
+
   useEffect(() => {
     const electron = window.electron;
     if (typeof window !== "undefined" && electron) {
