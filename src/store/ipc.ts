@@ -21,7 +21,18 @@ import { ownWriteGuard } from "@/lib/history";
 const ownNoteWriteMap = new Map<string, number>();
 const OWN_NOTE_WRITE_WINDOW_MS = 1500;
 
+// Drop entries older than maxAgeMs so the maps stay bounded over a long session
+// (they're keyed by noteId, but pruning avoids retaining IDs for notes that
+// were touched once and never again).
+function pruneExpired(map: Map<string, number>, maxAgeMs: number): void {
+  const now = Date.now();
+  for (const [key, t] of map) {
+    if (now - t >= maxAgeMs) map.delete(key);
+  }
+}
+
 export function markOwnNoteWrite(noteId: string): void {
+  pruneExpired(ownNoteWriteMap, OWN_NOTE_WRITE_WINDOW_MS);
   ownNoteWriteMap.set(noteId, Date.now());
 }
 
@@ -49,11 +60,13 @@ const AI_NOTE_WRITE_TAIL_MS = 5000;
 const aiWritingNotes = new Set<string>();
 
 export function markAiNoteWriteStarted(noteId: string): void {
+  pruneExpired(aiNoteWriteMap, AI_NOTE_WRITE_TAIL_MS);
   aiWritingNotes.add(noteId);
   aiNoteWriteMap.set(noteId, Date.now());
 }
 
 export function markAiNoteWriteEnded(noteId: string): void {
+  pruneExpired(aiNoteWriteMap, AI_NOTE_WRITE_TAIL_MS);
   aiWritingNotes.delete(noteId);
   aiNoteWriteMap.set(noteId, Date.now());
 }
