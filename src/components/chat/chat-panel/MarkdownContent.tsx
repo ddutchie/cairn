@@ -97,18 +97,29 @@ export function MarkdownContent({ content, isUser }: { content: string; isUser?:
     return preprocessMarkdown(content, notes, cards, cwd);
   }, [content, notes, cards, cwd]);
 
-  // The user bubble has an accent (purple) background with white text. Block
-  // elements below must read white there instead of the dark surface tokens
-  // (which are only legible on the assistant/surface bubble).
-  const strongColor = isUser ? "text-white" : "text-[var(--text-primary)]";
-  const headingColor = isUser ? "text-white" : "text-[var(--text-primary)]";
-  const listColor = isUser ? "text-white" : "text-[var(--text-secondary)]";
+  // The user bubble has an accent (purple) background with --accent-fg text.
+  // Block elements below must read against the accent there (token-based, with
+  // alpha via color-mix) instead of the dark surface tokens (which are only
+  // legible on the assistant/surface bubble).
+  const strongColor = isUser ? "text-[var(--accent-fg)]" : "text-[var(--text-primary)]";
+  const headingColor = isUser ? "text-[var(--accent-fg)]" : "text-[var(--text-primary)]";
+  const listColor = isUser ? "text-[var(--accent-fg)]" : "text-[var(--text-secondary)]";
   const codeClass = isUser
-    ? "bg-white/20 text-white"
+    ? "bg-[color-mix(in_srgb,var(--accent-fg)_20%,transparent)] text-[var(--accent-fg)]"
     : "bg-[var(--surface-3)] text-[var(--text-primary)]";
   const quoteClass = isUser
-    ? "border-white/40 text-white/80"
+    ? "border-[color-mix(in_srgb,var(--accent-fg)_40%,transparent)] text-[color-mix(in_srgb,var(--accent-fg)_80%,transparent)]"
     : "border-[var(--accent)] text-[var(--text-tertiary)]";
+  // Table / rule chrome — re-themed against the accent bubble for the user path.
+  const ruleBorder = isUser
+    ? "border-[color-mix(in_srgb,var(--accent-fg)_40%,transparent)]"
+    : "border-[var(--border)]";
+  const thClass = isUser
+    ? "text-[var(--accent-fg)] bg-[color-mix(in_srgb,var(--accent-fg)_15%,transparent)] border-[color-mix(in_srgb,var(--accent-fg)_40%,transparent)]"
+    : "text-[var(--text-primary)] bg-[var(--surface-2)] border-[var(--border)]";
+  const tdClass = isUser
+    ? "text-[var(--accent-fg)] border-[color-mix(in_srgb,var(--accent-fg)_40%,transparent)]"
+    : "text-[var(--text-secondary)] border-[var(--border)]";
 
   return (
     <ReactMarkdown
@@ -150,10 +161,10 @@ export function MarkdownContent({ content, isUser }: { content: string; isUser?:
         ),
         a: ({ href, children }) => {
           const linkClass = isUser
-            ? "inline-flex items-center text-white hover:text-white/80 underline font-medium cursor-pointer"
+            ? "inline-flex items-center text-[var(--accent-fg)] hover:text-[color-mix(in_srgb,var(--accent-fg)_80%,transparent)] underline font-medium cursor-pointer"
             : "inline-flex items-center text-[var(--accent)] hover:underline font-medium cursor-pointer";
           const fallbackClass = isUser
-            ? "text-white hover:text-white/80 underline"
+            ? "text-[var(--accent-fg)] hover:text-[color-mix(in_srgb,var(--accent-fg)_80%,transparent)] underline"
             : "text-[var(--accent)] hover:underline";
 
           if (href?.startsWith("cairn://note/")) {
@@ -216,7 +227,7 @@ export function MarkdownContent({ content, isUser }: { content: string; isUser?:
             </a>
           );
         },
-        hr: () => <hr className="my-2 border-[var(--border)]" />,
+        hr: () => <hr className={`my-2 ${ruleBorder}`} />,
         table: ({ children }) => (
           <div className="my-2 overflow-x-auto">
             <table className="w-full border-collapse text-xs">{children}</table>
@@ -224,14 +235,14 @@ export function MarkdownContent({ content, isUser }: { content: string; isUser?:
         ),
         thead: ({ children }) => <thead>{children}</thead>,
         tbody: ({ children }) => <tbody>{children}</tbody>,
-        tr: ({ children }) => <tr className="border-b border-[var(--border)]">{children}</tr>,
+        tr: ({ children }) => <tr className={`border-b ${ruleBorder}`}>{children}</tr>,
         th: ({ children }) => (
-          <th className="px-2.5 py-1.5 text-left font-semibold text-[var(--text-primary)] bg-[var(--surface-2)] border border-[var(--border)]">
+          <th className={`px-2.5 py-1.5 text-left font-semibold border ${thClass}`}>
             {children}
           </th>
         ),
         td: ({ children }) => (
-          <td className="px-2.5 py-1.5 text-[var(--text-secondary)] border border-[var(--border)]">
+          <td className={`px-2.5 py-1.5 border ${tdClass}`}>
             {children}
           </td>
         ),

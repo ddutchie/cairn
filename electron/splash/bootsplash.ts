@@ -99,6 +99,9 @@ function buildSplashHtml(iconDataUrl: string | null, colors: Record<string, stri
 <title>Cairn</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+${initialVars}
+  }
   html, body {
     height: 100%; width: 100%;
     overflow: hidden;
@@ -109,7 +112,6 @@ function buildSplashHtml(iconDataUrl: string | null, colors: Record<string, stri
     display: flex; flex-direction: column;
     align-items: center; justify-content: center;
     padding: 48px 32px;
-${initialVars}
     background: var(--splash-background);
   }
   .logo {

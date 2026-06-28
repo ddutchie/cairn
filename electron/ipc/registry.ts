@@ -29,32 +29,49 @@ const listeners = new Map<string, IpcHandler>();
 
 let mobileBroadcastCallback: ((channel: string, payload: unknown) => void) | null = null;
 
+/**
+ * Decide whether a completed `db:*` channel should auto-broadcast `db:changed`
+ * (which triggers a full snapshot re-hydration in every window + mobile client).
+ *
+ * Write channels broadcast; read channels must NOT. The previous implementation
+ * was a pure denylist of read channels, defaulting any *unlisted* `db:*` channel
+ * to "write" — so a forgotten read channel would silently fire `db:changed` on
+ * every call (a re-hydration storm that never errors, just wastes work).
+ *
+ * The codebase follows a strict `db:<entity>:<action>` naming convention, so we
+ * primarily classify by the trailing action verb: reads are the well-known
+ * read verbs below. A small denylist of irregularly-named read channels
+ * (e.g. `db:chat:threads`, `db:snapshot`) covers the cases that don't end in a
+ * read verb. Anything else is treated as a write.
+ */
+const READ_ACTIONS = new Set([
+  "list",
+  "get",
+  "search",
+  "neighbors",
+  "ready",
+  "messages",
+  "threads",
+  "fetch", // db:flow:url:fetch — fetches URL metadata, no DB write
+]);
+
+// Read channels whose names don't end in a recognised read verb.
+const READ_CHANNELS = new Set([
+  "db:snapshot",
+  "db:hasData",
+  "db:mcpQuery",
+]);
+
 function isWriteChannel(channel: string): boolean {
   if (!channel.startsWith("db:")) return false;
-
-  const readChannels = [
-    "db:snapshot",
-    "db:hasData",
-    "db:workspace:list",
-    "db:project:list",
-    "db:note:list",
-    "db:column:list",
-    "db:card:list",
-    "db:card:ready",
-    "db:flow:get",
-    "db:tag:list",
-    "db:chat:threads",
-    "db:chat:messages",
-    "db:piSession:list",
-    "db:piSession:messages",
-    "db:graph:get",
-    "db:graph:neighbors",
-    "db:embeddings:search",
-    "db:mcpQuery"
-  ];
-
-  return !readChannels.includes(channel);
+  if (READ_CHANNELS.has(channel)) return false;
+  const action = channel.slice(channel.lastIndexOf(":") + 1);
+  if (READ_ACTIONS.has(action)) return false;
+  return true;
 }
+
+/** Exported for unit testing the read/write classification. */
+export const __isWriteChannel = isWriteChannel;
 
 /**
  * Register a handler that maps to ipcMain.handle.
