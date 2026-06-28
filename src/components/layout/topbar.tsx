@@ -5,6 +5,7 @@ import {
   Hash,
   FileText,
   Kanban,
+  CalendarDays,
   Workflow,
   Terminal,
   MessageSquare,
@@ -24,6 +25,7 @@ const VIEW_TABS = [
   { id: "overview" as const, label: "Overview", icon: Hash },
   { id: "notes" as const, label: "Notes", icon: FileText },
   { id: "board" as const, label: "Board", icon: Kanban },
+  { id: "calendar" as const, label: "Calendar", icon: CalendarDays },
   { id: "flow" as const, label: "Flow", icon: Workflow },
   { id: "agent" as const, label: "Agent", icon: Terminal },
 ] as const;
@@ -138,7 +140,7 @@ export function Topbar() {
               onChange={(e) => setView(e.target.value as "overview" | "notes" | "board" | "flow" | "settings" | "graph" | "insights" | "chat" | "search" | "agent")}
               className="appearance-none bg-[var(--surface-2)] border border-[var(--border)] rounded-md pl-3 pr-8 py-1 text-xs font-medium text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] cursor-pointer"
             >
-              {VIEW_TABS.filter((tab) => !hiddenViews.has(tab.id as "board" | "flow" | "agent")).map((tab) => (
+              {VIEW_TABS.filter((tab) => !hiddenViews.has(tab.id as "board" | "calendar" | "flow" | "agent")).map((tab) => (
                 <option key={tab.id} value={tab.id} className="bg-[var(--surface-2)] text-[var(--text-primary)]">
                   {tab.label}
                 </option>
@@ -153,7 +155,7 @@ export function Topbar() {
 
           {/* Desktop tabs view selector */}
           <nav data-tutorial="view-tabs" className="hidden sm:flex items-center gap-0.5 ml-2 overflow-x-auto scrollbar-none flex-nowrap shrink">
-            {VIEW_TABS.filter((tab) => !hiddenViews.has(tab.id as "board" | "flow" | "agent")).map((tab) => {
+            {VIEW_TABS.filter((tab) => !hiddenViews.has(tab.id as "board" | "calendar" | "flow" | "agent")).map((tab) => {
               const Icon = tab.icon;
               return (
                 <button

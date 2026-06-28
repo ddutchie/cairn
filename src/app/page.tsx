@@ -13,6 +13,7 @@ import { Topbar } from "@/components/layout/topbar";
 import { ProjectOverview } from "@/components/layout/project-overview";
 import { NotesView } from "@/components/notes/notes-view";
 import { KanbanBoard } from "@/components/kanban/board";
+import { CalendarView } from "@/components/calendar/CalendarView";
 import { IdeaFlowView } from "@/components/flow/flow-view";
 import { KnowledgeGraphView } from "@/components/graph/KnowledgeGraphView";
 import { InsightsView } from "@/components/insights/InsightsView";
@@ -71,7 +72,7 @@ export default function Home() {
     lastContentView:     s.lastContentView,
   })));
   // All navigable views in shortcut order; overview=⌘1, notes=⌘2, then visible extras
-  const ORDERED_VIEWS = (["board", "flow", "agent", "graph", "insights"] as const).filter(
+  const ORDERED_VIEWS = (["board", "calendar", "flow", "agent", "graph", "insights"] as const).filter(
     (v) => !hiddenViews.has(v)
   );
 
@@ -391,6 +392,7 @@ export default function Home() {
             {lastContentView === "overview"  && <ProjectOverview />}
             {lastContentView === "notes"     && <NotesView />}
             {lastContentView === "board"     && <KanbanBoard />}
+            {lastContentView === "calendar"  && <CalendarView />}
             {lastContentView === "flow"      && <IdeaFlowView />}
            {lastContentView === "graph"     && <KnowledgeGraphView />}
            {lastContentView === "insights"  && <InsightsView />}

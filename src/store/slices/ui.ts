@@ -11,7 +11,7 @@ import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KE
 // ── View visibility ───────────────────────────────────────────────────────────
 
 /** Views that can be hidden. Overview and Notes are always visible. */
-export type ToggleableView = "board" | "flow" | "agent" | "graph" | "insights" | "chat";
+export type ToggleableView = "board" | "flow" | "calendar" | "agent" | "graph" | "insights" | "chat";
 
 export const HIDDEN_VIEWS_KEY = "hiddenViews";
 export const SEEN_FEATURES_KEY = "seenFeatures";
