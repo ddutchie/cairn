@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { CairnEvents } from "@/lib/events";
@@ -26,6 +26,7 @@ import { NewFeatureModal } from "@/components/layout/NewFeatureModal";
 import { AppTutorial } from "@/components/tutorial/AppTutorial";
 import { cn } from "@/lib/utils";
 import { NEW_FEATURES_REGISTRY } from "@/lib/new-features-registry";
+import { completeOnboarding } from "@/lib/complete-onboarding";
 
 export default function Home() {
   const [pendingTutorial, setPendingTutorial] = useState(false);
@@ -329,25 +330,14 @@ export default function Home() {
           <Onboarding
             initialStep={initialStep}
             onComplete={(startTour) => {
-              hydrateFromElectron().then(() => {
-                setOnboardingState(false);
-                if (startTour) {
-                  const state = useCairnStore.getState();
-                  // Match NewFeatureModal's gating: only unseen features from the latest
-                  // registry version defer the tour. Older unseen entries are ignored.
-                  const latestVersion = NEW_FEATURES_REGISTRY.length > 0
-                    ? NEW_FEATURES_REGISTRY[NEW_FEATURES_REGISTRY.length - 1].version
-                    : null;
-                  const hasUnseenLatest = latestVersion !== null
-                    && NEW_FEATURES_REGISTRY.some(
-                      (f) => f.version === latestVersion && !state.seenFeatures.includes(f.id)
-                    );
-                  if (hasUnseenLatest) {
-                    setPendingTutorial(true);
-                  } else {
-                    state.setTutorialActive(true);
-                  }
-                }
+              const state = useCairnStore.getState();
+              completeOnboarding(startTour, {
+                hydrateFromElectron,
+                setOnboardingState,
+                setPendingTutorial,
+                setTutorialActive: state.setTutorialActive,
+                getSeenFeatures: () => useCairnStore.getState().seenFeatures,
+                registry: NEW_FEATURES_REGISTRY,
               });
             }}
           />
@@ -357,8 +347,20 @@ export default function Home() {
   }
 
   // Main app
+  // Top offset for fixed-position chrome (the chat panel): the title bar
+  // occupies 41px (40px + 1px bottom border, both font-scale-independent), plus
+  // the update banner when visible. The banner is `h-9` (2.25rem) in
+  // app-chrome.tsx, so we add the SAME rem-based height here — a hard-coded px
+  // value would drift from the banner's real size under applyFontScale() /
+  // --font-scale root sizing. The chat panel anchors to this so it never
+  // overlaps the banner's download button and aligns with the Topbar.
+  const updateBannerVisible = !!(updateVersion || updateDownloaded);
+  const chromeTop = updateBannerVisible ? "calc(41px + 2.25rem)" : "41px";
   return (
-    <main className="flex flex-col h-dvh w-screen overflow-hidden bg-[var(--background)]">
+    <main
+      className="flex flex-col h-dvh w-screen overflow-hidden bg-[var(--background)]"
+      style={{ "--chrome-top": chromeTop } as React.CSSProperties}
+    >
       {/* Electron title bar — draggable, clears macOS traffic lights */}
       <TitleBar />
 

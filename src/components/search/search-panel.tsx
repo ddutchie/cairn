@@ -7,6 +7,13 @@ import { CairnEvents } from "@/lib/events";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useCairnStore, type SearchResult } from "@/store";
 import { useShallow } from "zustand/react/shallow";
+import {
+  filterSearchResults,
+  resolveFocusedResult,
+  clampFocus,
+  mergeSemanticResults,
+  type SearchFilterType,
+} from "./search-utils";
 
 interface ResultRowProps {
   result: SearchResult;
@@ -70,7 +77,7 @@ function ResultRow({ result, focused, onSelect, semanticScore }: ResultRowProps)
   );
 }
 
-type FilterType = "all" | "notes" | "tasks";
+type FilterType = SearchFilterType;
 
 const SEMANTIC_KEY = "search.semanticMode";
 
@@ -195,14 +202,7 @@ export function SearchPanel() {
           }
           // Merge: semantic hits that aren't already in keyword results get appended
           setSemanticScores(scoreMap);
-          setResults((prevKeyword) => {
-            const seen = new Set(prevKeyword.map((r) => r.id));
-            const merged = [...prevKeyword];
-            for (const s of enriched) {
-              if (!seen.has(s.id)) merged.push(s);
-            }
-            return merged;
-          });
+          setResults((prevKeyword) => mergeSemanticResults(prevKeyword, enriched));
         } catch {
           // embeddings worker may be down — silently fall back to keyword-only
         }
@@ -229,20 +229,17 @@ export function SearchPanel() {
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
+    const total = noteResults.length + taskResults.length;
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setFocused((f) => Math.min(f + 1, (noteResults.length + taskResults.length) - 1));
+      setFocused((f) => clampFocus(f + 1, total));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      setFocused((f) => Math.max(f - 1, 0));
+      setFocused((f) => clampFocus(f - 1, total));
     } else if (e.key === "Enter") {
       // Focus order matches UI order: notes first, then tasks.
-      if (focused < noteResults.length && noteResults[focused]) {
-        handleSelect(noteResults[focused]);
-      } else if (focused >= noteResults.length) {
-        const taskIdx = focused - noteResults.length;
-        if (taskResults[taskIdx]) handleSelect(taskResults[taskIdx]);
-      }
+      const result = resolveFocusedResult(focused, noteResults, taskResults);
+      if (result) handleSelect(result);
     } else if (e.key === "Escape") {
       toggleSearch();
     }
@@ -250,9 +247,7 @@ export function SearchPanel() {
 
   if (!searchOpen) return null;
 
-  const filtered = results
-    .filter((r) => filterType === "all" || (filterType === "notes" ? r.type === "note" : r.type === "card"))
-    .filter((r) => !filterProject || r.projectId === filterProject);
+  const filtered = filterSearchResults(results, filterType, filterProject);
 
   const noteResults = filtered.filter((r) => r.type === "note");
   const taskResults = filtered.filter((r) => r.type === "card");

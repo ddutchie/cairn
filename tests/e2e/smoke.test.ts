@@ -13,6 +13,11 @@
 
 import { test, expect, type Page, type ConsoleMessage } from "@playwright/test";
 import { buildIpcMock, NOTE_1 } from "../fixtures/ipc-mock";
+import { NEW_FEATURES_REGISTRY, getUnseenLatestFeatures } from "../../src/lib/new-features-registry";
+
+// Derive the latest-release feature from the registry rather than hard-coding a
+// specific entry — these assertions then stay valid as new releases are added.
+const LATEST_FEATURE = getUnseenLatestFeatures(NEW_FEATURES_REGISTRY, [])[0];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -267,5 +272,112 @@ test.describe("Cairn smoke tests", () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (window as any).__cairnEmit?.("onAiWriteEnded", { noteId: "some-other-note" });
     });
+  });
+});
+
+// ── "What's New" feature modal ────────────────────────────────────────────────
+// Uses an isolated browser context per assertion so seenFeatures (persisted in
+// localStorage / the store) starts clean and is independent of test order.
+
+test.describe("What's New modal", () => {
+  /** Boot a fresh page with the IPC mock + store bridge installed. */
+  async function bootFreshPage(browser: import("@playwright/test").Browser): Promise<Page> {
+    const context = await browser.newContext();
+    const p = await context.newPage();
+    await p.addInitScript({ content: buildIpcMock() });
+    await p.addInitScript({ content: STORE_ATTACH_SCRIPT });
+    await p.goto("/");
+    await p.waitForSelector("[data-testid='sidebar'], nav, aside", { timeout: 20_000 });
+    return p;
+  }
+
+  test("appears on boot when the latest-version feature is unseen", async ({ browser }) => {
+    const p = await bootFreshPage(browser);
+    try {
+      // The fixture starts with no seen features, so the latest release modal shows.
+      await expect(p.getByRole("heading", { name: /What's New in Cairn/i })).toBeVisible({ timeout: 10_000 });
+      // The latest registry feature title is rendered.
+      await expect(p.getByText(LATEST_FEATURE.title)).toBeVisible();
+    } finally {
+      await p.context().close();
+    }
+  });
+
+  test("clicking Done marks the feature seen and the modal does not reappear", async ({ browser }) => {
+    const p = await bootFreshPage(browser);
+    try {
+      const heading = p.getByRole("heading", { name: /What's New in Cairn/i });
+      await expect(heading).toBeVisible({ timeout: 10_000 });
+
+      // Close via the primary action (single latest feature → "Done").
+      await p.getByRole("button", { name: "Done" }).click();
+
+      // Modal closes...
+      await expect(heading).toHaveCount(0, { timeout: 5_000 });
+
+      // ...and the feature is now recorded as seen in the store.
+      const seen = await p.evaluate(() => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return (window as any).__cairnStore?.getState?.()?.seenFeatures ?? [];
+      });
+      expect(seen).toContain(LATEST_FEATURE.id);
+
+      // Navigating around does not re-open it (gate is empty now).
+      await p.evaluate(() => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (window as any).__cairnStore?.getState?.()?.setView?.("board");
+      });
+      await p.waitForTimeout(300);
+      await expect(heading).toHaveCount(0);
+    } finally {
+      await p.context().close();
+    }
+  });
+
+  test("does not appear on boot when the latest feature is already seen", async ({ browser }) => {
+    const context = await browser.newContext();
+    const p = await context.newPage();
+    await p.addInitScript({ content: buildIpcMock() });
+    await p.addInitScript({ content: STORE_ATTACH_SCRIPT });
+    // Pre-seed seenFeatures in localStorage before the app boots. The storage
+    // layer prefixes keys with "cairn:v1:" (see src/lib/storage.ts).
+    await p.addInitScript({
+      content: `localStorage.setItem("cairn:v1:seenFeatures", JSON.stringify([${JSON.stringify(LATEST_FEATURE.id)}]));`,
+    });
+    try {
+      await p.goto("/");
+      await p.waitForSelector("[data-testid='sidebar'], nav, aside", { timeout: 20_000 });
+      // Give the modal a chance to (not) render.
+      await p.waitForTimeout(500);
+      await expect(p.getByRole("heading", { name: /What's New in Cairn/i })).toHaveCount(0);
+    } finally {
+      await p.context().close();
+    }
+  });
+});
+
+// ── Onboarding wizard entry ───────────────────────────────────────────────────
+// The full wizard spans many steps; here we assert the onboarding path is wired
+// (it appears on a fresh install) and the choose-folder entry step renders.
+// Component-level StepCreateProject behaviors (icon persistence, disabled
+// states, aria-pressed) are covered by unit tests (workspace.test.ts) since the
+// renderer has no DOM-unit harness.
+
+test.describe("Onboarding wizard", () => {
+  test("shows the wizard on a fresh install (needs workspace setup)", async ({ browser }) => {
+    const context = await browser.newContext();
+    const p = await context.newPage();
+    // Override the mock to simulate a fresh install: workspace setup required.
+    // Baked into the same synchronous script that defines window.electron so the
+    // app never reads the default `false` before the override applies.
+    await p.addInitScript({ content: buildIpcMock({ needsWorkspaceSetup: true }) });
+    await p.addInitScript({ content: STORE_ATTACH_SCRIPT });
+    try {
+      await p.goto("/");
+      // The choose-folder step heading should render instead of the app shell.
+      await expect(p.getByText("Choose a workspace folder")).toBeVisible({ timeout: 20_000 });
+    } finally {
+      await p.context().close();
+    }
   });
 });

@@ -97,6 +97,30 @@ export function MarkdownContent({ content, isUser }: { content: string; isUser?:
     return preprocessMarkdown(content, notes, cards, cwd);
   }, [content, notes, cards, cwd]);
 
+  // The user bubble has an accent (purple) background with --accent-fg text.
+  // Block elements below must read against the accent there (token-based, with
+  // alpha via color-mix) instead of the dark surface tokens (which are only
+  // legible on the assistant/surface bubble).
+  const strongColor = isUser ? "text-[var(--accent-fg)]" : "text-[var(--text-primary)]";
+  const headingColor = isUser ? "text-[var(--accent-fg)]" : "text-[var(--text-primary)]";
+  const listColor = isUser ? "text-[var(--accent-fg)]" : "text-[var(--text-secondary)]";
+  const codeClass = isUser
+    ? "bg-[color-mix(in_srgb,var(--accent-fg)_20%,transparent)] text-[var(--accent-fg)]"
+    : "bg-[var(--surface-3)] text-[var(--text-primary)]";
+  const quoteClass = isUser
+    ? "border-[color-mix(in_srgb,var(--accent-fg)_40%,transparent)] text-[color-mix(in_srgb,var(--accent-fg)_80%,transparent)]"
+    : "border-[var(--accent)] text-[var(--text-tertiary)]";
+  // Table / rule chrome — re-themed against the accent bubble for the user path.
+  const ruleBorder = isUser
+    ? "border-[color-mix(in_srgb,var(--accent-fg)_40%,transparent)]"
+    : "border-[var(--border)]";
+  const thClass = isUser
+    ? "text-[var(--accent-fg)] bg-[color-mix(in_srgb,var(--accent-fg)_15%,transparent)] border-[color-mix(in_srgb,var(--accent-fg)_40%,transparent)]"
+    : "text-[var(--text-primary)] bg-[var(--surface-2)] border-[var(--border)]";
+  const tdClass = isUser
+    ? "text-[var(--accent-fg)] border-[color-mix(in_srgb,var(--accent-fg)_40%,transparent)]"
+    : "text-[var(--text-secondary)] border-[var(--border)]";
+
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm, remarkBreaks]}
@@ -104,14 +128,14 @@ export function MarkdownContent({ content, isUser }: { content: string; isUser?:
       urlTransform={(url) => url.startsWith("cairn://") ? url : defaultUrlTransform(url)}
       components={{
         p: ({ children }) => <p className="mb-1.5 last:mb-0 leading-relaxed break-words">{children}</p>,
-        strong: ({ children }) => <strong className="font-semibold text-[var(--text-primary)]">{children}</strong>,
+        strong: ({ children }) => <strong className={`font-semibold ${strongColor}`}>{children}</strong>,
         em: ({ children }) => <em className="italic opacity-80">{children}</em>,
-        ul: ({ children }) => <ul className="my-1.5 pl-4 list-disc space-y-0.5 text-[var(--text-secondary)]">{children}</ul>,
-        ol: ({ children }) => <ol className="my-1.5 pl-4 list-decimal space-y-0.5 text-[var(--text-secondary)]">{children}</ol>,
+        ul: ({ children }) => <ul className={`my-1.5 pl-4 list-disc space-y-0.5 ${listColor}`}>{children}</ul>,
+        ol: ({ children }) => <ol className={`my-1.5 pl-4 list-decimal space-y-0.5 ${listColor}`}>{children}</ol>,
         li: ({ children }) => <li className="leading-relaxed break-words">{children}</li>,
-        h1: ({ children }) => <h1 className="font-semibold text-[var(--text-primary)] text-sm mt-2 mb-1">{children}</h1>,
-        h2: ({ children }) => <h2 className="font-semibold text-[var(--text-primary)] text-sm mt-2 mb-1">{children}</h2>,
-        h3: ({ children }) => <h3 className="font-medium text-[var(--text-primary)] mt-1.5 mb-0.5">{children}</h3>,
+        h1: ({ children }) => <h1 className={`font-semibold ${headingColor} text-sm mt-2 mb-1`}>{children}</h1>,
+        h2: ({ children }) => <h2 className={`font-semibold ${headingColor} text-sm mt-2 mb-1`}>{children}</h2>,
+        h3: ({ children }) => <h3 className={`font-medium ${headingColor} mt-1.5 mb-0.5`}>{children}</h3>,
         pre: ({ children }) => {
           const child = Array.isArray(children) ? children[0] : children;
           const code = child as React.ReactElement<{ className?: string; children?: React.ReactNode }>;
@@ -125,22 +149,22 @@ export function MarkdownContent({ content, isUser }: { content: string; isUser?:
           // Fenced blocks handled by `pre` above — this only runs for inline code
           if (className?.startsWith("language-")) return <>{children}</>;
           return (
-            <code className="px-1 py-0.5 rounded bg-[var(--surface-3)] font-mono text-[0.786rem] text-[var(--text-primary)] break-all">
+            <code className={`px-1 py-0.5 rounded font-mono text-[0.786rem] break-all ${codeClass}`}>
               {children}
             </code>
           );
         },
         blockquote: ({ children }) => (
-          <blockquote className="border-l-2 border-[var(--accent)] pl-2.5 my-1.5 text-[var(--text-tertiary)] italic">
+          <blockquote className={`border-l-2 pl-2.5 my-1.5 italic ${quoteClass}`}>
             {children}
           </blockquote>
         ),
         a: ({ href, children }) => {
           const linkClass = isUser
-            ? "inline-flex items-center text-white hover:text-white/80 underline font-medium cursor-pointer"
+            ? "inline-flex items-center text-[var(--accent-fg)] hover:text-[color-mix(in_srgb,var(--accent-fg)_80%,transparent)] underline font-medium cursor-pointer"
             : "inline-flex items-center text-[var(--accent)] hover:underline font-medium cursor-pointer";
           const fallbackClass = isUser
-            ? "text-white hover:text-white/80 underline"
+            ? "text-[var(--accent-fg)] hover:text-[color-mix(in_srgb,var(--accent-fg)_80%,transparent)] underline"
             : "text-[var(--accent)] hover:underline";
 
           if (href?.startsWith("cairn://note/")) {
@@ -203,7 +227,7 @@ export function MarkdownContent({ content, isUser }: { content: string; isUser?:
             </a>
           );
         },
-        hr: () => <hr className="my-2 border-[var(--border)]" />,
+        hr: () => <hr className={`my-2 ${ruleBorder}`} />,
         table: ({ children }) => (
           <div className="my-2 overflow-x-auto">
             <table className="w-full border-collapse text-xs">{children}</table>
@@ -211,14 +235,14 @@ export function MarkdownContent({ content, isUser }: { content: string; isUser?:
         ),
         thead: ({ children }) => <thead>{children}</thead>,
         tbody: ({ children }) => <tbody>{children}</tbody>,
-        tr: ({ children }) => <tr className="border-b border-[var(--border)]">{children}</tr>,
+        tr: ({ children }) => <tr className={`border-b ${ruleBorder}`}>{children}</tr>,
         th: ({ children }) => (
-          <th className="px-2.5 py-1.5 text-left font-semibold text-[var(--text-primary)] bg-[var(--surface-2)] border border-[var(--border)]">
+          <th className={`px-2.5 py-1.5 text-left font-semibold border ${thClass}`}>
             {children}
           </th>
         ),
         td: ({ children }) => (
-          <td className="px-2.5 py-1.5 text-[var(--text-secondary)] border border-[var(--border)]">
+          <td className={`px-2.5 py-1.5 border ${tdClass}`}>
             {children}
           </td>
         ),

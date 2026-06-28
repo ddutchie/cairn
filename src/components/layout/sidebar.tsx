@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   FileText, Kanban, Settings, Search, MessageSquare,
   ChevronDown, ChevronRight, Plus, MoreHorizontal,
@@ -19,6 +19,7 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { WorkspaceSwitcher } from "./sidebar/WorkspaceSwitcher";
 import { ProjectCreateForm } from "./sidebar/ProjectCreateForm";
+import { buildShortcutMap, countOpenCardsByProject, dueDateSeverity, dueDateDiffDays } from "./sidebar-utils";
 import type { Project } from "@/types";
 
 // ── View nav config ───────────────────────────────────────────────────────────
@@ -78,15 +79,10 @@ export function Sidebar() {
     [hiddenViews],
   );
   // ⌘1 = overview, ⌘2 = notes, then visible views in order
-  const shortcutBase = 3; // first view after overview+notes
-  const shortcutMap = React.useMemo(() => {
-    const map = new Map<string, string>();
-    visibleNavItems.forEach((item, idx) => {
-      const num = idx + shortcutBase;
-      map.set(item.view, num <= 9 ? `⌘${num}` : "");
-    });
-    return map;
-  }, [visibleNavItems]);
+  const shortcutMap = React.useMemo(
+    () => buildShortcutMap(visibleNavItems),
+    [visibleNavItems],
+  );
   function shortcutLabel(item: ViewNavItem): string {
     return shortcutMap.get(item.view) ?? "";
   }
@@ -240,11 +236,7 @@ export function Sidebar() {
             <div className="space-y-0.5 px-1">
               {(() => {
                 // Pre-compute card counts per project to avoid O(projects × cards) in the map
-                const openCardCountByProject = new Map<string, number>();
-                for (const c of cards) {
-                  if (c.archivedAt) continue;
-                  openCardCountByProject.set(c.projectId, (openCardCountByProject.get(c.projectId) ?? 0) + 1);
-                }
+                const openCardCountByProject = countOpenCardsByProject(cards);
                 return projects.map((project) => (
                   <ProjectItem
                     key={project.id}
@@ -424,20 +416,22 @@ function ProjectItem({ project, isActive, isExpanded, onToggleExpand, onSelectPr
 }
 
 function DueDateDot({ dueDate }: { dueDate: string }) {
-  const { diffDays, dueDateLabel } = useMemo(() => {
-    const due = new Date(dueDate);
-    return {
-      // eslint-disable-next-line react-hooks/purity
-      diffDays: Math.ceil((due.getTime() - Date.now()) / (1000 * 60 * 60 * 24)),
-      dueDateLabel: due.toLocaleDateString(),
-    };
-  }, [dueDate]);
-  if (diffDays < 0) return (
+  // Computed on every render rather than memoised on `dueDate` alone: a memo
+  // keyed only by dueDate would freeze Date.now() at first render, so the
+  // severity/diffDays/label would go stale as wall-clock time advances while
+  // the app stays open (e.g. a "due in 1 day" item never ticking to overdue).
+  const due = new Date(dueDate);
+  // eslint-disable-next-line react-hooks/purity
+  const now = Date.now();
+  const severity = dueDateSeverity(dueDate, now);
+  const diffDays = dueDateDiffDays(dueDate, now);
+  const dueDateLabel = due.toLocaleDateString();
+  if (severity === "danger") return (
     <Tooltip content={`Overdue — due ${dueDateLabel}`} side="right">
       <span className="w-1.5 h-1.5 rounded-full bg-[var(--danger)] flex-shrink-0" />
     </Tooltip>
   );
-  if (diffDays <= 7) return (
+  if (severity === "warning") return (
     <Tooltip content={diffDays === 0 ? "Due today" : `Due in ${diffDays} day${diffDays !== 1 ? "s" : ""}`} side="right">
       <span className="w-1.5 h-1.5 rounded-full bg-[var(--warning)] flex-shrink-0" />
     </Tooltip>

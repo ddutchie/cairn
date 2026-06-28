@@ -31,14 +31,7 @@ import { KanbanColumn } from "./column";
 import { KanbanCard } from "./card";
 import { CardDetailModal } from "./card-detail";
 import type { TaskCard, BoardColumn } from "@/types";
-
-function getZoneHit(clientX: number, clientY: number, barRect: DOMRect | null, archiveRect: DOMRect | null, deleteRect: DOMRect | null): "archive" | "delete" | null {
-  if (!barRect) return null;
-  if (clientY < barRect.top || clientY > barRect.bottom) return null;
-  if (archiveRect && clientX >= archiveRect.left && clientX <= archiveRect.right) return "archive";
-  if (deleteRect && clientX >= deleteRect.left && clientX <= deleteRect.right) return "delete";
-  return null;
-}
+import { getZoneHit, resolveCardDrop } from "./board-dnd";
 
 export function KanbanBoard() {
   const {
@@ -236,32 +229,9 @@ export function KanbanBoard() {
 
     // ── Card move / reorder ───────────────────────────────────────────────
     if (!draggedCard) return;
-    const overIdStr = over.id as string;
-    let targetColumnId: string;
-    let targetIndex: number;
-
-    const isOverColumn = columns.some((c) => c.id === overIdStr);
-    if (isOverColumn) {
-      targetColumnId = overIdStr;
-      targetIndex = getColumnCards(overIdStr).length;
-    } else {
-      const allCards = columns.flatMap((c) =>
-        getColumnCards(c.id).map((card) => ({ ...card, _colId: c.id }))
-      );
-      const overCard = allCards.find((c) => c.id === overIdStr);
-      if (!overCard) return;
-      targetColumnId = overCard._colId;
-      const colCards = getColumnCards(targetColumnId).filter((c) => c.id !== draggedCard.id);
-      const overIdx  = colCards.findIndex((c) => c.id === overIdStr);
-      targetIndex = overIdx >= 0 ? overIdx : colCards.length;
-    }
-
-    if (
-      draggedCard.columnId === targetColumnId &&
-      getColumnCards(targetColumnId)[targetIndex]?.id === draggedCard.id
-    ) return;
-
-    moveCard(draggedCard.id, targetColumnId, targetIndex);
+    const cardDrop = resolveCardDrop(columns, getColumnCards, draggedCard, over.id as string);
+    if (!cardDrop) return;
+    moveCard(draggedCard.id, cardDrop.targetColumnId, cardDrop.targetIndex);
   }
 
   // Deep-link: open card detail

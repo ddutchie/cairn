@@ -655,13 +655,27 @@ Launch with `mode: "plan"` to produce a PRD before writing code. Plan Mode restr
 
 ## Tests
 
-Tests live next to the code they cover under `electron/`:
+Tests live next to the code they cover, under both `electron/` (store/lib/MCP logic) and `src/` (store slices, pure libs, and React components):
 
 ```bash
 npm test                  # run all tests
 npm run test:watch        # watch mode — great for TDD
 npm run test:coverage     # coverage report
+npm run test:unit         # node project only (store/lib/electron logic)
+npm run test:component    # component project only (React + jsdom)
 ```
+
+vitest runs **two projects** (see `vitest.config.ts`):
+
+- **`node`** — the default fast suite for store slices, pure libs, and the
+  electron/MCP layer. Runs in the `node` environment with the native SQLite
+  shim. Matches `electron/**/*.test.ts`, `src/**/*.test.ts`, and
+  `src/**/*.test.tsx`, excluding component tests (`src/**/*.component.test.tsx`).
+- **`component`** — React component tests rendered in **jsdom** via
+  `@testing-library/react`. Matches `src/**/*.component.test.tsx` and loads
+  `vitest.setup.components.ts` (jest-dom matchers + auto-cleanup). Use these for
+  presentational behavior (disabled states, ARIA attributes, click handlers).
+  Store-connected components can mock `@/store` with `vi.mock`.
 
 | Test file | What it covers |
 |-----------|---------------|
