@@ -299,6 +299,10 @@ export function buildIpcMock(): string {
     onMcpUnreadCount:          makeListener(),
     markMcpNotificationsRead:  noop,
 
+    // ── AI write-lock events (note editor + db:changed override) ──
+    onAiWriteStarted:          makeListener(),
+    onAiWriteEnded:            makeListener(),
+
     // ── Dashboard live query bridge ───────────────────────────
     mcpQuery: (_tool, _args) => Promise.resolve(null),
 
