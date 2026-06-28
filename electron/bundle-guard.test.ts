@@ -79,6 +79,22 @@ const SHIPPED_NATIVE = new Set([
 ]);
 
 /**
+ * The MCP SDK's default JSON-schema validator pulls in `ajv` (+ `ajv-formats`).
+ * ajv generates validation code that `require()`s its own runtime helpers via
+ * computed paths esbuild can't statically inline, so ajv is marked `--external`
+ * for the main bundle and shipped (with its transitive deps) via
+ * electron-builder.yml. Pure JS — no native binaries.
+ */
+const MCP_SDK_SHIPPED = new Set([
+  "ajv",
+  "ajv-formats",
+  "fast-deep-equal",
+  "fast-uri",
+  "json-schema-traverse",
+  "require-from-string",
+]);
+
+/**
  * The full allowlist. Union of the groups above. Any `require()` in any
  * bundle that isn't in this set (or a Node built-in) fails the test.
  */
@@ -87,6 +103,7 @@ const ALLOWED_EXTERNALS = new Set<string>([
   ...OPTIONAL_TRANSITIVE,
   ...RUNTIME_SHIPPED,
   ...SHIPPED_NATIVE,
+  ...MCP_SDK_SHIPPED,
 ]);
 
 /* ──────────────────────────────────────────────────────────────────────── *
@@ -120,6 +137,19 @@ const NODE_BUILTINS = new Set([
 
 /** Regex to find `require("...")` calls in CJS bundle output. */
 const REQUIRE_RE = /require\("([^"]+)"\)/g;
+
+/**
+ * Reduce a require specifier to its package name so subpath imports
+ * (`ajv/dist/runtime/uri`) match the bare package allowlist entry (`ajv`).
+ * Scoped packages keep their first two segments (`@scope/name`). Node built-ins
+ * and relative paths are returned unchanged.
+ */
+function packageNameOf(spec: string): string {
+  if (spec.startsWith(".") || spec.startsWith("/")) return spec;
+  const parts = spec.split("/");
+  if (spec.startsWith("@")) return parts.slice(0, 2).join("/");
+  return parts[0];
+}
 
 function extractRequires(bundlePath: string): string[] {
   const src = fs.readFileSync(bundlePath, "utf8");
@@ -181,9 +211,10 @@ describe("bundle self-containment guard", () => {
       it("no un-allowed external requires", () => {
         if (!fs.existsSync(bundlePath)) return;
         const requires = extractRequires(bundlePath);
-        const offenders = requires.filter(
-          (r) => !NODE_BUILTINS.has(r) && !ALLOWED_EXTERNALS.has(r),
-        );
+        const offenders = requires.filter((r) => {
+          const pkg = packageNameOf(r);
+          return !NODE_BUILTINS.has(r) && !ALLOWED_EXTERNALS.has(pkg);
+        });
         expect(
           offenders,
           `Bundle ${bundleRel} contains \`require()\` calls for packages that are neither Node built-ins nor on the ALLOWED_EXTERNALS list. In a packaged Electron app these will fail with "Cannot find module". Either remove the \`--external:<pkg>\` flag from the esbuild command in package.json (so esbuild bundles the package), or add the package to ALLOWED_EXTERNALS and ship it via electron-builder.yml.\n  Offenders:\n    - ${offenders.join("\n    - ")}`,
@@ -221,6 +252,14 @@ describe("allowlist drift checks", () => {
     ).toHaveLength(0);
   });
 
+  it("every MCP_SDK_SHIPPED external actually ships via electron-builder.yml", () => {
+    const missing = [...MCP_SDK_SHIPPED].filter((x) => !shipped.has(x));
+    expect(
+      missing,
+      "These are classified MCP_SDK_SHIPPED (ajv + transitive deps for the MCP SDK validator, marked --external in the main bundle) but electron-builder.yml `files` doesn't include them. Add a `node_modules/<pkg>/**/*` entry and update the negation glob.\n  Missing:\n    - " + missing.join("\n    - "),
+    ).toHaveLength(0);
+  });
+
   it("RUNTIME_SHIPPED externals never appear in the Electron main bundle requires", () => {
     const mainPath = path.join(ROOT, "dist-electron/main.js");
     if (!fs.existsSync(mainPath)) return;
@@ -238,6 +277,7 @@ describe("allowlist drift checks", () => {
       ["OPTIONAL_TRANSITIVE", OPTIONAL_TRANSITIVE],
       ["RUNTIME_SHIPPED", RUNTIME_SHIPPED],
       ["SHIPPED_NATIVE", SHIPPED_NATIVE],
+      ["MCP_SDK_SHIPPED", MCP_SDK_SHIPPED],
     ] as const;
     const seen = new Map<string, string>();
     const dupes: string[] = [];

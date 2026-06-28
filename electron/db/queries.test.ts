@@ -22,6 +22,16 @@ import {
   searchNotes,
   searchTasks,
   getFullSnapshot,
+  saveMcpServer,
+  getMcpServers,
+  getMcpServerById,
+  deleteMcpServer,
+  saveCustomService,
+  getCustomServices,
+  deleteCustomService,
+  getToolAttachments,
+  setToolAttachment,
+  clearToolAttachment,
 } from "./queries";
 
 // ── Shared fixture builders ───────────────────────────────────────────────
@@ -438,5 +448,150 @@ describe("getFullSnapshot", () => {
 
     const snap = getFullSnapshot(db);
     expect(snap.notes).toHaveLength(2);
+  });
+});
+
+// ── External tools: MCP servers ──────────────────────────────────────────────
+
+describe("MCP server queries", () => {
+  let db: Database.Database;
+  beforeEach(() => {
+    db = makeDb();
+    seedWorkspace(db);
+  });
+
+  it("saves, lists, and round-trips headers + transport", () => {
+    saveMcpServer(db, {
+      id: "m1", workspaceId: "ws1", name: "CoinGecko",
+      transport: "sse", baseUrl: "https://mcp.coingecko.com/sse",
+      headers: { Authorization: "secret://m1/Authorization" },
+      enabled: true, source: "manual",
+    });
+    const list = getMcpServers(db, "ws1");
+    expect(list).toHaveLength(1);
+    expect(list[0].name).toBe("CoinGecko");
+    expect(list[0].transport).toBe("sse");
+    expect(list[0].headers).toEqual({ Authorization: "secret://m1/Authorization" });
+    expect(list[0].enabled).toBe(true);
+  });
+
+  it("upserts on conflicting id", () => {
+    saveMcpServer(db, { id: "m1", workspaceId: "ws1", name: "A", transport: "http", baseUrl: "https://a", enabled: true, source: "manual" });
+    saveMcpServer(db, { id: "m1", workspaceId: "ws1", name: "B", transport: "http", baseUrl: "https://b", enabled: false, source: "manual" });
+    expect(getMcpServers(db, "ws1")).toHaveLength(1);
+    expect(getMcpServerById(db, "m1")?.name).toBe("B");
+    expect(getMcpServerById(db, "m1")?.enabled).toBe(false);
+  });
+
+  it("scopes by workspace", () => {
+    createWorkspace(db, { id: "ws2", name: "Other" });
+    saveMcpServer(db, { id: "m1", workspaceId: "ws1", name: "A", transport: "http", baseUrl: "https://a", enabled: true, source: "manual" });
+    saveMcpServer(db, { id: "m2", workspaceId: "ws2", name: "B", transport: "http", baseUrl: "https://b", enabled: true, source: "manual" });
+    expect(getMcpServers(db, "ws1")).toHaveLength(1);
+    expect(getMcpServers(db, "ws2")).toHaveLength(1);
+  });
+
+  it("delete also removes attachments", () => {
+    saveMcpServer(db, { id: "m1", workspaceId: "ws1", name: "A", transport: "http", baseUrl: "https://a", enabled: true, source: "manual" });
+    setToolAttachment(db, { projectId: "p1", toolType: "mcp", toolId: "m1", enabled: true });
+    deleteMcpServer(db, "m1");
+    expect(getMcpServers(db, "ws1")).toHaveLength(0);
+    expect(getToolAttachments(db, "p1")).toHaveLength(0);
+  });
+
+  it("defaults authMode to 'none' and round-trips oauth fields", () => {
+    saveMcpServer(db, { id: "m1", workspaceId: "ws1", name: "Plain", transport: "http", baseUrl: "https://a", enabled: true, source: "manual" });
+    expect(getMcpServerById(db, "m1")?.authMode).toBe("none");
+    expect(getMcpServerById(db, "m1")?.oauthScope).toBeUndefined();
+
+    saveMcpServer(db, {
+      id: "m2", workspaceId: "ws1", name: "Figma", transport: "http", baseUrl: "https://mcp.figma.com/mcp",
+      enabled: true, source: "manual", authMode: "oauth", oauthScope: "read:files",
+    });
+    const figma = getMcpServerById(db, "m2");
+    expect(figma?.authMode).toBe("oauth");
+    expect(figma?.oauthScope).toBe("read:files");
+  });
+
+  it("defaults disabledTools to [] and round-trips the list", () => {
+    saveMcpServer(db, { id: "m1", workspaceId: "ws1", name: "A", transport: "http", baseUrl: "https://a", enabled: true, source: "manual" });
+    expect(getMcpServerById(db, "m1")?.disabledTools).toEqual([]);
+
+    saveMcpServer(db, {
+      id: "m1", workspaceId: "ws1", name: "A", transport: "http", baseUrl: "https://a",
+      enabled: true, source: "manual", disabledTools: ["search-designs", "delete_design"],
+    });
+    expect(getMcpServerById(db, "m1")?.disabledTools).toEqual(["search-designs", "delete_design"]);
+
+    // Clearing the list persists an empty array, not the previous value.
+    saveMcpServer(db, {
+      id: "m1", workspaceId: "ws1", name: "A", transport: "http", baseUrl: "https://a",
+      enabled: true, source: "manual", disabledTools: [],
+    });
+    expect(getMcpServerById(db, "m1")?.disabledTools).toEqual([]);
+  });
+});
+
+// ── External tools: custom services ──────────────────────────────────────────
+
+describe("custom service queries", () => {
+  let db: Database.Database;
+  beforeEach(() => {
+    db = makeDb();
+    seedWorkspace(db);
+  });
+
+  it("saves and round-trips responseKeys + method", () => {
+    saveCustomService(db, {
+      id: "s1", workspaceId: "ws1", name: "Search",
+      apiUrl: "https://api.x.com/search", method: "GET",
+      headers: { "X-Api-Key": "secret://s1/X-Api-Key" },
+      toolDefinition: '{"name":"searchWeb"}',
+      responseKeys: ["results", "title", "url"],
+      enabled: true, source: "ai-builder",
+    });
+    const list = getCustomServices(db, "ws1");
+    expect(list).toHaveLength(1);
+    expect(list[0].method).toBe("GET");
+    expect(list[0].responseKeys).toEqual(["results", "title", "url"]);
+    expect(list[0].source).toBe("ai-builder");
+  });
+
+  it("delete removes the service + its attachments", () => {
+    saveCustomService(db, { id: "s1", workspaceId: "ws1", name: "S", apiUrl: "https://a", method: "GET", toolDefinition: "{}", enabled: true, source: "manual" });
+    setToolAttachment(db, { projectId: "p1", toolType: "service", toolId: "s1", enabled: true });
+    deleteCustomService(db, "s1");
+    expect(getCustomServices(db, "ws1")).toHaveLength(0);
+    expect(getToolAttachments(db, "p1")).toHaveLength(0);
+  });
+});
+
+// ── External tools: per-project attachments ──────────────────────────────────
+
+describe("tool attachment queries", () => {
+  let db: Database.Database;
+  beforeEach(() => {
+    db = makeDb();
+    seedWorkspace(db);
+  });
+
+  it("sets, updates (upsert), and lists per project", () => {
+    setToolAttachment(db, { projectId: "p1", toolType: "mcp", toolId: "m1", enabled: true });
+    setToolAttachment(db, { projectId: "p1", toolType: "mcp", toolId: "m1", enabled: false });
+    const list = getToolAttachments(db, "p1");
+    expect(list).toHaveLength(1);
+    expect(list[0].enabled).toBe(false);
+  });
+
+  it("distinguishes mcp vs service with the same id", () => {
+    setToolAttachment(db, { projectId: "p1", toolType: "mcp", toolId: "x", enabled: true });
+    setToolAttachment(db, { projectId: "p1", toolType: "service", toolId: "x", enabled: true });
+    expect(getToolAttachments(db, "p1")).toHaveLength(2);
+  });
+
+  it("clears a specific attachment", () => {
+    setToolAttachment(db, { projectId: "p1", toolType: "mcp", toolId: "m1", enabled: true });
+    clearToolAttachment(db, { projectId: "p1", toolType: "mcp", toolId: "m1" });
+    expect(getToolAttachments(db, "p1")).toHaveLength(0);
   });
 });

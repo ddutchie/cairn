@@ -21,4 +21,12 @@ export const CairnEvents = {
   /** Navigates to notes view and applies a tag filter. */
   filterByTag: (tagId: string) =>
     new CustomEvent("cairn:filter-by-tag", { detail: { tagId } }),
+  /**
+   * Fired by the Agent GitView when the set of changed/untracked files in the
+   * working tree changes (detected via its git-status poll). The FileTree
+   * listens and refreshes so externally added/removed files appear without a
+   * manual refresh.
+   */
+  agentFilesChanged: () =>
+    new CustomEvent("cairn:agent-files-changed"),
 };

@@ -11,6 +11,7 @@ import {
   Terminal,
   Smartphone,
   Network,
+  Wrench,
 } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -24,11 +25,22 @@ import { AboutSection } from "./AboutSection";
 import { AgentSettings } from "./AgentSettings";
 import { MobileSettings } from "./MobileSettings";
 import { EmbeddingsSettings } from "./EmbeddingsSettings";
-type SettingsSection = "general" | "ai" | "embeddings" | "agents" | "mobile" | "data" | "about" | "shortcuts" | "tags";
+import { ToolsSettings } from "./ToolsSettings";
+import type { SettingsSection } from "@/types";
 
 export function SettingsView() {
-  const [section, setSection] = useState<SettingsSection>("general");
-  const { workspaces, projects, notes, cards } = useCairnStore(useShallow((s) => ({ workspaces: s.workspaces, projects: s.projects, notes: s.notes, cards: s.cards })));
+  const { workspaces, projects, notes, cards, settingsSection, setSettingsSection } = useCairnStore(useShallow((s) => ({ workspaces: s.workspaces, projects: s.projects, notes: s.notes, cards: s.cards, settingsSection: s.settingsSection, setSettingsSection: s.setSettingsSection })));
+
+  // Honour a requested target section (e.g. "open Tools" from the Overview) as
+  // the initial section, then clear the request so it doesn't override manual
+  // navigation later. Consumed once at mount.
+  const [section, setSection] = useState<SettingsSection>(
+    () => settingsSection ?? "general",
+  );
+  React.useEffect(() => {
+    if (settingsSection) setSettingsSection(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="flex flex-col md:flex-row flex-1 min-h-0 overflow-hidden">
@@ -39,6 +51,7 @@ export function SettingsView() {
           { id: "ai" as const, label: "AI & Chat", icon: Bot },
           { id: "embeddings" as const, label: "Embeddings", icon: Network },
           { id: "agents" as const, label: "Coding Agents", icon: Terminal },
+          { id: "tools" as const, label: "Tools", icon: Wrench },
           { id: "mobile" as const, label: "Mobile Access", icon: Smartphone },
           { id: "tags" as const, label: "Tags", icon: Tag },
           { id: "shortcuts" as const, label: "Shortcuts", icon: Keyboard },
@@ -76,6 +89,7 @@ export function SettingsView() {
           {section === "ai" && <AISettings />}
           {section === "embeddings" && <EmbeddingsSettings />}
           {section === "agents" && <AgentSettings />}
+          {section === "tools" && <ToolsSettings />}
           {section === "mobile" && <MobileSettings />}
           {section === "tags" && <TagsSettings />}
           {section === "shortcuts" && <ShortcutsSettings />}

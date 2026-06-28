@@ -503,6 +503,87 @@ const MIGRATIONS: Migration[] = [
       db.exec("ALTER TABLE projects ADD COLUMN project_settings TEXT NOT NULL DEFAULT '{}'");
     }
   },
+
+  // v22: External tools — remote MCP servers + custom HTTP services the AI can
+  // use, plus per-project attachment flags. Workspace-scoped definitions;
+  // tool_attachments rows enable/attach a tool per project (projectId
+  // '__global__' = always-on). Secret header values are stored as
+  // "secret://<toolId>/<header>" refs; real values live in the OS keychain.
+  (db) => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS mcp_servers (
+        id           TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+        name         TEXT NOT NULL,
+        description  TEXT,
+        transport    TEXT NOT NULL DEFAULT 'http',
+        base_url     TEXT NOT NULL,
+        headers      TEXT NOT NULL DEFAULT '{}',
+        enabled      INTEGER NOT NULL DEFAULT 1,
+        source       TEXT NOT NULL DEFAULT 'manual',
+        community_id TEXT,
+        version      TEXT,
+        created_at   TEXT NOT NULL,
+        updated_at   TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS custom_services (
+        id              TEXT PRIMARY KEY,
+        workspace_id    TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+        name            TEXT NOT NULL,
+        description     TEXT,
+        api_url         TEXT NOT NULL,
+        method          TEXT NOT NULL DEFAULT 'GET',
+        headers         TEXT NOT NULL DEFAULT '{}',
+        tool_definition TEXT NOT NULL,
+        response_keys   TEXT NOT NULL DEFAULT '[]',
+        api_key_url     TEXT,
+        enabled         INTEGER NOT NULL DEFAULT 1,
+        source          TEXT NOT NULL DEFAULT 'manual',
+        community_id    TEXT,
+        version         TEXT,
+        created_at      TEXT NOT NULL,
+        updated_at      TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS tool_attachments (
+        project_id TEXT NOT NULL,
+        tool_type  TEXT NOT NULL,
+        tool_id    TEXT NOT NULL,
+        enabled    INTEGER NOT NULL DEFAULT 1,
+        PRIMARY KEY (project_id, tool_type, tool_id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_mcp_servers_workspace     ON mcp_servers(workspace_id);
+      CREATE INDEX IF NOT EXISTS idx_custom_services_workspace ON custom_services(workspace_id);
+      CREATE INDEX IF NOT EXISTS idx_tool_attachments_project  ON tool_attachments(project_id);
+      CREATE INDEX IF NOT EXISTS idx_tool_attachments_tool     ON tool_attachments(tool_id);
+    `);
+  },
+
+  // v23: OAuth for remote MCP servers. auth_mode 'none' keeps the existing
+  // static-header behaviour; 'oauth' drives the SDK OAuth flow. oauth_scope is
+  // an optional requested scope string. OAuth client registration + tokens are
+  // NOT stored here — they live encrypted in the OS keychain (secure store).
+  (db) => {
+    const cols = db.prepare("PRAGMA table_info(mcp_servers)").all() as { name: string }[];
+    if (!cols.some((c) => c.name === "auth_mode")) {
+      db.exec("ALTER TABLE mcp_servers ADD COLUMN auth_mode TEXT NOT NULL DEFAULT 'none'");
+    }
+    if (!cols.some((c) => c.name === "oauth_scope")) {
+      db.exec("ALTER TABLE mcp_servers ADD COLUMN oauth_scope TEXT");
+    }
+  },
+
+  // v24: per-tool enable/disable for MCP servers. disabled_tools is a JSON array
+  // of raw (un-namespaced) tool names the user has switched off for this server,
+  // applied workspace-wide. Empty array = all tools enabled (the default).
+  (db) => {
+    const cols = db.prepare("PRAGMA table_info(mcp_servers)").all() as { name: string }[];
+    if (!cols.some((c) => c.name === "disabled_tools")) {
+      db.exec("ALTER TABLE mcp_servers ADD COLUMN disabled_tools TEXT NOT NULL DEFAULT '[]'");
+    }
+  },
 ];
 
 export function applySchema(db: Database.Database): void {

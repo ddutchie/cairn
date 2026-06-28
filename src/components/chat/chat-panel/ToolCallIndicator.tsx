@@ -4,6 +4,7 @@ import React from "react";
 import { Loader2, CheckCircle, Bot } from "lucide-react";
 import { MarkdownContent } from "./MarkdownContent";
 import { ThinkingPanel } from "./ThinkingPanel";
+import { prettifyToolLabel } from "@/lib/utils";
 import type { ChatToolCall } from "@/hooks/useChatStream";
 
 interface ToolCallIndicatorProps {
@@ -28,7 +29,7 @@ export const ToolCallIndicator = React.memo(function ToolCallIndicator({ toolCal
             ) : (
               <CheckCircle size={10} className="text-[var(--accent)] shrink-0" />
             )}
-            <span className="text-[0.786rem] text-[var(--text-secondary)]">{tc.label}</span>
+            <span className="text-[0.786rem] text-[var(--text-secondary)]">{prettifyToolLabel(tc.label)}</span>
           </div>
         ))}
         {hasThought && (

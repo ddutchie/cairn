@@ -214,7 +214,7 @@ export function calculatePromptBreakdown(
   let conversationTokens = 0;
   let toolOutputsTokens = 0;
   const rulesTokens = 0;
-  const mcpTokens = 0;
+  let mcpTokens = 0;
   const subagentTokens = 0;
 
   // 1. System Prompt & Skills
@@ -235,15 +235,22 @@ export function calculatePromptBreakdown(
     for (const tool of tools) {
       const t = tool as Record<string, unknown>;
       const func = (t.function ?? {}) as Record<string, unknown>;
+      const name = (func.name ?? t.name ?? "") as string;
       const toolStr = JSON.stringify({
         type: "function",
         function: {
-          name: (func.name ?? t.name ?? "") as string,
+          name,
           description: (func.description ?? t.description ?? "") as string,
           parameters: (func.parameters ?? t.parameters ?? {}) as object,
         },
       });
-      toolsTokens += tok(toolStr);
+      // External tools (MCP servers / custom services) are accounted separately
+      // under `mcp` so the breakdown UI can distinguish built-in from external.
+      if (name.startsWith("mcp__") || name.startsWith("svc__")) {
+        mcpTokens += tok(toolStr);
+      } else {
+        toolsTokens += tok(toolStr);
+      }
     }
   }
 

@@ -376,6 +376,46 @@ export function buildIpcMock(opts?: { needsWorkspaceSetup?: boolean }): string {
       onNoteUpdated:  makeListener("piAgent.onNoteUpdated"),
       onModeChange:   makeListener("piAgent.onModeChange"),
     },
+
+    // ── External tools (MCP servers + custom HTTP services) ───
+    tools: {
+      listMcpServers:  () => Promise.resolve([]),
+      saveMcpServer:   noop,
+      deleteMcpServer: noop,
+      testMcp:         () => Promise.resolve({ ok: true, toolCount: 0, toolNames: [] }),
+      listMcpTools:    () => Promise.resolve({ ok: true, tools: [] }),
+      listServices:    () => Promise.resolve([]),
+      saveService:     noop,
+      deleteService:   noop,
+      testService:     () => Promise.resolve({ ok: true }),
+      listAttachments: () => Promise.resolve([]),
+      setAttachment:   noop,
+      clearAttachment: noop,
+      startMcpAuth:    () => Promise.resolve({ status: "already_authorized" }),
+      mcpAuthStatus:   () => Promise.resolve({ connected: false }),
+      signOutMcp:      noop,
+      onOauthCallback: makeListener("tools.onOauthCallback"),
+    },
+
+    // ── Secrets (OS keychain) ─────────────────────────────────
+    secrets: {
+      available: () => Promise.resolve(false),
+      set:       () => Promise.resolve(""),
+      has:       () => Promise.resolve(false),
+      delete:    noop,
+    },
+
+    // ── AI Tool Builder ───────────────────────────────────────
+    toolBuilder: {
+      prompt:       () => {},
+      abort:        () => {},
+      end:          () => {},
+      onToken:      makeListener("toolBuilder.onToken"),
+      onStep:       makeListener("toolBuilder.onStep"),
+      onProbeHost:  makeListener("toolBuilder.onProbeHost"),
+      onProposal:   makeListener("toolBuilder.onProposal"),
+      onDone:       makeListener("toolBuilder.onDone"),
+    },
   };
 })();
 `;

@@ -35,6 +35,9 @@ import {
   toWorkspace,
   toProject,
   toCodingAgent,
+  toMcpServer,
+  toCustomService,
+  toToolAttachment,
   toNote,
   toColumn,
   toCard,
@@ -885,6 +888,138 @@ export function deleteCodingAgent(db: Database.Database, id: string) {
 export function setProjectCodeDirectory(db: Database.Database, projectId: string, path: string | null) {
   db.prepare("UPDATE projects SET code_directory = ?, updated_at = ? WHERE id = ?")
     .run(path ?? null, ts(), projectId);
+}
+
+// ── External Tools: MCP servers ───────────────────────────────────────────────
+
+interface McpServerInput {
+  id: string; workspaceId: string; name: string; description?: string;
+  transport: "sse" | "http"; baseUrl: string; headers?: Record<string, string>;
+  authMode?: "none" | "oauth"; oauthScope?: string;
+  enabled: boolean; source: string; communityId?: string; version?: string;
+  /** Raw (un-namespaced) tool names disabled for this server, workspace-wide. */
+  disabledTools?: string[];
+}
+
+export function getMcpServers(db: Database.Database, workspaceId: string) {
+  return (db.prepare("SELECT * FROM mcp_servers WHERE workspace_id = ? ORDER BY created_at").all(workspaceId) as unknown[])
+    .map(toMcpServer);
+}
+
+export function getMcpServerById(db: Database.Database, id: string) {
+  const row = db.prepare("SELECT * FROM mcp_servers WHERE id = ?").get(id);
+  return row ? toMcpServer(row) : null;
+}
+
+export function saveMcpServer(db: Database.Database, s: McpServerInput) {
+  const now = ts();
+  db.prepare(`
+    INSERT INTO mcp_servers (id, workspace_id, name, description, transport, base_url, headers, auth_mode, oauth_scope, enabled, source, community_id, version, disabled_tools, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      name        = excluded.name,
+      description = excluded.description,
+      transport   = excluded.transport,
+      base_url    = excluded.base_url,
+      headers     = excluded.headers,
+      auth_mode   = excluded.auth_mode,
+      oauth_scope = excluded.oauth_scope,
+      enabled     = excluded.enabled,
+      source      = excluded.source,
+      community_id= excluded.community_id,
+      version     = excluded.version,
+      disabled_tools = excluded.disabled_tools,
+      updated_at  = excluded.updated_at
+  `).run(
+    s.id, s.workspaceId, s.name, s.description ?? null, s.transport, s.baseUrl,
+    j(s.headers ?? {}), s.authMode ?? "none", s.oauthScope ?? null,
+    s.enabled ? 1 : 0, s.source, s.communityId ?? null, s.version ?? null,
+    j(s.disabledTools ?? []), now, now,
+  );
+  return getMcpServerById(db, s.id)!;
+}
+
+export function deleteMcpServer(db: Database.Database, id: string) {
+  db.prepare("DELETE FROM mcp_servers WHERE id = ?").run(id);
+  db.prepare("DELETE FROM tool_attachments WHERE tool_type = 'mcp' AND tool_id = ?").run(id);
+}
+
+// ── External Tools: custom HTTP services ──────────────────────────────────────
+
+interface CustomServiceInput {
+  id: string; workspaceId: string; name: string; description?: string;
+  apiUrl: string; method: "GET" | "POST" | "PUT" | "DELETE"; headers?: Record<string, string>;
+  toolDefinition: string; responseKeys?: string[]; apiKeyUrl?: string;
+  enabled: boolean; source: string; communityId?: string; version?: string;
+}
+
+export function getCustomServices(db: Database.Database, workspaceId: string) {
+  return (db.prepare("SELECT * FROM custom_services WHERE workspace_id = ? ORDER BY created_at").all(workspaceId) as unknown[])
+    .map(toCustomService);
+}
+
+export function getCustomServiceById(db: Database.Database, id: string) {
+  const row = db.prepare("SELECT * FROM custom_services WHERE id = ?").get(id);
+  return row ? toCustomService(row) : null;
+}
+
+export function saveCustomService(db: Database.Database, s: CustomServiceInput) {
+  const now = ts();
+  db.prepare(`
+    INSERT INTO custom_services (id, workspace_id, name, description, api_url, method, headers, tool_definition, response_keys, api_key_url, enabled, source, community_id, version, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      name            = excluded.name,
+      description     = excluded.description,
+      api_url         = excluded.api_url,
+      method          = excluded.method,
+      headers         = excluded.headers,
+      tool_definition = excluded.tool_definition,
+      response_keys   = excluded.response_keys,
+      api_key_url     = excluded.api_key_url,
+      enabled         = excluded.enabled,
+      source          = excluded.source,
+      community_id    = excluded.community_id,
+      version         = excluded.version,
+      updated_at      = excluded.updated_at
+  `).run(
+    s.id, s.workspaceId, s.name, s.description ?? null, s.apiUrl, s.method,
+    j(s.headers ?? {}), s.toolDefinition, j(s.responseKeys ?? []), s.apiKeyUrl ?? null,
+    s.enabled ? 1 : 0, s.source, s.communityId ?? null, s.version ?? null, now, now,
+  );
+  return getCustomServiceById(db, s.id)!;
+}
+
+export function deleteCustomService(db: Database.Database, id: string) {
+  db.prepare("DELETE FROM custom_services WHERE id = ?").run(id);
+  db.prepare("DELETE FROM tool_attachments WHERE tool_type = 'service' AND tool_id = ?").run(id);
+}
+
+// ── External Tools: per-project attachments ───────────────────────────────────
+
+export function getToolAttachments(db: Database.Database, projectId: string) {
+  return (db.prepare("SELECT * FROM tool_attachments WHERE project_id = ?").all(projectId) as unknown[])
+    .map(toToolAttachment);
+}
+
+export function setToolAttachment(
+  db: Database.Database,
+  a: { projectId: string; toolType: "mcp" | "service"; toolId: string; enabled: boolean },
+) {
+  db.prepare(`
+    INSERT INTO tool_attachments (project_id, tool_type, tool_id, enabled)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(project_id, tool_type, tool_id) DO UPDATE SET enabled = excluded.enabled
+  `).run(a.projectId, a.toolType, a.toolId, a.enabled ? 1 : 0);
+  return a;
+}
+
+export function clearToolAttachment(
+  db: Database.Database,
+  a: { projectId: string; toolType: "mcp" | "service"; toolId: string },
+) {
+  db.prepare("DELETE FROM tool_attachments WHERE project_id = ? AND tool_type = ? AND tool_id = ?")
+    .run(a.projectId, a.toolType, a.toolId);
 }
 
 // ── Pi Agent Sessions ────────────────────────────────────────────────────────────────────

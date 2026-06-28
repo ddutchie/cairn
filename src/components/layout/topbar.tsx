@@ -5,6 +5,7 @@ import {
   Hash,
   FileText,
   Kanban,
+  CalendarDays,
   Workflow,
   Terminal,
   MessageSquare,
@@ -13,6 +14,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
+import type { ToggleableView } from "@/store/slices/ui";
 import { useShallow } from "zustand/react/shallow";
 import { WorkspaceIcon, ProjectIcon } from "@/lib/workspace-icons";
 import { Button } from "@/components/ui/button";
@@ -24,9 +26,18 @@ const VIEW_TABS = [
   { id: "overview" as const, label: "Overview", icon: Hash },
   { id: "notes" as const, label: "Notes", icon: FileText },
   { id: "board" as const, label: "Board", icon: Kanban },
+  { id: "calendar" as const, label: "Calendar", icon: CalendarDays },
   { id: "flow" as const, label: "Flow", icon: Workflow },
   { id: "agent" as const, label: "Agent", icon: Terminal },
 ] as const;
+
+/** Tab id type derived from VIEW_TABS so it can't drift from the entries. */
+type ViewTabId = (typeof VIEW_TABS)[number]["id"];
+
+/** A VIEW_TABS id that is also a user-toggleable view. */
+function isHidden(hidden: Set<ToggleableView>, id: ViewTabId): boolean {
+  return hidden.has(id as ToggleableView);
+}
 
 export function Topbar() {
   const {
@@ -135,10 +146,10 @@ export function Topbar() {
           <div className="flex sm:hidden items-center relative ml-2">
             <select
               value={activeView}
-              onChange={(e) => setView(e.target.value as "overview" | "notes" | "board" | "flow" | "settings" | "graph" | "insights" | "chat" | "search" | "agent")}
+              onChange={(e) => setView(e.target.value as ViewTabId)}
               className="appearance-none bg-[var(--surface-2)] border border-[var(--border)] rounded-md pl-3 pr-8 py-1 text-xs font-medium text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] cursor-pointer"
             >
-              {VIEW_TABS.filter((tab) => !hiddenViews.has(tab.id as "board" | "flow" | "agent")).map((tab) => (
+              {VIEW_TABS.filter((tab) => !isHidden(hiddenViews, tab.id)).map((tab) => (
                 <option key={tab.id} value={tab.id} className="bg-[var(--surface-2)] text-[var(--text-primary)]">
                   {tab.label}
                 </option>
@@ -153,7 +164,7 @@ export function Topbar() {
 
           {/* Desktop tabs view selector */}
           <nav data-tutorial="view-tabs" className="hidden sm:flex items-center gap-0.5 ml-2 overflow-x-auto scrollbar-none flex-nowrap shrink">
-            {VIEW_TABS.filter((tab) => !hiddenViews.has(tab.id as "board" | "flow" | "agent")).map((tab) => {
+            {VIEW_TABS.filter((tab) => !isHidden(hiddenViews, tab.id)).map((tab) => {
               const Icon = tab.icon;
               return (
                 <button

@@ -4,14 +4,14 @@
 
 import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
-import type { ID, AppUIState } from "@/types";
+import type { ID, AppUIState, SettingsSection } from "@/types";
 import { storage } from "@/lib/storage";
 import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KEY, ACTIVE_PROJECT_KEY, CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY } from "@/lib/constants";
 
 // ── View visibility ───────────────────────────────────────────────────────────
 
 /** Views that can be hidden. Overview and Notes are always visible. */
-export type ToggleableView = "board" | "flow" | "agent" | "graph" | "insights" | "chat";
+export type ToggleableView = "board" | "flow" | "calendar" | "agent" | "graph" | "insights" | "chat";
 
 export const HIDDEN_VIEWS_KEY = "hiddenViews";
 export const SEEN_FEATURES_KEY = "seenFeatures";
@@ -159,6 +159,10 @@ export interface UISlice extends AppUIState {
   // Last content view before entering chat or search mode
   lastContentView: AppUIState["lastContentView"];
 
+  /** Optional target section for the Settings view (consumed once on open). */
+  settingsSection: SettingsSection | null;
+  setSettingsSection: (section: SettingsSection | null) => void;
+
   // Seen features for What's New modal
   seenFeatures: string[];
   markFeatureAsSeen: (id: string) => void;
@@ -194,6 +198,7 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
   activePreviewItem: null,
   chatPanelResizing: false,
   lastContentView: "overview",
+  settingsSection: null,
   seenFeatures: [],
   tutorialActive: false,
   tutorialStepIndex: 0,
@@ -299,7 +304,7 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
       activeProjectId: projects[0]?.id ?? null,
       activeView: "overview",
       activePreviewItem: null,
-      lastContentView: "overview",
+  lastContentView: "overview",
     });
   },
 
@@ -314,6 +319,10 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
     } else {
       set({ activeView: view });
     }
+  },
+
+  setSettingsSection(section) {
+    set({ settingsSection: section });
   },
 
   setActivePreviewItem(item) {

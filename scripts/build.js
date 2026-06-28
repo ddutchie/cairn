@@ -54,7 +54,7 @@ run("node scripts/generate-licenses.js");
 run("cross-env ELECTRON_BUILD=true next build");
 
 // 3. Bundle Electron main + preload with esbuild (inlines all deps except native/dynamic ones)
-run("esbuild electron/main.ts electron/preload.ts --bundle --platform=node --target=node24 --external:electron --external:better-sqlite3 --external:node-pty --external:@huggingface/transformers --external:onnxruntime-node --outdir=dist-electron --format=cjs");
+run("esbuild electron/main.ts electron/preload.ts --bundle --platform=node --target=node24 --external:electron --external:better-sqlite3 --external:node-pty --external:@huggingface/transformers --external:onnxruntime-node --external:ajv --external:ajv-formats --outdir=dist-electron --format=cjs");
 
 // 3b. Bundle the runtime server (unified embeddings + LLM — runs as ELECTRON_RUN_AS_NODE child)
 run("esbuild electron/runtime/server.ts --bundle --platform=node --target=node24 --external:@huggingface/transformers --external:onnxruntime-node --outfile=dist-electron/runtime-server.bundle.js --format=cjs");

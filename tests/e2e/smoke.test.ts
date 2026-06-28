@@ -15,9 +15,11 @@ import { test, expect, type Page, type ConsoleMessage } from "@playwright/test";
 import { buildIpcMock, NOTE_1 } from "../fixtures/ipc-mock";
 import { NEW_FEATURES_REGISTRY, getUnseenLatestFeatures } from "../../src/lib/new-features-registry";
 
-// Derive the latest-release feature from the registry rather than hard-coding a
-// specific entry — these assertions then stay valid as new releases are added.
-const LATEST_FEATURE = getUnseenLatestFeatures(NEW_FEATURES_REGISTRY, [])[0];
+// Derive the latest-release feature(s) from the registry rather than hard-coding
+// a specific entry — these assertions then stay valid as new releases are added,
+// and tolerate a release shipping more than one feature card.
+const LATEST_FEATURES = getUnseenLatestFeatures(NEW_FEATURES_REGISTRY, []);
+const LATEST_FEATURE = LATEST_FEATURES[0];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -309,18 +311,23 @@ test.describe("What's New modal", () => {
       const heading = p.getByRole("heading", { name: /What's New in Cairn/i });
       await expect(heading).toBeVisible({ timeout: 10_000 });
 
-      // Close via the primary action (single latest feature → "Done").
+      // Advance through any intermediate feature cards, then close on the last
+      // one. A multi-feature release shows "Next Feature" until the final card,
+      // which shows "Done".
+      for (let i = 0; i < LATEST_FEATURES.length - 1; i++) {
+        await p.getByRole("button", { name: "Next Feature" }).click();
+      }
       await p.getByRole("button", { name: "Done" }).click();
 
       // Modal closes...
       await expect(heading).toHaveCount(0, { timeout: 5_000 });
 
-      // ...and the feature is now recorded as seen in the store.
+      // ...and every shown feature is now recorded as seen in the store.
       const seen = await p.evaluate(() => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         return (window as any).__cairnStore?.getState?.()?.seenFeatures ?? [];
       });
-      expect(seen).toContain(LATEST_FEATURE.id);
+      for (const f of LATEST_FEATURES) expect(seen).toContain(f.id);
 
       // Navigating around does not re-open it (gate is empty now).
       await p.evaluate(() => {
@@ -340,9 +347,11 @@ test.describe("What's New modal", () => {
     await p.addInitScript({ content: buildIpcMock() });
     await p.addInitScript({ content: STORE_ATTACH_SCRIPT });
     // Pre-seed seenFeatures in localStorage before the app boots. The storage
-    // layer prefixes keys with "cairn:v1:" (see src/lib/storage.ts).
+    // layer prefixes keys with "cairn:v1:" (see src/lib/storage.ts). Seed every
+    // latest-version feature id so the boot gate is fully satisfied.
+    const seedIds = JSON.stringify(LATEST_FEATURES.map((f) => f.id));
     await p.addInitScript({
-      content: `localStorage.setItem("cairn:v1:seenFeatures", JSON.stringify([${JSON.stringify(LATEST_FEATURE.id)}]));`,
+      content: `localStorage.setItem("cairn:v1:seenFeatures", JSON.stringify(${seedIds}));`,
     });
     try {
       await p.goto("/");

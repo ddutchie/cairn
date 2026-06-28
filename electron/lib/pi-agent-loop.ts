@@ -262,12 +262,20 @@ const PLAN_MODE_ALLOWED = new Set([
 // ── Fetch all tool definitions (coding + Cairn subset) ────────────────────────
 
 import { TOOLS as ALL_CAIRN_TOOLS } from "./tools";
+import { getExternalToolDefs, executeExternalTool, isExternalToolName, externalToolLabel } from "./external-tools";
 
-function getAllToolDefs(mode: "plan" | "execute" = "execute", skills: SkillMeta[] = []) {
+function getAllToolDefs(
+  mode: "plan" | "execute" = "execute",
+  skills: SkillMeta[] = [],
+  externalDefs: typeof ALL_CAIRN_TOOLS = [],
+) {
   const cairnSubset = ALL_CAIRN_TOOLS.filter((t) => CAIRN_TOOL_NAMES.has(t.function.name));
   // Only include the skill tool when at least one skill is available
   const skillDef = skills.length > 0 ? [makeSkillToolDefinition(skills)] : [];
-  const all = [...CODING_TOOL_DEFS, ...skillDef, ...cairnSubset];
+  // External tools (MCP servers / custom services) are side-effecting, so they
+  // are excluded from plan mode entirely (plan mode is read-only analysis).
+  const external = mode === "plan" ? [] : externalDefs;
+  const all = [...CODING_TOOL_DEFS, ...skillDef, ...cairnSubset, ...external];
   if (mode === "plan") {
     return all.filter((t) => PLAN_MODE_ALLOWED.has(t.function.name));
   }
@@ -372,8 +380,16 @@ async function executeSingleTool(
   onUpdate: (output: string) => void,
   toolCtx: AgentToolContext,
   llmConfig: AgentLLMConfig,
+  mode: "plan" | "execute",
+  allowedToolNames: Set<string>,
 ): Promise<string> {
   const { cwd, db, req, workspacePath, sessionId, send, getWin: _getWin } = toolCtx;
+
+  // Reject any tool the model hallucinated that wasn't actually offered this
+  // turn (defends plan mode's read-only contract and stale external names).
+  if (!allowedToolNames.has(name)) {
+    throw new Error(`Tool "${name}" is not available in ${mode} mode.`);
+  }
 
   switch (name) {
     case "read":  return readTool(args as Parameters<typeof readTool>[0],  cwd);
@@ -397,6 +413,21 @@ async function executeSingleTool(
       llmConfig,
     );
     default: {
+      // External tools (MCP servers / custom services) — execute mode only,
+      // and only when the name was actually offered this turn. executeExternalTool
+      // additionally re-validates workspace/project scope + enabled state.
+      if (isExternalToolName(name)) {
+        if (mode !== "execute") {
+          throw new Error(`External tool "${name}" is not available in plan mode.`);
+        }
+        return executeExternalTool(
+          db,
+          req.workspaceId ?? "",
+          req.projectId ?? "",
+          name,
+          args as Record<string, unknown>,
+        );
+      }
       // Delegate to Cairn chat executor
       if (CAIRN_TOOL_NAMES.has(name)) {
         // ask_questions is a renderer-side tool — emit the questions as an IPC event
@@ -439,7 +470,24 @@ export async function runAgentLoop(
   mode: "plan" | "execute" = "execute",
 ): Promise<void> {
   const { signal } = session.abortCtrl;
-  const allTools = getAllToolDefs(mode, toolCtx.skills ?? []);
+  // Assemble external tool defs (MCP servers + custom services) in scope for the
+  // session's project. Execute mode only; failures degrade to no external tools.
+  let externalDefs: typeof ALL_CAIRN_TOOLS = [];
+  if (mode === "execute") {
+    try {
+      externalDefs = (await getExternalToolDefs(
+        toolCtx.db,
+        toolCtx.req.workspaceId ?? "",
+        toolCtx.req.projectId ?? "",
+      )) as typeof ALL_CAIRN_TOOLS;
+    } catch (err) {
+      console.error("[agent] failed to assemble external tools:", err);
+    }
+  }
+  const allTools = getAllToolDefs(mode, toolCtx.skills ?? [], externalDefs);
+  // The exact set of tool names offered to the model this turn — used to reject
+  // hallucinated / out-of-mode tool calls before execution.
+  const allowedToolNames = new Set(allTools.map((t) => t.function.name));
 
   const {
     baseUrl, model, apiKey, maxSteps, temperature: configTemp,
@@ -714,7 +762,9 @@ export async function runAgentLoop(
         args = {};
       }
 
-      const label = CODING_LABELS[tc.function.name]?.(args) ?? tc.function.name;
+      const label = isExternalToolName(tc.function.name)
+        ? externalToolLabel(tc.function.name, toolCtx.db)
+        : (CODING_LABELS[tc.function.name]?.(args) ?? tc.function.name);
       const pendingCallId = streamCallIds.get(tcIdx);
       callbacks.onToolStart(tc.function.name, label, pendingCallId);
 
@@ -771,6 +821,8 @@ export async function runAgentLoop(
           (output) => callbacks.onToolStart(tc.function.name, `${label}: ${output.slice(-80)}`),
           toolCtx,
           llmConfig,
+          mode,
+          allowedToolNames,
         );
       } catch (e) {
         ok = false;

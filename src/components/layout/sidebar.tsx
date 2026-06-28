@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   FileText, Kanban, Settings, Search, MessageSquare,
   ChevronDown, ChevronRight, Plus, MoreHorizontal,
-  FolderOpen, Hash, Layers, Pencil, Trash2, GitBranch, BarChart2, Workflow, Terminal,
+  FolderOpen, Hash, Layers, Pencil, Trash2, GitBranch, BarChart2, Workflow, Terminal, CalendarDays,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
@@ -25,18 +25,19 @@ import type { Project } from "@/types";
 // ── View nav config ───────────────────────────────────────────────────────────
 
 interface ViewNavItem {
-  view: "board" | "flow" | "agent" | "graph" | "insights" | "chat";
+  view: "board" | "calendar" | "flow" | "agent" | "graph" | "insights" | "chat";
   label: string;
   icon: React.ReactNode;
   iconSm: React.ReactNode;
   /** Which hiddenView key this maps to */
-  hiddenKey: "board" | "flow" | "agent" | "graph" | "insights";
+  hiddenKey: "board" | "calendar" | "flow" | "agent" | "graph" | "insights";
   /** Whether it lives inside the project tree (true) or bottom bar (false) */
   inProject: boolean;
 }
 
 const VIEW_NAV: ViewNavItem[] = [
   { view: "board",    label: "Board",           icon: <Kanban size={13} />,   iconSm: <Kanban size={15} />,   hiddenKey: "board",    inProject: true  },
+  { view: "calendar", label: "Calendar",         icon: <CalendarDays size={13} />, iconSm: <CalendarDays size={15} />, hiddenKey: "calendar", inProject: true  },
   { view: "flow",     label: "Idea Flow",        icon: <Workflow size={11} />, iconSm: <Workflow size={15} />, hiddenKey: "flow",     inProject: true  },
   { view: "agent",    label: "Agent",            icon: <Terminal size={11} />, iconSm: <Terminal size={15} />, hiddenKey: "agent",   inProject: true  },
   { view: "graph",    label: "Knowledge Graph",  icon: <GitBranch size={13} />,iconSm: <GitBranch size={15} />,hiddenKey: "graph",    inProject: false },
@@ -306,7 +307,7 @@ interface ProjectItemProps {
   project: Project; isActive: boolean; isExpanded: boolean;
   onToggleExpand: () => void; onSelectProject: () => void;
   activeView: string;
-  onSelectView: (view: "overview" | "notes" | "board" | "flow" | "graph" | "chat" | "agent") => void;
+  onSelectView: (view: "overview" | "notes" | "board" | "calendar" | "flow" | "graph" | "chat" | "agent") => void;
   onRename: (name: string) => void; onDelete: () => void;
   openCardCount: number;
   hiddenViews: Set<string>;
@@ -405,7 +406,7 @@ function ProjectItem({ project, isActive, isExpanded, onToggleExpand, onSelectPr
                 icon={item.icon}
                 label={item.label}
                 isActive={isActive && activeView === item.view}
-                onClick={() => onSelectView(item.view as "board" | "flow" | "agent" | "chat")}
+                onClick={() => onSelectView(item.view as "board" | "calendar" | "flow" | "agent" | "chat")}
               />
             ))}
           </div>

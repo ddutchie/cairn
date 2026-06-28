@@ -123,6 +123,89 @@ export interface TaskCard {
   version: number;
 }
 
+// ── External Tools (MCP servers + custom HTTP services) ──────────────
+//
+// Workspace-scoped definitions; per-project enable/attach lives in
+// ToolAttachment rows. Header values that are secrets are stored as a
+// ref token ("secret://<toolId>/<headerName>") — the real value lives in
+// the OS keychain via the secure store, never in SQLite.
+
+/** Where a tool definition came from. */
+export type ToolSource = "manual" | "community" | "ai-builder";
+
+/** Remote MCP server the AI chat/agent can connect to as a client. */
+export interface McpServerConfig {
+  id: ID;
+  workspaceId: ID;
+  name: string;
+  description?: string;
+  /** Transport — derived from baseUrl when not explicit. */
+  transport: "sse" | "http";
+  baseUrl: string;
+  /** Header values may be literal or a "secret://" ref. */
+  headers?: Record<string, string>;
+  /**
+   * Authentication mode. "none" = static headers only (default). "oauth" =
+   * SDK-driven OAuth 2.1 flow; client registration + tokens live in the OS
+   * keychain, never in SQLite.
+   */
+  authMode?: "none" | "oauth";
+  /** Optional requested OAuth scope string (space-delimited). */
+  oauthScope?: string;
+  enabled: boolean;
+  source: ToolSource;
+  /** Set when installed from the community registry. */
+  communityId?: string;
+  version?: string;
+  /**
+   * Raw (un-namespaced) tool names the user has disabled for this server,
+   * applied workspace-wide. Absent / empty = all tools enabled.
+   */
+  disabledTools?: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Custom HTTP API exposed to the AI as a single function-calling tool. */
+export interface CustomServiceConfig {
+  id: ID;
+  workspaceId: ID;
+  name: string;
+  description?: string;
+  apiUrl: string;
+  method: "GET" | "POST" | "PUT" | "DELETE";
+  /** Header values may be literal or a "secret://" ref. */
+  headers?: Record<string, string>;
+  /** Stringified OpenAI tool JSON (name/description/parameters). */
+  toolDefinition: string;
+  /** Keys to keep from the API response (token optimisation). */
+  responseKeys?: string[];
+  /** Where the user can obtain an API key. */
+  apiKeyUrl?: string;
+  enabled: boolean;
+  source: ToolSource;
+  communityId?: string;
+  version?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type ToolType = "mcp" | "service";
+
+/**
+ * Per-project enable/attach of a workspace tool. A row with
+ * projectId === GLOBAL_TOOL_SCOPE marks the tool as always-on everywhere.
+ */
+export interface ToolAttachment {
+  projectId: ID;
+  toolType: ToolType;
+  toolId: ID;
+  enabled: boolean;
+}
+
+/** Sentinel projectId for workspace-global ("always-on") attachments. */
+export const GLOBAL_TOOL_SCOPE = "__global__";
+
 // ── Chat ──────────────────────────────────────
 export type ChatThreadScope = "workspace" | "project";
 
@@ -373,16 +456,29 @@ export interface GraphFilters {
 }
 
 // ── App UI State (not persisted) ──────────────
+/** Deep-linkable Settings view sections. */
+export type SettingsSection =
+  | "general"
+  | "ai"
+  | "embeddings"
+  | "agents"
+  | "tools"
+  | "mobile"
+  | "data"
+  | "about"
+  | "shortcuts"
+  | "tags";
+
 export interface AppUIState {
   activeWorkspaceId: ID | null;
   activeProjectId: ID | null;
-  activeView: "overview" | "notes" | "board" | "flow" | "graph" | "insights" | "chat" | "search" | "settings" | "agent";
+  activeView: "overview" | "notes" | "board" | "flow" | "calendar" | "graph" | "insights" | "chat" | "search" | "settings" | "agent";
   sidebarCollapsed: boolean;
   chatOpen: boolean;
   searchOpen: boolean;
   activePreviewItem: { type: "note" | "task"; id: ID } | null;
   chatPanelResizing: boolean;
-  lastContentView: "overview" | "notes" | "board" | "flow" | "graph" | "insights" | "settings" | "agent";
+  lastContentView: "overview" | "notes" | "board" | "flow" | "calendar" | "graph" | "insights" | "settings" | "agent";
   seenFeatures: string[];
   tutorialActive: boolean;
   tutorialStepIndex: number;

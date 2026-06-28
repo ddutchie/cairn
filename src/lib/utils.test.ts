@@ -5,7 +5,7 @@
  */
 
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
-import { formatRelative, getDueDateStatus } from "./utils";
+import { formatRelative, getDueDateStatus, prettifyToolLabel } from "./utils";
 
 const NOW = new Date("2026-06-15T12:00:00.000Z");
 
@@ -86,5 +86,29 @@ describe("getDueDateStatus", () => {
   it("returns 'upcoming' for a future calendar day", () => {
     expect(getDueDateStatus(localDay(1))).toBe("upcoming");
     expect(getDueDateStatus(localDay(200))).toBe("upcoming");
+  });
+});
+
+describe("prettifyToolLabel", () => {
+  it("strips the mcp namespace and prettifies the raw tool name", () => {
+    expect(prettifyToolLabel("mcp__BZfTDDlqAOoB__search-designs")).toBe("Search designs");
+  });
+
+  it("strips the svc namespace too", () => {
+    expect(prettifyToolLabel("svc__abc123__list_invoices")).toBe("List invoices");
+  });
+
+  it("keeps a tool name that contains the separator", () => {
+    expect(prettifyToolLabel("mcp__srv1__weird__tool")).toBe("Weird tool");
+  });
+
+  it("leaves already-friendly labels untouched", () => {
+    expect(prettifyToolLabel("Canva · Search designs")).toBe("Canva · Search designs");
+    expect(prettifyToolLabel("Reading src/index.ts")).toBe("Reading src/index.ts");
+    expect(prettifyToolLabel("Create note \"Plan\"")).toBe("Create note \"Plan\"");
+  });
+
+  it("leaves built-in tool names untouched", () => {
+    expect(prettifyToolLabel("create_task")).toBe("create_task");
   });
 });

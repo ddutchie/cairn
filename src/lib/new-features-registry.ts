@@ -154,5 +154,44 @@ export const NEW_FEATURES_REGISTRY: NewFeature[] = [
       "What's New Modal: Paginated carousel modal highlights new updates automatically on launch.",
       "Skip All Controls: Skip remaining slide cards instantly and mark everything as seen to prevent boot prompts."
     ]
+  },
+  {
+    id: "v2.3.4-calendar",
+    version: "v2.3.4",
+    title: "Calendar View",
+    category: "Planning",
+    description: "Schedule tasks by due date and see what's overdue at a glance.",
+    highlights: [
+      "Month & Week Layouts: A project-scoped calendar (⌘4) lays out task cards by due date with prev / next / today navigation.",
+      "Drag to Reschedule: Drag any task onto a different day to change its due date — an optimistic, fully undoable update.",
+      "Overdue & Unscheduled Trays: A past-due banner and a collapsible no-due-date tray let you drag tasks straight onto a day to schedule them.",
+      "Day Detail Modal: Packed days show a \"+N more\" affordance opening a list of everything due that day."
+    ]
+  },
+  {
+    id: "v2.3.4-external-tools",
+    version: "v2.3.4",
+    title: "External Tools — MCP Servers & HTTP APIs",
+    category: "AI Tools",
+    description: "Connect the AI chat and agent to remote MCP servers and any HTTP API.",
+    highlights: [
+      "Settings → Tools: Add remote MCP servers (SSE or streamable-HTTP) and expose any HTTP API as a single tool, each with an enable toggle and Test connection button.",
+      "Per-Project Attach: Attach tools per-project from the Overview → Tools panel so each project only sees the tools it needs.",
+      "AI Tool Builder: Describe an endpoint in plain English; the builder probes it live, figures out the auth and response shape, and trims it to just the useful fields to save tokens.",
+      "Secure Credentials: API keys and tokens live in your OS keychain (Keychain / DPAPI / libsecret) — never in the database, plain text, or sent to the AI model."
+    ]
+  },
+  {
+    id: "v2.3.4-mcp-oauth",
+    version: "v2.3.4",
+    title: "OAuth Sign-in for Remote MCP Servers",
+    category: "AI Tools",
+    description: "Connect to MCP servers that gate access behind a sign-in page — Figma, Linear, Notion, GitHub, and more.",
+    highlights: [
+      "One-Click Sign In: Choose OAuth as the auth mode, click Sign in, approve in your browser, and you're redirected back via a cairn:// deep link.",
+      "Full OAuth 2.1 Flow: Server discovery, dynamic client registration, PKCE, token exchange, and automatic refresh are handled for you by the MCP SDK.",
+      "Keychain-Backed Tokens: Access and refresh tokens are encrypted in your OS keychain and never exposed to the AI model or the app's UI layer.",
+      "Connection Status: A Connected / Sign out control shows each server's auth state at a glance."
+    ]
   }
 ];

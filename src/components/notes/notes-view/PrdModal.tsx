@@ -8,7 +8,7 @@ import { useCairnStore } from "@/store";
 import { useChatStream } from "@/hooks/useChatStream";
 import { MarkdownContent } from "@/components/chat/chat-panel/MarkdownContent";
 import { QuestionForm } from "@/components/chat/chat-panel/QuestionForm";
-import { cn } from "@/lib/utils";
+import { cn, prettifyToolLabel } from "@/lib/utils";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -190,7 +190,7 @@ export function PrdModal({ projectId, workspaceId, onClose }: PrdModalProps) {
                 {toolCalls.map((tc, i) => (
                   <div key={i} className="flex items-center gap-1.5 text-[0.714rem] text-[var(--text-tertiary)]">
                     <CheckCircle2 size={10} className="text-[var(--accent)] flex-shrink-0" />
-                    <span>{tc.label}</span>
+                    <span>{prettifyToolLabel(tc.label)}</span>
                   </div>
                 ))}
                 {streamingContent ? (

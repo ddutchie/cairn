@@ -8,6 +8,27 @@
 
 import { contextBridge, ipcRenderer } from "electron";
 
+// Local structural types for the external-tools namespace. The renderer's
+// canonical types live in src/types; electron's rootDir excludes src, so we
+// mirror the shapes here (kept in sync by the IPC return types).
+interface McpServerConfig {
+  id: string; workspaceId: string; name: string; description?: string;
+  transport: "sse" | "http"; baseUrl: string; headers?: Record<string, string>;
+  authMode?: "none" | "oauth"; oauthScope?: string;
+  enabled: boolean; source: string; communityId?: string; version?: string;
+  disabledTools?: string[];
+  createdAt: string; updatedAt: string;
+}
+interface CustomServiceConfig {
+  id: string; workspaceId: string; name: string; description?: string;
+  apiUrl: string; method: "GET" | "POST" | "PUT" | "DELETE"; headers?: Record<string, string>;
+  toolDefinition: string; responseKeys?: string[]; apiKeyUrl?: string;
+  enabled: boolean; source: string; communityId?: string; version?: string;
+  createdAt: string; updatedAt: string;
+}
+interface ToolAttachment {
+  projectId: string; toolType: "mcp" | "service"; toolId: string; enabled: boolean;
+}
 // ── Inline types for the git API (not shared with the renderer bundle) ──────
 
 interface GitStatusEntry {
@@ -378,6 +399,70 @@ const api = {
     },
   },
 
+  // ── External tools (MCP servers + custom HTTP services) ───────
+  tools: {
+    listMcpServers: (workspaceId: string) =>
+      invoke<McpServerConfig[]>("tools:listMcpServers", { workspaceId }),
+    saveMcpServer: (server: Partial<McpServerConfig>) =>
+      invoke<McpServerConfig>("tools:saveMcpServer", server),
+    deleteMcpServer: (id: string) => invoke("tools:deleteMcpServer", { id }),
+    testMcp: (id: string) =>
+      invoke<{ ok: boolean; toolCount?: number; toolNames?: string[]; error?: string }>(
+        "tools:testMcp",
+        { id }
+      ),
+    listMcpTools: (id: string) =>
+      invoke<{ ok: boolean; tools: Array<{ name: string; description?: string }>; error?: string }>(
+        "tools:listMcpTools",
+        { id }
+      ),
+
+    listServices: (workspaceId: string) =>
+      invoke<CustomServiceConfig[]>("tools:listServices", { workspaceId }),
+    saveService: (service: Partial<CustomServiceConfig>) =>
+      invoke<CustomServiceConfig>("tools:saveService", service),
+    deleteService: (id: string) => invoke("tools:deleteService", { id }),
+    testService: (id: string, sampleArgs?: Record<string, unknown>) =>
+      invoke<{ ok: boolean; status?: number; preview?: string; error?: string }>(
+        "tools:testService",
+        { id, sampleArgs }
+      ),
+
+    listAttachments: (projectId: string) =>
+      invoke<ToolAttachment[]>("tools:listAttachments", { projectId }),
+    setAttachment: (a: ToolAttachment) => invoke<ToolAttachment>("tools:setAttachment", a),
+    clearAttachment: (a: Omit<ToolAttachment, "enabled">) => invoke("tools:clearAttachment", a),
+
+    // OAuth (remote MCP servers gated behind an authorization page).
+    startMcpAuth: (id: string) =>
+      invoke<{ status: "redirected" | "already_authorized" | "error"; error?: string }>(
+        "tools:startMcpAuth",
+        { id }
+      ),
+    mcpAuthStatus: (id: string) => invoke<{ connected: boolean }>("tools:mcpAuthStatus", { id }),
+    signOutMcp: (id: string) => invoke("tools:signOutMcp", { id }),
+    /** Fires when a cairn://oauth/callback deep link finishes a sign-in. */
+    onOauthCallback: (
+      cb: (e: { status: string; serverId?: string; error?: string }) => void
+    ) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { status: string; serverId?: string; error?: string }) => cb(e);
+      ipcRenderer.on("tools:oauthCallback", handler);
+      return () => ipcRenderer.off("tools:oauthCallback", handler);
+    },
+  },
+
+  // ── Secrets (OS keychain). No get() by design — renderer only learns set/not-set.
+  secrets: {
+    available: () => invoke<boolean>("secrets:available"),
+    set: (toolType: "mcp" | "service", toolId: string, key: string, value: string) =>
+      invoke<string>("secrets:set", { toolType, toolId, key, value }),
+    has: (toolType: "mcp" | "service", toolId: string, key: string) =>
+      invoke<boolean>("secrets:has", { toolType, toolId, key }),
+    delete: (toolType: "mcp" | "service", toolId: string, key: string) =>
+      invoke("secrets:delete", { toolType, toolId, key }),
+  },
+
   // ── Git operations (Agent Git tab) ────────────
   git: {
     status:   (cwd: string) => invoke<GitStatus>("git:status", { cwd }),
@@ -547,6 +632,48 @@ const api = {
       const handler = (_: any, e: { sessionId: string; callId: string; name: string; label: string }) => cb(e);
       ipcRenderer.on("pi-agent:tool-confirm-required", handler);
       return () => ipcRenderer.off("pi-agent:tool-confirm-required", handler);
+    },
+  },
+
+  // ── AI Tool Builder (streaming builder session) ───────────────
+  toolBuilder: {
+    /** Send a builder prompt (and optionally a user-supplied secret). Fire-and-forget. */
+    prompt: (req: { sessionId: string; workspaceId: string; message: string; secret?: { header: string; value: string } }) =>
+      ipcRenderer.send("tool-builder:prompt", req),
+    /** Abort the current in-flight builder turn. */
+    abort: (sessionId: string) => ipcRenderer.send("tool-builder:abort", { sessionId }),
+    /** Destroy a builder session (clears its in-memory state + temp secrets). */
+    end: (sessionId: string) => ipcRenderer.send("tool-builder:end", { sessionId }),
+
+    onToken: (cb: (e: { sessionId: string; delta: string }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { sessionId: string; delta: string }) => cb(e);
+      ipcRenderer.on("tool-builder:token", handler);
+      return () => ipcRenderer.off("tool-builder:token", handler);
+    },
+    onStep: (cb: (e: { sessionId: string; name: string; args: Record<string, unknown> }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { sessionId: string; name: string; args: Record<string, unknown> }) => cb(e);
+      ipcRenderer.on("tool-builder:step", handler);
+      return () => ipcRenderer.off("tool-builder:step", handler);
+    },
+    onProbeHost: (cb: (e: { sessionId: string; host: string }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { sessionId: string; host: string }) => cb(e);
+      ipcRenderer.on("tool-builder:probe-host", handler);
+      return () => ipcRenderer.off("tool-builder:probe-host", handler);
+    },
+    onProposal: (cb: (e: { sessionId: string; toolType: "service" | "mcp"; config: unknown }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { sessionId: string; toolType: "service" | "mcp"; config: unknown }) => cb(e);
+      ipcRenderer.on("tool-builder:proposal", handler);
+      return () => ipcRenderer.off("tool-builder:proposal", handler);
+    },
+    onDone: (cb: (e: { sessionId: string; error?: string; aborted?: boolean }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: { sessionId: string; error?: string; aborted?: boolean }) => cb(e);
+      ipcRenderer.on("tool-builder:done", handler);
+      return () => ipcRenderer.off("tool-builder:done", handler);
     },
   },
 

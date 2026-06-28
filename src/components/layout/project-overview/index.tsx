@@ -17,6 +17,7 @@ import type { ProjectStatus, Priority } from "@/types";
 import { useProjectMetrics } from "./useProjectMetrics";
 import { ChatInput, SuggestionItem } from "@/components/chat/ChatInput";
 import { SectionHeader, StatCard, ProgressRing } from "./primitives";
+import { ToolsAttachPanel } from "./ToolsAttachPanel";
 import {
   ColumnBreakdownCard,
   PriorityBreakdownCard,
@@ -28,12 +29,13 @@ import {
 } from "./sections";
 
 export function ProjectOverview() {
-  const { activeProjectId, projects, setView, updateProject, chatOpen } = useCairnStore(useShallow((s) => ({
+  const { activeProjectId, projects, setView, updateProject, chatOpen, setSettingsSection } = useCairnStore(useShallow((s) => ({
     activeProjectId: s.activeProjectId,
     projects:        s.projects,
     setView:         s.setView,
     updateProject:   s.updateProject,
     chatOpen:        s.chatOpen,
+    setSettingsSection: s.setSettingsSection,
   })));
   const project = projects.find((p) => p.id === activeProjectId);
   const metrics = useProjectMetrics(activeProjectId);
@@ -323,6 +325,9 @@ export function ProjectOverview() {
             </div>
           </section>
         )}
+
+        {/* ── Tools (per-project attach) ────────────────────── */}
+        <ToolsAttachPanel projectId={project.id} workspaceId={project.workspaceId} onManage={() => { setSettingsSection("tools"); setView("settings"); }} />
 
         {/* ── Board snapshot ────────────────────────────────── */}
         {columns.length > 0 && (
