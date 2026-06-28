@@ -5,7 +5,7 @@
  * Overview and Notes are always visible and shown as locked.
  */
 
-import { Kanban, CalendarDays, Workflow, GitBranch, BarChart2, Lock } from "lucide-react";
+import { Kanban, CalendarDays, Workflow, GitBranch, BarChart2, Terminal, MessageSquare, Lock } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import type { ToggleableView } from "@/store/slices/ui";
@@ -47,6 +47,8 @@ const VIEW_OPTIONS: ViewOption[] = [
   { view: "flow",     label: "Idea Flow",        description: "Visual node graph for ideas",     icon: <Workflow size={13} /> },
   { view: "graph",    label: "Knowledge Graph",  description: "Workspace-wide connection graph", icon: <GitBranch size={13} /> },
   { view: "insights", label: "Insights",         description: "Analytics and progress charts",   icon: <BarChart2 size={13} /> },
+  { view: "agent",    label: "Agent",            description: "Embedded coding agent in the sidebar", icon: <Terminal size={13} /> },
+  { view: "chat",     label: "AI Chat",          description: "In-app AI chat panel",            icon: <MessageSquare size={13} /> },
 ];
 
 export function ViewVisibilitySettings() {
@@ -55,7 +57,7 @@ export function ViewVisibilitySettings() {
   return (
     <SettingsGroup
       title="Views"
-      description="Choose which views appear in the sidebar. Overview and Notes are always shown. Agent and AI Chat are managed in AI & Chat settings."
+      description="Choose which views appear in the sidebar. Overview and Notes are always shown."
     >
       {/* Always-on rows */}
       {(["Overview", "Notes"] as const).map((label) => (

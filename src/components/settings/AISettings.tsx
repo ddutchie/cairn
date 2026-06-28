@@ -13,14 +13,11 @@ import {
   useEndpointConfig, isLocalBaseUrl, LOCAL_FALLBACK_MODELS,
 } from "./endpoint-components";
 import { MCPServerSettings } from "./MCPSettings";
-import type { ToggleableView } from "@/store/slices/ui";
 
 export function AISettings() {
-  const { aiConfig, setAIConfig, hiddenViews, toggleViewVisibility } = useCairnStore(useShallow((s) => ({
+  const { aiConfig, setAIConfig } = useCairnStore(useShallow((s) => ({
     aiConfig:             s.aiConfig,
     setAIConfig:          s.setAIConfig,
-    hiddenViews:          s.hiddenViews,
-    toggleViewVisibility: s.toggleViewVisibility,
   })));
 
   const {
@@ -238,10 +235,10 @@ export function AISettings() {
 
   return (
     <div className="space-y-8">
-      {/* ── Visibility ── */}
+      {/* ── Inline AI ── */}
       <SettingsGroup
-        title="Visibility"
-        description="Control which AI features and views are shown."
+        title="Inline AI"
+        description="Control AI features shown in the editor. View visibility (Agent, AI Chat) is managed in General settings."
       >
         <SettingsRow
           label="Enable inline AI"
@@ -253,17 +250,6 @@ export function AISettings() {
             label="Enable inline AI"
           />
         </SettingsRow>
-        {([
-          { view: "agent" as ToggleableView, label: "Agent view", description: "Embedded coding agent in the sidebar" },
-          { view: "chat"  as ToggleableView, label: "AI Chat view", description: "In-app AI chat panel" },
-        ]).map(({ view, label, description }) => {
-          const visible = !hiddenViews.has(view);
-          return (
-            <SettingsRow key={view} label={label} description={description}>
-              <Toggle checked={visible} onChange={() => toggleViewVisibility(view)} label={label} />
-            </SettingsRow>
-          );
-        })}
       </SettingsGroup>
 
       {/* ── General Chat & Inline AI Feature Config ── */}
