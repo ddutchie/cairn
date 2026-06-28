@@ -383,6 +383,7 @@ export function buildIpcMock(opts?: { needsWorkspaceSetup?: boolean }): string {
       saveMcpServer:   noop,
       deleteMcpServer: noop,
       testMcp:         () => Promise.resolve({ ok: true, toolCount: 0, toolNames: [] }),
+      listMcpTools:    () => Promise.resolve({ ok: true, tools: [] }),
       listServices:    () => Promise.resolve([]),
       saveService:     noop,
       deleteService:   noop,

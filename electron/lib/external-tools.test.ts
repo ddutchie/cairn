@@ -6,7 +6,7 @@ vi.mock("electron", () => ({
   safeStorage: { isEncryptionAvailable: () => false },
 }));
 
-import { resolveAttachedToolIds, isExternalToolName, prettifyToolName, externalToolLabel } from "./external-tools";
+import { resolveAttachedToolIds, isExternalToolName, prettifyToolName, externalToolLabel, filterDisabledMcpDefs } from "./external-tools";
 
 describe("external-tools scoping", () => {
   it("collects enabled attachments by type", () => {
@@ -89,5 +89,33 @@ describe("externalToolLabel", () => {
   it("returns non-external names unchanged", () => {
     expect(externalToolLabel("create_task")).toBe("create_task");
     expect(externalToolLabel("read")).toBe("read");
+  });
+});
+
+describe("filterDisabledMcpDefs", () => {
+  const def = (name: string): { type: "function"; function: { name: string; description: string; parameters: Record<string, unknown> } } => ({
+    type: "function",
+    function: { name, description: "", parameters: {} },
+  });
+
+  it("returns all defs when nothing is disabled", () => {
+    const defs = [def("mcp__srv1__a"), def("mcp__srv1__b")];
+    expect(filterDisabledMcpDefs(defs, [])).toHaveLength(2);
+  });
+
+  it("drops defs whose raw tool name is disabled", () => {
+    const defs = [def("mcp__srv1__search-designs"), def("mcp__srv1__list_files")];
+    const kept = filterDisabledMcpDefs(defs, ["search-designs"]);
+    expect(kept.map((d) => d.function.name)).toEqual(["mcp__srv1__list_files"]);
+  });
+
+  it("matches on the raw name regardless of server id", () => {
+    const defs = [def("mcp__OTHER__search-designs")];
+    expect(filterDisabledMcpDefs(defs, ["search-designs"])).toHaveLength(0);
+  });
+
+  it("keeps defs whose name doesn't parse as an mcp tool", () => {
+    const defs = [def("not-namespaced"), def("svc__s1__call")];
+    expect(filterDisabledMcpDefs(defs, ["call"])).toHaveLength(2);
   });
 });

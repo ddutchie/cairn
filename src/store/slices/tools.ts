@@ -13,17 +13,37 @@ import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
 import type { McpServerConfig, CustomServiceConfig, ToolAttachment, ToolType } from "@/types";
 
+/** A single tool exposed by an MCP server (raw name + description). */
+export interface McpToolInfo {
+  name: string;
+  description?: string;
+}
+
+/** Per-server tool-listing state for the Settings checklist. */
+export interface McpToolsState {
+  loading: boolean;
+  tools: McpToolInfo[];
+  error?: string;
+}
+
 export interface ToolsSlice {
   mcpServers: McpServerConfig[];
   customServices: CustomServiceConfig[];
   /** Attachments for the currently-loaded project (keyed by project on fetch). */
   toolAttachments: ToolAttachment[];
+  /** Live tool listings per MCP server id, fetched lazily for the checklist. */
+  mcpTools: Record<string, McpToolsState>;
 
   fetchTools: (workspaceId: string) => Promise<void>;
   saveMcpServer: (server: Partial<McpServerConfig>) => Promise<void>;
   deleteMcpServer: (id: string) => Promise<void>;
   saveCustomService: (service: Partial<CustomServiceConfig>) => Promise<void>;
   deleteCustomService: (id: string) => Promise<void>;
+
+  /** Fetch (and cache) the individual tools of an MCP server for the checklist. */
+  fetchMcpTools: (serverId: string) => Promise<void>;
+  /** Enable/disable a single tool of an MCP server (workspace-wide). */
+  setMcpToolEnabled: (serverId: string, toolName: string, enabled: boolean) => Promise<void>;
 
   fetchToolAttachments: (projectId: string) => Promise<void>;
   setToolAttachment: (projectId: string, toolType: ToolType, toolId: string, enabled: boolean) => Promise<void>;
@@ -34,6 +54,7 @@ export const createToolsSlice: StateCreator<CairnStore, [], [], ToolsSlice> = (s
   mcpServers: [],
   customServices: [],
   toolAttachments: [],
+  mcpTools: {},
 
   async fetchTools(workspaceId) {
     if (typeof window === "undefined" || !window.electron?.tools) return;
@@ -70,6 +91,37 @@ export const createToolsSlice: StateCreator<CairnStore, [], [], ToolsSlice> = (s
       console.error("[tools] deleteMcpServer error", err);
       set({ mcpServers: prev }); // rollback so the UI stays consistent + retryable
     }
+  },
+
+  async fetchMcpTools(serverId) {
+    if (typeof window === "undefined" || !window.electron?.tools?.listMcpTools) return;
+    set((s) => ({
+      mcpTools: { ...s.mcpTools, [serverId]: { loading: true, tools: s.mcpTools[serverId]?.tools ?? [] } },
+    }));
+    try {
+      const res = await window.electron.tools.listMcpTools(serverId);
+      set((s) => ({
+        mcpTools: {
+          ...s.mcpTools,
+          [serverId]: res.ok
+            ? { loading: false, tools: res.tools }
+            : { loading: false, tools: [], error: res.error ?? "Failed to list tools" },
+        },
+      }));
+    } catch (err) {
+      set((s) => ({
+        mcpTools: { ...s.mcpTools, [serverId]: { loading: false, tools: [], error: String(err) } },
+      }));
+    }
+  },
+
+  async setMcpToolEnabled(serverId, toolName, enabled) {
+    const server = get().mcpServers.find((m) => m.id === serverId);
+    if (!server) return;
+    const current = new Set(server.disabledTools ?? []);
+    if (enabled) current.delete(toolName);
+    else current.add(toolName);
+    await get().saveMcpServer({ ...server, disabledTools: [...current] });
   },
 
   async saveCustomService(service) {

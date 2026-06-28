@@ -129,6 +129,24 @@ export function registerToolsHandlers(db: Database): void {
     })
   );
 
+  // List a server's individual tools (raw name + description) for the per-tool
+  // enable/disable checklist in Settings. Keeps the cached connection alive.
+  registerIpcHandle("tools:listMcpTools", (_e, { id }: { id: string }) =>
+    handle(() => {
+      const server = q.getMcpServerById(db, id);
+      if (!server) throw new Error("MCP server not found");
+      return mcpClient.listToolsDetailed({
+        id: server.id,
+        baseUrl: server.baseUrl,
+        transport: server.transport,
+        headers: server.headers,
+        authMode: server.authMode,
+        oauthScope: server.oauthScope,
+        name: server.name,
+      });
+    })
+  );
+
   // ── MCP OAuth ──────────────────────────────────────────────────────────────
   // Begin sign-in: opens the system browser; resolves once the redirect has been
   // triggered. Completion arrives via either the loopback listener (default) or

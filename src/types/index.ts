@@ -157,6 +157,11 @@ export interface McpServerConfig {
   /** Set when installed from the community registry. */
   communityId?: string;
   version?: string;
+  /**
+   * Raw (un-namespaced) tool names the user has disabled for this server,
+   * applied workspace-wide. Absent / empty = all tools enabled.
+   */
+  disabledTools?: string[];
   createdAt: string;
   updatedAt: string;
 }

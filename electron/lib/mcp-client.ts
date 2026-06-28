@@ -245,6 +245,35 @@ export async function listTools(cfg: McpServerRuntimeConfig): Promise<OpenAITool
   }
 }
 
+/** A server's individual tool, with its raw (un-namespaced) name + description. */
+export interface McpToolInfo {
+  name: string;
+  description?: string;
+}
+
+export interface ListMcpToolsResult {
+  ok: boolean;
+  tools: McpToolInfo[];
+  error?: string;
+}
+
+/**
+ * List a server's tools with raw names + descriptions, for the Settings
+ * per-tool enable/disable checklist. Unlike {@link testConnection} this keeps
+ * the (cached) connection alive — the user is actively configuring the server —
+ * and surfaces descriptions. Never throws.
+ */
+export async function listToolsDetailed(cfg: McpServerRuntimeConfig): Promise<ListMcpToolsResult> {
+  try {
+    const conn = await connect(cfg);
+    const res = await withTimeout(conn.client.listTools(), CALL_TIMEOUT_MS, `MCP listToolsDetailed ${cfg.id}`);
+    const tools = (res.tools ?? []) as McpToolDef[];
+    return { ok: true, tools: tools.map((t) => ({ name: t.name, description: t.description })) };
+  } catch (e) {
+    return { ok: false, tools: [], error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 /**
  * Call a namespaced MCP tool. Returns the textual result, or an error string
  * (never throws). `namespaced` is the `mcp__<serverId>__<tool>` name; `cfg` must

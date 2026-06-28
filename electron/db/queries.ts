@@ -897,6 +897,8 @@ interface McpServerInput {
   transport: "sse" | "http"; baseUrl: string; headers?: Record<string, string>;
   authMode?: "none" | "oauth"; oauthScope?: string;
   enabled: boolean; source: string; communityId?: string; version?: string;
+  /** Raw (un-namespaced) tool names disabled for this server, workspace-wide. */
+  disabledTools?: string[];
 }
 
 export function getMcpServers(db: Database.Database, workspaceId: string) {
@@ -912,8 +914,8 @@ export function getMcpServerById(db: Database.Database, id: string) {
 export function saveMcpServer(db: Database.Database, s: McpServerInput) {
   const now = ts();
   db.prepare(`
-    INSERT INTO mcp_servers (id, workspace_id, name, description, transport, base_url, headers, auth_mode, oauth_scope, enabled, source, community_id, version, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO mcp_servers (id, workspace_id, name, description, transport, base_url, headers, auth_mode, oauth_scope, enabled, source, community_id, version, disabled_tools, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       name        = excluded.name,
       description = excluded.description,
@@ -926,11 +928,13 @@ export function saveMcpServer(db: Database.Database, s: McpServerInput) {
       source      = excluded.source,
       community_id= excluded.community_id,
       version     = excluded.version,
+      disabled_tools = excluded.disabled_tools,
       updated_at  = excluded.updated_at
   `).run(
     s.id, s.workspaceId, s.name, s.description ?? null, s.transport, s.baseUrl,
     j(s.headers ?? {}), s.authMode ?? "none", s.oauthScope ?? null,
-    s.enabled ? 1 : 0, s.source, s.communityId ?? null, s.version ?? null, now, now,
+    s.enabled ? 1 : 0, s.source, s.communityId ?? null, s.version ?? null,
+    j(s.disabledTools ?? []), now, now,
   );
   return getMcpServerById(db, s.id)!;
 }

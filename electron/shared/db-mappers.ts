@@ -109,6 +109,7 @@ export function toMcpServer(row: any) {
     source: (row.source ?? "manual") as "manual" | "community" | "ai-builder",
     communityId: (row.community_id ?? undefined) as string | undefined,
     version: (row.version ?? undefined) as string | undefined,
+    disabledTools: j2(row.disabled_tools),
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   };

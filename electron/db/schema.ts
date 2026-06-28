@@ -574,6 +574,16 @@ const MIGRATIONS: Migration[] = [
       db.exec("ALTER TABLE mcp_servers ADD COLUMN oauth_scope TEXT");
     }
   },
+
+  // v24: per-tool enable/disable for MCP servers. disabled_tools is a JSON array
+  // of raw (un-namespaced) tool names the user has switched off for this server,
+  // applied workspace-wide. Empty array = all tools enabled (the default).
+  (db) => {
+    const cols = db.prepare("PRAGMA table_info(mcp_servers)").all() as { name: string }[];
+    if (!cols.some((c) => c.name === "disabled_tools")) {
+      db.exec("ALTER TABLE mcp_servers ADD COLUMN disabled_tools TEXT NOT NULL DEFAULT '[]'");
+    }
+  },
 ];
 
 export function applySchema(db: Database.Database): void {

@@ -512,6 +512,24 @@ describe("MCP server queries", () => {
     expect(figma?.authMode).toBe("oauth");
     expect(figma?.oauthScope).toBe("read:files");
   });
+
+  it("defaults disabledTools to [] and round-trips the list", () => {
+    saveMcpServer(db, { id: "m1", workspaceId: "ws1", name: "A", transport: "http", baseUrl: "https://a", enabled: true, source: "manual" });
+    expect(getMcpServerById(db, "m1")?.disabledTools).toEqual([]);
+
+    saveMcpServer(db, {
+      id: "m1", workspaceId: "ws1", name: "A", transport: "http", baseUrl: "https://a",
+      enabled: true, source: "manual", disabledTools: ["search-designs", "delete_design"],
+    });
+    expect(getMcpServerById(db, "m1")?.disabledTools).toEqual(["search-designs", "delete_design"]);
+
+    // Clearing the list persists an empty array, not the previous value.
+    saveMcpServer(db, {
+      id: "m1", workspaceId: "ws1", name: "A", transport: "http", baseUrl: "https://a",
+      enabled: true, source: "manual", disabledTools: [],
+    });
+    expect(getMcpServerById(db, "m1")?.disabledTools).toEqual([]);
+  });
 });
 
 // ── External tools: custom services ──────────────────────────────────────────

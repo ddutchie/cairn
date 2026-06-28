@@ -95,6 +95,20 @@ export function resolveAttachedToolIds(rows: AttachmentRow[]): {
 
 // ── Def assembly ──────────────────────────────────────────────────────────────
 
+/**
+ * Drop namespaced MCP tool defs whose raw (un-namespaced) tool name is in the
+ * server's `disabledTools` list. Pure — exported for unit testing. A def whose
+ * name doesn't parse is kept (it isn't one of ours to suppress).
+ */
+export function filterDisabledMcpDefs(defs: OpenAIToolDef[], disabledTools: string[]): OpenAIToolDef[] {
+  const disabled = new Set(disabledTools);
+  if (disabled.size === 0) return defs;
+  return defs.filter((d) => {
+    const parsed = mcpClient.parseToolName(d.function.name);
+    return !(parsed && disabled.has(parsed.toolName));
+  });
+}
+
 /** Load the in-scope MCP + service runtime configs for a project. */
 function loadScopedConfigs(db: Database.Database, workspaceId: string, projectId: string) {
   const rows = [
@@ -127,7 +141,10 @@ export async function getExternalToolDefs(
 
   const mcpDefs = (
     await Promise.all(
-      mcpServers.map((s) => mcpClient.listTools(toRuntimeConfig(s)))
+      mcpServers.map(async (s) => {
+        const defs = await mcpClient.listTools(toRuntimeConfig(s));
+        return filterDisabledMcpDefs(defs, s.disabledTools ?? []);
+      })
     )
   ).flat();
 
@@ -173,6 +190,11 @@ export async function executeExternalTool(
     const server = mcpServers.find((s) => s.id === mcpParsed.serverId);
     if (!server) {
       return `Error: MCP server ${mcpParsed.serverId} is not enabled/attached for this project`;
+    }
+    // Respect the per-tool disable list so a stale/hallucinated name for a
+    // switched-off tool can't run.
+    if ((server.disabledTools ?? []).includes(mcpParsed.toolName)) {
+      return `Error: tool "${mcpParsed.toolName}" is disabled for MCP server ${mcpParsed.serverId}`;
     }
     return mcpClient.callTool(
       toRuntimeConfig(server),

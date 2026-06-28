@@ -14,7 +14,9 @@ import { contextBridge, ipcRenderer } from "electron";
 interface McpServerConfig {
   id: string; workspaceId: string; name: string; description?: string;
   transport: "sse" | "http"; baseUrl: string; headers?: Record<string, string>;
+  authMode?: "none" | "oauth"; oauthScope?: string;
   enabled: boolean; source: string; communityId?: string; version?: string;
+  disabledTools?: string[];
   createdAt: string; updatedAt: string;
 }
 interface CustomServiceConfig {
@@ -407,6 +409,11 @@ const api = {
     testMcp: (id: string) =>
       invoke<{ ok: boolean; toolCount?: number; toolNames?: string[]; error?: string }>(
         "tools:testMcp",
+        { id }
+      ),
+    listMcpTools: (id: string) =>
+      invoke<{ ok: boolean; tools: Array<{ name: string; description?: string }>; error?: string }>(
+        "tools:listMcpTools",
         { id }
       ),
 
