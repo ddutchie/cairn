@@ -5,6 +5,7 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { CairnEvents } from "@/lib/events";
 import { historyManager, ownWriteGuard } from "@/lib/history";
+import { markAiNoteWriteStarted, markAiNoteWriteEnded, hasRecentAiNoteWrite } from "@/store/ipc";
 import { useIpcErrorToasts } from "@/hooks/useIpcErrorToasts";
 import { TitleBar } from "@/components/layout/title-bar";
 import { Sidebar } from "@/components/layout/sidebar";
@@ -159,12 +160,27 @@ export default function Home() {
         }
       });
 
+      // Track AI note writes (in-app chat executor + standalone MCP server) so
+      // the db:changed handler below knows to re-hydrate and accept the AI's
+      // content for those notes, overriding the own-write guard.
+      const unsubAiStart = electron.onAiWriteStarted(({ noteId }) => {
+        markAiNoteWriteStarted(noteId);
+      });
+      const unsubAiEnd = electron.onAiWriteEnded(({ noteId }) => {
+        markAiNoteWriteEnded(noteId);
+      });
+
       // Register db:changed listener synchronously so React gets the cleanup fn
       const unsubDb = electron.onDbChanged(() => {
         // Own writes are already reflected in Zustand via optimistic updates —
         // re-hydrating from SQLite would race against in-flight IPC and overwrite
         // the optimistic state with stale content. Skip hydration entirely.
-        if (ownWriteGuard.isOwnWrite()) return;
+        //
+        // Exception: if the AI (chat executor or MCP) just wrote a note, the
+        // surrounding chat IPC also touched ownWriteGuard — but those changes
+        // are NOT in Zustand, so we must hydrate to surface them in the open
+        // editor. A recent AI note write overrides the own-write skip.
+        if (ownWriteGuard.isOwnWrite() && !hasRecentAiNoteWrite()) return;
         // Don't re-hydrate (and potentially reset onboardingState) while the
         // onboarding wizard is still in progress — folder selection and workspace
         // creation trigger db:changed but the wizard handles its own state.
@@ -182,6 +198,8 @@ export default function Home() {
 
       return () => {
         unsubDb();
+        unsubAiStart();
+        unsubAiEnd();
         unsubAvailable();
         unsubDownloaded();
       };

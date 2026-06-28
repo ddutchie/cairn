@@ -44,7 +44,9 @@ export function StepCreateProject({
             <button
               type="button"
               onClick={onBack}
-              className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
+              disabled={submitting}
+              aria-label="Go back to previous step"
+              className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[var(--text-tertiary)]"
             >
               <ArrowLeft size={13} />
             </button>
@@ -62,8 +64,11 @@ export function StepCreateProject({
               key={iconName}
               type="button"
               onClick={() => onIconChange(iconName)}
+              disabled={submitting}
+              aria-label={`Use ${iconName} icon`}
+              aria-pressed={icon === iconName}
               className={cn(
-                "w-8 h-8 rounded-lg flex items-center justify-center transition-colors text-[var(--text-secondary)]",
+                "w-8 h-8 rounded-lg flex items-center justify-center transition-colors text-[var(--text-secondary)] disabled:opacity-50 disabled:cursor-not-allowed",
                 icon === iconName
                   ? "bg-[var(--accent-dim)] ring-1 ring-[var(--accent)] text-[var(--accent)]"
                   : "bg-[var(--surface-2)] hover:bg-[var(--surface-3)]"
@@ -95,7 +100,7 @@ export function StepCreateProject({
           className={cn(
             "w-full py-2 rounded-lg text-sm font-medium transition-all",
             name.trim() && !submitting
-              ? "bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)]"
+              ? "bg-[var(--accent)] text-[var(--accent-fg,#fff)] hover:bg-[var(--accent-hover)]"
               : "bg-[var(--surface-2)] text-[var(--text-tertiary)] cursor-not-allowed"
           )}
         >
@@ -111,7 +116,8 @@ export function StepCreateProject({
         <button
           type="button"
           onClick={onSkip}
-          className="w-full py-2 rounded-lg text-sm font-medium text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)] transition-colors"
+          disabled={submitting}
+          className="w-full py-2 rounded-lg text-sm font-medium text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[var(--text-tertiary)]"
         >
           Skip — I&apos;ll create one later
         </button>

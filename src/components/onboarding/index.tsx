@@ -60,7 +60,7 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
     if (!trimmed || creatingProject || !activeWorkspaceId) return;
     setCreatingProject(true);
     try {
-      const proj = await createProject(activeWorkspaceId, trimmed);
+      const proj = await createProject(activeWorkspaceId, trimmed, projectIcon);
       setActiveProject(proj.id);
       setStep("done");
     } finally {

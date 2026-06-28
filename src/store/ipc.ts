@@ -30,6 +30,51 @@ export function isOwnNoteWrite(noteId: string): boolean {
   return t !== undefined && Date.now() - t < OWN_NOTE_WRITE_WINDOW_MS;
 }
 
+// ── AI-written notes registry ─────────────────────────────────────────────────
+// Tracks notes that are currently — or were very recently — written by the AI
+// (the in-app chat executor or the standalone MCP server), as signalled by the
+// note:aiWriteStarted / note:aiWriteEnded events.
+//
+// This is the inverse of the own-write guard: when the AI patches a note we
+// MUST re-hydrate from SQLite and accept the snapshot content for that note,
+// even though the surrounding chat IPC touched ownWriteGuard and even if the
+// user typed in the note shortly before. Without this override the open editor
+// never sees the AI's changes (both guards would suppress the snapshot).
+//
+// We keep a short tail window after the write ends so the db:changed event
+// (broadcast once after the whole chat stream finishes) still counts the note
+// as AI-written when it finally fires.
+const aiNoteWriteMap = new Map<string, number>();
+const AI_NOTE_WRITE_TAIL_MS = 5000;
+const aiWritingNotes = new Set<string>();
+
+export function markAiNoteWriteStarted(noteId: string): void {
+  aiWritingNotes.add(noteId);
+  aiNoteWriteMap.set(noteId, Date.now());
+}
+
+export function markAiNoteWriteEnded(noteId: string): void {
+  aiWritingNotes.delete(noteId);
+  aiNoteWriteMap.set(noteId, Date.now());
+}
+
+/** True if the note is actively or recently (within the tail window) AI-written. */
+export function isAiNoteWrite(noteId: string): boolean {
+  if (aiWritingNotes.has(noteId)) return true;
+  const t = aiNoteWriteMap.get(noteId);
+  return t !== undefined && Date.now() - t < AI_NOTE_WRITE_TAIL_MS;
+}
+
+/** True if any note is actively or recently AI-written (cheap pre-check). */
+export function hasRecentAiNoteWrite(): boolean {
+  if (aiWritingNotes.size > 0) return true;
+  const now = Date.now();
+  for (const t of aiNoteWriteMap.values()) {
+    if (now - t < AI_NOTE_WRITE_TAIL_MS) return true;
+  }
+  return false;
+}
+
 export function isElectron(): boolean {
   return typeof window !== "undefined" && !!window.electron;
 }

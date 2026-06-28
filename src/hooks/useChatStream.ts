@@ -185,7 +185,9 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
         return true;
       });
       if (hasPersistedWrite) {
-        useCairnStore.getState().hydrateFromElectron(true);
+        useCairnStore.getState().hydrateFromElectron(true).catch((err) => {
+          console.error("[useChatStream] post-write hydrate failed", err);
+        });
       }
     });
 

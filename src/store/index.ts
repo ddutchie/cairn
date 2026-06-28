@@ -18,7 +18,7 @@ import type {
 } from "@/types";
 import { storage } from "@/lib/storage";
 import { historyManager } from "@/lib/history";
-import { isOwnNoteWrite } from "./ipc";
+import { isOwnNoteWrite, isAiNoteWrite } from "./ipc";
 import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KEY, ACTIVE_PROJECT_KEY, CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY } from "@/lib/constants";
 import { MIN_NOTES_SIDEBAR_WIDTH, MAX_NOTES_SIDEBAR_WIDTH } from "./slices/ui";
 
@@ -344,10 +344,14 @@ export const useCairnStore = create<CairnStore>()(
       // Merge snapshot notes: preserve any note that was recently written by
       // the user (within the own-write window) so we don't overwrite optimistic
       // state with a stale snapshot triggered by the WAL poller.
+      //
+      // Exception: notes the AI just wrote (chat executor / MCP) always take the
+      // snapshot content — the AI's edit isn't in our in-memory copy, so keeping
+      // the local version would hide it from the open editor.
       const snapNotes: Note[] = snap.notes ?? [];
       const mergedNotes = isRefresh
         ? snapNotes.map((sn) => {
-            if (isOwnNoteWrite(sn.id)) {
+            if (isOwnNoteWrite(sn.id) && !isAiNoteWrite(sn.id)) {
               return current.notes.find((cn) => cn.id === sn.id) ?? sn;
             }
             return sn;
