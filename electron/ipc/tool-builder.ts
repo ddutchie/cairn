@@ -16,9 +16,9 @@
  * probe attempts per session.
  */
 
-import type { BrowserWindow } from "electron";
+import type { BrowserWindow, IpcMainEvent } from "electron";
 import type { Database } from "better-sqlite3";
-import { registerIpcOn, broadcastEvent } from "./registry";
+import { registerIpcOn } from "./registry";
 import { getCachedConfig } from "../lib/config-cache";
 import { newId } from "../db/utils";
 import * as q from "../db/queries";
@@ -122,7 +122,11 @@ async function dispatchBuilderTool(
       const result = await builder.probeEndpoint({
         url,
         method: (args.method as builder.ProbeRequest["method"]) ?? "GET",
-        headers: args.headers as Record<string, string> | undefined,
+        // Substitute the user's session secret for any placeholder header so the
+        // probe is actually authenticated. The original placeholder form is what
+        // the LLM authored (and what gets echoed/persisted) — only the live
+        // request sees the real value, and it never leaves the main process.
+        headers: resolveProbeHeaders(session, args.headers as Record<string, string> | undefined),
         query: args.query as Record<string, unknown> | undefined,
         body: args.body,
       });
@@ -180,7 +184,7 @@ async function dispatchBuilderTool(
  */
 function saveServiceDraft(session: BuilderSession, db: Database, def: builder.ServiceDraft) {
   const id = newId();
-  const headers = persistSecretHeaders(session, id, def.headers ?? {});
+  const headers = persistSecretHeaders(session, "service", id, def.headers ?? {});
   return q.saveCustomService(db, {
     id,
     workspaceId: session.workspaceId,
@@ -199,7 +203,7 @@ function saveServiceDraft(session: BuilderSession, db: Database, def: builder.Se
 
 function saveMcpDraft(session: BuilderSession, db: Database, def: builder.McpDraft) {
   const id = newId();
-  const headers = persistSecretHeaders(session, id, def.headers ?? {});
+  const headers = persistSecretHeaders(session, "mcp", id, def.headers ?? {});
   return q.saveMcpServer(db, {
     id,
     workspaceId: session.workspaceId,
@@ -214,22 +218,44 @@ function saveMcpDraft(session: BuilderSession, db: Database, def: builder.McpDra
 }
 
 /**
+ * Resolve placeholder header values to the user's session secret for a live
+ * probe. Non-placeholder values pass through. The result is used ONLY for the
+ * actual request — never echoed to the renderer or sent to the LLM.
+ */
+function resolveProbeHeaders(
+  session: BuilderSession,
+  headers?: Record<string, string>
+): Record<string, string> | undefined {
+  if (!headers) return undefined;
+  const out: Record<string, string> = {};
+  for (const [name, value] of Object.entries(headers)) {
+    if (builder.hasPlaceholder(value) && session.tempSecrets.has(name)) {
+      out[name] = session.tempSecrets.get(name)!;
+    } else {
+      out[name] = value;
+    }
+  }
+  return out;
+}
+
+/**
  * Replace secret-placeholder header values with `secret://<toolId>/<header>`
  * refs. If a temp secret was captured for that header during the session, store
  * the real value now; otherwise the UI will prompt the user to fill it in.
  */
 function persistSecretHeaders(
   session: BuilderSession,
+  toolType: secrets.ToolKind,
   toolId: string,
   headers: Record<string, string>
 ): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [name, value] of Object.entries(headers)) {
     if (builder.hasPlaceholder(value)) {
-      const ref = secrets.secretRef(toolId, name);
+      const ref = secrets.secretRef(toolType, toolId, name);
       const temp = session.tempSecrets.get(name);
       if (temp && secrets.isAvailable()) {
-        secrets.setSecret(toolId, name, temp);
+        secrets.setSecret(toolType, toolId, name, temp);
       }
       out[name] = ref;
     } else {
@@ -314,11 +340,9 @@ export function registerToolBuilderHandlers(
   db: Database,
   _getWin?: () => BrowserWindow | null
 ): void {
-  const send = (channel: string, payload: unknown) => broadcastEvent(channel, payload);
-
   registerIpcOn(
     "tool-builder:prompt",
-    (_e, { sessionId, workspaceId, message, secret }: {
+    (event: IpcMainEvent, { sessionId, workspaceId, message, secret }: {
       sessionId: string;
       workspaceId: string;
       message: string;
@@ -337,10 +361,22 @@ export function registerToolBuilderHandlers(
         };
         sessions.set(sessionId, session);
       }
+      // Each prompt starts a fresh run — never reuse an already-aborted
+      // controller from a previous (cancelled) turn, which would abort every
+      // subsequent run immediately.
+      session.abortCtrl = new AbortController();
       if (secret?.header && secret.value) {
         session.tempSecrets.set(secret.header, secret.value);
       }
       session.messages.push({ role: "user", content: message });
+
+      // Route this session's events ONLY back to the requesting window, so
+      // probe hosts, body samples, and saved proposals never leak to other
+      // renderer instances.
+      const sender = event.sender;
+      const send = (channel: string, payload: unknown) => {
+        if (!sender.isDestroyed()) sender.send(channel, payload);
+      };
       void runBuilderLoop(session, db, send);
     }
   );

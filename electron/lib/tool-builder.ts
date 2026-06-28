@@ -39,6 +39,12 @@ const PLACEHOLDER_RE = /<API_KEY>|YOUR_API_KEY|<ACCESS_TOKEN>|<TOKEN>/;
 /** Max bytes of response body ever handed to the LLM. */
 export const BODY_SAMPLE_LIMIT = 4096;
 
+/**
+ * Hard ceiling on bytes read from a probe response. Bounds memory for huge
+ * payloads while still being large enough to parse typical JSON for jsonKeys.
+ */
+const MAX_PROBE_READ = 256 * 1024;
+
 const PROBE_TIMEOUT_MS = 20_000;
 
 // ── JSON key extraction (pure) ───────────────────────────────────────────────
@@ -102,14 +108,18 @@ function countTokens(s: string): number {
   }
 }
 
-/** Deep allow-list pick mirroring custom-services.filterResponse semantics. */
+/** Deep allow-list pick — keeps wanted keys and recurses into their containers
+ * so nested non-wanted fields are still filtered out (accurate token estimate). */
 function deepPick(value: unknown, wanted: Set<string>): unknown {
   if (Array.isArray(value)) return value.map((v) => deepPick(v, wanted));
   if (value && typeof value === "object") {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      if (wanted.has(k)) out[k] = v;
-      else if (v && typeof v === "object") {
+      if (wanted.has(k)) {
+        // Keep the key, but still recurse into container values so unwanted
+        // nested fields don't inflate the kept payload.
+        out[k] = v && typeof v === "object" ? deepPick(v, wanted) : v;
+      } else if (v && typeof v === "object") {
         const nested = deepPick(v, wanted);
         if (!isEmpty(nested)) out[k] = nested;
       }
@@ -262,6 +272,36 @@ export interface ProbeResult {
 }
 
 /**
+ * Read a fetch Response body up to `maxBytes`, then stop pulling chunks (and
+ * cancel the stream) so an oversized payload is never fully materialized. Falls
+ * back to `res.text()` if the body isn't a readable stream.
+ */
+async function readCapped(res: Response, maxBytes: number): Promise<string> {
+  const body = res.body as ReadableStream<Uint8Array> | null;
+  if (!body || typeof body.getReader !== "function") {
+    const text = await res.text();
+    return text.length > maxBytes ? text.slice(0, maxBytes) : text;
+  }
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let out = "";
+  try {
+    while (out.length < maxBytes) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      out += decoder.decode(value, { stream: true });
+    }
+  } finally {
+    try {
+      await reader.cancel();
+    } catch {
+      /* stream already closed */
+    }
+  }
+  return out.length > maxBytes ? out.slice(0, maxBytes) : out;
+}
+
+/**
  * Make a real request from the main process. GET/DELETE append `query` to the
  * URL; POST/PUT JSON-encode `body`. Returns a bounded sample + analysis. Never
  * throws — network failures surface as `{ ok:false, error }`.
@@ -307,7 +347,10 @@ export async function probeEndpoint(req: ProbeRequest): Promise<ProbeResult> {
       respHeaders[k] = v;
     });
     const contentType = res.headers.get("content-type") ?? "";
-    const rawText = await res.text();
+    // Read with a hard ceiling so a probe never buffers an unbounded payload.
+    // We read up to MAX_PROBE_READ (enough to parse normal JSON for jsonKeys),
+    // then derive the LLM-facing bodySample from the capped text.
+    const rawText = await readCapped(res, MAX_PROBE_READ);
     const bodySample = rawText.slice(0, BODY_SAMPLE_LIMIT);
 
     let jsonKeys: string[] = [];
@@ -315,7 +358,7 @@ export async function probeEndpoint(req: ProbeRequest): Promise<ProbeResult> {
       try {
         jsonKeys = extractJsonKeys(JSON.parse(rawText));
       } catch {
-        /* malformed JSON — leave keys empty */
+        /* malformed or truncated JSON — leave keys empty */
       }
     }
 

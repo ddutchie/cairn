@@ -28,6 +28,20 @@ function looksSecret(value: string): boolean {
   return PLACEHOLDER_RE.test(value) || value.startsWith("secret://");
 }
 
+/**
+ * Heuristic for "this header value is a credential" — used so a token typed
+ * into a normal-looking header is still stored in the keychain rather than
+ * persisted as plaintext config.
+ */
+function looksLikeCredential(name: string, value: string): boolean {
+  if (!value.trim()) return false;
+  if (value.startsWith("secret://")) return false;
+  const n = name.toLowerCase();
+  if (n === "authorization" || /api[_-]?key|token|secret|access[_-]?key/.test(n)) return true;
+  if (/^bearer\s+\S/i.test(value)) return true;
+  return false;
+}
+
 function headersToRows(headers?: Record<string, string>): HeaderRow[] {
   return Object.entries(headers ?? {}).map(([name, value]) => ({
     name,
@@ -98,7 +112,11 @@ function TestButton({ onTest }: { onTest: () => Promise<TestState> }) {
         disabled={state.status === "testing"}
         onClick={async () => {
           setState({ status: "testing" });
-          setState(await onTest());
+          try {
+            setState(await onTest());
+          } catch (err) {
+            setState({ status: "error", detail: err instanceof Error ? err.message : "Test failed" });
+          }
         }}
       >
         {state.status === "testing" ? <Loader2 size={12} className="animate-spin" /> : null}
@@ -365,6 +383,7 @@ export function ToolsSettings() {
   const [addingSvc, setAddingSvc] = useState(false);
   const [editingSvc, setEditingSvc] = useState<string | null>(null);
   const [builderOpen, setBuilderOpen] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     if (activeWorkspaceId) fetchTools(activeWorkspaceId);
@@ -372,32 +391,43 @@ export function ToolsSettings() {
 
   // Persist secret-header values to the OS keychain, replacing the row value
   // with the returned secret:// ref before saving the config.
-  const resolveHeaders = useCallback(async (toolId: string, rows: HeaderRow[]): Promise<Record<string, string>> => {
-    const out: Record<string, string> = {};
-    for (const row of rows) {
-      if (!row.name.trim()) continue;
-      if (row.isSecret && row.value && !row.value.startsWith("secret://")) {
-        // A freshly-entered secret value — store it and keep only the ref.
-        try {
-          const ref = await window.electron?.secrets.set(toolId, row.name.trim(), row.value);
-          out[row.name.trim()] = (ref as string) ?? `secret://${toolId}/${row.name.trim()}`;
-        } catch {
-          out[row.name.trim()] = row.value;
+  const resolveHeaders = useCallback(
+    async (toolType: "mcp" | "service", toolId: string, rows: HeaderRow[]): Promise<Record<string, string>> => {
+      const out: Record<string, string> = {};
+      for (const row of rows) {
+        const name = row.name.trim();
+        if (!name) continue;
+        // Treat anything that looks like a credential as a secret, even if the
+        // user didn't flag it — defense against plaintext tokens in config.
+        const isSecretValue =
+          (row.isSecret || looksLikeCredential(name, row.value)) && !row.value.startsWith("secret://");
+        if (isSecretValue && row.value) {
+          // Store in the keychain and keep ONLY the ref. If storage fails, do
+          // not fall back to persisting the plaintext value — surface the error.
+          const ref = await window.electron?.secrets.set(toolType, toolId, name, row.value);
+          if (!ref) throw new Error(`Could not securely store the secret for "${name}". It was not saved.`);
+          out[name] = ref as string;
+        } else {
+          out[name] = row.value;
         }
-      } else {
-        out[row.name.trim()] = row.value;
       }
-    }
-    return out;
-  }, []);
+      return out;
+    },
+    []
+  );
 
   const handleSaveMcp = useCallback(
     async (s: Partial<McpServerConfig>, rows: HeaderRow[]) => {
       const toolId = s.id ?? id();
-      const headers = await resolveHeaders(toolId, rows);
-      await saveMcpServer({ ...s, id: toolId, workspaceId: activeWorkspaceId ?? undefined, headers });
-      setAddingMcp(false);
-      setEditingMcp(null);
+      setSaveError(null);
+      try {
+        const headers = await resolveHeaders("mcp", toolId, rows);
+        await saveMcpServer({ ...s, id: toolId, workspaceId: activeWorkspaceId ?? undefined, headers });
+        setAddingMcp(false);
+        setEditingMcp(null);
+      } catch (err) {
+        setSaveError(err instanceof Error ? err.message : "Failed to save server.");
+      }
     },
     [activeWorkspaceId, resolveHeaders, saveMcpServer]
   );
@@ -405,16 +435,26 @@ export function ToolsSettings() {
   const handleSaveSvc = useCallback(
     async (s: Partial<CustomServiceConfig>, rows: HeaderRow[]) => {
       const toolId = s.id ?? id();
-      const headers = await resolveHeaders(toolId, rows);
-      await saveCustomService({ ...s, id: toolId, workspaceId: activeWorkspaceId ?? undefined, headers });
-      setAddingSvc(false);
-      setEditingSvc(null);
+      setSaveError(null);
+      try {
+        const headers = await resolveHeaders("service", toolId, rows);
+        await saveCustomService({ ...s, id: toolId, workspaceId: activeWorkspaceId ?? undefined, headers });
+        setAddingSvc(false);
+        setEditingSvc(null);
+      } catch (err) {
+        setSaveError(err instanceof Error ? err.message : "Failed to save service.");
+      }
     },
     [activeWorkspaceId, resolveHeaders, saveCustomService]
   );
 
   return (
     <>
+      {saveError && (
+        <div className="text-[0.714rem] text-[var(--danger)] bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] rounded px-3 py-2">
+          {saveError}
+        </div>
+      )}
       <SettingsGroup
         title="MCP Servers"
         description="Connect the AI to remote MCP servers (SSE or streamable-HTTP). Enable a server here, then attach it per-project from the project Overview."
@@ -451,7 +491,7 @@ export function ToolsSettings() {
               name={server.name}
               subtitle={server.baseUrl}
               enabled={server.enabled}
-              onToggle={(v) => saveMcpServer({ ...server, enabled: v })}
+              onToggle={(v) => { void saveMcpServer({ ...server, enabled: v }).catch((e) => setSaveError(e instanceof Error ? e.message : "Failed to update server.")); }}
               onEdit={() => setEditingMcp(server.id)}
               onDelete={() => deleteMcpServer(server.id)}
             >
@@ -498,7 +538,7 @@ export function ToolsSettings() {
               name={svc.name}
               subtitle={`${svc.method} ${svc.apiUrl}`}
               enabled={svc.enabled}
-              onToggle={(v) => saveCustomService({ ...svc, enabled: v })}
+              onToggle={(v) => { void saveCustomService({ ...svc, enabled: v }).catch((e) => setSaveError(e instanceof Error ? e.message : "Failed to update service.")); }}
               onEdit={() => setEditingSvc(svc.id)}
               onDelete={() => deleteCustomService(svc.id)}
             >

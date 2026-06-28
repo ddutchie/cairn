@@ -34,9 +34,16 @@ type SecretStore = Record<string, string>;
 
 // ── Pure helpers (unit-testable, no Electron) ────────────────────────────────
 
-/** Build the canonical reference token for a tool's named secret. */
-export function secretRef(toolId: string, key: string): string {
-  return `${SECRET_REF_PREFIX}${toolId}/${key}`;
+/** Tool kinds that own secrets. Mirrors ToolType in src/types. */
+export type ToolKind = "mcp" | "service";
+
+/**
+ * Build the canonical reference token for a tool's named secret. The toolType is
+ * part of the key so an MCP server and a custom service that happen to share an
+ * id can never read, overwrite, or delete each other's secrets.
+ */
+export function secretRef(toolType: ToolKind, toolId: string, key: string): string {
+  return `${SECRET_REF_PREFIX}${toolType}:${toolId}/${key}`;
 }
 
 /** True if a string is a secret reference token (not a literal value). */
@@ -45,8 +52,8 @@ export function isSecretRef(value: string): boolean {
 }
 
 /** All reference tokens belonging to a given tool (used for orphan cleanup). */
-export function refsForTool(store: SecretStore, toolId: string): string[] {
-  const prefix = `${SECRET_REF_PREFIX}${toolId}/`;
+export function refsForTool(store: SecretStore, toolType: ToolKind, toolId: string): string[] {
+  const prefix = `${SECRET_REF_PREFIX}${toolType}:${toolId}/`;
   return Object.keys(store).filter((ref) => ref.startsWith(prefix));
 }
 
@@ -65,6 +72,12 @@ const PLACEHOLDER_TOKENS = new Set([
 /** True if a header value is an unfilled secret placeholder. */
 export function isPlaceholder(value: string): boolean {
   return PLACEHOLDER_TOKENS.has((value ?? "").trim());
+}
+
+/** True if a value contains a placeholder token anywhere (e.g. "Bearer <API_KEY>"). */
+const PLACEHOLDER_RE = /<API_KEY>|YOUR_API_KEY|<ACCESS_TOKEN>|<TOKEN>/;
+export function containsPlaceholder(value: string): boolean {
+  return PLACEHOLDER_RE.test(value ?? "");
 }
 
 // ── Persistence (Electron safeStorage) ───────────────────────────────────────
@@ -107,13 +120,13 @@ export function isAvailable(): boolean {
  * the reference token that should be persisted in the tool config's headers.
  * Throws if encryption is unavailable (never silently stores plaintext).
  */
-export function setSecret(toolId: string, key: string, value: string): string {
+export function setSecret(toolType: ToolKind, toolId: string, key: string, value: string): string {
   if (!isAvailable()) {
     throw new Error(
       "Secret storage is unavailable on this system (OS keychain/encryption not accessible). Cannot store credentials securely."
     );
   }
-  const ref = secretRef(toolId, key);
+  const ref = secretRef(toolType, toolId, key);
   const store = readStore();
   store[ref] = safeStorage.encryptString(value).toString("base64");
   writeStore(store);
@@ -121,14 +134,14 @@ export function setSecret(toolId: string, key: string, value: string): string {
 }
 
 /** True if a secret has been stored for this tool + key. No value is revealed. */
-export function hasSecret(toolId: string, key: string): boolean {
-  const ref = secretRef(toolId, key);
+export function hasSecret(toolType: ToolKind, toolId: string, key: string): boolean {
+  const ref = secretRef(toolType, toolId, key);
   return Object.prototype.hasOwnProperty.call(readStore(), ref);
 }
 
 /** Delete a single secret. No-op if absent. */
-export function deleteSecret(toolId: string, key: string): void {
-  const ref = secretRef(toolId, key);
+export function deleteSecret(toolType: ToolKind, toolId: string, key: string): void {
+  const ref = secretRef(toolType, toolId, key);
   const store = readStore();
   if (Object.prototype.hasOwnProperty.call(store, ref)) {
     delete store[ref];
@@ -137,9 +150,9 @@ export function deleteSecret(toolId: string, key: string): void {
 }
 
 /** Delete every secret belonging to a tool. Used when a tool is removed. */
-export function deleteToolSecrets(toolId: string): void {
+export function deleteToolSecrets(toolType: ToolKind, toolId: string): void {
   const store = readStore();
-  const refs = refsForTool(store, toolId);
+  const refs = refsForTool(store, toolType, toolId);
   if (refs.length === 0) return;
   for (const ref of refs) delete store[ref];
   writeStore(store);
@@ -178,6 +191,9 @@ export function resolveSecrets(headers: Record<string, string>): Record<string, 
       const real = getSecretByRef(value);
       if (real !== null) out[name] = real;
       // else: drop the header rather than leak the ref token
+    } else if (isPlaceholder(value) || containsPlaceholder(value)) {
+      // An unfilled placeholder (e.g. "<API_KEY>" or "Bearer <API_KEY>") is a
+      // missing secret, not a literal — drop it rather than send it verbatim.
     } else {
       out[name] = value;
     }

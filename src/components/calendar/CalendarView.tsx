@@ -10,7 +10,7 @@
  * follow-up cards — this component owns the read-only grid + navigation shell.
  */
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { format } from "date-fns";
 import {
@@ -70,7 +70,24 @@ export function CalendarView() {
     useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
   );
 
-  const today = useMemo(() => new Date(), []);
+  // `today` must not be frozen for the component's lifetime, or overdue/today
+  // styling goes stale after midnight. Track a day-key and bump it on an
+  // interval (and on window focus) so `today` recomputes when the date rolls.
+  const [dayKey, setDayKey] = useState(() => new Date().toDateString());
+  useEffect(() => {
+    const tick = () => {
+      const k = new Date().toDateString();
+      setDayKey((prev) => (prev === k ? prev : k));
+    };
+    const interval = setInterval(tick, 60_000);
+    window.addEventListener("focus", tick);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("focus", tick);
+    };
+  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const today = useMemo(() => new Date(), [dayKey]);
 
   const projectCards = useMemo(
     () =>

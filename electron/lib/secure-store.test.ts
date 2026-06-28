@@ -37,8 +37,8 @@ beforeEach(() => {
 
 describe("secure-store pure helpers", () => {
   it("builds and detects reference tokens", () => {
-    const ref = store.secretRef("tool1", "Authorization");
-    expect(ref).toBe("secret://tool1/Authorization");
+    const ref = store.secretRef("mcp", "tool1", "Authorization");
+    expect(ref).toBe("secret://mcp:tool1/Authorization");
     expect(store.isSecretRef(ref)).toBe(true);
     expect(store.isSecretRef("Bearer abc")).toBe(false);
     expect(store.isSecretRef("")).toBe(false);
@@ -57,26 +57,26 @@ describe("secure-store pure helpers", () => {
 
 describe("secure-store persistence round-trip", () => {
   it("set/has/delete a single secret", () => {
-    expect(store.hasSecret("t1", "Authorization")).toBe(false);
-    const ref = store.setSecret("t1", "Authorization", "Bearer xyz");
-    expect(ref).toBe("secret://t1/Authorization");
-    expect(store.hasSecret("t1", "Authorization")).toBe(true);
+    expect(store.hasSecret("mcp", "t1", "Authorization")).toBe(false);
+    const ref = store.setSecret("mcp", "t1", "Authorization", "Bearer xyz");
+    expect(ref).toBe("secret://mcp:t1/Authorization");
+    expect(store.hasSecret("mcp", "t1", "Authorization")).toBe(true);
 
-    store.deleteSecret("t1", "Authorization");
-    expect(store.hasSecret("t1", "Authorization")).toBe(false);
+    store.deleteSecret("mcp", "t1", "Authorization");
+    expect(store.hasSecret("mcp", "t1", "Authorization")).toBe(false);
   });
 
   it("never persists the plaintext value on disk", () => {
-    store.setSecret("t1", "X-Api-Key", "super-secret-123");
+    store.setSecret("service", "t1", "X-Api-Key", "super-secret-123");
     const onDisk = JSON.stringify(virtualFiles);
     expect(onDisk).not.toContain("super-secret-123");
-    expect(onDisk).toContain("secret://t1/X-Api-Key");
+    expect(onDisk).toContain("secret://service:t1/X-Api-Key");
   });
 
   it("resolveSecrets swaps ref tokens for decrypted values, passes literals through", () => {
-    store.setSecret("t1", "Authorization", "Bearer xyz");
+    store.setSecret("mcp", "t1", "Authorization", "Bearer xyz");
     const resolved = store.resolveSecrets({
-      Authorization: store.secretRef("t1", "Authorization"),
+      Authorization: store.secretRef("mcp", "t1", "Authorization"),
       "Content-Type": "application/json",
     });
     expect(resolved).toEqual({
@@ -87,21 +87,52 @@ describe("secure-store persistence round-trip", () => {
 
   it("resolveSecrets drops unresolved refs rather than leaking the token", () => {
     const resolved = store.resolveSecrets({
-      Authorization: "secret://missing/Authorization",
+      Authorization: "secret://mcp:missing/Authorization",
       Accept: "*/*",
     });
     expect(resolved).toEqual({ Accept: "*/*" });
     expect(resolved.Authorization).toBeUndefined();
   });
 
-  it("deleteToolSecrets removes every secret for a tool only", () => {
-    store.setSecret("t1", "A", "a");
-    store.setSecret("t1", "B", "b");
-    store.setSecret("t2", "C", "c");
+  it("resolveSecrets drops unfilled placeholder values", () => {
+    const resolved = store.resolveSecrets({
+      Authorization: "Bearer <API_KEY>",
+      "X-Api-Key": "YOUR_API_KEY",
+      Accept: "application/json",
+    });
+    expect(resolved).toEqual({ Accept: "application/json" });
+  });
 
-    store.deleteToolSecrets("t1");
-    expect(store.hasSecret("t1", "A")).toBe(false);
-    expect(store.hasSecret("t1", "B")).toBe(false);
-    expect(store.hasSecret("t2", "C")).toBe(true);
+  it("deleteToolSecrets removes every secret for a tool only", () => {
+    store.setSecret("mcp", "t1", "A", "a");
+    store.setSecret("mcp", "t1", "B", "b");
+    store.setSecret("mcp", "t2", "C", "c");
+
+    store.deleteToolSecrets("mcp", "t1");
+    expect(store.hasSecret("mcp", "t1", "A")).toBe(false);
+    expect(store.hasSecret("mcp", "t1", "B")).toBe(false);
+    expect(store.hasSecret("mcp", "t2", "C")).toBe(true);
+  });
+
+  it("isolates secrets per { toolType, toolId } even when ids collide", () => {
+    // Same id, different tool type — must not cross-read/overwrite/delete.
+    store.setSecret("mcp", "shared", "Authorization", "mcp-secret");
+    store.setSecret("service", "shared", "Authorization", "svc-secret");
+
+    expect(store.hasSecret("mcp", "shared", "Authorization")).toBe(true);
+    expect(store.hasSecret("service", "shared", "Authorization")).toBe(true);
+
+    // Resolving each ref returns its own value.
+    expect(store.resolveSecrets({ Authorization: store.secretRef("mcp", "shared", "Authorization") })).toEqual({
+      Authorization: "mcp-secret",
+    });
+    expect(store.resolveSecrets({ Authorization: store.secretRef("service", "shared", "Authorization") })).toEqual({
+      Authorization: "svc-secret",
+    });
+
+    // Deleting the mcp tool's secrets leaves the service's intact.
+    store.deleteToolSecrets("mcp", "shared");
+    expect(store.hasSecret("mcp", "shared", "Authorization")).toBe(false);
+    expect(store.hasSecret("service", "shared", "Authorization")).toBe(true);
   });
 });

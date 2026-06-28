@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Sparkles, Send, Loader2, Server, Globe, ShieldAlert } from "lucide-react";
+import { Sparkles, Send, Loader2, Server, Globe, ShieldAlert, X } from "lucide-react";
 import { ModalShell } from "@/components/ui/modal-shell";
 import { Button } from "@/components/ui/button";
 import { id, cn } from "@/lib/utils";
@@ -96,6 +96,14 @@ export function ToolBuilderModal({ workspaceId, onClose }: { workspaceId: string
     window.electron?.toolBuilder?.prompt({ sessionId, workspaceId, message });
   }, [input, busy, sessionId, workspaceId]);
 
+  // Abort an in-flight run. Also clears local streaming state in case a `done`
+  // event is never delivered (e.g. the run hangs), so the modal can be closed.
+  const cancel = useCallback(() => {
+    window.electron?.toolBuilder?.abort(sessionId);
+    streamingRef.current = false;
+    setBusy(false);
+  }, [sessionId]);
+
   return (
     <ModalShell
       onClose={onClose}
@@ -119,9 +127,15 @@ export function ToolBuilderModal({ workspaceId, onClose }: { workspaceId: string
             className={cn(inputCls, "flex-1")}
             disabled={busy}
           />
-          <Button size="sm" onClick={send} disabled={busy || !input.trim()}>
-            {busy ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
-          </Button>
+          {busy ? (
+            <Button size="sm" variant="outline" onClick={cancel}>
+              <X size={13} /> Stop
+            </Button>
+          ) : (
+            <Button size="sm" onClick={send} disabled={!input.trim()}>
+              <Send size={13} />
+            </Button>
+          )}
         </div>
       }
     >

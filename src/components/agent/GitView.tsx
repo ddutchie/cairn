@@ -136,10 +136,11 @@ export function GitView({ cwd }: GitViewProps) {
       const s = await window.electron.git.status(cwd);
       setStatus(s);
       setError(null);
-      // Notify the FileTree when the working-tree file set changes (e.g. a new
-      // untracked file appeared) so it can refresh its directory listing.
+      // Notify the FileTree only when the working-tree file SET changes (a path
+      // added/removed/renamed), not when an existing path merely changes status
+      // (e.g. staged ↔ unstaged) — that doesn't alter the directory listing.
       const sig = [...s.staged, ...s.unstaged, ...s.untracked]
-        .map((f) => `${f.status}:${f.path}`)
+        .map((f) => f.path)
         .sort()
         .join("|");
       if (prevFileSigRef.current !== null && prevFileSigRef.current !== sig) {

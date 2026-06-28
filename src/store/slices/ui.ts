@@ -159,6 +159,10 @@ export interface UISlice extends AppUIState {
   // Last content view before entering chat or search mode
   lastContentView: AppUIState["lastContentView"];
 
+  /** Optional target section for the Settings view (consumed once on open). */
+  settingsSection: string | null;
+  setSettingsSection: (section: string | null) => void;
+
   // Seen features for What's New modal
   seenFeatures: string[];
   markFeatureAsSeen: (id: string) => void;
@@ -194,6 +198,7 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
   activePreviewItem: null,
   chatPanelResizing: false,
   lastContentView: "overview",
+  settingsSection: null,
   seenFeatures: [],
   tutorialActive: false,
   tutorialStepIndex: 0,
@@ -299,7 +304,7 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
       activeProjectId: projects[0]?.id ?? null,
       activeView: "overview",
       activePreviewItem: null,
-      lastContentView: "overview",
+  lastContentView: "overview",
     });
   },
 
@@ -314,6 +319,10 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
     } else {
       set({ activeView: view });
     }
+  },
+
+  setSettingsSection(section) {
+    set({ settingsSection: section });
   },
 
   setActivePreviewItem(item) {

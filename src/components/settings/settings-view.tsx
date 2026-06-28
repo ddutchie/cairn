@@ -29,8 +29,18 @@ import { ToolsSettings } from "./ToolsSettings";
 type SettingsSection = "general" | "ai" | "embeddings" | "agents" | "tools" | "mobile" | "data" | "about" | "shortcuts" | "tags";
 
 export function SettingsView() {
-  const [section, setSection] = useState<SettingsSection>("general");
-  const { workspaces, projects, notes, cards } = useCairnStore(useShallow((s) => ({ workspaces: s.workspaces, projects: s.projects, notes: s.notes, cards: s.cards })));
+  const { workspaces, projects, notes, cards, settingsSection, setSettingsSection } = useCairnStore(useShallow((s) => ({ workspaces: s.workspaces, projects: s.projects, notes: s.notes, cards: s.cards, settingsSection: s.settingsSection, setSettingsSection: s.setSettingsSection })));
+
+  // Honour a requested target section (e.g. "open Tools" from the Overview) as
+  // the initial section, then clear the request so it doesn't override manual
+  // navigation later. Consumed once at mount.
+  const [section, setSection] = useState<SettingsSection>(
+    () => (settingsSection as SettingsSection | null) ?? "general",
+  );
+  React.useEffect(() => {
+    if (settingsSection) setSettingsSection(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="flex flex-col md:flex-row flex-1 min-h-0 overflow-hidden">

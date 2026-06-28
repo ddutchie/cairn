@@ -22,6 +22,43 @@ import * as services from "../lib/custom-services";
 type SaveMcpArgs = Omit<Parameters<typeof q.saveMcpServer>[1], "id"> & { id?: string };
 type SaveServiceArgs = Omit<Parameters<typeof q.saveCustomService>[1], "id"> & { id?: string };
 
+/**
+ * Reject plain-secret header values before they hit SQLite. Only literal
+ * non-secret values or `secret://` refs may be persisted; an unfilled
+ * placeholder is dropped (the UI prompts for the real value, which is stored in
+ * the keychain). This is a defense-in-depth backstop even if a renderer forgets
+ * to route a credential through the secure store.
+ */
+function sanitizeHeaders(headers?: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [name, value] of Object.entries(headers ?? {})) {
+    if (secrets.isSecretRef(value)) {
+      out[name] = value; // already a ref — safe to store
+    } else if (secrets.isPlaceholder(value) || secrets.containsPlaceholder(value)) {
+      // Unfilled placeholder — drop it; the real value belongs in the keychain.
+    } else if (looksLikeBareCredential(name, value)) {
+      throw new Error(
+        `Refusing to store a plaintext credential in header "${name}". Store it via the secure store and pass a secret:// ref instead.`
+      );
+    } else {
+      out[name] = value;
+    }
+  }
+  return out;
+}
+
+/**
+ * Heuristic: an Authorization/api-key header whose value is a non-empty literal
+ * (not a ref, not a placeholder) is almost certainly a real credential.
+ */
+function looksLikeBareCredential(name: string, value: string): boolean {
+  if (!value.trim()) return false;
+  const n = name.toLowerCase();
+  if (n === "authorization" || /api[_-]?key|token|secret|access[_-]?key/.test(n)) return true;
+  if (/^bearer\s+\S/i.test(value)) return true;
+  return false;
+}
+
 export function registerToolsHandlers(db: Database): void {
   // ── MCP servers ──────────────────────────────────────────────────────────
   registerIpcHandle("tools:listMcpServers", (_e, { workspaceId }: { workspaceId: string }) =>
@@ -29,13 +66,13 @@ export function registerToolsHandlers(db: Database): void {
   );
 
   registerIpcHandle("tools:saveMcpServer", (_e, server: SaveMcpArgs) =>
-    handle(() => q.saveMcpServer(db, { ...server, id: server.id ?? newId() }))
+    handle(() => q.saveMcpServer(db, { ...server, id: server.id ?? newId(), headers: sanitizeHeaders(server.headers) }))
   );
 
   registerIpcHandle("tools:deleteMcpServer", (_e, { id }: { id: string }) =>
     handle(() => {
       q.deleteMcpServer(db, id);
-      secrets.deleteToolSecrets(id); // purge any keychain credentials
+      secrets.deleteToolSecrets("mcp", id); // purge any keychain credentials
       void mcpClient.dispose(id); // drop any live connection
     })
   );
@@ -60,13 +97,13 @@ export function registerToolsHandlers(db: Database): void {
   );
 
   registerIpcHandle("tools:saveService", (_e, service: SaveServiceArgs) =>
-    handle(() => q.saveCustomService(db, { ...service, id: service.id ?? newId() }))
+    handle(() => q.saveCustomService(db, { ...service, id: service.id ?? newId(), headers: sanitizeHeaders(service.headers) }))
   );
 
   registerIpcHandle("tools:deleteService", (_e, { id }: { id: string }) =>
     handle(() => {
       q.deleteCustomService(db, id);
-      secrets.deleteToolSecrets(id); // purge any keychain credentials
+      secrets.deleteToolSecrets("service", id); // purge any keychain credentials
     })
   );
 
@@ -112,19 +149,19 @@ export function registerToolsHandlers(db: Database): void {
 
   registerIpcHandle(
     "secrets:set",
-    (_e, { toolId, key, value }: { toolId: string; key: string; value: string }) =>
-      handle(() => secrets.setSecret(toolId, key, value))
+    (_e, { toolType, toolId, key, value }: { toolType: secrets.ToolKind; toolId: string; key: string; value: string }) =>
+      handle(() => secrets.setSecret(toolType, toolId, key, value))
   );
 
   registerIpcHandle(
     "secrets:has",
-    (_e, { toolId, key }: { toolId: string; key: string }) =>
-      handle(() => secrets.hasSecret(toolId, key))
+    (_e, { toolType, toolId, key }: { toolType: secrets.ToolKind; toolId: string; key: string }) =>
+      handle(() => secrets.hasSecret(toolType, toolId, key))
   );
 
   registerIpcHandle(
     "secrets:delete",
-    (_e, { toolId, key }: { toolId: string; key: string }) =>
-      handle(() => secrets.deleteSecret(toolId, key))
+    (_e, { toolType, toolId, key }: { toolType: secrets.ToolKind; toolId: string; key: string }) =>
+      handle(() => secrets.deleteSecret(toolType, toolId, key))
   );
 }

@@ -430,10 +430,12 @@ const api = {
   // ── Secrets (OS keychain). No get() by design — renderer only learns set/not-set.
   secrets: {
     available: () => invoke<boolean>("secrets:available"),
-    set: (toolId: string, key: string, value: string) =>
-      invoke<string>("secrets:set", { toolId, key, value }),
-    has: (toolId: string, key: string) => invoke<boolean>("secrets:has", { toolId, key }),
-    delete: (toolId: string, key: string) => invoke("secrets:delete", { toolId, key }),
+    set: (toolType: "mcp" | "service", toolId: string, key: string, value: string) =>
+      invoke<string>("secrets:set", { toolType, toolId, key, value }),
+    has: (toolType: "mcp" | "service", toolId: string, key: string) =>
+      invoke<boolean>("secrets:has", { toolType, toolId, key }),
+    delete: (toolType: "mcp" | "service", toolId: string, key: string) =>
+      invoke("secrets:delete", { toolType, toolId, key }),
   },
 
   // ── Git operations (Agent Git tab) ────────────

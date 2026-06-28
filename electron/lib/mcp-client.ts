@@ -110,9 +110,20 @@ interface Conn {
   transport: StreamableHTTPClientTransport | SSEClientTransport;
   lastUsed: number;
   idleTimer: NodeJS.Timeout | null;
+  /** Signature of the config used to open this connection (baseUrl/transport/headers). */
+  signature: string;
 }
 
 const conns = new Map<string, Conn>();
+
+/**
+ * Stable signature of the connection-relevant config fields. When any of these
+ * change (server edited in Settings, secret rotated), the cached transport must
+ * be torn down and rebuilt rather than silently reused.
+ */
+function configSignature(cfg: McpServerRuntimeConfig): string {
+  return JSON.stringify({ baseUrl: cfg.baseUrl, transport: cfg.transport, headers: cfg.headers ?? {} });
+}
 
 function makeTransport(cfg: McpServerRuntimeConfig) {
   const url = new URL(cfg.baseUrl);
@@ -155,18 +166,22 @@ async function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise
 
 /** Connect (or reuse a cached connection) to a server. Throws on failure. */
 async function connect(cfg: McpServerRuntimeConfig): Promise<Conn> {
+  const signature = configSignature(cfg);
   const existing = conns.get(cfg.id);
-  if (existing) {
+  if (existing && existing.signature === signature) {
     touch(existing);
     return existing;
   }
+  // Config changed (or no connection yet) — drop any stale transport first.
+  if (existing) await dispose(cfg.id);
+
   const client = new Client(
     { name: "cairn", version: "1.0.0" },
     { capabilities: {} }
   );
   const transport = makeTransport(cfg);
   await withTimeout(client.connect(transport), CONNECT_TIMEOUT_MS, `MCP connect to ${cfg.id}`);
-  const conn: Conn = { client, transport, lastUsed: Date.now(), idleTimer: null };
+  const conn: Conn = { client, transport, lastUsed: Date.now(), idleTimer: null, signature };
   conns.set(cfg.id, conn);
   touch(conn);
   return conn;

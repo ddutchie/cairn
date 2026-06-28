@@ -380,8 +380,16 @@ async function executeSingleTool(
   onUpdate: (output: string) => void,
   toolCtx: AgentToolContext,
   llmConfig: AgentLLMConfig,
+  mode: "plan" | "execute",
+  allowedToolNames: Set<string>,
 ): Promise<string> {
   const { cwd, db, req, workspacePath, sessionId, send, getWin: _getWin } = toolCtx;
+
+  // Reject any tool the model hallucinated that wasn't actually offered this
+  // turn (defends plan mode's read-only contract and stale external names).
+  if (!allowedToolNames.has(name)) {
+    throw new Error(`Tool "${name}" is not available in ${mode} mode.`);
+  }
 
   switch (name) {
     case "read":  return readTool(args as Parameters<typeof readTool>[0],  cwd);
@@ -405,9 +413,20 @@ async function executeSingleTool(
       llmConfig,
     );
     default: {
-      // External tools (MCP servers / custom services) — route by prefix.
+      // External tools (MCP servers / custom services) — execute mode only,
+      // and only when the name was actually offered this turn. executeExternalTool
+      // additionally re-validates workspace/project scope + enabled state.
       if (isExternalToolName(name)) {
-        return executeExternalTool(db, name, args as Record<string, unknown>);
+        if (mode !== "execute") {
+          throw new Error(`External tool "${name}" is not available in plan mode.`);
+        }
+        return executeExternalTool(
+          db,
+          req.workspaceId ?? "",
+          req.projectId ?? "",
+          name,
+          args as Record<string, unknown>,
+        );
       }
       // Delegate to Cairn chat executor
       if (CAIRN_TOOL_NAMES.has(name)) {
@@ -466,6 +485,9 @@ export async function runAgentLoop(
     }
   }
   const allTools = getAllToolDefs(mode, toolCtx.skills ?? [], externalDefs);
+  // The exact set of tool names offered to the model this turn — used to reject
+  // hallucinated / out-of-mode tool calls before execution.
+  const allowedToolNames = new Set(allTools.map((t) => t.function.name));
 
   const {
     baseUrl, model, apiKey, maxSteps, temperature: configTemp,
@@ -797,6 +819,8 @@ export async function runAgentLoop(
           (output) => callbacks.onToolStart(tc.function.name, `${label}: ${output.slice(-80)}`),
           toolCtx,
           llmConfig,
+          mode,
+          allowedToolNames,
         );
       } catch (e) {
         ok = false;

@@ -29,12 +29,13 @@ import {
 } from "./sections";
 
 export function ProjectOverview() {
-  const { activeProjectId, projects, setView, updateProject, chatOpen } = useCairnStore(useShallow((s) => ({
+  const { activeProjectId, projects, setView, updateProject, chatOpen, setSettingsSection } = useCairnStore(useShallow((s) => ({
     activeProjectId: s.activeProjectId,
     projects:        s.projects,
     setView:         s.setView,
     updateProject:   s.updateProject,
     chatOpen:        s.chatOpen,
+    setSettingsSection: s.setSettingsSection,
   })));
   const project = projects.find((p) => p.id === activeProjectId);
   const metrics = useProjectMetrics(activeProjectId);
@@ -326,7 +327,7 @@ export function ProjectOverview() {
         )}
 
         {/* ── Tools (per-project attach) ────────────────────── */}
-        <ToolsAttachPanel projectId={project.id} workspaceId={project.workspaceId} onManage={() => setView("settings")} />
+        <ToolsAttachPanel projectId={project.id} workspaceId={project.workspaceId} onManage={() => { setSettingsSection("tools"); setView("settings"); }} />
 
         {/* ── Board snapshot ────────────────────────────────── */}
         {columns.length > 0 && (

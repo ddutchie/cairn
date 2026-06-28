@@ -316,7 +316,7 @@ async function runToolLoop(
         if (isExternalToolName(call.function.name)) {
           // MCP server / custom service tool — route to the external executor.
           emitToolCall({ tool: call.function.name, label: call.function.name, args, callId: call.id });
-          const output = await executeExternalTool(db, call.function.name, args);
+          const output = await executeExternalTool(db, req.workspaceId ?? "", req.projectId ?? "", call.function.name, args);
           emitToolCallDone?.({ tool: call.function.name, output, callId: call.id });
           result = output;
         } else {

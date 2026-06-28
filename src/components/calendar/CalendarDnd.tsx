@@ -30,15 +30,17 @@ export function DraggableChip({
     data: { card },
   });
 
+  // Spread the drag ref + listeners onto the chip's button itself so there's a
+  // single focusable control per card (no extra wrapper tab stop).
   return (
-    <div
+    <TaskChip
       ref={setNodeRef}
-      {...attributes}
-      {...listeners}
-      className={isDragging ? "opacity-40" : undefined}
-    >
-      <TaskChip card={card} overdue={overdue} onOpen={onOpen} dragging={isDragging} />
-    </div>
+      card={card}
+      overdue={overdue}
+      onOpen={onOpen}
+      dragging={isDragging}
+      dragProps={{ ...attributes, ...listeners }}
+    />
   );
 }
 

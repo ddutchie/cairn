@@ -42,6 +42,8 @@ export const createToolsSlice: StateCreator<CairnStore, [], [], ToolsSlice> = (s
         window.electron.tools.listMcpServers(workspaceId) as Promise<McpServerConfig[]>,
         window.electron.tools.listServices(workspaceId) as Promise<CustomServiceConfig[]>,
       ]);
+      // Guard against a late response overwriting a newer active workspace.
+      if (get().activeWorkspaceId && get().activeWorkspaceId !== workspaceId) return;
       set({ mcpServers, customServices });
     } catch (err) {
       console.error("[tools] fetchTools error", err);
@@ -50,49 +52,45 @@ export const createToolsSlice: StateCreator<CairnStore, [], [], ToolsSlice> = (s
 
   async saveMcpServer(server) {
     if (typeof window === "undefined" || !window.electron) return;
-    try {
-      const saved = await window.electron.tools.saveMcpServer(server) as McpServerConfig;
-      set((s) => ({
-        mcpServers: s.mcpServers.some((m) => m.id === saved.id)
-          ? s.mcpServers.map((m) => (m.id === saved.id ? saved : m))
-          : [...s.mcpServers, saved],
-      }));
-    } catch (err) {
-      console.error("[tools] saveMcpServer error", err);
-    }
+    const saved = await window.electron.tools.saveMcpServer(server) as McpServerConfig;
+    set((s) => ({
+      mcpServers: s.mcpServers.some((m) => m.id === saved.id)
+        ? s.mcpServers.map((m) => (m.id === saved.id ? saved : m))
+        : [...s.mcpServers, saved],
+    }));
   },
 
   async deleteMcpServer(id) {
     if (typeof window === "undefined" || !window.electron) return;
-    set((s) => ({ mcpServers: s.mcpServers.filter((m) => m.id !== id) }));
+    const prev = get().mcpServers;
+    set({ mcpServers: prev.filter((m) => m.id !== id) });
     try {
       await window.electron.tools.deleteMcpServer(id);
     } catch (err) {
       console.error("[tools] deleteMcpServer error", err);
+      set({ mcpServers: prev }); // rollback so the UI stays consistent + retryable
     }
   },
 
   async saveCustomService(service) {
     if (typeof window === "undefined" || !window.electron) return;
-    try {
-      const saved = await window.electron.tools.saveService(service) as CustomServiceConfig;
-      set((s) => ({
-        customServices: s.customServices.some((c) => c.id === saved.id)
-          ? s.customServices.map((c) => (c.id === saved.id ? saved : c))
-          : [...s.customServices, saved],
-      }));
-    } catch (err) {
-      console.error("[tools] saveCustomService error", err);
-    }
+    const saved = await window.electron.tools.saveService(service) as CustomServiceConfig;
+    set((s) => ({
+      customServices: s.customServices.some((c) => c.id === saved.id)
+        ? s.customServices.map((c) => (c.id === saved.id ? saved : c))
+        : [...s.customServices, saved],
+    }));
   },
 
   async deleteCustomService(id) {
     if (typeof window === "undefined" || !window.electron) return;
-    set((s) => ({ customServices: s.customServices.filter((c) => c.id !== id) }));
+    const prev = get().customServices;
+    set({ customServices: prev.filter((c) => c.id !== id) });
     try {
       await window.electron.tools.deleteService(id);
     } catch (err) {
       console.error("[tools] deleteCustomService error", err);
+      set({ customServices: prev }); // rollback
     }
   },
 
@@ -100,6 +98,8 @@ export const createToolsSlice: StateCreator<CairnStore, [], [], ToolsSlice> = (s
     if (typeof window === "undefined" || !window.electron) return;
     try {
       const toolAttachments = await window.electron.tools.listAttachments(projectId) as ToolAttachment[];
+      // Guard against a late response overwriting a newer active project.
+      if (get().activeProjectId && get().activeProjectId !== projectId) return;
       set({ toolAttachments });
     } catch (err) {
       console.error("[tools] fetchToolAttachments error", err);

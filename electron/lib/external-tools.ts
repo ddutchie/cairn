@@ -134,19 +134,27 @@ export function isExternalToolName(name: string): boolean {
 }
 
 /**
- * Execute an external tool by its namespaced name. Loads the owning config from
- * the DB and delegates to the MCP client or service executor. Returns a string
- * result (or error string) — never throws into the loop.
+ * Execute an external tool by its namespaced name. Re-validates that the tool is
+ * in the active scope (workspace-enabled AND attached to the project, globally or
+ * directly) before running it — so a hallucinated or stale namespaced name can't
+ * invoke a tool the loop wasn't actually offered. Returns a string result (or
+ * error string) — never throws into the loop.
  */
 export async function executeExternalTool(
   db: Database.Database,
+  workspaceId: string,
+  projectId: string,
   name: string,
   args: Record<string, unknown>
 ): Promise<string> {
+  const { mcpServers, customServices } = loadScopedConfigs(db, workspaceId, projectId);
+
   const mcpParsed = mcpClient.parseToolName(name);
   if (mcpParsed) {
-    const server = q.getMcpServerById(db, mcpParsed.serverId);
-    if (!server) return `Error: MCP server ${mcpParsed.serverId} no longer exists`;
+    const server = mcpServers.find((s) => s.id === mcpParsed.serverId);
+    if (!server) {
+      return `Error: MCP server ${mcpParsed.serverId} is not enabled/attached for this project`;
+    }
     return mcpClient.callTool(
       { id: server.id, baseUrl: server.baseUrl, transport: server.transport, headers: server.headers },
       name,
@@ -156,8 +164,10 @@ export async function executeExternalTool(
 
   const svcParsed = services.parseServiceToolName(name);
   if (svcParsed) {
-    const svc = q.getCustomServiceById(db, svcParsed.serviceId);
-    if (!svc) return `Error: service ${svcParsed.serviceId} no longer exists`;
+    const svc = customServices.find((s) => s.id === svcParsed.serviceId);
+    if (!svc) {
+      return `Error: service ${svcParsed.serviceId} is not enabled/attached for this project`;
+    }
     return services.callService(
       {
         id: svc.id,

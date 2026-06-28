@@ -71,10 +71,10 @@ export function DayCell({
         {visible.map((card) =>
           renderChip ? renderChip(card) : <TaskChip key={card.id} card={card} onOpen={onOpenCard} />,
         )}
-        {overflow > 0 && (
+        {overflow > 0 && onShowMore && (
           <button
             type="button"
-            onClick={() => onShowMore?.(cell, cards)}
+            onClick={() => onShowMore(cell, cards)}
             className="px-1 py-0.5 text-left text-[0.6rem] font-medium text-[var(--text-tertiary)] rounded hover:bg-[var(--surface-3)] hover:text-[var(--text-primary)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
           >
             +{overflow} more
