@@ -24,8 +24,17 @@ import { UpdateBanner, ErrorToasts } from "@/components/layout/app-chrome";
 import { NewFeatureModal } from "@/components/layout/NewFeatureModal";
 import { AppTutorial } from "@/components/tutorial/AppTutorial";
 import { cn } from "@/lib/utils";
+import { NEW_FEATURES_REGISTRY } from "@/lib/new-features-registry";
 
 export default function Home() {
+  const [pendingTutorial, setPendingTutorial] = useState(false);
+
+  const handleNewFeatureModalClose = () => {
+    if (pendingTutorial) {
+      setPendingTutorial(false);
+      useCairnStore.getState().setTutorialActive(true);
+    }
+  };
   const {
     hydrate,
     hydrateFromElectron,
@@ -294,10 +303,18 @@ export default function Home() {
           <Onboarding
             initialStep={initialStep}
             onComplete={(startTour) => {
-              setOnboardingState(false);
-              if (startTour) {
-                useCairnStore.getState().setTutorialActive(true);
-              }
+              hydrateFromElectron().then(() => {
+                setOnboardingState(false);
+                if (startTour) {
+                  const state = useCairnStore.getState();
+                  const unseen = NEW_FEATURES_REGISTRY.some((f) => !state.seenFeatures.includes(f.id));
+                  if (unseen) {
+                    setPendingTutorial(true);
+                  } else {
+                    state.setTutorialActive(true);
+                  }
+                }
+              });
             }}
           />
         </div>
@@ -361,7 +378,7 @@ export default function Home() {
       <ErrorToasts toasts={toasts} onDismiss={dismiss} />
 
       {/* New Feature Modal (shows on launch if unseen features exist) */}
-      <NewFeatureModal />
+      <NewFeatureModal onClose={handleNewFeatureModalClose} />
 
       {/* Interactive App Tutorial Overlay */}
       <AppTutorial />

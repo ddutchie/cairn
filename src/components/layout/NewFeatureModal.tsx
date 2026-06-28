@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { Sparkles, ChevronLeft, ChevronRight, Check } from "lucide-react";
 import { ModalShell } from "@/components/ui/modal-shell";
-import { NEW_FEATURES_REGISTRY, NewFeature } from "@/lib/new-features-registry";
+import { NEW_FEATURES_REGISTRY } from "@/lib/new-features-registry";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 
@@ -25,12 +25,14 @@ export function NewFeatureModal({ forceOpen = false, onClose }: Props) {
 
   // Determine which features to highlight.
   // If forceOpen (e.g. from Settings), show all features in the registry.
-  // Otherwise, show only the features the user has NOT seen yet.
+  // Otherwise, show only unseen features belonging to the latest version.
   const featuresToShow = React.useMemo(() => {
     if (forceOpen) {
       return NEW_FEATURES_REGISTRY;
     }
-    return NEW_FEATURES_REGISTRY.filter((f) => !seenFeatures.includes(f.id));
+    if (NEW_FEATURES_REGISTRY.length === 0) return [];
+    const latestVersion = NEW_FEATURES_REGISTRY[NEW_FEATURES_REGISTRY.length - 1].version;
+    return NEW_FEATURES_REGISTRY.filter((f) => f.version === latestVersion && !seenFeatures.includes(f.id));
   }, [forceOpen, seenFeatures]);
 
   useEffect(() => {
@@ -133,7 +135,7 @@ export function NewFeatureModal({ forceOpen = false, onClose }: Props) {
             )}
             <button
               onClick={handleNext}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold text-white bg-[var(--accent)] hover:bg-[var(--accent-hover)] transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold text-[var(--accent-fg)] bg-[var(--accent)] hover:bg-[var(--accent-hover)] transition-colors cursor-pointer"
             >
               <span>{isLast ? "Done" : "Next Feature"}</span>
               {isLast ? <Check size={13} /> : <ChevronRight size={13} />}

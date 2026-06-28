@@ -1,6 +1,7 @@
 "use client";
 
-import React from "react";
+import React, { useState, useCallback, useContext, createContext } from "react";
+import { createPortal } from "react-dom";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { FontScale } from "@/store/slices/ui";
@@ -73,6 +74,12 @@ export const MCP_AGENTS = [
 
 export type McpAgentId = (typeof MCP_AGENTS)[number]["id"];
 
+// ── Nav footer context ────────────────────────────────────────────────────────
+// Shell provides a fixed footer div outside the scrollable area. NavRow portals
+// into it so the Back / Next buttons are always pinned at the bottom.
+
+const NavFooterCtx = createContext<HTMLDivElement | null>(null);
+
 // ── Shell layout ──────────────────────────────────────────────────────────────
 
 export function Shell({
@@ -84,41 +91,58 @@ export function Shell({
 }) {
   const idx = PROGRESS_STEPS.indexOf(step);
   const showProgress = idx >= 0;
+  // useState (not useRef) so that NavRow re-renders when the footer mounts.
+  const [footerEl, setFooterEl] = useState<HTMLDivElement | null>(null);
+  const footerCbRef = useCallback((node: HTMLDivElement | null) => setFooterEl(node), []);
 
   return (
-    <div className="flex flex-col items-center justify-center h-full w-full bg-[var(--background)] px-6 py-10">
-      {/* Wordmark */}
-      <div className="mb-8 text-center select-none">
-        <h1
-          className="text-4xl font-semibold text-[var(--text-primary)] tracking-tight mb-1"
-          style={{ fontFamily: "var(--font-display)" }}
-        >
-          Cairn
-        </h1>
-        <p className="text-sm text-[var(--text-tertiary)]">Your personal knowledge base</p>
-      </div>
+    <NavFooterCtx.Provider value={footerEl}>
+      <div className="flex flex-col items-center h-full w-full bg-[var(--background)]">
+        {/* Wordmark + progress — pinned at top */}
+        <div className="flex-shrink-0 pt-10 pb-2 text-center select-none px-6">
+          <h1
+            className="text-4xl font-semibold text-[var(--text-primary)] tracking-tight mb-1"
+            style={{ fontFamily: "var(--font-display)" }}
+          >
+            Cairn
+          </h1>
+          <p className="text-sm text-[var(--text-tertiary)]">Your personal knowledge base</p>
 
-      {/* Progress dots */}
-      {showProgress && (
-        <div className="flex items-center gap-2 mb-6">
-          {PROGRESS_STEPS.map((s, i) => (
-            <div
-              key={s}
-              className={cn(
-                "rounded-full transition-all duration-200",
-                i === idx
-                  ? "w-5 h-1.5 bg-[var(--accent)]"
-                  : i < idx
-                  ? "w-1.5 h-1.5 bg-[var(--accent)] opacity-40"
-                  : "w-1.5 h-1.5 bg-[var(--border)]"
-              )}
-            />
-          ))}
+          {/* Progress dots */}
+          {showProgress && (
+            <div className="flex items-center justify-center gap-2 mt-6">
+              {PROGRESS_STEPS.map((s, i) => (
+                <div
+                  key={s}
+                  className={cn(
+                    "rounded-full transition-all duration-200",
+                    i === idx
+                      ? "w-5 h-1.5 bg-[var(--accent)]"
+                      : i < idx
+                      ? "w-1.5 h-1.5 bg-[var(--accent)] opacity-40"
+                      : "w-1.5 h-1.5 bg-[var(--border)]"
+                  )}
+                />
+              ))}
+            </div>
+          )}
         </div>
-      )}
 
-      {children}
-    </div>
+        {/* Scrollable step content — grid centering avoids the justify-center
+            overflow clipping bug (content no longer cut off at the top). */}
+        <div className="flex-1 min-h-0 w-full overflow-y-auto">
+          <div className="min-h-full grid place-items-center px-6 py-6">
+            {children}
+          </div>
+        </div>
+
+        {/* Fixed nav footer — NavRow portals into this */}
+        <div
+          ref={footerCbRef}
+          className="flex-shrink-0 w-full max-w-md px-6 pb-6 pt-3 mx-auto bg-gradient-to-t from-[var(--background)] via-[var(--background)] to-transparent"
+        />
+      </div>
+    </NavFooterCtx.Provider>
   );
 }
 
@@ -137,8 +161,10 @@ export function NavRow({
   nextDisabled?: boolean;
   nextIcon?: React.ReactNode;
 }) {
-  return (
-    <div className={cn("flex items-center mt-5", onBack ? "justify-between" : "justify-end")}>
+  const footerEl = useContext(NavFooterCtx);
+
+  const content = (
+    <div className={cn("flex items-center", onBack ? "justify-between" : "justify-end")}>
       {onBack && (
         <button
           type="button"
@@ -165,4 +191,11 @@ export function NavRow({
       </button>
     </div>
   );
+
+  // Portal into Shell's fixed footer slot; fall back to inline rendering
+  if (footerEl) {
+    return createPortal(content, footerEl);
+  }
+  return <div className="mt-5">{content}</div>;
 }
+

@@ -51,7 +51,7 @@ export function StepDone({ onBack, onComplete }: Props) {
           {FEATURE_CARDS.map((f) => (
             <div
               key={f.label}
-              className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4 flex flex-col gap-2 hover:border-[var(--accent)]/40 transition-colors"
+              className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4 flex flex-col gap-2 hover:border-[color-mix(in_srgb,var(--accent)_40%,transparent)] transition-colors"
             >
               <div className="flex items-center justify-between">
                 {f.icon}
@@ -66,7 +66,7 @@ export function StepDone({ onBack, onComplete }: Props) {
         </div>
 
         {/* Start quick app tour checkbox */}
-        <label className="flex items-center gap-2.5 px-4 py-3 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] cursor-pointer hover:border-[var(--accent)]/30 transition-all select-none">
+        <label className="flex items-center gap-2.5 px-4 py-3 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] cursor-pointer hover:border-[color-mix(in_srgb,var(--accent)_30%,transparent)] transition-all select-none">
           <input
             type="checkbox"
             checked={startTour}

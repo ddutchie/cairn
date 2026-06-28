@@ -83,8 +83,58 @@ export function AppTutorial() {
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const [tooltipPos, setTooltipPos] = useState({ top: 0, left: 0 });
+  const [tutorialOpenedChat, setTutorialOpenedChat] = useState(false);
+  const prevIndexRef = useRef(tutorialStepIndex);
 
   const currentStep = TUTORIAL_STEPS[tutorialStepIndex];
+
+  // Track the step index history for direction-aware skipping
+  useEffect(() => {
+    prevIndexRef.current = tutorialStepIndex;
+  }, [tutorialStepIndex]);
+
+  // Reset chat opening flag when tutorial concludes
+  useEffect(() => {
+    if (!tutorialActive) {
+      setTutorialOpenedChat(false);
+    }
+  }, [tutorialActive]);
+
+  // Skip steps dynamically if the target elements aren't present in the DOM
+  useEffect(() => {
+    if (!tutorialActive || !currentStep) return;
+
+    let checkAttempts = 0;
+    let timeoutId: number;
+
+    const checkAvailability = () => {
+      const element = document.querySelector(currentStep.selector);
+      if (!element) {
+        if (checkAttempts < 6) {
+          checkAttempts++;
+          timeoutId = window.setTimeout(checkAvailability, 50);
+        } else {
+          const goingBack = tutorialStepIndex < prevIndexRef.current;
+          if (goingBack) {
+            if (tutorialStepIndex > 0) {
+              setTutorialStepIndex(tutorialStepIndex - 1);
+            } else {
+              handleFinish();
+            }
+          } else {
+            if (tutorialStepIndex < TUTORIAL_STEPS.length - 1) {
+              setTutorialStepIndex(tutorialStepIndex + 1);
+            } else {
+              handleFinish();
+            }
+          }
+        }
+      }
+    };
+
+    timeoutId = window.setTimeout(checkAvailability, 250);
+    return () => clearTimeout(timeoutId);
+  }, [tutorialActive, tutorialStepIndex, currentStep]);
 
   // Effect to handle switching views on step changes
   useEffect(() => {
@@ -191,6 +241,7 @@ export function AppTutorial() {
   const handleNext = () => {
     // Custom trigger action for final steps (e.g. toggle chat panel to show toggle element)
     if (tutorialStepIndex === TUTORIAL_STEPS.length - 2 && !chatOpen) {
+      setTutorialOpenedChat(true);
       toggleChat();
     }
 
@@ -210,9 +261,10 @@ export function AppTutorial() {
   const handleFinish = () => {
     setTutorialActive(false);
     // Close chat if we opened it for the tutorial
-    if (chatOpen) {
+    if (chatOpen && tutorialOpenedChat) {
       toggleChat();
     }
+    setTutorialOpenedChat(false);
   };
 
   // Build the clip-path cutout polygon.
@@ -237,7 +289,7 @@ export function AppTutorial() {
     <div className="fixed inset-0 z-[9999] pointer-events-none select-none">
       {/* Backdrop with cutout mask portal */}
       <div
-        className="absolute inset-0 bg-black/60 pointer-events-auto transition-all duration-300"
+        className="absolute inset-0 bg-[color-mix(in_srgb,var(--background)_60%,transparent)] pointer-events-auto transition-all duration-300"
         style={clipPathStyle}
         onClick={handleFinish}
       />
@@ -245,12 +297,13 @@ export function AppTutorial() {
       {/* High-visibility glowing target boundary indicator */}
       {targetRect && (
         <div
-          className="absolute border-2 border-[var(--accent)] rounded-lg pointer-events-none shadow-[0_0_15px_rgba(124,106,247,0.5)] transition-all duration-300"
+          className="absolute border-2 border-[var(--accent)] rounded-lg pointer-events-none transition-all duration-300"
           style={{
             top: targetRect.top - 2,
             left: targetRect.left - 2,
             width: targetRect.width + 4,
             height: targetRect.height + 4,
+            boxShadow: "0 0 15px color-mix(in srgb, var(--accent) 50%, transparent)",
           }}
         />
       )}
@@ -305,7 +358,7 @@ export function AppTutorial() {
             )}
             <button
               onClick={handleNext}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[0.714rem] font-semibold text-white bg-[var(--accent)] hover:bg-[var(--accent-hover)] transition-colors cursor-pointer"
+              className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[0.714rem] font-semibold text-[var(--accent-fg)] bg-[var(--accent)] hover:bg-[var(--accent-hover)] transition-colors cursor-pointer"
             >
               <span>{tutorialStepIndex === TUTORIAL_STEPS.length - 1 ? "Finish" : "Next"}</span>
               <ChevronRight size={11} />
