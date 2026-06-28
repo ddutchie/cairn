@@ -1,6 +1,18 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { describe, it, expect } from "vitest";
-import { createUISlice } from "./ui";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { createUISlice, SEEN_FEATURES_KEY } from "./ui";
+
+// Mock the persistence layer so we can assert markFeatureAsSeen's storage
+// contract (node project has no window, so storage.set is otherwise a no-op).
+const storageSet = vi.fn();
+vi.mock("@/lib/storage", () => ({
+  storage: {
+    get: vi.fn(() => null),
+    set: (...args: unknown[]) => storageSet(...args),
+    delete: vi.fn(),
+    clear: vi.fn(),
+  },
+}));
 
 describe("createUISlice", () => {
   it("initializes with overview as activeView and lastContentView", () => {
@@ -117,6 +129,10 @@ describe("createUISlice", () => {
 // ── Tour / What's New feature state ──────────────────────────────────────────
 
 describe("createUISlice — tour & seen-features state", () => {
+  beforeEach(() => {
+    storageSet.mockClear();
+  });
+
   function setup() {
     let state: any = {};
     const mockSet = (updater: any) => {
@@ -140,6 +156,8 @@ describe("createUISlice — tour & seen-features state", () => {
     const { get } = setup();
     get().markFeatureAsSeen("v2.3.2-onboarding-tour");
     expect(get().seenFeatures).toEqual(["v2.3.2-onboarding-tour"]);
+    // Persists the new array under the seen-features key.
+    expect(storageSet).toHaveBeenLastCalledWith(SEEN_FEATURES_KEY, ["v2.3.2-onboarding-tour"]);
   });
 
   it("markFeatureAsSeen is idempotent for an already-seen id", () => {
@@ -147,6 +165,8 @@ describe("createUISlice — tour & seen-features state", () => {
     get().markFeatureAsSeen("a");
     get().markFeatureAsSeen("a");
     expect(get().seenFeatures).toEqual(["a"]);
+    // Re-persists the unchanged array (no duplicate id).
+    expect(storageSet).toHaveBeenLastCalledWith(SEEN_FEATURES_KEY, ["a"]);
   });
 
   it("markFeatureAsSeen accumulates distinct ids in order", () => {
@@ -156,6 +176,8 @@ describe("createUISlice — tour & seen-features state", () => {
     get().markFeatureAsSeen("a"); // duplicate, ignored
     get().markFeatureAsSeen("c");
     expect(get().seenFeatures).toEqual(["a", "b", "c"]);
+    // Final persisted value matches the in-memory ordered set.
+    expect(storageSet).toHaveBeenLastCalledWith(SEEN_FEATURES_KEY, ["a", "b", "c"]);
   });
 
   it("setTutorialActive(true) activates the tour and resets the step index", () => {

@@ -12,6 +12,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { NewFeature } from "@/lib/new-features-registry";
 
 // ── Mock the store ────────────────────────────────────────────────────────────
 const markFeatureAsSeen = vi.fn();
@@ -22,10 +23,40 @@ vi.mock("@/store", () => ({
     selector({ seenFeatures, markFeatureAsSeen }),
 }));
 
-import { NewFeatureModal } from "./NewFeatureModal";
-import { NEW_FEATURES_REGISTRY } from "@/lib/new-features-registry";
+// ── Mock the registry ─────────────────────────────────────────────────────────
+// Decouple the modal-behavior assertions from the live registry: a stable local
+// fixture means these tests don't break when real release notes are added/changed.
+// Two versions, with the latest (v9.1) holding a single feature so the boot gate
+// surfaces exactly one item — mirroring the real single-latest-feature contract.
+// Built via vi.hoisted so it's available to the hoisted vi.mock factory below.
+const { FIXTURE_REGISTRY } = vi.hoisted(() => {
+  const FEATURE = (id: string, version: string, title: string): NewFeature => ({
+    id,
+    version,
+    title,
+    category: "Test",
+    description: `${title} description`,
+    highlights: [`${title} highlight`],
+  });
+  return {
+    FIXTURE_REGISTRY: [
+      FEATURE("v9.0-alpha", "v9.0", "Alpha Feature"),
+      FEATURE("v9.0-beta", "v9.0", "Beta Feature"),
+      FEATURE("v9.0-gamma", "v9.0", "Gamma Feature"),
+      FEATURE("v9.0-delta", "v9.0", "Delta Feature"),
+      FEATURE("v9.1-latest", "v9.1", "Latest Feature"),
+    ] as NewFeature[],
+  };
+});
 
-const LATEST = NEW_FEATURES_REGISTRY[NEW_FEATURES_REGISTRY.length - 1];
+vi.mock("@/lib/new-features-registry", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/new-features-registry")>();
+  return { ...actual, NEW_FEATURES_REGISTRY: FIXTURE_REGISTRY };
+});
+
+import { NewFeatureModal } from "./NewFeatureModal";
+
+const LATEST = FIXTURE_REGISTRY[FIXTURE_REGISTRY.length - 1];
 
 beforeEach(() => {
   markFeatureAsSeen.mockClear();
@@ -66,7 +97,7 @@ describe("NewFeatureModal", () => {
 
   describe("forceOpen (Settings entrypoint)", () => {
     it("renders even when everything has been seen", () => {
-      seenFeatures = NEW_FEATURES_REGISTRY.map((f) => f.id);
+      seenFeatures = FIXTURE_REGISTRY.map((f) => f.id);
       render(<NewFeatureModal forceOpen />);
       expect(screen.getByRole("heading", { name: /What's New in Cairn/i })).toBeInTheDocument();
     });
@@ -83,13 +114,18 @@ describe("NewFeatureModal", () => {
       const user = userEvent.setup();
       render(<NewFeatureModal forceOpen />);
 
-      const first = NEW_FEATURES_REGISTRY[0];
-      const second = NEW_FEATURES_REGISTRY[1];
+      const first = FIXTURE_REGISTRY[0];
+      const second = FIXTURE_REGISTRY[1];
 
+      // First slide: showing feature[0], Prev is disabled.
       expect(screen.getByText(first.title)).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Previous feature" })).toBeDisabled();
 
       await user.click(screen.getByRole("button", { name: /Next Feature/i }));
+
+      // Second slide: showing feature[1], Prev is now enabled.
       expect(screen.getByText(second.title)).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Previous feature" })).toBeEnabled();
     });
 
     it("jumps to a feature via its pagination dot", async () => {
@@ -98,7 +134,7 @@ describe("NewFeatureModal", () => {
 
       // Dot index 3 → 4th registry feature.
       await user.click(screen.getByRole("button", { name: "Go to feature 4" }));
-      expect(screen.getByText(NEW_FEATURES_REGISTRY[3].title)).toBeInTheDocument();
+      expect(screen.getByText(FIXTURE_REGISTRY[3].title)).toBeInTheDocument();
     });
 
     it("marks every displayed feature seen when Skip All is clicked", async () => {
@@ -109,7 +145,7 @@ describe("NewFeatureModal", () => {
       await user.click(screen.getByRole("button", { name: /Skip All/i }));
 
       // forceOpen shows the whole registry → all ids marked seen.
-      expect(markFeatureAsSeen).toHaveBeenCalledTimes(NEW_FEATURES_REGISTRY.length);
+      expect(markFeatureAsSeen).toHaveBeenCalledTimes(FIXTURE_REGISTRY.length);
       expect(onClose).toHaveBeenCalledTimes(1);
     });
   });

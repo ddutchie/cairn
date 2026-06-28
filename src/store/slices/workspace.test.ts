@@ -4,11 +4,12 @@
  *
  * Focus: the v2.3.2 fix that threads the chosen project icon through, plus the
  * optimistic state (project row + 5 default columns) created synchronously
- * before the IPC round-trip. Runs in the node test env where isElectron() is
- * false, so the IPC branch is skipped and only local state transitions run.
+ * before the IPC round-trip. The first block runs with no window.electron, so
+ * the IPC branch is skipped and only local state transitions run; a second block
+ * stubs window.electron to exercise the desktop replace-placeholders path.
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import { createWorkspaceSlice } from "./workspace";
 
 function setup(initial: any = {}) {
@@ -91,5 +92,67 @@ describe("createProject", () => {
     const a = await get().createProject("ws-1", "A");
     const b = await get().createProject("ws-1", "B");
     expect(a.id).not.toBe(b.id);
+  });
+});
+
+// ── Electron path ─────────────────────────────────────────────────────────────
+// In the desktop runtime createProject performs an atomic IPC call and then
+// replaces the optimistic placeholder columns with the authoritative server
+// rows. The node tests above skip this branch (no window.electron); here we stub
+// it to verify the placeholders are swapped out for server-owned columns.
+
+describe("createProject — Electron path", () => {
+  afterEach(() => {
+    delete (globalThis as any).window;
+  });
+
+  it("replaces the 5 placeholder columns with the server's authoritative rows", async () => {
+    const serverColumns = [
+      { id: "srv-backlog", projectId: "", workspaceId: "ws-1", name: "Backlog", type: "backlog", order: 0 },
+      { id: "srv-todo",    projectId: "", workspaceId: "ws-1", name: "Todo",    type: "todo",    order: 1 },
+      { id: "srv-done",    projectId: "", workspaceId: "ws-1", name: "Done",    type: "done",    order: 2 },
+    ];
+    let createArg: any;
+    const projectCreate = (arg: any) => {
+      createArg = arg;
+      // Server stamps the real project id onto its columns.
+      const columns = serverColumns.map((c) => ({ ...c, projectId: arg.id }));
+      return Promise.resolve({ data: { project: arg, columns } });
+    };
+    (globalThis as any).window = { electron: { project: { create: projectCreate } } };
+
+    const { get } = setup();
+    const proj = await get().createProject("ws-1", "Desktop Project", "Rocket");
+
+    // The IPC call received the optimistic project plus the columns flag.
+    expect(createArg.id).toBe(proj.id);
+    expect(createArg.workspaceId).toBe("ws-1");
+    expect(createArg.withDefaultColumns).toBe(true);
+
+    // Placeholder columns are gone; only the 3 authoritative server rows remain,
+    // and they carry the client project id (client/server ids stay in sync).
+    const cols = get().columns.filter((c: any) => c.projectId === proj.id);
+    expect(cols.map((c: any) => c.id)).toEqual(["srv-backlog", "srv-todo", "srv-done"]);
+    expect(cols.every((c: any) => c.projectId === proj.id)).toBe(true);
+  });
+
+  it("keeps the optimistic placeholders when the server returns no columns", async () => {
+    (globalThis as any).window = {
+      electron: { project: { create: () => Promise.resolve({ data: { columns: [] } }) } },
+    };
+
+    const { get } = setup();
+    const proj = await get().createProject("ws-1", "Fallback Project");
+
+    // No authoritative rows → the 5 optimistic placeholders survive.
+    const cols = get().columns.filter((c: any) => c.projectId === proj.id);
+    expect(cols).toHaveLength(5);
+    expect(cols.map((c: any) => c.type)).toEqual([
+      "backlog",
+      "todo",
+      "in_progress",
+      "review",
+      "done",
+    ]);
   });
 });

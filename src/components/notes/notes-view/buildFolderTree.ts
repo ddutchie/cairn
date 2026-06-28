@@ -41,7 +41,7 @@ export function buildFolderTree(notes: Note[]): { rootNotes: Note[]; folders: Fo
   for (const node of folderMap.values()) {
     if (!node.path.includes("/")) topLevel.push(node);
   }
-  topLevel.sort((a, b) => a.name.localeCompare(b.name));
+  topLevel.sort((a, b) => a.name.localeCompare(b.name, "en", { sensitivity: "base" }));
 
   return { rootNotes, folders: topLevel };
 }

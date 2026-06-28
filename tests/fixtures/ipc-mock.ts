@@ -150,14 +150,20 @@ export const FIXTURE_FLOW = {
  * and during view rendering.
  *
  * Pass the result to `page.addInitScript({ content: buildIpcMock() })`.
+ *
+ * `opts.needsWorkspaceSetup` overrides the default fresh-install probe so the
+ * value is baked into the same synchronous script that defines `window.electron`
+ * — avoiding a race where the app reads the default before a deferred override
+ * runs.
  */
-export function buildIpcMock(): string {
+export function buildIpcMock(opts?: { needsWorkspaceSetup?: boolean }): string {
   // Embed fixture data as JSON so the script is fully self-contained
   const snapshot = JSON.stringify(FIXTURE_SNAPSHOT);
   const graph = JSON.stringify(FIXTURE_GRAPH);
   const flow = JSON.stringify(FIXTURE_FLOW);
   const wsId = JSON.stringify(WS_ID);
   const projId = JSON.stringify(PROJ_ID);
+  const needsSetup = JSON.stringify(opts?.needsWorkspaceSetup ?? false);
 
   return /* js */ `
 (function () {
@@ -166,6 +172,7 @@ export function buildIpcMock(): string {
   const flowData = ${flow};
   const wsId = ${wsId};
   const projId = ${projId};
+  const needsSetup = ${needsSetup};
 
   // No-op that returns a resolved promise (used for write calls)
   const noop = () => Promise.resolve(null);
@@ -197,7 +204,7 @@ export function buildIpcMock(): string {
     // ── Boot sequence ────────────────────────────────────────
     snapshot:              () => Promise.resolve(snap),
     hasData:               () => Promise.resolve(true),
-    needsWorkspaceSetup:   () => Promise.resolve(false),
+    needsWorkspaceSetup:   () => Promise.resolve(needsSetup),
 
     // ── Workspace ─────────────────────────────────────────────
     workspace: {
@@ -295,7 +302,7 @@ export function buildIpcMock(): string {
     revealAssets:          noop,
     selectWorkspaceFolder: () => Promise.resolve(null),
     getWorkspacePath:      () => Promise.resolve("/mock/workspace"),
-    needsWorkspaceSetup:   () => Promise.resolve(false),
+    needsWorkspaceSetup:   () => Promise.resolve(needsSetup),
     setTheme:              noop,
     initWorkspace:         () => Promise.resolve({ requiresRestart: false }),
     relaunch:              noop,

@@ -20,7 +20,7 @@ export function UpdateBanner({
 }) {
   if (!version && !downloaded) return null;
   return (
-    <div className="flex items-center gap-3 px-4 py-2 bg-[var(--accent-dim)] border-b border-[color-mix(in_srgb,var(--accent)_30%,transparent)] flex-shrink-0">
+    <div className="flex items-center gap-3 px-4 h-9 bg-[var(--accent-dim)] border-b border-[color-mix(in_srgb,var(--accent)_30%,transparent)] flex-shrink-0">
       <Download size={13} className="text-[var(--accent)] shrink-0" />
       <span className="text-xs text-[var(--text-secondary)] flex-1">
         {downloaded

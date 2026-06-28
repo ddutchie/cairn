@@ -362,20 +362,11 @@ test.describe("Onboarding wizard", () => {
   test("shows the wizard on a fresh install (needs workspace setup)", async ({ browser }) => {
     const context = await browser.newContext();
     const p = await context.newPage();
-    await p.addInitScript({ content: buildIpcMock() });
-    await p.addInitScript({ content: STORE_ATTACH_SCRIPT });
     // Override the mock to simulate a fresh install: workspace setup required.
-    await p.addInitScript({
-      content: `
-        (function waitForElectron() {
-          if (window.electron) {
-            window.electron.needsWorkspaceSetup = () => Promise.resolve(true);
-          } else {
-            setTimeout(waitForElectron, 0);
-          }
-        })();
-      `,
-    });
+    // Baked into the same synchronous script that defines window.electron so the
+    // app never reads the default `false` before the override applies.
+    await p.addInitScript({ content: buildIpcMock({ needsWorkspaceSetup: true }) });
+    await p.addInitScript({ content: STORE_ATTACH_SCRIPT });
     try {
       await p.goto("/");
       // The choose-folder step heading should render instead of the app shell.

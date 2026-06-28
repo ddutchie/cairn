@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { CairnEvents } from "@/lib/events";
@@ -355,8 +355,17 @@ export default function Home() {
   }
 
   // Main app
+  // Top offset for fixed-position chrome (the chat panel): the title bar
+  // occupies 41px (40px + 1px bottom border), plus the 36px (h-9) update banner
+  // when it's visible. The chat panel anchors to this so it never overlaps the
+  // banner's download button and its header aligns with the Topbar.
+  const updateBannerVisible = !!(updateVersion || updateDownloaded);
+  const chromeTop = 41 + (updateBannerVisible ? 36 : 0);
   return (
-    <main className="flex flex-col h-dvh w-screen overflow-hidden bg-[var(--background)]">
+    <main
+      className="flex flex-col h-dvh w-screen overflow-hidden bg-[var(--background)]"
+      style={{ "--chrome-top": `${chromeTop}px` } as React.CSSProperties}
+    >
       {/* Electron title bar — draggable, clears macOS traffic lights */}
       <TitleBar />
 

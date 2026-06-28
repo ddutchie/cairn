@@ -655,7 +655,7 @@ Launch with `mode: "plan"` to produce a PRD before writing code. Plan Mode restr
 
 ## Tests
 
-Tests live next to the code they cover under `electron/`:
+Tests live next to the code they cover, under both `electron/` (store/lib/MCP logic) and `src/` (store slices, pure libs, and React components):
 
 ```bash
 npm test                  # run all tests

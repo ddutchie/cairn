@@ -5,7 +5,11 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { getUnseenLatestFeatures, type NewFeature } from "./new-features-registry";
+import {
+  getUnseenLatestFeatures,
+  NEW_FEATURES_REGISTRY,
+  type NewFeature,
+} from "./new-features-registry";
 
 const feat = (id: string, version: string): NewFeature => ({
   id,
@@ -75,5 +79,52 @@ describe("getUnseenLatestFeatures", () => {
     ];
     const result = getUnseenLatestFeatures(registry, []);
     expect(result.map((f) => f.id)).toEqual(["actual-latest"]);
+  });
+});
+
+// ── Real registry ordering invariant ──────────────────────────────────────────
+// getUnseenLatestFeatures trusts registry ORDER (last entry = latest version).
+// These checks tie that contract to the actual shared registry the modal and
+// onboarding logic consume, so an out-of-order append is caught here.
+describe("NEW_FEATURES_REGISTRY ordering invariant", () => {
+  const toTuple = (version: string): number[] =>
+    version.replace(/^v/, "").split(".").map((n) => Number.parseInt(n, 10) || 0);
+
+  const cmp = (a: number[], b: number[]): number => {
+    const len = Math.max(a.length, b.length);
+    for (let i = 0; i < len; i++) {
+      const diff = (a[i] ?? 0) - (b[i] ?? 0);
+      if (diff !== 0) return diff;
+    }
+    return 0;
+  };
+
+  it("is non-empty and every entry has a unique id", () => {
+    expect(NEW_FEATURES_REGISTRY.length).toBeGreaterThan(0);
+    const ids = NEW_FEATURES_REGISTRY.map((f) => f.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("is sorted by ascending version (no entry exceeds a later one)", () => {
+    for (let i = 1; i < NEW_FEATURES_REGISTRY.length; i++) {
+      const prev = toTuple(NEW_FEATURES_REGISTRY[i - 1].version);
+      const curr = toTuple(NEW_FEATURES_REGISTRY[i].version);
+      // Equal versions are allowed (multiple features per release).
+      expect(cmp(prev, curr)).toBeLessThanOrEqual(0);
+    }
+  });
+
+  it("ends with the maximum version — the last entry is genuinely the latest", () => {
+    const lastVersion = toTuple(NEW_FEATURES_REGISTRY[NEW_FEATURES_REGISTRY.length - 1].version);
+    for (const f of NEW_FEATURES_REGISTRY) {
+      expect(cmp(toTuple(f.version), lastVersion)).toBeLessThanOrEqual(0);
+    }
+  });
+
+  it("surfaces only features whose version matches the last entry's version", () => {
+    const latestVersion = NEW_FEATURES_REGISTRY[NEW_FEATURES_REGISTRY.length - 1].version;
+    const surfaced = getUnseenLatestFeatures(NEW_FEATURES_REGISTRY, []);
+    expect(surfaced.length).toBeGreaterThan(0);
+    expect(surfaced.every((f) => f.version === latestVersion)).toBe(true);
   });
 });

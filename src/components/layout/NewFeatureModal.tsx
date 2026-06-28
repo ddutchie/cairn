@@ -126,6 +126,7 @@ export function NewFeatureModal({ forceOpen = false, onClose }: Props) {
               <button
                 onClick={handlePrev}
                 disabled={activeIdx === 0}
+                aria-label="Previous feature"
                 className="p-2 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <ChevronLeft size={14} />
