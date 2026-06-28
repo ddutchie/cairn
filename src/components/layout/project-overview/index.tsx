@@ -17,6 +17,7 @@ import type { ProjectStatus, Priority } from "@/types";
 import { useProjectMetrics } from "./useProjectMetrics";
 import { ChatInput, SuggestionItem } from "@/components/chat/ChatInput";
 import { SectionHeader, StatCard, ProgressRing } from "./primitives";
+import { ToolsAttachPanel } from "./ToolsAttachPanel";
 import {
   ColumnBreakdownCard,
   PriorityBreakdownCard,
@@ -323,6 +324,9 @@ export function ProjectOverview() {
             </div>
           </section>
         )}
+
+        {/* ── Tools (per-project attach) ────────────────────── */}
+        <ToolsAttachPanel projectId={project.id} workspaceId={project.workspaceId} onManage={() => setView("settings")} />
 
         {/* ── Board snapshot ────────────────────────────────── */}
         {columns.length > 0 && (
