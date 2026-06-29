@@ -125,7 +125,7 @@ export const FIXTURE_GRAPH = {
     { id: "e1", source: PROJ_ID, target: NOTE_1, type: "project-member" },
     { id: "e2", source: PROJ_ID, target: CARD_1, type: "project-member" },
     { id: "e3", source: NOTE_1,  target: CARD_1, type: "note-card"      },
-    { id: "e4", source: TAG_1,   target: CARD_1, type: "tag-member"     },
+    { id: "e4", source: CARD_1,  target: TAG_1,  type: "tag-member"     },
   ],
 };
 
