@@ -92,7 +92,6 @@ const ROLE_MAP = {
   // ── Visualisation ───────────────────────────────────────────────────────────
   "@xyflow/react":                 ["React Flow",          "Node canvas (Idea Flow)",     "Visualisation"],
   "@dagrejs/dagre":                ["Dagre",               "Graph auto-layout",           "Visualisation"],
-  "react-force-graph-2d":          ["react-force-graph-2d","Force graph (Knowledge Graph)","Visualisation"],
   "d3":                            ["D3",                  "Analytics & graph visualisation","Visualisation"],
   "d3-hierarchy":                  ["d3-hierarchy",        "Radial tree layout",          "Visualisation"],
   "d3-zoom":                       ["d3-zoom",             "SVG pan & zoom",              "Visualisation"],

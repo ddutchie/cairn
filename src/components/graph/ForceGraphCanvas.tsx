@@ -6,10 +6,7 @@ import * as d3 from "d3";
 import type { GraphNode, KnowledgeGraph } from "@/types";
 import { resolveCssVar } from "./analyticsUtils";
 import { useFontScale } from "./analyticsHooks";
-
-// react-force-graph-2d is a CommonJS module with no TS types bundled.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type ForceGraph2DInstance = any;
+import { Tooltip } from "@/components/ui/tooltip";
 
 interface Props {
   graph: KnowledgeGraph;
@@ -19,7 +16,11 @@ interface Props {
   labelMode: "smart" | "all" | "minimal";
   spacing: number;
   semanticThreshold?: number;
+  /** Draw convex-hull outlines around each project cluster. */
+  showHulls?: boolean;
 }
+
+// ── colour helpers ──────────────────────────────────────────────────────────
 
 function hexForType(type: GraphNode["type"]): string {
   const map: Record<string, string> = {
@@ -31,14 +32,12 @@ function hexForType(type: GraphNode["type"]): string {
   return map[type] ?? "#888";
 }
 
-  // Edge colour by relationship type
-
 function edgeColor(edgeType: string): { color: string; opacity: number; dash: boolean } {
   switch (edgeType) {
     case "note-note":      return { color: resolveCssVar("--info"),    opacity: 0.6, dash: false };
     case "note-card":      return { color: resolveCssVar("--success"), opacity: 0.6, dash: false };
     case "tag-member":     return { color: resolveCssVar("--warning"), opacity: 0.5, dash: false };
-    case "project-member": return { color: resolveCssVar("--accent"),  opacity: 0.4, dash: false };
+    case "project-member": return { color: resolveCssVar("--accent"),  opacity: 0.35, dash: false };
     case "flow-edge":      return { color: resolveCssVar("--accent"),  opacity: 0.8, dash: false };
     case "flow-ref":       return { color: resolveCssVar("--accent"),  opacity: 0.5, dash: true  };
     case "co-mention":     return { color: resolveCssVar("--border"),  opacity: 0.5, dash: true  };
@@ -50,153 +49,124 @@ function edgeColor(edgeType: string): { color: string; opacity: number; dash: bo
   }
 }
 
-function toAlpha(hex: string, opacity: number): string {
-  const a = Math.round(opacity * 255).toString(16).padStart(2, "0");
-  return hex.replace(/^#/, "#") + a;
+/** Apply an alpha (0–1) to a hex colour. Pass-through for rgb()/var() strings. */
+function withAlpha(color: string, opacity: number): string {
+  if (!color.startsWith("#")) return color;
+  const a = Math.round(Math.max(0, Math.min(1, opacity)) * 255).toString(16).padStart(2, "0");
+  // normalise #rgb → #rrggbb
+  if (color.length === 4) {
+    const r = color[1], g = color[2], b = color[3];
+    return `#${r}${r}${g}${g}${b}${b}${a}`;
+  }
+  return color.slice(0, 7) + a;
 }
 
-type FgNode = { id?: string; name?: string; nodeType?: string; x?: number; y?: number };
+// ── simulation node/link shapes ──────────────────────────────────────────────
 
-function drawNode(
-  node: FgNode,
-  ctx: CanvasRenderingContext2D,
-  globalScale: number,
-  fs: number,
-  selectedNodeId: string | null,
-  hoveredNodeId: string | null,
-  connectedNodeIds: Set<string> | null,
-  labelMode: "smart" | "all" | "minimal",
-) {
-  const label = node.name ?? "";
-  const isSelected = node.id === selectedNodeId;
-  const isHovered = node.id === hoveredNodeId;
-  const isDimmed = selectedNodeId !== null && node.id !== null && node.id !== undefined && !connectedNodeIds?.has(node.id);
-  const isProject = node.nodeType === "project";
-  const radius = isProject ? 7 : node.nodeType === "tag" ? 4 : 5.5;
-  const x = node.x ?? 0;
-  const y = node.y ?? 0;
-  const color = hexForType((node.nodeType ?? "note") as GraphNode["type"]);
+type SimNode = d3.SimulationNodeDatum & {
+  id: string;
+  title: string;
+  nodeType: GraphNode["type"];
+  projectId?: string;
+};
+type SimLink = d3.SimulationLinkDatum<SimNode> & {
+  edgeType: string;
+  weight: number;
+};
 
-  if (isSelected || isHovered) {
-    const glowOpacity = isSelected ? 0.08 : 0.04;
-    for (let i = 3; i >= 1; i--) {
-      ctx.beginPath();
-      ctx.arc(x, y, radius + i * 3, 0, 2 * Math.PI);
-      ctx.fillStyle = color + Math.round((glowOpacity / i) * 255).toString(16).padStart(2, "0");
-      ctx.fill();
-    }
-  }
+const radiusOf = (n: SimNode) => (n.nodeType === "project" ? 9 : n.nodeType === "tag" ? 4.5 : 6);
 
-  ctx.beginPath();
-  ctx.arc(x, y, radius, 0, 2 * Math.PI);
-  ctx.fillStyle = isSelected ? color : color + (isDimmed ? "30" : "bb");
-  ctx.fill();
-
-  if (isSelected) {
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 2 / globalScale;
-    ctx.stroke();
-  }
-
-  let showLabel = false;
-  if (isProject || isSelected || isHovered) {
-    showLabel = true;
-  } else if (labelMode === "all") {
-    showLabel = globalScale >= 0.7;
-  } else if (labelMode === "smart") {
-    showLabel = globalScale >= 1.4;
-  }
-
-  if (showLabel) {
-    const isHighlight = isSelected || isHovered;
-    const screenPx = (isProject ? 11.5 : 10) * fs;
-    const fontSize = screenPx / globalScale;
-    const maxLen = isHighlight ? 60 : isProject ? 24 : 18;
-    const text = label.length > maxLen ? label.slice(0, maxLen - 1) + "…" : label;
-
-    ctx.font = `${(isProject || isHighlight) ? "600 " : ""}${fontSize}px ui-sans-serif, system-ui, sans-serif`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "top";
-
-    ctx.strokeStyle = resolveCssVar("--background");
-    ctx.lineWidth = 4 / globalScale;
-    ctx.lineJoin = "round";
-    ctx.strokeText(text, x, y + radius + 4 / globalScale);
-
-    if (isHighlight && !isProject) {
-      ctx.fillStyle = resolveCssVar("--accent");
-    } else {
-      ctx.fillStyle = resolveCssVar(isProject ? "--text-primary" : "--text-secondary");
-    }
-
-    ctx.fillText(text, x, y + radius + 4 / globalScale);
-  }
-}
-
-export function ForceGraphCanvas({ graph, selectedNodeId, onNodeClick, onBackgroundClick, labelMode, spacing, semanticThreshold = 1 }: Props) {
+const ZOOM_BTN_CLASS =
+  "w-7 h-7 flex items-center justify-center rounded-md bg-[var(--surface)] border border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors shadow-sm";export function ForceGraphCanvas({
+  graph,
+  selectedNodeId,
+  onNodeClick,
+  onBackgroundClick,
+  labelMode,
+  spacing,
+  semanticThreshold = 1,
+  showHulls = true,
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const fgRef = useRef<ForceGraph2DInstance>(null);
-  const [ForceGraph2D, setForceGraph2D] = useState<ForceGraph2DInstance>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const fs = useFontScale();
+
   const [dims, setDims] = useState({ width: 800, height: 600 });
-  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+  const dimsRef = useRef(dims);
+  // eslint-disable-next-line react-hooks/refs -- keep latest value for ref-only consumers (render loop / fit)
+  dimsRef.current = dims;
   const [hoveredEdgeText, setHoveredEdgeText] = useState<string | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
+  // True until the first real fit-to-view has run, so we don't show a stale
+  // top-left framing while the simulation is still settling.
+  const didInitialFitRef = useRef(false);
+  // Set once the user pans/zooms, so auto-fit stops fighting their navigation.
+  const userInteractedRef = useRef(false);
 
-  // Compute node degrees to dynamically scale individual node repulsion (charge force)
-  const nodeDegrees = useMemo(() => {
-    const degrees: Record<string, number> = {};
-    for (const link of graph.edges) {
-      if (link.type === "semantic" && (link.weight ?? 1) < semanticThreshold) continue;
-      degrees[link.source] = (degrees[link.source] ?? 0) + 1;
-      degrees[link.target] = (degrees[link.target] ?? 0) + 1;
-    }
-    return degrees;
-  }, [graph.edges, semanticThreshold]);
+  // Mutable refs the render loop reads without re-instantiating the simulation
+  const transformRef = useRef<d3.ZoomTransform>(d3.zoomIdentity);
+  const hoveredNodeRef = useRef<string | null>(null);
+  const simRef = useRef<d3.Simulation<SimNode, SimLink> | null>(null);
+  const nodesRef = useRef<SimNode[]>([]);
+  const linksRef = useRef<SimLink[]>([]);
+  const drawRef = useRef<() => void>(() => {});
+  const zoomRef = useRef<d3.ZoomBehavior<HTMLCanvasElement, unknown> | null>(null);
 
-  useEffect(() => {
-    import("react-force-graph-2d").then((mod) => setForceGraph2D(() => mod.default));
+  // ── fit-to-view (stable; reads live state from refs) ──
+  const zoomFit = useCallback((animate = true) => {
+    const canvas = canvasRef.current, zoom = zoomRef.current;
+    if (!canvas || !zoom) return;
+    const nodes = nodesRef.current.filter((n) => n.x != null && n.y != null);
+    if (!nodes.length) return;
+    const { width, height } = dimsRef.current;
+    const xs = nodes.map((n) => n.x!), ys = nodes.map((n) => n.y!);
+    const minX = Math.min(...xs), maxX = Math.max(...xs);
+    const minY = Math.min(...ys), maxY = Math.max(...ys);
+    const gw = maxX - minX || 1, gh = maxY - minY || 1;
+    const pad = 60;
+    const k = Math.max(0.2, Math.min(4, Math.min(
+      (width - pad * 2) / gw,
+      (height - pad * 2) / gh,
+    )));
+    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+    const tr = d3.zoomIdentity
+      .translate(width / 2, height / 2)
+      .scale(k)
+      .translate(-cx, -cy);
+    const sel = d3.select<HTMLCanvasElement, unknown>(canvas);
+    if (animate) sel.transition().duration(400).call(zoom.transform, tr);
+    else sel.call(zoom.transform, tr);
   }, []);
 
-  // Dynamically update D3 forces on spacing changes
-  useEffect(() => {
-    const fg = fgRef.current;
-    if (!fg) return;
+  // Keep latest prop values available to the render loop without re-creating it
+  const propsRef = useRef({ selectedNodeId, labelMode, spacing, semanticThreshold, showHulls });
+  // eslint-disable-next-line react-hooks/refs -- keep latest value for ref-only consumers (render loop / fit)
+  propsRef.current = { selectedNodeId, labelMode, spacing, semanticThreshold, showHulls };
 
-    fg.d3Force("charge")?.strength((node: d3.SimulationNodeDatum) => {
-             const n = node as (d3.SimulationNodeDatum & { id?: string; nodeType?: string });
-             const degree = nodeDegrees[n.id ?? ""] ?? 0;
-      if (degree === 0) return -15; // float unlinked nodes close to center without blasting them off
-      if (degree === 1) return -40 * spacing;
-      const isProject = n.nodeType === "project";
-      const baseCharge = isProject ? -150 : -100;
-      return baseCharge * spacing;
-    });
+  // ── visible edges (semantic threshold) + degree map ──
+  const visibleEdges = useMemo(
+    () => graph.edges.filter((e) => e.type !== "semantic" || (e.weight ?? 1) >= semanticThreshold),
+    [graph.edges, semanticThreshold],
+  );
 
-    if (ForceGraph2D) {
-      fg.d3Force("collide", d3.forceCollide<d3.SimulationNodeDatum>().radius((node: d3.SimulationNodeDatum) => {
-        const n = node as (d3.SimulationNodeDatum & { nodeType?: string });
-        const isProject = n.nodeType === "project";
-        const radius = isProject ? 7 : n.nodeType === "tag" ? 4 : 5.5;
-        return (radius + 15) * spacing;
-      }).iterations(2));
+  const connectedNodeIds = useMemo(() => {
+    if (!selectedNodeId) return null;
+    const ids = new Set<string>([selectedNodeId]);
+    for (const e of visibleEdges) {
+      if (e.source === selectedNodeId) ids.add(e.target);
+      if (e.target === selectedNodeId) ids.add(e.source);
     }
+    return ids;
+  }, [selectedNodeId, visibleEdges]);
+  const connectedRef = useRef(connectedNodeIds);
+  // eslint-disable-next-line react-hooks/refs -- keep latest value for ref-only consumers (render loop / fit)
+  connectedRef.current = connectedNodeIds;
 
+  // Stable fingerprints so the simulation only rebuilds when topology changes
+  const nodeFingerprint = graph.nodes.map((n) => n.id).join(",");
+  const edgeFingerprint = visibleEdges.map((e) => `${e.source}-${e.target}`).join(",");
 
-    fg.d3Force("link")?.distance((link: { edgeType?: string }) => {
-      let baseDist = 35;
-      if (link.edgeType === "project-member") baseDist = 70;
-      if (link.edgeType === "tag-member")     baseDist = 50;
-      return baseDist * spacing;
-    });
-
-    // Centering gravity forces to prevent drifting of unlinked nodes
-    fg.d3Force("x", d3.forceX(0).strength(0.06 * (spacing >= 1 ? spacing : 1)));
-    fg.d3Force("y", d3.forceY(0).strength(0.06 * (spacing >= 1 ? spacing : 1)));
-
-    fg.d3ReheatSimulation();
-  }, [spacing, ForceGraph2D, nodeDegrees]);
-
+  // ── resize observer ──
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -209,204 +179,423 @@ export function ForceGraphCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
     return () => ro.disconnect();
   }, []);
 
-  const handleNodeClick = useCallback(
-    (node: { id?: string }) => {
+  // ── build / rebuild simulation when topology changes ──
+  useEffect(() => {
+    // Preserve positions of nodes that still exist across rebuilds
+    const prevPos = new Map(nodesRef.current.map((n) => [n.id, { x: n.x, y: n.y, vx: n.vx, vy: n.vy }]));
+
+    const nodes: SimNode[] = graph.nodes.map((n) => {
+      const p = prevPos.get(n.id);
+      return {
+        id: n.id,
+        title: n.title,
+        nodeType: n.type,
+        projectId: n.projectId,
+        x: p?.x, y: p?.y, vx: p?.vx, vy: p?.vy,
+      };
+    });
+    const nodeById = new Map(nodes.map((n) => [n.id, n]));
+    const links: SimLink[] = visibleEdges
+      .filter((e) => nodeById.has(e.source) && nodeById.has(e.target))
+      .map((e) => ({ source: e.source, target: e.target, edgeType: e.type, weight: e.weight ?? 1 }));
+
+    nodesRef.current = nodes;
+    linksRef.current = links;
+
+    // degree map — must exist before sim construction (forces read it on first tick)
+    const degree = new Map<string, number>();
+    for (const l of links) {
+      const s = typeof l.source === "object" ? (l.source as SimNode).id : (l.source as string);
+      const t = typeof l.target === "object" ? (l.target as SimNode).id : (l.target as string);
+      degree.set(s, (degree.get(s) ?? 0) + 1);
+      degree.set(t, (degree.get(t) ?? 0) + 1);
+    }
+
+    // project cluster anchors (radial arrangement of project regions)
+    const projects = nodes.filter((n) => n.nodeType === "project");
+    const projIndex = new Map(projects.map((p, i) => [p.id, i]));
+    const clusterAnchor = (n: SimNode): { x: number; y: number } | null => {
+      const pid = n.projectId;
+      if (!pid || !projIndex.has(pid)) return null;
+      const i = projIndex.get(pid)!;
+      const k = Math.max(1, projects.length);
+      const ang = (i / k) * 2 * Math.PI;
+      const R = 230 * propsRef.current.spacing;
+      return { x: Math.cos(ang) * R, y: Math.sin(ang) * R };
+    };
+
+    const chargeFor = (n: SimNode) => {
+      const deg = degree.get(n.id) ?? 0;
+      if (deg === 0) return -20;
+      return (n.nodeType === "project" ? -260 : -130) * propsRef.current.spacing;
+    };
+    const linkDist = (l: SimLink) => {
+      let b = 42;
+      if (l.edgeType === "project-member") b = 64;
+      if (l.edgeType === "tag-member") b = 54;
+      return b * propsRef.current.spacing;
+    };
+    const anchorStrength = (n: SimNode) =>
+      n.nodeType === "project" ? 0.25 : n.projectId ? 0.14 : 0.03;
+
+    const sim = d3.forceSimulation<SimNode>(nodes)
+      .force("charge", d3.forceManyBody<SimNode>().strength(chargeFor))
+      .force("link", d3.forceLink<SimNode, SimLink>(links).id((d) => d.id).distance(linkDist).strength(0.35))
+      .force("collide", d3.forceCollide<SimNode>().radius((n) => (radiusOf(n) + 12) * propsRef.current.spacing).iterations(2))
+      .force("x", d3.forceX<SimNode>((n) => clusterAnchor(n)?.x ?? 0).strength(anchorStrength))
+      .force("y", d3.forceY<SimNode>((n) => clusterAnchor(n)?.y ?? 0).strength(anchorStrength))
+      .alphaDecay(0.025)
+      .velocityDecay(0.4)
+      .on("tick", () => {
+        // Until the user takes control (or the first animated fit completes),
+        // keep the whole graph framed instantly each tick so it never sits
+        // stranded in a corner while positions are still settling.
+        if (!userInteractedRef.current && !didInitialFitRef.current) {
+          zoomFit(false);
+        }
+        drawRef.current();
+      });
+
+    simRef.current = sim;
+    // expose anchor/cluster fns to the spacing-update effect via the sim object
+    (sim as unknown as { _cairn: unknown })._cairn = { chargeFor, linkDist, clusterAnchor, anchorStrength, projects };
+
+    // final animated fit once settled
+    sim.on("end", () => {
+      if (!userInteractedRef.current) zoomFit(true);
+      didInitialFitRef.current = true;
+    });
+
+    return () => { sim.stop(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nodeFingerprint, edgeFingerprint]);
+
+  // ── react to spacing changes without rebuilding the sim ──
+  useEffect(() => {
+    const sim = simRef.current;
+    if (!sim) return;
+    const c = (sim as unknown as { _cairn?: {
+      chargeFor: (n: SimNode) => number;
+      linkDist: (l: SimLink) => number;
+      anchorStrength: (n: SimNode) => number;
+      clusterAnchor: (n: SimNode) => { x: number; y: number } | null;
+    } })._cairn;
+    if (!c) return;
+    (sim.force("charge") as d3.ForceManyBody<SimNode>)?.strength(c.chargeFor);
+    (sim.force("link") as d3.ForceLink<SimNode, SimLink>)?.distance(c.linkDist);
+    (sim.force("collide") as d3.ForceCollide<SimNode>)?.radius((n) => (radiusOf(n) + 12) * spacing);
+    (sim.force("x") as d3.ForceX<SimNode>)?.x((n) => c.clusterAnchor(n)?.x ?? 0);
+    (sim.force("y") as d3.ForceY<SimNode>)?.y((n) => c.clusterAnchor(n)?.y ?? 0);
+    sim.alpha(0.5).restart();
+  }, [spacing]);
+
+  // ── the draw routine ──
+  const draw = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const t = transformRef.current;
+    const { selectedNodeId: sel, labelMode: lm, showHulls: hulls } = propsRef.current;
+    const connected = connectedRef.current;
+    const hovered = hoveredNodeRef.current;
+    const nodes = nodesRef.current;
+    const links = linksRef.current;
+
+    // Fully reset the transform and clear the ENTIRE backing store (in device
+    // pixels) before painting. Clearing in CSS-pixel space after applying the
+    // DPR transform can leave a strip unpainted, causing the smear/half-render.
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.translate(t.x, t.y);
+    ctx.scale(t.k, t.k);
+
+    const bg = resolveCssVar("--background");
+    const accent = resolveCssVar("--accent");
+
+    // ── cluster hulls ──
+    if (hulls) {
+      const projects = nodes.filter((n) => n.nodeType === "project");
+      for (const p of projects) {
+        const members = nodes.filter((n) => n.projectId === p.id && n.x != null && n.y != null);
+        const pts: [number, number][] = members.map((m) => [m.x!, m.y!]);
+        if (p.x != null && p.y != null) pts.push([p.x, p.y]);
+        if (pts.length < 3) continue;
+        const hull = d3.polygonHull(pts);
+        if (!hull) continue;
+        const cx = d3.mean(hull, (d) => d[0]) ?? 0;
+        const cy = d3.mean(hull, (d) => d[1]) ?? 0;
+        const pad = 22;
+        const expanded = hull.map(([x, y]) => {
+          const dx = x - cx, dy = y - cy, m = Math.hypot(dx, dy) || 1;
+          return [x + (dx / m) * pad, y + (dy / m) * pad] as [number, number];
+        });
+        ctx.beginPath();
+        const curve = d3.line().curve(d3.curveCatmullRomClosed.alpha(0.6)).context(ctx);
+        curve(expanded);
+        ctx.fillStyle = withAlpha(accent, 0.05);
+        ctx.strokeStyle = withAlpha(accent, 0.18);
+        ctx.lineWidth = 1.2 / t.k;
+        ctx.fill();
+        ctx.stroke();
+      }
+    }
+
+    // ── edges ──
+    for (const l of links) {
+      const s = l.source as SimNode, tg = l.target as SimNode;
+      if (s.x == null || s.y == null || tg.x == null || tg.y == null) continue;
+      const st = edgeColor(l.edgeType);
+      let op = st.opacity;
+      let w = l.edgeType === "wikilink" ? 1.6 : 1;
+      if (l.edgeType === "semantic" && l.weight < 1) w = 0.5 + l.weight;
+      if (sel) {
+        const on = connected && connected.has(s.id) && connected.has(tg.id);
+        op = on ? Math.max(op, 0.9) : op * 0.1;
+        if (on) w *= 1.4;
+      }
+      ctx.beginPath();
+      ctx.moveTo(s.x, s.y);
+      ctx.lineTo(tg.x, tg.y);
+      ctx.strokeStyle = withAlpha(st.color, op);
+      ctx.lineWidth = w / t.k;
+      ctx.setLineDash(st.dash ? [3 / t.k, 3 / t.k] : []);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+
+    // ── nodes ──
+    for (const n of nodes) {
+      if (n.x == null || n.y == null) continue;
+      const r = radiusOf(n);
+      const col = hexForType(n.nodeType);
+      const isSel = n.id === sel;
+      const isHov = n.id === hovered;
+      const dim = !!sel && connected != null && !connected.has(n.id);
+
+      if (isSel || isHov) {
+        const g = ctx.createRadialGradient(n.x, n.y, r, n.x, n.y, r + 14);
+        g.addColorStop(0, withAlpha(col, 0.35));
+        g.addColorStop(1, withAlpha(col, 0));
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, r + 14, 0, 2 * Math.PI);
+        ctx.fillStyle = g;
+        ctx.fill();
+      }
+
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, r, 0, 2 * Math.PI);
+      ctx.fillStyle = isSel ? col : withAlpha(col, dim ? 0.22 : 0.92);
+      ctx.fill();
+      if (isSel || isHov) {
+        ctx.lineWidth = 1.6 / t.k;
+        ctx.strokeStyle = col;
+        ctx.stroke();
+      }
+
+      // labels
+      const isProject = n.nodeType === "project";
+      let showLabel = false;
+      if (isProject || isSel || isHov) showLabel = true;
+      else if (lm === "all") showLabel = t.k >= 0.7;
+      else if (lm === "smart") showLabel = t.k >= 1.5;
+
+      if (showLabel) {
+        const isHighlight = isSel || isHov;
+        const screenPx = (isProject ? 12 : 10) * fs;
+        const fontSize = screenPx / t.k;
+        const maxLen = isHighlight ? 60 : isProject ? 26 : 18;
+        const text = n.title.length > maxLen ? n.title.slice(0, maxLen - 1) + "…" : n.title;
+        ctx.font = `${(isProject || isHighlight) ? "600 " : ""}${fontSize}px ui-sans-serif, system-ui, sans-serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "top";
+        ctx.lineJoin = "round";
+        ctx.lineWidth = 4 / t.k;
+        ctx.strokeStyle = bg;
+        ctx.strokeText(text, n.x, n.y + r + 4 / t.k);
+        ctx.fillStyle = isHighlight && !isProject
+          ? accent
+          : dim
+            ? withAlpha(resolveCssVar("--text-tertiary"), 0.5)
+            : resolveCssVar(isProject ? "--text-primary" : "--text-secondary");
+        ctx.fillText(text, n.x, n.y + r + 4 / t.k);
+      }
+    }
+
+    ctx.restore();
+  }, [fs]);
+  useEffect(() => { drawRef.current = draw; }, [draw]);
+
+  // ── canvas sizing (DPR-aware) + initial centering ──
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    canvas.width = dims.width * dpr;
+    canvas.height = dims.height * dpr;
+    canvas.style.width = dims.width + "px";
+    canvas.style.height = dims.height + "px";
+    draw();
+  }, [dims, draw]);
+
+  // redraw whenever selection / threshold / hull-toggle / label-mode changes
+  useEffect(() => { draw(); }, [selectedNodeId, semanticThreshold, showHulls, labelMode, draw]);
+
+  // Repaint after a theme change. `resolveCssVar` reads the live computed CSS
+  // custom properties, which only update once the browser has applied the new
+  // `data-theme` attribute on <html> and recomputed styles. Observe that
+  // attribute (covers both the explicit light/dark toggle and OS-driven changes
+  // in "system" mode) and redraw on the next frames, after the recalc — else
+  // the canvas keeps the previous theme's colours (artifacts).
+  useEffect(() => {
+    const root = document.documentElement;
+    let raf1 = 0, raf2 = 0;
+    const repaint = () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+      raf1 = requestAnimationFrame(() => {
+        raf2 = requestAnimationFrame(() => drawRef.current());
+      });
+    };
+    const obs = new MutationObserver((muts) => {
+      if (muts.some((m) => m.attributeName === "data-theme")) repaint();
+    });
+    obs.observe(root, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => {
+      obs.disconnect();
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+    };
+  }, []);
+
+  // ── zoom & pan ──
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const selection = d3.select<HTMLCanvasElement, unknown>(canvas);
+    const zoom = d3.zoom<HTMLCanvasElement, unknown>()
+      .scaleExtent([0.2, 6])
+      .on("zoom", (ev) => { transformRef.current = ev.transform; draw(); })
+      .on("start", (ev) => {
+        // A pointer/wheel-driven zoom means the user has taken control; stop
+        // auto-fitting on subsequent simulation ticks.
+        if (ev.sourceEvent) userInteractedRef.current = true;
+      });
+    zoomRef.current = zoom;
+    selection.call(zoom);
+    // initial centering (instant) — fit happens once positions settle
+    const init = d3.zoomIdentity.translate(dims.width / 2, dims.height / 2).scale(0.85);
+    selection.call(zoom.transform, init);
+    transformRef.current = init;
+    return () => { selection.on(".zoom", null); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── hit testing for hover + click ──
+  const pick = useCallback((mx: number, my: number): SimNode | null => {
+    const t = transformRef.current;
+    const x = (mx - t.x) / t.k;
+    const y = (my - t.y) / t.k;
+    let best: SimNode | null = null;
+    let bd = Infinity;
+    for (const n of nodesRef.current) {
+      if (n.x == null || n.y == null) continue;
+      const d = Math.hypot(n.x - x, n.y - y);
+      const r = radiusOf(n) + 6;
+      if (d < r && d < bd) { bd = d; best = n; }
+    }
+    return best;
+  }, []);
+
+  // pick the nearest semantic edge for tooltip
+  const pickEdge = useCallback((mx: number, my: number): SimLink | null => {
+    const t = transformRef.current;
+    const x = (mx - t.x) / t.k;
+    const y = (my - t.y) / t.k;
+    let best: SimLink | null = null;
+    let bd = 6 / t.k;
+    for (const l of linksRef.current) {
+      if (l.edgeType !== "semantic") continue;
+      const s = l.source as SimNode, e = l.target as SimNode;
+      if (s.x == null || e.x == null) continue;
+      // distance point→segment
+      const dx = e.x! - s.x!, dy = e.y! - s.y!;
+      const len2 = dx * dx + dy * dy || 1;
+      let tt = ((x - s.x!) * dx + (y - s.y!) * dy) / len2;
+      tt = Math.max(0, Math.min(1, tt));
+      const px = s.x! + tt * dx, py = s.y! + tt * dy;
+      const d = Math.hypot(px - x, py - y);
+      if (d < bd) { bd = d; best = l; }
+    }
+    return best;
+  }, []);
+
+  const handleMouseMove = useCallback((ev: React.MouseEvent<HTMLDivElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const mx = ev.clientX - rect.left, my = ev.clientY - rect.top;
+    const node = pick(mx, my);
+    const prevHover = hoveredNodeRef.current;
+    hoveredNodeRef.current = node ? node.id : null;
+    canvas.style.cursor = node ? "pointer" : "grab";
+
+    if (!node) {
+      const edge = pickEdge(mx, my);
+      if (edge) {
+        const s = edge.source as SimNode, tg = edge.target as SimNode;
+        const orig = graph.edges.find((e) =>
+          (e.source === s.id && e.target === tg.id) || (e.source === tg.id && e.target === s.id),
+        );
+        const left = orig?.sourceSectionTitle ? `${s.title} › ${orig.sourceSectionTitle}` : s.title;
+        const right = orig?.targetSectionTitle ? `${tg.title} › ${orig.targetSectionTitle}` : tg.title;
+        setHoveredEdgeText(`${left} ↔ ${right} · ${((edge.weight ?? 1) * 100).toFixed(0)}%`);
+        setTooltipPos({ x: mx + 12, y: my + 12 });
+      } else if (hoveredEdgeText) {
+        setHoveredEdgeText(null);
+      }
+    } else if (hoveredEdgeText) {
+      setHoveredEdgeText(null);
+    }
+
+    if (prevHover !== hoveredNodeRef.current) draw();
+  }, [pick, pickEdge, graph.edges, hoveredEdgeText, draw]);
+
+  const handleClick = useCallback((ev: React.MouseEvent<HTMLDivElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const node = pick(ev.clientX - rect.left, ev.clientY - rect.top);
+    if (node) {
       const found = graph.nodes.find((n) => n.id === node.id);
       if (found) onNodeClick(found);
-    },
-    [graph.nodes, onNodeClick]
-  );
-
-  // Key on stable fingerprints of node/edge IDs — not object identity.
-  // This means selectedNodeId changes (which cause re-renders) never invalidate
-  // the memo and never hand a new graphData object to the library → no re-simulation.
-  const visibleEdges = useMemo(
-    () => graph.edges.filter(
-      (e) => e.type !== "semantic" || (e.weight ?? 1) >= semanticThreshold,
-    ),
-    [graph.edges, semanticThreshold],
-  );
-  const nodeFingerprint = graph.nodes.map((n) => n.id).join(",");
-  const edgeFingerprint = visibleEdges.map((e) => `${e.source}-${e.target}`).join(",");
-  const fgData = useMemo(() => ({
-    nodes: graph.nodes.map((n) => ({
-      id: n.id,
-      name: n.title,
-      nodeType: n.type,
-      val: n.type === "project" ? 3 : n.type === "tag" ? 1.5 : 2,
-    })),
-    links: visibleEdges.map((e) => ({
-      source: e.source,
-      target: e.target,
-      edgeType: e.type,
-      weight: e.weight ?? 1,
-    })),
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [nodeFingerprint, edgeFingerprint]);
-
-  const connectedNodeIds = useMemo(() => {
-    if (!selectedNodeId) return null;
-    const ids = new Set<string>();
-    ids.add(selectedNodeId);
-    for (const e of visibleEdges) {
-      if (e.source === selectedNodeId) ids.add(e.target);
-      if (e.target === selectedNodeId) ids.add(e.source);
+    } else {
+      onBackgroundClick();
+      setHoveredEdgeText(null);
     }
-    return ids;
-  }, [selectedNodeId, visibleEdges]);
+  }, [pick, graph.nodes, onNodeClick, onBackgroundClick]);
 
-  function zoomBy(factor: number) {
-    fgRef.current?.zoom(fgRef.current.zoom() * factor, 300);
-  }
-  function zoomFit() {
-    fgRef.current?.zoomToFit(400, 40);
-  }
-
-  if (!ForceGraph2D) {
-    return (
-      <div ref={containerRef} className="flex-1 flex items-center justify-center">
-        <span className="text-xs text-[var(--text-tertiary)]">Loading graph…</span>
-      </div>
-    );
-  }
+  // ── zoom controls ──
+  const zoomBy = useCallback((factor: number) => {
+    const canvas = canvasRef.current, zoom = zoomRef.current;
+    if (!canvas || !zoom) return;
+    d3.select<HTMLCanvasElement, unknown>(canvas).transition().duration(300).call(zoom.scaleBy, factor);
+  }, []);
 
   return (
     <div
       ref={containerRef}
       className="flex-1 overflow-hidden relative"
-      onMouseMove={(e) => {
-        if (hoveredEdgeText) {
-          const rect = e.currentTarget.getBoundingClientRect();
-          setTooltipPos({ x: e.clientX - rect.left + 12, y: e.clientY - rect.top + 12 });
-        }
-      }}
-      onMouseLeave={() => setHoveredEdgeText(null)}
-    >      <ForceGraph2D
-        ref={fgRef}
-        width={dims.width}
-        height={dims.height}
-        graphData={fgData}
-        nodeId="id"
-        nodeLabel=""
-        nodeVal="val"
-        nodeColor={(node: { id?: string; nodeType?: string }) => {
-          const type = (node.nodeType ?? "note") as GraphNode["type"];
-          const isSelected = node.id === selectedNodeId;
-          const isDimmed = selectedNodeId !== null && node.id !== null && node.id !== undefined && !connectedNodeIds?.has(node.id);
-          const base = hexForType(type);
-          if (isSelected) return base;
-          if (isDimmed) return base + "30";
-          return base + "bb";
-        }}
-        nodeRelSize={5}
-        linkColor={(link: { source?: { id?: string } | string; target?: { id?: string } | string; edgeType?: string }) => {
-          const srcId = typeof link.source === "object" ? link.source?.id : link.source;
-          const tgtId = typeof link.target === "object" ? link.target?.id : link.target;
-          const isConnected = selectedNodeId && (srcId === selectedNodeId || tgtId === selectedNodeId);
-          const { color, opacity } = edgeColor(link.edgeType ?? "");
-          if (selectedNodeId) {
-            return isConnected
-              ? toAlpha(color, Math.max(opacity, 0.9))
-              : toAlpha(color, opacity * 0.12);
-          }
-          return toAlpha(color, opacity);
-        }}
-        linkWidth={(link: { source?: { id?: string } | string; target?: { id?: string } | string; edgeType?: string; weight?: number }) => {
-          const srcId = typeof link.source === "object" ? link.source?.id : link.source;
-          const tgtId = typeof link.target === "object" ? link.target?.id : link.target;
-          const isConnected = selectedNodeId && (srcId === selectedNodeId || tgtId === selectedNodeId);
-          if (isConnected) return 2.5;
-          if (link.edgeType === "flow-edge") return 2;
-          if (link.edgeType === "wikilink") return 2;
-          if (link.weight != null && link.weight < 1) return 0.5 + link.weight * 1.0;
-          return 1;
-        }}
-        linkLineDash={(link: { edgeType?: string }) =>
-          edgeColor(link.edgeType ?? "").dash ? [3, 3] : null
-        }
-        linkDirectionalArrowLength={(link: { edgeType?: string }) =>
-          link.edgeType === "flow-edge" || link.edgeType === "wikilink" ? 4 : 0
-        }
-        linkDirectionalArrowRelPos={1}
-        onNodeClick={handleNodeClick}
-        onBackgroundClick={() => { onBackgroundClick(); setHoveredEdgeText(null); }}
-        onLinkClick={(link: { source?: { id?: string } | string; target?: { id?: string } | string; edgeType?: string }) => {
-          if (link.edgeType !== "semantic") return;
-          const tgtId = typeof link.target === "object" ? link.target?.id : link.target;
-          const found = graph.nodes.find((n) => n.id === tgtId);
-          if (found) onNodeClick(found);
-        }}
-        onNodeHover={(node: { id?: string } | null) => {
-          setHoveredNodeId(node ? node.id ?? null : null);
-          setHoveredEdgeText(null);
-          if (containerRef.current) {
-            containerRef.current.style.cursor = node ? "pointer" : "default";
-          }
-        }}
-        onLinkHover={(link: { source?: { id?: string; name?: string }; target?: { id?: string; name?: string }; edgeType?: string; weight?: number } | null) => {
-          if (!link || link.edgeType !== "semantic") { setHoveredEdgeText(null); return; }
-          const srcId = typeof link.source === "object" ? link.source?.id ?? "" : "";
-          const tgtId = typeof link.target === "object" ? link.target?.id ?? "" : "";
-          const srcName = typeof link.source === "object" ? link.source?.name ?? "" : "";
-          const tgtName = typeof link.target === "object" ? link.target?.name ?? "" : "";
-          const edge = graph.edges.find((e) =>
-            (e.source === srcId && e.target === tgtId) || (e.source === tgtId && e.target === srcId),
-          );
-          const srcSec = edge?.sourceSectionTitle;
-          const tgtSec = edge?.targetSectionTitle;
-          const left = srcSec ? `${srcName} › ${srcSec}` : srcName;
-          const right = tgtSec ? `${tgtName} › ${tgtSec}` : tgtName;
-          setHoveredEdgeText(`${left} ↔ ${right} · ${((link.weight ?? 1) * 100).toFixed(0)}%`);
-        }}
-        nodeCanvasObject={(
-          node: FgNode,
-          ctx: CanvasRenderingContext2D,
-          globalScale: number
-        ) => {
-          if (node.id === selectedNodeId || node.id === hoveredNodeId) return;
-          drawNode(node, ctx, globalScale, fs, selectedNodeId, hoveredNodeId, connectedNodeIds, labelMode);
-        }}
-        nodeCanvasObjectMode={() => "replace"}
-        onRenderFramePost={(ctx: CanvasRenderingContext2D, globalScale: number) => {
-          for (const node of fgData.nodes) {
-            if (node.id === selectedNodeId || node.id === hoveredNodeId) {
-              drawNode(node, ctx, globalScale, fs, selectedNodeId, hoveredNodeId, connectedNodeIds, labelMode);
-            }
-          }
-        }}
-        cooldownTicks={150}
-        d3AlphaDecay={0.03}
-        d3VelocityDecay={0.4}
-        onEngineStart={() => {
-          const fg = fgRef.current;
-          if (!fg) return;
-          fg.d3Force("charge")?.strength((node: d3.SimulationNodeDatum) => {
-            const n = node as (d3.SimulationNodeDatum & { id?: string; nodeType?: string });
-            const degree = nodeDegrees[n.id ?? ""] ?? 0;
-            if (degree === 0) return -15;
-            if (degree === 1) return -40 * spacing;
-            const isProject = n.nodeType === "project";
-            const baseCharge = isProject ? -150 : -100;
-            return baseCharge * spacing;
-          });
-          fg.d3Force("collide", d3.forceCollide<d3.SimulationNodeDatum>().radius((node: d3.SimulationNodeDatum) => {
-            const n = node as (d3.SimulationNodeDatum & { nodeType?: string });
-            const isProject = n.nodeType === "project";
-            const radius = isProject ? 7 : n.nodeType === "tag" ? 4 : 5.5;
-            return (radius + 15) * spacing;
-          }).iterations(2));
-          fg.d3Force("link")?.distance((link: d3.SimulationLinkDatum<d3.SimulationNodeDatum>) => {
-            const l = link as (d3.SimulationLinkDatum<d3.SimulationNodeDatum> & { edgeType?: string });
-            let baseDist = 35;
-            if (l.edgeType === "project-member") baseDist = 70;
-            if (l.edgeType === "tag-member")     baseDist = 50;
-            return baseDist * spacing;
-          });
-          fg.d3Force("x", d3.forceX(0).strength(0.06 * (spacing >= 1 ? spacing : 1)));
-          fg.d3Force("y", d3.forceY(0).strength(0.06 * (spacing >= 1 ? spacing : 1)));
-        }}
-        onEngineStop={() => fgRef.current?.zoomToFit(400, 40)}
-      />
+      onMouseMove={handleMouseMove}
+      onMouseLeave={() => { hoveredNodeRef.current = null; setHoveredEdgeText(null); draw(); }}
+      onClick={handleClick}
+    >
+      <canvas ref={canvasRef} className="block" />
 
       {hoveredEdgeText && (
         <div
@@ -419,21 +608,33 @@ export function ForceGraphCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
 
       {/* Zoom controls */}
       <div className="absolute bottom-4 right-4 flex flex-col gap-1">
-        {/* eslint-disable-next-line react-hooks/refs */}
-        {[
-          { icon: <ZoomIn size={13} />, action: () => zoomBy(1.4), tip: "Zoom in" },
-          { icon: <ZoomOut size={13} />, action: () => zoomBy(1 / 1.4), tip: "Zoom out" },
-          { icon: <Maximize2 size={13} />, action: zoomFit, tip: "Fit" },
-        ].map(({ icon, action, tip }) => (
+        <Tooltip content="Zoom in" side="left">
           <button
-            key={tip}
-            onClick={action}
-            title={tip}
-            className="w-7 h-7 flex items-center justify-center rounded-md bg-[var(--surface)] border border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors shadow-sm"
+            onClick={(e) => { e.stopPropagation(); zoomBy(1.4); }}
+            aria-label="Zoom in"
+            className={ZOOM_BTN_CLASS}
           >
-            {icon}
+            <ZoomIn size={13} />
           </button>
-        ))}
+        </Tooltip>
+        <Tooltip content="Zoom out" side="left">
+          <button
+            onClick={(e) => { e.stopPropagation(); zoomBy(1 / 1.4); }}
+            aria-label="Zoom out"
+            className={ZOOM_BTN_CLASS}
+          >
+            <ZoomOut size={13} />
+          </button>
+        </Tooltip>
+        <Tooltip content="Fit all" side="left">
+          <button
+            onClick={(e) => { e.stopPropagation(); zoomFit(true); }}
+            aria-label="Fit all"
+            className={ZOOM_BTN_CLASS}
+          >
+            <Maximize2 size={13} />
+          </button>
+        </Tooltip>
       </div>
     </div>
   );

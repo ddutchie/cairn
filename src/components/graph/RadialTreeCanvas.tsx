@@ -1,12 +1,10 @@
 "use client";
 
-import React, { useRef, useEffect, useCallback, useState } from "react";
-import { ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
-import * as d3Hierarchy from "d3-hierarchy";
-import * as d3Zoom from "d3-zoom";
-import * as d3Selection from "d3-selection";
-import type { GraphNode, GraphEdge, KnowledgeGraph } from "@/types";
-import { resolveCssVar as resolveVar } from "./analyticsUtils";
+import React, { useRef, useEffect, useCallback, useState, useMemo } from "react";
+import { ChevronLeft } from "lucide-react";
+import * as d3 from "d3";
+import type { GraphNode, KnowledgeGraph } from "@/types";
+import { resolveCssVar } from "./analyticsUtils";
 import { useFontScale } from "./analyticsHooks";
 
 interface Props {
@@ -14,14 +12,25 @@ interface Props {
   selectedNodeId: string | null;
   onNodeClick: (node: GraphNode) => void;
   onBackgroundClick: () => void;
+  // Kept for API compatibility with KnowledgeGraphView; the sunburst drills in
+  // rather than showing every label / cross-edge, so labelMode and
+  // semanticThreshold have no effect here.
   labelMode: "smart" | "all" | "minimal";
   spacing: number;
   semanticThreshold?: number;
 }
 
+const TAGS_BRANCH_ID = "__tags__";
+const ROOT_ID = "__workspace__";
+
 type HNode = { id: string; title: string; type: string; children?: HNode[] };
 
-function buildHierarchy(graph: KnowledgeGraph) {
+/**
+ * Build a clean hierarchy for the sunburst:
+ *   root → projects → (notes | cards)
+ *   root → "Tags" branch → tags (each tag once, shared across the workspace)
+ */
+function buildHierarchy(graph: KnowledgeGraph): HNode {
   const projects = graph.nodes.filter((n) => n.type === "project");
   const byProject = new Map<string, HNode>();
 
@@ -32,477 +41,518 @@ function buildHierarchy(graph: KnowledgeGraph) {
   for (const n of graph.nodes) {
     if (n.type !== "note" && n.type !== "card") continue;
     const parent = n.projectId ? byProject.get(n.projectId) : null;
-    const child: HNode = { id: n.id, title: n.title, type: n.type };
-    if (parent) parent.children!.push(child);
+    if (parent) parent.children!.push({ id: n.id, title: n.title, type: n.type });
   }
 
   const tagNodes = graph.nodes.filter((n) => n.type === "tag");
-  const tagEdges = graph.edges.filter((e) => e.type === "tag-member");
-  for (const tag of tagNodes) {
-    const memberIds = new Set(tagEdges.filter((e) => e.target === tag.id).map((e) => e.source));
-    const projectsUsingTag = new Set<string>();
-    for (const node of graph.nodes) {
-      if (memberIds.has(node.id) && node.projectId) projectsUsingTag.add(node.projectId);
-    }
-    for (const pid of projectsUsingTag) {
-      const proj = byProject.get(pid);
-      if (proj) proj.children!.push({ id: `${tag.id}:${pid}`, title: tag.title, type: "tag" });
-    }
+  const children: HNode[] = [...byProject.values()];
+  if (tagNodes.length) {
+    children.push({
+      id: TAGS_BRANCH_ID,
+      title: "Tags",
+      type: "branch",
+      children: tagNodes.map((t) => ({ id: t.id, title: t.title, type: "tag" })),
+    });
   }
 
-  return {
-    id: "__workspace__",
-    title: "Workspace",
-    type: "workspace",
-    children: [...byProject.values()],
-  } as HNode;
+  return { id: ROOT_ID, title: "Workspace", type: "workspace", children };
 }
 
 function colorForType(type: string): string {
   switch (type) {
-    case "project":   return resolveVar("--accent");
-    case "note":      return resolveVar("--info");
-    case "card":      return resolveVar("--success");
-    case "tag":       return resolveVar("--warning");
-    case "workspace": return resolveVar("--text-secondary");
-    default:          return resolveVar("--text-tertiary");
+    case "project":   return resolveCssVar("--accent");
+    case "note":      return resolveCssVar("--info");
+    case "card":      return resolveCssVar("--success");
+    case "tag":       return resolveCssVar("--warning");
+    case "branch":    return resolveCssVar("--text-secondary");
+    case "workspace": return resolveCssVar("--text-secondary");
+    default:          return resolveCssVar("--text-tertiary");
   }
 }
 
-// Edge colour for cross-edges
-function crossEdgeColor(type: string): string {
-  switch (type) {
-    case "note-note":  return resolveVar("--info");
-    case "note-card":  return resolveVar("--success");
-    case "flow-edge":  return resolveVar("--accent");
-    case "flow-ref":   return resolveVar("--accent");
-    case "semantic":   return resolveVar("--accent");
-    default:           return resolveVar("--accent");
+/** Apply an alpha (0–1) to a hex colour. Pass-through for rgb()/var() strings. */
+function withAlpha(color: string, opacity: number): string {
+  if (!color.startsWith("#")) return color;
+  const a = Math.round(Math.max(0, Math.min(1, opacity)) * 255).toString(16).padStart(2, "0");
+  if (color.length === 4) {
+    const r = color[1], g = color[2], b = color[3];
+    return `#${r}${r}${g}${g}${b}${b}${a}`;
   }
+  return color.slice(0, 7) + a;
 }
 
-export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgroundClick, labelMode, spacing, semanticThreshold = 1 }: Props) {
-  const svgRef = useRef<SVGSVGElement>(null);
-  const gRef = useRef<SVGGElement>(null);
-  const zoomRef = useRef<d3Zoom.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
-  const fs = useFontScale();
-  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
-  const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
+const INNER_R = 38;
+// When drilled into a branch the leaves fill a single wide ring; pushing the
+// inner edge out makes each wedge's inner arc wide enough to host a label.
+const INNER_R_FOCUSED = 140;
+
+type Arc = { x0: number; x1: number; y0: number; y1: number };
+type PNode = d3.HierarchyRectangularNode<HNode>;
+
+export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgroundClick, spacing }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const fs = useFontScale();
 
-  const labelModeRef = useRef(labelMode);
-  const selectedNodeIdRef = useRef(selectedNodeId);
-  const hoveredNodeIdRef = useRef(hoveredNodeId);
+  const [dims, setDims] = useState({ width: 800, height: 600 });
+  const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
+  // Breadcrumb label of the focused branch (null = at workspace root).
+  const [focusLabel, setFocusLabel] = useState<string | null>(null);
 
-  // Synchronise state values to refs on every render to ensure zoom callback has access
-  // without triggering a full Zoom re-initialisation which would reset zoom/pan coordinates.
-  useEffect(() => {
-    labelModeRef.current = labelMode;
-    selectedNodeIdRef.current = selectedNodeId;
-    hoveredNodeIdRef.current = hoveredNodeId;
-  });
-
-  const renderTree = useCallback(() => {
-    const svg = svgRef.current;
-    const g = gRef.current;
-    if (!svg || !g) return;
-
-    const width = svg.clientWidth || 800;
-    const height = svg.clientHeight || 600;
-    // Scale radial tree radius with spacing (where 1.2 is default)
-    const radius = (Math.min(width, height) / 2 - 100) * (spacing / 1.2);
-
-    d3Selection.select(g).selectAll("*").remove();
-
-    const hierarchyData = buildHierarchy(graph);
-    const root = d3Hierarchy.hierarchy(hierarchyData);
-
-    const tree = d3Hierarchy.tree<typeof hierarchyData>()
-      .size([2 * Math.PI, radius])
-      .separation((a, b) => (a.parent === b.parent ? 1 : 2) / a.depth);
-
-    tree(root);
-
-    const gSel = d3Selection.select(g);
-
-    // Build node map for cross-edge lookups
-    const treeNodeMap = new Map<string, d3Hierarchy.HierarchyPointNode<typeof hierarchyData>>();
-    root.each((d) => {
-      const id = (d.data as { id: string }).id;
-      const baseId = id.includes(":") ? id.split(":")[0] : id;
-      treeNodeMap.set(baseId, d as d3Hierarchy.HierarchyPointNode<typeof hierarchyData>);
-    });
-
-    function polar2cart(angle: number, r: number): [number, number] {
-      return [r * Math.cos(angle - Math.PI / 2), r * Math.sin(angle - Math.PI / 2)];
-    }
-
-    function showEdgeTooltip(event: MouseEvent, edge: GraphEdge) {
-      const container = containerRef.current;
-      if (!container) return;
-      const rect = container.getBoundingClientRect();
-      const srcName = nodeTitleMap.get(edge.source) ?? edge.source;
-      const tgtName = nodeTitleMap.get(edge.target) ?? edge.target;
-      const left = edge.sourceSectionTitle ? `${srcName} › ${edge.sourceSectionTitle}` : srcName;
-      const right = edge.targetSectionTitle ? `${tgtName} › ${edge.targetSectionTitle}` : tgtName;
-      const pct = ((edge.weight ?? 1) * 100).toFixed(0);
-      setTooltip({
-        x: event.clientX - rect.left + 12,
-        y: event.clientY - rect.top + 12,
-        text: `${left} ↔ ${right} · ${pct}%`,
-      });
-    }
-
-    // Cross-edge chords — more visible, coloured by type
-    const crossEdges = graph.edges.filter(
-      (e) => !["project-member", "tag-member"].includes(e.type)
-        && (e.type !== "semantic" || (e.weight ?? 1) >= semanticThreshold)
-    );
-
-    // Prioritise semantic and wikilink edges so they render on top
-    crossEdges.sort((a, b) => {
-      const rank = (t: string) => t === "semantic" ? 0 : t === "wikilink" ? 1 : 2;
-      return rank(a.type) - rank(b.type);
-    });
-
-    const nodeTitleMap = new Map(graph.nodes.map((n) => [n.id, n.title] as const));
-
-    // Build set of connected node IDs for highlight/dim
-    const selId = selectedNodeId;
-    const connectedIds = selId ? new Set<string>() : null;
-    if (connectedIds && selId) {
-      connectedIds.add(selId);
-      for (const e of crossEdges) {
-        if (e.source === selId) connectedIds.add(e.target);
-        if (e.target === selId) connectedIds.add(e.source);
-      }
-    }
-
-    for (const edge of crossEdges) {
-      const sn = treeNodeMap.get(edge.source) as d3Hierarchy.HierarchyPointNode<HNode> | undefined;
-      const tn = treeNodeMap.get(edge.target) as d3Hierarchy.HierarchyPointNode<HNode> | undefined;
-      if (!sn || !tn) continue;
-      const [x1, y1] = polar2cart(sn.x, sn.y);
-      const [x2, y2] = polar2cart(tn.x, tn.y);
-      const color = crossEdgeColor(edge.type);
-      const isConnected = selectedNodeId && (edge.source === selectedNodeId || edge.target === selectedNodeId);
-      const isSemantic = edge.type === "semantic";
-      let opacity = isSemantic ? 0.5 : ["co-mention", "keyword", "assignee"].includes(edge.type) ? 0.1 : 0.2;
-      let width = isSemantic ? 1.2 : 0.75;
-      if (selectedNodeId) {
-        if (isConnected) {
-          opacity = 0.85;
-          width = 2;
-        } else {
-          opacity = opacity * 0.12;
-        }
-      }
-
-      gSel.append("line")
-        .attr("x1", x1).attr("y1", y1)
-        .attr("x2", x2).attr("y2", y2)
-        .attr("stroke", color)
-        .attr("stroke-width", width)
-        .attr("stroke-opacity", opacity)
-        .attr("stroke-dasharray", "3,4")
-        .style("cursor", edge.type === "semantic" ? "pointer" : "default")
-        .on("click", function(event: MouseEvent) {
-          if (edge.type !== "semantic") return;
-          event.stopPropagation();
-          const found = graph.nodes.find((n) => n.id === edge.target);
-          if (found) onNodeClick(found);
-        })
-        .on("mouseenter", function(event: MouseEvent) {
-          if (edge.type !== "semantic") return;
-          d3Selection.select(this).attr("stroke-opacity", 1).attr("stroke-width", 3);
-          showEdgeTooltip(event, edge);
-        })
-        .on("mousemove", function(event: MouseEvent) {
-          if (edge.type !== "semantic") return;
-          showEdgeTooltip(event, edge);
-        })
-        .on("mouseleave", function() {
-          if (edge.type !== "semantic") return;
-          d3Selection.select(this).attr("stroke-opacity", opacity).attr("stroke-width", width);
-          setTooltip(null);
-        });
-    }
-
-    // Radial link path
-    function radialLinkPath(link: d3Hierarchy.HierarchyPointLink<HNode>): string {
-      const s = link.source as d3Hierarchy.HierarchyPointNode<HNode>;
-      const t = link.target as d3Hierarchy.HierarchyPointNode<HNode>;
-      const [sx, sy] = polar2cart(s.x, s.y);
-      const [tx, ty] = polar2cart(t.x, t.y);
-      return `M${sx},${sy}C${sx * 0.5},${sy * 0.5} ${tx * 0.5},${ty * 0.5} ${tx},${ty}`;
-    }
-
-    // Tree links
-    gSel.selectAll(".link")
-      .data(root.links())
-      .join("path")
-      .attr("class", "link")
-      .attr("fill", "none")
-      .attr("stroke", resolveVar("--border"))
-      .attr("stroke-opacity", selectedNodeId ? 0.1 : 0.5)
-      .attr("stroke-width", 1)
-      .attr("d", (d) => radialLinkPath(d as d3Hierarchy.HierarchyPointLink<HNode>));
-
-    // Nodes
-    const nodeGroups = gSel.selectAll(".node")
-      .data(root.descendants())
-      .join("g")
-      .attr("class", "node")
-      .attr("transform", (d) => {
-        const pd = d as d3Hierarchy.HierarchyPointNode<HNode>;
-        const [x, y] = polar2cart(pd.x, pd.y);
-        return `translate(${x},${y})`;
-      })
-      .style("cursor", "pointer")
-      .on("click", (event: MouseEvent, d) => {
-        event.stopPropagation();
-        const nodeId = (d.data as { id: string }).id;
-        const baseId = nodeId.includes(":") ? nodeId.split(":")[0] : nodeId;
-        const found = graph.nodes.find((n) => n.id === baseId);
-        if (found) onNodeClick(found);
-      })
-      .on("mouseenter", (event: MouseEvent, d) => {
-        const nodeId = (d.data as { id: string }).id;
-        const baseId = nodeId.includes(":") ? nodeId.split(":")[0] : nodeId;
-        setHoveredNodeId(baseId);
-        setTooltip(null);
-      })
-      .on("mouseleave", () => {
-        setHoveredNodeId(null);
-      });
-
-    // Workspace root: distinctive hollow ring
-    nodeGroups.each(function(d) {
-      const type = (d.data as { type: string }).type;
-      const nodeId = (d.data as { id: string }).id;
-      const baseId = nodeId.includes(":") ? nodeId.split(":")[0] : nodeId;
-      const isSelected = baseId === selectedNodeId;
-      const isDimmed = !!selectedNodeId && !connectedIds?.has(baseId);
-      const color = colorForType(type);
-      const sel = d3Selection.select(this);
-
-      if (type === "workspace") {
-        // Outer ring
-        sel.append("circle")
-          .attr("r", 14)
-          .attr("fill", "none")
-          .attr("stroke", color)
-          .attr("stroke-width", 2)
-          .attr("stroke-opacity", 0.6);
-        // Inner fill
-        sel.append("circle")
-          .attr("r", 8)
-          .attr("fill", color)
-          .attr("fill-opacity", 0.15);
-        // Centre dot
-        sel.append("circle")
-          .attr("r", 3)
-          .attr("fill", color)
-          .attr("fill-opacity", 0.7);
-      } else {
-        const radius = type === "project" ? 7 : type === "tag" ? 3.5 : 4.5;
-        const isHovered = baseId === hoveredNodeId;
-        // Highlight sibling tag nodes sharing the same baseId
-        const isTagSibling = nodeId !== baseId && (baseId === selectedNodeId || baseId === hoveredNodeId);
-
-        // Glow for selected, hovered, or tag siblings
-        if (isSelected || isHovered || isTagSibling) {
-          const glowOpacity = isSelected ? 0.15 : isTagSibling ? 0.06 : 0.08;
-          sel.append("circle")
-            .attr("r", radius + 6)
-            .attr("fill", color)
-            .attr("fill-opacity", glowOpacity);
-          sel.append("circle")
-            .attr("r", radius + 3)
-            .attr("fill", color)
-            .attr("fill-opacity", glowOpacity * 1.3);
-        }
-
-        sel.append("circle")
-          .attr("r", radius)
-          .attr("fill", (isSelected || isHovered) ? color : color + (isDimmed ? "30" : "aa"))
-          .attr("stroke", (isSelected || isHovered) ? color : "none")
-          .attr("stroke-width", (isSelected || isHovered) ? 2 : 0);
-
-        // Larger invisible hit zone for small nodes
-        sel.append("circle")
-          .attr("r", Math.max(radius, 8))
-          .attr("fill", "transparent");
-      }
-    });
-
-    // Bring hovered/selected nodes to front (painted last = on top)
-    // Also highlight sibling tag nodes sharing the same baseId
-    nodeGroups.each(function(d) {
-      const nodeId = (d.data as { id: string }).id;
-      const baseId = nodeId.includes(":") ? nodeId.split(":")[0] : nodeId;
-      const isHighlighted = baseId === selectedNodeId || baseId === hoveredNodeId;
-      const isTagSibling = nodeId.includes(":") && (
-        baseId === selectedNodeId || baseId === hoveredNodeId
-      );
-      if (isHighlighted || isTagSibling) {
-        const el = this as SVGGElement;
-        const parent = el.parentNode;
-        if (parent) parent.appendChild(el);
-      }
-    });
-
-    // Labels
-    nodeGroups.append("text")
-      .attr("dy", "0.31em")
-      .attr("x", (d) => {
-        const pd = d as d3Hierarchy.HierarchyPointNode<HNode>;
-        const type = (d.data as { type: string }).type;
-        if (type === "workspace") return 0;
-        return pd.x < Math.PI ? 10 : -10;
-      })
-      .attr("y", (d) => {
-        const type = (d.data as { type: string }).type;
-        return type === "workspace" ? 22 : 0;
-      })
-      .attr("text-anchor", (d) => {
-        const pd = d as d3Hierarchy.HierarchyPointNode<HNode>;
-        const type = (d.data as { type: string }).type;
-        if (type === "workspace") return "middle";
-        return pd.x < Math.PI ? "start" : "end";
-      })
-      .style("font-size", (d) => {
-        const type = (d.data as { type: string }).type;
-        const nodeId = (d.data as { id: string }).id;
-        const baseId = nodeId.includes(":") ? nodeId.split(":")[0] : nodeId;
-        const isHighlight = baseId === selectedNodeId || baseId === hoveredNodeId;
-
-        if (type === "workspace") return `${11 * fs}px`;
-        if (type === "project") return `${10.5 * fs}px`;
-        return `${(isHighlight ? 9.5 : 9) * fs}px`;
-      })
-      .style("font-weight", (d) => {
-        const type = (d.data as { type: string }).type;
-        const nodeId = (d.data as { id: string }).id;
-        const baseId = nodeId.includes(":") ? nodeId.split(":")[0] : nodeId;
-        const isHighlight = baseId === selectedNodeId || baseId === hoveredNodeId;
-
-        return (type === "project" || isHighlight) ? "600" : "400";
-      })
-      .style("fill", (d) => {
-        const type = (d.data as { type: string }).type;
-        const nodeId = (d.data as { id: string }).id;
-        const baseId = nodeId.includes(":") ? nodeId.split(":")[0] : nodeId;
-        const isHighlight = baseId === selectedNodeId || baseId === hoveredNodeId;
-
-        if (isHighlight && type !== "project" && type !== "workspace") {
-          return resolveVar("--accent");
-        }
-        return type === "project"
-          ? resolveVar("--text-primary")
-          : type === "workspace"
-          ? resolveVar("--text-secondary")
-          : resolveVar("--text-tertiary");
-      })
-      .style("stroke", resolveVar("--background"))
-      .style("stroke-width", "3.5px")
-      .style("stroke-linejoin", "round")
-      .style("paint-order", "stroke fill")
-      .style("font-family", "ui-sans-serif, system-ui, sans-serif")
-      .style("pointer-events", "none")
-      .style("opacity", (d) => {
-        const type = (d.data as { type: string }).type;
-        const nodeId = (d.data as { id: string }).id;
-        const baseId = nodeId.includes(":") ? nodeId.split(":")[0] : nodeId;
-        const isHighlight = baseId === selectedNodeId || baseId === hoveredNodeId;
-
-        if (type === "workspace" || type === "project" || isHighlight) return 1;
-        if (labelMode === "minimal") return 0;
-        if (labelMode === "smart") {
-          const svg = svgRef.current;
-          let currentK = 1.0;
-          if (svg) {
-              try {
-                currentK = d3Zoom.zoomTransform(svg).k;
-              } catch (_e) {}
-            }
-            return currentK >= 1.3 ? 1 : 0;
-          }
-        return 1;
-      })
-      .text((d) => {
-        const title = (d.data as { title: string }).title;
-        const type = (d.data as { type: string }).type;
-        const nodeId = (d.data as { id: string }).id;
-        const baseId = nodeId.includes(":") ? nodeId.split(":")[0] : nodeId;
-        const isHighlight = baseId === selectedNodeId || baseId === hoveredNodeId;
-        const maxLen = isHighlight ? 60 : type === "project" ? 28 : 22;
-        return title.length > maxLen ? title.slice(0, maxLen - 1) + "…" : title;
-      });
-
-  }, [graph, selectedNodeId, hoveredNodeId, labelMode, spacing, onNodeClick, fs, semanticThreshold]);
-
-  useEffect(() => { renderTree(); }, [renderTree]);
-
-  useEffect(() => {
-    const svg = svgRef.current;
-    const g = gRef.current;
-    if (!svg || !g) return;
-
-    const width = svg.clientWidth || 800;
-    const height = svg.clientHeight || 600;
-
-    const zoom = d3Zoom.zoom<SVGSVGElement, unknown>()
-      .scaleExtent([0.15, 5])
-      .on("zoom", (event) => {
-        const transform = event.transform;
-        d3Selection.select(g).attr("transform", transform);
-        // Dynamically adjust label visibility based on zoom scale k at 60 FPS
-         d3Selection.select(g).selectAll("text")
-           .style("opacity", (d: unknown) => {
-             const node = d as d3Hierarchy.HierarchyNode<HNode>;
-             if (!node.data) return 1;
-             const type = (node.data as { type: string }).type;
-             const nodeId = (node.data as { id: string }).id;
-             const baseId = nodeId.includes(":") ? nodeId.split(":")[0] : nodeId;
-             const isHighlight = baseId === selectedNodeIdRef.current || baseId === hoveredNodeIdRef.current;
-
-
-            if (type === "workspace" || type === "project" || isHighlight) return 1;
-            if (labelModeRef.current === "minimal") return 0;
-            if (labelModeRef.current === "smart") {
-              return transform.k >= 1.3 ? 1 : 0;
-            }
-            return 1;
-          });
-      });
-
-    const svgSel = d3Selection.select(svg);
-    svgSel.call(zoom);
-    svgSel.call(zoom.transform, d3Zoom.zoomIdentity.translate(width / 2, height / 2));
-    svgSel.on("click.bg", () => { onBackgroundClick(); setTooltip(null); });
-
-    zoomRef.current = zoom;
-
-    return () => {
-      svgSel.on(".zoom", null);
-      svgSel.on("click.bg", null);
+  // Adjacency: nodeId → set of directly-connected nodeIds (both edge directions).
+  // Used to highlight everything linked to the selected node — for a tag that's
+  // its members (tag-member edges), for any other node it's its direct links.
+  const adjacency = useMemo(() => {
+    const adj = new Map<string, Set<string>>();
+    const link = (a: string, b: string) => {
+      (adj.get(a) ?? adj.set(a, new Set()).get(a)!).add(b);
     };
-  }, [onBackgroundClick]);
+    for (const e of graph.edges) {
+      link(e.source, e.target);
+      link(e.target, e.source);
+    }
+    return adj;
+  }, [graph.edges]);
 
+  // The set of node IDs to spotlight: the selected node plus everything linked
+  // to it. Empty/ null when nothing is selected (everything renders normally).
+  const relatedIds = useMemo(() => {
+    if (!selectedNodeId) return null;
+    const set = new Set<string>([selectedNodeId]);
+    const neighbours = adjacency.get(selectedNodeId);
+    if (neighbours) for (const id of neighbours) set.add(id);
+    return set;
+  }, [selectedNodeId, adjacency]);
+
+  // ── build partitioned hierarchy (rebuilds only when topology changes) ──
+  const root = useMemo(() => {
+    const r = d3.hierarchy(buildHierarchy(graph))
+      .sum((d) => (d.children ? 0 : 1))
+      .sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
+    d3.partition<HNode>().size([2 * Math.PI, r.height + 1])(r);
+    return r as PNode;
+  }, [graph]);
+
+  // Mutable render state the draw loop reads without re-creating itself.
+  const focusRef = useRef<PNode>(root);
+  const currentRef = useRef<Map<PNode, Arc>>(new Map());
+  const hoveredRef = useRef<PNode | null>(null);
+  const animRef = useRef<number>(0);
+  const drawRef = useRef<() => void>(() => {});
+  const geomRef = useRef({ cx: 400, cy: 300, maxR: 200 });
+  // Animated ring geometry — interpolated by zoomTo so the inner radius and
+  // ring count morph smoothly instead of snapping when the focus changes.
+  const geomAnimRef = useRef({ innerR: INNER_R, levels: Math.max(1, root.height) });
+
+  // Reset focus to root when the underlying graph changes.
   useEffect(() => {
-    const svg = svgRef.current;
-    if (!svg) return;
-    const ro = new ResizeObserver(() => renderTree());
-    ro.observe(svg);
+    focusRef.current = root;
+    currentRef.current = new Map();
+    hoveredRef.current = null;
+    geomAnimRef.current = { innerR: INNER_R, levels: Math.max(1, root.height) };
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setFocusLabel(null);
+  }, [root]);
+
+  // Map a node's absolute partition coords to coords relative to the focus.
+  const targetArc = useCallback((d: PNode): Arc => {
+    const focus = focusRef.current;
+    const span = focus.x1 - focus.x0 || 1;
+    const x0 = Math.max(0, Math.min(1, (d.x0 - focus.x0) / span)) * 2 * Math.PI;
+    const x1 = Math.max(0, Math.min(1, (d.x1 - focus.x0) / span)) * 2 * Math.PI;
+    // Focus's direct children occupy the innermost ring (y=0); the focus itself
+    // lives in the central hub, so offset by focus.depth + 1.
+    const y0 = Math.max(0, d.y0 - focus.depth - 1);
+    const y1 = Math.max(0, d.y1 - focus.depth - 1);
+    return { x0, x1, y0, y1 };
+  }, []);
+
+  // Equal-width rings, one per hierarchy level *below the current focus*. At the
+  // workspace root that's 2 (projects + leaves); drilled into a project the
+  // leaves are the only level, so they fill the whole radius as one wide ring.
+  const visibleLevels = useCallback((focusNode: PNode): number => {
+    return Math.max(1, root.height - focusNode.depth);
+  }, [root]);
+
+  // Inner radius of the first ring for a given focus. Expands when drilled below
+  // the root so the single leaf ring's inner edge is wide enough to fit labels.
+  const innerRadiusFor = useCallback((focusNode: PNode): number => {
+    if (focusNode === root) return INNER_R;
+    // Don't let the hub eat the whole disc on small canvases.
+    return Math.min(INNER_R_FOCUSED, geomRef.current.maxR * 0.45);
+  }, [root]);
+
+  const ringR = useCallback((y: number): number => {
+    const { maxR } = geomRef.current;
+    const { innerR, levels } = geomAnimRef.current;
+    const band = (maxR - innerR) / levels;
+    return innerR + Math.min(y, levels) * band;
+  }, []);
+
+  // ── render ──
+  const draw = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const { cx, cy } = geomRef.current;
+    const focus = focusRef.current;
+    const hovered = hoveredRef.current;
+
+    const bg = resolveCssVar("--background");
+    const accent = resolveCssVar("--accent");
+    const accentFg = resolveCssVar("--accent-fg");
+    const surface = resolveCssVar("--surface");
+    const border = resolveCssVar("--border");
+    const textPrimary = resolveCssVar("--text-primary");
+    const textSecondary = resolveCssVar("--text-secondary");
+
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.translate(cx, cy);
+
+    // Arc of the selected wedge, captured so its accent ring can be re-stroked
+    // on top after the loop (neighbouring wedges' bg separators would otherwise
+    // paint over part of it).
+    let selectedDraw: { r0: number; r1: number; x0: number; x1: number } | null = null;
+
+    root.each((d) => {
+      if (d === root) return;
+      const a = currentRef.current.get(d) ?? targetArc(d);
+      if (a.x1 - a.x0 < 0.002 || a.y1 <= 0) return;
+      const r0 = ringR(a.y0);
+      const r1 = ringR(a.y1) - 1.5;
+      if (r1 <= r0) return;
+
+      const col = colorForType(d.data.type);
+      const isHover = d === hovered;
+      // Spotlight: when a node is selected, the selection itself is the brightest
+      // and is the ONLY wedge with an accent ring + glow; its connections stay
+      // bright (plain separators); everything else dims so relationships pop.
+      const hasSpotlight = !!relatedIds;
+      const isSelected = hasSpotlight && d.data.id === selectedNodeId;
+      const isConnected = hasSpotlight && !isSelected && relatedIds!.has(d.data.id);
+      ctx.beginPath();
+      ctx.arc(0, 0, r0, a.x0 - Math.PI / 2, a.x1 - Math.PI / 2);
+      ctx.arc(0, 0, r1, a.x1 - Math.PI / 2, a.x0 - Math.PI / 2, true);
+      ctx.closePath();
+      // "Branch ring" = the focus's direct children that themselves have
+      // children (projects / Tags). Leaves render dimmer with outward labels.
+      const isBranch = d.depth === focus.depth + 1 && !!d.children && d.children.length > 0;
+      let alpha = isHover ? 0.95 : isBranch ? 1 : 0.62;
+      if (hasSpotlight) {
+        alpha = isSelected ? 1 : isConnected ? (isBranch ? 1 : 0.82) : isBranch ? 0.14 : 0.08;
+        if (isHover && (isSelected || isConnected)) alpha = 1;
+      }
+      // Glow halo behind the selected wedge so it reads as the focal point.
+      if (isSelected) {
+        ctx.save();
+        ctx.shadowColor = accent;
+        ctx.shadowBlur = 18;
+        ctx.fillStyle = accent;
+        ctx.fill();
+        ctx.restore();
+      }
+      // The selected wedge is filled with the accent colour (not its own muted
+      // type colour) for a strong, high-contrast read against its connections.
+      ctx.fillStyle = isSelected ? accent : withAlpha(col, alpha);
+      ctx.fill();
+      // Only the selected wedge gets the accent ring — that's its signature.
+      // Connections use a plain bg separator like everything else.
+      if (isSelected) {
+        ctx.lineWidth = 2.5;
+        ctx.strokeStyle = accentFg;
+        selectedDraw = { r0, r1, x0: a.x0, x1: a.x1 };
+      } else {
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = bg;
+      }
+      ctx.stroke();
+
+      // ── label ──
+      const ang = (a.x0 + a.x1) / 2;
+      const arcSpan = a.x1 - a.x0;
+      const ringDepth = r1 - r0;
+      const fontPx = (isBranch ? 12 : 11) * fs;
+      // Leaf labels read radially outward, so neighbours collide only where the
+      // wedge is narrowest — at the inner edge. Require the wedge to clear the
+      // font's cap height (~0.72×) there; this packs far more labels than a full
+      // line-height gate while still avoiding overlap.
+      const arcLenInner = arcSpan * r0;
+      const fits = isBranch || arcLenInner >= fontPx * 0.72;
+      if (fits && arcSpan > 0.012 && ringDepth > 12) {
+        ctx.save();
+        ctx.rotate(ang - Math.PI / 2);
+        const flip = ang >= Math.PI;
+        ctx.font = `${isBranch ? "600 " : ""}${fontPx}px ui-sans-serif, system-ui, sans-serif`;
+        const dimLabel = hasSpotlight && !isConnected && !isSelected;
+        // Selected wedge is filled with accent, so its label uses accent-fg for
+        // legibility; branch labels sit on full-opacity colour (accent-fg too);
+        // leaves on the muted fill use the primary text colour.
+        ctx.fillStyle = isSelected
+          ? accentFg
+          : isBranch
+            ? withAlpha(accentFg, dimLabel ? 0.25 : 1)
+            : withAlpha(textPrimary, dimLabel ? 0.22 : 0.95);
+        ctx.textBaseline = "middle";
+        // Truncate to the radial depth available (text reads along the radius).
+        const maxChars = Math.max(2, Math.floor((ringDepth - 8) / (fontPx * 0.58)));
+        let label = d.data.title;
+        if (label.length > maxChars) label = label.slice(0, maxChars - 1) + "…";
+        if (isBranch) {
+          // Centre project/branch labels in their (wide) ring.
+          ctx.translate((r0 + r1) / 2, 0);
+          if (flip) ctx.rotate(Math.PI);
+          ctx.textAlign = "center";
+          ctx.fillText(label, 0, 0);
+        } else {
+          // Leaf labels read outward from just past the inner edge so they never
+          // overrun the hub. On the left half, flip and anchor from the outer edge.
+          if (flip) {
+            ctx.translate(r1 - 4, 0);
+            ctx.rotate(Math.PI);
+            ctx.textAlign = "start";
+          } else {
+            ctx.translate(r0 + 4, 0);
+            ctx.textAlign = "start";
+          }
+          ctx.fillText(label, 0, 0);
+        }
+        ctx.restore();
+      }
+    });
+
+    // Re-stroke the selected wedge's ring on top of its neighbours so the
+    // contrast border around the accent fill stays crisp.
+    if (selectedDraw) {
+      const s = selectedDraw as { r0: number; r1: number; x0: number; x1: number };
+      ctx.beginPath();
+      ctx.arc(0, 0, s.r0, s.x0 - Math.PI / 2, s.x1 - Math.PI / 2);
+      ctx.arc(0, 0, s.r1, s.x1 - Math.PI / 2, s.x0 - Math.PI / 2, true);
+      ctx.closePath();
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = accentFg;
+      ctx.stroke();
+    }
+
+    // center hub: focus label + back affordance
+    const hubR = geomAnimRef.current.innerR;
+    ctx.beginPath();
+    ctx.arc(0, 0, hubR - 3, 0, 7);
+    ctx.fillStyle = withAlpha(surface, 0.95);
+    ctx.fill();
+    ctx.strokeStyle = focus === root ? border : withAlpha(accent, 0.5);
+    ctx.lineWidth = focus === root ? 1 : 1.5;
+    ctx.stroke();
+    ctx.fillStyle = focus === root ? textSecondary : textPrimary;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    if (focus === root) {
+      ctx.font = `600 ${10 * fs}px ui-sans-serif, system-ui, sans-serif`;
+      ctx.fillText("Workspace", 0, 0);
+    } else {
+      // Larger hub when drilled in — room for a fuller title + back hint.
+      ctx.font = `600 ${14 * fs}px ui-sans-serif, system-ui, sans-serif`;
+      const title = focus.data.title.length > 18 ? focus.data.title.slice(0, 17) + "…" : focus.data.title;
+      ctx.fillText(title, 0, -10);
+      ctx.font = `${10 * fs}px ui-sans-serif, system-ui, sans-serif`;
+      ctx.fillStyle = withAlpha(accent, 0.9);
+      ctx.fillText("← back", 0, 12);
+    }
+    ctx.restore();
+  }, [root, targetArc, ringR, fs, relatedIds, selectedNodeId]);
+  useEffect(() => { drawRef.current = draw; }, [draw]);
+
+  // ── zoom-to-focus animation ──
+  const zoomTo = useCallback((node: PNode) => {
+    const fromInnerR = geomAnimRef.current.innerR;
+    const fromLevels = geomAnimRef.current.levels;
+    const toInnerR = innerRadiusFor(node);
+    const toLevels = visibleLevels(node);
+
+    focusRef.current = node;
+    setFocusLabel(node === root ? null : node.data.title);
+    const start = performance.now();
+    const dur = 520;
+    const from = new Map<PNode, Arc>();
+    const to = new Map<PNode, Arc>();
+    root.each((d) => {
+      from.set(d, currentRef.current.get(d) ?? targetArc(d));
+      to.set(d, targetArc(d));
+    });
+    cancelAnimationFrame(animRef.current);
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - start) / dur);
+      const e = d3.easeCubicInOut(t);
+      geomAnimRef.current = {
+        innerR: fromInnerR + (toInnerR - fromInnerR) * e,
+        levels: fromLevels + (toLevels - fromLevels) * e,
+      };
+      root.each((d) => {
+        const a = from.get(d)!;
+        const b = to.get(d)!;
+        currentRef.current.set(d, {
+          x0: a.x0 + (b.x0 - a.x0) * e,
+          x1: a.x1 + (b.x1 - a.x1) * e,
+          y0: a.y0 + (b.y0 - a.y0) * e,
+          y1: a.y1 + (b.y1 - a.y1) * e,
+        });
+      });
+      drawRef.current();
+      if (t < 1) animRef.current = requestAnimationFrame(tick);
+    };
+    animRef.current = requestAnimationFrame(tick);
+  }, [root, targetArc, innerRadiusFor, visibleLevels]);
+
+  // ── hit testing ──
+  const HUB = "__hub__";
+  const pick = useCallback((mx: number, my: number): PNode | typeof HUB | null => {
+    const { cx, cy } = geomRef.current;
+    const dx = mx - cx;
+    const dy = my - cy;
+    const r = Math.hypot(dx, dy);
+    if (r < geomAnimRef.current.innerR) return HUB;
+    let ang = Math.atan2(dy, dx) + Math.PI / 2;
+    if (ang < 0) ang += 2 * Math.PI;
+    let found: PNode | null = null;
+    root.each((d) => {
+      if (d === root || found) return;
+      const a = currentRef.current.get(d) ?? targetArc(d);
+      const r0 = ringR(a.y0);
+      const r1 = ringR(a.y1);
+      if (r >= r0 && r <= r1 && ang >= a.x0 && ang <= a.x1 && a.x1 - a.x0 > 0.002) found = d;
+    });
+    return found;
+  }, [root, targetArc, ringR]);
+
+  // ── resize observer ──
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const e = entries[0];
+      if (e) setDims({ width: e.contentRect.width, height: e.contentRect.height });
+    });
+    ro.observe(el);
+    setDims({ width: el.clientWidth, height: el.clientHeight });
     return () => ro.disconnect();
-  }, [renderTree]);
+  }, []);
+
+  // ── canvas sizing (DPR-aware) + geometry + (re)seed arcs ──
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    canvas.width = dims.width * dpr;
+    canvas.height = dims.height * dpr;
+    canvas.style.width = dims.width + "px";
+    canvas.style.height = dims.height + "px";
+    geomRef.current = {
+      cx: dims.width / 2,
+      cy: dims.height / 2,
+      maxR: (Math.min(dims.width, dims.height) / 2 - 20) * (spacing / 1.2),
+    };
+    // Resync the (non-animating) ring geometry to the current focus so a resize
+    // while drilled in re-clamps the inner radius to the new canvas size.
+    geomAnimRef.current = {
+      innerR: innerRadiusFor(focusRef.current),
+      levels: visibleLevels(focusRef.current),
+    };
+    // Seed any not-yet-animated nodes to their resting positions.
+    root.each((d) => {
+      if (!currentRef.current.has(d)) currentRef.current.set(d, targetArc(d));
+    });
+    draw();
+  }, [dims, spacing, root, targetArc, draw, innerRadiusFor, visibleLevels]);
+
+  // Redraw when theme/selection-driven colours change.
+  useEffect(() => { draw(); }, [draw, selectedNodeId]);
+
+  // Repaint after a theme change. `resolveCssVar` reads the live computed CSS
+  // custom properties, which only update once the browser has applied the new
+  // `data-theme` attribute on <html> and recomputed styles. Observe it (covers
+  // explicit toggles and OS-driven changes in "system" mode) and redraw on the
+  // next frames, after the recalc — else the canvas keeps the previous theme's
+  // colours (artifacts).
+  useEffect(() => {
+    const rootEl = document.documentElement;
+    let raf1 = 0, raf2 = 0;
+    const repaint = () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+      raf1 = requestAnimationFrame(() => {
+        raf2 = requestAnimationFrame(() => drawRef.current());
+      });
+    };
+    const obs = new MutationObserver((muts) => {
+      if (muts.some((m) => m.attributeName === "data-theme")) repaint();
+    });
+    obs.observe(rootEl, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => {
+      obs.disconnect();
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+    };
+  }, []);
+
+  // ── pointer interaction ──
+  const handleMouseMove = useCallback((ev: React.MouseEvent<HTMLDivElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const mx = ev.clientX - rect.left;
+    const my = ev.clientY - rect.top;
+    const n = pick(mx, my);
+    const hovered = n === HUB ? null : n;
+    if (hovered !== hoveredRef.current) {
+      hoveredRef.current = hovered;
+      draw();
+    }
+    canvas.style.cursor = (n === HUB && focusRef.current !== root) ? "pointer" : hovered ? "pointer" : "default";
+    if (hovered && hovered !== root) {
+      const childCount = hovered.children?.length ?? 0;
+      const sub = childCount ? `${hovered.data.type} · ${childCount} items` : hovered.data.type;
+      setTooltip({ x: mx + 12, y: my + 12, text: `${hovered.data.title} · ${sub}` });
+    } else {
+      setTooltip(null);
+    }
+  }, [pick, draw, root]);
+
+  const handleClick = useCallback((ev: React.MouseEvent<HTMLDivElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const n = pick(ev.clientX - rect.left, ev.clientY - rect.top);
+    if (n === null) { onBackgroundClick(); return; }
+    // Central hub → go up one level (and clear any spotlight selection).
+    if (n === HUB) {
+      onBackgroundClick();
+      if (focusRef.current !== root) zoomTo(focusRef.current.parent ?? root);
+      return;
+    }
+    // Surface selection (opens detail panel for real nodes).
+    if (n.data.type !== "workspace" && n.data.type !== "branch") {
+      const found = graph.nodes.find((g) => g.id === n.data.id);
+      if (found) onNodeClick(found);
+    }
+    // A branch with children → drill in.
+    if (n.children && n.children.length) zoomTo(n);
+  }, [pick, zoomTo, root, graph.nodes, onNodeClick, onBackgroundClick]);
 
   return (
-    <div ref={containerRef} className="flex-1 w-full h-full relative" onMouseLeave={() => setTooltip(null)}>
-      <svg ref={svgRef} className="flex-1 w-full h-full" style={{ background: "transparent" }}>
-        <g ref={gRef} />
-      </svg>
+    <div
+      ref={containerRef}
+      className="flex-1 w-full h-full relative overflow-hidden"
+      onMouseMove={handleMouseMove}
+      onMouseLeave={() => { hoveredRef.current = null; setTooltip(null); draw(); }}
+      onClick={handleClick}
+    >
+      <canvas ref={canvasRef} className="block" />
+
       {tooltip && (
         <div
           className="pointer-events-none absolute z-20 px-3 py-1.5 rounded-md text-xs bg-[var(--surface)] border border-[var(--border)] text-[var(--text-primary)] shadow-lg max-w-[280px] break-words"
@@ -512,35 +562,19 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
         </div>
       )}
 
-      {/* Zoom controls */}
-      <div className="absolute bottom-4 right-4 flex flex-col gap-1">
-        <button
-          onClick={() => zoomRef.current?.scaleBy(d3Selection.select(svgRef.current) as never, 1.4)}
-          title="Zoom in"
-          className="w-7 h-7 flex items-center justify-center rounded-md bg-[var(--surface)] border border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors shadow-sm"
-        >
-          <ZoomIn size={13} />
-        </button>
-        <button
-          onClick={() => zoomRef.current?.scaleBy(d3Selection.select(svgRef.current) as never, 1 / 1.4)}
-          title="Zoom out"
-          className="w-7 h-7 flex items-center justify-center rounded-md bg-[var(--surface)] border border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors shadow-sm"
-        >
-          <ZoomOut size={13} />
-        </button>
-        <button
-          onClick={() => {
-            if (!zoomRef.current || !svgRef.current) return;
-            const w = svgRef.current.clientWidth || 800;
-            const h = svgRef.current.clientHeight || 600;
-            d3Selection.select(svgRef.current).call(zoomRef.current.transform, d3Zoom.zoomIdentity.translate(w / 2, h / 2));
-          }}
-          title="Fit"
-          className="w-7 h-7 flex items-center justify-center rounded-md bg-[var(--surface)] border border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors shadow-sm"
-        >
-          <Maximize2 size={13} />
-        </button>
-      </div>
+      {/* Breadcrumb / back affordance */}
+      {focusLabel && (
+        <div className="absolute top-4 left-4 z-20 flex items-center gap-2">
+          <button
+            onClick={(e) => { e.stopPropagation(); onBackgroundClick(); zoomTo(root); }}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs bg-[var(--accent-dim)] border border-transparent text-[var(--accent)] hover:bg-[var(--surface-2)] transition-colors shadow-sm"
+          >
+            <ChevronLeft size={13} />
+            {focusLabel}
+            <span className="text-[var(--text-tertiary)]">· show all</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 }

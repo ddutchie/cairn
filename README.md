@@ -383,8 +383,7 @@ Unit/integration tests (`electron/**/*.test.ts`) cover SQLite queries, file I/O,
 |------|------|
 | @xyflow/react | Node-based canvas (Idea Flow) |
 | dnd-kit | Drag and drop (Kanban) |
-| D3 v7 | Analytics & graph visualisation (Insights canvases, Radial tree) |
-| react-force-graph-2d | Force-directed graph canvas (Knowledge Graph) |
+| D3 v7 | Analytics & graph visualisation (Insights canvases, Radial tree, Force-directed graph) |
 | d3-sankey | Sankey pipeline diagram (Insights) |
 | @dagrejs/dagre | Graph auto-layout (Idea Flow) |
 
