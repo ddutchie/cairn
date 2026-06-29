@@ -116,15 +116,16 @@ export const FIXTURE_SNAPSHOT = {
 
 export const FIXTURE_GRAPH = {
   nodes: [
-    { id: PROJ_ID,  type: "project", label: "Test Project",  data: FIXTURE_SNAPSHOT.projects[0] },
-    { id: NOTE_1,   type: "note",    label: "Fixture Note",  data: FIXTURE_SNAPSHOT.notes[0] },
-    { id: CARD_1,   type: "card",    label: "Fix the bug",   data: FIXTURE_SNAPSHOT.cards[0] },
-    { id: TAG_1,    type: "tag",     label: "bug",            data: FIXTURE_SNAPSHOT.tags[0] },
+    { id: PROJ_ID, type: "project", title: "Test Project", workspaceId: WS_ID },
+    { id: NOTE_1,  type: "note",    title: "Fixture Note",  projectId: PROJ_ID, workspaceId: WS_ID },
+    { id: CARD_1,  type: "card",    title: "Fix the bug",   projectId: PROJ_ID, workspaceId: WS_ID },
+    { id: TAG_1,   type: "tag",     title: "bug",            workspaceId: WS_ID },
   ],
   edges: [
-    { id: "e1", source: PROJ_ID, target: NOTE_1, type: "has_note" },
-    { id: "e2", source: PROJ_ID, target: CARD_1, type: "has_card" },
-    { id: "e3", source: NOTE_1,  target: CARD_1, type: "linked"   },
+    { id: "e1", source: PROJ_ID, target: NOTE_1, type: "project-member" },
+    { id: "e2", source: PROJ_ID, target: CARD_1, type: "project-member" },
+    { id: "e3", source: NOTE_1,  target: CARD_1, type: "note-card"      },
+    { id: "e4", source: TAG_1,   target: CARD_1, type: "tag-member"     },
   ],
 };
 

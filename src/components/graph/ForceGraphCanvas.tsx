@@ -205,7 +205,7 @@ const ZOOM_BTN_CLASS =
       const p = prevPos.get(n.id);
       return {
         id: n.id,
-        title: n.title,
+        title: n.title ?? "",
         nodeType: n.type,
         projectId: n.projectId,
         x: p?.x, y: p?.y, vx: p?.vx, vy: p?.vy,

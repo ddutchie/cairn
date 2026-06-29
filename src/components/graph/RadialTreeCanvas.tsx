@@ -37,19 +37,19 @@ function buildHierarchy(graph: KnowledgeGraph): HNode {
   const orphans: HNode[] = [];
 
   for (const p of projects) {
-    byProject.set(p.id, { id: p.id, title: p.title, type: "project", children: [] });
+    byProject.set(p.id, { id: p.id, title: p.title ?? "", type: "project", children: [] });
   }
 
   for (const n of graph.nodes) {
     if (n.type !== "note" && n.type !== "card") continue;
     const parent = n.projectId ? byProject.get(n.projectId) : null;
     if (parent) {
-      parent.children!.push({ id: n.id, title: n.title, type: n.type });
+      parent.children!.push({ id: n.id, title: n.title ?? "", type: n.type });
     } else {
       // Note/card whose project isn't present (e.g. the "project" node type is
       // filtered out, or it has no projectId): keep it visible under a fallback
       // branch instead of silently dropping it.
-      orphans.push({ id: n.id, title: n.title, type: n.type });
+      orphans.push({ id: n.id, title: n.title ?? "", type: n.type });
     }
   }
 
@@ -63,7 +63,7 @@ function buildHierarchy(graph: KnowledgeGraph): HNode {
       id: TAGS_BRANCH_ID,
       title: "Tags",
       type: "branch",
-      children: tagNodes.map((t) => ({ id: t.id, title: t.title, type: "tag" })),
+      children: tagNodes.map((t) => ({ id: t.id, title: t.title ?? "", type: "tag" })),
     });
   }
 
