@@ -49,16 +49,25 @@ function edgeColor(edgeType: string): { color: string; opacity: number; dash: bo
   }
 }
 
-/** Apply an alpha (0–1) to a hex colour. Pass-through for rgb()/var() strings. */
+/**
+ * Apply an alpha (0–1) to any CSS colour for canvas use.
+ * Hex inputs use a fast `#rrggbbaa` path; every other format (rgb(), oklch(),
+ * var(), …) is wrapped in `color-mix(in srgb, …, transparent)` so transparency
+ * is preserved regardless of the theme token's colour format. Canvas 2D in the
+ * bundled Chromium supports `color-mix()` as a fill/stroke style.
+ */
 function withAlpha(color: string, opacity: number): string {
-  if (!color.startsWith("#")) return color;
-  const a = Math.round(Math.max(0, Math.min(1, opacity)) * 255).toString(16).padStart(2, "0");
-  // normalise #rgb → #rrggbb
-  if (color.length === 4) {
-    const r = color[1], g = color[2], b = color[3];
-    return `#${r}${r}${g}${g}${b}${b}${a}`;
+  const o = Math.max(0, Math.min(1, opacity));
+  if (color.startsWith("#")) {
+    const a = Math.round(o * 255).toString(16).padStart(2, "0");
+    // normalise #rgb → #rrggbb
+    if (color.length === 4) {
+      const r = color[1], g = color[2], b = color[3];
+      return `#${r}${r}${g}${g}${b}${b}${a}`;
+    }
+    return color.slice(0, 7) + a;
   }
-  return color.slice(0, 7) + a;
+  return `color-mix(in srgb, ${color} ${(o * 100).toFixed(2)}%, transparent)`;
 }
 
 // ── simulation node/link shapes ──────────────────────────────────────────────
@@ -162,9 +171,17 @@ const ZOOM_BTN_CLASS =
   // eslint-disable-next-line react-hooks/refs -- keep latest value for ref-only consumers (render loop / fit)
   connectedRef.current = connectedNodeIds;
 
-  // Stable fingerprints so the simulation only rebuilds when topology changes
-  const nodeFingerprint = graph.nodes.map((n) => n.id).join(",");
-  const edgeFingerprint = visibleEdges.map((e) => `${e.source}-${e.target}`).join(",");
+  // Stable fingerprints so the simulation only rebuilds when something it
+  // copies into the sim nodes/links actually changes. Includes every field the
+  // rebuild effect reads (node: id/type/projectId/title; link:
+  // endpoints/type/weight) so renamed nodes, retyped/recoloured edges, etc.
+  // refresh instead of showing stale data.
+  const nodeFingerprint = graph.nodes
+    .map((n) => `${n.id}:${n.type}:${n.projectId ?? ""}:${n.title}`)
+    .join(",");
+  const edgeFingerprint = visibleEdges
+    .map((e) => `${e.source}-${e.target}:${e.type}:${e.weight ?? 1}`)
+    .join(",");
 
   // ── resize observer ──
   useEffect(() => {
@@ -584,6 +601,10 @@ const ZOOM_BTN_CLASS =
   const zoomBy = useCallback((factor: number) => {
     const canvas = canvasRef.current, zoom = zoomRef.current;
     if (!canvas || !zoom) return;
+    // A toolbar zoom is a deliberate user action — flag it so the settling
+    // simulation's auto-fit doesn't override it (the D3 source-event handler
+    // can't see programmatic transitions).
+    userInteractedRef.current = true;
     d3.select<HTMLCanvasElement, unknown>(canvas).transition().duration(300).call(zoom.scaleBy, factor);
   }, []);
 

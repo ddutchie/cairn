@@ -21,6 +21,7 @@ interface Props {
 }
 
 const TAGS_BRANCH_ID = "__tags__";
+const ORPHAN_BRANCH_ID = "__orphans__";
 const ROOT_ID = "__workspace__";
 
 type HNode = { id: string; title: string; type: string; children?: HNode[] };
@@ -33,6 +34,7 @@ type HNode = { id: string; title: string; type: string; children?: HNode[] };
 function buildHierarchy(graph: KnowledgeGraph): HNode {
   const projects = graph.nodes.filter((n) => n.type === "project");
   const byProject = new Map<string, HNode>();
+  const orphans: HNode[] = [];
 
   for (const p of projects) {
     byProject.set(p.id, { id: p.id, title: p.title, type: "project", children: [] });
@@ -41,11 +43,21 @@ function buildHierarchy(graph: KnowledgeGraph): HNode {
   for (const n of graph.nodes) {
     if (n.type !== "note" && n.type !== "card") continue;
     const parent = n.projectId ? byProject.get(n.projectId) : null;
-    if (parent) parent.children!.push({ id: n.id, title: n.title, type: n.type });
+    if (parent) {
+      parent.children!.push({ id: n.id, title: n.title, type: n.type });
+    } else {
+      // Note/card whose project isn't present (e.g. the "project" node type is
+      // filtered out, or it has no projectId): keep it visible under a fallback
+      // branch instead of silently dropping it.
+      orphans.push({ id: n.id, title: n.title, type: n.type });
+    }
   }
 
   const tagNodes = graph.nodes.filter((n) => n.type === "tag");
   const children: HNode[] = [...byProject.values()];
+  if (orphans.length) {
+    children.push({ id: ORPHAN_BRANCH_ID, title: "Other", type: "branch", children: orphans });
+  }
   if (tagNodes.length) {
     children.push({
       id: TAGS_BRANCH_ID,
@@ -70,15 +82,24 @@ function colorForType(type: string): string {
   }
 }
 
-/** Apply an alpha (0–1) to a hex colour. Pass-through for rgb()/var() strings. */
+/**
+ * Apply an alpha (0–1) to any CSS colour for canvas use.
+ * Hex inputs use a fast `#rrggbbaa` path; every other format (rgb(), oklch(),
+ * var(), …) is wrapped in `color-mix(in srgb, …, transparent)` so transparency
+ * is preserved regardless of the theme token's colour format. Canvas 2D in the
+ * bundled Chromium supports `color-mix()` as a fill/stroke style.
+ */
 function withAlpha(color: string, opacity: number): string {
-  if (!color.startsWith("#")) return color;
-  const a = Math.round(Math.max(0, Math.min(1, opacity)) * 255).toString(16).padStart(2, "0");
-  if (color.length === 4) {
-    const r = color[1], g = color[2], b = color[3];
-    return `#${r}${r}${g}${g}${b}${b}${a}`;
+  const o = Math.max(0, Math.min(1, opacity));
+  if (color.startsWith("#")) {
+    const a = Math.round(o * 255).toString(16).padStart(2, "0");
+    if (color.length === 4) {
+      const r = color[1], g = color[2], b = color[3];
+      return `#${r}${r}${g}${g}${b}${b}${a}`;
+    }
+    return color.slice(0, 7) + a;
   }
-  return color.slice(0, 7) + a;
+  return `color-mix(in srgb, ${color} ${(o * 100).toFixed(2)}%, transparent)`;
 }
 
 const INNER_R = 38;
@@ -127,7 +148,9 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
   // ── build partitioned hierarchy (rebuilds only when topology changes) ──
   const root = useMemo(() => {
     const r = d3.hierarchy(buildHierarchy(graph))
-      .sum((d) => (d.children ? 0 : 1))
+      // A node with no children (including an empty project: children === [])
+      // still counts as 1 so it gets a visible, nonzero-width wedge.
+      .sum((d) => (d.children && d.children.length ? 0 : 1))
       .sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
     d3.partition<HNode>().size([2 * Math.PI, r.height + 1])(r);
     return r as PNode;

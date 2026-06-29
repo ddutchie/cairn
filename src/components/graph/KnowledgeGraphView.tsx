@@ -404,6 +404,7 @@ export function KnowledgeGraphView() {
           <Tooltip content="Outline each project's cluster with a hull">
             <button
               onClick={() => setShowHulls((v) => !v)}
+              aria-pressed={showHulls}
               className={cn(
                 "flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-xs transition-colors",
                 showHulls
