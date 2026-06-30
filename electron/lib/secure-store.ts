@@ -51,6 +51,14 @@ export function isSecretRef(value: string): boolean {
   return typeof value === "string" && value.startsWith(SECRET_REF_PREFIX);
 }
 
+/** Matches a ref token embedded anywhere in a value (e.g. after a "Bearer " scheme). */
+const EMBEDDED_REF_RE = new RegExp(`${SECRET_REF_PREFIX}\\S+`, "g");
+
+/** True if a value contains a ref token but is not itself a bare ref. */
+function containsSecretRef(value: string): boolean {
+  return typeof value === "string" && !isSecretRef(value) && value.includes(SECRET_REF_PREFIX);
+}
+
 /** All reference tokens belonging to a given tool (used for orphan cleanup). */
 export function refsForTool(store: SecretStore, toolType: ToolKind, toolId: string): string[] {
   const prefix = `${SECRET_REF_PREFIX}${toolType}:${toolId}/`;
@@ -187,6 +195,25 @@ function getSecretByRef(ref: string): string | null {
 }
 
 /**
+ * Replace every embedded ref token within a value with its decrypted value,
+ * preserving surrounding text (e.g. "Bearer secret://…" → "Bearer <key>").
+ * Returns null if any embedded ref fails to resolve, so the caller can drop the
+ * header rather than transmit an unresolved "secret://…" token.
+ */
+function resolveEmbeddedRefs(value: string): string | null {
+  let failed = false;
+  const out = value.replace(EMBEDDED_REF_RE, (ref) => {
+    const real = getSecretByRef(ref);
+    if (real === null) {
+      failed = true;
+      return ref;
+    }
+    return real;
+  });
+  return failed ? null : out;
+}
+
+/**
  * Read the decrypted value behind a tool's named secret. Main-process only —
  * there is intentionally no renderer-facing equivalent. Returns null if unset
  * or undecryptable. Used by the OAuth provider to read token/client-info blobs.
@@ -238,6 +265,12 @@ export function resolveSecrets(headers: Record<string, string>): Record<string, 
       const real = getSecretByRef(value);
       if (real !== null) out[name] = real;
       // else: drop the header rather than leak the ref token
+    } else if (containsSecretRef(value)) {
+      // Embedded ref with a surrounding scheme, e.g. "Bearer secret://…/Authorization".
+      // Substitute the ref token in place, preserving the prefix. Drop the header
+      // entirely if the ref can't be resolved so we never send the raw token.
+      const resolved = resolveEmbeddedRefs(value);
+      if (resolved !== null) out[name] = resolved;
     } else if (isPlaceholder(value) || containsPlaceholder(value)) {
       // An unfilled placeholder (e.g. "<API_KEY>" or "Bearer <API_KEY>") is a
       // missing secret, not a literal — drop it rather than send it verbatim.

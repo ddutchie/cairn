@@ -231,7 +231,9 @@ function resolveProbeHeaders(
   const out: Record<string, string> = {};
   for (const [name, value] of Object.entries(headers)) {
     if (builder.hasPlaceholder(value) && session.tempSecrets.has(name)) {
-      out[name] = session.tempSecrets.get(name)!;
+      // Substitute only the placeholder token, keeping any scheme prefix
+      // (e.g. "Bearer <API_KEY>" → "Bearer <realkey>").
+      out[name] = builder.replacePlaceholder(value, session.tempSecrets.get(name)!);
     } else {
       out[name] = value;
     }
@@ -258,7 +260,10 @@ function persistSecretHeaders(
       if (temp && secrets.isAvailable()) {
         secrets.setSecret(toolType, toolId, name, temp);
       }
-      out[name] = ref;
+      // Swap only the placeholder token for the ref, preserving any scheme
+      // prefix (e.g. "Bearer <API_KEY>" → "Bearer secret://…"). resolveSecrets
+      // substitutes the embedded ref at request time.
+      out[name] = builder.replacePlaceholder(value, ref);
     } else {
       out[name] = value;
     }

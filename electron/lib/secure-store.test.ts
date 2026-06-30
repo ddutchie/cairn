@@ -109,6 +109,22 @@ describe("secure-store persistence round-trip", () => {
     expect(resolved).toEqual({ Accept: "application/json" });
   });
 
+  it("resolveSecrets substitutes an embedded ref, preserving the auth scheme", () => {
+    store.setSecret("service", "t1", "Authorization", "rawtoken");
+    const ref = store.secretRef("service", "t1", "Authorization");
+    const resolved = store.resolveSecrets({ Authorization: `Bearer ${ref}` });
+    expect(resolved).toEqual({ Authorization: "Bearer rawtoken" });
+  });
+
+  it("resolveSecrets drops a header whose embedded ref can't be resolved", () => {
+    const resolved = store.resolveSecrets({
+      Authorization: "Bearer secret://service:missing/Authorization",
+      Accept: "*/*",
+    });
+    expect(resolved).toEqual({ Accept: "*/*" });
+    expect(resolved.Authorization).toBeUndefined();
+  });
+
   it("deleteToolSecrets removes every secret for a tool only", () => {
     store.setSecret("mcp", "t1", "A", "a");
     store.setSecret("mcp", "t1", "B", "b");

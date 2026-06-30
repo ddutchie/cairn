@@ -161,6 +161,18 @@ describe("custom-services arg coercion", () => {
     expect(out.domains).toEqual(["a.com", "b.com"]);
   });
 
+  it("leaves a JSON object string untouched for an array-typed param (shape mismatch)", () => {
+    // domains is declared "array"; an object string must not slip through.
+    const out = coerceArgs({ domains: '{"a":1}' }, params);
+    expect(out.domains).toBe('{"a":1}');
+  });
+
+  it("leaves a JSON array string untouched for an object-typed param (shape mismatch)", () => {
+    const objParams = { type: "object", properties: { meta: { type: "object" } } };
+    const out = coerceArgs({ meta: "[1,2,3]" }, objParams);
+    expect(out.meta).toBe("[1,2,3]");
+  });
+
   it("leaves non-coercible / unschema'd values untouched", () => {
     const out = coerceArgs({ query: "x", numResults: "not-a-number", extra: "y" }, params);
     expect(out).toEqual({ query: "x", numResults: "not-a-number", extra: "y" });
@@ -203,7 +215,10 @@ describe("custom-services sample args (Test connection)", () => {
     const params = {
       type: "object",
       properties: {
-        mode: { type: "string", enum: ["fast", "slow"] },
+        // enum and a conflicting example on the SAME property — enum must win so
+        // the generated value is guaranteed valid against the schema.
+        mode: { type: "string", enum: ["fast", "slow"], example: "turbo" },
+        // no enum → falls back to example.
         seed: { type: "integer", example: 42 },
       },
       required: ["mode", "seed"],

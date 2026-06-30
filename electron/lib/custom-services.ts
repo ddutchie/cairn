@@ -150,13 +150,23 @@ function coerceValue(value: unknown, declared: unknown): unknown {
     // Models sometimes send JSON-encoded strings for structured params.
     if ((trimmed.startsWith("[") && trimmed.endsWith("]")) || (trimmed.startsWith("{") && trimmed.endsWith("}"))) {
       try {
-        return JSON.parse(trimmed);
+        const parsed = JSON.parse(trimmed);
+        // Only accept the parse if its shape matches the declared type — an
+        // array string for an "object" param (or vice versa) is a mismatch, so
+        // fall back to the original value rather than send the wrong shape.
+        const shapeOk = declared === "array" ? Array.isArray(parsed) : isPlainObject(parsed);
+        return shapeOk ? parsed : value;
       } catch {
         return value;
       }
     }
   }
   return value;
+}
+
+/** True for a non-null, non-array JSON object. */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /**
@@ -351,9 +361,12 @@ export function sampleArgsFromSchema(parameters: Record<string, unknown> | undef
 }
 
 function sampleValue(key: string, schema: Record<string, unknown>): unknown {
+  // Enum first: a valid enum member is guaranteed to satisfy the schema, whereas
+  // an example/default could conflict with the enum. Fall back to example/default
+  // only when there's no usable enum.
+  if (Array.isArray(schema.enum) && schema.enum.length > 0) return schema.enum[0];
   if (schema.example !== undefined) return schema.example;
   if (schema.default !== undefined) return schema.default;
-  if (Array.isArray(schema.enum) && schema.enum.length > 0) return schema.enum[0];
 
   switch (schema.type) {
     case "number":

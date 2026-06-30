@@ -168,6 +168,16 @@ export function hasPlaceholder(value: string): boolean {
 }
 
 /**
+ * Substitute the placeholder token *in place* with `replacement`, preserving any
+ * surrounding text. So "Bearer <API_KEY>" → "Bearer <replacement>" rather than
+ * collapsing to just the raw replacement — keeping the auth scheme intact for
+ * both live probes and the finalized tool config.
+ */
+export function replacePlaceholder(value: string, replacement: string): string {
+  return (value ?? "").replace(new RegExp(PLACEHOLDER_RE.source, "g"), replacement);
+}
+
+/**
  * Find every header whose value is a secret placeholder — the UI prompts for
  * each and stores the real value via the secure store keyed to the new tool id.
  */
