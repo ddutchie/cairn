@@ -419,7 +419,7 @@ Shared modules live in `src/components/graph/`: `analyticsUtils.ts` (constants, 
 | `src/components/flow/nodes/` | Six custom node components (IdeaNode, NoteRefNode, TaskRefNode, GroupNode, UrlNode, AiSummaryNode) |
 | `src/components/flow/edges/FlowEdge.tsx` | Custom bezier edge with hover-delete button via EdgeLabelRenderer |
 | `src/components/graph/KnowledgeGraphView.tsx` | Graph view — Force-directed and Radial layouts only |
-| `src/components/graph/ForceGraphCanvas.tsx` | Force-directed canvas via `react-force-graph-2d` |
+| `src/components/graph/ForceGraphCanvas.tsx` | Force-directed canvas via raw D3 (`d3-force` + canvas 2D); project-cluster convex hulls |
 | `src/components/graph/RadialTreeCanvas.tsx` | Radial hierarchy tree via D3 |
 | `src/components/graph/analyticsUtils.ts` | Shared constants + pure helpers: `PRIORITY_COLOR`, `PRIORITY_WEIGHT`, `PRIORITY_SORT_ORDER`, `resolveCssVar()`, `truncateName()`, `CANVAS_PAD` |
 | `src/components/agent/AgentView.tsx` | Three-pane layout — drag-resize dividers, Editor/Diff tab bar; always mounted (CSS-hidden when inactive) |

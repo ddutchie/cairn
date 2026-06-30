@@ -168,6 +168,16 @@ export function hasPlaceholder(value: string): boolean {
 }
 
 /**
+ * Substitute the placeholder token *in place* with `replacement`, preserving any
+ * surrounding text. So "Bearer <API_KEY>" → "Bearer <replacement>" rather than
+ * collapsing to just the raw replacement — keeping the auth scheme intact for
+ * both live probes and the finalized tool config.
+ */
+export function replacePlaceholder(value: string, replacement: string): string {
+  return (value ?? "").replace(new RegExp(PLACEHOLDER_RE.source, "g"), replacement);
+}
+
+/**
  * Find every header whose value is a secret placeholder — the UI prompts for
  * each and stores the real value via the secure store keyed to the new tool id.
  */
@@ -199,7 +209,7 @@ export function parseAuthHint(
   responseHeaders: Record<string, string>,
   bodySample: string
 ): AuthHint {
-  if (status !== 401 && status !== 403) return { needsAuth: false };
+  if (status !== 401 && status !== 403 && status !== 402) return { needsAuth: false };
 
   const wwwAuth = headerValue(responseHeaders, "www-authenticate") ?? "";
   const body = (bodySample ?? "").toLowerCase();

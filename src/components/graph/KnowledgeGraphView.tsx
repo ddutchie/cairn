@@ -2,7 +2,7 @@
 
 import React, { useEffect, useCallback, useState, useMemo, useRef } from "react";
 import {
-  GitBranch, Circle, RefreshCw, ChevronDown, LayoutGrid, Search, SlidersHorizontal, Type, Network,
+  GitBranch, Circle, RefreshCw, ChevronDown, LayoutGrid, Search, SlidersHorizontal, Type, Network, Hexagon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
@@ -72,11 +72,16 @@ export function KnowledgeGraphView() {
     const v = parseFloat(localStorage.getItem("kg-semantic-threshold") || "1.0");
     return isFinite(v) ? v : 1.0;
   });
+  const [showHulls, setShowHulls] = useState<boolean>(() => {
+    if (typeof localStorage === "undefined") return true;
+    return localStorage.getItem("kg-hulls") !== "false";
+  });
 
   // Persist graph prefs to localStorage
   useEffect(() => { localStorage.setItem("kg-label-mode", labelMode); }, [labelMode]);
   useEffect(() => { localStorage.setItem("kg-spacing", String(spacing)); }, [spacing]);
   useEffect(() => { localStorage.setItem("kg-semantic-threshold", String(semanticThreshold)); }, [semanticThreshold]);
+  useEffect(() => { localStorage.setItem("kg-hulls", String(showHulls)); }, [showHulls]);
 
   // ⌘F / Ctrl+F — focus the graph search input
   const graphSearchRef = useRef<HTMLInputElement>(null);
@@ -306,8 +311,8 @@ export function KnowledgeGraphView() {
           )}
         </div>
 
-        {/* Label Mode dropdown */}
-        {(graphLayout === "force" || graphLayout === "radial") && (
+        {/* Label Mode dropdown — force only (sunburst drills in, no label modes) */}
+        {graphLayout === "force" && (
           <div className="relative">
             <button
               onClick={() => { setLabelDropdownOpen((v) => !v); setProjectDropdownOpen(false); }}
@@ -369,8 +374,8 @@ export function KnowledgeGraphView() {
           </div>
         )}
 
-        {/* Semantic similarity threshold slider */}
-        {(graphLayout === "force" || graphLayout === "radial") && (
+        {/* Semantic similarity threshold slider — force only (no cross-edges in sunburst) */}
+        {graphLayout === "force" && (
           <div className="flex items-center gap-2 px-2.5 py-1 rounded-md border border-[var(--border)] bg-[var(--surface)]">
             <Tooltip content="Reveal semantic edges by similarity. 0 = all edges; 1.0 = hide (hard links only).">
               <div className="flex items-center gap-1.5 text-[var(--text-secondary)] cursor-help">
@@ -392,6 +397,25 @@ export function KnowledgeGraphView() {
               {semanticThreshold >= 1 ? "off" : `≥${semanticThreshold.toFixed(2)}`}
             </span>
           </div>
+        )}
+
+        {/* Cluster hulls toggle — force mode only */}
+        {graphLayout === "force" && (
+          <Tooltip content="Outline each project's cluster with a hull">
+            <button
+              onClick={() => setShowHulls((v) => !v)}
+              aria-pressed={showHulls}
+              className={cn(
+                "flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-xs transition-colors",
+                showHulls
+                  ? "border-transparent bg-[var(--accent-dim)] text-[var(--accent)]"
+                  : "border-[var(--border)] text-[var(--text-tertiary)]"
+              )}
+            >
+              <Hexagon size={12} />
+              Hulls
+            </button>
+          </Tooltip>
         )}
 
         {/* Search + type toggles — shown for force and radial */}
@@ -440,8 +464,8 @@ export function KnowledgeGraphView() {
           </>
         )}
 
-        {/* Auto-relationship toggle — graph modes only */}
-        {(graphLayout === "force" || graphLayout === "radial") && (
+        {/* Auto-relationship toggle — force only (sunburst shows hierarchy, not cross-edges) */}
+        {graphLayout === "force" && (
           <Tooltip content="Toggle auto-discovered relationships (co-mention, keyword, assignee)">
             <button
               onClick={() => {
@@ -510,6 +534,7 @@ export function KnowledgeGraphView() {
               labelMode={labelMode}
               spacing={spacing}
               semanticThreshold={semanticThreshold}
+              showHulls={showHulls}
             />
           )}
 
@@ -540,23 +565,25 @@ export function KnowledgeGraphView() {
                   </div>
                 ))}
               </div>
-              {/* Edge type legend */}
-              <div className="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-[var(--surface)]/90 border border-[var(--border)] backdrop-blur-sm">
-                {EDGE_LEGEND.map(({ label, color, dash }) => (
-                  <div key={label} className="flex items-center gap-1.5">
-                    {dash ? (
-                      <svg width="16" height="4" className="flex-shrink-0">
-                        <line x1="0" y1="2" x2="16" y2="2" stroke={color} strokeWidth="1.5" strokeDasharray="2,2" />
-                      </svg>
-                    ) : (
-                      <svg width="16" height="4" className="flex-shrink-0">
-                        <line x1="0" y1="2" x2="16" y2="2" stroke={color} strokeWidth="1.5" />
-                      </svg>
-                    )}
-                    <span className="text-[0.786rem] text-[var(--text-tertiary)]">{label}</span>
-                  </div>
-                ))}
-              </div>
+              {/* Edge type legend — force only (sunburst has no cross-edges) */}
+              {graphLayout === "force" && (
+                <div className="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-[var(--surface)]/90 border border-[var(--border)] backdrop-blur-sm">
+                  {EDGE_LEGEND.map(({ label, color, dash }) => (
+                    <div key={label} className="flex items-center gap-1.5">
+                      {dash ? (
+                        <svg width="16" height="4" className="flex-shrink-0">
+                          <line x1="0" y1="2" x2="16" y2="2" stroke={color} strokeWidth="1.5" strokeDasharray="2,2" />
+                        </svg>
+                      ) : (
+                        <svg width="16" height="4" className="flex-shrink-0">
+                          <line x1="0" y1="2" x2="16" y2="2" stroke={color} strokeWidth="1.5" />
+                        </svg>
+                      )}
+                      <span className="text-[0.786rem] text-[var(--text-tertiary)]">{label}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>

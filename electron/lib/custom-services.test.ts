@@ -15,6 +15,8 @@ import {
   serviceToOpenAI,
   buildRequest,
   filterResponse,
+  coerceArgs,
+  sampleArgsFromSchema,
   type CustomServiceRuntimeConfig,
 } from "./custom-services";
 
@@ -131,5 +133,103 @@ describe("custom-services response filtering", () => {
   it("drops object branches that contain no wanted keys", () => {
     const v = { wanted: 1, empty: { nope: 2 } };
     expect(filterResponse(v, ["wanted"])).toEqual({ wanted: 1 });
+  });
+});
+
+describe("custom-services arg coercion", () => {
+  const params = {
+    type: "object",
+    properties: {
+      query: { type: "string" },
+      numResults: { type: "number" },
+      max: { type: "integer" },
+      flag: { type: "boolean" },
+      domains: { type: "array", items: { type: "string" } },
+    },
+  };
+
+  it("coerces stringified numbers/integers/booleans to declared types", () => {
+    const out = coerceArgs(
+      { query: "cats", numResults: "10", max: "3.9", flag: "true" },
+      params
+    );
+    expect(out).toEqual({ query: "cats", numResults: 10, max: 3, flag: true });
+  });
+
+  it("parses JSON-encoded arrays/objects sent as strings", () => {
+    const out = coerceArgs({ domains: '["a.com","b.com"]' }, params);
+    expect(out.domains).toEqual(["a.com", "b.com"]);
+  });
+
+  it("leaves a JSON object string untouched for an array-typed param (shape mismatch)", () => {
+    // domains is declared "array"; an object string must not slip through.
+    const out = coerceArgs({ domains: '{"a":1}' }, params);
+    expect(out.domains).toBe('{"a":1}');
+  });
+
+  it("leaves a JSON array string untouched for an object-typed param (shape mismatch)", () => {
+    const objParams = { type: "object", properties: { meta: { type: "object" } } };
+    const out = coerceArgs({ meta: "[1,2,3]" }, objParams);
+    expect(out.meta).toBe("[1,2,3]");
+  });
+
+  it("leaves non-coercible / unschema'd values untouched", () => {
+    const out = coerceArgs({ query: "x", numResults: "not-a-number", extra: "y" }, params);
+    expect(out).toEqual({ query: "x", numResults: "not-a-number", extra: "y" });
+  });
+
+  it("POST body reflects coerced numeric types (Exa numResults bug)", () => {
+    const cfg: CustomServiceRuntimeConfig = {
+      id: "svc1",
+      apiUrl: "https://api.exa.ai/search",
+      method: "POST",
+      headers: {},
+      toolDefinition: JSON.stringify({ name: "s", parameters: params }),
+    };
+    const { init } = buildRequest(cfg, { query: "x", numResults: "10" }, {}, params);
+    expect(init.body).toBe(JSON.stringify({ query: "x", numResults: 10 }));
+  });
+});
+
+describe("custom-services sample args (Test connection)", () => {
+  it("fills required fields and example/default-bearing fields", () => {
+    const params = {
+      type: "object",
+      properties: {
+        query: { type: "string" },
+        type: { default: "auto" },
+        numResults: { type: "number", default: 10 },
+        includeDomains: { type: "array", items: { type: "string" } },
+      },
+      required: ["query"],
+    };
+    const sample = sampleArgsFromSchema(params);
+    expect(sample.query).toBe("test");
+    expect(sample.type).toBe("auto");
+    expect(sample.numResults).toBe(10);
+    // optional, no example/default → omitted to keep the test request minimal
+    expect(sample.includeDomains).toBeUndefined();
+  });
+
+  it("prefers enum first value, then example", () => {
+    const params = {
+      type: "object",
+      properties: {
+        // enum and a conflicting example on the SAME property — enum must win so
+        // the generated value is guaranteed valid against the schema.
+        mode: { type: "string", enum: ["fast", "slow"], example: "turbo" },
+        // no enum → falls back to example.
+        seed: { type: "integer", example: 42 },
+      },
+      required: ["mode", "seed"],
+    };
+    const sample = sampleArgsFromSchema(params);
+    expect(sample.mode).toBe("fast");
+    expect(sample.seed).toBe(42);
+  });
+
+  it("returns empty object when there is no schema", () => {
+    expect(sampleArgsFromSchema(undefined)).toEqual({});
+    expect(sampleArgsFromSchema({ type: "object" })).toEqual({});
   });
 });
