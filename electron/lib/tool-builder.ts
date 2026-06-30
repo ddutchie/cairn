@@ -199,7 +199,7 @@ export function parseAuthHint(
   responseHeaders: Record<string, string>,
   bodySample: string
 ): AuthHint {
-  if (status !== 401 && status !== 403) return { needsAuth: false };
+  if (status !== 401 && status !== 403 && status !== 402) return { needsAuth: false };
 
   const wwwAuth = headerValue(responseHeaders, "www-authenticate") ?? "";
   const body = (bodySample ?? "").toLowerCase();

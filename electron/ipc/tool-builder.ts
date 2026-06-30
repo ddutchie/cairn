@@ -20,6 +20,7 @@ import type { BrowserWindow, IpcMainEvent } from "electron";
 import type { Database } from "better-sqlite3";
 import { registerIpcOn } from "./registry";
 import { getCachedConfig } from "../lib/config-cache";
+import { isLocalEndpoint, normaliseBaseUrl } from "../lib/llm";
 import { newId } from "../db/utils";
 import * as q from "../db/queries";
 import * as builder from "../lib/tool-builder";
@@ -59,7 +60,7 @@ function resolveConfig(): AIConfig {
   const cached = getCachedConfig().aiConfig;
   return {
     provider: cached?.provider ?? "openai",
-    baseUrl: (cached?.baseUrl ?? "https://api.openai.com").replace(/\/+$/, ""),
+    baseUrl: normaliseBaseUrl(cached?.baseUrl ?? "https://api.openai.com"),
     model: cached?.model ?? "gpt-4o-mini",
     apiKey: cached?.apiKey ?? "",
   };
@@ -271,7 +272,7 @@ async function runBuilderLoop(
   send: (channel: string, payload: unknown) => void
 ): Promise<void> {
   const config = resolveConfig();
-  if (!config.apiKey && config.provider !== "localllm") {
+  if (!config.apiKey && config.provider !== "localllm" && !isLocalEndpoint(config.baseUrl)) {
     send("tool-builder:done", { sessionId: session.id, error: "No API key configured. Set one in Settings → AI & Chat." });
     return;
   }
@@ -366,7 +367,23 @@ export function registerToolBuilderHandlers(
       // subsequent run immediately.
       session.abortCtrl = new AbortController();
       if (secret?.header && secret.value) {
+        const isNew = !session.tempSecrets.has(secret.header) || session.tempSecrets.get(secret.header) !== secret.value;
         session.tempSecrets.set(secret.header, secret.value);
+        if (isNew) {
+          // Tell the model a credential is already on hand (without ever
+          // revealing it). It should probe authenticated immediately using a
+          // placeholder in this header and must NOT ask the user for the key.
+          // We pin the placeholder to <API_KEY> because that token is what the
+          // probe/finalize secret-detection recognises (see hasPlaceholder).
+          session.messages.push({
+            role: "system",
+            content:
+              `The user has already provided a secret for the "${secret.header}" header. ` +
+              `When you need to authenticate a probe, include the header ${secret.header}: <API_KEY> ` +
+              `(use the literal placeholder <API_KEY> — the real value is injected out of band and you must never ask for it). ` +
+              `Persist this same header with the <API_KEY> placeholder in the finalized tool.`,
+          });
+        }
       }
       session.messages.push({ role: "user", content: message });
 

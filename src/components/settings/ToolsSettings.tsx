@@ -662,6 +662,23 @@ export function ToolsSettings() {
           {saveError}
         </div>
       )}
+
+      <div className="flex items-center justify-between gap-4 rounded-lg border border-[var(--border)] bg-[color-mix(in_srgb,var(--accent)_5%,var(--surface))] px-4 py-3">
+        <div className="flex items-start gap-3 min-w-0">
+          <span className="text-[var(--accent)] mt-0.5"><Sparkles size={16} /></span>
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold text-[var(--text-primary)]">Build a tool with AI</h3>
+            <p className="text-xs text-[var(--text-tertiary)] mt-0.5">
+              Describe any API endpoint or MCP server — the AI probes it, figures out the auth and response shape, and
+              creates a ready-to-enable tool (HTTP service or MCP server).
+            </p>
+          </div>
+        </div>
+        <Button size="sm" onClick={() => setBuilderOpen(true)} className="shrink-0">
+          <Sparkles size={12} /> Build with AI
+        </Button>
+      </div>
+
       <SettingsGroup
         title="MCP Servers"
         description="Connect the AI to remote MCP servers (SSE or streamable-HTTP). Enable a server here, then attach it per-project from the project Overview."
@@ -669,9 +686,6 @@ export function ToolsSettings() {
         <div className="flex items-center justify-between">
           <h3 className="text-xs font-semibold uppercase tracking-widest text-[var(--text-tertiary)]">Configured servers</h3>
           <div className="flex gap-1">
-            <Button variant="ghost" size="sm" onClick={() => setBuilderOpen(true)}>
-              <Sparkles size={12} /> Build with AI
-            </Button>
             {!addingMcp && (
               <Button variant="ghost" size="sm" onClick={() => setAddingMcp(true)}>
                 <Plus size={12} /> Add server
