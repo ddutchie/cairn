@@ -33,7 +33,15 @@ Recommendations are ordered so the high-impact / low-effort items come first.
 
 Deferred to Wave 3 (higher risk): the full `useMarkdownComponents()` factory (3.2/4.2 — the three ReactMarkdown override maps have genuinely different feature sets), the tool-call chip unification (3.2), and `<PriorityBadge>`/`<SearchInput>`/`<TagPicker>`/`<ArchivedSection>` (2.4/4.4 — lower value now that colour maps are unified).
 
-**Wave 3** — not started.
+**Wave 3** — partial (`type-check:all`, 836 tests, and `npm run compile` green):
+
+- ✅ 7 Store hydration de-dup: extracted `restorePersistedTheme()` + `restorePersistedUiPrefs()` in `store/index.ts`; both hydration paths call them (removed ~40 duplicated lines). AI/agent config restore left inline (the electron path genuinely differs — backend fetch + localLLM probe).
+- ✅ 6/4.2 Extracted PDF-export HTML prep from `note-editor.tsx` into `note-pdf-export.ts` (`prepareNoteHtmlForPdf` + `pdfSafeTitle`).
+- ✅ 4.2 Extracted the shared ReactMarkdown `pre`→CodeBlock/Mermaid handler into `notes/markdown-code-fence.tsx` (`renderCodeFence`); migrated note-editor, NoteMarkdownPreview, and chat MarkdownContent. (The broader per-surface override maps genuinely differ and were left in place.)
+- ✅ 6 Decomposed `board.tsx` (657→549): extracted the inline archive-view IIFE into `kanban/archive-view.tsx` (`<ArchiveView>`).
+- ⏭️ **Skipped by decision** — splitting `terminal-sessions.ts` (highest risk, touches streaming-message mutations, no user-facing benefit).
+- ⏭️ **Deferred** — decomposing `GitView.tsx` (1100 lines, tightly-coupled git state; lowest reward-to-risk); the full `useMarkdownComponents()` factory beyond the shared `pre` handler (the override maps legitimately differ per surface).
+
 
 ---
 

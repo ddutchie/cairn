@@ -17,8 +17,7 @@ import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import rehypeRaw from "rehype-raw";
 import "katex/dist/katex.min.css";
-import { MermaidDiagram } from "./MermaidDiagram";
-import { CodeBlock } from "./CodeBlock";
+import { renderCodeFence } from "./markdown-code-fence";
 import { Callout } from "./Callout";
 import { MathBlock } from "./MathBlock";
 import { remarkCallout, remarkObsidianEmbeds, remarkPromoteDisplayMath, makeLatexPlugins, InlineCode } from "@/lib/markdown/pipeline";
@@ -206,12 +205,7 @@ export function NoteMarkdownPreview({ content, className, filePath, projectRoot 
             return <MarkdownImage src={typeof src === "string" ? src : undefined} alt={alt} title={title} filePath={filePath} projectRoot={projectRoot} {...props} />;
           },
           pre({ children }: React.HTMLAttributes<HTMLPreElement> & ExtraProps) {
-            const child = Array.isArray(children) ? children[0] : children;
-            const code = child as React.ReactElement<{ className?: string; children?: React.ReactNode }>;
-            const lang = (code?.props?.className ?? "").replace("language-", "") || undefined;
-            const text = String(code?.props?.children ?? "").replace(/\n$/, "");
-            if (lang === "mermaid") return <MermaidDiagram chart={text} />;
-            return <CodeBlock code={text} language={lang} />;
+            return renderCodeFence(children);
           },
           code({ className, children }: React.HTMLAttributes<HTMLElement> & ExtraProps) {
             return <InlineCode className={className}>{children}</InlineCode>;

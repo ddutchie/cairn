@@ -5,8 +5,7 @@ import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import rehypeRaw from "rehype-raw";
-import { MermaidDiagram } from "@/components/notes/MermaidDiagram";
-import { CodeBlock } from "@/components/notes/CodeBlock";
+import { renderCodeFence } from "@/components/notes/markdown-code-fence";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { revealNote, revealCard } from "@/lib/events";
@@ -137,15 +136,7 @@ export function MarkdownContent({ content, isUser }: { content: string; isUser?:
         h1: ({ children }) => <h1 className={`font-semibold ${headingColor} text-sm mt-2 mb-1`}>{children}</h1>,
         h2: ({ children }) => <h2 className={`font-semibold ${headingColor} text-sm mt-2 mb-1`}>{children}</h2>,
         h3: ({ children }) => <h3 className={`font-medium ${headingColor} mt-1.5 mb-0.5`}>{children}</h3>,
-        pre: ({ children }) => {
-          const child = Array.isArray(children) ? children[0] : children;
-          const code = child as React.ReactElement<{ className?: string; children?: React.ReactNode }>;
-          const className = code?.props?.className ?? "";
-          const lang = className.replace("language-", "") || undefined;
-          const content = String(code?.props?.children ?? "").replace(/\n$/, "");
-          if (lang === "mermaid") return <MermaidDiagram chart={content} />;
-          return <CodeBlock code={content} language={lang} />;
-        },
+        pre: ({ children }) => renderCodeFence(children),
         code: ({ children, className }) => {
           // Fenced blocks handled by `pre` above — this only runs for inline code
           if (className?.startsWith("language-")) return <>{children}</>;
