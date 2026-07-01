@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { CheckCircle, Copy } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
+import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
 import { cn } from "@/lib/utils";
 import { SettingsGroup } from "./shared";
 import { MCP_TOOLS } from "../../../electron/lib/tool-schemas";
@@ -13,7 +14,7 @@ import { MCP_TOOLS } from "../../../electron/lib/tool-schemas";
 export function MCPServerSettings() {
   const [mcpServerPath, setMcpServerPath] = useState<string | null>(null);
   const [platform, setPlatform] = useState<string | null>(null);
-  const [copied, setCopied] = useState<string | null>(null);
+  const { copiedKey, copy: copyToClipboard } = useCopyToClipboard();
 
   useEffect(() => {
     if (typeof window !== "undefined" && window.electron) {
@@ -39,9 +40,7 @@ export function MCPServerSettings() {
     : null;
 
   function copy(text: string, key: string) {
-    navigator.clipboard.writeText(text);
-    setCopied(key);
-    setTimeout(() => setCopied(null), 2000);
+    copyToClipboard(text, key);
   }
 
   return (
@@ -58,7 +57,7 @@ export function MCPServerSettings() {
           hint="opencode.json — project root"
           code={opencodeConfig}
           copyId="opencode"
-          copied={copied}
+          copied={copiedKey}
           onCopy={copy}
         />
         <MCPConfigBlock
@@ -66,7 +65,7 @@ export function MCPServerSettings() {
           hint='claude_desktop_config.json → "mcpServers"'
           code={claudeConfig}
           copyId="claude"
-          copied={copied}
+          copied={copiedKey}
           onCopy={copy}
         />
       </div>
@@ -191,15 +190,13 @@ export function MCPProjectConfig() {
     activeProjectId: s.activeProjectId,
   })));
   const [selectedId, setSelectedId] = useState<string>(activeProjectId ?? projects[0]?.id ?? "");
-  const [copied, setCopied] = useState<string | null>(null);
+  const { copiedKey, copy: copyToClipboard } = useCopyToClipboard();
 
   const project   = useMemo(() => projects.find((p) => p.id === selectedId),     [projects, selectedId]);
   const workspace = useMemo(() => workspaces.find((w) => w.id === project?.workspaceId), [workspaces, project?.workspaceId]);
 
   function copy(text: string, key: string) {
-    navigator.clipboard.writeText(text);
-    setCopied(key);
-    setTimeout(() => setCopied(null), 2000);
+    copyToClipboard(text, key);
   }
 
   if (!project) return null;
@@ -257,7 +254,7 @@ export function MCPProjectConfig() {
           description="Paste into your agent's system prompt to pre-scope all tool calls to this project."
           snippet={systemPrompt}
           onCopy={() => copy(systemPrompt, "system")}
-          copied={copied === "system"}
+          copied={copiedKey === "system"}
           mono
         />
         <SnippetRow
@@ -265,7 +262,7 @@ export function MCPProjectConfig() {
           description='Add to claude_desktop_config.json → "mcpServers".'
           snippet={claudeSnippet}
           onCopy={() => copy(claudeSnippet, "claude")}
-          copied={copied === "claude"}
+          copied={copiedKey === "claude"}
           mono
         />
         <SnippetRow
@@ -273,7 +270,7 @@ export function MCPProjectConfig() {
           description="Add to .cursor/mcp.json or VS Code MCP settings."
           snippet={cursorSnippet}
           onCopy={() => copy(cursorSnippet, "cursor")}
-          copied={copied === "cursor"}
+          copied={copiedKey === "cursor"}
           mono
         />
         <SnippetRow
@@ -281,7 +278,7 @@ export function MCPProjectConfig() {
           description="Raw project and workspace IDs — useful for custom integrations."
           snippet={projectJson}
           onCopy={() => copy(projectJson, "ids")}
-          copied={copied === "ids"}
+          copied={copiedKey === "ids"}
           mono
         />
       </div>

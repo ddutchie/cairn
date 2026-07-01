@@ -5,7 +5,7 @@ import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { CheckSquare, ExternalLink } from "lucide-react";
 import { cn, PRIORITY_COLORS } from "@/lib/utils";
 import { useCairnStore } from "@/store";
-import { CairnEvents } from "@/lib/events";
+import { revealCard } from "@/lib/events";
 
 export interface TaskRefNodeData {
   cardId?: string;
@@ -23,8 +23,7 @@ export const TaskRefNode = memo(function TaskRefNode({ data, selected, isConnect
 
   function handleOpen(e: React.MouseEvent) {
     e.stopPropagation();
-    setView("board");
-    if (d.cardId) window.dispatchEvent(CairnEvents.openCard(d.cardId));
+    if (d.cardId) revealCard(setView, d.cardId);
   }
 
   return (

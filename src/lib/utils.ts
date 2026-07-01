@@ -2,7 +2,7 @@ import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 import { nanoid } from "nanoid";
 import { defaultUrlTransform } from "react-markdown";
-export { PRIORITY_COLORS } from "./constants";
+export { PRIORITY_COLORS, STATUS_COLORS } from "./constants";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -33,6 +33,19 @@ export function prettifyToolLabel(label: string): string {
 
 export function now(): string {
   return new Date().toISOString();
+}
+
+/**
+ * Canonical dark-mode read. The active theme is stored as the `data-theme`
+ * attribute on `<html>` (set by `applyTheme`). Any value other than "light"
+ * is treated as dark, and SSR / pre-hydration defaults to dark to match the
+ * app's default theme. This is the single source of truth for imperative
+ * reads (canvas draw, CodeMirror/mermaid theming); React components that need
+ * to re-render on theme change should use the `useIsDark()` hook instead.
+ */
+export function getIsDark(): boolean {
+  if (typeof document === "undefined") return true;
+  return document.documentElement.getAttribute("data-theme") !== "light";
 }
 
 export function formatDate(iso: string): string {
@@ -72,13 +85,6 @@ export function getDueDateStatus(dueDate: string | null | undefined): "overdue" 
   if (diff === 0) return "today";
   return "upcoming";
 }
-
-export const STATUS_COLORS: Record<string, string> = {
-  active:    "text-[var(--success)]",
-  on_hold:   "text-[var(--warning)]",
-  completed: "text-[var(--info)]",
-  archived:  "text-[var(--text-tertiary)]",
-};
 
 export function urlTransform(url: string): string {
   return url.startsWith("asset://")

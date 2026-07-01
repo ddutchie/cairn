@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
 import { FileText, Kanban, FolderOpen, Search, Copy, Check, RotateCcw, CheckCircle } from "lucide-react";
 import { cn, formatRelative, prettifyToolLabel } from "@/lib/utils";
 import { MarkdownContent } from "./MarkdownContent";
@@ -31,13 +32,10 @@ interface ChatMessageBubbleProps {
 export const ChatMessageBubble = React.memo(function ChatMessageBubble({ message, onRetry }: ChatMessageBubbleProps) {
   const isUser = message.role === "user";
   const isSystem = message.role === "system";
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopyToClipboard();
 
   function handleCopy() {
-    navigator.clipboard.writeText(message.content).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
+    copy(message.content);
   }
 
   if (isSystem) {

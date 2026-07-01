@@ -15,6 +15,8 @@ import { useMemo, useState, useEffect, useCallback, useRef, useDeferredValue } f
 import parseDiff from "parse-diff";
 import { Copy, Check, RefreshCw, FolderGit2, ChevronRight, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useIsDark } from "@/hooks/useIsDark";
+import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
 import { Tooltip } from "@/components/ui/tooltip";
 import { FileDiff, PALETTE_DARK, PALETTE_LIGHT } from "./DiffFile";
 import type { ViewMode } from "./DiffFile";
@@ -43,17 +45,14 @@ interface DiffViewerProps {
 }
 
 export function DiffViewer({ cwd }: DiffViewerProps) {
-  const isDark =
-    typeof document !== "undefined"
-      ? document.documentElement.getAttribute("data-theme") !== "light"
-      : true;
+  const isDark = useIsDark();
   const palette = isDark ? PALETTE_DARK : PALETTE_LIGHT;
 
   const [diffText, setDiffText] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopyToClipboard();
   const [mode, setMode] = useState<ViewMode>("unified");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const isMounted = useRef(true);
@@ -106,11 +105,8 @@ export function DiffViewer({ cwd }: DiffViewerProps) {
   const expandAll = useCallback(() => setCollapsed(new Set()), []);
 
   const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(diffText).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  }, [diffText]);
+    copy(diffText);
+  }, [diffText, copy]);
 
   // ── Toolbar ────────────────────────────────────────────────────────────────
   const toolbar = (

@@ -10,7 +10,7 @@
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { COLUMN_TYPE_ORDER } from "@/lib/constants";
-import { CairnEvents } from "@/lib/events";
+import { revealNote, revealCard } from "@/lib/events";
 import type { Note, TaskCard, BoardColumn } from "@/types";
 
 export interface ActivityItem {
@@ -122,7 +122,7 @@ export function useProjectMetrics(projectId: string | null): ProjectMetrics | nu
       id: n.id, type: "note" as const,
       title: n.title, subtitle: null,
       updatedAt: n.updatedAt,
-      onClick: () => { setView("notes"); window.dispatchEvent(CairnEvents.selectNote(n.id)); },
+      onClick: () => revealNote(setView, n.id),
     })),
     ...allCards.map((c) => {
       const col = columns.find((col) => col.id === c.columnId);
@@ -130,7 +130,7 @@ export function useProjectMetrics(projectId: string | null): ProjectMetrics | nu
         id: c.id, type: "card" as const,
         title: c.title, subtitle: col?.name ?? null,
         updatedAt: c.updatedAt,
-        onClick: () => { setView("board"); window.dispatchEvent(CairnEvents.openCard(c.id)); },
+        onClick: () => revealCard(setView, c.id),
       };
     }),
   ]

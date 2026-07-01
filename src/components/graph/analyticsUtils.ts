@@ -21,6 +21,27 @@ export function resolveCssVar(varName: string): string {
     .trim();
 }
 
+/**
+ * Apply an alpha (0–1) to any CSS colour for canvas use.
+ * Hex inputs use a fast `#rrggbbaa` path; every other format (rgb(), oklch(),
+ * var(), …) is wrapped in `color-mix(in srgb, …, transparent)` so transparency
+ * is preserved regardless of the theme token's colour format. Canvas 2D in the
+ * bundled Chromium supports `color-mix()` as a fill/stroke style.
+ */
+export function withAlpha(color: string, opacity: number): string {
+  const o = Math.max(0, Math.min(1, opacity));
+  if (color.startsWith("#")) {
+    const a = Math.round(o * 255).toString(16).padStart(2, "0");
+    // normalise #rgb → #rrggbb
+    if (color.length === 4) {
+      const r = color[1], g = color[2], b = color[3];
+      return `#${r}${r}${g}${g}${b}${b}${a}`;
+    }
+    return color.slice(0, 7) + a;
+  }
+  return `color-mix(in srgb, ${color} ${(o * 100).toFixed(2)}%, transparent)`;
+}
+
 // ── Time helpers ──────────────────────────────────────────────────────────────
 
 export const HOUR_MS = 3_600_000;
@@ -36,13 +57,13 @@ export function floorDay(ms: number): number {
 
 // ── Priority ──────────────────────────────────────────────────────────────────
 
-/** CSS-variable colour for each priority level. */
-export const PRIORITY_COLOR: Record<string, string> = {
-  low:    "var(--text-tertiary)",
-  medium: "var(--info)",
-  high:   "var(--warning)",
-  urgent: "var(--danger)",
-};
+/**
+ * CSS-variable colour for each priority level.
+ * Canonical source lives in `@/lib/constants` (`PRIORITY_CSS_COLORS`);
+ * re-exported here under the canvas-friendly `PRIORITY_COLOR` name so the
+ * analytics canvases keep a single import site.
+ */
+export { PRIORITY_CSS_COLORS as PRIORITY_COLOR } from "@/lib/constants";
 
 /** Numeric sort weight — higher = more urgent. */
 export const PRIORITY_WEIGHT: Record<string, number> = {

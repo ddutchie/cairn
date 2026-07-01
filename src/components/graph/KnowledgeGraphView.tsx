@@ -11,6 +11,7 @@ import { useLoadGraph } from "@/hooks/useLoadGraph";
 import { filterGraphNodes, filterGraphEdges, nodeTypeColor } from "@/store/slices/graph";
 import type { GraphNode, GraphNodeType } from "@/types";
 import { GraphDetailPanel } from "./GraphDetailPanel";
+import { NodeTypeChip } from "./NodeTypeChip";
 import { ForceGraphCanvas } from "./ForceGraphCanvas";
 import { RadialTreeCanvas } from "./RadialTreeCanvas";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -436,28 +437,16 @@ export function KnowledgeGraphView() {
 
             {/* Type toggles */}
             <div className="flex items-center gap-1">
-              {ALL_NODE_TYPES.map((t) => {
-                const isActive = graphFilters.nodeTypes.includes(t);
-                return (
-                  <Tooltip key={t} content={`Toggle ${t}`}>
-                    <button
-                      onClick={() => toggleNodeType(t)}
-                      className={cn(
-                        "flex items-center gap-1 px-2 py-1 rounded text-[0.786rem] capitalize transition-colors border",
-                        isActive ? "border-transparent" : "border-[var(--border)] text-[var(--text-tertiary)] opacity-50"
-                      )}
-                      style={isActive ? {
-                        background: `color-mix(in srgb, ${nodeTypeColor(t)} 12%, transparent)`,
-                        color: nodeTypeColor(t),
-                        borderColor: `color-mix(in srgb, ${nodeTypeColor(t)} 30%, transparent)`,
-                      } : undefined}
-                    >
-                      <span className="w-2 h-2 rounded-full" style={{ background: nodeTypeColor(t) }} />
-                      {t}
-                    </button>
-                  </Tooltip>
-                );
-              })}
+              {ALL_NODE_TYPES.map((t) => (
+                <NodeTypeChip
+                  key={t}
+                  type={t}
+                  active={graphFilters.nodeTypes.includes(t)}
+                  onClick={() => toggleNodeType(t)}
+                  tooltip={`Toggle ${t}`}
+                  dotSize={8}
+                />
+              ))}
             </div>
 
             <div className="w-px h-5 bg-[var(--border)]" />

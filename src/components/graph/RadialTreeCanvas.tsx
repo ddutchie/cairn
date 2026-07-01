@@ -4,8 +4,8 @@ import React, { useRef, useEffect, useCallback, useState, useMemo } from "react"
 import { ChevronLeft } from "lucide-react";
 import * as d3 from "d3";
 import type { GraphNode, KnowledgeGraph } from "@/types";
-import { resolveCssVar } from "./analyticsUtils";
-import { useFontScale } from "./analyticsHooks";
+import { resolveCssVar, withAlpha } from "./analyticsUtils";
+import { useFontScale, useThemeRepaint } from "./analyticsHooks";
 
 interface Props {
   graph: KnowledgeGraph;
@@ -80,26 +80,6 @@ function colorForType(type: string): string {
     case "workspace": return resolveCssVar("--text-secondary");
     default:          return resolveCssVar("--text-tertiary");
   }
-}
-
-/**
- * Apply an alpha (0–1) to any CSS colour for canvas use.
- * Hex inputs use a fast `#rrggbbaa` path; every other format (rgb(), oklch(),
- * var(), …) is wrapped in `color-mix(in srgb, …, transparent)` so transparency
- * is preserved regardless of the theme token's colour format. Canvas 2D in the
- * bundled Chromium supports `color-mix()` as a fill/stroke style.
- */
-function withAlpha(color: string, opacity: number): string {
-  const o = Math.max(0, Math.min(1, opacity));
-  if (color.startsWith("#")) {
-    const a = Math.round(o * 255).toString(16).padStart(2, "0");
-    if (color.length === 4) {
-      const r = color[1], g = color[2], b = color[3];
-      return `#${r}${r}${g}${g}${b}${b}${a}`;
-    }
-    return color.slice(0, 7) + a;
-  }
-  return `color-mix(in srgb, ${color} ${(o * 100).toFixed(2)}%, transparent)`;
 }
 
 const INNER_R = 38;
@@ -495,32 +475,8 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
   // Redraw when theme/selection-driven colours change.
   useEffect(() => { draw(); }, [draw, selectedNodeId]);
 
-  // Repaint after a theme change. `resolveCssVar` reads the live computed CSS
-  // custom properties, which only update once the browser has applied the new
-  // `data-theme` attribute on <html> and recomputed styles. Observe it (covers
-  // explicit toggles and OS-driven changes in "system" mode) and redraw on the
-  // next frames, after the recalc — else the canvas keeps the previous theme's
-  // colours (artifacts).
-  useEffect(() => {
-    const rootEl = document.documentElement;
-    let raf1 = 0, raf2 = 0;
-    const repaint = () => {
-      cancelAnimationFrame(raf1);
-      cancelAnimationFrame(raf2);
-      raf1 = requestAnimationFrame(() => {
-        raf2 = requestAnimationFrame(() => drawRef.current());
-      });
-    };
-    const obs = new MutationObserver((muts) => {
-      if (muts.some((m) => m.attributeName === "data-theme")) repaint();
-    });
-    obs.observe(rootEl, { attributes: true, attributeFilter: ["data-theme"] });
-    return () => {
-      obs.disconnect();
-      cancelAnimationFrame(raf1);
-      cancelAnimationFrame(raf2);
-    };
-  }, []);
+  // Repaint after a theme change so the canvas picks up the new CSS-var colours.
+  useThemeRepaint(drawRef);
 
   // ── pointer interaction ──
   const handleMouseMove = useCallback((ev: React.MouseEvent<HTMLDivElement>) => {

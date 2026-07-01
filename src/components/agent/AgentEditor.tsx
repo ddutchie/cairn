@@ -13,6 +13,7 @@
 import { useState, useCallback } from "react";
 import { X, Save, FileCode, Eye, ImageIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useIsDark } from "@/hooks/useIsDark";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { NoteMarkdownPreview } from "@/components/notes/NoteMarkdownPreview";
@@ -41,10 +42,7 @@ export function AgentEditor() {
   // Preview content cache: path → content string
   const [previewContent, setPreviewContent] = useState<Record<string, string>>({});
 
-  const isDark =
-    typeof document !== "undefined"
-      ? document.documentElement.getAttribute("data-theme") !== "light"
-      : true;
+  const isDark = useIsDark();
 
   const handleDirtyChange = useCallback((path: string, dirty: boolean) => {
     setDirtyFiles((prev) => {

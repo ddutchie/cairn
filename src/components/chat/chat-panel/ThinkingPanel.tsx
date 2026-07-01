@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { ChevronDown, Brain } from "lucide-react";
 import { MarkdownContent } from "./MarkdownContent";
+import { StreamingCursor } from "./message-ui";
 
 interface ThinkingPanelProps {
   /** Reasoning text. When non-empty the panel renders; when empty it's null. */
@@ -95,9 +96,7 @@ export const ThinkingPanel = React.memo(function ThinkingPanel({
       {open && (
         <div className="px-3 py-2 border-t text-[0.786rem] leading-relaxed text-[var(--text-tertiary)] max-h-[300px] overflow-y-auto" style={{ borderTopColor: "color-mix(in srgb, var(--border) 50%, transparent)" }}>
           <MarkdownContent content={text} />
-          {streaming && open && (
-            <span className="inline-block w-0.5 h-3 bg-[var(--accent)] animate-pulse ml-0.5 align-middle" />
-          )}
+          {streaming && open && <StreamingCursor />}
         </div>
       )}
     </div>

@@ -47,11 +47,13 @@ export const PROJECT_STATUS_OPTIONS: ProjectStatus[] = [
 
 /**
  * Tailwind text-colour classes per priority level.
+ * Colours mirror `PRIORITY_CSS_COLORS` (the CSS-var equivalent) so a priority
+ * renders the same hue whether styled via className or inline style.
  * Use for badges, icons, and text labels.
  */
 export const PRIORITY_COLORS: Record<string, string> = {
   low:    "text-[var(--text-tertiary)]",
-  medium: "text-[var(--warning)]",
+  medium: "text-[var(--info)]",
   high:   "text-[var(--warning)]",
   urgent: "text-[var(--danger)]",
 };
@@ -76,6 +78,17 @@ export const STATUS_CSS_COLORS: Record<ProjectStatus | string, string> = {
   on_hold:   "var(--warning)",
   completed: "var(--info)",
   archived:  "var(--text-tertiary)",
+};
+
+/**
+ * Tailwind text-colour classes per project status.
+ * Mirrors `STATUS_CSS_COLORS`. Use for className-based text/icon colouring.
+ */
+export const STATUS_COLORS: Record<string, string> = {
+  active:    "text-[var(--success)]",
+  on_hold:   "text-[var(--warning)]",
+  completed: "text-[var(--info)]",
+  archived:  "text-[var(--text-tertiary)]",
 };
 
 /** Default AI/LLM config values. */

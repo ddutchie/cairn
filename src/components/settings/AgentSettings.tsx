@@ -8,6 +8,7 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
 import { id, cn } from "@/lib/utils";
+import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
 import type { CodingAgent } from "@/store/slices/coding-agents";
 import { SettingsGroup, SettingsRow, StepperSettingsRow } from "./shared";
 import {
@@ -188,7 +189,7 @@ interface PromptPreviewProps {
 
 function PromptPreview({ systemPrompt }: PromptPreviewProps) {
   const [expanded, setExpanded] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const { copied, copy: copyToClipboard } = useCopyToClipboard();
 
   const lines = systemPrompt.split("\n");
   const PREVIEW_LINES = 6;
@@ -196,9 +197,7 @@ function PromptPreview({ systemPrompt }: PromptPreviewProps) {
   const hasMore = lines.length > PREVIEW_LINES;
 
   function copy() {
-    navigator.clipboard.writeText(systemPrompt);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    copyToClipboard(systemPrompt);
   }
 
   return (

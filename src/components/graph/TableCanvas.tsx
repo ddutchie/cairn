@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import type { GraphNode, GraphNodeType } from "@/types";
-import { nodeTypeColor } from "@/store/slices/graph";
+import { NodeTypeChip } from "./NodeTypeChip";
 import { PRIORITY_COLOR, PRIORITY_SORT_ORDER } from "./analyticsUtils";
 
 interface Props {
@@ -163,19 +163,7 @@ export function TableCanvas({ nodes, onNodeClick, selectedNodeId, search, typeFi
               >
                 {/* Type */}
                 <td className="px-3 py-2">
-                  <span
-                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[0.714rem] font-medium capitalize"
-                    style={{
-                      color: nodeTypeColor(node.type),
-                      background: `color-mix(in srgb, ${nodeTypeColor(node.type)} 12%, transparent)`,
-                    }}
-                  >
-                    <span
-                      className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                      style={{ background: nodeTypeColor(node.type) }}
-                    />
-                    {node.type}
-                  </span>
+                  <NodeTypeChip type={node.type} />
                 </td>
 
                 {/* Title + snippet */}

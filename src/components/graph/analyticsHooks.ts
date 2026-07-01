@@ -2,6 +2,7 @@
  * Shared React hooks for analytics canvas components.
  */
 import { useEffect, useState, useMemo, useCallback } from "react";
+import type { RefObject } from "react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import type { GraphNode } from "@/types";
@@ -87,7 +88,6 @@ export function useRelativePointer<T extends HTMLElement | SVGSVGElement>(ref: R
 }
 
 // ── useNow ───────────────────────────────────────────────────────────────────
-
 /**
  * Returns `Date.now()` snapshot at mount time (plus optional periodic refresh).
  * Safe to use in `useMemo` deps — the lint rule that flags `Date.now()` inside
@@ -102,4 +102,42 @@ export function useNow(refreshMs?: number): number {
     return () => clearInterval(id);
   }, [refreshMs]);
   return now;
+}
+
+// ── useThemeRepaint ───────────────────────────────────────────────────────────
+
+/**
+ * Repaints a canvas after a theme change. `resolveCssVar` reads the live
+ * computed CSS custom properties, which only update once the browser has
+ * applied the new `data-theme` attribute on <html> and recomputed styles.
+ * This observes that attribute (covering both the explicit light/dark toggle
+ * and OS-driven changes in "system" mode) and invokes the latest draw function
+ * on the next frames, after the recalc — otherwise the canvas keeps the
+ * previous theme's colours (artifacts).
+ *
+ * Pass a ref holding the current draw function (not the function itself) so the
+ * observer always calls the freshest closure without re-subscribing.
+ */
+export function useThemeRepaint(drawRef: RefObject<() => void>) {
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const root = document.documentElement;
+    let raf1 = 0, raf2 = 0;
+    const repaint = () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+      raf1 = requestAnimationFrame(() => {
+        raf2 = requestAnimationFrame(() => drawRef.current?.());
+      });
+    };
+    const obs = new MutationObserver((muts) => {
+      if (muts.some((m) => m.attributeName === "data-theme")) repaint();
+    });
+    obs.observe(root, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => {
+      obs.disconnect();
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+    };
+  }, [drawRef]);
 }

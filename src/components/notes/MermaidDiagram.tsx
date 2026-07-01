@@ -16,6 +16,7 @@
 import { useEffect, useRef, useState, useId, useCallback } from "react";
 import { Maximize2 } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { getIsDark } from "@/lib/utils";
 
 interface Props {
   chart: string;
@@ -29,7 +30,7 @@ async function getMermaid(id: string) {
   // Prevent mermaid from throwing uncaught errors globally that bubble up to Next.js
   mermaid.parseError = () => {};
 
-  const isDark = document.documentElement.getAttribute("data-theme") !== "light";
+  const isDark = getIsDark();
   mermaid.initialize({
     startOnLoad: false,
     suppressErrorRendering: true,

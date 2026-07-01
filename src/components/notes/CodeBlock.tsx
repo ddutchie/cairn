@@ -14,9 +14,12 @@
  *  - theme-aware: dark uses One Dark-style palette, light uses a softer palette
  */
 
-import { useMemo, useState, useCallback } from "react";
+import { useMemo, useCallback } from "react";
 import { common, createLowlight } from "lowlight";
 import { Check, Copy } from "lucide-react";
+import { useIsDark } from "@/hooks/useIsDark";
+import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
+import { SYNTAX_COLORS } from "@/lib/syntax-palette";
 
 const lowlight = createLowlight(common);
 
@@ -28,99 +31,68 @@ const lowlight = createLowlight(common);
 
 type Palette = Record<string, string>;
 
-const DARK: Palette = {
-  // Keywords: if, const, function, return, class …
-  "hljs-keyword":        "#c678dd",
-  "hljs-built_in":       "#e5c07b",
-  // Literals: true, false, null, undefined
-  "hljs-literal":        "#56b6c2",
-  // Numbers
-  "hljs-number":         "#d19a66",
-  // Strings (all flavours)
-  "hljs-string":         "#98c379",
-  "hljs-template-tag":   "#98c379",
-  "hljs-template-variable": "#e06c75",
-  // Regexp
-  "hljs-regexp":         "#98c379",
-  // Comments
-  "hljs-comment":        "#5c6370",
-  "hljs-quote":          "#5c6370",
-  // Variable names / identifiers
-  "hljs-variable":       "#e06c75",
-  "hljs-attr":           "#e06c75",
-  "hljs-attribute":      "#e06c75",
-  // Function / method names
-  "hljs-title":          "#61afef",
-  "hljs-title.class_":   "#e5c07b",
-  "hljs-title.function_":"#61afef",
-  // Types, classes
-  "hljs-type":           "#e5c07b",
-  "hljs-class":          "#e5c07b",
-  // Operators & punctuation — left at default text colour
-  "hljs-operator":       "#56b6c2",
-  "hljs-punctuation":    "#abb2bf",
-  // Tags (HTML/JSX)
-  "hljs-tag":            "#e06c75",
-  "hljs-name":           "#e06c75",
-  "hljs-selector-tag":   "#e06c75",
-  "hljs-selector-id":    "#61afef",
-  "hljs-selector-class": "#e5c07b",
-  // Meta / preprocessor
-  "hljs-meta":           "#61afef",
-  "hljs-meta-keyword":   "#c678dd",
-  "hljs-meta-string":    "#98c379",
-  // Diff
-  "hljs-addition":       "#98c379",
-  "hljs-deletion":       "#e06c75",
-  // Section / heading (markdown inside code?)
-  "hljs-section":        "#61afef",
-  "hljs-bullet":         "#e5c07b",
-  "hljs-link":           "#98c379",
-  "hljs-symbol":         "#61afef",
-  "hljs-formula":        "#56b6c2",
-  "hljs-emphasis":       "#e5c07b",
-  "hljs-strong":         "#ffffff",
-};
+// Both palettes are derived from the shared `SYNTAX_COLORS` tokens so the four
+// syntax-highlight consumers (CodeBlock, editor-theme, dashboard-view, PDF
+// export) stay in lockstep. `variant` picks the dark/light hex per token.
+function buildPalette(variant: "dark" | "light"): Palette {
+  const c = (name: keyof typeof SYNTAX_COLORS) => SYNTAX_COLORS[name][variant];
+  return {
+    // Keywords: if, const, function, return, class …
+    "hljs-keyword":        c("keyword"),
+    "hljs-built_in":       c("builtin"),
+    // Literals: true, false, null, undefined
+    "hljs-literal":        c("literal"),
+    // Numbers
+    "hljs-number":         c("number"),
+    // Strings (all flavours)
+    "hljs-string":         c("string"),
+    "hljs-template-tag":   c("string"),
+    "hljs-template-variable": c("variable"),
+    // Regexp
+    "hljs-regexp":         c("string"),
+    // Comments
+    "hljs-comment":        c("comment"),
+    "hljs-quote":          c("comment"),
+    // Variable names / identifiers
+    "hljs-variable":       c("variable"),
+    "hljs-attr":           c("variable"),
+    "hljs-attribute":      c("variable"),
+    // Function / method names
+    "hljs-title":          c("func"),
+    "hljs-title.class_":   c("builtin"),
+    "hljs-title.function_":c("func"),
+    // Types, classes
+    "hljs-type":           c("builtin"),
+    "hljs-class":          c("builtin"),
+    // Operators & punctuation
+    "hljs-operator":       c("literal"),
+    "hljs-punctuation":    c("punctuation"),
+    // Tags (HTML/JSX)
+    "hljs-tag":            c("variable"),
+    "hljs-name":           c("variable"),
+    "hljs-selector-tag":   c("variable"),
+    "hljs-selector-id":    c("func"),
+    "hljs-selector-class": c("builtin"),
+    // Meta / preprocessor
+    "hljs-meta":           c("func"),
+    "hljs-meta-keyword":   c("keyword"),
+    "hljs-meta-string":    c("string"),
+    // Diff
+    "hljs-addition":       c("string"),
+    "hljs-deletion":       c("variable"),
+    // Section / heading (markdown inside code?)
+    "hljs-section":        c("func"),
+    "hljs-bullet":         c("builtin"),
+    "hljs-link":           c("string"),
+    "hljs-symbol":         c("func"),
+    "hljs-formula":        c("literal"),
+    "hljs-emphasis":       c("builtin"),
+    "hljs-strong":         variant === "dark" ? "#ffffff" : "#111827",
+  };
+}
 
-const LIGHT: Palette = {
-  "hljs-keyword":        "#7c3aed",
-  "hljs-built_in":       "#b45309",
-  "hljs-literal":        "#0891b2",
-  "hljs-number":         "#c2410c",
-  "hljs-string":         "#16a34a",
-  "hljs-template-tag":   "#16a34a",
-  "hljs-template-variable": "#dc2626",
-  "hljs-regexp":         "#16a34a",
-  "hljs-comment":        "#9ca3af",
-  "hljs-quote":          "#9ca3af",
-  "hljs-variable":       "#dc2626",
-  "hljs-attr":           "#dc2626",
-  "hljs-attribute":      "#dc2626",
-  "hljs-title":          "#1d4ed8",
-  "hljs-title.class_":   "#b45309",
-  "hljs-title.function_":"#1d4ed8",
-  "hljs-type":           "#b45309",
-  "hljs-class":          "#b45309",
-  "hljs-operator":       "#0891b2",
-  "hljs-punctuation":    "#374151",
-  "hljs-tag":            "#dc2626",
-  "hljs-name":           "#dc2626",
-  "hljs-selector-tag":   "#dc2626",
-  "hljs-selector-id":    "#1d4ed8",
-  "hljs-selector-class": "#b45309",
-  "hljs-meta":           "#1d4ed8",
-  "hljs-meta-keyword":   "#7c3aed",
-  "hljs-meta-string":    "#16a34a",
-  "hljs-addition":       "#16a34a",
-  "hljs-deletion":       "#dc2626",
-  "hljs-section":        "#1d4ed8",
-  "hljs-bullet":         "#b45309",
-  "hljs-link":           "#16a34a",
-  "hljs-symbol":         "#1d4ed8",
-  "hljs-formula":        "#0891b2",
-  "hljs-emphasis":       "#b45309",
-  "hljs-strong":         "#111827",
-};
+const DARK: Palette = buildPalette("dark");
+const LIGHT: Palette = buildPalette("light");
 
 // ── Token renderer ─────────────────────────────────────────────────────────────
 
@@ -157,11 +129,9 @@ interface Props {
 }
 
 export function CodeBlock({ code, language }: Props) {
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopyToClipboard();
 
-  const isDark = typeof document !== "undefined"
-    ? document.documentElement.getAttribute("data-theme") !== "light"
-    : true;
+  const isDark = useIsDark();
 
   const palette = isDark ? DARK : LIGHT;
 
@@ -179,11 +149,8 @@ export function CodeBlock({ code, language }: Props) {
   }, [code, language]);
 
   const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(code).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  }, [code]);
+    copy(code);
+  }, [code, copy]);
 
   // Background and default text for the block — slightly different dark/light
   const bgColor   = isDark ? "#161616" : "#f8f7f5";

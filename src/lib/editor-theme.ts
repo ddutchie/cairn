@@ -10,50 +10,35 @@
 import { EditorView, lineNumbers } from "@codemirror/view";
 import { syntaxHighlighting, HighlightStyle } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
+import { SYNTAX_COLORS } from "./syntax-palette";
 
-// ── Syntax highlight style (mirrors CodeBlock.tsx dark/light palettes) ─────────
+// ── Syntax highlight style ─────────────────────────────────────────────────────
 // CM6 HighlightStyle.define only accepts colour strings, not CSS variables, so
-// these are intentionally static palette values matched to the CodeBlock palette.
+// these are built from the shared `SYNTAX_COLORS` palette (see syntax-palette.ts),
+// the single source of truth shared with CodeBlock and the PDF export path.
 
 export function buildHighlightStyle(isDark: boolean) {
+  const v = isDark ? "dark" : "light";
+  const c = (name: keyof typeof SYNTAX_COLORS) => SYNTAX_COLORS[name][v];
   return syntaxHighlighting(
-    HighlightStyle.define(
-      isDark ? [
-        { tag: [tags.keyword, tags.modifier],                    color: "#c678dd" },
-        { tag: [tags.function(tags.variableName), tags.function(tags.propertyName)], color: "#61afef" },
-        { tag: [tags.definitionKeyword, tags.moduleKeyword],     color: "#c678dd" },
-        { tag: [tags.typeName, tags.className, tags.typeOperator], color: "#e5c07b" },
-        { tag: [tags.string, tags.special(tags.string)],         color: "#98c379" },
-        { tag: [tags.number, tags.integer, tags.float],          color: "#d19a66" },
-        { tag: [tags.bool, tags.null],                           color: "#56b6c2" },
-        { tag: [tags.comment, tags.lineComment, tags.blockComment], color: "#5c6370", fontStyle: "italic" },
-        { tag: tags.variableName,                                color: "#e06c75" },
-        { tag: tags.propertyName,                                color: "#e06c75" },
-        { tag: [tags.operator, tags.punctuation],                color: "#abb2bf" },
-        { tag: [tags.tagName, tags.angleBracket],                color: "#e06c75" },
-        { tag: tags.attributeName,                               color: "#d19a66" },
-        { tag: tags.attributeValue,                              color: "#98c379" },
-        { tag: [tags.meta, tags.processingInstruction],          color: "#61afef" },
-        { tag: tags.regexp,                                      color: "#e06c75" },
-      ] : [
-        { tag: [tags.keyword, tags.modifier],                    color: "#7c3aed" },
-        { tag: [tags.function(tags.variableName), tags.function(tags.propertyName)], color: "#1d4ed8" },
-        { tag: [tags.definitionKeyword, tags.moduleKeyword],     color: "#7c3aed" },
-        { tag: [tags.typeName, tags.className, tags.typeOperator], color: "#b45309" },
-        { tag: [tags.string, tags.special(tags.string)],         color: "#16a34a" },
-        { tag: [tags.number, tags.integer, tags.float],          color: "#c2410c" },
-        { tag: [tags.bool, tags.null],                           color: "#0891b2" },
-        { tag: [tags.comment, tags.lineComment, tags.blockComment], color: "#9ca3af", fontStyle: "italic" },
-        { tag: tags.variableName,                                color: "#dc2626" },
-        { tag: tags.propertyName,                                color: "#dc2626" },
-        { tag: [tags.operator, tags.punctuation],                color: "#374151" },
-        { tag: [tags.tagName, tags.angleBracket],                color: "#dc2626" },
-        { tag: tags.attributeName,                               color: "#1d4ed8" },
-        { tag: tags.attributeValue,                              color: "#16a34a" },
-        { tag: [tags.meta, tags.processingInstruction],          color: "#1d4ed8" },
-        { tag: tags.regexp,                                      color: "#dc2626" },
-      ]
-    )
+    HighlightStyle.define([
+      { tag: [tags.keyword, tags.modifier],                    color: c("keyword") },
+      { tag: [tags.function(tags.variableName), tags.function(tags.propertyName)], color: c("func") },
+      { tag: [tags.definitionKeyword, tags.moduleKeyword],     color: c("keyword") },
+      { tag: [tags.typeName, tags.className, tags.typeOperator], color: c("builtin") },
+      { tag: [tags.string, tags.special(tags.string)],         color: c("string") },
+      { tag: [tags.number, tags.integer, tags.float],          color: c("number") },
+      { tag: [tags.bool, tags.null],                           color: c("literal") },
+      { tag: [tags.comment, tags.lineComment, tags.blockComment], color: c("comment"), fontStyle: "italic" },
+      { tag: tags.variableName,                                color: c("variable") },
+      { tag: tags.propertyName,                                color: c("variable") },
+      { tag: [tags.operator, tags.punctuation],                color: c("punctuation") },
+      { tag: [tags.tagName, tags.angleBracket],                color: c("variable") },
+      { tag: tags.attributeName,                               color: isDark ? c("number") : c("func") },
+      { tag: tags.attributeValue,                              color: c("string") },
+      { tag: [tags.meta, tags.processingInstruction],          color: c("func") },
+      { tag: tags.regexp,                                      color: c("variable") },
+    ])
   );
 }
 

@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState } from "react";
-import { Bot } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { MessageAvatar } from "./message-ui";
 import { cn } from "@/lib/utils";
 import type { PendingQuestion } from "@/hooks/useChatStream";
 
@@ -30,10 +30,7 @@ export function QuestionForm({ questions, onSubmit, disabled = false }: Question
 
   return (
     <div className="flex gap-2 items-start">
-      {/* Bot avatar — mirrors ChatMessageBubble assistant style */}
-      <div className="w-6 h-6 rounded-full bg-[var(--accent-dim)] border border-[var(--accent)]/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-        <Bot size={11} className="text-[var(--accent)]" />
-      </div>
+      <MessageAvatar role="bot" size="lg" />
 
       <div className={cn(
         "flex-1 min-w-0 rounded-xl rounded-tl-sm border px-3 py-2.5 flex flex-col gap-2.5 transition-opacity",

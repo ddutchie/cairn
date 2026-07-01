@@ -13,6 +13,7 @@ import { getActiveWikilink } from "@/lib/wikilink-parser";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn, formatRelative, urlTransform } from "@/lib/utils";
+import { DARK_TO_LIGHT } from "@/lib/syntax-palette";
 import { Tooltip } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import type { Note } from "@/types";
@@ -725,12 +726,7 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
           pre.style.color      = "#374151";
           block.style.border   = "1px solid #dddad6";
 
-          // Rewrite token span colours from DARK palette → LIGHT palette
-          const DARK_TO_LIGHT: Record<string, string> = {
-            "#c678dd": "#7c3aed", "#e5c07b": "#b45309", "#56b6c2": "#0891b2",
-            "#d19a66": "#c2410c", "#98c379": "#16a34a", "#e06c75": "#dc2626",
-            "#5c6370": "#9ca3af", "#61afef": "#1d4ed8", "#abb2bf": "#374151",
-          };
+          // Rewrite token span colours from the dark palette → light palette
           for (const span of pre.querySelectorAll<HTMLElement>("span[style]")) {
             const c = span.style.color.toLowerCase();
             // normalise hex shorthand if needed, try direct map

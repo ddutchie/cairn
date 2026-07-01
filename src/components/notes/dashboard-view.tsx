@@ -3,7 +3,8 @@
 import React, { useEffect, useRef, useCallback, useState } from "react";
 import { RefreshCw, Calendar, LayoutDashboard, AlertTriangle, X, Zap, Code2, Wand2, Save, HelpCircle, ChevronLeft } from "lucide-react";
 import type { Note, DashboardQueryMessage } from "@/types";
-import { cn, formatRelative } from "@/lib/utils";
+import { cn, formatRelative, getIsDark } from "@/lib/utils";
+import { SYNTAX_COLORS } from "@/lib/syntax-palette";
 import { buildSrcdoc, buildThemeStyle, CAIRN_CSS_VARS } from "./dashboard-bootstrap";
 import { CairnEvents } from "@/lib/events";
 import { useCairnStore } from "@/store";
@@ -158,33 +159,22 @@ export function DashboardView({ note, onBack }: DashboardViewProps) {
       const { syntaxHighlighting, HighlightStyle } = await import("@codemirror/language");
       const { tags } = await import("@lezer/highlight");
 
-      const isDark = document.documentElement.getAttribute("data-theme") !== "light";
+      const isDark = getIsDark();
 
-      // Palette matched to CodeBlock.tsx dark/light palettes
-      const highlightStyle = HighlightStyle.define(isDark ? [
-        { tag: [tags.tagName, tags.angleBracket],        color: "#e06c75" },
-        { tag: tags.attributeName,                        color: "#e06c75" },
-        { tag: tags.attributeValue,                       color: "#98c379" },
-        { tag: [tags.string, tags.special(tags.string)],  color: "#98c379" },
-        { tag: tags.comment,                              color: "#5c6370", fontStyle: "italic" },
-        { tag: tags.docComment,                            color: "#c678dd" },
-        { tag: [tags.keyword, tags.operator],             color: "#56b6c2" },
-        { tag: tags.number,                               color: "#d19a66" },
-        { tag: tags.url,                                  color: "#98c379" },
-        { tag: tags.punctuation,                          color: "#abb2bf" },
-        { tag: tags.meta,                                 color: "#61afef" },
-      ] : [
-        { tag: [tags.tagName, tags.angleBracket],        color: "#dc2626" },
-        { tag: tags.attributeName,                        color: "#1d4ed8" },
-        { tag: tags.attributeValue,                       color: "#16a34a" },
-        { tag: [tags.string, tags.special(tags.string)],  color: "#16a34a" },
-        { tag: tags.comment,                              color: "#9ca3af", fontStyle: "italic" },
-        { tag: tags.docComment,                            color: "#7c3aed" },
-        { tag: [tags.keyword, tags.operator],             color: "#0891b2" },
-        { tag: tags.number,                               color: "#c2410c" },
-        { tag: tags.url,                                  color: "#16a34a" },
-        { tag: tags.punctuation,                          color: "#374151" },
-        { tag: tags.meta,                                 color: "#1d4ed8" },
+      // Syntax palette shared with CodeBlock via SYNTAX_COLORS (see syntax-palette.ts)
+      const sc = (name: keyof typeof SYNTAX_COLORS) => SYNTAX_COLORS[name][isDark ? "dark" : "light"];
+      const highlightStyle = HighlightStyle.define([
+        { tag: [tags.tagName, tags.angleBracket],        color: sc("variable") },
+        { tag: tags.attributeName,                        color: isDark ? sc("variable") : sc("func") },
+        { tag: tags.attributeValue,                       color: sc("string") },
+        { tag: [tags.string, tags.special(tags.string)],  color: sc("string") },
+        { tag: tags.comment,                              color: sc("comment"), fontStyle: "italic" },
+        { tag: tags.docComment,                            color: sc("keyword") },
+        { tag: [tags.keyword, tags.operator],             color: sc("literal") },
+        { tag: tags.number,                               color: sc("number") },
+        { tag: tags.url,                                  color: sc("string") },
+        { tag: tags.punctuation,                          color: sc("punctuation") },
+        { tag: tags.meta,                                 color: sc("func") },
       ]);
 
       const theme = EditorView.theme({

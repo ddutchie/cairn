@@ -20,7 +20,7 @@ import { AgentMessageBubble } from "./AgentMessageBubble";
 import { PlanTaskList } from "./PlanTaskList";
 import { ContextRing } from "./ContextRing";
 import { Tooltip } from "@/components/ui/tooltip";
-import { CairnEvents } from "@/lib/events";
+import { revealNote } from "@/lib/events";
 import { resolvePromptContext } from "@/lib/context-resolver";
 import type { TerminalSession, TokenBreakdown } from "@/types";
 
@@ -596,10 +596,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
         {session.planNoteId && (
           <Tooltip content="Open plan note" side="left">
             <button
-              onClick={() => {
-                setView("notes");
-                setTimeout(() => window.dispatchEvent(CairnEvents.selectNote(session.planNoteId!)), 50);
-              }}
+              onClick={() => revealNote(setView, session.planNoteId!)}
               className="flex items-center gap-1 text-[0.643rem] text-[var(--text-secondary)] hover:text-[var(--text-primary)] px-1.5 py-0.5 rounded-full border border-[var(--border)] hover:bg-[var(--surface-2)] transition-colors"
             >
               <FileText size={9} />

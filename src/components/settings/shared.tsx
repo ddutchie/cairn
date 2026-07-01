@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Footprints, Thermometer, Layers } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Toggle as UiToggle } from "@/components/ui/toggle";
 
 // ── Layout helpers ────────────────────────────
 
@@ -70,24 +71,7 @@ export function Toggle({
   id?: string;
 }) {
   return (
-    <button
-      id={id}
-      onClick={() => onChange(!checked)}
-      className={cn(
-        "relative inline-flex h-5 w-9 items-center rounded-full transition-colors",
-        checked ? "bg-[var(--accent)]" : "bg-[var(--surface-3)] border border-[var(--border)]"
-      )}
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-    >
-      <span
-        className={cn(
-          "inline-block h-3.5 w-3.5 rounded-full bg-[var(--surface)] shadow-sm transition-transform",
-          checked ? "translate-x-4.5" : "translate-x-0.5"
-        )}
-      />
-    </button>
+    <UiToggle checked={checked} onCheckedChange={onChange} label={label} id={id} />
   );
 }
 

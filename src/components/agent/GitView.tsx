@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { RefreshCw, GitBranch, GitCommit, ArrowUp, Sparkles, File, Check, X, ChevronRight, ChevronDown, GitPullRequest, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useIsDark } from "@/hooks/useIsDark";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
@@ -1059,10 +1060,7 @@ function FileRow({
 }
 
 function Inlinediff({ rawDiff, loading }: { rawDiff: string; loading: boolean }) {
-  const isDark =
-    typeof document !== "undefined"
-      ? document.documentElement.getAttribute("data-theme") !== "light"
-      : true;
+  const isDark = useIsDark();
   const palette = isDark ? PALETTE_DARK : PALETTE_LIGHT;
 
   const parsed = useMemo(() => {

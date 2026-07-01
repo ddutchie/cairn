@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Check, Copy } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
 import { Shell, NavRow, MCP_AGENTS, type McpAgentId } from "./shared";
 import { isElectron } from "@/store/ipc";
 
@@ -13,7 +14,7 @@ interface Props {
 
 export function StepMCP({ onBack, onNext }: Props) {
   const [selectedAgent, setSelectedAgent] = useState<McpAgentId>("claude");
-  const [copied, setCopied] = useState(false);
+  const { isCopied, copy } = useCopyToClipboard();
   const [mcpBin, setMcpBin] = useState<string | null>(null);
 
   useEffect(() => {
@@ -30,9 +31,7 @@ export function StepMCP({ onBack, onNext }: Props) {
 
   function handleCopy() {
     if (!mcpBin) return;
-    navigator.clipboard.writeText(agentData.snippet(mcpBin));
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    copy(agentData.snippet(mcpBin), selectedAgent);
   }
 
   return (
@@ -53,7 +52,7 @@ export function StepMCP({ onBack, onNext }: Props) {
               <button
                 key={a.id}
                 type="button"
-                onClick={() => { setSelectedAgent(a.id); setCopied(false); }}
+                onClick={() => { setSelectedAgent(a.id); }}
                 className={cn(
                   "flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-lg border transition-colors",
                   selectedAgent === a.id
@@ -83,10 +82,10 @@ export function StepMCP({ onBack, onNext }: Props) {
               disabled={!mcpBin}
               className="absolute top-2 right-2 flex items-center gap-1 px-2 py-1 text-[0.65rem] rounded bg-[var(--surface-3)] border border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:border-[var(--accent)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              {copied
+              {isCopied(selectedAgent)
                 ? <Check size={10} className="text-[var(--success)]" />
                 : <Copy size={10} />}
-              {copied ? "Copied" : "Copy"}
+              {isCopied(selectedAgent) ? "Copied" : "Copy"}
             </button>
           </div>
         </div>
