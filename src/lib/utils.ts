@@ -56,6 +56,31 @@ export function formatDate(iso: string): string {
   });
 }
 
+/**
+ * Compact list-oriented date: "Today" / "Yesterday" / "3d ago" for the last
+ * week, an absolute "Jan 5" otherwise. Future dates fall back to "Jan 5".
+ * Used by session/agent lists where a terse relative label reads better than
+ * the absolute {@link formatDate}.
+ */
+export function formatDateCompact(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "Invalid date";
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const target = new Date(d);
+  target.setHours(0, 0, 0, 0);
+
+  const diffDays = Math.floor((today.getTime() - target.getTime()) / 86400000);
+  if (diffDays < 0) {
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
 export function formatRelative(iso: string): string {
   const date = new Date(iso);
   const diff = Date.now() - date.getTime();

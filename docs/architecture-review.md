@@ -43,6 +43,17 @@ Deferred to Wave 3 (higher risk): the full `useMarkdownComponents()` factory (3.
 - ⏭️ **Deferred** — decomposing `GitView.tsx` (1100 lines, tightly-coupled git state; lowest reward-to-risk); the full `useMarkdownComponents()` factory beyond the shared `pre` handler (the override maps legitimately differ per surface).
 
 
+**Wave 3.5 — cheap follow-ups** (`type-check:all`, 836 tests, and `npm run compile` green):
+
+- ✅ 2.8 Merged the divergent `agent/sessionUtils.formatDate` into `lib/utils.ts` as `formatDateCompact` (Today / Yesterday / Nd ago / "MMM d"), sitting alongside the absolute `formatDate`; deleted `sessionUtils.ts` and repointed `AgentSessionTab`/`AgentEmptyState`. (The raw `toLocaleDateString`/`toLocaleString` calls in the graph canvases, board, GitView, chat, and PrdModal use bespoke time/axis formats that don't map onto the shared helpers — left as-is to avoid visible changes.)
+- ✅ 3.5 Extracted `persistPiTranscript(sessionId)` in `AgentChatPane` (module-level, reads store state imperatively); the `onDone` and `onError` handlers now both call it instead of inlining identical save blocks.
+
+Assessed but intentionally **not** changed (avoiding regressions / unused abstractions):
+
+- ⏭️ 5 `InsightsView` layout toggle — not a clean `ui/segmented-control.tsx` fit: it has per-item Tooltips and an animated icon→icon+label expand on the active item that the shared primitive doesn't model. Migrating would lose the tooltips and change the visuals.
+- ⏭️ 7 `useDebouncedCallback` — the three ad-hoc debouncers (`note-editor` save, `search-panel` keyword+semantic timers with stale-query guards, `ChatInput`) are specialized effect-based debouncers with different signatures; none is a clean, low-risk fit, and adding a hook with zero adopters would just be dead code.
+
+
 ---
 
 ## 1. Executive summary

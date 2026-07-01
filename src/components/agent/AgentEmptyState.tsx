@@ -3,9 +3,8 @@
 import { useShallow } from "zustand/react/shallow";
 import { Plus, Bot, History, ArrowRight } from "lucide-react";
 import { useCairnStore } from "@/store";
-import { cn } from "@/lib/utils";
+import { cn, formatDateCompact } from "@/lib/utils";
 import { useAgentSessionActions } from "./useAgentSessionActions";
-import { formatDate } from "./sessionUtils";
 
 export function AgentEmptyState() {
   const { piSessionHistory, persistentPiSessionId } = useCairnStore(useShallow((s) => ({
@@ -58,7 +57,7 @@ export function AgentEmptyState() {
             >
               <div className="flex-1 min-w-0">
                 <p className="text-[0.714rem] text-[var(--text-secondary)] truncate">{summary.taskTitle}</p>
-                <p className="text-[0.607rem] text-[var(--text-tertiary)]">{formatDate(summary.updatedAt)}</p>
+                <p className="text-[0.607rem] text-[var(--text-tertiary)]">{formatDateCompact(summary.updatedAt)}</p>
               </div>
               <ArrowRight size={10} className="text-[var(--text-tertiary)] shrink-0 opacity-0 group-hover:opacity-100" />
             </button>
