@@ -27,6 +27,6 @@ export function useIsDark(): boolean {
   return useSyncExternalStore(
     subscribe,
     getIsDark,
-    () => true, // server snapshot — matches the app's default dark theme
+    getIsDark, // server/hydration snapshot — reads the DOM if present, else safely defaults to dark
   );
 }

@@ -36,6 +36,20 @@ export function ArchiveView({ projectId, filter, onFilterChange, onOpenCard }: A
     : allArchived;
   const colMap = new Map(columns.map((c) => [c.id, c]));
 
+  // Permanent deletion is irreversible — gate every path behind a confirm.
+  const confirmDeleteAll = () => {
+    if (filtered.length === 0) return;
+    const msg = filter
+      ? `Permanently delete ${filtered.length} matching archived task${filtered.length !== 1 ? "s" : ""}? This cannot be undone.`
+      : `Permanently delete all ${filtered.length} archived task${filtered.length !== 1 ? "s" : ""}? This cannot be undone.`;
+    if (!window.confirm(msg)) return;
+    filtered.forEach((c) => deleteCard(c.id));
+  };
+  const confirmDeleteOne = (cardId: string, title: string) => {
+    if (!window.confirm(`Permanently delete "${title}"? This cannot be undone.`)) return;
+    deleteCard(cardId);
+  };
+
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
       {/* Archive toolbar */}
@@ -56,8 +70,8 @@ export function ArchiveView({ projectId, filter, onFilterChange, onOpenCard }: A
         {filtered.length > 0 && (
           <Tooltip content={filter ? "Delete matching tasks permanently" : "Delete all archived tasks permanently"}>
             <button
-              onClick={() => filtered.forEach((c) => deleteCard(c.id))}
-              className="flex items-center gap-1.5 ml-auto px-2 py-1 rounded text-xs text-[var(--text-tertiary)] hover:text-[var(--danger)] hover:bg-[var(--danger)]/10 transition-colors"
+              onClick={confirmDeleteAll}
+              className="flex items-center gap-1.5 ml-auto px-2 py-1 rounded text-xs text-[var(--text-tertiary)] hover:text-[var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] transition-colors"
             >
               <Trash2 size={11} />
               Delete all
@@ -80,10 +94,28 @@ export function ArchiveView({ projectId, filter, onFilterChange, onOpenCard }: A
               const col = colMap.get(card.columnId);
               return (
                 <div key={card.id} className="rounded-xl border border-[var(--border)] bg-[var(--surface)] flex flex-col opacity-80 hover:opacity-100 transition-opacity">
-                  {/* Clickable body — opens detail modal */}
-                  <button
-                    onClick={() => onOpenCard(card.id)}
-                    className="flex-1 p-3 text-left flex flex-col gap-2 hover:bg-[var(--surface-2)] rounded-t-xl transition-colors"
+                  {/*
+                    Clickable body — opens the detail modal. Rendered as a div
+                    (not a button) so the markdown preview, which may contain
+                    links, isn't nested inside interactive content. Keyboard
+                    activation is wired up explicitly. Clicks that originate on
+                    a nested link/button are ignored so those keep working.
+                  */}
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={(e) => {
+                      if ((e.target as HTMLElement).closest("a, button")) return;
+                      onOpenCard(card.id);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        onOpenCard(card.id);
+                      }
+                    }}
+                    aria-label={`Open ${card.title}`}
+                    className="flex-1 p-3 text-left flex flex-col gap-2 hover:bg-[var(--surface-2)] rounded-t-xl transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-inset"
                   >
                     <span className="text-xs font-medium text-[var(--text-primary)] leading-snug line-clamp-2">{card.title}</span>
                     {card.description && (
@@ -100,8 +132,8 @@ export function ArchiveView({ projectId, filter, onFilterChange, onOpenCard }: A
                       {card.priority && card.priority !== "medium" && (
                         <span className={cn(
                           "text-[0.643rem] px-1.5 py-0.5 rounded",
-                          card.priority === "urgent" && "bg-[var(--danger)]/10 text-[var(--danger)]",
-                          card.priority === "high"   && "bg-[var(--warning)]/10 text-[var(--warning)]",
+                          card.priority === "urgent" && "bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] text-[var(--danger)]",
+                          card.priority === "high"   && "bg-[color-mix(in_srgb,var(--warning)_10%,transparent)] text-[var(--warning)]",
                           card.priority === "low"    && "bg-[var(--surface-2)] text-[var(--text-tertiary)]",
                         )}>
                           {card.priority}
@@ -113,23 +145,25 @@ export function ArchiveView({ projectId, filter, onFilterChange, onOpenCard }: A
                         </span>
                       )}
                     </div>
-                  </button>
+                  </div>
                   {/* Action row */}
                   <div className="flex items-center justify-end gap-0.5 px-2 py-1.5 border-t border-[var(--border)]">
                     <Tooltip content="Restore to board">
                       <button
                         onClick={() => restoreCard(card.id)}
-                        className="p-1 rounded hover:bg-[var(--accent)]/10 text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors"
+                        aria-label={`Restore "${card.title}" to board`}
+                        className="p-1 rounded hover:bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors"
                       >
-                        <ArchiveRestore size={12} />
+                        <ArchiveRestore size={12} aria-hidden="true" />
                       </button>
                     </Tooltip>
                     <Tooltip content="Delete permanently">
                       <button
-                        onClick={() => deleteCard(card.id)}
-                        className="p-1 rounded hover:bg-[var(--danger)]/10 text-[var(--text-tertiary)] hover:text-[var(--danger)] transition-colors"
+                        onClick={() => confirmDeleteOne(card.id, card.title)}
+                        aria-label={`Delete "${card.title}" permanently`}
+                        className="p-1 rounded hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] text-[var(--text-tertiary)] hover:text-[var(--danger)] transition-colors"
                       >
-                        <Trash2 size={12} />
+                        <Trash2 size={12} aria-hidden="true" />
                       </button>
                     </Tooltip>
                   </div>

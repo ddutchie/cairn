@@ -9,8 +9,7 @@ import { Kanban, CalendarDays, Workflow, GitBranch, BarChart2, Terminal, Message
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import type { ToggleableView } from "@/store/slices/ui";
-import { Toggle } from "@/components/ui/toggle";
-import { SettingsGroup } from "./shared";
+import { SettingsGroup, Toggle } from "./shared";
 
 interface ViewOption {
   view: ToggleableView;
@@ -50,7 +49,7 @@ export function ViewVisibilitySettings() {
               <p className="text-[0.714rem] text-[var(--text-tertiary)]">Always visible</p>
             </div>
           </div>
-            <Toggle checked disabled onCheckedChange={() => {}} label="Always visible" />
+            <Toggle checked disabled onChange={() => {}} label={`${label} — always visible`} />
         </div>
       ))}
 
@@ -69,7 +68,7 @@ export function ViewVisibilitySettings() {
                 <p className="text-[0.714rem] text-[var(--text-tertiary)]">{description}</p>
               </div>
             </div>
-            <Toggle checked={visible} onCheckedChange={() => toggleViewVisibility(view)} label={`Toggle ${label}`} />
+            <Toggle checked={visible} onChange={() => toggleViewVisibility(view)} label={`Toggle ${label}`} />
           </div>
         );
       })}

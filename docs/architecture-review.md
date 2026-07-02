@@ -213,10 +213,10 @@ Remaining duplication:
 
 ## 4. Notes & Kanban
 
-### 4.1 `card-detail.tsx` ≈ `card-detail-panel.tsx` (~95% duplicate) — Impact: High, Effort: M
-Both share identical store selectors, `useMemo` derivations, and Title/Description/Tags/Linked-notes JSX (~150 lines each). Only the wrapper differs (`<Dialog>` vs `<div>`). Worse, `card-detail-panel.tsx:55-60` re-inlines blocker logic instead of importing `card-detail-utils.ts`.
+### 4.1 `card-detail.tsx` ≈ `card-detail-panel.tsx` (~95% duplicate) — Impact: High, Effort: M — ✅ DONE (Wave 2)
+Both shared identical store selectors, `useMemo` derivations, and Title/Description/Tags/Linked-notes JSX (~150 lines each); only the wrapper differed (`<Dialog>` vs `<div>`), and the panel re-inlined blocker logic instead of importing `card-detail-utils.ts`.
 
-**Recommendation.** Extract `<CardDetailBody>`; have both wrappers render it. Make the panel use `card-detail-utils.ts`. Removes ~180 duplicated lines.
+**Shipped.** Extracted `<CardDetailBody>` (`card-detail-body.tsx`); both wrappers now render it, and the panel uses `card-detail-utils.ts`. See the Wave 2 progress log entry above.
 
 ### 4.2 Three parallel ReactMarkdown override maps — Impact: High, Effort: M
 The `pre`→CodeBlock/Mermaid switch + element overrides exist in three places:

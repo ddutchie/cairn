@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Footprints, Thermometer, Layers } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Toggle as UiToggle } from "@/components/ui/toggle";
+import { Toggle as UiToggle, type ToggleProps } from "@/components/ui/toggle";
 
 // ── Layout helpers ────────────────────────────
 
@@ -59,19 +59,33 @@ export function SettingsRow({
 
 // ── Toggle switch ─────────────────────────────
 
+/**
+ * Settings-flavoured Toggle. Wraps the canonical `ui/toggle` but keeps the
+ * settings-local `onChange` prop name for its existing callers, while
+ * forwarding the rest of the canonical `ToggleProps` surface (`disabled`,
+ * `className`, `label`, `id`) so settings code has a single import path that
+ * supports every supported prop.
+ */
 export function Toggle({
   checked,
   onChange,
   label,
   id,
+  disabled,
+  className,
 }: {
   checked: boolean;
   onChange: (v: boolean) => void;
-  label?: string;
-  id?: string;
-}) {
+} & Pick<ToggleProps, "label" | "id" | "disabled" | "className">) {
   return (
-    <UiToggle checked={checked} onCheckedChange={onChange} label={label} id={id} />
+    <UiToggle
+      checked={checked}
+      onCheckedChange={onChange}
+      label={label}
+      id={id}
+      disabled={disabled}
+      className={className}
+    />
   );
 }
 

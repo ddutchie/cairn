@@ -51,6 +51,7 @@ export function NodeTypeChip({ type, active, onClick, tooltip, dotSize = 6, clas
   const button = (
     <button
       onClick={onClick}
+      aria-pressed={active}
       className={cn(
         "flex items-center gap-1 px-2 py-1 rounded text-[0.786rem] capitalize transition-colors border",
         active ? "border-transparent" : "border-[var(--border)] text-[var(--text-tertiary)] opacity-50",

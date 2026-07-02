@@ -87,7 +87,7 @@ function buildPalette(variant: "dark" | "light"): Palette {
     "hljs-symbol":         c("func"),
     "hljs-formula":        c("literal"),
     "hljs-emphasis":       c("builtin"),
-    "hljs-strong":         variant === "dark" ? "#ffffff" : "#111827",
+    "hljs-strong":         c("strong"),
   };
 }
 
@@ -162,11 +162,13 @@ export function CodeBlock({ code, language }: Props) {
 
   return (
     <div
+      data-cairn-codeblock=""
       className="my-4 rounded-lg overflow-hidden text-[12.5px] font-mono"
       style={{ border: `1px solid ${borderColor}` }}
     >
       {/* Header bar */}
       <div
+        data-cairn-codeblock-header=""
         className="flex items-center justify-between px-3 py-1.5"
         style={{ background: headerBg, borderBottom: `1px solid ${borderColor}` }}
       >

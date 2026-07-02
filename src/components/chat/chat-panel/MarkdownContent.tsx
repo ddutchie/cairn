@@ -96,29 +96,29 @@ export function MarkdownContent({ content, isUser }: { content: string; isUser?:
     return preprocessMarkdown(content, notes, cards, cwd);
   }, [content, notes, cards, cwd]);
 
-  // The user bubble has an accent (purple) background. All text there renders
-  // white for a single, consistent, high-brightness treatment (matching the
-  // plain paragraph colour set on the bubble container). Chrome (borders,
-  // code/table backgrounds) use white alpha via color-mix. Assistant bubbles
-  // keep the dark surface tokens.
-  const strongColor = isUser ? "text-white" : "text-[var(--text-primary)]";
-  const headingColor = isUser ? "text-white" : "text-[var(--text-primary)]";
-  const listColor = isUser ? "text-white" : "text-[var(--text-secondary)]";
+  // The user bubble has an accent background. All text there renders in the
+  // accent-foreground token (`--accent-fg`), which is theme-aware and meets AA
+  // contrast on the accent surface (plain `text-white` fails AA on the dark
+  // accent). Chrome (borders, code/table backgrounds) use accent-fg alpha via
+  // color-mix. Assistant bubbles keep the dark surface tokens.
+  const strongColor = isUser ? "text-[var(--accent-fg)]" : "text-[var(--text-primary)]";
+  const headingColor = isUser ? "text-[var(--accent-fg)]" : "text-[var(--text-primary)]";
+  const listColor = isUser ? "text-[var(--accent-fg)]" : "text-[var(--text-secondary)]";
   const codeClass = isUser
-    ? "bg-[color-mix(in_srgb,#ffffff_20%,transparent)] text-white"
+    ? "bg-[color-mix(in_srgb,var(--accent-fg)_20%,transparent)] text-[var(--accent-fg)]"
     : "bg-[var(--surface-3)] text-[var(--text-primary)]";
   const quoteClass = isUser
-    ? "border-[color-mix(in_srgb,#ffffff_40%,transparent)] text-[color-mix(in_srgb,#ffffff_85%,transparent)]"
+    ? "border-[color-mix(in_srgb,var(--accent-fg)_40%,transparent)] text-[color-mix(in_srgb,var(--accent-fg)_85%,transparent)]"
     : "border-[var(--accent)] text-[var(--text-tertiary)]";
   // Table / rule chrome — re-themed against the accent bubble for the user path.
   const ruleBorder = isUser
-    ? "border-[color-mix(in_srgb,#ffffff_40%,transparent)]"
+    ? "border-[color-mix(in_srgb,var(--accent-fg)_40%,transparent)]"
     : "border-[var(--border)]";
   const thClass = isUser
-    ? "text-white bg-[color-mix(in_srgb,#ffffff_15%,transparent)] border-[color-mix(in_srgb,#ffffff_40%,transparent)]"
+    ? "text-[var(--accent-fg)] bg-[color-mix(in_srgb,var(--accent-fg)_15%,transparent)] border-[color-mix(in_srgb,var(--accent-fg)_40%,transparent)]"
     : "text-[var(--text-primary)] bg-[var(--surface-2)] border-[var(--border)]";
   const tdClass = isUser
-    ? "text-white border-[color-mix(in_srgb,#ffffff_40%,transparent)]"
+    ? "text-[var(--accent-fg)] border-[color-mix(in_srgb,var(--accent-fg)_40%,transparent)]"
     : "text-[var(--text-secondary)] border-[var(--border)]";
 
   return (
@@ -153,10 +153,10 @@ export function MarkdownContent({ content, isUser }: { content: string; isUser?:
         ),
         a: ({ href, children }) => {
           const linkClass = isUser
-            ? "inline-flex items-center text-white hover:text-[color-mix(in_srgb,#ffffff_85%,transparent)] underline font-medium cursor-pointer"
+            ? "inline-flex items-center text-[var(--accent-fg)] hover:text-[color-mix(in_srgb,var(--accent-fg)_85%,transparent)] underline font-medium cursor-pointer"
             : "inline-flex items-center text-[var(--accent)] hover:underline font-medium cursor-pointer";
           const fallbackClass = isUser
-            ? "text-white hover:text-[color-mix(in_srgb,#ffffff_85%,transparent)] underline"
+            ? "text-[var(--accent-fg)] hover:text-[color-mix(in_srgb,var(--accent-fg)_85%,transparent)] underline"
             : "text-[var(--accent)] hover:underline";
 
           if (href?.startsWith("cairn://note/")) {

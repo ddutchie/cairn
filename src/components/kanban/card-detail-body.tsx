@@ -120,11 +120,20 @@ export function CardDetailBody({
             />
           ) : (
             <div
+              role="button"
+              tabIndex={0}
               onClick={(e) => {
                 if ((e.target as HTMLElement).closest("a, button")) return;
                 setIsEditingDesc(true);
               }}
-              className={cn("w-full bg-[var(--surface-2)] border border-[var(--border)] hover:border-[color-mix(in_srgb,var(--accent)_40%,transparent)] rounded-lg px-3 py-2.5 text-sm text-[var(--text-secondary)] cursor-pointer transition-colors overflow-y-auto", descMinHeight)}
+              onKeyDown={(e) => {
+                if ((e.target as HTMLElement).closest("a, button")) return;
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setIsEditingDesc(true);
+                }
+              }}
+              className={cn("w-full bg-[var(--surface-2)] border border-[var(--border)] hover:border-[color-mix(in_srgb,var(--accent)_40%,transparent)] rounded-lg px-3 py-2.5 text-sm text-[var(--text-secondary)] cursor-pointer transition-colors overflow-y-auto focus:outline-none focus-visible:border-[var(--accent)]", descMinHeight)}
             >
               {card.description?.trim() ? (
                 <NoteMarkdownPreview content={card.description} className="!px-3 !py-2.5" />
@@ -180,7 +189,7 @@ export function CardDetailBody({
                 <FileText size={12} className="text-[var(--text-tertiary)] flex-shrink-0" />
                 <span className="text-xs text-[var(--text-secondary)] flex-1 truncate" title={note.title}>{note.title}</span>
                 <Tooltip content="Open note">
-                  <button onClick={() => revealNote(setView, note.id)} className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-all" aria-label="Open note">
+                  <button onClick={() => { revealNote(setView, note.id); onClose?.(); }} className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-all" aria-label="Open note">
                     <ExternalLink size={11} aria-hidden="true" />
                   </button>
                 </Tooltip>

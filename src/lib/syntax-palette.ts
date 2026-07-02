@@ -29,6 +29,7 @@ export const SYNTAX_COLORS = {
   variable:    { dark: "#e06c75", light: "#dc2626" },
   func:        { dark: "#61afef", light: "#1d4ed8" },
   punctuation: { dark: "#abb2bf", light: "#374151" },
+  strong:      { dark: "#ffffff", light: "#111827" },
 } as const satisfies Record<string, SyntaxColor>;
 
 /**

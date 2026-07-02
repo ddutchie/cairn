@@ -34,25 +34,33 @@ export const CairnEvents = {
 };
 
 /**
- * Delay (ms) between switching views and dispatching the reveal event. The
- * target view needs one render cycle to mount its CustomEvent listener before
- * we fire, otherwise the event is missed. Centralised here so the magic number
- * lives in exactly one place.
+ * Switch view, then reveal a target after the view has mounted. See
+ * `navigateAndReveal` for the readiness strategy.
  */
-const REVEAL_DELAY_MS = 50;
-
 type ActiveView = AppUIState["activeView"];
 type SetView = (view: ActiveView) => void;
 
 /**
- * Switch to `view`, then—after the target view has had a render cycle to mount
- * its listener—dispatch `event`. Consolidates the
+ * Switch to `view`, then—once the target view has had a chance to mount its
+ * CustomEvent listener—dispatch `event`. Consolidates the
  * `setView(...); setTimeout(() => window.dispatchEvent(...), 50)` idiom that
  * was duplicated across chat, kanban, project-overview, and ref chips.
+ *
+ * Instead of a fixed magic-number delay, we wait for two animation frames: the
+ * first lets React commit the view switch, the second fires after the browser
+ * has painted the newly-mounted view (and thus attached its listener). This is
+ * more reliable than a hard-coded timeout when mounting is slower than expected.
+ * Falls back to a `setTimeout` when `requestAnimationFrame` is unavailable
+ * (e.g. non-DOM environments).
  */
 export function navigateAndReveal(setView: SetView, view: ActiveView, event: Event) {
   setView(view);
-  setTimeout(() => window.dispatchEvent(event), REVEAL_DELAY_MS);
+  const fire = () => window.dispatchEvent(event);
+  if (typeof requestAnimationFrame === "function") {
+    requestAnimationFrame(() => requestAnimationFrame(fire));
+  } else {
+    setTimeout(fire, 50);
+  }
 }
 
 /** Navigate to the Notes view and select the given note. */

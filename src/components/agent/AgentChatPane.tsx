@@ -77,7 +77,9 @@ function persistPiTranscript(sessionId: string): void {
     subagents: m.subagents ?? null,
     timestamp: m.timestamp,
   }));
-  window.electron?.piAgent.saveMessages(sessionId, saveable).catch(console.error);
+  window.electron?.piAgent.saveMessages(sessionId, saveable).catch((err) =>
+    console.error(`[AgentChatPane] failed to persist transcript for session ${sessionId}:`, err),
+  );
 }
 
 

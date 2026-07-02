@@ -17,10 +17,13 @@ export function prepareNoteHtmlForPdf(rawHtml: string, theme: "light" | "dark"):
   const root = doc.body.firstElementChild;
   if (!root) return rawHtml;
 
-  // Each CodeBlock renders as: div.my-4.rounded-lg > div(header) + pre
-  for (const block of root.querySelectorAll<HTMLElement>("div.my-4")) {
+  // Each CodeBlock renders as:
+  //   div[data-cairn-codeblock] > div[data-cairn-codeblock-header] + pre
+  // Target the stable data-attribute markers rather than the layout classes
+  // (`div.my-4`), which can match unrelated note content.
+  for (const block of root.querySelectorAll<HTMLElement>("[data-cairn-codeblock]")) {
     const pre = block.querySelector<HTMLElement>("pre");
-    const header = block.querySelector<HTMLElement>("div");
+    const header = block.querySelector<HTMLElement>("[data-cairn-codeblock-header]");
     if (!pre) continue;
 
     if (theme === "light") {
