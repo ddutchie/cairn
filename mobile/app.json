@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "Cairn",
+    "slug": "cairn-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "cairn",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.cairn.mobile"
+    },
+    "android": {
+      "package": "com.cairn.mobile"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-sqlite",
+      "expo-status-bar"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
