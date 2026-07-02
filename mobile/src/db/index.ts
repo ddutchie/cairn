@@ -6,7 +6,7 @@
  */
 
 import * as SQLite from "expo-sqlite";
-import { SyncEngine } from "@shared/sync/engine";
+import { SyncEngine } from "@cairn/shared/sync/engine";
 import { createExpoSyncDb } from "./expo-sync-db";
 import { MOBILE_SCHEMA_SQL, MOBILE_TRIGGERS_SQL } from "./schema";
 

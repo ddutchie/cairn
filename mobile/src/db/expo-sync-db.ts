@@ -17,7 +17,7 @@
  */
 
 import type { SQLiteDatabase } from "expo-sqlite";
-import type { SyncDb, SyncStatement } from "@shared/sync/db-adapter";
+import type { SyncDb, SyncStatement } from "@cairn/shared/sync/db-adapter";
 
 function toParams(params: unknown[]): unknown[] {
   // Callers pass positional args like better-sqlite3 (.run(a, b, c)).

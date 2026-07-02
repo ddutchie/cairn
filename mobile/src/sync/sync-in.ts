@@ -16,7 +16,7 @@
 
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
-import type { OplogEntry } from "@shared/sync/engine";
+import type { OplogEntry } from "@cairn/shared/sync/engine";
 import { getEngine } from "@/db";
 
 function parseNdjson(text: string): OplogEntry[] {
