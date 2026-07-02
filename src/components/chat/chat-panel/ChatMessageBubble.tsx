@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React from "react";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
 import { FileText, Kanban, FolderOpen, Search, Copy, Check, RotateCcw, CheckCircle } from "lucide-react";
 import { cn, formatRelative, prettifyToolLabel } from "@/lib/utils";

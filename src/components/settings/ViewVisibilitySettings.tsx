@@ -9,7 +9,6 @@ import { Kanban, CalendarDays, Workflow, GitBranch, BarChart2, Terminal, Message
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import type { ToggleableView } from "@/store/slices/ui";
-import { cn } from "@/lib/utils";
 import { Toggle } from "@/components/ui/toggle";
 import { SettingsGroup } from "./shared";
 

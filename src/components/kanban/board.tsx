@@ -19,8 +19,7 @@ import {
   horizontalListSortingStrategy,
   arrayMove,
 } from "@dnd-kit/sortable";
-import { Plus, Kanban, Archive, Trash2, Search, X, ArchiveRestore, ArchiveX } from "lucide-react";
-import { Tooltip } from "@/components/ui/tooltip";
+import { Plus, Kanban, Archive, Trash2, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
