@@ -584,6 +584,106 @@ const MIGRATIONS: Migration[] = [
       db.exec("ALTER TABLE mcp_servers ADD COLUMN disabled_tools TEXT NOT NULL DEFAULT '[]'");
     }
   },
+
+  // v25: Mobile sync foundation (docs/plans/mobile-app-viability.md Phase 1).
+  //
+  // Adds, to every syncable table:
+  //   - hlc        TEXT : Hybrid Logical Clock stamp of the row's last write
+  //                       (the last-writer-wins key; skew-safe, monotonic).
+  //   - deleted_at TEXT : tombstone. NULL = live. Sync NEVER hard-deletes, so
+  //                       deletions propagate instead of resurrecting.
+  // Plus timestamps on `tags` (which had none, making tag changes invisible to
+  // any diff), and the engine's bookkeeping tables:
+  //   - sync_oplog    : append-only, HLC-ordered local change log.
+  //   - sync_pending  : raw change staging populated by capture triggers (v26);
+  //                     drained into sync_oplog with HLC stamps by the engine.
+  //   - sync_state    : device_id + this device's HLC + per-peer watermarks.
+  //
+  // Proven in the Phase 0 spike (electron/sync/*). This migration is additive
+  // and backward-compatible; the desktop keeps working unchanged.
+  (db) => {
+    const SYNCABLE = [
+      "workspaces", "projects", "board_columns", "tags",
+      "notes", "task_cards", "chat_threads", "chat_messages",
+    ];
+    const colNames = (t: string) =>
+      (db.prepare(`PRAGMA table_info(${t})`).all() as { name: string }[]).map((c) => c.name);
+
+    // tags has no timestamps at all — add them.
+    const tagCols = colNames("tags");
+    if (!tagCols.includes("created_at")) db.exec("ALTER TABLE tags ADD COLUMN created_at TEXT");
+    if (!tagCols.includes("updated_at")) db.exec("ALTER TABLE tags ADD COLUMN updated_at TEXT");
+
+    for (const t of SYNCABLE) {
+      const cols = colNames(t);
+      if (!cols.includes("hlc")) db.exec(`ALTER TABLE ${t} ADD COLUMN hlc TEXT`);
+      if (!cols.includes("deleted_at")) db.exec(`ALTER TABLE ${t} ADD COLUMN deleted_at TEXT`);
+    }
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS sync_oplog (
+        seq        INTEGER PRIMARY KEY AUTOINCREMENT,
+        hlc        TEXT NOT NULL,
+        origin     TEXT NOT NULL,
+        entity     TEXT NOT NULL,
+        entity_id  TEXT NOT NULL,
+        op         TEXT NOT NULL,          -- 'put' | 'delete'
+        payload    TEXT,                   -- JSON row snapshot for 'put'
+        applied_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_oplog_hlc    ON sync_oplog(hlc);
+      CREATE INDEX IF NOT EXISTS idx_oplog_entity ON sync_oplog(entity, entity_id);
+
+      CREATE TABLE IF NOT EXISTS sync_pending (
+        seq       INTEGER PRIMARY KEY AUTOINCREMENT,
+        entity    TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        op        TEXT NOT NULL            -- 'put' | 'delete'
+      );
+
+      CREATE TABLE IF NOT EXISTS sync_state (
+        key   TEXT PRIMARY KEY,            -- 'device_id' | 'hlc' | 'watermark:<peer>'
+        value TEXT NOT NULL
+      );
+    `);
+  },
+
+  // v26: Capture triggers. Every INSERT/UPDATE/DELETE on a syncable table stages
+  // a row in sync_pending, regardless of which code path wrote it (renderer IPC,
+  // MCP tools, or the file-watcher). The engine drains sync_pending into the
+  // HLC-stamped sync_oplog. Trigger writes made by the engine itself are marked
+  // via the `sync_state` key 'suppress' to avoid re-capturing applied remote ops.
+  (db) => {
+    // Guard: skip capturing changes the engine makes while applying remote ops.
+    // A trigger checks whether the 'suppress' flag is set (value '1').
+    const suppressGuard = `(SELECT COALESCE((SELECT value FROM sync_state WHERE key='suppress'),'0')) = '0'`;
+    const SYNCABLE = [
+      "workspaces", "projects", "board_columns", "tags",
+      "notes", "task_cards", "chat_threads", "chat_messages",
+    ];
+    for (const t of SYNCABLE) {
+      db.exec(`
+        CREATE TRIGGER IF NOT EXISTS trg_sync_${t}_ins AFTER INSERT ON ${t}
+        WHEN ${suppressGuard}
+        BEGIN
+          INSERT INTO sync_pending (entity, entity_id, op) VALUES ('${t}', NEW.id, 'put');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS trg_sync_${t}_upd AFTER UPDATE ON ${t}
+        WHEN ${suppressGuard}
+        BEGIN
+          INSERT INTO sync_pending (entity, entity_id, op)
+          VALUES ('${t}', NEW.id, CASE WHEN NEW.deleted_at IS NOT NULL THEN 'delete' ELSE 'put' END);
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS trg_sync_${t}_del AFTER DELETE ON ${t}
+        WHEN ${suppressGuard}
+        BEGIN
+          INSERT INTO sync_pending (entity, entity_id, op) VALUES ('${t}', OLD.id, 'delete');
+        END;
+      `);
+    }
+  },
 ];
 
 export function applySchema(db: Database.Database): void {
