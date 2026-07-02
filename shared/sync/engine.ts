@@ -13,7 +13,7 @@
  * so LWW + conflict-copy is sufficient; no CRDTs.
  */
 
-import type Database from "better-sqlite3";
+import type { SyncDb } from "./db-adapter";
 import { Hlc, compareHlc } from "./hlc";
 import { SYNCABLE_TABLES, type SyncableTable } from "./schema";
 
@@ -40,11 +40,11 @@ const BODY_COLUMN: Partial<Record<SyncableTable, string>> = {
   notes: "content",
 };
 
-function tableColumns(db: Database.Database, table: string): string[] {
+function tableColumns(db: SyncDb, table: string): string[] {
   return (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name);
 }
 
-function readRow(db: Database.Database, table: string, id: string): Record<string, unknown> | undefined {
+function readRow(db: SyncDb, table: string, id: string): Record<string, unknown> | undefined {
   return db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(id) as Record<string, unknown> | undefined;
 }
 
@@ -70,11 +70,11 @@ function unionArrays(a: unknown, b: unknown): string {
  * replicate MUST go through put()/remove() so they are HLC-stamped and logged.
  */
 export class SyncEngine {
-  readonly db: Database.Database;
+  readonly db: SyncDb;
   readonly deviceId: string;
   private hlc: Hlc;
 
-  constructor(db: Database.Database, deviceId: string, opts?: { now?: () => number }) {
+  constructor(db: SyncDb, deviceId: string, opts?: { now?: () => number }) {
     this.db = db;
     this.deviceId = deviceId;
 
@@ -389,7 +389,7 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-function db_cols_notnull(db: Database.Database, table: string): Array<{ name: string; dflt: unknown }> {
+function db_cols_notnull(db: SyncDb, table: string): Array<{ name: string; dflt: unknown }> {
   const cols = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{
     name: string;
     notnull: number;

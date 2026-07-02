@@ -599,7 +599,7 @@ const MIGRATIONS: Migration[] = [
   //                     drained into sync_oplog with HLC stamps by the engine.
   //   - sync_state    : device_id + this device's HLC + per-peer watermarks.
   //
-  // Proven in the Phase 0 spike (electron/sync/*). This migration is additive
+  // Proven in the Phase 0 spike (shared/sync/*). This migration is additive
   // and backward-compatible; the desktop keeps working unchanged.
   (db) => {
     const SYNCABLE = [
