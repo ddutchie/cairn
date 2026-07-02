@@ -20,7 +20,7 @@ import { AgentMessageBubble } from "./AgentMessageBubble";
 import { PlanTaskList } from "./PlanTaskList";
 import { ContextRing } from "./ContextRing";
 import { Tooltip } from "@/components/ui/tooltip";
-import { CairnEvents } from "@/lib/events";
+import { revealNote } from "@/lib/events";
 import { resolvePromptContext } from "@/lib/context-resolver";
 import type { TerminalSession, TokenBreakdown } from "@/types";
 
@@ -58,6 +58,28 @@ function extractCairnRef(
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Persist the session's finalised message transcript to the backend. Reads the
+ * latest store state imperatively (so it is safe to call from IPC callbacks),
+ * drops still-streaming messages, and fire-and-forgets the save. Shared by the
+ * `onDone` and `onError` handlers, which previously inlined identical blocks.
+ */
+function persistPiTranscript(sessionId: string): void {
+  const msgs = useCairnStore.getState().terminalSessions.find((t) => t.sessionId === sessionId)?.piMessages ?? [];
+  const saveable = msgs.filter((m) => !m.isStreaming).map((m) => ({
+    id: m.id,
+    role: m.role,
+    content: m.content,
+    reasoning: m.reasoning ?? null,
+    toolCalls: m.toolCalls ?? null,
+    subagents: m.subagents ?? null,
+    timestamp: m.timestamp,
+  }));
+  window.electron?.piAgent.saveMessages(sessionId, saveable).catch((err) =>
+    console.error(`[AgentChatPane] failed to persist transcript for session ${sessionId}:`, err),
+  );
 }
 
 
@@ -248,17 +270,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       setRetryInfo(null);
       setIsCompacting(false);
       // Persist the full message transcript after the turn completes
-      const msgs = useCairnStore.getState().terminalSessions.find((t) => t.sessionId === sessionId)?.piMessages ?? [];
-      const saveable = msgs.filter((m) => !m.isStreaming).map((m) => ({
-        id: m.id,
-        role: m.role,
-        content: m.content,
-        reasoning: m.reasoning ?? null,
-        toolCalls: m.toolCalls ?? null,
-        subagents: m.subagents ?? null,
-        timestamp: m.timestamp,
-      }));
-      window.electron?.piAgent.saveMessages(sessionId, saveable).catch(console.error);
+      persistPiTranscript(sessionId);
     });
 
     const unsubError = electron.piAgent.onError((e) => {
@@ -274,19 +286,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       });
       setIsLoading(false);
       // Persist the message transcript including the error message
-      setTimeout(() => {
-        const msgs = useCairnStore.getState().terminalSessions.find((t) => t.sessionId === sessionId)?.piMessages ?? [];
-        const saveable = msgs.filter((m) => !m.isStreaming).map((m) => ({
-          id: m.id,
-          role: m.role,
-          content: m.content,
-          reasoning: m.reasoning ?? null,
-          toolCalls: m.toolCalls ?? null,
-          subagents: m.subagents ?? null,
-          timestamp: m.timestamp,
-        }));
-        window.electron?.piAgent.saveMessages(sessionId, saveable).catch(console.error);
-      }, 0);
+      setTimeout(() => persistPiTranscript(sessionId), 0);
     });
 
     // ── Subagent events (child session IDs routed back to parent) ──────────
@@ -596,10 +596,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
         {session.planNoteId && (
           <Tooltip content="Open plan note" side="left">
             <button
-              onClick={() => {
-                setView("notes");
-                setTimeout(() => window.dispatchEvent(CairnEvents.selectNote(session.planNoteId!)), 50);
-              }}
+              onClick={() => revealNote(setView, session.planNoteId!)}
               className="flex items-center gap-1 text-[0.643rem] text-[var(--text-secondary)] hover:text-[var(--text-primary)] px-1.5 py-0.5 rounded-full border border-[var(--border)] hover:bg-[var(--surface-2)] transition-colors"
             >
               <FileText size={9} />

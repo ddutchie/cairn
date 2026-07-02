@@ -12,7 +12,7 @@
 
 import { FileText, SquareCheck, CheckCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { CairnEvents } from "@/lib/events";
+import { revealNote, revealCard } from "@/lib/events";
 import { useCairnStore } from "@/store";
 
 // ── Action label lookup ──────────────────────────────────────────────────────
@@ -59,16 +59,10 @@ export function CairnRefChip({ toolName, cairnRef, ok = true }: {
   function handleClick() {
     if (activeView === "chat") {
       setActivePreviewItem({ type: cairnRef.type, id: cairnRef.id });
+    } else if (isNote) {
+      revealNote(setView, cairnRef.id);
     } else {
-      if (isNote) {
-        setView("notes");
-        // Defer so NotesView has one render cycle to mount its cairn:select-note listener
-        setTimeout(() => window.dispatchEvent(CairnEvents.selectNote(cairnRef.id)), 50);
-      } else {
-        setView("board");
-        // Defer so KanbanBoard has one render cycle to mount its cairn:open-card listener
-        setTimeout(() => window.dispatchEvent(CairnEvents.openCard(cairnRef.id)), 50);
-      }
+      revealCard(setView, cairnRef.id);
     }
   }
 

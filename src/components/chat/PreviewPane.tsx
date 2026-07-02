@@ -6,7 +6,7 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { NoteEditor } from "@/components/notes/note-editor";
 import { CardDetailPanel } from "@/components/kanban/card-detail-panel";
-import { CairnEvents } from "@/lib/events";
+import { revealNote, revealCard } from "@/lib/events";
 import { Button } from "@/components/ui/button";
 
 const MIN_PREVIEW_WIDTH = 360;
@@ -79,11 +79,9 @@ export function PreviewPane() {
 
   function handleGoToSection() {
     if (type === "note" && note) {
-      setView("notes");
-      setTimeout(() => window.dispatchEvent(CairnEvents.selectNote(note.id)), 50);
+      revealNote(setView, note.id);
     } else if (type === "task" && card) {
-      setView("board");
-      setTimeout(() => window.dispatchEvent(CairnEvents.openCard(card.id)), 50);
+      revealCard(setView, card.id);
     }
     setActivePreviewItem(null);
   }

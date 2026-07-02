@@ -5,7 +5,7 @@ import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { FileText, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
-import { CairnEvents } from "@/lib/events";
+import { revealNote } from "@/lib/events";
 
 export interface NoteRefNodeData {
   noteId?: string;
@@ -23,8 +23,7 @@ export const NoteRefNode = memo(function NoteRefNode({ data, selected, isConnect
   function handleOpen(e: React.MouseEvent) {
     e.stopPropagation();
     if (d.noteId) {
-      setView("notes");
-      window.dispatchEvent(CairnEvents.selectNote(d.noteId));
+      revealNote(setView, d.noteId);
     }
   }
 

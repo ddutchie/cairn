@@ -2,7 +2,7 @@ import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 import { nanoid } from "nanoid";
 import { defaultUrlTransform } from "react-markdown";
-export { PRIORITY_COLORS } from "./constants";
+export { PRIORITY_COLORS, STATUS_COLORS } from "./constants";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -35,12 +35,50 @@ export function now(): string {
   return new Date().toISOString();
 }
 
+/**
+ * Canonical dark-mode read. The active theme is stored as the `data-theme`
+ * attribute on `<html>` (set by `applyTheme`). Any value other than "light"
+ * is treated as dark, and SSR / pre-hydration defaults to dark to match the
+ * app's default theme. This is the single source of truth for imperative
+ * reads (canvas draw, CodeMirror/mermaid theming); React components that need
+ * to re-render on theme change should use the `useIsDark()` hook instead.
+ */
+export function getIsDark(): boolean {
+  if (typeof document === "undefined") return true;
+  return document.documentElement.getAttribute("data-theme") !== "light";
+}
+
 export function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
     year: "numeric",
   });
+}
+
+/**
+ * Compact list-oriented date: "Today" / "Yesterday" / "3d ago" for the last
+ * week, an absolute "Jan 5" otherwise. Future dates fall back to "Jan 5".
+ * Used by session/agent lists where a terse relative label reads better than
+ * the absolute {@link formatDate}.
+ */
+export function formatDateCompact(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "Invalid date";
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const target = new Date(d);
+  target.setHours(0, 0, 0, 0);
+
+  const diffDays = Math.floor((today.getTime() - target.getTime()) / 86400000);
+  if (diffDays < 0) {
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 export function formatRelative(iso: string): string {
@@ -72,13 +110,6 @@ export function getDueDateStatus(dueDate: string | null | undefined): "overdue" 
   if (diff === 0) return "today";
   return "upcoming";
 }
-
-export const STATUS_COLORS: Record<string, string> = {
-  active:    "text-[var(--success)]",
-  on_hold:   "text-[var(--warning)]",
-  completed: "text-[var(--info)]",
-  archived:  "text-[var(--text-tertiary)]",
-};
 
 export function urlTransform(url: string): string {
   return url.startsWith("asset://")

@@ -7,10 +7,10 @@ import React from "react";
 import { FileText, Circle, Pin } from "lucide-react";
 import { cn, formatRelative } from "@/lib/utils";
 import { COLUMN_COLORS, PRIORITY_CSS_COLORS } from "@/lib/constants";
-import { CairnEvents } from "@/lib/events";
+import { revealColumn } from "@/lib/events";
 import { Badge } from "@/components/ui/badge";
 import { useCairnStore } from "@/store";
-import type { TaskCard, Note, BoardColumn } from "@/types";
+import type { TaskCard, Note, BoardColumn, AppUIState } from "@/types";
 import type { ActivityGroup } from "./useProjectMetrics";
 import { SectionHeader } from "./primitives";
 
@@ -21,7 +21,7 @@ export function ColumnBreakdownCard({
 }: {
   columns: BoardColumn[];
   allCards: TaskCard[];
-  setView: (v: "board") => void;
+  setView: (v: AppUIState["activeView"]) => void;
 }) {
   if (columns.length === 0) return null;
   return (
@@ -34,7 +34,7 @@ export function ColumnBreakdownCard({
           const color = COLUMN_COLORS[col.type] ?? COLUMN_COLORS.custom;
           return (
             <button key={col.id}
-              onClick={() => { setView("board"); setTimeout(() => window.dispatchEvent(CairnEvents.scrollToColumn(col.id)), 50); }}
+              onClick={() => revealColumn(setView, col.id)}
               className="flex items-center gap-2.5 w-full group">
               <span className="text-[0.786rem] text-[var(--text-tertiary)] w-20 text-right flex-shrink-0 group-hover:text-[var(--text-secondary)] transition-colors truncate">{col.name}</span>
               <div className="flex-1 h-2 rounded-full bg-[var(--surface-2)] overflow-hidden">
@@ -56,7 +56,7 @@ export function PriorityBreakdownCard({
 }: {
   priorityCounts: { urgent: number; high: number; medium: number; low: number };
   hasAnyCategorised: boolean;
-  setView: (v: "board") => void;
+  setView: (v: AppUIState["activeView"]) => void;
 }) {
   if (!hasAnyCategorised) return null;
   return (

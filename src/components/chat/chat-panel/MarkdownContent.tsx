@@ -5,11 +5,10 @@ import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import rehypeRaw from "rehype-raw";
-import { MermaidDiagram } from "@/components/notes/MermaidDiagram";
-import { CodeBlock } from "@/components/notes/CodeBlock";
+import { renderCodeFence } from "@/components/notes/markdown-code-fence";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
-import { CairnEvents } from "@/lib/events";
+import { revealNote, revealCard } from "@/lib/events";
 import { parseWikilinks } from "@/lib/wikilink-parser";
 import type { Note, TaskCard } from "@/types";
 
@@ -97,10 +96,11 @@ export function MarkdownContent({ content, isUser }: { content: string; isUser?:
     return preprocessMarkdown(content, notes, cards, cwd);
   }, [content, notes, cards, cwd]);
 
-  // The user bubble has an accent (purple) background with --accent-fg text.
-  // Block elements below must read against the accent there (token-based, with
-  // alpha via color-mix) instead of the dark surface tokens (which are only
-  // legible on the assistant/surface bubble).
+  // The user bubble has an accent background. All text there renders in the
+  // accent-foreground token (`--accent-fg`), which is theme-aware and meets AA
+  // contrast on the accent surface (plain `text-white` fails AA on the dark
+  // accent). Chrome (borders, code/table backgrounds) use accent-fg alpha via
+  // color-mix. Assistant bubbles keep the dark surface tokens.
   const strongColor = isUser ? "text-[var(--accent-fg)]" : "text-[var(--text-primary)]";
   const headingColor = isUser ? "text-[var(--accent-fg)]" : "text-[var(--text-primary)]";
   const listColor = isUser ? "text-[var(--accent-fg)]" : "text-[var(--text-secondary)]";
@@ -108,7 +108,7 @@ export function MarkdownContent({ content, isUser }: { content: string; isUser?:
     ? "bg-[color-mix(in_srgb,var(--accent-fg)_20%,transparent)] text-[var(--accent-fg)]"
     : "bg-[var(--surface-3)] text-[var(--text-primary)]";
   const quoteClass = isUser
-    ? "border-[color-mix(in_srgb,var(--accent-fg)_40%,transparent)] text-[color-mix(in_srgb,var(--accent-fg)_80%,transparent)]"
+    ? "border-[color-mix(in_srgb,var(--accent-fg)_40%,transparent)] text-[color-mix(in_srgb,var(--accent-fg)_85%,transparent)]"
     : "border-[var(--accent)] text-[var(--text-tertiary)]";
   // Table / rule chrome — re-themed against the accent bubble for the user path.
   const ruleBorder = isUser
@@ -136,15 +136,7 @@ export function MarkdownContent({ content, isUser }: { content: string; isUser?:
         h1: ({ children }) => <h1 className={`font-semibold ${headingColor} text-sm mt-2 mb-1`}>{children}</h1>,
         h2: ({ children }) => <h2 className={`font-semibold ${headingColor} text-sm mt-2 mb-1`}>{children}</h2>,
         h3: ({ children }) => <h3 className={`font-medium ${headingColor} mt-1.5 mb-0.5`}>{children}</h3>,
-        pre: ({ children }) => {
-          const child = Array.isArray(children) ? children[0] : children;
-          const code = child as React.ReactElement<{ className?: string; children?: React.ReactNode }>;
-          const className = code?.props?.className ?? "";
-          const lang = className.replace("language-", "") || undefined;
-          const content = String(code?.props?.children ?? "").replace(/\n$/, "");
-          if (lang === "mermaid") return <MermaidDiagram chart={content} />;
-          return <CodeBlock code={content} language={lang} />;
-        },
+        pre: ({ children }) => renderCodeFence(children),
         code: ({ children, className }) => {
           // Fenced blocks handled by `pre` above — this only runs for inline code
           if (className?.startsWith("language-")) return <>{children}</>;
@@ -161,10 +153,10 @@ export function MarkdownContent({ content, isUser }: { content: string; isUser?:
         ),
         a: ({ href, children }) => {
           const linkClass = isUser
-            ? "inline-flex items-center text-[var(--accent-fg)] hover:text-[color-mix(in_srgb,var(--accent-fg)_80%,transparent)] underline font-medium cursor-pointer"
+            ? "inline-flex items-center text-[var(--accent-fg)] hover:text-[color-mix(in_srgb,var(--accent-fg)_85%,transparent)] underline font-medium cursor-pointer"
             : "inline-flex items-center text-[var(--accent)] hover:underline font-medium cursor-pointer";
           const fallbackClass = isUser
-            ? "text-[var(--accent-fg)] hover:text-[color-mix(in_srgb,var(--accent-fg)_80%,transparent)] underline"
+            ? "text-[var(--accent-fg)] hover:text-[color-mix(in_srgb,var(--accent-fg)_85%,transparent)] underline"
             : "text-[var(--accent)] hover:underline";
 
           if (href?.startsWith("cairn://note/")) {
@@ -176,8 +168,7 @@ export function MarkdownContent({ content, isUser }: { content: string; isUser?:
                   if (activeView === "chat") {
                     setActivePreviewItem({ type: "note", id: noteId });
                   } else {
-                    setView("notes");
-                    setTimeout(() => window.dispatchEvent(CairnEvents.selectNote(noteId)), 50);
+                    revealNote(setView, noteId);
                   }
                 }}
                 className={linkClass}
@@ -195,8 +186,7 @@ export function MarkdownContent({ content, isUser }: { content: string; isUser?:
                   if (activeView === "chat") {
                     setActivePreviewItem({ type: "task", id: cardId });
                   } else {
-                    setView("board");
-                    setTimeout(() => window.dispatchEvent(CairnEvents.openCard(cardId)), 50);
+                    revealCard(setView, cardId);
                   }
                 }}
                 className={linkClass}

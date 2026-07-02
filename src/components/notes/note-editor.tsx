@@ -13,13 +13,13 @@ import { getActiveWikilink } from "@/lib/wikilink-parser";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn, formatRelative, urlTransform } from "@/lib/utils";
+import { prepareNoteHtmlForPdf, pdfSafeTitle } from "./note-pdf-export";
 import { Tooltip } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import type { Note } from "@/types";
-import { MermaidDiagram } from "./MermaidDiagram";
+import { renderCodeFence } from "./markdown-code-fence";
 import { TableOfContents, headingSlug } from "./TableOfContents";
 import { findSectionTitleAtOffset, extractSectionTextAtOffset } from "./toc-utils";
-import { CodeBlock } from "./CodeBlock";
 import { Callout } from "./Callout";
 import { MathBlock } from "./MathBlock";
 import { AITextToolbar, buildAIActionPrompt, applyFormat, type AITextAction, type FormatAction } from "./ai-text-toolbar";
@@ -518,13 +518,7 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
       );
     },
     pre({ children }: { children?: React.ReactNode }) {
-      const child = Array.isArray(children) ? children[0] : children;
-      const code = child as React.ReactElement<{ className?: string; children?: React.ReactNode }>;
-      const className = code?.props?.className ?? "";
-      const lang = className.replace("language-", "") || undefined;
-      const content = String(code?.props?.children ?? "").replace(/\n$/, "");
-      if (lang === "mermaid") return <MermaidDiagram chart={content} />;
-      return <CodeBlock code={content} language={lang} />;
+      return renderCodeFence(children);
     },
     code({ className, children }: { className?: string; children?: React.ReactNode }) {
       return <InlineCode className={className}>{children}</InlineCode>;
@@ -704,45 +698,9 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
       const isMobile = typeof window !== "undefined" && !!window.electron && !isElectron;
 
       const raw = proseRef.current.innerHTML;
-      // Post-process HTML to make code blocks print-friendly:
-      // CodeBlock uses hardcoded inline styles derived from the active theme.
-      // For light PDFs: parse the captured HTML, rewrite those inline styles to
-      // light-palette values, and remove the Copy button (not useful in a PDF).
-      // For dark PDFs: the code blocks are already dark-themed, so only strip
-      // the Copy button header.
-      const doc = new DOMParser().parseFromString(`<div>${raw}</div>`, "text/html");
-      const root = doc.body.firstElementChild!;
-
-      // Each CodeBlock renders as: div.my-4.rounded-lg > div(header) + pre
-      for (const block of root.querySelectorAll<HTMLElement>("div.my-4")) {
-        const pre = block.querySelector<HTMLElement>("pre");
-        const header = block.querySelector<HTMLElement>("div");
-        if (!pre) continue;
-
-        if (theme === "light") {
-          // Force light-theme colours on pre and its border container
-          pre.style.background = "#f8f7f5";
-          pre.style.color      = "#374151";
-          block.style.border   = "1px solid #dddad6";
-
-          // Rewrite token span colours from DARK palette → LIGHT palette
-          const DARK_TO_LIGHT: Record<string, string> = {
-            "#c678dd": "#7c3aed", "#e5c07b": "#b45309", "#56b6c2": "#0891b2",
-            "#d19a66": "#c2410c", "#98c379": "#16a34a", "#e06c75": "#dc2626",
-            "#5c6370": "#9ca3af", "#61afef": "#1d4ed8", "#abb2bf": "#374151",
-          };
-          for (const span of pre.querySelectorAll<HTMLElement>("span[style]")) {
-            const c = span.style.color.toLowerCase();
-            // normalise hex shorthand if needed, try direct map
-            if (DARK_TO_LIGHT[c]) span.style.color = DARK_TO_LIGHT[c];
-          }
-        }
-
-        // Remove the Copy button header — not useful in print
-        if (header) header.remove();
-      }
-
-      const html = root.innerHTML;
+      // Post-process HTML to make code blocks print-friendly (light-palette
+      // remap + strip Copy button). See prepareNoteHtmlForPdf.
+      const html = prepareNoteHtmlForPdf(raw, theme);
 
       if (isElectron && window.electron?.exportNotePdf) {
         await window.electron.exportNotePdf(note.title, html, { theme });
@@ -756,7 +714,7 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
             arr[i] = binStr.charCodeAt(i);
           }
           const blob = new Blob([arr], { type: "application/pdf" });
-          const safeTitle = note.title.replace(/[\/\\:*?"<>|]/g, "_").trim() || "untitled";
+          const safeTitle = pdfSafeTitle(note.title);
           const file = new File([blob], `${safeTitle}.pdf`, { type: "application/pdf" });
 
           if (navigator.canShare && navigator.canShare({ files: [file] })) {

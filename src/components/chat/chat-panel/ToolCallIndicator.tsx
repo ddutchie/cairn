@@ -1,9 +1,10 @@
 "use client";
 
 import React from "react";
-import { Loader2, CheckCircle, Bot } from "lucide-react";
+import { Loader2, CheckCircle } from "lucide-react";
 import { MarkdownContent } from "./MarkdownContent";
 import { ThinkingPanel } from "./ThinkingPanel";
+import { MessageAvatar, StreamingCursor } from "./message-ui";
 import { prettifyToolLabel } from "@/lib/utils";
 import type { ChatToolCall } from "@/hooks/useChatStream";
 
@@ -18,9 +19,7 @@ export const ToolCallIndicator = React.memo(function ToolCallIndicator({ toolCal
   const hasContent = !!streamingContent;
   return (
     <div className="flex gap-2 items-start">
-      <div className="w-6 h-6 rounded-full bg-[var(--accent-dim)] border border-[var(--accent)]/20 flex items-center justify-center flex-shrink-0 mt-0.5 shrink-0">
-        <Bot size={11} className="text-[var(--accent)]" />
-      </div>
+      <MessageAvatar role="bot" size="lg" />
       <div className="flex flex-col gap-1 min-w-0 flex-1">
         {toolCalls.map((tc, i) => (
           <div key={i} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--surface-2)] border border-[var(--border)] w-fit">
@@ -44,7 +43,7 @@ export const ToolCallIndicator = React.memo(function ToolCallIndicator({ toolCal
         {hasContent ? (
           <div className="px-3 py-2.5 rounded-xl rounded-tl-sm text-xs leading-relaxed bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-secondary)] max-w-full">
             <MarkdownContent content={streamingContent} />
-            <span className="inline-block w-0.5 h-3 bg-[var(--accent)] animate-pulse ml-0.5 align-middle" />
+            <StreamingCursor />
           </div>
         ) : !hasThought ? (
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--surface-2)] border border-[var(--border)] w-fit">

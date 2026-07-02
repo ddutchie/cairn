@@ -4,9 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { ChevronDown, History, MessageSquare, Trash2 } from "lucide-react";
 import { useCairnStore } from "@/store";
-import { cn } from "@/lib/utils";
+import { cn, formatDateCompact } from "@/lib/utils";
 import { useAgentSessionActions } from "./useAgentSessionActions";
-import { formatDate } from "./sessionUtils";
 import type { PiSessionSummary } from "@/types";
 
 interface AgentSessionTabProps {
@@ -123,7 +122,7 @@ export function AgentSessionTab({ isActive, onActivate }: AgentSessionTabProps) 
                       )}>
                         {summary.mode.toUpperCase()}
                       </span>
-                      <span className="text-[0.607rem] text-[var(--text-tertiary)]">{formatDate(summary.updatedAt)}</span>
+                      <span className="text-[0.607rem] text-[var(--text-tertiary)]">{formatDateCompact(summary.updatedAt)}</span>
                       {summary.status === "exited" && (
                         <span className="text-[0.607rem] text-[var(--text-tertiary)]">· exited</span>
                       )}

@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { useLoadGraph } from "@/hooks/useLoadGraph";
-import { filterGraphNodes, nodeTypeColor } from "@/store/slices/graph";
+import { filterGraphNodes } from "@/store/slices/graph";
 import type { GraphNode, GraphNodeType } from "@/types";
 import { Tooltip } from "@/components/ui/tooltip";
 
@@ -22,6 +22,7 @@ import { BeeswarmCanvas }  from "@/components/graph/BeeswarmCanvas";
 import { BulletCanvas }    from "@/components/graph/BulletCanvas";
 import { SemanticMapCanvas } from "@/components/graph/SemanticMapCanvas";
 import { GraphDetailPanel } from "@/components/graph/GraphDetailPanel";
+import { NodeTypeChip } from "@/components/graph/NodeTypeChip";
 
 type InsightsLayout = "timeline" | "matrix" | "table" | "ridgeline" | "sankey" | "beeswarm" | "bullet" | "semantic-map";
 
@@ -210,25 +211,14 @@ export function InsightsView() {
               />
             </div>
             <div className="flex items-center gap-1">
-              {ALL_NODE_TYPES.map((t) => {
-                const isActive = tableTypeFilter.includes(t);
-                const color = nodeTypeColor(t);
-                return (
-                  <button key={t}
-                    onClick={() => setTableTypeFilter((prev) => prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t])}
-                    className={cn("flex items-center gap-1 px-2 py-1 rounded text-[0.786rem] capitalize transition-colors border",
-                      isActive ? "border-transparent" : "border-[var(--border)] text-[var(--text-tertiary)] opacity-50")}
-                    style={isActive ? {
-                      background: `color-mix(in srgb, ${color} 12%, transparent)`,
-                      color,
-                      borderColor: `color-mix(in srgb, ${color} 30%, transparent)`,
-                    } : undefined}
-                  >
-                    <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: isActive ? color : "currentColor" }} />
-                    {t}
-                  </button>
-                );
-              })}
+              {ALL_NODE_TYPES.map((t) => (
+                <NodeTypeChip
+                  key={t}
+                  type={t}
+                  active={tableTypeFilter.includes(t)}
+                  onClick={() => setTableTypeFilter((prev) => prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t])}
+                />
+              ))}
             </div>
             <div className="w-px h-5 bg-[var(--border)]" />
           </>

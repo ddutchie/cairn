@@ -16,6 +16,8 @@
 import { useEffect, useRef, useState, useId, useCallback } from "react";
 import { Maximize2 } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { getIsDark } from "@/lib/utils";
+import { useIsDark } from "@/hooks/useIsDark";
 
 interface Props {
   chart: string;
@@ -29,7 +31,7 @@ async function getMermaid(id: string) {
   // Prevent mermaid from throwing uncaught errors globally that bubble up to Next.js
   mermaid.parseError = () => {};
 
-  const isDark = document.documentElement.getAttribute("data-theme") !== "light";
+  const isDark = getIsDark();
   mermaid.initialize({
     startOnLoad: false,
     suppressErrorRendering: true,
@@ -64,6 +66,8 @@ async function getMermaid(id: string) {
 function DiagramModal({ chart, onClose }: { chart: string; onClose: () => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const modalId = useId().replace(/:/g, "") + "modal";
+  // Re-render the diagram when the theme flips (getMermaid reads the theme).
+  const isDark = useIsDark();
 
   // Render diagram inside modal
   useEffect(() => {
@@ -89,7 +93,7 @@ function DiagramModal({ chart, onClose }: { chart: string; onClose: () => void }
     }
     render();
     return () => { cancelled = true; };
-  }, [chart, modalId]);
+  }, [chart, modalId, isDark]);
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -115,6 +119,8 @@ export function MermaidDiagram({ chart }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
   const id = useId().replace(/:/g, "");
+  // Re-render on live theme switch (getMermaid reads the active theme once).
+  const isDark = useIsDark();
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -133,7 +139,7 @@ export function MermaidDiagram({ chart }: Props) {
     }
     render();
     return () => { cancelled = true; };
-  }, [chart, id]);
+  }, [chart, id, isDark]);
 
   const handleExpand = useCallback(() => setExpanded(true), []);
 

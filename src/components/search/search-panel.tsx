@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Search, SearchX, FileText, Kanban, X, ArrowRight, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { CairnEvents } from "@/lib/events";
+import { revealNote, revealCard } from "@/lib/events";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useCairnStore, type SearchResult } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -219,11 +219,9 @@ export function SearchPanel() {
   function handleSelect(result: SearchResult) {
     setActiveProject(result.projectId);
     if (result.type === "note") {
-      setView("notes");
-      window.dispatchEvent(CairnEvents.selectNote(result.id));
+      revealNote(setView, result.id);
     } else {
-      setView("board");
-      window.dispatchEvent(CairnEvents.openCard(result.id));
+      revealCard(setView, result.id);
     }
     toggleSearch();
   }

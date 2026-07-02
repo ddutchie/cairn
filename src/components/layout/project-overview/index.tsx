@@ -10,7 +10,7 @@ import { useShallow } from "zustand/react/shallow";
 import { ProjectIcon, WORKSPACE_ICONS } from "@/lib/workspace-icons";
 import { cn, formatDate, STATUS_COLORS } from "@/lib/utils";
 import { PRIORITY_CSS_COLORS, PRIORITY_OPTIONS, PROJECT_STATUS_OPTIONS, STATUS_CSS_COLORS } from "@/lib/constants";
-import { CairnEvents } from "@/lib/events";
+import { CairnEvents, revealNote, revealCard, revealColumn } from "@/lib/events";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { ProjectStatus, Priority } from "@/types";
@@ -336,7 +336,7 @@ export function ProjectOverview() {
             <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
               {columns.map((col) => (
                 <ColumnPill key={col.id} column={col} cards={allCards.filter((c) => c.columnId === col.id)}
-                  onClick={() => { setView("board"); setTimeout(() => window.dispatchEvent(CairnEvents.scrollToColumn(col.id)), 50); }} />
+                  onClick={() => revealColumn(setView, col.id)} />
               ))}
             </div>
           </section>
@@ -349,7 +349,7 @@ export function ProjectOverview() {
             <div className="space-y-2">
               {dueCards.map((card) => (
                 <DueCard key={card.id} card={card} columns={columns} today={today}
-                  onClick={() => { setView("board"); window.dispatchEvent(CairnEvents.openCard(card.id)); }} />
+                  onClick={() => revealCard(setView, card.id)} />
               ))}
             </div>
           </section>
@@ -362,7 +362,7 @@ export function ProjectOverview() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {pinnedNotes.map((note) => (
                 <PinnedNoteCard key={note.id} note={note}
-                  onClick={() => { setView("notes"); window.dispatchEvent(CairnEvents.selectNote(note.id)); }} />
+                  onClick={() => revealNote(setView, note.id)} />
               ))}
             </div>
           </section>
@@ -375,7 +375,7 @@ export function ProjectOverview() {
             <div className="space-y-0.5">
               {recentNotes.map((note) => (
                 <NoteRow key={note.id} note={note}
-                  onClick={() => { setView("notes"); window.dispatchEvent(CairnEvents.selectNote(note.id)); }} />
+                  onClick={() => revealNote(setView, note.id)} />
               ))}
             </div>
           </section>

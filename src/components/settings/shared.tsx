@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Footprints, Thermometer, Layers } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Toggle as UiToggle, type ToggleProps } from "@/components/ui/toggle";
 
 // ── Layout helpers ────────────────────────────
 
@@ -58,36 +59,33 @@ export function SettingsRow({
 
 // ── Toggle switch ─────────────────────────────
 
+/**
+ * Settings-flavoured Toggle. Wraps the canonical `ui/toggle` but keeps the
+ * settings-local `onChange` prop name for its existing callers, while
+ * forwarding the rest of the canonical `ToggleProps` surface (`disabled`,
+ * `className`, `label`, `id`) so settings code has a single import path that
+ * supports every supported prop.
+ */
 export function Toggle({
   checked,
   onChange,
   label,
   id,
+  disabled,
+  className,
 }: {
   checked: boolean;
   onChange: (v: boolean) => void;
-  label?: string;
-  id?: string;
-}) {
+} & Pick<ToggleProps, "label" | "id" | "disabled" | "className">) {
   return (
-    <button
+    <UiToggle
+      checked={checked}
+      onCheckedChange={onChange}
+      label={label}
       id={id}
-      onClick={() => onChange(!checked)}
-      className={cn(
-        "relative inline-flex h-5 w-9 items-center rounded-full transition-colors",
-        checked ? "bg-[var(--accent)]" : "bg-[var(--surface-3)] border border-[var(--border)]"
-      )}
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-    >
-      <span
-        className={cn(
-          "inline-block h-3.5 w-3.5 rounded-full bg-[var(--surface)] shadow-sm transition-transform",
-          checked ? "translate-x-4.5" : "translate-x-0.5"
-        )}
-      />
-    </button>
+      disabled={disabled}
+      className={className}
+    />
   );
 }
 

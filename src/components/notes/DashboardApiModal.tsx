@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
+import React from "react";
+import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
 import { HelpCircle, Copy, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ModalShell } from "@/components/ui/modal-shell";
@@ -70,16 +71,10 @@ const API_ENTRIES: ApiEntry[] = [
 ];
 
 function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-  function copy() {
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1800);
-    });
-  }
+  const { copied, copy } = useCopyToClipboard(1800);
   return (
     <button
-      onClick={copy}
+      onClick={() => copy(text)}
       className={cn(
         "flex-shrink-0 p-1 rounded transition-colors",
         copied

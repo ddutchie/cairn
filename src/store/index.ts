@@ -139,8 +139,57 @@ function savePersisted(state: PersistedState): void {
   }, 200);
 }
 
-// ── Store creation ────────────────────────────────────────────────────────────
+type PartialSetter = (partial: Partial<CairnStore>) => void;
 
+/**
+ * Restore theme + font scale from localStorage and apply them to the DOM.
+ * Shared by both hydration paths (`hydrate` / `hydrateFromElectron`).
+ */
+function restorePersistedTheme(set: PartialSetter): void {
+  const savedTheme = storage.get<Theme>(THEME_KEY);
+  if (savedTheme) {
+    set({ theme: savedTheme });
+    applyTheme(savedTheme);
+  } else {
+    applyTheme("dark");
+  }
+
+  const savedFontScale = storage.get<FontScale>(FONT_SCALE_KEY);
+  if (savedFontScale) {
+    set({ fontScale: savedFontScale });
+    applyFontScale(savedFontScale);
+  } else {
+    applyFontScale(DEFAULT_FONT_SCALE);
+  }
+}
+
+/**
+ * Restore persisted UI preferences (hidden views, seen features, panel widths)
+ * from localStorage. Shared by both hydration paths.
+ */
+function restorePersistedUiPrefs(set: PartialSetter): void {
+  const savedHidden = storage.get<ToggleableView[]>(HIDDEN_VIEWS_KEY);
+  if (savedHidden) {
+    set({ hiddenViews: new Set(savedHidden) });
+  }
+
+  const savedSeenFeatures = storage.get<string[]>(SEEN_FEATURES_KEY);
+  if (savedSeenFeatures) {
+    set({ seenFeatures: savedSeenFeatures });
+  }
+
+  const savedChatWidth = storage.get<number>(CHAT_PANEL_WIDTH_KEY);
+  if (savedChatWidth) {
+    set({ chatPanelWidth: Math.min(MAX_CHAT_PANEL_WIDTH, Math.max(MIN_CHAT_PANEL_WIDTH, savedChatWidth)) });
+  }
+
+  const savedNotesWidth = storage.get<number>(NOTES_SIDEBAR_WIDTH_KEY);
+  if (savedNotesWidth != null) {
+    set({ notesSidebarWidth: Math.min(MAX_NOTES_SIDEBAR_WIDTH, Math.max(MIN_NOTES_SIDEBAR_WIDTH, savedNotesWidth)) });
+  }
+}
+
+// ── Store creation ────────────────────────────────────────────────────────────
 export const useCairnStore = create<CairnStore>()(
   subscribeWithSelector((...a) => ({
     // ── Compose all domain slices ──────────────────
@@ -160,21 +209,7 @@ export const useCairnStore = create<CairnStore>()(
     hydrate() {
       const [, get] = a;
 
-      const savedTheme = storage.get<Theme>(THEME_KEY);
-      if (savedTheme) {
-        a[0]({ theme: savedTheme });
-        applyTheme(savedTheme);
-      } else {
-        applyTheme("dark");
-      }
-
-      const savedFontScale = storage.get<FontScale>(FONT_SCALE_KEY);
-      if (savedFontScale) {
-        a[0]({ fontScale: savedFontScale });
-        applyFontScale(savedFontScale);
-      } else {
-        applyFontScale(DEFAULT_FONT_SCALE);
-      }
+      restorePersistedTheme(a[0]);
 
       const savedConfig = storage.get<AIConfig>(AI_CONFIG_KEY);
       if (savedConfig) {
@@ -202,25 +237,7 @@ export const useCairnStore = create<CairnStore>()(
         storage.set(AGENT_CONFIG_KEY, migrated);
       }
 
-      const savedHidden = storage.get<ToggleableView[]>(HIDDEN_VIEWS_KEY);
-      if (savedHidden) {
-        a[0]({ hiddenViews: new Set(savedHidden) });
-      }
-
-      const savedSeenFeatures = storage.get<string[]>(SEEN_FEATURES_KEY);
-      if (savedSeenFeatures) {
-        a[0]({ seenFeatures: savedSeenFeatures });
-      }
-
-      const savedChatWidth = storage.get<number>(CHAT_PANEL_WIDTH_KEY);
-      if (savedChatWidth) {
-        a[0]({ chatPanelWidth: Math.min(MAX_CHAT_PANEL_WIDTH, Math.max(MIN_CHAT_PANEL_WIDTH, savedChatWidth)) });
-      }
-
-      const savedNotesWidth = storage.get<number>(NOTES_SIDEBAR_WIDTH_KEY);
-      if (savedNotesWidth != null) {
-        a[0]({ notesSidebarWidth: Math.min(MAX_NOTES_SIDEBAR_WIDTH, Math.max(MIN_NOTES_SIDEBAR_WIDTH, savedNotesWidth)) });
-      }
+      restorePersistedUiPrefs(a[0]);
 
       const saved = loadPersisted();
       if (saved && saved.workspaces.length > 0) {
@@ -251,21 +268,7 @@ export const useCairnStore = create<CairnStore>()(
       }
 
       if (!isRefresh) {
-        const savedTheme = storage.get<Theme>(THEME_KEY);
-        if (savedTheme) {
-          set({ theme: savedTheme });
-          applyTheme(savedTheme);
-        } else {
-          applyTheme("dark");
-        }
-
-        const savedFontScale = storage.get<FontScale>(FONT_SCALE_KEY);
-        if (savedFontScale) {
-          set({ fontScale: savedFontScale });
-          applyFontScale(savedFontScale);
-        } else {
-          applyFontScale(DEFAULT_FONT_SCALE);
-        }
+        restorePersistedTheme(set);
       }
 
       const savedConfig = backendAiConfig || storage.get<AIConfig>(AI_CONFIG_KEY);
@@ -318,25 +321,7 @@ export const useCairnStore = create<CairnStore>()(
         set({ agentConfig: DEFAULT_AGENT_CONFIG });
       }
 
-      const savedHidden = storage.get<ToggleableView[]>(HIDDEN_VIEWS_KEY);
-      if (savedHidden) {
-        set({ hiddenViews: new Set(savedHidden) });
-      }
-
-      const savedSeenFeatures = storage.get<string[]>(SEEN_FEATURES_KEY);
-      if (savedSeenFeatures) {
-        set({ seenFeatures: savedSeenFeatures });
-      }
-
-      const savedChatWidth = storage.get<number>(CHAT_PANEL_WIDTH_KEY);
-      if (savedChatWidth) {
-        set({ chatPanelWidth: Math.min(MAX_CHAT_PANEL_WIDTH, Math.max(MIN_CHAT_PANEL_WIDTH, savedChatWidth)) });
-      }
-
-      const savedNotesWidth = storage.get<number>(NOTES_SIDEBAR_WIDTH_KEY);
-      if (savedNotesWidth != null) {
-        set({ notesSidebarWidth: Math.min(MAX_NOTES_SIDEBAR_WIDTH, Math.max(MIN_NOTES_SIDEBAR_WIDTH, savedNotesWidth)) });
-      }
+      restorePersistedUiPrefs(set);
 
       const snap = (await window.electron!.snapshot()) as PersistedState;
 

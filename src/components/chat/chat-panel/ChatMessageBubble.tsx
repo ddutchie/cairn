@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
+import React from "react";
+import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
 import { FileText, Kanban, FolderOpen, Search, Copy, Check, RotateCcw, CheckCircle } from "lucide-react";
 import { cn, formatRelative, prettifyToolLabel } from "@/lib/utils";
 import { MarkdownContent } from "./MarkdownContent";
@@ -31,13 +32,10 @@ interface ChatMessageBubbleProps {
 export const ChatMessageBubble = React.memo(function ChatMessageBubble({ message, onRetry }: ChatMessageBubbleProps) {
   const isUser = message.role === "user";
   const isSystem = message.role === "system";
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopyToClipboard();
 
   function handleCopy() {
-    navigator.clipboard.writeText(message.content).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
+    copy(message.content);
   }
 
   if (isSystem) {
@@ -85,7 +83,7 @@ export const ChatMessageBubble = React.memo(function ChatMessageBubble({ message
           </div>
         )}
         <div className={cn("px-3 py-2.5 rounded-xl text-xs leading-relaxed max-w-full",
-          isUser ? "bg-[var(--accent)] text-white rounded-tr-sm" : "bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-secondary)] rounded-tl-sm")}>
+          isUser ? "bg-[var(--accent)] text-[var(--accent-fg)] rounded-tr-sm" : "bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-secondary)] rounded-tl-sm")}>
           <MarkdownContent content={message.content} isUser={isUser} />
         </div>
         {!isUser && message.actions && message.actions.length > 0 && (
