@@ -6,8 +6,8 @@
   "scripts": {
     "postinstall": "node scripts/link-shared.js",
     "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
