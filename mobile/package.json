@@ -11,6 +11,7 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
+    "ai": "^7.0.15",
     "expo": "^57.0.0",
     "expo-constants": "~57.0.2",
     "expo-document-picker": "~57.0.0",
@@ -26,7 +27,8 @@
     "react-native-markdown-display": "^7.0.2",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "4.25.2",
-    "react-native-svg": "15.15.4"
+    "react-native-svg": "15.15.4",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/react": "~19.2.4",
