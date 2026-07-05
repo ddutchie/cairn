@@ -16,7 +16,7 @@
     "plugins": [
       "expo-router",
       "expo-sqlite",
-      "expo-status-bar"
+      "./plugins/withPlistLaunchScreen"
     ],
     "experiments": {
       "typedRoutes": true
