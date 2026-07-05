@@ -159,6 +159,46 @@ export const remarkPromoteDisplayMath: RemarkPlugin<[], MdastRoot> = () => (tree
   });
 };
 
+// ── Rehype plugin: escape unknown "HTML" tags back to literal text ────────────
+// rehypeRaw parses any <angle-bracket> sequence as raw HTML. Non-HTML text like
+// "<repo>", "<TOKEN>", or a generic "Array<T>" then becomes an unknown element
+// which React refuses to render ("The tag <repo> is unrecognized"). This runs
+// after rehypeRaw and converts elements whose tagName is NOT a real HTML element
+// (nor a custom tag our pipeline introduces) back into literal text nodes, so
+// they render as the author typed them instead of crashing the preview.
+const KNOWN_HTML_TAGS = new Set([
+  // Sectioning / text content
+  "a","abbr","address","area","article","aside","audio","b","base","bdi","bdo","blockquote","body","br","button",
+  "canvas","caption","cite","code","col","colgroup","data","datalist","dd","del","details","dfn","dialog","div","dl","dt",
+  "em","embed","fieldset","figcaption","figure","footer","form","h1","h2","h3","h4","h5","h6","head","header","hgroup","hr",
+  "html","i","iframe","img","input","ins","kbd","label","legend","li","link","main","map","meta","meter","nav","noscript",
+  "object","ol","optgroup","option","output","p","param","picture","pre","progress","q","rp","rt","ruby","s","samp","script",
+  "section","select","slot","small","source","span","strong","style","sub","summary","sup","table","tbody","td","template",
+  "textarea","tfoot","th","thead","time","title","tr","track","u","ul","var","video","wbr",
+  // SVG (KaTeX / diagrams emit these)
+  "svg","path","g","rect","circle","line","polyline","polygon","text","tspan","defs","use","symbol","marker","mask","pattern",
+  "clippath","lineargradient","radialgradient","stop","foreignobject",
+  // MathML (KaTeX)
+  "math","semantics","mrow","mi","mo","mn","msup","msub","mfrac","msqrt","annotation",
+  // Custom tags this pipeline maps to React components
+  "mark","callout","mathblock",
+]);
+
+export const rehypeEscapeUnknownTags: Plugin<[], Root> = () => (tree) => {
+  visit(tree, "element", (node, index, parent) => {
+    const tag = (node as Element).tagName?.toLowerCase();
+    if (!tag || KNOWN_HTML_TAGS.has(tag) || !parent || index === undefined) return;
+    // Rebuild the literal source: <tag>children</tag> (self-closing if empty).
+    const el = node as Element;
+    const inner = el.children
+      .filter((c): c is Text => c.type === "text")
+      .map((c) => c.value)
+      .join("");
+    const literal = inner ? `<${el.tagName}>${inner}</${el.tagName}>` : `<${el.tagName}>`;
+    (parent.children as ElementContent[])[index] = { type: "text", value: literal };
+  });
+};
+
 // ── Rehype plugins: math tagging + ==highlight== marks ───────────────────────
 export function makeLatexPlugins() {
   const latexBlocks: string[] = [];

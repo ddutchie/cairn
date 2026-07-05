@@ -5,6 +5,7 @@ import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import rehypeRaw from "rehype-raw";
+import { rehypeEscapeUnknownTags } from "@/lib/markdown/pipeline";
 import { renderCodeFence } from "@/components/notes/markdown-code-fence";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -124,7 +125,7 @@ export function MarkdownContent({ content, isUser }: { content: string; isUser?:
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm, remarkBreaks]}
-      rehypePlugins={[rehypeRaw]}
+      rehypePlugins={[rehypeRaw, rehypeEscapeUnknownTags]}
       urlTransform={(url) => url.startsWith("cairn://") ? url : defaultUrlTransform(url)}
       components={{
         p: ({ children }) => <p className="mb-1.5 last:mb-0 leading-relaxed break-words">{children}</p>,

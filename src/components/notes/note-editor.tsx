@@ -24,7 +24,7 @@ import { Callout } from "./Callout";
 import { MathBlock } from "./MathBlock";
 import { AITextToolbar, buildAIActionPrompt, applyFormat, type AITextAction, type FormatAction } from "./ai-text-toolbar";
 import { MarkdownEditor, type MarkdownEditorHandle } from "./markdown-editor";
-import { remarkCallout, remarkObsidianEmbeds, remarkWikilinks, remarkPromoteDisplayMath, makeLatexPlugins, InlineCode } from "@/lib/markdown/pipeline";
+import { remarkCallout, remarkObsidianEmbeds, remarkWikilinks, remarkPromoteDisplayMath, makeLatexPlugins, InlineCode, rehypeEscapeUnknownTags } from "@/lib/markdown/pipeline";
 import { BacklinksPanel, NoteTagBar } from "./BacklinksPanel";
 import { MDPreviewPanel } from "./MDPreviewPanel";
 import { countWords, stripMarkdown, toggleCheckboxInSource } from "./note-editor-utils";
@@ -1011,7 +1011,7 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
                 <div className="prose-cairn" ref={proseRef}>
                    <ReactMarkdown
                      remarkPlugins={[remarkGfm, remarkBreaks, remarkMath, remarkPromoteDisplayMath, remarkCallout, remarkObsidianEmbeds, remarkWikilinks]}
-                      rehypePlugins={[rehypeRaw, rehypeCaptureLatex, rehypeKatex, rehypeMergedPass]}
+                      rehypePlugins={[rehypeRaw, rehypeEscapeUnknownTags, rehypeCaptureLatex, rehypeKatex, rehypeMergedPass]}
                      urlTransform={urlTransform}
                      components={mdComponents}
                    >
