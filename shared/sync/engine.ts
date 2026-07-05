@@ -280,33 +280,42 @@ export class SyncEngine {
    * Apply a batch of peer oplog entries. Convergent: entries are sorted by HLC
    * and each is reconciled against local state with LWW + conflict-copy.
    * Idempotent: an entry whose HLC is <= the row's current HLC is skipped.
+   *
+   * Returns `conflictCopies` (new conflict-copy row ids) and `applied` — the
+   * ops that actually changed local state (skipped stale ops are omitted). The
+   * desktop uses `applied` to project note changes back into their .md files.
    */
-  applyRemote(entries: OplogEntry[]): { conflictCopies: string[] } {
+  applyRemote(entries: OplogEntry[]): {
+    conflictCopies: string[];
+    applied: Array<{ entity: SyncableTable; entity_id: string; op: Op }>;
+  } {
     const conflictCopies: string[] = [];
+    const applied: Array<{ entity: SyncableTable; entity_id: string; op: Op }> = [];
     const sorted = [...entries].sort((a, b) => compareHlc(a.hlc, b.hlc));
 
     const run = this.db.transaction(() => {
       this.setSuppress(true); // reconcile writes must not be re-captured as local ops
       for (const entry of sorted) {
         this.hlc.receive(entry.hlc);
-        const copyId = this.reconcileOne(entry);
-        if (copyId) conflictCopies.push(copyId);
+        const res = this.reconcileOne(entry);
+        if (res.applied) applied.push({ entity: entry.entity, entity_id: entry.entity_id, op: entry.op });
+        if (res.conflictCopyId) conflictCopies.push(res.conflictCopyId);
       }
       this.setSuppress(false);
       this.persistHlc();
     });
     run();
-    return { conflictCopies };
+    return { conflictCopies, applied };
   }
 
-  private reconcileOne(entry: OplogEntry): string | null {
+  private reconcileOne(entry: OplogEntry): { applied: boolean; conflictCopyId: string | null } {
     const { entity, entity_id, op, hlc } = entry;
     const local = readRow(this.db, entity, entity_id);
     const localHlc = (local?.hlc as string | undefined) ?? null;
 
     // Idempotency / staleness guard: never let an older op overwrite a newer row.
     if (localHlc && compareHlc(hlc, localHlc) <= 0) {
-      return null;
+      return { applied: false, conflictCopyId: null };
     }
 
     // Record the remote op in our own oplog too, so a third party syncing from
@@ -321,7 +330,7 @@ export class SyncEngine {
         // a later 'put' with an older HLC can't resurrect it.
         this.insertTombstoneShell(entity, entity_id, hlc);
       }
-      return null;
+      return { applied: true, conflictCopyId: null };
     }
 
     // op === 'put'
@@ -352,7 +361,7 @@ export class SyncEngine {
     } else {
       this.writeRow(entity, merged);
     }
-    return conflictCopyId;
+    return { applied: true, conflictCopyId };
   }
 
   /** True if any array-merge column in `merged` has elements absent from `remote`. */

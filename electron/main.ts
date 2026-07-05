@@ -428,8 +428,35 @@ app.whenReady().then(async () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const desktopSync = require("./sync/desktop-sync");
   const drainDesktop: (db: unknown) => number = desktopSync.drainDesktop;
-  const syncDesktop: (db: unknown) => { seeded: number; drained: number; peerOpsApplied: number; conflictCopies: number; connected: boolean } = desktopSync.syncDesktop;
+  const syncDesktop: (db: unknown, projectNote?: (noteId: string, op: "put" | "delete") => void) => { seeded: number; drained: number; peerOpsApplied: number; conflictCopies: number; connected: boolean } = desktopSync.syncDesktop;
   const getSyncFolder: (db: unknown) => string | null = desktopSync.getSyncFolder;
+
+  // Project an inbound (synced) note change onto disk so the .md file stays in
+  // lock-step with cairn.db — the desktop's normal dual-write, applied to edits
+  // that arrive from the phone. Echo-suppressed so the file-watcher doesn't
+  // re-import our own write as an external edit and loop it back into the DB.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { writeNoteFile, deleteNoteFile } = require("./notes-files");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { suppressNextChange } = require("./file-watcher");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { getProjectName } = require("./ipc/result-helpers");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { getNoteById } = require("./db/queries");
+  function projectNoteToDisk(noteId: string, op: "put" | "delete") {
+    const note = getNoteById(ctx.db, noteId);
+    if (!note || note.type === "dashboard") return; // dashboards have no .md
+    suppressNextChange(noteId);
+    if (op === "delete" || note.archivedAt || note.deletedAt) {
+      deleteNoteFile(ctx.workspacePath, note);
+    } else {
+      writeNoteFile(ctx.workspacePath, { ...note, projectName: getProjectName(ctx.db, note.projectId) });
+    }
+  }
+  // Register once so both the periodic loop and the manual sync:now IPC handler
+  // re-emit .md files for inbound note changes.
+  desktopSync.setNoteFileProjector(projectNoteToDisk);
+
   function runFullSync(reason: string) {
     try {
       if (!getSyncFolder(ctx.db)) {

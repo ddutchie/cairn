@@ -29,6 +29,22 @@ export interface DesktopSyncResult {
   connected: boolean;
 }
 
+/**
+ * Callback that projects a synced note change back onto disk (.md dual-write).
+ * main.ts supplies this (it owns workspacePath + the notes-io/file-watcher
+ * modules); desktop-sync stays platform-light. `op` is 'put' (write/rewrite the
+ * .md) or 'delete' (remove the .md).
+ */
+export type NoteFileProjector = (noteId: string, op: "put" | "delete") => void;
+
+// A projector registered once by main.ts, so BOTH the periodic sync loop and
+// the manual sync:now IPC handler re-emit .md files for inbound note changes
+// without each caller having to thread the callback through.
+let _projector: NoteFileProjector | null = null;
+export function setNoteFileProjector(fn: NoteFileProjector | null): void {
+  _projector = fn;
+}
+
 let _engine: SyncEngine | null = null;
 
 /** Stable per-install device id (persisted in sync_state by the engine ctor). */
@@ -99,13 +115,18 @@ export function drainDesktop(db: Database.Database): number {
 /**
  * Run a full sync against the connected folder. Safe to call with no folder
  * connected (returns connected:false). Serialised by the engine's transactions.
+ *
+ * `projectNote` (optional) is invoked for every note row changed by inbound
+ * peer ops so the desktop can re-emit the .md file (dual-write parity). Called
+ * AFTER reconcile so the DB is already authoritative.
  */
-export function syncDesktop(db: Database.Database): DesktopSyncResult {
+export function syncDesktop(db: Database.Database, projectNote?: NoteFileProjector): DesktopSyncResult {
   const folder = getSyncFolder(db);
   if (!folder) {
     return { drained: 0, seeded: 0, peerOpsApplied: 0, conflictCopies: 0, connected: false };
   }
   const engine = getDesktopEngine(db);
+  const project = projectNote ?? _projector;
 
   // First-run backfill so the phone receives the whole existing workspace.
   const seeded = engine.backfill();
@@ -115,10 +136,29 @@ export function syncDesktop(db: Database.Database): DesktopSyncResult {
   writeOplogFile(folder, engine.deviceId, engine.exportOplog());
   // Read + reconcile peers.
   const peerEntries = readPeerOplogs(folder, engine.deviceId);
-  const { conflictCopies } = engine.applyRemote(peerEntries);
+  const { conflictCopies, applied } = engine.applyRemote(peerEntries);
   // Re-publish if reconcile forwarded peer ops / minted conflict copies.
   if (peerEntries.length > 0) {
     writeOplogFile(folder, engine.deviceId, engine.exportOplog());
+  }
+
+  // Project inbound note changes onto disk (.md dual-write parity). Conflict
+  // copies are new note rows, so they get .md files too.
+  if (project) {
+    const seen = new Set<string>();
+    for (const a of applied) {
+      if (a.entity !== "notes") continue;
+      if (seen.has(a.entity_id)) continue;
+      seen.add(a.entity_id);
+      try {
+        project(a.entity_id, a.op === "delete" ? "delete" : "put");
+      } catch (err) {
+        console.error(`[sync] project note ${a.entity_id} to disk failed:`, err);
+      }
+    }
+    for (const copyId of conflictCopies) {
+      try { project(copyId, "put"); } catch { /* ignore */ }
+    }
   }
 
   return {
