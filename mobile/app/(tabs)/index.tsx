@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import { View, Text, FlatList, Pressable, StyleSheet, RefreshControl } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { listNotes, type NoteRow } from "@/db/queries";
+import { Screen } from "@/components/Screen";
 
 export default function NotesScreen() {
   const router = useRouter();
@@ -19,31 +20,35 @@ export default function NotesScreen() {
 
   if (notes.length === 0) {
     return (
-      <View style={styles.empty}>
-        <Text style={styles.emptyTitle}>No notes yet</Text>
-        <Text style={styles.emptyHint}>Import a desktop oplog from the Sync tab to pull your workspace.</Text>
-      </View>
+      <Screen title="Notes">
+        <View style={styles.empty}>
+          <Text style={styles.emptyTitle}>No notes yet</Text>
+          <Text style={styles.emptyHint}>Import a desktop oplog from the Sync tab to pull your workspace.</Text>
+        </View>
+      </Screen>
     );
   }
 
   return (
-    <FlatList
-      data={notes}
-      keyExtractor={(n) => n.id}
-      refreshControl={<RefreshControl refreshing={false} onRefresh={load} />}
-      contentContainerStyle={styles.list}
-      renderItem={({ item }) => (
-        <Pressable style={styles.row} onPress={() => router.push(`/note/${item.id}`)}>
-          <Text style={styles.title} numberOfLines={1}>
-            {item.title || "Untitled"}
-          </Text>
-          {item.folder ? <Text style={styles.folder}>{item.folder}</Text> : null}
-          <Text style={styles.preview} numberOfLines={2}>
-            {(item.content ?? "").replace(/[#*_`>-]/g, "").trim()}
-          </Text>
-        </Pressable>
-      )}
-    />
+    <Screen title="Notes">
+      <FlatList
+        data={notes}
+        keyExtractor={(n) => n.id}
+        refreshControl={<RefreshControl refreshing={false} onRefresh={load} />}
+        contentContainerStyle={styles.list}
+        renderItem={({ item }) => (
+          <Pressable style={styles.row} onPress={() => router.push(`/note/${item.id}`)}>
+            <Text style={styles.title} numberOfLines={1}>
+              {item.title || "Untitled"}
+            </Text>
+            {item.folder ? <Text style={styles.folder}>{item.folder}</Text> : null}
+            <Text style={styles.preview} numberOfLines={2}>
+              {(item.content ?? "").replace(/[#*_`>-]/g, "").trim()}
+            </Text>
+          </Pressable>
+        )}
+      />
+    </Screen>
   );
 }
 

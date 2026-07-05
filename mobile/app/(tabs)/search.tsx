@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { View, Text, TextInput, FlatList, Pressable, StyleSheet } from "react-native";
+import { Text, TextInput, FlatList, Pressable, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
 import { searchNotes, type NoteRow } from "@/db/queries";
+import { Screen } from "@/components/Screen";
 
 export default function SearchScreen() {
   const router = useRouter();
@@ -14,7 +15,7 @@ export default function SearchScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <Screen title="Search">
       <TextInput
         style={styles.input}
         placeholder="Search notes…"
@@ -41,12 +42,11 @@ export default function SearchScreen() {
           </Pressable>
         )}
       />
-    </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f8f8f8" },
   input: { margin: 12, paddingHorizontal: 14, paddingVertical: 10, backgroundColor: "#fff", borderRadius: 10, borderWidth: 1, borderColor: "#e5e5e5", fontSize: 15 },
   list: { paddingHorizontal: 12 },
   row: { paddingVertical: 10, paddingHorizontal: 14, marginBottom: 8, backgroundColor: "#fff", borderRadius: 10, borderWidth: 1, borderColor: "#eee" },

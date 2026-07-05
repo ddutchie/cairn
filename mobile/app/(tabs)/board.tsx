@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import { View, Text, ScrollView, Pressable, StyleSheet } from "react-native";
 import { useFocusEffect } from "expo-router";
 import { listProjects, listColumns, listCards, type ProjectRow } from "@/db/queries";
+import { Screen } from "@/components/Screen";
 
 const PRIORITY_COLOR: Record<string, string> = {
   low: "#94a3b8",
@@ -24,9 +25,11 @@ export default function BoardScreen() {
 
   if (projects.length === 0) {
     return (
-      <View style={styles.empty}>
-        <Text style={styles.emptyHint}>No projects yet. Import a desktop oplog from the Sync tab.</Text>
-      </View>
+      <Screen title="Board">
+        <View style={styles.empty}>
+          <Text style={styles.emptyHint}>No projects yet. Import a desktop oplog from the Sync tab.</Text>
+        </View>
+      </Screen>
     );
   }
 
@@ -34,38 +37,40 @@ export default function BoardScreen() {
   const cards = activeProject ? listCards(activeProject) : [];
 
   return (
-    <View style={styles.container}>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.projectBar} contentContainerStyle={styles.projectBarInner}>
-        {projects.map((p) => (
-          <Pressable
-            key={p.id}
-            onPress={() => setActiveProject(p.id)}
-            style={[styles.chip, activeProject === p.id && styles.chipActive]}
-          >
-            <Text style={[styles.chipText, activeProject === p.id && styles.chipTextActive]}>{p.name}</Text>
-          </Pressable>
-        ))}
-      </ScrollView>
+    <Screen title="Board">
+      <View style={styles.container}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.projectBar} contentContainerStyle={styles.projectBarInner}>
+          {projects.map((p) => (
+            <Pressable
+              key={p.id}
+              onPress={() => setActiveProject(p.id)}
+              style={[styles.chip, activeProject === p.id && styles.chipActive]}
+            >
+              <Text style={[styles.chipText, activeProject === p.id && styles.chipTextActive]}>{p.name}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.board}>
-        {columns.map((col) => {
-          const colCards = cards.filter((c) => c.column_id === col.id);
-          return (
-            <View key={col.id} style={styles.column}>
-              <Text style={styles.columnTitle}>
-                {col.name} <Text style={styles.count}>{colCards.length}</Text>
-              </Text>
-              {colCards.map((card) => (
-                <View key={card.id} style={styles.card}>
-                  <View style={[styles.priorityDot, { backgroundColor: PRIORITY_COLOR[card.priority] ?? "#6366f1" }]} />
-                  <Text style={styles.cardTitle}>{card.title}</Text>
-                </View>
-              ))}
-            </View>
-          );
-        })}
-      </ScrollView>
-    </View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.board}>
+          {columns.map((col) => {
+            const colCards = cards.filter((c) => c.column_id === col.id);
+            return (
+              <View key={col.id} style={styles.column}>
+                <Text style={styles.columnTitle}>
+                  {col.name} <Text style={styles.count}>{colCards.length}</Text>
+                </Text>
+                {colCards.map((card) => (
+                  <View key={card.id} style={styles.card}>
+                    <View style={[styles.priorityDot, { backgroundColor: PRIORITY_COLOR[card.priority] ?? "#6366f1" }]} />
+                    <Text style={styles.cardTitle}>{card.title}</Text>
+                  </View>
+                ))}
+              </View>
+            );
+          })}
+        </ScrollView>
+      </View>
+    </Screen>
   );
 }
 

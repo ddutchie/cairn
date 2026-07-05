@@ -6,16 +6,22 @@
     "orientation": "portrait",
     "scheme": "cairn",
     "userInterfaceStyle": "automatic",
+    "icon": "./assets/icon.png",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.cairn.mobile"
+      "bundleIdentifier": "com.gerardslee.cairn"
     },
     "android": {
-      "package": "com.cairn.mobile"
+      "package": "com.gerardslee.cairn",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#8FA87E"
+      }
     },
     "plugins": [
       "expo-router",
-      "expo-sqlite"
+      "expo-sqlite",
+      "./plugins/withAppleSigning"
     ],
     "experiments": {
       "typedRoutes": true
