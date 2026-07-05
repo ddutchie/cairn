@@ -69,13 +69,8 @@ export const lightTheme: Theme = {
   info: "#2563eb",
 };
 
-/** Priority colours (match desktop analyticsUtils PRIORITY_COLOR). */
-export const PRIORITY_COLOR: Record<string, string> = {
-  low: "#94a3b8",
-  medium: "#6366f1",
-  high: "#f59e0b",
-  urgent: "#ef4444",
-};
+/** Priority colours — re-exported from shared so desktop + mobile match. */
+export { PRIORITY_COLOR } from "@cairn/shared/ui/constants";
 
 /** Returns the theme for the current system colour scheme. */
 export function useTheme(): Theme {

@@ -137,6 +137,20 @@ export function searchNotes(query: string): NoteRow[] {
 }
 
 /**
+ * Move a card to a different column. Plain UPDATE so capture triggers stage it
+ * for sync. Mirrors the desktop moveCard's column change (order left as-is).
+ */
+export function moveCardToColumn(cardId: string, columnId: string): void {
+  const now = new Date().toISOString();
+  getDb().runSync(
+    `UPDATE task_cards SET column_id = ?, updated_at = ?, version = version + 1 WHERE id = ?`,
+    columnId,
+    now,
+    cardId,
+  );
+}
+
+/**
  * Update a note's title/body locally. A plain UPDATE so the capture triggers
  * stage the change into sync_pending; syncNow() drains + publishes it.
  * content_text is kept as a plain-text mirror for search (matches desktop).

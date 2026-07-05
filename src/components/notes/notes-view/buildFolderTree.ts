@@ -1,47 +1,17 @@
 import type { Note } from "@/types";
+import {
+  buildFolderTree as buildFolderTreeShared,
+  type FolderNode as SharedFolderNode,
+} from "../../../../shared/notes/folder-tree";
 
-export interface FolderNode {
-  name: string;
-  path: string;
-  notes: Note[];
-  children: FolderNode[];
-}
+/** Desktop-typed folder node (notes are the full `Note` type). */
+export type FolderNode = SharedFolderNode<Note>;
 
-/** Build a tree from a flat list of notes using their folder field. */
+/**
+ * Build a tree from a flat list of notes using their folder field.
+ * Thin wrapper over the shared pure-logic (shared/notes/folder-tree) so desktop
+ * and mobile group folders identically.
+ */
 export function buildFolderTree(notes: Note[]): { rootNotes: Note[]; folders: FolderNode[] } {
-  const rootNotes: Note[] = [];
-  const folderMap = new Map<string, FolderNode>();
-
-  for (const note of notes) {
-    const folder = note.folder ?? "";
-    if (!folder) {
-      rootNotes.push(note);
-      continue;
-    }
-    const normalizedFolder = folder.split("/").filter(Boolean).join("/");
-    const segments = normalizedFolder.split("/");
-    let built = "";
-    for (const seg of segments) {
-      built = built ? `${built}/${seg}` : seg;
-      if (!folderMap.has(built)) {
-        folderMap.set(built, { name: seg, path: built, notes: [], children: [] });
-      }
-    }
-    folderMap.get(normalizedFolder)!.notes.push(note);
-  }
-
-  for (const node of folderMap.values()) {
-    const lastSlash = node.path.lastIndexOf("/");
-    if (lastSlash === -1) continue;
-    const parentPath = node.path.slice(0, lastSlash);
-    folderMap.get(parentPath)?.children.push(node);
-  }
-
-  const topLevel: FolderNode[] = [];
-  for (const node of folderMap.values()) {
-    if (!node.path.includes("/")) topLevel.push(node);
-  }
-  topLevel.sort((a, b) => a.name.localeCompare(b.name, "en", { sensitivity: "base" }));
-
-  return { rootNotes, folders: topLevel };
+  return buildFolderTreeShared<Note>(notes);
 }

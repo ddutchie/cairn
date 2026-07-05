@@ -3,6 +3,7 @@ import { View, Text, FlatList, Pressable, StyleSheet, RefreshControl } from "rea
 import { useFocusEffect, useRouter } from "expo-router";
 import { listProjectSummaries, type ProjectSummary } from "@/db/queries";
 import { Screen } from "@/components/Screen";
+import { ProjectIcon } from "@/components/ProjectIcon";
 import { useTheme } from "@/theme";
 
 export default function ProjectsScreen() {
@@ -39,7 +40,7 @@ export default function ProjectsScreen() {
             onPress={() => router.push(`/project/${item.id}`)}
           >
             <View style={[styles.iconWrap, { backgroundColor: t.accentDim }]}>
-              <Text style={styles.icon}>{item.icon || "📁"}</Text>
+              <ProjectIcon name={item.icon} size={18} color={t.accent} />
             </View>
             <View style={styles.rowBody}>
               <Text style={[styles.name, { color: t.textPrimary }]} numberOfLines={1}>
@@ -71,7 +72,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   iconWrap: { width: 38, height: 38, borderRadius: 9, alignItems: "center", justifyContent: "center" },
-  icon: { fontSize: 20 },
   rowBody: { flex: 1 },
   name: { fontSize: 16, fontWeight: "600" },
   meta: { fontSize: 12, marginTop: 2 },
