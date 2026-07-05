@@ -200,4 +200,14 @@ export function registerAppHandlers(
 
   // Cached AI/agent/theme/fontScale settings.
   registerSettingsHandlers();
+
+  // Desktop sync (folder connect + manual sync). Registered here so it shares
+  // the app DB context. Drain/periodic triggers are wired in main.ts.
+  // Lazy require with no static type reference: electron/sync/* imports the
+  // repo-root shared engine, outside this tsconfig's rootDir. A `typeof import`
+  // would still pull it into the program, so we keep it fully dynamic; esbuild
+  // resolves the require at build time.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const syncHandlers = require("../sync/sync-handlers");
+  syncHandlers.registerSyncHandlers({ db: ctx.db, getWin: ctx.getWin }, registerIpcHandle, handle);
 }

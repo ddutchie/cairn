@@ -14,5 +14,5 @@
     "sourceMap": true
   },
   "include": ["electron/**/*.ts"],
-  "exclude": ["node_modules", "dist-electron"]
+  "exclude": ["node_modules", "dist-electron", "electron/sync/**/*.ts"]
 }

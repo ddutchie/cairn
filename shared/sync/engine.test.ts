@@ -363,4 +363,35 @@ describe("sync engine — trigger→drain capture of real queries.ts writes", ()
     expect(() => applySchema(db)).not.toThrow();
     expect(db.pragma("user_version", { simple: true })).toBe(finalVersion);
   });
+
+  it("backfills pre-existing rows (created before capture) so a fresh peer receives the whole workspace", () => {
+    const A = makeDevice("A", clockFrom(9_800_000).now);
+    const B = makeDevice("B", clockFrom(9_800_000).now);
+
+    // Simulate a workspace created BEFORE the sync engine existed: write rows
+    // with capture suppressed so no oplog/pending entries are produced.
+    A.db.prepare("INSERT INTO sync_state (key, value) VALUES ('suppress','1') ON CONFLICT(key) DO UPDATE SET value='1'").run();
+    q.createWorkspace(A.db, { id: "ws1", name: "WS" });
+    q.createProject(A.db, { id: "p1", workspaceId: "ws1", name: "P" });
+    q.createNote(A.db, { id: "n1", projectId: "p1", workspaceId: "ws1", title: "Old Note", content: "pre-sync" });
+    A.db.prepare("UPDATE sync_state SET value='0' WHERE key='suppress'").run();
+
+    // No ops captured for the pre-existing rows.
+    expect((A.db.prepare("SELECT COUNT(*) c FROM sync_oplog").get() as { c: number }).c).toBe(0);
+    expect((A.db.prepare("SELECT COUNT(*) c FROM sync_pending").get() as { c: number }).c).toBe(0);
+
+    // Backfill seeds one put per live row.
+    const seeded = A.engine.backfill();
+    expect(seeded).toBeGreaterThanOrEqual(3);
+
+    // Backfill is idempotent — second run seeds nothing.
+    expect(A.engine.backfill()).toBe(0);
+
+    // The whole existing workspace replicates to a brand-new peer.
+    writeOplogFile(dir, "A", A.engine.exportOplog());
+    B.engine.applyRemote(readPeerOplogs(dir, "B"));
+    const noteOnB = B.db.prepare("SELECT title, content FROM notes WHERE id='n1'").get() as { title: string; content: string };
+    expect(noteOnB).toEqual({ title: "Old Note", content: "pre-sync" });
+    expect((B.db.prepare("SELECT COUNT(*) c FROM projects WHERE id='p1'").get() as { c: number }).c).toBe(1);
+  });
 });

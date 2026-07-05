@@ -46,11 +46,11 @@ export function initDatabase(): { db: SQLite.SQLiteDatabase; engine: SyncEngine 
 }
 
 export function getDb(): SQLite.SQLiteDatabase {
-  if (!_db) throw new Error("DB not initialised — call initDatabase() first");
-  return _db;
+  if (!_db) initDatabase(); // lazy-init: native tabs mount screens eagerly, so a
+  return _db!; // query can fire before RootLayout's effect runs.
 }
 
 export function getEngine(): SyncEngine {
-  if (!_engine) throw new Error("Sync engine not initialised — call initDatabase() first");
-  return _engine;
+  if (!_engine) initDatabase();
+  return _engine!;
 }

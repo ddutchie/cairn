@@ -154,6 +154,54 @@ export class SyncEngine {
     return latest.size;
   }
 
+  /**
+   * One-time backfill: seed the oplog with a coalesced `put` for every existing
+   * live (non-tombstoned) row across all syncable tables.
+   *
+   * The oplog is a *changelog* — rows created before the engine started
+   * capturing have no ops, so a fresh peer would never receive the existing
+   * workspace. This walks the authoritative SQLite rows and logs one `put` each
+   * so the whole current state propagates on first sync. Coalesced by design
+   * (one op per row, not per historical edit), so the oplog stays proportional
+   * to live-row count, not edit history.
+   *
+   * Idempotent: guarded by a `backfilled` flag in sync_state, so it runs once.
+   * Returns the number of rows seeded (0 if already backfilled).
+   */
+  backfill(): number {
+    if (this.getState("backfilled") === "1") return 0;
+
+    let seeded = 0;
+    const run = this.db.transaction(() => {
+      this.setSuppress(true); // hlc writes below must not re-stage via triggers
+      for (const entity of SYNCABLE_TABLES) {
+        // Skip tables that don't exist on this platform (e.g. mobile subset).
+        const exists = this.db
+          .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name = ?")
+          .get(entity);
+        if (!exists) continue;
+
+        const rows = this.db
+          .prepare(`SELECT * FROM ${entity} WHERE deleted_at IS NULL`)
+          .all() as Array<Record<string, unknown>>;
+        for (const row of rows) {
+          const id = row.id as string;
+          if (id == null) continue;
+          const stamp = this.hlc.send();
+          this.db.prepare(`UPDATE ${entity} SET hlc = ? WHERE id = ?`).run(stamp, id);
+          const payload = readRow(this.db, entity, id) ?? null;
+          this.appendOplog({ hlc: stamp, origin: this.deviceId, entity, entity_id: id, op: "put", payload });
+          seeded++;
+        }
+      }
+      this.setState("backfilled", "1");
+      this.setSuppress(false);
+      this.persistHlc();
+    });
+    run();
+    return seeded;
+  }
+
   // ── local mutations (direct API — used by tests and non-triggered paths) ─
 
   /**

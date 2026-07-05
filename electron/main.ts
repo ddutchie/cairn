@@ -416,6 +416,57 @@ app.whenReady().then(async () => {
   // Register app:* and mcp:* IPC handlers (now that updateBadge is available)
   registerAppHandlers(ctx, userDataPath, updateBadge, reinitialise, clearBadge);
 
+  // ── Desktop sync drain/sync wiring ───────────────────────────────────────
+  // The sync engine + folder connect live in electron/sync. Here we drive it:
+  //  - drain staged writes frequently (cheap; coalesces bursts),
+  //  - periodically full-sync as the primary + safety-net path,
+  //  - drain + sync on resume-from-sleep / window focus / before quit,
+  // so nothing sits un-synced (JS timers pause during sleep — see the P1 note).
+  // Writes from every path (renderer IPC, MCP, file-watcher) land in
+  // sync_pending via the capture triggers, so a periodic drain catches them all
+  // regardless of source — no per-write hook needed.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const desktopSync = require("./sync/desktop-sync");
+  const drainDesktop: (db: unknown) => number = desktopSync.drainDesktop;
+  const syncDesktop: (db: unknown) => { seeded: number; drained: number; peerOpsApplied: number; conflictCopies: number; connected: boolean } = desktopSync.syncDesktop;
+  const getSyncFolder: (db: unknown) => string | null = desktopSync.getSyncFolder;
+  function runFullSync(reason: string) {
+    try {
+      if (!getSyncFolder(ctx.db)) {
+        drainDesktop(ctx.db); // still drain so the oplog is ready when a folder connects
+        return;
+      }
+      const r = syncDesktop(ctx.db);
+      if (r.seeded || r.drained || r.peerOpsApplied) {
+        console.log(`[sync] ${reason}: seeded=${r.seeded} sent=${r.drained} applied=${r.peerOpsApplied} conflicts=${r.conflictCopies}`);
+        // If peers changed our data, tell the renderer to re-hydrate.
+        if (r.peerOpsApplied > 0 && !win.isDestroyed()) win.webContents.send("db:changed");
+      }
+    } catch (err) {
+      console.error(`[sync] ${reason} failed:`, err);
+    }
+  }
+
+  // Frequent cheap drain (turns staged writes into oplog ops).
+  const drainInterval = setInterval(() => {
+    try { drainDesktop(ctx.db); } catch (err) { console.error("[sync] drain:", err); }
+  }, 5_000);
+  // Full folder sync (publish + reconcile peers) as the primary + safety net.
+  const syncInterval = setInterval(() => runFullSync("periodic"), 30_000);
+
+  // Resume from sleep / focus / quit — timers may have been paused.
+  const { powerMonitor } = await import("electron");
+  powerMonitor.on("resume", () => runFullSync("resume"));
+  win.on("focus", () => runFullSync("focus"));
+  app.on("before-quit", () => {
+    try { drainDesktop(ctx.db); runFullSync("before-quit"); } catch { /* ignore */ }
+    clearInterval(drainInterval);
+    clearInterval(syncInterval);
+  });
+
+  // Initial sync shortly after boot (lets the workspace settle first).
+  setTimeout(() => runFullSync("startup"), 3_000);
+
   // Start mobile access server if enabled
   try {
     const mobileSettings = loadMobileSettings(userDataPath);

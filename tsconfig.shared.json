@@ -12,6 +12,6 @@
     "isolatedModules": true,
     "types": ["node"]
   },
-  "include": ["shared/**/*.ts", "electron/db/schema.ts", "electron/db/queries.ts", "electron/db/**/*.ts"],
+  "include": ["shared/**/*.ts", "electron/db/schema.ts", "electron/db/queries.ts", "electron/db/**/*.ts", "electron/sync/**/*.ts"],
   "exclude": ["node_modules"]
 }
