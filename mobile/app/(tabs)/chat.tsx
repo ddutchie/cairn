@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -7,10 +7,9 @@ import {
   StyleSheet,
   ScrollView,
   ActivityIndicator,
-  KeyboardAvoidingView,
-  Keyboard,
-  Platform,
 } from "react-native";
+import Animated, { useAnimatedStyle, useSharedValue } from "react-native-reanimated";
+import { useKeyboardHandler } from "react-native-keyboard-controller";
 import { Wrench, Send } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Screen } from "@/components/Screen";
@@ -26,6 +25,26 @@ interface UiMessage {
   streaming?: boolean;
 }
 
+/**
+ * Track the keyboard height as a shared value that animates in lockstep with
+ * the system keyboard (react-native-keyboard-controller). Driving a spacer
+ * View off this gives frame-perfect avoidance with no dead space — unlike
+ * KeyboardAvoidingView (see Expo keyboard docs).
+ */
+function useGradualAnimation() {
+  const height = useSharedValue(0);
+  useKeyboardHandler(
+    {
+      onMove: (e) => {
+        "worklet";
+        height.value = e.height;
+      },
+    },
+    [],
+  );
+  return { height };
+}
+
 export default function ChatScreen() {
   const t = useTheme();
   const insets = useSafeAreaInsets();
@@ -36,20 +55,13 @@ export default function ChatScreen() {
   const scrollRef = useRef<ScrollView>(null);
   // Persistent agent conversation (UIMessage parts format) across turns.
   const conversation = useRef<UIMessage[]>([]);
-  // Track keyboard visibility so we only add the tab-bar safe-area inset when
-  // the keyboard is HIDDEN — otherwise KeyboardAvoidingView + inset double up
-  // and leave dead space above the keyboard.
-  const [kbVisible, setKbVisible] = useState(false);
-  useEffect(() => {
-    const showEvt = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
-    const hideEvt = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
-    const s = Keyboard.addListener(showEvt, () => setKbVisible(true));
-    const h = Keyboard.addListener(hideEvt, () => setKbVisible(false));
-    return () => {
-      s.remove();
-      h.remove();
-    };
-  }, []);
+
+  const { height: kbHeight } = useGradualAnimation();
+  // Spacer below the composer: keyboard height when open, else the bottom safe
+  // area (so the composer clears the tab bar). max() avoids double-spacing.
+  const spacer = useAnimatedStyle(() => ({
+    height: Math.max(kbHeight.value, insets.bottom),
+  }), [insets.bottom]);
 
   const send = useCallback(async () => {
     const text = input.trim();
@@ -108,14 +120,12 @@ export default function ChatScreen() {
 
   return (
     <Screen title="Chat">
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-      >
+      <View style={{ flex: 1 }}>
         <ScrollView
           ref={scrollRef}
           style={{ flex: 1 }}
           contentContainerStyle={styles.list}
+          keyboardShouldPersistTaps="handled"
           onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
         >
           {messages.length === 0 ? (
@@ -131,7 +141,7 @@ export default function ChatScreen() {
           )}
         </ScrollView>
 
-        <View style={[styles.composer, { paddingBottom: 10 + (kbVisible ? 0 : insets.bottom) }]}>
+        <View style={styles.composer}>
           <TextInput
             style={styles.input}
             value={input}
@@ -145,7 +155,10 @@ export default function ChatScreen() {
             {busy ? <ActivityIndicator color={t.accentFg} size="small" /> : <Send size={16} color={t.accentFg} />}
           </Pressable>
         </View>
-      </KeyboardAvoidingView>
+
+        {/* Animated spacer: tracks the keyboard, else the bottom safe area. */}
+        <Animated.View style={spacer} />
+      </View>
     </Screen>
   );
 }

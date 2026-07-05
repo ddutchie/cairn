@@ -3,6 +3,7 @@ import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { View, Text, ActivityIndicator, StyleSheet } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { KeyboardProvider } from "react-native-keyboard-controller";
 import { initDatabase } from "@/db";
 import { useTheme } from "@/theme";
 
@@ -46,14 +47,16 @@ export default function RootLayout() {
   };
 
   return (
-    <SafeAreaProvider>
-      <StatusBar style="auto" />
-      <Stack screenOptions={{ headerShown: true, ...headerStyle }}>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="project/[id]" options={{ title: "Project" }} />
-        <Stack.Screen name="note/[id]" options={{ title: "Note" }} />
-      </Stack>
-    </SafeAreaProvider>
+    <KeyboardProvider>
+      <SafeAreaProvider>
+        <StatusBar style="auto" />
+        <Stack screenOptions={{ headerShown: true, ...headerStyle }}>
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="project/[id]" options={{ title: "Project" }} />
+          <Stack.Screen name="note/[id]" options={{ title: "Note" }} />
+        </Stack>
+      </SafeAreaProvider>
+    </KeyboardProvider>
   );
 }
 
