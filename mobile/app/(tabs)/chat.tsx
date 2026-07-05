@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   ScrollView,
   ActivityIndicator,
   KeyboardAvoidingView,
+  Keyboard,
   Platform,
 } from "react-native";
 import { Wrench, Send } from "lucide-react-native";
@@ -35,6 +36,20 @@ export default function ChatScreen() {
   const scrollRef = useRef<ScrollView>(null);
   // Persistent agent conversation (UIMessage parts format) across turns.
   const conversation = useRef<UIMessage[]>([]);
+  // Track keyboard visibility so we only add the tab-bar safe-area inset when
+  // the keyboard is HIDDEN — otherwise KeyboardAvoidingView + inset double up
+  // and leave dead space above the keyboard.
+  const [kbVisible, setKbVisible] = useState(false);
+  useEffect(() => {
+    const showEvt = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvt = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const s = Keyboard.addListener(showEvt, () => setKbVisible(true));
+    const h = Keyboard.addListener(hideEvt, () => setKbVisible(false));
+    return () => {
+      s.remove();
+      h.remove();
+    };
+  }, []);
 
   const send = useCallback(async () => {
     const text = input.trim();
@@ -95,8 +110,7 @@ export default function ChatScreen() {
     <Screen title="Chat">
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={90}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
         <ScrollView
           ref={scrollRef}
@@ -117,7 +131,7 @@ export default function ChatScreen() {
           )}
         </ScrollView>
 
-        <View style={[styles.composer, { paddingBottom: 10 + insets.bottom }]}>
+        <View style={[styles.composer, { paddingBottom: 10 + (kbVisible ? 0 : insets.bottom) }]}>
           <TextInput
             style={styles.input}
             value={input}
