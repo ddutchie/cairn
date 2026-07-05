@@ -10,12 +10,13 @@ import {
 } from "react-native";
 import Animated, { useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { useKeyboardHandler } from "react-native-keyboard-controller";
-import { Wrench, Send } from "lucide-react-native";
+import { CheckCircle, Bot, User, Send } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Screen } from "@/components/Screen";
 import { MarkdownView } from "@/components/MarkdownView";
-import { useTheme, type Theme } from "@/theme";
+import { useTheme, withAlpha, type Theme } from "@/theme";
 import { runAgent, userMessage, type AgentEvent } from "@/chat/agent";
+import { prettifyToolLabel } from "@cairn/shared/ui/constants";
 import type { UIMessage } from "@/chat/rork-client";
 
 interface UiMessage {
@@ -166,24 +167,35 @@ export default function ChatScreen() {
 function Bubble({ m, t, styles }: { m: UiMessage; t: Theme; styles: ReturnType<typeof makeStyles> }) {
   const isUser = m.role === "user";
   return (
-    <View style={[styles.bubbleWrap, isUser ? styles.userWrap : styles.aiWrap]}>
-      {m.tools && m.tools.length > 0 && (
-        <View style={styles.toolTrail}>
-          {m.tools.map((tt, i) => (
-            <View key={i} style={styles.toolChip}>
-              <Wrench size={10} color={tt.ok ? t.success : t.danger} />
-              <Text style={styles.toolChipText}>{tt.tool}</Text>
-            </View>
-          ))}
+    <View style={[styles.row, isUser && styles.rowUser]}>
+      {/* Avatar */}
+      <View style={[styles.avatar, isUser ? styles.avatarUser : styles.avatarBot]}>
+        {isUser ? <User size={12} color={t.textTertiary} /> : <Bot size={12} color={t.accent} />}
+      </View>
+
+      {/* Column: tool chips, bubble, timestamp */}
+      <View style={[styles.col, isUser && styles.colUser]}>
+        {!isUser && m.tools && m.tools.length > 0 && (
+          <View style={styles.toolTrail}>
+            {m.tools.map((tt, i) => (
+              <View key={i} style={styles.toolChip}>
+                <CheckCircle size={10} color={tt.ok ? t.accent : t.danger} />
+                <Text style={styles.toolChipText}>{prettifyToolLabel(tt.tool)}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+        <View style={[styles.bubble, isUser ? styles.userBubble : styles.aiBubble]}>
+          {m.role === "assistant" && m.streaming && !m.content ? (
+            <ActivityIndicator color={t.textTertiary} size="small" />
+          ) : isUser ? (
+            <Text style={styles.userText}>{m.content}</Text>
+          ) : (
+            <MarkdownView content={m.content} />
+          )}
         </View>
-      )}
-      {m.role === "assistant" && m.streaming && !m.content ? (
-        <ActivityIndicator color={t.textTertiary} size="small" />
-      ) : isUser ? (
-        <Text style={styles.userText}>{m.content}</Text>
-      ) : (
-        <MarkdownView content={m.content} />
-      )}
+      </View>
     </View>
   );
 }
@@ -194,13 +206,35 @@ function makeStyles(t: Theme) {
     empty: { alignItems: "center", justifyContent: "center", paddingVertical: 60, paddingHorizontal: 24 },
     emptyTitle: { fontSize: 18, fontWeight: "700", color: t.textSecondary },
     emptyHint: { fontSize: 13, color: t.textTertiary, textAlign: "center", marginTop: 8, lineHeight: 19 },
-    bubbleWrap: { marginBottom: 12, maxWidth: "88%", borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10 },
-    userWrap: { alignSelf: "flex-end", backgroundColor: t.accent },
-    aiWrap: { alignSelf: "flex-start", backgroundColor: t.surface, borderWidth: 1, borderColor: t.border },
+
+    // Row: avatar + column (reversed for user), matching the desktop bubble.
+    row: { flexDirection: "row", alignItems: "flex-start", gap: 8, marginBottom: 14 },
+    rowUser: { flexDirection: "row-reverse" },
+    avatar: { width: 24, height: 24, borderRadius: 12, alignItems: "center", justifyContent: "center", marginTop: 2, borderWidth: 1 },
+    avatarBot: { backgroundColor: t.accentDim, borderColor: withAlpha(t.accent, 0.2) },
+    avatarUser: { backgroundColor: t.surface3, borderColor: t.border },
+    col: { flex: 1, minWidth: 0, gap: 6 },
+    colUser: { alignItems: "flex-end" },
+
+    toolTrail: { flexDirection: "column", gap: 4, alignSelf: "flex-start" },
+    toolChip: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      alignSelf: "flex-start",
+      backgroundColor: t.surface2,
+      borderWidth: 1,
+      borderColor: t.border,
+      borderRadius: 8,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+    },
+    toolChipText: { fontSize: 12, color: t.textSecondary },
+
+    bubble: { maxWidth: "94%", paddingHorizontal: 12, paddingVertical: 10, borderRadius: 14 },
+    aiBubble: { backgroundColor: t.surface2, borderWidth: 1, borderColor: t.border, borderTopLeftRadius: 4, alignSelf: "flex-start" },
+    userBubble: { backgroundColor: t.accent, borderTopRightRadius: 4, alignSelf: "flex-end" },
     userText: { color: t.accentFg, fontSize: 15, lineHeight: 21 },
-    toolTrail: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 6 },
-    toolChip: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: t.surface2, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
-    toolChipText: { fontSize: 11, color: t.textSecondary, fontFamily: "Menlo" },
     composer: {
       flexDirection: "row",
       alignItems: "flex-end",

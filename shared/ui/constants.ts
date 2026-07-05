@@ -47,3 +47,17 @@ export const PRIORITY_COLOR: Record<string, string> = {
   high: "#f59e0b",
   urgent: "#ef4444",
 };
+
+/**
+ * Prettify a tool label/name for display (mirrors src/lib/utils
+ * prettifyToolLabel + a snake/namespaced fallback). Both apps show identical
+ * tool-call chip labels.
+ */
+export function prettifyToolLabel(label: string): string {
+  if (typeof label !== "string") return label;
+  const match = /^(?:mcp|svc)__.+?__(.+)$/.exec(label);
+  const raw = match && match[1] ? match[1] : label;
+  const tool = raw.replace(/[_.\-]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!tool) return label;
+  return tool.charAt(0).toUpperCase() + tool.slice(1);
+}

@@ -77,3 +77,17 @@ export function useTheme(): Theme {
   const scheme = useColorScheme();
   return scheme === "light" ? lightTheme : darkTheme;
 }
+
+/**
+ * Apply an alpha to a hex colour → rgba() string. Mirrors the desktop's
+ * color-mix / `/20` alpha usage (e.g. accent border at 20%).
+ */
+export function withAlpha(hex: string, alpha: number): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return hex;
+  const n = parseInt(m[1], 16);
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
