@@ -1,61 +1,48 @@
 /**
- * iCloud (or any Files-provider) sync-folder access for the mobile app.
+ * iCloud container access for the mobile sync folder — no picker, auto-persists.
  *
- * iOS sandboxes apps: to read/write an arbitrary iCloud Drive folder we ask the
- * user to pick it once via the system directory picker. iOS grants a persistent
- * security-scoped URL for a picked directory, which we store in sync_state so
- * the app reconnects automatically on later launches.
+ * The app has its own iCloud ubiquity container (entitlement added by
+ * plugins/withICloudContainer). Its Documents folder is always accessible to
+ * the app with no security-scoped-bookmark dance, and iOS keeps it in sync
+ * across the user's devices. We put the oplog files under Documents/ so they
+ * surface in iCloud Drive under the "Cairn" app folder — the same place the
+ * desktop points its Device Sync at.
  *
- * The chosen folder is the shared rendezvous point (plan §3): each device writes
- * its own append-only oplog file here; peers read each other's files.
+ * (Replaces the old Directory.pickDirectoryAsync approach, whose access did NOT
+ * survive app relaunch → "you don't have permission" on write.)
  */
 
-import { Directory } from "expo-file-system";
-import { getDb } from "@/db";
+import { defaultICloudContainerPath, isICloudAvailable, createDir, exist, PathUtils } from "react-native-cloud-store";
 
-const FOLDER_KEY = "sync_folder_uri";
+/** Subfolder inside the container's Documents where oplogs live. */
+const SYNC_SUBDIR = "sync";
 
-/** Read the persisted sync-folder URI, or null if none connected yet. */
-export function getSyncFolderUri(): string | null {
-  const row = getDb().getFirstSync<{ value: string }>(
-    "SELECT value FROM sync_state WHERE key = ?",
-    FOLDER_KEY,
-  );
-  return row?.value ?? null;
-}
-
-function setSyncFolderUri(uri: string): void {
-  getDb().runSync(
-    "INSERT INTO sync_state (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-    FOLDER_KEY,
-    uri,
-  );
-}
-
-/** Clear the connected folder (user disconnect). */
-export function clearSyncFolder(): void {
-  getDb().runSync("DELETE FROM sync_state WHERE key = ?", FOLDER_KEY);
-}
-
-/**
- * Prompt the user to pick the iCloud Cairn sync folder and persist it.
- * Returns the connected Directory, or null if the user cancelled.
- */
-export async function connectSyncFolder(): Promise<Directory | null> {
+export async function iCloudAvailable(): Promise<boolean> {
   try {
-    const dir = await Directory.pickDirectoryAsync();
-    if (!dir?.uri) return null;
-    setSyncFolderUri(dir.uri);
-    return dir;
+    return await isICloudAvailable();
   } catch {
-    // Picker dismissed / permission denied.
-    return null;
+    return false;
   }
 }
 
-/** Resolve the connected folder as a Directory handle, or null if not set. */
-export function getSyncFolder(): Directory | null {
-  const uri = getSyncFolderUri();
-  if (!uri) return null;
-  return new Directory(uri);
+/**
+ * Absolute path to the sync folder inside the app's iCloud container Documents,
+ * creating it if needed. Returns null if iCloud isn't available (not signed in).
+ */
+export async function getSyncFolderPath(): Promise<string | null> {
+  const container = defaultICloudContainerPath;
+  if (!container) return null;
+  const docs = PathUtils.join(container, "Documents");
+  const dir = PathUtils.join(docs, SYNC_SUBDIR);
+  try {
+    if (!(await exist(dir))) await createDir(dir);
+  } catch {
+    // createDir throws if it already exists in some cases — ignore.
+  }
+  return dir;
+}
+
+/** Human label for the connected folder (for the UI). */
+export function syncFolderLabel(): string {
+  return "iCloud Drive › Cairn › sync";
 }

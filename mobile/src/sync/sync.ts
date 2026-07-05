@@ -1,36 +1,31 @@
 /**
- * Bidirectional sync orchestration (P4).
+ * Bidirectional sync orchestration (iCloud container).
  *
- * A single "Sync Now" runs the full round-trip against the connected iCloud
- * folder using the IDENTICAL shared SyncEngine the desktop uses:
- *
- *   1. drainPending()  — turn local writes (staged by capture triggers) into
- *                        HLC-stamped oplog entries.
- *   2. writeOwnOplog() — publish this device's full oplog to the shared folder.
- *   3. readPeerOplogs()— read every other device's oplog file.
- *   4. applyRemote()   — reconcile peer ops (LWW + array-union + conflict-copy).
- *   5. re-export + re-publish — applyRemote may forward peer ops into our own
- *                        oplog and mint conflict copies, so write again so peers
- *                        converge on the merged state.
- *
- * Convergent by construction (all peers replay the same ops in HLC order).
+ * One "Sync Now" runs the full round-trip on the shared SyncEngine against the
+ * app's iCloud container sync folder (no picker — auto-persisting):
+ *   drainPending -> writeOwnOplog -> readPeerOplogs -> applyRemote -> re-publish
+ * Async because iCloud I/O is async.
  */
 
 import { getDb, getEngine } from "@/db";
-import { getSyncFolder } from "./folder";
+import { getSyncFolderPath, iCloudAvailable } from "./folder";
 import { writeOwnOplog, readPeerOplogs } from "./fs-transport";
 
 export interface SyncResult {
-  drained: number; // local changes turned into ops this run
-  peerOpsApplied: number; // peer ops reconciled in
-  conflictCopies: number; // conflict-copy notes created
-  connected: boolean; // false if no folder is connected
+  drained: number;
+  peerOpsApplied: number;
+  conflictCopies: number;
+  connected: boolean;
+  reason?: string; // when connected=false
 }
 
-export function syncNow(): SyncResult {
-  const folder = getSyncFolder();
+export async function syncNow(): Promise<SyncResult> {
+  if (!(await iCloudAvailable())) {
+    return { drained: 0, peerOpsApplied: 0, conflictCopies: 0, connected: false, reason: "iCloud not available — sign in to iCloud in Settings." };
+  }
+  const folder = await getSyncFolderPath();
   if (!folder) {
-    return { drained: 0, peerOpsApplied: 0, conflictCopies: 0, connected: false };
+    return { drained: 0, peerOpsApplied: 0, conflictCopies: 0, connected: false, reason: "Couldn't open the iCloud Cairn folder." };
   }
 
   const engine = getEngine();
@@ -39,17 +34,17 @@ export function syncNow(): SyncResult {
   const drained = engine.drainPending();
 
   // 2. Publish our oplog.
-  writeOwnOplog(folder, engine.deviceId, engine.exportOplog());
+  await writeOwnOplog(folder, engine.deviceId, engine.exportOplog());
 
   // 3. Read peers.
-  const peerEntries = readPeerOplogs(folder, engine.deviceId);
+  const peerEntries = await readPeerOplogs(folder, engine.deviceId);
 
   // 4. Reconcile.
   const { conflictCopies } = engine.applyRemote(peerEntries);
 
-  // 5. Re-publish if reconcile changed our oplog (forwarded ops / conflict copies).
+  // 5. Re-publish if reconcile changed our oplog.
   if (peerEntries.length > 0) {
-    writeOwnOplog(folder, engine.deviceId, engine.exportOplog());
+    await writeOwnOplog(folder, engine.deviceId, engine.exportOplog());
   }
 
   return {
@@ -60,7 +55,7 @@ export function syncNow(): SyncResult {
   };
 }
 
-/** Count local changes waiting to be drained (for a "N pending" status hint). */
+/** Count local changes waiting to be drained (for a "N pending" hint). */
 export function pendingCount(): number {
   const row = getDb().getFirstSync<{ n: number }>("SELECT COUNT(*) AS n FROM sync_pending");
   return row?.n ?? 0;

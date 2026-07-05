@@ -1,26 +1,25 @@
 /**
- * Mobile sync transport over expo-file-system (P4).
+ * Mobile sync transport over the iCloud container (react-native-cloud-store).
  *
- * Mirrors the desktop synced-folder layout (shared/sync/transport.ts): each
- * device writes an append-only per-device oplog file into the shared folder:
- *
- *   <syncFolder>/oplog-<deviceId>.ndjson   — one JSON OplogEntry per line
- *
- * Because files are per-device, iCloud/Files never has to merge the same file
- * from two writers. We NEVER place the binary cairn.db in this folder.
- *
- * The desktop uses Node fs; here we use the SDK 57 File/Directory API so the
- * mobile app reads/writes the SAME file format the desktop produces/consumes.
+ * Same file layout as desktop: <syncFolder>/oplog-<deviceId>.ndjson, one JSON
+ * OplogEntry per line. Async because iCloud I/O is async and peer files may
+ * need downloading (iCloud stores placeholders until materialized).
  */
 
-import { Directory, File } from "expo-file-system";
+import {
+  writeFile,
+  readFile,
+  readDir,
+  exist,
+  startDownloadingUbiquitousItem,
+  PathUtils,
+} from "react-native-cloud-store";
 import type { OplogEntry } from "@cairn/shared/sync/engine";
 
 function oplogFileName(deviceId: string): string {
   return `oplog-${deviceId}.ndjson`;
 }
 
-/** Serialize entries to NDJSON (one JSON object per line, trailing newline). */
 function toNdjson(entries: OplogEntry[]): string {
   return entries.map((e) => JSON.stringify(e)).join("\n") + (entries.length ? "\n" : "");
 }
@@ -33,38 +32,54 @@ function parseNdjson(text: string): OplogEntry[] {
     try {
       out.push(JSON.parse(t) as OplogEntry);
     } catch {
-      // Skip partially-synced / corrupt lines; a later read re-parses cleanly.
+      // skip partial/corrupt lines
     }
   }
   return out;
 }
 
-/** Write (replace) this device's full oplog file into the sync folder. */
-export function writeOwnOplog(folder: Directory, deviceId: string, entries: OplogEntry[]): void {
-  const file = new File(folder, oplogFileName(deviceId));
-  const body = toNdjson(entries);
-  // File.write replaces contents. Create if missing.
-  if (!file.exists) file.create();
-  file.write(body);
+/** Write (replace) this device's oplog file into the sync folder. */
+export async function writeOwnOplog(folder: string, deviceId: string, entries: OplogEntry[]): Promise<void> {
+  const path = PathUtils.join(folder, oplogFileName(deviceId));
+  await writeFile(path, toNdjson(entries), { override: true });
 }
 
 /**
- * Read all peer oplog entries from the folder, excluding this device's own file.
- * Returns a flat list of entries (the engine sorts them by HLC on apply).
+ * Read all peer oplog entries from the folder, excluding this device's file.
+ * Downloads iCloud placeholders first so their contents are readable.
  */
-export function readPeerOplogs(folder: Directory, selfDeviceId: string): OplogEntry[] {
-  if (!folder.exists) return [];
+export async function readPeerOplogs(folder: string, selfDeviceId: string): Promise<OplogEntry[]> {
   const selfFile = oplogFileName(selfDeviceId);
+  let entries: string[] = [];
+  try {
+    entries = await readDir(folder);
+  } catch {
+    return [];
+  }
+
   const out: OplogEntry[] = [];
-  for (const entry of folder.list()) {
-    if (!(entry instanceof File)) continue;
-    const name = entry.name;
-    if (!name.startsWith("oplog-") || !name.endsWith(".ndjson")) continue;
-    if (name === selfFile) continue;
+  for (const entryPath of entries) {
+    // readDir returns full-ish paths; normalise to a basename.
+    const name = entryPath.split("/").filter(Boolean).pop() ?? "";
+    // iCloud placeholders are named "<file>.icloud" — strip for the match.
+    const realName = PathUtils.iCloudRemoveDotExt(name);
+    if (!realName.startsWith("oplog-") || !realName.endsWith(".ndjson")) continue;
+    if (realName === selfFile) continue;
+
+    const filePath = PathUtils.join(folder, realName);
     try {
-      out.push(...parseNdjson(entry.textSync()));
+      // Materialise if it's still an iCloud placeholder, then read.
+      if (!(await exist(filePath))) {
+        try {
+          await startDownloadingUbiquitousItem(PathUtils.join(folder, name));
+        } catch {
+          /* best effort */
+        }
+      }
+      const text = await readFile(filePath);
+      out.push(...parseNdjson(text));
     } catch {
-      // Unreadable file (mid-sync); skip — next sync will retry.
+      // Unreadable / still downloading; next sync retries.
     }
   }
   return out;

@@ -21,7 +21,8 @@
     "plugins": [
       "expo-router",
       "expo-sqlite",
-      "./plugins/withAppleSigning"
+      "./plugins/withAppleSigning",
+      "./plugins/withICloudContainer"
     ],
     "experiments": {
       "typedRoutes": true
