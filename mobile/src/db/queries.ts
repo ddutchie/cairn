@@ -45,6 +45,46 @@ export function listProjects(): ProjectRow[] {
   );
 }
 
+export function getProject(id: string): ProjectRow | null {
+  return (
+    getDb().getFirstSync<ProjectRow>(
+      `SELECT id, name, icon FROM projects WHERE id = ? AND ${LIVE}`,
+      id,
+    ) ?? null
+  );
+}
+
+/** Note + card counts per project, for the projects list. */
+export interface ProjectSummary extends ProjectRow {
+  noteCount: number;
+  cardCount: number;
+}
+
+export function listProjectSummaries(): ProjectSummary[] {
+  const db = getDb();
+  const projects = listProjects();
+  return projects.map((p) => {
+    const n = db.getFirstSync<{ c: number }>(
+      `SELECT COUNT(*) c FROM notes WHERE ${LIVE} AND type='note' AND project_id = ?`,
+      p.id,
+    );
+    const c = db.getFirstSync<{ c: number }>(
+      `SELECT COUNT(*) c FROM task_cards WHERE ${LIVE} AND project_id = ?`,
+      p.id,
+    );
+    return { ...p, noteCount: n?.c ?? 0, cardCount: c?.c ?? 0 };
+  });
+}
+
+/** Distinct folders within a project (empty string = project root). */
+export function listFolders(projectId: string): string[] {
+  const rows = getDb().getAllSync<{ folder: string }>(
+    `SELECT DISTINCT folder FROM notes WHERE ${LIVE} AND type='note' AND project_id = ? ORDER BY folder`,
+    projectId,
+  );
+  return rows.map((r) => r.folder ?? "");
+}
+
 export function listNotes(projectId?: string): NoteRow[] {
   const db = getDb();
   if (projectId) {

@@ -1,5 +1,5 @@
-import { useLocalSearchParams, Stack, useRouter } from "expo-router";
-import { useState } from "react";
+import { useLocalSearchParams, Stack } from "expo-router";
+import { useMemo, useState } from "react";
 import {
   ScrollView,
   Text,
@@ -11,15 +11,19 @@ import {
   Platform,
 } from "react-native";
 import { getNote, updateNote } from "@/db/queries";
+import { MarkdownView } from "@/components/MarkdownView";
+import { useTheme, type Theme } from "@/theme";
 
 export default function NoteDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const router = useRouter();
+  const t = useTheme();
   const note = id ? getNote(id) : null;
 
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(note?.title ?? "");
   const [body, setBody] = useState(note?.content ?? "");
+
+  const styles = useMemo(() => makeStyles(t), [t]);
 
   if (!note) {
     return (
@@ -32,9 +36,7 @@ export default function NoteDetail() {
   const onSave = () => {
     updateNote(note.id, title.trim() || "Untitled", body);
     setEditing(false);
-    // Changes are now staged in sync_pending; the Sync tab publishes them.
   };
-
   const onCancel = () => {
     setTitle(note.title ?? "");
     setBody(note.content ?? "");
@@ -42,10 +44,7 @@ export default function NoteDetail() {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-    >
+    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <Stack.Screen
         options={{
           title: editing ? "Edit note" : note.title || "Note",
@@ -71,18 +70,13 @@ export default function NoteDetail() {
 
       {editing ? (
         <ScrollView style={styles.scroll} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-          <TextInput
-            style={styles.titleInput}
-            value={title}
-            onChangeText={setTitle}
-            placeholder="Title"
-            multiline
-          />
+          <TextInput style={styles.titleInput} value={title} onChangeText={setTitle} placeholder="Title" placeholderTextColor={t.textTertiary} multiline />
           <TextInput
             style={styles.bodyInput}
             value={body}
             onChangeText={setBody}
             placeholder="Write in Markdown…"
+            placeholderTextColor={t.textTertiary}
             multiline
             textAlignVertical="top"
           />
@@ -91,31 +85,28 @@ export default function NoteDetail() {
         <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
           <Text style={styles.title}>{note.title || "Untitled"}</Text>
           {note.folder ? <Text style={styles.folder}>{note.folder}</Text> : null}
-          <Text style={styles.body}>{note.content ?? ""}</Text>
+          <View style={styles.md}>
+            <MarkdownView content={note.content ?? ""} />
+          </View>
         </ScrollView>
       )}
     </KeyboardAvoidingView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fff" },
-  scroll: { flex: 1 },
-  content: { padding: 18, paddingBottom: 48 },
-  title: { fontSize: 22, fontWeight: "700", color: "#111" },
-  folder: { fontSize: 12, color: "#8b5cf6", marginTop: 4 },
-  body: { fontSize: 15, lineHeight: 22, color: "#222", marginTop: 16, fontFamily: "Menlo" },
-  titleInput: { fontSize: 22, fontWeight: "700", color: "#111", padding: 0 },
-  bodyInput: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: "#222",
-    marginTop: 16,
-    fontFamily: "Menlo",
-    minHeight: 320,
-  },
-  action: { color: "#6366f1", fontSize: 16, fontWeight: "600" },
-  actionMuted: { color: "#888", fontSize: 16 },
-  center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  missing: { color: "#888" },
-});
+function makeStyles(t: Theme) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: t.background },
+    scroll: { flex: 1 },
+    content: { padding: 18, paddingBottom: 64 },
+    title: { fontSize: 24, fontWeight: "700", color: t.textPrimary },
+    folder: { fontSize: 12, color: t.accent, marginTop: 4, marginBottom: 4 },
+    md: { marginTop: 12 },
+    titleInput: { fontSize: 24, fontWeight: "700", color: t.textPrimary, padding: 0 },
+    bodyInput: { fontSize: 15, lineHeight: 22, color: t.textPrimary, marginTop: 16, fontFamily: "Menlo", minHeight: 320 },
+    action: { color: t.accent, fontSize: 16, fontWeight: "600" },
+    actionMuted: { color: t.textTertiary, fontSize: 16 },
+    center: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: t.background },
+    missing: { color: t.textTertiary },
+  });
+}

@@ -1,50 +1,56 @@
 import { useCallback, useState } from "react";
 import { View, Text, FlatList, Pressable, StyleSheet, RefreshControl } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
-import { listNotes, type NoteRow } from "@/db/queries";
+import { listProjectSummaries, type ProjectSummary } from "@/db/queries";
 import { Screen } from "@/components/Screen";
+import { useTheme } from "@/theme";
 
-export default function NotesScreen() {
+export default function ProjectsScreen() {
   const router = useRouter();
-  const [notes, setNotes] = useState<NoteRow[]>([]);
+  const t = useTheme();
+  const [projects, setProjects] = useState<ProjectSummary[]>([]);
 
-  const load = useCallback(() => {
-    setNotes(listNotes());
-  }, []);
+  const load = useCallback(() => setProjects(listProjectSummaries()), []);
+  useFocusEffect(useCallback(() => load(), [load]));
 
-  useFocusEffect(
-    useCallback(() => {
-      load();
-    }, [load]),
-  );
-
-  if (notes.length === 0) {
+  if (projects.length === 0) {
     return (
-      <Screen title="Notes">
+      <Screen title="Projects">
         <View style={styles.empty}>
-          <Text style={styles.emptyTitle}>No notes yet</Text>
-          <Text style={styles.emptyHint}>Import a desktop oplog from the Sync tab to pull your workspace.</Text>
+          <Text style={[styles.emptyTitle, { color: t.textSecondary }]}>No projects yet</Text>
+          <Text style={[styles.emptyHint, { color: t.textTertiary }]}>
+            Connect your sync folder in the Sync tab to pull your workspace.
+          </Text>
         </View>
       </Screen>
     );
   }
 
   return (
-    <Screen title="Notes">
+    <Screen title="Projects">
       <FlatList
-        data={notes}
-        keyExtractor={(n) => n.id}
-        refreshControl={<RefreshControl refreshing={false} onRefresh={load} />}
+        data={projects}
+        keyExtractor={(p) => p.id}
+        refreshControl={<RefreshControl refreshing={false} onRefresh={load} tintColor={t.textTertiary} />}
         contentContainerStyle={styles.list}
         renderItem={({ item }) => (
-          <Pressable style={styles.row} onPress={() => router.push(`/note/${item.id}`)}>
-            <Text style={styles.title} numberOfLines={1}>
-              {item.title || "Untitled"}
-            </Text>
-            {item.folder ? <Text style={styles.folder}>{item.folder}</Text> : null}
-            <Text style={styles.preview} numberOfLines={2}>
-              {(item.content ?? "").replace(/[#*_`>-]/g, "").trim()}
-            </Text>
+          <Pressable
+            style={[styles.row, { backgroundColor: t.surface, borderColor: t.border }]}
+            onPress={() => router.push(`/project/${item.id}`)}
+          >
+            <View style={[styles.iconWrap, { backgroundColor: t.accentDim }]}>
+              <Text style={styles.icon}>{item.icon || "📁"}</Text>
+            </View>
+            <View style={styles.rowBody}>
+              <Text style={[styles.name, { color: t.textPrimary }]} numberOfLines={1}>
+                {item.name}
+              </Text>
+              <Text style={[styles.meta, { color: t.textTertiary }]}>
+                {item.noteCount} {item.noteCount === 1 ? "note" : "notes"} · {item.cardCount}{" "}
+                {item.cardCount === 1 ? "task" : "tasks"}
+              </Text>
+            </View>
+            <Text style={[styles.chevron, { color: t.textTertiary }]}>›</Text>
           </Pressable>
         )}
       />
@@ -54,11 +60,23 @@ export default function NotesScreen() {
 
 const styles = StyleSheet.create({
   list: { padding: 12 },
-  row: { paddingVertical: 12, paddingHorizontal: 14, marginBottom: 8, backgroundColor: "#fff", borderRadius: 10, borderWidth: 1, borderColor: "#eee" },
-  title: { fontSize: 16, fontWeight: "600", color: "#111" },
-  folder: { fontSize: 12, color: "#8b5cf6", marginTop: 2 },
-  preview: { fontSize: 13, color: "#666", marginTop: 4 },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginBottom: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  iconWrap: { width: 38, height: 38, borderRadius: 9, alignItems: "center", justifyContent: "center" },
+  icon: { fontSize: 20 },
+  rowBody: { flex: 1 },
+  name: { fontSize: 16, fontWeight: "600" },
+  meta: { fontSize: 12, marginTop: 2 },
+  chevron: { fontSize: 22, fontWeight: "300" },
   empty: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32 },
-  emptyTitle: { fontSize: 17, fontWeight: "600", color: "#333" },
-  emptyHint: { fontSize: 13, color: "#888", textAlign: "center", marginTop: 8 },
+  emptyTitle: { fontSize: 17, fontWeight: "600" },
+  emptyHint: { fontSize: 13, textAlign: "center", marginTop: 8 },
 });

@@ -1,43 +1,51 @@
 import type { ReactNode } from "react";
 import { StyleSheet, View, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useTheme } from "@/theme";
 
 /**
  * Shared screen scaffold for the native-tab layout.
  *
- * Native tabs (expo-router/unstable-native-tabs) don't render a header bar, so
- * screen content would otherwise slide under the status bar / notch. This wraps
- * content in a SafeAreaView that applies the top/left/right insets (the tab bar
- * handles the bottom inset itself) and renders an optional large title.
+ * Native tabs don't render a header, so content would slide under the status
+ * bar / notch. This wraps content in a SafeAreaView applying top/left/right
+ * insets (the tab bar owns the bottom inset) and an optional large title,
+ * themed from the shared Cairn tokens.
  */
 export function Screen({
   title,
+  right,
   children,
   edges = ["top", "left", "right"],
-  style,
 }: {
   title?: string;
+  right?: ReactNode;
   children: ReactNode;
   edges?: ("top" | "bottom" | "left" | "right")[];
-  style?: object;
 }) {
+  const t = useTheme();
   return (
-    <SafeAreaView style={[styles.safe, style]} edges={edges}>
-      {title ? <Text style={styles.title}>{title}</Text> : null}
+    <SafeAreaView style={[styles.safe, { backgroundColor: t.background }]} edges={edges}>
+      {title ? (
+        <View style={styles.header}>
+          <Text style={[styles.title, { color: t.textPrimary }]}>{title}</Text>
+          {right ? <View>{right}</View> : null}
+        </View>
+      ) : null}
       <View style={styles.body}>{children}</View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#f8f8f8" },
-  title: {
-    fontSize: 30,
-    fontWeight: "700",
-    color: "#111",
+  safe: { flex: 1 },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 16,
     paddingTop: 8,
-    paddingBottom: 4,
+    paddingBottom: 6,
   },
+  title: { fontSize: 30, fontWeight: "700" },
   body: { flex: 1 },
 });
