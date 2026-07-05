@@ -95,3 +95,22 @@ export function searchNotes(query: string): NoteRow[] {
     q,
   );
 }
+
+/**
+ * Update a note's title/body locally. A plain UPDATE so the capture triggers
+ * stage the change into sync_pending; syncNow() drains + publishes it.
+ * content_text is kept as a plain-text mirror for search (matches desktop).
+ */
+export function updateNote(id: string, title: string, content: string): void {
+  const now = new Date().toISOString();
+  const contentText = content.replace(/[#*_`>[\]()!-]/g, "").replace(/\s+/g, " ").trim();
+  getDb().runSync(
+    `UPDATE notes SET title = ?, content = ?, content_text = ?, updated_at = ?, version = version + 1
+     WHERE id = ?`,
+    title,
+    content,
+    contentText,
+    now,
+    id,
+  );
+}
