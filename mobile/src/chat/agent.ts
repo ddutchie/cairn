@@ -1,117 +1,149 @@
 /**
- * Prompt-based tool loop for mobile chat (ReAct style).
+ * Streaming agent loop for mobile chat — native tool-calling via /agent/chat.
  *
- * Rork has no native function-calling, but reliably returns structured JSON
- * when instructed. So we describe the tools + a strict JSON protocol in the
- * system prompt, call Rork, parse its completion as either a tool call or a
- * final answer, execute tool calls locally against the expo-sqlite DB, feed the
- * result back, and repeat until a final answer or the iteration cap.
+ * Per turn we stream the model's response, surfacing text deltas live and
+ * collecting any tool calls it emits. When the turn finishes with tool calls we
+ * execute them locally (expo-sqlite), merge the results back into the assistant
+ * message (state:"output-available", per the Rork/AI-SDK contract), and run the
+ * next turn. Loop until the model finishes with plain text (no tool calls).
  */
 
-import { rorkComplete, type ChatMsg } from "./rork-client";
-import { TOOLS, TOOL_MAP } from "./tools";
+import {
+  streamAgentChat,
+  msgId,
+  type UIMessage,
+  type UIPart,
+  type ToolPart,
+} from "./rork-client";
+import { toolsForAgent, TOOL_MAP } from "./tools";
 
-const MAX_STEPS = 6;
-
-function systemPrompt(): string {
-  const toolList = TOOLS.map((t) => `- ${t.name}: ${t.description} args ${t.params}`).join("\n");
-  return [
-    "You are Cairn's mobile assistant. You help the user read and edit their notes and tasks.",
-    "You can call tools that run against the user's local workspace. Writes sync to their desktop.",
-    "",
-    "TOOLS:",
-    toolList,
-    "",
-    "PROTOCOL — reply with EXACTLY ONE JSON object per turn, nothing else:",
-    'To call a tool:   {"tool":"<name>","args":{...}}',
-    'To answer/finish: {"answer":"<markdown reply to the user>"}',
-    "",
-    "Rules:",
-    "- Output raw JSON only. No prose, no code fences, no commentary around it.",
-    "- Call tools to look up ids before writing. Never invent an id.",
-    "- When you have enough info or have completed the edit, return an answer.",
-    "- Keep answers concise and in markdown.",
-  ].join("\n");
-}
+const MAX_TURNS = 8;
 
 export interface AgentEvent {
-  type: "tool" | "final" | "error";
+  type: "text-delta" | "tool" | "final" | "error";
+  delta?: string; // for text-delta
   tool?: string;
-  args?: Record<string, unknown>;
+  args?: unknown;
   result?: unknown;
-  text?: string;
+  text?: string; // full text for final / error
 }
 
-function extractJson(s: string): Record<string, unknown> | null {
-  const trimmed = s.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
-  try {
-    return JSON.parse(trimmed) as Record<string, unknown>;
-  } catch {
-    // Fallback: grab the first {...} block.
-    const m = trimmed.match(/\{[\s\S]*\}/);
-    if (m) {
-      try {
-        return JSON.parse(m[0]) as Record<string, unknown>;
-      } catch {
-        return null;
-      }
-    }
-    return null;
-  }
+/** Build the system message (as a UIMessage part). */
+function systemMessage(): UIMessage {
+  return {
+    id: msgId(),
+    role: "system",
+    parts: [
+      {
+        type: "text",
+        text: [
+          "You are Cairn's mobile assistant. You help the user read and edit their notes and tasks.",
+          "You have tools that run against the user's local workspace; writes sync to their desktop.",
+          "Look up ids with read tools before writing — never invent an id.",
+          "After a successful write, briefly confirm what you did. Answer in concise markdown.",
+        ].join(" "),
+      },
+    ],
+  };
+}
+
+export function userMessage(text: string): UIMessage {
+  return { id: msgId(), role: "user", parts: [{ type: "text", text }] };
 }
 
 /**
- * Run the agent. `history` is prior turns (user/assistant). `onEvent` streams
- * tool calls + the final answer for the UI. Returns the final answer text.
+ * Run the agent to completion. `conversation` is the running UIMessage history
+ * (system + prior user/assistant turns). Mutated in place with new turns.
+ * Streams events via onEvent; returns the final assistant text.
  */
 export async function runAgent(
-  history: ChatMsg[],
+  conversation: UIMessage[],
   onEvent?: (e: AgentEvent) => void,
   signal?: AbortSignal,
 ): Promise<string> {
-  const messages: ChatMsg[] = [{ role: "system", content: systemPrompt() }, ...history];
+  const tools = toolsForAgent();
+  let finalText = "";
 
-  for (let step = 0; step < MAX_STEPS; step++) {
-    const completion = await rorkComplete(messages, signal);
-    const parsed = extractJson(completion);
+  for (let turn = 0; turn < MAX_TURNS; turn++) {
+    // Build the assistant message we're producing this turn.
+    const assistant: UIMessage = { id: msgId(), role: "assistant", parts: [] };
+    let text = "";
+    const toolCalls: { id: string; name: string; input: unknown }[] = [];
+    let finishReason: string | undefined;
 
-    if (!parsed) {
-      // Model replied with plain prose — treat it as the final answer.
-      onEvent?.({ type: "final", text: completion });
-      return completion;
-    }
-
-    if (typeof parsed.answer === "string") {
-      onEvent?.({ type: "final", text: parsed.answer });
-      return parsed.answer;
-    }
-
-    if (typeof parsed.tool === "string") {
-      const tool = TOOL_MAP.get(parsed.tool);
-      const args = (parsed.args as Record<string, unknown>) ?? {};
-      let result: unknown;
-      if (!tool) {
-        result = { error: `Unknown tool: ${parsed.tool}` };
-      } else {
-        try {
-          result = tool.run(args);
-        } catch (e) {
-          result = { error: e instanceof Error ? e.message : String(e) };
+    try {
+      for await (const ev of streamAgentChat(conversation, tools, signal)) {
+        if (ev.type === "text-delta" && typeof (ev as { delta?: string }).delta === "string") {
+          const delta = (ev as { delta: string }).delta;
+          text += delta;
+          onEvent?.({ type: "text-delta", delta });
+        } else if (ev.type === "tool-input-available") {
+          const e = ev as { toolCallId: string; toolName: string; input: unknown };
+          toolCalls.push({ id: e.toolCallId, name: e.toolName, input: e.input });
+        } else if (ev.type === "finish") {
+          finishReason = (ev as { finishReason?: string }).finishReason;
         }
       }
-      onEvent?.({ type: "tool", tool: parsed.tool, args, result });
-      // Feed the tool call + its result back into the conversation.
-      messages.push({ role: "assistant", content: JSON.stringify({ tool: parsed.tool, args }) });
-      messages.push({ role: "user", content: `TOOL_RESULT ${parsed.tool}: ${JSON.stringify(result)}` });
-      continue;
+    } catch (e) {
+      const msg =
+        e instanceof Error && /network|fetch|abort|failed|\(5\d\d\)/i.test(e.message)
+          ? "Chat needs a connection. Reconnect and try again."
+          : `Error: ${e instanceof Error ? e.message : String(e)}`;
+      onEvent?.({ type: "error", text: msg });
+      return msg;
     }
 
-    // Unrecognized JSON — return it as text.
-    onEvent?.({ type: "final", text: completion });
-    return completion;
+    // Record the assistant text part.
+    if (text) assistant.parts.push({ type: "text", text });
+    finalText = text || finalText;
+
+    // No tool calls → we're done.
+    if (toolCalls.length === 0) {
+      // Ensure the assistant turn is in history even if empty-ish.
+      if (assistant.parts.length === 0) assistant.parts.push({ type: "text", text: finalText });
+      conversation.push(assistant);
+      onEvent?.({ type: "final", text: finalText });
+      return finalText;
+    }
+
+    // Execute each tool locally, appending an input-available part then filling
+    // in its output (state:"output-available") — the shape /agent/chat expects.
+    for (const call of toolCalls) {
+      const toolPart: ToolPart = {
+        type: `tool-${call.name}`,
+        toolCallId: call.id,
+        toolName: call.name,
+        state: "input-available",
+        input: call.input,
+      };
+      assistant.parts.push(toolPart as UIPart);
+
+      const tool = TOOL_MAP.get(call.name);
+      let result: unknown;
+      if (!tool) {
+        result = { error: `Unknown tool: ${call.name}` };
+      } else {
+        try {
+          result = tool.run((call.input as Record<string, unknown>) ?? {});
+        } catch (err) {
+          result = { error: err instanceof Error ? err.message : String(err) };
+        }
+      }
+      onEvent?.({ type: "tool", tool: call.name, args: call.input, result });
+
+      toolPart.state = "output-available";
+      toolPart.output = { type: "text", value: JSON.stringify(result) };
+    }
+
+    conversation.push(assistant);
+    // Loop for the model's follow-up turn (it now sees the tool outputs).
+    if (finishReason === "stop") {
+      onEvent?.({ type: "final", text: finalText });
+      return finalText;
+    }
   }
 
-  const msg = "I couldn't complete that in a reasonable number of steps. Try rephrasing?";
+  const msg = finalText || "I couldn't finish that in a reasonable number of steps.";
   onEvent?.({ type: "final", text: msg });
   return msg;
 }

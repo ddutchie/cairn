@@ -11,68 +11,85 @@ import {
   Platform,
 } from "react-native";
 import { Wrench, Send } from "lucide-react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Screen } from "@/components/Screen";
 import { MarkdownView } from "@/components/MarkdownView";
 import { useTheme, type Theme } from "@/theme";
-import { runAgent, type AgentEvent } from "@/chat/agent";
-import type { ChatMsg } from "@/chat/rork-client";
+import { runAgent, userMessage, type AgentEvent } from "@/chat/agent";
+import type { UIMessage } from "@/chat/rork-client";
 
 interface UiMessage {
   role: "user" | "assistant";
   content: string;
   tools?: { tool: string; ok: boolean }[];
+  streaming?: boolean;
 }
 
 export default function ChatScreen() {
   const t = useTheme();
+  const insets = useSafeAreaInsets();
   const styles = useMemo(() => makeStyles(t), [t]);
   const [messages, setMessages] = useState<UiMessage[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
+  // Persistent agent conversation (UIMessage parts format) across turns.
+  const conversation = useRef<UIMessage[]>([]);
 
   const send = useCallback(async () => {
     const text = input.trim();
     if (!text || busy) return;
     setInput("");
-    const nextMessages: UiMessage[] = [...messages, { role: "user", content: text }];
-    setMessages(nextMessages);
     setBusy(true);
 
-    // Build history for the agent (user/assistant only).
-    const history: ChatMsg[] = nextMessages.map((m) => ({ role: m.role, content: m.content }));
+    // UI: add the user bubble + an empty streaming assistant bubble.
+    setMessages((prev) => [
+      ...prev,
+      { role: "user", content: text },
+      { role: "assistant", content: "", tools: [], streaming: true },
+    ]);
+
+    conversation.current.push(userMessage(text));
+    let acc = "";
     const toolTrail: { tool: string; ok: boolean }[] = [];
+
+    const patchAssistant = (patch: Partial<UiMessage>) => {
+      setMessages((prev) => {
+        const copy = [...prev];
+        for (let i = copy.length - 1; i >= 0; i--) {
+          if (copy[i].role === "assistant" && copy[i].streaming) {
+            copy[i] = { ...copy[i], ...patch };
+            break;
+          }
+        }
+        return copy;
+      });
+    };
 
     try {
       const onEvent = (e: AgentEvent) => {
-        if (e.type === "tool" && e.tool) {
+        if (e.type === "text-delta" && e.delta) {
+          acc += e.delta;
+          patchAssistant({ content: acc });
+        } else if (e.type === "tool" && e.tool) {
           const ok = !(e.result && typeof e.result === "object" && "error" in (e.result as object));
           toolTrail.push({ tool: e.tool, ok });
-          setMessages((prev) => {
-            // Show a live "thinking" assistant bubble with the tool trail.
-            const withoutPending = prev.filter((m) => m.role !== "assistant" || m.content !== "…");
-            return [...withoutPending, { role: "assistant", content: "…", tools: [...toolTrail] }];
-          });
+          patchAssistant({ tools: [...toolTrail] });
         }
+        setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 20);
       };
-      const answer = await runAgent(history, onEvent);
-      setMessages((prev) => {
-        const cleaned = prev.filter((m) => !(m.role === "assistant" && m.content === "…"));
-        return [...cleaned, { role: "assistant", content: answer, tools: toolTrail.length ? toolTrail : undefined }];
-      });
+      const answer = await runAgent(conversation.current, onEvent);
+      patchAssistant({ content: answer || acc, streaming: false, tools: toolTrail.length ? toolTrail : undefined });
     } catch (e) {
-      setMessages((prev) => {
-        const cleaned = prev.filter((m) => !(m.role === "assistant" && m.content === "…"));
-        const msg = e instanceof Error && /network|fetch|failed/i.test(e.message)
-          ? "Chat needs a connection. Reconnect and try again."
-          : `Error: ${e instanceof Error ? e.message : String(e)}`;
-        return [...cleaned, { role: "assistant", content: msg }];
-      });
+      const msg = e instanceof Error && /network|fetch|failed/i.test(e.message)
+        ? "Chat needs a connection. Reconnect and try again."
+        : `Error: ${e instanceof Error ? e.message : String(e)}`;
+      patchAssistant({ content: msg, streaming: false });
     } finally {
       setBusy(false);
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50);
     }
-  }, [input, busy, messages]);
+  }, [input, busy]);
 
   return (
     <Screen title="Chat">
@@ -100,7 +117,7 @@ export default function ChatScreen() {
           )}
         </ScrollView>
 
-        <View style={styles.composer}>
+        <View style={[styles.composer, { paddingBottom: 10 + insets.bottom }]}>
           <TextInput
             style={styles.input}
             value={input}
@@ -133,7 +150,7 @@ function Bubble({ m, t, styles }: { m: UiMessage; t: Theme; styles: ReturnType<t
           ))}
         </View>
       )}
-      {m.content === "…" ? (
+      {m.role === "assistant" && m.streaming && !m.content ? (
         <ActivityIndicator color={t.textTertiary} size="small" />
       ) : isUser ? (
         <Text style={styles.userText}>{m.content}</Text>

@@ -56,9 +56,6 @@ export default function ProjectScreen() {
           <Empty text="No notes in this project." t={t} />
         ) : (
           <ScrollView contentContainerStyle={styles.notesScroll}>
-            {tree.rootNotes.map((n) => (
-              <NoteRowItem key={n.id} note={n} depth={0} onPress={() => router.push(`/note/${n.id}`)} t={t} />
-            ))}
             {tree.folders.map((f) => (
               <FolderTree
                 key={f.path}
@@ -69,6 +66,9 @@ export default function ProjectScreen() {
                 onNote={(nid) => router.push(`/note/${nid}`)}
                 t={t}
               />
+            ))}
+            {tree.rootNotes.map((n) => (
+              <NoteRowItem key={n.id} note={n} depth={0} onPress={() => router.push(`/note/${n.id}`)} t={t} />
             ))}
           </ScrollView>
         )
