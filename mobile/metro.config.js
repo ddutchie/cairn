@@ -26,4 +26,21 @@ config.resolver.nodeModulesPaths = [
 // Follow the node_modules/@cairn/shared symlink to the real source outside root.
 config.resolver.unstable_enableSymlinks = true;
 
+// Robust @cairn/shared resolution: map "@cairn/shared[/sub]" directly to
+// <repo>/shared[/sub] so bundling works even if the postinstall symlink is
+// missing (npm install can wipe node_modules/@cairn). Falls back to Metro's
+// default resolver for everything else.
+const sharedRoot = path.resolve(repoRoot, "shared");
+const defaultResolveRequest = config.resolver.resolveRequest;
+config.resolver.resolveRequest = (context, moduleName, platform) => {
+  if (moduleName === "@cairn/shared" || moduleName.startsWith("@cairn/shared/")) {
+    const sub = moduleName === "@cairn/shared" ? "sync/index" : moduleName.slice("@cairn/shared/".length);
+    const target = path.join(sharedRoot, sub.endsWith(".ts") ? sub : `${sub}.ts`);
+    return { type: "sourceFile", filePath: target };
+  }
+  return defaultResolveRequest
+    ? defaultResolveRequest(context, moduleName, platform)
+    : context.resolveRequest(context, moduleName, platform);
+};
+
 module.exports = config;

@@ -12,6 +12,10 @@
     "./sync/hlc": "./sync/hlc.ts",
     "./sync/schema": "./sync/schema.ts",
     "./sync/db-adapter": "./sync/db-adapter.ts",
-    "./sync/transport": "./sync/transport.ts"
+    "./sync/transport": "./sync/transport.ts",
+    "./notes/folder-tree": "./notes/folder-tree.ts",
+    "./ui/constants": "./ui/constants.ts",
+    "./*": "./*.ts",
+    "./*.ts": "./*.ts"
   }
 }
