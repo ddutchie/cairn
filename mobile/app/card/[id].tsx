@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
-import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, KeyboardAvoidingView, Platform } from "react-native";
+import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, KeyboardAvoidingView, Platform, Alert } from "react-native";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
-import { getCard, listColumns, updateTask, moveCardToColumn, tagsForCard, type ColumnRow } from "@/db/queries";
+import { MoreHorizontal } from "lucide-react-native";
+import { getCard, listColumns, updateTask, moveCardToColumn, archiveCard, tagsForCard, type ColumnRow } from "@/db/queries";
 import { TagChips } from "@/components/TagChips";
 import { useTheme, PRIORITY_COLOR, type Theme } from "@/theme";
 
@@ -35,6 +36,20 @@ export default function CardDetail() {
     router.back();
   };
 
+  const onArchive = () => {
+    Alert.alert("Archive task?", "Archived tasks are removed from the board but kept in your data.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Archive",
+        style: "destructive",
+        onPress: () => {
+          archiveCard(card.id);
+          router.back();
+        },
+      },
+    ]);
+  };
+
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <Stack.Screen
@@ -42,9 +57,14 @@ export default function CardDetail() {
           title: "Edit Task",
           headerBackTitle: "Board",
           headerRight: () => (
-            <Pressable onPress={save} hitSlop={12}>
-              <Text style={styles.save}>Save</Text>
-            </Pressable>
+            <View style={styles.headerActions}>
+              <Pressable onPress={save} hitSlop={12}>
+                <Text style={styles.save}>Save</Text>
+              </Pressable>
+              <Pressable onPress={onArchive} hitSlop={12}>
+                <MoreHorizontal size={22} color={t.accent} />
+              </Pressable>
+            </View>
           ),
         }}
       />
@@ -117,6 +137,7 @@ function makeStyles(t: Theme) {
     columnChip: { paddingVertical: 6, paddingHorizontal: 14, borderRadius: 16, borderWidth: 1 },
     descInput: { fontSize: 15, lineHeight: 22, color: t.textPrimary, backgroundColor: t.surface, borderWidth: 1, borderColor: t.border, borderRadius: 10, padding: 12, minHeight: 160, fontFamily: "Menlo" },
     save: { color: t.accent, fontSize: 16, fontWeight: "600" },
+    headerActions: { flexDirection: "row", alignItems: "center", gap: 16 },
     center: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: t.background },
     missing: { color: t.textTertiary },
   });

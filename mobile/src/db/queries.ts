@@ -33,6 +33,7 @@ export interface NoteRow {
   folder: string;
   tag_ids: string;
   updated_at: string;
+  is_pinned?: number;
 }
 
 export interface ProjectRow {
@@ -100,6 +101,18 @@ export function tagsForCard(card: { tag_ids: string }): TagRow[] {
   return tagsForIds(parseIds(card.tag_ids));
 }
 
+/** Distinct tags used across a set of notes, for a project's filter chip row. */
+export function tagsForNotes(notes: { tag_ids: string }[]): TagRow[] {
+  const seen = new Set<string>();
+  for (const n of notes) for (const id of parseIds(n.tag_ids)) seen.add(id);
+  return tagsForIds([...seen]);
+}
+
+/** Parse a note/card tag_ids JSON column to an id array (exported for filters). */
+export function noteTagIds(note: { tag_ids: string }): string[] {
+  return parseIds(note.tag_ids);
+}
+
 const LIVE = "deleted_at IS NULL AND archived_at IS NULL";
 
 /**
@@ -157,23 +170,28 @@ export function listFolders(projectId: string): string[] {
 
 export function listNotes(projectId?: string): NoteRow[] {
   const db = getDb();
+  // Pinned-first, then most-recently-updated — matches the desktop
+  // getProjectNotes selector. buildFolderTree preserves this order within each
+  // folder + the root list.
   if (projectId) {
     return db.getAllSync<NoteRow>(
-      `SELECT id, project_id, title, content, folder, tag_ids, updated_at FROM notes
-       WHERE ${LIVE} AND type = 'note' AND ${NOT_CONFLICT} AND project_id = ? ORDER BY updated_at DESC`,
+      `SELECT id, project_id, title, content, folder, tag_ids, updated_at, is_pinned FROM notes
+       WHERE ${LIVE} AND type = 'note' AND ${NOT_CONFLICT} AND project_id = ?
+       ORDER BY is_pinned DESC, updated_at DESC`,
       projectId,
     );
   }
   return db.getAllSync<NoteRow>(
-    `SELECT id, project_id, title, content, folder, tag_ids, updated_at FROM notes
-     WHERE ${LIVE} AND type = 'note' AND ${NOT_CONFLICT} ORDER BY updated_at DESC`,
+    `SELECT id, project_id, title, content, folder, tag_ids, updated_at, is_pinned FROM notes
+     WHERE ${LIVE} AND type = 'note' AND ${NOT_CONFLICT}
+     ORDER BY is_pinned DESC, updated_at DESC`,
   );
 }
 
 export function getNote(id: string): NoteRow | null {
   return (
     getDb().getFirstSync<NoteRow>(
-      `SELECT id, project_id, title, content, folder, tag_ids, updated_at FROM notes WHERE id = ?`,
+      `SELECT id, project_id, title, content, folder, tag_ids, updated_at, is_pinned FROM notes WHERE id = ?`,
       id,
     ) ?? null
   );
@@ -340,6 +358,22 @@ export function updateTask(cardId: string, patch: { title?: string; description?
   notifyLocalWrite();
 }
 
+/**
+ * Archive a task card (set archived_at). LIVE-scoped lists exclude it, so it
+ * disappears from the board — mirroring the desktop archive. Plain UPDATE, so
+ * the capture triggers publish the change to peers.
+ */
+export function archiveCard(cardId: string): void {
+  const now = new Date().toISOString();
+  getDb().runSync(
+    `UPDATE task_cards SET archived_at = ?, updated_at = ?, version = version + 1 WHERE id = ?`,
+    now,
+    now,
+    cardId,
+  );
+  notifyLocalWrite();
+}
+
 // ── Aggregate context tools (mirror desktop read-tools-pure) ────────────────
 
 /**
@@ -455,6 +489,18 @@ export function updateNote(id: string, title: string, content: string): void {
     title,
     content,
     contentText,
+    now,
+    id,
+  );
+  notifyLocalWrite();
+}
+
+/** Pin or unpin a note. Plain UPDATE so the capture triggers publish it. */
+export function pinNote(id: string, pinned: boolean): void {
+  const now = new Date().toISOString();
+  getDb().runSync(
+    `UPDATE notes SET is_pinned = ?, updated_at = ?, version = version + 1 WHERE id = ?`,
+    pinned ? 1 : 0,
     now,
     id,
   );

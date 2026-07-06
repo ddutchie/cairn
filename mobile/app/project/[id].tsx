@@ -1,8 +1,8 @@
 import { useCallback, useMemo, useState } from "react";
-import { View, Text, ScrollView, Pressable, StyleSheet, LayoutAnimation } from "react-native";
+import { View, Text, ScrollView, Pressable, StyleSheet, LayoutAnimation, TextInput } from "react-native";
 import { useLocalSearchParams, useRouter, useFocusEffect, Stack } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ChevronDown, ChevronRight, Folder, FolderOpen, FileText, Plus } from "lucide-react-native";
+import { ChevronDown, ChevronRight, Folder, FolderOpen, FileText, Plus, Pin, Search, X } from "lucide-react-native";
 import {
   getProject,
   listNotes,
@@ -11,14 +11,17 @@ import {
   moveCardToColumn,
   tagsForCard,
   tagsForNote,
+  tagsForNotes,
+  noteTagIds,
   type NoteRow,
   type CardRow,
   type ColumnRow,
+  type TagRow,
 } from "@/db/queries";
 import { TagChips } from "@/components/TagChips";
 import { PressableScale } from "@/components/PressableScale";
 import { useDataChanged } from "@/sync/useSyncStatus";
-import { useTheme, PRIORITY_COLOR, elevation, type Theme } from "@/theme";
+import { useTheme, withAlpha, PRIORITY_COLOR, elevation, type Theme } from "@/theme";
 import { buildFolderTree, type FolderNode } from "@cairn/shared/notes/folder-tree";
 import { stripMarkdown } from "@cairn/shared/notes/text";
 import { formatRelative } from "@cairn/shared/format/date";
@@ -36,6 +39,8 @@ export default function ProjectScreen() {
   const [columns, setColumns] = useState<ColumnRow[]>([]);
   const [cards, setCards] = useState<CardRow[]>([]);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [filter, setFilter] = useState("");
+  const [activeTagId, setActiveTagId] = useState<string | null>(null);
 
   const load = useCallback(() => {
     if (!id) return;
@@ -51,6 +56,26 @@ export default function ProjectScreen() {
   const tree = useMemo(() => buildFolderTree(notes), [notes]);
   const styles = useMemo(() => makeStyles(t), [t]);
   const toggle = (path: string) => setCollapsed((c) => ({ ...c, [path]: !c[path] }));
+
+  // Distinct tags used by this project's notes — the filter chip row.
+  const projectTags = useMemo(() => tagsForNotes(notes), [notes]);
+
+  // Text + tag filter, mirroring the desktop useNoteFilter (title/content
+  // contains + active-tag membership). While filtering we show a flat list
+  // instead of the folder tree.
+  const isFiltering = !!(filter || activeTagId);
+  const filtered = useMemo(() => {
+    if (!isFiltering) return [];
+    const q = filter.toLowerCase();
+    return notes.filter((n) => {
+      const matchesText =
+        !filter ||
+        (n.title ?? "").toLowerCase().includes(q) ||
+        (n.content ?? "").toLowerCase().includes(q);
+      const matchesTag = !activeTagId || noteTagIds(n).includes(activeTagId);
+      return matchesText && matchesTag;
+    });
+  }, [notes, filter, activeTagId, isFiltering]);
 
   const onAdd = () => {
     if (!id) return;
@@ -81,22 +106,45 @@ export default function ProjectScreen() {
         notes.length === 0 ? (
           <Empty text="No notes yet. Tap + to create one." t={t} />
         ) : (
-          <ScrollView contentContainerStyle={styles.notesScroll}>
-            {tree.folders.map((f) => (
-              <FolderTree
-                key={f.path}
-                node={f}
-                depth={0}
-                collapsed={collapsed}
-                onToggle={toggle}
-                onNote={(nid) => router.push(`/note/${nid}`)}
-                t={t}
-              />
-            ))}
-            {tree.rootNotes.map((n) => (
-              <NoteRowItem key={n.id} note={n} depth={0} onPress={() => router.push(`/note/${n.id}`)} t={t} />
-            ))}
-          </ScrollView>
+          <View style={{ flex: 1 }}>
+            <NoteFilterBar
+              filter={filter}
+              onFilter={setFilter}
+              tags={projectTags}
+              activeTagId={activeTagId}
+              onToggleTag={(tid) => setActiveTagId((cur) => (cur === tid ? null : tid))}
+              t={t}
+              styles={styles}
+            />
+            {isFiltering ? (
+              filtered.length === 0 ? (
+                <Empty text="No notes match your filter." t={t} />
+              ) : (
+                <ScrollView contentContainerStyle={styles.notesScroll} keyboardShouldPersistTaps="handled">
+                  {filtered.map((n) => (
+                    <NoteRowItem key={n.id} note={n} depth={0} onPress={() => router.push(`/note/${n.id}`)} t={t} />
+                  ))}
+                </ScrollView>
+              )
+            ) : (
+              <ScrollView contentContainerStyle={styles.notesScroll} keyboardShouldPersistTaps="handled">
+                {tree.folders.map((f) => (
+                  <FolderTree
+                    key={f.path}
+                    node={f}
+                    depth={0}
+                    collapsed={collapsed}
+                    onToggle={toggle}
+                    onNote={(nid) => router.push(`/note/${nid}`)}
+                    t={t}
+                  />
+                ))}
+                {tree.rootNotes.map((n) => (
+                  <NoteRowItem key={n.id} note={n} depth={0} onPress={() => router.push(`/note/${n.id}`)} t={t} />
+                ))}
+              </ScrollView>
+            )}
+          </View>
         )
       ) : (
         <BoardView
@@ -114,6 +162,72 @@ export default function ProjectScreen() {
           onOpenCard={(cid) => router.push(`/card/${cid}`)}
           onAddCard={(colId) => router.push(`/card/new?project=${id}&column=${colId}`)}
         />
+      )}
+    </View>
+  );
+}
+
+function NoteFilterBar({
+  filter,
+  onFilter,
+  tags,
+  activeTagId,
+  onToggleTag,
+  t,
+  styles,
+}: {
+  filter: string;
+  onFilter: (v: string) => void;
+  tags: TagRow[];
+  activeTagId: string | null;
+  onToggleTag: (id: string) => void;
+  t: Theme;
+  styles: ReturnType<typeof makeStyles>;
+}) {
+  return (
+    <View style={styles.filterWrap}>
+      <View style={styles.filterInputRow}>
+        <Search size={15} color={t.textTertiary} />
+        <TextInput
+          style={styles.filterInput}
+          value={filter}
+          onChangeText={onFilter}
+          placeholder="Filter notes…"
+          placeholderTextColor={t.textTertiary}
+          autoCapitalize="none"
+          autoCorrect={false}
+          returnKeyType="search"
+        />
+        {filter ? (
+          <Pressable onPress={() => onFilter("")} hitSlop={8}>
+            <X size={15} color={t.textTertiary} />
+          </Pressable>
+        ) : null}
+      </View>
+      {tags.length > 0 && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tagFilterRow} keyboardShouldPersistTaps="handled">
+          {tags.map((tag) => {
+            const active = activeTagId === tag.id;
+            return (
+              <Pressable
+                key={tag.id}
+                onPress={() => onToggleTag(tag.id)}
+                style={[
+                  styles.tagFilterChip,
+                  {
+                    backgroundColor: active ? tag.color : withAlpha(tag.color, 0.14),
+                    borderColor: active ? tag.color : withAlpha(tag.color, 0.35),
+                  },
+                ]}
+              >
+                {!active && <View style={[styles.tagFilterDot, { backgroundColor: tag.color }]} />}
+                <Text style={[styles.tagFilterText, { color: active ? "#fff" : t.textSecondary }]} numberOfLines={1}>
+                  {tag.name}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
       )}
     </View>
   );
@@ -156,6 +270,7 @@ function NoteRowItem({ note, depth, onPress, t }: { note: NoteRow; depth: number
     >
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
         <FileText size={13} color={t.textTertiary} />
+        {note.is_pinned ? <Pin size={11} color={t.accent} fill={t.accent} /> : null}
         <Text style={{ flex: 1, color: t.textPrimary, fontSize: 14, fontWeight: "500" }} numberOfLines={1}>
           {note.title || "Untitled"}
         </Text>
@@ -349,6 +464,23 @@ function makeStyles(t: Theme) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: t.background },
     segment: { flexDirection: "row", gap: 4, margin: 12, padding: 4, backgroundColor: t.surface2, borderRadius: 10 },
+    filterWrap: { paddingHorizontal: 12, paddingBottom: 8, gap: 8 },
+    filterInputRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      paddingHorizontal: 12,
+      height: 38,
+      backgroundColor: t.surface2,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: t.border,
+    },
+    filterInput: { flex: 1, color: t.textPrimary, fontSize: 14, padding: 0 },
+    tagFilterRow: { gap: 8, paddingRight: 12 },
+    tagFilterChip: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 5, paddingHorizontal: 12, borderRadius: 14, borderWidth: 1 },
+    tagFilterDot: { width: 7, height: 7, borderRadius: 4 },
+    tagFilterText: { fontSize: 13, fontWeight: "600", maxWidth: 140 },
     notesScroll: { paddingBottom: 40 },
     // The horizontal board scroller fills the remaining vertical space; its
     // content stretches column height to match so columns reach the bottom.
