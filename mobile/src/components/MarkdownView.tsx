@@ -1,17 +1,110 @@
 import React, { useMemo } from "react";
-import Markdown from "react-native-markdown-display";
-import { useTheme, type Theme } from "@/theme";
+import { Linking, Text, View } from "react-native";
+import Markdown, { type RenderRules } from "react-native-markdown-display";
+import { useRouter } from "expo-router";
+import { useTheme, withAlpha, type Theme } from "@/theme";
+import { findNoteIdByTitle } from "@/db/queries";
+import { preprocessCairnMarkdown, noteTitleFromUrl, parseCalloutHeader } from "@cairn/shared/notes/markdown";
 
 /**
- * Themed markdown renderer for note bodies. Wraps react-native-markdown-display
- * (pure JS) with a stylesheet derived from the shared Cairn theme tokens, so
- * rendered notes match the desktop's look. Supports GFM: headings, lists,
- * tables, code, blockquotes, links, task lists, hr, images.
+ * Themed markdown renderer with Cairn parity: GFM (headings, lists, tables,
+ * code, quotes) PLUS the desktop's Cairn syntax:
+ *   - [[Wikilinks]] → tappable, navigate to the linked note (unresolved =
+ *     dimmed, non-navigating).
+ *   - ![[embeds]] → italic placeholder (binary assets out of the mobile MVP).
+ *   - > [!type] callouts → styled callout blocks.
+ *
+ * Cairn syntax is rewritten to standard markdown (shared preprocessCairnMarkdown)
+ * so markdown-it can parse it; wikilinks become cairn://note/ links intercepted
+ * by onLinkPress.
  */
 export function MarkdownView({ content }: { content: string }) {
   const t = useTheme();
+  const router = useRouter();
   const styles = useMemo(() => markdownStyles(t), [t]);
-  return <Markdown style={styles}>{content || ""}</Markdown>;
+  const src = useMemo(() => preprocessCairnMarkdown(content ?? ""), [content]);
+
+  const onLinkPress = (url: string): boolean => {
+    const title = noteTitleFromUrl(url);
+    if (title != null) {
+      const id = findNoteIdByTitle(title);
+      if (id) router.push(`/note/${id}`);
+      return false; // handled (whether resolved or not) — don't open externally
+    }
+    Linking.openURL(url).catch(() => {});
+    return false;
+  };
+
+  const rules = useMemo(() => makeRules(t), [t]);
+
+  return (
+    <Markdown style={styles} rules={rules} onLinkPress={onLinkPress}>
+      {src}
+    </Markdown>
+  );
+}
+
+/** Custom render rules — callout blockquotes + wikilink chip styling. */
+function makeRules(t: Theme): RenderRules {
+  const CALLOUT_ACCENT: Record<string, string> = {
+    note: t.accent,
+    info: t.info,
+    tip: t.success,
+    success: t.success,
+    warning: t.warning,
+    danger: t.danger,
+    error: t.danger,
+    question: t.info,
+    quote: t.textTertiary,
+  };
+
+  return {
+    // A blockquote whose first line is `[!type] Title` renders as a callout.
+    blockquote: (node, children, _parent, styles) => {
+      // Extract the leading text of the first child to detect a callout header.
+      const firstText = extractFirstText(node);
+      const meta = firstText ? parseCalloutHeader(firstText) : null;
+      if (meta) {
+        const accent = CALLOUT_ACCENT[meta.type] ?? t.accent;
+        return (
+          <View
+            key={node.key}
+            style={{
+              backgroundColor: withAlpha(accent, 0.1),
+              borderLeftColor: accent,
+              borderLeftWidth: 3,
+              borderRadius: 6,
+              paddingHorizontal: 12,
+              paddingVertical: 8,
+              marginBottom: 12,
+            }}
+          >
+            <Text style={{ color: accent, fontWeight: "700", fontSize: 13, textTransform: "capitalize", marginBottom: 4 }}>
+              {meta.title || meta.type}
+            </Text>
+            {children}
+          </View>
+        );
+      }
+      // Plain blockquote.
+      return (
+        <View key={node.key} style={styles.blockquote}>
+          {children}
+        </View>
+      );
+    },
+  };
+}
+
+/** Best-effort: pull the first text string out of a markdown-it node subtree. */
+function extractFirstText(node: { children?: unknown[]; content?: string }): string {
+  if (typeof node.content === "string" && node.content) return node.content;
+  const kids = (node.children as { content?: string; children?: unknown[] }[] | undefined) ?? [];
+  for (const k of kids) {
+    const s = extractFirstText(k);
+    if (s) return s;
+  }
+  return "";
 }
 
 function markdownStyles(t: Theme) {

@@ -142,6 +142,16 @@ export function listCards(projectId: string): CardRow[] {
   );
 }
 
+/** Get a single card by id (for the card detail screen). */
+export function getCard(id: string): CardRow | null {
+  return (
+    getDb().getFirstSync<CardRow>(
+      `SELECT id, column_id, project_id, title, description, priority, "order" FROM task_cards WHERE id = ?`,
+      id,
+    ) ?? null
+  );
+}
+
 export function searchNotes(query: string): NoteRow[] {
   const q = `%${query}%`;
   return getDb().getAllSync<NoteRow>(
@@ -181,6 +191,15 @@ export function findNoteByTitle(projectId: string, title: string): NoteRow | nul
       title,
     ) ?? null
   );
+}
+
+/** Resolve a note id by title across the whole workspace (case-insensitive) — for wikilinks. */
+export function findNoteIdByTitle(title: string): string | null {
+  const row = getDb().getFirstSync<{ id: string }>(
+    `SELECT id FROM notes WHERE ${LIVE} AND type='note' AND lower(title) = lower(?) LIMIT 1`,
+    title,
+  );
+  return row?.id ?? null;
 }
 
 /** Create a note. Returns its id. Plain INSERT so capture triggers stage it. */

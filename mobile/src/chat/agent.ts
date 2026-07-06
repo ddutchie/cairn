@@ -42,6 +42,7 @@ function systemMessage(): UIMessage {
           "ALWAYS begin by calling get_cairn_context to get project ids, columns, and tags — there is no separate 'list projects' tool.",
           "To summarise or reason about a project, then call get_project_context_pack(project_id): it returns the project, columns, pinned notes, open tasks grouped by column, and recent activity in one call. Prefer it over many small list/get calls.",
           "Look up ids with read tools before writing — never invent an id.",
+          "When you mention a specific note in your reply, wrap its exact title in [[double brackets]] so the user can tap it to open the note.",
           "After a successful write, briefly confirm what you did. Answer in concise markdown.",
         ].join(" "),
       },

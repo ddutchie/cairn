@@ -82,7 +82,7 @@ export default function ProjectScreen() {
             moveCardToColumn(cardId, colId);
             load();
           }}
-          onOpenNote={(nid) => router.push(`/note/${nid}`)}
+          onOpenCard={(cid) => router.push(`/card/${cid}`)}
         />
       )}
     </View>
@@ -182,14 +182,14 @@ function BoardView({
   t,
   styles,
   onMove,
-  onOpenNote,
+  onOpenCard,
 }: {
   columns: ColumnRow[];
   cards: CardRow[];
   t: Theme;
   styles: ReturnType<typeof makeStyles>;
   onMove: (cardId: string, colId: string) => void;
-  onOpenNote: (id: string) => void;
+  onOpenCard: (id: string) => void;
 }) {
   if (columns.length === 0) return <Empty text="No board columns in this project." t={t} />;
   return (
@@ -214,7 +214,7 @@ function BoardView({
                   canRight={!!nextCol}
                   onLeft={() => prevCol && onMove(card.id, prevCol.id)}
                   onRight={() => nextCol && onMove(card.id, nextCol.id)}
-                  onOpenNote={onOpenNote}
+                  onOpen={onOpenCard}
                 />
               ))}
             </ScrollView>
@@ -233,6 +233,7 @@ function CardItem({
   canRight,
   onLeft,
   onRight,
+  onOpen,
 }: {
   card: CardRow;
   t: Theme;
@@ -241,32 +242,27 @@ function CardItem({
   canRight: boolean;
   onLeft: () => void;
   onRight: () => void;
-  onOpenNote: (id: string) => void;
+  onOpen: (id: string) => void;
 }) {
-  const [open, setOpen] = useState(false);
   return (
-    <Pressable style={styles.card} onPress={() => setOpen((o) => !o)}>
+    <Pressable style={styles.card} onPress={() => onOpen(card.id)}>
       <View style={styles.cardTop}>
         <View style={[styles.priorityDot, { backgroundColor: PRIORITY_COLOR[card.priority] ?? t.accent }]} />
         <Text style={styles.cardTitle}>{card.title}</Text>
       </View>
-      {open && (
-        <>
-          {card.description ? (
-            <Text style={styles.cardDesc} numberOfLines={4}>
-              {card.description.replace(/[#*_`>[\]()!-]/g, "").trim()}
-            </Text>
-          ) : null}
-          <View style={styles.cardActions}>
-            <Pressable disabled={!canLeft} onPress={onLeft} style={[styles.moveBtn, !canLeft && styles.moveBtnDisabled]}>
-              <Text style={styles.moveBtnText}>← Move</Text>
-            </Pressable>
-            <Pressable disabled={!canRight} onPress={onRight} style={[styles.moveBtn, !canRight && styles.moveBtnDisabled]}>
-              <Text style={styles.moveBtnText}>Move →</Text>
-            </Pressable>
-          </View>
-        </>
-      )}
+      {card.description ? (
+        <Text style={styles.cardDesc} numberOfLines={2}>
+          {card.description.replace(/[#*_`>[\]()!-]/g, "").trim()}
+        </Text>
+      ) : null}
+      <View style={styles.cardActions}>
+        <Pressable disabled={!canLeft} onPress={onLeft} hitSlop={6} style={[styles.moveBtn, !canLeft && styles.moveBtnDisabled]}>
+          <Text style={styles.moveBtnText}>←</Text>
+        </Pressable>
+        <Pressable disabled={!canRight} onPress={onRight} hitSlop={6} style={[styles.moveBtn, !canRight && styles.moveBtnDisabled]}>
+          <Text style={styles.moveBtnText}>→</Text>
+        </Pressable>
+      </View>
     </Pressable>
   );
 }

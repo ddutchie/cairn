@@ -52,8 +52,9 @@ export default function RootLayout() {
         <StatusBar style="auto" />
         <Stack screenOptions={{ headerShown: true, ...headerStyle }}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="project/[id]" options={{ title: "Project" }} />
-          <Stack.Screen name="note/[id]" options={{ title: "Note" }} />
+        <Stack.Screen name="project/[id]" options={{ title: "Project" }} />
+        <Stack.Screen name="note/[id]" options={{ title: "Note" }} />
+        <Stack.Screen name="card/[id]" options={{ title: "Task" }} />
         </Stack>
       </SafeAreaProvider>
     </KeyboardProvider>

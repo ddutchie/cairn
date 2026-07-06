@@ -4,6 +4,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { listProjectSummaries, type ProjectSummary } from "@/db/queries";
 import { Screen } from "@/components/Screen";
 import { ProjectIcon } from "@/components/ProjectIcon";
+import { SyncStatusBadge } from "@/components/SyncStatusBadge";
 import { useTheme } from "@/theme";
 
 export default function ProjectsScreen() {
@@ -16,7 +17,7 @@ export default function ProjectsScreen() {
 
   if (projects.length === 0) {
     return (
-      <Screen title="Projects">
+      <Screen title="Projects" right={<SyncStatusBadge />}>
         <View style={styles.empty}>
           <Text style={[styles.emptyTitle, { color: t.textSecondary }]}>No projects yet</Text>
           <Text style={[styles.emptyHint, { color: t.textTertiary }]}>
@@ -28,7 +29,7 @@ export default function ProjectsScreen() {
   }
 
   return (
-    <Screen title="Projects">
+    <Screen title="Projects" right={<SyncStatusBadge />}>
       <FlatList
         data={projects}
         keyExtractor={(p) => p.id}
