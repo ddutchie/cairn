@@ -12,7 +12,6 @@ import { MermaidView } from "@/components/MermaidView";
 import {
   preprocessCairnMarkdown,
   noteTitleFromUrl,
-  parseCalloutHeader,
   isColorLiteral,
   toggleCheckboxInSource,
 } from "@cairn/shared/notes/markdown";
@@ -81,6 +80,7 @@ export function MarkdownView({
 const markdownItInstance = MarkdownIt({ breaks: true, linkify: true, typographer: true })
   .use(markdownItMark)
   .use(taskListPlugin as unknown as Parameters<ReturnType<typeof MarkdownIt>["use"]>[0])
+  .use(calloutPlugin as unknown as Parameters<ReturnType<typeof MarkdownIt>["use"]>[0])
   .use(mathPlugin as unknown as Parameters<ReturnType<typeof MarkdownIt>["use"]>[0]);
 
 /**
@@ -112,6 +112,40 @@ function taskListPlugin(md: MdItLike) {
         taskIndex,
       };
       taskIndex += 1;
+    }
+    return true;
+  });
+}
+
+/**
+ * markdown-it plugin: strip the `[!type] Title` header line from callout
+ * blockquotes so it isn't rendered twice (the render rule draws its own title).
+ * The header lives as the first text child of the blockquote's inline token,
+ * followed by a softbreak — we clear both and stash the parsed meta on the
+ * blockquote_open token.
+ */
+function calloutPlugin(md: MdItLike) {
+  md.core.ruler.after("inline", "cairn_callouts", (state) => {
+    const tokens = state.tokens as MdToken[];
+    for (let i = 0; i < tokens.length; i++) {
+      if (tokens[i].type !== "blockquote_open") continue;
+      // blockquote_open → paragraph_open → inline
+      const inline = tokens[i + 2];
+      if (!inline || inline.type !== "inline" || !inline.children?.length) continue;
+      const kids = inline.children;
+      const first = kids[0];
+      if (!first || first.type !== "text") continue;
+      const m = /^\[!([^\]]+)\]\s*(.*)$/.exec(first.content);
+      if (!m) continue;
+      // Drop the header text token; also drop a leading softbreak so the body
+      // starts on the next line without a blank first row.
+      kids.shift();
+      if (kids[0] && kids[0].type === "softbreak") kids.shift();
+      inline.content = kids.map((k) => k.content).join("");
+      tokens[i].meta = {
+        ...(tokens[i].meta as object),
+        callout: { type: m[1].trim().toLowerCase(), title: m[2].trim() || undefined },
+      };
     }
     return true;
   });
@@ -255,12 +289,13 @@ function makeRules(
       </Text>
     ),
 
-    // A blockquote whose first line is `[!type] Title` renders as a callout.
+    // A blockquote tagged by calloutPlugin renders as a coloured callout; the
+    // `[!type] Title` header line has already been stripped from the children.
     blockquote: (node, children, _parent, styles) => {
-      const firstText = extractFirstText(node);
-      const meta = firstText ? parseCalloutHeader(firstText) : null;
-      if (meta) {
-        const accent = CALLOUT_ACCENT[meta.type] ?? t.accent;
+      const meta = (node as { sourceMeta?: { callout?: { type: string; title?: string } } }).sourceMeta;
+      const callout = meta?.callout;
+      if (callout) {
+        const accent = CALLOUT_ACCENT[callout.type] ?? t.accent;
         return (
           <View
             key={node.key}
@@ -283,7 +318,7 @@ function makeRules(
                 marginBottom: 4,
               }}
             >
-              {meta.title || meta.type}
+              {callout.title || callout.type}
             </Text>
             {children}
           </View>
@@ -306,7 +341,7 @@ function makeRules(
         const index = meta.taskIndex ?? 0;
         const interactive = !!onChangeContent;
         return (
-          <View key={node.key} style={styles._VIEW_SAFE_list_item}>
+          <View key={node.key} style={{ flexDirection: "row", alignItems: "flex-start", marginBottom: 4 }}>
             <Pressable
               disabled={!interactive}
               hitSlop={8}
@@ -319,20 +354,29 @@ function makeRules(
                 <Square size={17} color={t.textTertiary} />
               )}
             </Pressable>
-            <View style={styles._VIEW_SAFE_bullet_list_content ?? { flex: 1 }}>{children}</View>
+            <View style={{ flex: 1 }}>{children}</View>
           </View>
         );
       }
 
       // Plain list item — mirror the library's default bullet / ordered marker
-      // so non-task lists look identical to before.
+      // so non-task lists look identical to before. Inline the marker style with
+      // a fixed width so the dot always shows regardless of style merging.
       const ordered = hasParentType(parent, "ordered_list");
       return (
-        <View key={node.key} style={styles._VIEW_SAFE_list_item}>
-          <Text style={ordered ? styles.ordered_list_icon : styles.bullet_list_icon} accessible={false}>
+        <View key={node.key} style={{ flexDirection: "row", alignItems: "flex-start", marginBottom: 4 }}>
+          <Text
+            accessible={false}
+            style={{
+              color: ordered ? t.textSecondary : t.accent,
+              width: ordered ? 22 : 16,
+              lineHeight: 15 * 1.7,
+              fontWeight: "700",
+            }}
+          >
             {ordered ? `${(node.index ?? 0) + 1}.` : "\u2022"}
           </Text>
-          <View style={styles._VIEW_SAFE_bullet_list_content ?? { flex: 1 }}>{children}</View>
+          <View style={{ flex: 1 }}>{children}</View>
         </View>
       );
     },
@@ -367,17 +411,6 @@ function extractFenceLang(node: ASTNode): string | undefined {
 /** True if any ancestor node is a list of the given type. */
 function hasParentType(parents: ASTNode[], type: string): boolean {
   return parents.some((p) => p.type === type);
-}
-
-/** Best-effort: pull the first text string out of a markdown-it node subtree. */
-function extractFirstText(node: { children?: unknown[]; content?: string }): string {
-  if (typeof node.content === "string" && node.content) return node.content;
-  const kids = (node.children as { content?: string; children?: unknown[] }[] | undefined) ?? [];
-  for (const k of kids) {
-    const s = extractFirstText(k);
-    if (s) return s;
-  }
-  return "";
 }
 
 // ── Styles ── tuned to match the desktop .prose-cairn spec (globals.css:357).
