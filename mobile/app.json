@@ -29,7 +29,8 @@
         }
       ],
       "./plugins/withAppleSigning",
-      "./plugins/withICloudContainer"
+      "./plugins/withICloudContainer",
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true

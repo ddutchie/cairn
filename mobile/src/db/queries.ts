@@ -58,6 +58,8 @@ export interface CardRow {
   priority: string;
   tag_ids: string;
   order: number;
+  due_date?: string | null;
+  assignee?: string | null;
 }
 
 export interface TagRow {
@@ -111,6 +113,38 @@ export function tagsForNotes(notes: { tag_ids: string }[]): TagRow[] {
 /** Parse a note/card tag_ids JSON column to an id array (exported for filters). */
 export function noteTagIds(note: { tag_ids: string }): string[] {
   return parseIds(note.tag_ids);
+}
+
+/** All workspace tags, alphabetical — the source list for a tag picker. */
+export function listAllTags(): TagRow[] {
+  return getDb().getAllSync<TagRow>(
+    "SELECT id, name, color FROM tags WHERE deleted_at IS NULL ORDER BY name",
+  );
+}
+
+/**
+ * Write a note's tag set. Stored as a JSON id array (matching desktop's
+ * tag_ids). Plain UPDATE so the capture triggers stage it for sync.
+ */
+export function setNoteTags(noteId: string, tagIds: string[]): void {
+  getDb().runSync(
+    `UPDATE notes SET tag_ids = ?, updated_at = ?, version = version + 1 WHERE id = ?`,
+    JSON.stringify(tagIds),
+    new Date().toISOString(),
+    noteId,
+  );
+  notifyLocalWrite();
+}
+
+/** Write a card's tag set (JSON id array). Plain UPDATE → staged for sync. */
+export function setCardTags(cardId: string, tagIds: string[]): void {
+  getDb().runSync(
+    `UPDATE task_cards SET tag_ids = ?, updated_at = ?, version = version + 1 WHERE id = ?`,
+    JSON.stringify(tagIds),
+    new Date().toISOString(),
+    cardId,
+  );
+  notifyLocalWrite();
 }
 
 const LIVE = "deleted_at IS NULL AND archived_at IS NULL";
@@ -217,7 +251,7 @@ export function listCards(projectId: string): CardRow[] {
 export function getCard(id: string): CardRow | null {
   return (
     getDb().getFirstSync<CardRow>(
-      `SELECT id, column_id, project_id, title, description, priority, tag_ids, "order" FROM task_cards WHERE id = ?`,
+      `SELECT id, column_id, project_id, title, description, priority, tag_ids, "order", due_date, assignee FROM task_cards WHERE id = ?`,
       id,
     ) ?? null
   );
@@ -228,6 +262,18 @@ export function searchNotes(query: string): NoteRow[] {
   return getDb().getAllSync<NoteRow>(
     `SELECT id, project_id, title, content, folder, tag_ids, updated_at FROM notes
      WHERE ${LIVE} AND type = 'note' AND ${NOT_CONFLICT} AND (title LIKE ? OR content_text LIKE ?)
+     ORDER BY updated_at DESC LIMIT 50`,
+    q,
+    q,
+  );
+}
+
+/** Search live (non-archived) task cards by title or description. */
+export function searchTasks(query: string): CardRow[] {
+  const q = `%${query}%`;
+  return getDb().getAllSync<CardRow>(
+    `SELECT id, column_id, project_id, title, description, priority, tag_ids, "order", due_date, assignee FROM task_cards
+     WHERE ${LIVE} AND (title LIKE ? OR description LIKE ?)
      ORDER BY updated_at DESC LIMIT 50`,
     q,
     q,
@@ -343,13 +389,19 @@ export function createTask(projectId: string, columnId: string, title: string, o
   return id;
 }
 
-/** Update a task card's fields (title/description/priority). */
-export function updateTask(cardId: string, patch: { title?: string; description?: string; priority?: string }): void {
+/** Update a task card's fields (title/description/priority/dueDate/assignee). */
+export function updateTask(
+  cardId: string,
+  patch: { title?: string; description?: string; priority?: string; dueDate?: string | null; assignee?: string | null },
+): void {
   const sets: string[] = [];
   const vals: unknown[] = [];
   if (patch.title !== undefined) { sets.push("title = ?"); vals.push(patch.title); }
   if (patch.description !== undefined) { sets.push("description = ?"); vals.push(patch.description); }
   if (patch.priority !== undefined) { sets.push("priority = ?"); vals.push(patch.priority); }
+  // dueDate/assignee use explicit-key detection so they can be cleared to NULL.
+  if ("dueDate" in patch) { sets.push("due_date = ?"); vals.push(patch.dueDate || null); }
+  if ("assignee" in patch) { sets.push("assignee = ?"); vals.push(patch.assignee || null); }
   if (sets.length === 0) return;
   sets.push("updated_at = ?"); vals.push(new Date().toISOString());
   sets.push("version = version + 1");

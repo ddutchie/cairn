@@ -12,9 +12,10 @@ import {
   Alert,
 } from "react-native";
 import { MoreHorizontal, Pin } from "lucide-react-native";
-import { getNote, updateNote, tagsForNote, pinNote, softDeleteNote } from "@/db/queries";
+import { getNote, updateNote, tagsForNote, noteTagIds, setNoteTags, pinNote, softDeleteNote } from "@/db/queries";
 import { MarkdownView } from "@/components/MarkdownView";
 import { TagChips } from "@/components/TagChips";
+import { TagPickerSheet } from "@/components/TagPickerSheet";
 import { useTheme, type Theme } from "@/theme";
 
 export default function NoteDetail() {
@@ -26,6 +27,7 @@ export default function NoteDetail() {
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(note?.title ?? "");
   const [body, setBody] = useState(note?.content ?? "");
+  const [tagPickerOpen, setTagPickerOpen] = useState(false);
 
   const styles = useMemo(() => makeStyles(t), [t]);
 
@@ -36,6 +38,13 @@ export default function NoteDetail() {
     pinNote(note.id, !isPinned);
     setNote(getNote(note.id));
   }, [note, isPinned]);
+
+  const onTags = useCallback((tagIds: string[]) => {
+    if (!note) return;
+    setNoteTags(note.id, tagIds);
+    setNote(getNote(note.id));
+    setTagPickerOpen(false);
+  }, [note]);
 
   const onDelete = useCallback(() => {
     if (!note) return;
@@ -55,6 +64,7 @@ export default function NoteDetail() {
   const onActions = useCallback(() => {
     Alert.alert(note?.title || "Note", undefined, [
       { text: isPinned ? "Unpin" : "Pin", onPress: onPin },
+      { text: "Edit tags", onPress: () => setTagPickerOpen(true) },
       { text: "Delete", style: "destructive", onPress: onDelete },
       { text: "Cancel", style: "cancel" },
     ]);
@@ -135,6 +145,13 @@ export default function NoteDetail() {
           </View>
         </ScrollView>
       )}
+
+      <TagPickerSheet
+        visible={tagPickerOpen}
+        initialSelected={noteTagIds(note)}
+        onDone={onTags}
+        onClose={() => setTagPickerOpen(false)}
+      />
     </KeyboardAvoidingView>
   );
 }
