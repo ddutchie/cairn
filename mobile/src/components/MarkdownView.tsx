@@ -174,7 +174,7 @@ interface MdItLike {
  * Typed loosely against markdown-it's runtime shapes (no @types/markdown-it);
  * the logic mirrors the common markdown-it-texmath dollar rules.
  */
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 function mathPlugin(md: any) {
   // Inline: $...$  (no space right after the opening $, not a lone $)
   md.inline.ruler.after("escape", "math_inline", (state: any, silent: boolean) => {
@@ -242,7 +242,7 @@ function mathPlugin(md: any) {
     },
   );
 }
-/* eslint-enable @typescript-eslint/no-explicit-any */
+ 
 
 
 /** Custom render rules — code fences, callouts, highlight, checkboxes, swatches. */
@@ -333,7 +333,7 @@ function makeRules(
 
     // Task-list checkboxes (tagged by taskListPlugin) render an icon in place of
     // the bullet; plain list items keep the default bullet/number.
-    list_item: (node, children, parent, styles) => {
+    list_item: (node, children, parent, _styles) => {
       const meta = (node as { sourceMeta?: { isTask?: boolean; checked?: boolean; taskIndex?: number } })
         .sourceMeta;
       if (meta?.isTask) {

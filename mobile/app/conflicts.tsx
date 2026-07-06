@@ -65,14 +65,12 @@ export default function ConflictsScreen() {
                   label="This device (original)"
                   body={c.original?.content ?? "(original was deleted)"}
                   onOpen={c.original ? () => router.push(`/note/${c.original!.id}`) : undefined}
-                  t={t}
                   styles={styles}
                 />
                 <VersionBlock
                   label="Conflicted copy"
                   body={c.content ?? ""}
                   onOpen={() => router.push(`/note/${c.id}`)}
-                  t={t}
                   styles={styles}
                 />
               </View>
@@ -97,13 +95,11 @@ function VersionBlock({
   label,
   body,
   onOpen,
-  t,
   styles,
 }: {
   label: string;
   body: string;
   onOpen?: () => void;
-  t: Theme;
   styles: ReturnType<typeof makeStyles>;
 }) {
   const preview = body.replace(/\s+/g, " ").trim().slice(0, 240);

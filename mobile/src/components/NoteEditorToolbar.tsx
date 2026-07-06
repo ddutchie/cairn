@@ -13,8 +13,7 @@ import {
 } from "react-native";
 import Animated, { useAnimatedStyle, interpolate } from "react-native-reanimated";
 import { useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
-import { ChevronLeft, ChevronRight } from "lucide-react-native";
-import {
+import { ChevronLeft, ChevronRight ,
   Bold,
   Italic,
   Strikethrough,

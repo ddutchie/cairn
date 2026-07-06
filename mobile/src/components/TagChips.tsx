@@ -32,7 +32,7 @@ export function TagChips({ tags, size = "md" }: { tags: TagRow[]; size?: "sm" | 
   );
 }
 
-function makeStyles(t: Theme) {
+function makeStyles(_t: Theme) {
   return StyleSheet.create({
     row: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
     chip: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 4, paddingHorizontal: 10, borderRadius: 14, borderWidth: 1 },

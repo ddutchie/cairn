@@ -111,7 +111,7 @@ export function buildHtmlHead(t: Theme, extraCss = ""): string {
   `;
 }
 
-function makeStyles(t: Theme) {
+function makeStyles(_t: Theme) {
   return StyleSheet.create({
     wrap: { width: "100%", backgroundColor: "transparent", marginVertical: 6 },
     web: { flex: 1, backgroundColor: "transparent" },

@@ -1,5 +1,5 @@
 import { forwardRef, useCallback } from "react";
-import { Pressable, type PressableProps, type View } from "react-native";
+import { Pressable, type PressableProps, type View , StyleProp, ViewStyle } from "react-native";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -7,7 +7,6 @@ import Animated, {
   withSpring,
   type AnimatedStyle,
 } from "react-native-reanimated";
-import type { StyleProp, ViewStyle } from "react-native";
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 

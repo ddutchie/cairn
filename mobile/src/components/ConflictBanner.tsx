@@ -1,4 +1,4 @@
-import { Pressable, Text, View, StyleSheet } from "react-native";
+import { Pressable, Text, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
 import { AlertTriangle, ChevronRight } from "lucide-react-native";
 import { useTheme, withAlpha, type Theme } from "@/theme";
