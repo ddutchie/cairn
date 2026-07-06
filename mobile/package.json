@@ -5,6 +5,11 @@
   "main": "expo-router/entry",
   "scripts": {
     "postinstall": "node scripts/link-shared.js",
+    "link-shared": "node scripts/link-shared.js",
+    "prestart": "node scripts/link-shared.js",
+    "preios": "node scripts/link-shared.js",
+    "preandroid": "node scripts/link-shared.js",
+    "prebuild": "node scripts/link-shared.js",
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
