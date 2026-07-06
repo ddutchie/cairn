@@ -16,6 +16,7 @@
  */
 
 import chokidar, { type FSWatcher } from "chokidar";
+import fs from "fs";
 import type Database from "better-sqlite3";
 import { parseNoteFile, upsertNoteFromFile, adoptExternalNoteFile } from "./notes-files";
 import * as q from "./db/queries";
@@ -109,12 +110,52 @@ export function resumeFileWatcher(): void {
 
 // ── Event handlers ────────────────────────────
 
+/**
+ * Guard against note resurrection from orphaned .md files.
+ *
+ * When a note is deleted, its DB row is removed and its .md file is unlinked.
+ * But in a synced workspace a PEER may re-materialise that .md on disk (its own
+ * copy hadn't received the delete yet, or a sync race). Chokidar then fires an
+ * `add`, and without this guard the watcher would re-import the file, recreate
+ * the row, and the capture trigger would publish a fresh `put` — fighting the
+ * delete forever (the "conflict copies keep coming back" loop).
+ *
+ * The distinguishing fact: a note that legitimately arrives via sync gets its
+ * DB row written by the engine's projector BEFORE (or with) the .md file, so by
+ * the time we observe the file the row exists. A file that carries a real Cairn
+ * id in its frontmatter but has NO matching DB row is therefore an orphan of a
+ * deleted note. We delete the orphan and skip the import.
+ *
+ * (Files with no Cairn frontmatter are handled by adoptExternalNoteFile with a
+ * fresh id — genuinely new external notes — so they never hit this path.)
+ *
+ * `hadCairnId` is true when parseNoteFile (not adoption) produced the note, i.e.
+ * the file already claimed an existing id. Returns true if it handled (skipped).
+ */
+function skipIfOrphan(
+  filePath: string,
+  noteId: string,
+  hadCairnId: boolean,
+  db: Database.Database,
+): boolean {
+  if (!hadCairnId) return false; // adopted/new note — not an orphan
+  const exists = db.prepare("SELECT 1 FROM notes WHERE id = ?").get(noteId);
+  if (exists) return false; // live note — normal upsert
+  // Real Cairn id, no row → orphan of a deleted note. Remove it.
+  suppressNextChange(noteId); // the unlink we're about to do is ours, not a user delete
+  try { fs.unlinkSync(filePath); } catch { /* already gone */ }
+  pathToNoteId.delete(filePath);
+  return true;
+}
+
 function handleFileAdd(filePath: string, workspacePath: string, db: Database.Database, onChanged: () => void): void {
   if (!filePath.endsWith(".md")) return;
   let note = parseNoteFile(filePath);
+  const hadCairnId = note !== null;
   // Plain .md file with no Cairn frontmatter — try to adopt it
   if (!note) note = adoptExternalNoteFile(db, workspacePath, filePath);
   if (!note) return;
+  if (skipIfOrphan(filePath, note.id, hadCairnId, db)) return;
   pathToNoteId.set(filePath, note.id);
   if (suppressedNoteIds.has(note.id)) return;
   upsertNoteFromFile(db, note);
@@ -124,9 +165,11 @@ function handleFileAdd(filePath: string, workspacePath: string, db: Database.Dat
 function handleFileChange(filePath: string, workspacePath: string, db: Database.Database, onChanged: () => void): void {
   if (!filePath.endsWith(".md")) return;
   let note = parseNoteFile(filePath);
+  const hadCairnId = note !== null;
   // Plain .md file — try to adopt (e.g. frontmatter was stripped by external editor)
   if (!note) note = adoptExternalNoteFile(db, workspacePath, filePath);
   if (!note) return;
+  if (skipIfOrphan(filePath, note.id, hadCairnId, db)) return;
   pathToNoteId.set(filePath, note.id);
   if (suppressedNoteIds.has(note.id)) return;
   upsertNoteFromFile(db, note);

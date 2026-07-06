@@ -230,6 +230,16 @@ export function updateNote(db: Database.Database, id: string, patch: Partial<{
   return toNote(db.prepare("SELECT * FROM notes WHERE id = ?").get(id));
 }
 
+/**
+ * Hard-delete a note. The row is physically removed (desktop live queries do
+ * not filter tombstones, so a soft-delete would leak ghost notes into every
+ * list/search). Delete-safety across sync is handled two ways:
+ *   1. The AFTER DELETE capture trigger stages a `delete` op so peers tombstone.
+ *   2. The .md file MUST be removed too (see callers), and the file-watcher
+ *      records the id in a short-lived "recently deleted" set so a peer that
+ *      re-materialises the orphan file on disk can't re-import it. See
+ *      electron/file-watcher.ts markDeleted().
+ */
 export function deleteNote(db: Database.Database, id: string) {
   db.prepare("DELETE FROM notes WHERE id = ?").run(id);
 }
