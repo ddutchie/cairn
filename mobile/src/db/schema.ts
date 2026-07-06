@@ -14,6 +14,8 @@
  * triggers mirror desktop migrations v25/v26.
  */
 
+import { SYNCABLE_TABLES } from "@cairn/shared/sync/schema";
+
 export const MOBILE_SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = OFF; -- sync applies rows in oplog order, not FK order
@@ -161,6 +163,15 @@ CREATE TABLE IF NOT EXISTS chat_local (
   created_at TEXT NOT NULL
 );
 
+-- Local-only, on-device app settings (key/value). NO capture trigger, so it
+-- never publishes to or pulls from the sync folder. Holds non-secret AI config
+-- (OpenAI-compatible base URL, model). Secrets like the API key live in
+-- expo-secure-store (keychain), NOT here.
+CREATE TABLE IF NOT EXISTS app_settings (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
 -- Sync engine tables (mirror desktop migrations v25/v26).
 CREATE TABLE IF NOT EXISTS sync_oplog (
   seq        INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -195,10 +206,8 @@ CREATE TABLE IF NOT EXISTS sync_state (
  */
 export const MOBILE_TRIGGERS_SQL = (() => {
   const suppressGuard = `(SELECT COALESCE((SELECT value FROM sync_state WHERE key='suppress'),'0')) = '0'`;
-  const tables = [
-    "workspaces", "projects", "board_columns", "tags",
-    "notes", "task_cards", "chat_threads", "chat_messages",
-  ];
+  // Single source of truth for "what syncs" lives in @cairn/shared.
+  const tables = SYNCABLE_TABLES;
   return tables
     .map(
       (t) => `

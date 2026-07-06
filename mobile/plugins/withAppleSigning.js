@@ -8,15 +8,27 @@
  * team + CODE_SIGN_STYLE=Automatic lets Xcode auto-manage the profile.
  *
  * Durable: applied on every `expo prebuild` so it survives native regeneration.
- * Override the team via the APPLE_TEAM_ID env var if needed.
+ *
+ * The team is read from the APPLE_TEAM_ID env var (see .env.example). It is
+ * intentionally NOT hardcoded so the developer account isn't committed to the
+ * repo. If it's unset we skip the plugin with a warning — Xcode's manual
+ * signing UI (or a CI without the secret) can still prebuild; only automatic
+ * on-device signing needs the team set.
  */
 
 const { withXcodeProject } = require("@expo/config-plugins");
 
-const TEAM_ID = process.env.APPLE_TEAM_ID || "DA48HNTSEZ";
+const TEAM_ID = process.env.APPLE_TEAM_ID;
 
-module.exports = (config) =>
-  withXcodeProject(config, (cfg) => {
+module.exports = (config) => {
+  if (!TEAM_ID) {
+    console.warn(
+      "[withAppleSigning] APPLE_TEAM_ID not set — skipping automatic code signing. " +
+        "Set it (see mobile/.env.example) to auto-manage the provisioning profile.",
+    );
+    return config;
+  }
+  return withXcodeProject(config, (cfg) => {
     const project = cfg.modResults;
     const configs = project.pbxXCBuildConfigurationSection();
     for (const key of Object.keys(configs)) {
@@ -40,3 +52,4 @@ module.exports = (config) =>
 
     return cfg;
   });
+};
