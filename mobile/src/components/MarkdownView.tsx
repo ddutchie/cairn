@@ -7,6 +7,8 @@ import { Square, CheckSquare } from "lucide-react-native";
 import { useTheme, withAlpha, type Theme } from "@/theme";
 import { findNoteIdByTitle } from "@/db/queries";
 import { CodeBlock } from "@/components/CodeBlock";
+import { MathView } from "@/components/MathView";
+import { MermaidView } from "@/components/MermaidView";
 import {
   preprocessCairnMarkdown,
   noteTitleFromUrl,
@@ -78,7 +80,8 @@ export function MarkdownView({
 // default in markdown-it.
 const markdownItInstance = MarkdownIt({ breaks: true, linkify: true, typographer: true })
   .use(markdownItMark)
-  .use(taskListPlugin as unknown as Parameters<ReturnType<typeof MarkdownIt>["use"]>[0]);
+  .use(taskListPlugin as unknown as Parameters<ReturnType<typeof MarkdownIt>["use"]>[0])
+  .use(mathPlugin as unknown as Parameters<ReturnType<typeof MarkdownIt>["use"]>[0]);
 
 /**
  * markdown-it plugin: detect GFM task-list items. For each list item whose first
@@ -124,14 +127,88 @@ interface MdToken {
 interface MdItLike {
   core: {
     ruler: {
-      after: (
-        after: string,
-        name: string,
-        fn: (state: { tokens: unknown[] }) => boolean,
-      ) => void;
+      after: (after: string, name: string, fn: (state: { tokens: unknown[] }) => boolean) => void;
     };
   };
 }
+
+/**
+ * markdown-it plugin: KaTeX-style math. Adds a block rule for `$$…$$` (emits a
+ * `math_block` token) and an inline rule for `$…$` (emits `math_inline`). The
+ * LaTeX source lands in token.content; render rules hand it to MathView.
+ *
+ * Typed loosely against markdown-it's runtime shapes (no @types/markdown-it);
+ * the logic mirrors the common markdown-it-texmath dollar rules.
+ */
+/* eslint-disable @typescript-eslint/no-explicit-any */
+function mathPlugin(md: any) {
+  // Inline: $...$  (no space right after the opening $, not a lone $)
+  md.inline.ruler.after("escape", "math_inline", (state: any, silent: boolean) => {
+    const start = state.pos;
+    if (state.src[start] !== "$") return false;
+    // Escaped \$ handled by the escape rule already.
+    const next = state.src[start + 1];
+    if (next === undefined || next === " " || next === "$") return false;
+    let end = start + 1;
+    while (end < state.posMax) {
+      if (state.src[end] === "$" && state.src[end - 1] !== "\\" && state.src[end - 1] !== " ") break;
+      end += 1;
+    }
+    if (end >= state.posMax || state.src[end] !== "$") return false;
+    const content = state.src.slice(start + 1, end);
+    if (!content.trim()) return false;
+    if (!silent) {
+      const token = state.push("math_inline", "math", 0);
+      token.content = content;
+      token.markup = "$";
+    }
+    state.pos = end + 1;
+    return true;
+  });
+
+  // Block: a line that is exactly $$ ... $$ (single or multi-line).
+  md.block.ruler.before(
+    "fence",
+    "math_block",
+    (state: any, startLine: number, endLine: number, silent: boolean) => {
+      const startPos = state.bMarks[startLine] + state.tShift[startLine];
+      const max = state.eMarks[startLine];
+      if (startPos + 2 > max) return false;
+      if (state.src.slice(startPos, startPos + 2) !== "$$") return false;
+      // Find the closing $$.
+      let nextLine = startLine;
+      let haveEnd = false;
+      let firstLine = state.src.slice(startPos + 2, max);
+      if (firstLine.trim().endsWith("$$")) {
+        firstLine = firstLine.trim().replace(/\$\$$/, "");
+        haveEnd = true;
+      }
+      const buf: string[] = firstLine ? [firstLine] : [];
+      while (!haveEnd) {
+        nextLine += 1;
+        if (nextLine >= endLine) break;
+        const from = state.bMarks[nextLine] + state.tShift[nextLine];
+        const to = state.eMarks[nextLine];
+        const line = state.src.slice(from, to);
+        if (line.trim().endsWith("$$")) {
+          buf.push(line.trim().replace(/\$\$$/, ""));
+          haveEnd = true;
+        } else {
+          buf.push(line);
+        }
+      }
+      if (!haveEnd) return false;
+      if (silent) return true;
+      state.line = nextLine + 1;
+      const token = state.push("math_block", "math", 0);
+      token.block = true;
+      token.content = buf.join("\n").trim();
+      token.markup = "$$";
+      return true;
+    },
+  );
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
 
 /** Custom render rules — code fences, callouts, highlight, checkboxes, swatches. */
@@ -153,11 +230,17 @@ function makeRules(
   };
 
   return {
-    // Syntax-highlighted fenced / indented code blocks.
-    fence: (node) => (
-      <CodeBlock key={node.key} code={node.content} language={extractFenceLang(node)} />
-    ),
+    // Syntax-highlighted fenced / indented code blocks; mermaid → diagram.
+    fence: (node) => {
+      const lang = extractFenceLang(node);
+      if (lang === "mermaid") return <MermaidView key={node.key} code={node.content} />;
+      return <CodeBlock key={node.key} code={node.content} language={lang} />;
+    },
     code_block: (node) => <CodeBlock key={node.key} code={node.content} />,
+
+    // KaTeX math (from mathPlugin).
+    math_inline: (node) => <MathView key={node.key} latex={node.content} display={false} />,
+    math_block: (node) => <MathView key={node.key} latex={node.content} display={true} />,
 
     // ==highlight== → mark chip.
     mark: (node, children) => (
