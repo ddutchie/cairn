@@ -9,7 +9,10 @@
     "icon": "./assets/icon.png",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.gerardslee.cairn"
+      "bundleIdentifier": "com.gerardslee.cairn",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "com.gerardslee.cairn",
@@ -17,7 +20,10 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#8FA87E"
-      }
+      },
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "plugins": [
       "expo-router",
@@ -49,6 +55,19 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "b9634bc3-1e30-4cc2-82a4-4d43a2ed5644"
+      },
+      "router": {}
+    },
+    "owner": "gerardslee",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/b9634bc3-1e30-4cc2-82a4-4d43a2ed5644"
     }
   }
 }

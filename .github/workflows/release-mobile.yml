@@ -1,0 +1,72 @@
+name: Release Mobile (TestFlight)
+
+# Builds the Expo iOS app on EAS and submits it to TestFlight.
+#
+# Trigger: push a tag like `mobile-v2.4.0` (see scripts/releasemobile.sh), or
+# run manually from the Actions tab (workflow_dispatch).
+#
+# Required repo secret:
+#   EXPO_TOKEN  — an Expo access token (expo.dev → Account → Access tokens).
+#                 EAS uses it for both the build and the TestFlight submit;
+#                 Apple signing credentials + the App Store Connect key are
+#                 stored on EAS (managed credentials), not here.
+#
+# One-time setup (run locally in mobile/, see mobile/README):
+#   npm i -g eas-cli && eas login && eas init && eas credentials
+
+on:
+  push:
+    tags:
+      - "mobile-v*"
+  workflow_dispatch:
+    inputs:
+      submit:
+        description: "Submit the build to TestFlight after it finishes"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-ios:
+    name: EAS Build + Submit (iOS)
+    runs-on: ubuntu-latest
+    # The build itself runs on EAS's macOS workers; this runner only drives the
+    # eas-cli, so ubuntu is fine (and cheaper/faster to spin up).
+    defaults:
+      run:
+        working-directory: mobile
+
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      # Sets up eas-cli and authenticates via EXPO_TOKEN.
+      # NOTE: pin to a commit SHA once you've vetted the version you want.
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Build on EAS (managed credentials) and wait for the artifact.
+      - name: EAS Build (iOS, production)
+        run: eas build --platform ios --profile production --non-interactive --wait
+
+      # Submit the finished build to TestFlight. Skipped if a manual run
+      # unchecked "submit". Uses the latest successful iOS build for this commit.
+      - name: EAS Submit (TestFlight)
+        if: >-
+          github.event_name == 'push' ||
+          github.event.inputs.submit == 'true'
+        run: eas submit --platform ios --profile production --latest --non-interactive

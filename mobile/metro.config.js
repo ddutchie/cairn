@@ -31,7 +31,4 @@ config.resolver.nodeModulesPaths = [
   path.resolve(repoRoot, "node_modules"),
 ];
 
-// Follow the node_modules/@cairn/shared symlink to the real source outside root.
-config.resolver.unstable_enableSymlinks = true;
-
 module.exports = config;
