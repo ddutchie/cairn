@@ -3,6 +3,17 @@ import { twMerge } from "tailwind-merge";
 import { nanoid } from "nanoid";
 import { defaultUrlTransform } from "react-markdown";
 export { PRIORITY_COLORS, STATUS_COLORS } from "./constants";
+// Date formatters + tool-label prettifier now live in @cairn/shared so desktop
+// and mobile share one implementation. Re-exported here to preserve the
+// existing `@/lib/utils` import surface across the renderer.
+export {
+  formatDate,
+  formatDateCompact,
+  formatRelative,
+  getDueDateStatus,
+  type DueDateStatus,
+} from "../../shared/format/date";
+export { prettifyToolLabel } from "../../shared/ui/constants";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -10,25 +21,6 @@ export function cn(...inputs: ClassValue[]) {
 
 export function id(): string {
   return nanoid(12);
-}
-
-/**
- * Defensive renderer-side fallback for tool-call chip labels. The main process
- * already emits friendly labels (e.g. "Canva · Search designs"), but a raw
- * namespaced id can still reach the UI via a transient "pending" chip or a
- * historical message saved before labelling existed. This strips the
- * `mcp__<id>__` / `svc__<id>__` prefix and prettifies the remaining tool name:
- *   "mcp__BZfTDDlqAOoB__search-designs" → "Search designs".
- * Anything that isn't a raw namespaced id is returned unchanged.
- */
-export function prettifyToolLabel(label: string): string {
-  if (typeof label !== "string") return label;
-  // Only rewrite when it actually looks like a raw namespaced id with a tool part.
-  const match = /^(?:mcp|svc)__.+?__(.+)$/.exec(label);
-  if (!match || !match[1]) return label;
-  const tool = match[1].replace(/[_.\-]+/g, " ").replace(/\s+/g, " ").trim();
-  if (!tool) return label;
-  return tool.charAt(0).toUpperCase() + tool.slice(1);
 }
 
 export function now(): string {
@@ -46,69 +38,6 @@ export function now(): string {
 export function getIsDark(): boolean {
   if (typeof document === "undefined") return true;
   return document.documentElement.getAttribute("data-theme") !== "light";
-}
-
-export function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
-/**
- * Compact list-oriented date: "Today" / "Yesterday" / "3d ago" for the last
- * week, an absolute "Jan 5" otherwise. Future dates fall back to "Jan 5".
- * Used by session/agent lists where a terse relative label reads better than
- * the absolute {@link formatDate}.
- */
-export function formatDateCompact(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "Invalid date";
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const target = new Date(d);
-  target.setHours(0, 0, 0, 0);
-
-  const diffDays = Math.floor((today.getTime() - target.getTime()) / 86400000);
-  if (diffDays < 0) {
-    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  }
-  if (diffDays === 0) return "Today";
-  if (diffDays === 1) return "Yesterday";
-  if (diffDays < 7) return `${diffDays}d ago`;
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
-
-export function formatRelative(iso: string): string {
-  const date = new Date(iso);
-  const diff = Date.now() - date.getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  if (days < 7) return `${days}d ago`;
-  return formatDate(iso);
-}
-
-/**
- * Returns "overdue" | "today" | "upcoming" | "none" for a due date string.
- * Compares calendar days (not timestamps) so due-today is correct regardless of time.
- */
-export function getDueDateStatus(dueDate: string | null | undefined): "overdue" | "today" | "upcoming" | "none" {
-  if (!dueDate) return "none";
-  const due = new Date(dueDate);
-  const today = new Date();
-  // Normalise both to midnight local time for day comparison
-  due.setHours(0, 0, 0, 0);
-  today.setHours(0, 0, 0, 0);
-  const diff = due.getTime() - today.getTime();
-  if (diff < 0) return "overdue";
-  if (diff === 0) return "today";
-  return "upcoming";
 }
 
 export function urlTransform(url: string): string {

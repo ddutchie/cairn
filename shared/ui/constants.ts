@@ -49,15 +49,35 @@ export const PRIORITY_COLOR: Record<string, string> = {
 };
 
 /**
- * Prettify a tool label/name for display (mirrors src/lib/utils
- * prettifyToolLabel + a snake/namespaced fallback). Both apps show identical
- * tool-call chip labels.
+ * Prettify a tool label/name for display. Both apps show identical tool-call
+ * chip labels via this single implementation.
+ *
+ * Behaviour:
+ *   - A raw namespaced id (`mcp__<id>__<tool>` / `svc__<id>__<tool>`) always has
+ *     its prefix stripped and the tool part humanised: `Search designs`.
+ *   - Otherwise the label is returned UNCHANGED by default — the desktop main
+ *     process already emits friendly labels (`Canva · Search designs`), so a
+ *     bare string must not be mangled.
+ *   - `prettifyBare: true` additionally humanises a plain `snake_case` /
+ *     `kebab-case` name (`create_task` → `Create task`). The mobile agent emits
+ *     raw tool names with no namespace, so it opts in.
  */
-export function prettifyToolLabel(label: string): string {
+export function prettifyToolLabel(
+  label: string,
+  opts?: { prettifyBare?: boolean },
+): string {
   if (typeof label !== "string") return label;
   const match = /^(?:mcp|svc)__.+?__(.+)$/.exec(label);
-  const raw = match && match[1] ? match[1] : label;
-  const tool = raw.replace(/[_.\-]+/g, " ").replace(/\s+/g, " ").trim();
-  if (!tool) return label;
-  return tool.charAt(0).toUpperCase() + tool.slice(1);
+  if (match && match[1]) {
+    const tool = match[1].replace(/[_.\-]+/g, " ").replace(/\s+/g, " ").trim();
+    if (!tool) return label;
+    return tool.charAt(0).toUpperCase() + tool.slice(1);
+  }
+  // Not a namespaced id. Only rewrite bare snake/kebab names when asked, and
+  // only when the label looks like a raw identifier (no spaces already).
+  if (opts?.prettifyBare && !/\s/.test(label) && /[_.\-]/.test(label)) {
+    const tool = label.replace(/[_.\-]+/g, " ").replace(/\s+/g, " ").trim();
+    if (tool) return tool.charAt(0).toUpperCase() + tool.slice(1);
+  }
+  return label;
 }

@@ -5,6 +5,7 @@
 
 import { getDb } from "./index";
 import { inspectConflict, cleanConflictTitle } from "@cairn/shared/sync/conflict";
+import { stripMarkdown } from "@cairn/shared/notes/text";
 import { notifyLocalWrite } from "@/sync/write-signal";
 
 /** Client-generated collision-free id (mirrors desktop nanoid(12) scheme). */
@@ -231,7 +232,7 @@ export function moveCardToColumn(cardId: string, columnId: string): void {
 }
 
 function plainText(md: string): string {
-  return md.replace(/[#*_`>[\]()!-]/g, "").replace(/\s+/g, " ").trim();
+  return stripMarkdown(md);
 }
 
 /** Find a note by exact title within a project (for ensure_note upsert). */
@@ -447,7 +448,7 @@ export function getProjectContextPack(projectId: string): unknown {
  */
 export function updateNote(id: string, title: string, content: string): void {
   const now = new Date().toISOString();
-  const contentText = content.replace(/[#*_`>[\]()!-]/g, "").replace(/\s+/g, " ").trim();
+  const contentText = stripMarkdown(content);
   getDb().runSync(
     `UPDATE notes SET title = ?, content = ?, content_text = ?, updated_at = ?, version = version + 1
      WHERE id = ?`,
