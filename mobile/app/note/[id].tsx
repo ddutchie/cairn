@@ -46,6 +46,19 @@ export default function NoteDetail() {
     setTagPickerOpen(false);
   }, [note]);
 
+  // Toggling a task-list checkbox in the rendered preview rewrites the source
+  // and persists immediately (mirrors the desktop live-preview toggle).
+  const onToggleCheckbox = useCallback(
+    (next: string) => {
+      if (!note) return;
+      updateNote(note.id, note.title ?? "Untitled", next);
+      const fresh = getNote(note.id);
+      setNote(fresh);
+      setBody(fresh?.content ?? next);
+    },
+    [note],
+  );
+
   const onDelete = useCallback(() => {
     if (!note) return;
     Alert.alert("Delete note?", "This removes the note on all your devices. This can't be undone.", [
@@ -141,7 +154,7 @@ export default function NoteDetail() {
           {note.folder ? <Text style={styles.folder}>{note.folder}</Text> : null}
           <TagChipsRow note={note} />
           <View style={styles.md}>
-            <MarkdownView content={note.content ?? ""} />
+            <MarkdownView content={note.content ?? ""} onChangeContent={onToggleCheckbox} />
           </View>
         </ScrollView>
       )}

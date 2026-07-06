@@ -6,6 +6,7 @@ import { getCard, listColumns, updateTask, moveCardToColumn, archiveCard, tagsFo
 import { TagChips } from "@/components/TagChips";
 import { TagPickerSheet } from "@/components/TagPickerSheet";
 import { DueDatePickerSheet } from "@/components/DueDatePickerSheet";
+import { MarkdownView } from "@/components/MarkdownView";
 import { formatDate } from "@cairn/shared/format/date";
 import { useTheme, PRIORITY_COLOR, type Theme } from "@/theme";
 
@@ -27,6 +28,7 @@ export default function CardDetail() {
   const [tagIds, setTagIds] = useState<string[]>(card ? noteTagIds(card) : []);
   const [tagPickerOpen, setTagPickerOpen] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [descPreview, setDescPreview] = useState(false);
   const columns: ColumnRow[] = card ? listColumns(card.project_id) : [];
   const tags = useMemo(() => (card ? tagsForCard({ tag_ids: JSON.stringify(tagIds) }) : []), [card, tagIds]);
 
@@ -150,16 +152,29 @@ export default function CardDetail() {
           autoCapitalize="words"
         />
 
-        <Text style={styles.label}>Description</Text>
-        <TextInput
-          style={styles.descInput}
-          value={description}
-          onChangeText={setDescription}
-          placeholder="Add a description (markdown)…"
-          placeholderTextColor={t.textTertiary}
-          multiline
-          textAlignVertical="top"
-        />
+        <View style={styles.descHeader}>
+          <Text style={[styles.label, { marginBottom: 0 }]}>Description</Text>
+          {description.trim().length > 0 && (
+            <Pressable onPress={() => setDescPreview((v) => !v)} hitSlop={8}>
+              <Text style={styles.descToggle}>{descPreview ? "Edit" : "Preview"}</Text>
+            </Pressable>
+          )}
+        </View>
+        {descPreview ? (
+          <View style={styles.descPreview}>
+            <MarkdownView content={description} onChangeContent={setDescription} />
+          </View>
+        ) : (
+          <TextInput
+            style={styles.descInput}
+            value={description}
+            onChangeText={setDescription}
+            placeholder="Add a description (markdown)…"
+            placeholderTextColor={t.textTertiary}
+            multiline
+            textAlignVertical="top"
+          />
+        )}
       </ScrollView>
 
       <TagPickerSheet
@@ -203,6 +218,9 @@ function makeStyles(t: Theme) {
     columnRow: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
     columnChip: { paddingVertical: 6, paddingHorizontal: 14, borderRadius: 16, borderWidth: 1 },
     descInput: { fontSize: 15, lineHeight: 22, color: t.textPrimary, backgroundColor: t.surface, borderWidth: 1, borderColor: t.border, borderRadius: 10, padding: 12, minHeight: 160, fontFamily: "Menlo" },
+    descHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 18, marginBottom: 8 },
+    descToggle: { fontSize: 13, color: t.accent, fontWeight: "600" },
+    descPreview: { backgroundColor: t.surface, borderWidth: 1, borderColor: t.border, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 4, minHeight: 160 },
     save: { color: t.accent, fontSize: 16, fontWeight: "600" },
     headerActions: { flexDirection: "row", alignItems: "center", gap: 16 },
     center: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: t.background },

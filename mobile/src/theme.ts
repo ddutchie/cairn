@@ -102,6 +102,11 @@ export function useTheme(): Theme {
   return scheme === "light" ? lightTheme : darkTheme;
 }
 
+/** True when the current system colour scheme is dark (default when unset). */
+export function useIsDark(): boolean {
+  return useColorScheme() !== "light";
+}
+
 /**
  * Apply an alpha to a hex colour → rgba() string. Mirrors the desktop's
  * color-mix / `/20` alpha usage (e.g. accent border at 20%).

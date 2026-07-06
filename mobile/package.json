@@ -14,6 +14,7 @@
     "@react-native-community/datetimepicker": "9.1.0",
     "ai": "^7.0.15",
     "expo": "^57.0.0",
+    "expo-clipboard": "~57.0.0",
     "expo-constants": "~57.0.2",
     "expo-document-picker": "~57.0.0",
     "expo-file-system": "~57.0.0",
@@ -23,7 +24,9 @@
     "expo-router": "~57.0.2",
     "expo-sqlite": "~57.0.0",
     "expo-status-bar": "~57.0.0",
+    "lowlight": "^3.3.0",
     "lucide-react-native": "^1.23.0",
+    "markdown-it-mark": "^4.0.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.0",
@@ -35,6 +38,7 @@
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "4.25.2",
     "react-native-svg": "15.15.4",
+    "react-native-webview": "13.16.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {
