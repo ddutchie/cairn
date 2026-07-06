@@ -1,4 +1,4 @@
-import React, { useMemo, useRef } from "react";
+import React, { useMemo } from "react";
 import { Linking, Text, View, Pressable } from "react-native";
 import Markdown, { MarkdownIt, type RenderRules, type ASTNode } from "react-native-markdown-display";
 import markdownItMark from "markdown-it-mark";
@@ -56,14 +56,8 @@ export function MarkdownView({
     Linking.openURL(url).catch(() => {});
     return false;
   };
-
-  // Checkbox render order counter — reset each render pass so tap → source index
-  // stays aligned with the top-to-bottom order the parser emits.
-  const checkboxCounter = useRef(0);
-  checkboxCounter.current = 0;
-
   const rules = useMemo(
-    () => makeRules(t, content ?? "", checkboxCounter, onChangeContent),
+    () => makeRules(t, content ?? "", onChangeContent),
     [t, content, onChangeContent],
   );
 
@@ -80,18 +74,70 @@ export function MarkdownView({
 }
 
 // A single markdown-it instance: GFM-ish (breaks + linkify + typographer) plus
-// ==highlight== support. Tables/strikethrough are on by default in markdown-it.
-const markdownItInstance = MarkdownIt({ breaks: true, linkify: true, typographer: true }).use(
-  markdownItMark,
-);
+// ==highlight== support and task-list detection. Tables/strikethrough are on by
+// default in markdown-it.
+const markdownItInstance = MarkdownIt({ breaks: true, linkify: true, typographer: true })
+  .use(markdownItMark)
+  .use(taskListPlugin as unknown as Parameters<ReturnType<typeof MarkdownIt>["use"]>[0]);
 
-const CHECKBOX_RE = /^\[([ xX])\]\s?/;
+/**
+ * markdown-it plugin: detect GFM task-list items. For each list item whose first
+ * inline text starts with `[ ]`/`[x]`, strip that marker from the text token and
+ * stash `{ isTask, checked, taskIndex }` on the `list_item_open` token's meta.
+ * Stripping here (not in the render rule) is what stops the literal `[x]` from
+ * rendering twice — the marker is gone from the children by render time.
+ */
+function taskListPlugin(md: MdItLike) {
+  md.core.ruler.after("inline", "cairn_task_lists", (state) => {
+    const tokens = state.tokens as MdToken[];
+    let taskIndex = 0;
+    for (let i = 0; i < tokens.length; i++) {
+      if (tokens[i].type !== "list_item_open") continue;
+      // Find the inline token inside this list item (list_item_open →
+      // paragraph_open → inline).
+      const inline = tokens[i + 2];
+      if (!inline || inline.type !== "inline" || !inline.children?.length) continue;
+      const firstText = inline.children.find((c) => c.type === "text");
+      if (!firstText) continue;
+      const m = /^\[([ xX])\]\s?/.exec(firstText.content);
+      if (!m) continue;
+      firstText.content = firstText.content.slice(m[0].length);
+      tokens[i].meta = {
+        ...(tokens[i].meta as object),
+        isTask: true,
+        checked: m[1].toLowerCase() === "x",
+        taskIndex,
+      };
+      taskIndex += 1;
+    }
+    return true;
+  });
+}
+
+// Minimal structural types for the markdown-it plugin (no @types/markdown-it).
+interface MdToken {
+  type: string;
+  content: string;
+  meta?: unknown;
+  children?: MdToken[] | null;
+}
+interface MdItLike {
+  core: {
+    ruler: {
+      after: (
+        after: string,
+        name: string,
+        fn: (state: { tokens: unknown[] }) => boolean,
+      ) => void;
+    };
+  };
+}
+
 
 /** Custom render rules — code fences, callouts, highlight, checkboxes, swatches. */
 function makeRules(
   t: Theme,
   source: string,
-  checkboxCounter: React.MutableRefObject<number>,
   onChangeContent?: (next: string) => void,
 ): RenderRules {
   const CALLOUT_ACCENT: Record<string, string> = {
@@ -167,41 +213,43 @@ function makeRules(
       );
     },
 
-    // Task-list checkboxes: a list item whose text starts with `[ ]`/`[x]`.
+    // Task-list checkboxes (tagged by taskListPlugin) render an icon in place of
+    // the bullet; plain list items keep the default bullet/number.
     list_item: (node, children, parent, styles) => {
-      const leading = extractFirstText(node);
-      const cm = leading.match(CHECKBOX_RE);
-      if (cm) {
-        const checked = cm[1].toLowerCase() === "x";
-        const index = checkboxCounter.current;
-        checkboxCounter.current += 1;
+      const meta = (node as { sourceMeta?: { isTask?: boolean; checked?: boolean; taskIndex?: number } })
+        .sourceMeta;
+      if (meta?.isTask) {
+        const checked = !!meta.checked;
+        const index = meta.taskIndex ?? 0;
         const interactive = !!onChangeContent;
         return (
-          <View key={node.key} style={{ flexDirection: "row", alignItems: "flex-start", marginBottom: 4 }}>
+          <View key={node.key} style={styles._VIEW_SAFE_list_item}>
             <Pressable
               disabled={!interactive}
               hitSlop={8}
               onPress={() => onChangeContent?.(toggleCheckboxInSource(source, index))}
-              style={{ paddingTop: 3, paddingRight: 8 }}
+              style={{ paddingTop: 2, paddingRight: 8 }}
             >
               {checked ? (
-                <CheckSquare size={16} color={t.accent} />
+                <CheckSquare size={17} color={t.accent} />
               ) : (
-                <Square size={16} color={t.textTertiary} />
+                <Square size={17} color={t.textTertiary} />
               )}
             </Pressable>
-            <View style={{ flex: 1 }}>{children}</View>
+            <View style={styles._VIEW_SAFE_bullet_list_content ?? { flex: 1 }}>{children}</View>
           </View>
         );
       }
-      // Fall back to the default bullet/ordered rendering.
-      const ordered = parent[0]?.type === "ordered_list";
+
+      // Plain list item — mirror the library's default bullet / ordered marker
+      // so non-task lists look identical to before.
+      const ordered = hasParentType(parent, "ordered_list");
       return (
-        <View key={node.key} style={{ flexDirection: "row", marginBottom: 4 }}>
-          <Text style={ordered ? styles.ordered_list_icon : styles.bullet_list_icon}>
-            {ordered ? `${(node.index ?? 0) + 1}.` : "•"}
+        <View key={node.key} style={styles._VIEW_SAFE_list_item}>
+          <Text style={ordered ? styles.ordered_list_icon : styles.bullet_list_icon} accessible={false}>
+            {ordered ? `${(node.index ?? 0) + 1}.` : "\u2022"}
           </Text>
-          <View style={{ flex: 1 }}>{children}</View>
+          <View style={styles._VIEW_SAFE_bullet_list_content ?? { flex: 1 }}>{children}</View>
         </View>
       );
     },
@@ -231,6 +279,11 @@ function extractFenceLang(node: ASTNode): string | undefined {
   const info = (node as { sourceInfo?: string }).sourceInfo;
   if (!info) return undefined;
   return info.trim().split(/\s+/)[0] || undefined;
+}
+
+/** True if any ancestor node is a list of the given type. */
+function hasParentType(parents: ASTNode[], type: string): boolean {
+  return parents.some((p) => p.type === type);
 }
 
 /** Best-effort: pull the first text string out of a markdown-it node subtree. */
@@ -289,7 +342,10 @@ function markdownStyles(t: Theme) {
     fence: { color: t.textPrimary, backgroundColor: t.surface2, fontFamily: mono, fontSize: 13, padding: 12, borderRadius: 8, marginBottom: 12 },
     bullet_list: { marginVertical: 8 },
     ordered_list: { marginVertical: 8 },
-    list_item: { color: t.textPrimary, marginBottom: 4 },
+    // Row layout comes from the library default; we add spacing + alignment.
+    list_item: { flexDirection: "row" as const, justifyContent: "flex-start" as const, alignItems: "flex-start" as const, marginBottom: 4 },
+    bullet_list_content: { flex: 1 },
+    ordered_list_content: { flex: 1 },
     bullet_list_icon: { color: t.accent, marginRight: 8, lineHeight: LINE },
     ordered_list_icon: { color: t.textSecondary, marginRight: 8, lineHeight: LINE },
     hr: { backgroundColor: t.border, height: 1, marginVertical: 16 },
