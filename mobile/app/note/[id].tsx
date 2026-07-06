@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { MoreHorizontal, Pin } from "lucide-react-native";
 import { KeyboardAwareScrollView, KeyboardStickyView } from "react-native-keyboard-controller";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getNote, updateNote, tagsForNote, noteTagIds, setNoteTags, pinNote, softDeleteNote } from "@/db/queries";
 import { MarkdownView } from "@/components/MarkdownView";
 import { TagChips } from "@/components/TagChips";
@@ -28,6 +29,7 @@ export default function NoteDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const t = useTheme();
+  const insets = useSafeAreaInsets();
   const [note, setNote] = useState(() => (id ? getNote(id) : null));
 
   const [editing, setEditing] = useState(false);
@@ -244,6 +246,7 @@ export default function NoteDetail() {
               aiEnabled
               loading={aiLoading}
               onDismiss={() => bodyRef.current?.blur()}
+              bottomInset={insets.bottom}
             />
           </KeyboardStickyView>
         </>

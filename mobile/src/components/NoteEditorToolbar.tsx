@@ -1,5 +1,19 @@
 import { useEffect, useRef, useState } from "react";
-import { View, Text, Pressable, ScrollView, TextInput, ActivityIndicator, StyleSheet } from "react-native";
+import {
+  View,
+  Text,
+  Pressable,
+  ScrollView,
+  TextInput,
+  ActivityIndicator,
+  StyleSheet,
+  type LayoutChangeEvent,
+  type NativeSyntheticEvent,
+  type NativeScrollEvent,
+} from "react-native";
+import Animated, { useAnimatedStyle, interpolate } from "react-native-reanimated";
+import { useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
+import { ChevronLeft, ChevronRight } from "lucide-react-native";
 import {
   Bold,
   Italic,
@@ -25,7 +39,7 @@ import {
   Wand2,
   X,
 } from "lucide-react-native";
-import { useTheme, type Theme } from "@/theme";
+import { useTheme, withAlpha, type Theme } from "@/theme";
 import { REQUIRES_SELECTION, type FormatAction } from "@cairn/shared/notes/format";
 import { AI_ACTIONS, type AITextAction } from "@cairn/shared/notes/ai-actions";
 
@@ -72,6 +86,72 @@ const AI_ICONS: Record<AITextAction, typeof Bold> = {
 // ── Component ───────────────────────────────────────────────────────────────
 
 /**
+ * A horizontally-scrolling row that shows a chevron cue at whichever edge has
+ * more content off-screen, so it's obvious the row scrolls. The cue is a small
+ * pill tinted with the bar background (a cheap edge-fade — no LinearGradient
+ * dependency) with a chevron on top. It hides once you reach that end.
+ */
+function ScrollAffordanceRow({ children, fill }: { children: React.ReactNode; fill?: boolean }) {
+  const t = useTheme();
+  const styles = makeStyles(t);
+  const [canLeft, setCanLeft] = useState(false);
+  const [canRight, setCanRight] = useState(false);
+
+  const update = (contentW: number, layoutW: number, x: number) => {
+    setCanLeft(x > 1);
+    setCanRight(x < contentW - layoutW - 1);
+  };
+  const layoutW = useRef(0);
+  const contentW = useRef(0);
+  const offX = useRef(0);
+
+  const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    offX.current = e.nativeEvent.contentOffset.x;
+    update(contentW.current, layoutW.current, offX.current);
+  };
+  const onLayout = (e: LayoutChangeEvent) => {
+    layoutW.current = e.nativeEvent.layout.width;
+    update(contentW.current, layoutW.current, offX.current);
+  };
+  const onContentSize = (w: number) => {
+    contentW.current = w;
+    update(contentW.current, layoutW.current, offX.current);
+  };
+
+  return (
+    <View style={[styles.affordanceWrap, fill && styles.affordanceFill]} onLayout={onLayout}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.rowScroll}
+        keyboardShouldPersistTaps="always"
+        onScroll={onScroll}
+        scrollEventThrottle={16}
+        onContentSizeChange={onContentSize}
+      >
+        {children}
+      </ScrollView>
+      {canLeft && (
+        <View style={[styles.edgeCue, styles.edgeLeft]} pointerEvents="none">
+          <View style={[styles.fadeBand, { backgroundColor: withAlpha(t.surface2, 1), left: 0 }]} />
+          <View style={[styles.fadeBand, { backgroundColor: withAlpha(t.surface2, 0.6), left: 8 }]} />
+          <View style={[styles.fadeBand, { backgroundColor: withAlpha(t.surface2, 0.25), left: 16 }]} />
+          <ChevronLeft size={16} color={t.textSecondary} />
+        </View>
+      )}
+      {canRight && (
+        <View style={[styles.edgeCue, styles.edgeRight]} pointerEvents="none">
+          <View style={[styles.fadeBand, { backgroundColor: withAlpha(t.surface2, 1), right: 0 }]} />
+          <View style={[styles.fadeBand, { backgroundColor: withAlpha(t.surface2, 0.6), right: 8 }]} />
+          <View style={[styles.fadeBand, { backgroundColor: withAlpha(t.surface2, 0.25), right: 16 }]} />
+          <ChevronRight size={16} color={t.textSecondary} />
+        </View>
+      )}
+    </View>
+  );
+}
+
+/**
  * The mobile note-editor formatting + AI toolbar — the analogue of the desktop
  * AITextToolbar. Two rows:
  *   1. AI actions (rephrase / summarize / expand / fix grammar / change tone /
@@ -86,6 +166,7 @@ export function NoteEditorToolbar({
   aiEnabled,
   loading,
   onDismiss,
+  bottomInset = 0,
 }: {
   onFormat: (action: FormatAction) => void;
   onAction: (action: AITextAction, customPrompt?: string) => void;
@@ -93,12 +174,23 @@ export function NoteEditorToolbar({
   aiEnabled: boolean;
   loading: boolean;
   onDismiss: () => void;
+  /** Home-indicator inset, applied only while the keyboard is closed. */
+  bottomInset?: number;
 }) {
   const t = useTheme();
   const styles = makeStyles(t);
   const [showCustom, setShowCustom] = useState(false);
   const [customPrompt, setCustomPrompt] = useState("");
   const inputRef = useRef<TextInput>(null);
+
+  // The toolbar rides the keyboard via KeyboardStickyView, so when the keyboard
+  // is up it sits flush against it (no inset). When closed it drops to the
+  // screen bottom and must clear the home indicator — animate the extra bottom
+  // padding from `bottomInset` (closed) to 0 (open).
+  const { progress } = useReanimatedKeyboardAnimation();
+  const insetStyle = useAnimatedStyle(() => ({
+    paddingBottom: interpolate(progress.value, [0, 1], [bottomInset, 0]),
+  }));
 
   useEffect(() => {
     if (showCustom) inputRef.current?.focus();
@@ -121,7 +213,7 @@ export function NoteEditorToolbar({
   }
 
   return (
-    <View style={styles.bar}>
+    <Animated.View style={[styles.bar, insetStyle]}>
       {/* ── AI row ── */}
       {aiEnabled && (
         <View style={styles.aiRow}>
@@ -132,7 +224,7 @@ export function NoteEditorToolbar({
             </View>
           ) : (
             <>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rowScroll} keyboardShouldPersistTaps="always">
+              <ScrollAffordanceRow fill>
                 {AI_ACTIONS.map(({ id, label }) => {
                   const Icon = AI_ICONS[id];
                   const active = id === "custom" && showCustom;
@@ -150,7 +242,7 @@ export function NoteEditorToolbar({
                     </Pressable>
                   );
                 })}
-              </ScrollView>
+              </ScrollAffordanceRow>
               <Pressable onPress={onDismiss} hitSlop={10} style={styles.dismiss}>
                 <X size={16} color={t.textTertiary} />
               </Pressable>
@@ -180,7 +272,7 @@ export function NoteEditorToolbar({
       )}
 
       {/* ── Formatting row ── */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rowScroll} keyboardShouldPersistTaps="always">
+      <ScrollAffordanceRow>
         {FORMAT_GROUPS.map((group, gi) => (
           <View key={gi} style={styles.group}>
             {gi > 0 && <View style={styles.divider} />}
@@ -200,8 +292,8 @@ export function NoteEditorToolbar({
             })}
           </View>
         ))}
-      </ScrollView>
-    </View>
+      </ScrollAffordanceRow>
+    </Animated.View>
   );
 }
 
@@ -210,6 +302,19 @@ function makeStyles(t: Theme) {
     bar: { backgroundColor: t.surface2, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: t.border },
     aiRow: { flexDirection: "row", alignItems: "center", borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.border, paddingRight: 8 },
     rowScroll: { alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 6 },
+    affordanceWrap: { position: "relative" },
+    affordanceFill: { flex: 1 },
+    edgeCue: {
+      position: "absolute",
+      top: 0,
+      bottom: 0,
+      width: 30,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    edgeLeft: { left: 0, alignItems: "flex-start", paddingLeft: 2 },
+    edgeRight: { right: 0, alignItems: "flex-end", paddingRight: 2 },
+    fadeBand: { position: "absolute", top: 0, bottom: 0, width: 14 },
     aiChip: { flexDirection: "row", alignItems: "center", gap: 5, paddingVertical: 6, paddingHorizontal: 10, borderRadius: 8 },
     aiChipActive: { backgroundColor: t.surface3 },
     aiLabel: { fontSize: 13, fontWeight: "500" },
