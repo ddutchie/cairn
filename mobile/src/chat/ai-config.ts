@@ -20,11 +20,15 @@ import { getDb } from "../db";
 
 const KEY_BASE_URL = "ai.openai.baseUrl";
 const KEY_MODEL = "ai.openai.model";
+const KEY_PROVIDER = "ai.provider"; // "rork" | "openai"
 const SECURE_KEY_APIKEY = "ai.openai.apiKey"; // secure-store key
+
+/** Which backend the user prefers when more than one is available. */
+export type ProviderPref = "rork" | "openai";
 
 /** Sensible default for an OpenAI-compatible endpoint. */
 export const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
-export const DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
+export const DEFAULT_OPENAI_MODEL = "gpt-4.1-mini";
 
 export interface OpenAIConfig {
   baseUrl: string;
@@ -62,6 +66,21 @@ export function getOpenAIModel(): string {
 export function setOpenAIEndpoint(baseUrl: string, model: string): void {
   setSetting(KEY_BASE_URL, baseUrl.trim());
   setSetting(KEY_MODEL, model.trim());
+}
+
+/**
+ * The user's preferred provider. Defaults to "rork" when a Rork endpoint was
+ * built in (so first-party builds are zero-config), otherwise "openai".
+ */
+export function getProviderPref(rorkAvailable: boolean): ProviderPref {
+  const stored = getSetting(KEY_PROVIDER);
+  if (stored === "rork" || stored === "openai") return stored;
+  return rorkAvailable ? "rork" : "openai";
+}
+
+/** Persist the preferred provider. */
+export function setProviderPref(pref: ProviderPref): void {
+  setSetting(KEY_PROVIDER, pref);
 }
 
 /** Read the API key from the keychain (null if none stored). */

@@ -13,15 +13,17 @@ import {
 import Animated, { useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { KeyboardStickyView, useKeyboardHandler } from "react-native-keyboard-controller";
 import { Stack } from "expo-router";
-import { CheckCircle, Bot, User, Send, ImagePlus, X, Trash2 } from "lucide-react-native";
+import { CheckCircle, Bot, User, Send, ImagePlus, X, Trash2, Settings2 } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { TabScreen } from "@/components/TabScreen";
 import { GlassBar, glassActive } from "@/components/GlassBar";
 import { MarkdownView } from "@/components/MarkdownView";
+import { AiSettingsSheet } from "@/components/AiSettingsSheet";
 import { useTheme, withAlpha, type Theme } from "@/theme";
 import { runAgent, userMessage, assistantMessage, type AgentEvent, type Attachment } from "@/chat/agent";
 import { pickImages, takePhoto } from "@/chat/attachments";
-import { loadChatHistory, saveChatMessage, clearChatHistory, type StoredMessage } from "@/db/chat-store";
+import { loadChatHistory, saveChatMessage, clearChatHistory } from "@/db/chat-store";
+import { hasProvider } from "@/chat/providers";
 import { prettifyToolLabel } from "@cairn/shared/ui/constants";
 import type { UIMessage } from "@/chat/providers/types";
 
@@ -66,9 +68,20 @@ export default function ChatScreen() {
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [busy, setBusy] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [configured, setConfigured] = useState(true);
   const scrollRef = useRef<ScrollView>(null);
   // Persistent agent conversation (UIMessage parts format) across turns.
   const conversation = useRef<UIMessage[]>([]);
+
+  // Whether any AI provider is usable (built-in Rork or a configured OpenAI
+  // key). Re-checked on mount and whenever the settings sheet closes.
+  const refreshConfigured = useCallback(() => {
+    hasProvider().then(setConfigured).catch(() => setConfigured(false));
+  }, []);
+  useEffect(() => {
+    refreshConfigured();
+  }, [refreshConfigured]);
 
   // Restore local (on-device) chat history once on mount: rebuild both the UI
   // bubbles and the agent conversation so context survives an app relaunch.
@@ -219,12 +232,18 @@ export default function ChatScreen() {
       <Stack.Screen
         options={{
           title: "Chat",
-          headerRight: () =>
-            messages.length > 0 ? (
-              <Pressable onPress={onClear} hitSlop={8} disabled={busy}>
-                <Trash2 size={20} color={busy ? t.textTertiary : t.textSecondary} />
+          headerRight: () => (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 16 }}>
+              {messages.length > 0 && (
+                <Pressable onPress={onClear} hitSlop={8} disabled={busy}>
+                  <Trash2 size={20} color={busy ? t.textTertiary : t.textSecondary} />
+                </Pressable>
+              )}
+              <Pressable onPress={() => setSettingsOpen(true)} hitSlop={8}>
+                <Settings2 size={20} color={t.textSecondary} />
               </Pressable>
-            ) : null,
+            </View>
+          ),
         }}
       />
       <View style={{ flex: 1 }}>
@@ -246,6 +265,12 @@ export default function ChatScreen() {
                 Ask about your notes, or tell the assistant to create or edit them. Changes sync to your
                 desktop.
               </Text>
+              {!configured && (
+                <Pressable style={styles.configureBtn} onPress={() => setSettingsOpen(true)}>
+                  <Settings2 size={14} color={t.accentFg} />
+                  <Text style={styles.configureBtnText}>Set up AI</Text>
+                </Pressable>
+              )}
             </View>
           ) : (
             messages.map((m, i) => <Bubble key={i} m={m} t={t} styles={styles} />)
@@ -300,6 +325,14 @@ export default function ChatScreen() {
           </View>
         </KeyboardStickyView>
       </View>
+
+      <AiSettingsSheet
+        visible={settingsOpen}
+        onClose={() => {
+          setSettingsOpen(false);
+          refreshConfigured();
+        }}
+      />
     </TabScreen>
   );
 }
@@ -353,6 +386,17 @@ function makeStyles(t: Theme) {
     empty: { alignItems: "center", justifyContent: "center", paddingVertical: 60, paddingHorizontal: 24 },
     emptyTitle: { fontSize: 18, fontWeight: "700", color: t.textSecondary },
     emptyHint: { fontSize: 13, color: t.textTertiary, textAlign: "center", marginTop: 8, lineHeight: 19 },
+    configureBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      marginTop: 18,
+      backgroundColor: t.accent,
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+      borderRadius: 12,
+    },
+    configureBtnText: { color: t.accentFg, fontSize: 14, fontWeight: "600" },
 
     // Row: avatar + column (reversed for user), matching the desktop bubble.
     row: { flexDirection: "row", alignItems: "flex-start", gap: 8, marginBottom: 14 },

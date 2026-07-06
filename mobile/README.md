@@ -33,8 +33,8 @@ The active provider is chosen automatically:
    injected from `.env.local` at build time only. Do not add it to git.
 
 2. **OpenAI-compatible** — the default for anyone building Cairn themselves.
-   Leave `EXPO_PUBLIC_TOOLKIT_URL` blank and configure an endpoint in-app under
-   **Settings → AI**:
+   Leave `EXPO_PUBLIC_TOOLKIT_URL` blank and configure an endpoint in-app via the
+   **gear icon on the Chat screen**:
    - **Base URL** — any OpenAI-compatible `/v1` endpoint (OpenAI, Azure OpenAI,
      OpenRouter, Together, Groq, LM Studio, Ollama's OpenAI shim, …).
      Default: `https://api.openai.com/v1`.
@@ -42,7 +42,10 @@ The active provider is chosen automatically:
    - **API key** — stored in the device keychain via `expo-secure-store`, never
      in the database and never synced.
 
-If neither is configured, chat surfaces a "No AI provider configured" prompt.
+When a Rork endpoint **is** built in, the AI settings sheet shows a **toggle**
+so the user can still switch to their own OpenAI-compatible endpoint. When Rork
+is **not** built in, only the OpenAI fields are shown. If neither is configured,
+chat shows a "Set up AI" prompt.
 
 ### Why this split
 
@@ -63,8 +66,10 @@ source build never depends on (or exposes) our endpoint.
 - `providers/openai.ts` — OpenAI `/v1/chat/completions`, maps our message/tool
   shapes to OpenAI's and translates streamed chunks back to `StreamEvent`s.
 - `providers/index.ts` — `resolveProvider()` auto-selection.
-- `chat/ai-config.ts` — persists the OpenAI base URL/model (SQLite `app_settings`)
-  and API key (keychain).
+- `chat/ai-config.ts` — persists the OpenAI base URL/model (SQLite `app_settings`),
+  API key (keychain), and the provider preference (`getProviderPref`/`setProviderPref`).
+- `components/AiSettingsSheet.tsx` — the in-app AI settings sheet (Rork/OpenAI
+  toggle + OpenAI base URL / model / key fields), opened from the Chat header.
 
 The agent loop (`chat/agent.ts`) is provider-agnostic — it only consumes the
 normalised event stream.

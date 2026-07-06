@@ -223,3 +223,37 @@ function makeStreamer(config: OpenAIConfig) {
 export function makeOpenAIProvider(config: OpenAIConfig): ChatProvider {
   return { name: "OpenAI-compatible", stream: makeStreamer(config) };
 }
+
+/**
+ * Query the endpoint's available models via `GET {base}/models` (the standard
+ * OpenAI list-models call, supported by most compatible servers). Returns model
+ * ids sorted alphabetically. Throws with a readable message on failure so the
+ * settings UI can surface it (bad key, endpoint that doesn't implement /models,
+ * offline, …).
+ */
+export async function listModels(baseUrl: string, apiKey: string): Promise<string[]> {
+  const url = new URL("models", baseUrl.replace(/\/?$/, "/")).toString();
+  const res = await expoFetch(url, {
+    method: "GET",
+    headers: { Accept: "application/json", Authorization: `Bearer ${apiKey}` },
+  });
+  if (!res.ok) {
+    throw new Error(
+      res.status === 401 || res.status === 403
+        ? "Couldn't list models: the API key was rejected."
+        : `Couldn't list models (HTTP ${res.status}).`,
+    );
+  }
+  let json: { data?: { id?: string }[] } | { id?: string }[];
+  try {
+    json = (await res.json()) as typeof json;
+  } catch {
+    throw new Error("Couldn't parse the models response.");
+  }
+  // OpenAI shape: { data: [{ id }] }. Some servers return a bare array.
+  const list = Array.isArray(json) ? json : (json.data ?? []);
+  const ids = list
+    .map((m) => (typeof m === "string" ? m : m?.id))
+    .filter((id): id is string => typeof id === "string" && id.length > 0);
+  return Array.from(new Set(ids)).sort((a, b) => a.localeCompare(b));
+}

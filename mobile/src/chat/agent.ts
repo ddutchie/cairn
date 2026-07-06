@@ -32,6 +32,16 @@ export interface AgentEvent {
 
 /** Build the system message (as a UIMessage part). */
 function systemMessage(): UIMessage {
+  const now = new Date();
+  // Human-readable date (with weekday) for relative reasoning, plus the ISO
+  // date so the model emits correct YYYY-MM-DD values for tool args (dueDate).
+  const humanDate = now.toLocaleDateString(undefined, {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+  const isoDate = now.toISOString().slice(0, 10);
   return {
     id: msgId(),
     role: "system",
@@ -40,6 +50,7 @@ function systemMessage(): UIMessage {
         type: "text",
         text: [
           "You are Cairn's mobile assistant. You help the user read and edit their notes and tasks.",
+          `The current date is ${humanDate} (${isoDate}). Use it to resolve relative dates like "tomorrow" or "next week", and always pass dates to tools as YYYY-MM-DD.`,
           "You have tools that run against the user's local workspace; writes sync to their desktop.",
           "ALWAYS begin by calling get_cairn_context to get project ids, columns, and tags — there is no separate 'list projects' tool.",
           "To summarise or reason about a project, then call get_project_context_pack(project_id): it returns the project, columns, pinned notes, open tasks grouped by column, and recent activity in one call. Prefer it over many small list/get calls.",
@@ -96,6 +107,14 @@ export async function runAgent(
 ): Promise<string> {
   const tools = toolsForAgent();
   let finalText = "";
+
+  // Ensure the conversation is led by an up-to-date system prompt. Refresh it
+  // each run so the injected current date doesn't go stale in a long session.
+  if (conversation[0]?.role === "system") {
+    conversation[0] = systemMessage();
+  } else {
+    conversation.unshift(systemMessage());
+  }
 
   let provider;
   try {
