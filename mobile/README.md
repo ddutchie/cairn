@@ -73,3 +73,69 @@ source build never depends on (or exposes) our endpoint.
 
 The agent loop (`chat/agent.ts`) is provider-agnostic — it only consumes the
 normalised event stream.
+
+## Releasing to TestFlight
+
+CI builds the iOS app on **EAS Build** (Expo's cloud macOS workers, managed
+signing) and uploads it to TestFlight with **EAS Submit**. The workflow lives at
+`.github/workflows/release-mobile.yml`.
+
+### One-time setup
+
+1. Create an Expo account and, in `mobile/`, initialise the EAS project:
+   ```sh
+   npm i -g eas-cli
+   eas login
+   eas init                 # fills extra.eas.projectId in app.json (commit it)
+   eas credentials          # set up iOS distribution cert + provisioning (managed)
+   ```
+2. Configure TestFlight submission credentials once (App Store Connect API key,
+   stored on EAS, not in git):
+   ```sh
+   eas submit --platform ios --profile production   # prompts + stores the key
+   ```
+3. In the GitHub repo, add secret **`EXPO_TOKEN`**
+   (expo.dev → Account → Access tokens). CI uses it for build + submit.
+
+### Cutting a release
+
+```sh
+./scripts/releasemobile.sh 2.4.0
+```
+
+This bumps `mobile/app.json` `version`, commits, and pushes the tag
+`mobile-v2.4.0`, which triggers the workflow. The iOS **build number** is
+auto-incremented by EAS (`appVersionSource: "remote"` in `eas.json`) — you only
+bump the marketing version. You can also run the workflow manually from the
+Actions tab (**Release Mobile (TestFlight)** → Run workflow).
+
+> The first-party `EXPO_PUBLIC_TOOLKIT_URL` (Rork endpoint) is not in `eas.json`.
+> Set it as an EAS environment variable so cloud builds get it without committing
+> it: `eas env:create --name EXPO_PUBLIC_TOOLKIT_URL --value <url> --environment production`.
+> Builds without it fall back to the in-app OpenAI-compatible provider.
+
+## Over-the-air updates (EAS Update)
+
+JS and asset changes can ship to already-installed builds **without a new
+TestFlight submission** via EAS Update — much cheaper and faster than a full
+build. Configured with `runtimeVersion: { policy: "appVersion" }`, so updates
+only reach builds with the same marketing `version`.
+
+Publish an update:
+
+```sh
+./scripts/publishupdate.sh "what changed"          # → production channel
+./scripts/publishupdate.sh "what changed" preview  # → preview channel
+```
+
+The app checks for updates on cold launch and on returning to the foreground
+(`src/updates/useAppUpdates.ts`), downloads them in the background, and shows a
+**"An update is ready — Restart"** banner (`src/components/UpdateBanner.tsx`)
+that reloads into the new bundle when tapped. Updates are disabled in dev, so
+this is inert until a release/EAS build.
+
+> **Native changes need a full build.** Adding a native module, changing a
+> config plugin, bumping the SDK, or adding permissions changes the
+> runtimeVersion — push those with `scripts/releasemobile.sh` (build + submit),
+> not an OTA update. Shipping JS that expects native changes to an old build
+> will crash it.

@@ -8,6 +8,7 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 import * as SplashScreen from "expo-splash-screen";
 import { initDatabase } from "@/db";
 import { startAutoSync } from "@/sync/controller";
+import { UpdateBanner } from "@/components/UpdateBanner";
 import { useTheme } from "@/theme";
 
 // Keep the native splash up until the DB is ready, so there's no flash between
@@ -82,6 +83,7 @@ export default function RootLayout() {
               <Stack.Screen name="conflicts" options={{ title: "Sync Conflicts" }} />
             </Stack>
           </ThemeProvider>
+          <UpdateBanner />
         </SafeAreaProvider>
       </KeyboardProvider>
     </GestureHandlerRootView>
