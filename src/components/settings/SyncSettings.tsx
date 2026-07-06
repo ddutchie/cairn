@@ -36,7 +36,6 @@ export function SyncSettings() {
   useEffect(() => {
     const api = syncApi();
     if (!api) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     api.getFolder().then(setFolder).catch(() => {});
   }, []);
 
