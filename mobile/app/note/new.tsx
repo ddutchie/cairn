@@ -4,13 +4,13 @@ import {
   Text,
   TextInput,
   StyleSheet,
-  Pressable,
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
 import { createNote } from "@/db/queries";
 import { useTheme, type Theme } from "@/theme";
+import { ICON_CHECK } from "@/components/toolbar-icons";
 
 /**
  * New-note composer. `project` (id) is required; `folder` optionally pre-fills
@@ -40,13 +40,19 @@ export default function NewNote() {
         options={{
           title: "New Note",
           headerBackTitle: "Back",
-          headerRight: () => (
-            <Pressable onPress={save} hitSlop={12} disabled={!canSave}>
-              <Text style={[styles.action, !canSave && styles.actionDisabled]}>Save</Text>
-            </Pressable>
-          ),
         }}
       />
+      <Stack.Toolbar placement="right">
+        <Stack.Toolbar.Button
+          icon={ICON_CHECK}
+          variant="done"
+          disabled={!canSave}
+          accessibilityLabel="Save"
+          onPress={save}
+        >
+          Save
+        </Stack.Toolbar.Button>
+      </Stack.Toolbar>
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         {folder ? <Text style={styles.folder}>{folder}</Text> : null}
         <TextInput
@@ -80,7 +86,5 @@ function makeStyles(t: Theme) {
     folder: { fontSize: 12, color: t.accent, marginBottom: 8 },
     titleInput: { fontSize: 24, fontWeight: "700", color: t.textPrimary, padding: 0 },
     bodyInput: { fontSize: 15, lineHeight: 22, color: t.textPrimary, marginTop: 16, fontFamily: "Menlo", minHeight: 320 },
-    action: { color: t.accent, fontSize: 16, fontWeight: "600" },
-    actionDisabled: { color: t.textTertiary },
   });
 }

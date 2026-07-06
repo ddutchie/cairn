@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { Stack } from "expo-router";
+import { Stack, ThemeProvider, DarkTheme, DefaultTheme } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { View, Text, ActivityIndicator, StyleSheet } from "react-native";
+import { View, Text, ActivityIndicator, StyleSheet, useColorScheme } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
@@ -11,6 +11,7 @@ import { useTheme } from "@/theme";
 
 export default function RootLayout() {
   const t = useTheme();
+  const scheme = useColorScheme();
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -53,17 +54,22 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <KeyboardProvider>
         <SafeAreaProvider>
-          <StatusBar style="auto" />
-          <Stack screenOptions={{ headerShown: true, ...headerStyle }}>
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen name="project/[id]" options={{ title: "Project" }} />
-            <Stack.Screen name="note/new" options={{ title: "New Note", presentation: "modal" }} />
-            <Stack.Screen name="note/[id]" options={{ title: "Note" }} />
-            <Stack.Screen name="card/new" options={{ title: "New Task", presentation: "modal" }} />
-            <Stack.Screen name="card/[id]" options={{ title: "Task" }} />
-            <Stack.Screen name="sync" options={{ title: "Sync", headerBackTitle: "Projects" }} />
-            <Stack.Screen name="conflicts" options={{ title: "Sync Conflicts" }} />
-          </Stack>
+          {/* ThemeProvider drives the navigator theme so screen transitions and
+              iOS 26 liquid-glass toolbar buttons don't flash a light background
+              in dark mode (see Expo "Stack Toolbar → Common problems"). */}
+          <ThemeProvider value={scheme === "dark" ? DarkTheme : DefaultTheme}>
+            <StatusBar style="auto" />
+            <Stack screenOptions={{ headerShown: true, ...headerStyle }}>
+              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+              <Stack.Screen name="project/[id]" options={{ title: "Project" }} />
+              <Stack.Screen name="note/new" options={{ title: "New Note", presentation: "modal" }} />
+              <Stack.Screen name="note/[id]" options={{ title: "Note" }} />
+              <Stack.Screen name="card/new" options={{ title: "New Task", presentation: "modal" }} />
+              <Stack.Screen name="card/[id]" options={{ title: "Task" }} />
+              <Stack.Screen name="sync" options={{ title: "Sync", headerBackTitle: "Projects" }} />
+              <Stack.Screen name="conflicts" options={{ title: "Sync Conflicts" }} />
+            </Stack>
+          </ThemeProvider>
         </SafeAreaProvider>
       </KeyboardProvider>
     </GestureHandlerRootView>

@@ -6,12 +6,11 @@ import {
   TextInput,
   StyleSheet,
   View,
-  Pressable,
   Alert,
   type NativeSyntheticEvent,
   type TextInputSelectionChangeEventData,
 } from "react-native";
-import { MoreHorizontal, Pin } from "lucide-react-native";
+import { Pin } from "lucide-react-native";
 import { KeyboardAwareScrollView, KeyboardStickyView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getNote, updateNote, tagsForNote, noteTagIds, setNoteTags, pinNote, softDeleteNote } from "@/db/queries";
@@ -20,6 +19,7 @@ import { TagChips } from "@/components/TagChips";
 import { TagPickerSheet } from "@/components/TagPickerSheet";
 import { NoteEditorToolbar } from "@/components/NoteEditorToolbar";
 import { WikilinkPickerSheet } from "@/components/WikilinkPickerSheet";
+import { ICON_CHECK, ICON_CLOSE, ICON_EDIT, ICON_MORE, ICON_PIN, ICON_UNPIN, ICON_TAG, ICON_DELETE } from "@/components/toolbar-icons";
 import { applyFormat, insertWikilink, type FormatAction, type Selection } from "@cairn/shared/notes/format";
 import { buildAIActionPrompt, type AITextAction } from "@cairn/shared/notes/ai-actions";
 import { runTextAction } from "@/chat/agent";
@@ -158,15 +158,6 @@ export default function NoteDetail() {
     ]);
   }, [note, router]);
 
-  const onActions = useCallback(() => {
-    Alert.alert(note?.title || "Note", undefined, [
-      { text: isPinned ? "Unpin" : "Pin", onPress: onPin },
-      { text: "Edit tags", onPress: () => setTagPickerOpen(true) },
-      { text: "Delete", style: "destructive", onPress: onDelete },
-      { text: "Cancel", style: "cancel" },
-    ]);
-  }, [note, isPinned, onPin, onDelete]);
-
   if (!note) {
     return (
       <View style={styles.center}>
@@ -188,33 +179,42 @@ export default function NoteDetail() {
 
   return (
     <View style={styles.container}>
-      <Stack.Screen
-        options={{
-          title: editing ? "Edit note" : note.title || "Note",
-          headerRight: () =>
-            editing ? (
-              <Pressable onPress={onSave} hitSlop={12}>
-                <Text style={styles.action}>Save</Text>
-              </Pressable>
-            ) : (
-              <View style={styles.headerActions}>
-                <Pressable onPress={() => setEditing(true)} hitSlop={12}>
-                  <Text style={styles.action}>Edit</Text>
-                </Pressable>
-                <Pressable onPress={onActions} hitSlop={12}>
-                  <MoreHorizontal size={22} color={t.accent} />
-                </Pressable>
-              </View>
-            ),
-          headerLeft: editing
-            ? () => (
-                <Pressable onPress={onCancel} hitSlop={12}>
-                  <Text style={styles.actionMuted}>Cancel</Text>
-                </Pressable>
-              )
-            : undefined,
-        }}
-      />
+      <Stack.Screen options={{ title: editing ? "Edit note" : note.title || "Note" }} />
+      {editing ? (
+        <>
+          <Stack.Toolbar placement="left">
+            <Stack.Toolbar.Button icon={ICON_CLOSE} accessibilityLabel="Cancel" onPress={onCancel}>
+              Cancel
+            </Stack.Toolbar.Button>
+          </Stack.Toolbar>
+          <Stack.Toolbar placement="right">
+            <Stack.Toolbar.Button icon={ICON_CHECK} variant="done" accessibilityLabel="Save" onPress={onSave}>
+              Save
+            </Stack.Toolbar.Button>
+          </Stack.Toolbar>
+        </>
+      ) : (
+        <Stack.Toolbar placement="right">
+          <Stack.Toolbar.Menu icon={ICON_MORE} accessibilityLabel="Note actions">
+            <Stack.Toolbar.MenuAction
+              icon={isPinned ? ICON_UNPIN : ICON_PIN}
+              isOn={isPinned}
+              onPress={onPin}
+            >
+              {isPinned ? "Unpin" : "Pin"}
+            </Stack.Toolbar.MenuAction>
+            <Stack.Toolbar.MenuAction icon={ICON_TAG} onPress={() => setTagPickerOpen(true)}>
+              Edit tags
+            </Stack.Toolbar.MenuAction>
+            <Stack.Toolbar.MenuAction icon={ICON_DELETE} destructive onPress={onDelete}>
+              Delete
+            </Stack.Toolbar.MenuAction>
+          </Stack.Toolbar.Menu>
+          <Stack.Toolbar.Button icon={ICON_EDIT} accessibilityLabel="Edit" onPress={() => setEditing(true)}>
+            Edit
+          </Stack.Toolbar.Button>
+        </Stack.Toolbar>
+      )}
 
       {editing ? (
         <>
@@ -297,13 +297,10 @@ function makeStyles(t: Theme) {
     content: { padding: 18, paddingBottom: 64 },
     titleRow: { flexDirection: "row", alignItems: "center", gap: 8 },
     title: { fontSize: 24, fontWeight: "700", color: t.textPrimary, flexShrink: 1 },
-    headerActions: { flexDirection: "row", alignItems: "center", gap: 16 },
     folder: { fontSize: 12, color: t.accent, marginTop: 4, marginBottom: 4 },
     md: { marginTop: 12 },
     titleInput: { fontSize: 24, fontWeight: "700", color: t.textPrimary, padding: 0 },
     bodyInput: { fontSize: 15, lineHeight: 22, color: t.textPrimary, marginTop: 16, fontFamily: "Menlo", minHeight: 320 },
-    action: { color: t.accent, fontSize: 16, fontWeight: "600" },
-    actionMuted: { color: t.textTertiary, fontSize: 16 },
     center: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: t.background },
     missing: { color: t.textTertiary },
   });

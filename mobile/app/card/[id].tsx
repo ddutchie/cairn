@@ -1,12 +1,13 @@
 import { useMemo, useState } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, KeyboardAvoidingView, Platform, Alert } from "react-native";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
-import { MoreHorizontal, Calendar, X } from "lucide-react-native";
+import { Calendar, X } from "lucide-react-native";
 import { getCard, listColumns, updateTask, moveCardToColumn, archiveCard, tagsForCard, noteTagIds, setCardTags, type ColumnRow } from "@/db/queries";
 import { TagChips } from "@/components/TagChips";
 import { TagPickerSheet } from "@/components/TagPickerSheet";
 import { DueDatePickerSheet } from "@/components/DueDatePickerSheet";
 import { MarkdownView } from "@/components/MarkdownView";
+import { ICON_CHECK, ICON_MORE, ICON_ARCHIVE } from "@/components/toolbar-icons";
 import { formatDate } from "@cairn/shared/format/date";
 import { useTheme, PRIORITY_COLOR, type Theme } from "@/theme";
 
@@ -73,18 +74,18 @@ export default function CardDetail() {
         options={{
           title: "Edit Task",
           headerBackTitle: "Board",
-          headerRight: () => (
-            <View style={styles.headerActions}>
-              <Pressable onPress={save} hitSlop={12}>
-                <Text style={styles.save}>Save</Text>
-              </Pressable>
-              <Pressable onPress={onArchive} hitSlop={12}>
-                <MoreHorizontal size={22} color={t.accent} />
-              </Pressable>
-            </View>
-          ),
         }}
       />
+      <Stack.Toolbar placement="right">
+        <Stack.Toolbar.Menu icon={ICON_MORE} accessibilityLabel="Task actions">
+          <Stack.Toolbar.MenuAction icon={ICON_ARCHIVE} destructive onPress={onArchive}>
+            Archive
+          </Stack.Toolbar.MenuAction>
+        </Stack.Toolbar.Menu>
+        <Stack.Toolbar.Button icon={ICON_CHECK} variant="done" accessibilityLabel="Save" onPress={save}>
+          Save
+        </Stack.Toolbar.Button>
+      </Stack.Toolbar>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <Text style={styles.label}>Title</Text>
         <TextInput style={styles.titleInput} value={title} onChangeText={setTitle} placeholder="Task title" placeholderTextColor={t.textTertiary} multiline />
@@ -221,8 +222,6 @@ function makeStyles(t: Theme) {
     descHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 18, marginBottom: 8 },
     descToggle: { fontSize: 13, color: t.accent, fontWeight: "600" },
     descPreview: { backgroundColor: t.surface, borderWidth: 1, borderColor: t.border, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 4, minHeight: 160 },
-    save: { color: t.accent, fontSize: 16, fontWeight: "600" },
-    headerActions: { flexDirection: "row", alignItems: "center", gap: 16 },
     center: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: t.background },
     missing: { color: t.textTertiary },
   });

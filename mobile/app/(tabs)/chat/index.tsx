@@ -13,12 +13,13 @@ import {
 import Animated, { useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { KeyboardStickyView, useKeyboardHandler } from "react-native-keyboard-controller";
 import { Stack } from "expo-router";
-import { CheckCircle, Bot, User, Send, ImagePlus, X, Trash2, Settings2 } from "lucide-react-native";
+import { CheckCircle, Bot, User, Send, ImagePlus, X, Settings2 } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { TabScreen } from "@/components/TabScreen";
 import { GlassBar, glassActive } from "@/components/GlassBar";
 import { MarkdownView } from "@/components/MarkdownView";
 import { AiSettingsSheet } from "@/components/AiSettingsSheet";
+import { ICON_DELETE, ICON_SETTINGS } from "@/components/toolbar-icons";
 import { useTheme, withAlpha, type Theme } from "@/theme";
 import { runAgent, userMessage, assistantMessage, type AgentEvent, type Attachment } from "@/chat/agent";
 import { pickImages, takePhoto } from "@/chat/attachments";
@@ -229,23 +230,21 @@ export default function ChatScreen() {
 
   return (
     <TabScreen>
-      <Stack.Screen
-        options={{
-          title: "Chat",
-          headerRight: () => (
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 16 }}>
-              {messages.length > 0 && (
-                <Pressable onPress={onClear} hitSlop={8} disabled={busy}>
-                  <Trash2 size={20} color={busy ? t.textTertiary : t.textSecondary} />
-                </Pressable>
-              )}
-              <Pressable onPress={() => setSettingsOpen(true)} hitSlop={8}>
-                <Settings2 size={20} color={t.textSecondary} />
-              </Pressable>
-            </View>
-          ),
-        }}
-      />
+      <Stack.Screen options={{ title: "Chat" }} />
+      <Stack.Toolbar placement="right">
+        <Stack.Toolbar.Button
+          icon={ICON_DELETE}
+          hidden={messages.length === 0}
+          disabled={busy}
+          accessibilityLabel="Clear chat"
+          onPress={onClear}
+        />
+        <Stack.Toolbar.Button
+          icon={ICON_SETTINGS}
+          accessibilityLabel="AI settings"
+          onPress={() => setSettingsOpen(true)}
+        />
+      </Stack.Toolbar>
       <View style={{ flex: 1 }}>
         {/* Full-height scroll: messages scroll BEHIND the sticky composer and
             the translucent native tab bar. The animated bottom spacer clears

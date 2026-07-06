@@ -26,12 +26,14 @@ export default function ProjectsScreen() {
   useDataChanged(load);
 
   const header = (
-    <Stack.Screen
-      options={{
-        title: "Projects",
-        headerRight: () => <SyncStatusBadge />,
-      }}
-    />
+    <>
+      <Stack.Screen options={{ title: "Projects" }} />
+      <Stack.Toolbar placement="right">
+        <Stack.Toolbar.View>
+          <SyncStatusBadge />
+        </Stack.Toolbar.View>
+      </Stack.Toolbar>
+    </>
   );
 
   if (!loaded) {

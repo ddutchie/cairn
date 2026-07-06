@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 import { View, Text, ScrollView, Pressable, StyleSheet, TextInput } from "react-native";
 import { useLocalSearchParams, useRouter, useFocusEffect, Stack } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ChevronDown, ChevronRight, Folder, FolderOpen, FileText, Plus, Pin, Search, X } from "lucide-react-native";
+import { ChevronDown, ChevronRight, Folder, FolderOpen, FileText, Pin, Search, X } from "lucide-react-native";
 import {
   getProject,
   listNotes,
@@ -19,6 +19,7 @@ import {
 } from "@/db/queries";
 import { TagChips } from "@/components/TagChips";
 import { PressableScale } from "@/components/PressableScale";
+import { ICON_ADD } from "@/components/toolbar-icons";
 import { DraggableBoard } from "@/components/DraggableBoard";
 import { useDataChanged } from "@/sync/useSyncStatus";
 import { useTheme, withAlpha, type Theme } from "@/theme";
@@ -89,13 +90,15 @@ export default function ProjectScreen() {
         options={{
           title: project?.name || "Project",
           headerBackTitle: "Projects",
-          headerRight: () => (
-            <Pressable onPress={onAdd} hitSlop={12}>
-              <Plus size={22} color={t.accent} />
-            </Pressable>
-          ),
         }}
       />
+      <Stack.Toolbar placement="right">
+        <Stack.Toolbar.Button
+          icon={ICON_ADD}
+          accessibilityLabel={tab === "notes" ? "New note" : "New task"}
+          onPress={onAdd}
+        />
+      </Stack.Toolbar>
 
       <View style={styles.segment}>
         <Segment label="Notes" count={notes.length} active={tab === "notes"} onPress={() => setTab("notes")} t={t} />

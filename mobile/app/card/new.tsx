@@ -3,6 +3,7 @@ import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, KeyboardAvoid
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
 import { createTask, listColumns, type ColumnRow } from "@/db/queries";
 import { useTheme, PRIORITY_COLOR, type Theme } from "@/theme";
+import { ICON_CHECK } from "@/components/toolbar-icons";
 
 const PRIORITIES = ["low", "medium", "high", "urgent"] as const;
 
@@ -37,13 +38,19 @@ export default function NewCard() {
         options={{
           title: "New Task",
           headerBackTitle: "Board",
-          headerRight: () => (
-            <Pressable onPress={save} hitSlop={12} disabled={!canSave}>
-              <Text style={[styles.save, !canSave && styles.saveDisabled]}>Save</Text>
-            </Pressable>
-          ),
         }}
       />
+      <Stack.Toolbar placement="right">
+        <Stack.Toolbar.Button
+          icon={ICON_CHECK}
+          variant="done"
+          disabled={!canSave}
+          accessibilityLabel="Save"
+          onPress={save}
+        >
+          Save
+        </Stack.Toolbar.Button>
+      </Stack.Toolbar>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <Text style={styles.label}>Title</Text>
         <TextInput style={styles.titleInput} value={title} onChangeText={setTitle} placeholder="Task title" placeholderTextColor={t.textTertiary} autoFocus multiline />
@@ -103,7 +110,5 @@ function makeStyles(t: Theme) {
     chip: { paddingVertical: 6, paddingHorizontal: 14, borderRadius: 16, borderWidth: 1 },
     chipText: { fontSize: 13, fontWeight: "600", textTransform: "capitalize" },
     descInput: { fontSize: 15, lineHeight: 22, color: t.textPrimary, backgroundColor: t.surface, borderWidth: 1, borderColor: t.border, borderRadius: 10, padding: 12, minHeight: 160, fontFamily: "Menlo" },
-    save: { color: t.accent, fontSize: 16, fontWeight: "600" },
-    saveDisabled: { color: t.textTertiary },
   });
 }
