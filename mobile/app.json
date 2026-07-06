@@ -32,7 +32,20 @@
       "./plugins/withAppleSigning",
       "./plugins/withICloudContainer",
       "@react-native-community/datetimepicker",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splashIcon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#f5f4f1",
+          "dark": {
+            "image": "./assets/splashIcon.png",
+            "backgroundColor": "#0d0d0d"
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

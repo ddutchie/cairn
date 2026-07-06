@@ -5,9 +5,15 @@ import { View, Text, ActivityIndicator, StyleSheet, useColorScheme } from "react
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
+import * as SplashScreen from "expo-splash-screen";
 import { initDatabase } from "@/db";
 import { startAutoSync } from "@/sync/controller";
 import { useTheme } from "@/theme";
+
+// Keep the native splash up until the DB is ready, so there's no flash between
+// the splash and the first screen. Fade it out for a smooth handoff.
+SplashScreen.preventAutoHideAsync().catch(() => {});
+SplashScreen.setOptions({ duration: 300, fade: true });
 
 export default function RootLayout() {
   const t = useTheme();
@@ -24,6 +30,12 @@ export default function RootLayout() {
       setError(e instanceof Error ? e.message : String(e));
     }
   }, []);
+
+  // Hide the native splash once we've either loaded or hit an error, so the
+  // splash never lingers past the point the UI is ready to show.
+  useEffect(() => {
+    if (ready || error) SplashScreen.hideAsync().catch(() => {});
+  }, [ready, error]);
 
   if (error) {
     return (
