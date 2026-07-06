@@ -460,7 +460,11 @@ app.whenReady().then(async () => {
   function runFullSync(reason: string) {
     try {
       if (!getSyncFolder(ctx.db)) {
-        drainDesktop(ctx.db); // still drain so the oplog is ready when a folder connects
+        // Device Sync not enabled: do nothing. We deliberately DON'T drain here —
+        // building the oplog while disconnected is wasted work and grows
+        // sync_oplog for users who never sync. sync_pending simply accumulates
+        // (cheap: entity/id/op rows) and is superseded by backfill() on first
+        // connect, which seeds the whole workspace from current table state.
         return;
       }
       const r = syncDesktop(ctx.db);
@@ -474,9 +478,13 @@ app.whenReady().then(async () => {
     }
   }
 
-  // Frequent cheap drain (turns staged writes into oplog ops).
+  // Frequent cheap drain (turns staged writes into oplog ops) — only while a
+  // sync folder is connected. When disabled, skip it so the oplog isn't built.
   const drainInterval = setInterval(() => {
-    try { drainDesktop(ctx.db); } catch (err) { console.error("[sync] drain:", err); }
+    try {
+      if (!getSyncFolder(ctx.db)) return;
+      drainDesktop(ctx.db);
+    } catch (err) { console.error("[sync] drain:", err); }
   }, 5_000);
   // Full folder sync (publish + reconcile peers) as the primary + safety net.
   const syncInterval = setInterval(() => runFullSync("periodic"), 30_000);
@@ -486,7 +494,9 @@ app.whenReady().then(async () => {
   powerMonitor.on("resume", () => runFullSync("resume"));
   win.on("focus", () => runFullSync("focus"));
   app.on("before-quit", () => {
-    try { drainDesktop(ctx.db); runFullSync("before-quit"); } catch { /* ignore */ }
+    try {
+      if (getSyncFolder(ctx.db)) { drainDesktop(ctx.db); runFullSync("before-quit"); }
+    } catch { /* ignore */ }
     clearInterval(drainInterval);
     clearInterval(syncInterval);
   });

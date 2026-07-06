@@ -501,6 +501,23 @@ describe("sync engine — trigger→drain capture of real queries.ts writes", ()
     expect((B.db.prepare("SELECT COUNT(*) c FROM projects WHERE id='p1'").get() as { c: number }).c).toBe(1);
   });
 
+  it("clears staged sync_pending on first backfill (accumulated while sync was disabled)", () => {
+    const A = makeDevice("A", clockFrom(9_850_000).now);
+
+    // Writes with capture active (sync not yet connected on desktop) stage rows
+    // into sync_pending via the triggers.
+    q.createWorkspace(A.db, { id: "ws1", name: "WS" });
+    q.createProject(A.db, { id: "p1", workspaceId: "ws1", name: "P" });
+    q.createNote(A.db, { id: "n1", projectId: "p1", workspaceId: "ws1", title: "N", content: "c" });
+    expect((A.db.prepare("SELECT COUNT(*) c FROM sync_pending").get() as { c: number }).c).toBeGreaterThan(0);
+
+    // First connect → backfill seeds current state AND clears the now-subsumed
+    // pending rows, so a subsequent drain produces no redundant ops.
+    A.engine.backfill();
+    expect((A.db.prepare("SELECT COUNT(*) c FROM sync_pending").get() as { c: number }).c).toBe(0);
+    expect(A.engine.drainPending()).toBe(0);
+  });
+
   it("migrates a legacy sync_row_base (base_hlc) table without breaking drain", () => {
     const db = new BetterSqlite3(":memory:");
     applySchema(db);

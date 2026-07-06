@@ -260,6 +260,10 @@ export class SyncEngine {
         }
       }
       this.setState("backfilled", "1");
+      // Backfill captured the full current state of every syncable table, so any
+      // rows staged in sync_pending before the first connect are now subsumed —
+      // clear them so they don't drain into redundant oplog ops afterwards.
+      this.db.prepare("DELETE FROM sync_pending").run();
       this.setSuppress(false);
       this.persistHlc();
     });
