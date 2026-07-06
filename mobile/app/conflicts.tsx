@@ -8,6 +8,7 @@ import {
   resolveConflictKeepOriginal,
   type ConflictCopy,
 } from "@/db/queries";
+import { useDataChanged } from "@/sync/useSyncStatus";
 import { useTheme, type Theme } from "@/theme";
 
 /**
@@ -23,6 +24,7 @@ export default function ConflictsScreen() {
 
   const load = useCallback(() => setConflicts(listConflictCopies()), []);
   useFocusEffect(useCallback(() => load(), [load]));
+  useDataChanged(load);
 
   const keepCopy = (c: ConflictCopy) => {
     resolveConflictKeepCopy(c.id);

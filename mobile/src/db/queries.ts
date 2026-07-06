@@ -5,6 +5,7 @@
 
 import { getDb } from "./index";
 import { inspectConflict, cleanConflictTitle } from "@cairn/shared/sync/conflict";
+import { notifyLocalWrite } from "@/sync/write-signal";
 
 /** Client-generated collision-free id (mirrors desktop nanoid(12) scheme). */
 const ID_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_";
@@ -226,6 +227,7 @@ export function moveCardToColumn(cardId: string, columnId: string): void {
     now,
     cardId,
   );
+  notifyLocalWrite();
 }
 
 function plainText(md: string): string {
@@ -270,6 +272,7 @@ export function createNote(projectId: string, title: string, content: string, fo
     now,
     now,
   );
+  notifyLocalWrite();
   return id;
 }
 
@@ -317,6 +320,7 @@ export function createTask(projectId: string, columnId: string, title: string, o
     now,
     now,
   );
+  notifyLocalWrite();
   return id;
 }
 
@@ -332,6 +336,7 @@ export function updateTask(cardId: string, patch: { title?: string; description?
   sets.push("version = version + 1");
   vals.push(cardId);
   getDb().runSync(`UPDATE task_cards SET ${sets.join(", ")} WHERE id = ?`, ...(vals as never[]));
+  notifyLocalWrite();
 }
 
 // ── Aggregate context tools (mirror desktop read-tools-pure) ────────────────
@@ -452,6 +457,7 @@ export function updateNote(id: string, title: string, content: string): void {
     now,
     id,
   );
+  notifyLocalWrite();
 }
 
 // ── Conflict copies ─────────────────────────────────────────────────────────
@@ -548,6 +554,7 @@ export function softDeleteNote(id: string): void {
     now,
     id,
   );
+  notifyLocalWrite();
 }
 
 function isTombstoned(id: string): boolean {

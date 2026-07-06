@@ -5,6 +5,7 @@ import { listProjectSummaries, type ProjectSummary } from "@/db/queries";
 import { Screen } from "@/components/Screen";
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { SyncStatusBadge } from "@/components/SyncStatusBadge";
+import { useDataChanged } from "@/sync/useSyncStatus";
 import { useTheme } from "@/theme";
 
 export default function ProjectsScreen() {
@@ -14,6 +15,7 @@ export default function ProjectsScreen() {
 
   const load = useCallback(() => setProjects(listProjectSummaries()), []);
   useFocusEffect(useCallback(() => load(), [load]));
+  useDataChanged(load);
 
   if (projects.length === 0) {
     return (

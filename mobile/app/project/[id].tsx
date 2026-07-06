@@ -14,6 +14,7 @@ import {
   type ColumnRow,
 } from "@/db/queries";
 import { TagChips } from "@/components/TagChips";
+import { useDataChanged } from "@/sync/useSyncStatus";
 import { useTheme, PRIORITY_COLOR, type Theme } from "@/theme";
 import { buildFolderTree, type FolderNode } from "@cairn/shared/notes/folder-tree";
 
@@ -39,6 +40,7 @@ export default function ProjectScreen() {
   }, [id]);
 
   useFocusEffect(useCallback(() => load(), [load]));
+  useDataChanged(load);
 
   const tree = useMemo(() => buildFolderTree(notes), [notes]);
   const styles = useMemo(() => makeStyles(t), [t]);

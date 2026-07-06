@@ -5,6 +5,7 @@ import { View, Text, ActivityIndicator, StyleSheet } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { initDatabase } from "@/db";
+import { startAutoSync } from "@/sync/controller";
 import { useTheme } from "@/theme";
 
 export default function RootLayout() {
@@ -16,6 +17,7 @@ export default function RootLayout() {
     try {
       initDatabase();
       setReady(true);
+      startAutoSync();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }

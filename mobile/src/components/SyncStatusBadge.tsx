@@ -1,50 +1,27 @@
-import { useCallback, useEffect, useState } from "react";
-import { Pressable, Text, View, ActivityIndicator, StyleSheet } from "react-native";
+import { Pressable, Text, ActivityIndicator, StyleSheet } from "react-native";
 import { Cloud, CloudOff, RefreshCw } from "lucide-react-native";
 import { useTheme } from "@/theme";
-import { syncNow, pendingCount } from "@/sync/sync";
+import { useSyncStatus } from "@/sync/useSyncStatus";
+import { requestSync } from "@/sync/controller";
 
 /**
- * Compact global sync-status pill for screen headers: shows pending-change
- * count and current state (idle / syncing / offline), and triggers a sync on
- * tap. Polls pendingCount lightly while mounted.
+ * Compact global sync-status pill for screen headers. Reflects the auto-sync
+ * controller's live state (idle / syncing / offline + pending count) and lets
+ * the user force a sync on tap. Auto-sync runs on its own schedule; this is the
+ * manual override + status readout.
  */
 export function SyncStatusBadge() {
   const t = useTheme();
-  const [pending, setPending] = useState(0);
-  const [state, setState] = useState<"idle" | "syncing" | "offline">("idle");
-
-  const refresh = useCallback(() => {
-    try {
-      setPending(pendingCount());
-    } catch {
-      /* db not ready */
-    }
-  }, []);
-
-  useEffect(() => {
-    refresh();
-    const id = setInterval(refresh, 4000);
-    return () => clearInterval(id);
-  }, [refresh]);
-
-  const onPress = async () => {
-    if (state === "syncing") return;
-    setState("syncing");
-    try {
-      const res = await syncNow();
-      setState(res.connected ? "idle" : "offline");
-    } catch {
-      setState("offline");
-    } finally {
-      refresh();
-    }
-  };
+  const { state, pending } = useSyncStatus();
 
   const color = state === "offline" ? t.textTertiary : pending > 0 ? t.warning : t.success;
 
   return (
-    <Pressable onPress={onPress} hitSlop={8} style={[styles.pill, { backgroundColor: t.surface2, borderColor: t.border }]}>
+    <Pressable
+      onPress={() => void requestSync("manual")}
+      hitSlop={8}
+      style={[styles.pill, { backgroundColor: t.surface2, borderColor: t.border }]}
+    >
       {state === "syncing" ? (
         <ActivityIndicator size="small" color={t.accent} />
       ) : state === "offline" ? (

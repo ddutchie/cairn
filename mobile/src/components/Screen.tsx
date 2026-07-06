@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { StyleSheet, View, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useTheme } from "@/theme";
+import { ConflictBanner } from "./ConflictBanner";
 
 /**
  * Shared screen scaffold for the native-tab layout.
@@ -31,6 +32,7 @@ export function Screen({
           {right ? <View>{right}</View> : null}
         </View>
       ) : null}
+      <ConflictBanner />
       <View style={styles.body}>{children}</View>
     </SafeAreaView>
   );

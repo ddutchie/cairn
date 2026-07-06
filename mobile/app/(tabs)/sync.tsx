@@ -1,48 +1,28 @@
 import { useCallback, useMemo, useState } from "react";
-import { View, Text, Pressable, StyleSheet, ActivityIndicator, Alert } from "react-native";
+import { View, Text, Pressable, StyleSheet, ActivityIndicator } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { GitMerge, ChevronRight } from "lucide-react-native";
 import { Screen } from "@/components/Screen";
-import { syncNow, pendingCount, type SyncResult } from "@/sync/sync";
 import { iCloudAvailable, syncFolderLabel } from "@/sync/folder";
-import { conflictCount } from "@/db/queries";
+import { requestSync } from "@/sync/controller";
+import { useSyncStatus } from "@/sync/useSyncStatus";
 import { useTheme, type Theme } from "@/theme";
 
 export default function SyncScreen() {
   const t = useTheme();
   const router = useRouter();
+  const { state, pending, conflicts, lastResult: last } = useSyncStatus();
   const [available, setAvailable] = useState<boolean | null>(null);
-  const [pending, setPending] = useState(0);
-  const [conflicts, setConflicts] = useState(0);
-  const [busy, setBusy] = useState(false);
-  const [last, setLast] = useState<SyncResult | null>(null);
   const styles = useMemo(() => makeStyles(t), [t]);
+  const busy = state === "syncing";
 
   const refresh = useCallback(() => {
-    setPending(pendingCount());
-    try {
-      setConflicts(conflictCount());
-    } catch {
-      /* db not ready */
-    }
     iCloudAvailable().then(setAvailable).catch(() => setAvailable(false));
   }, []);
 
   useFocusEffect(useCallback(() => refresh(), [refresh]));
 
-  const onSync = async () => {
-    setBusy(true);
-    try {
-      const res = await syncNow();
-      setLast(res);
-      if (!res.connected && res.reason) Alert.alert("Can't sync yet", res.reason);
-      refresh();
-    } catch (e) {
-      Alert.alert("Sync failed", e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  };
+  const onSync = () => void requestSync("manual");
 
   return (
     <Screen title="Sync">
@@ -67,6 +47,12 @@ export default function SyncScreen() {
             <Text style={styles.buttonText}>Sync now{pending > 0 ? ` (${pending} pending)` : ""}</Text>
           )}
         </Pressable>
+
+        <Text style={styles.autoNote}>
+          {state === "offline" && last && !last.connected && last.reason
+            ? last.reason
+            : "Auto-sync is on — Cairn syncs on launch, when you switch back to the app, periodically, and shortly after you make a change. Use this button to sync immediately."}
+        </Text>
 
         {last && last.connected && (
           <View style={styles.result}>
@@ -115,6 +101,7 @@ function makeStyles(t: Theme) {
     syncButton: { backgroundColor: t.accent, paddingVertical: 14, borderRadius: 12, alignItems: "center", marginTop: 16 },
     buttonDisabled: { opacity: 0.6 },
     buttonText: { color: t.accentFg, fontWeight: "600", fontSize: 15 },
+    autoNote: { marginTop: 10, fontSize: 12, color: t.textTertiary, lineHeight: 17 },
     result: { marginTop: 16, padding: 14, backgroundColor: t.surface, borderRadius: 10, borderWidth: 1, borderColor: t.border },
     resultLine: { fontSize: 14, color: t.textPrimary, marginBottom: 4 },
     conflictRow: { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 16, padding: 14, backgroundColor: t.surface, borderRadius: 12, borderWidth: 1, borderColor: t.border },
