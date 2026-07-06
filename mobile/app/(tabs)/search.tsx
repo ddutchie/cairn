@@ -3,6 +3,7 @@ import { Text, TextInput, FlatList, Pressable, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
 import { searchNotes, type NoteRow } from "@/db/queries";
 import { Screen } from "@/components/Screen";
+import { GlassBar, glassActive } from "@/components/GlassBar";
 import { useTheme, type Theme } from "@/theme";
 
 export default function SearchScreen() {
@@ -19,16 +20,18 @@ export default function SearchScreen() {
 
   return (
     <Screen title="Search">
-      <TextInput
-        style={styles.input}
-        placeholder="Search notes…"
-        placeholderTextColor={t.textTertiary}
-        value={query}
-        onChangeText={onChange}
-        autoCapitalize="none"
-        autoCorrect={false}
-        clearButtonMode="while-editing"
-      />
+      <GlassBar style={styles.inputGlass} interactive={false}>
+        <TextInput
+          style={styles.input}
+          placeholder="Search notes…"
+          placeholderTextColor={t.textTertiary}
+          value={query}
+          onChangeText={onChange}
+          autoCapitalize="none"
+          autoCorrect={false}
+          clearButtonMode="while-editing"
+        />
+      </GlassBar>
       <FlatList
         data={results}
         keyExtractor={(n) => n.id}
@@ -52,14 +55,17 @@ export default function SearchScreen() {
 
 function makeStyles(t: Theme) {
   return StyleSheet.create({
-    input: {
+    inputGlass: {
       margin: 12,
-      paddingHorizontal: 14,
-      paddingVertical: 10,
-      backgroundColor: t.surface,
-      borderRadius: 10,
-      borderWidth: 1,
+      borderRadius: 12,
+      overflow: "hidden",
+      backgroundColor: glassActive ? undefined : t.surface,
+      borderWidth: glassActive ? 0 : 1,
       borderColor: t.border,
+    },
+    input: {
+      paddingHorizontal: 14,
+      paddingVertical: 11,
       fontSize: 15,
       color: t.textPrimary,
     },

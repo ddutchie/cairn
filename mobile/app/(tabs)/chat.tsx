@@ -13,6 +13,7 @@ import { useKeyboardHandler } from "react-native-keyboard-controller";
 import { CheckCircle, Bot, User, Send } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Screen } from "@/components/Screen";
+import { GlassBar, glassActive } from "@/components/GlassBar";
 import { MarkdownView } from "@/components/MarkdownView";
 import { useTheme, withAlpha, type Theme } from "@/theme";
 import { runAgent, userMessage, type AgentEvent } from "@/chat/agent";
@@ -143,15 +144,17 @@ export default function ChatScreen() {
         </ScrollView>
 
         <View style={styles.composer}>
-          <TextInput
-            style={styles.input}
-            value={input}
-            onChangeText={setInput}
-            placeholder="Message Cairn…"
-            placeholderTextColor={t.textTertiary}
-            multiline
-            editable={!busy}
-          />
+          <GlassBar style={styles.inputGlass}>
+            <TextInput
+              style={styles.input}
+              value={input}
+              onChangeText={setInput}
+              placeholder="Message Cairn…"
+              placeholderTextColor={t.textTertiary}
+              multiline
+              editable={!busy}
+            />
+          </GlassBar>
           <Pressable style={[styles.sendBtn, (!input.trim() || busy) && styles.sendBtnDisabled]} onPress={send} disabled={!input.trim() || busy}>
             {busy ? <ActivityIndicator color={t.accentFg} size="small" /> : <Send size={16} color={t.accentFg} />}
           </Pressable>
@@ -239,16 +242,19 @@ function makeStyles(t: Theme) {
       flexDirection: "row",
       alignItems: "flex-end",
       gap: 8,
-      padding: 10,
-      borderTopWidth: 1,
-      borderTopColor: t.border,
-      backgroundColor: t.surface,
+      paddingHorizontal: 10,
+      paddingTop: 8,
     },
-    input: {
+    inputGlass: {
       flex: 1,
       maxHeight: 120,
-      backgroundColor: t.surface2,
       borderRadius: 20,
+      overflow: "hidden",
+      backgroundColor: glassActive ? undefined : t.surface2,
+      borderWidth: glassActive ? 0 : 1,
+      borderColor: t.border,
+    },
+    input: {
       paddingHorizontal: 14,
       paddingVertical: 10,
       color: t.textPrimary,
