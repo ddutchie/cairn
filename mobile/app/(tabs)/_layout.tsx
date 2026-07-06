@@ -26,11 +26,6 @@ export default function TabsLayout() {
           <NativeTabs.Trigger.Icon sf="bubble.left.and.bubble.right.fill" md="chat" />
           <NativeTabs.Trigger.Label>Chat</NativeTabs.Trigger.Label>
         </NativeTabs.Trigger>
-
-        <NativeTabs.Trigger name="sync">
-          <NativeTabs.Trigger.Icon sf="arrow.triangle.2.circlepath" md="sync" />
-          <NativeTabs.Trigger.Label>Sync</NativeTabs.Trigger.Label>
-        </NativeTabs.Trigger>
       </NativeTabs>
     </ThemeProvider>
   );

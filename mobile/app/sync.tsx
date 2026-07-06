@@ -1,13 +1,18 @@
 import { useCallback, useMemo, useState } from "react";
 import { View, Text, Pressable, StyleSheet, ActivityIndicator, ScrollView } from "react-native";
-import { Stack, useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { GitMerge, ChevronRight } from "lucide-react-native";
-import { TabScreen } from "@/components/TabScreen";
 import { iCloudAvailable, syncFolderLabel } from "@/sync/folder";
 import { requestSync } from "@/sync/controller";
 import { useSyncStatus } from "@/sync/useSyncStatus";
 import { useTheme, type Theme } from "@/theme";
 
+/**
+ * Sync detail page. No longer a top-level tab — reached from the header sync
+ * badge (SyncStatusBadge), which escalates its appearance when offline or when
+ * conflicts exist. Owns the things the badge can't: iCloud availability
+ * diagnostics, the conflict-resolution entry point, and the last sync result.
+ */
 export default function SyncScreen() {
   const t = useTheme();
   const router = useRouter();
@@ -25,8 +30,7 @@ export default function SyncScreen() {
   const onSync = () => void requestSync("manual");
 
   return (
-    <TabScreen>
-      <Stack.Screen options={{ title: "Sync" }} />
+    <View style={[styles.root, { backgroundColor: t.background }]}>
       <ScrollView contentContainerStyle={styles.container} contentInsetAdjustmentBehavior="automatic">
         <View style={styles.card}>
           <Text style={styles.cardLabel}>iCloud sync folder</Text>
@@ -86,12 +90,13 @@ export default function SyncScreen() {
           shared sync engine. Body conflicts are kept as a &quot;conflicted copy&quot; note, never lost.
         </Text>
       </ScrollView>
-    </TabScreen>
+    </View>
   );
 }
 
 function makeStyles(t: Theme) {
   return StyleSheet.create({
+    root: { flex: 1 },
     container: { padding: 20 },
     card: { padding: 16, backgroundColor: t.surface, borderRadius: 12, borderWidth: 1, borderColor: t.border },
     cardLabel: { fontSize: 12, fontWeight: "600", color: t.textTertiary, textTransform: "uppercase", letterSpacing: 0.5 },
