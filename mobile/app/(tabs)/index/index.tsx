@@ -1,45 +1,74 @@
 import { useCallback, useState } from "react";
-import { View, Text, FlatList, Pressable, StyleSheet, RefreshControl } from "react-native";
-import { useFocusEffect, useRouter } from "expo-router";
+import { View, Text, FlatList, StyleSheet, RefreshControl } from "react-native";
+import { Stack, useFocusEffect, useRouter } from "expo-router";
 import { listProjectSummaries, type ProjectSummary } from "@/db/queries";
-import { Screen } from "@/components/Screen";
+import { PressableScale } from "@/components/PressableScale";
+import { TabScreen } from "@/components/TabScreen";
+import { SkeletonList } from "@/components/Skeleton";
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { SyncStatusBadge } from "@/components/SyncStatusBadge";
 import { useDataChanged } from "@/sync/useSyncStatus";
-import { useTheme } from "@/theme";
+import { useTheme, elevation } from "@/theme";
 
 export default function ProjectsScreen() {
   const router = useRouter();
   const t = useTheme();
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  // Distinguish "still loading the first read" from "genuinely no projects" so
+  // we show a skeleton instead of the empty state on cold start.
+  const [loaded, setLoaded] = useState(false);
 
-  const load = useCallback(() => setProjects(listProjectSummaries()), []);
+  const load = useCallback(() => {
+    setProjects(listProjectSummaries());
+    setLoaded(true);
+  }, []);
   useFocusEffect(useCallback(() => load(), [load]));
   useDataChanged(load);
 
+  const header = (
+    <Stack.Screen
+      options={{
+        title: "Projects",
+        headerRight: () => <SyncStatusBadge />,
+      }}
+    />
+  );
+
+  if (!loaded) {
+    return (
+      <TabScreen>
+        {header}
+        <SkeletonList count={6} />
+      </TabScreen>
+    );
+  }
+
   if (projects.length === 0) {
     return (
-      <Screen title="Projects" right={<SyncStatusBadge />}>
+      <TabScreen>
+        {header}
         <View style={styles.empty}>
           <Text style={[styles.emptyTitle, { color: t.textSecondary }]}>No projects yet</Text>
           <Text style={[styles.emptyHint, { color: t.textTertiary }]}>
             Connect your sync folder in the Sync tab to pull your workspace.
           </Text>
         </View>
-      </Screen>
+      </TabScreen>
     );
   }
 
   return (
-    <Screen title="Projects" right={<SyncStatusBadge />}>
+    <TabScreen>
+      {header}
       <FlatList
         data={projects}
         keyExtractor={(p) => p.id}
         refreshControl={<RefreshControl refreshing={false} onRefresh={load} tintColor={t.textTertiary} />}
         contentContainerStyle={styles.list}
+        contentInsetAdjustmentBehavior="automatic"
         renderItem={({ item }) => (
-          <Pressable
-            style={[styles.row, { backgroundColor: t.surface, borderColor: t.border }]}
+          <PressableScale
+            style={[styles.row, { backgroundColor: t.surface, borderColor: t.border }, elevation.sm]}
             onPress={() => router.push(`/project/${item.id}`)}
           >
             <View style={[styles.iconWrap, { backgroundColor: t.accentDim }]}>
@@ -55,10 +84,10 @@ export default function ProjectsScreen() {
               </Text>
             </View>
             <Text style={[styles.chevron, { color: t.textTertiary }]}>›</Text>
-          </Pressable>
+          </PressableScale>
         )}
       />
-    </Screen>
+    </TabScreen>
   );
 }
 

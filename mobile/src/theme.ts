@@ -72,6 +72,30 @@ export const lightTheme: Theme = {
 /** Priority colours — re-exported from shared so desktop + mobile match. */
 export { PRIORITY_COLOR } from "@cairn/shared/ui/constants";
 
+/**
+ * Elevation ladder — the RN analogue of the desktop shadow scale
+ * (shadow-sm → shadow-xl in globals.css). Each level bundles the iOS shadow*
+ * props with an Android `elevation` so cards/menus/modals read with depth
+ * instead of flat 1px borders. Spread into a style object.
+ *
+ * Shadows are near-black with low opacity so they work on both themes; on dark
+ * surfaces they read as a subtle darkening at the card's edge.
+ */
+export interface Elevation {
+  shadowColor: string;
+  shadowOffset: { width: number; height: number };
+  shadowOpacity: number;
+  shadowRadius: number;
+  elevation: number;
+}
+
+export const elevation: Record<"sm" | "md" | "lg" | "xl", Elevation> = {
+  sm: { shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 2, elevation: 1 },
+  md: { shadowColor: "#000", shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.1, shadowRadius: 6, elevation: 3 },
+  lg: { shadowColor: "#000", shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.12, shadowRadius: 16, elevation: 8 },
+  xl: { shadowColor: "#000", shadowOffset: { width: 0, height: 16 }, shadowOpacity: 0.16, shadowRadius: 30, elevation: 16 },
+};
+
 /** Returns the theme for the current system colour scheme. */
 export function useTheme(): Theme {
   const scheme = useColorScheme();

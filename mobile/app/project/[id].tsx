@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
-import { View, Text, ScrollView, Pressable, StyleSheet } from "react-native";
+import { View, Text, ScrollView, Pressable, StyleSheet, LayoutAnimation } from "react-native";
 import { useLocalSearchParams, useRouter, useFocusEffect, Stack } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChevronDown, ChevronRight, Folder, FolderOpen, FileText, Plus } from "lucide-react-native";
 import {
   getProject,
@@ -14,9 +15,11 @@ import {
   type ColumnRow,
 } from "@/db/queries";
 import { TagChips } from "@/components/TagChips";
+import { PressableScale } from "@/components/PressableScale";
 import { useDataChanged } from "@/sync/useSyncStatus";
-import { useTheme, PRIORITY_COLOR, type Theme } from "@/theme";
+import { useTheme, PRIORITY_COLOR, elevation, type Theme } from "@/theme";
 import { buildFolderTree, type FolderNode } from "@cairn/shared/notes/folder-tree";
+import { stripMarkdown } from "@cairn/shared/notes/text";
 
 type Tab = "notes" | "board";
 
@@ -24,6 +27,7 @@ export default function ProjectScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const t = useTheme();
+  const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<Tab>("notes");
   const [project, setProject] = useState(id ? getProject(id) : null);
   const [notes, setNotes] = useState<NoteRow[]>([]);
@@ -98,7 +102,10 @@ export default function ProjectScreen() {
           cards={cards}
           t={t}
           styles={styles}
+          bottomInset={insets.bottom}
           onMove={(cardId, colId) => {
+            // Animate the card sliding between columns instead of teleporting.
+            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
             moveCardToColumn(cardId, colId);
             load();
           }}
@@ -125,7 +132,9 @@ function Segment({ label, count, active, onPress, t }: { label: string; count: n
 
 function NoteRowItem({ note, depth, onPress, t }: { note: NoteRow; depth: number; onPress: () => void; t: Theme }) {
   return (
-    <Pressable
+    <PressableScale
+      scaleTo={1}
+      dimTo={0.5}
       onPress={onPress}
       style={{
         flexDirection: "row",
@@ -142,7 +151,7 @@ function NoteRowItem({ note, depth, onPress, t }: { note: NoteRow; depth: number
       <Text style={{ flex: 1, color: t.textPrimary, fontSize: 14 }} numberOfLines={1}>
         {note.title || "Untitled"}
       </Text>
-    </Pressable>
+    </PressableScale>
   );
 }
 
@@ -202,6 +211,7 @@ function BoardView({
   cards,
   t,
   styles,
+  bottomInset,
   onMove,
   onOpenCard,
   onAddCard,
@@ -210,13 +220,19 @@ function BoardView({
   cards: CardRow[];
   t: Theme;
   styles: ReturnType<typeof makeStyles>;
+  bottomInset: number;
   onMove: (cardId: string, colId: string) => void;
   onOpenCard: (id: string) => void;
   onAddCard: (colId: string) => void;
 }) {
   if (columns.length === 0) return <Empty text="No board columns in this project." t={t} />;
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.board}>
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={[styles.board, { paddingBottom: 12 + bottomInset }]}
+      style={styles.boardScroll}
+    >
       {columns.map((col, colIdx) => {
         const colCards = cards.filter((c) => c.column_id === col.id);
         const prevCol = columns[colIdx - 1];
@@ -226,7 +242,7 @@ function BoardView({
             <Text style={styles.columnTitle}>
               {col.name} <Text style={styles.count}>{colCards.length}</Text>
             </Text>
-            <ScrollView style={{ maxHeight: 560 }}>
+            <ScrollView style={styles.columnCards} showsVerticalScrollIndicator={false}>
               {colCards.map((card) => (
                 <CardItem
                   key={card.id}
@@ -272,14 +288,14 @@ function CardItem({
   onOpen: (id: string) => void;
 }) {
   return (
-    <Pressable style={styles.card} onPress={() => onOpen(card.id)}>
+    <PressableScale style={[styles.card, elevation.sm]} onPress={() => onOpen(card.id)}>
       <View style={styles.cardTop}>
         <View style={[styles.priorityDot, { backgroundColor: PRIORITY_COLOR[card.priority] ?? t.accent }]} />
         <Text style={styles.cardTitle}>{card.title}</Text>
       </View>
       {card.description ? (
         <Text style={styles.cardDesc} numberOfLines={2}>
-          {card.description.replace(/[#*_`>[\]()!-]/g, "").trim()}
+          {stripMarkdown(card.description)}
         </Text>
       ) : null}
       <CardTags card={card} />
@@ -291,7 +307,7 @@ function CardItem({
           <Text style={styles.moveBtnText}>→</Text>
         </Pressable>
       </View>
-    </Pressable>
+    </PressableScale>
   );
 }
 
@@ -318,8 +334,13 @@ function makeStyles(t: Theme) {
     container: { flex: 1, backgroundColor: t.background },
     segment: { flexDirection: "row", gap: 4, margin: 12, padding: 4, backgroundColor: t.surface2, borderRadius: 10 },
     notesScroll: { paddingBottom: 40 },
-    board: { padding: 12, paddingTop: 0, gap: 12, flexDirection: "row", alignItems: "flex-start" },
+    // The horizontal board scroller fills the remaining vertical space; its
+    // content stretches column height to match so columns reach the bottom.
+    boardScroll: { flex: 1 },
+    board: { padding: 12, paddingTop: 0, gap: 12, flexDirection: "row", alignItems: "stretch", flexGrow: 1 },
     column: { width: 260, backgroundColor: t.surface, borderRadius: 12, padding: 10, borderWidth: 1, borderColor: t.border },
+    // Card list grows to fill the column and scrolls internally when overflowing.
+    columnCards: { flex: 1 },
     columnTitle: { fontSize: 14, fontWeight: "700", color: t.textPrimary, marginBottom: 8 },
     count: { color: t.textTertiary, fontWeight: "400" },
     card: { backgroundColor: t.surface2, borderRadius: 8, padding: 10, marginBottom: 8, borderWidth: 1, borderColor: t.borderSubtle },

@@ -12,9 +12,10 @@ import {
 } from "react-native";
 import Animated, { useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { useKeyboardHandler } from "react-native-keyboard-controller";
+import { Stack } from "expo-router";
 import { CheckCircle, Bot, User, Send, ImagePlus, X, Trash2 } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Screen } from "@/components/Screen";
+import { TabScreen } from "@/components/TabScreen";
 import { GlassBar, glassActive } from "@/components/GlassBar";
 import { MarkdownView } from "@/components/MarkdownView";
 import { useTheme, withAlpha, type Theme } from "@/theme";
@@ -196,16 +197,18 @@ export default function ChatScreen() {
   }, [messages.length, busy]);
 
   return (
-    <Screen
-      title="Chat"
-      right={
-        messages.length > 0 ? (
-          <Pressable onPress={onClear} hitSlop={8} disabled={busy}>
-            <Trash2 size={20} color={busy ? t.textTertiary : t.textSecondary} />
-          </Pressable>
-        ) : undefined
-      }
-    >
+    <TabScreen>
+      <Stack.Screen
+        options={{
+          title: "Chat",
+          headerRight: () =>
+            messages.length > 0 ? (
+              <Pressable onPress={onClear} hitSlop={8} disabled={busy}>
+                <Trash2 size={20} color={busy ? t.textTertiary : t.textSecondary} />
+              </Pressable>
+            ) : null,
+        }}
+      />
       <View style={{ flex: 1 }}>
         <ScrollView
           ref={scrollRef}
@@ -240,11 +243,11 @@ export default function ChatScreen() {
           </ScrollView>
         )}
 
-        <View style={styles.composer}>
-          <Pressable style={styles.attachBtn} onPress={onAttach} disabled={busy} hitSlop={6}>
-            <ImagePlus size={22} color={busy ? t.textTertiary : t.accent} />
-          </Pressable>
-          <GlassBar style={styles.inputGlass}>
+        <View style={styles.composerWrap}>
+          <GlassBar style={styles.composer} interactive={false}>
+            <Pressable style={styles.attachBtn} onPress={onAttach} disabled={busy} hitSlop={6}>
+              <ImagePlus size={16} color={busy ? withAlpha(t.textTertiary, 0.5) : t.textTertiary} />
+            </Pressable>
             <TextInput
               style={styles.input}
               value={input}
@@ -254,20 +257,20 @@ export default function ChatScreen() {
               multiline
               editable={!busy}
             />
+            <Pressable
+              style={[styles.sendBtn, ((!input.trim() && attachments.length === 0) || busy) && styles.sendBtnDisabled]}
+              onPress={send}
+              disabled={(!input.trim() && attachments.length === 0) || busy}
+            >
+              {busy ? <ActivityIndicator color={t.accentFg} size="small" /> : <Send size={14} color={t.accentFg} />}
+            </Pressable>
           </GlassBar>
-          <Pressable
-            style={[styles.sendBtn, ((!input.trim() && attachments.length === 0) || busy) && styles.sendBtnDisabled]}
-            onPress={send}
-            disabled={(!input.trim() && attachments.length === 0) || busy}
-          >
-            {busy ? <ActivityIndicator color={t.accentFg} size="small" /> : <Send size={18} color={t.accentFg} />}
-          </Pressable>
         </View>
 
         {/* Animated spacer: tracks the keyboard, else the bottom safe area. */}
         <Animated.View style={spacer} />
       </View>
-    </Screen>
+    </TabScreen>
   );
 }
 
@@ -287,7 +290,7 @@ function Bubble({ m, t, styles }: { m: UiMessage; t: Theme; styles: ReturnType<t
             {m.tools.map((tt, i) => (
               <View key={i} style={styles.toolChip}>
                 <CheckCircle size={10} color={tt.ok ? t.accent : t.danger} />
-                <Text style={styles.toolChipText}>{prettifyToolLabel(tt.tool)}</Text>
+                <Text style={styles.toolChipText}>{prettifyToolLabel(tt.tool, { prettifyBare: true })}</Text>
               </View>
             ))}
           </View>
@@ -356,34 +359,58 @@ function makeStyles(t: Theme) {
     previewItem: { position: "relative" },
     previewImg: { width: 68, height: 68, borderRadius: 10, backgroundColor: t.surface3 },
     previewRemove: { position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: 10, backgroundColor: "rgba(0,0,0,0.7)", alignItems: "center", justifyContent: "center" },
-    attachBtn: { width: 40, height: 44, alignItems: "center", justifyContent: "center" },
+    // Outer padding around the pinned composer (mirrors desktop overview `p-6`
+    // overlay, trimmed for mobile). The keyboard/safe-area spacer sits below.
+    composerWrap: { paddingHorizontal: 12, paddingTop: 8 },
+    // Single unified rounded container holding attach + input + send inline,
+    // mirroring the desktop overview ChatInput: rounded-2xl (16px), frosted
+    // surface-2 at ~85%, 1px border, soft drop shadow. Buttons align to the
+    // bottom edge (items-end) so a multiline field grows upward.
     composer: {
       flexDirection: "row",
       alignItems: "flex-end",
-      gap: 8,
-      paddingHorizontal: 12,
-      paddingTop: 8,
-      paddingBottom: 8,
-    },
-    inputGlass: {
-      flex: 1,
-      minHeight: 48,
-      maxHeight: 140,
-      justifyContent: "center",
-      borderRadius: 24,
+      gap: 10,
+      paddingHorizontal: 8,
+      paddingVertical: 8,
+      borderRadius: 16,
       overflow: "hidden",
-      backgroundColor: glassActive ? undefined : t.surface2,
-      borderWidth: glassActive ? 0 : 1,
+      backgroundColor: glassActive ? undefined : withAlpha(t.surface2, 0.92),
+      borderWidth: 1,
       borderColor: t.border,
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.12,
+      shadowRadius: 30,
+      elevation: 4,
     },
     input: {
-      paddingHorizontal: 16,
-      paddingVertical: 13,
+      flex: 1,
+      minHeight: 36,
+      maxHeight: 132,
       color: t.textPrimary,
-      fontSize: 16,
+      fontSize: 15,
       lineHeight: 21,
+      paddingVertical: 6,
+      paddingHorizontal: 2,
     },
-    sendBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: t.accent, alignItems: "center", justifyContent: "center" },
+    // 32px rounded-xl (12px) icon buttons, vertically centred against the input.
+    attachBtn: {
+      width: 32,
+      height: 32,
+      borderRadius: 12,
+      alignItems: "center",
+      justifyContent: "center",
+      alignSelf: "center",
+    },
+    sendBtn: {
+      width: 32,
+      height: 32,
+      borderRadius: 12,
+      backgroundColor: t.accent,
+      alignItems: "center",
+      justifyContent: "center",
+      alignSelf: "center",
+    },
     sendBtnDisabled: { opacity: 0.4 },
   });
 }

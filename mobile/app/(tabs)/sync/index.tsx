@@ -1,8 +1,8 @@
 import { useCallback, useMemo, useState } from "react";
-import { View, Text, Pressable, StyleSheet, ActivityIndicator } from "react-native";
-import { useFocusEffect, useRouter } from "expo-router";
+import { View, Text, Pressable, StyleSheet, ActivityIndicator, ScrollView } from "react-native";
+import { Stack, useFocusEffect, useRouter } from "expo-router";
 import { GitMerge, ChevronRight } from "lucide-react-native";
-import { Screen } from "@/components/Screen";
+import { TabScreen } from "@/components/TabScreen";
 import { iCloudAvailable, syncFolderLabel } from "@/sync/folder";
 import { requestSync } from "@/sync/controller";
 import { useSyncStatus } from "@/sync/useSyncStatus";
@@ -25,8 +25,9 @@ export default function SyncScreen() {
   const onSync = () => void requestSync("manual");
 
   return (
-    <Screen title="Sync">
-      <View style={styles.container}>
+    <TabScreen>
+      <Stack.Screen options={{ title: "Sync" }} />
+      <ScrollView contentContainerStyle={styles.container} contentInsetAdjustmentBehavior="automatic">
         <View style={styles.card}>
           <Text style={styles.cardLabel}>iCloud sync folder</Text>
           <View style={styles.statusRow}>
@@ -84,14 +85,14 @@ export default function SyncScreen() {
           Bidirectional, offline-first. Edits made on this phone and the desktop reconcile via the
           shared sync engine. Body conflicts are kept as a &quot;conflicted copy&quot; note, never lost.
         </Text>
-      </View>
-    </Screen>
+      </ScrollView>
+    </TabScreen>
   );
 }
 
 function makeStyles(t: Theme) {
   return StyleSheet.create({
-    container: { flex: 1, padding: 20 },
+    container: { padding: 20 },
     card: { padding: 16, backgroundColor: t.surface, borderRadius: 12, borderWidth: 1, borderColor: t.border },
     cardLabel: { fontSize: 12, fontWeight: "600", color: t.textTertiary, textTransform: "uppercase", letterSpacing: 0.5 },
     statusRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 10 },
