@@ -3,6 +3,7 @@ import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { View, Text, ActivityIndicator, StyleSheet } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { initDatabase } from "@/db";
 import { startAutoSync } from "@/sync/controller";
@@ -49,21 +50,23 @@ export default function RootLayout() {
   };
 
   return (
-    <KeyboardProvider>
-      <SafeAreaProvider>
-        <StatusBar style="auto" />
-        <Stack screenOptions={{ headerShown: true, ...headerStyle }}>
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="project/[id]" options={{ title: "Project" }} />
-        <Stack.Screen name="note/new" options={{ title: "New Note", presentation: "modal" }} />
-        <Stack.Screen name="note/[id]" options={{ title: "Note" }} />
-        <Stack.Screen name="card/new" options={{ title: "New Task", presentation: "modal" }} />
-        <Stack.Screen name="card/[id]" options={{ title: "Task" }} />
-        <Stack.Screen name="sync" options={{ title: "Sync", headerBackTitle: "Projects" }} />
-        <Stack.Screen name="conflicts" options={{ title: "Sync Conflicts" }} />
-        </Stack>
-      </SafeAreaProvider>
-    </KeyboardProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <KeyboardProvider>
+        <SafeAreaProvider>
+          <StatusBar style="auto" />
+          <Stack screenOptions={{ headerShown: true, ...headerStyle }}>
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen name="project/[id]" options={{ title: "Project" }} />
+            <Stack.Screen name="note/new" options={{ title: "New Note", presentation: "modal" }} />
+            <Stack.Screen name="note/[id]" options={{ title: "Note" }} />
+            <Stack.Screen name="card/new" options={{ title: "New Task", presentation: "modal" }} />
+            <Stack.Screen name="card/[id]" options={{ title: "Task" }} />
+            <Stack.Screen name="sync" options={{ title: "Sync", headerBackTitle: "Projects" }} />
+            <Stack.Screen name="conflicts" options={{ title: "Sync Conflicts" }} />
+          </Stack>
+        </SafeAreaProvider>
+      </KeyboardProvider>
+    </GestureHandlerRootView>
   );
 }
 
