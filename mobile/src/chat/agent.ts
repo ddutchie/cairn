@@ -179,3 +179,26 @@ export async function runAgent(
   onEvent?.({ type: "final", text: msg });
   return msg;
 }
+
+/**
+ * Single-shot text completion for the note editor's AI actions (rephrase,
+ * summarise, expand, …). No tools, no history — just send the built prompt and
+ * return the model's plain-text reply (streaming deltas via onDelta). Online
+ * only, like chat.
+ */
+export async function runTextAction(
+  prompt: string,
+  onDelta?: (delta: string) => void,
+  signal?: AbortSignal,
+): Promise<string> {
+  const conversation: UIMessage[] = [userMessage(prompt)];
+  let text = "";
+  for await (const ev of streamAgentChat(conversation, {}, signal)) {
+    if (ev.type === "text-delta" && typeof (ev as { delta?: string }).delta === "string") {
+      const delta = (ev as { delta: string }).delta;
+      text += delta;
+      onDelta?.(delta);
+    }
+  }
+  return text.trim();
+}

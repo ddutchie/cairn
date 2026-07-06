@@ -1,5 +1,5 @@
 import { useLocalSearchParams, Stack, useRouter } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   ScrollView,
   Text,
@@ -7,15 +7,21 @@ import {
   StyleSheet,
   View,
   Pressable,
-  KeyboardAvoidingView,
-  Platform,
   Alert,
+  type NativeSyntheticEvent,
+  type TextInputSelectionChangeEventData,
 } from "react-native";
 import { MoreHorizontal, Pin } from "lucide-react-native";
+import { KeyboardAwareScrollView, KeyboardStickyView } from "react-native-keyboard-controller";
 import { getNote, updateNote, tagsForNote, noteTagIds, setNoteTags, pinNote, softDeleteNote } from "@/db/queries";
 import { MarkdownView } from "@/components/MarkdownView";
 import { TagChips } from "@/components/TagChips";
 import { TagPickerSheet } from "@/components/TagPickerSheet";
+import { NoteEditorToolbar } from "@/components/NoteEditorToolbar";
+import { WikilinkPickerSheet } from "@/components/WikilinkPickerSheet";
+import { applyFormat, insertWikilink, type FormatAction, type Selection } from "@cairn/shared/notes/format";
+import { buildAIActionPrompt, type AITextAction } from "@cairn/shared/notes/ai-actions";
+import { runTextAction } from "@/chat/agent";
 import { useTheme, type Theme } from "@/theme";
 
 export default function NoteDetail() {
@@ -29,7 +35,83 @@ export default function NoteDetail() {
   const [body, setBody] = useState(note?.content ?? "");
   const [tagPickerOpen, setTagPickerOpen] = useState(false);
 
+  // Editing toolbar state.
+  const bodyRef = useRef<TextInput>(null);
+  const [selection, setSelection] = useState<Selection>({ start: 0, end: 0 });
+  const selectionRef = useRef<Selection>({ start: 0, end: 0 });
+  const [aiLoading, setAiLoading] = useState(false);
+  const [wikilinkOpen, setWikilinkOpen] = useState(false);
+
   const styles = useMemo(() => makeStyles(t), [t]);
+
+  const onSelectionChange = useCallback(
+    (e: NativeSyntheticEvent<TextInputSelectionChangeEventData>) => {
+      selectionRef.current = e.nativeEvent.selection;
+      setSelection(e.nativeEvent.selection);
+    },
+    [],
+  );
+
+  const hasSelection = selection.end > selection.start;
+
+  // Apply a formatting action to the body at the current selection, then restore
+  // the (shifted) selection so the caret lands sensibly.
+  const onFormat = useCallback(
+    (action: FormatAction) => {
+      if (action === "wikilink") {
+        setWikilinkOpen(true);
+        return;
+      }
+      const res = applyFormat(body, selectionRef.current, action);
+      if (!res) return;
+      setBody(res.text);
+      selectionRef.current = res.selection;
+      setSelection(res.selection);
+    },
+    [body],
+  );
+
+  const onWikilink = useCallback(
+    (noteTitle: string) => {
+      const res = insertWikilink(body, selectionRef.current, noteTitle);
+      setBody(res.text);
+      selectionRef.current = res.selection;
+      setSelection(res.selection);
+      setWikilinkOpen(false);
+    },
+    [body],
+  );
+
+  // Run an AI text action over the current selection and replace it with the
+  // model's reply (online only, via Rork).
+  const onAIAction = useCallback(
+    async (action: AITextAction, customPrompt?: string) => {
+      const sel = selectionRef.current;
+      const selected = body.slice(sel.start, sel.end);
+      if (!selected) return;
+      setAiLoading(true);
+      try {
+        const prompt = buildAIActionPrompt(action, selected, customPrompt);
+        const reply = await runTextAction(prompt);
+        if (!reply) return;
+        const next = body.slice(0, sel.start) + reply + body.slice(sel.end);
+        const newSel = { start: sel.start, end: sel.start + reply.length };
+        setBody(next);
+        selectionRef.current = newSel;
+        setSelection(newSel);
+      } catch (e) {
+        Alert.alert(
+          "AI action failed",
+          e instanceof Error && /network|fetch|connect|\(5\d\d\)/i.test(e.message)
+            ? "This needs a connection. Reconnect and try again."
+            : "Something went wrong. Try again.",
+        );
+      } finally {
+        setAiLoading(false);
+      }
+    },
+    [body],
+  );
 
   const isPinned = !!note?.is_pinned;
 
@@ -103,7 +185,7 @@ export default function NoteDetail() {
   };
 
   return (
-    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+    <View style={styles.container}>
       <Stack.Screen
         options={{
           title: editing ? "Edit note" : note.title || "Note",
@@ -133,18 +215,38 @@ export default function NoteDetail() {
       />
 
       {editing ? (
-        <ScrollView style={styles.scroll} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-          <TextInput style={styles.titleInput} value={title} onChangeText={setTitle} placeholder="Title" placeholderTextColor={t.textTertiary} multiline />
-          <TextInput
-            style={styles.bodyInput}
-            value={body}
-            onChangeText={setBody}
-            placeholder="Write in Markdown…"
-            placeholderTextColor={t.textTertiary}
-            multiline
-            textAlignVertical="top"
-          />
-        </ScrollView>
+        <>
+          <KeyboardAwareScrollView
+            style={styles.scroll}
+            contentContainerStyle={styles.content}
+            keyboardShouldPersistTaps="handled"
+            bottomOffset={62}
+          >
+            <TextInput style={styles.titleInput} value={title} onChangeText={setTitle} placeholder="Title" placeholderTextColor={t.textTertiary} multiline />
+            <TextInput
+              ref={bodyRef}
+              style={styles.bodyInput}
+              value={body}
+              onChangeText={setBody}
+              selection={selection}
+              onSelectionChange={onSelectionChange}
+              placeholder="Write in Markdown…"
+              placeholderTextColor={t.textTertiary}
+              multiline
+              textAlignVertical="top"
+            />
+          </KeyboardAwareScrollView>
+          <KeyboardStickyView>
+            <NoteEditorToolbar
+              onFormat={onFormat}
+              onAction={onAIAction}
+              hasSelection={hasSelection}
+              aiEnabled
+              loading={aiLoading}
+              onDismiss={() => bodyRef.current?.blur()}
+            />
+          </KeyboardStickyView>
+        </>
       ) : (
         <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
           <View style={styles.titleRow}>
@@ -165,7 +267,13 @@ export default function NoteDetail() {
         onDone={onTags}
         onClose={() => setTagPickerOpen(false)}
       />
-    </KeyboardAvoidingView>
+
+      <WikilinkPickerSheet
+        visible={wikilinkOpen}
+        onSelect={onWikilink}
+        onClose={() => setWikilinkOpen(false)}
+      />
+    </View>
   );
 }
 
