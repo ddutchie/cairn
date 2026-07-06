@@ -78,10 +78,51 @@ export class SyncEngine {
     this.db = db;
     this.deviceId = deviceId;
 
+    this.ensureBaseTable();
     const stored = this.getState("hlc");
     this.hlc = new Hlc(deviceId, { last: stored ?? undefined, now: opts?.now });
     this.setState("device_id", deviceId);
     this.persistHlc();
+  }
+
+  /**
+   * Per-row conflict ancestor. Stores the body-column value at the last point
+   * this device agreed with the remote lineage (the "common ancestor" from the
+   * plan §5). A genuine body conflict is a classic 3-way disagreement: local
+   * changed the body since the ancestor AND the incoming remote also changed it
+   * AND the two differ. Recording the ancestor value (not just an HLC) avoids
+   * false positives on one-sided edits, where only one side moved from the
+   * ancestor. Owned by the engine (created lazily) — no external migration.
+   */
+  private ensureBaseTable(): void {
+    this.db
+      .prepare(
+        `CREATE TABLE IF NOT EXISTS sync_row_base (
+           entity     TEXT NOT NULL,
+           entity_id  TEXT NOT NULL,
+           base_body  TEXT,
+           PRIMARY KEY (entity, entity_id)
+         )`,
+      )
+      .run();
+  }
+
+  /** The common-ancestor body value for a row, or undefined if none recorded. */
+  private getBaseBody(entity: string, id: string): string | null | undefined {
+    const row = this.db
+      .prepare("SELECT base_body FROM sync_row_base WHERE entity = ? AND entity_id = ?")
+      .get(entity, id) as { base_body: string | null } | undefined;
+    return row ? row.base_body : undefined;
+  }
+
+  private setBaseBody(entity: string, id: string, body: unknown): void {
+    const val = body == null ? null : String(body);
+    this.db
+      .prepare(
+        `INSERT INTO sync_row_base (entity, entity_id, base_body) VALUES (?, ?, ?)
+         ON CONFLICT(entity, entity_id) DO UPDATE SET base_body = excluded.base_body`,
+      )
+      .run(entity, id, val);
   }
 
   // ── sync_state helpers ────────────────────────────────────────────────
@@ -144,6 +185,16 @@ export class SyncEngine {
         } else {
           this.db.prepare(`UPDATE ${entity} SET hlc = ? WHERE id = ?`).run(stamp, entity_id);
           this.appendOplog({ hlc: stamp, origin: this.deviceId, entity, entity_id, op: "put", payload: readRow(this.db, entity, entity_id) ?? null });
+        }
+        // Establish the conflict ancestor the FIRST time a row is published, so
+        // a fresh row has a baseline. We must NOT advance an existing ancestor
+        // here: a later local edit has to remain "changed vs ancestor" so a
+        // genuinely concurrent remote edit is still detected as a conflict. The
+        // ancestor advances only at real sync points — applying a remote op, or
+        // receiving our own op echoed back (see reconcileOne).
+        const bodyCol = BODY_COLUMN[entity];
+        if (bodyCol && row && this.getBaseBody(entity, entity_id) === undefined) {
+          this.setBaseBody(entity, entity_id, row[bodyCol]);
         }
       }
       this.db.prepare("DELETE FROM sync_pending WHERE seq <= ?").run(maxSeq);
@@ -230,6 +281,14 @@ export class SyncEngine {
       .run(...present.map((c) => merged[c] as never));
 
     this.appendOplog({ hlc: stamp, origin: this.deviceId, entity, entity_id: values.id, op: "put", payload: readRow(this.db, entity, values.id) ?? null });
+    // Establish the conflict ancestor the first time this row is published
+    // (mirrors drainPending). Never advance an existing ancestor — a later
+    // local edit must stay "changed vs ancestor" so a concurrent remote edit is
+    // still caught.
+    const bodyCol = BODY_COLUMN[entity];
+    if (bodyCol && this.getBaseBody(entity, values.id) === undefined) {
+      this.setBaseBody(entity, values.id, merged[bodyCol]);
+    }
     this.setSuppress(false);
     return stamp;
   }
@@ -256,8 +315,59 @@ export class SyncEngine {
 
   // ── export / import ───────────────────────────────────────────────────
 
-  /** All oplog entries this device has, in HLC order (for a full peer sync). */
+  /**
+   * Compact the oplog in place: keep only the highest-HLC entry per
+   * (entity, entity_id), dropping superseded ops. Safe because reconcile
+   * applies ops in HLC order and the per-row staleness guard makes older ops
+   * no-ops anyway — a peer only needs the latest snapshot of each row to
+   * converge. This keeps the oplog (and the published .ndjson) proportional to
+   * live-row count rather than growing with every edit.
+   *
+   * Returns the number of superseded rows removed.
+   */
+  compactOplog(): number {
+    // For a stable HLC comparison in SQL we can't rely on lexical ordering of
+    // the encoded HLC across all encodings, so resolve the winner per row via
+    // the engine's compareHlc in JS, then delete everything else by seq.
+    const rows = this.db
+      .prepare("SELECT seq, hlc, entity, entity_id FROM sync_oplog")
+      .all() as Array<{ seq: number; hlc: string; entity: string; entity_id: string }>;
+    if (rows.length === 0) return 0;
+
+    const winnerSeq = new Map<string, { seq: number; hlc: string }>();
+    for (const r of rows) {
+      const key = `${r.entity}\u0000${r.entity_id}`;
+      const cur = winnerSeq.get(key);
+      // Latest by HLC; tie-break on higher seq (later physical insert).
+      if (!cur || compareHlc(r.hlc, cur.hlc) > 0 || (compareHlc(r.hlc, cur.hlc) === 0 && r.seq > cur.seq)) {
+        winnerSeq.set(key, { seq: r.seq, hlc: r.hlc });
+      }
+    }
+
+    const keep = new Set<number>([...winnerSeq.values()].map((w) => w.seq));
+    const toDelete = rows.filter((r) => !keep.has(r.seq)).map((r) => r.seq);
+    if (toDelete.length === 0) return 0;
+
+    const run = this.db.transaction(() => {
+      // Delete in chunks to stay within SQLite's parameter limit.
+      const CHUNK = 500;
+      for (let i = 0; i < toDelete.length; i += CHUNK) {
+        const batch = toDelete.slice(i, i + CHUNK);
+        const placeholders = batch.map(() => "?").join(",");
+        this.db.prepare(`DELETE FROM sync_oplog WHERE seq IN (${placeholders})`).run(...(batch as never[]));
+      }
+    });
+    run();
+    return toDelete.length;
+  }
+
+  /**
+   * All oplog entries this device has, in HLC order (for a full peer sync).
+   * Compacts first so the exported changelog carries one entry per live row,
+   * not the full edit history.
+   */
   exportOplog(): OplogEntry[] {
+    this.compactOplog();
     const rows = this.db.prepare("SELECT * FROM sync_oplog ORDER BY seq ASC").all() as Array<{
       hlc: string;
       origin: string;
@@ -293,6 +403,15 @@ export class SyncEngine {
     const applied: Array<{ entity: SyncableTable; entity_id: string; op: Op }> = [];
     const sorted = [...entries].sort((a, b) => compareHlc(a.hlc, b.hlc));
 
+    // Sync applies rows in oplog (HLC) order, not FK-dependency order, and may
+    // insert tombstone shells for created-then-deleted rows whose 'put' was
+    // compacted away. Both legitimately violate FKs, so enforce none while
+    // reconciling. The pragma must be toggled OUTSIDE a transaction (SQLite
+    // ignores it inside one), so we do it around the transaction, not within.
+    const fkRow = this.db.prepare("PRAGMA foreign_keys").get() as { foreign_keys?: number } | undefined;
+    const fkWasOn = fkRow?.foreign_keys === 1;
+    if (fkWasOn) this.db.prepare("PRAGMA foreign_keys = OFF").run();
+
     const run = this.db.transaction(() => {
       this.setSuppress(true); // reconcile writes must not be re-captured as local ops
       for (const entry of sorted) {
@@ -304,7 +423,11 @@ export class SyncEngine {
       this.setSuppress(false);
       this.persistHlc();
     });
-    run();
+    try {
+      run();
+    } finally {
+      if (fkWasOn) this.db.prepare("PRAGMA foreign_keys = ON").run();
+    }
     return { conflictCopies, applied };
   }
 
@@ -315,6 +438,18 @@ export class SyncEngine {
 
     // Idempotency / staleness guard: never let an older op overwrite a newer row.
     if (localHlc && compareHlc(hlc, localHlc) <= 0) {
+      // Even though we don't apply this op, if its body matches our current row
+      // it's proof the peer has converged on this exact version (typically our
+      // own edit echoed back via gossip). Advance the conflict ancestor so a
+      // later legitimately-sequential edit from the peer isn't mistaken for a
+      // concurrent one. Only advance toward agreement (bodies equal).
+      const bodyCol = BODY_COLUMN[entity];
+      if (bodyCol && op === "put" && local && entry.payload) {
+        const remoteBody = entry.payload[bodyCol];
+        if (local[bodyCol] === remoteBody) {
+          this.setBaseBody(entity, entity_id, remoteBody);
+        }
+      }
       return { applied: false, conflictCopyId: null };
     }
 
@@ -336,12 +471,25 @@ export class SyncEngine {
     // op === 'put'
     const remote = entry.payload ?? {};
     let conflictCopyId: string | null = null;
+    const bodyCol = BODY_COLUMN[entity];
 
-    if (local && !local.deleted_at) {
-      // Body conflict detection (notes.content). Both sides changed since we
-      // diverged and the bodies differ → keep both via a conflict copy.
-      const bodyCol = BODY_COLUMN[entity];
-      if (bodyCol && local[bodyCol] !== remote[bodyCol] && remote[bodyCol] != null && local[bodyCol] != null) {
+    if (local && !local.deleted_at && bodyCol) {
+      // 3-way body conflict (plan §5): a conflict copy is created only when BOTH
+      // sides changed the body since the common ancestor and they now disagree.
+      // A one-sided remote edit (local == ancestor) is NOT a conflict — this is
+      // what prevents spurious conflict copies on notes the user never touched.
+      const ancestor = this.getBaseBody(entity, entity_id); // undefined = unknown
+      const localBody = local[bodyCol];
+      const remoteBody = remote[bodyCol];
+      const localChanged = ancestor === undefined ? false : String(localBody ?? "") !== String(ancestor ?? "");
+      const remoteChanged = ancestor === undefined ? false : String(remoteBody ?? "") !== String(ancestor ?? "");
+      if (
+        localChanged &&
+        remoteChanged &&
+        localBody !== remoteBody &&
+        remoteBody != null &&
+        localBody != null
+      ) {
         conflictCopyId = this.makeConflictCopy(entity, local);
       }
     }
@@ -361,6 +509,8 @@ export class SyncEngine {
     } else {
       this.writeRow(entity, merged);
     }
+    // The merged body is now the value both sides agree on → new ancestor.
+    if (bodyCol) this.setBaseBody(entity, entity_id, merged[bodyCol]);
     return { applied: true, conflictCopyId };
   }
 
@@ -412,7 +562,12 @@ export class SyncEngine {
   }
 
   private insertTombstoneShell(entity: SyncableTable, id: string, hlc: string): void {
-    // Insert a minimal row that satisfies NOT NULL constraints, already tombstoned.
+    // Insert a minimal row that satisfies NOT NULL constraints, already
+    // tombstoned. This is an intentionally-incomplete placeholder (e.g. a
+    // created-then-deleted row whose 'put' was compacted away, so the peer only
+    // ever sees the delete). FK columns can't reference real rows; callers run
+    // reconcile with FKs disabled (see applyRemote) so the dead shell is
+    // allowed. The row is never read as live data.
     const cols = db_cols_notnull(this.db, entity);
     const row: Record<string, unknown> = { id, hlc, deleted_at: nowIso() };
     for (const c of cols) if (!(c.name in row)) row[c.name] = c.dflt ?? "";

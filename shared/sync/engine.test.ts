@@ -178,6 +178,79 @@ describe("sync engine — Phase 0 convergence spike", () => {
     expect(copiesB.map((c) => c.content)).toEqual(["A edited this"]);
   });
 
+  it("does NOT create a conflict for a one-sided remote edit (no local change)", () => {
+    // Regression: a note edited only on B must apply cleanly on A without
+    // spawning a spurious 'conflicted copy' on A — the user never touched it.
+    const clkA = clockFrom(3_500_000);
+    const clkB = clockFrom(3_500_000);
+    const A = makeDevice("A", clkA.now);
+    const B = makeDevice("B", clkB.now);
+    seedBase(A.engine);
+    A.engine.put("notes", { id: "n1", project_id: "p1", workspace_id: "ws1", title: "Shared", content: "original", created_at: "t", updated_at: "t", content_text: "" });
+    syncFolder(dir, A.engine, B.engine); // both agree on "original"
+
+    // Only B edits. A does nothing.
+    clkB.advance(10);
+    B.engine.put("notes", { id: "n1", content: "B's one-sided edit" });
+
+    syncFolder(dir, A.engine, B.engine);
+
+    // Converged, B's body wins, and crucially NO conflict copy anywhere.
+    expect(liveState(A.db)).toEqual(liveState(B.db));
+    for (const dev of [A, B]) {
+      const row = dev.db.prepare("SELECT content FROM notes WHERE id='n1'").get() as { content: string };
+      expect(row.content).toBe("B's one-sided edit");
+      const copies = dev.db
+        .prepare("SELECT id FROM notes WHERE id LIKE '%\\_conflict\\_%' ESCAPE '\\' AND deleted_at IS NULL")
+        .all();
+      expect(copies.length).toBe(0);
+    }
+
+    // And re-syncing (idempotent) still produces no new conflicts.
+    syncFolder(dir, A.engine, B.engine);
+    for (const dev of [A, B]) {
+      const copies = dev.db
+        .prepare("SELECT id FROM notes WHERE id LIKE '%\\_conflict\\_%' ESCAPE '\\' AND deleted_at IS NULL")
+        .all();
+      expect(copies.length).toBe(0);
+    }
+  });
+
+  it("does not regenerate conflicts after repeated syncs of sequential edits", () => {
+    // A edits, syncs (B fast-forwards). Later B edits, syncs (A fast-forwards).
+    // Each edit is sequential (never concurrent), so no conflict should ever
+    // appear, even across many sync rounds.
+    const clkA = clockFrom(3_800_000);
+    const clkB = clockFrom(3_800_000);
+    const A = makeDevice("A", clkA.now);
+    const B = makeDevice("B", clkB.now);
+    seedBase(A.engine);
+    A.engine.put("notes", { id: "n1", project_id: "p1", workspace_id: "ws1", title: "Doc", content: "v0", created_at: "t", updated_at: "t", content_text: "" });
+    syncFolder(dir, A.engine, B.engine);
+
+    clkA.advance(10);
+    A.engine.put("notes", { id: "n1", content: "v1 by A" });
+    syncFolder(dir, A.engine, B.engine);
+
+    clkB.advance(10);
+    B.engine.put("notes", { id: "n1", content: "v2 by B" });
+    syncFolder(dir, A.engine, B.engine);
+
+    clkA.advance(10);
+    A.engine.put("notes", { id: "n1", content: "v3 by A" });
+    syncFolder(dir, A.engine, B.engine);
+
+    expect(liveState(A.db)).toEqual(liveState(B.db));
+    for (const dev of [A, B]) {
+      const row = dev.db.prepare("SELECT content FROM notes WHERE id='n1'").get() as { content: string };
+      expect(row.content).toBe("v3 by A");
+      const copies = dev.db
+        .prepare("SELECT id FROM notes WHERE id LIKE '%\\_conflict\\_%' ESCAPE '\\' AND deleted_at IS NULL")
+        .all();
+      expect(copies.length).toBe(0);
+    }
+  });
+
   it("propagates deletes without resurrection (delete wins over older edit)", () => {
     const clkA = clockFrom(4_000_000);
     const clkB = clockFrom(4_000_000);
@@ -339,6 +412,39 @@ describe("sync engine — trigger→drain capture of real queries.ts writes", ()
     expect(n).toBe(1);
     const after = (A.db.prepare("SELECT COUNT(*) c FROM sync_oplog WHERE entity='notes' AND entity_id='n1'").get() as { c: number }).c;
     expect(after).toBe(before + 1);
+  });
+
+  it("compacts the oplog to one entry per row (proportional to live state, not edit history)", () => {
+    const clkA = clockFrom(9_600_000);
+    const A = makeDevice("A", clkA.now);
+    q.createWorkspace(A.db, { id: "ws1", name: "WS" });
+    q.createProject(A.db, { id: "p1", workspaceId: "ws1", name: "P" });
+    q.createNote(A.db, { id: "n1", projectId: "p1", workspaceId: "ws1", title: "N", content: "v1" });
+    A.engine.drainPending();
+
+    // Many sequential edits, each drained → many historical ops accumulate.
+    for (let i = 2; i <= 20; i++) {
+      clkA.advance(1);
+      q.updateNote(A.db, "n1", { content: `v${i}` });
+      A.engine.drainPending();
+    }
+    const rawCount = (A.db.prepare("SELECT COUNT(*) c FROM sync_oplog WHERE entity='notes' AND entity_id='n1'").get() as { c: number }).c;
+    expect(rawCount).toBeGreaterThan(1); // history piled up
+
+    // Export compacts in place: one entry per (entity, entity_id).
+    const exported = A.engine.exportOplog();
+    const n1Entries = exported.filter((e) => e.entity === "notes" && e.entity_id === "n1");
+    expect(n1Entries.length).toBe(1);
+    // And it's the LATEST value.
+    expect((n1Entries[0].payload as { content: string }).content).toBe("v20");
+    // Physical table is compacted too.
+    const compactedCount = (A.db.prepare("SELECT COUNT(*) c FROM sync_oplog WHERE entity='notes' AND entity_id='n1'").get() as { c: number }).c;
+    expect(compactedCount).toBe(1);
+
+    // A fresh peer still receives the correct final state from the compacted log.
+    const B = makeDevice("B", clockFrom(9_700_000).now);
+    B.engine.applyRemote(exported);
+    expect((B.db.prepare("SELECT content FROM notes WHERE id='n1'").get() as { content: string }).content).toBe("v20");
   });
 
   it("migrations upgrade a pre-sync (v24) database in place", () => {
