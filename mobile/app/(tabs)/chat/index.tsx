@@ -11,7 +11,7 @@ import {
   Alert,
 } from "react-native";
 import Animated, { useAnimatedStyle, useSharedValue } from "react-native-reanimated";
-import { useKeyboardHandler } from "react-native-keyboard-controller";
+import { KeyboardStickyView, useKeyboardHandler } from "react-native-keyboard-controller";
 import { Stack } from "expo-router";
 import { CheckCircle, Bot, User, Send, ImagePlus, X, Trash2 } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -24,6 +24,11 @@ import { pickImages, takePhoto } from "@/chat/attachments";
 import { loadChatHistory, saveChatMessage, clearChatHistory, type StoredMessage } from "@/db/chat-store";
 import { prettifyToolLabel } from "@cairn/shared/ui/constants";
 import type { UIMessage } from "@/chat/rork-client";
+
+/** Standard UIKit tab bar content height (excludes the home-indicator inset). */
+const TAB_BAR_BASE = 49;
+/** Composer height assumed before its first onLayout measurement. */
+const COMPOSER_FALLBACK_H = 60;
 
 interface UiMessage {
   role: "user" | "assistant";
@@ -81,12 +86,25 @@ export default function ChatScreen() {
   }, []);
 
   const { height: kbHeight } = useGradualAnimation();
-  // Spacer below the composer: keyboard height when open, else the bottom safe
-  // area + a little breathing room (so the composer clears the tab bar and
-  // doesn't feel cramped). max() avoids double-spacing.
-  const spacer = useAnimatedStyle(() => ({
-    height: Math.max(kbHeight.value, insets.bottom + 6),
-  }), [insets.bottom]);
+  // Approximate the native (translucent) iOS tab bar height. NativeTabs doesn't
+  // expose BottomTabBarHeightContext, so we reconstruct it: the standard UIKit
+  // tab bar is 49pt tall and sits above the home-indicator safe area.
+  //
+  // Lift the composer just above the tab bar when the keyboard is closed. We
+  // lift by only slightly more than the bar's visible height (not the full
+  // safe-area-inclusive height) so the composer hugs the bar instead of
+  // floating well above it.
+  const closedLift = TAB_BAR_BASE + insets.bottom * 0.5;
+  // Height the composer occupies, measured lazily (falls back before layout).
+  const [composerH, setComposerH] = useState(COMPOSER_FALLBACK_H);
+  // Animated spacer at the BOTTOM of the scroll content. It always keeps the
+  // last message clear of the floating composer, and grows to clear the
+  // keyboard when it opens (so you can scroll the newest message above the
+  // keyboard). When closed it matches where the composer actually rests
+  // (closedLift above the screen bottom) so there's no dead space.
+  const bottomSpacer = useAnimatedStyle(() => ({
+    height: composerH + 12 + Math.max(kbHeight.value, closedLift),
+  }), [composerH, closedLift]);
 
   const send = useCallback(async () => {
     const text = input.trim();
@@ -210,11 +228,15 @@ export default function ChatScreen() {
         }}
       />
       <View style={{ flex: 1 }}>
+        {/* Full-height scroll: messages scroll BEHIND the sticky composer and
+            the translucent native tab bar. The animated bottom spacer clears
+            both the composer and (when open) the keyboard. */}
         <ScrollView
           ref={scrollRef}
-          style={{ flex: 1 }}
+          style={StyleSheet.absoluteFill}
           contentContainerStyle={styles.list}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
           onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
         >
           {messages.length === 0 ? (
@@ -228,47 +250,55 @@ export default function ChatScreen() {
           ) : (
             messages.map((m, i) => <Bubble key={i} m={m} t={t} styles={styles} />)
           )}
+          <Animated.View style={bottomSpacer} />
         </ScrollView>
 
-        {attachments.length > 0 && (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.previewStrip} contentContainerStyle={styles.previewContent}>
-            {attachments.map((a, i) => (
-              <View key={i} style={styles.previewItem}>
-                <Image source={{ uri: a.url }} style={styles.previewImg} />
-                <Pressable style={styles.previewRemove} onPress={() => removeAttachment(i)} hitSlop={6}>
-                  <X size={12} color="#fff" />
+        {/* Sticky composer: pinned to the bottom, rides up with the keyboard
+            automatically. When the keyboard is closed it's offset up above the
+            translucent tab bar; when open it sits flush on the keyboard. */}
+        <KeyboardStickyView
+          offset={{ closed: -closedLift, opened: 0 }}
+          style={styles.composerOverlay}
+        >
+          <View onLayout={(e) => setComposerH(e.nativeEvent.layout.height)}>
+            {attachments.length > 0 && (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.previewStrip} contentContainerStyle={styles.previewContent}>
+                {attachments.map((a, i) => (
+                  <View key={i} style={styles.previewItem}>
+                    <Image source={{ uri: a.url }} style={styles.previewImg} />
+                    <Pressable style={styles.previewRemove} onPress={() => removeAttachment(i)} hitSlop={6}>
+                      <X size={12} color="#fff" />
+                    </Pressable>
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+
+            <View style={styles.composerWrap}>
+              <GlassBar style={styles.composer} interactive={false}>
+                <Pressable style={styles.attachBtn} onPress={onAttach} disabled={busy} hitSlop={6}>
+                  <ImagePlus size={16} color={busy ? withAlpha(t.textTertiary, 0.5) : t.textTertiary} />
                 </Pressable>
-              </View>
-            ))}
-          </ScrollView>
-        )}
-
-        <View style={styles.composerWrap}>
-          <GlassBar style={styles.composer} interactive={false}>
-            <Pressable style={styles.attachBtn} onPress={onAttach} disabled={busy} hitSlop={6}>
-              <ImagePlus size={16} color={busy ? withAlpha(t.textTertiary, 0.5) : t.textTertiary} />
-            </Pressable>
-            <TextInput
-              style={styles.input}
-              value={input}
-              onChangeText={setInput}
-              placeholder="Message Cairn…"
-              placeholderTextColor={t.textTertiary}
-              multiline
-              editable={!busy}
-            />
-            <Pressable
-              style={[styles.sendBtn, ((!input.trim() && attachments.length === 0) || busy) && styles.sendBtnDisabled]}
-              onPress={send}
-              disabled={(!input.trim() && attachments.length === 0) || busy}
-            >
-              {busy ? <ActivityIndicator color={t.accentFg} size="small" /> : <Send size={14} color={t.accentFg} />}
-            </Pressable>
-          </GlassBar>
-        </View>
-
-        {/* Animated spacer: tracks the keyboard, else the bottom safe area. */}
-        <Animated.View style={spacer} />
+                <TextInput
+                  style={styles.input}
+                  value={input}
+                  onChangeText={setInput}
+                  placeholder="Message Cairn…"
+                  placeholderTextColor={t.textTertiary}
+                  multiline
+                  editable={!busy}
+                />
+                <Pressable
+                  style={[styles.sendBtn, ((!input.trim() && attachments.length === 0) || busy) && styles.sendBtnDisabled]}
+                  onPress={send}
+                  disabled={(!input.trim() && attachments.length === 0) || busy}
+                >
+                  {busy ? <ActivityIndicator color={t.accentFg} size="small" /> : <Send size={14} color={t.accentFg} />}
+                </Pressable>
+              </GlassBar>
+            </View>
+          </View>
+        </KeyboardStickyView>
       </View>
     </TabScreen>
   );
@@ -359,8 +389,12 @@ function makeStyles(t: Theme) {
     previewItem: { position: "relative" },
     previewImg: { width: 68, height: 68, borderRadius: 10, backgroundColor: t.surface3 },
     previewRemove: { position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: 10, backgroundColor: "rgba(0,0,0,0.7)", alignItems: "center", justifyContent: "center" },
+    // The composer overlay is absolutely pinned to the bottom of the screen and
+    // lifted above the tab bar / keyboard via an animated transform. It sits ON
+    // TOP of the scroll content so messages scroll behind it.
+    composerOverlay: { position: "absolute", left: 0, right: 0, bottom: 0 },
     // Outer padding around the pinned composer (mirrors desktop overview `p-6`
-    // overlay, trimmed for mobile). The keyboard/safe-area spacer sits below.
+    // overlay, trimmed for mobile).
     composerWrap: { paddingHorizontal: 12, paddingTop: 8 },
     // Single unified rounded container holding attach + input + send inline,
     // mirroring the desktop overview ChatInput: rounded-2xl (16px), frosted

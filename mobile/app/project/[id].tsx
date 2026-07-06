@@ -10,6 +10,7 @@ import {
   listCards,
   moveCardToColumn,
   tagsForCard,
+  tagsForNote,
   type NoteRow,
   type CardRow,
   type ColumnRow,
@@ -20,6 +21,7 @@ import { useDataChanged } from "@/sync/useSyncStatus";
 import { useTheme, PRIORITY_COLOR, elevation, type Theme } from "@/theme";
 import { buildFolderTree, type FolderNode } from "@cairn/shared/notes/folder-tree";
 import { stripMarkdown } from "@cairn/shared/notes/text";
+import { formatRelative } from "@cairn/shared/format/date";
 
 type Tab = "notes" | "board";
 
@@ -131,15 +133,20 @@ function Segment({ label, count, active, onPress, t }: { label: string; count: n
 }
 
 function NoteRowItem({ note, depth, onPress, t }: { note: NoteRow; depth: number; onPress: () => void; t: Theme }) {
+  // Mirror the desktop NoteListItem: title, a 1-line content preview, then a
+  // meta row of relative time + up to 3 tag chips.
+  const preview = useMemo(() => {
+    const text = stripMarkdown(note.content ?? "").trim();
+    return text ? text.slice(0, 80) : "Empty note";
+  }, [note.content]);
+  const tags = useMemo(() => tagsForNote(note).slice(0, 3), [note]);
   return (
     <PressableScale
       scaleTo={1}
       dimTo={0.5}
       onPress={onPress}
       style={{
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 8,
+        gap: 3,
         paddingVertical: 10,
         paddingRight: 14,
         paddingLeft: 14 + depth * 16,
@@ -147,10 +154,19 @@ function NoteRowItem({ note, depth, onPress, t }: { note: NoteRow; depth: number
         borderBottomColor: t.borderSubtle,
       }}
     >
-      <FileText size={13} color={t.textTertiary} />
-      <Text style={{ flex: 1, color: t.textPrimary, fontSize: 14 }} numberOfLines={1}>
-        {note.title || "Untitled"}
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+        <FileText size={13} color={t.textTertiary} />
+        <Text style={{ flex: 1, color: t.textPrimary, fontSize: 14, fontWeight: "500" }} numberOfLines={1}>
+          {note.title || "Untitled"}
+        </Text>
+      </View>
+      <Text style={{ color: t.textTertiary, fontSize: 12, paddingLeft: 21 }} numberOfLines={1}>
+        {preview}
       </Text>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingLeft: 21 }}>
+        <Text style={{ color: t.textTertiary, fontSize: 11 }}>{formatRelative(note.updated_at)}</Text>
+        {tags.length > 0 && <TagChips tags={tags} size="sm" />}
+      </View>
     </PressableScale>
   );
 }
