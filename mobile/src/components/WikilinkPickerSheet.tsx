@@ -1,5 +1,15 @@
 import { useMemo, useState } from "react";
-import { Modal, View, Text, Pressable, TextInput, FlatList, StyleSheet } from "react-native";
+import {
+  Modal,
+  View,
+  Text,
+  Pressable,
+  TextInput,
+  FlatList,
+  StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
+} from "react-native";
 import { FileText, Search } from "lucide-react-native";
 import { listNotes, searchNotes, type NoteRow } from "@/db/queries";
 import { useTheme, elevation, type Theme } from "@/theme";
@@ -38,63 +48,66 @@ export function WikilinkPickerSheet({
   }, [visible, query]);
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose} />
-      <View style={[styles.sheet, elevation.xl]}>
-        <View style={styles.grabber} />
-        <View style={styles.header}>
-          <Pressable onPress={onClose} hitSlop={12}>
-            <Text style={styles.cancel}>Cancel</Text>
-          </Pressable>
-          <Text style={styles.title}>Link a note</Text>
-          <View style={{ width: 48 }} />
-        </View>
-
-        <View style={styles.searchRow}>
-          <Search size={15} color={t.textTertiary} />
-          <TextInput
-            style={styles.searchInput}
-            value={query}
-            onChangeText={setQuery}
-            placeholder="Search notes…"
-            placeholderTextColor={t.textTertiary}
-            autoFocus
-            autoCorrect={false}
-            returnKeyType="search"
-          />
-        </View>
-
-        {results.length === 0 ? (
-          <Text style={styles.empty}>No notes found.</Text>
-        ) : (
-          <FlatList
-            data={results}
-            keyExtractor={(n) => n.id}
-            keyboardShouldPersistTaps="handled"
-            style={styles.list}
-            renderItem={({ item }) => (
-              <Pressable style={styles.row} onPress={() => onSelect(item.title || "Untitled")}>
-                <FileText size={15} color={t.textTertiary} />
-                <Text style={styles.name} numberOfLines={1}>
-                  {item.title || "Untitled"}
-                </Text>
+    <Modal visible={visible} transparent animationType="slide" statusBarTranslucent onRequestClose={onClose}>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+      >
+        <Pressable style={styles.backdrop} onPress={onClose}>
+          <Pressable style={[styles.sheet, elevation.xl]} onPress={() => {}}>
+            <View style={styles.grabber} />
+            <View style={styles.header}>
+              <Pressable onPress={onClose} hitSlop={12}>
+                <Text style={styles.cancel}>Cancel</Text>
               </Pressable>
+              <Text style={styles.title}>Link a note</Text>
+              <View style={{ width: 48 }} />
+            </View>
+
+            <View style={styles.searchRow}>
+              <Search size={15} color={t.textTertiary} />
+              <TextInput
+                style={styles.searchInput}
+                value={query}
+                onChangeText={setQuery}
+                placeholder="Search notes…"
+                placeholderTextColor={t.textTertiary}
+                autoFocus
+                autoCorrect={false}
+                returnKeyType="search"
+              />
+            </View>
+
+            {results.length === 0 ? (
+              <Text style={styles.empty}>No notes found.</Text>
+            ) : (
+              <FlatList
+                data={results}
+                keyExtractor={(n) => n.id}
+                keyboardShouldPersistTaps="handled"
+                style={styles.list}
+                renderItem={({ item }) => (
+                  <Pressable style={styles.row} onPress={() => onSelect(item.title || "Untitled")}>
+                    <FileText size={15} color={t.textTertiary} />
+                    <Text style={styles.name} numberOfLines={1}>
+                      {item.title || "Untitled"}
+                    </Text>
+                  </Pressable>
+                )}
+              />
             )}
-          />
-        )}
-      </View>
+          </Pressable>
+        </Pressable>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
 
 function makeStyles(t: Theme) {
   return StyleSheet.create({
-    backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)" },
+    flex: { flex: 1 },
+    backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
     sheet: {
-      position: "absolute",
-      left: 0,
-      right: 0,
-      bottom: 0,
       maxHeight: "70%",
       backgroundColor: t.surface,
       borderTopLeftRadius: 18,
