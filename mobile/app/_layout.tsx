@@ -53,7 +53,9 @@ export default function RootLayout() {
         <Stack screenOptions={{ headerShown: true, ...headerStyle }}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="project/[id]" options={{ title: "Project" }} />
+        <Stack.Screen name="note/new" options={{ title: "New Note", presentation: "modal" }} />
         <Stack.Screen name="note/[id]" options={{ title: "Note" }} />
+        <Stack.Screen name="card/new" options={{ title: "New Task", presentation: "modal" }} />
         <Stack.Screen name="card/[id]" options={{ title: "Task" }} />
         <Stack.Screen name="conflicts" options={{ title: "Sync Conflicts" }} />
         </Stack>

@@ -7,22 +7,26 @@ import {
   StyleSheet,
   ScrollView,
   ActivityIndicator,
+  Image,
+  Alert,
 } from "react-native";
 import Animated, { useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { useKeyboardHandler } from "react-native-keyboard-controller";
-import { CheckCircle, Bot, User, Send } from "lucide-react-native";
+import { CheckCircle, Bot, User, Send, ImagePlus, X } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Screen } from "@/components/Screen";
 import { GlassBar, glassActive } from "@/components/GlassBar";
 import { MarkdownView } from "@/components/MarkdownView";
 import { useTheme, withAlpha, type Theme } from "@/theme";
-import { runAgent, userMessage, type AgentEvent } from "@/chat/agent";
+import { runAgent, userMessage, type AgentEvent, type Attachment } from "@/chat/agent";
+import { pickImages, takePhoto } from "@/chat/attachments";
 import { prettifyToolLabel } from "@cairn/shared/ui/constants";
 import type { UIMessage } from "@/chat/rork-client";
 
 interface UiMessage {
   role: "user" | "assistant";
   content: string;
+  images?: string[]; // data URIs for user attachments
   tools?: { tool: string; ok: boolean }[];
   streaming?: boolean;
 }
@@ -53,6 +57,7 @@ export default function ChatScreen() {
   const styles = useMemo(() => makeStyles(t), [t]);
   const [messages, setMessages] = useState<UiMessage[]>([]);
   const [input, setInput] = useState("");
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [busy, setBusy] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
   // Persistent agent conversation (UIMessage parts format) across turns.
@@ -68,18 +73,20 @@ export default function ChatScreen() {
 
   const send = useCallback(async () => {
     const text = input.trim();
-    if (!text || busy) return;
+    const atts = attachments;
+    if ((!text && atts.length === 0) || busy) return;
     setInput("");
+    setAttachments([]);
     setBusy(true);
 
     // UI: add the user bubble + an empty streaming assistant bubble.
     setMessages((prev) => [
       ...prev,
-      { role: "user", content: text },
+      { role: "user", content: text, images: atts.map((a) => a.url) },
       { role: "assistant", content: "", tools: [], streaming: true },
     ]);
 
-    conversation.current.push(userMessage(text));
+    conversation.current.push(userMessage(text, atts));
     let acc = "";
     const toolTrail: { tool: string; ok: boolean }[] = [];
 
@@ -119,7 +126,37 @@ export default function ChatScreen() {
       setBusy(false);
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50);
     }
-  }, [input, busy]);
+  }, [input, attachments, busy]);
+
+  const addImages = useCallback(async () => {
+    try {
+      const picked = await pickImages();
+      if (picked.length === 0) return;
+      setAttachments((prev) => [...prev, ...picked].slice(0, 4));
+    } catch (e) {
+      Alert.alert("Couldn't add image", e instanceof Error ? e.message : String(e));
+    }
+  }, []);
+
+  const capturePhoto = useCallback(async () => {
+    try {
+      const shot = await takePhoto();
+      if (shot.length === 0) return;
+      setAttachments((prev) => [...prev, ...shot].slice(0, 4));
+    } catch (e) {
+      Alert.alert("Couldn't take photo", e instanceof Error ? e.message : String(e));
+    }
+  }, []);
+
+  const onAttach = useCallback(() => {
+    Alert.alert("Add image", undefined, [
+      { text: "Photo Library", onPress: addImages },
+      { text: "Take Photo", onPress: capturePhoto },
+      { text: "Cancel", style: "cancel" },
+    ]);
+  }, [addImages, capturePhoto]);
+
+  const removeAttachment = (idx: number) => setAttachments((prev) => prev.filter((_, i) => i !== idx));
 
   return (
     <Screen title="Chat">
@@ -144,7 +181,23 @@ export default function ChatScreen() {
           )}
         </ScrollView>
 
+        {attachments.length > 0 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.previewStrip} contentContainerStyle={styles.previewContent}>
+            {attachments.map((a, i) => (
+              <View key={i} style={styles.previewItem}>
+                <Image source={{ uri: a.url }} style={styles.previewImg} />
+                <Pressable style={styles.previewRemove} onPress={() => removeAttachment(i)} hitSlop={6}>
+                  <X size={12} color="#fff" />
+                </Pressable>
+              </View>
+            ))}
+          </ScrollView>
+        )}
+
         <View style={styles.composer}>
+          <Pressable style={styles.attachBtn} onPress={onAttach} disabled={busy} hitSlop={6}>
+            <ImagePlus size={22} color={busy ? t.textTertiary : t.accent} />
+          </Pressable>
           <GlassBar style={styles.inputGlass}>
             <TextInput
               style={styles.input}
@@ -156,7 +209,11 @@ export default function ChatScreen() {
               editable={!busy}
             />
           </GlassBar>
-          <Pressable style={[styles.sendBtn, (!input.trim() || busy) && styles.sendBtnDisabled]} onPress={send} disabled={!input.trim() || busy}>
+          <Pressable
+            style={[styles.sendBtn, ((!input.trim() && attachments.length === 0) || busy) && styles.sendBtnDisabled]}
+            onPress={send}
+            disabled={(!input.trim() && attachments.length === 0) || busy}
+          >
             {busy ? <ActivityIndicator color={t.accentFg} size="small" /> : <Send size={18} color={t.accentFg} />}
           </Pressable>
         </View>
@@ -191,10 +248,17 @@ function Bubble({ m, t, styles }: { m: UiMessage; t: Theme; styles: ReturnType<t
         )}
 
         <View style={[styles.bubble, isUser ? styles.userBubble : styles.aiBubble]}>
+          {isUser && m.images && m.images.length > 0 && (
+            <View style={styles.bubbleImages}>
+              {m.images.map((uri, i) => (
+                <Image key={i} source={{ uri }} style={styles.bubbleImg} />
+              ))}
+            </View>
+          )}
           {m.role === "assistant" && m.streaming && !m.content ? (
             <ActivityIndicator color={t.textTertiary} size="small" />
           ) : isUser ? (
-            <Text style={styles.userText}>{m.content}</Text>
+            m.content ? <Text style={styles.userText}>{m.content}</Text> : null
           ) : (
             <MarkdownView content={m.content} />
           )}
@@ -239,6 +303,14 @@ function makeStyles(t: Theme) {
     aiBubble: { backgroundColor: t.surface2, borderWidth: 1, borderColor: t.border, borderTopLeftRadius: 4, alignSelf: "flex-start" },
     userBubble: { backgroundColor: t.accent, borderTopRightRadius: 4, alignSelf: "flex-end" },
     userText: { color: t.accentFg, fontSize: 15, lineHeight: 21 },
+    bubbleImages: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 6 },
+    bubbleImg: { width: 120, height: 120, borderRadius: 8, backgroundColor: t.surface3 },
+    previewStrip: { maxHeight: 84, marginHorizontal: 12 },
+    previewContent: { gap: 8, paddingVertical: 6 },
+    previewItem: { position: "relative" },
+    previewImg: { width: 68, height: 68, borderRadius: 10, backgroundColor: t.surface3 },
+    previewRemove: { position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: 10, backgroundColor: "rgba(0,0,0,0.7)", alignItems: "center", justifyContent: "center" },
+    attachBtn: { width: 40, height: 44, alignItems: "center", justifyContent: "center" },
     composer: {
       flexDirection: "row",
       alignItems: "flex-end",

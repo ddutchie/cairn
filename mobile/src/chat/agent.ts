@@ -14,6 +14,7 @@ import {
   type UIMessage,
   type UIPart,
   type ToolPart,
+  type FilePart,
 } from "./rork-client";
 import { toolsForAgent, TOOL_MAP } from "./tools";
 
@@ -50,8 +51,27 @@ function systemMessage(): UIMessage {
   };
 }
 
-export function userMessage(text: string): UIMessage {
-  return { id: msgId(), role: "user", parts: [{ type: "text", text }] };
+/** An image/file attachment for a user message (data URI). */
+export interface Attachment {
+  mediaType: string;
+  url: string;
+  name?: string;
+}
+
+/**
+ * Build a user message. Attachments (images) become native "file" parts so the
+ * model receives them as multimodal input via /agent/chat. Text always leads so
+ * a caption reads before its image.
+ */
+export function userMessage(text: string, attachments?: Attachment[]): UIMessage {
+  const parts: UIPart[] = [];
+  if (text) parts.push({ type: "text", text });
+  for (const a of attachments ?? []) {
+    parts.push({ type: "file", mediaType: a.mediaType, url: a.url, name: a.name } as FilePart);
+  }
+  // A message with only an image still needs a part; guarantee non-empty.
+  if (parts.length === 0) parts.push({ type: "text", text: "" });
+  return { id: msgId(), role: "user", parts };
 }
 
 /**

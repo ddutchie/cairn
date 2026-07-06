@@ -25,6 +25,17 @@ export interface TextPart {
   type: "text";
   text: string;
 }
+/**
+ * A binary attachment (image/pdf). For /agent/chat this is a native UIMessage
+ * "file" part whose `url` is a data URI (see rorkopenai src/chat.ts image
+ * handling). Rork forwards it to the model as multimodal input.
+ */
+export interface FilePart {
+  type: "file";
+  mediaType: string; // e.g. "image/jpeg"
+  url: string; // data:image/jpeg;base64,… or a remote URL
+  name?: string;
+}
 export interface ToolPart {
   type: string; // "tool-<name>"
   toolCallId: string;
@@ -33,7 +44,7 @@ export interface ToolPart {
   input?: unknown;
   output?: { type: "text"; value: string } | unknown;
 }
-export type UIPart = TextPart | ToolPart;
+export type UIPart = TextPart | FilePart | ToolPart;
 
 export interface UIMessage {
   id: string;

@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { View, Text, ScrollView, Pressable, StyleSheet } from "react-native";
 import { useLocalSearchParams, useRouter, useFocusEffect, Stack } from "expo-router";
-import { ChevronDown, ChevronRight, Folder, FolderOpen, FileText } from "lucide-react-native";
+import { ChevronDown, ChevronRight, Folder, FolderOpen, FileText, Plus } from "lucide-react-native";
 import {
   getProject,
   listNotes,
@@ -44,9 +44,25 @@ export default function ProjectScreen() {
   const styles = useMemo(() => makeStyles(t), [t]);
   const toggle = (path: string) => setCollapsed((c) => ({ ...c, [path]: !c[path] }));
 
+  const onAdd = () => {
+    if (!id) return;
+    if (tab === "notes") router.push(`/note/new?project=${id}`);
+    else router.push(`/card/new?project=${id}`);
+  };
+
   return (
     <View style={styles.container}>
-      <Stack.Screen options={{ title: project?.name || "Project", headerBackTitle: "Projects" }} />
+      <Stack.Screen
+        options={{
+          title: project?.name || "Project",
+          headerBackTitle: "Projects",
+          headerRight: () => (
+            <Pressable onPress={onAdd} hitSlop={12}>
+              <Plus size={22} color={t.accent} />
+            </Pressable>
+          ),
+        }}
+      />
 
       <View style={styles.segment}>
         <Segment label="Notes" count={notes.length} active={tab === "notes"} onPress={() => setTab("notes")} t={t} />
@@ -55,7 +71,7 @@ export default function ProjectScreen() {
 
       {tab === "notes" ? (
         notes.length === 0 ? (
-          <Empty text="No notes in this project." t={t} />
+          <Empty text="No notes yet. Tap + to create one." t={t} />
         ) : (
           <ScrollView contentContainerStyle={styles.notesScroll}>
             {tree.folders.map((f) => (
@@ -85,6 +101,7 @@ export default function ProjectScreen() {
             load();
           }}
           onOpenCard={(cid) => router.push(`/card/${cid}`)}
+          onAddCard={(colId) => router.push(`/card/new?project=${id}&column=${colId}`)}
         />
       )}
     </View>
@@ -185,6 +202,7 @@ function BoardView({
   styles,
   onMove,
   onOpenCard,
+  onAddCard,
 }: {
   columns: ColumnRow[];
   cards: CardRow[];
@@ -192,6 +210,7 @@ function BoardView({
   styles: ReturnType<typeof makeStyles>;
   onMove: (cardId: string, colId: string) => void;
   onOpenCard: (id: string) => void;
+  onAddCard: (colId: string) => void;
 }) {
   if (columns.length === 0) return <Empty text="No board columns in this project." t={t} />;
   return (
@@ -219,6 +238,10 @@ function BoardView({
                   onOpen={onOpenCard}
                 />
               ))}
+              <Pressable style={styles.addCard} onPress={() => onAddCard(col.id)}>
+                <Plus size={14} color={t.textTertiary} />
+                <Text style={styles.addCardText}>New task</Text>
+              </Pressable>
             </ScrollView>
           </View>
         );
@@ -298,6 +321,8 @@ function makeStyles(t: Theme) {
     columnTitle: { fontSize: 14, fontWeight: "700", color: t.textPrimary, marginBottom: 8 },
     count: { color: t.textTertiary, fontWeight: "400" },
     card: { backgroundColor: t.surface2, borderRadius: 8, padding: 10, marginBottom: 8, borderWidth: 1, borderColor: t.borderSubtle },
+    addCard: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 10, borderRadius: 8, borderWidth: 1, borderColor: t.border, borderStyle: "dashed", marginTop: 2 },
+    addCardText: { fontSize: 13, color: t.textTertiary, fontWeight: "600" },
     cardTop: { flexDirection: "row", alignItems: "center", gap: 8 },
     priorityDot: { width: 8, height: 8, borderRadius: 4 },
     cardTitle: { flex: 1, fontSize: 13, color: t.textPrimary, fontWeight: "500" },

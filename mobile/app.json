@@ -21,6 +21,13 @@
     "plugins": [
       "expo-router",
       "expo-sqlite",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Cairn uses your photos to attach images to chat messages.",
+          "cameraPermission": "Cairn uses the camera to attach photos to chat messages."
+        }
+      ],
       "./plugins/withAppleSigning",
       "./plugins/withICloudContainer"
     ],
