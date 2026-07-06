@@ -46,13 +46,6 @@ export const TOOLS: ToolDef[] = [
     run: (a) => q.getProjectContextPack(str(a.project_id)),
   },
   {
-    name: "list_projects",
-    description: "List all projects (id, name).",
-    params: "{}",
-    jsonSchema: obj({}),
-    run: () => q.listProjects().map((p) => ({ id: p.id, name: p.name })),
-  },
-  {
     name: "search_notes",
     description: "Search notes by text. Returns id, title, folder, project_id.",
     params: '{ "query": string }',
