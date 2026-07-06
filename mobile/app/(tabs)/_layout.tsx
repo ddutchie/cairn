@@ -1,6 +1,7 @@
 import { NativeTabs } from "expo-router/unstable-native-tabs";
 import { ThemeProvider, DarkTheme, DefaultTheme } from "expo-router";
 import { useColorScheme } from "react-native";
+import { useTheme } from "@/theme";
 
 /**
  * Native platform tab bar with SF Symbols (iOS) / Material icons (Android).
@@ -9,9 +10,13 @@ import { useColorScheme } from "react-native";
  */
 export default function TabsLayout() {
   const colorScheme = useColorScheme();
+  const t = useTheme();
   return (
     <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
-      <NativeTabs>
+      {/* tintColor accents the selected tab (icon + label) with our brand
+          accent instead of the platform default blue. minimizeBehavior
+          collapses the tab bar as you scroll down for more content room. */}
+      <NativeTabs tintColor={t.accent} minimizeBehavior="onScrollDown">
         <NativeTabs.Trigger name="index">
           <NativeTabs.Trigger.Icon sf="folder.fill" md="folder" />
           <NativeTabs.Trigger.Label>Projects</NativeTabs.Trigger.Label>

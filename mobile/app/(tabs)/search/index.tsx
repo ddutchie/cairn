@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Text, FlatList, StyleSheet } from "react-native";
-import { Stack, useRouter } from "expo-router";
+import { Stack, useRouter, useFocusEffect } from "expo-router";
+import type { SearchBarCommands } from "react-native-screens";
 import { searchNotes, type NoteRow } from "@/db/queries";
 import { PressableScale } from "@/components/PressableScale";
 import { TabScreen } from "@/components/TabScreen";
@@ -19,11 +20,22 @@ export default function SearchScreen() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<NoteRow[]>([]);
   const styles = useMemo(() => makeStyles(t), [t]);
+  const searchRef = useRef<SearchBarCommands>(null);
 
   const onChange = (text: string) => {
     setQuery(text);
     setResults(text.trim().length > 0 ? searchNotes(text.trim()) : []);
   };
+
+  // Focus the native search bar (and raise the keyboard) every time the tab is
+  // opened — not just on first mount, since native tabs stay mounted. A short
+  // delay lets the header search controller finish presenting first.
+  useFocusEffect(
+    useCallback(() => {
+      const id = setTimeout(() => searchRef.current?.focus(), 350);
+      return () => clearTimeout(id);
+    }, []),
+  );
 
   return (
     <TabScreen>
@@ -31,8 +43,10 @@ export default function SearchScreen() {
         options={{
           title: "Search",
           headerSearchBarOptions: {
+            ref: searchRef,
             placeholder: "Search notes",
             autoCapitalize: "none",
+            autoFocus: true,
             hideWhenScrolling: false,
             onChangeText: (e) => onChange(e.nativeEvent.text),
           },
