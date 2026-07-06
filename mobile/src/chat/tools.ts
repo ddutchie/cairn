@@ -30,6 +30,22 @@ const S = { type: "string" };
 
 export const TOOLS: ToolDef[] = [
   {
+    name: "get_cairn_context",
+    description:
+      "Workspace orientation: all projects (each with their board columns) + tags. Call this FIRST to get ids and structure.",
+    params: "{}",
+    jsonSchema: obj({}),
+    run: () => q.getCairnContext(),
+  },
+  {
+    name: "get_project_context_pack",
+    description:
+      "Rich single-call project summary: project + columns, note count, pinned notes (with content), open tasks grouped by column, and recent activity. Use this to summarize or understand a project.",
+    params: '{ "project_id": string }',
+    jsonSchema: obj({ project_id: S }, ["project_id"]),
+    run: (a) => q.getProjectContextPack(str(a.project_id)),
+  },
+  {
     name: "list_projects",
     description: "List all projects (id, name).",
     params: "{}",

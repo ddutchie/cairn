@@ -264,6 +264,107 @@ export function updateTask(cardId: string, patch: { title?: string; description?
   getDb().runSync(`UPDATE task_cards SET ${sets.join(", ")} WHERE id = ?`, ...(vals as never[]));
 }
 
+// ── Aggregate context tools (mirror desktop read-tools-pure) ────────────────
+
+/**
+ * Workspace orientation — projects (with their columns) + tags. Mirrors the
+ * desktop get_cairn_context so the agent can get IDs + structure in one call.
+ */
+export function getCairnContext(): unknown {
+  const db = getDb();
+  const projects = db.getAllSync<{ id: string; name: string; icon: string | null }>(
+    `SELECT id, name, icon FROM projects WHERE ${LIVE} ORDER BY name`,
+  );
+  const tags = db.getAllSync<{ id: string; name: string; color: string }>(
+    "SELECT id, name, color FROM tags WHERE deleted_at IS NULL ORDER BY name",
+  );
+  return {
+    projects: projects.map((p) => ({
+      id: p.id,
+      name: p.name,
+      columns: db.getAllSync<{ id: string; name: string; type: string }>(
+        `SELECT id, name, type FROM board_columns WHERE deleted_at IS NULL AND project_id = ? ORDER BY "order"`,
+        p.id,
+      ),
+    })),
+    tags: tags.map((t) => ({ id: t.id, name: t.name, color: t.color })),
+  };
+}
+
+/**
+ * Rich single-call project summary — project + columns, noteCount, pinned notes
+ * (with truncated content), open tasks grouped by column, recent activity.
+ * Mirrors the desktop get_project_context_pack so the mobile agent can produce
+ * an equally rich project summary.
+ */
+export function getProjectContextPack(projectId: string): unknown {
+  const db = getDb();
+  const project = db.getFirstSync<{ id: string; name: string; description: string | null; status: string; priority: string; due_date: string | null }>(
+    `SELECT id, name, description, status, priority, due_date FROM projects WHERE id = ? AND ${LIVE}`,
+    projectId,
+  );
+  if (!project) return { error: "Project not found" };
+
+  const columns = db.getAllSync<{ id: string; name: string; type: string }>(
+    `SELECT id, name, type FROM board_columns WHERE deleted_at IS NULL AND project_id = ? ORDER BY "order"`,
+    projectId,
+  );
+
+  const notes = db.getAllSync<NoteRow & { is_pinned: number }>(
+    `SELECT id, project_id, title, content, folder, updated_at, is_pinned FROM notes
+     WHERE ${LIVE} AND type='note' AND project_id = ? ORDER BY updated_at DESC`,
+    projectId,
+  );
+
+  const pinnedNotes = notes
+    .filter((n) => n.is_pinned)
+    .map((n) => {
+      const content = n.content ?? "";
+      const truncated = content.length > 1000 ? content.slice(0, 1000) + "\n\n... (truncated, use get_note)" : content;
+      return { id: n.id, title: n.title, folder: n.folder ?? "", content: truncated };
+    });
+
+  const cards = db.getAllSync<CardRow & { due_date: string | null; updated_at: string }>(
+    `SELECT id, column_id, project_id, title, description, priority, "order", due_date, updated_at FROM task_cards
+     WHERE ${LIVE} AND project_id = ?`,
+    projectId,
+  );
+
+  const openTasks = columns
+    .filter((c) => c.type !== "done")
+    .map((col) => ({
+      columnType: col.type,
+      columnId: col.id,
+      tasks: cards
+        .filter((c) => c.column_id === col.id)
+        .map((c) => {
+          const desc = c.description ?? "";
+          const t: Record<string, unknown> = { id: c.id, title: c.title, priority: c.priority };
+          if (desc) t.description = desc.length > 400 ? desc.slice(0, 400) + "\n... (truncated, use get_note)" : desc;
+          if (c.due_date) t.dueDate = c.due_date;
+          return t;
+        }),
+    }))
+    .filter((col) => col.tasks.length > 0);
+
+  const recentActivity = [
+    ...notes.map((n) => ({ type: "note" as const, id: n.id, title: n.title, updatedAt: n.updated_at })),
+    ...cards.map((c) => ({ type: "card" as const, id: c.id, title: c.title, updatedAt: c.updated_at })),
+  ]
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+    .slice(0, 10)
+    .map(({ type, id, title }) => ({ type, id, title }));
+
+  const proj: Record<string, unknown> = { id: project.id, name: project.name };
+  if (project.description) proj.description = project.description;
+  if (project.status && project.status !== "active") proj.status = project.status;
+  if (project.priority && project.priority !== "medium") proj.priority = project.priority;
+  if (project.due_date) proj.dueDate = project.due_date;
+  proj.columns = columns;
+
+  return { project: proj, noteCount: notes.length, pinnedNotes, openTasks, recentActivity };
+}
+
 /**
  * Update a note's title/body locally. A plain UPDATE so the capture triggers
  * stage the change into sync_pending; syncNow() drains + publishes it.
