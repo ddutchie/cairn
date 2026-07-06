@@ -8,7 +8,8 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "lint": "eslint ."
   },
   "dependencies": {
     "@react-native-community/datetimepicker": "9.1.0",
@@ -47,6 +48,8 @@
   "devDependencies": {
     "@types/react": "~19.2.4",
     "babel-plugin-module-resolver": "^5.0.2",
+    "eslint": "^9.39.4",
+    "eslint-config-expo": "~57.0.0",
     "typescript": "~6.0.3"
   }
 }

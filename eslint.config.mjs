@@ -62,6 +62,10 @@ const eslintConfig = defineConfig([
     // Compiled Electron + MCP bundles — not source
     "dist-electron/**",
     "dist-mcp/**",
+    // Mobile (Expo/React Native) has its own RN-aware ESLint config
+    // (mobile/eslint.config.js). The Next.js/web rules here flag valid RN
+    // patterns, so it is linted separately.
+    "mobile/**",
     // Remotion video compositions — separate build pipeline, not part of app
     "remotion/**",
     // Plain Node.js CJS build/helper scripts
