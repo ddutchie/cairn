@@ -60,9 +60,10 @@ export default function ChatScreen() {
 
   const { height: kbHeight } = useGradualAnimation();
   // Spacer below the composer: keyboard height when open, else the bottom safe
-  // area (so the composer clears the tab bar). max() avoids double-spacing.
+  // area + a little breathing room (so the composer clears the tab bar and
+  // doesn't feel cramped). max() avoids double-spacing.
   const spacer = useAnimatedStyle(() => ({
-    height: Math.max(kbHeight.value, insets.bottom),
+    height: Math.max(kbHeight.value, insets.bottom + 6),
   }), [insets.bottom]);
 
   const send = useCallback(async () => {
@@ -156,7 +157,7 @@ export default function ChatScreen() {
             />
           </GlassBar>
           <Pressable style={[styles.sendBtn, (!input.trim() || busy) && styles.sendBtnDisabled]} onPress={send} disabled={!input.trim() || busy}>
-            {busy ? <ActivityIndicator color={t.accentFg} size="small" /> : <Send size={16} color={t.accentFg} />}
+            {busy ? <ActivityIndicator color={t.accentFg} size="small" /> : <Send size={18} color={t.accentFg} />}
           </Pressable>
         </View>
 
@@ -242,25 +243,29 @@ function makeStyles(t: Theme) {
       flexDirection: "row",
       alignItems: "flex-end",
       gap: 8,
-      paddingHorizontal: 10,
+      paddingHorizontal: 12,
       paddingTop: 8,
+      paddingBottom: 8,
     },
     inputGlass: {
       flex: 1,
-      maxHeight: 120,
-      borderRadius: 20,
+      minHeight: 48,
+      maxHeight: 140,
+      justifyContent: "center",
+      borderRadius: 24,
       overflow: "hidden",
       backgroundColor: glassActive ? undefined : t.surface2,
       borderWidth: glassActive ? 0 : 1,
       borderColor: t.border,
     },
     input: {
-      paddingHorizontal: 14,
-      paddingVertical: 10,
+      paddingHorizontal: 16,
+      paddingVertical: 13,
       color: t.textPrimary,
-      fontSize: 15,
+      fontSize: 16,
+      lineHeight: 21,
     },
-    sendBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: t.accent, alignItems: "center", justifyContent: "center" },
+    sendBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: t.accent, alignItems: "center", justifyContent: "center" },
     sendBtnDisabled: { opacity: 0.4 },
   });
 }
