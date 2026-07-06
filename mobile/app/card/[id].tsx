@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, KeyboardAvoidingView, Platform } from "react-native";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
-import { getCard, listColumns, updateTask, moveCardToColumn, type ColumnRow } from "@/db/queries";
+import { getCard, listColumns, updateTask, moveCardToColumn, tagsForCard, type ColumnRow } from "@/db/queries";
+import { TagChips } from "@/components/TagChips";
 import { useTheme, PRIORITY_COLOR, type Theme } from "@/theme";
 
 const PRIORITIES = ["low", "medium", "high", "urgent"] as const;
@@ -18,6 +19,7 @@ export default function CardDetail() {
   const [priority, setPriority] = useState(card?.priority ?? "medium");
   const [columnId, setColumnId] = useState(card?.column_id ?? "");
   const columns: ColumnRow[] = card ? listColumns(card.project_id) : [];
+  const tags = card ? tagsForCard(card) : [];
 
   if (!card) {
     return (
@@ -49,6 +51,13 @@ export default function CardDetail() {
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <Text style={styles.label}>Title</Text>
         <TextInput style={styles.titleInput} value={title} onChangeText={setTitle} placeholder="Task title" placeholderTextColor={t.textTertiary} multiline />
+
+        {tags.length > 0 && (
+          <>
+            <Text style={styles.label}>Tags</Text>
+            <TagChips tags={tags} />
+          </>
+        )}
 
         <Text style={styles.label}>Priority</Text>
         <View style={styles.priorityRow}>

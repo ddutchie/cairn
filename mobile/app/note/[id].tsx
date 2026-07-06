@@ -10,8 +10,9 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
-import { getNote, updateNote } from "@/db/queries";
+import { getNote, updateNote, tagsForNote } from "@/db/queries";
 import { MarkdownView } from "@/components/MarkdownView";
+import { TagChips } from "@/components/TagChips";
 import { useTheme, type Theme } from "@/theme";
 
 export default function NoteDetail() {
@@ -85,12 +86,23 @@ export default function NoteDetail() {
         <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
           <Text style={styles.title}>{note.title || "Untitled"}</Text>
           {note.folder ? <Text style={styles.folder}>{note.folder}</Text> : null}
+          <TagChipsRow note={note} />
           <View style={styles.md}>
             <MarkdownView content={note.content ?? ""} />
           </View>
         </ScrollView>
       )}
     </KeyboardAvoidingView>
+  );
+}
+
+function TagChipsRow({ note }: { note: { tag_ids: string } }) {
+  const tags = tagsForNote(note);
+  if (!tags.length) return null;
+  return (
+    <View style={{ marginTop: 10 }}>
+      <TagChips tags={tags} size="sm" />
+    </View>
   );
 }
 

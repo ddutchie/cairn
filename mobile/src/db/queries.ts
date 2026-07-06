@@ -4,6 +4,7 @@
  */
 
 import { getDb } from "./index";
+import { inspectConflict, cleanConflictTitle } from "@cairn/shared/sync/conflict";
 
 /** Client-generated collision-free id (mirrors desktop nanoid(12) scheme). */
 const ID_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_";
@@ -28,6 +29,7 @@ export interface NoteRow {
   title: string;
   content: string | null;
   folder: string;
+  tag_ids: string;
   updated_at: string;
 }
 
@@ -51,10 +53,59 @@ export interface CardRow {
   title: string;
   description: string | null;
   priority: string;
+  tag_ids: string;
   order: number;
 }
 
+export interface TagRow {
+  id: string;
+  name: string;
+  color: string;
+}
+
+/** Parse a JSON `tag_ids` column into an id array (tolerant of bad data). */
+function parseIds(json: string | null | undefined): string[] {
+  if (!json) return [];
+  try {
+    const v = JSON.parse(json);
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Resolve an array of tag ids to full tag rows (name + colour), skipping unknowns. */
+export function tagsForIds(tagIds: string[]): TagRow[] {
+  if (tagIds.length === 0) return [];
+  const db = getDb();
+  const placeholders = tagIds.map(() => "?").join(",");
+  const rows = db.getAllSync<TagRow>(
+    `SELECT id, name, color FROM tags WHERE deleted_at IS NULL AND id IN (${placeholders})`,
+    ...(tagIds as never[]),
+  );
+  // Preserve the stored order.
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  return tagIds.map((id) => byId.get(id)).filter((r): r is TagRow => !!r);
+}
+
+/** Tags attached to a note, resolved from its tag_ids JSON. */
+export function tagsForNote(note: { tag_ids: string }): TagRow[] {
+  return tagsForIds(parseIds(note.tag_ids));
+}
+
+/** Tags attached to a card, resolved from its tag_ids JSON. */
+export function tagsForCard(card: { tag_ids: string }): TagRow[] {
+  return tagsForIds(parseIds(card.tag_ids));
+}
+
 const LIVE = "deleted_at IS NULL AND archived_at IS NULL";
+
+/**
+ * SQL fragment excluding conflict-copy note rows (id like `..._conflict_...`).
+ * Conflict copies are surfaced separately via listConflictCopies() so they
+ * don't clutter the normal note lists / counts.
+ */
+const NOT_CONFLICT = `id NOT LIKE '%\\_conflict\\_%' ESCAPE '\\'`;
 
 export function listProjects(): ProjectRow[] {
   return getDb().getAllSync<ProjectRow>(
@@ -82,7 +133,7 @@ export function listProjectSummaries(): ProjectSummary[] {
   const projects = listProjects();
   return projects.map((p) => {
     const n = db.getFirstSync<{ c: number }>(
-      `SELECT COUNT(*) c FROM notes WHERE ${LIVE} AND type='note' AND project_id = ?`,
+      `SELECT COUNT(*) c FROM notes WHERE ${LIVE} AND type='note' AND ${NOT_CONFLICT} AND project_id = ?`,
       p.id,
     );
     const c = db.getFirstSync<{ c: number }>(
@@ -106,21 +157,21 @@ export function listNotes(projectId?: string): NoteRow[] {
   const db = getDb();
   if (projectId) {
     return db.getAllSync<NoteRow>(
-      `SELECT id, project_id, title, content, folder, updated_at FROM notes
-       WHERE ${LIVE} AND type = 'note' AND project_id = ? ORDER BY updated_at DESC`,
+      `SELECT id, project_id, title, content, folder, tag_ids, updated_at FROM notes
+       WHERE ${LIVE} AND type = 'note' AND ${NOT_CONFLICT} AND project_id = ? ORDER BY updated_at DESC`,
       projectId,
     );
   }
   return db.getAllSync<NoteRow>(
-    `SELECT id, project_id, title, content, folder, updated_at FROM notes
-     WHERE ${LIVE} AND type = 'note' ORDER BY updated_at DESC`,
+    `SELECT id, project_id, title, content, folder, tag_ids, updated_at FROM notes
+     WHERE ${LIVE} AND type = 'note' AND ${NOT_CONFLICT} ORDER BY updated_at DESC`,
   );
 }
 
 export function getNote(id: string): NoteRow | null {
   return (
     getDb().getFirstSync<NoteRow>(
-      `SELECT id, project_id, title, content, folder, updated_at FROM notes WHERE id = ?`,
+      `SELECT id, project_id, title, content, folder, tag_ids, updated_at FROM notes WHERE id = ?`,
       id,
     ) ?? null
   );
@@ -136,7 +187,7 @@ export function listColumns(projectId: string): ColumnRow[] {
 
 export function listCards(projectId: string): CardRow[] {
   return getDb().getAllSync<CardRow>(
-    `SELECT id, column_id, project_id, title, description, priority, "order" FROM task_cards
+    `SELECT id, column_id, project_id, title, description, priority, tag_ids, "order" FROM task_cards
      WHERE ${LIVE} AND project_id = ? ORDER BY "order"`,
     projectId,
   );
@@ -146,7 +197,7 @@ export function listCards(projectId: string): CardRow[] {
 export function getCard(id: string): CardRow | null {
   return (
     getDb().getFirstSync<CardRow>(
-      `SELECT id, column_id, project_id, title, description, priority, "order" FROM task_cards WHERE id = ?`,
+      `SELECT id, column_id, project_id, title, description, priority, tag_ids, "order" FROM task_cards WHERE id = ?`,
       id,
     ) ?? null
   );
@@ -155,8 +206,8 @@ export function getCard(id: string): CardRow | null {
 export function searchNotes(query: string): NoteRow[] {
   const q = `%${query}%`;
   return getDb().getAllSync<NoteRow>(
-    `SELECT id, project_id, title, content, folder, updated_at FROM notes
-     WHERE ${LIVE} AND type = 'note' AND (title LIKE ? OR content_text LIKE ?)
+    `SELECT id, project_id, title, content, folder, tag_ids, updated_at FROM notes
+     WHERE ${LIVE} AND type = 'note' AND ${NOT_CONFLICT} AND (title LIKE ? OR content_text LIKE ?)
      ORDER BY updated_at DESC LIMIT 50`,
     q,
     q,
@@ -185,7 +236,7 @@ function plainText(md: string): string {
 export function findNoteByTitle(projectId: string, title: string): NoteRow | null {
   return (
     getDb().getFirstSync<NoteRow>(
-      `SELECT id, project_id, title, content, folder, updated_at FROM notes
+      `SELECT id, project_id, title, content, folder, tag_ids, updated_at FROM notes
        WHERE ${LIVE} AND type='note' AND project_id = ? AND title = ? LIMIT 1`,
       projectId,
       title,
@@ -330,7 +381,7 @@ export function getProjectContextPack(projectId: string): unknown {
   );
 
   const notes = db.getAllSync<NoteRow & { is_pinned: number }>(
-    `SELECT id, project_id, title, content, folder, updated_at, is_pinned FROM notes
+    `SELECT id, project_id, title, content, folder, tag_ids, updated_at, is_pinned FROM notes
      WHERE ${LIVE} AND type='note' AND project_id = ? ORDER BY updated_at DESC`,
     projectId,
   );
@@ -344,7 +395,7 @@ export function getProjectContextPack(projectId: string): unknown {
     });
 
   const cards = db.getAllSync<CardRow & { due_date: string | null; updated_at: string }>(
-    `SELECT id, column_id, project_id, title, description, priority, "order", due_date, updated_at FROM task_cards
+    `SELECT id, column_id, project_id, title, description, priority, tag_ids, "order", due_date, updated_at FROM task_cards
      WHERE ${LIVE} AND project_id = ?`,
     projectId,
   );
@@ -401,4 +452,108 @@ export function updateNote(id: string, title: string, content: string): void {
     now,
     id,
   );
+}
+
+// ── Conflict copies ─────────────────────────────────────────────────────────
+
+export interface ConflictCopy {
+  /** The conflict-copy row id. */
+  id: string;
+  /** Clean title (suffix stripped). */
+  title: string;
+  content: string | null;
+  projectId: string;
+  folder: string;
+  updatedAt: string;
+  /** The device that produced the copy. */
+  deviceId: string | null;
+  /** The id of the original note this conflicts with (may be missing if deleted). */
+  originalId: string | null;
+  /** The current live original note (null if it was deleted). */
+  original: NoteRow | null;
+}
+
+/**
+ * All conflict-copy notes (body diverged during offline edits and were kept
+ * rather than lost). Surfaced in the Conflicts UI for manual resolution.
+ */
+export function listConflictCopies(): ConflictCopy[] {
+  const db = getDb();
+  const rows = db.getAllSync<NoteRow>(
+    `SELECT id, project_id, title, content, folder, tag_ids, updated_at FROM notes
+     WHERE ${LIVE} AND type = 'note' AND id LIKE '%\\_conflict\\_%' ESCAPE '\\'
+     ORDER BY updated_at DESC`,
+  );
+  return rows.map((r) => {
+    const info = inspectConflict(r.id, r.title);
+    return {
+      id: r.id,
+      title: cleanConflictTitle(r.title),
+      content: r.content,
+      projectId: r.project_id,
+      folder: r.folder,
+      updatedAt: r.updated_at,
+      deviceId: info.deviceId,
+      originalId: info.originalId,
+      original: info.originalId ? getNote(info.originalId) : null,
+    };
+  });
+}
+
+/** Count of unresolved conflict copies — for the header badge. */
+export function conflictCount(): number {
+  const row = getDb().getFirstSync<{ c: number }>(
+    `SELECT COUNT(*) c FROM notes
+     WHERE ${LIVE} AND type = 'note' AND id LIKE '%\\_conflict\\_%' ESCAPE '\\'`,
+  );
+  return row?.c ?? 0;
+}
+
+/**
+ * Resolve a conflict by keeping the CONFLICT-COPY's body: overwrite the
+ * original note with the copy's content, then delete the copy. If the original
+ * no longer exists, the copy is simply promoted (renamed to its clean title).
+ * Plain writes so the capture triggers publish the resolution to peers.
+ */
+export function resolveConflictKeepCopy(copyId: string): void {
+  const copy = getNote(copyId);
+  if (!copy) return;
+  const info = inspectConflict(copy.id, copy.title);
+  const cleanTitle = cleanConflictTitle(copy.title);
+  const original = info.originalId ? getNote(info.originalId) : null;
+
+  if (original && !isTombstoned(original.id)) {
+    updateNote(original.id, cleanTitle, copy.content ?? "");
+    softDeleteNote(copy.id);
+  } else {
+    // No live original — just strip the conflict suffix so the copy stands in.
+    updateNote(copy.id, cleanTitle, copy.content ?? "");
+  }
+}
+
+/**
+ * Resolve a conflict by keeping the ORIGINAL note as-is and discarding the
+ * conflict copy (soft delete → tombstone syncs to peers).
+ */
+export function resolveConflictKeepOriginal(copyId: string): void {
+  softDeleteNote(copyId);
+}
+
+/** Soft-delete a note (tombstone) so the deletion propagates via sync. */
+export function softDeleteNote(id: string): void {
+  const now = new Date().toISOString();
+  getDb().runSync(
+    `UPDATE notes SET deleted_at = ?, updated_at = ?, version = version + 1 WHERE id = ?`,
+    now,
+    now,
+    id,
+  );
+}
+
+function isTombstoned(id: string): boolean {
+  const row = getDb().getFirstSync<{ deleted_at: string | null }>(
+    `SELECT deleted_at FROM notes WHERE id = ?`,
+    id,
+  );
+  return !row || row.deleted_at != null;
 }

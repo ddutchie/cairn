@@ -1,21 +1,30 @@
 import { useCallback, useMemo, useState } from "react";
 import { View, Text, Pressable, StyleSheet, ActivityIndicator, Alert } from "react-native";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
+import { GitMerge, ChevronRight } from "lucide-react-native";
 import { Screen } from "@/components/Screen";
 import { syncNow, pendingCount, type SyncResult } from "@/sync/sync";
 import { iCloudAvailable, syncFolderLabel } from "@/sync/folder";
+import { conflictCount } from "@/db/queries";
 import { useTheme, type Theme } from "@/theme";
 
 export default function SyncScreen() {
   const t = useTheme();
+  const router = useRouter();
   const [available, setAvailable] = useState<boolean | null>(null);
   const [pending, setPending] = useState(0);
+  const [conflicts, setConflicts] = useState(0);
   const [busy, setBusy] = useState(false);
   const [last, setLast] = useState<SyncResult | null>(null);
   const styles = useMemo(() => makeStyles(t), [t]);
 
   const refresh = useCallback(() => {
     setPending(pendingCount());
+    try {
+      setConflicts(conflictCount());
+    } catch {
+      /* db not ready */
+    }
     iCloudAvailable().then(setAvailable).catch(() => setAvailable(false));
   }, []);
 
@@ -65,9 +74,24 @@ export default function SyncScreen() {
             <Text style={styles.resultLine}>Peer changes applied: {last.peerOpsApplied}</Text>
             <Text style={styles.resultLine}>
               Conflict copies: {last.conflictCopies}
-              {last.conflictCopies > 0 ? "  (see Notes)" : ""}
+              {last.conflictCopies > 0 ? "  (tap below to resolve)" : ""}
             </Text>
           </View>
+        )}
+
+        {(conflicts > 0 || (last && last.connected)) && (
+          <Pressable style={[styles.conflictRow, conflicts > 0 && styles.conflictRowActive]} onPress={() => router.push("/conflicts")}>
+            <GitMerge size={18} color={conflicts > 0 ? t.warning : t.textTertiary} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.conflictTitle, conflicts > 0 && { color: t.textPrimary }]}>
+                {conflicts > 0 ? `${conflicts} conflict${conflicts === 1 ? "" : "s"} to review` : "No conflicts"}
+              </Text>
+              <Text style={styles.conflictHelp}>
+                {conflicts > 0 ? "Two devices edited the same note. Tap to resolve." : "Diverged notes appear here — nothing is ever lost."}
+              </Text>
+            </View>
+            <ChevronRight size={18} color={t.textTertiary} />
+          </Pressable>
         )}
 
         <Text style={styles.note}>
@@ -93,6 +117,10 @@ function makeStyles(t: Theme) {
     buttonText: { color: t.accentFg, fontWeight: "600", fontSize: 15 },
     result: { marginTop: 16, padding: 14, backgroundColor: t.surface, borderRadius: 10, borderWidth: 1, borderColor: t.border },
     resultLine: { fontSize: 14, color: t.textPrimary, marginBottom: 4 },
+    conflictRow: { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 16, padding: 14, backgroundColor: t.surface, borderRadius: 12, borderWidth: 1, borderColor: t.border },
+    conflictRowActive: { borderColor: t.warning, backgroundColor: t.surface2 },
+    conflictTitle: { fontSize: 15, fontWeight: "600", color: t.textSecondary },
+    conflictHelp: { fontSize: 12, color: t.textTertiary, marginTop: 2, lineHeight: 16 },
     note: { marginTop: 24, fontSize: 12, color: t.textTertiary, lineHeight: 18 },
   });
 }

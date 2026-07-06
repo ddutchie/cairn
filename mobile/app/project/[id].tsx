@@ -8,10 +8,12 @@ import {
   listColumns,
   listCards,
   moveCardToColumn,
+  tagsForCard,
   type NoteRow,
   type CardRow,
   type ColumnRow,
 } from "@/db/queries";
+import { TagChips } from "@/components/TagChips";
 import { useTheme, PRIORITY_COLOR, type Theme } from "@/theme";
 import { buildFolderTree, type FolderNode } from "@cairn/shared/notes/folder-tree";
 
@@ -255,6 +257,7 @@ function CardItem({
           {card.description.replace(/[#*_`>[\]()!-]/g, "").trim()}
         </Text>
       ) : null}
+      <CardTags card={card} />
       <View style={styles.cardActions}>
         <Pressable disabled={!canLeft} onPress={onLeft} hitSlop={6} style={[styles.moveBtn, !canLeft && styles.moveBtnDisabled]}>
           <Text style={styles.moveBtnText}>←</Text>
@@ -271,6 +274,16 @@ function Empty({ text, t }: { text: string; t: Theme }) {
   return (
     <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 32 }}>
       <Text style={{ fontSize: 13, color: t.textTertiary, textAlign: "center" }}>{text}</Text>
+    </View>
+  );
+}
+
+function CardTags({ card }: { card: CardRow }) {
+  const tags = tagsForCard(card);
+  if (!tags.length) return null;
+  return (
+    <View style={{ marginTop: 8 }}>
+      <TagChips tags={tags} size="sm" />
     </View>
   );
 }

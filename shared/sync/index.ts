@@ -16,3 +16,5 @@ export { SYNCABLE_TABLES } from "./schema";
 export type { SyncableTable } from "./schema";
 export { writeOplogFile, readPeerOplogs } from "./transport";
 export type { SyncDb, SyncStatement } from "./db-adapter";
+export { inspectConflict, isConflictCopy, cleanConflictTitle } from "./conflict";
+export type { ConflictInfo } from "./conflict";
