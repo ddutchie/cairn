@@ -500,4 +500,31 @@ describe("sync engine — trigger→drain capture of real queries.ts writes", ()
     expect(noteOnB).toEqual({ title: "Old Note", content: "pre-sync" });
     expect((B.db.prepare("SELECT COUNT(*) c FROM projects WHERE id='p1'").get() as { c: number }).c).toBe(1);
   });
+
+  it("migrates a legacy sync_row_base (base_hlc) table without breaking drain", () => {
+    const db = new BetterSqlite3(":memory:");
+    applySchema(db);
+    // Simulate the earlier engine build that created a NOT NULL base_hlc table.
+    db.prepare(
+      `CREATE TABLE sync_row_base (
+         entity TEXT NOT NULL, entity_id TEXT NOT NULL, base_hlc TEXT NOT NULL,
+         PRIMARY KEY (entity, entity_id)
+       )`,
+    ).run();
+    db.prepare("INSERT INTO sync_row_base (entity, entity_id, base_hlc) VALUES ('notes','n1','stale')").run();
+
+    // Constructing the engine must migrate the table to the base_body shape.
+    const engine = new SyncEngine(db, "A", { now: clockFrom(11_000_000).now });
+    const cols = (db.prepare("PRAGMA table_info(sync_row_base)").all() as { name: string }[]).map((c) => c.name);
+    expect(cols).toContain("base_body");
+    expect(cols).not.toContain("base_hlc");
+
+    // A normal create + drain (which writes base_body) must now succeed.
+    q.createWorkspace(db, { id: "ws1", name: "WS" });
+    q.createProject(db, { id: "p1", workspaceId: "ws1", name: "P" });
+    q.createNote(db, { id: "n1", projectId: "p1", workspaceId: "ws1", title: "N", content: "hello" });
+    expect(() => engine.drainPending()).not.toThrow();
+    const base = db.prepare("SELECT base_body FROM sync_row_base WHERE entity='notes' AND entity_id='n1'").get() as { base_body: string } | undefined;
+    expect(base?.base_body).toBe("hello");
+  });
 });

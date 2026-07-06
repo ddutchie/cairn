@@ -95,6 +95,20 @@ export class SyncEngine {
    * ancestor. Owned by the engine (created lazily) — no external migration.
    */
   private ensureBaseTable(): void {
+    // An earlier iteration of this table had a NOT NULL `base_hlc` column
+    // instead of `base_body`. If we detect that legacy shape, drop it — its
+    // values are irrelevant to the current 3-way body-ancestor logic, and a
+    // null ancestor just means "unknown" (no conflict), re-established on the
+    // next sync. Dropping avoids the NOT NULL base_hlc breaking inserts.
+    const existing = this.db
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='sync_row_base'")
+      .get();
+    if (existing) {
+      const cols = (this.db.prepare("PRAGMA table_info(sync_row_base)").all() as { name: string }[]).map((c) => c.name);
+      if (!cols.includes("base_body") || cols.includes("base_hlc")) {
+        this.db.prepare("DROP TABLE sync_row_base").run();
+      }
+    }
     this.db
       .prepare(
         `CREATE TABLE IF NOT EXISTS sync_row_base (
