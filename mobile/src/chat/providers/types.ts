@@ -1,0 +1,93 @@
+/**
+ * AI provider abstraction — the seam between the agent loop and whichever
+ * backend actually talks to a model.
+ *
+ * Two providers implement this:
+ *   - rork.ts   — the Rork AI toolkit (/agent/chat, native tool-calling).
+ *                 Zero-config for first-party builds; endpoint injected at build
+ *                 time via a git-ignored env var (never hardcoded in source).
+ *   - openai.ts — any OpenAI-compatible /v1/chat/completions endpoint, using a
+ *                 base URL + API key the user supplies in-app. This is the path
+ *                 for third-party builders (BYO key), so the app never depends on
+ *                 our unauthenticated Rork endpoint.
+ *
+ * Both normalise their wire format down to the same `StreamEvent` stream so the
+ * agent loop (agent.ts) is provider-agnostic.
+ */
+
+export type RorkRole = "system" | "user" | "assistant";
+
+export interface TextPart {
+  type: "text";
+  text: string;
+}
+
+/**
+ * A binary attachment (image/pdf). For Rork /agent/chat this is a native
+ * UIMessage "file" part whose `url` is a data URI; the OpenAI provider maps it
+ * to an `image_url` content part.
+ */
+export interface FilePart {
+  type: "file";
+  mediaType: string; // e.g. "image/jpeg"
+  url: string; // data:image/jpeg;base64,… or a remote URL
+  name?: string;
+}
+
+export interface ToolPart {
+  type: string; // "tool-<name>"
+  toolCallId: string;
+  toolName?: string;
+  state: "input-available" | "output-available";
+  input?: unknown;
+  output?: { type: "text"; value: string } | unknown;
+}
+
+export type UIPart = TextPart | FilePart | ToolPart;
+
+export interface UIMessage {
+  id: string;
+  role: RorkRole;
+  parts: UIPart[];
+}
+
+/** A tool the model may call. `jsonSchema` is a JSON Schema object for the args. */
+export interface AiTool {
+  description: string;
+  jsonSchema: Record<string, unknown>;
+}
+
+/**
+ * Normalised stream events every provider emits. This is the Rork
+ * UI-message-stream subset; the OpenAI provider translates its
+ * chat.completion.chunk deltas into these same shapes.
+ */
+export type StreamEvent =
+  | { type: "text-delta"; id?: string; delta: string }
+  | { type: "tool-input-start"; toolCallId: string; toolName: string }
+  | { type: "tool-input-available"; toolCallId: string; toolName: string; input: unknown }
+  | { type: "finish"; finishReason?: string }
+  | { type: "reasoning-delta"; delta?: string }
+  | { type: string; [k: string]: unknown };
+
+/** A provider streams normalised events for a turn. */
+export interface ChatProvider {
+  /** Human label for diagnostics / the settings UI. */
+  readonly name: string;
+  /** Stream one model turn as normalised events. */
+  stream(
+    messages: UIMessage[],
+    tools: Record<string, AiTool>,
+    signal?: AbortSignal,
+  ): AsyncGenerator<StreamEvent>;
+}
+
+let _runSeq = 0;
+export function newRunId(): string {
+  _runSeq += 1;
+  return `run-${Date.now().toString(36)}${_runSeq}${Math.random().toString(36).slice(2, 8)}`;
+}
+
+export function msgId(): string {
+  return `m-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+}

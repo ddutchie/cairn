@@ -1,21 +1,22 @@
 /**
- * Streaming agent loop for mobile chat — native tool-calling via /agent/chat.
+ * Streaming agent loop for mobile chat — provider-agnostic native tool-calling.
  *
- * Per turn we stream the model's response, surfacing text deltas live and
- * collecting any tool calls it emits. When the turn finishes with tool calls we
- * execute them locally (expo-sqlite), merge the results back into the assistant
- * message (state:"output-available", per the Rork/AI-SDK contract), and run the
- * next turn. Loop until the model finishes with plain text (no tool calls).
+ * Per turn we stream the model's response (via the active provider — Rork or
+ * OpenAI-compatible, see providers/), surfacing text deltas live and collecting
+ * any tool calls it emits. When the turn finishes with tool calls we execute
+ * them locally (expo-sqlite), merge the results back into the assistant message
+ * (state:"output-available"), and run the next turn. Loop until the model
+ * finishes with plain text (no tool calls).
  */
 
+import { resolveProvider } from "./providers";
 import {
-  streamAgentChat,
   msgId,
   type UIMessage,
   type UIPart,
   type ToolPart,
   type FilePart,
-} from "./rork-client";
+} from "./providers/types";
 import { toolsForAgent, TOOL_MAP } from "./tools";
 
 const MAX_TURNS = 8;
@@ -96,6 +97,15 @@ export async function runAgent(
   const tools = toolsForAgent();
   let finalText = "";
 
+  let provider;
+  try {
+    provider = await resolveProvider();
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    onEvent?.({ type: "error", text: msg });
+    return msg;
+  }
+
   for (let turn = 0; turn < MAX_TURNS; turn++) {
     // Build the assistant message we're producing this turn.
     const assistant: UIMessage = { id: msgId(), role: "assistant", parts: [] };
@@ -104,7 +114,7 @@ export async function runAgent(
     let finishReason: string | undefined;
 
     try {
-      for await (const ev of streamAgentChat(conversation, tools, signal)) {
+      for await (const ev of provider.stream(conversation, tools, signal)) {
         if (ev.type === "text-delta" && typeof (ev as { delta?: string }).delta === "string") {
           const delta = (ev as { delta: string }).delta;
           text += delta;
@@ -193,7 +203,8 @@ export async function runTextAction(
 ): Promise<string> {
   const conversation: UIMessage[] = [userMessage(prompt)];
   let text = "";
-  for await (const ev of streamAgentChat(conversation, {}, signal)) {
+  const provider = await resolveProvider();
+  for await (const ev of provider.stream(conversation, {}, signal)) {
     if (ev.type === "text-delta" && typeof (ev as { delta?: string }).delta === "string") {
       const delta = (ev as { delta: string }).delta;
       text += delta;

@@ -23,7 +23,7 @@ import { runAgent, userMessage, assistantMessage, type AgentEvent, type Attachme
 import { pickImages, takePhoto } from "@/chat/attachments";
 import { loadChatHistory, saveChatMessage, clearChatHistory, type StoredMessage } from "@/db/chat-store";
 import { prettifyToolLabel } from "@cairn/shared/ui/constants";
-import type { UIMessage } from "@/chat/rork-client";
+import type { UIMessage } from "@/chat/providers/types";
 
 /** Standard UIKit tab bar content height (excludes the home-indicator inset). */
 const TAB_BAR_BASE = 49;

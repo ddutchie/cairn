@@ -19,7 +19,7 @@ Confirmed with product owner:
 - **MVP UI scope:** Notes (read + edit), Board (view + move cards), Search, Chat. Plus a **lightweight Knowledge Graph** view. Explicitly **out**: Idea Flow, Insights, full desktop Knowledge Graph.
 - **Sync transport: synced-folder oplog** (no backend, local-first). *(decided)*
 - **Scope: 2 personal devices** — single user, no multi-user concurrency. Simplifies the conflict model. *(decided)*
-- **Chat is online-only** via the **Rork AI toolkit** (`POST {EXPO_PUBLIC_TOOLKIT_URL||https://toolkit.rork.com}/text/llm/`), using the **Vercel AI SDK** (`ai`, already a Cairn devDep) with a custom provider. Chat is the one feature that degrades when offline. *(decided)*
+- **Chat is online-only** via a **pluggable AI provider** (first-party Rork toolkit, or an OpenAI-compatible endpoint for self-builds — see §4a). Chat is the one feature that degrades when offline. *(decided)*
 
 This is the harder of the two architectures considered in the earlier draft. Choosing
 standalone + offline means **we are committing to building a real sync engine**, because we
@@ -146,21 +146,35 @@ at first; include its tables in the protocol later.
 
 ---
 
-## 4a. Chat integration (online-only) — Rork AI toolkit
+## 4a. Chat integration (online-only) — pluggable AI provider
 
-Mobile chat does **not** use a local model; it calls the **Rork AI toolkit** over HTTP and is
-gracefully disabled/queued when offline.
+Mobile chat does **not** use a local model; it calls a hosted model over HTTP and is
+gracefully disabled/queued when offline. The backend is a **pluggable provider**
+(`mobile/src/chat/providers/`) chosen automatically at runtime:
 
-- **Endpoint:** `POST ${EXPO_PUBLIC_TOOLKIT_URL || "https://toolkit.rork.com"}/text/llm/`
-  with `{ messages: [{ role, content }, ...] }`.
-- **SDK:** the **Vercel AI SDK** (`ai`, already a Cairn devDep) with a **custom provider** that
-  targets the Rork endpoint. This gives us streaming, tool-call plumbing, and message typing for
-  free, and keeps the message shape consistent between desktop and mobile.
-- **Mapping layer:** a small adapter maps between Cairn's `chat_messages` shape
-  (`role`/`content`/`tool_calls`/`reasoning`/`context_refs`) and the Rork request/response body.
-  Lives in `@cairn/core` so both platforms share it. *(A dedicated Rork npm/bun package exists;
-  if it provides an AI-SDK-compatible provider, prefer it over a hand-rolled fetch provider.)*
-- **Env:** `EXPO_PUBLIC_TOOLKIT_URL` (public Expo env var) overrides the default base URL.
+- **Rork toolkit** (first-party builds) — `POST {base}/agent/chat` (SSE, Vercel AI
+  UI-message-stream v1) with native tool-calling:
+  `{ id, messages: [{ id, role, parts: [...] }], tools, stream: true, trigger: "submit-message" }`.
+  Messages use the AI SDK v5 `UIMessage` shape (`parts[]` + per-message `id`); a plain
+  `{role,content}` body 500s. Implemented in `providers/rork.ts`.
+  **Security:** the Rork endpoint is **unauthenticated**, so its URL is NOT hardcoded in
+  source and has no default. It is read only from the `EXPO_PUBLIC_TOOLKIT_URL` build-time
+  env var (kept in git-ignored `.env.local`). If unset, this provider is unavailable and the
+  app falls back to OpenAI. *(A leaked URL would let anyone run up our server bill; env only
+  keeps it out of git — `EXPO_PUBLIC_*` is still inlined into a first-party binary, so a fully
+  abuse-proof setup needs an authenticated proxy, tracked separately.)*
+- **OpenAI-compatible** (default for third-party / self-builds) — `POST {base}/chat/completions`
+  with `Authorization: Bearer <key>`, standard `messages[]` + `tools[]` function schemas,
+  SSE `chat.completion.chunk` deltas. Implemented in `providers/openai.ts`, which maps our
+  `UIMessage`/tool shapes to OpenAI's and translates chunks back to the shared `StreamEvent`.
+  Config (base URL, model, API key) is set in-app: base URL/model in the local `app_settings`
+  table, **API key in the device keychain** (`expo-secure-store`) — never in the DB, never synced.
+  Works with OpenAI, Azure OpenAI, OpenRouter, Together, Groq, LM Studio, Ollama's shim, etc.
+- **Selection:** `providers/index.ts::resolveProvider()` — Rork if the build URL is present,
+  else the configured OpenAI provider, else a `NoProviderError` the UI turns into a "configure
+  AI in Settings" prompt.
+- **Normalisation:** both providers emit the same `StreamEvent` stream (`providers/types.ts`), so
+  the agent loop (`chat/agent.ts`) is provider-agnostic.
 - **Offline behaviour:** the composer is disabled with a "chat needs a connection" hint; sent
   user messages persist locally and sync as normal chat rows. Assistant replies require a live
   request (no offline queue for LLM responses in MVP).
