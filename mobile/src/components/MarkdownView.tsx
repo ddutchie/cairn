@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import { useMemo } from "react";
 import { Linking, Text, View, Pressable } from "react-native";
 import Markdown, { MarkdownIt, type RenderRules, type ASTNode } from "react-native-markdown-display";
 import markdownItMark from "markdown-it-mark";

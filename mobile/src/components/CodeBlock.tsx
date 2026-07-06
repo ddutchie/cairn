@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { View, Text, ScrollView, Pressable, StyleSheet } from "react-native";
 import { createLowlight, common } from "lowlight";
 import * as Clipboard from "expo-clipboard";
@@ -83,7 +83,7 @@ function TokenNode({
   node: HastNode;
   palette: Record<string, string>;
   baseColor: string;
-}): React.ReactNode {
+}): ReactNode {
   if (node.type === "text") return node.value ?? "";
   if (node.type === "element") {
     const classes = node.properties?.className ?? [];
