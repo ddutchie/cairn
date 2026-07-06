@@ -76,7 +76,7 @@ export function SyncSettings() {
   return (
     <SettingsGroup
       title="Device Sync"
-      description="Sync your workspace with the Cairn mobile app through a shared cloud folder (iCloud Drive, Dropbox, or Syncthing). Offline-first — only append-only oplog files transit the folder, never the database."
+      description="Sync your workspace with the Cairn mobile companion app through a shared cloud folder (iCloud Drive, Dropbox, or Syncthing). Requires the mobile app installed on your phone — there's nothing to sync with otherwise. Offline-first: only append-only oplog files transit the folder, never the database."
     >
       <SettingsRow label="Shared sync folder" description="Pick the SAME folder your phone connects to.">
         {connected ? (
@@ -131,9 +131,12 @@ export function SyncSettings() {
         <div className="flex gap-2.5 p-3 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] opacity-80 mt-4">
           <AlertCircle size={14} className="text-[var(--text-tertiary)] mt-0.5 shrink-0" />
           <p className="text-[10px] text-[var(--text-tertiary)] leading-normal">
-            Choose a cloud-synced folder shared with your phone. On first sync, your entire existing
-            workspace is seeded to the folder; after that only changes are exchanged. Conflicting edits
-            are kept as a &quot;conflicted copy&quot; note — never silently lost.
+            <strong className="text-[var(--text-secondary)]">You need the Cairn mobile app installed</strong> for
+            this to do anything — Device Sync exchanges changes with your phone, not another desktop. The mobile
+            app is currently a build-it-yourself companion (see the docs). Once connected, choose a cloud-synced
+            folder shared with your phone: on first sync your entire existing workspace is seeded to the folder;
+            after that only changes are exchanged. Conflicting edits are kept as a &quot;conflicted copy&quot;
+            note — never silently lost.
           </p>
         </div>
       )}
