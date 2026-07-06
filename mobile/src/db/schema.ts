@@ -148,6 +148,19 @@ CREATE INDEX IF NOT EXISTS idx_cards_column    ON task_cards(column_id);
 CREATE INDEX IF NOT EXISTS idx_cards_project   ON task_cards(project_id);
 CREATE INDEX IF NOT EXISTS idx_columns_project ON board_columns(project_id);
 
+-- Local-only chat log. Deliberately SEPARATE from the synced chat_threads/
+-- chat_messages tables and has NO capture trigger, so mobile chat history stays
+-- entirely on-device and never publishes to (or receives from) the sync folder.
+-- role: 'user' | 'assistant'. images/tools are JSON blobs for UI restore.
+CREATE TABLE IF NOT EXISTS chat_local (
+  seq        INTEGER PRIMARY KEY AUTOINCREMENT,
+  role       TEXT NOT NULL,
+  content    TEXT NOT NULL DEFAULT '',
+  images     TEXT,
+  tools      TEXT,
+  created_at TEXT NOT NULL
+);
+
 -- Sync engine tables (mirror desktop migrations v25/v26).
 CREATE TABLE IF NOT EXISTS sync_oplog (
   seq        INTEGER PRIMARY KEY AUTOINCREMENT,

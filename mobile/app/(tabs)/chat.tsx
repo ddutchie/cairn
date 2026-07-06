@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -12,14 +12,15 @@ import {
 } from "react-native";
 import Animated, { useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { useKeyboardHandler } from "react-native-keyboard-controller";
-import { CheckCircle, Bot, User, Send, ImagePlus, X } from "lucide-react-native";
+import { CheckCircle, Bot, User, Send, ImagePlus, X, Trash2 } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Screen } from "@/components/Screen";
 import { GlassBar, glassActive } from "@/components/GlassBar";
 import { MarkdownView } from "@/components/MarkdownView";
 import { useTheme, withAlpha, type Theme } from "@/theme";
-import { runAgent, userMessage, type AgentEvent, type Attachment } from "@/chat/agent";
+import { runAgent, userMessage, assistantMessage, type AgentEvent, type Attachment } from "@/chat/agent";
 import { pickImages, takePhoto } from "@/chat/attachments";
+import { loadChatHistory, saveChatMessage, clearChatHistory, type StoredMessage } from "@/db/chat-store";
 import { prettifyToolLabel } from "@cairn/shared/ui/constants";
 import type { UIMessage } from "@/chat/rork-client";
 
@@ -63,6 +64,21 @@ export default function ChatScreen() {
   // Persistent agent conversation (UIMessage parts format) across turns.
   const conversation = useRef<UIMessage[]>([]);
 
+  // Restore local (on-device) chat history once on mount: rebuild both the UI
+  // bubbles and the agent conversation so context survives an app relaunch.
+  useEffect(() => {
+    const history = loadChatHistory();
+    if (history.length === 0) return;
+    setMessages(history.map((h) => ({ role: h.role, content: h.content, images: h.images, tools: h.tools })));
+    for (const h of history) {
+      if (h.role === "user") {
+        conversation.current.push(userMessage(h.content));
+      } else {
+        conversation.current.push(assistantMessage(h.content));
+      }
+    }
+  }, []);
+
   const { height: kbHeight } = useGradualAnimation();
   // Spacer below the composer: keyboard height when open, else the bottom safe
   // area + a little breathing room (so the composer clears the tab bar and
@@ -87,6 +103,8 @@ export default function ChatScreen() {
     ]);
 
     conversation.current.push(userMessage(text, atts));
+    // Persist the user turn locally (on-device only — chat never syncs).
+    saveChatMessage({ role: "user", content: text, images: atts.map((a) => a.url) });
     let acc = "";
     const toolTrail: { tool: string; ok: boolean }[] = [];
 
@@ -116,12 +134,15 @@ export default function ChatScreen() {
         setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 20);
       };
       const answer = await runAgent(conversation.current, onEvent);
-      patchAssistant({ content: answer || acc, streaming: false, tools: toolTrail.length ? toolTrail : undefined });
+      const finalText = answer || acc;
+      patchAssistant({ content: finalText, streaming: false, tools: toolTrail.length ? toolTrail : undefined });
+      saveChatMessage({ role: "assistant", content: finalText, tools: toolTrail.length ? toolTrail : undefined });
     } catch (e) {
       const msg = e instanceof Error && /network|fetch|failed/i.test(e.message)
         ? "Chat needs a connection. Reconnect and try again."
         : `Error: ${e instanceof Error ? e.message : String(e)}`;
       patchAssistant({ content: msg, streaming: false });
+      saveChatMessage({ role: "assistant", content: msg });
     } finally {
       setBusy(false);
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50);
@@ -158,8 +179,33 @@ export default function ChatScreen() {
 
   const removeAttachment = (idx: number) => setAttachments((prev) => prev.filter((_, i) => i !== idx));
 
+  const onClear = useCallback(() => {
+    if (messages.length === 0 || busy) return;
+    Alert.alert("Clear chat?", "This deletes the on-device conversation history. It only affects this device.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Clear",
+        style: "destructive",
+        onPress: () => {
+          clearChatHistory();
+          conversation.current = [];
+          setMessages([]);
+        },
+      },
+    ]);
+  }, [messages.length, busy]);
+
   return (
-    <Screen title="Chat">
+    <Screen
+      title="Chat"
+      right={
+        messages.length > 0 ? (
+          <Pressable onPress={onClear} hitSlop={8} disabled={busy}>
+            <Trash2 size={20} color={busy ? t.textTertiary : t.textSecondary} />
+          </Pressable>
+        ) : undefined
+      }
+    >
       <View style={{ flex: 1 }}>
         <ScrollView
           ref={scrollRef}

@@ -75,6 +75,15 @@ export function userMessage(text: string, attachments?: Attachment[]): UIMessage
 }
 
 /**
+ * Build an assistant message from stored text — used to rehydrate the agent
+ * conversation from persisted history so context survives an app relaunch.
+ * (Tool parts aren't restored; the prior text is enough for continuity.)
+ */
+export function assistantMessage(text: string): UIMessage {
+  return { id: msgId(), role: "assistant", parts: [{ type: "text", text }] };
+}
+
+/**
  * Run the agent to completion. `conversation` is the running UIMessage history
  * (system + prior user/assistant turns). Mutated in place with new turns.
  * Streams events via onEvent; returns the final assistant text.
