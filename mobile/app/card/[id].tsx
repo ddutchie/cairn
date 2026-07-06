@@ -1,11 +1,11 @@
 import { useMemo, useState } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, KeyboardAvoidingView, Platform, Alert } from "react-native";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
-import DateTimePicker from "@react-native-community/datetimepicker";
 import { MoreHorizontal, Calendar, X } from "lucide-react-native";
 import { getCard, listColumns, updateTask, moveCardToColumn, archiveCard, tagsForCard, noteTagIds, setCardTags, type ColumnRow } from "@/db/queries";
 import { TagChips } from "@/components/TagChips";
 import { TagPickerSheet } from "@/components/TagPickerSheet";
+import { DueDatePickerSheet } from "@/components/DueDatePickerSheet";
 import { formatDate } from "@cairn/shared/format/date";
 import { useTheme, PRIORITY_COLOR, type Theme } from "@/theme";
 
@@ -140,18 +140,6 @@ export default function CardDetail() {
             </Pressable>
           )}
         </View>
-        {showDatePicker && (
-          <DateTimePicker
-            value={dueDate ? new Date(dueDate) : new Date()}
-            mode="date"
-            display={Platform.OS === "ios" ? "inline" : "default"}
-            onChange={(event, date) => {
-              if (Platform.OS !== "ios") setShowDatePicker(false);
-              if (event.type === "set" && date) setDueDate(date.toISOString());
-            }}
-          />
-        )}
-
         <Text style={styles.label}>Assignee</Text>
         <TextInput
           style={styles.assigneeInput}
@@ -182,6 +170,16 @@ export default function CardDetail() {
           setTagPickerOpen(false);
         }}
         onClose={() => setTagPickerOpen(false)}
+      />
+
+      <DueDatePickerSheet
+        visible={showDatePicker}
+        initial={dueDate}
+        onDone={(iso) => {
+          setDueDate(iso);
+          setShowDatePicker(false);
+        }}
+        onClose={() => setShowDatePicker(false)}
       />
     </KeyboardAvoidingView>
   );
