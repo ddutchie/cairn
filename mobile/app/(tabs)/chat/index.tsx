@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -336,7 +336,10 @@ export default function ChatScreen() {
   );
 }
 
-function Bubble({ m, t, styles }: { m: UiMessage; t: Theme; styles: ReturnType<typeof makeStyles> }) {
+// Memoised so a stream-token setMessages (which replaces only the streaming
+// assistant message object) re-renders just that one bubble — not every prior
+// message, each of which would otherwise re-run its MarkdownView parse per token.
+const Bubble = memo(function Bubble({ m, t, styles }: { m: UiMessage; t: Theme; styles: ReturnType<typeof makeStyles> }) {
   const isUser = m.role === "user";
   return (
     <View style={[styles.row, isUser && styles.rowUser]}>
@@ -377,7 +380,7 @@ function Bubble({ m, t, styles }: { m: UiMessage; t: Theme; styles: ReturnType<t
       </View>
     </View>
   );
-}
+});
 
 function makeStyles(t: Theme) {
   return StyleSheet.create({
