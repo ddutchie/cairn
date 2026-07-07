@@ -30,6 +30,9 @@ import { formatRelative } from "@cairn/shared/format/date";
 
 type Tab = "notes" | "board";
 
+/** Standard UIKit tab bar height (excludes the home-indicator inset). */
+const TAB_BAR_BASE = 49;
+
 /** A single virtualized row in the notes list: a folder header or a note. */
 type ListRow =
   | { kind: "folder"; node: FolderNode<NoteRow>; depth: number }
@@ -54,6 +57,11 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
   const router = useRouter();
   const t = useTheme();
   const insets = useSafeAreaInsets();
+  // Bottom padding so the list can scroll its last rows clear of the tab bar
+  // (present only in the nested Projects-tab flow) + home indicator, while the
+  // translucent bar still shows content scrolling behind it. Root-stack copies
+  // have no tab bar, so they only need the home-indicator inset.
+  const listBottomPad = 24 + insets.bottom + (nested ? TAB_BAR_BASE : 0);
   const [tab, setTab] = useState<Tab>("notes");
   const [project, setProject] = useState(id ? getProject(id) : null);
   const [notes, setNotes] = useState<NoteRow[]>([]);
@@ -216,7 +224,7 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
                 data={rows}
                 keyExtractor={rowKey}
                 renderItem={renderRow}
-                contentContainerStyle={styles.notesScroll}
+                contentContainerStyle={[styles.notesScroll, { paddingBottom: listBottomPad }]}
                 keyboardShouldPersistTaps="handled"
                 // Windowing tuned for a text-row list: keep a modest buffer so
                 // fast scrolls stay filled without over-mounting.
@@ -427,6 +435,6 @@ function makeStyles(t: Theme) {
     tagFilterChip: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 5, paddingHorizontal: 12, borderRadius: 14, borderWidth: 1 },
     tagFilterDot: { width: 7, height: 7, borderRadius: 4 },
     tagFilterText: { ...typeScale.label, maxWidth: 140 },
-    notesScroll: { paddingBottom: 40 },
+    notesScroll: { flexGrow: 1 },
   });
 }

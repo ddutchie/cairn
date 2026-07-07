@@ -26,16 +26,27 @@ import { runTextAction } from "@/chat/agent";
 import { useDataChanged } from "@/sync/useSyncStatus";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 
+/** Standard UIKit tab bar height (excludes the home-indicator inset). */
+const TAB_BAR_BASE = 49;
+
 /**
  * Note viewer / editor. A leaf screen (navigates only back), so both its routes
  * (root `app/note/[id]` and Projects-tab `app/(tabs)/projects/note/[id]`) render it
  * unchanged; the containing stack decides whether the tab bar stays visible.
+ *
+ * `nested` = rendered inside the Projects tab (tab bar visible), so the read
+ * view adds tab-bar bottom padding; root-stack copies (Search/Graph/Conflicts)
+ * pass it false.
  */
-export function NoteDetailScreen() {
+export function NoteDetailScreen({ nested = false }: { nested?: boolean }) {
   const { id, back } = useLocalSearchParams<{ id: string; back?: string }>();
   const router = useRouter();
   const t = useTheme();
   const insets = useSafeAreaInsets();
+  // Bottom padding so the note body scrolls clear of the tab bar (present only
+  // in the nested Projects-tab flow) + home indicator; content still scrolls
+  // behind the translucent bar. Root-stack copies have no tab bar.
+  const viewBottomPad = 40 + insets.bottom + (nested ? TAB_BAR_BASE : 0);
   const [note, setNote] = useState(() => (id ? getNote(id) : null));
 
   const [editing, setEditing] = useState(false);
@@ -279,7 +290,7 @@ export function NoteDetailScreen() {
           </KeyboardStickyView>
         </>
       ) : (
-        <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+        <ScrollView style={styles.scroll} contentContainerStyle={[styles.content, { paddingBottom: viewBottomPad }]}>
           <View style={styles.titleRow}>
             {isPinned && <Pin size={16} color={t.accent} fill={t.accent} />}
             <Text style={styles.title}>{note.title || "Untitled"}</Text>
