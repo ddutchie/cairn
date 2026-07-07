@@ -76,11 +76,15 @@ export function DraggableBoard({
   const originY = useSharedValue(0);
   const scrollRef = useRef<ScrollView>(null);
 
-  // The card currently lifted (null when idle) and the column the finger hovers.
+  // The card currently lifted (null when idle). Changes only at drag start/end,
+  // not per frame — so it never causes the board to re-render mid-drag.
   const [dragging, setDragging] = useState<CardRow | null>(null);
   const [scrollEnabled, setScrollEnabled] = useState(true);
+  // Which column the finger is over + the drag's source column. Both are shared
+  // values updated entirely on the UI thread by the gesture worklets, and read
+  // by each column's useAnimatedStyle to light up the hover target — so hover
+  // highlighting never crosses back to JS or re-renders the board.
   const hoverColId = useSharedValue<string | null>(null);
-  const [hoverColJs, setHoverColJs] = useState<string | null>(null);
   const sourceColId = useSharedValue<string | null>(null);
 
   // Absolute pointer position of the lifted card's origin, updated each frame.
@@ -133,7 +137,6 @@ export function DraggableBoard({
     (cardId: string, target: string | null, source: string | null) => {
       setDragging(null);
       setScrollEnabled(true);
-      setHoverColJs(null);
       if (target && target !== source) onMove(cardId, target);
     },
     [onMove],
@@ -157,48 +160,29 @@ export function DraggableBoard({
         contentContainerStyle={[styles.board, { paddingBottom: 12 + bottomInset }]}
         style={styles.boardScroll}
       >
-        {columns.map((col) => {
-          const colCards = cardsByColumn.get(col.id) ?? [];
-          const isHoverTarget = hoverColJs === col.id && dragging?.column_id !== col.id;
-          return (
-            <View
-              key={col.id}
-              ref={(node) => measureColumn(col.id, node)}
-              style={[styles.column, isHoverTarget && styles.columnHover]}
-            >
-              <Text style={styles.columnTitle}>
-                {col.name} <Text style={styles.count}>{colCards.length}</Text>
-              </Text>
-              <ScrollView style={styles.columnCards} showsVerticalScrollIndicator={false}>
-                {colCards.map((card) => (
-                  <DraggableCard
-                    key={card.id}
-                    card={card}
-                    tags={tagMap.get(card.id)}
-                    t={t}
-                    styles={styles}
-                    isLifted={dragging?.id === card.id}
-                    frames={frames}
-                    hoverColId={hoverColId}
-                    sourceColId={sourceColId}
-                    dragX={dragX}
-                    dragY={dragY}
-                    dragW={dragW}
-                    onOpen={onOpenCard}
-                    onBeginDrag={beginDrag}
-                    onEndDrag={endDrag}
-                    onHoverChange={setHoverColJs}
-                    onRemeasure={remeasure}
-                  />
-                ))}
-                <Pressable style={styles.addCard} onPress={() => onAddCard(col.id)}>
-                  <Plus size={14} color={t.textTertiary} />
-                  <Text style={styles.addCardText}>New task</Text>
-                </Pressable>
-              </ScrollView>
-            </View>
-          );
-        })}
+        {columns.map((col) => (
+          <BoardColumn
+            key={col.id}
+            column={col}
+            cards={cardsByColumn.get(col.id) ?? []}
+            tagMap={tagMap}
+            draggingId={dragging?.id ?? null}
+            hoverColId={hoverColId}
+            sourceColId={sourceColId}
+            frames={frames}
+            dragX={dragX}
+            dragY={dragY}
+            dragW={dragW}
+            t={t}
+            styles={styles}
+            measureColumn={measureColumn}
+            onOpenCard={onOpenCard}
+            onAddCard={onAddCard}
+            onBeginDrag={beginDrag}
+            onEndDrag={endDrag}
+            onRemeasure={remeasure}
+          />
+        ))}
       </ScrollView>
 
       {dragging ? (
@@ -207,6 +191,100 @@ export function DraggableBoard({
     </View>
   );
 }
+
+/**
+ * A board column: its title/count, the draggable cards, and an "add" button.
+ * The column's hover-highlight (border + tint when the finger drags a card over
+ * it) is driven by a useAnimatedStyle reading the shared hoverColId — so it
+ * lights up on the UI thread without re-rendering the board. Memoised so a
+ * drag-start/end (which only flips draggingId) re-renders just the columns whose
+ * lifted card actually changed.
+ */
+const BoardColumn = memo(function BoardColumn({
+  column,
+  cards,
+  tagMap,
+  draggingId,
+  hoverColId,
+  sourceColId,
+  frames,
+  dragX,
+  dragY,
+  dragW,
+  t,
+  styles,
+  measureColumn,
+  onOpenCard,
+  onAddCard,
+  onBeginDrag,
+  onEndDrag,
+  onRemeasure,
+}: {
+  column: ColumnRow;
+  cards: CardRow[];
+  tagMap: Map<string, TagRow[]>;
+  draggingId: string | null;
+  hoverColId: SharedValue<string | null>;
+  sourceColId: SharedValue<string | null>;
+  frames: SharedValue<Record<string, ColumnFrame>>;
+  dragX: SharedValue<number>;
+  dragY: SharedValue<number>;
+  dragW: SharedValue<number>;
+  t: Theme;
+  styles: ReturnType<typeof makeStyles>;
+  measureColumn: (colId: string, node: View | null) => void;
+  onOpenCard: (id: string) => void;
+  onAddCard: (colId: string) => void;
+  onBeginDrag: (card: CardRow) => void;
+  onEndDrag: (cardId: string, target: string | null, source: string | null) => void;
+  onRemeasure: () => void;
+}) {
+  const colId = column.id;
+  // Highlight when the finger hovers THIS column and it isn't the source column.
+  const hoverStyle = useAnimatedStyle(() => {
+    const active = hoverColId.value === colId && sourceColId.value !== colId;
+    return {
+      borderColor: active ? t.accent : t.border,
+      backgroundColor: active ? withAlpha(t.accent, 0.06) : t.surface,
+    };
+  });
+  return (
+    <Animated.View
+      ref={(node: View | null) => measureColumn(colId, node)}
+      style={[styles.column, hoverStyle]}
+    >
+      <Text style={styles.columnTitle}>
+        {column.name} <Text style={styles.count}>{cards.length}</Text>
+      </Text>
+      <ScrollView style={styles.columnCards} showsVerticalScrollIndicator={false}>
+        {cards.map((card) => (
+          <DraggableCard
+            key={card.id}
+            card={card}
+            tags={tagMap.get(card.id)}
+            t={t}
+            styles={styles}
+            isLifted={draggingId === card.id}
+            frames={frames}
+            hoverColId={hoverColId}
+            sourceColId={sourceColId}
+            dragX={dragX}
+            dragY={dragY}
+            dragW={dragW}
+            onOpen={onOpenCard}
+            onBeginDrag={onBeginDrag}
+            onEndDrag={onEndDrag}
+            onRemeasure={onRemeasure}
+          />
+        ))}
+        <Pressable style={styles.addCard} onPress={() => onAddCard(colId)}>
+          <Plus size={14} color={t.textTertiary} />
+          <Text style={styles.addCardText}>New task</Text>
+        </Pressable>
+      </ScrollView>
+    </Animated.View>
+  );
+});
 
 /** The floating clone that follows the finger while a card is lifted. */
 function DragOverlay({
@@ -265,7 +343,6 @@ const DraggableCard = memo(function DraggableCard({
   onOpen,
   onBeginDrag,
   onEndDrag,
-  onHoverChange,
   onRemeasure,
 }: {
   card: CardRow;
@@ -282,7 +359,6 @@ const DraggableCard = memo(function DraggableCard({
   onOpen: (id: string) => void;
   onBeginDrag: (card: CardRow) => void;
   onEndDrag: (cardId: string, target: string | null, source: string | null) => void;
-  onHoverChange: (colId: string | null) => void;
   onRemeasure: () => void;
 }) {
   const active = useSharedValue(false);
@@ -321,16 +397,16 @@ const DraggableCard = memo(function DraggableCard({
       const col = columnAt(e.absoluteX);
       hoverColId.value = col;
       runOnJS(onBeginDrag)(card);
-      if (col !== null) runOnJS(onHoverChange)(col);
     })
     .onUpdate((e) => {
       "worklet";
       dragX.value = e.absoluteX - dragW.value / 2;
       dragY.value = e.absoluteY - 30;
       const col = columnAt(e.absoluteX);
+      // Update the shared hover id only when it changes; the column's
+      // useAnimatedStyle reacts on the UI thread — no JS round-trip / re-render.
       if (col !== hoverColId.value) {
         hoverColId.value = col;
-        runOnJS(onHoverChange)(col);
       }
     })
     .onEnd(() => {
@@ -406,7 +482,6 @@ function makeStyles(t: Theme) {
     boardScroll: { flex: 1 },
     board: { padding: 12, paddingTop: 0, gap: COLUMN_GAP, flexDirection: "row", alignItems: "stretch", flexGrow: 1 },
     column: { width: COLUMN_WIDTH, backgroundColor: t.surface, borderRadius: 12, padding: 10, borderWidth: 1, borderColor: t.border },
-    columnHover: { borderColor: t.accent, backgroundColor: withAlpha(t.accent, 0.06) },
     columnCards: { flex: 1 },
     columnTitle: { fontSize: 14, fontWeight: "700", color: t.textPrimary, marginBottom: 8 },
     count: { color: t.textTertiary, fontWeight: "400" },
