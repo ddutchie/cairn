@@ -92,7 +92,7 @@ export function TagPickerSheet({
 
 function makeStyles(t: Theme) {
   return StyleSheet.create({
-    backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)" },
+    backdrop: { flex: 1, backgroundColor: withAlpha("#000000", 0.4) },
     sheet: {
       position: "absolute",
       left: 0,

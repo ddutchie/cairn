@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   Modal,
   View,
@@ -12,7 +12,7 @@ import {
 } from "react-native";
 import { FileText, Search } from "lucide-react-native";
 import { listNotes, searchNotes, type NoteRow } from "@/db/queries";
-import { useTheme, elevation, type Theme } from "@/theme";
+import { useTheme, elevation, withAlpha, type Theme } from "@/theme";
 
 /**
  * Bottom-anchored note picker for inserting a `[[Wikilink]]`. Searches note
@@ -31,6 +31,7 @@ export function WikilinkPickerSheet({
   const t = useTheme();
   const styles = useMemo(() => makeStyles(t), [t]);
   const [query, setQuery] = useState("");
+  const inputRef = useRef<TextInput>(null);
 
   // Reset the query each time the sheet opens.
   const [wasVisible, setWasVisible] = useState(false);
@@ -48,7 +49,14 @@ export function WikilinkPickerSheet({
   }, [visible, query]);
 
   return (
-    <Modal visible={visible} transparent animationType="slide" statusBarTranslucent onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      statusBarTranslucent
+      onRequestClose={onClose}
+      onShow={() => inputRef.current?.focus()}
+    >
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -67,12 +75,12 @@ export function WikilinkPickerSheet({
             <View style={styles.searchRow}>
               <Search size={15} color={t.textTertiary} />
               <TextInput
+                ref={inputRef}
                 style={styles.searchInput}
                 value={query}
                 onChangeText={setQuery}
                 placeholder="Search notes…"
                 placeholderTextColor={t.textTertiary}
-                autoFocus
                 autoCorrect={false}
                 returnKeyType="search"
               />
@@ -106,7 +114,7 @@ export function WikilinkPickerSheet({
 function makeStyles(t: Theme) {
   return StyleSheet.create({
     flex: { flex: 1 },
-    backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
+    backdrop: { flex: 1, backgroundColor: withAlpha("#000000", 0.4), justifyContent: "flex-end" },
     sheet: {
       maxHeight: "70%",
       backgroundColor: t.surface,

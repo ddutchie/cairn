@@ -16,9 +16,9 @@ module.exports = function (api) {
           },
         },
       ],
-      // Reanimated 4 uses the worklets plugin (reanimated/plugin just re-exports
-      // it). MUST be the last plugin in the list.
-      "react-native-worklets/plugin",
+      // NOTE: react-native-worklets/plugin is NOT listed here — babel-preset-expo
+      // adds it automatically when react-native-worklets is installed (and keeps
+      // it last), so declaring it again would double-apply the plugin.
     ],
   };
 };

@@ -12,7 +12,7 @@ import {
   Platform,
 } from "react-native";
 import { Check, ShieldCheck, RefreshCw } from "lucide-react-native";
-import { useTheme, elevation, type Theme } from "@/theme";
+import { useTheme, elevation, withAlpha, type Theme } from "@/theme";
 import {
   DEFAULT_OPENAI_BASE_URL,
   DEFAULT_OPENAI_MODEL,
@@ -47,6 +47,7 @@ export function AiSettingsSheet({ visible, onClose }: { visible: boolean; onClos
   const [baseUrl, setBaseUrl] = useState("");
   const [model, setModel] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [loadedKey, setLoadedKey] = useState("");
   const [hadKey, setHadKey] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -69,6 +70,7 @@ export function AiSettingsSheet({ visible, onClose }: { visible: boolean; onClos
       if (cancelled) return;
       setHadKey(k != null);
       setApiKey(k ?? "");
+      setLoadedKey(k ?? "");
       setLoading(false);
     });
     return () => {
@@ -100,9 +102,9 @@ export function AiSettingsSheet({ visible, onClose }: { visible: boolean; onClos
     try {
       setProviderPref(rorkBuiltIn ? pref : "openai");
       setOpenAIEndpoint(baseUrl, model);
-      // Only rewrite the key if the field changed from the loaded value (avoid
-      // clobbering a stored key with the same value, and allow clearing it).
-      await setOpenAIApiKey(apiKey);
+      // Only touch the keychain if the key field actually changed from what we
+      // loaded — avoids a redundant write (and allows clearing it).
+      if (apiKey !== loadedKey) await setOpenAIApiKey(apiKey);
       onClose();
     } finally {
       setSaving(false);
@@ -326,7 +328,7 @@ function makeStyles(t: Theme) {
     // Full-screen dim; the sheet is flowed to the bottom (flex-end) so the
     // KeyboardAvoidingView's padding behaviour genuinely lifts it above the
     // keyboard. Tapping the backdrop (outside the sheet) closes.
-    backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
+    backdrop: { flex: 1, backgroundColor: withAlpha("#000000", 0.4), justifyContent: "flex-end" },
     sheet: {
       maxHeight: "88%",
       backgroundColor: t.surface,

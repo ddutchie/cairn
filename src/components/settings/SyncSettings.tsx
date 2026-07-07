@@ -105,7 +105,7 @@ export function SyncSettings() {
                 <FolderSync size={13} className="text-[var(--accent)]" />
                 Sync now
               </div>
-              <p className="text-[10px] text-[var(--text-tertiary)] mt-0.5 max-w-sm">
+              <p className="text-[0.714rem] text-[var(--text-tertiary)] mt-0.5 max-w-sm">
                 Publishes this device&apos;s changes and pulls the phone&apos;s. Runs automatically in
                 the background too.
               </p>
@@ -129,7 +129,7 @@ export function SyncSettings() {
       {!connected && (
         <div className="flex gap-2.5 p-3 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] opacity-80 mt-4">
           <AlertCircle size={14} className="text-[var(--text-tertiary)] mt-0.5 shrink-0" />
-          <p className="text-[10px] text-[var(--text-tertiary)] leading-normal">
+          <p className="text-[0.714rem] text-[var(--text-tertiary)] leading-normal">
             <strong className="text-[var(--text-secondary)]">You need the Cairn mobile app installed</strong> for
             this to do anything — Device Sync exchanges changes with your phone, not another desktop. The mobile
             app is currently a build-it-yourself companion (see the docs). Once connected, choose a cloud-synced
@@ -147,7 +147,7 @@ function Stat({ label, value }: { label: string; value: number }) {
   return (
     <div className="p-2 rounded-lg border border-[var(--border)] bg-[var(--surface-3)]">
       <div className="text-lg font-bold text-[var(--text-primary)]">{value}</div>
-      <div className="text-[10px] text-[var(--text-tertiary)] uppercase tracking-wide">{label}</div>
+      <div className="text-[0.714rem] text-[var(--text-tertiary)] uppercase tracking-wide">{label}</div>
     </div>
   );
 }

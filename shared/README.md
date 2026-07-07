@@ -27,9 +27,23 @@ import it directly:
   - `hlc.ts` — Hybrid Logical Clock
   - `engine.ts` — oplog capture drain + convergent reconcile (LWW +
     conflict-copy + set-union merge + tombstones)
-  - `transport.ts` — synced-folder NDJSON oplog transport
+  - `transport.ts` — synced-folder NDJSON oplog transport (Node-only)
+  - `conflict.ts` — conflict-copy id/title helpers
   - `db-adapter.ts` — the minimal `SyncDb` interface both drivers satisfy
   - `schema.ts` — `SYNCABLE_TABLES` (single source of truth)
   - `index.ts` — public API barrel
+- `notes/` — portable note logic
+  - `format.ts` — markdown formatting transforms (bold/heading/list/task…)
+  - `markdown.ts` — markdown helpers
+  - `text.ts` — `stripMarkdown` plain-text extraction
+  - `folder-tree.ts` — build a folder tree from a flat note list
+  - `syntax-palette.ts` — shared code-highlight palette
+  - `ai-actions.ts` — AI text-action prompt builders
+- `format/` — shared formatters
+  - `date.ts` — `formatDate`, `formatDateCompact`, `formatRelative`,
+    `getDueDateStatus`
+  - `index.ts` — barrel
+- `ui/` — shared UI constants
+  - `constants.ts` — priority colours, `prettifyToolLabel`, etc.
 
 Run the shared tests with: `npx vitest run shared/**/*.test.ts --project node`

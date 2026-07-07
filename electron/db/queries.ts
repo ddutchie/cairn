@@ -238,7 +238,7 @@ export function updateNote(db: Database.Database, id: string, patch: Partial<{
  *   2. The .md file MUST be removed too (see callers), and the file-watcher
  *      records the id in a short-lived "recently deleted" set so a peer that
  *      re-materialises the orphan file on disk can't re-import it. See
- *      electron/file-watcher.ts markDeleted().
+ *      electron/file-watcher.ts suppressNextChange() (backed by suppressedNoteIds).
  */
 export function deleteNote(db: Database.Database, id: string) {
   db.prepare("DELETE FROM notes WHERE id = ?").run(id);

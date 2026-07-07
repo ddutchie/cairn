@@ -188,16 +188,38 @@ export const rehypeEscapeUnknownTags: Plugin<[], Root> = () => (tree) => {
   visit(tree, "element", (node, index, parent) => {
     const tag = (node as Element).tagName?.toLowerCase();
     if (!tag || KNOWN_HTML_TAGS.has(tag) || !parent || index === undefined) return;
-    // Rebuild the literal source: <tag>children</tag> (self-closing if empty).
-    const el = node as Element;
-    const inner = el.children
-      .filter((c): c is Text => c.type === "text")
-      .map((c) => c.value)
-      .join("");
-    const literal = inner ? `<${el.tagName}>${inner}</${el.tagName}>` : `<${el.tagName}>`;
+    // Rebuild the literal source faithfully — including attributes and nested
+    // markup — so escaping an unknown tag doesn't silently drop the author's
+    // content (previously only direct text children survived).
+    const literal = serializeHast(node as Element);
     (parent.children as ElementContent[])[index] = { type: "text", value: literal };
   });
 };
+
+/** Minimal HAST → HTML-source serializer (attributes + recursive children). */
+function serializeHast(node: ElementContent): string {
+  if (node.type === "text") return (node as Text).value;
+  if (node.type !== "element") return "";
+  const el = node as Element;
+  const attrs = Object.entries(el.properties ?? {})
+    .map(([k, v]) => {
+      const name = hastPropName(k);
+      if (v === true) return ` ${name}`;
+      if (v === false || v == null) return "";
+      const value = Array.isArray(v) ? v.join(" ") : String(v);
+      return ` ${name}="${value.replace(/"/g, "&quot;")}"`;
+    })
+    .join("");
+  const inner = (el.children ?? []).map((c) => serializeHast(c as ElementContent)).join("");
+  return inner ? `<${el.tagName}${attrs}>${inner}</${el.tagName}>` : `<${el.tagName}${attrs}>`;
+}
+
+/** Map a few HAST property names back to their HTML attribute spelling. */
+function hastPropName(k: string): string {
+  if (k === "className") return "class";
+  if (k === "htmlFor") return "for";
+  return k;
+}
 
 // ── Rehype plugins: math tagging + ==highlight== marks ───────────────────────
 export function makeLatexPlugins() {

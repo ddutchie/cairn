@@ -26,9 +26,10 @@ import { registerToolBuilderHandlers } from "./ipc/tool-builder";
 import { registerGitHandlers } from "./ipc/git";
 import { registerPiAgentHandler } from "./ipc/pi-agent";
 import { readWorkspaceConfig, getDbPathForWorkspace } from "./workspace-config";
-import { startFileWatcher } from "./file-watcher";
-import { syncNotesFromDisk } from "./notes-files";
-import { markMcpNotificationsRead } from "./db/queries";
+import { startFileWatcher, suppressNextChange } from "./file-watcher";
+import { syncNotesFromDisk, writeNoteFile, deleteNoteFile } from "./notes-files";
+import { markMcpNotificationsRead, getNoteById } from "./db/queries";
+import { getProjectName } from "./ipc/result-helpers";
 import { setupProtocol, registerAssetProtocol, setAssetWorkspacePath } from "./lib/protocol";
 import { createTray } from "./lib/tray";
 import { killTrackedBashProcesses } from "./lib/coding-tools/bash";
@@ -425,6 +426,10 @@ app.whenReady().then(async () => {
   // Writes from every path (renderer IPC, MCP, file-watcher) land in
   // sync_pending via the capture triggers, so a periodic drain catches them all
   // regardless of source — no per-write hook needed.
+  // desktop-sync lives under electron/sync/** which is EXCLUDED from the
+  // electron tsconfig (it's type-checked via tsconfig.shared.json to import the
+  // repo-root shared engine). So it must be require()'d here, not statically
+  // imported — the one remaining runtime require in this file.
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const desktopSync = require("./sync/desktop-sync");
   const drainDesktop: (db: unknown) => number = desktopSync.drainDesktop;
@@ -435,22 +440,15 @@ app.whenReady().then(async () => {
   // lock-step with cairn.db — the desktop's normal dual-write, applied to edits
   // that arrive from the phone. Echo-suppressed so the file-watcher doesn't
   // re-import our own write as an external edit and loop it back into the DB.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { writeNoteFile, deleteNoteFile } = require("./notes-files");
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { suppressNextChange } = require("./file-watcher");
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { getProjectName } = require("./ipc/result-helpers");
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { getNoteById } = require("./db/queries");
   function projectNoteToDisk(noteId: string, op: "put" | "delete") {
     const note = getNoteById(ctx.db, noteId);
     if (!note || note.type === "dashboard") return; // dashboards have no .md
     suppressNextChange(noteId);
-    if (op === "delete" || note.archivedAt || note.deletedAt) {
-      deleteNoteFile(ctx.workspacePath, note);
+    const projectName = getProjectName(ctx.db, note.projectId);
+    if (op === "delete" || note.archivedAt) {
+      deleteNoteFile(ctx.workspacePath, projectName, note.id);
     } else {
-      writeNoteFile(ctx.workspacePath, { ...note, projectName: getProjectName(ctx.db, note.projectId) });
+      writeNoteFile(ctx.workspacePath, { ...note, projectName });
     }
   }
   // Register once so both the periodic loop and the manual sync:now IPC handler
@@ -478,31 +476,36 @@ app.whenReady().then(async () => {
     }
   }
 
-  // Frequent cheap drain (turns staged writes into oplog ops) — only while a
-  // sync folder is connected. When disabled, skip it so the oplog isn't built.
-  const drainInterval = setInterval(() => {
-    try {
-      if (!getSyncFolder(ctx.db)) return;
-      drainDesktop(ctx.db);
-    } catch (err) { console.error("[sync] drain:", err); }
-  }, 5_000);
-  // Full folder sync (publish + reconcile peers) as the primary + safety net.
-  const syncInterval = setInterval(() => runFullSync("periodic"), 30_000);
+  // Wire the background-sync lifecycle (timers + power/focus/quit listeners) in
+  // one place so the bookkeeping is isolated from the surrounding window setup.
+  async function wireBackgroundSync(): Promise<void> {
+    // Frequent cheap drain (turns staged writes into oplog ops) — only while a
+    // sync folder is connected. When disabled, skip it so the oplog isn't built.
+    const drainInterval = setInterval(() => {
+      try {
+        if (!getSyncFolder(ctx.db)) return;
+        drainDesktop(ctx.db);
+      } catch (err) { console.error("[sync] drain:", err); }
+    }, 5_000);
+    // Full folder sync (publish + reconcile peers) as the primary + safety net.
+    const syncInterval = setInterval(() => runFullSync("periodic"), 30_000);
 
-  // Resume from sleep / focus / quit — timers may have been paused.
-  const { powerMonitor } = await import("electron");
-  powerMonitor.on("resume", () => runFullSync("resume"));
-  win.on("focus", () => runFullSync("focus"));
-  app.on("before-quit", () => {
-    try {
-      if (getSyncFolder(ctx.db)) { drainDesktop(ctx.db); runFullSync("before-quit"); }
-    } catch { /* ignore */ }
-    clearInterval(drainInterval);
-    clearInterval(syncInterval);
-  });
+    // Resume from sleep / focus / quit — timers may have been paused.
+    const { powerMonitor } = await import("electron");
+    powerMonitor.on("resume", () => runFullSync("resume"));
+    win.on("focus", () => runFullSync("focus"));
+    app.on("before-quit", () => {
+      try {
+        if (getSyncFolder(ctx.db)) { drainDesktop(ctx.db); runFullSync("before-quit"); }
+      } catch { /* ignore */ }
+      clearInterval(drainInterval);
+      clearInterval(syncInterval);
+    });
 
-  // Initial sync shortly after boot (lets the workspace settle first).
-  setTimeout(() => runFullSync("startup"), 3_000);
+    // Initial sync shortly after boot (lets the workspace settle first).
+    setTimeout(() => runFullSync("startup"), 3_000);
+  }
+  await wireBackgroundSync();
 
   // Start mobile access server if enabled
   try {

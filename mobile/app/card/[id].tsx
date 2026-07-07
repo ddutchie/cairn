@@ -113,7 +113,7 @@ export default function CardDetail() {
               onPress={() => setPriority(p)}
               style={[styles.priorityChip, { borderColor: PRIORITY_COLOR[p] }, priority === p && { backgroundColor: PRIORITY_COLOR[p] }]}
             >
-              <Text style={[styles.priorityText, { color: priority === p ? "#fff" : t.textSecondary }]}>{p}</Text>
+              <Text style={[styles.priorityText, { color: priority === p ? t.accentFg : t.textSecondary }]}>{p}</Text>
             </Pressable>
           ))}
         </View>

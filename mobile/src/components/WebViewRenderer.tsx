@@ -54,7 +54,12 @@ export function WebViewRenderer({
         showsVerticalScrollIndicator={false}
         showsHorizontalScrollIndicator={false}
         onMessage={onMessage}
-        // Static, bundled content only — hardened against navigation.
+        // Static, bundled content only: allow the initial inline document to
+        // load, and block ALL subsequent navigations (link taps, redirects) so
+        // rendered note/diagram content can't navigate the WebView anywhere.
+        onShouldStartLoadWithRequest={(req) =>
+          req.url === "about:blank" || req.url.startsWith("data:") || req.navigationType === "other"
+        }
         javaScriptEnabled
         setSupportMultipleWindows={false}
       />

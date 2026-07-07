@@ -46,6 +46,30 @@ import { AI_ACTIONS, type AITextAction } from "@cairn/shared/notes/ai-actions";
 
 const ICON = 18;
 
+/** Human-readable accessibility labels for the icon-only formatting buttons. */
+const FORMAT_LABELS: Record<FormatAction, string> = {
+  bold: "Bold",
+  italic: "Italic",
+  strikethrough: "Strikethrough",
+  code: "Inline code",
+  highlight: "Highlight",
+  link: "Link",
+  h1: "Heading 1",
+  h2: "Heading 2",
+  h3: "Heading 3",
+  quote: "Quote",
+  bullet: "Bulleted list",
+  ordered: "Numbered list",
+  task: "Task list",
+  codeblock: "Code block",
+  hr: "Horizontal rule",
+  wikilink: "Link a note",
+};
+
+function formatActionLabel(id: FormatAction): string {
+  return FORMAT_LABELS[id] ?? id;
+}
+
 const FORMAT_GROUPS: { id: FormatAction; Icon: typeof Bold }[][] = [
   [
     { id: "bold", Icon: Bold },
@@ -292,6 +316,9 @@ export function NoteEditorToolbar({
                   onPress={() => onFormat(id)}
                   style={[styles.fmtBtn, disabled && styles.disabled]}
                   hitSlop={4}
+                  accessibilityRole="button"
+                  accessibilityLabel={formatActionLabel(id)}
+                  accessibilityState={{ disabled }}
                 >
                   <Icon size={ICON} color={disabled ? t.textTertiary : t.textSecondary} />
                 </Pressable>

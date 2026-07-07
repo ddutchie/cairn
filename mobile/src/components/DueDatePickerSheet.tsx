@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Modal, View, Text, Pressable, StyleSheet, useColorScheme } from "react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
-import { useTheme, elevation, type Theme } from "@/theme";
+import { useTheme, elevation, withAlpha, type Theme } from "@/theme";
 
 /**
  * A bottom-anchored modal for picking a card's due date. Wraps the native
@@ -72,7 +72,7 @@ export function DueDatePickerSheet({
 
 function makeStyles(t: Theme) {
   return StyleSheet.create({
-    backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)" },
+    backdrop: { flex: 1, backgroundColor: withAlpha("#000000", 0.4) },
     sheet: {
       position: "absolute",
       left: 0,

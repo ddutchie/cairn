@@ -103,17 +103,27 @@ export async function setOpenAIApiKey(apiKey: string): Promise<void> {
 }
 
 /**
- * Resolve the full OpenAI config, or null if no API key has been set yet (in
- * which case chat can't run on the OpenAI provider and the UI should prompt the
- * user to configure it).
+ * True when the user pointed at a custom (non-default) endpoint. Local
+ * OpenAI-compatible servers (LM Studio, Ollama, …) need no API key, so a custom
+ * base URL alone is enough to consider OpenAI configured.
+ */
+function hasCustomBaseUrl(): boolean {
+  const url = getSetting(KEY_BASE_URL)?.trim();
+  return !!url && url !== DEFAULT_OPENAI_BASE_URL;
+}
+
+/**
+ * Resolve the full OpenAI config, or null if it can't run yet. Requires either
+ * an API key (hosted providers) OR a custom base URL (keyless local servers).
  */
 export async function resolveOpenAIConfig(): Promise<OpenAIConfig | null> {
-  const apiKey = await getOpenAIApiKey();
-  if (!apiKey) return null;
+  const apiKey = (await getOpenAIApiKey()) ?? "";
+  if (!apiKey && !hasCustomBaseUrl()) return null;
   return { baseUrl: getOpenAIBaseUrl(), model: getOpenAIModel(), apiKey };
 }
 
-/** Whether the OpenAI provider is usable (has a key). */
+/** Whether the OpenAI provider is usable (has a key, or a custom keyless endpoint). */
 export async function isOpenAIConfigured(): Promise<boolean> {
+  if (hasCustomBaseUrl()) return true;
   return (await getOpenAIApiKey()) != null;
 }

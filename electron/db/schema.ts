@@ -14,6 +14,17 @@
 
 import type Database from "better-sqlite3";
 
+/**
+ * The tables replicated by Device Sync, as of migrations v25/v26. Hoisted to a
+ * single constant so the v25 (column) and v26 (trigger) migrations can't drift.
+ * NOTE: this is intentionally a frozen snapshot for those historical migrations
+ * — adding a new syncable table requires its own new migration, not editing v25/v26.
+ */
+const SYNCABLE_V25_V26 = [
+  "workspaces", "projects", "board_columns", "tags",
+  "notes", "task_cards", "chat_threads", "chat_messages",
+] as const;
+
 export const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
@@ -602,10 +613,7 @@ const MIGRATIONS: Migration[] = [
   // Proven in the Phase 0 spike (shared/sync/*). This migration is additive
   // and backward-compatible; the desktop keeps working unchanged.
   (db) => {
-    const SYNCABLE = [
-      "workspaces", "projects", "board_columns", "tags",
-      "notes", "task_cards", "chat_threads", "chat_messages",
-    ];
+    const SYNCABLE = SYNCABLE_V25_V26;
     const colNames = (t: string) =>
       (db.prepare(`PRAGMA table_info(${t})`).all() as { name: string }[]).map((c) => c.name);
 
@@ -657,10 +665,7 @@ const MIGRATIONS: Migration[] = [
     // Guard: skip capturing changes the engine makes while applying remote ops.
     // A trigger checks whether the 'suppress' flag is set (value '1').
     const suppressGuard = `(SELECT COALESCE((SELECT value FROM sync_state WHERE key='suppress'),'0')) = '0'`;
-    const SYNCABLE = [
-      "workspaces", "projects", "board_columns", "tags",
-      "notes", "task_cards", "chat_threads", "chat_messages",
-    ];
+    const SYNCABLE = SYNCABLE_V25_V26;
     for (const t of SYNCABLE) {
       db.exec(`
         CREATE TRIGGER IF NOT EXISTS trg_sync_${t}_ins AFTER INSERT ON ${t}

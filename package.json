@@ -26,7 +26,7 @@
     "lint": "eslint",
     "type-check": "tsc --noEmit",
     "type-check:electron": "tsc --noEmit -p tsconfig.electron.json",
-    "type-check:shared": "tsc --noEmit -p tsconfig.shared.json",
+    "type-check:shared": "tsc --noEmit -p tsconfig.shared.json && tsc --noEmit -p tsconfig.shared-node.json",
     "type-check:all": "npm run type-check && npm run type-check:electron && npm run type-check:shared",
     "mcp": "node dist-mcp/mcp-server.bundle.js",
     "smoke-test": "node scripts/smoke-test.js",

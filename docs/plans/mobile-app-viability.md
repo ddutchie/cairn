@@ -45,8 +45,8 @@ model gives us for free and what we must add.
 
 ### What is missing and MUST be added (the actual project)
 
-| Gap | Consequence if ignored | Required addition |
-|---|---|---|
+| Gap | Consequence if ignored | Required addition | Reference |
+|---|---|---|---|
 | **No tombstones. Deletes are hard-deletes** (except `archived_at` soft-archive on workspaces/projects/notes/cards) | A diff-based sync **cannot tell "deleted on peer A" from "not-yet-created on peer B"** → deleted items resurrect. `board_columns`, `tags`, `chat_*`, and all idea-flow tables have no soft-delete at all. | `deleted_at`/tombstone rows on every syncable table. | `schema.ts` (see §6) |
 | **No changelog / oplog. `db:changed` is a zero-payload signal** ("something changed", re-hydrate everything) | No way to ask "what changed and how" — can't build incremental sync. | A changelog table (entity, op, logical clock, hash) populated by a write-wrapper or triggers. | `registry.ts:83-89` |
 | **`tags` has NO timestamps at all** | Tag create/rename/recolor/delete is invisible to any timestamp diff. | Add `created_at`, `updated_at`, `version`, `deleted_at` to `tags`. | `schema.ts:93-98` |
@@ -64,7 +64,7 @@ net-new and is the crux of the project.
 
 **One shared TypeScript core, two thin UI shells, and a sync layer that both DBs speak.**
 
-```
+```text
                  ┌───────────────────────────────────────────┐
                  │        @cairn/core  (shared package)        │
                  │  domain types · zod schemas · store logic   │
