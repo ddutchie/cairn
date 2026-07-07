@@ -110,6 +110,45 @@ export function tagsForNotes(notes: { tag_ids: string }[]): TagRow[] {
   return tagsForIds([...seen]);
 }
 
+/**
+ * Batch-resolve tags for a whole list of rows in a SINGLE query, returning a
+ * `Map<rowId, TagRow[]>` that preserves each row's stored tag order.
+ *
+ * This replaces the per-row `tagsForNote()`/`tagsForCard()` calls that fired one
+ * `SELECT … IN` per list item on the JS thread (an N+1 that stalled note-list /
+ * board / calendar renders). Call it once per list (memoised on the rows) and
+ * look each row up by id when rendering.
+ */
+export function tagsByRow<T extends { id: string; tag_ids: string }>(
+  rows: T[],
+): Map<string, TagRow[]> {
+  const result = new Map<string, TagRow[]>();
+  if (rows.length === 0) return result;
+
+  // Collect every distinct tag id across all rows, then resolve them at once.
+  const perRow = new Map<string, string[]>();
+  const all = new Set<string>();
+  for (const r of rows) {
+    const ids = parseIds(r.tag_ids);
+    perRow.set(r.id, ids);
+    for (const id of ids) all.add(id);
+  }
+  if (all.size === 0) {
+    for (const r of rows) result.set(r.id, []);
+    return result;
+  }
+
+  const byId = new Map(tagsForIds([...all]).map((tag) => [tag.id, tag]));
+  for (const r of rows) {
+    const ids = perRow.get(r.id) ?? [];
+    result.set(
+      r.id,
+      ids.map((id) => byId.get(id)).filter((tag): tag is TagRow => !!tag),
+    );
+  }
+  return result;
+}
+
 /** Parse a note/card tag_ids JSON column to an id array (exported for filters). */
 export function noteTagIds(note: { tag_ids: string }): string[] {
   return parseIds(note.tag_ids);
@@ -180,17 +219,30 @@ export interface ProjectSummary extends ProjectRow {
 export function listProjectSummaries(): ProjectSummary[] {
   const db = getDb();
   const projects = listProjects();
-  return projects.map((p) => {
-    const n = db.getFirstSync<{ c: number }>(
-      `SELECT COUNT(*) c FROM notes WHERE ${LIVE} AND type='note' AND ${NOT_CONFLICT} AND project_id = ?`,
-      p.id,
-    );
-    const c = db.getFirstSync<{ c: number }>(
-      `SELECT COUNT(*) c FROM task_cards WHERE ${LIVE} AND project_id = ?`,
-      p.id,
-    );
-    return { ...p, noteCount: n?.c ?? 0, cardCount: c?.c ?? 0 };
-  });
+  if (projects.length === 0) return [];
+
+  // Count notes + cards for ALL projects in two grouped queries instead of two
+  // COUNT(*) per project (an N+1 that scaled the projects list linearly). The
+  // GROUP BY tallies every project in one pass; missing keys default to 0.
+  const noteCounts = new Map<string, number>();
+  for (const r of db.getAllSync<{ project_id: string; c: number }>(
+    `SELECT project_id, COUNT(*) c FROM notes
+     WHERE ${LIVE} AND type='note' AND ${NOT_CONFLICT} GROUP BY project_id`,
+  )) {
+    noteCounts.set(r.project_id, r.c);
+  }
+  const cardCounts = new Map<string, number>();
+  for (const r of db.getAllSync<{ project_id: string; c: number }>(
+    `SELECT project_id, COUNT(*) c FROM task_cards WHERE ${LIVE} GROUP BY project_id`,
+  )) {
+    cardCounts.set(r.project_id, r.c);
+  }
+
+  return projects.map((p) => ({
+    ...p,
+    noteCount: noteCounts.get(p.id) ?? 0,
+    cardCount: cardCounts.get(p.id) ?? 0,
+  }));
 }
 
 /** Distinct folders within a project (empty string = project root). */

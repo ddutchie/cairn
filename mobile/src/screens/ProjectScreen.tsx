@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import { View, Text, ScrollView, Pressable, StyleSheet } from "react-native";
 import { useLocalSearchParams, useRouter, useFocusEffect, Stack, type Href } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -9,7 +9,7 @@ import {
   listColumns,
   listCards,
   moveCardToColumn,
-  tagsForNote,
+  tagsByRow,
   tagsForNotes,
   noteTagIds,
   type NoteRow,
@@ -85,6 +85,11 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
   const tree = useMemo(() => buildFolderTree(notes), [notes]);
   const styles = useMemo(() => makeStyles(t), [t]);
   const toggle = (path: string) => setCollapsed((c) => ({ ...c, [path]: !c[path] }));
+
+  // Resolve every note's tags in ONE query up front (memoised on the notes),
+  // then look each note up by id when rendering its row — instead of firing a
+  // per-row `tagsForNote()` query during render.
+  const tagMap = useMemo(() => tagsByRow(notes), [notes]);
 
   // Distinct tags used by this project's notes — the filter chip row.
   const projectTags = useMemo(() => tagsForNotes(notes), [notes]);
@@ -170,7 +175,7 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
               ) : (
                 <ScrollView contentContainerStyle={styles.notesScroll} keyboardShouldPersistTaps="handled">
                   {filtered.map((n) => (
-                    <NoteRowItem key={n.id} note={n} depth={0} onPress={() => router.push(noteHref(n.id))} t={t} />
+                    <NoteRowItem key={n.id} note={n} depth={0} tags={tagMap.get(n.id)} onPress={() => router.push(noteHref(n.id))} t={t} />
                   ))}
                 </ScrollView>
               )
@@ -184,11 +189,12 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
                     collapsed={collapsed}
                     onToggle={toggle}
                     onNote={(nid) => router.push(noteHref(nid))}
+                    tagMap={tagMap}
                     t={t}
                   />
                 ))}
                 {tree.rootNotes.map((n) => (
-                  <NoteRowItem key={n.id} note={n} depth={0} onPress={() => router.push(noteHref(n.id))} t={t} />
+                  <NoteRowItem key={n.id} note={n} depth={0} tags={tagMap.get(n.id)} onPress={() => router.push(noteHref(n.id))} t={t} />
                 ))}
               </ScrollView>
             )}
@@ -273,14 +279,27 @@ function Segment({ label, count, active, onPress, t }: { label: string; count: n
   );
 }
 
-function NoteRowItem({ note, depth, onPress, t }: { note: NoteRow; depth: number; onPress: () => void; t: Theme }) {
+const NoteRowItem = memo(function NoteRowItem({
+  note,
+  depth,
+  tags,
+  onPress,
+  t,
+}: {
+  note: NoteRow;
+  depth: number;
+  tags?: TagRow[];
+  onPress: () => void;
+  t: Theme;
+}) {
   // Mirror the desktop NoteListItem: title, a 1-line content preview, then a
-  // meta row of relative time + up to 3 tag chips.
+  // meta row of relative time + up to 3 tag chips. Tags are resolved once by the
+  // parent (tagsByRow) and passed in, so this row does no DB work on render.
   const preview = useMemo(() => {
     const text = stripMarkdown(note.content ?? "").trim();
     return text ? text.slice(0, 80) : "Empty note";
   }, [note.content]);
-  const tags = useMemo(() => tagsForNote(note).slice(0, 3), [note]);
+  const shownTags = useMemo(() => (tags ?? []).slice(0, 3), [tags]);
   return (
     <PressableScale
       scaleTo={1}
@@ -307,11 +326,11 @@ function NoteRowItem({ note, depth, onPress, t }: { note: NoteRow; depth: number
       </Text>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingLeft: 21 }}>
         <Text style={{ color: t.textTertiary, ...typeScale.micro, fontWeight: "400" }}>{formatRelative(note.updated_at)}</Text>
-        {tags.length > 0 && <TagChips tags={tags} size="sm" />}
+        {shownTags.length > 0 && <TagChips tags={shownTags} size="sm" />}
       </View>
     </PressableScale>
   );
-}
+});
 
 function FolderTree({
   node,
@@ -319,6 +338,7 @@ function FolderTree({
   collapsed,
   onToggle,
   onNote,
+  tagMap,
   t,
 }: {
   node: FolderNode<NoteRow>;
@@ -326,6 +346,7 @@ function FolderTree({
   collapsed: Record<string, boolean>;
   onToggle: (p: string) => void;
   onNote: (id: string) => void;
+  tagMap: Map<string, TagRow[]>;
   t: Theme;
 }) {
   const isCollapsed = collapsed[node.path];
@@ -353,10 +374,10 @@ function FolderTree({
       {!isCollapsed && (
         <>
           {node.children.map((child) => (
-            <FolderTree key={child.path} node={child} depth={depth + 1} collapsed={collapsed} onToggle={onToggle} onNote={onNote} t={t} />
+            <FolderTree key={child.path} node={child} depth={depth + 1} collapsed={collapsed} onToggle={onToggle} onNote={onNote} tagMap={tagMap} t={t} />
           ))}
           {node.notes.map((n) => (
-            <NoteRowItem key={n.id} note={n} depth={depth + 1} onPress={() => onNote(n.id)} t={t} />
+            <NoteRowItem key={n.id} note={n} depth={depth + 1} tags={tagMap.get(n.id)} onPress={() => onNote(n.id)} t={t} />
           ))}
         </>
       )}

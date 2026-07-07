@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useMemo, useRef, useState } from "react";
 import { View, Text, ScrollView, Pressable, StyleSheet } from "react-native";
 import { Plus } from "lucide-react-native";
 import Animated, {
@@ -11,7 +11,7 @@ import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { PressableScale } from "@/components/PressableScale";
 import { TagChips } from "@/components/TagChips";
 import { useTheme, withAlpha, PRIORITY_COLOR, elevation, type as typeScale, type Theme } from "@/theme";
-import { tagsForCard, type CardRow, type ColumnRow } from "@/db/queries";
+import { tagsByRow, type CardRow, type ColumnRow, type TagRow } from "@/db/queries";
 import { stripMarkdown } from "@cairn/shared/notes/text";
 
 const COLUMN_WIDTH = 260;
@@ -47,6 +47,21 @@ export function DraggableBoard({
 }) {
   const t = useTheme();
   const styles = useMemo(() => makeStyles(t), [t]);
+
+  // Resolve tags for every card in ONE query, and group cards by column ONCE —
+  // both memoised on `cards` — instead of a per-card `tagsForCard()` query and a
+  // per-column `cards.filter()` on every render (the board re-renders each drag
+  // frame via setHoverColJs, so this ran N queries + M filters per frame).
+  const tagMap = useMemo(() => tagsByRow(cards), [cards]);
+  const cardsByColumn = useMemo(() => {
+    const map = new Map<string, CardRow[]>();
+    for (const c of cards) {
+      const arr = map.get(c.column_id);
+      if (arr) arr.push(c);
+      else map.set(c.column_id, [c]);
+    }
+    return map;
+  }, [cards]);
 
   // Column window frames keyed by column id, filled lazily on layout. Shared so
   // the gesture worklet can read them without a JS round-trip. We keep the View
@@ -143,7 +158,7 @@ export function DraggableBoard({
         style={styles.boardScroll}
       >
         {columns.map((col) => {
-          const colCards = cards.filter((c) => c.column_id === col.id);
+          const colCards = cardsByColumn.get(col.id) ?? [];
           const isHoverTarget = hoverColJs === col.id && dragging?.column_id !== col.id;
           return (
             <View
@@ -159,6 +174,7 @@ export function DraggableBoard({
                   <DraggableCard
                     key={card.id}
                     card={card}
+                    tags={tagMap.get(card.id)}
                     t={t}
                     styles={styles}
                     isLifted={dragging?.id === card.id}
@@ -186,7 +202,7 @@ export function DraggableBoard({
       </ScrollView>
 
       {dragging ? (
-        <DragOverlay card={dragging} t={t} styles={styles} dragX={dragX} dragY={dragY} dragW={dragW} originX={originX} originY={originY} />
+        <DragOverlay card={dragging} tags={tagMap.get(dragging.id)} t={t} styles={styles} dragX={dragX} dragY={dragY} dragW={dragW} originX={originX} originY={originY} />
       ) : null}
     </View>
   );
@@ -195,6 +211,7 @@ export function DraggableBoard({
 /** The floating clone that follows the finger while a card is lifted. */
 function DragOverlay({
   card,
+  tags,
   t,
   styles,
   dragX,
@@ -204,6 +221,7 @@ function DragOverlay({
   originY,
 }: {
   card: CardRow;
+  tags?: TagRow[];
   t: Theme;
   styles: ReturnType<typeof makeStyles>;
   dragX: SharedValue<number>;
@@ -227,13 +245,14 @@ function DragOverlay({
   }));
   return (
     <Animated.View pointerEvents="none" style={[style, styles.card, styles.cardLiftedOverlay, elevation.xl]}>
-      <CardBody card={card} t={t} styles={styles} />
+      <CardBody card={card} tags={tags} t={t} styles={styles} />
     </Animated.View>
   );
 }
 
-function DraggableCard({
+const DraggableCard = memo(function DraggableCard({
   card,
+  tags,
   t,
   styles,
   isLifted,
@@ -250,6 +269,7 @@ function DraggableCard({
   onRemeasure,
 }: {
   card: CardRow;
+  tags?: TagRow[];
   t: Theme;
   styles: ReturnType<typeof makeStyles>;
   isLifted: boolean;
@@ -337,34 +357,47 @@ function DraggableCard({
     <GestureDetector gesture={pan}>
       <Animated.View style={slotStyle}>
         <PressableScale style={[styles.card, elevation.sm]} onPress={() => onOpen(card.id)} disabled={isLifted}>
-          <CardBody card={card} t={t} styles={styles} />
+          <CardBody card={card} tags={tags} t={t} styles={styles} />
         </PressableScale>
       </Animated.View>
     </GestureDetector>
   );
-}
+});
 
-function CardBody({ card, t, styles }: { card: CardRow; t: Theme; styles: ReturnType<typeof makeStyles> }) {
-  const tags = tagsForCard(card);
+const CardBody = memo(function CardBody({
+  card,
+  tags,
+  t,
+  styles,
+}: {
+  card: CardRow;
+  tags?: TagRow[];
+  t: Theme;
+  styles: ReturnType<typeof makeStyles>;
+}) {
+  // Tags are resolved once by the parent (tagsByRow) and passed in; the desc is
+  // stripped once per card (memoised) rather than on every board re-render.
+  const desc = useMemo(() => (card.description ? stripMarkdown(card.description) : ""), [card.description]);
+  const shownTags = tags ?? [];
   return (
     <>
       <View style={styles.cardTop}>
         <View style={[styles.priorityDot, { backgroundColor: PRIORITY_COLOR[card.priority] ?? t.accent }]} />
         <Text style={styles.cardTitle}>{card.title}</Text>
       </View>
-      {card.description ? (
+      {desc ? (
         <Text style={styles.cardDesc} numberOfLines={2}>
-          {stripMarkdown(card.description)}
+          {desc}
         </Text>
       ) : null}
-      {tags.length > 0 ? (
+      {shownTags.length > 0 ? (
         <View style={{ marginTop: 8 }}>
-          <TagChips tags={tags} size="sm" />
+          <TagChips tags={shownTags} size="sm" />
         </View>
       ) : null}
     </>
   );
-}
+});
 
 function makeStyles(t: Theme) {
   return StyleSheet.create({

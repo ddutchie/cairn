@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { View, Text, ScrollView, Pressable, StyleSheet } from "react-native";
 import { ChevronLeft, ChevronRight, AlertTriangle, Lock } from "lucide-react-native";
 import { PressableScale } from "@/components/PressableScale";
-import { tagsForCard, type CalendarCard } from "@/db/queries";
+import { tagsByRow, type CalendarCard, type TagRow } from "@/db/queries";
 import { useTheme, withAlpha, PRIORITY_COLOR, type as typeScale, iconSize, type Theme } from "@/theme";
 import { getDueDateStatus, formatDate } from "@cairn/shared/format/date";
 
@@ -150,6 +150,10 @@ export function CalendarView({
   );
 
   const selectedCards = useMemo(() => byDay.get(selectedKey) ?? [], [byDay, selectedKey]);
+
+  // Resolve tags for the selected day's cards in one query (memoised), so each
+  // DayDetailRow doesn't fire its own tagsForCard() during render.
+  const selectedTagMap = useMemo(() => tagsByRow(selectedCards), [selectedCards]);
 
   const maxVisible = layout === "month" ? 2 : 6;
 
@@ -329,6 +333,7 @@ export function CalendarView({
               <DayDetailRow
                 key={card.id}
                 card={card}
+                tags={selectedTagMap.get(card.id)}
                 showProject={showProject}
                 onPress={() => onOpenCard(card.id)}
                 t={t}
@@ -398,18 +403,20 @@ function TaskChip({
 
 function DayDetailRow({
   card,
+  tags,
   showProject,
   onPress,
   t,
   styles,
 }: {
   card: CalendarCard;
+  tags?: TagRow[];
   showProject: boolean;
   onPress: () => void;
   t: Theme;
   styles: ReturnType<typeof makeStyles>;
 }) {
-  const tags = useMemo(() => tagsForCard(card).slice(0, 3), [card]);
+  const shownTags = useMemo(() => (tags ?? []).slice(0, 3), [tags]);
   const status = getDueDateStatus(card.due_date);
   const priorityColor = PRIORITY_COLOR[card.priority] ?? t.textTertiary;
   return (
@@ -428,7 +435,7 @@ function DayDetailRow({
           {status === "today" ? (
             <Text style={[styles.sheetBadge, { color: t.warning }]}>Today</Text>
           ) : null}
-          {tags.map((tag) => (
+          {shownTags.map((tag) => (
             <View
               key={tag.id}
               style={[

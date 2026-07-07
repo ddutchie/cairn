@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { lazy, Suspense, useMemo } from "react";
 import { Linking, Text, View, Pressable } from "react-native";
 import Markdown, { MarkdownIt, type RenderRules, type ASTNode } from "react-native-markdown-display";
 import markdownItMark from "markdown-it-mark";
@@ -7,14 +7,24 @@ import { Square, CheckSquare } from "lucide-react-native";
 import { useTheme, withAlpha, type Theme } from "@/theme";
 import { findNoteIdByTitle } from "@/db/queries";
 import { CodeBlock } from "@/components/CodeBlock";
-import { MathView } from "@/components/MathView";
-import { MermaidView } from "@/components/MermaidView";
 import {
   preprocessCairnMarkdown,
   noteTitleFromUrl,
   isColorLiteral,
   toggleCheckboxInSource,
 } from "@cairn/shared/notes/markdown";
+
+// Mermaid + KaTeX bundle their renderer sources as ~1 MB inline strings
+// (mermaid-assets.ts alone is 3.5k lines). A static import would evaluate those
+// modules — and heap-allocate the strings — at bundle init, i.e. every time ANY
+// note opens, even a plain-text one. Loading them lazily defers that cost until
+// a note actually contains a diagram / math block.
+const MermaidView = lazy(() =>
+  import("@/components/MermaidView").then((m) => ({ default: m.MermaidView })),
+);
+const MathView = lazy(() =>
+  import("@/components/MathView").then((m) => ({ default: m.MathView })),
+);
 
 /**
  * Themed markdown renderer with Cairn desktop parity.
@@ -267,14 +277,27 @@ function makeRules(
     // Syntax-highlighted fenced / indented code blocks; mermaid → diagram.
     fence: (node) => {
       const lang = extractFenceLang(node);
-      if (lang === "mermaid") return <MermaidView key={node.key} code={node.content} />;
+      if (lang === "mermaid")
+        return (
+          <Suspense key={node.key} fallback={<View style={{ height: 60 }} />}>
+            <MermaidView code={node.content} />
+          </Suspense>
+        );
       return <CodeBlock key={node.key} code={node.content} language={lang} />;
     },
     code_block: (node) => <CodeBlock key={node.key} code={node.content} />,
 
     // KaTeX math (from mathPlugin).
-    math_inline: (node) => <MathView key={node.key} latex={node.content} display={false} />,
-    math_block: (node) => <MathView key={node.key} latex={node.content} display={true} />,
+    math_inline: (node) => (
+      <Suspense key={node.key} fallback={<Text> </Text>}>
+        <MathView latex={node.content} display={false} />
+      </Suspense>
+    ),
+    math_block: (node) => (
+      <Suspense key={node.key} fallback={<View style={{ height: 24 }} />}>
+        <MathView latex={node.content} display={true} />
+      </Suspense>
+    ),
 
     // ==highlight== → mark chip.
     mark: (node, children) => (

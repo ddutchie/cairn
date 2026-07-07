@@ -1,12 +1,19 @@
-import { useCallback, useState } from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { lazy, Suspense, useCallback, useState } from "react";
+import { View, Text, ActivityIndicator, StyleSheet } from "react-native";
 import { Stack, useFocusEffect, useRouter } from "expo-router";
 import { getKnowledgeGraph, type KnowledgeGraph } from "@/db/queries";
-import { KnowledgeGraphWebView, type GraphMode } from "@/components/KnowledgeGraphWebView";
+import type { GraphMode } from "@/components/KnowledgeGraphWebView";
 import { TabScreen } from "@/components/TabScreen";
 import { ICON_GRAPH_FORCE, ICON_GRAPH_RADIAL } from "@/components/toolbar-icons";
 import { useDataChanged } from "@/sync/useSyncStatus";
 import { useTheme, type as typeScale } from "@/theme";
+
+// The graph WebView inlines the full D3 bundle (~274 KB) as a string. Load it
+// lazily so opening the app / other tabs never evaluates that module — only the
+// Graph tab, on first view, pays the cost.
+const KnowledgeGraphWebView = lazy(() =>
+  import("@/components/KnowledgeGraphWebView").then((m) => ({ default: m.KnowledgeGraphWebView })),
+);
 
 /**
  * Workspace-wide Knowledge Graph — every project, note, card and tag wired by
@@ -83,7 +90,9 @@ export default function GraphScreen() {
           </Text>
         </View>
       ) : graph ? (
-        <KnowledgeGraphWebView graph={graph} mode={mode} onModeChange={setMode} onSelectNode={onSelectNode} />
+        <Suspense fallback={<View style={styles.empty}><ActivityIndicator color={t.textTertiary} /></View>}>
+          <KnowledgeGraphWebView graph={graph} mode={mode} onModeChange={setMode} onSelectNode={onSelectNode} />
+        </Suspense>
       ) : null}
     </TabScreen>
   );
