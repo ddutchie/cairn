@@ -17,7 +17,10 @@ export default function CardDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const t = useTheme();
-  const card = id ? getCard(id) : null;
+  // Memoize the SQLite reads by their stable inputs so controlled-input edits
+  // (title/description keystrokes) don't re-run the queries every render — and
+  // so the `tags` memo below isn't invalidated by a fresh `card` object ref.
+  const card = useMemo(() => (id ? getCard(id) : null), [id]);
   const styles = useMemo(() => makeStyles(t), [t]);
 
   const [title, setTitle] = useState(card?.title ?? "");
@@ -30,7 +33,10 @@ export default function CardDetail() {
   const [tagPickerOpen, setTagPickerOpen] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [descPreview, setDescPreview] = useState(false);
-  const columns: ColumnRow[] = card ? listColumns(card.project_id) : [];
+  const columns: ColumnRow[] = useMemo(
+    () => (card ? listColumns(card.project_id) : []),
+    [card],
+  );
   const tags = useMemo(() => (card ? tagsForCard({ tag_ids: JSON.stringify(tagIds) }) : []), [card, tagIds]);
 
   if (!card) {

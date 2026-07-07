@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -92,7 +92,7 @@ const AI_ICONS: Record<AITextAction, typeof Bold> = {
  */
 function ScrollAffordanceRow({ children, fill }: { children: React.ReactNode; fill?: boolean }) {
   const t = useTheme();
-  const styles = makeStyles(t);
+  const styles = useMemo(() => makeStyles(t), [t]);
   const [canLeft, setCanLeft] = useState(false);
   const [canRight, setCanRight] = useState(false);
 
@@ -177,7 +177,7 @@ export function NoteEditorToolbar({
   bottomInset?: number;
 }) {
   const t = useTheme();
-  const styles = makeStyles(t);
+  const styles = useMemo(() => makeStyles(t), [t]);
   const [showCustom, setShowCustom] = useState(false);
   const [customPrompt, setCustomPrompt] = useState("");
   const inputRef = useRef<TextInput>(null);

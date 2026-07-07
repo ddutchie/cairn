@@ -37,13 +37,27 @@ export default function SearchScreen() {
     else setTasks(searchTasks(q));
   }, []);
 
+  // Debounce search-as-you-type so a burst of keystrokes fires one SQLite query
+  // after input settles, not one per character.
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const runDebounced = useCallback(
+    (text: string, s: Scope) => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => run(text, s), 200);
+    },
+    [run],
+  );
+
   const onChange = (text: string) => {
     setQuery(text);
-    run(text, scope);
+    runDebounced(text, scope);
   };
 
   const switchScope = (s: Scope) => {
     setScope(s);
+    // Scope changes are deliberate (not rapid) — run immediately, and cancel any
+    // pending debounced query so it can't overwrite this with the old scope.
+    if (debounceRef.current) clearTimeout(debounceRef.current);
     run(query, s);
   };
 

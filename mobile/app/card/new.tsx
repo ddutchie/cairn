@@ -17,7 +17,8 @@ export default function NewCard() {
   const router = useRouter();
   const t = useTheme();
   const styles = useMemo(() => makeStyles(t), [t]);
-  const columns: ColumnRow[] = project ? listColumns(project) : [];
+  // Memoize by `project` so the SQLite query doesn't re-run on every keystroke.
+  const columns: ColumnRow[] = useMemo(() => (project ? listColumns(project) : []), [project]);
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
