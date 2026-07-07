@@ -15,8 +15,6 @@
   "include": [
     "shared/sync/transport.ts",
     "shared/sync/transport.test.ts",
-    "electron/db/schema.ts",
-    "electron/db/queries.ts",
     "electron/db/**/*.ts",
     "electron/sync/**/*.ts"
   ],
