@@ -14,7 +14,7 @@
  */
 
 import type { SyncDb } from "./db-adapter";
-import { Hlc, compareHlc } from "./hlc";
+import { Hlc, compareHlc, decodeHlc } from "./hlc";
 import { SYNCABLE_TABLES, type SyncableTable } from "./schema";
 
 export type Op = "put" | "delete";
@@ -198,7 +198,9 @@ export class SyncEngine {
           this.appendOplog({ hlc: stamp, origin: this.deviceId, entity, entity_id, op: "delete", payload: null });
         } else {
           this.db.prepare(`UPDATE ${entity} SET hlc = ? WHERE id = ?`).run(stamp, entity_id);
-          this.appendOplog({ hlc: stamp, origin: this.deviceId, entity, entity_id, op: "put", payload: readRow(this.db, entity, entity_id) ?? null });
+          // Reuse the already-fetched row (with the new hlc) for the payload
+          // instead of a second readRow SELECT — the UPDATE only changed hlc.
+          this.appendOplog({ hlc: stamp, origin: this.deviceId, entity, entity_id, op: "put", payload: { ...row, hlc: stamp } });
         }
         // Establish the conflict ancestor the FIRST time a row is published, so
         // a fresh row has a baseline. We must NOT advance an existing ancestor
@@ -254,8 +256,8 @@ export class SyncEngine {
           if (id == null) continue;
           const stamp = this.hlc.send();
           this.db.prepare(`UPDATE ${entity} SET hlc = ? WHERE id = ?`).run(stamp, id);
-          const payload = readRow(this.db, entity, id) ?? null;
-          this.appendOplog({ hlc: stamp, origin: this.deviceId, entity, entity_id: id, op: "put", payload });
+          // Reuse the row we already SELECTed (with the new hlc) — no re-read.
+          this.appendOplog({ hlc: stamp, origin: this.deviceId, entity, entity_id: id, op: "put", payload: { ...row, hlc: stamp } });
           seeded++;
         }
       }
@@ -298,6 +300,8 @@ export class SyncEngine {
       )
       .run(...present.map((c) => merged[c] as never));
 
+    // Read back the stored row so the payload includes any DB-applied column
+    // defaults (e.g. status) that `merged` may have omitted.
     this.appendOplog({ hlc: stamp, origin: this.deviceId, entity, entity_id: values.id, op: "put", payload: readRow(this.db, entity, values.id) ?? null });
     // Establish the conflict ancestor the first time this row is published
     // (mirrors drainPending). Never advance an existing ancestor — a later
@@ -588,18 +592,32 @@ export class SyncEngine {
     // allowed. The row is never read as live data.
     const cols = db_cols_notnull(this.db, entity);
     const row: Record<string, unknown> = { id, hlc, deleted_at: nowIso() };
-    for (const c of cols) if (!(c.name in row)) row[c.name] = c.dflt ?? "";
+    // Only synthesize a placeholder for NOT NULL columns that have NO db default.
+    // Columns WITH a default are omitted so SQLite applies the real default —
+    // copying the raw PRAGMA dflt_value text here would corrupt quoted-literal
+    // defaults (e.g. "'x'" would be stored including the quotes).
+    for (const c of cols) {
+      if (c.name in row) continue;
+      if (c.dflt != null) continue; // let SQLite apply the column default
+      row[c.name] = "";
+    }
     this.writeRow(entity, row);
   }
 
   private makeConflictCopy(entity: SyncableTable, local: Record<string, unknown>): string {
     // Clone the LOCAL version as a new row so the incoming remote can win in place.
-    const copyId = `${local.id}_conflict_${this.deviceId}_${Date.now().toString(36)}`;
+    // Derive the unique suffix from the freshly-minted HLC (send()) rather than
+    // Date.now(), so multiple conflicts in the same millisecond on one device
+    // never collide. Keep the `_conflict_<deviceId>_<suffix>` shape the conflict
+    // helpers (conflict.ts) parse — suffix is the HLC physical+counter in hex.
+    const stamp = this.hlc.send();
+    const parts = decodeHlc(stamp);
+    const suffix = parts.physical.toString(16) + parts.counter.toString(16).padStart(4, "0");
+    const copyId = `${local.id}_conflict_${this.deviceId}_${suffix}`;
     const clone: Record<string, unknown> = { ...local, id: copyId };
     if (entity === "notes") {
       clone.title = `${local.title ?? "Untitled"} (conflicted copy — ${this.deviceId})`;
     }
-    const stamp = this.hlc.send();
     clone.hlc = stamp;
     clone.deleted_at = null;
     this.writeRow(entity, clone);

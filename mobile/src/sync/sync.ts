@@ -19,6 +19,23 @@ export interface SyncResult {
   reason?: string; // when connected=false
 }
 
+/** Max time to wait on any single iCloud I/O call before treating it as stalled. */
+const ICLOUD_IO_TIMEOUT_MS = 20_000;
+
+class TimeoutError extends Error {}
+
+/** Reject if `p` doesn't settle within `ms` — prevents a stalled native iCloud
+ * call from wedging the sync scheduler (requestSync's inFlight guard). */
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new TimeoutError(`${label} timed out after ${ms}ms`)), ms);
+    p.then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      (e) => { clearTimeout(timer); reject(e); },
+    );
+  });
+}
+
 export async function syncNow(): Promise<SyncResult> {
   if (!(await iCloudAvailable())) {
     return { drained: 0, peerOpsApplied: 0, conflictCopies: 0, connected: false, reason: "iCloud not available — sign in to iCloud in Settings." };
@@ -30,29 +47,36 @@ export async function syncNow(): Promise<SyncResult> {
 
   const engine = getEngine();
 
-  // 1. Stage local writes into the oplog.
-  const drained = engine.drainPending();
+  try {
+    // 1. Stage local writes into the oplog.
+    const drained = engine.drainPending();
 
-  // 2. Publish our oplog.
-  await writeOwnOplog(folder, engine.deviceId, engine.exportOplog());
+    // 2. Publish our oplog.
+    await withTimeout(writeOwnOplog(folder, engine.deviceId, engine.exportOplog()), ICLOUD_IO_TIMEOUT_MS, "writeOwnOplog");
 
-  // 3. Read peers.
-  const peerEntries = await readPeerOplogs(folder, engine.deviceId);
+    // 3. Read peers.
+    const peerEntries = await withTimeout(readPeerOplogs(folder, engine.deviceId), ICLOUD_IO_TIMEOUT_MS, "readPeerOplogs");
 
-  // 4. Reconcile.
-  const { conflictCopies } = engine.applyRemote(peerEntries);
+    // 4. Reconcile.
+    const { conflictCopies } = engine.applyRemote(peerEntries);
 
-  // 5. Re-publish if reconcile changed our oplog.
-  if (peerEntries.length > 0) {
-    await writeOwnOplog(folder, engine.deviceId, engine.exportOplog());
+    // 5. Re-publish if reconcile changed our oplog.
+    if (peerEntries.length > 0) {
+      await withTimeout(writeOwnOplog(folder, engine.deviceId, engine.exportOplog()), ICLOUD_IO_TIMEOUT_MS, "writeOwnOplog");
+    }
+
+    return {
+      drained,
+      peerOpsApplied: peerEntries.length,
+      conflictCopies: conflictCopies.length,
+      connected: true,
+    };
+  } catch (e) {
+    // A stalled/failed iCloud call resolves to connected:false so the scheduler
+    // (controller.requestSync) clears its in-flight guard and can retry later.
+    const reason = e instanceof TimeoutError ? e.message : `Sync failed: ${e instanceof Error ? e.message : String(e)}`;
+    return { drained: 0, peerOpsApplied: 0, conflictCopies: 0, connected: false, reason };
   }
-
-  return {
-    drained,
-    peerOpsApplied: peerEntries.length,
-    conflictCopies: conflictCopies.length,
-    connected: true,
-  };
 }
 
 /** Count local changes waiting to be drained (for a "N pending" hint). */

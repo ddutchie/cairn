@@ -39,7 +39,11 @@ async function* streamRork(
     throw new Error("Rork endpoint not configured (EXPO_PUBLIC_TOOLKIT_URL unset).");
   }
 
-  const res = await expoFetch(new URL("/agent/chat", base).toString(), {
+  // Preserve any path in the configured base URL (e.g. .../api). A leading-slash
+  // path in `new URL` would reset to the host root and break `{base}/agent/chat`
+  // — mirror openai.ts's relative-segment + trailing-slash approach.
+  const url = new URL("agent/chat", base.replace(/\/?$/, "/")).toString();
+  const res = await expoFetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
     body: JSON.stringify({

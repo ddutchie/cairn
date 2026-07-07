@@ -109,9 +109,13 @@ export async function requestSync(_reason: string = "manual"): Promise<void> {
     emit();
   } finally {
     inFlight = false;
-    if (pendingRerun) {
+    // Only fire a queued rerun if the scheduler is still running — otherwise a
+    // sync that finishes after stopAutoSync() would resurrect work post-teardown.
+    if (pendingRerun && started) {
       pendingRerun = false;
       void requestSync("rerun");
+    } else {
+      pendingRerun = false;
     }
   }
 }
@@ -155,6 +159,7 @@ export function startAutoSync(): void {
 /** Tear down (mainly for tests / hot-reload cleanliness). */
 export function stopAutoSync(): void {
   started = false;
+  pendingRerun = false; // suppress any queued rerun from an in-flight sync
   if (intervalId) clearInterval(intervalId);
   if (writeTimer) clearTimeout(writeTimer);
   appStateSub?.remove();

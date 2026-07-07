@@ -16,8 +16,37 @@ import fs from "fs";
 import path from "path";
 import type { OplogEntry } from "./engine";
 
+/**
+ * Reject device ids that could escape the sync folder or corrupt the filename.
+ * Device ids are minted locally (e.g. "desktop_ab12cd34…"), so anything with a
+ * path separator, traversal token, or non-identifier char is untrusted input.
+ */
+function assertSafeDeviceId(deviceId: string): void {
+  if (!/^[A-Za-z0-9._-]+$/.test(deviceId) || deviceId === "." || deviceId === "..") {
+    throw new Error(`Unsafe sync deviceId: ${JSON.stringify(deviceId)}`);
+  }
+}
+
 function oplogFileName(deviceId: string): string {
+  assertSafeDeviceId(deviceId);
   return `oplog-${deviceId}.ndjson`;
+}
+
+const OPS = new Set(["put", "delete"]);
+
+/** Structural guard so only well-formed entries reach applyRemote. */
+function isOplogEntry(v: unknown): v is OplogEntry {
+  if (typeof v !== "object" || v === null) return false;
+  const e = v as Record<string, unknown>;
+  return (
+    typeof e.hlc === "string" &&
+    typeof e.origin === "string" &&
+    typeof e.entity === "string" &&
+    typeof e.entity_id === "string" &&
+    typeof e.op === "string" &&
+    OPS.has(e.op) &&
+    (e.payload === null || (typeof e.payload === "object" && e.payload !== null))
+  );
 }
 
 /** Write (replace) this device's full oplog file. Atomic via tmp+rename. */
@@ -43,7 +72,9 @@ export function readPeerOplogs(syncFolder: string, selfDeviceId: string): OplogE
       const trimmed = line.trim();
       if (!trimmed) continue;
       try {
-        out.push(JSON.parse(trimmed) as OplogEntry);
+        const parsed = JSON.parse(trimmed);
+        if (isOplogEntry(parsed)) out.push(parsed);
+        // else: shape mismatch (partial/older/corrupt) — skip like bad JSON.
       } catch {
         // Skip partially-synced/corrupt lines; a later sync will re-read cleanly.
       }

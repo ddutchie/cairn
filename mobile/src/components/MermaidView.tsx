@@ -16,7 +16,9 @@ export function MermaidView({ code }: { code: string }) {
   const [failed, setFailed] = useState(false);
 
   const html = useMemo(() => {
-    const safe = JSON.stringify(code);
+    // Escape `</` so a literal </script> inside the diagram source can't break
+    // out of the inline <script> (JSON.stringify alone doesn't escape it).
+    const safe = JSON.stringify(code).replace(/<\//g, "<\\/");
     return `<!doctype html><html><head>${buildHtmlHead(
       t,
       `#d { display: flex; justify-content: center; }
@@ -24,6 +26,8 @@ export function MermaidView({ code }: { code: string }) {
     )}</head><body>
       <div id="d"></div>
       <script>${MERMAID_JS}</script>
+      <!-- Defines window.__postError; must run BEFORE the render script below. -->
+      <script>${buildAutoHeightScript()}</script>
       <script>
         (function () {
           try {
@@ -47,7 +51,6 @@ export function MermaidView({ code }: { code: string }) {
           }
         })();
       </script>
-      <script>${buildAutoHeightScript()}</script>
     </body></html>`;
   }, [code, t, isDark]);
 

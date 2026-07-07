@@ -35,9 +35,19 @@ export function encodeHlc(parts: HlcParts): string {
 
 export function decodeHlc(stamp: string): HlcParts {
   const [p, c, ...rest] = stamp.split(":");
+  // Validate before parsing: a malformed stamp must fail loudly rather than
+  // silently yielding NaN, which would corrupt compareHlc ordering.
+  if (!/^[0-9a-f]+$/i.test(p ?? "") || !/^[0-9a-f]+$/i.test(c ?? "") || rest.length === 0) {
+    throw new Error(`Malformed HLC stamp: ${JSON.stringify(stamp)}`);
+  }
+  const physical = parseInt(p, 16);
+  const counter = parseInt(c, 16);
+  if (!Number.isFinite(physical) || !Number.isFinite(counter)) {
+    throw new Error(`Malformed HLC stamp: ${JSON.stringify(stamp)}`);
+  }
   return {
-    physical: parseInt(p, 16),
-    counter: parseInt(c, 16),
+    physical,
+    counter,
     deviceId: rest.join(":"),
   };
 }

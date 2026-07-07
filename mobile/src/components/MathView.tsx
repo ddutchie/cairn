@@ -12,7 +12,9 @@ import { KATEX_JS, KATEX_CSS } from "@/webview-assets/katex-assets";
 export function MathView({ latex, display }: { latex: string; display: boolean }) {
   const t = useTheme();
   const html = useMemo(() => {
-    const safe = JSON.stringify(latex);
+    // Escape `</` so a literal </script> in the latex can't break out of the
+    // inline <script> (JSON.stringify alone doesn't escape it).
+    const safe = JSON.stringify(latex).replace(/<\//g, "<\\/");
     return `<!doctype html><html><head>${buildHtmlHead(
       t,
       `${KATEX_CSS}
@@ -21,6 +23,8 @@ export function MathView({ latex, display }: { latex: string; display: boolean }
     )}</head><body>
       <div class="cairn-math" id="m"></div>
       <script>${KATEX_JS}</script>
+      <!-- Defines window.__postError; must run BEFORE the render script below. -->
+      <script>${buildAutoHeightScript()}</script>
       <script>
         try {
           katex.render(${safe}, document.getElementById('m'), {
@@ -30,7 +34,6 @@ export function MathView({ latex, display }: { latex: string; display: boolean }
           });
         } catch (e) { window.__postError && window.__postError(e && e.message ? e.message : e); }
       </script>
-      <script>${buildAutoHeightScript()}</script>
     </body></html>`;
   }, [latex, display, t]);
 

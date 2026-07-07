@@ -372,9 +372,16 @@ export function patchNote(noteId: string, oldString: string, newString: string):
 export function createTask(projectId: string, columnId: string, title: string, opts?: { description?: string; priority?: string }): string {
   const id = genId();
   const now = new Date().toISOString();
+  // Append to the end of the target column: next order = max(order)+1 among the
+  // column's live cards (hardcoding 0 made every new card collide at the top).
+  const maxRow = getDb().getFirstSync<{ maxOrder: number | null }>(
+    `SELECT MAX("order") AS maxOrder FROM task_cards WHERE column_id = ? AND deleted_at IS NULL`,
+    columnId,
+  );
+  const order = (maxRow?.maxOrder ?? -1) + 1;
   getDb().runSync(
     `INSERT INTO task_cards (id, column_id, project_id, workspace_id, title, description, priority, "order", created_at, updated_at, version)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 0)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
     id,
     columnId,
     projectId,
@@ -382,6 +389,7 @@ export function createTask(projectId: string, columnId: string, title: string, o
     title,
     opts?.description ?? null,
     opts?.priority ?? "medium",
+    order,
     now,
     now,
   );

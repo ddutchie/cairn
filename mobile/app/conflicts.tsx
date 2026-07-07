@@ -27,8 +27,12 @@ export default function ConflictsScreen() {
   useDataChanged(load);
 
   const keepCopy = (c: ConflictCopy) => {
-    resolveConflictKeepCopy(c.id);
-    load();
+    // More destructive: this overwrites the live original with the copy. Confirm
+    // first (mirrors keepOriginal) so the overwrite is never silent.
+    Alert.alert("Replace the original?", "This copy overwrites the original note. The original version is discarded.", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Replace original", style: "destructive", onPress: () => { resolveConflictKeepCopy(c.id); load(); } },
+    ]);
   };
   const keepOriginal = (c: ConflictCopy) => {
     Alert.alert("Discard this copy?", "The original note is kept and this conflicted copy is deleted.", [
@@ -63,7 +67,7 @@ export default function ConflictsScreen() {
               <View style={styles.versions}>
                 <VersionBlock
                   label="This device (original)"
-                  body={c.original?.content ?? "(original was deleted)"}
+                  body={c.original ? (c.original.content ?? "") : "(original was deleted)"}
                   onOpen={c.original ? () => router.push(`/note/${c.original!.id}`) : undefined}
                   styles={styles}
                 />

@@ -26,9 +26,16 @@ export default function RootLayout() {
     try {
       initDatabase();
       setReady(true);
-      startAutoSync();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      return;
+    }
+    // Sync startup is non-fatal: a failure here must NOT show the "Database
+    // error" screen (the DB opened fine). Guard it separately.
+    try {
+      startAutoSync();
+    } catch (e) {
+      console.warn("[sync] auto-sync failed to start:", e);
     }
   }, []);
 
