@@ -1,5 +1,5 @@
 import { memo, useCallback, useMemo, useState } from "react";
-import { View, Text, ScrollView, Pressable, StyleSheet } from "react-native";
+import { View, Text, ScrollView, FlatList, Pressable, StyleSheet, type ListRenderItem } from "react-native";
 import { useLocalSearchParams, useRouter, useFocusEffect, Stack, type Href } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChevronDown, ChevronRight, Folder, FolderOpen, FileText, Pin } from "lucide-react-native";
@@ -29,6 +29,11 @@ import { stripMarkdown } from "@cairn/shared/notes/text";
 import { formatRelative } from "@cairn/shared/format/date";
 
 type Tab = "notes" | "board";
+
+/** A single virtualized row in the notes list: a folder header or a note. */
+type ListRow =
+  | { kind: "folder"; node: FolderNode<NoteRow>; depth: number }
+  | { kind: "note"; note: NoteRow; depth: number };
 
 /**
  * Project detail (notes tree + board). Shared by two routes:
@@ -82,9 +87,15 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
   useFocusEffect(useCallback(() => load(), [load]));
   useDataChanged(load);
 
+  // A single stable note-open handler built from the (stable) href builder, so
+  // the memoised rows below keep the SAME onOpen reference across renders and
+  // actually skip re-rendering when unrelated state (filter text, collapse)
+  // changes. Passing a fresh `() => push(...)` per row would defeat React.memo.
+  const openNote = useCallback((nid: string) => router.push(noteHref(nid)), [router, noteHref]);
+
   const tree = useMemo(() => buildFolderTree(notes), [notes]);
   const styles = useMemo(() => makeStyles(t), [t]);
-  const toggle = (path: string) => setCollapsed((c) => ({ ...c, [path]: !c[path] }));
+  const toggle = useCallback((path: string) => setCollapsed((c) => ({ ...c, [path]: !c[path] })), []);
 
   // Resolve every note's tags in ONE query up front (memoised on the notes),
   // then look each note up by id when rendering its row — instead of firing a
@@ -110,6 +121,35 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
       return matchesText && matchesTag;
     });
   }, [notes, filter, activeTagId, isFiltering]);
+
+  // Flatten what's on screen into ONE linear row array so a single FlatList can
+  // virtualize it — mounting only visible rows instead of every note/folder at
+  // once (projects can have hundreds of notes). Filtering shows a flat note
+  // list; otherwise the folder tree, walked depth-first and skipping the
+  // subtrees of collapsed folders.
+  const rows = useMemo<ListRow[]>(() => {
+    if (isFiltering) return filtered.map((n) => ({ kind: "note", note: n, depth: 0 }));
+    const out: ListRow[] = [];
+    const walk = (node: FolderNode<NoteRow>, depth: number) => {
+      out.push({ kind: "folder", node, depth });
+      if (collapsed[node.path]) return;
+      for (const child of node.children) walk(child, depth + 1);
+      for (const n of node.notes) out.push({ kind: "note", note: n, depth: depth + 1 });
+    };
+    for (const f of tree.folders) walk(f, 0);
+    for (const n of tree.rootNotes) out.push({ kind: "note", note: n, depth: 0 });
+    return out;
+  }, [isFiltering, filtered, tree, collapsed]);
+
+  const renderRow = useCallback<ListRenderItem<ListRow>>(
+    ({ item }) =>
+      item.kind === "folder" ? (
+        <FolderRow node={item.node} depth={item.depth} collapsed={!!collapsed[item.node.path]} onToggle={toggle} t={t} />
+      ) : (
+        <NoteRowItem note={item.note} depth={item.depth} tags={tagMap.get(item.note.id)} onOpen={openNote} t={t} />
+      ),
+    [collapsed, toggle, t, tagMap, openNote],
+  );
 
   const onAdd = () => {
     if (!id) return;
@@ -169,34 +209,22 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
               t={t}
               styles={styles}
             />
-            {isFiltering ? (
-              filtered.length === 0 ? (
-                <Empty text="No notes match your filter." t={t} />
-              ) : (
-                <ScrollView contentContainerStyle={styles.notesScroll} keyboardShouldPersistTaps="handled">
-                  {filtered.map((n) => (
-                    <NoteRowItem key={n.id} note={n} depth={0} tags={tagMap.get(n.id)} onPress={() => router.push(noteHref(n.id))} t={t} />
-                  ))}
-                </ScrollView>
-              )
+            {isFiltering && filtered.length === 0 ? (
+              <Empty text="No notes match your filter." t={t} />
             ) : (
-              <ScrollView contentContainerStyle={styles.notesScroll} keyboardShouldPersistTaps="handled">
-                {tree.folders.map((f) => (
-                  <FolderTree
-                    key={f.path}
-                    node={f}
-                    depth={0}
-                    collapsed={collapsed}
-                    onToggle={toggle}
-                    onNote={(nid) => router.push(noteHref(nid))}
-                    tagMap={tagMap}
-                    t={t}
-                  />
-                ))}
-                {tree.rootNotes.map((n) => (
-                  <NoteRowItem key={n.id} note={n} depth={0} tags={tagMap.get(n.id)} onPress={() => router.push(noteHref(n.id))} t={t} />
-                ))}
-              </ScrollView>
+              <FlatList
+                data={rows}
+                keyExtractor={rowKey}
+                renderItem={renderRow}
+                contentContainerStyle={styles.notesScroll}
+                keyboardShouldPersistTaps="handled"
+                // Windowing tuned for a text-row list: keep a modest buffer so
+                // fast scrolls stay filled without over-mounting.
+                initialNumToRender={20}
+                maxToRenderPerBatch={20}
+                windowSize={11}
+                removeClippedSubviews
+              />
             )}
           </View>
         )
@@ -283,23 +311,26 @@ const NoteRowItem = memo(function NoteRowItem({
   note,
   depth,
   tags,
-  onPress,
+  onOpen,
   t,
 }: {
   note: NoteRow;
   depth: number;
   tags?: TagRow[];
-  onPress: () => void;
+  onOpen: (id: string) => void;
   t: Theme;
 }) {
   // Mirror the desktop NoteListItem: title, a 1-line content preview, then a
   // meta row of relative time + up to 3 tag chips. Tags are resolved once by the
   // parent (tagsByRow) and passed in, so this row does no DB work on render.
+  // `onOpen` is a stable ref → this memoised row skips re-render when unrelated
+  // parent state changes.
   const preview = useMemo(() => {
     const text = stripMarkdown(note.content ?? "").trim();
     return text ? text.slice(0, 80) : "Empty note";
   }, [note.content]);
   const shownTags = useMemo(() => (tags ?? []).slice(0, 3), [tags]);
+  const onPress = useCallback(() => onOpen(note.id), [onOpen, note.id]);
   return (
     <PressableScale
       scaleTo={1}
@@ -332,58 +363,52 @@ const NoteRowItem = memo(function NoteRowItem({
   );
 });
 
-function FolderTree({
+/** FlatList key for a flattened row — folder path or note id, both unique. */
+function rowKey(item: ListRow): string {
+  return item.kind === "folder" ? `f:${item.node.path}` : `n:${item.note.id}`;
+}
+
+/**
+ * A single folder header row. Non-recursive: the tree is flattened by the parent
+ * so each folder + its (visible) descendants are separate FlatList rows. Toggling
+ * only flips `collapsed[path]`, which re-derives the flattened row list.
+ */
+const FolderRow = memo(function FolderRow({
   node,
   depth,
   collapsed,
   onToggle,
-  onNote,
-  tagMap,
   t,
 }: {
   node: FolderNode<NoteRow>;
   depth: number;
-  collapsed: Record<string, boolean>;
+  collapsed: boolean;
   onToggle: (p: string) => void;
-  onNote: (id: string) => void;
-  tagMap: Map<string, TagRow[]>;
   t: Theme;
 }) {
-  const isCollapsed = collapsed[node.path];
+  const onPress = useCallback(() => onToggle(node.path), [onToggle, node.path]);
   return (
-    <View>
-      <Pressable
-        onPress={() => onToggle(node.path)}
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          gap: 6,
-          paddingVertical: 9,
-          paddingRight: 14,
-          paddingLeft: 12 + depth * 16,
-          backgroundColor: t.surface2,
-        }}
-      >
-        {isCollapsed ? <ChevronRight size={14} color={t.textTertiary} /> : <ChevronDown size={14} color={t.textTertiary} />}
-        {isCollapsed ? <Folder size={14} color={t.accent} /> : <FolderOpen size={14} color={t.accent} />}
-        <Text style={{ flex: 1, color: t.textSecondary, ...typeScale.label }} numberOfLines={1}>
-          {node.name}
-        </Text>
-        <Text style={{ color: t.textTertiary, ...typeScale.micro, fontWeight: "400" }}>{node.notes.length}</Text>
-      </Pressable>
-      {!isCollapsed && (
-        <>
-          {node.children.map((child) => (
-            <FolderTree key={child.path} node={child} depth={depth + 1} collapsed={collapsed} onToggle={onToggle} onNote={onNote} tagMap={tagMap} t={t} />
-          ))}
-          {node.notes.map((n) => (
-            <NoteRowItem key={n.id} note={n} depth={depth + 1} tags={tagMap.get(n.id)} onPress={() => onNote(n.id)} t={t} />
-          ))}
-        </>
-      )}
-    </View>
+    <Pressable
+      onPress={onPress}
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 6,
+        paddingVertical: 9,
+        paddingRight: 14,
+        paddingLeft: 12 + depth * 16,
+        backgroundColor: t.surface2,
+      }}
+    >
+      {collapsed ? <ChevronRight size={14} color={t.textTertiary} /> : <ChevronDown size={14} color={t.textTertiary} />}
+      {collapsed ? <Folder size={14} color={t.accent} /> : <FolderOpen size={14} color={t.accent} />}
+      <Text style={{ flex: 1, color: t.textSecondary, ...typeScale.label }} numberOfLines={1}>
+        {node.name}
+      </Text>
+      <Text style={{ color: t.textTertiary, ...typeScale.micro, fontWeight: "400" }}>{node.notes.length}</Text>
+    </Pressable>
   );
-}
+});
 
 function Empty({ text, t }: { text: string; t: Theme }) {
   return (
