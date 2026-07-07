@@ -240,19 +240,28 @@ const BoardColumn = memo(function BoardColumn({
   onRemeasure: () => void;
 }) {
   const colId = column.id;
-  // Highlight when the finger hovers THIS column and it isn't the source column.
+  // Precompute both colour states on the JS thread — the worklet below must not
+  // call withAlpha() (a non-worklet JS fn) or it crashes on the UI thread.
+  const activeBorder = t.accent;
+  const activeBg = withAlpha(t.accent, 0.06);
+  // Overlay is invisible when idle (transparent border + fill) and only lights
+  // up while the finger hovers this column and it isn't the drag's source.
   const hoverStyle = useAnimatedStyle(() => {
     const active = hoverColId.value === colId && sourceColId.value !== colId;
     return {
-      borderColor: active ? t.accent : t.border,
-      backgroundColor: active ? withAlpha(t.accent, 0.06) : t.surface,
+      borderColor: active ? activeBorder : "transparent",
+      backgroundColor: active ? activeBg : "transparent",
     };
   });
   return (
-    <Animated.View
+    <View
       ref={(node: View | null) => measureColumn(colId, node)}
-      style={[styles.column, hoverStyle]}
+      style={styles.column}
     >
+      {/* Hover highlight overlay — an absolutely-filled Animated.View so the
+          measured column stays a plain View (reanimated animates the border/bg
+          here on the UI thread). */}
+      <Animated.View pointerEvents="none" style={[styles.columnHighlight, hoverStyle]} />
       <Text style={styles.columnTitle}>
         {column.name} <Text style={styles.count}>{cards.length}</Text>
       </Text>
@@ -282,7 +291,7 @@ const BoardColumn = memo(function BoardColumn({
           <Text style={styles.addCardText}>New task</Text>
         </Pressable>
       </ScrollView>
-    </Animated.View>
+    </View>
   );
 });
 
@@ -482,6 +491,7 @@ function makeStyles(t: Theme) {
     boardScroll: { flex: 1 },
     board: { padding: 12, paddingTop: 0, gap: COLUMN_GAP, flexDirection: "row", alignItems: "stretch", flexGrow: 1 },
     column: { width: COLUMN_WIDTH, backgroundColor: t.surface, borderRadius: 12, padding: 10, borderWidth: 1, borderColor: t.border },
+    columnHighlight: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, borderRadius: 12, borderWidth: 1.5 },
     columnCards: { flex: 1 },
     columnTitle: { fontSize: 14, fontWeight: "700", color: t.textPrimary, marginBottom: 8 },
     count: { color: t.textTertiary, fontWeight: "400" },
