@@ -1,0 +1,127 @@
+/**
+ * Chat tools — executed locally against the mobile expo-sqlite DB.
+ *
+ * The AI (via the prompt-based tool protocol in agent.ts) emits a tool call as
+ * JSON; we run the matching executor here. Writes go through queries.ts (plain
+ * SQL) so the capture triggers stage them for sync — anything the AI changes
+ * propagates to the desktop, which projects note edits to .md.
+ */
+
+import * as q from "@/db/queries";
+
+export interface ToolDef {
+  name: string;
+  description: string;
+  params: string; // human-readable hint (kept for prompts/debug)
+  jsonSchema: Record<string, unknown>; // JSON Schema for /agent/chat tools
+  run: (args: Record<string, unknown>) => unknown;
+}
+
+const str = (v: unknown): string => (typeof v === "string" ? v : v == null ? "" : String(v));
+
+// Small helpers to keep tool schemas terse.
+const obj = (props: Record<string, unknown>, required: string[] = []) => ({
+  type: "object",
+  properties: props,
+  required,
+  additionalProperties: false,
+});
+const S = { type: "string" };
+
+export const TOOLS: ToolDef[] = [
+  {
+    name: "get_cairn_context",
+    description:
+      "Workspace orientation: all projects (each with their board columns) + tags. Call this FIRST to get ids and structure.",
+    params: "{}",
+    jsonSchema: obj({}),
+    run: () => q.getCairnContext(),
+  },
+  {
+    name: "get_project_context_pack",
+    description:
+      "Rich single-call project summary: project + columns, note count, pinned notes (with content), open tasks grouped by column, and recent activity. Use this to summarize or understand a project.",
+    params: '{ "project_id": string }',
+    jsonSchema: obj({ project_id: S }, ["project_id"]),
+    run: (a) => q.getProjectContextPack(str(a.project_id)),
+  },
+  {
+    name: "search_notes",
+    description: "Search notes by text. Returns id, title, folder, project_id.",
+    params: '{ "query": string }',
+    jsonSchema: obj({ query: S }, ["query"]),
+    run: (a) =>
+      q.searchNotes(str(a.query)).map((n) => ({ id: n.id, title: n.title, folder: n.folder, project_id: n.project_id })),
+  },
+  {
+    name: "list_notes",
+    description: "List notes in a project. Returns id, title, folder.",
+    params: '{ "project_id": string }',
+    jsonSchema: obj({ project_id: S }, ["project_id"]),
+    run: (a) => q.listNotes(str(a.project_id)).map((n) => ({ id: n.id, title: n.title, folder: n.folder })),
+  },
+  {
+    name: "get_note",
+    description: "Get a note's full content by id.",
+    params: '{ "id": string }',
+    jsonSchema: obj({ id: S }, ["id"]),
+    run: (a) => q.getNote(str(a.id)),
+  },
+  {
+    name: "ensure_note",
+    description: "Create or update a note by title within a project. Returns the note id.",
+    params: '{ "project_id": string, "title": string, "content": string, "folder"?: string }',
+    jsonSchema: obj({ project_id: S, title: S, content: S, folder: S }, ["project_id", "title", "content"]),
+    run: (a) => ({ id: q.ensureNote(str(a.project_id), str(a.title), str(a.content), str(a.folder)) }),
+  },
+  {
+    name: "append_to_note",
+    description: "Append markdown text to a note's body.",
+    params: '{ "id": string, "text": string }',
+    jsonSchema: obj({ id: S, text: S }, ["id", "text"]),
+    run: (a) => ({ ok: q.appendToNote(str(a.id), str(a.text)) }),
+  },
+  {
+    name: "patch_note",
+    description: "Replace an exact substring in a note's body (include enough context to be unique).",
+    params: '{ "id": string, "oldString": string, "newString": string }',
+    jsonSchema: obj({ id: S, oldString: S, newString: S }, ["id", "oldString", "newString"]),
+    run: (a) => ({ ok: q.patchNote(str(a.id), str(a.oldString), str(a.newString)) }),
+  },
+  {
+    name: "list_columns",
+    description: "List board columns for a project (id, name).",
+    params: '{ "project_id": string }',
+    jsonSchema: obj({ project_id: S }, ["project_id"]),
+    run: (a) => q.listColumns(str(a.project_id)).map((c) => ({ id: c.id, name: c.name })),
+  },
+  {
+    name: "create_task",
+    description: "Create a task card in a column. priority = low|medium|high|urgent.",
+    params: '{ "project_id": string, "column_id": string, "title": string, "description"?: string, "priority"?: string }',
+    jsonSchema: obj({ project_id: S, column_id: S, title: S, description: S, priority: S }, ["project_id", "column_id", "title"]),
+    run: (a) => ({
+      id: q.createTask(str(a.project_id), str(a.column_id), str(a.title), {
+        description: a.description ? str(a.description) : undefined,
+        priority: a.priority ? str(a.priority) : undefined,
+      }),
+    }),
+  },
+  {
+    name: "search_tasks",
+    description: "List task cards in a project (id, title, priority, column_id).",
+    params: '{ "project_id": string }',
+    jsonSchema: obj({ project_id: S }, ["project_id"]),
+    run: (a) =>
+      q.listCards(str(a.project_id)).map((c) => ({ id: c.id, title: c.title, priority: c.priority, column_id: c.column_id })),
+  },
+];
+
+export const TOOL_MAP = new Map(TOOLS.map((t) => [t.name, t]));
+
+/** Tool defs in the /agent/chat shape: { name: { description, jsonSchema } }. */
+export function toolsForAgent(): Record<string, { description: string; jsonSchema: Record<string, unknown> }> {
+  const out: Record<string, { description: string; jsonSchema: Record<string, unknown> }> = {};
+  for (const t of TOOLS) out[t.name] = { description: t.description, jsonSchema: t.jsonSchema };
+  return out;
+}

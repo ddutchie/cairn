@@ -1,0 +1,73 @@
+{
+  "expo": {
+    "name": "Cairn",
+    "slug": "cairn-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "cairn",
+    "userInterfaceStyle": "automatic",
+    "icon": "./assets/icon.png",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.gerardslee.cairn",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "com.gerardslee.cairn",
+      "softwareKeyboardLayoutMode": "pan",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#8FA87E"
+      },
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-sqlite",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Cairn uses your photos to attach images to chat messages.",
+          "cameraPermission": "Cairn uses the camera to attach photos to chat messages."
+        }
+      ],
+      "./plugins/withAppleSigning",
+      "./plugins/withICloudContainer",
+      "@react-native-community/datetimepicker",
+      "expo-secure-store",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splashIcon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#f5f4f1",
+          "dark": {
+            "image": "./assets/splashIcon.png",
+            "backgroundColor": "#0d0d0d"
+          }
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "b9634bc3-1e30-4cc2-82a4-4d43a2ed5644"
+      },
+      "router": {}
+    },
+    "owner": "gerardslee",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/b9634bc3-1e30-4cc2-82a4-4d43a2ed5644"
+    }
+  }
+}

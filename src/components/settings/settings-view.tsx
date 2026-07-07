@@ -12,6 +12,7 @@ import {
   Smartphone,
   Network,
   Wrench,
+  FolderSync,
 } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -24,6 +25,7 @@ import { DataSettings } from "./DataSettings";
 import { AboutSection } from "./AboutSection";
 import { AgentSettings } from "./AgentSettings";
 import { MobileSettings } from "./MobileSettings";
+import { SyncSettings } from "./SyncSettings";
 import { EmbeddingsSettings } from "./EmbeddingsSettings";
 import { ToolsSettings } from "./ToolsSettings";
 import type { SettingsSection } from "@/types";
@@ -53,6 +55,7 @@ export function SettingsView() {
           { id: "agents" as const, label: "Coding Agents", icon: Terminal },
           { id: "tools" as const, label: "Tools", icon: Wrench },
           { id: "mobile" as const, label: "Mobile Access", icon: Smartphone },
+          { id: "sync" as const, label: "Device Sync", icon: FolderSync },
           { id: "tags" as const, label: "Tags", icon: Tag },
           { id: "shortcuts" as const, label: "Shortcuts", icon: Keyboard },
           { id: "data" as const, label: "Data", icon: Database },
@@ -91,6 +94,7 @@ export function SettingsView() {
           {section === "agents" && <AgentSettings />}
           {section === "tools" && <ToolsSettings />}
           {section === "mobile" && <MobileSettings />}
+          {section === "sync" && <SyncSettings />}
           {section === "tags" && <TagsSettings />}
           {section === "shortcuts" && <ShortcutsSettings />}
           {section === "data" && (

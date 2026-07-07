@@ -20,7 +20,7 @@ import "katex/dist/katex.min.css";
 import { renderCodeFence } from "./markdown-code-fence";
 import { Callout } from "./Callout";
 import { MathBlock } from "./MathBlock";
-import { remarkCallout, remarkObsidianEmbeds, remarkPromoteDisplayMath, makeLatexPlugins, InlineCode } from "@/lib/markdown/pipeline";
+import { remarkCallout, remarkObsidianEmbeds, remarkPromoteDisplayMath, makeLatexPlugins, InlineCode, rehypeEscapeUnknownTags } from "@/lib/markdown/pipeline";
 
 // ── NoteMarkdownPreview ───────────────────────────────────────────────────────
 
@@ -172,7 +172,7 @@ export function NoteMarkdownPreview({ content, className, filePath, projectRoot 
     <div className={`prose-cairn px-6 py-5 overflow-y-auto h-full ${className ?? ""}`}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkBreaks, remarkMath, remarkPromoteDisplayMath, remarkCallout, remarkObsidianEmbeds]}
-        rehypePlugins={[rehypeRaw, rehypeCaptureLatex, rehypeKatex, rehypeMergedPass]}
+        rehypePlugins={[rehypeRaw, rehypeEscapeUnknownTags, rehypeCaptureLatex, rehypeKatex, rehypeMergedPass]}
         urlTransform={urlTransform}
         components={({
           mark({ children }: React.HTMLAttributes<HTMLElement> & ExtraProps) {

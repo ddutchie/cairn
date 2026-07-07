@@ -8,16 +8,10 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
+import { type AITextAction, buildAIActionPrompt } from "../../../shared/notes/ai-actions";
 
-// ── AI actions ────────────────────────────────────────────────────────────────
-
-export type AITextAction =
-  | "rephrase"
-  | "summarize"
-  | "expand"
-  | "fix_grammar"
-  | "change_tone"
-  | "custom";
+// Re-export so existing importers (note-editor.tsx, tests) keep their paths.
+export { buildAIActionPrompt, type AITextAction };
 
 // ── Format actions ────────────────────────────────────────────────────────────
 // Inline: wrap/unwrap the selection.
@@ -226,23 +220,8 @@ export function AITextToolbar({ onAction, onFormat, loading, onDismiss, hasSelec
 }
 
 // ── AI prompt builder ─────────────────────────────────────────────────────────
-
-export function buildAIActionPrompt(action: AITextAction, selectedText: string, customPrompt?: string): string {
-  const base = `You are an AI writing assistant embedded in a note editor. The user has selected the following text:\n\n"${selectedText}"\n\n## RENDERING CAPABILITIES:
-- You have access to the following markdown rendering features:
-  - **Mermaid Diagrams**: Use \`\`\`mermaid\`\`\` blocks for flowcharts, sequence diagrams, etc.
-  - **Tables**: Use standard markdown table syntax for data representation.
-  - **Code Blocks**: Specify the language (e.g., \`\`\`typescript\`\`\`) for syntax highlighting.
-  - **Standard Formatting**: Bold, italic, bulleted/numbered lists, and links.\n\n`;
-  switch (action) {
-    case "rephrase":     return base + "Rephrase this text to say the same thing in a different, clearer way. Return only the rewritten text, no commentary.";
-    case "summarize":    return base + "Summarize this text concisely. Return only the summary, no commentary.";
-    case "expand":       return base + "Expand this text with more detail and depth. Return only the expanded text, no commentary.";
-    case "fix_grammar":  return base + "Fix any grammar, spelling, and punctuation errors in this text. Return only the corrected text, no commentary.";
-    case "change_tone":  return base + "Rewrite this text in a more professional and polished tone. Return only the rewritten text, no commentary.";
-    case "custom":       return base + `${customPrompt}. Return only the resulting text, no commentary.`;
-  }
-}
+// buildAIActionPrompt now lives in shared/notes/ai-actions.ts and is re-exported
+// at the top of this file.
 
 // ── Format logic ──────────────────────────────────────────────────────────────
 // Exported so note-editor.tsx can call it directly with the CodeMirror view.

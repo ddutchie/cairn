@@ -29,7 +29,7 @@ export default defineConfig({
           name: "node",
           environment: "node",
           globals: true,
-          include: ["electron/**/*.test.ts", "src/**/*.test.ts", "src/**/*.test.tsx"],
+          include: ["electron/**/*.test.ts", "shared/**/*.test.ts", "src/**/*.test.ts", "src/**/*.test.tsx"],
           exclude: ["src/**/*.component.test.tsx"],
           env: {
             BETTER_SQLITE3_BINDING: path.resolve(__dirname, "vitest-native/better_sqlite3.node"),

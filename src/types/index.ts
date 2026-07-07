@@ -464,6 +464,7 @@ export type SettingsSection =
   | "agents"
   | "tools"
   | "mobile"
+  | "sync"
   | "data"
   | "about"
   | "shortcuts"

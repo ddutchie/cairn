@@ -15,6 +15,8 @@ import {
   createProject,
   createNote,
   updateNote,
+  deleteNote,
+  getNoteById,
   createColumn,
   createCard,
   updateCard,
@@ -593,5 +595,27 @@ describe("tool attachment queries", () => {
     setToolAttachment(db, { projectId: "p1", toolType: "mcp", toolId: "m1", enabled: true });
     clearToolAttachment(db, { projectId: "p1", toolType: "mcp", toolId: "m1" });
     expect(getToolAttachments(db, "p1")).toHaveLength(0);
+  });
+});
+
+describe("deleteNote (hard delete)", () => {
+  let db: Database.Database;
+
+  beforeEach(() => {
+    db = makeDb();
+    seedWorkspace(db);
+    seedProject(db);
+  });
+
+  it("physically removes the row (desktop lists don't filter tombstones)", () => {
+    createNote(db, { id: "n1", projectId: "proj1", workspaceId: "ws1", title: "Doomed", content: "x" });
+    expect(getNoteById(db, "n1")).not.toBeNull();
+    deleteNote(db, "n1");
+    expect(getNoteById(db, "n1")).toBeNull();
+    expect(searchNotes(db, { query: "Doomed" }).find((n) => n.id === "n1")).toBeUndefined();
+  });
+
+  it("is a no-op for an unknown id", () => {
+    expect(() => deleteNote(db, "does-not-exist")).not.toThrow();
   });
 });

@@ -324,6 +324,21 @@ const api = {
     return () => ipcRenderer.off("db:changed", handler);
   },
 
+  // ── Desktop sync (synced-folder oplog: connect folder + manual sync) ──
+  sync: {
+    getFolder: () => invoke<string | null>("sync:getFolder"),
+    selectFolder: () => invoke<string | null>("sync:selectFolder"),
+    clearFolder: () => invoke<{ ok: true }>("sync:clearFolder"),
+    now: () =>
+      invoke<{
+        drained: number;
+        seeded: number;
+        peerOpsApplied: number;
+        conflictCopies: number;
+        connected: boolean;
+      }>("sync:now"),
+  },
+
   // ── AI write lock events ──────────────────────
   // Fired by the main process when the in-app AI chat executor starts or
   // finishes writing to a note. The renderer uses these to show a read-only
