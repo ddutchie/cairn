@@ -9,6 +9,7 @@ import * as SQLite from "expo-sqlite";
 import { SyncEngine } from "@cairn/shared/sync/engine";
 import { createExpoSyncDb } from "./expo-sync-db";
 import { MOBILE_SCHEMA_SQL, MOBILE_TRIGGERS_SQL } from "./schema";
+import { runMigrations } from "./migrations";
 
 const DB_NAME = "cairn-mobile.db";
 
@@ -35,6 +36,8 @@ export function initDatabase(): { db: SQLite.SQLiteDatabase; engine: SyncEngine 
   const db = SQLite.openDatabaseSync(DB_NAME);
   db.execSync(MOBILE_SCHEMA_SQL);
   db.execSync(MOBILE_TRIGGERS_SQL);
+  // Version + apply any pending forward migrations for existing installs.
+  runMigrations(db);
 
   const deviceId = ensureDeviceId(db);
   const adapter = createExpoSyncDb(db);

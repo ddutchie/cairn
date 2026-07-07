@@ -433,7 +433,7 @@ app.whenReady().then(async () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const desktopSync = require("./sync/desktop-sync");
   const drainDesktop: (db: unknown) => number = desktopSync.drainDesktop;
-  const syncDesktop: (db: unknown, projectNote?: (noteId: string, op: "put" | "delete") => void) => { seeded: number; drained: number; peerOpsApplied: number; conflictCopies: number; connected: boolean } = desktopSync.syncDesktop;
+  const syncDesktop: (db: unknown, projectNote?: (noteId: string, op: "put" | "delete") => void) => Promise<{ seeded: number; drained: number; peerOpsApplied: number; conflictCopies: number; connected: boolean }> = desktopSync.syncDesktop;
   const getSyncFolder: (db: unknown) => string | null = desktopSync.getSyncFolder;
 
   // Project an inbound (synced) note change onto disk so the .md file stays in
@@ -455,7 +455,7 @@ app.whenReady().then(async () => {
   // re-emit .md files for inbound note changes.
   desktopSync.setNoteFileProjector(projectNoteToDisk);
 
-  function runFullSync(reason: string) {
+  async function runFullSync(reason: string) {
     try {
       if (!getSyncFolder(ctx.db)) {
         // Device Sync not enabled: do nothing. We deliberately DON'T drain here —
@@ -465,7 +465,7 @@ app.whenReady().then(async () => {
         // connect, which seeds the whole workspace from current table state.
         return;
       }
-      const r = syncDesktop(ctx.db);
+      const r = await syncDesktop(ctx.db);
       if (r.seeded || r.drained || r.peerOpsApplied) {
         console.log(`[sync] ${reason}: seeded=${r.seeded} sent=${r.drained} applied=${r.peerOpsApplied} conflicts=${r.conflictCopies}`);
         // If peers changed our data, tell the renderer to re-hydrate.

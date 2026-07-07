@@ -19,7 +19,7 @@
 
 import type Database from "better-sqlite3";
 import { SyncEngine } from "../../shared/sync/engine";
-import { writeOplogFile, readPeerOplogs } from "../../shared/sync/transport";
+import { writeOplogFileAsync, readPeerOplogsAsync } from "../../shared/sync/transport";
 
 export interface DesktopSyncResult {
   drained: number;
@@ -120,7 +120,7 @@ export function drainDesktop(db: Database.Database): number {
  * peer ops so the desktop can re-emit the .md file (dual-write parity). Called
  * AFTER reconcile so the DB is already authoritative.
  */
-export function syncDesktop(db: Database.Database, projectNote?: NoteFileProjector): DesktopSyncResult {
+export async function syncDesktop(db: Database.Database, projectNote?: NoteFileProjector): Promise<DesktopSyncResult> {
   const folder = getSyncFolder(db);
   if (!folder) {
     return { drained: 0, seeded: 0, peerOpsApplied: 0, conflictCopies: 0, connected: false };
@@ -132,14 +132,15 @@ export function syncDesktop(db: Database.Database, projectNote?: NoteFileProject
   const seeded = engine.backfill();
   // Stage any pending local writes.
   const drained = engine.drainPending();
-  // Publish our full oplog.
-  writeOplogFile(folder, engine.deviceId, engine.exportOplog());
+  // Publish our full oplog. Folder I/O is async so a slow/network-backed folder
+  // (iCloud/Dropbox) doesn't block the Electron main loop.
+  await writeOplogFileAsync(folder, engine.deviceId, engine.exportOplog());
   // Read + reconcile peers.
-  const peerEntries = readPeerOplogs(folder, engine.deviceId);
+  const peerEntries = await readPeerOplogsAsync(folder, engine.deviceId);
   const { conflictCopies, applied } = engine.applyRemote(peerEntries);
   // Re-publish if reconcile forwarded peer ops / minted conflict copies.
   if (peerEntries.length > 0) {
-    writeOplogFile(folder, engine.deviceId, engine.exportOplog());
+    await writeOplogFileAsync(folder, engine.deviceId, engine.exportOplog());
   }
 
   // Project inbound note changes onto disk (.md dual-write parity). Conflict

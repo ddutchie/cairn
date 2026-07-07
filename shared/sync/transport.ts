@@ -68,17 +68,55 @@ export function readPeerOplogs(syncFolder: string, selfDeviceId: string): OplogE
     if (!file.startsWith("oplog-") || !file.endsWith(".ndjson")) continue;
     if (file === selfFile) continue;
     const raw = fs.readFileSync(path.join(syncFolder, file), "utf-8");
-    for (const line of raw.split("\n")) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      try {
-        const parsed = JSON.parse(trimmed);
-        if (isOplogEntry(parsed)) out.push(parsed);
-        // else: shape mismatch (partial/older/corrupt) — skip like bad JSON.
-      } catch {
-        // Skip partially-synced/corrupt lines; a later sync will re-read cleanly.
-      }
-    }
+    for (const line of raw.split("\n")) parseInto(out, line);
+  }
+  return out;
+}
+
+/** Push one parsed+validated entry from a raw line into `out` (shared by sync/async). */
+function parseInto(out: OplogEntry[], line: string): void {
+  const trimmed = line.trim();
+  if (!trimmed) return;
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (isOplogEntry(parsed)) out.push(parsed);
+    // else: shape mismatch (partial/older/corrupt) — skip like bad JSON.
+  } catch {
+    // Skip partially-synced/corrupt lines; a later sync will re-read cleanly.
+  }
+}
+
+// ── Async variants (preferred on the Electron main process) ─────────────────
+// The desktop drives sync on timers against a possibly network-backed folder
+// (iCloud/Dropbox), so it uses these fs.promises versions to avoid blocking the
+// main loop on slow I/O. The sync versions above remain for tests and any
+// caller that is already off the hot path.
+
+/** Async: write (replace) this device's full oplog file. Atomic via tmp+rename. */
+export async function writeOplogFileAsync(syncFolder: string, deviceId: string, entries: OplogEntry[]): Promise<void> {
+  await fs.promises.mkdir(syncFolder, { recursive: true });
+  const target = path.join(syncFolder, oplogFileName(deviceId));
+  const tmp = `${target}.tmp`;
+  const body = entries.map((e) => JSON.stringify(e)).join("\n") + (entries.length ? "\n" : "");
+  await fs.promises.writeFile(tmp, body, "utf-8");
+  await fs.promises.rename(tmp, target);
+}
+
+/** Async: read all peer oplog entries, excluding this device's own file. */
+export async function readPeerOplogsAsync(syncFolder: string, selfDeviceId: string): Promise<OplogEntry[]> {
+  try {
+    await fs.promises.access(syncFolder);
+  } catch {
+    return [];
+  }
+  const selfFile = oplogFileName(selfDeviceId);
+  const out: OplogEntry[] = [];
+  const files = await fs.promises.readdir(syncFolder);
+  for (const file of files) {
+    if (!file.startsWith("oplog-") || !file.endsWith(".ndjson")) continue;
+    if (file === selfFile) continue;
+    const raw = await fs.promises.readFile(path.join(syncFolder, file), "utf-8");
+    for (const line of raw.split("\n")) parseInto(out, line);
   }
   return out;
 }
