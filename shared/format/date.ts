@@ -16,9 +16,11 @@ export function formatDate(iso: string): string {
   });
 }
 
-/** UTC calendar-day index (days since epoch) for a Date — DST-safe day math. */
-function utcDayNumber(d: Date): number {
-  return Math.floor(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) / 86400000);
+/** Local calendar-day index — DST-safe (uses UTC math on the LOCAL y/m/d). */
+function localDayNumber(d: Date): number {
+  // Date.UTC on the local calendar fields gives exact 24h-spaced values, so the
+  // difference of two of these is an exact whole-day count even across DST.
+  return Math.floor(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86400000);
 }
 
 /**
@@ -31,8 +33,9 @@ export function formatDateCompact(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "Invalid date";
 
-  // Compare UTC calendar days so day math isn't skewed by DST transitions.
-  const diffDays = utcDayNumber(new Date()) - utcDayNumber(d);
+  // Compare LOCAL calendar days (DST-safe) so "Today"/"Yesterday" match the
+  // user's wall clock.
+  const diffDays = localDayNumber(new Date()) - localDayNumber(d);
   if (diffDays < 0) {
     return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
   }
@@ -65,11 +68,19 @@ export type DueDateStatus = "overdue" | "today" | "upcoming" | "none";
  */
 export function getDueDateStatus(dueDate: string | null | undefined): DueDateStatus {
   if (!dueDate) return "none";
-  // yyyy-MM-dd is parsed by `new Date` as UTC midnight; comparing UTC calendar
-  // days keeps due-today correct regardless of the device's timezone.
-  const due = new Date(dueDate);
+  // Compare LOCAL calendar days so "today" means the user's today regardless of
+  // the time of day. A bare yyyy-MM-dd is parsed by `new Date` as UTC midnight,
+  // which can land on the previous local day — so parse the date-only form as a
+  // LOCAL date to avoid the timezone shift.
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dueDate);
+  const due = dateOnly
+    ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
+    : new Date(dueDate);
   if (Number.isNaN(due.getTime())) return "none";
-  const diff = utcDayNumber(due) - utcDayNumber(new Date());
+  const today = new Date();
+  due.setHours(0, 0, 0, 0);
+  today.setHours(0, 0, 0, 0);
+  const diff = due.getTime() - today.getTime();
   if (diff < 0) return "overdue";
   if (diff === 0) return "today";
   return "upcoming";
