@@ -141,6 +141,20 @@ export async function runAgent(
         } else if (ev.type === "tool-input-available") {
           const e = ev as { toolCallId: string; toolName: string; input: unknown };
           toolCalls.push({ id: e.toolCallId, name: e.toolName, input: e.input });
+        } else if (ev.type === "tool-executed") {
+          // Provider already ran this tool (e.g. Apple's native tool-calling).
+          // Record it in history for continuity and surface it for display, but
+          // do NOT queue it for re-execution.
+          const e = ev as { toolCallId: string; toolName: string; input: unknown; output: unknown };
+          assistant.parts.push({
+            type: `tool-${e.toolName}`,
+            toolCallId: e.toolCallId,
+            toolName: e.toolName,
+            state: "output-available",
+            input: e.input,
+            output: { type: "text", value: JSON.stringify(e.output ?? {}) },
+          } as UIPart);
+          onEvent?.({ type: "tool", tool: e.toolName, args: e.input, result: e.output });
         } else if (ev.type === "finish") {
           finishReason = (ev as { finishReason?: string }).finishReason;
         }

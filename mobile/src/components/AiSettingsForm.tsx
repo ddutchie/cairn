@@ -9,7 +9,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { Stack } from "expo-router";
-import { Check, ShieldCheck, RefreshCw } from "lucide-react-native";
+import { Check, ShieldCheck, RefreshCw, Cpu } from "lucide-react-native";
 import { ICON_CHECK } from "@/components/toolbar-icons";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 import {
@@ -25,6 +25,8 @@ import {
   type ProviderPref,
 } from "@/chat/ai-config";
 import { isRorkAvailable } from "@/chat/providers/rork";
+import { isAppleProviderAvailable, isAppleDevEnabled } from "@/chat/providers/apple";
+import { appleLlmUnavailableReason } from "@modules/apple-llm";
 import { listModels } from "@/chat/providers/openai";
 
 /**
@@ -32,19 +34,30 @@ import { listModels } from "@/chat/providers/openai";
  * (`app/settings/ai.tsx`) rather than a hand-rolled modal, so it gets the
  * system modal transition + swipe-to-dismiss instead of a backdrop that slides
  * in with the card. Lets the user pick the chat backend:
- *   - When a Rork endpoint is built into the app, a segmented toggle chooses
- *     between the built-in Rork provider and a custom OpenAI-compatible one.
- *   - When Rork is NOT built in (third-party builds), only the OpenAI fields
- *     show — Rork isn't an option.
+ *   - "Apple Intelligence (on-device)" — shown when the device supports it
+ *     (iOS 26+, Apple Intelligence enabled). Runs fully offline, no key.
+ *   - "Rork" — shown when a Rork endpoint is built into the app.
+ *   - "OpenAI-compatible" — always available; the user supplies endpoint + key.
  *
- * Non-secret fields (base URL, model) persist to local SQLite; the API key goes
- * to the device keychain (expo-secure-store). Saved on Done (onClose fires
- * after the write completes).
+ * The provider segment appears whenever more than one backend is available. The
+ * OpenAI fields show only when OpenAI is the selected provider. Non-secret
+ * fields (base URL, model) persist to local SQLite; the API key goes to the
+ * device keychain (expo-secure-store). Saved on Done.
  */
 export function AiSettingsForm({ onClose }: { onClose: () => void }) {
   const t = useTheme();
   const styles = useMemo(() => makeStyles(t), [t]);
   const rorkBuiltIn = isRorkAvailable();
+  const appleAvailable = isAppleProviderAvailable();
+  // Only surface an Apple availability reason when Apple is a dev-enabled option
+  // (isAppleProviderAvailable already false when the dev flag is off, so this
+  // stays empty in shipped builds and no Apple messaging leaks to end users).
+  const appleReason = useMemo(
+    () => (isAppleDevEnabled() && !appleAvailable ? appleLlmUnavailableReason() : ""),
+    [appleAvailable],
+  );
+  // Whether to show the provider chooser at all: only when there's a choice.
+  const showChooser = rorkBuiltIn || appleAvailable;
 
   const [pref, setPref] = useState<ProviderPref>("openai");
   const [baseUrl, setBaseUrl] = useState("");
@@ -79,7 +92,6 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
       cancelled = true;
     };
   }, [rorkBuiltIn]);
-
   const fetchModels = async () => {
     const key = apiKey.trim();
     if (!key) {
@@ -102,7 +114,9 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
   const save = async () => {
     setSaving(true);
     try {
-      setProviderPref(rorkBuiltIn ? pref : "openai");
+      // Persist the chosen provider. When there's no chooser (only OpenAI is
+      // available), force "openai".
+      setProviderPref(showChooser ? pref : "openai");
       setOpenAIEndpoint(baseUrl, model);
       // Only touch the keychain if the key field actually changed from what we
       // loaded — avoids a redundant write (and allows clearing it).
@@ -113,7 +127,9 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
     }
   };
 
-  const usingOpenAI = !rorkBuiltIn || pref === "openai";
+  // OpenAI fields show when OpenAI is the effective selection: no chooser (only
+  // OpenAI available) or the user picked it explicitly.
+  const usingOpenAI = !showChooser || pref === "openai";
 
   return (
     <View style={styles.flex}>
@@ -140,25 +156,46 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
             contentContainerStyle={styles.bodyContent}
             keyboardShouldPersistTaps="handled"
           >
-            {rorkBuiltIn ? (
+            {showChooser ? (
               <>
                 <Text style={styles.sectionLabel}>Provider</Text>
                 <View style={styles.segment}>
+                  {appleAvailable && (
+                    <SegmentButton
+                      label="On-device"
+                      selected={pref === "apple"}
+                      onPress={() => setPref("apple")}
+                      t={t}
+                      styles={styles}
+                    />
+                  )}
+                  {rorkBuiltIn && (
+                    <SegmentButton
+                      label="Rork"
+                      selected={pref === "rork"}
+                      onPress={() => setPref("rork")}
+                      t={t}
+                      styles={styles}
+                    />
+                  )}
                   <SegmentButton
-                    label="Rork"
-                    selected={pref === "rork"}
-                    onPress={() => setPref("rork")}
-                    t={t}
-                    styles={styles}
-                  />
-                  <SegmentButton
-                    label="OpenAI-compatible"
+                    label="OpenAI"
                     selected={pref === "openai"}
                     onPress={() => setPref("openai")}
                     t={t}
                     styles={styles}
                   />
                 </View>
+                {pref === "apple" && (
+                  <View style={styles.rorkNote}>
+                    <Cpu size={14} color={t.success} />
+                    <Text style={styles.rorkNoteText}>
+                      Apple Intelligence runs entirely on your device — private, offline,
+                      no API key. Best for quick chats; it has a small context window, so
+                      long conversations may need a fresh start.
+                    </Text>
+                  </View>
+                )}
                 {pref === "rork" && (
                   <View style={styles.rorkNote}>
                     <ShieldCheck size={14} color={t.success} />
@@ -172,8 +209,9 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
             ) : (
               <View style={styles.rorkNote}>
                 <Text style={styles.rorkNoteText}>
-                  This build has no bundled AI endpoint. Configure an OpenAI-compatible
-                  endpoint and API key below to enable chat.
+                  {appleReason
+                    ? `On-device AI is unavailable: ${appleReason} Configure an OpenAI-compatible endpoint and API key below to enable chat.`
+                    : "This build has no bundled AI endpoint. Configure an OpenAI-compatible endpoint and API key below to enable chat."}
                 </Text>
               </View>
             )}

@@ -1,0 +1,7 @@
+{
+  "name": "apple-llm",
+  "version": "0.1.0",
+  "description": "On-device Apple Foundation Models (Apple Intelligence) for Cairn — local Expo module.",
+  "main": "index.ts",
+  "private": true
+}

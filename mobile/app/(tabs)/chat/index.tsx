@@ -24,6 +24,7 @@ import { runAgent, userMessage, assistantMessage, type AgentEvent, type Attachme
 import { pickImages, takePhoto } from "@/chat/attachments";
 import { loadChatHistory, saveChatMessage, clearChatHistory } from "@/db/chat-store";
 import { hasProvider } from "@/chat/providers";
+import { resetAppleSession } from "@/chat/providers/apple";
 import { prettifyToolLabel } from "@cairn/shared/ui/constants";
 import type { UIMessage } from "@/chat/providers/types";
 
@@ -231,6 +232,8 @@ export default function ChatScreen() {
           clearChatHistory();
           conversation.current = [];
           setMessages([]);
+          // Drop the on-device session so a new chat gets a fresh context window.
+          resetAppleSession();
         },
       },
     ]);

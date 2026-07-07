@@ -20,11 +20,16 @@ import { getDb } from "../db";
 
 const KEY_BASE_URL = "ai.openai.baseUrl";
 const KEY_MODEL = "ai.openai.model";
-const KEY_PROVIDER = "ai.provider"; // "rork" | "openai"
+const KEY_PROVIDER = "ai.provider"; // "rork" | "openai" | "apple"
 const SECURE_KEY_APIKEY = "ai.openai.apiKey"; // secure-store key
 
-/** Which backend the user prefers when more than one is available. */
-export type ProviderPref = "rork" | "openai";
+/**
+ * Which backend the user prefers when more than one is available.
+ *   - "apple": on-device Apple Foundation Models (offline, no key; iOS 26+ only)
+ *   - "rork":  built-in first-party endpoint (network)
+ *   - "openai": user-supplied OpenAI-compatible endpoint (network)
+ */
+export type ProviderPref = "rork" | "openai" | "apple";
 
 /** Sensible default for an OpenAI-compatible endpoint. */
 export const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
@@ -69,12 +74,14 @@ export function setOpenAIEndpoint(baseUrl: string, model: string): void {
 }
 
 /**
- * The user's preferred provider. Defaults to "rork" when a Rork endpoint was
- * built in (so first-party builds are zero-config), otherwise "openai".
+ * The user's preferred provider. If the user explicitly chose one, honour it.
+ * Otherwise default to "rork" when a Rork endpoint was built in (first-party
+ * builds are zero-config), else "openai". On-device Apple is never the implicit
+ * default — the user opts into it — but it's always an available fallback.
  */
 export function getProviderPref(rorkAvailable: boolean): ProviderPref {
   const stored = getSetting(KEY_PROVIDER);
-  if (stored === "rork" || stored === "openai") return stored;
+  if (stored === "rork" || stored === "openai" || stored === "apple") return stored;
   return rorkAvailable ? "rork" : "openai";
 }
 
