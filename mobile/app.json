@@ -37,6 +37,7 @@
       ],
       "./plugins/withAppleSigning",
       "./plugins/withICloudContainer",
+      "./plugins/withStatusBarStyle",
       "@react-native-community/datetimepicker",
       "expo-secure-store",
       [

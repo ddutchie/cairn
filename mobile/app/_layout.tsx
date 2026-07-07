@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { Stack, ThemeProvider, DarkTheme, DefaultTheme } from "expo-router";
-import { StatusBar } from "expo-status-bar";
 import { View, Text, ActivityIndicator, StyleSheet, useColorScheme } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -21,6 +20,14 @@ export default function RootLayout() {
   const scheme = useColorScheme();
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // NOTE: the status bar is intentionally NOT controlled from JS. With
+  // UIUserInterfaceStyle=Automatic + UIStatusBarStyle=UIStatusBarStyleDefault
+  // (set natively via plugins/withStatusBarStyle.js), iOS resolves the
+  // status-bar content colour per light/dark mode itself — flash-free. Driving
+  // it from JS (expo-status-bar / setStatusBarStyle) fought the native window
+  // default during appearance changes, causing a white→black flash. See
+  // github.com/expo/expo/issues/8002.
 
   useEffect(() => {
     try {
@@ -78,11 +85,6 @@ export default function RootLayout() {
               iOS 26 liquid-glass toolbar buttons don't flash a light background
               in dark mode (see Expo "Stack Toolbar → Common problems"). */}
           <ThemeProvider value={scheme === "dark" ? DarkTheme : DefaultTheme}>
-            {/* Drive the status-bar text colour explicitly from the current
-                scheme (light text on dark, dark text on light). `style="auto"`
-                infers from the window background and lags a frame during a
-                theme switch — that's the white→black flash in dark mode. */}
-            <StatusBar style={scheme === "dark" ? "light" : "dark"} />
             <Stack screenOptions={{ headerShown: true, ...headerStyle }}>
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
               <Stack.Screen name="project/[id]" options={{ title: "Project" }} />
