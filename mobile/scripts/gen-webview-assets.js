@@ -53,8 +53,9 @@ const mermaidJs = fs.readFileSync(path.join(MERMAID, "mermaid.min.js"), "utf8");
 writeModule("mermaid-assets.ts", { MERMAID_JS: mermaidJs });
 
 // ── D3 ──────────────────────────────────────────────────────────────────────
-// D3 powers the offline Knowledge Graph WebView (force-directed layout). It may
-// be hoisted to the repo root node_modules, so resolve from either location.
+// D3 powers the offline Knowledge Graph WebView (force-directed layout). It is a
+// direct devDependency of this package; the two candidates cover a local install
+// and a hoisted (repo-root) install as a fallback.
 const D3_CANDIDATES = [
   path.join(MOBILE, "node_modules", "d3", "dist", "d3.min.js"),
   path.join(MOBILE, "..", "node_modules", "d3", "dist", "d3.min.js"),

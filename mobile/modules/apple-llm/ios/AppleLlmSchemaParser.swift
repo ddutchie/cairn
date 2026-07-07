@@ -114,8 +114,11 @@ enum AppleLlmSchemaParser {
     }
     // Exclusive bounds → nearest inclusive (Apple only supports ≤ / ≥).
     if let exclusiveMax = schema["exclusiveMaximum"] as? Double {
+      // Largest integer strictly below exclusiveMax: ceil(x)-1 handles both whole
+      // (5.0 → 4) and fractional (5.5 → 5) bounds. Plain Int(x)-1 was wrong for
+      // fractional values (5.5 → 4).
       return isInt
-        ? DynamicGenerationSchema(type: Int.self, guides: [GenerationGuide.maximum(Int(exclusiveMax) - 1)])
+        ? DynamicGenerationSchema(type: Int.self, guides: [GenerationGuide.maximum(Int(exclusiveMax.rounded(.up)) - 1)])
         : DynamicGenerationSchema(type: Double.self, guides: [GenerationGuide.maximum(exclusiveMax.nextDown)])
     }
     if let exclusiveMin = schema["exclusiveMinimum"] as? Double {

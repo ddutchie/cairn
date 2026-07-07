@@ -276,7 +276,7 @@ const ZOOM_BTN_CLASS =
     if (!c) return;
     (sim.force("charge") as d3.ForceManyBody<SimNode>)?.strength(c.chargeFor);
     (sim.force("link") as d3.ForceLink<SimNode, SimLink>)?.distance(c.linkDist);
-    (sim.force("collide") as d3.ForceCollide<SimNode>)?.radius((n) => (radiusOf(n) + 12) * spacing);
+    (sim.force("collide") as d3.ForceCollide<SimNode>)?.radius((n) => collideRadius(n.nodeType, spacing));
     (sim.force("x") as d3.ForceX<SimNode>)?.x((n) => c.clusterAnchor(n)?.x ?? 0);
     (sim.force("y") as d3.ForceY<SimNode>)?.y((n) => c.clusterAnchor(n)?.y ?? 0);
     sim.alpha(0.5).restart();

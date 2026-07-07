@@ -10,7 +10,7 @@ import {
   type ViewStyle,
   type StyleProp,
 } from "react-native";
-import { useTheme, elevation, withAlpha, type as typeScale, type Theme } from "@/theme";
+import { useTheme, elevation, type as typeScale, type Theme } from "@/theme";
 
 /**
  * Shared bottom-sheet scaffold for contextual pickers (due date, tags,
@@ -135,12 +135,12 @@ export function BottomSheetHeader({
   const styles = useMemo(() => makeStyles(t), [t]);
   return (
     <View style={styles.header}>
-      <Pressable onPress={onCancel} hitSlop={12}>
+      <Pressable onPress={onCancel} hitSlop={12} accessibilityRole="button" accessibilityLabel="Cancel">
         <Animated.Text style={styles.cancel}>Cancel</Animated.Text>
       </Pressable>
       <Animated.Text style={styles.title}>{title}</Animated.Text>
       {onDone ? (
-        <Pressable onPress={onDone} hitSlop={12}>
+        <Pressable onPress={onDone} hitSlop={12} accessibilityRole="button" accessibilityLabel="Done">
           <Animated.Text style={styles.done}>Done</Animated.Text>
         </Pressable>
       ) : (
@@ -159,7 +159,7 @@ function makeStyles(t: Theme) {
       left: 0,
       right: 0,
       bottom: 0,
-      backgroundColor: withAlpha("#000000", 0.4),
+      backgroundColor: t.scrim,
     },
     anchor: { flex: 1, justifyContent: "flex-end" },
     sheet: {

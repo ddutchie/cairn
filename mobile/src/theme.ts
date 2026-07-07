@@ -27,6 +27,8 @@ export interface Theme {
   warning: string;
   danger: string;
   info: string;
+  /** Modal/sheet backdrop dimming colour (already includes its own alpha). */
+  scrim: string;
 }
 
 export const darkTheme: Theme = {
@@ -47,6 +49,7 @@ export const darkTheme: Theme = {
   warning: "#f59e0b",
   danger: "#ef4444",
   info: "#60a5fa",
+  scrim: "rgba(0,0,0,0.5)",
 };
 
 export const lightTheme: Theme = {
@@ -67,6 +70,7 @@ export const lightTheme: Theme = {
   warning: "#d97706",
   danger: "#dc2626",
   info: "#2563eb",
+  scrim: "rgba(0,0,0,0.4)",
 };
 
 /** Priority colours — re-exported from shared so desktop + mobile match. */
@@ -148,6 +152,14 @@ export const iconSize = {
   /** Small affordances (dropdown carets, inline meta glyphs). */
   hint: 14,
 } as const;
+
+/**
+ * Standard UIKit tab bar height (excludes the home-indicator safe-area inset).
+ * Used to reserve bottom space in the nested Projects-tab flow, where the
+ * translucent native tab bar overlays scroll content. NativeTabs doesn't expose
+ * its height, so we reconstruct it (see chat composer for the same constant).
+ */
+export const TAB_BAR_BASE = 49;
 
 
 /** Returns the theme for the current system colour scheme. */

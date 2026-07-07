@@ -174,10 +174,22 @@ export function CalendarView({
       {/* Toolbar */}
       <View style={styles.toolbar}>
         <View style={styles.navGroup}>
-          <Pressable onPress={() => step(-1)} hitSlop={8} style={styles.iconBtn}>
+          <Pressable
+            onPress={() => step(-1)}
+            hitSlop={8}
+            style={styles.iconBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Previous"
+          >
             <ChevronLeft size={iconSize.nav} color={t.textSecondary} />
           </Pressable>
-          <Pressable onPress={() => step(1)} hitSlop={8} style={styles.iconBtn}>
+          <Pressable
+            onPress={() => step(1)}
+            hitSlop={8}
+            style={styles.iconBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Next"
+          >
             <ChevronRight size={iconSize.nav} color={t.textSecondary} />
           </Pressable>
         </View>

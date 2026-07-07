@@ -294,7 +294,7 @@ function makeRules(
       </Suspense>
     ),
     math_block: (node) => (
-      <Suspense key={node.key} fallback={<View style={{ height: 24 }} />}>
+      <Suspense key={node.key} fallback={<View style={{ height: 40 }} />}>
         <MathView latex={node.content} display={true} />
       </Suspense>
     ),

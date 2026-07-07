@@ -23,15 +23,12 @@ import { SearchField } from "@/components/SearchField";
 import { ICON_ADD, ICON_CALENDAR } from "@/components/toolbar-icons";
 import { DraggableBoard } from "@/components/DraggableBoard";
 import { useDataChanged } from "@/sync/useSyncStatus";
-import { useTheme, withAlpha, type as typeScale, type Theme } from "@/theme";
+import { useTheme, withAlpha, TAB_BAR_BASE, type as typeScale, type Theme } from "@/theme";
 import { buildFolderTree, type FolderNode } from "@cairn/shared/notes/folder-tree";
 import { stripMarkdown } from "@cairn/shared/notes/text";
 import { formatRelative } from "@cairn/shared/format/date";
 
 type Tab = "notes" | "board";
-
-/** Standard UIKit tab bar height (excludes the home-indicator inset). */
-const TAB_BAR_BASE = 49;
 
 /** A single virtualized row in the notes list: a folder header or a note. */
 type ListRow =
@@ -240,7 +237,7 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
         <DraggableBoard
           columns={columns}
           cards={cards}
-          bottomInset={insets.bottom}
+          bottomInset={insets.bottom + (nested ? TAB_BAR_BASE : 0)}
           onMove={(cardId, colId) => {
             moveCardToColumn(cardId, colId);
             load();
@@ -290,7 +287,7 @@ function NoteFilterBar({
                 ]}
               >
                 {!active && <View style={[styles.tagFilterDot, { backgroundColor: tag.color }]} />}
-                <Text style={[styles.tagFilterText, { color: active ? "#fff" : t.textSecondary }]} numberOfLines={1}>
+                <Text style={[styles.tagFilterText, { color: active ? t.accentFg : t.textSecondary }]} numberOfLines={1}>
                   {tag.name}
                 </Text>
               </Pressable>

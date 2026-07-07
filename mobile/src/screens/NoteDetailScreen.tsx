@@ -24,10 +24,7 @@ import { applyFormat, insertWikilink, type FormatAction, type Selection } from "
 import { buildAIActionPrompt, type AITextAction } from "@cairn/shared/notes/ai-actions";
 import { runTextAction } from "@/chat/agent";
 import { useDataChanged } from "@/sync/useSyncStatus";
-import { useTheme, type as typeScale, type Theme } from "@/theme";
-
-/** Standard UIKit tab bar height (excludes the home-indicator inset). */
-const TAB_BAR_BASE = 49;
+import { useTheme, TAB_BAR_BASE, type as typeScale, type Theme } from "@/theme";
 
 /**
  * Note viewer / editor. A leaf screen (navigates only back), so both its routes
@@ -285,7 +282,7 @@ export function NoteDetailScreen({ nested = false }: { nested?: boolean }) {
               aiEnabled
               loading={aiLoading}
               onDismiss={() => bodyRef.current?.blur()}
-              bottomInset={insets.bottom}
+              bottomInset={insets.bottom + (nested ? TAB_BAR_BASE : 0)}
             />
           </KeyboardStickyView>
         </>

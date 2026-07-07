@@ -248,6 +248,11 @@ async function* streamApple(
       "On-device AI isn't available in this build.",
     );
   }
+  // If the caller already aborted before we started, short-circuit before
+  // registering any listeners or kicking off a generation.
+  if (signal?.aborted) {
+    throw new AppleLLMError(AppleLLMErrorCodes.Cancelled, "Generation cancelled.");
+  }
 
   const prompt = latestPrompt(messages);
   const nativeTools = buildTools(tools);

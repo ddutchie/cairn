@@ -50,6 +50,10 @@ public class AppleLlmModule: Module {
   // 4096-token window. Stored as AnyObject because the concrete type is
   // iOS-26-only; access is always `@available`-gated and cast back.
   private var sessionStore: [String: AnyObject] = [:]
+  // Serialises access to `tasks` and `sessionStore`, which are touched from
+  // Expo function callbacks, event callbacks, and the unstructured streaming
+  // Task. Mirrors ToolBridge's NSLock approach.
+  private let stateLock = NSLock()
   // Sendable bridge that owns tool-call continuations and forwards calls to JS.
   // Shared across requests (callIds are globally unique). Created lazily once the
   // module can emit events.
@@ -98,7 +102,7 @@ public class AppleLlmModule: Module {
     // Drop a persistent session (e.g. when the user clears the chat) so the next
     // generate() starts a fresh 4096-token context window.
     Function("resetSession") { (sessionId: String) in
-      self.sessionStore.removeValue(forKey: sessionId)
+      self.withState { _ = $0.sessionStore.removeValue(forKey: sessionId) }
     }
 
     // Warm the model for a session to reduce first-token latency. Best-effort.
@@ -120,21 +124,47 @@ public class AppleLlmModule: Module {
 
     // Cancel an in-flight generation.
     Function("cancel") { (requestId: String) in
-      self.tasks[requestId]?.cancel()
-      self.tasks.removeValue(forKey: requestId)
+      self.cancelTask(requestId)
     }
 
     OnDestroy {
-      for task in self.tasks.values { task.cancel() }
-      self.tasks.removeAll()
-      self.sessionStore.removeAll()
+      let pendingTasks = self.withState { s -> [Task<Void, Never>] in
+        let all = Array(s.tasks.values)
+        s.tasks.removeAll()
+        s.sessionStore.removeAll()
+        return all
+      }
+      for task in pendingTasks { task.cancel() }
       self.toolBridge.cancelAll()
     }
   }
 
+  // MARK: - Guarded state
+
+  /// Serialised access to `tasks` / `sessionStore`. All mutation/reads of those
+  /// two dictionaries go through this so callbacks and the streaming Task can't
+  /// race. The closure runs under `stateLock`.
+  @discardableResult
+  private func withState<T>(_ body: (AppleLlmModule) -> T) -> T {
+    stateLock.lock()
+    defer { stateLock.unlock() }
+    return body(self)
+  }
+
+  private func storeTask(_ task: Task<Void, Never>, for requestId: String) {
+    withState { $0.tasks[requestId] = task }
+  }
+
+  private func removeTask(_ requestId: String) {
+    withState { _ = $0.tasks.removeValue(forKey: requestId) }
+  }
+
+  private func cancelTask(_ requestId: String) {
+    let task = withState { $0.tasks.removeValue(forKey: requestId) }
+    task?.cancel()
+  }
 
   // MARK: - Availability
-
   private static func availabilityState() -> (available: Bool, reason: String) {
     #if canImport(FoundationModels)
     if #available(iOS 26.0, *) {
@@ -216,7 +246,7 @@ public class AppleLlmModule: Module {
         for try await snapshot in stream {
           if Task.isCancelled {
             self.emitError(requestId, .cancelled, "Generation cancelled.")
-            self.tasks.removeValue(forKey: requestId)
+            self.removeTask(requestId)
             return
           }
           // ResponseStream<String>.Snapshot.content is the cumulative text so
@@ -234,17 +264,17 @@ public class AppleLlmModule: Module {
           }
         }
         self.sendEvent(EVENT_DONE, ["requestId": requestId, "finishReason": "stop"])
-        self.tasks.removeValue(forKey: requestId)
+        self.removeTask(requestId)
       } catch is CancellationError {
         self.emitError(requestId, .cancelled, "Generation cancelled.")
-        self.tasks.removeValue(forKey: requestId)
+        self.removeTask(requestId)
       } catch {
         let (code, message) = Self.mapError(error)
         self.emitError(requestId, code, message)
-        self.tasks.removeValue(forKey: requestId)
+        self.removeTask(requestId)
       }
     }
-    tasks[requestId] = task
+    storeTask(task, for: requestId)
   }
 
   /// Fetch the cached session for `sessionId`, or build one bound with the given
@@ -253,7 +283,7 @@ public class AppleLlmModule: Module {
   /// for the life of a chat thread.
   @available(iOS 26.0, *)
   private func ensureSession(sessionId: String, system: String?, tools: [AppleLlmTool]) throws -> LanguageModelSession {
-    if let existing = sessionStore[sessionId] as? LanguageModelSession {
+    if let existing = withState({ $0.sessionStore[sessionId] }) as? LanguageModelSession {
       return existing
     }
     let bridge = self.toolBridge
@@ -271,7 +301,7 @@ public class AppleLlmModule: Module {
     }
     let instructions = (system?.isEmpty == false) ? Instructions(system!) : nil
     let session = LanguageModelSession(model: SystemLanguageModel.default, tools: bridgedTools, instructions: instructions)
-    sessionStore[sessionId] = session
+    withState { $0.sessionStore[sessionId] = session }
     return session
   }
 

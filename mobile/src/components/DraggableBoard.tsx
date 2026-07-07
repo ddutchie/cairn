@@ -18,6 +18,11 @@ const COLUMN_WIDTH = 260;
 const COLUMN_GAP = 12;
 const LONG_PRESS_MS = 220;
 
+// Stable empty-array reference for columns with no cards, so BoardColumn's
+// memoisation isn't defeated by a fresh `[]` each render (which would re-render
+// empty columns on every drag-state change).
+const EMPTY_CARDS: CardRow[] = [];
+
 /** Absolute window frame of a column, captured via measureInWindow. */
 type ColumnFrame = { x: number; width: number };
 
@@ -164,7 +169,7 @@ export function DraggableBoard({
           <BoardColumn
             key={col.id}
             column={col}
-            cards={cardsByColumn.get(col.id) ?? []}
+            cards={cardsByColumn.get(col.id) ?? EMPTY_CARDS}
             tagMap={tagMap}
             draggingId={dragging?.id ?? null}
             hoverColId={hoverColId}
