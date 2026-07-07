@@ -92,7 +92,13 @@ export default function ChatScreen() {
     setMessages(history.map((h) => ({ role: h.role, content: h.content, images: h.images, tools: h.tools })));
     for (const h of history) {
       if (h.role === "user") {
-        conversation.current.push(userMessage(h.content));
+        // Restore image attachments too, so the agent keeps multimodal context
+        // across relaunch (the UI bubble already shows them via setMessages).
+        const atts = (h.images ?? []).map((url) => ({
+          url,
+          mediaType: url.match(/^data:([^;,]+)/)?.[1] ?? "image/jpeg",
+        }));
+        conversation.current.push(userMessage(h.content, atts));
       } else {
         conversation.current.push(assistantMessage(h.content));
       }

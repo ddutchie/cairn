@@ -53,7 +53,16 @@ export function buildFolderTree<T extends NoteWithFolder>(
   for (const node of folderMap.values()) {
     if (!node.path.includes("/")) topLevel.push(node);
   }
-  topLevel.sort((a, b) => a.name.localeCompare(b.name, "en", { sensitivity: "base" }));
+
+  // Sort every level alphabetically, not just the top — nested children were
+  // left in insertion order.
+  const byName = (a: FolderNode<T>, b: FolderNode<T>) =>
+    a.name.localeCompare(b.name, "en", { sensitivity: "base" });
+  const sortRecursive = (nodes: FolderNode<T>[]) => {
+    nodes.sort(byName);
+    for (const n of nodes) sortRecursive(n.children);
+  };
+  sortRecursive(topLevel);
 
   return { rootNotes, folders: topLevel };
 }

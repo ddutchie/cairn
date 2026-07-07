@@ -163,14 +163,26 @@ export function applyFormat(
     const block = text.slice(from, to);
     const lines = block.split("\n");
 
-    const hasPrefix =
-      action === "ordered"
-        ? (l: string) => /^\d+\.\s/.test(l)
-        : (l: string) => l.startsWith(prefix);
+    // Detection must be action-specific so bullet ("- ") and task ("- [ ] ")
+    // don't collide, and so a CHECKED task ("- [x] ") still reads as a task.
+    let hasPrefix: (l: string) => boolean;
+    if (action === "ordered") {
+      hasPrefix = (l) => /^\d+\.\s/.test(l);
+    } else if (action === "task") {
+      hasPrefix = (l) => /^-\s\[[ xX]\]\s/.test(l);
+    } else if (action === "bullet") {
+      // A bullet, but NOT a task line (which also starts with "- ").
+      hasPrefix = (l) => /^-\s/.test(l) && !/^-\s\[[ xX]\]\s/.test(l);
+    } else {
+      hasPrefix = (l) => l.startsWith(prefix);
+    }
     const allHave = lines.every(hasPrefix);
 
     let orderedIndex = 1;
     const out = lines.map((line) => {
+      // Remember an existing task's checked state before stripping, so toggling
+      // task on a line that's already a checked task doesn't reset it to "[ ]".
+      const wasChecked = /^-\s\[[xX]\]\s/.test(line);
       const stripped = line
         .replace(/^(#{1,6}\s)/, "")
         .replace(/^(>\s)/, "")
@@ -178,6 +190,7 @@ export function applyFormat(
         .replace(/^(-\s)/, "")
         .replace(/^(\d+\.\s)/, "");
       if (allHave) return stripped;
+      if (action === "task") return `- [${wasChecked ? "x" : " "}] ` + stripped;
       const p = action === "ordered" ? `${orderedIndex++}. ` : prefix;
       return p + stripped;
     });

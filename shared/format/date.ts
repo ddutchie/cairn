@@ -16,6 +16,11 @@ export function formatDate(iso: string): string {
   });
 }
 
+/** UTC calendar-day index (days since epoch) for a Date — DST-safe day math. */
+function utcDayNumber(d: Date): number {
+  return Math.floor(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) / 86400000);
+}
+
 /**
  * Compact list-oriented date: "Today" / "Yesterday" / "3d ago" for the last
  * week, an absolute "Jan 5" otherwise. Future dates fall back to "Jan 5".
@@ -26,12 +31,8 @@ export function formatDateCompact(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "Invalid date";
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const target = new Date(d);
-  target.setHours(0, 0, 0, 0);
-
-  const diffDays = Math.floor((today.getTime() - target.getTime()) / 86400000);
+  // Compare UTC calendar days so day math isn't skewed by DST transitions.
+  const diffDays = utcDayNumber(new Date()) - utcDayNumber(d);
   if (diffDays < 0) {
     return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
   }
@@ -64,12 +65,11 @@ export type DueDateStatus = "overdue" | "today" | "upcoming" | "none";
  */
 export function getDueDateStatus(dueDate: string | null | undefined): DueDateStatus {
   if (!dueDate) return "none";
+  // yyyy-MM-dd is parsed by `new Date` as UTC midnight; comparing UTC calendar
+  // days keeps due-today correct regardless of the device's timezone.
   const due = new Date(dueDate);
-  const today = new Date();
-  // Normalise both to midnight local time for day comparison.
-  due.setHours(0, 0, 0, 0);
-  today.setHours(0, 0, 0, 0);
-  const diff = due.getTime() - today.getTime();
+  if (Number.isNaN(due.getTime())) return "none";
+  const diff = utcDayNumber(due) - utcDayNumber(new Date());
   if (diff < 0) return "overdue";
   if (diff === 0) return "today";
   return "upcoming";

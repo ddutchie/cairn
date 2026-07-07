@@ -211,6 +211,14 @@ export function NoteEditorToolbar({
     setShowCustom(false);
   }
 
+  // Reset the custom-AI input on dismiss so it doesn't reappear (with stale
+  // text) the next time the toolbar/keyboard is focused.
+  function handleDismiss() {
+    setShowCustom(false);
+    setCustomPrompt("");
+    onDismiss();
+  }
+
   return (
     <Animated.View style={[styles.bar, insetStyle]}>
       {/* ── AI row ── */}
@@ -242,7 +250,7 @@ export function NoteEditorToolbar({
                   );
                 })}
               </ScrollAffordanceRow>
-              <Pressable onPress={onDismiss} hitSlop={10} style={styles.dismiss}>
+              <Pressable onPress={handleDismiss} hitSlop={10} style={styles.dismiss}>
                 <X size={16} color={t.textTertiary} />
               </Pressable>
             </>

@@ -153,6 +153,25 @@ describe("applyFormat", () => {
     expect(off.text).toBe("todo");
   });
 
+  it("preserves checked state when re-toggling task on an already-checked item", () => {
+    // A checked task is recognised as a task; toggling task off removes it.
+    const off = applyFormat("- [x] done", sel(0, 0), "task")!;
+    expect(off.text).toBe("done");
+  });
+
+  it("does not treat a task line as a plain bullet (no collision)", () => {
+    // Toggling bullet on a task line converts it to a bullet, not off.
+    const r = applyFormat("- [ ] todo", sel(0, 0), "bullet")!;
+    expect(r.text).toBe("- todo");
+  });
+
+  it("bullets a plain line and strips on toggle-off", () => {
+    const on = applyFormat("item", sel(0, 0), "bullet")!;
+    expect(on.text).toBe("- item");
+    const off = applyFormat("- item", sel(0, 0), "bullet")!;
+    expect(off.text).toBe("item");
+  });
+
   it("wraps a selection in a fenced code block", () => {
     const r = applyFormat("x = 1", sel(0, 5), "codeblock")!;
     expect(r.text).toBe("```\nx = 1\n```");

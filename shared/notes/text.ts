@@ -11,7 +11,10 @@
 export function stripMarkdown(md: string): string {
   if (!md) return "";
   return md
-    .replace(/[#*_`>[\]()!-]/g, "")
+    // Replace markdown punctuation with a SPACE (not "") so adjacent words
+    // don't merge (e.g. "[a](b)c" must not become "abc"). Whitespace is
+    // collapsed next, so extra spaces are harmless.
+    .replace(/[#*_`>[\]()!-]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }

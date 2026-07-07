@@ -1,4 +1,4 @@
-import { useLocalSearchParams, Stack, useRouter } from "expo-router";
+import { useLocalSearchParams, Stack, useRouter, useFocusEffect } from "expo-router";
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
   ScrollView,
@@ -23,6 +23,7 @@ import { ICON_CHECK, ICON_CLOSE, ICON_EDIT, ICON_MORE, ICON_PIN, ICON_UNPIN, ICO
 import { applyFormat, insertWikilink, type FormatAction, type Selection } from "@cairn/shared/notes/format";
 import { buildAIActionPrompt, type AITextAction } from "@cairn/shared/notes/ai-actions";
 import { runTextAction } from "@/chat/agent";
+import { useDataChanged } from "@/sync/useSyncStatus";
 import { useTheme, type Theme } from "@/theme";
 
 export default function NoteDetail() {
@@ -45,6 +46,20 @@ export default function NoteDetail() {
   const [wikilinkOpen, setWikilinkOpen] = useState(false);
 
   const styles = useMemo(() => makeStyles(t), [t]);
+
+  // Re-read the note when the screen refocuses or inbound sync lands changes,
+  // so the view reflects edits made on another device. Skip while editing so we
+  // never clobber the user's in-progress changes.
+  const reload = useCallback(() => {
+    if (editing || !id) return;
+    const fresh = getNote(id);
+    if (!fresh) return;
+    setNote(fresh);
+    setTitle(fresh.title ?? "");
+    setBody(fresh.content ?? "");
+  }, [editing, id]);
+  useFocusEffect(useCallback(() => reload(), [reload]));
+  useDataChanged(reload);
 
   const onSelectionChange = useCallback(
     (e: NativeSyntheticEvent<TextInputSelectionChangeEventData>) => {
