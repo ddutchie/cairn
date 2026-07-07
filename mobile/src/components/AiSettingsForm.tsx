@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  Modal,
   View,
   Text,
   TextInput,
@@ -8,11 +7,11 @@ import {
   StyleSheet,
   ScrollView,
   ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
 } from "react-native";
+import { Stack } from "expo-router";
 import { Check, ShieldCheck, RefreshCw } from "lucide-react-native";
-import { useTheme, elevation, withAlpha, type Theme } from "@/theme";
+import { ICON_CHECK } from "@/components/toolbar-icons";
+import { useTheme, type as typeScale, type Theme } from "@/theme";
 import {
   DEFAULT_OPENAI_BASE_URL,
   DEFAULT_OPENAI_MODEL,
@@ -29,16 +28,20 @@ import { isRorkAvailable } from "@/chat/providers/rork";
 import { listModels } from "@/chat/providers/openai";
 
 /**
- * AI settings bottom sheet. Lets the user pick the chat backend:
+ * AI settings form body. Presented as a native `formSheet` route
+ * (`app/settings/ai.tsx`) rather than a hand-rolled modal, so it gets the
+ * system modal transition + swipe-to-dismiss instead of a backdrop that slides
+ * in with the card. Lets the user pick the chat backend:
  *   - When a Rork endpoint is built into the app, a segmented toggle chooses
  *     between the built-in Rork provider and a custom OpenAI-compatible one.
  *   - When Rork is NOT built in (third-party builds), only the OpenAI fields
  *     show — Rork isn't an option.
  *
  * Non-secret fields (base URL, model) persist to local SQLite; the API key goes
- * to the device keychain (expo-secure-store). Saved on Done.
+ * to the device keychain (expo-secure-store). Saved on Done (onClose fires
+ * after the write completes).
  */
-export function AiSettingsSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+export function AiSettingsForm({ onClose }: { onClose: () => void }) {
   const t = useTheme();
   const styles = useMemo(() => makeStyles(t), [t]);
   const rorkBuiltIn = isRorkAvailable();
@@ -56,9 +59,8 @@ export function AiSettingsSheet({ visible, onClose }: { visible: boolean; onClos
   const [fetchingModels, setFetchingModels] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
 
-  // Load current values each time the sheet opens.
+  // Load current values once when the screen mounts.
   useEffect(() => {
-    if (!visible) return;
     let cancelled = false;
     setLoading(true);
     setPref(getProviderPref(rorkBuiltIn));
@@ -76,7 +78,7 @@ export function AiSettingsSheet({ visible, onClose }: { visible: boolean; onClos
     return () => {
       cancelled = true;
     };
-  }, [visible, rorkBuiltIn]);
+  }, [rorkBuiltIn]);
 
   const fetchModels = async () => {
     const key = apiKey.trim();
@@ -114,23 +116,19 @@ export function AiSettingsSheet({ visible, onClose }: { visible: boolean; onClos
   const usingOpenAI = !rorkBuiltIn || pref === "openai";
 
   return (
-    <Modal visible={visible} transparent animationType="slide" statusBarTranslucent onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-      >
-        <Pressable style={styles.backdrop} onPress={onClose}>
-          <Pressable style={[styles.sheet, elevation.xl]} onPress={() => {}}>
-            <View style={styles.grabber} />
-            <View style={styles.header}>
-              <Pressable onPress={onClose} hitSlop={12}>
-                <Text style={styles.cancel}>Cancel</Text>
-              </Pressable>
-              <Text style={styles.title}>AI settings</Text>
-            <Pressable onPress={save} hitSlop={12} disabled={saving}>
-              {saving ? <ActivityIndicator size="small" color={t.accent} /> : <Text style={styles.done}>Done</Text>}
-            </Pressable>
-          </View>
+    <View style={styles.flex}>
+      <Stack.Screen options={{ headerShown: true, title: "AI settings", headerBackTitle: "Back" }} />
+      <Stack.Toolbar placement="right">
+        <Stack.Toolbar.Button
+          icon={ICON_CHECK}
+          variant="done"
+          disabled={saving}
+          accessibilityLabel="Save AI settings"
+          onPress={save}
+        >
+          Save
+        </Stack.Toolbar.Button>
+      </Stack.Toolbar>
 
         {loading ? (
           <View style={styles.loadingBox}>
@@ -267,10 +265,7 @@ export function AiSettingsSheet({ visible, onClose }: { visible: boolean; onClos
             )}
           </ScrollView>
         )}
-          </Pressable>
-        </Pressable>
-      </KeyboardAvoidingView>
-    </Modal>
+    </View>
   );
 }
 
@@ -324,33 +319,9 @@ function Field({
 
 function makeStyles(t: Theme) {
   return StyleSheet.create({
-    flex: { flex: 1 },
-    // Full-screen dim; the sheet is flowed to the bottom (flex-end) so the
-    // KeyboardAvoidingView's padding behaviour genuinely lifts it above the
-    // keyboard. Tapping the backdrop (outside the sheet) closes.
-    backdrop: { flex: 1, backgroundColor: withAlpha("#000000", 0.4), justifyContent: "flex-end" },
-    sheet: {
-      maxHeight: "88%",
-      backgroundColor: t.surface,
-      borderTopLeftRadius: 18,
-      borderTopRightRadius: 18,
-      paddingBottom: 34,
-    },
-    grabber: { alignSelf: "center", width: 40, height: 5, borderRadius: 3, backgroundColor: t.border, marginTop: 8 },
-    header: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      paddingHorizontal: 18,
-      paddingVertical: 14,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: t.border,
-    },
-    title: { fontSize: 16, fontWeight: "700", color: t.textPrimary },
-    cancel: { fontSize: 16, color: t.textTertiary },
-    done: { fontSize: 16, fontWeight: "600", color: t.accent },
+    flex: { flex: 1, backgroundColor: t.surface },
     loadingBox: { paddingVertical: 48, alignItems: "center" },
-    body: { maxHeight: 560 },
+    body: { flex: 1 },
     bodyContent: { padding: 18, gap: 8 },
 
     sectionLabel: {
@@ -380,7 +351,7 @@ function makeStyles(t: Theme) {
       borderRadius: 9,
     },
     segmentBtnActive: { backgroundColor: t.accent },
-    segmentText: { fontSize: 14, fontWeight: "600", color: t.textSecondary },
+    segmentText: { ...typeScale.control, color: t.textSecondary },
     segmentTextActive: { color: t.accentFg },
 
     rorkNote: {
@@ -392,11 +363,11 @@ function makeStyles(t: Theme) {
       padding: 12,
       marginTop: 4,
     },
-    rorkNoteText: { flex: 1, fontSize: 13, color: t.textSecondary, lineHeight: 18 },
+    rorkNoteText: { flex: 1, ...typeScale.caption, color: t.textSecondary, lineHeight: 18 },
 
     fields: { gap: 14, marginTop: 12 },
     field: { gap: 6 },
-    fieldLabel: { fontSize: 13, fontWeight: "600", color: t.textSecondary },
+    fieldLabel: { ...typeScale.label, color: t.textSecondary },
     fieldInput: {
       backgroundColor: t.surface2,
       borderWidth: 1,
@@ -404,12 +375,12 @@ function makeStyles(t: Theme) {
       borderRadius: 10,
       paddingHorizontal: 12,
       paddingVertical: 11,
-      fontSize: 15,
+      ...typeScale.body,
       color: t.textPrimary,
     },
     keyNote: { flexDirection: "row", gap: 6, alignItems: "flex-start", marginTop: -2 },
-    keyNoteText: { flex: 1, fontSize: 12, color: t.textTertiary, lineHeight: 16 },
-    compatHint: { fontSize: 12, color: t.textTertiary, lineHeight: 16, marginTop: 2 },
+    keyNoteText: { flex: 1, ...typeScale.caption, color: t.textTertiary, lineHeight: 16 },
+    compatHint: { ...typeScale.caption, color: t.textTertiary, lineHeight: 16, marginTop: 2 },
 
     modelHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
     fetchBtn: {
@@ -421,8 +392,8 @@ function makeStyles(t: Theme) {
       borderRadius: 8,
       backgroundColor: t.accentDim,
     },
-    fetchBtnText: { fontSize: 12, fontWeight: "600", color: t.accent },
-    modelsError: { fontSize: 12, color: t.danger, lineHeight: 16 },
+    fetchBtnText: { ...typeScale.label, color: t.accent },
+    modelsError: { ...typeScale.caption, color: t.danger, lineHeight: 16 },
     modelChips: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 2 },
     modelChip: {
       flexDirection: "row",
@@ -437,7 +408,7 @@ function makeStyles(t: Theme) {
       paddingVertical: 6,
     },
     modelChipActive: { backgroundColor: t.accent, borderColor: t.accent },
-    modelChipText: { fontSize: 12, color: t.textSecondary, flexShrink: 1 },
+    modelChipText: { ...typeScale.caption, color: t.textSecondary, flexShrink: 1 },
     modelChipTextActive: { color: t.accentFg, fontWeight: "600" },
   });
 }

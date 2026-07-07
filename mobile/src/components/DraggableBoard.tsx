@@ -10,7 +10,7 @@ import Animated, {
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { PressableScale } from "@/components/PressableScale";
 import { TagChips } from "@/components/TagChips";
-import { useTheme, withAlpha, PRIORITY_COLOR, elevation, type Theme } from "@/theme";
+import { useTheme, withAlpha, PRIORITY_COLOR, elevation, type as typeScale, type Theme } from "@/theme";
 import { tagsForCard, type CardRow, type ColumnRow } from "@/db/queries";
 import { stripMarkdown } from "@cairn/shared/notes/text";
 
@@ -369,7 +369,7 @@ function CardBody({ card, t, styles }: { card: CardRow; t: Theme; styles: Return
 function makeStyles(t: Theme) {
   return StyleSheet.create({
     emptyWrap: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32 },
-    emptyText: { fontSize: 13, color: t.textTertiary, textAlign: "center" },
+    emptyText: { ...typeScale.caption, color: t.textTertiary, textAlign: "center" },
     boardScroll: { flex: 1 },
     board: { padding: 12, paddingTop: 0, gap: COLUMN_GAP, flexDirection: "row", alignItems: "stretch", flexGrow: 1 },
     column: { width: COLUMN_WIDTH, backgroundColor: t.surface, borderRadius: 12, padding: 10, borderWidth: 1, borderColor: t.border },
@@ -380,10 +380,10 @@ function makeStyles(t: Theme) {
     card: { backgroundColor: t.surface2, borderRadius: 8, padding: 10, marginBottom: 8, borderWidth: 1, borderColor: t.borderSubtle },
     cardLiftedOverlay: { borderColor: t.accent, backgroundColor: t.surface2 },
     addCard: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 10, borderRadius: 8, borderWidth: 1, borderColor: t.border, borderStyle: "dashed", marginTop: 2 },
-    addCardText: { fontSize: 13, color: t.textTertiary, fontWeight: "600" },
+    addCardText: { ...typeScale.label, color: t.textTertiary },
     cardTop: { flexDirection: "row", alignItems: "center", gap: 8 },
     priorityDot: { width: 8, height: 8, borderRadius: 4 },
-    cardTitle: { flex: 1, fontSize: 13, color: t.textPrimary, fontWeight: "500" },
-    cardDesc: { fontSize: 12, color: t.textSecondary, marginTop: 8, lineHeight: 17 },
+    cardTitle: { flex: 1, ...typeScale.label, fontWeight: "500", color: t.textPrimary },
+    cardDesc: { ...typeScale.caption, color: t.textSecondary, marginTop: 8, lineHeight: 17 },
   });
 }

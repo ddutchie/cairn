@@ -27,7 +27,15 @@ import SettingsXml from "@expo/material-symbols/settings.xml";
 import PinXml from "@expo/material-symbols/keep.xml";
 import UnpinXml from "@expo/material-symbols/keep_off.xml";
 import TagXml from "@expo/material-symbols/sell.xml";
-
+import CalendarXml from "@expo/material-symbols/calendar_month.xml";
+import CalendarViewMonthXml from "@expo/material-symbols/calendar_view_month.xml";
+import CalendarViewWeekXml from "@expo/material-symbols/calendar_view_week.xml";
+import AccountTreeXml from "@expo/material-symbols/account_tree.xml";
+import PieChartXml from "@expo/material-symbols/pie_chart.xml";
+import NeurologyXml from "@expo/material-symbols/neurology.xml";
+import CloudXml from "@expo/material-symbols/cloud.xml";
+import CloudOffXml from "@expo/material-symbols/cloud_off.xml";
+import CloudSyncXml from "@expo/material-symbols/cloud_sync.xml";
 /** An icon usable by both platforms via the toolbar `icon` prop. */
 export type ToolbarIcon = SFSymbol | ImageSourcePropType;
 
@@ -51,9 +59,27 @@ export const ICON_ARCHIVE: ToolbarIcon = ios ? "archivebox" : ArchiveXml;
 export const ICON_UNARCHIVE: ToolbarIcon = ios ? "tray.and.arrow.up" : UnarchiveXml;
 /** Settings (gear). */
 export const ICON_SETTINGS: ToolbarIcon = ios ? "gearshape" : SettingsXml;
+/** AI / model settings (brain). */
+export const ICON_AI: ToolbarIcon = ios ? "brain" : NeurologyXml;
+/** iCloud sync — synced/idle. */
+export const ICON_ICLOUD: ToolbarIcon = ios ? "icloud" : CloudXml;
+/** iCloud sync — offline / unavailable. */
+export const ICON_ICLOUD_OFF: ToolbarIcon = ios ? "icloud.slash" : CloudOffXml;
+/** iCloud sync — syncing / pending changes. */
+export const ICON_ICLOUD_SYNC: ToolbarIcon = ios ? "arrow.triangle.2.circlepath.icloud" : CloudSyncXml;
 /** Pin. */
 export const ICON_PIN: ToolbarIcon = ios ? "pin" : PinXml;
 /** Unpin. */
 export const ICON_UNPIN: ToolbarIcon = ios ? "pin.slash" : UnpinXml;
 /** Tags / labels. */
 export const ICON_TAG: ToolbarIcon = ios ? "tag" : TagXml;
+/** Calendar / due dates. */
+export const ICON_CALENDAR: ToolbarIcon = ios ? "calendar" : CalendarXml;
+/** Month span (grid of days). */
+export const ICON_VIEW_MONTH: ToolbarIcon = ios ? "square.grid.2x2" : CalendarViewMonthXml;
+/** Week span (single-row timeline). */
+export const ICON_VIEW_WEEK: ToolbarIcon = ios ? "calendar.day.timeline.left" : CalendarViewWeekXml;
+/** Force-directed graph layout (nodes connected in a web). */
+export const ICON_GRAPH_FORCE: ToolbarIcon = ios ? "point.3.connected.trianglepath.dotted" : AccountTreeXml;
+/** Radial hierarchy layout (sunburst / pie). */
+export const ICON_GRAPH_RADIAL: ToolbarIcon = ios ? "chart.pie" : PieChartXml;

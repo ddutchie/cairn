@@ -38,7 +38,7 @@ import { ChevronLeft, ChevronRight ,
   Wand2,
   X,
 } from "lucide-react-native";
-import { useTheme, withAlpha, type Theme } from "@/theme";
+import { useTheme, withAlpha, type as typeScale, type Theme } from "@/theme";
 import { REQUIRES_SELECTION, type FormatAction } from "@cairn/shared/notes/format";
 import { AI_ACTIONS, type AITextAction } from "@cairn/shared/notes/ai-actions";
 
@@ -351,15 +351,15 @@ function makeStyles(t: Theme) {
     fadeBand: { position: "absolute", top: 0, bottom: 0, width: 14 },
     aiChip: { flexDirection: "row", alignItems: "center", gap: 5, paddingVertical: 6, paddingHorizontal: 10, borderRadius: 8 },
     aiChipActive: { backgroundColor: t.surface3 },
-    aiLabel: { fontSize: 13, fontWeight: "500" },
+    aiLabel: { ...typeScale.caption, fontWeight: "500" },
     disabled: { opacity: 0.4 },
     dismiss: { padding: 6 },
     loadingRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, paddingVertical: 10 },
-    loadingText: { fontSize: 13, color: t.textTertiary },
+    loadingText: { ...typeScale.caption, color: t.textTertiary },
     customRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.border },
-    customInput: { flex: 1, color: t.textPrimary, fontSize: 14, padding: 0 },
+    customInput: { flex: 1, color: t.textPrimary, ...typeScale.caption, padding: 0 },
     applyBtn: { backgroundColor: t.accent, paddingVertical: 5, paddingHorizontal: 12, borderRadius: 6 },
-    applyText: { color: t.accentFg, fontSize: 13, fontWeight: "600" },
+    applyText: { ...typeScale.label, color: t.accentFg },
     group: { flexDirection: "row", alignItems: "center", gap: 4 },
     divider: { width: StyleSheet.hairlineWidth, height: 18, backgroundColor: t.border, marginHorizontal: 6 },
     fmtBtn: { width: 32, height: 32, alignItems: "center", justifyContent: "center", borderRadius: 6 },

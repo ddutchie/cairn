@@ -18,7 +18,7 @@ import { ICON_CHECK } from "@/components/toolbar-icons";
 import { applyFormat, insertWikilink, type FormatAction, type Selection } from "@cairn/shared/notes/format";
 import { buildAIActionPrompt, type AITextAction } from "@cairn/shared/notes/ai-actions";
 import { runTextAction } from "@/chat/agent";
-import { useTheme, type Theme } from "@/theme";
+import { useTheme, type as typeScale, type Theme } from "@/theme";
 
 /**
  * New-note composer. `project` (id) is required; `folder` optionally pre-fills
@@ -194,8 +194,8 @@ function makeStyles(t: Theme) {
     container: { flex: 1, backgroundColor: t.background },
     scroll: { flex: 1 },
     content: { padding: 18, paddingBottom: 64 },
-    folder: { fontSize: 12, color: t.accent, marginBottom: 8 },
-    titleInput: { fontSize: 24, fontWeight: "700", color: t.textPrimary, padding: 0 },
-    bodyInput: { fontSize: 15, lineHeight: 22, color: t.textPrimary, marginTop: 16, fontFamily: "Menlo", minHeight: 320 },
+    folder: { ...typeScale.caption, color: t.accent, marginBottom: 8 },
+    titleInput: { ...typeScale.display, color: t.textPrimary, padding: 0 },
+    bodyInput: { ...typeScale.body, color: t.textPrimary, marginTop: 16, fontFamily: "Menlo", minHeight: 320 },
   });
 }

@@ -7,6 +7,24 @@ import type { GraphNode, KnowledgeGraph } from "@/types";
 import { resolveCssVar, withAlpha } from "./analyticsUtils";
 import { useFontScale, useThemeRepaint } from "./analyticsHooks";
 import { Tooltip } from "@/components/ui/tooltip";
+import {
+  nodeTypeToken,
+  nodeRadius,
+  edgeStyle as sharedEdgeStyle,
+  chargeStrength,
+  linkDistance,
+  collideRadius,
+  anchorStrength as sharedAnchorStrength,
+  CLUSTER_RADIUS,
+  LINK_STRENGTH,
+  COLLIDE_ITERATIONS,
+  ALPHA_DECAY,
+  VELOCITY_DECAY,
+  shouldShowLabel,
+  labelScreenPx,
+  labelMaxLen,
+  type ThemeToken,
+} from "../../../shared/ui/graph";
 
 interface Props {
   graph: KnowledgeGraph;
@@ -22,31 +40,18 @@ interface Props {
 
 // ── colour helpers ──────────────────────────────────────────────────────────
 
+/** Resolve a shared graph theme token to a concrete CSS-var colour. */
+function tokenColor(token: ThemeToken): string {
+  return resolveCssVar(`--${token === "textPrimary" ? "text-primary" : token === "textSecondary" ? "text-secondary" : token === "textTertiary" ? "text-tertiary" : token}`);
+}
+
 function hexForType(type: GraphNode["type"]): string {
-  const map: Record<string, string> = {
-    project: resolveCssVar("--accent"),
-    note:    resolveCssVar("--info"),
-    card:    resolveCssVar("--success"),
-    tag:     resolveCssVar("--warning"),
-  };
-  return map[type] ?? "#888";
+  return tokenColor(nodeTypeToken(type));
 }
 
 function edgeColor(edgeType: string): { color: string; opacity: number; dash: boolean } {
-  switch (edgeType) {
-    case "note-note":      return { color: resolveCssVar("--info"),    opacity: 0.6, dash: false };
-    case "note-card":      return { color: resolveCssVar("--success"), opacity: 0.6, dash: false };
-    case "tag-member":     return { color: resolveCssVar("--warning"), opacity: 0.5, dash: false };
-    case "project-member": return { color: resolveCssVar("--accent"),  opacity: 0.35, dash: false };
-    case "flow-edge":      return { color: resolveCssVar("--accent"),  opacity: 0.8, dash: false };
-    case "flow-ref":       return { color: resolveCssVar("--accent"),  opacity: 0.5, dash: true  };
-    case "co-mention":     return { color: resolveCssVar("--border"),  opacity: 0.5, dash: true  };
-    case "keyword":        return { color: resolveCssVar("--border"),  opacity: 0.4, dash: true  };
-    case "assignee":       return { color: resolveCssVar("--border"),  opacity: 0.4, dash: true  };
-    case "wikilink":       return { color: resolveCssVar("--accent"),  opacity: 0.75, dash: false };
-    case "semantic":       return { color: resolveCssVar("--accent"),  opacity: 0.5, dash: true  };
-    default:               return { color: resolveCssVar("--border"),  opacity: 0.4, dash: false };
-  }
+  const s = sharedEdgeStyle(edgeType);
+  return { color: tokenColor(s.token), opacity: s.opacity, dash: s.dash };
 }
 
 // ── simulation node/link shapes ──────────────────────────────────────────────
@@ -62,7 +67,7 @@ type SimLink = d3.SimulationLinkDatum<SimNode> & {
   weight: number;
 };
 
-const radiusOf = (n: SimNode) => (n.nodeType === "project" ? 9 : n.nodeType === "tag" ? 4.5 : 6);
+const radiusOf = (n: SimNode) => nodeRadius(n.nodeType);
 
 const ZOOM_BTN_CLASS =
   "w-7 h-7 flex items-center justify-center rounded-md bg-[var(--surface)] border border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors shadow-sm";export function ForceGraphCanvas({
@@ -216,32 +221,24 @@ const ZOOM_BTN_CLASS =
       const i = projIndex.get(pid)!;
       const k = Math.max(1, projects.length);
       const ang = (i / k) * 2 * Math.PI;
-      const R = 230 * propsRef.current.spacing;
+      const R = CLUSTER_RADIUS * propsRef.current.spacing;
       return { x: Math.cos(ang) * R, y: Math.sin(ang) * R };
     };
 
-    const chargeFor = (n: SimNode) => {
-      const deg = degree.get(n.id) ?? 0;
-      if (deg === 0) return -20;
-      return (n.nodeType === "project" ? -260 : -130) * propsRef.current.spacing;
-    };
-    const linkDist = (l: SimLink) => {
-      let b = 42;
-      if (l.edgeType === "project-member") b = 64;
-      if (l.edgeType === "tag-member") b = 54;
-      return b * propsRef.current.spacing;
-    };
+    const chargeFor = (n: SimNode) =>
+      chargeStrength(n.nodeType, degree.get(n.id) ?? 0, propsRef.current.spacing);
+    const linkDist = (l: SimLink) => linkDistance(l.edgeType, propsRef.current.spacing);
     const anchorStrength = (n: SimNode) =>
-      n.nodeType === "project" ? 0.25 : n.projectId ? 0.14 : 0.03;
+      sharedAnchorStrength(n.nodeType, !!n.projectId);
 
     const sim = d3.forceSimulation<SimNode>(nodes)
       .force("charge", d3.forceManyBody<SimNode>().strength(chargeFor))
-      .force("link", d3.forceLink<SimNode, SimLink>(links).id((d) => d.id).distance(linkDist).strength(0.35))
-      .force("collide", d3.forceCollide<SimNode>().radius((n) => (radiusOf(n) + 12) * propsRef.current.spacing).iterations(2))
+      .force("link", d3.forceLink<SimNode, SimLink>(links).id((d) => d.id).distance(linkDist).strength(LINK_STRENGTH))
+      .force("collide", d3.forceCollide<SimNode>().radius((n) => collideRadius(n.nodeType, propsRef.current.spacing)).iterations(COLLIDE_ITERATIONS))
       .force("x", d3.forceX<SimNode>((n) => clusterAnchor(n)?.x ?? 0).strength(anchorStrength))
       .force("y", d3.forceY<SimNode>((n) => clusterAnchor(n)?.y ?? 0).strength(anchorStrength))
-      .alphaDecay(0.025)
-      .velocityDecay(0.4)
+      .alphaDecay(ALPHA_DECAY)
+      .velocityDecay(VELOCITY_DECAY)
       .on("tick", () => {
         // Until the user takes control (or the first animated fit completes),
         // keep the whole graph framed instantly each tick so it never sits
@@ -396,16 +393,19 @@ const ZOOM_BTN_CLASS =
 
       // labels
       const isProject = n.nodeType === "project";
-      let showLabel = false;
-      if (isProject || isSel || isHov) showLabel = true;
-      else if (lm === "all") showLabel = t.k >= 0.7;
-      else if (lm === "smart") showLabel = t.k >= 1.5;
+      const showLabel = shouldShowLabel({
+        type: n.nodeType,
+        isSelected: isSel,
+        isHovered: isHov,
+        labelMode: lm,
+        zoom: t.k,
+      });
 
       if (showLabel) {
         const isHighlight = isSel || isHov;
-        const screenPx = (isProject ? 12 : 10) * fs;
+        const screenPx = labelScreenPx(n.nodeType) * fs;
         const fontSize = screenPx / t.k;
-        const maxLen = isHighlight ? 60 : isProject ? 26 : 18;
+        const maxLen = labelMaxLen(n.nodeType, isHighlight);
         const text = n.title.length > maxLen ? n.title.slice(0, maxLen - 1) + "…" : n.title;
         ctx.font = `${(isProject || isHighlight) ? "600 " : ""}${fontSize}px ui-sans-serif, system-ui, sans-serif`;
         ctx.textAlign = "center";

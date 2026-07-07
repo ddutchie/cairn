@@ -17,9 +17,19 @@ export default function TabsLayout() {
           accent instead of the platform default blue. minimizeBehavior
           collapses the tab bar as you scroll down for more content room. */}
       <NativeTabs tintColor={t.accent} minimizeBehavior="onScrollDown">
-        <NativeTabs.Trigger name="index">
+        <NativeTabs.Trigger name="projects">
           <NativeTabs.Trigger.Icon sf="folder.fill" md="folder" />
           <NativeTabs.Trigger.Label>Projects</NativeTabs.Trigger.Label>
+        </NativeTabs.Trigger>
+
+        <NativeTabs.Trigger name="calendar">
+          <NativeTabs.Trigger.Icon sf="calendar" md="calendar_month" />
+          <NativeTabs.Trigger.Label>Calendar</NativeTabs.Trigger.Label>
+        </NativeTabs.Trigger>
+
+        <NativeTabs.Trigger name="graph">
+          <NativeTabs.Trigger.Icon sf="point.3.connected.trianglepath.dotted" md="hub" />
+          <NativeTabs.Trigger.Label>Graph</NativeTabs.Trigger.Label>
         </NativeTabs.Trigger>
 
         <NativeTabs.Trigger name="search" role="search">

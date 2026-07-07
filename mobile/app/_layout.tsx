@@ -78,16 +78,22 @@ export default function RootLayout() {
               iOS 26 liquid-glass toolbar buttons don't flash a light background
               in dark mode (see Expo "Stack Toolbar → Common problems"). */}
           <ThemeProvider value={scheme === "dark" ? DarkTheme : DefaultTheme}>
-            <StatusBar style="auto" />
+            {/* Drive the status-bar text colour explicitly from the current
+                scheme (light text on dark, dark text on light). `style="auto"`
+                infers from the window background and lags a frame during a
+                theme switch — that's the white→black flash in dark mode. */}
+            <StatusBar style={scheme === "dark" ? "light" : "dark"} />
             <Stack screenOptions={{ headerShown: true, ...headerStyle }}>
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
               <Stack.Screen name="project/[id]" options={{ title: "Project" }} />
+              <Stack.Screen name="project/calendar" options={{ title: "Calendar" }} />
               <Stack.Screen name="note/new" options={{ title: "New Note", presentation: "modal" }} />
               <Stack.Screen name="note/[id]" options={{ title: "Note" }} />
               <Stack.Screen name="card/new" options={{ title: "New Task", presentation: "modal" }} />
               <Stack.Screen name="card/[id]" options={{ title: "Task" }} />
-              <Stack.Screen name="sync" options={{ title: "Sync", headerBackTitle: "Projects" }} />
+              <Stack.Screen name="sync" options={{ title: "Sync", presentation: "modal" }} />
               <Stack.Screen name="conflicts" options={{ title: "Sync Conflicts" }} />
+              <Stack.Screen name="settings/ai" options={{ title: "AI settings", presentation: "modal" }} />
             </Stack>
           </ThemeProvider>
           <UpdateBanner />

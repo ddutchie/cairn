@@ -6,7 +6,7 @@ import { searchNotes, searchTasks, type NoteRow, type CardRow } from "@/db/queri
 import { PressableScale } from "@/components/PressableScale";
 import { TabScreen } from "@/components/TabScreen";
 import { stripMarkdown } from "@cairn/shared/notes/text";
-import { useTheme, elevation, PRIORITY_COLOR, type Theme } from "@/theme";
+import { useTheme, elevation, PRIORITY_COLOR, type as typeScale, type Theme } from "@/theme";
 
 type Scope = "notes" | "tasks";
 
@@ -110,7 +110,7 @@ export default function SearchScreen() {
           keyboardShouldPersistTaps="handled"
           ListEmptyComponent={hasQuery ? <Text style={styles.hint}>No matching notes</Text> : null}
           renderItem={({ item }) => (
-            <PressableScale style={[styles.row, elevation.sm]} onPress={() => router.push(`/note/${item.id}`)}>
+            <PressableScale style={[styles.row, elevation.sm]} onPress={() => router.push({ pathname: "/note/[id]", params: { id: item.id, back: "Search" } })}>
               <Text style={styles.title} numberOfLines={1}>
                 {item.title || "Untitled"}
               </Text>
@@ -128,7 +128,7 @@ export default function SearchScreen() {
           keyboardShouldPersistTaps="handled"
           ListEmptyComponent={hasQuery ? <Text style={styles.hint}>No matching tasks</Text> : null}
           renderItem={({ item }) => (
-            <PressableScale style={[styles.row, elevation.sm]} onPress={() => router.push(`/card/${item.id}`)}>
+            <PressableScale style={[styles.row, elevation.sm]} onPress={() => router.push({ pathname: "/card/[id]", params: { id: item.id, back: "Search" } })}>
               <View style={styles.taskTitleRow}>
                 <View style={[styles.priorityDot, { backgroundColor: PRIORITY_COLOR[item.priority as keyof typeof PRIORITY_COLOR] ?? t.textTertiary }]} />
                 <Text style={styles.title} numberOfLines={1}>
@@ -163,7 +163,7 @@ function makeStyles(t: Theme) {
     },
     segmentBtn: { flex: 1, paddingVertical: 7, borderRadius: 7, alignItems: "center" },
     segmentBtnActive: { backgroundColor: t.accent },
-    segmentText: { fontSize: 14, fontWeight: "600", color: t.textSecondary },
+    segmentText: { ...typeScale.control, color: t.textSecondary },
     segmentTextActive: { color: t.accentFg },
     list: { padding: 12 },
     row: {
@@ -177,8 +177,8 @@ function makeStyles(t: Theme) {
     },
     taskTitleRow: { flexDirection: "row", alignItems: "center", gap: 8 },
     priorityDot: { width: 8, height: 8, borderRadius: 4 },
-    title: { fontSize: 15, fontWeight: "600", color: t.textPrimary, flexShrink: 1 },
-    preview: { fontSize: 13, color: t.textSecondary, marginTop: 2 },
+    title: { ...typeScale.control, color: t.textPrimary, flexShrink: 1 },
+    preview: { ...typeScale.caption, color: t.textSecondary, marginTop: 2 },
     hint: { textAlign: "center", color: t.textTertiary, marginTop: 24 },
   });
 }

@@ -1,17 +1,20 @@
 import { useCallback, useMemo, useState } from "react";
 import { View, Text, Pressable, StyleSheet, ActivityIndicator, ScrollView } from "react-native";
-import { useFocusEffect, useRouter } from "expo-router";
+import { Stack, useFocusEffect, useRouter } from "expo-router";
 import { GitMerge, ChevronRight } from "lucide-react-native";
 import { iCloudAvailable, syncFolderLabel } from "@/sync/folder";
 import { requestSync } from "@/sync/controller";
 import { useSyncStatus } from "@/sync/useSyncStatus";
-import { useTheme, type Theme } from "@/theme";
+import { ICON_CHECK } from "@/components/toolbar-icons";
+import { useTheme, type as typeScale, type Theme } from "@/theme";
 
 /**
- * Sync detail page. No longer a top-level tab — reached from the header sync
- * badge (SyncStatusBadge), which escalates its appearance when offline or when
- * conflicts exist. Owns the things the badge can't: iCloud availability
- * diagnostics, the conflict-resolution entry point, and the last sync result.
+ * Sync detail presented as a native modal (see the `sync` screen's
+ * `presentation: "modal"` in the root layout). Reached from the header sync
+ * badge (SyncStatusBadge). A native Stack.Toolbar "Done" button — plus the
+ * modal's swipe-down — dismisses it, matching the new-note / AI-settings modal
+ * pattern. Owns the things the badge can't: iCloud availability diagnostics, the
+ * conflict-resolution entry point, and the last sync result.
  */
 export default function SyncScreen() {
   const t = useTheme();
@@ -28,9 +31,17 @@ export default function SyncScreen() {
   useFocusEffect(useCallback(() => refresh(), [refresh]));
 
   const onSync = () => void requestSync("manual");
+  const close = () => {
+    if (router.canGoBack()) router.back();
+  };
 
   return (
     <View style={[styles.root, { backgroundColor: t.background }]}>
+      <Stack.Toolbar placement="right">
+        <Stack.Toolbar.Button icon={ICON_CHECK} variant="done" accessibilityLabel="Done" onPress={close}>
+          Done
+        </Stack.Toolbar.Button>
+      </Stack.Toolbar>
       <ScrollView contentContainerStyle={styles.container} contentInsetAdjustmentBehavior="automatic">
         <View style={styles.card}>
           <Text style={styles.cardLabel}>iCloud sync folder</Text>
@@ -102,18 +113,18 @@ function makeStyles(t: Theme) {
     cardLabel: { fontSize: 12, fontWeight: "600", color: t.textTertiary, textTransform: "uppercase", letterSpacing: 0.5 },
     statusRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 10 },
     dot: { width: 9, height: 9, borderRadius: 5 },
-    folderName: { fontSize: 15, fontWeight: "600", color: t.textPrimary, flex: 1 },
-    help: { fontSize: 12, color: t.textTertiary, marginTop: 10, lineHeight: 18 },
+    folderName: { ...typeScale.control, color: t.textPrimary, flex: 1 },
+    help: { ...typeScale.caption, color: t.textTertiary, marginTop: 10, lineHeight: 18 },
     syncButton: { backgroundColor: t.accent, paddingVertical: 14, borderRadius: 12, alignItems: "center", marginTop: 16 },
     buttonDisabled: { opacity: 0.6 },
-    buttonText: { color: t.accentFg, fontWeight: "600", fontSize: 15 },
-    autoNote: { marginTop: 10, fontSize: 12, color: t.textTertiary, lineHeight: 17 },
+    buttonText: { ...typeScale.control, color: t.accentFg },
+    autoNote: { marginTop: 10, ...typeScale.caption, color: t.textTertiary, lineHeight: 17 },
     result: { marginTop: 16, padding: 14, backgroundColor: t.surface, borderRadius: 10, borderWidth: 1, borderColor: t.border },
-    resultLine: { fontSize: 14, color: t.textPrimary, marginBottom: 4 },
+    resultLine: { ...typeScale.caption, color: t.textPrimary, marginBottom: 4 },
     conflictRow: { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 16, padding: 14, backgroundColor: t.surface, borderRadius: 12, borderWidth: 1, borderColor: t.border },
     conflictRowActive: { borderColor: t.warning, backgroundColor: t.surface2 },
-    conflictTitle: { fontSize: 15, fontWeight: "600", color: t.textSecondary },
-    conflictHelp: { fontSize: 12, color: t.textTertiary, marginTop: 2, lineHeight: 16 },
-    note: { marginTop: 24, fontSize: 12, color: t.textTertiary, lineHeight: 18 },
+    conflictTitle: { ...typeScale.control, color: t.textSecondary },
+    conflictHelp: { ...typeScale.caption, color: t.textTertiary, marginTop: 2, lineHeight: 16 },
+    note: { marginTop: 24, ...typeScale.caption, color: t.textTertiary, lineHeight: 18 },
   });
 }

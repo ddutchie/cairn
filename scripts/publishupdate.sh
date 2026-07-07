@@ -34,7 +34,15 @@ fi
 cd "$MOBILE_DIR"
 
 echo "Publishing OTA update to channel '$CHANNEL'…"
-eas update --channel "$CHANNEL" --message "$MESSAGE" --non-interactive
+# --environment is required in non-interactive mode; our channels + EAS
+# environments share the same names (production / preview).
+# Publish per native platform: this is a native-only app (no react-native-web),
+# so --platform=all fails trying to bundle for web, and the CLI rejects a
+# comma list — so run ios and android separately.
+for plat in ios android; do
+  echo "  → $plat"
+  eas update --channel "$CHANNEL" --environment "$CHANNEL" --platform "$plat" --message "$MESSAGE" --non-interactive
+done
 
 echo ""
 echo "✓ Update published to '$CHANNEL'."

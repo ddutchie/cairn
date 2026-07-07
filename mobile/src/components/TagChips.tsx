@@ -1,5 +1,5 @@
 import { View, Text, StyleSheet } from "react-native";
-import { useTheme, withAlpha, type Theme } from "@/theme";
+import { useTheme, withAlpha, type as typeScale, type Theme } from "@/theme";
 import type { TagRow } from "@/db/queries";
 
 /**
@@ -39,7 +39,7 @@ function makeStyles(_t: Theme) {
     chipSm: { paddingVertical: 2, paddingHorizontal: 8, borderRadius: 10, gap: 4 },
     dot: { width: 8, height: 8, borderRadius: 4 },
     dotSm: { width: 6, height: 6, borderRadius: 3 },
-    text: { fontSize: 13, fontWeight: "600" },
+    text: { ...typeScale.label },
     textSm: { fontSize: 11 },
   });
 }

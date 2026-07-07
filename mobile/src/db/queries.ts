@@ -281,6 +281,37 @@ export function searchTasks(query: string): CardRow[] {
 }
 
 /**
+ * A task card that has a due date, enriched with its project name for the
+ * workspace-wide Calendar view. `due_date` is guaranteed non-null here.
+ */
+export interface CalendarCard extends CardRow {
+  due_date: string;
+  project_name: string;
+}
+
+/**
+ * Live task cards that have a due date, for the Calendar view. Ordered by due
+ * date so the agenda groups chronologically. Pass a projectId to scope to one
+ * project (per-project calendar); omit for the workspace-wide calendar.
+ */
+export function listCardsWithDueDates(projectId?: string): CalendarCard[] {
+  const db = getDb();
+  const scope = projectId ? "AND c.project_id = ?" : "";
+  const rows = db.getAllSync<CalendarCard>(
+    `SELECT c.id, c.column_id, c.project_id, c.title, c.description, c.priority,
+            c.tag_ids, c."order", c.due_date, c.assignee, p.name AS project_name
+     FROM task_cards c
+     JOIN projects p ON p.id = c.project_id
+     WHERE c.deleted_at IS NULL AND c.archived_at IS NULL
+       AND c.due_date IS NOT NULL AND c.due_date != ''
+       ${scope}
+     ORDER BY c.due_date ASC, c."order" ASC`,
+    ...((projectId ? [projectId] : []) as never[]),
+  );
+  return rows;
+}
+
+/**
  * Move a card to a different column. Plain UPDATE so capture triggers stage it
  * for sync. Mirrors the desktop moveCard's column change (order left as-is).
  */
@@ -297,6 +328,120 @@ export function moveCardToColumn(cardId: string, columnId: string): void {
 
 function plainText(md: string): string {
   return stripMarkdown(md);
+}
+
+// ── Knowledge graph ─────────────────────────────────────────────────────────
+
+export type GraphNodeType = "project" | "note" | "card" | "tag";
+export type GraphEdgeType = "project-member" | "note-note" | "note-card" | "tag-member";
+
+export interface GraphNode {
+  id: string;
+  type: GraphNodeType;
+  title: string;
+  /** Tag colour (tag nodes) or priority accent (card nodes), for rendering. */
+  color?: string;
+  priority?: string;
+  /** Owning project id (note/card nodes) — used to draw cluster hulls. */
+  projectId?: string;
+}
+
+export interface GraphEdge {
+  source: string;
+  target: string;
+  type: GraphEdgeType;
+}
+
+export interface KnowledgeGraph {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
+
+/**
+ * Build the workspace knowledge graph from the SYNCABLE tables the mobile app
+ * holds: projects, notes, cards and tags, wired by their explicit links
+ * (project membership, note↔note wikilinks, note↔card links, tag membership).
+ *
+ * Unlike desktop this omits idea-flow and auto/semantic edges — mobile has no
+ * idea_flow_* or embeddings tables — so it's a purely structural graph. Only
+ * tags actually referenced by a scoped note/card become nodes, matching the
+ * desktop's "used tags only" behaviour.
+ */
+export function getKnowledgeGraph(): KnowledgeGraph {
+  const db = getDb();
+  const nodes: GraphNode[] = [];
+  const edges: GraphEdge[] = [];
+  const nodeIds = new Set<string>();
+  const add = (n: GraphNode) => {
+    if (nodeIds.has(n.id)) return;
+    nodeIds.add(n.id);
+    nodes.push(n);
+  };
+
+  const projects = db.getAllSync<{ id: string; name: string }>(
+    `SELECT id, name FROM projects WHERE ${LIVE}`,
+  );
+  for (const p of projects) add({ id: p.id, type: "project", title: p.name });
+
+  const notes = db.getAllSync<{
+    id: string;
+    project_id: string;
+    title: string;
+    tag_ids: string;
+    linked_note_ids: string;
+  }>(
+    `SELECT id, project_id, title, tag_ids, linked_note_ids FROM notes
+     WHERE ${LIVE} AND type='note' AND ${NOT_CONFLICT}`,
+  );
+  for (const n of notes) {
+    add({ id: n.id, type: "note", title: n.title || "Untitled", projectId: n.project_id });
+    if (nodeIds.has(n.project_id)) edges.push({ source: n.project_id, target: n.id, type: "project-member" });
+    // note↔note links: emit once (lower id as source) to avoid duplicate pairs.
+    for (const linked of parseIds(n.linked_note_ids)) {
+      if (n.id < linked) edges.push({ source: n.id, target: linked, type: "note-note" });
+    }
+  }
+
+  const cards = db.getAllSync<{
+    id: string;
+    project_id: string;
+    title: string;
+    priority: string;
+    tag_ids: string;
+    linked_note_ids: string;
+  }>(
+    `SELECT id, project_id, title, priority, tag_ids, linked_note_ids FROM task_cards
+     WHERE ${LIVE}`,
+  );
+  for (const c of cards) {
+    add({ id: c.id, type: "card", title: c.title, priority: c.priority, projectId: c.project_id });
+    if (nodeIds.has(c.project_id)) edges.push({ source: c.project_id, target: c.id, type: "project-member" });
+    for (const noteId of parseIds(c.linked_note_ids)) {
+      if (nodeIds.has(noteId)) edges.push({ source: noteId, target: c.id, type: "note-card" });
+    }
+  }
+
+  // Only tags actually used by a scoped note/card become nodes.
+  const usedTagIds = new Set<string>();
+  for (const n of notes) for (const tid of parseIds(n.tag_ids)) usedTagIds.add(tid);
+  for (const c of cards) for (const tid of parseIds(c.tag_ids)) usedTagIds.add(tid);
+  if (usedTagIds.size > 0) {
+    const tagRows = tagsForIds([...usedTagIds]);
+    const tagById = new Map(tagRows.map((tr) => [tr.id, tr]));
+    for (const tid of usedTagIds) {
+      const tag = tagById.get(tid);
+      if (!tag) continue;
+      add({ id: tag.id, type: "tag", title: tag.name, color: tag.color });
+    }
+    for (const n of notes) for (const tid of parseIds(n.tag_ids)) {
+      if (nodeIds.has(tid)) edges.push({ source: n.id, target: tid, type: "tag-member" });
+    }
+    for (const c of cards) for (const tid of parseIds(c.tag_ids)) {
+      if (nodeIds.has(tid)) edges.push({ source: c.id, target: tid, type: "tag-member" });
+    }
+  }
+
+  return { nodes, edges };
 }
 
 /** Find a note by exact title within a project (for ensure_note upsert). */
