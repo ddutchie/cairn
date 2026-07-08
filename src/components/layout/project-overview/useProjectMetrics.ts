@@ -9,6 +9,7 @@
 
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
+import { getDueDateStatus } from "@/lib/utils";
 import { COLUMN_TYPE_ORDER } from "@/lib/constants";
 import { revealNote, revealCard } from "@/lib/events";
 import type { Note, TaskCard, BoardColumn } from "@/types";
@@ -102,7 +103,7 @@ export function useProjectMetrics(projectId: string | null): ProjectMetrics | nu
     .filter((c) => new Date(c.dueDate!) <= in7Days)
     .sort((a, b) => new Date(a.dueDate!).getTime() - new Date(b.dueDate!).getTime());
 
-  const overdueCount = dueCards.filter((c) => new Date(c.dueDate!) < today).length;
+  const overdueCount = dueCards.filter((c) => getDueDateStatus(c.dueDate) === "overdue").length;
 
   const priorityCounts = {
     urgent: openCards.filter((c) => c.priority === "urgent").length,
