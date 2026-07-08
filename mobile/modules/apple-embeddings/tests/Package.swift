@@ -26,7 +26,12 @@ let package = Package(
     .testTarget(
       name: "EmbeddingLiveTests",
       dependencies: ["EmbeddingLive", "EmbeddingMath"],
-      path: "Tests/EmbeddingLiveTests"
+      path: "Tests/EmbeddingLiveTests",
+      // Only the committed sample is a declared resource (SwiftPM errors on a
+      // missing declared resource). The gitignored real_notes.json — generated
+      // by scripts/export-notes-fixture.sh — is loaded from disk at test time
+      // when present; otherwise the tests fall back to the sample.
+      resources: [.copy("Fixtures/sample_notes.json")]
     ),
   ]
 )

@@ -1039,3 +1039,17 @@ export function noteTitleById(noteId: string): string {
   );
   return row?.title ?? "Untitled";
 }
+
+/** Title + plain-text body for a set of notes, for lexical (keyword) scoring in
+ *  hybrid semantic search. Returns a map keyed by note id. */
+export function noteTextByIds(noteIds: string[]): Map<string, { title: string; text: string }> {
+  const out = new Map<string, { title: string; text: string }>();
+  if (noteIds.length === 0) return out;
+  const placeholders = noteIds.map(() => "?").join(",");
+  const rows = getDb().getAllSync<{ id: string; title: string; content_text: string }>(
+    `SELECT id, title, content_text FROM notes WHERE id IN (${placeholders})`,
+    ...noteIds,
+  );
+  for (const r of rows) out.set(r.id, { title: r.title, text: r.content_text ?? "" });
+  return out;
+}

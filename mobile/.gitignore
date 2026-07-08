@@ -20,6 +20,10 @@ web-build/
 .build/
 .swiftpm/
 
+# Real-corpus test fixture — regenerated locally from your own cairn.db by
+# scripts/export-notes-fixture.sh. Never committed (contains private note text).
+modules/apple-embeddings/tests/Tests/EmbeddingLiveTests/Fixtures/real_notes.json
+
 # Metro
 .metro-health-check*
 

@@ -29,6 +29,7 @@ import {
   embeddedNoteIds,
   clearAllEmbeddings,
   noteTitleById,
+  noteTextByIds,
   getNoteForEmbedding,
   listWorkspaceIds,
   type EmbeddableNote,
@@ -166,6 +167,49 @@ function displayScore(centered: number): number {
   // A strong match centres around ~0.4–0.8; scale so 0.5 → ~0.85, 0.8 → ~1.0.
   const scaled = Math.min(1, centered / 0.8);
   return Math.round(scaled * 1000) / 1000;
+}
+
+// --- lexical (keyword) scoring for hybrid search --------------------------
+
+// Mean-pooled contextual embeddings capture broad topic/style but not keyword
+// salience, so on a homogeneous corpus pure cosine buries the obviously-correct
+// note (verified on the real 70-note DB: "how does semantic search work" ranked
+// the semantic-search note 36th). Production semantic search is therefore hybrid
+// — dense (vectors) + sparse (keywords). We blend a title-weighted lexical score
+// with the centred cosine; α=SEMANTIC_WEIGHT was tuned on the real corpus so
+// every query with a clear target note ranks it #1.
+const SEMANTIC_WEIGHT = 0.5; // weight on the dense (embedding) score; 1-α on lexical
+
+const STOPWORDS = new Set([
+  "the", "and", "for", "how", "does", "did", "was", "were", "are", "you", "your",
+  "with", "what", "why", "who", "can", "our", "this", "that", "into", "from",
+  "work", "works", "use", "used", "using", "get", "got", "has", "have", "a", "an",
+]);
+
+/** Distinct, meaningful (>2 chars, non-stopword) lowercased query terms. */
+function queryTerms(query: string): string[] {
+  const seen = new Set<string>();
+  for (const raw of query.toLowerCase().split(/[^a-z0-9]+/)) {
+    if (raw.length > 2 && !STOPWORDS.has(raw)) seen.add(raw);
+  }
+  return [...seen];
+}
+
+/**
+ * Title-weighted lexical score in [0,1]: each query term matched in the note
+ * title counts double, in the body once. This is what lets a note literally
+ * titled "…semantic search" win the query "how does semantic search work".
+ */
+function lexicalScore(terms: string[], title: string, body: string): number {
+  if (terms.length === 0) return 0;
+  const t = title.toLowerCase();
+  const b = body.toLowerCase();
+  let score = 0;
+  for (const term of terms) {
+    if (t.includes(term)) score += 2;
+    else if (b.includes(term)) score += 1;
+  }
+  return score / (terms.length * 2);
 }
 
 function averageAndNormalise(vecs: Float32Array[]): Float32Array {
@@ -369,24 +413,51 @@ export async function semanticSearch(
 
   const cq = centerAndNormalise(qvec, centroid);
 
-  const best = new Map<string, { score: number; sectionTitle: string }>();
+  // Best (highest) centred-cosine section score per note.
+  const bestSem = new Map<string, { score: number; sectionTitle: string }>();
   for (const p of parsed) {
     const score = dot(cq, centerAndNormalise(p.vec, centroid));
-    const prev = best.get(p.noteId);
+    const prev = bestSem.get(p.noteId);
     if (!prev || score > prev.score) {
-      best.set(p.noteId, { score, sectionTitle: p.sectionTitle });
+      bestSem.set(p.noteId, { score, sectionTitle: p.sectionTitle });
     }
   }
+  if (bestSem.size === 0) return [];
 
-  return [...best.entries()]
-    .map(([noteId, v]) => ({
-      noteId,
-      title: noteTitleById(noteId),
-      sectionTitle: v.sectionTitle,
-      score: displayScore(v.score),
-    }))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, k);
+  // Hybrid re-rank: blend the dense (embedding) score with a title-weighted
+  // lexical score. Pure cosine alone buries the obviously-correct note on a
+  // homogeneous corpus (see lexicalScore comment); the blend fixes that.
+  // Min-max normalise the semantic scores across candidate notes so they sit in
+  // the same 0–1 range as the lexical score before mixing.
+  const semScores = [...bestSem.values()].map((v) => v.score);
+  const lo = Math.min(...semScores);
+  const hi = Math.max(...semScores);
+  const span = Math.max(hi - lo, 1e-6);
+
+  const noteIds = [...bestSem.keys()];
+  const texts = noteTextByIds(noteIds);
+  const terms = queryTerms(q);
+
+  return noteIds
+    .map((noteId) => {
+      const sem = bestSem.get(noteId)!;
+      const semN = (sem.score - lo) / span;
+      const info2 = texts.get(noteId);
+      const lex = lexicalScore(terms, info2?.title ?? "", info2?.text ?? "");
+      const blended = SEMANTIC_WEIGHT * semN + (1 - SEMANTIC_WEIGHT) * lex;
+      return {
+        noteId,
+        title: noteTitleById(noteId),
+        sectionTitle: sem.sectionTitle,
+        // Display uses the raw centred cosine (a real similarity the user can
+        // reason about); ranking uses the blended score.
+        score: displayScore(sem.score),
+        _rank: blended,
+      };
+    })
+    .sort((a, b) => b._rank - a._rank)
+    .slice(0, k)
+    .map(({ _rank, ...hit }) => hit);
 }
 
 // --- semantic graph edges --------------------------------------------------

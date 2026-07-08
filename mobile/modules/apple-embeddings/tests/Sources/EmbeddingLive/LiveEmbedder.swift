@@ -53,3 +53,63 @@ public struct LiveEmbedder {
     EmbeddingMath.dot(a, b)
   }
 }
+
+// MARK: - Full-pipeline replica (matches src/notes/embeddings.ts)
+
+/// A note section as produced by splitIntoSections.
+public struct NoteSection {
+  public let title: String
+  public let text: String
+}
+
+/// A raw note row exported from the app DB (id/title/content markdown).
+public struct RawNote: Decodable {
+  public let id: String
+  public let title: String
+  public let content: String
+}
+
+/// Faithful Swift port of the app's markdown pipeline + centring search, so a
+/// test can run the EXACT algorithm the device runs, on the EXACT note text.
+public enum Pipeline {
+  /// Port of splitIntoSections in embeddings.ts: split on `#`/`##` headers.
+  public static func splitIntoSections(noteTitle: String, content: String) -> [NoteSection] {
+    let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+    if trimmed.isEmpty { return [] }
+    var sections: [NoteSection] = []
+    var currentTitle = noteTitle.isEmpty ? "Untitled" : noteTitle
+    var currentLines: [String] = []
+    func flush() {
+      let text = currentLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+      if !text.isEmpty { sections.append(NoteSection(title: currentTitle, text: text)) }
+    }
+    for line in trimmed.components(separatedBy: "\n") {
+      // Match ^(#{1,6})\s+(.+)$ but only split on level 1–2 headers.
+      if let hashRange = line.range(of: "^#{1,6}\\s+", options: .regularExpression) {
+        let hashes = line[line.startIndex..<hashRange.upperBound].prefix { $0 == "#" }.count
+        if hashes <= 2 {
+          flush()
+          currentTitle = String(line[hashRange.upperBound...]).trimmingCharacters(in: .whitespaces)
+          currentLines = []
+          continue
+        }
+      }
+      currentLines.append(line)
+    }
+    flush()
+    if sections.isEmpty { sections.append(NoteSection(title: noteTitle.isEmpty ? "Untitled" : noteTitle, text: trimmed)) }
+    return sections
+  }
+
+  /// Centre a vector by the corpus centroid and renormalise (matches
+  /// centerAndNormalise in embeddings.ts).
+  public static func centerAndNormalise(_ v: [Double], centroid: [Double]) -> [Double] {
+    var out = [Double](repeating: 0, count: v.count)
+    var norm = 0.0
+    for i in 0..<v.count { out[i] = v[i] - centroid[i]; norm += out[i] * out[i] }
+    norm = norm.squareRoot()
+    if norm > 1e-9 { for i in 0..<out.count { out[i] /= norm } }
+    return out
+  }
+}
+

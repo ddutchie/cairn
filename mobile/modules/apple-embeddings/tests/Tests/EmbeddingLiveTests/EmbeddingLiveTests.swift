@@ -190,4 +190,222 @@ final class LiveEmbeddingTests: XCTestCase {
     print(String(format: "  mean spread: withPrefix=%.4f  noPrefix=%.4f", withPrefix.spread, noPrefix.spread))
     print("  allCorrect: withPrefix=\(withPrefix.allCorrect) noPrefix=\(noPrefix.allCorrect)")
   }
+
+  // MARK: - Real DB corpus
+
+  /// Load the note corpus. Prefers the gitignored real_notes.json (your full
+  /// cairn.db export via scripts/export-notes-fixture.sh) sitting next to this
+  /// file; falls back to the committed anonymised sample_notes.json so the test
+  /// always runs on any machine / CI.
+  private func loadRealNotes() throws -> (notes: [RawNote], usingReal: Bool) {
+    // real_notes.json lives beside this source file (Fixtures/ subdir).
+    let here = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+    let realURL = here.appendingPathComponent("Fixtures/real_notes.json")
+    if FileManager.default.fileExists(atPath: realURL.path) {
+      let notes = try JSONDecoder().decode([RawNote].self, from: Data(contentsOf: realURL))
+      if !notes.isEmpty { return (notes, true) }
+    }
+    guard let url = Bundle.module.url(forResource: "sample_notes", withExtension: "json") else {
+      throw XCTSkip("no notes fixture available")
+    }
+    return (try JSONDecoder().decode([RawNote].self, from: Data(contentsOf: url)), false)
+  }
+
+  /// A pre-embedded corpus: one entry per note SECTION (best-per-note is taken
+  /// at query time, matching semanticSearch).
+  private struct Corpus {
+    let sectionVecs: [(noteId: String, title: String, vec: [Double])]
+    let centroid: [Double]
+  }
+
+  private func embedCorpus(_ e: LiveEmbedder, _ notes: [RawNote]) -> Corpus {
+    var sectionVecs: [(noteId: String, title: String, vec: [Double])] = []
+    for n in notes {
+      for sec in Pipeline.splitIntoSections(noteTitle: n.title, content: n.content) {
+        let text = LiveEmbedder.sectionText(noteTitle: n.title, sectionTitle: sec.title, body: sec.text)
+        if let v = e.embed(text) { sectionVecs.append((n.id, n.title, v)) }
+      }
+    }
+    let dim = e.dim
+    var centroid = [Double](repeating: 0, count: dim)
+    for s in sectionVecs { for i in 0..<dim { centroid[i] += s.vec[i] } }
+    for i in 0..<dim { centroid[i] /= Double(sectionVecs.count) }
+    return Corpus(sectionVecs: sectionVecs, centroid: centroid)
+  }
+
+  /// Run the exact centring search and return ranked (title, score) best-per-note.
+  private func search(_ e: LiveEmbedder, _ corpus: Corpus, query: String) -> [(title: String, score: Double)] {
+    let cq = Pipeline.centerAndNormalise(e.embed(query)!, centroid: corpus.centroid)
+    var best: [String: (title: String, score: Double)] = [:]
+    for s in corpus.sectionVecs {
+      let score = EmbeddingMath.dot(cq, Pipeline.centerAndNormalise(s.vec, centroid: corpus.centroid))
+      if let prev = best[s.noteId], prev.score >= score { continue }
+      best[s.noteId] = (s.title, score)
+    }
+    return best.values.map { ($0.title, $0.score) }.sorted { $0.score > $1.score }
+  }
+
+  /// The APP's hybrid re-rank (mirrors semanticSearch in embeddings.ts): blend
+  /// min-max-normalised centred cosine with a title-weighted lexical score at
+  /// SEMANTIC_WEIGHT. Returns note ids ranked best-first.
+  private func hybridRanked(_ e: LiveEmbedder, _ corpus: Corpus, _ notes: [RawNote],
+                            query: String, semanticWeight: Double = 0.5) -> [String] {
+    var titleById: [String: String] = [:], bodyById: [String: String] = [:]
+    for n in notes { titleById[n.id] = n.title; bodyById[n.id] = n.content }
+    let cq = Pipeline.centerAndNormalise(e.embed(query)!, centroid: corpus.centroid)
+    var sem: [String: Double] = [:]
+    for s in corpus.sectionVecs {
+      let score = EmbeddingMath.dot(cq, Pipeline.centerAndNormalise(s.vec, centroid: corpus.centroid))
+      sem[s.noteId] = max(sem[s.noteId] ?? -2, score)
+    }
+    let lo = sem.values.min() ?? 0, hi = sem.values.max() ?? 1
+    let span = max(hi - lo, 1e-6)
+    return sem.map { (id, s) -> (id: String, score: Double) in
+      let semN = (s - lo) / span
+      let lex = titleWeightedLexical(query: query, title: titleById[id] ?? "", body: bodyById[id] ?? "")
+      return (id, semanticWeight * semN + (1 - semanticWeight) * lex)
+    }.sorted { $0.score > $1.score }.map { $0.id }
+  }
+
+  /// THE reported bug, tested against the REAL 70-note corpus with the app's
+  /// HYBRID pipeline: searching "How does semantic search work" must rank the
+  /// on-device-semantic-search note first. Prints both the pure-semantic and
+  /// hybrid rankings so a regression is easy to diagnose.
+  func testRealCorpusRanksSemanticSearchNoteForItsQuery() throws {
+    let e = try makeEmbedder()
+    let (notes, usingReal) = try loadRealNotes()
+    print("  loaded \(notes.count) notes (\(usingReal ? "REAL cairn.db export" : "committed sample"))")
+    let corpus = embedCorpus(e, notes)
+    print("  embedded \(corpus.sectionVecs.count) sections")
+
+    let query = "How does semantic search work"
+
+    // Pure semantic (what pure cosine does — for the diagnostic print).
+    let pure = search(e, corpus, query: query)
+    let pureRank = (pure.firstIndex { $0.title.lowercased().contains("semantic search") } ?? -1) + 1
+    print("  pure-semantic rank of semantic-search note: \(pureRank) of \(pure.count)")
+
+    // Hybrid (what the app now does).
+    let idByTitle = Dictionary(notes.map { ($0.title, $0.id) }, uniquingKeysWith: { a, _ in a })
+    let wantId = idByTitle.first { $0.key.lowercased().contains("semantic search") }?.value
+    let ranked = hybridRanked(e, corpus, notes, query: query)
+    print("  === hybrid ranking (top 5) for: \(query) ===")
+    for (i, id) in ranked.prefix(5).enumerated() {
+      let title = notes.first { $0.id == id }?.title ?? id
+      print(String(format: "    %2d. %@", i + 1, title))
+    }
+    let hybridRank = (ranked.firstIndex { $0 == wantId } ?? -1) + 1
+    print("  hybrid rank of semantic-search note: \(hybridRank) of \(ranked.count)")
+    XCTAssertEqual(hybridRank, 1, "Hybrid search should rank the semantic-search note #1 for its own query")
+  }
+
+  /// Broader probe: several natural queries against the real corpus with the
+  /// hybrid pipeline. Every query whose target note exists should rank it #1.
+  func testRealCorpusMultiQueryDiagnostic() throws {
+    let e = try makeEmbedder()
+    let (notes, usingReal) = try loadRealNotes()
+    let corpus = embedCorpus(e, notes)
+
+    // (query, substring of the expected note's title). Only queries with a
+    // clear single target are asserted. Skipped if the corpus has no such note
+    // (e.g. the sample lacks a sync note under this exact title).
+    let cases: [(q: String, expect: String)] = [
+      ("How does semantic search work", "semantic search"),
+      ("on-device embeddings apple", "semantic search"),
+      ("sync conflict resolution", "sync"),
+    ]
+    // The real corpus is where correctness matters (strict #1). The tiny sample
+    // is only a smoke test — 8 notes don't separate as cleanly — so allow top-3.
+    let maxRank = usingReal ? 1 : 3
+    for c in cases {
+      // Candidate target notes: any whose title contains the expected term
+      // (there can be several, e.g. multiple "Sync …" notes). We check that the
+      // BEST-ranked such note lands within maxRank — i.e. a relevant note
+      // surfaces at the top, which is the actual UX guarantee.
+      let wantIds = Set(notes.filter { $0.title.lowercased().contains(c.expect) }.map { $0.id })
+      guard !wantIds.isEmpty else {
+        print("  (skip) no target note for: \(c.q)")
+        continue
+      }
+      let ranked = hybridRanked(e, corpus, notes, query: c.q)
+      let bestRank = (ranked.firstIndex { wantIds.contains($0) } ?? -1) + 1
+      let top = notes.first { $0.id == ranked.first }?.title ?? "?"
+      print(String(format: "  %-34@ → best target rank %d (top: %@)", c.q as NSString, bestRank, top as NSString))
+      XCTAssertTrue(bestRank >= 1 && bestRank <= maxRank, "Best target rank \(bestRank) > \(maxRank) for: \(c.q)")
+    }
+  }
+
+  // MARK: - Hybrid (lexical + semantic) experiment
+
+  private static let stopwords: Set<String> = [
+    "the", "and", "for", "how", "does", "did", "was", "were", "are", "you", "your",
+    "with", "what", "why", "who", "can", "our", "this", "that", "into", "from",
+    "work", "works", "use", "used", "using", "get", "got", "has", "have",
+  ]
+
+  /// Title-weighted lexical score: query keywords (stopwords removed) matched
+  /// against the note TITLE count 2×, body 1×. This is what makes a note called
+  /// literally "…semantic search" win the query "how does semantic search work".
+  private func titleWeightedLexical(query: String, title: String, body: String) -> Double {
+    let terms = Set(
+      query.lowercased()
+        .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+        .map(String.init)
+        .filter { $0.count > 2 && !Self.stopwords.contains($0) }
+    )
+    if terms.isEmpty { return 0 }
+    let t = title.lowercased(), b = body.lowercased()
+    var score = 0.0
+    for term in terms {
+      if t.contains(term) { score += 2 }
+      else if b.contains(term) { score += 1 }
+    }
+    return score / (Double(terms.count) * 2) // 0..1
+  }
+
+  /// Experiment: blend centred-cosine with a lexical keyword score and measure
+  /// how the correct note ranks for each query as we vary the blend weight.
+  /// Pure semantic (alpha=1) is the current app behaviour; this shows whether a
+  /// hybrid rescues the keyword-heavy queries that pure embeddings botch.
+  func testHybridLexicalSemanticRanking() throws {
+    let e = try makeEmbedder()
+    let (notes, _) = try loadRealNotes()
+    let corpus = embedCorpus(e, notes)
+    // Map title → id so we can locate the expected note.
+    let idByTitle = Dictionary(notes.map { ($0.title, $0.id) }, uniquingKeysWith: { a, _ in a })
+    var titleById: [String: String] = [:], bodyById: [String: String] = [:]
+    for n in notes { titleById[n.id] = n.title; bodyById[n.id] = n.content }
+
+    let cases: [(q: String, expectContains: String)] = [
+      ("How does semantic search work", "semantic search"),
+      ("on-device embeddings apple", "semantic search"),
+      ("kanban board columns", "kanban"),
+      ("sync conflict resolution", "sync"),
+    ]
+
+    for alpha in [1.0, 0.7, 0.5, 0.3] {
+      print(String(format: "  ===== alpha(semantic)=%.1f  beta(title-lexical)=%.1f =====", alpha, 1 - alpha))
+      for c in cases {
+        let cq = Pipeline.centerAndNormalise(e.embed(c.q)!, centroid: corpus.centroid)
+        // best semantic per note
+        var sem: [String: Double] = [:]
+        for s in corpus.sectionVecs {
+          let score = EmbeddingMath.dot(cq, Pipeline.centerAndNormalise(s.vec, centroid: corpus.centroid))
+          sem[s.noteId] = max(sem[s.noteId] ?? -2, score)
+        }
+        // Normalise semantic to 0..1 across the corpus so it blends fairly with
+        // the 0..1 lexical score.
+        let lo = sem.values.min() ?? 0, hi = sem.values.max() ?? 1
+        let span = max(hi - lo, 1e-6)
+        let blended: [(id: String, score: Double)] = sem.map { (id, s) in
+          let semN = (s - lo) / span
+          let lex = titleWeightedLexical(query: c.q, title: titleById[id] ?? "", body: bodyById[id] ?? "")
+          return (id, alpha * semN + (1 - alpha) * lex)
+        }.sorted { $0.score > $1.score }
+        let wantId = idByTitle.first { $0.key.lowercased().contains(c.expectContains) }?.value
+        let rank = (blended.firstIndex { $0.id == wantId } ?? -1) + 1
+        print(String(format: "    %-34@ → rank %d", c.q as NSString, rank))
+      }
+    }
+  }
 }
