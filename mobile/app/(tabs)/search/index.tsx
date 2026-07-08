@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from "react";
-import { Text, View, FlatList, StyleSheet, RefreshControl, Pressable, Alert } from "react-native";
-import { Stack, useRouter, useFocusEffect } from "expo-router";
+import { Text, View, FlatList, StyleSheet, RefreshControl, Pressable, Alert, Keyboard } from "react-native";
+import { Stack, useRouter, useFocusEffect, type Href } from "expo-router";
 import type { SearchBarCommands } from "react-native-screens";
 import { searchNotes, searchTasks, listWorkspaceIds, embeddingIndexStats, type NoteRow, type CardRow } from "@/db/queries";
 import { PressableScale } from "@/components/PressableScale";
@@ -114,6 +114,20 @@ export default function SearchScreen() {
     }, []),
   );
 
+  // Navigate to a result, dismissing the keyboard + blurring the native search
+  // bar FIRST. Leaving the search bar focused while pushing a detail screen
+  // makes it re-present its focused/keyboard state on return, so the header
+  // animates open → snaps closed → reopens (the visible jump). Blurring before
+  // the push means the header is already at rest when we come back.
+  const openResult = useCallback(
+    (href: Href) => {
+      searchRef.current?.blur();
+      Keyboard.dismiss();
+      router.push(href);
+    },
+    [router],
+  );
+
   // Recompute index stats (indexed vs total notes) across all workspaces.
   const refreshStats = useCallback(() => {
     let live = 0;
@@ -223,7 +237,7 @@ export default function SearchScreen() {
             ) : undefined
           }
           renderItem={({ item }) => (
-            <PressableScale style={[styles.row, elevation.sm]} onPress={() => router.push({ pathname: "/note/[id]", params: { id: item.noteId, back: "Search" } })}>
+            <PressableScale style={[styles.row, elevation.sm]} onPress={() => openResult({ pathname: "/note/[id]", params: { id: item.noteId, back: "Search" } })}>
               <View style={styles.taskTitleRow}>
                 <Text style={styles.title} numberOfLines={1}>
                   {item.title || "Untitled"}
@@ -244,7 +258,7 @@ export default function SearchScreen() {
           keyExtractor={(n) => n.id}
           {...listProps}
           renderItem={({ item }) => (
-            <PressableScale style={[styles.row, elevation.sm]} onPress={() => router.push({ pathname: "/note/[id]", params: { id: item.id, back: "Search" } })}>
+            <PressableScale style={[styles.row, elevation.sm]} onPress={() => openResult({ pathname: "/note/[id]", params: { id: item.id, back: "Search" } })}>
               <Text style={styles.title} numberOfLines={1}>
                 {item.title || "Untitled"}
               </Text>
@@ -260,7 +274,7 @@ export default function SearchScreen() {
           keyExtractor={(c) => c.id}
           {...listProps}
           renderItem={({ item }) => (
-            <PressableScale style={[styles.row, elevation.sm]} onPress={() => router.push({ pathname: "/card/[id]", params: { id: item.id, back: "Search" } })}>
+            <PressableScale style={[styles.row, elevation.sm]} onPress={() => openResult({ pathname: "/card/[id]", params: { id: item.id, back: "Search" } })}>
               <View style={styles.taskTitleRow}>
                 <View style={[styles.priorityDot, { backgroundColor: PRIORITY_COLOR[item.priority as keyof typeof PRIORITY_COLOR] ?? t.textTertiary }]} />
                 <Text style={styles.title} numberOfLines={1}>
