@@ -42,10 +42,11 @@ export function NoteDetailScreen({ nested = false }: { nested?: boolean }) {
   const router = useRouter();
   const t = useTheme();
   const insets = useSafeAreaInsets();
-  // Bottom padding so the note body scrolls clear of the tab bar (present only
-  // in the nested Projects-tab flow) + home indicator; content still scrolls
-  // behind the translucent bar. Root-stack copies have no tab bar.
-  const viewBottomPad = 40 + insets.bottom + (nested ? TAB_BAR_BASE : 0);
+  // Bottom padding so the note body scrolls clear of the bottom safe area.
+  // `insets.bottom` already includes the native tab bar on a tab screen (see
+  // TAB_BAR_BASE doc), so we no longer add it separately; the +40 is scroll
+  // slack so the last line isn't flush against the bar / home indicator.
+  const viewBottomPad = 40 + insets.bottom;
   const [note, setNote] = useState(() => (id ? getNote(id) : null));
 
   const [editing, setEditing] = useState(false);

@@ -54,11 +54,11 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
   const router = useRouter();
   const t = useTheme();
   const insets = useSafeAreaInsets();
-  // Bottom padding so the list can scroll its last rows clear of the tab bar
-  // (present only in the nested Projects-tab flow) + home indicator, while the
-  // translucent bar still shows content scrolling behind it. Root-stack copies
-  // have no tab bar, so they only need the home-indicator inset.
-  const listBottomPad = 24 + insets.bottom + (nested ? TAB_BAR_BASE : 0);
+  // Bottom padding so the list can scroll its last rows clear of the bottom
+  // safe area. `insets.bottom` already includes the native tab bar on a tab
+  // screen (see TAB_BAR_BASE doc), so we no longer add it separately; the +24
+  // is scroll slack above the bar / home indicator.
+  const listBottomPad = 24 + insets.bottom;
   const [tab, setTab] = useState<Tab>("notes");
   const [project, setProject] = useState(id ? getProject(id) : null);
   const [notes, setNotes] = useState<NoteRow[]>([]);
