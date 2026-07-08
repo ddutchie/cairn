@@ -16,6 +16,7 @@ import { Stack, useRouter, useFocusEffect } from "expo-router";
 import { CheckCircle, Bot, User, Send, ImagePlus, X, Settings2 } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { TabScreen } from "@/components/TabScreen";
+import { EmptyState } from "@/components/EmptyState";
 import { GlassBar, glassActive } from "@/components/GlassBar";
 import { MarkdownView } from "@/components/MarkdownView";
 import { ICON_DELETE, ICON_AI } from "@/components/toolbar-icons";
@@ -267,25 +268,24 @@ export default function ChatScreen() {
         <ScrollView
           ref={scrollRef}
           style={StyleSheet.absoluteFill}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, messages.length === 0 && styles.listEmpty]}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="interactive"
           onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
         >
           {messages.length === 0 ? (
-            <View style={styles.empty}>
-              <Text style={styles.emptyTitle}>Ask Cairn</Text>
-              <Text style={styles.emptyHint}>
-                Ask about your notes, or tell the assistant to create or edit them. Changes sync to your
-                desktop.
-              </Text>
-              {!configured && (
+            <EmptyState
+              title="Ask Cairn"
+              subtitle="Ask about your notes, or tell the assistant to create or edit them. Changes sync to your desktop."
+              align="top"
+            >
+              {!configured ? (
                 <Pressable style={styles.configureBtn} onPress={() => router.push("/settings/ai")}>
                   <Settings2 size={14} color={t.accentFg} />
                   <Text style={styles.configureBtnText}>Set up AI</Text>
                 </Pressable>
-              )}
-            </View>
+              ) : null}
+            </EmptyState>
           ) : (
             messages.map((m, i) => <Bubble key={i} m={m} t={t} styles={styles} />)
           )}
@@ -392,9 +392,9 @@ const Bubble = memo(function Bubble({ m, t, styles }: { m: UiMessage; t: Theme; 
 function makeStyles(t: Theme) {
   return StyleSheet.create({
     list: { padding: 14, paddingBottom: 20 },
-    empty: { alignItems: "center", justifyContent: "center", paddingVertical: 60, paddingHorizontal: 24 },
-    emptyTitle: { ...typeScale.title, fontWeight: "700", color: t.textSecondary },
-    emptyHint: { ...typeScale.caption, color: t.textTertiary, textAlign: "center", marginTop: 8, lineHeight: 19 },
+    // Grow to fill the viewport when empty so the branded EmptyState's top-bias
+    // measures against the full content area (below the header).
+    listEmpty: { flexGrow: 1 },
     configureBtn: {
       flexDirection: "row",
       alignItems: "center",

@@ -32,7 +32,7 @@ export function EmptyState({
 }: {
   title?: string;
   subtitle?: string;
-  /** Custom body below the brand block (overrides title/subtitle if provided). */
+  /** Optional action(s) rendered below the title/subtitle (e.g. a button). */
   children?: ReactNode;
   /** Smaller icon + tighter spacing, for overlays over a list. */
   compact?: boolean;
@@ -52,12 +52,11 @@ export function EmptyState({
         {APP_VERSION ? <Text style={styles.version}>v{APP_VERSION}</Text> : null}
       </View>
 
-      {children ?? (
-        <View style={styles.content}>
-          {title ? <Text style={styles.title}>{title}</Text> : null}
-          {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
-        </View>
-      )}
+      <View style={styles.content}>
+        {title ? <Text style={styles.title}>{title}</Text> : null}
+        {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+        {children ? <View style={styles.action}>{children}</View> : null}
+      </View>
     </View>
   );
 }
@@ -74,5 +73,6 @@ function makeStyles(t: Theme) {
     content: { alignItems: "center", maxWidth: 320 },
     title: { ...typeScale.title, color: t.textSecondary, textAlign: "center" },
     subtitle: { ...typeScale.caption, color: t.textTertiary, textAlign: "center", marginTop: 8, lineHeight: 20 },
+    action: { marginTop: 16, alignItems: "center" },
   });
 }
