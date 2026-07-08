@@ -379,6 +379,7 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
     const electron = window.electron;
     if (!electron) return;
     const unsub = electron.chat.onToolCall((e) => {
+      if (e.threadId != null && e.threadId !== "spawn-tasks") return;
       if (e.tool === "create_task") {
         setSpawnToolCalls((prev) => [...prev, e.label]);
       }
@@ -399,7 +400,12 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
     setSpawnToolCalls([]);
     try {
       const result = await new Promise<{ content: string }>((resolve) => {
-        const unsub = electron.chat.onDone((e) => { unsub(); resolve(e); });
+        const unsub = electron.chat.onDone((e) => {
+          // The chat channel is shared — only resolve on our own spawn stream.
+          if (e.threadId != null && e.threadId !== "spawn-tasks") return;
+          unsub();
+          resolve(e);
+        });
         electron.chat.stream({
           message: `Spawn tasks from the note with id="${note.id}" into column "${backlogCol.id}". Use the spawn_tasks_from_note tool.`,
           threadId: "spawn-tasks",
