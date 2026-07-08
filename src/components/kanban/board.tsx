@@ -12,7 +12,9 @@ import {
   type DragEndEvent,
   type DragOverEvent,
   type DragMoveEvent,
+  pointerWithin,
   closestCorners,
+  type CollisionDetection,
 } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -31,6 +33,115 @@ import { KanbanCard } from "./card";
 import { CardDetailModal } from "./card-detail";
 import type { TaskCard, BoardColumn } from "@/types";
 import { getZoneHit, resolveCardDrop } from "./board-dnd";
+
+/**
+ * Collision detection for the board.
+ *
+ * We prefer `pointerWithin` because it resolves the drop target from the real
+ * pointer position rather than the dragged item's *translated rect*. dnd-kit's
+ * translated-rect tracking does not account for auto-scroll of the horizontal
+ * board container (see the livePointer note below), which made rect-based
+ * strategies like closestCorners resolve `over` to the wrong / furthest columns
+ * while the board scrolled. `pointerWithin` sidesteps that entirely.
+ *
+ * When the pointer sits in a gap between columns (inside no droppable),
+ * pointerWithin returns nothing — we fall back to closestCorners so a drop
+ * still lands on the nearest column instead of being dropped.
+ */
+const boardCollision: CollisionDetection = (args) => {
+  const pointerHits = pointerWithin(args);
+  if (pointerHits.length > 0) return pointerHits;
+  return closestCorners(args);
+};
+
+interface BoardColumnItemProps {
+  column: BoardColumn;
+  cards: TaskCard[];
+  archivedCards: TaskCard[];
+  allCardsCount: number;
+  activeProjectId: string;
+  isDragOver: boolean;
+  isColumnDragging: boolean;
+  isHighlighted: boolean;
+  onOpenCard: (cardId: string) => void;
+  createCard: (columnId: string, projectId: string, title: string, extras?: { dueDate?: string; assignee?: string }) => void;
+  updateColumn: (columnId: string, patch: { name?: string; cardLimit?: number }) => void;
+  deleteColumn: (columnId: string) => void;
+  restoreCard: (cardId: string) => void;
+  archiveAllDoneCards: (columnId: string) => void;
+}
+
+/**
+ * Per-column wrapper that memoizes the column and stabilizes its callbacks with
+ * useCallback (keyed to the column id). Because the board re-renders on every
+ * drag-hover (`overId` change), passing inline closures + fresh arrays straight
+ * to KanbanColumn would re-render *every* column each pointer move → hitches.
+ * With stable props, React.memo(KanbanColumn) only re-renders the column whose
+ * isDragOver/isColumnDragging/isHighlighted/cards actually changed.
+ */
+const BoardColumnItem = React.memo(function BoardColumnItem({
+  column, cards, archivedCards, allCardsCount, activeProjectId,
+  isDragOver, isColumnDragging, isHighlighted,
+  onOpenCard, createCard, updateColumn, deleteColumn, restoreCard, archiveAllDoneCards,
+}: BoardColumnItemProps) {
+  const columnId = column.id;
+  const handleAddCard = useCallback(
+    (data: { title: string; dueDate?: string; assignee?: string }) =>
+      createCard(columnId, activeProjectId, data.title, { dueDate: data.dueDate, assignee: data.assignee }),
+    [createCard, columnId, activeProjectId]
+  );
+  const handleRename   = useCallback((name: string) => updateColumn(columnId, { name }), [updateColumn, columnId]);
+  const handleSetLimit = useCallback((limit: number | null) => updateColumn(columnId, { cardLimit: limit ?? undefined }), [updateColumn, columnId]);
+  const handleDelete   = useCallback(() => deleteColumn(columnId), [deleteColumn, columnId]);
+  const handleRestore  = useCallback((cardId: string) => restoreCard(cardId), [restoreCard]);
+  const handleArchiveAllDone = useCallback(() => archiveAllDoneCards(columnId), [archiveAllDoneCards, columnId]);
+
+  return (
+    <KanbanColumn
+      column={column}
+      cards={cards}
+      archivedCards={archivedCards}
+      onCardClick={onOpenCard}
+      onAddCard={handleAddCard}
+      onRename={handleRename}
+      onSetLimit={handleSetLimit}
+      onDelete={handleDelete}
+      onRestoreCard={handleRestore}
+      onArchiveAllDone={column.type === "done" && allCardsCount > 0 ? handleArchiveAllDone : undefined}
+      isDragOver={isDragOver}
+      isColumnDragging={isColumnDragging}
+      isHighlighted={isHighlighted}
+    />
+  );
+}, arePropsEqual);
+
+/** Shallow-equal check for a card list by element reference (store returns a
+ *  fresh array each call, but unchanged card objects keep their identity). */
+function cardsEqual(a: TaskCard[], b: TaskCard[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+function arePropsEqual(prev: BoardColumnItemProps, next: BoardColumnItemProps): boolean {
+  return (
+    prev.column === next.column &&
+    prev.activeProjectId === next.activeProjectId &&
+    prev.allCardsCount === next.allCardsCount &&
+    prev.isDragOver === next.isDragOver &&
+    prev.isColumnDragging === next.isColumnDragging &&
+    prev.isHighlighted === next.isHighlighted &&
+    prev.onOpenCard === next.onOpenCard &&
+    prev.createCard === next.createCard &&
+    prev.updateColumn === next.updateColumn &&
+    prev.deleteColumn === next.deleteColumn &&
+    prev.restoreCard === next.restoreCard &&
+    prev.archiveAllDoneCards === next.archiveAllDoneCards &&
+    cardsEqual(prev.cards, next.cards) &&
+    cardsEqual(prev.archivedCards, next.archivedCards)
+  );
+}
 
 export function KanbanBoard() {
   const {
@@ -152,7 +263,17 @@ export function KanbanBoard() {
   }
 
   function handleDragOver(event: DragOverEvent) {
-    setOverId(event.over?.id as string ?? null);
+    const rawOverId = event.over?.id as string | undefined;
+    if (!rawOverId) { setOverId(null); return; }
+    // `over` may be a column id or a card id (pointerWithin returns the card
+    // when hovering one). Normalise to the containing column id so the column
+    // highlight (isDragOver === column.id) works in both cases.
+    const isColumn = columns.some((c) => c.id === rawOverId);
+    if (isColumn) { setOverId(rawOverId); return; }
+    const parentColumn = columns.find((c) =>
+      getColumnCards(c.id).some((card) => card.id === rawOverId)
+    );
+    setOverId(parentColumn?.id ?? rawOverId);
   }
 
   function handleDragCancel() {
@@ -305,7 +426,7 @@ export function KanbanBoard() {
     <>
       <DndContext
         sensors={sensors}
-        collisionDetection={closestCorners}
+        collisionDetection={boardCollision}
         onDragStart={handleDragStart}
         onDragMove={handleDragMove}
         onDragOver={handleDragOver}
@@ -439,20 +560,21 @@ export function KanbanBoard() {
                   : allCards;
                 return (
                   <div key={column.id} ref={(el) => { columnRefs.current[column.id] = el; }} className="flex-shrink-0 self-stretch">
-                    <KanbanColumn
+                    <BoardColumnItem
                       column={column}
                       cards={filteredCards}
                       archivedCards={getArchivedColumnCards(column.id)}
-                      onCardClick={(cardId) => setDetailCardId(cardId)}
-                      onAddCard={(data) => createCard(column.id, activeProjectId, data.title, { dueDate: data.dueDate, assignee: data.assignee })}
-                      onRename={(name) => updateColumn(column.id, { name })}
-                      onSetLimit={(limit) => updateColumn(column.id, { cardLimit: limit ?? undefined })}
-                      onDelete={() => deleteColumn(column.id)}
-                      onRestoreCard={(cardId) => restoreCard(cardId)}
-                      onArchiveAllDone={column.type === "done" && allCards.length > 0 ? () => archiveAllDoneCards(column.id) : undefined}
+                      allCardsCount={allCards.length}
+                      activeProjectId={activeProjectId}
                       isDragOver={overId === column.id}
                       isColumnDragging={activeColumn?.id === column.id}
                       isHighlighted={highlightedColumnId === column.id}
+                      onOpenCard={setDetailCardId}
+                      createCard={createCard}
+                      updateColumn={updateColumn}
+                      deleteColumn={deleteColumn}
+                      restoreCard={restoreCard}
+                      archiveAllDoneCards={archiveAllDoneCards}
                     />
                   </div>
                 );
@@ -488,7 +610,7 @@ export function KanbanBoard() {
               ref={dragOverlayRef}
               className="rotate-2 opacity-90 rounded-lg"
             >
-              <KanbanCard card={activeCard} isDragging onClick={() => {}} />
+              <KanbanCard card={activeCard} isDragging onOpenCard={() => {}} />
             </div>
           )}
           {activeColumn && (

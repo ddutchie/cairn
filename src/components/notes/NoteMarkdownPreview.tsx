@@ -157,7 +157,7 @@ function MarkdownImage({ src, alt, title, filePath, projectRoot, ...props }: Mar
   );
 }
 
-export function NoteMarkdownPreview({ content, className, filePath, projectRoot }: NoteMarkdownPreviewProps) {
+function NoteMarkdownPreviewImpl({ content, className, filePath, projectRoot }: NoteMarkdownPreviewProps) {
   const { rehypeCaptureLatex, rehypeMergedPass } = useMemo(() => makeLatexPlugins(), []);
 
   if (!content.trim()) {
@@ -238,3 +238,11 @@ export function NoteMarkdownPreview({ content, className, filePath, projectRoot 
     </div>
   );
 }
+
+/**
+ * Memoized: the markdown pipeline (react-markdown + remark/rehype/KaTeX) is
+ * expensive, and this renderer is used inside list items (e.g. Kanban cards)
+ * that re-render for reasons unrelated to their content. All props are
+ * primitives, so a shallow compare safely skips re-parsing identical content.
+ */
+export const NoteMarkdownPreview = React.memo(NoteMarkdownPreviewImpl);
