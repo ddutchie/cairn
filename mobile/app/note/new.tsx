@@ -90,6 +90,10 @@ export default function NewNote() {
           onSelectionChange={fmt.onSelectionChange}
           placeholder="Write in Markdown…"
           placeholderTextColor={t.textTertiary}
+          // Lock edits while an AI action is pending: onAIAction splices its
+          // reply into the body snapshot captured at call time, so edits made
+          // mid-request would be clobbered / spliced at stale offsets.
+          editable={!fmt.aiLoading}
           multiline
           textAlignVertical="top"
         />
