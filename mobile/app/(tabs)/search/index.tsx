@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react";
-import { Text, View, FlatList, StyleSheet, RefreshControl, Pressable, Alert, Keyboard } from "react-native";
+import { Text, View, FlatList, StyleSheet, RefreshControl, Pressable, Alert, Keyboard, useWindowDimensions } from "react-native";
 import { Stack, useRouter, useFocusEffect, type Href } from "expo-router";
 import type { SearchBarCommands } from "react-native-screens";
 import { searchNotes, searchTasks, listWorkspaceIds, embeddingIndexStats, type NoteRow, type CardRow } from "@/db/queries";
@@ -23,11 +23,6 @@ type Scope = "notes" | "tasks" | "semantic";
 const SEARCH_FIELD_H = 52;
 // Breathing room between the scope bar and the search field.
 const SCOPE_GAP = 8;
-// Approx height of the nav header + attached search bar (below the status-bar
-// safe-area inset). Used to carve the empty state clear of the header.
-const HEADER_SEARCH_H = 96;
-// Approx rendered height of the scope-switch bar (padding + button).
-const SCOPE_BAR_H = 40;
 
 /**
  * Search screen using the native iOS search bar (headerSearchBarOptions) — the
@@ -48,6 +43,14 @@ export default function SearchScreen() {
   const styles = useMemo(() => makeStyles(t), [t]);
   const searchRef = useRef<SearchBarCommands>(null);
   const insets = useSafeAreaInsets();
+  const { height: screenH } = useWindowDimensions();
+  // Match the chat empty state's icon position exactly. Chat's ScrollView fills
+  // the screen and its EmptyState biases 25% down, so its icon lands ~25.7% of
+  // the screen height from the top. Search's FlatList content box isn't the full
+  // screen height on iOS 27 (the search header/insets shrink it), so a relative
+  // 25% would land too high (behind the header). Anchor from the SCREEN TOP with
+  // the same fraction instead, so both screens match on any device.
+  const emptyTop = screenH * 0.257;
   const semanticAvailable = isAppleEmbeddingsSupported();
   // Monotonic token so a slow semantic query can't overwrite a newer one.
   const semanticSeq = useRef(0);
@@ -215,22 +218,14 @@ export default function SearchScreen() {
   // render behind it. With no query it's the branded resting state; during an
   // active search with no matches it's a light top-anchored text hint.
   const listEmpty = hasQuery ? (
-    <View style={[styles.emptyHint, { paddingTop: insets.top + HEADER_SEARCH_H }]} pointerEvents="none">
+    <View style={[styles.emptyHint, { paddingTop: emptyTop }]} pointerEvents="none">
       <Text style={styles.hint}>{emptyHint.primary}</Text>
       {emptyHint.secondary ? <Text style={styles.statHint}>{emptyHint.secondary}</Text> : null}
     </View>
   ) : (
-    <EmptyState
-      title={emptyHint.primary}
-      subtitle={emptyHint.secondary}
-      // Centre the branded state in the visible region — between the search
-      // header (top) and the pinned scope bar + tab bar (bottom) — so it sits
-      // like the other centred screens (e.g. chat), not top-pinned. We pass
-      // explicit offsets because on iOS 27 the list's automatic header inset
-      // isn't applied, so flexGrow fills the FULL frame (behind the header).
-      topOffset={insets.top + HEADER_SEARCH_H}
-      bottomOffset={tabBarClosedLift(insets.bottom) + SCOPE_BAR_H + SCOPE_GAP}
-    />
+    // topBias = screen-top-relative position matching chat's icon (~25.7% down),
+    // since the search list frame isn't the full screen on iOS 27.
+    <EmptyState title={emptyHint.primary} subtitle={emptyHint.secondary} align="top" topBias={emptyTop} />
   );
 
   const listProps = {
@@ -398,9 +393,8 @@ function makeStyles(t: Theme) {
     // Lets ListEmptyComponent fill the viewport so the branded state's top-bias
     // is measured against the full content area (below the header).
     listGrow: { flexGrow: 1 },
-    // Active-search "no matches" hint — top-anchored (paddingTop supplied
-    // inline from insets.top so it clears the header on iOS 27 where the list's
-    // automatic header inset doesn't apply) and clear of the keyboard.
+    // Active-search "no matches" hint — paddingTop supplied inline (emptyTop) so
+    // it matches the branded state and clears the header / keyboard.
     emptyHint: { flex: 1, alignItems: "center", paddingHorizontal: 32 },
     hint: { textAlign: "center", color: t.textTertiary },
     statHint: { ...typeScale.caption, textAlign: "center", color: t.textTertiary, marginTop: 8 },

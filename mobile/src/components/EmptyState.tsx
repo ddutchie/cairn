@@ -35,8 +35,7 @@ export function EmptyState({
   children,
   compact = false,
   align = "center",
-  topOffset,
-  bottomOffset,
+  topBias,
 }: {
   title?: string;
   subtitle?: string;
@@ -45,25 +44,17 @@ export function EmptyState({
   /** Smaller icon + tighter spacing, for overlays over a list. */
   compact?: boolean;
   /** "center" (default) fills and centres; "top" biases the content toward the
-   *  upper ~22% so it stays readable when a keyboard covers the lower half. */
+   *  upper third so it stays readable when a keyboard covers the lower half. */
   align?: "center" | "top";
-  /** Explicit top padding (px) — the header/safe-area region to stay clear of.
-   *  Use when the container's own top isn't reliable (e.g. a list whose
-   *  automatic header inset doesn't apply, as on iOS 27). With `bottomOffset`
-   *  the content CENTRES in the region between them (matching other centred
-   *  screens); alone with `align="top"` it just pins below the offset. */
-  topOffset?: number;
-  /** Explicit bottom padding (px) — the region occupied by pinned bottom
-   *  controls (scope bar, tab bar). Pair with `topOffset` to centre between. */
-  bottomOffset?: number;
+  /** Overrides the `align="top"` bias (default "25%"). Pass an absolute px value
+   *  when the container height can't be trusted (e.g. an iOS 27 search list
+   *  whose frame isn't the full screen) so the content lands at a screen-top-
+   *  relative position that matches other screens. */
+  topBias?: number | `${number}%`;
 }) {
   const t = useTheme();
   const styles = makeStyles(t);
   const iconSize = compact ? 56 : 76;
-  // When both offsets are given, centre within the carved region (top→bottom),
-  // matching the look of other centred screens. Otherwise fall back to the
-  // align-based behaviour.
-  const bounded = topOffset != null && bottomOffset != null;
 
   // Easter egg: 5 quick taps on the Cairn icon launches Breakout.
   const [gameOpen, setGameOpen] = useState(false);
@@ -82,12 +73,10 @@ export function EmptyState({
     <View
       style={[
         styles.root,
-        // Bounded: centre (default root) but padded by the header + bottom
-        // controls so it centres in the visible region, not the full frame.
-        bounded
-          ? { paddingTop: topOffset, paddingBottom: bottomOffset }
-          : align === "top" && styles.rootTop,
-        !bounded && align === "top" && topOffset != null ? { paddingTop: topOffset } : null,
+        align === "top" && styles.rootTop,
+        // Override the default "25%" bias when a caller needs an exact position
+        // (e.g. iOS 27 search list — see topBias doc).
+        align === "top" && topBias != null ? { paddingTop: topBias } : null,
       ]}
     >
       <View style={styles.brand}>
