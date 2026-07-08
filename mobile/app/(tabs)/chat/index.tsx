@@ -22,6 +22,7 @@ import { MarkdownView } from "@/components/MarkdownView";
 import { ICON_DELETE, ICON_AI } from "@/components/toolbar-icons";
 import { useTheme, withAlpha, type as typeScale, type Theme } from "@/theme";
 import { runAgent, userMessage, assistantMessage, type AgentEvent, type Attachment } from "@/chat/agent";
+import { haptics } from "@/haptics";
 import { pickImages, takePhoto } from "@/chat/attachments";
 import { loadChatHistory, saveChatMessage, clearChatHistory } from "@/db/chat-store";
 import { hasProvider } from "@/chat/providers";
@@ -138,6 +139,7 @@ export default function ChatScreen() {
     const text = input.trim();
     const atts = attachments;
     if ((!text && atts.length === 0) || busy) return;
+    haptics.selection(); // message sent
     setInput("");
     setAttachments([]);
     setBusy(true);
@@ -177,6 +179,7 @@ export default function ChatScreen() {
           const ok = !(e.result && typeof e.result === "object" && "error" in (e.result as object));
           toolTrail.push({ tool: e.tool, ok });
           patchAssistant({ tools: [...toolTrail] });
+          haptics.impact(); // agent ran a tool
         }
         setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 20);
       };
@@ -184,12 +187,14 @@ export default function ChatScreen() {
       const finalText = answer || acc;
       patchAssistant({ content: finalText, streaming: false, tools: toolTrail.length ? toolTrail : undefined });
       saveChatMessage({ role: "assistant", content: finalText, tools: toolTrail.length ? toolTrail : undefined });
+      haptics.success(); // response received
     } catch (e) {
       const msg = e instanceof Error && /network|fetch|failed/i.test(e.message)
         ? "Chat needs a connection. Reconnect and try again."
         : `Error: ${e instanceof Error ? e.message : String(e)}`;
       patchAssistant({ content: msg, streaming: false });
       saveChatMessage({ role: "assistant", content: msg });
+      haptics.error(); // request failed
     } finally {
       setBusy(false);
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50);

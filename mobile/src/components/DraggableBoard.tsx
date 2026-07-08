@@ -10,6 +10,7 @@ import Animated, {
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { PressableScale } from "@/components/PressableScale";
 import { TagChips } from "@/components/TagChips";
+import { haptics } from "@/haptics";
 import { useTheme, withAlpha, PRIORITY_COLOR, elevation, type as typeScale, type Theme } from "@/theme";
 import { tagsByRow, type CardRow, type ColumnRow, type TagRow } from "@/db/queries";
 import { stripMarkdown } from "@cairn/shared/notes/text";
@@ -132,6 +133,7 @@ export function DraggableBoard({
 
   const beginDrag = useCallback(
     (card: CardRow) => {
+      haptics.impact(); // card picked up (long-press)
       setDragging(card);
       setScrollEnabled(false);
     },
@@ -142,7 +144,10 @@ export function DraggableBoard({
     (cardId: string, target: string | null, source: string | null) => {
       setDragging(null);
       setScrollEnabled(true);
-      if (target && target !== source) onMove(cardId, target);
+      if (target && target !== source) {
+        haptics.impactMedium(); // dropped into a new column
+        onMove(cardId, target);
+      }
     },
     [onMove],
   );

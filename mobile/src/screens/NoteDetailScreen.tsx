@@ -23,6 +23,7 @@ import { GlassBar, glassActive } from "@/components/GlassBar";
 import { ICON_CHECK, ICON_CLOSE, ICON_EDIT, ICON_MORE, ICON_PIN, ICON_UNPIN, ICON_TAG, ICON_DELETE } from "@/components/toolbar-icons";
 import { useNoteFormattingToolbar } from "@/notes/useNoteFormattingToolbar";
 import { reindexNote, relatedNotes, type RelatedNote } from "@/notes/embeddings";
+import { haptics } from "@/haptics";
 import { extractHeadings } from "@cairn/shared/notes/toc";
 import { isAppleEmbeddingsSupported } from "@modules/apple-embeddings";
 import { useDataChanged } from "@/sync/useSyncStatus";
@@ -127,6 +128,7 @@ export function NoteDetailScreen({ nested = false }: { nested?: boolean }) {
         text: "Delete",
         style: "destructive",
         onPress: () => {
+          haptics.warning();
           softDeleteNote(note.id);
           router.back();
         },
@@ -146,6 +148,7 @@ export function NoteDetailScreen({ nested = false }: { nested?: boolean }) {
     updateNote(note.id, title.trim() || "Untitled", body);
     setNote(getNote(note.id));
     setEditing(false);
+    haptics.success(); // note saved
     // Refresh the on-device semantic index for just this note (incremental,
     // hash-gated, no-op when embeddings are unavailable). Fire-and-forget.
     reindexNote(note.id).catch(() => {});

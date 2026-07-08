@@ -11,6 +11,7 @@ import {
   type StyleProp,
 } from "react-native";
 import { useTheme, elevation, type as typeScale, type Theme } from "@/theme";
+import { haptics } from "@/haptics";
 
 /**
  * Shared bottom-sheet scaffold for contextual pickers (due date, tags,
@@ -62,6 +63,7 @@ export function BottomSheet({
       // do NOT setState here (a synchronous setState-in-effect triggers a
       // cascading render). Just play the enter animation.
       wasVisible.current = true;
+      haptics.impact(); // subtle tap as any sheet/modal opens (central hook)
       Animated.timing(progress, {
         toValue: 1,
         duration: 240,

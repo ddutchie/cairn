@@ -11,6 +11,7 @@ import {
   Maximize2,
 } from "lucide-react-native";
 import { useTheme, useIsDark, withAlpha, type as typeScale, iconSize, type Theme } from "@/theme";
+import { haptics } from "@/haptics";
 import { SearchField } from "@/components/SearchField";
 import { D3_JS } from "@/webview-assets/d3-assets";
 import type { KnowledgeGraph, GraphNodeType } from "@/db/queries";
@@ -241,6 +242,7 @@ export function KnowledgeGraphWebView({
   // Zoom-to-fit: ask the WebView to frame all nodes into the viewport. Only
   // meaningful in force mode (radial has its own drill-in navigation).
   const fitToView = () => {
+    haptics.selection();
     ref.current?.injectJavaScript("window.__fit && window.__fit(); true;");
   };
 

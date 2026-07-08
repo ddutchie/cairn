@@ -11,6 +11,7 @@ import { GlassBar, glassActive } from "@/components/GlassBar";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { semanticSearch, catchUpIndex, type SemanticHit } from "@/notes/embeddings";
+import { haptics } from "@/haptics";
 import { isAppleEmbeddingsSupported, appleEmbeddingsUnavailableReason } from "@modules/apple-embeddings";
 import { stripMarkdown } from "@cairn/shared/notes/text";
 import { useTheme, elevation, PRIORITY_COLOR, TAB_BAR_BASE, type as typeScale, type Theme } from "@/theme";
@@ -90,6 +91,7 @@ export default function SearchScreen() {
   };
 
   const switchScope = (s: Scope) => {
+    if (s !== scope) haptics.selection();
     setScope(s);
     // Selecting Semantic ensures the on-device index is built (downloads model
     // assets on first use + embeds any not-yet-indexed notes). The IndexingBar
