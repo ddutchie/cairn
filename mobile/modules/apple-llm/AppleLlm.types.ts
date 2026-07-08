@@ -24,6 +24,32 @@ export interface AppleGenerateOptions {
   temperature?: number;
   maxTokens?: number;
   system?: string;
+  /**
+   * Route through Private Cloud Compute (server model, iOS 27+) instead of the
+   * on-device model. Falls back to on-device automatically below iOS 27 or when
+   * PCC is unavailable.
+   */
+  useServer?: boolean;
+  /**
+   * PCC reasoning effort. Ignored on-device / when omitted (model default).
+   * Deeper reasoning trades latency + context for stronger multi-step analysis.
+   */
+  reasoningLevel?: AppleReasoningLevel;
+}
+
+/** PCC reasoning-effort levels (iOS 27+). */
+export type AppleReasoningLevel = "light" | "moderate" | "deep";
+
+/** PCC daily-quota snapshot (from `quotaStatus()`). */
+export interface AppleQuotaStatus {
+  /** False when PCC/iOS 27 isn't present — callers should hide quota UI. */
+  available: boolean;
+  status: "below" | "approaching" | "exceeded" | "unknown";
+  isLimitReached: boolean;
+  /** Whether an iCloud+ upgrade suggestion can be presented. */
+  canUpgrade: boolean;
+  /** ISO8601 quota-reset date, or "" when unknown / well below the limit. */
+  resetDate: string;
 }
 
 /** Streaming events emitted by the native module, keyed by `requestId`. */
@@ -73,6 +99,10 @@ export const AppleLLMErrorCodes = {
   ToolCallError: "TOOL_CALL_ERROR",
   ContextWindowExceeded: "CONTEXT_WINDOW_EXCEEDED",
   Cancelled: "CANCELLED",
+  /** Private Cloud Compute daily request quota reached (iOS 27+). */
+  QuotaExceeded: "QUOTA_EXCEEDED",
+  /** PCC request failed with no network (PCC is online-only). */
+  NetworkUnavailable: "NETWORK_UNAVAILABLE",
 } as const;
 
 export type AppleLLMErrorCode =

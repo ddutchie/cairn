@@ -23,6 +23,11 @@ private enum AppleLlmCode: String {
   case toolCallError = "TOOL_CALL_ERROR"
   case contextWindowExceeded = "CONTEXT_WINDOW_EXCEEDED"
   case cancelled = "CANCELLED"
+  // Private Cloud Compute: the user hit their daily request quota. Distinct from
+  // rate limiting — they wait for the reset date or upgrade iCloud+.
+  case quotaExceeded = "QUOTA_EXCEEDED"
+  // PCC request failed with no network (PCC is online-only). JS retries on-device.
+  case networkUnavailable = "NETWORK_UNAVAILABLE"
 }
 
 /// A tool the model may call, mirrored from Cairn's AiTool. `jsonSchema` is a
@@ -39,6 +44,13 @@ struct AppleLlmOptions: Record {
   @Field var temperature: Double?
   @Field var maxTokens: Int?
   @Field var system: String?
+  /// Route this session through Private Cloud Compute (server model, iOS 27+)
+  /// instead of the on-device model. Falls back to on-device below iOS 27.
+  @Field var useServer: Bool = false
+  /// PCC reasoning effort: "light" | "moderate" | "deep". Ignored on-device and
+  /// when nil (uses the model default). Deeper reasoning trades latency + more
+  /// of the 32K window for stronger multi-step analysis.
+  @Field var reasoningLevel: String?
 }
 
 public class AppleLlmModule: Module {
@@ -78,6 +90,33 @@ public class AppleLlmModule: Module {
       return Self.availabilityState().reason
     }
 
+    // Whether Private Cloud Compute (the server model) can serve requests right
+    // now: iOS 27+, an Apple-Intelligence-eligible device, and PCC ready. False
+    // everywhere else (older OS, ineligible device, simulator).
+    Function("isServerAvailable") { () -> Bool in
+      return Self.serverAvailabilityState().available
+    }
+
+    // Human-readable reason PCC is unavailable (empty when available).
+    Function("serverUnavailableReason") { () -> String in
+      return Self.serverAvailabilityState().reason
+    }
+
+    // Current PCC daily-quota snapshot as a JSON string, so the JS/UI can show a
+    // usage indicator and an iCloud+ upgrade path. Fields:
+    //   { available: Bool, status: "below"|"approaching"|"exceeded"|"unknown",
+    //     isLimitReached: Bool, canUpgrade: Bool, resetDate: String? (ISO8601) }
+    // `available:false` when PCC/iOS 27 isn't present — callers should hide the UI.
+    Function("quotaStatus") { () -> String in
+      return Self.quotaStatusJson()
+    }
+
+    // Present Apple's system iCloud+ upgrade sheet when the user is at/near quota.
+    // No-op when PCC is unavailable or no upgrade suggestion exists. Best-effort.
+    Function("showQuotaUpgradeOptions") { () -> Bool in
+      return Self.showQuotaUpgrade()
+    }
+
     // Best-effort token count. Returns -1 ("unknown"): the current
     // FoundationModels SDK exposes no public token-counting API. JS surface kept
     // so a future SDK can fill it in without a bridge change.
@@ -100,16 +139,21 @@ public class AppleLlmModule: Module {
     }
 
     // Drop a persistent session (e.g. when the user clears the chat) so the next
-    // generate() starts a fresh 4096-token context window.
+    // generate() starts a fresh context window. Clears both the on-device and
+    // PCC variants for the thread (sessions are namespaced by model kind).
     Function("resetSession") { (sessionId: String) in
-      self.withState { _ = $0.sessionStore.removeValue(forKey: sessionId) }
+      self.withState {
+        $0.sessionStore.removeValue(forKey: "device:" + sessionId)
+        $0.sessionStore.removeValue(forKey: "server:" + sessionId)
+      }
     }
 
     // Warm the model for a session to reduce first-token latency. Best-effort.
-    Function("prewarm") { (sessionId: String, system: String?, tools: [AppleLlmTool]) in
+    Function("prewarm") { (sessionId: String, system: String?, tools: [AppleLlmTool], useServer: Bool) in
       #if canImport(FoundationModels)
       if #available(iOS 26.0, *) {
-        if let session = try? self.ensureSession(sessionId: sessionId, system: system, tools: tools) {
+        let server = useServer && Self.serverAvailabilityState().available
+        if let session = try? self.ensureSession(sessionId: sessionId, system: system, tools: tools, useServer: server) {
           session.prewarm()
         }
       }
@@ -199,15 +243,100 @@ public class AppleLlmModule: Module {
   }
   #endif
 
+  // MARK: - Private Cloud Compute availability + quota
+
+  /// Whether the server (PCC) model can serve requests. Requires iOS 27+, an
+  /// eligible device, and the framework reporting `.available`. Always false when
+  /// built against a pre-iOS-27 SDK (PCC symbols compiled out via CAIRN_PCC_SDK).
+  private static func serverAvailabilityState() -> (available: Bool, reason: String) {
+    #if CAIRN_PCC_SDK
+    if #available(iOS 27.0, *) {
+      switch PrivateCloudComputeLanguageModel().availability {
+      case .available:
+        return (true, "")
+      case .unavailable(.deviceNotEligible):
+        return (false, "This device doesn't support Apple Intelligence.")
+      case .unavailable(.systemNotReady):
+        return (false, "Private Cloud Compute isn't ready yet. Try again shortly.")
+      case .unavailable:
+        return (false, "Private Cloud Compute is unavailable.")
+      @unknown default:
+        return (false, "Private Cloud Compute is unavailable.")
+      }
+    }
+    return (false, "Requires iOS 27 or newer.")
+    #else
+    return (false, "Private Cloud Compute requires iOS 27 or newer.")
+    #endif
+  }
+
+  /// PCC daily-quota snapshot as JSON (see the `quotaStatus` Function doc).
+  private static func quotaStatusJson() -> String {
+    #if CAIRN_PCC_SDK
+    if #available(iOS 27.0, *), case .available = PrivateCloudComputeLanguageModel().availability {
+      let model = PrivateCloudComputeLanguageModel()
+      let usage = model.quotaUsage
+      var status = "unknown"
+      var approaching = false
+      if usage.isLimitReached {
+        status = "exceeded"
+      } else if case .belowLimit(let info) = usage.status {
+        approaching = info.isApproachingLimit
+        status = approaching ? "approaching" : "below"
+      }
+      let iso: String
+      if let reset = usage.resetDate {
+        let fmt = ISO8601DateFormatter()
+        iso = fmt.string(from: reset)
+      } else {
+        iso = ""
+      }
+      let dict: [String: Any] = [
+        "available": true,
+        "status": status,
+        "isLimitReached": usage.isLimitReached,
+        "canUpgrade": usage.limitIncreaseSuggestion != nil,
+        "resetDate": iso,
+      ]
+      if let data = try? JSONSerialization.data(withJSONObject: dict),
+         let json = String(data: data, encoding: .utf8) {
+        return json
+      }
+    }
+    #endif
+    return "{\"available\":false,\"status\":\"unknown\",\"isLimitReached\":false,\"canUpgrade\":false,\"resetDate\":\"\"}"
+  }
+
+  /// Present the system iCloud+ upgrade sheet. Returns whether a suggestion was shown.
+  private static func showQuotaUpgrade() -> Bool {
+    #if CAIRN_PCC_SDK
+    if #available(iOS 27.0, *), case .available = PrivateCloudComputeLanguageModel().availability {
+      if let suggestion = PrivateCloudComputeLanguageModel().quotaUsage.limitIncreaseSuggestion {
+        suggestion.show()
+        return true
+      }
+    }
+    #endif
+    return false
+  }
+
   // MARK: - Generation
 
   #if canImport(FoundationModels)
   @available(iOS 26.0, *)
   private func startGeneration(requestId: String, sessionId: String, prompt: String, tools: [AppleLlmTool], options: AppleLlmOptions) {
-    guard case .available = SystemLanguageModel.default.availability else {
-      let state = Self.availabilityState()
-      emitError(requestId, .modelUnavailable, state.reason.isEmpty ? "Apple Intelligence is unavailable." : state.reason)
-      return
+    // Resolve the effective model kind: PCC only when requested AND actually
+    // available (iOS 27 + eligible device). Otherwise fall back to on-device.
+    let useServer = options.useServer && Self.serverAvailabilityState().available
+
+    if useServer {
+      // PCC availability was just checked; on-device check is skipped for server.
+    } else {
+      guard case .available = SystemLanguageModel.default.availability else {
+        let state = Self.availabilityState()
+        emitError(requestId, .modelUnavailable, state.reason.isEmpty ? "Apple Intelligence is unavailable." : state.reason)
+        return
+      }
     }
 
     let promptText = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -217,10 +346,12 @@ public class AppleLlmModule: Module {
     }
 
     // Reuse (or lazily create) the persistent session for this chat thread. The
-    // session carries the transcript + tools + instructions across turns.
+    // session carries the transcript + tools + instructions across turns. The
+    // cache key includes the model kind so an on-device and a PCC session for
+    // the same thread never collide.
     let session: LanguageModelSession
     do {
-      session = try ensureSession(sessionId: sessionId, system: options.system, tools: tools)
+      session = try ensureSession(sessionId: sessionId, system: options.system, tools: tools, useServer: useServer)
     } catch let e as AppleLlmSchemaError {
       if case .unsupported(let m) = e {
         emitError(requestId, .invalidSchema, "A tool schema couldn't be used by Apple Foundation Models: \(m)")
@@ -242,7 +373,13 @@ public class AppleLlmModule: Module {
       guard let self else { return }
       var previous = ""
       do {
-        let stream = session.streamResponse(to: promptText, options: genOptions)
+        let stream = Self.makeStream(
+          session: session,
+          prompt: promptText,
+          genOptions: genOptions,
+          useServer: useServer,
+          reasoningLevel: options.reasoningLevel
+        )
         for try await snapshot in stream {
           if Task.isCancelled {
             self.emitError(requestId, .cancelled, "Generation cancelled.")
@@ -277,13 +414,43 @@ public class AppleLlmModule: Module {
     storeTask(task, for: requestId)
   }
 
-  /// Fetch the cached session for `sessionId`, or build one bound with the given
-  /// instructions + tools. Tools/instructions are fixed at creation time (Apple's
-  /// design), which is fine because Cairn's tool set and system prompt are stable
-  /// for the life of a chat thread.
+  /// Build the response stream, applying PCC `ContextOptions(reasoningLevel:)`
+  /// when running on the server model (iOS 27+). On-device ignores reasoning.
   @available(iOS 26.0, *)
-  private func ensureSession(sessionId: String, system: String?, tools: [AppleLlmTool]) throws -> LanguageModelSession {
-    if let existing = withState({ $0.sessionStore[sessionId] }) as? LanguageModelSession {
+  private static func makeStream(
+    session: LanguageModelSession,
+    prompt: String,
+    genOptions: GenerationOptions,
+    useServer: Bool,
+    reasoningLevel: String?
+  ) -> LanguageModelSession.ResponseStream<String> {
+    #if CAIRN_PCC_SDK
+    if useServer, #available(iOS 27.0, *), let level = Self.reasoning(from: reasoningLevel) {
+      return session.streamResponse(
+        to: prompt,
+        options: genOptions,
+        contextOptions: ContextOptions(reasoningLevel: level)
+      )
+    }
+    #endif
+    return session.streamResponse(to: prompt, options: genOptions)
+  }
+
+  /// Fetch the cached session for `sessionId` (namespaced by model kind), or
+  /// build one bound with the given instructions + tools. Tools/instructions are
+  /// fixed at creation time (Apple's design), which is fine because Cairn's tool
+  /// set and system prompt are stable for the life of a chat thread.
+  ///
+  /// NOTE: the initializers differ by OS. iOS 26 has
+  /// `init(model: SystemLanguageModel = .default, ...)` (concrete). The unified
+  /// `init(model: some LanguageModel, ...)` — needed to pass a
+  /// PrivateCloudComputeLanguageModel — is iOS 27+ ONLY. So the server path uses
+  /// the 27-only init under `#if CAIRN_PCC_SDK`, and the on-device path uses the
+  /// 26 concrete-SystemLanguageModel init. There is no single shared init.
+  @available(iOS 26.0, *)
+  private func ensureSession(sessionId: String, system: String?, tools: [AppleLlmTool], useServer: Bool) throws -> LanguageModelSession {
+    let cacheKey = (useServer ? "server:" : "device:") + sessionId
+    if let existing = withState({ $0.sessionStore[cacheKey] }) as? LanguageModelSession {
       return existing
     }
     let bridge = self.toolBridge
@@ -300,18 +467,68 @@ public class AppleLlmModule: Module {
       )
     }
     let instructions = (system?.isEmpty == false) ? Instructions(system!) : nil
-    let session = LanguageModelSession(model: SystemLanguageModel.default, tools: bridgedTools, instructions: instructions)
-    withState { $0.sessionStore[sessionId] = session }
+
+    let session: LanguageModelSession
+    #if CAIRN_PCC_SDK
+    if useServer, #available(iOS 27.0, *) {
+      // iOS 27 unified init taking `some LanguageModel` (PCC conforms to it).
+      session = LanguageModelSession(
+        model: PrivateCloudComputeLanguageModel(),
+        tools: bridgedTools,
+        instructions: instructions
+      )
+    } else {
+      // On-device: iOS 26 concrete-SystemLanguageModel init.
+      session = LanguageModelSession(
+        model: SystemLanguageModel.default,
+        tools: bridgedTools,
+        instructions: instructions
+      )
+    }
+    #else
+    // Built against a pre-iOS-27 SDK: on-device model only.
+    session = LanguageModelSession(
+      model: SystemLanguageModel.default,
+      tools: bridgedTools,
+      instructions: instructions
+    )
+    #endif
+
+    withState { $0.sessionStore[cacheKey] = session }
     return session
   }
+
+  /// Map a JS reasoning-level string to the FoundationModels enum (iOS 27+).
+  #if CAIRN_PCC_SDK
+  @available(iOS 27.0, *)
+  private static func reasoning(from level: String?) -> ContextOptions.ReasoningLevel? {
+    switch level?.lowercased() {
+    case "light": return .light
+    case "moderate": return .moderate
+    case "deep": return .deep
+    default: return nil
+    }
+  }
+  #endif
 
 
   @available(iOS 26.0, *)
   private static func mapError(_ error: Error) -> (AppleLlmCode, String) {
+    // Private Cloud Compute daily-quota exhaustion (iOS 27+). Checked first so
+    // the JS side can steer the user to an iCloud+ upgrade instead of retrying.
+    #if CAIRN_PCC_SDK
+    if #available(iOS 27.0, *) {
+      if let pccError = error as? PrivateCloudComputeLanguageModel.Error {
+        if case .quotaLimitReached = pccError {
+          return (.quotaExceeded, "You've reached your daily Private Cloud Compute limit. It resets later, or upgrade iCloud+ for more.")
+        }
+      }
+    }
+    #endif
     if let genError = error as? LanguageModelSession.GenerationError {
       switch genError {
       case .exceededContextWindowSize:
-        return (.contextWindowExceeded, "The request exceeded the model's 4096-token context window.")
+        return (.contextWindowExceeded, "The request exceeded the model's context window.")
       case .assetsUnavailable:
         return (.modelUnavailable, "The on-device model assets aren't available yet.")
       default:
@@ -320,6 +537,12 @@ public class AppleLlmModule: Module {
     }
     if let toolError = error as? AppleLlmToolError {
       return (.toolCallError, toolError.message)
+    }
+    // A PCC request with no connectivity surfaces as a URL/network error; flag it
+    // so JS can retry on-device.
+    let ns = error as NSError
+    if ns.domain == NSURLErrorDomain {
+      return (.networkUnavailable, "Private Cloud Compute needs a connection. Reconnect and try again.")
     }
     return (.generationError, error.localizedDescription)
   }

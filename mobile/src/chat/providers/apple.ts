@@ -1,31 +1,31 @@
 /**
- * Apple on-device Foundation Models provider (Apple Intelligence).
+ * Apple Foundation Models provider (Apple Intelligence) — two model kinds behind
+ * one native module (modules/apple-llm), NOT a third-party package.
  *
- * Wraps our own native module (modules/apple-llm) — NOT a third-party package —
- * which streams tokens from Apple's FoundationModels framework on iOS 26+.
- * Everything runs on-device: no network, no API key, works offline.
+ * 1. PRIVATE CLOUD COMPUTE (server, iOS 27+) — the USER-FACING provider.
+ *    32K context + stronger reasoning, no API key, privacy-preserving. Uses the
+ *    FULL Cairn tool set, the agent's full system prompt, and rich tool schemas
+ *    (the on-device leanness isn't needed with 32K). Online-only; on a network
+ *    failure the caller can retry another provider. Daily per-user quota (see
+ *    quota handling below). This is what `appleProvider` resolves to.
  *
- * TUNED FOR A SMALL ON-DEVICE MODEL (per Apple's guidance):
- *   - Persistent session per chat thread: we keep ONE native LanguageModelSession
- *     (keyed by a sessionId) and reuse it, so FoundationModels holds the
- *     transcript natively instead of us re-sending flattened history each turn.
- *     Better grounding, far fewer tokens. A new chat → resetAppleSession() →
- *     fresh 4096-token window.
- *   - Short, imperative system prompt (APPLE_SYSTEM), not the long frontier-model
- *     one — the 3B model gets confused by long/indirect instructions.
- *   - Lean tool schemas: verbose descriptions are stripped before sending, since
- *     schema text counts against the 4096-token window.
+ * 2. ON-DEVICE (iOS 26+) — DEV-ONLY, hidden behind EXPO_PUBLIC_APPLE_LLM_DEV.
+ *    The ~3B model + fixed 4096-token window proved too weak for Cairn's agentic
+ *    tool use (see docs/plans/apple-foundation-models-provider.md), so it's kept
+ *    only for local iteration: terse system prompt + lean schemas + small reply
+ *    cap. This is `appleOnDeviceProvider`.
  *
- * TOOL-CALLING (native): each Cairn tool's JSON Schema becomes a native
- * GenerationSchema via guided generation, so the model is *constrained* to emit
- * valid arguments (no text parsing). Apple drives the multi-tool turn inside one
- * generate(); on each tool call the native module suspends and fires onToolCall.
- * We execute the tool locally (TOOL_MAP → expo-sqlite), resolve it back into the
- * turn, and surface a `tool-executed` StreamEvent so agent.ts shows it in the
- * tool-trail WITHOUT re-running it.
+ * TOOL-CALLING (native, both kinds): each Cairn tool's JSON Schema becomes a
+ * native GenerationSchema via guided generation, so the model is *constrained*
+ * to emit valid arguments (no text parsing). Apple drives the multi-tool turn
+ * inside one generate(); on each tool call the native module suspends and fires
+ * onToolCall. We execute the tool locally (TOOL_MAP → expo-sqlite), resolve it
+ * back into the turn, and surface a `tool-executed` StreamEvent so agent.ts
+ * shows it in the tool-trail WITHOUT re-running it.
  *
- * CONTEXT WINDOW: fixed 4096 tokens (instructions + transcript + tools + output).
- * Overflow surfaces as AppleLLMErrorCodes.ContextWindowExceeded.
+ * PERSISTENT SESSION per chat thread (both kinds): ONE native LanguageModelSession
+ * per sessionId + model kind; reuse keeps the transcript natively (better
+ * grounding, fewer tokens). A new chat → resetAppleSession() → fresh window.
  */
 
 import {
@@ -33,7 +33,9 @@ import {
   AppleLLMError,
   AppleLLMErrorCodes,
   isAppleLlmAvailable,
+  isAppleServerAvailable,
   type AppleErrorEvent,
+  type AppleReasoningLevel,
   type AppleTool,
   type AppleToolCallEvent,
 } from "@modules/apple-llm";
@@ -49,28 +51,43 @@ import {
 } from "./types";
 
 /**
- * Dev-only gate. The Apple on-device provider is experimental and NOT viable for
- * Cairn's agentic tool use yet (see docs/plans/apple-foundation-models-provider.md),
- * so it's hidden from end users. It's exposed only in LOCAL builds where the
- * git-ignored `.env` sets EXPO_PUBLIC_APPLE_LLM_DEV=1 — EAS builds don't get that
- * file, so the provider never appears or resolves in shipped apps. (The native
- * module still compiles; it's dormant unless this flag turns the provider on.)
+ * Dev-only gate for the ON-DEVICE model. It's experimental and NOT viable for
+ * Cairn's agentic tool use, so it's hidden from end users — exposed only in
+ * LOCAL builds where the git-ignored `.env` sets EXPO_PUBLIC_APPLE_LLM_DEV=1.
+ * PCC (the user-facing Apple provider) is NOT behind this flag.
  */
 export function isAppleDevEnabled(): boolean {
   const v = process.env.EXPO_PUBLIC_APPLE_LLM_DEV;
   return v === "1" || v === "true";
 }
 
-/** Whether the on-device Apple provider can run right now (dev-gated). */
-export function isAppleProviderAvailable(): boolean {
+/** Whether the DEV on-device Apple provider can run right now (dev-gated). */
+export function isAppleOnDeviceAvailable(): boolean {
   return isAppleDevEnabled() && isAppleLlmAvailable();
 }
 
 /**
- * Short, imperative system prompt for the on-device model. Deliberately terse
+ * Whether the user-facing Apple (PCC) provider can run right now: an iOS 27+ SDK
+ * build on an eligible iOS 27+ device with PCC ready. False on current EAS/
+ * shipped builds (iOS 26 SDK → PCC compiled out) until an iOS 27 SDK build ships.
+ */
+export function isAppleServerProviderAvailable(): boolean {
+  return isAppleServerAvailable();
+}
+
+/**
+ * Whether ANY Apple provider is available (PCC for users, or on-device in dev).
+ * Used for provider selection + settings gating.
+ */
+export function isAppleProviderAvailable(): boolean {
+  return isAppleServerProviderAvailable() || isAppleOnDeviceAvailable();
+}
+
+/**
+ * Short, imperative system prompt for the ON-DEVICE model. Deliberately terse
  * (Apple: "reduce prompts to no more than three paragraphs", "an on-device model
- * may get confused with a long and indirect instruction"). The full frontier
- * prompt in agent.ts is skipped for this provider.
+ * may get confused with a long and indirect instruction"). PCC uses the agent's
+ * full system prompt instead (extracted from the conversation).
  */
 function appleSystemPrompt(): string {
   const iso = new Date().toISOString().slice(0, 10);
@@ -80,6 +97,16 @@ function appleSystemPrompt(): string {
     "Call get_cairn_context first to get project ids, columns, and tags. Use get_project_context_pack(project_id) to summarize a project. Look up ids before writing.",
     "Answer briefly in markdown. Wrap any note title you mention in [[double brackets]].",
   ].join(" ");
+}
+
+/** Extract the system-role text from the conversation (agent.ts injects it). */
+function systemFromConversation(messages: UIMessage[]): string {
+  const sys = messages.find((m) => m.role === "system");
+  if (!sys) return "";
+  return sys.parts
+    .map((p) => (p.type === "text" ? (p as TextPart).text : ""))
+    .join("\n")
+    .trim();
 }
 
 // ── session lifecycle ────────────────────────────────────────────────────────
@@ -98,9 +125,12 @@ export function resetAppleSession(): void {
 
 /** Warm the model for the current session to cut first-token latency. */
 export function prewarmAppleSession(tools: Record<string, AiTool>): void {
-  if (!AppleLlm || !isAppleLlmAvailable()) return;
+  if (!AppleLlm) return;
+  const server = isAppleServerProviderAvailable();
+  if (!server && !isAppleLlmAvailable()) return;
   try {
-    AppleLlm.prewarm(_sessionId, appleSystemPrompt(), buildTools(tools));
+    // Server (PCC) prewarm uses full schemas; on-device uses lean ones.
+    AppleLlm.prewarm(_sessionId, server ? undefined : appleSystemPrompt(), buildTools(tools, server), server);
   } catch {
     // best-effort
   }
@@ -197,14 +227,29 @@ function leanSchema(schema: unknown): unknown {
   return out;
 }
 
-/** Map the agent's tools to the native tool shape with lean, short schemas. */
-function buildTools(tools: Record<string, AiTool>): AppleTool[] {
-  return Object.entries(tools).map(([name, t]) => ({
-    name,
-    // Keep the description to one short line — it counts against the window.
-    description: t.description.split(/[.\n]/)[0].slice(0, 120),
-    jsonSchema: JSON.stringify(leanSchema(t.jsonSchema ?? { type: "object", properties: {} })),
-  }));
+/**
+ * Map the agent's tools to the native tool shape. On-device uses lean, short
+ * schemas (the 4096 window can't fit verbose descriptions). PCC keeps full
+ * descriptions + schemas — the 32K window has room, and richer schemas improve
+ * tool selection.
+ */
+function buildTools(tools: Record<string, AiTool>, server: boolean): AppleTool[] {
+  return Object.entries(tools).map(([name, t]) => {
+    const rawSchema = t.jsonSchema ?? { type: "object", properties: {} };
+    if (server) {
+      return {
+        name,
+        description: t.description,
+        jsonSchema: JSON.stringify(rawSchema),
+      };
+    }
+    return {
+      name,
+      // Keep the description to one short line — it counts against the window.
+      description: t.description.split(/[.\n]/)[0].slice(0, 120),
+      jsonSchema: JSON.stringify(leanSchema(rawSchema)),
+    };
+  });
 }
 
 /** Execute a tool locally and return its result as a JSON string. */
@@ -235,133 +280,155 @@ function runToolToJson(toolName: string, inputJson: string): { resultJson: strin
  * Bridge the native module's event stream into an async generator of
  * StreamEvents. Text deltas stream live. Tool calls are executed locally and
  * resolved back into the native turn; each is also surfaced as
- * `tool-input-available` (+ its result) so the chat UI can show the tool-trail.
+ * `tool-executed` so the chat UI can show the tool-trail.
+ *
+ * `server` selects PCC (full prompt/schemas/32K, reasoning) vs on-device (terse
+ * prompt/lean schemas/small window).
  */
-async function* streamApple(
-  messages: UIMessage[],
-  tools: Record<string, AiTool>,
-  signal?: AbortSignal,
-): AsyncGenerator<StreamEvent> {
-  if (!AppleLlm) {
-    throw new AppleLLMError(
-      AppleLLMErrorCodes.ModelUnavailable,
-      "On-device AI isn't available in this build.",
-    );
-  }
-  // If the caller already aborted before we started, short-circuit before
-  // registering any listeners or kicking off a generation.
-  if (signal?.aborted) {
-    throw new AppleLLMError(AppleLLMErrorCodes.Cancelled, "Generation cancelled.");
-  }
+function makeStreamApple(server: boolean) {
+  return async function* streamApple(
+    messages: UIMessage[],
+    tools: Record<string, AiTool>,
+    signal?: AbortSignal,
+  ): AsyncGenerator<StreamEvent> {
+    if (!AppleLlm) {
+      throw new AppleLLMError(
+        AppleLLMErrorCodes.ModelUnavailable,
+        server ? "Private Cloud Compute isn't available in this build." : "On-device AI isn't available in this build.",
+      );
+    }
+    // If the caller already aborted before we started, short-circuit before
+    // registering any listeners or kicking off a generation.
+    if (signal?.aborted) {
+      throw new AppleLLMError(AppleLLMErrorCodes.Cancelled, "Generation cancelled.");
+    }
 
-  const prompt = latestPrompt(messages);
-  const nativeTools = buildTools(tools);
-  const requestId = nextRequestId();
-  const sessionId = _sessionId;
+    const prompt = latestPrompt(messages);
+    const nativeTools = buildTools(tools, server);
+    const requestId = nextRequestId();
+    const sessionId = _sessionId;
+    // PCC: use the agent's full system prompt (from the conversation). On-device:
+    // the terse prompt. Fall back to the terse one if none is present.
+    const system = server ? systemFromConversation(messages) || appleSystemPrompt() : appleSystemPrompt();
 
-  type Item =
-    | { kind: "token"; delta: string }
-    | { kind: "toolCall"; callId: string; toolName: string; input: string }
-    | { kind: "done"; finishReason: string }
-    | { kind: "error"; err: AppleLLMError };
-  const queue: Item[] = [];
-  let notify: (() => void) | null = null;
-  const push = (item: Item) => {
-    queue.push(item);
-    notify?.();
+    type Item =
+      | { kind: "token"; delta: string }
+      | { kind: "toolCall"; callId: string; toolName: string; input: string }
+      | { kind: "done"; finishReason: string }
+      | { kind: "error"; err: AppleLLMError };
+    const queue: Item[] = [];
+    let notify: (() => void) | null = null;
+    const push = (item: Item) => {
+      queue.push(item);
+      notify?.();
+    };
+
+    const subToken = AppleLlm.addListener("onToken", (e) => {
+      if (e.requestId === requestId) push({ kind: "token", delta: e.delta });
+    });
+    const subDone = AppleLlm.addListener("onDone", (e) => {
+      if (e.requestId === requestId) push({ kind: "done", finishReason: e.finishReason });
+    });
+    const subError = AppleLlm.addListener("onError", (e: AppleErrorEvent) => {
+      if (e.requestId === requestId) push({ kind: "error", err: new AppleLLMError(e.code, e.message) });
+    });
+    // Tool calls are routed by sessionId (a session runs one generation at a time).
+    const subTool = AppleLlm.addListener("onToolCall", (e: AppleToolCallEvent) => {
+      if (e.sessionId === sessionId) {
+        push({ kind: "toolCall", callId: e.callId, toolName: e.toolName, input: e.input });
+      }
+    });
+
+    const onAbort = () => AppleLlm?.cancel(requestId);
+    signal?.addEventListener("abort", onAbort);
+
+    // Persistent session keeps the transcript; send only the newest user prompt.
+    // PCC gets the 32K window + a reasoning level; on-device a small reply cap.
+    const reasoningLevel: AppleReasoningLevel | undefined = server ? "moderate" : undefined;
+    void AppleLlm.generate(requestId, sessionId, prompt, nativeTools, {
+      system,
+      useServer: server,
+      reasoningLevel,
+      maxTokens: server ? 4096 : 1024,
+    }).catch((err: unknown) => {
+      const message = err instanceof Error ? err.message : String(err);
+      push({ kind: "error", err: new AppleLLMError(AppleLLMErrorCodes.GenerationError, message) });
+    });
+
+    try {
+      while (true) {
+        if (queue.length === 0) {
+          await new Promise<void>((resolve) => {
+            notify = resolve;
+          });
+          notify = null;
+        }
+        const item = queue.shift();
+        if (!item) continue;
+
+        if (item.kind === "error") throw item.err;
+
+        if (item.kind === "token") {
+          yield { type: "text-delta", delta: item.delta };
+          continue;
+        }
+
+        if (item.kind === "toolCall") {
+          // Execute locally, surface for the UI tool-trail (as an already-executed
+          // tool so agent.ts doesn't re-run it), then resolve back into the native
+          // turn. Apple continues generating once resolved.
+          let input: unknown = {};
+          try {
+            input = item.input ? JSON.parse(item.input) : {};
+          } catch {
+            input = { _raw: item.input };
+          }
+          const { resultJson, error } = runToolToJson(item.toolName, item.input);
+          let output: unknown;
+          try {
+            output = JSON.parse(resultJson);
+          } catch {
+            output = resultJson;
+          }
+          yield {
+            type: "tool-executed",
+            toolCallId: item.callId,
+            toolName: item.toolName,
+            input,
+            output,
+          };
+          AppleLlm.resolveToolCall(item.callId, resultJson, error);
+          continue;
+        }
+
+        // done
+        yield { type: "finish", finishReason: item.finishReason || "stop" };
+        return;
+      }
+    } finally {
+      subToken.remove();
+      subDone.remove();
+      subError.remove();
+      subTool.remove();
+      signal?.removeEventListener("abort", onAbort);
+    }
   };
-
-  const subToken = AppleLlm.addListener("onToken", (e) => {
-    if (e.requestId === requestId) push({ kind: "token", delta: e.delta });
-  });
-  const subDone = AppleLlm.addListener("onDone", (e) => {
-    if (e.requestId === requestId) push({ kind: "done", finishReason: e.finishReason });
-  });
-  const subError = AppleLlm.addListener("onError", (e: AppleErrorEvent) => {
-    if (e.requestId === requestId) push({ kind: "error", err: new AppleLLMError(e.code, e.message) });
-  });
-  // Tool calls are routed by sessionId (a session runs one generation at a time).
-  const subTool = AppleLlm.addListener("onToolCall", (e: AppleToolCallEvent) => {
-    if (e.sessionId === sessionId) {
-      push({ kind: "toolCall", callId: e.callId, toolName: e.toolName, input: e.input });
-    }
-  });
-
-  const onAbort = () => AppleLlm?.cancel(requestId);
-  signal?.addEventListener("abort", onAbort);
-
-  // Persistent session keeps the transcript; send only the newest user prompt.
-  // Instructions are bound at session creation (first turn) via `system`.
-  void AppleLlm.generate(requestId, sessionId, prompt, nativeTools, {
-    system: appleSystemPrompt(),
-    // Conservative reply cap to stay within the shared 4096-token window.
-    maxTokens: 1024,
-  }).catch((err: unknown) => {
-    const message = err instanceof Error ? err.message : String(err);
-    push({ kind: "error", err: new AppleLLMError(AppleLLMErrorCodes.GenerationError, message) });
-  });
-
-  try {
-    while (true) {
-      if (queue.length === 0) {
-        await new Promise<void>((resolve) => {
-          notify = resolve;
-        });
-        notify = null;
-      }
-      const item = queue.shift();
-      if (!item) continue;
-
-      if (item.kind === "error") throw item.err;
-
-      if (item.kind === "token") {
-        yield { type: "text-delta", delta: item.delta };
-        continue;
-      }
-
-      if (item.kind === "toolCall") {
-        // Execute locally, surface for the UI tool-trail (as an already-executed
-        // tool so agent.ts doesn't re-run it), then resolve back into the native
-        // turn. Apple continues generating once resolved.
-        let input: unknown = {};
-        try {
-          input = item.input ? JSON.parse(item.input) : {};
-        } catch {
-          input = { _raw: item.input };
-        }
-        const { resultJson, error } = runToolToJson(item.toolName, item.input);
-        let output: unknown;
-        try {
-          output = JSON.parse(resultJson);
-        } catch {
-          output = resultJson;
-        }
-        yield {
-          type: "tool-executed",
-          toolCallId: item.callId,
-          toolName: item.toolName,
-          input,
-          output,
-        };
-        AppleLlm.resolveToolCall(item.callId, resultJson, error);
-        continue;
-      }
-
-      // done
-      yield { type: "finish", finishReason: item.finishReason || "stop" };
-      return;
-    }
-  } finally {
-    subToken.remove();
-    subDone.remove();
-    subError.remove();
-    subTool.remove();
-    signal?.removeEventListener("abort", onAbort);
-  }
 }
 
-/** The on-device Apple Foundation Models provider. */
+/**
+ * The USER-FACING Apple provider: Private Cloud Compute (server model, iOS 27+).
+ * Full tool set, full system prompt, 32K window, reasoning. Online-only.
+ */
 export const appleProvider: ChatProvider = {
+  name: "Apple Intelligence",
+  stream: makeStreamApple(true),
+};
+
+/**
+ * The DEV-ONLY on-device provider (hidden behind EXPO_PUBLIC_APPLE_LLM_DEV).
+ * Terse prompt, lean schemas, small window — kept for local iteration only.
+ */
+export const appleOnDeviceProvider: ChatProvider = {
   name: "Apple Intelligence (on-device)",
-  stream: streamApple,
+  stream: makeStreamApple(false),
 };

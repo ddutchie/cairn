@@ -160,8 +160,13 @@ export async function runAgent(
         }
       }
     } catch (e) {
-      const msg =
-        e instanceof Error && /network|fetch|abort|failed|\(5\d\d\)/i.test(e.message)
+      // AppleLLMError already carries a user-friendly message (quota, PCC network,
+      // unavailable, etc.) — pass it through verbatim rather than prefixing
+      // "Error:". Otherwise map generic network failures to a connection hint.
+      const isAppleErr = e instanceof Error && e.name === "AppleLLMError";
+      const msg = isAppleErr
+        ? (e as Error).message
+        : e instanceof Error && /network|fetch|abort|failed|\(5\d\d\)/i.test(e.message)
           ? "Chat needs a connection. Reconnect and try again."
           : `Error: ${e instanceof Error ? e.message : String(e)}`;
       onEvent?.({ type: "error", text: msg });

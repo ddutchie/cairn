@@ -1,9 +1,61 @@
 # Plan: On-device / Private Cloud Compute Apple Intelligence provider
 
-**Status:** shelved. On-device (iOS 26) implementation exists in the repo but is
-**not viable** for Cairn's agentic tool use. Re-implement against **Private Cloud
-Compute (PCC)** once the managed entitlement is granted and an **iOS 27 SDK** is
-available.
+**Status:** PCC IMPLEMENTED (2026-07-08). Private Cloud Compute is now the
+user-facing "Apple Intelligence" provider (full tool set, full system prompt,
+32K window, `moderate` reasoning, quota UI). The on-device (iOS 26) model is
+retained but DEV-ONLY behind `EXPO_PUBLIC_APPLE_LLM_DEV` (too weak for agentic
+tool use). Verified: JS type-check + lint clean; Swift parses clean under BOTH
+the stable iOS-26 SDK (PCC compiled out) and the beta iOS-27 SDK (PCC compiled
+in). Pending device verification on iOS 27 with the granted entitlement.
+
+### EAS-safety: the CAIRN_PCC_SDK compile-time gate (critical)
+
+PCC symbols (`PrivateCloudComputeLanguageModel`, `ContextOptions.ReasoningLevel`,
+`.quotaLimitReached`, `quotaUsage`) exist ONLY in the iOS 27 SDK. `#available(iOS
+27)` is a RUNTIME check — it does NOT stop the compiler needing those symbols to
+exist. `#if canImport(FoundationModels)` is TRUE on both SDK 26 and 27 (only the
+PCC types within it are new), so it can't gate them either. The current EAS iOS
+image is `macos-tahoe-26.4-xcode-26.4` (iOS 26 SDK) — referencing PCC symbols
+unconditionally there FAILS the build.
+
+Fix (`modules/apple-llm/ios/AppleLlm.podspec`): read the active iOS SDK version
+at pod-eval time (`xcrun --sdk iphoneos --show-sdk-version`) and define the
+`CAIRN_PCC_SDK` compilation condition ONLY when the SDK major is ≥ 27. ALL PCC
+symbol references live inside `#if CAIRN_PCC_SDK`. Result:
+- EAS / stable Xcode 26 (iOS 26 SDK) → flag off → PCC compiled out → builds green,
+  PCC reports unavailable at runtime.
+- Local Xcode 27 beta (`/Applications/Xcode-beta.app`, iOS 27 SDK) → flag on →
+  PCC compiled in + runs. Point the toolchain at it:
+  `sudo xcode-select -s /Applications/Xcode-beta.app/Contents/Developer`
+  (or prefix a build with `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer`).
+- Future EAS iOS 27 image → flips on automatically, zero code change.
+
+### SDK API gotcha: LanguageModelSession init + `LanguageModel` are iOS-27-only
+
+Verified against the iOS 27 SDK `.swiftinterface` (build error surfaced it):
+- The **unified** `LanguageModelSession.init(model: some LanguageModel, tools:, instructions:)` and the `LanguageModel` protocol itself are **iOS 27.0+**. Passing a `PrivateCloudComputeLanguageModel` REQUIRES this init.
+- iOS 26 only has the **concrete** `init(model: SystemLanguageModel = .default, tools:, instructions:)`.
+- So there is NO single shared init/`resolveModel(): any LanguageModel` (that annotation compiled under `@available(iOS 26)` but references 27-only symbols → error). `ensureSession` must branch: server path (`#if CAIRN_PCC_SDK` + `#available(iOS 27)`) builds with `PrivateCloudComputeLanguageModel()` via the `some LanguageModel` init; on-device path uses the concrete-`SystemLanguageModel` init.
+- Likewise `streamResponse(to:options:contextOptions:)` is iOS 27+ (base `streamResponse(to:options:)` is iOS 26); reasoning is applied only on the server path.
+- Quota/availability shapes confirmed: `PrivateCloudComputeLanguageModel()`, `.availability → .available/.unavailable(.deviceNotEligible|.systemNotReady)`, `.quotaUsage.status → .belowLimit(BelowLimit{isApproachingLimit})`, `.isLimitReached`, `.limitIncreaseSuggestion?.show()`, `.resetDate`, `Error.quotaLimitReached(_)`.
+- **Verified:** AppleLlm pod `xcodebuild BUILD SUCCEEDED` under iOS 27 SDK (flag on); parses clean under iOS 26 SDK (flag off).
+
+### Entitlement gating (critical)
+
+`com.apple.developer.private-cloud-compute` is a MANAGED entitlement
+without it being provisioned for the App ID BREAKS code-signing on every build.
+`plugins/withPrivateCloudCompute.js` therefore injects it ONLY when
+`EXPO_PUBLIC_PCC=1`. Set that flag only once the entitlement is granted AND you
+build the iOS 27 SDK variant. The app runs fine without it (PCC just reports
+unavailable), so shipped/EAS builds stay signable.
+
+---
+
+## Original shelving context (on-device)
+
+On-device (iOS 26) implementation exists but is **not viable** for Cairn's
+agentic tool use. Re-implemented against **Private Cloud Compute (PCC)** — see
+status above.
 
 ---
 

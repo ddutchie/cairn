@@ -26,8 +26,18 @@ import {
   type ProviderPref,
 } from "@/chat/ai-config";
 import { isRorkAvailable } from "@/chat/providers/rork";
-import { isAppleProviderAvailable, isAppleDevEnabled } from "@/chat/providers/apple";
-import { appleLlmUnavailableReason } from "@modules/apple-llm";
+import {
+  isAppleProviderAvailable,
+  isAppleServerProviderAvailable,
+  isAppleDevEnabled,
+} from "@/chat/providers/apple";
+import {
+  appleLlmUnavailableReason,
+  appleServerUnavailableReason,
+  appleQuotaStatus,
+  showAppleQuotaUpgrade,
+  type AppleQuotaStatus,
+} from "@modules/apple-llm";
 import { listModels } from "@/chat/providers/openai";
 
 /**
@@ -50,12 +60,23 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
   const styles = useMemo(() => makeStyles(t), [t]);
   const rorkBuiltIn = isRorkAvailable();
   const appleAvailable = isAppleProviderAvailable();
-  // Only surface an Apple availability reason when Apple is a dev-enabled option
-  // (isAppleProviderAvailable already false when the dev flag is off, so this
-  // stays empty in shipped builds and no Apple messaging leaks to end users).
-  const appleReason = useMemo(
-    () => (isAppleDevEnabled() && !appleAvailable ? appleLlmUnavailableReason() : ""),
-    [appleAvailable],
+  // Which Apple model backs the "Apple Intelligence" option: PCC (user-facing)
+  // or the dev-only on-device model.
+  const appleIsServer = isAppleServerProviderAvailable();
+  // Availability reason, tailored to which Apple backend is expected: PCC first
+  // (user-facing), then the dev on-device model (only when the dev flag is on so
+  // no Apple messaging leaks to shipped builds).
+  const appleReason = useMemo(() => {
+    if (appleAvailable) return "";
+    // Prefer the PCC reason; fall back to the on-device reason under the dev flag.
+    const server = appleServerUnavailableReason();
+    return isAppleDevEnabled() ? appleLlmUnavailableReason() : server;
+  }, [appleAvailable]);
+  // PCC daily-quota snapshot (only meaningful when PCC is the active Apple model).
+  // Seeded from a synchronous native getter via a lazy initializer (like the
+  // provider/baseUrl values below) rather than an effect.
+  const [quota] = useState<AppleQuotaStatus | null>(() =>
+    isAppleServerProviderAvailable() ? appleQuotaStatus() : null,
   );
   // Whether to show the provider chooser at all: only when there's a choice.
   const showChooser = rorkBuiltIn || appleAvailable;
@@ -163,7 +184,7 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                 <View style={styles.segment}>
                   {appleAvailable && (
                     <SegmentButton
-                      label="On-device"
+                      label="Apple Intelligence"
                       selected={pref === "apple"}
                       onPress={() => setPref("apple")}
                       t={t}
@@ -191,10 +212,38 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                   <View style={styles.rorkNote}>
                     <Cpu size={14} color={t.success} />
                     <Text style={styles.rorkNoteText}>
-                      Apple Intelligence runs entirely on your device — private, offline,
-                      no API key. Best for quick chats; it has a small context window, so
-                      long conversations may need a fresh start.
+                      {appleIsServer
+                        ? "Apple Intelligence runs on Private Cloud Compute — private, no API key, with a larger context window and stronger reasoning. Needs a connection and has a daily usage limit."
+                        : "Apple Intelligence runs entirely on your device — private, offline, no API key. Best for quick chats; it has a small context window, so long conversations may need a fresh start."}
                     </Text>
+                  </View>
+                )}
+                {pref === "apple" && appleIsServer && quota?.available && quota.status !== "below" && (
+                  <View style={styles.rorkNote}>
+                    <Text
+                      style={[
+                        styles.rorkNoteText,
+                        { color: quota.isLimitReached ? t.danger : t.warning },
+                      ]}
+                    >
+                      {quota.isLimitReached
+                        ? "You've reached your daily Private Cloud Compute limit."
+                        : "You're approaching your daily Private Cloud Compute limit."}
+                      {quota.resetDate ? ` Resets ${new Date(quota.resetDate).toLocaleDateString()}.` : ""}
+                    </Text>
+                    {quota.canUpgrade && (
+                      <Pressable
+                        onPress={() => {
+                          haptics.selection();
+                          showAppleQuotaUpgrade();
+                        }}
+                        hitSlop={8}
+                      >
+                        <Text style={[styles.rorkNoteText, { color: t.accent, fontWeight: "600" }]}>
+                          Show options
+                        </Text>
+                      </Pressable>
+                    )}
                   </View>
                 )}
                 {pref === "rork" && (

@@ -25,7 +25,8 @@ const SECURE_KEY_APIKEY = "ai.openai.apiKey"; // secure-store key
 
 /**
  * Which backend the user prefers when more than one is available.
- *   - "apple": on-device Apple Foundation Models (offline, no key; iOS 26+ only)
+ *   - "apple": Apple Intelligence — Private Cloud Compute (iOS 27+, no key,
+ *     privacy-preserving) when available, else the dev on-device model.
  *   - "rork":  built-in first-party endpoint (network)
  *   - "openai": user-supplied OpenAI-compatible endpoint (network)
  */

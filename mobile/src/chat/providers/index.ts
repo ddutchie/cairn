@@ -14,7 +14,12 @@
  */
 
 import { getProviderPref, resolveOpenAIConfig } from "../ai-config";
-import { appleProvider, isAppleProviderAvailable } from "./apple";
+import {
+  appleOnDeviceProvider,
+  appleProvider,
+  isAppleOnDeviceAvailable,
+  isAppleServerProviderAvailable,
+} from "./apple";
 import { makeOpenAIProvider } from "./openai";
 import { isRorkAvailable, rorkProvider } from "./rork";
 import type { ChatProvider } from "./types";
@@ -32,36 +37,47 @@ export class NoProviderError extends Error {
 }
 
 /**
- * Resolve the active provider. Honours the user's preference first (Apple when
- * on-device is available; OpenAI when configured), then Rork when built in, then
- * a configured OpenAI, then on-device Apple as a universal offline fallback,
- * else NoProviderError. Async because reading the API key touches the keychain.
+ * The Apple provider to use, if any: Private Cloud Compute (user-facing) when
+ * available, else the on-device model when the dev flag exposes it. null when
+ * neither is available.
+ */
+function appleProviderOrNull(): ChatProvider | null {
+  if (isAppleServerProviderAvailable()) return appleProvider;
+  if (isAppleOnDeviceAvailable()) return appleOnDeviceProvider;
+  return null;
+}
+
+/**
+ * Resolve the active provider. Honours the user's preference first (Apple →
+ * PCC when available, else dev on-device; OpenAI when configured), then Rork
+ * when built in, then a configured OpenAI, then Apple as a fallback, else
+ * NoProviderError. Async because reading the API key touches the keychain.
  */
 export async function resolveProvider(): Promise<ChatProvider> {
   const rork = isRorkAvailable();
-  const apple = isAppleProviderAvailable();
+  const apple = appleProviderOrNull();
   const pref = getProviderPref(rork);
 
   if (pref === "apple") {
-    if (apple) return appleProvider;
-    // Preferred Apple but unavailable (older OS / disabled) — fall through.
+    if (apple) return apple;
+    // Preferred Apple but unavailable (older OS / not entitled / disabled) — fall through.
   } else if (pref === "openai") {
     const openai = await resolveOpenAIConfig();
     if (openai) return makeOpenAIProvider(openai);
     // Preferred OpenAI but not configured — fall back below.
   }
 
-  // Fallback order: Rork → configured OpenAI → on-device Apple.
+  // Fallback order: Rork → configured OpenAI → Apple (PCC or dev on-device).
   if (rork) return rorkProvider;
   const openai = await resolveOpenAIConfig();
   if (openai) return makeOpenAIProvider(openai);
-  if (apple) return appleProvider;
+  if (apple) return apple;
   throw new NoProviderError();
 }
 
 /** Whether any provider is usable right now (for gating the composer). */
 export async function hasProvider(): Promise<boolean> {
   if (isRorkAvailable()) return true;
-  if (isAppleProviderAvailable()) return true;
+  if (appleProviderOrNull()) return true;
   return (await resolveOpenAIConfig()) != null;
 }
