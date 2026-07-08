@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -65,15 +65,37 @@ export default function ChatScreen() {
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => makeStyles(t), [t]);
-  const [messages, setMessages] = useState<UiMessage[]>([]);
+  // Restore local (on-device) chat history once, synchronously, when the screen
+  // first mounts — seeding both the UI bubbles (messages) and the persistent
+  // agent conversation (ref) via lazy initializers rather than a
+  // setState-in-effect (which the linter flags as a cascading render).
+  // `useState`'s lazy initializer runs exactly once, so history is read a single
+  // time and shared by both seeds below.
+  const [messages, setMessages] = useState<UiMessage[]>(() =>
+    loadChatHistory().map((h) => ({ role: h.role, content: h.content, images: h.images, tools: h.tools })),
+  );
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [busy, setBusy] = useState(false);
   const [configured, setConfigured] = useState(true);
   const scrollRef = useRef<ScrollView>(null);
   const router = useRouter();
-  // Persistent agent conversation (UIMessage parts format) across turns.
-  const conversation = useRef<UIMessage[]>([]);
+  // Persistent agent conversation (UIMessage parts format) across turns. Seeded
+  // once from the same on-device history as `messages` above.
+  const conversation = useRef<UIMessage[]>(
+    loadChatHistory().map((h) => {
+      if (h.role === "user") {
+        // Restore image attachments too, so the agent keeps multimodal context
+        // across relaunch (the UI bubble already shows them via `messages`).
+        const atts = (h.images ?? []).map((url) => ({
+          url,
+          mediaType: url.match(/^data:([^;,]+)/)?.[1] ?? "image/jpeg",
+        }));
+        return userMessage(h.content, atts);
+      }
+      return assistantMessage(h.content);
+    }),
+  );
 
   // Whether any AI provider is usable (built-in Rork or a configured OpenAI
   // key). Re-checked whenever the chat screen regains focus — e.g. after the
@@ -86,27 +108,6 @@ export default function ChatScreen() {
       refreshConfigured();
     }, [refreshConfigured]),
   );
-
-  // Restore local (on-device) chat history once on mount: rebuild both the UI
-  // bubbles and the agent conversation so context survives an app relaunch.
-  useEffect(() => {
-    const history = loadChatHistory();
-    if (history.length === 0) return;
-    setMessages(history.map((h) => ({ role: h.role, content: h.content, images: h.images, tools: h.tools })));
-    for (const h of history) {
-      if (h.role === "user") {
-        // Restore image attachments too, so the agent keeps multimodal context
-        // across relaunch (the UI bubble already shows them via setMessages).
-        const atts = (h.images ?? []).map((url) => ({
-          url,
-          mediaType: url.match(/^data:([^;,]+)/)?.[1] ?? "image/jpeg",
-        }));
-        conversation.current.push(userMessage(h.content, atts));
-      } else {
-        conversation.current.push(assistantMessage(h.content));
-      }
-    }
-  }, []);
 
   const { height: kbHeight } = useGradualAnimation();
   // Approximate the native (translucent) iOS tab bar height. NativeTabs doesn't

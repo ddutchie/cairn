@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
   Modal,
@@ -44,33 +44,47 @@ export function BottomSheet({
   const t = useTheme();
   const styles = useMemo(() => makeStyles(t), [t]);
 
-  // Keep the Modal mounted for the duration of the exit animation.
-  const [mounted, setMounted] = useState(visible);
+  // Keep the Modal mounted for the duration of the EXIT animation. When
+  // `visible` is true we render immediately (no state write needed); this flag
+  // only extends mounting past a close so the slide-out can play. Deriving the
+  // render condition from `visible || exiting` avoids a setState-in-effect.
+  const [exiting, setExiting] = useState(false);
   // Lazily create the driver once (useState initialiser, not useRef, so the
   // react-hooks lint rule doesn't flag reading a ref value during render).
   const [progress] = useState(() => new Animated.Value(0)); // 0 = hidden, 1 = shown
+  // Tracks whether the sheet has ever been opened, so an initial `visible=false`
+  // render doesn't trigger a spurious exit animation / mount flash.
+  const wasVisible = useRef(false);
 
   useEffect(() => {
     if (visible) {
-      setMounted(true);
+      // Opening: `exiting` is already false in the steady state; we deliberately
+      // do NOT setState here (a synchronous setState-in-effect triggers a
+      // cascading render). Just play the enter animation.
+      wasVisible.current = true;
       Animated.timing(progress, {
         toValue: 1,
         duration: 240,
         useNativeDriver: true,
       }).start();
-    } else if (mounted) {
+    } else if (wasVisible.current) {
+      // Play the exit animation, keeping the sheet mounted until it finishes.
+      wasVisible.current = false;
+      setExiting(true);
       Animated.timing(progress, {
         toValue: 0,
         duration: 200,
         useNativeDriver: true,
       }).start(({ finished }) => {
-        if (finished) setMounted(false);
+        // Only unmount if we didn't get reopened mid-exit (wasVisible flips true
+        // again in that case).
+        if (finished && !wasVisible.current) setExiting(false);
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
-  if (!mounted) return null;
+  if (!visible && !exiting) return null;
 
   const backdropOpacity = progress; // 0 → 1
   const translateY = progress.interpolate({

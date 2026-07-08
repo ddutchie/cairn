@@ -59,28 +59,27 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
   // Whether to show the provider chooser at all: only when there's a choice.
   const showChooser = rorkBuiltIn || appleAvailable;
 
-  const [pref, setPref] = useState<ProviderPref>("openai");
-  const [baseUrl, setBaseUrl] = useState("");
-  const [model, setModel] = useState("");
+  // These initial values come from synchronous getters, so seed them via lazy
+  // useState initializers (run once) rather than assigning in an effect — the
+  // latter is a cascading setState-in-effect the linter flags. The API key is
+  // async (secure store), so it's loaded in the effect below.
+  const [pref, setPref] = useState<ProviderPref>(() => getProviderPref(rorkBuiltIn));
+  const [baseUrl, setBaseUrl] = useState(() => getOpenAIBaseUrl());
+  const [model, setModel] = useState(() => getOpenAIModel());
   const [apiKey, setApiKey] = useState("");
   const [loadedKey, setLoadedKey] = useState("");
   const [hadKey, setHadKey] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   // Model discovery via GET {base}/models.
   const [models, setModels] = useState<string[]>([]);
   const [fetchingModels, setFetchingModels] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
 
-  // Load current values once when the screen mounts.
+  // Load the API key (async, from secure store) once on mount. The synchronous
+  // provider/baseUrl/model values are already seeded above.
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setPref(getProviderPref(rorkBuiltIn));
-    setBaseUrl(getOpenAIBaseUrl());
-    setModel(getOpenAIModel());
-    setModels([]);
-    setModelsError(null);
     getOpenAIApiKey().then((k) => {
       if (cancelled) return;
       setHadKey(k != null);
@@ -91,7 +90,7 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
     return () => {
       cancelled = true;
     };
-  }, [rorkBuiltIn]);
+  }, []);
   const fetchModels = async () => {
     const key = apiKey.trim();
     if (!key) {

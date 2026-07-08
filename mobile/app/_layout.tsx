@@ -6,8 +6,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import * as SplashScreen from "expo-splash-screen";
 import { initDatabase } from "@/db";
-import { startAutoSync } from "@/sync/controller";
-import { onDataChanged } from "@/sync/controller";
+import { startAutoSync, onDataChanged } from "@/sync/controller";
 import { catchUpIndex } from "@/notes/embeddings";
 import { UpdateBanner } from "@/components/UpdateBanner";
 import { useTheme } from "@/theme";
@@ -20,8 +19,18 @@ SplashScreen.setOptions({ duration: 300, fade: true });
 export default function RootLayout() {
   const t = useTheme();
   const scheme = useColorScheme();
-  const [ready, setReady] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Open the DB once, synchronously, during the first render — the whole app
+  // depends on it, so there's no meaningful "before DB" UI to show. A lazy
+  // useState initializer runs exactly once and keeps the DB init OUT of an
+  // effect (avoids the cascading setState-in-effect the linter flags).
+  const [{ ready, error }] = useState<{ ready: boolean; error: string | null }>(() => {
+    try {
+      initDatabase();
+      return { ready: true, error: null };
+    } catch (e) {
+      return { ready: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  });
 
   // NOTE: the status bar is intentionally NOT controlled from JS. With
   // UIUserInterfaceStyle=Automatic + UIStatusBarStyle=UIStatusBarStyleDefault
@@ -32,13 +41,9 @@ export default function RootLayout() {
   // github.com/expo/expo/issues/8002.
 
   useEffect(() => {
-    try {
-      initDatabase();
-      setReady(true);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-      return;
-    }
+    // The DB is already open (see the lazy initializer above). If it failed,
+    // skip all startup side-effects — the error screen renders instead.
+    if (error) return;
     // Sync startup is non-fatal: a failure here must NOT show the "Database
     // error" screen (the DB opened fine). Guard it separately.
     try {
@@ -62,7 +67,7 @@ export default function RootLayout() {
       clearTimeout(kickoff);
       unsub();
     };
-  }, []);
+  }, [error]);
 
   // Hide the native splash once we've either loaded or hit an error, so the
   // splash never lingers past the point the UI is ready to show.
