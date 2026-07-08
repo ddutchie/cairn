@@ -1040,6 +1040,15 @@ export function noteTitleById(noteId: string): string {
   return row?.title ?? "Untitled";
 }
 
+/** The workspace id a note belongs to (via its project). */
+export function workspaceIdForNote(noteId: string): string {
+  const row = getDb().getFirstSync<{ workspace_id: string }>(
+    `SELECT workspace_id FROM notes WHERE id = ?`,
+    noteId,
+  );
+  return row?.workspace_id ?? "";
+}
+
 /** Title + plain-text body for a set of notes, for lexical (keyword) scoring in
  *  hybrid semantic search. Returns a map keyed by note id. */
 export function noteTextByIds(noteIds: string[]): Map<string, { title: string; text: string }> {

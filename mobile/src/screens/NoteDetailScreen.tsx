@@ -11,15 +11,17 @@ import {
 import { Pin } from "lucide-react-native";
 import { KeyboardAwareScrollView, KeyboardStickyView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { getNote, updateNote, tagsForNote, noteTagIds, setNoteTags, pinNote, softDeleteNote } from "@/db/queries";
+import { getNote, updateNote, tagsForNote, noteTagIds, setNoteTags, pinNote, softDeleteNote, workspaceIdForNote } from "@/db/queries";
 import { MarkdownView } from "@/components/MarkdownView";
 import { TagChips } from "@/components/TagChips";
 import { TagPickerSheet } from "@/components/TagPickerSheet";
 import { NoteEditorToolbar } from "@/components/NoteEditorToolbar";
 import { WikilinkPickerSheet } from "@/components/WikilinkPickerSheet";
+import { PressableScale } from "@/components/PressableScale";
 import { ICON_CHECK, ICON_CLOSE, ICON_EDIT, ICON_MORE, ICON_PIN, ICON_UNPIN, ICON_TAG, ICON_DELETE } from "@/components/toolbar-icons";
 import { useNoteFormattingToolbar } from "@/notes/useNoteFormattingToolbar";
-import { reindexNote } from "@/notes/embeddings";
+import { reindexNote, relatedNotes, type RelatedNote } from "@/notes/embeddings";
+import { isAppleEmbeddingsSupported } from "@modules/apple-embeddings";
 import { useDataChanged } from "@/sync/useSyncStatus";
 import { useTheme, TAB_BAR_BASE, type as typeScale, type Theme } from "@/theme";
 
@@ -229,6 +231,10 @@ export function NoteDetailScreen({ nested = false }: { nested?: boolean }) {
           <View style={styles.md}>
             <MarkdownView content={note.content ?? ""} onChangeContent={onToggleCheckbox} />
           </View>
+          <RelatedNotes
+            noteId={note.id}
+            onOpen={(id) => router.push({ pathname: "/note/[id]", params: { id, back: "Note" } })}
+          />
         </ScrollView>
       )}
 
@@ -258,6 +264,46 @@ function TagChipsRow({ note }: { note: { tag_ids: string } }) {
   );
 }
 
+/**
+ * "Related notes" — on-device semantic neighbours of the current note, surfaced
+ * below the body. Reuses relatedNotes() (corpus-centred cosine). Renders nothing
+ * when embeddings are unavailable, the note isn't indexed yet, or there are no
+ * matches above the similarity floor — so it never shows an empty shell.
+ */
+function RelatedNotes({ noteId, onOpen }: { noteId: string; onOpen: (id: string) => void }) {
+  const t = useTheme();
+  const styles = useMemo(() => makeStyles(t), [t]);
+  const [items, setItems] = useState<RelatedNote[] | null>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!isAppleEmbeddingsSupported()) {
+        setItems([]);
+        return;
+      }
+      let alive = true;
+      relatedNotes(workspaceIdForNote(noteId), noteId, 5)
+        .then((r) => { if (alive) setItems(r); })
+        .catch(() => { if (alive) setItems([]); });
+      return () => { alive = false; };
+    }, [noteId]),
+  );
+
+  if (!items || items.length === 0) return null;
+
+  return (
+    <View style={styles.related}>
+      <Text style={styles.relatedHeading}>Related notes</Text>
+      {items.map((r) => (
+        <PressableScale key={r.noteId} style={styles.relatedRow} onPress={() => onOpen(r.noteId)}>
+          <Text style={styles.relatedTitle} numberOfLines={1}>{r.title || "Untitled"}</Text>
+          <Text style={styles.relatedScore}>{Math.round(r.score * 100)}%</Text>
+        </PressableScale>
+      ))}
+    </View>
+  );
+}
+
 function makeStyles(t: Theme) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: t.background },
@@ -271,5 +317,34 @@ function makeStyles(t: Theme) {
     bodyInput: { ...typeScale.body, color: t.textPrimary, marginTop: 16, fontFamily: "Menlo", minHeight: 320 },
     center: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: t.background },
     missing: { color: t.textTertiary },
+    // Related notes (semantic neighbours)
+    related: {
+      marginTop: 28,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: t.border,
+      paddingTop: 16,
+    },
+    relatedHeading: {
+      ...typeScale.caption,
+      color: t.textTertiary,
+      textTransform: "uppercase",
+      letterSpacing: 0.5,
+      fontWeight: "600",
+      marginBottom: 8,
+    },
+    relatedRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      paddingVertical: 10,
+      paddingHorizontal: 12,
+      marginBottom: 8,
+      backgroundColor: t.surface,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: t.border,
+    },
+    relatedTitle: { ...typeScale.control, color: t.textPrimary, flexShrink: 1 },
+    relatedScore: { ...typeScale.caption, color: t.textTertiary, marginLeft: "auto", fontVariant: ["tabular-nums"] },
   });
 }

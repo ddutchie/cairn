@@ -199,7 +199,7 @@ export async function runAgent(
         result = { error: `Unknown tool: ${call.name}` };
       } else {
         try {
-          result = tool.run((call.input as Record<string, unknown>) ?? {});
+          result = await tool.run((call.input as Record<string, unknown>) ?? {});
         } catch (err) {
           result = { error: err instanceof Error ? err.message : String(err) };
         }

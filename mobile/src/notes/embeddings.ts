@@ -549,6 +549,72 @@ export async function semanticEdges(workspaceId: string): Promise<SemanticEdge[]
   return edges;
 }
 
+export interface RelatedNote {
+  noteId: string;
+  title: string;
+  /** Centred-cosine similarity to the source note (0–1). */
+  score: number;
+}
+
+/**
+ * Notes most similar to `noteId` by meaning — for a "Related notes" section on
+ * the note detail screen. Centres all workspace vectors by the corpus centroid
+ * (same discrimination fix as semanticSearch/semanticEdges), then keeps the best
+ * section-to-section similarity between the source note and every other note.
+ * Empty when embeddings are unavailable or the note isn't indexed yet.
+ */
+export async function relatedNotes(
+  workspaceId: string,
+  noteId: string,
+  k = 5,
+  floor = SEMANTIC_FLOOR,
+): Promise<RelatedNote[]> {
+  if (!isAppleEmbeddingsSupported()) return [];
+  const info = await embeddingsInfo();
+  if (!info) return [];
+  const key = modelKey(info);
+  const dim = info.dimension;
+
+  const rows = getWorkspaceEmbeddingRows(workspaceId).filter((r) => r.model === key);
+  const raw: { noteId: string; vec: Float32Array }[] = [];
+  for (const r of rows) {
+    try {
+      const v = Float32Array.from(JSON.parse(r.vector) as number[]);
+      if (v.length === dim) raw.push({ noteId: r.note_id, vec: v });
+    } catch {
+      // skip malformed row
+    }
+  }
+  if (raw.length === 0) return [];
+
+  const centroid = new Float32Array(dim);
+  for (const p of raw) for (let i = 0; i < dim; i++) centroid[i] += p.vec[i];
+  for (let i = 0; i < dim; i++) centroid[i] /= raw.length;
+
+  const centred = raw.map((p) => ({ noteId: p.noteId, vec: centerAndNormalise(p.vec, centroid) }));
+  const source = centred.filter((p) => p.noteId === noteId);
+  if (source.length === 0) return []; // note not indexed
+
+  // Best section-to-section similarity between the source note and each other note.
+  const best = new Map<string, number>();
+  for (const other of centred) {
+    if (other.noteId === noteId) continue;
+    let s = -2;
+    for (const src of source) {
+      const score = dot(src.vec, other.vec);
+      if (score > s) s = score;
+    }
+    if (s < floor) continue;
+    const prev = best.get(other.noteId);
+    if (prev === undefined || s > prev) best.set(other.noteId, s);
+  }
+
+  return [...best.entries()]
+    .map(([id, score]) => ({ noteId: id, title: noteTitleById(id), score: Math.round(score * 100) / 100 }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, k);
+}
+
 // --- index status store + orchestration -----------------------------------
 //
 // A tiny external store (useSyncExternalStore-friendly) so the UI can show a
