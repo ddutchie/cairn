@@ -7,6 +7,8 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 import * as SplashScreen from "expo-splash-screen";
 import { initDatabase } from "@/db";
 import { startAutoSync } from "@/sync/controller";
+import { onDataChanged } from "@/sync/controller";
+import { catchUpIndex } from "@/notes/embeddings";
 import { UpdateBanner } from "@/components/UpdateBanner";
 import { useTheme } from "@/theme";
 
@@ -44,6 +46,22 @@ export default function RootLayout() {
     } catch (e) {
       console.warn("[sync] auto-sync failed to start:", e);
     }
+
+    // On-device semantic-search index catch-up. Runs after first paint so it
+    // never blocks startup; incremental + hash-gated, so an already-indexed
+    // workspace finishes near-instantly. No-op when embeddings are unavailable
+    // (older iOS / Android / Expo Go). Re-run after any inbound sync that may
+    // have pulled in or imported new notes.
+    const kickoff = setTimeout(() => {
+      catchUpIndex().catch((e) => console.warn("[embeddings] initial catch-up failed:", e));
+    }, 1200);
+    const unsub = onDataChanged(() => {
+      catchUpIndex().catch(() => {});
+    });
+    return () => {
+      clearTimeout(kickoff);
+      unsub();
+    };
   }, []);
 
   // Hide the native splash once we've either loaded or hit an error, so the

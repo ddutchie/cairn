@@ -83,3 +83,5 @@ export const ICON_VIEW_WEEK: ToolbarIcon = ios ? "calendar.day.timeline.left" : 
 export const ICON_GRAPH_FORCE: ToolbarIcon = ios ? "point.3.connected.trianglepath.dotted" : AccountTreeXml;
 /** Radial hierarchy layout (sunburst / pie). */
 export const ICON_GRAPH_RADIAL: ToolbarIcon = ios ? "chart.pie" : PieChartXml;
+/** Semantic (on-device embedding-similarity) connections toggle. */
+export const ICON_SEMANTIC: ToolbarIcon = ios ? "sparkles" : NeurologyXml;

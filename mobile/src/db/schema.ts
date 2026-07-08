@@ -172,6 +172,32 @@ CREATE TABLE IF NOT EXISTS app_settings (
   value TEXT NOT NULL
 );
 
+-- Local-only on-device semantic-search index. NO capture trigger, so it never
+-- publishes to or pulls from the sync folder. Vectors are produced by Apple's
+-- NLContextualEmbedding (see modules/apple-embeddings) and live in Apple's own
+-- embedding space — they are NOT interchangeable with desktop bge-small
+-- embeddings, so each device builds and queries its own index. One row per
+-- markdown section (mirrors desktop's note_embeddings section shape).
+--   model        : "<modelIdentifier>@<revision>:<dim>" — invalidation key.
+--   content_hash : sha256-ish digest of the embedded section text (skip re-embed
+--                  when unchanged).
+--   vector       : JSON-serialised number[] (L2-normalised), sqlite-vec-swappable
+--                  later if we ever want an ANN index.
+-- ON DELETE CASCADE isn't declared because foreign_keys is OFF (see top); the
+-- reindex/prune path deletes rows for removed notes explicitly.
+CREATE TABLE IF NOT EXISTS note_embeddings (
+  note_id       TEXT NOT NULL,
+  section_idx   INTEGER NOT NULL DEFAULT 0,
+  workspace_id  TEXT NOT NULL DEFAULT '',
+  model         TEXT NOT NULL DEFAULT '',
+  section_title TEXT NOT NULL DEFAULT '',
+  content_hash  TEXT NOT NULL DEFAULT '',
+  vector        TEXT NOT NULL DEFAULT '[]',
+  embedded_at   TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (note_id, section_idx)
+);
+CREATE INDEX IF NOT EXISTS idx_note_emb_note ON note_embeddings(note_id);
+
 -- Sync engine tables (mirror desktop migrations v25/v26).
 CREATE TABLE IF NOT EXISTS sync_oplog (
   seq        INTEGER PRIMARY KEY AUTOINCREMENT,

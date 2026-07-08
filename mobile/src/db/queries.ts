@@ -385,7 +385,12 @@ function plainText(md: string): string {
 // ── Knowledge graph ─────────────────────────────────────────────────────────
 
 export type GraphNodeType = "project" | "note" | "card" | "tag";
-export type GraphEdgeType = "project-member" | "note-note" | "note-card" | "tag-member";
+export type GraphEdgeType =
+  | "project-member"
+  | "note-note"
+  | "note-card"
+  | "tag-member"
+  | "semantic";
 
 export interface GraphNode {
   id: string;
@@ -402,6 +407,8 @@ export interface GraphEdge {
   source: string;
   target: string;
   type: GraphEdgeType;
+  /** Similarity (0–1) for 'semantic' edges; drives dash-line weight/threshold. */
+  weight?: number;
 }
 
 export interface KnowledgeGraph {
@@ -429,7 +436,6 @@ export function getKnowledgeGraph(): KnowledgeGraph {
     nodeIds.add(n.id);
     nodes.push(n);
   };
-
   const projects = db.getAllSync<{ id: string; name: string }>(
     `SELECT id, name FROM projects WHERE ${LIVE}`,
   );
@@ -867,4 +873,144 @@ function isTombstoned(id: string): boolean {
     id,
   );
   return !row || row.deleted_at != null;
+}
+
+// ---------------------------------------------------------------------------
+// On-device semantic-search index (note_embeddings). Local-only, never synced.
+// See src/notes/embeddings.ts for the reindex/search logic that drives these.
+// ---------------------------------------------------------------------------
+
+/** A note (with markdown source) needing an embedding pass. */
+export interface EmbeddableNote {
+  id: string;
+  workspace_id: string;
+  title: string;
+  content: string | null;
+}
+
+/** A stored section embedding row (vector kept as JSON text on disk). */
+export interface EmbeddingRow {
+  note_id: string;
+  section_idx: number;
+  workspace_id: string;
+  model: string;
+  section_title: string;
+  content_hash: string;
+  vector: string;
+}
+
+/** All live notes for a workspace that could hold text worth embedding. */
+export function listEmbeddableNotes(workspaceId: string): EmbeddableNote[] {
+  return getDb().getAllSync<EmbeddableNote>(
+    `SELECT id, workspace_id, title, content FROM notes
+     WHERE ${LIVE} AND type = 'note' AND ${NOT_CONFLICT} AND workspace_id = ?`,
+    workspaceId,
+  );
+}
+
+/** One note (id, workspace_id, title, content) for an incremental embed pass. */
+export function getNoteForEmbedding(noteId: string): EmbeddableNote | null {
+  return (
+    getDb().getFirstSync<EmbeddableNote>(
+      `SELECT id, workspace_id, title, content FROM notes WHERE id = ?`,
+      noteId,
+    ) ?? null
+  );
+}
+
+/** Existing section rows for a note (to diff hashes before re-embedding). */
+export function getNoteEmbeddingRows(noteId: string): EmbeddingRow[] {
+  return getDb().getAllSync<EmbeddingRow>(
+    `SELECT note_id, section_idx, workspace_id, model, section_title, content_hash, vector
+     FROM note_embeddings WHERE note_id = ? ORDER BY section_idx`,
+    noteId,
+  );
+}
+
+/** All 'search_document' section rows for a workspace, for brute-force search. */
+export function getWorkspaceEmbeddingRows(workspaceId: string): EmbeddingRow[] {
+  return getDb().getAllSync<EmbeddingRow>(
+    `SELECT note_id, section_idx, workspace_id, model, section_title, content_hash, vector
+     FROM note_embeddings WHERE workspace_id = ?`,
+    workspaceId,
+  );
+}
+
+/** Upsert one section embedding (vector serialised as JSON). */
+export function upsertNoteEmbedding(row: {
+  noteId: string;
+  sectionIdx: number;
+  workspaceId: string;
+  model: string;
+  sectionTitle: string;
+  contentHash: string;
+  vector: number[];
+}): void {
+  getDb().runSync(
+    `INSERT INTO note_embeddings
+       (note_id, section_idx, workspace_id, model, section_title, content_hash, vector, embedded_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(note_id, section_idx) DO UPDATE SET
+       workspace_id = excluded.workspace_id,
+       model        = excluded.model,
+       section_title= excluded.section_title,
+       content_hash = excluded.content_hash,
+       vector       = excluded.vector,
+       embedded_at  = excluded.embedded_at`,
+    row.noteId,
+    row.sectionIdx,
+    row.workspaceId,
+    row.model,
+    row.sectionTitle,
+    row.contentHash,
+    JSON.stringify(row.vector),
+    new Date().toISOString(),
+  );
+}
+
+/** Delete section rows for a note at or above a given index (prune shrinks). */
+export function deleteNoteEmbeddingsFrom(noteId: string, fromIdx: number): void {
+  getDb().runSync(
+    `DELETE FROM note_embeddings WHERE note_id = ? AND section_idx >= ?`,
+    noteId,
+    fromIdx,
+  );
+}
+
+/** Delete every section row for a note (note emptied or removed). */
+export function deleteNoteEmbeddings(noteId: string): void {
+  getDb().runSync(`DELETE FROM note_embeddings WHERE note_id = ?`, noteId);
+}
+
+/** Note ids that currently have any embedding rows (to find orphans). */
+export function embeddedNoteIds(workspaceId: string): string[] {
+  return getDb()
+    .getAllSync<{ note_id: string }>(
+      `SELECT DISTINCT note_id FROM note_embeddings WHERE workspace_id = ?`,
+      workspaceId,
+    )
+    .map((r) => r.note_id);
+}
+
+/** Wipe the whole index (e.g. on model-identifier change). */
+export function clearAllEmbeddings(): void {
+  getDb().runSync(`DELETE FROM note_embeddings`);
+}
+
+/** All live workspace ids (semantic index is maintained per workspace). */
+export function listWorkspaceIds(): string[] {
+  return getDb()
+    .getAllSync<{ id: string }>(
+      `SELECT id FROM workspaces WHERE deleted_at IS NULL AND archived_at IS NULL`,
+    )
+    .map((r) => r.id);
+}
+
+/** Resolve a note's title for search-result display. */
+export function noteTitleById(noteId: string): string {
+  const row = getDb().getFirstSync<{ title: string }>(
+    `SELECT title FROM notes WHERE id = ?`,
+    noteId,
+  );
+  return row?.title ?? "Untitled";
 }

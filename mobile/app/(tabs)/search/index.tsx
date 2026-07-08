@@ -2,13 +2,16 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { Text, View, FlatList, Pressable, StyleSheet } from "react-native";
 import { Stack, useRouter, useFocusEffect } from "expo-router";
 import type { SearchBarCommands } from "react-native-screens";
-import { searchNotes, searchTasks, type NoteRow, type CardRow } from "@/db/queries";
+import { searchNotes, searchTasks, listWorkspaceIds, type NoteRow, type CardRow } from "@/db/queries";
 import { PressableScale } from "@/components/PressableScale";
 import { TabScreen } from "@/components/TabScreen";
+import { IndexingBar } from "@/components/IndexingBar";
+import { semanticSearch, catchUpIndex, type SemanticHit } from "@/notes/embeddings";
+import { isAppleEmbeddingsSupported } from "@modules/apple-embeddings";
 import { stripMarkdown } from "@cairn/shared/notes/text";
 import { useTheme, elevation, PRIORITY_COLOR, type as typeScale, type Theme } from "@/theme";
 
-type Scope = "notes" | "tasks";
+type Scope = "notes" | "tasks" | "semantic";
 
 /**
  * Search screen using the native iOS search bar (headerSearchBarOptions) — the
@@ -23,18 +26,33 @@ export default function SearchScreen() {
   const [scope, setScope] = useState<Scope>("notes");
   const [notes, setNotes] = useState<NoteRow[]>([]);
   const [tasks, setTasks] = useState<CardRow[]>([]);
+  const [hits, setHits] = useState<SemanticHit[]>([]);
   const styles = useMemo(() => makeStyles(t), [t]);
   const searchRef = useRef<SearchBarCommands>(null);
+  const semanticAvailable = isAppleEmbeddingsSupported();
+  // Monotonic token so a slow semantic query can't overwrite a newer one.
+  const semanticSeq = useRef(0);
 
   const run = useCallback((text: string, s: Scope) => {
     const q = text.trim();
     if (q.length === 0) {
       setNotes([]);
       setTasks([]);
+      setHits([]);
       return;
     }
     if (s === "notes") setNotes(searchNotes(q));
-    else setTasks(searchTasks(q));
+    else if (s === "tasks") setTasks(searchTasks(q));
+    else {
+      // Semantic: embed the query and cosine-rank across all workspaces.
+      const seq = ++semanticSeq.current;
+      (async () => {
+        const all: SemanticHit[] = [];
+        for (const ws of listWorkspaceIds()) all.push(...(await semanticSearch(ws, q, 20)));
+        all.sort((a, b) => b.score - a.score);
+        if (seq === semanticSeq.current) setHits(all.slice(0, 30));
+      })();
+    }
   }, []);
 
   // Debounce search-as-you-type so a burst of keystrokes fires one SQLite query
@@ -55,6 +73,14 @@ export default function SearchScreen() {
 
   const switchScope = (s: Scope) => {
     setScope(s);
+    // Selecting Semantic ensures the on-device index is built (downloads model
+    // assets on first use + embeds any not-yet-indexed notes). The IndexingBar
+    // shows progress; re-run the query when it finishes so results appear.
+    if (s === "semantic") {
+      catchUpIndex()
+        .then(() => run(query, "semantic"))
+        .catch(() => {});
+    }
     // Scope changes are deliberate (not rapid) — run immediately, and cancel any
     // pending debounced query so it can't overwrite this with the old scope.
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -72,6 +98,10 @@ export default function SearchScreen() {
   );
 
   const hasQuery = query.trim().length > 0;
+  const scopes: Scope[] = semanticAvailable ? ["notes", "tasks", "semantic"] : ["notes", "tasks"];
+  const scopeLabel = (s: Scope) => (s === "notes" ? "Notes" : s === "tasks" ? "Tasks" : "Semantic");
+  const placeholder =
+    scope === "notes" ? "Search notes" : scope === "tasks" ? "Search tasks" : "Search notes by meaning";
 
   return (
     <TabScreen>
@@ -80,7 +110,7 @@ export default function SearchScreen() {
           title: "Search",
           headerSearchBarOptions: {
             ref: searchRef,
-            placeholder: scope === "notes" ? "Search notes" : "Search tasks",
+            placeholder,
             autoCapitalize: "none",
             autoFocus: true,
             hideWhenScrolling: false,
@@ -88,21 +118,46 @@ export default function SearchScreen() {
           },
         }}
       />
+      {/* Live progress while the on-device semantic index catches up. */}
+      <IndexingBar />
       <View style={styles.segment}>
-        {(["notes", "tasks"] as Scope[]).map((s) => (
+        {scopes.map((s) => (
           <Pressable
             key={s}
             onPress={() => switchScope(s)}
             style={[styles.segmentBtn, scope === s && styles.segmentBtnActive]}
           >
             <Text style={[styles.segmentText, scope === s && styles.segmentTextActive]}>
-              {s === "notes" ? "Notes" : "Tasks"}
+              {scopeLabel(s)}
             </Text>
           </Pressable>
         ))}
       </View>
 
-      {scope === "notes" ? (
+      {scope === "semantic" ? (
+        <FlatList
+          data={hits}
+          keyExtractor={(h) => h.noteId}
+          contentContainerStyle={styles.list}
+          keyboardShouldPersistTaps="handled"
+          ListEmptyComponent={hasQuery ? <Text style={styles.hint}>No semantically similar notes</Text> : null}
+          renderItem={({ item }) => (
+            <PressableScale style={[styles.row, elevation.sm]} onPress={() => router.push({ pathname: "/note/[id]", params: { id: item.noteId, back: "Search" } })}>
+              <View style={styles.taskTitleRow}>
+                <Text style={styles.title} numberOfLines={1}>
+                  {item.title || "Untitled"}
+                </Text>
+                <Text style={styles.score}>{Math.round(item.score * 100)}%</Text>
+              </View>
+              {item.sectionTitle ? (
+                <Text style={styles.preview} numberOfLines={1}>
+                  {item.sectionTitle}
+                </Text>
+              ) : null}
+            </PressableScale>
+          )}
+        />
+      ) : scope === "notes" ? (
         <FlatList
           data={notes}
           keyExtractor={(n) => n.id}
@@ -179,6 +234,7 @@ function makeStyles(t: Theme) {
     priorityDot: { width: 8, height: 8, borderRadius: 4 },
     title: { ...typeScale.control, color: t.textPrimary, flexShrink: 1 },
     preview: { ...typeScale.caption, color: t.textSecondary, marginTop: 2 },
+    score: { ...typeScale.caption, color: t.textTertiary, marginLeft: "auto", fontVariant: ["tabular-nums"] },
     hint: { textAlign: "center", color: t.textTertiary, marginTop: 24 },
   });
 }

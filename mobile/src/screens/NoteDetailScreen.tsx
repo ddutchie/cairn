@@ -19,6 +19,7 @@ import { NoteEditorToolbar } from "@/components/NoteEditorToolbar";
 import { WikilinkPickerSheet } from "@/components/WikilinkPickerSheet";
 import { ICON_CHECK, ICON_CLOSE, ICON_EDIT, ICON_MORE, ICON_PIN, ICON_UNPIN, ICON_TAG, ICON_DELETE } from "@/components/toolbar-icons";
 import { useNoteFormattingToolbar } from "@/notes/useNoteFormattingToolbar";
+import { reindexNote } from "@/notes/embeddings";
 import { useDataChanged } from "@/sync/useSyncStatus";
 import { useTheme, TAB_BAR_BASE, type as typeScale, type Theme } from "@/theme";
 
@@ -122,6 +123,9 @@ export function NoteDetailScreen({ nested = false }: { nested?: boolean }) {
     updateNote(note.id, title.trim() || "Untitled", body);
     setNote(getNote(note.id));
     setEditing(false);
+    // Refresh the on-device semantic index for just this note (incremental,
+    // hash-gated, no-op when embeddings are unavailable). Fire-and-forget.
+    reindexNote(note.id).catch(() => {});
   };
   const onCancel = () => {
     setTitle(note.title ?? "");

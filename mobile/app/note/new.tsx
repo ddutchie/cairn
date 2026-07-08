@@ -9,6 +9,7 @@ import { useLocalSearchParams, useRouter, Stack } from "expo-router";
 import { KeyboardAwareScrollView, KeyboardStickyView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { createNote } from "@/db/queries";
+import { reindexNote } from "@/notes/embeddings";
 import { NoteEditorToolbar } from "@/components/NoteEditorToolbar";
 import { WikilinkPickerSheet } from "@/components/WikilinkPickerSheet";
 import { ICON_CHECK } from "@/components/toolbar-icons";
@@ -42,6 +43,8 @@ export default function NewNote() {
   const save = () => {
     if (!project || !canSave) return;
     const id = createNote(project, title.trim() || "Untitled", body, folder ?? "");
+    // Index the new note for on-device semantic search (fire-and-forget).
+    reindexNote(id).catch(() => {});
     router.replace(`/note/${id}`);
   };
 

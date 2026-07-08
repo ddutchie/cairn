@@ -187,12 +187,18 @@ export function KnowledgeGraphWebView({
       }),
       links: filtered.edges.map((e) => {
         const s = edgeStyle(e.type);
+        // Semantic edges scale with similarity (0.5 + weight) so stronger
+        // matches read bolder; all others are a uniform hairline. (Mobile has
+        // no wikilink edges — those exist only on desktop.)
+        let width = 1;
+        if (e.type === "semantic" && (e.weight ?? 1) < 1) width = 0.5 + (e.weight ?? 0);
         return {
           source: e.source,
           target: e.target,
           color: tokenColor(s.token, t),
           opacity: s.opacity,
           dash: s.dash,
+          width,
           distance: linkDistance(e.type),
         };
       }),
@@ -479,7 +485,7 @@ function buildGraphHtml(payload: string): string {
           var link = root.append('g').selectAll('line').data(DATA.links).join('line')
             .attr('stroke', function (d) { return d.color; })
             .attr('stroke-opacity', function (d) { return d.opacity; })
-            .attr('stroke-width', 1)
+            .attr('stroke-width', function (d) { return d.width || 1; })
             .attr('stroke-dasharray', function (d) { return d.dash ? '3,3' : null; });
 
           var selectedId = null, hoveredId = null;

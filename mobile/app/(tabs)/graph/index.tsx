@@ -1,11 +1,13 @@
-import { lazy, Suspense, useCallback, useState } from "react";
+import { lazy, Suspense, useCallback, useMemo, useState } from "react";
 import { View, Text, ActivityIndicator, StyleSheet } from "react-native";
 import { Stack, useFocusEffect, useRouter } from "expo-router";
-import { getKnowledgeGraph, type KnowledgeGraph } from "@/db/queries";
+import { getKnowledgeGraph, listWorkspaceIds, type KnowledgeGraph, type GraphEdge } from "@/db/queries";
 import type { GraphMode } from "@/components/KnowledgeGraphWebView";
 import { TabScreen } from "@/components/TabScreen";
-import { ICON_GRAPH_FORCE, ICON_GRAPH_RADIAL } from "@/components/toolbar-icons";
+import { ICON_GRAPH_FORCE, ICON_GRAPH_RADIAL, ICON_SEMANTIC } from "@/components/toolbar-icons";
 import { useDataChanged } from "@/sync/useSyncStatus";
+import { semanticEdges } from "@/notes/embeddings";
+import { isAppleEmbeddingsSupported } from "@modules/apple-embeddings";
 import { useTheme, type as typeScale } from "@/theme";
 
 // The graph WebView inlines the full D3 bundle (~274 KB) as a string. Load it
@@ -30,10 +32,44 @@ export default function GraphScreen() {
   const t = useTheme();
   const [graph, setGraph] = useState<KnowledgeGraph | null>(null);
   const [mode, setMode] = useState<GraphMode>("force");
+  // On-device semantic edges (dashed accent links), loaded lazily and merged
+  // only when the toggle is on. Off by default so the graph opens showing the
+  // explicit/structural links first (matches desktop, where the semantic
+  // threshold defaults to "off").
+  const [showSemantic, setShowSemantic] = useState(false);
+  const [semantic, setSemantic] = useState<GraphEdge[]>([]);
+  const semanticAvailable = isAppleEmbeddingsSupported();
 
   const load = useCallback(() => setGraph(getKnowledgeGraph()), []);
   useFocusEffect(useCallback(() => load(), [load]));
   useDataChanged(load);
+
+  // Compute semantic edges once the toggle is switched on (and refresh when the
+  // underlying data changes while it's on). Cheap no-op when unavailable.
+  const loadSemantic = useCallback(async () => {
+    if (!showSemantic || !semanticAvailable) {
+      setSemantic([]);
+      return;
+    }
+    const all: GraphEdge[] = [];
+    for (const ws of listWorkspaceIds()) {
+      const edges = await semanticEdges(ws);
+      for (const e of edges) all.push({ source: e.source, target: e.target, type: "semantic", weight: e.weight });
+    }
+    setSemantic(all);
+  }, [showSemantic, semanticAvailable]);
+  useFocusEffect(useCallback(() => { loadSemantic(); }, [loadSemantic]));
+  useDataChanged(useCallback(() => { loadSemantic(); }, [loadSemantic]));
+
+  // Merge structural + semantic edges, keeping only semantic edges whose both
+  // endpoints exist as nodes in the current graph.
+  const mergedGraph = useMemo<KnowledgeGraph | null>(() => {
+    if (!graph) return null;
+    if (!showSemantic || semantic.length === 0) return graph;
+    const ids = new Set(graph.nodes.map((n) => n.id));
+    const extra = semantic.filter((e) => ids.has(e.source) && ids.has(e.target));
+    return { nodes: graph.nodes, edges: [...graph.edges, ...extra] };
+  }, [graph, semantic, showSemantic]);
 
   const onSelectNode = useCallback(
     (node: { id: string; type: string }) => {
@@ -79,6 +115,15 @@ export default function GraphScreen() {
             >
               Radial
             </Stack.Toolbar.MenuAction>
+            {semanticAvailable && mode === "force" ? (
+              <Stack.Toolbar.MenuAction
+                icon={ICON_SEMANTIC}
+                isOn={showSemantic}
+                onPress={() => setShowSemantic((v) => !v)}
+              >
+                Semantic links
+              </Stack.Toolbar.MenuAction>
+            ) : null}
           </Stack.Toolbar.Menu>
         </Stack.Toolbar>
       ) : null}
@@ -91,7 +136,7 @@ export default function GraphScreen() {
         </View>
       ) : graph ? (
         <Suspense fallback={<View style={styles.empty}><ActivityIndicator color={t.textTertiary} /></View>}>
-          <KnowledgeGraphWebView graph={graph} mode={mode} onModeChange={setMode} onSelectNode={onSelectNode} />
+          <KnowledgeGraphWebView graph={mergedGraph ?? graph} mode={mode} onModeChange={setMode} onSelectNode={onSelectNode} />
         </Suspense>
       ) : null}
     </TabScreen>
