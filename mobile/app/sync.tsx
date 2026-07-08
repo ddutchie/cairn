@@ -7,6 +7,7 @@ import { requestSync } from "@/sync/controller";
 import { useSyncStatus } from "@/sync/useSyncStatus";
 import { EmbeddingsCard } from "@/components/EmbeddingsCard";
 import { ICON_CHECK } from "@/components/toolbar-icons";
+import { useModalOpenHaptic } from "@/haptics";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 
 /**
@@ -18,6 +19,7 @@ import { useTheme, type as typeScale, type Theme } from "@/theme";
  * conflict-resolution entry point, and the last sync result.
  */
 export default function SyncScreen() {
+  useModalOpenHaptic();
   const t = useTheme();
   const router = useRouter();
   const { state, pending, conflicts, lastResult: last } = useSyncStatus();

@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import * as Haptics from "expo-haptics";
 
 /**
@@ -54,4 +54,16 @@ export type HapticsApi = typeof haptics;
  */
 export function useHaptics(): HapticsApi {
   return useMemo(() => haptics, []);
+}
+
+/**
+ * Fire a subtle impact once when a screen mounts — the native-route-modal
+ * equivalent of the BottomSheet open tap. Call once at the top of a screen
+ * presented with `presentation: "modal"` (sync, AI settings, new note/task) so
+ * those modals get the same open feedback as the in-app sheets.
+ */
+export function useModalOpenHaptic(): void {
+  useEffect(() => {
+    haptics.impact();
+  }, []);
 }

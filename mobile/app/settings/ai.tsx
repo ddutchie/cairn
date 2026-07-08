@@ -1,5 +1,6 @@
 import { useRouter } from "expo-router";
 import { AiSettingsForm } from "@/components/AiSettingsForm";
+import { useModalOpenHaptic } from "@/haptics";
 
 /**
  * AI settings presented as a native form-sheet modal. Uses the native
@@ -10,6 +11,7 @@ import { AiSettingsForm } from "@/components/AiSettingsForm";
  * which re-checks provider availability on focus.
  */
 export default function AiSettingsScreen() {
+  useModalOpenHaptic();
   const router = useRouter();
   const close = () => {
     if (router.canGoBack()) router.back();

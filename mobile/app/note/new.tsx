@@ -13,6 +13,7 @@ import { reindexNote } from "@/notes/embeddings";
 import { NoteEditorToolbar } from "@/components/NoteEditorToolbar";
 import { WikilinkPickerSheet } from "@/components/WikilinkPickerSheet";
 import { ICON_CHECK } from "@/components/toolbar-icons";
+import { useModalOpenHaptic } from "@/haptics";
 import { useNoteFormattingToolbar } from "@/notes/useNoteFormattingToolbar";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 
@@ -26,6 +27,7 @@ import { useTheme, type as typeScale, type Theme } from "@/theme";
  * shortcuts, wikilinks, and AI text actions are available while composing.
  */
 export default function NewNote() {
+  useModalOpenHaptic();
   const { project, folder } = useLocalSearchParams<{ project: string; folder?: string }>();
   const router = useRouter();
   const t = useTheme();

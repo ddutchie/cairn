@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, KeyboardAvoidingView, Platform } from "react-native";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
 import { createTask, listColumns, type ColumnRow } from "@/db/queries";
+import { useModalOpenHaptic } from "@/haptics";
 import { useTheme, PRIORITY_COLOR, type as typeScale, type Theme } from "@/theme";
 import { ICON_CHECK } from "@/components/toolbar-icons";
 
@@ -13,6 +14,7 @@ const PRIORITIES = ["low", "medium", "high", "urgent"] as const;
  * column. Creates the card locally so capture triggers stage it for sync.
  */
 export default function NewCard() {
+  useModalOpenHaptic();
   const { project, column } = useLocalSearchParams<{ project: string; column?: string }>();
   const router = useRouter();
   const t = useTheme();
