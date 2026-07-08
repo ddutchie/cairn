@@ -149,4 +149,45 @@ final class LiveEmbeddingTests: XCTestCase {
       XCTAssertGreaterThan(sorted[0] - sorted[1], 0.02, "Top-2 too close for query: \(c.q)")
     }
   }
+
+  /// Does the BGE query prefix help or hurt on Apple's model, WITH centring in
+  /// place? Compares mean top-2 spread across all queries, prefix vs raw query.
+  /// The prefix is a foreign-model instruction that adds a shared boilerplate
+  /// direction to every query — the same common-component that centring fights —
+  /// so it may erode discrimination. This test decides empirically.
+  func testCenteredPipelinePrefixVsNoPrefix() throws {
+    let e = try makeEmbedder()
+    let docs = notes.map { n in
+      e.embed(LiveEmbedder.sectionText(noteTitle: n.title, sectionTitle: n.section, body: n.body))!
+    }
+    let cases: [(q: String, expect: String)] = [
+      ("how does note syncing and conflict resolution work", "iCloud sync engine"),
+      ("drag to reorder cards on the kanban board", "Kanban board drag and drop"),
+      ("recipe with flour and starter, ferment and bake", "Sourdough bread recipe"),
+    ]
+
+    func run(prefix: String, label: String) -> (spread: Double, allCorrect: Bool) {
+      var spreadSum = 0.0
+      var allCorrect = true
+      print("  --- \(label) ---")
+      for c in cases {
+        let all = centered(docs + [e.embed(prefix + c.q)!])
+        let cDocs = Array(all.prefix(docs.count))
+        let cq = all[docs.count]
+        let scores = cDocs.map { EmbeddingMath.dot(cq, $0) }
+        let best = scores.enumerated().max(by: { $0.element < $1.element })!
+        let sorted = scores.sorted(by: >)
+        let spread = sorted[0] - sorted[1]
+        spreadSum += spread
+        if notes[best.offset].title != c.expect { allCorrect = false }
+        print(String(format: "    spread=%.4f top=%@ (want %@)", spread, notes[best.offset].title, c.expect))
+      }
+      return (spreadSum / Double(cases.count), allCorrect)
+    }
+
+    let withPrefix = run(prefix: LiveEmbedder.queryPrefix, label: "WITH BGE prefix")
+    let noPrefix = run(prefix: "", label: "NO prefix")
+    print(String(format: "  mean spread: withPrefix=%.4f  noPrefix=%.4f", withPrefix.spread, noPrefix.spread))
+    print("  allCorrect: withPrefix=\(withPrefix.allCorrect) noPrefix=\(noPrefix.allCorrect)")
+  }
 }

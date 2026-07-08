@@ -34,11 +34,6 @@ import {
   type EmbeddableNote,
 } from "@/db/queries";
 
-// BGE-style query instruction — kept even though the model differs, since a
-// short lead-in nudges the pooled vector toward "retrieval" intent. Documents
-// are embedded verbatim.
-const QUERY_PREFIX = "Represent this sentence for searching relevant passages: ";
-
 // Chunk very long sections so we stay near the model's token budget; chunk
 // vectors are averaged + renormalised (same approach as desktop).
 const CHUNK_CHARS = 3500;
@@ -331,7 +326,7 @@ export async function semanticSearch(
 
   let qvec = queryCache.get(q);
   if (!qvec) {
-    const v = await embedOne(QUERY_PREFIX + q, info.dimension);
+    const v = await embedOne(q, info.dimension);
     if (!v) return [];
     qvec = v;
     if (queryCache.size >= QUERY_CACHE_MAX) {
