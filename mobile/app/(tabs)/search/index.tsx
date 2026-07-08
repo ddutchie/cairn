@@ -7,7 +7,7 @@ import { PressableScale } from "@/components/PressableScale";
 import { TabScreen } from "@/components/TabScreen";
 import { IndexingBar } from "@/components/IndexingBar";
 import { semanticSearch, catchUpIndex, type SemanticHit } from "@/notes/embeddings";
-import { isAppleEmbeddingsSupported } from "@modules/apple-embeddings";
+import { isAppleEmbeddingsSupported, appleEmbeddingsUnavailableReason } from "@modules/apple-embeddings";
 import { stripMarkdown } from "@cairn/shared/notes/text";
 import { useTheme, elevation, PRIORITY_COLOR, type as typeScale, type Theme } from "@/theme";
 
@@ -98,7 +98,10 @@ export default function SearchScreen() {
   );
 
   const hasQuery = query.trim().length > 0;
-  const scopes: Scope[] = semanticAvailable ? ["notes", "tasks", "semantic"] : ["notes", "tasks"];
+  // Always show the Semantic scope so it's discoverable; if on-device
+  // embeddings aren't usable we explain why in the results area rather than
+  // silently hiding the option.
+  const scopes: Scope[] = ["notes", "tasks", "semantic"];
   const scopeLabel = (s: Scope) => (s === "notes" ? "Notes" : s === "tasks" ? "Tasks" : "Semantic");
   const placeholder =
     scope === "notes" ? "Search notes" : scope === "tasks" ? "Search tasks" : "Search notes by meaning";
@@ -140,7 +143,15 @@ export default function SearchScreen() {
           keyExtractor={(h) => h.noteId}
           contentContainerStyle={styles.list}
           keyboardShouldPersistTaps="handled"
-          ListEmptyComponent={hasQuery ? <Text style={styles.hint}>No semantically similar notes</Text> : null}
+          ListEmptyComponent={
+            !semanticAvailable ? (
+              <Text style={styles.hint}>{appleEmbeddingsUnavailableReason()}</Text>
+            ) : hasQuery ? (
+              <Text style={styles.hint}>No semantically similar notes</Text>
+            ) : (
+              <Text style={styles.hint}>Search your notes by meaning, not just keywords.</Text>
+            )
+          }
           renderItem={({ item }) => (
             <PressableScale style={[styles.row, elevation.sm]} onPress={() => router.push({ pathname: "/note/[id]", params: { id: item.noteId, back: "Search" } })}>
               <View style={styles.taskTitleRow}>
