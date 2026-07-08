@@ -36,6 +36,8 @@ import NeurologyXml from "@expo/material-symbols/neurology.xml";
 import CloudXml from "@expo/material-symbols/cloud.xml";
 import CloudOffXml from "@expo/material-symbols/cloud_off.xml";
 import CloudSyncXml from "@expo/material-symbols/cloud_sync.xml";
+import NoteXml from "@expo/material-symbols/description.xml";
+import TaskXml from "@expo/material-symbols/check_box.xml";
 /** An icon usable by both platforms via the toolbar `icon` prop. */
 export type ToolbarIcon = SFSymbol | ImageSourcePropType;
 
@@ -85,3 +87,7 @@ export const ICON_GRAPH_FORCE: ToolbarIcon = ios ? "point.3.connected.trianglepa
 export const ICON_GRAPH_RADIAL: ToolbarIcon = ios ? "chart.pie" : PieChartXml;
 /** Semantic (on-device embedding-similarity) connections toggle. */
 export const ICON_SEMANTIC: ToolbarIcon = ios ? "sparkles" : NeurologyXml;
+/** Note / document (search scope). */
+export const ICON_NOTE: ToolbarIcon = ios ? "doc.text" : NoteXml;
+/** Task / checklist item (search scope). */
+export const ICON_TASK: ToolbarIcon = ios ? "checklist" : TaskXml;

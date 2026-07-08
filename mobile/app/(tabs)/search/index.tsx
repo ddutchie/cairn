@@ -1,11 +1,12 @@
 import { useCallback, useMemo, useRef, useState } from "react";
-import { Text, View, FlatList, Pressable, StyleSheet } from "react-native";
+import { Text, View, FlatList, StyleSheet } from "react-native";
 import { Stack, useRouter, useFocusEffect } from "expo-router";
 import type { SearchBarCommands } from "react-native-screens";
 import { searchNotes, searchTasks, listWorkspaceIds, type NoteRow, type CardRow } from "@/db/queries";
 import { PressableScale } from "@/components/PressableScale";
 import { TabScreen } from "@/components/TabScreen";
 import { IndexingBar } from "@/components/IndexingBar";
+import { ICON_NOTE, ICON_TASK, ICON_SEMANTIC } from "@/components/toolbar-icons";
 import { semanticSearch, catchUpIndex, type SemanticHit } from "@/notes/embeddings";
 import { isAppleEmbeddingsSupported, appleEmbeddingsUnavailableReason } from "@modules/apple-embeddings";
 import { stripMarkdown } from "@cairn/shared/notes/text";
@@ -103,6 +104,7 @@ export default function SearchScreen() {
   // silently hiding the option.
   const scopes: Scope[] = ["notes", "tasks", "semantic"];
   const scopeLabel = (s: Scope) => (s === "notes" ? "Notes" : s === "tasks" ? "Tasks" : "Semantic");
+  const scopeIcon = (s: Scope) => (s === "notes" ? ICON_NOTE : s === "tasks" ? ICON_TASK : ICON_SEMANTIC);
   const placeholder =
     scope === "notes" ? "Search notes" : scope === "tasks" ? "Search tasks" : "Search notes by meaning";
 
@@ -121,21 +123,26 @@ export default function SearchScreen() {
           },
         }}
       />
+      {/* Scope switch lives in the native toolbar (not an in-body segment):
+          the search tab's native search field owns the header area, so a
+          floating menu reads correctly and can't be clipped by content insets. */}
+      <Stack.Toolbar placement="right">
+        <Stack.Toolbar.Menu icon={scopeIcon(scope)} accessibilityLabel="Search scope">
+          <Stack.Toolbar.Label>{scopeLabel(scope)}</Stack.Toolbar.Label>
+          {scopes.map((s) => (
+            <Stack.Toolbar.MenuAction
+              key={s}
+              icon={scopeIcon(s)}
+              isOn={scope === s}
+              onPress={() => switchScope(s)}
+            >
+              {scopeLabel(s)}
+            </Stack.Toolbar.MenuAction>
+          ))}
+        </Stack.Toolbar.Menu>
+      </Stack.Toolbar>
       {/* Live progress while the on-device semantic index catches up. */}
       <IndexingBar />
-      <View style={styles.segment}>
-        {scopes.map((s) => (
-          <Pressable
-            key={s}
-            onPress={() => switchScope(s)}
-            style={[styles.segmentBtn, scope === s && styles.segmentBtnActive]}
-          >
-            <Text style={[styles.segmentText, scope === s && styles.segmentTextActive]}>
-              {scopeLabel(s)}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
 
       {scope === "semantic" ? (
         <FlatList
@@ -216,21 +223,6 @@ export default function SearchScreen() {
 
 function makeStyles(t: Theme) {
   return StyleSheet.create({
-    segment: {
-      flexDirection: "row",
-      gap: 4,
-      margin: 12,
-      marginBottom: 0,
-      padding: 3,
-      backgroundColor: t.surface,
-      borderRadius: 10,
-      borderWidth: 1,
-      borderColor: t.border,
-    },
-    segmentBtn: { flex: 1, paddingVertical: 7, borderRadius: 7, alignItems: "center" },
-    segmentBtnActive: { backgroundColor: t.accent },
-    segmentText: { ...typeScale.control, color: t.textSecondary },
-    segmentTextActive: { color: t.accentFg },
     list: { padding: 12 },
     row: {
       paddingVertical: 10,
