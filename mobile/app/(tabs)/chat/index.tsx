@@ -22,7 +22,7 @@ import { MarkdownView } from "@/components/MarkdownView";
 import { ICON_DELETE, ICON_AI } from "@/components/toolbar-icons";
 import { useTheme, withAlpha, type as typeScale, type Theme } from "@/theme";
 import { runAgent, userMessage, assistantMessage, type AgentEvent, type Attachment } from "@/chat/agent";
-import { haptics } from "@/haptics";
+import { haptics, toolbarPress } from "@/haptics";
 import { pickImages, takePhoto } from "@/chat/attachments";
 import { loadChatHistory, saveChatMessage, clearChatHistory } from "@/db/chat-store";
 import { hasProvider } from "@/chat/providers";
@@ -239,6 +239,7 @@ export default function ChatScreen() {
         text: "Clear",
         style: "destructive",
         onPress: () => {
+          haptics.warning();
           clearChatHistory();
           conversation.current = [];
           setMessages([]);
@@ -258,12 +259,14 @@ export default function ChatScreen() {
           hidden={messages.length === 0}
           disabled={busy}
           accessibilityLabel="Clear chat"
-          onPress={onClear}
+          // Inline arrow (not a bare toolbarPress(onClear)) so the react-hooks
+          // ref lint doesn't flag onClear's transitive ref access during render.
+          onPress={() => toolbarPress(onClear)()}
         />
         <Stack.Toolbar.Button
           icon={ICON_AI}
           accessibilityLabel="AI settings"
-          onPress={() => router.push("/settings/ai")}
+          onPress={toolbarPress(() => router.push("/settings/ai"))}
         />
       </Stack.Toolbar>
       <View style={{ flex: 1 }}>

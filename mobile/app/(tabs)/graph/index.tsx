@@ -6,6 +6,7 @@ import type { GraphMode } from "@/components/KnowledgeGraphWebView";
 import { TabScreen } from "@/components/TabScreen";
 import { EmptyState } from "@/components/EmptyState";
 import { ICON_GRAPH_FORCE, ICON_GRAPH_RADIAL, ICON_SEMANTIC } from "@/components/toolbar-icons";
+import { toolbarPress } from "@/haptics";
 import { useDataChanged } from "@/sync/useSyncStatus";
 import { semanticEdges } from "@/notes/embeddings";
 import { isAppleEmbeddingsSupported } from "@modules/apple-embeddings";
@@ -114,14 +115,14 @@ export default function GraphScreen() {
             <Stack.Toolbar.MenuAction
               icon={ICON_GRAPH_FORCE}
               isOn={mode === "force"}
-              onPress={() => setMode("force")}
+              onPress={toolbarPress(() => setMode("force"))}
             >
               Force
             </Stack.Toolbar.MenuAction>
             <Stack.Toolbar.MenuAction
               icon={ICON_GRAPH_RADIAL}
               isOn={mode === "radial"}
-              onPress={() => setMode("radial")}
+              onPress={toolbarPress(() => setMode("radial"))}
             >
               Radial
             </Stack.Toolbar.MenuAction>
@@ -129,7 +130,7 @@ export default function GraphScreen() {
               <Stack.Toolbar.MenuAction
                 icon={ICON_SEMANTIC}
                 isOn={showSemantic}
-                onPress={() => setShowSemantic((v) => !v)}
+                onPress={toolbarPress(() => setShowSemantic((v) => !v))}
               >
                 Semantic links
               </Stack.Toolbar.MenuAction>

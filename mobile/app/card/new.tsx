@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, KeyboardAvoidingView, Platform } from "react-native";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
 import { createTask, listColumns, type ColumnRow } from "@/db/queries";
-import { useModalOpenHaptic } from "@/haptics";
+import { useModalOpenHaptic, toolbarPress } from "@/haptics";
 import { useTheme, PRIORITY_COLOR, type as typeScale, type Theme } from "@/theme";
 import { ICON_CHECK } from "@/components/toolbar-icons";
 
@@ -49,7 +49,7 @@ export default function NewCard() {
           variant="done"
           disabled={!canSave}
           accessibilityLabel="Save"
-          onPress={save}
+          onPress={toolbarPress(save, "confirm")}
         >
           Save
         </Stack.Toolbar.Button>

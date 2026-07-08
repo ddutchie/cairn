@@ -13,7 +13,7 @@ import { reindexNote } from "@/notes/embeddings";
 import { NoteEditorToolbar } from "@/components/NoteEditorToolbar";
 import { WikilinkPickerSheet } from "@/components/WikilinkPickerSheet";
 import { ICON_CHECK } from "@/components/toolbar-icons";
-import { useModalOpenHaptic } from "@/haptics";
+import { useModalOpenHaptic, toolbarPress } from "@/haptics";
 import { useNoteFormattingToolbar } from "@/notes/useNoteFormattingToolbar";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 
@@ -64,7 +64,7 @@ export default function NewNote() {
           variant="done"
           disabled={!canSave}
           accessibilityLabel="Save"
-          onPress={save}
+          onPress={toolbarPress(save, "confirm")}
         >
           Save
         </Stack.Toolbar.Button>

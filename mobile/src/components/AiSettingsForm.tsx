@@ -11,6 +11,7 @@ import {
 import { Stack } from "expo-router";
 import { Check, ShieldCheck, RefreshCw, Cpu } from "lucide-react-native";
 import { ICON_CHECK } from "@/components/toolbar-icons";
+import { haptics, toolbarPress } from "@/haptics";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 import {
   DEFAULT_OPENAI_BASE_URL,
@@ -120,6 +121,7 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
       // Only touch the keychain if the key field actually changed from what we
       // loaded — avoids a redundant write (and allows clearing it).
       if (apiKey !== loadedKey) await setOpenAIApiKey(apiKey);
+      haptics.success(); // settings persisted
       onClose();
     } finally {
       setSaving(false);
@@ -139,7 +141,7 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
           variant="done"
           disabled={saving}
           accessibilityLabel="Save AI settings"
-          onPress={save}
+          onPress={toolbarPress(save)}
         >
           Save
         </Stack.Toolbar.Button>

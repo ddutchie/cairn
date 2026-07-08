@@ -8,6 +8,7 @@ import { TagPickerSheet } from "@/components/TagPickerSheet";
 import { DueDatePickerSheet } from "@/components/DueDatePickerSheet";
 import { MarkdownView } from "@/components/MarkdownView";
 import { ICON_CHECK, ICON_MORE, ICON_ARCHIVE } from "@/components/toolbar-icons";
+import { haptics, toolbarPress } from "@/haptics";
 import { formatDate } from "@cairn/shared/format/date";
 import { useTheme, PRIORITY_COLOR, type as typeScale, type Theme } from "@/theme";
 
@@ -72,6 +73,7 @@ export function CardDetailScreen() {
         text: "Archive",
         style: "destructive",
         onPress: () => {
+          haptics.warning();
           archiveCard(card.id);
           router.back();
         },
@@ -93,11 +95,11 @@ export function CardDetailScreen() {
       />
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Menu icon={ICON_MORE} accessibilityLabel="Task actions">
-          <Stack.Toolbar.MenuAction icon={ICON_ARCHIVE} destructive onPress={onArchive}>
+          <Stack.Toolbar.MenuAction icon={ICON_ARCHIVE} destructive onPress={toolbarPress(onArchive)}>
             Archive
           </Stack.Toolbar.MenuAction>
         </Stack.Toolbar.Menu>
-        <Stack.Toolbar.Button icon={ICON_CHECK} variant="done" accessibilityLabel="Save" onPress={save}>
+        <Stack.Toolbar.Button icon={ICON_CHECK} variant="done" accessibilityLabel="Save" onPress={toolbarPress(save, "confirm")}>
           Save
         </Stack.Toolbar.Button>
       </Stack.Toolbar>

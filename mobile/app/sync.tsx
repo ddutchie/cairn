@@ -7,7 +7,7 @@ import { requestSync } from "@/sync/controller";
 import { useSyncStatus } from "@/sync/useSyncStatus";
 import { EmbeddingsCard } from "@/components/EmbeddingsCard";
 import { ICON_CHECK } from "@/components/toolbar-icons";
-import { useModalOpenHaptic } from "@/haptics";
+import { useModalOpenHaptic, toolbarPress } from "@/haptics";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 
 /**
@@ -41,7 +41,7 @@ export default function SyncScreen() {
   return (
     <View style={[styles.root, { backgroundColor: t.background }]}>
       <Stack.Toolbar placement="right">
-        <Stack.Toolbar.Button icon={ICON_CHECK} variant="done" accessibilityLabel="Done" onPress={close}>
+        <Stack.Toolbar.Button icon={ICON_CHECK} variant="done" accessibilityLabel="Done" onPress={toolbarPress(close)}>
           Done
         </Stack.Toolbar.Button>
       </Stack.Toolbar>

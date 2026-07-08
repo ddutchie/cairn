@@ -5,6 +5,7 @@ import { listCardsWithDueDates, type CalendarCard } from "@/db/queries";
 import { CalendarView, type CalendarLayout } from "@/components/CalendarView";
 import { TabScreen } from "@/components/TabScreen";
 import { ICON_VIEW_MONTH, ICON_VIEW_WEEK } from "@/components/toolbar-icons";
+import { toolbarPress } from "@/haptics";
 import { useDataChanged } from "@/sync/useSyncStatus";
 
 /**
@@ -34,7 +35,7 @@ export default function CalendarScreen() {
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Button
           accessibilityLabel="Jump to today"
-          onPress={() => setTodayNonce((n) => n + 1)}
+          onPress={toolbarPress(() => setTodayNonce((n) => n + 1))}
         >
           Today
         </Stack.Toolbar.Button>
@@ -46,14 +47,14 @@ export default function CalendarScreen() {
           <Stack.Toolbar.MenuAction
             icon={ICON_VIEW_MONTH}
             isOn={layout === "month"}
-            onPress={() => setLayout("month")}
+            onPress={toolbarPress(() => setLayout("month"))}
           >
             Month
           </Stack.Toolbar.MenuAction>
           <Stack.Toolbar.MenuAction
             icon={ICON_VIEW_WEEK}
             isOn={layout === "week"}
-            onPress={() => setLayout("week")}
+            onPress={toolbarPress(() => setLayout("week"))}
           >
             Week
           </Stack.Toolbar.MenuAction>

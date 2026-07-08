@@ -23,7 +23,7 @@ import { GlassBar, glassActive } from "@/components/GlassBar";
 import { ICON_CHECK, ICON_CLOSE, ICON_EDIT, ICON_MORE, ICON_PIN, ICON_UNPIN, ICON_TAG, ICON_DELETE } from "@/components/toolbar-icons";
 import { useNoteFormattingToolbar } from "@/notes/useNoteFormattingToolbar";
 import { reindexNote, relatedNotes, type RelatedNote } from "@/notes/embeddings";
-import { haptics } from "@/haptics";
+import { haptics, toolbarPress } from "@/haptics";
 import { extractHeadings } from "@cairn/shared/notes/toc";
 import { isAppleEmbeddingsSupported } from "@modules/apple-embeddings";
 import { useDataChanged } from "@/sync/useSyncStatus";
@@ -173,12 +173,12 @@ export function NoteDetailScreen({ nested = false }: { nested?: boolean }) {
       {editing ? (
         <>
           <Stack.Toolbar placement="left">
-            <Stack.Toolbar.Button icon={ICON_CLOSE} accessibilityLabel="Cancel" onPress={onCancel}>
+            <Stack.Toolbar.Button icon={ICON_CLOSE} accessibilityLabel="Cancel" onPress={toolbarPress(onCancel)}>
               Cancel
             </Stack.Toolbar.Button>
           </Stack.Toolbar>
           <Stack.Toolbar placement="right">
-            <Stack.Toolbar.Button icon={ICON_CHECK} variant="done" accessibilityLabel="Save" onPress={onSave}>
+            <Stack.Toolbar.Button icon={ICON_CHECK} variant="done" accessibilityLabel="Save" onPress={toolbarPress(onSave)}>
               Save
             </Stack.Toolbar.Button>
           </Stack.Toolbar>
@@ -189,18 +189,18 @@ export function NoteDetailScreen({ nested = false }: { nested?: boolean }) {
             <Stack.Toolbar.MenuAction
               icon={isPinned ? ICON_UNPIN : ICON_PIN}
               isOn={isPinned}
-              onPress={onPin}
+              onPress={toolbarPress(onPin)}
             >
               {isPinned ? "Unpin" : "Pin"}
             </Stack.Toolbar.MenuAction>
-            <Stack.Toolbar.MenuAction icon={ICON_TAG} onPress={() => setTagPickerOpen(true)}>
+            <Stack.Toolbar.MenuAction icon={ICON_TAG} onPress={toolbarPress(() => setTagPickerOpen(true))}>
               Edit tags
             </Stack.Toolbar.MenuAction>
-            <Stack.Toolbar.MenuAction icon={ICON_DELETE} destructive onPress={onDelete}>
+            <Stack.Toolbar.MenuAction icon={ICON_DELETE} destructive onPress={toolbarPress(onDelete)}>
               Delete
             </Stack.Toolbar.MenuAction>
           </Stack.Toolbar.Menu>
-          <Stack.Toolbar.Button icon={ICON_EDIT} accessibilityLabel="Edit" onPress={() => setEditing(true)}>
+          <Stack.Toolbar.Button icon={ICON_EDIT} accessibilityLabel="Edit" onPress={toolbarPress(() => setEditing(true))}>
             Edit
           </Stack.Toolbar.Button>
         </Stack.Toolbar>
@@ -280,7 +280,7 @@ export function NoteDetailScreen({ nested = false }: { nested?: boolean }) {
           style={[styles.tocFab, { bottom: 12 + insets.bottom }]}
           pointerEvents="box-none"
         >
-          <PressableScale onPress={() => setTocOpen(true)} accessibilityLabel="Table of contents">
+          <PressableScale onPress={() => setTocOpen(true)} haptic={false} accessibilityLabel="Table of contents">
             <GlassBar style={[styles.tocFabInner, !glassActive && styles.tocFabFallback]}>
               <List size={22} color={t.textPrimary} />
             </GlassBar>

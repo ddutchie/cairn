@@ -21,6 +21,7 @@ import { TagChips } from "@/components/TagChips";
 import { PressableScale } from "@/components/PressableScale";
 import { SearchField } from "@/components/SearchField";
 import { ICON_ADD, ICON_CALENDAR } from "@/components/toolbar-icons";
+import { toolbarPress } from "@/haptics";
 import { DraggableBoard } from "@/components/DraggableBoard";
 import { EmptyState } from "@/components/EmptyState";
 import { useDataChanged } from "@/sync/useSyncStatus";
@@ -180,19 +181,19 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
         <Stack.Toolbar.Button
           icon={ICON_CALENDAR}
           accessibilityLabel="Calendar"
-          onPress={() =>
+          onPress={toolbarPress(() =>
             id &&
             router.push(
               nested
                 ? { pathname: "/projects/project/calendar", params: { project: id } }
                 : { pathname: "/project/calendar", params: { project: id } },
             )
-          }
+          )}
         />
         <Stack.Toolbar.Button
           icon={ICON_ADD}
           accessibilityLabel={tab === "notes" ? "New note" : "New task"}
-          onPress={onAdd}
+          onPress={toolbarPress(onAdd)}
         />
       </Stack.Toolbar>
 

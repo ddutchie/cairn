@@ -67,3 +67,43 @@ export function useModalOpenHaptic(): void {
     haptics.impact();
   }, []);
 }
+
+/**
+ * Intent of a toolbar action, mapped to the right haptic:
+ *   - "action"  → selection tick (default: navigate, open a menu/picker, toggle)
+ *   - "confirm" → success       (Save / Create / Done — a committed change)
+ *   - "destroy" → warning       (Delete / Archive — a destructive commit)
+ */
+export type ToolbarHaptic = "action" | "confirm" | "destroy";
+
+const TOOLBAR_HAPTIC: Record<ToolbarHaptic, () => void> = {
+  action: haptics.selection,
+  confirm: haptics.success,
+  destroy: haptics.warning,
+};
+
+/**
+ * Wrap a `Stack.Toolbar.Button` / `MenuAction` `onPress` so it fires an
+ * intent-appropriate haptic before running.
+ *
+ * The native toolbar reflects on its children's component identity
+ * (`isChildOfType(child, StackToolbarButton)`), so we can't wrap the button in
+ * a custom component — instead we decorate the handler:
+ *
+ *   <Stack.Toolbar.Button icon={ICON_CHECK} onPress={toolbarPress(onSave, "confirm")} />
+ *
+ * Defaults to `"action"` (a subtle selection tick). Prefer `"action"` whenever
+ * the handler is async or already fires its own outcome haptic
+ * (success/warning/error on completion) — otherwise the tap and the outcome
+ * double-buzz. Reserve `"confirm"`/`"destroy"` for handlers that commit
+ * synchronously and don't signal completion themselves.
+ */
+export function toolbarPress(
+  handler: (() => void) | undefined,
+  intent: ToolbarHaptic = "action",
+): () => void {
+  return () => {
+    TOOLBAR_HAPTIC[intent]();
+    handler?.();
+  };
+}
