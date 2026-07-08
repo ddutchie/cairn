@@ -10,7 +10,7 @@ import { ICON_NOTE, ICON_TASK, ICON_SEMANTIC } from "@/components/toolbar-icons"
 import { semanticSearch, catchUpIndex, type SemanticHit } from "@/notes/embeddings";
 import { isAppleEmbeddingsSupported, appleEmbeddingsUnavailableReason } from "@modules/apple-embeddings";
 import { stripMarkdown } from "@cairn/shared/notes/text";
-import { useTheme, elevation, PRIORITY_COLOR, type as typeScale, type Theme } from "@/theme";
+import { useTheme, elevation, PRIORITY_COLOR, TAB_BAR_BASE, type as typeScale, type Theme } from "@/theme";
 
 type Scope = "notes" | "tasks" | "semantic";
 
@@ -108,6 +108,21 @@ export default function SearchScreen() {
   const placeholder =
     scope === "notes" ? "Search notes" : scope === "tasks" ? "Search tasks" : "Search notes by meaning";
 
+  // Shared list scrolling behaviour. `contentInsetAdjustmentBehavior="automatic"`
+  // makes the list clear the native search header; `automaticallyAdjustKeyboardInsets`
+  // lifts content above the on-screen keyboard; the bottom pad keeps the last row
+  // reachable above the tab bar. IndexingBar rides as the list header so the
+  // FlatList stays the screen's first (and only) scroll view — required for iOS
+  // to apply the automatic search-header inset.
+  const listProps = {
+    contentContainerStyle: styles.list,
+    contentInsetAdjustmentBehavior: "automatic" as const,
+    automaticallyAdjustKeyboardInsets: true,
+    keyboardShouldPersistTaps: "handled" as const,
+    keyboardDismissMode: "on-drag" as const,
+    ListHeaderComponent: <IndexingBar />,
+  };
+
   return (
     <TabScreen>
       <Stack.Screen
@@ -141,15 +156,12 @@ export default function SearchScreen() {
           ))}
         </Stack.Toolbar.Menu>
       </Stack.Toolbar>
-      {/* Live progress while the on-device semantic index catches up. */}
-      <IndexingBar />
 
       {scope === "semantic" ? (
         <FlatList
           data={hits}
           keyExtractor={(h) => h.noteId}
-          contentContainerStyle={styles.list}
-          keyboardShouldPersistTaps="handled"
+          {...listProps}
           ListEmptyComponent={
             !semanticAvailable ? (
               <Text style={styles.hint}>{appleEmbeddingsUnavailableReason()}</Text>
@@ -179,8 +191,7 @@ export default function SearchScreen() {
         <FlatList
           data={notes}
           keyExtractor={(n) => n.id}
-          contentContainerStyle={styles.list}
-          keyboardShouldPersistTaps="handled"
+          {...listProps}
           ListEmptyComponent={hasQuery ? <Text style={styles.hint}>No matching notes</Text> : null}
           renderItem={({ item }) => (
             <PressableScale style={[styles.row, elevation.sm]} onPress={() => router.push({ pathname: "/note/[id]", params: { id: item.id, back: "Search" } })}>
@@ -197,8 +208,7 @@ export default function SearchScreen() {
         <FlatList
           data={tasks}
           keyExtractor={(c) => c.id}
-          contentContainerStyle={styles.list}
-          keyboardShouldPersistTaps="handled"
+          {...listProps}
           ListEmptyComponent={hasQuery ? <Text style={styles.hint}>No matching tasks</Text> : null}
           renderItem={({ item }) => (
             <PressableScale style={[styles.row, elevation.sm]} onPress={() => router.push({ pathname: "/card/[id]", params: { id: item.id, back: "Search" } })}>
@@ -223,7 +233,7 @@ export default function SearchScreen() {
 
 function makeStyles(t: Theme) {
   return StyleSheet.create({
-    list: { padding: 12 },
+    list: { padding: 12, paddingBottom: 12 + TAB_BAR_BASE },
     row: {
       paddingVertical: 10,
       paddingHorizontal: 14,
