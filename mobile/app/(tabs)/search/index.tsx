@@ -5,6 +5,7 @@ import type { SearchBarCommands } from "react-native-screens";
 import { searchNotes, searchTasks, listWorkspaceIds, embeddingIndexStats, type NoteRow, type CardRow } from "@/db/queries";
 import { PressableScale } from "@/components/PressableScale";
 import { TabScreen } from "@/components/TabScreen";
+import { EmptyState } from "@/components/EmptyState";
 import { IndexingBar } from "@/components/IndexingBar";
 import { GlassBar, glassActive } from "@/components/GlassBar";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
@@ -173,10 +174,7 @@ export default function SearchScreen() {
   const placeholder =
     scope === "notes" ? "Search notes" : scope === "tasks" ? "Search tasks" : "Search notes by meaning";
 
-  // Which list is active + whether it's empty (drives the centred overlay hint).
-  const activeCount = scope === "notes" ? notes.length : scope === "tasks" ? tasks.length : hits.length;
-  const showEmpty = activeCount === 0;
-  // Primary + secondary hint lines for the centred empty state.
+  // Primary + secondary hint lines for the empty state (ListEmptyComponent).
   const emptyHint: { primary: string; secondary?: string } = (() => {
     if (scope === "semantic") {
       if (!semanticAvailable) return { primary: appleEmbeddingsUnavailableReason() };
@@ -202,12 +200,28 @@ export default function SearchScreen() {
   // scrolls the first result up under the header. IndexingBar rides as the list
   // header so the FlatList stays the screen's first (and only) scroll view —
   // required for iOS to apply the automatic search-header inset.
+  // Empty/hint state rendered INSIDE the list (as ListEmptyComponent) so it
+  // sits below the native search header — an absolute screen overlay would
+  // render behind it. With no query it's the branded resting state; during an
+  // active search with no matches it's a light top-anchored text hint.
+  const listEmpty = hasQuery ? (
+    <View style={styles.emptyHint} pointerEvents="none">
+      <Text style={styles.hint}>{emptyHint.primary}</Text>
+      {emptyHint.secondary ? <Text style={styles.statHint}>{emptyHint.secondary}</Text> : null}
+    </View>
+  ) : (
+    <EmptyState title={emptyHint.primary} subtitle={emptyHint.secondary} align="top" />
+  );
+
   const listProps = {
-    contentContainerStyle: styles.list,
+    // flexGrow:1 lets ListEmptyComponent fill the viewport (so the branded
+    // state's top-bias is measured against the full content area, below header).
+    contentContainerStyle: [styles.list, styles.listGrow],
     contentInsetAdjustmentBehavior: "automatic" as const,
     keyboardShouldPersistTaps: "handled" as const,
     keyboardDismissMode: "on-drag" as const,
     ListHeaderComponent: <IndexingBar />,
+    ListEmptyComponent: listEmpty,
   };
 
   return (
@@ -291,16 +305,6 @@ export default function SearchScreen() {
         />
       )}
 
-      {/* Centred empty/hint overlay — absolutely positioned over the list area so
-          it stays put (doesn't jump with the keyboard, doesn't hide behind the
-          header the way a list-top ListEmptyComponent does). */}
-      {showEmpty ? (
-        <View style={styles.emptyOverlay} pointerEvents="none">
-          <Text style={styles.hint}>{emptyHint.primary}</Text>
-          {emptyHint.secondary ? <Text style={styles.statHint}>{emptyHint.secondary}</Text> : null}
-        </View>
-      ) : null}
-
       {/* Persistent scope switch, pinned to the bottom just above the native
           search field. With the iOS 26 search tab the search field lives at the
           bottom (above the keyboard), so the toggle rides the keyboard via
@@ -363,18 +367,12 @@ function makeStyles(t: Theme) {
     title: { ...typeScale.control, color: t.textPrimary, flexShrink: 1 },
     preview: { ...typeScale.caption, color: t.textSecondary, marginTop: 2 },
     score: { ...typeScale.caption, color: t.textTertiary, marginLeft: "auto", fontVariant: ["tabular-nums"] },
-    emptyOverlay: {
-      position: "absolute",
-      top: 0,
-      left: 0,
-      right: 0,
-      // Anchor the hint at ~25% from the top (75% from the bottom) so it stays
-      // clear of the keyboard/scope bar rather than being hidden behind them.
-      bottom: "75%",
-      alignItems: "center",
-      justifyContent: "flex-end",
-      paddingHorizontal: 32,
-    },
+    // Lets ListEmptyComponent fill the viewport so the branded state's top-bias
+    // is measured against the full content area (below the header).
+    listGrow: { flexGrow: 1 },
+    // Active-search "no matches" hint — top-anchored (~25% down) so it stays
+    // clear of the keyboard rather than centring under it.
+    emptyHint: { flex: 1, alignItems: "center", paddingTop: "25%", paddingHorizontal: 32 },
     hint: { textAlign: "center", color: t.textTertiary },
     statHint: { ...typeScale.caption, textAlign: "center", color: t.textTertiary, marginTop: 8 },
   });

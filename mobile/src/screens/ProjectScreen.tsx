@@ -22,6 +22,7 @@ import { PressableScale } from "@/components/PressableScale";
 import { SearchField } from "@/components/SearchField";
 import { ICON_ADD, ICON_CALENDAR } from "@/components/toolbar-icons";
 import { DraggableBoard } from "@/components/DraggableBoard";
+import { EmptyState } from "@/components/EmptyState";
 import { useDataChanged } from "@/sync/useSyncStatus";
 import { useTheme, withAlpha, TAB_BAR_BASE, type as typeScale, type Theme } from "@/theme";
 import { buildFolderTree, type FolderNode } from "@cairn/shared/notes/folder-tree";
@@ -202,7 +203,7 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
 
       {tab === "notes" ? (
         notes.length === 0 ? (
-          <Empty text="No notes yet. Tap + to create one." t={t} />
+          <EmptyState title="No notes yet" subtitle="Tap + to create your first note." align="top" />
         ) : (
           <View style={{ flex: 1 }}>
             <NoteFilterBar

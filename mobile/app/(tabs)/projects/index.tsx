@@ -4,6 +4,7 @@ import { Stack, useFocusEffect, useRouter } from "expo-router";
 import { listProjectSummaries, type ProjectSummary } from "@/db/queries";
 import { PressableScale } from "@/components/PressableScale";
 import { TabScreen } from "@/components/TabScreen";
+import { EmptyState } from "@/components/EmptyState";
 import { SkeletonList } from "@/components/Skeleton";
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { useSyncBadge } from "@/components/SyncStatusBadge";
@@ -48,12 +49,10 @@ export default function ProjectsScreen() {
     return (
       <TabScreen>
         {header}
-        <View style={styles.empty}>
-          <Text style={[styles.emptyTitle, { color: t.textSecondary }]}>No projects yet</Text>
-          <Text style={[styles.emptyHint, { color: t.textTertiary }]}>
-            Connect your sync folder in the Sync tab to pull your workspace.
-          </Text>
-        </View>
+        <EmptyState
+          title="No projects yet"
+          subtitle="Connect your sync folder in the Sync tab to pull your workspace."
+        />
       </TabScreen>
     );
   }
@@ -109,7 +108,4 @@ const styles = StyleSheet.create({
   name: { ...typeScale.subtitle },
   meta: { ...typeScale.caption, marginTop: 2 },
   chevron: { fontSize: 22, fontWeight: "300" },
-  empty: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32 },
-  emptyTitle: { ...typeScale.title },
-  emptyHint: { ...typeScale.caption, textAlign: "center", marginTop: 8 },
 });

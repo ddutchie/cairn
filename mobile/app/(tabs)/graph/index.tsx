@@ -1,14 +1,15 @@
 import { lazy, Suspense, useCallback, useMemo, useRef, useState } from "react";
-import { View, Text, ActivityIndicator, StyleSheet } from "react-native";
+import { View, ActivityIndicator, StyleSheet } from "react-native";
 import { Stack, useFocusEffect, useRouter } from "expo-router";
 import { getKnowledgeGraph, listWorkspaceIds, type KnowledgeGraph, type GraphEdge } from "@/db/queries";
 import type { GraphMode } from "@/components/KnowledgeGraphWebView";
 import { TabScreen } from "@/components/TabScreen";
+import { EmptyState } from "@/components/EmptyState";
 import { ICON_GRAPH_FORCE, ICON_GRAPH_RADIAL, ICON_SEMANTIC } from "@/components/toolbar-icons";
 import { useDataChanged } from "@/sync/useSyncStatus";
 import { semanticEdges } from "@/notes/embeddings";
 import { isAppleEmbeddingsSupported } from "@modules/apple-embeddings";
-import { useTheme, type as typeScale } from "@/theme";
+import { useTheme } from "@/theme";
 
 // The graph WebView inlines the full D3 bundle (~274 KB) as a string. Load it
 // lazily so opening the app / other tabs never evaluates that module — only the
@@ -137,12 +138,10 @@ export default function GraphScreen() {
         </Stack.Toolbar>
       ) : null}
       {isEmpty ? (
-        <View style={styles.empty}>
-          <Text style={[styles.emptyTitle, { color: t.textSecondary }]}>Nothing to graph yet</Text>
-          <Text style={[styles.emptyHint, { color: t.textTertiary }]}>
-            Create notes and tasks, then link or tag them to see connections here.
-          </Text>
-        </View>
+        <EmptyState
+          title="Nothing to graph yet"
+          subtitle="Create notes and tasks, then link or tag them to see connections here."
+        />
       ) : graph ? (
         <Suspense fallback={<View style={styles.empty}><ActivityIndicator color={t.textTertiary} /></View>}>
           <KnowledgeGraphWebView graph={mergedGraph ?? graph} mode={mode} onModeChange={setMode} onSelectNode={onSelectNode} />
@@ -154,7 +153,5 @@ export default function GraphScreen() {
 
 const styles = StyleSheet.create({
   empty: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32 },
-  emptyTitle: { ...typeScale.title },
-  emptyHint: { ...typeScale.caption, textAlign: "center", marginTop: 8 },
 });
 
