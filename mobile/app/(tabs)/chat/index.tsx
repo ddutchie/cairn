@@ -20,7 +20,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { GlassBar, glassActive } from "@/components/GlassBar";
 import { MarkdownView } from "@/components/MarkdownView";
 import { ICON_DELETE, ICON_AI } from "@/components/toolbar-icons";
-import { useTheme, withAlpha, type as typeScale, type Theme } from "@/theme";
+import { useTheme, withAlpha, tabBarClosedLift, KEYBOARD_OPEN_GAP, type as typeScale, type Theme } from "@/theme";
 import { runAgent, userMessage, assistantMessage, type AgentEvent, type Attachment } from "@/chat/agent";
 import { haptics, toolbarPress } from "@/haptics";
 import { pickImages, takePhoto } from "@/chat/attachments";
@@ -30,8 +30,6 @@ import { resetAppleSession } from "@/chat/providers/apple";
 import { prettifyToolLabel } from "@cairn/shared/ui/constants";
 import type { UIMessage } from "@/chat/providers/types";
 
-/** Standard UIKit tab bar content height (excludes the home-indicator inset). */
-const TAB_BAR_BASE = 49;
 /** Composer height assumed before its first onLayout measurement. */
 const COMPOSER_FALLBACK_H = 60;
 
@@ -115,24 +113,19 @@ export default function ChatScreen() {
   );
 
   const { height: kbHeight } = useGradualAnimation();
-  // Approximate the native (translucent) iOS tab bar height. NativeTabs doesn't
-  // expose BottomTabBarHeightContext, so we reconstruct it: the standard UIKit
-  // tab bar is 49pt tall and sits above the home-indicator safe area.
-  //
-  // Lift the composer just above the tab bar when the keyboard is closed. We
-  // lift by only slightly more than the bar's visible height (not the full
-  // safe-area-inclusive height) so the composer hugs the bar instead of
-  // floating well above it.
-  const closedLift = TAB_BAR_BASE + insets.bottom * 0.5;
+  // Lift the composer just above the tab bar when the keyboard is closed
+  // (shared with the search scope bar so both rest at the same height).
+  const closedLift = tabBarClosedLift(insets.bottom);
   // Height the composer occupies, measured lazily (falls back before layout).
   const [composerH, setComposerH] = useState(COMPOSER_FALLBACK_H);
   // Animated spacer at the BOTTOM of the scroll content. It always keeps the
   // last message clear of the floating composer, and grows to clear the
   // keyboard when it opens (so you can scroll the newest message above the
   // keyboard). When closed it matches where the composer actually rests
-  // (closedLift above the screen bottom) so there's no dead space.
+  // (closedLift above the screen bottom) so there's no dead space. The +GAP on
+  // the open case matches the composer's KEYBOARD_OPEN_GAP lift.
   const bottomSpacer = useAnimatedStyle(() => ({
-    height: composerH + 12 + Math.max(kbHeight.value, closedLift),
+    height: composerH + 12 + Math.max(kbHeight.value + KEYBOARD_OPEN_GAP, closedLift),
   }), [composerH, closedLift]);
 
   const send = useCallback(async () => {
@@ -302,9 +295,10 @@ export default function ChatScreen() {
 
         {/* Sticky composer: pinned to the bottom, rides up with the keyboard
             automatically. When the keyboard is closed it's offset up above the
-            translucent tab bar; when open it sits flush on the keyboard. */}
+            translucent tab bar; when open it sits just above the keyboard with a
+            small gap (KEYBOARD_OPEN_GAP), matching the search scope bar. */}
         <KeyboardStickyView
-          offset={{ closed: -closedLift, opened: 0 }}
+          offset={{ closed: -closedLift, opened: -KEYBOARD_OPEN_GAP }}
           style={styles.composerOverlay}
         >
           <View onLayout={(e) => setComposerH(e.nativeEvent.layout.height)}>

@@ -32,14 +32,16 @@ export default function TabsLayout() {
           <NativeTabs.Trigger.Label>Graph</NativeTabs.Trigger.Label>
         </NativeTabs.Trigger>
 
-        <NativeTabs.Trigger name="search" role="search">
-          <NativeTabs.Trigger.Icon sf="magnifyingglass" md="search" />
-          <NativeTabs.Trigger.Label>Search</NativeTabs.Trigger.Label>
-        </NativeTabs.Trigger>
-
         <NativeTabs.Trigger name="chat">
           <NativeTabs.Trigger.Icon sf="bubble.left.and.bubble.right.fill" md="chat" />
           <NativeTabs.Trigger.Label>Chat</NativeTabs.Trigger.Label>
+        </NativeTabs.Trigger>
+
+        {/* Search last so it sits on the far right — matches the iOS search-tab
+            convention and keeps it out of the primary nav flow. */}
+        <NativeTabs.Trigger name="search" role="search">
+          <NativeTabs.Trigger.Icon sf="magnifyingglass" md="search" />
+          <NativeTabs.Trigger.Label>Search</NativeTabs.Trigger.Label>
         </NativeTabs.Trigger>
       </NativeTabs>
     </ThemeProvider>
