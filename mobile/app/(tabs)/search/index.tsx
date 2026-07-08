@@ -59,12 +59,14 @@ export default function SearchScreen() {
     if (s === "notes") setNotes(searchNotes(q));
     else if (s === "tasks") setTasks(searchTasks(q));
     else {
-      // Semantic: embed the query and cosine-rank across all workspaces.
+      // Semantic: embed the query and rank across all workspaces. Sort by the
+      // hybrid `rank` (dense+lexical), NOT the displayed `score` (raw cosine) —
+      // ranking by score alone reintroduces the "correct note buried" bug.
       const seq = ++semanticSeq.current;
       (async () => {
         const all: SemanticHit[] = [];
         for (const ws of listWorkspaceIds()) all.push(...(await semanticSearch(ws, q, 20)));
-        all.sort((a, b) => b.score - a.score);
+        all.sort((a, b) => b.rank - a.rank);
         if (seq === semanticSeq.current) setHits(all.slice(0, 30));
       })().catch((e) => console.warn("[search] semantic search failed:", e));
     }

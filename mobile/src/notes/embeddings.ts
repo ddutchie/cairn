@@ -353,7 +353,11 @@ export interface SemanticHit {
   noteId: string;
   title: string;
   sectionTitle: string;
+  /** Human-readable similarity (centred cosine, 0–1) shown in the UI. */
   score: number;
+  /** Blended dense+lexical score used for ORDERING. Callers merging results
+   *  across workspaces must sort by this, not `score` (see semanticSearch). */
+  rank: number;
 }
 
 // Small LRU-ish cache of recent query vectors (queries repeat as the user types).
@@ -452,12 +456,11 @@ export async function semanticSearch(
         // Display uses the raw centred cosine (a real similarity the user can
         // reason about); ranking uses the blended score.
         score: displayScore(sem.score),
-        _rank: blended,
+        rank: blended,
       };
     })
-    .sort((a, b) => b._rank - a._rank)
-    .slice(0, k)
-    .map(({ _rank, ...hit }) => hit);
+    .sort((a, b) => b.rank - a.rank)
+    .slice(0, k);
 }
 
 // --- semantic graph edges --------------------------------------------------
