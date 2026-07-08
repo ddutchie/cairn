@@ -3,7 +3,6 @@ import { NativeModule, requireOptionalNativeModule } from "expo";
 import type {
   AppleGenerateOptions,
   AppleLlmEvents,
-  AppleMessage,
   AppleTool,
 } from "./AppleLlm.types";
 

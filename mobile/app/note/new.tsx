@@ -1,12 +1,9 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   Text,
   TextInput,
   StyleSheet,
   View,
-  Alert,
-  type NativeSyntheticEvent,
-  type TextInputSelectionChangeEventData,
 } from "react-native";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
 import { KeyboardAwareScrollView, KeyboardStickyView } from "react-native-keyboard-controller";
@@ -15,9 +12,7 @@ import { createNote } from "@/db/queries";
 import { NoteEditorToolbar } from "@/components/NoteEditorToolbar";
 import { WikilinkPickerSheet } from "@/components/WikilinkPickerSheet";
 import { ICON_CHECK } from "@/components/toolbar-icons";
-import { applyFormat, insertWikilink, type FormatAction, type Selection } from "@cairn/shared/notes/format";
-import { buildAIActionPrompt, type AITextAction } from "@cairn/shared/notes/ai-actions";
-import { runTextAction } from "@/chat/agent";
+import { useNoteFormattingToolbar } from "@/notes/useNoteFormattingToolbar";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 
 /**
@@ -40,10 +35,7 @@ export default function NewNote() {
 
   // Editing toolbar state (mirrors note/[id]'s editing mode).
   const bodyRef = useRef<TextInput>(null);
-  const [selection, setSelection] = useState<Selection>({ start: 0, end: 0 });
-  const selectionRef = useRef<Selection>({ start: 0, end: 0 });
-  const [aiLoading, setAiLoading] = useState(false);
-  const [wikilinkOpen, setWikilinkOpen] = useState(false);
+  const fmt = useNoteFormattingToolbar(body, setBody);
 
   const canSave = title.trim().length > 0 || body.trim().length > 0;
 
@@ -52,71 +44,6 @@ export default function NewNote() {
     const id = createNote(project, title.trim() || "Untitled", body, folder ?? "");
     router.replace(`/note/${id}`);
   };
-
-  const onSelectionChange = useCallback(
-    (e: NativeSyntheticEvent<TextInputSelectionChangeEventData>) => {
-      selectionRef.current = e.nativeEvent.selection;
-      setSelection(e.nativeEvent.selection);
-    },
-    [],
-  );
-
-  const hasSelection = selection.end > selection.start;
-
-  const onFormat = useCallback(
-    (action: FormatAction) => {
-      if (action === "wikilink") {
-        setWikilinkOpen(true);
-        return;
-      }
-      const res = applyFormat(body, selectionRef.current, action);
-      if (!res) return;
-      setBody(res.text);
-      selectionRef.current = res.selection;
-      setSelection(res.selection);
-    },
-    [body],
-  );
-
-  const onWikilink = useCallback(
-    (noteTitle: string) => {
-      const res = insertWikilink(body, selectionRef.current, noteTitle);
-      setBody(res.text);
-      selectionRef.current = res.selection;
-      setSelection(res.selection);
-      setWikilinkOpen(false);
-    },
-    [body],
-  );
-
-  const onAIAction = useCallback(
-    async (action: AITextAction, customPrompt?: string) => {
-      const sel = selectionRef.current;
-      const selected = body.slice(sel.start, sel.end);
-      if (!selected) return;
-      setAiLoading(true);
-      try {
-        const prompt = buildAIActionPrompt(action, selected, customPrompt);
-        const reply = await runTextAction(prompt);
-        if (!reply) return;
-        const next = body.slice(0, sel.start) + reply + body.slice(sel.end);
-        const newSel = { start: sel.start, end: sel.start + reply.length };
-        setBody(next);
-        selectionRef.current = newSel;
-        setSelection(newSel);
-      } catch (e) {
-        Alert.alert(
-          "AI action failed",
-          e instanceof Error && /network|fetch|connect|\(5\d\d\)/i.test(e.message)
-            ? "This needs a connection. Reconnect and try again."
-            : "Something went wrong. Try again.",
-        );
-      } finally {
-        setAiLoading(false);
-      }
-    },
-    [body],
-  );
 
   return (
     <View style={styles.container}>
@@ -159,8 +86,8 @@ export default function NewNote() {
           style={styles.bodyInput}
           value={body}
           onChangeText={setBody}
-          selection={selection}
-          onSelectionChange={onSelectionChange}
+          selection={fmt.selection}
+          onSelectionChange={fmt.onSelectionChange}
           placeholder="Write in Markdown…"
           placeholderTextColor={t.textTertiary}
           multiline
@@ -170,20 +97,20 @@ export default function NewNote() {
 
       <KeyboardStickyView>
         <NoteEditorToolbar
-          onFormat={onFormat}
-          onAction={onAIAction}
-          hasSelection={hasSelection}
+          onFormat={fmt.onFormat}
+          onAction={fmt.onAIAction}
+          hasSelection={fmt.hasSelection}
           aiEnabled
-          loading={aiLoading}
+          loading={fmt.aiLoading}
           onDismiss={() => bodyRef.current?.blur()}
           bottomInset={insets.bottom}
         />
       </KeyboardStickyView>
 
       <WikilinkPickerSheet
-        visible={wikilinkOpen}
-        onSelect={onWikilink}
-        onClose={() => setWikilinkOpen(false)}
+        visible={fmt.wikilinkOpen}
+        onSelect={fmt.onWikilink}
+        onClose={fmt.closeWikilink}
       />
     </View>
   );
