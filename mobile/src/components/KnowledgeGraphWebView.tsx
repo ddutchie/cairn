@@ -8,6 +8,7 @@ import {
   Hexagon,
   Type,
   ChevronDown,
+  Maximize2,
 } from "lucide-react-native";
 import { useTheme, useIsDark, withAlpha, type as typeScale, iconSize, type Theme } from "@/theme";
 import { SearchField } from "@/components/SearchField";
@@ -237,6 +238,12 @@ export function KnowledgeGraphWebView({
     }
   };
 
+  // Zoom-to-fit: ask the WebView to frame all nodes into the viewport. Only
+  // meaningful in force mode (radial has its own drill-in navigation).
+  const fitToView = () => {
+    ref.current?.injectJavaScript("window.__fit && window.__fit(); true;");
+  };
+
   const toggleType = (type: GraphNodeType) => {
     setActiveTypes((cur) => {
       const next = new Set(cur);
@@ -391,16 +398,27 @@ export function KnowledgeGraphWebView({
           scrollEnabled={false}
         />
 
-        {/* Legend overlay — bottom-left. Offset by the safe-area inset so it
-            clears the home indicator / tab bar. Hidden in radial (it drills). */}
+        {/* Legend + zoom-to-fit — bottom row. Keys are left-aligned, the fit
+            button is right-aligned in the same row. Offset by the safe-area
+            inset so it clears the home indicator / tab bar. Force only. */}
         {mode === "force" ? (
-          <View style={[styles.legend, { bottom: 16 + insets.bottom }]}>
-            {ALL_NODE_TYPES.filter((type) => activeTypes.has(type)).map((type) => (
-              <View key={type} style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: nodeTypeColor(type, t) }]} />
-                <Text style={styles.legendLabel} numberOfLines={1}>{type}</Text>
-              </View>
-            ))}
+          <View style={[styles.bottomRow, { bottom: 16 + insets.bottom }]} pointerEvents="box-none">
+            <View style={styles.legend}>
+              {ALL_NODE_TYPES.filter((type) => activeTypes.has(type)).map((type) => (
+                <View key={type} style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: nodeTypeColor(type, t) }]} />
+                  <Text style={styles.legendLabel} numberOfLines={1}>{type}</Text>
+                </View>
+              ))}
+            </View>
+            <Pressable
+              onPress={fitToView}
+              style={styles.fitBtn}
+              accessibilityLabel="Zoom to fit"
+              hitSlop={8}
+            >
+              <Maximize2 size={iconSize.control} color={t.textSecondary} />
+            </Pressable>
           </View>
         ) : null}
       </View>
@@ -552,6 +570,30 @@ function buildGraphHtml(payload: string): string {
           });
           svg.call(zoom);
           svg.call(zoom.transform, d3.zoomIdentity.translate(W / 2, H / 2).scale(0.85).translate(-W / 2, -H / 2));
+
+          // Zoom-to-fit: frame every node's bounding box (padded for their radii
+          // + labels) into the viewport. Exposed for the native "fit" button,
+          // which injects window.__fit().
+          window.__fit = function () {
+            if (!DATA.nodes.length) return;
+            var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            DATA.nodes.forEach(function (d) {
+              if (d.x == null || d.y == null) return;
+              var pad = d.r + 8;
+              if (d.x - pad < minX) minX = d.x - pad;
+              if (d.y - pad < minY) minY = d.y - pad;
+              if (d.x + pad > maxX) maxX = d.x + pad;
+              if (d.y + pad > maxY) maxY = d.y + pad;
+            });
+            if (!isFinite(minX)) return;
+            var bw = Math.max(1, maxX - minX), bh = Math.max(1, maxY - minY);
+            var margin = 40;
+            var k = Math.min((W - margin) / bw, (H - margin) / bh);
+            k = Math.max(0.2, Math.min(6, k));
+            var cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+            var tf = d3.zoomIdentity.translate(W / 2, H / 2).scale(k).translate(-cx, -cy);
+            svg.transition().duration(450).call(zoom.transform, tf);
+          };
 
           node.call(d3.drag()
             .on('start', function (e, d) { if (!e.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
@@ -844,9 +886,17 @@ function makeStyles(t: Theme) {
     // Canvas + legend
     canvasWrap: { flex: 1 },
     web: { flex: 1, backgroundColor: "transparent" },
-    legend: {
+    // Bottom overlay row: legend (left) + zoom-to-fit (right).
+    bottomRow: {
       position: "absolute",
       left: 16,
+      right: 16,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 12,
+    },
+    legend: {
       flexDirection: "row",
       alignItems: "center",
       gap: 12,
@@ -856,9 +906,21 @@ function makeStyles(t: Theme) {
       borderWidth: 1,
       borderColor: t.border,
       backgroundColor: withAlpha(t.surface, 0.9),
+      flexShrink: 1,
     },
     legendItem: { flexDirection: "row", alignItems: "center", gap: 6, flexShrink: 0 },
     legendDot: { width: 10, height: 10, borderRadius: 5 },
     legendLabel: { fontSize: 11, color: t.textTertiary, textTransform: "capitalize" },
+    fitBtn: {
+      width: 40,
+      height: 40,
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: t.border,
+      backgroundColor: withAlpha(t.surface, 0.9),
+      flexShrink: 0,
+    },
   });
 }
