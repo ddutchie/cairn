@@ -21,6 +21,7 @@
     "@react-native-community/datetimepicker": "9.1.0",
     "ai": "^7.0.15",
     "expo": "~57.0.2",
+    "expo-build-properties": "~57.0.3",
     "expo-clipboard": "~57.0.0",
     "expo-constants": "~57.0.2",
     "expo-document-picker": "~57.0.0",
