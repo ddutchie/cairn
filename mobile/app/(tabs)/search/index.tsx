@@ -1,18 +1,26 @@
 import { useCallback, useMemo, useRef, useState } from "react";
-import { Text, View, FlatList, StyleSheet } from "react-native";
+import { Text, View, FlatList, StyleSheet, RefreshControl, Pressable } from "react-native";
 import { Stack, useRouter, useFocusEffect } from "expo-router";
 import type { SearchBarCommands } from "react-native-screens";
-import { searchNotes, searchTasks, listWorkspaceIds, type NoteRow, type CardRow } from "@/db/queries";
+import { searchNotes, searchTasks, listWorkspaceIds, embeddingIndexStats, type NoteRow, type CardRow } from "@/db/queries";
 import { PressableScale } from "@/components/PressableScale";
 import { TabScreen } from "@/components/TabScreen";
 import { IndexingBar } from "@/components/IndexingBar";
-import { ICON_NOTE, ICON_TASK, ICON_SEMANTIC } from "@/components/toolbar-icons";
+import { GlassBar, glassActive } from "@/components/GlassBar";
+import { KeyboardStickyView } from "react-native-keyboard-controller";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { semanticSearch, catchUpIndex, type SemanticHit } from "@/notes/embeddings";
 import { isAppleEmbeddingsSupported, appleEmbeddingsUnavailableReason } from "@modules/apple-embeddings";
 import { stripMarkdown } from "@cairn/shared/notes/text";
 import { useTheme, elevation, PRIORITY_COLOR, TAB_BAR_BASE, type as typeScale, type Theme } from "@/theme";
 
 type Scope = "notes" | "tasks" | "semantic";
+
+// Approx height of the native iOS 26 tab-bar search field (used to lift the
+// scope bar clear of it, both docked-on-keyboard and resting above the tab bar).
+const SEARCH_FIELD_H = 52;
+// Breathing room between the scope bar and the search field.
+const SCOPE_GAP = 8;
 
 /**
  * Search screen using the native iOS search bar (headerSearchBarOptions) — the
@@ -28,8 +36,11 @@ export default function SearchScreen() {
   const [notes, setNotes] = useState<NoteRow[]>([]);
   const [tasks, setTasks] = useState<CardRow[]>([]);
   const [hits, setHits] = useState<SemanticHit[]>([]);
+  const [reindexing, setReindexing] = useState(false);
+  const [stats, setStats] = useState<{ liveNotes: number; indexedNotes: number } | null>(null);
   const styles = useMemo(() => makeStyles(t), [t]);
   const searchRef = useRef<SearchBarCommands>(null);
+  const insets = useSafeAreaInsets();
   const semanticAvailable = isAppleEmbeddingsSupported();
   // Monotonic token so a slow semantic query can't overwrite a newer one.
   const semanticSeq = useRef(0);
@@ -98,13 +109,45 @@ export default function SearchScreen() {
     }, []),
   );
 
+  // Recompute index stats (indexed vs total notes) across all workspaces.
+  const refreshStats = useCallback(() => {
+    let live = 0;
+    let indexed = 0;
+    for (const ws of listWorkspaceIds()) {
+      const s = embeddingIndexStats(ws);
+      live += s.liveNotes;
+      indexed += s.indexedNotes;
+    }
+    setStats({ liveNotes: live, indexedNotes: indexed });
+  }, []);
+
+  // Pull-to-refresh on the Semantic list: force a full catch-up (embeds any
+  // not-yet-indexed notes — e.g. ones just synced from desktop), then re-run
+  // the query + refresh the stats readout.
+  const forceReindex = useCallback(async () => {
+    setReindexing(true);
+    try {
+      await catchUpIndex();
+      refreshStats();
+      run(query, "semantic");
+    } finally {
+      setReindexing(false);
+    }
+  }, [query, run, refreshStats]);
+
+  // Refresh stats whenever the Semantic scope is shown or the tab regains focus.
+  useFocusEffect(
+    useCallback(() => {
+      if (scope === "semantic") refreshStats();
+    }, [scope, refreshStats]),
+  );
+
   const hasQuery = query.trim().length > 0;
   // Always show the Semantic scope so it's discoverable; if on-device
   // embeddings aren't usable we explain why in the results area rather than
   // silently hiding the option.
   const scopes: Scope[] = ["notes", "tasks", "semantic"];
   const scopeLabel = (s: Scope) => (s === "notes" ? "Notes" : s === "tasks" ? "Tasks" : "Semantic");
-  const scopeIcon = (s: Scope) => (s === "notes" ? ICON_NOTE : s === "tasks" ? ICON_TASK : ICON_SEMANTIC);
   const placeholder =
     scope === "notes" ? "Search notes" : scope === "tasks" ? "Search tasks" : "Search notes by meaning";
 
@@ -138,37 +181,32 @@ export default function SearchScreen() {
           },
         }}
       />
-      {/* Scope switch lives in the native toolbar (not an in-body segment):
-          the search tab's native search field owns the header area, so a
-          floating menu reads correctly and can't be clipped by content insets. */}
-      <Stack.Toolbar placement="right">
-        <Stack.Toolbar.Menu icon={scopeIcon(scope)} accessibilityLabel="Search scope">
-          <Stack.Toolbar.Label>{scopeLabel(scope)}</Stack.Toolbar.Label>
-          {scopes.map((s) => (
-            <Stack.Toolbar.MenuAction
-              key={s}
-              icon={scopeIcon(s)}
-              isOn={scope === s}
-              onPress={() => switchScope(s)}
-            >
-              {scopeLabel(s)}
-            </Stack.Toolbar.MenuAction>
-          ))}
-        </Stack.Toolbar.Menu>
-      </Stack.Toolbar>
 
       {scope === "semantic" ? (
         <FlatList
           data={hits}
           keyExtractor={(h) => h.noteId}
           {...listProps}
+          refreshControl={
+            semanticAvailable ? (
+              <RefreshControl refreshing={reindexing} onRefresh={forceReindex} tintColor={t.textTertiary} />
+            ) : undefined
+          }
           ListEmptyComponent={
             !semanticAvailable ? (
               <Text style={styles.hint}>{appleEmbeddingsUnavailableReason()}</Text>
             ) : hasQuery ? (
               <Text style={styles.hint}>No semantically similar notes</Text>
             ) : (
-              <Text style={styles.hint}>Search your notes by meaning, not just keywords.</Text>
+              <View>
+                <Text style={styles.hint}>Search your notes by meaning, not just keywords.</Text>
+                {stats ? (
+                  <Text style={styles.statHint}>
+                    {stats.indexedNotes} of {stats.liveNotes} notes indexed
+                    {stats.indexedNotes < stats.liveNotes ? " · pull down to finish indexing" : ""}
+                  </Text>
+                ) : null}
+              </View>
             )
           }
           renderItem={({ item }) => (
@@ -227,13 +265,55 @@ export default function SearchScreen() {
           )}
         />
       )}
+
+      {/* Persistent scope switch, pinned to the bottom just above the native
+          search field. With the iOS 26 search tab the search field lives at the
+          bottom (above the keyboard), so the toggle rides the keyboard via
+          KeyboardStickyView: when closed it sits above the tab-bar search field;
+          when open it lifts to clear the field that's now docked on the keyboard. */}
+      <KeyboardStickyView
+        offset={{ closed: -(SEARCH_FIELD_H + insets.bottom), opened: -(SEARCH_FIELD_H + SCOPE_GAP) }}
+        style={styles.scopeOverlay}
+      >
+        <GlassBar style={[styles.scopeBar, !glassActive && styles.scopeBarFallback]}>
+          {scopes.map((s) => (
+            <Pressable
+              key={s}
+              onPress={() => switchScope(s)}
+              style={[styles.scopeBtn, scope === s && styles.scopeBtnActive]}
+              accessibilityRole="button"
+              accessibilityState={{ selected: scope === s }}
+            >
+              <Text style={[styles.scopeText, scope === s && styles.scopeTextActive]}>
+                {scopeLabel(s)}
+              </Text>
+            </Pressable>
+          ))}
+        </GlassBar>
+      </KeyboardStickyView>
     </TabScreen>
   );
 }
 
 function makeStyles(t: Theme) {
   return StyleSheet.create({
-    list: { padding: 12, paddingBottom: 12 + TAB_BAR_BASE },
+    scopeOverlay: { position: "absolute", left: 12, right: 12, bottom: 0 },
+    scopeBar: {
+      flexDirection: "row",
+      gap: 4,
+      padding: 4,
+      borderRadius: 12,
+      overflow: "hidden",
+    },
+    // Fallback (no Liquid Glass): give the bar a solid themed surface + border.
+    scopeBarFallback: { backgroundColor: t.surface, borderWidth: 1, borderColor: t.border },
+    scopeBtn: { flex: 1, paddingVertical: 7, borderRadius: 8, alignItems: "center" },
+    scopeBtnActive: { backgroundColor: t.accent },
+    scopeText: { ...typeScale.control, color: t.textSecondary },
+    scopeTextActive: { color: t.accentFg },
+    // Bottom pad clears the pinned scope bar + the native search field + tab bar
+    // so the last result is scrollable into view above them.
+    list: { padding: 12, paddingBottom: 12 + TAB_BAR_BASE + SEARCH_FIELD_H + 48 },
     row: {
       paddingVertical: 10,
       paddingHorizontal: 14,
@@ -249,5 +329,6 @@ function makeStyles(t: Theme) {
     preview: { ...typeScale.caption, color: t.textSecondary, marginTop: 2 },
     score: { ...typeScale.caption, color: t.textTertiary, marginLeft: "auto", fontVariant: ["tabular-nums"] },
     hint: { textAlign: "center", color: t.textTertiary, marginTop: 24 },
+    statHint: { ...typeScale.caption, textAlign: "center", color: t.textTertiary, marginTop: 8 },
   });
 }

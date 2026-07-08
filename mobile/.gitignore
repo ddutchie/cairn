@@ -16,6 +16,10 @@ web-build/
 *.key
 *.mobileprovision
 
+# SwiftPM build output (e.g. apple-embeddings/tests/.build from `swift test`)
+.build/
+.swiftpm/
+
 # Metro
 .metro-health-check*
 

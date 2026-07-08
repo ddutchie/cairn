@@ -1006,6 +1006,31 @@ export function listWorkspaceIds(): string[] {
     .map((r) => r.id);
 }
 
+/** Diagnostic counts for the on-device semantic index (indexed vs total notes). */
+export function embeddingIndexStats(workspaceId: string): {
+  liveNotes: number;
+  indexedNotes: number;
+  sections: number;
+} {
+  const db = getDb();
+  const liveNotes =
+    db.getFirstSync<{ n: number }>(
+      `SELECT COUNT(*) n FROM notes WHERE ${LIVE} AND type='note' AND ${NOT_CONFLICT} AND workspace_id = ?`,
+      workspaceId,
+    )?.n ?? 0;
+  const indexedNotes =
+    db.getFirstSync<{ n: number }>(
+      `SELECT COUNT(DISTINCT note_id) n FROM note_embeddings WHERE workspace_id = ?`,
+      workspaceId,
+    )?.n ?? 0;
+  const sections =
+    db.getFirstSync<{ n: number }>(
+      `SELECT COUNT(*) n FROM note_embeddings WHERE workspace_id = ?`,
+      workspaceId,
+    )?.n ?? 0;
+  return { liveNotes, indexedNotes, sections };
+}
+
 /** Resolve a note's title for search-result display. */
 export function noteTitleById(noteId: string): string {
   const row = getDb().getFirstSync<{ title: string }>(

@@ -5,6 +5,7 @@ import { GitMerge, ChevronRight } from "lucide-react-native";
 import { iCloudAvailable, syncFolderLabel } from "@/sync/folder";
 import { requestSync } from "@/sync/controller";
 import { useSyncStatus } from "@/sync/useSyncStatus";
+import { EmbeddingsCard } from "@/components/EmbeddingsCard";
 import { ICON_CHECK } from "@/components/toolbar-icons";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 
@@ -100,6 +101,8 @@ export default function SyncScreen() {
           Bidirectional, offline-first. Edits made on this phone and the desktop reconcile via the
           shared sync engine. Body conflicts are kept as a &quot;conflicted copy&quot; note, never lost.
         </Text>
+
+        <EmbeddingsCard />
       </ScrollView>
     </View>
   );

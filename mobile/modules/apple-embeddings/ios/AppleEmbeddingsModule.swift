@@ -168,32 +168,17 @@ public class AppleEmbeddingsModule: Module {
                         description: "Failed to embed text: \(error.localizedDescription)")
       }
 
-      // Mean-pool over subword-token vectors.
-      var acc = [Double](repeating: 0, count: dim)
-      var count = 0
+      // Collect subword-token vectors, then mean-pool + L2-normalise them via
+      // the shared (unit-tested) EmbeddingMath helper.
+      var tokenVectors: [[Double]] = []
       let full = text.startIndex..<text.endIndex
       result.enumerateTokenVectors(in: full) { vector, _ in
-        if vector.count == dim {
-          for d in 0..<dim { acc[d] += vector[d] }
-          count += 1
-        }
+        tokenVectors.append(vector)
         return true
       }
-      if count == 0 { continue }
-
-      // Average, then L2-normalise (so downstream cosine == dot product).
-      var norm = 0.0
-      for d in 0..<dim {
-        acc[d] /= Double(count)
-        norm += acc[d] * acc[d]
-      }
-      norm = norm.squareRoot()
+      guard let pooled = EmbeddingMath.poolAndNormalise(tokenVectors, dim: dim) else { continue }
       let base = i * dim
-      if norm > 1e-9 {
-        for d in 0..<dim { out[base + d] = acc[d] / norm }
-      } else {
-        for d in 0..<dim { out[base + d] = acc[d] }
-      }
+      for d in 0..<dim { out[base + d] = pooled[d] }
     }
     return out
   }
