@@ -26,6 +26,7 @@
     "expo-document-picker": "~57.0.0",
     "expo-file-system": "~57.0.0",
     "expo-glass-effect": "~57.0.0",
+    "expo-haptics": "~57.0.0",
     "expo-image-picker": "~57.0.2",
     "expo-linking": "~57.0.1",
     "expo-router": "~57.0.3",
@@ -57,6 +58,7 @@
   "devDependencies": {
     "@types/react": "~19.2.4",
     "babel-plugin-module-resolver": "^5.0.2",
+    "d3": "^7.9.0",
     "eslint": "^9.39.4",
     "eslint-config-expo": "~57.0.0",
     "typescript": "~6.0.3"

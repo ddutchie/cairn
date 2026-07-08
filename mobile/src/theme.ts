@@ -27,6 +27,8 @@ export interface Theme {
   warning: string;
   danger: string;
   info: string;
+  /** Modal/sheet backdrop dimming colour (already includes its own alpha). */
+  scrim: string;
 }
 
 export const darkTheme: Theme = {
@@ -47,6 +49,7 @@ export const darkTheme: Theme = {
   warning: "#f59e0b",
   danger: "#ef4444",
   info: "#60a5fa",
+  scrim: "rgba(0,0,0,0.5)",
 };
 
 export const lightTheme: Theme = {
@@ -67,6 +70,7 @@ export const lightTheme: Theme = {
   warning: "#d97706",
   danger: "#dc2626",
   info: "#2563eb",
+  scrim: "rgba(0,0,0,0.4)",
 };
 
 /** Priority colours — re-exported from shared so desktop + mobile match. */
@@ -95,6 +99,76 @@ export const elevation: Record<"sm" | "md" | "lg" | "xl", Elevation> = {
   lg: { shadowColor: "#000", shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.12, shadowRadius: 16, elevation: 8 },
   xl: { shadowColor: "#000", shadowOffset: { width: 0, height: 16 }, shadowOpacity: 0.16, shadowRadius: 30, elevation: 16 },
 };
+
+/**
+ * Shared typography scale — the single source of truth for text sizing/weight
+ * across the app UI, so screens stop each picking their own 12/13/14/16. Spread
+ * a token into a StyleSheet entry and override only `color` (and, rarely, a
+ * one-off weight):
+ *
+ *   periodLabel: { ...type.title, color: t.textPrimary }
+ *   preview:     { ...type.caption, color: t.textTertiary }
+ *
+ * Sizes are unscaled points; RN scales them with the OS text-size setting.
+ *
+ * Role guide (largest → smallest):
+ *   display  24/700  screen & note titles, big inputs
+ *   heading  20/700  section headings, empty-state titles
+ *   title    17/600  list-item titles, prominent labels, period label
+ *   subtitle 16/600  sheet titles, day-list titles
+ *   control  15/600  toolbar buttons, toggles, pills, primary body-ish labels
+ *   body     15/400  body copy / descriptions
+ *   label    13/600  field labels, tab/segment labels, chips
+ *   caption  13/400  meta, previews, timestamps, stat counts
+ *   micro    11/500  dense keys — day-cell chips, legend, small tag chips
+ */
+export interface TypeToken {
+  fontSize: number;
+  fontWeight: "400" | "500" | "600" | "700";
+  lineHeight?: number;
+}
+
+export const type = {
+  display: { fontSize: 24, fontWeight: "700" } as TypeToken,
+  heading: { fontSize: 20, fontWeight: "700" } as TypeToken,
+  title: { fontSize: 17, fontWeight: "600" } as TypeToken,
+  subtitle: { fontSize: 16, fontWeight: "600" } as TypeToken,
+  control: { fontSize: 15, fontWeight: "600" } as TypeToken,
+  body: { fontSize: 15, fontWeight: "400", lineHeight: 22 } as TypeToken,
+  label: { fontSize: 13, fontWeight: "600" } as TypeToken,
+  caption: { fontSize: 13, fontWeight: "400" } as TypeToken,
+  micro: { fontSize: 11, fontWeight: "500" } as TypeToken,
+} as const;
+
+/**
+ * Icon sizing that pairs with the `type` scale so glyphs sit proportionally
+ * next to their labels across the app.
+ */
+export const iconSize = {
+  /** Inline with `type.control`/`type.label` (pill/toggle/segment icons). */
+  control: 17,
+  /** Nav chevrons and standalone tappable glyphs. */
+  nav: 20,
+  /** Small affordances (dropdown carets, inline meta glyphs). */
+  hint: 14,
+} as const;
+
+/**
+ * Standard UIKit tab bar content height (excludes the home-indicator inset).
+ *
+ * NOTE: on a tab screen the safe-area `insets.bottom` reported to the content
+ * ALREADY INCLUDES the native tab bar (the bar is part of the bottom safe area),
+ * so a fixed bottom overlay only needs `insets.bottom` + a small gap — adding
+ * TAB_BAR_BASE on top double-counts and floats it too high (verified on device
+ * with the note TOC button). Prefer plain `insets.bottom` for overlays.
+ *
+ * This constant remains only for cases that must reserve the bar's height
+ * separately from the inset (e.g. reconstructing a keyboard-sticky offset where
+ * no safe-area inset is in play — see the chat composer). NativeTabs doesn't
+ * expose its height, so we reconstruct it.
+ */
+export const TAB_BAR_BASE = 49;
+
 
 /** Returns the theme for the current system colour scheme. */
 export function useTheme(): Theme {

@@ -52,7 +52,20 @@ writeModule("katex-assets.ts", {
 const mermaidJs = fs.readFileSync(path.join(MERMAID, "mermaid.min.js"), "utf8");
 writeModule("mermaid-assets.ts", { MERMAID_JS: mermaidJs });
 
-console.log("[gen-webview-assets] wrote katex-assets.ts + mermaid-assets.ts");
+// ── D3 ──────────────────────────────────────────────────────────────────────
+// D3 powers the offline Knowledge Graph WebView (force-directed layout). It is a
+// direct devDependency of this package; the two candidates cover a local install
+// and a hoisted (repo-root) install as a fallback.
+const D3_CANDIDATES = [
+  path.join(MOBILE, "node_modules", "d3", "dist", "d3.min.js"),
+  path.join(MOBILE, "..", "node_modules", "d3", "dist", "d3.min.js"),
+];
+const d3Path = D3_CANDIDATES.find((p) => fs.existsSync(p));
+if (!d3Path) throw new Error("d3.min.js not found in mobile or root node_modules");
+const d3Js = fs.readFileSync(d3Path, "utf8");
+writeModule("d3-assets.ts", { D3_JS: d3Js });
+
+console.log("[gen-webview-assets] wrote katex-assets.ts + mermaid-assets.ts + d3-assets.ts");
 
 /** Emit a TS module that exports each entry as a backtick string constant. */
 function writeModule(filename, entries) {

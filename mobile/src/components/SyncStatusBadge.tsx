@@ -1,48 +1,41 @@
-import { Pressable, Text, ActivityIndicator, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
-import { Cloud, CloudOff, RefreshCw } from "lucide-react-native";
 import { useTheme } from "@/theme";
 import { useSyncStatus } from "@/sync/useSyncStatus";
+import { ICON_ICLOUD, ICON_ICLOUD_OFF, ICON_ICLOUD_SYNC, type ToolbarIcon } from "@/components/toolbar-icons";
 
 /**
- * Compact global sync-status button for screen headers. Reflects the auto-sync
- * controller's live state (idle / syncing / offline + pending count) and, on
- * tap, opens the Sync detail page (folder diagnostics, manual sync, conflict
- * resolution). Its icon/colour escalate when offline or when changes are
- * pending, drawing the eye when there's something to act on.
+ * Derives the props for a native sync-status toolbar button from the auto-sync
+ * controller's live state, as an iCloud SF Symbol (so it matches the other
+ * native header buttons — a lucide SVG looked out of place among them).
+ *
+ * Returned as a hook (not a wrapper component) because `Stack.Toolbar` reads its
+ * DIRECT children's element types to build native header items; a wrapper whose
+ * *return value* is a `Stack.Toolbar.Button` isn't recognised and renders
+ * nothing. Callers spread/apply these onto an inline `<Stack.Toolbar.Button>`.
+ *
+ * State → glyph: idle/synced → icloud · offline → icloud.slash · syncing OR
+ * pending changes → arrow.triangle.2.circlepath.icloud. Tint escalates
+ * (warning when pending, muted when offline). Tapping opens the Sync modal.
  */
-export function SyncStatusBadge() {
+export function useSyncBadge(): {
+  icon: ToolbarIcon;
+  tintColor: string;
+  accessibilityLabel: string;
+  accessibilityHint: string;
+  onPress: () => void;
+} {
   const t = useTheme();
   const router = useRouter();
   const { state, pending } = useSyncStatus();
 
-  const color = state === "offline" ? t.textTertiary : pending > 0 ? t.warning : t.success;
+  const offline = state === "offline";
+  const active = state === "syncing" || pending > 0;
 
-  return (
-    <Pressable
-      onPress={() => router.push("/sync")}
-      hitSlop={8}
-      style={styles.pill}
-    >
-      {state === "syncing" ? (
-        <ActivityIndicator size="small" color={t.accent} />
-      ) : state === "offline" ? (
-        <CloudOff size={20} color={color} />
-      ) : pending > 0 ? (
-        <RefreshCw size={20} color={color} />
-      ) : (
-        <Cloud size={20} color={color} />
-      )}
-      {pending > 0 && state !== "syncing" ? <Text style={[styles.count, { color }]}>{pending}</Text> : null}
-    </Pressable>
-  );
+  return {
+    icon: offline ? ICON_ICLOUD_OFF : active ? ICON_ICLOUD_SYNC : ICON_ICLOUD,
+    tintColor: offline ? t.textTertiary : pending > 0 ? t.warning : t.success,
+    accessibilityLabel: "Sync status",
+    accessibilityHint: "Opens sync details",
+    onPress: () => router.push("/sync"),
+  };
 }
-
-const styles = StyleSheet.create({
-  pill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-  },
-  count: { fontSize: 12, fontWeight: "700" },
-});

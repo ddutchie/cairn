@@ -1,0 +1,42 @@
+[
+  {
+    "id": "sample-semantic",
+    "title": "On-device semantic search",
+    "content": "# On-device semantic search\n\nMirrors the desktop bge-small semantic search on mobile, but runs fully on-device via Apple's NLContextualEmbedding (NaturalLanguage framework).\n\n## Why NLContextualEmbedding\nChosen over shipping the desktop ONNX model: no model bundle, no native runtime, no tokenizer. The OS provides the model and downloads assets on demand.\n\n## Centering fix\nMean-pooled vectors share a common component that crushes cosine into a narrow band. Subtracting the corpus centroid restores discrimination. A title-weighted lexical score is blended in so keyword-heavy queries surface the right note."
+  },
+  {
+    "id": "sample-kanban",
+    "title": "Kanban board drag and drop",
+    "content": "# Kanban board drag and drop\n\n## Gestures\nThe board uses react-native-gesture-handler and reanimated worklets to reorder cards between columns with a long-press drag, updating card order on the UI thread for a smooth 60fps interaction."
+  },
+  {
+    "id": "sample-sync",
+    "title": "iCloud sync engine",
+    "content": "# iCloud sync engine\n\n## Conflicts\nBidirectional offline-first sync over a shared iCloud folder. Diverged note bodies are kept as a conflicted copy so nothing is lost; a hybrid logical clock (HLC) orders operations deterministically across devices."
+  },
+  {
+    "id": "sample-recipe",
+    "title": "Sourdough bread recipe",
+    "content": "# Sourdough bread recipe\n\n## Method\nMix flour, water, salt and an active starter. Bulk ferment for four hours with stretch and folds, shape, cold proof overnight, then bake in a dutch oven at 250C for a crisp crust."
+  },
+  {
+    "id": "sample-tax",
+    "title": "Tax filing checklist",
+    "content": "# Tax filing checklist\n\n## Documents\nGather income statements, receipts for deductible expenses, mortgage interest, and last year's return before the April deadline. Submit electronically for a faster refund."
+  },
+  {
+    "id": "sample-arch",
+    "title": "Architecture: Persistence Layer",
+    "content": "# Architecture: Persistence Layer\n\nAll data lives in SQLite via better-sqlite3. The renderer talks to the main process over IPC. Notes are written to both a markdown file and a SQLite row simultaneously."
+  },
+  {
+    "id": "sample-graph",
+    "title": "Knowledge Graph redesign",
+    "content": "# Knowledge Graph redesign\n\nForce-directed and radial layouts render every project, note, card and tag wired by their explicit links. Semantic edges overlay dashed accent links between topically similar notes."
+  },
+  {
+    "id": "sample-expo",
+    "title": "Mobile Expo SDK upgrade",
+    "content": "# Mobile Expo SDK upgrade\n\nBumped Expo SDK and React Native, regenerated the native projects via prebuild, and re-ran pod install. Verified the app boots on a physical iOS device."
+  }
+]

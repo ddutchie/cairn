@@ -2,7 +2,8 @@ import { useMemo, useState } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, KeyboardAvoidingView, Platform } from "react-native";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
 import { createTask, listColumns, type ColumnRow } from "@/db/queries";
-import { useTheme, PRIORITY_COLOR, type Theme } from "@/theme";
+import { useModalOpenHaptic, toolbarPress } from "@/haptics";
+import { useTheme, PRIORITY_COLOR, type as typeScale, type Theme } from "@/theme";
 import { ICON_CHECK } from "@/components/toolbar-icons";
 
 const PRIORITIES = ["low", "medium", "high", "urgent"] as const;
@@ -13,6 +14,7 @@ const PRIORITIES = ["low", "medium", "high", "urgent"] as const;
  * column. Creates the card locally so capture triggers stage it for sync.
  */
 export default function NewCard() {
+  useModalOpenHaptic();
   const { project, column } = useLocalSearchParams<{ project: string; column?: string }>();
   const router = useRouter();
   const t = useTheme();
@@ -47,7 +49,7 @@ export default function NewCard() {
           variant="done"
           disabled={!canSave}
           accessibilityLabel="Save"
-          onPress={save}
+          onPress={toolbarPress(save, "confirm")}
         >
           Save
         </Stack.Toolbar.Button>
@@ -79,7 +81,7 @@ export default function NewCard() {
                   onPress={() => setColumnId(c.id)}
                   style={[styles.chip, { borderColor: t.border }, columnId === c.id && { backgroundColor: t.accent, borderColor: t.accent }]}
                 >
-                  <Text style={{ color: columnId === c.id ? t.accentFg : t.textSecondary, fontSize: 13, fontWeight: "600" }}>{c.name}</Text>
+                  <Text style={{ color: columnId === c.id ? t.accentFg : t.textSecondary, ...typeScale.label }}>{c.name}</Text>
                 </Pressable>
               ))}
             </View>
@@ -106,10 +108,10 @@ function makeStyles(t: Theme) {
     container: { flex: 1, backgroundColor: t.background },
     content: { padding: 18, paddingBottom: 60 },
     label: { fontSize: 12, fontWeight: "700", color: t.textTertiary, textTransform: "uppercase", letterSpacing: 0.5, marginTop: 18, marginBottom: 8 },
-    titleInput: { fontSize: 18, fontWeight: "600", color: t.textPrimary, backgroundColor: t.surface, borderWidth: 1, borderColor: t.border, borderRadius: 10, padding: 12 },
+    titleInput: { ...typeScale.title, color: t.textPrimary, backgroundColor: t.surface, borderWidth: 1, borderColor: t.border, borderRadius: 10, padding: 12 },
     row: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
     chip: { paddingVertical: 6, paddingHorizontal: 14, borderRadius: 16, borderWidth: 1 },
-    chipText: { fontSize: 13, fontWeight: "600", textTransform: "capitalize" },
-    descInput: { fontSize: 15, lineHeight: 22, color: t.textPrimary, backgroundColor: t.surface, borderWidth: 1, borderColor: t.border, borderRadius: 10, padding: 12, minHeight: 160, fontFamily: "Menlo" },
+    chipText: { ...typeScale.label, textTransform: "capitalize" },
+    descInput: { ...typeScale.body, color: t.textPrimary, backgroundColor: t.surface, borderWidth: 1, borderColor: t.border, borderRadius: 10, padding: 12, minHeight: 160, fontFamily: "Menlo" },
   });
 }

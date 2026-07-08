@@ -1,7 +1,7 @@
 import { View, Text, Pressable, StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ArrowUpCircle } from "lucide-react-native";
-import { useTheme, elevation } from "@/theme";
+import { useTheme, elevation, type as typeScale } from "@/theme";
 import { useAppUpdates } from "@/updates/useAppUpdates";
 
 /**
@@ -49,7 +49,7 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
   },
   row: { flexDirection: "row", alignItems: "center", gap: 8 },
-  text: { flex: 1, fontSize: 14, fontWeight: "500" },
+  text: { flex: 1, ...typeScale.control, fontWeight: "500" },
   button: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 10 },
-  buttonText: { fontSize: 13, fontWeight: "700" },
+  buttonText: { ...typeScale.label, fontWeight: "700" },
 });

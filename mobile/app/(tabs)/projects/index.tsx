@@ -4,15 +4,17 @@ import { Stack, useFocusEffect, useRouter } from "expo-router";
 import { listProjectSummaries, type ProjectSummary } from "@/db/queries";
 import { PressableScale } from "@/components/PressableScale";
 import { TabScreen } from "@/components/TabScreen";
+import { EmptyState } from "@/components/EmptyState";
 import { SkeletonList } from "@/components/Skeleton";
 import { ProjectIcon } from "@/components/ProjectIcon";
-import { SyncStatusBadge } from "@/components/SyncStatusBadge";
+import { useSyncBadge } from "@/components/SyncStatusBadge";
 import { useDataChanged } from "@/sync/useSyncStatus";
-import { useTheme, elevation } from "@/theme";
+import { useTheme, elevation, type as typeScale } from "@/theme";
 
 export default function ProjectsScreen() {
   const router = useRouter();
   const t = useTheme();
+  const syncBadge = useSyncBadge();
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   // Distinguish "still loading the first read" from "genuinely no projects" so
   // we show a skeleton instead of the empty state on cold start.
@@ -29,9 +31,7 @@ export default function ProjectsScreen() {
     <>
       <Stack.Screen options={{ title: "Projects" }} />
       <Stack.Toolbar placement="right">
-        <Stack.Toolbar.View>
-          <SyncStatusBadge />
-        </Stack.Toolbar.View>
+        <Stack.Toolbar.Button {...syncBadge} />
       </Stack.Toolbar>
     </>
   );
@@ -49,12 +49,10 @@ export default function ProjectsScreen() {
     return (
       <TabScreen>
         {header}
-        <View style={styles.empty}>
-          <Text style={[styles.emptyTitle, { color: t.textSecondary }]}>No projects yet</Text>
-          <Text style={[styles.emptyHint, { color: t.textTertiary }]}>
-            Connect your sync folder in the Sync tab to pull your workspace.
-          </Text>
-        </View>
+        <EmptyState
+          title="No projects yet"
+          subtitle="Connect your sync folder in the Sync tab to pull your workspace."
+        />
       </TabScreen>
     );
   }
@@ -71,7 +69,7 @@ export default function ProjectsScreen() {
         renderItem={({ item }) => (
           <PressableScale
             style={[styles.row, { backgroundColor: t.surface, borderColor: t.border }, elevation.sm]}
-            onPress={() => router.push(`/project/${item.id}`)}
+            onPress={() => router.push({ pathname: "/projects/project/[id]", params: { id: item.id } })}
           >
             <View style={[styles.iconWrap, { backgroundColor: t.accentDim }]}>
               <ProjectIcon name={item.icon} size={18} color={t.accent} />
@@ -107,10 +105,7 @@ const styles = StyleSheet.create({
   },
   iconWrap: { width: 38, height: 38, borderRadius: 9, alignItems: "center", justifyContent: "center" },
   rowBody: { flex: 1 },
-  name: { fontSize: 16, fontWeight: "600" },
-  meta: { fontSize: 12, marginTop: 2 },
+  name: { ...typeScale.subtitle },
+  meta: { ...typeScale.caption, marginTop: 2 },
   chevron: { fontSize: 22, fontWeight: "300" },
-  empty: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32 },
-  emptyTitle: { fontSize: 17, fontWeight: "600" },
-  emptyHint: { fontSize: 13, textAlign: "center", marginTop: 8 },
 });

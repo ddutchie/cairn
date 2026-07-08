@@ -1,0 +1,7 @@
+{
+  "name": "apple-embeddings",
+  "version": "0.1.0",
+  "description": "On-device text embeddings via Apple's NaturalLanguage NLContextualEmbedding — powers local semantic search in Cairn. Local Expo module.",
+  "main": "index.ts",
+  "private": true
+}

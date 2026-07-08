@@ -18,8 +18,24 @@ import type * as SQLite from "expo-sqlite";
  * next entry. NEVER edit or reorder existing entries; only append.
  */
 const MIGRATIONS: ((db: SQLite.SQLiteDatabase) => void)[] = [
-  // Example (leave commented until the first real schema change ships):
-  // (db) => db.execSync(`ALTER TABLE notes ADD COLUMN color TEXT`),
+  // v2: local-only on-device semantic-search index (see schema.ts). No capture
+  // trigger — never syncs. Fresh installs already have this from the base
+  // schema; this back-fills existing installs.
+  (db) =>
+    db.execSync(`
+      CREATE TABLE IF NOT EXISTS note_embeddings (
+        note_id       TEXT NOT NULL,
+        section_idx   INTEGER NOT NULL DEFAULT 0,
+        workspace_id  TEXT NOT NULL DEFAULT '',
+        model         TEXT NOT NULL DEFAULT '',
+        section_title TEXT NOT NULL DEFAULT '',
+        content_hash  TEXT NOT NULL DEFAULT '',
+        vector        TEXT NOT NULL DEFAULT '[]',
+        embedded_at   TEXT NOT NULL DEFAULT '',
+        PRIMARY KEY (note_id, section_idx)
+      );
+      CREATE INDEX IF NOT EXISTS idx_note_emb_note ON note_embeddings(note_id);
+    `),
 ];
 
 /** The schema version this build expects (base schema = 1, plus each migration). */

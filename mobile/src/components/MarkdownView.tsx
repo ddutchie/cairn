@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { lazy, Suspense, useMemo, type ReactNode } from "react";
 import { Linking, Text, View, Pressable } from "react-native";
 import Markdown, { MarkdownIt, type RenderRules, type ASTNode } from "react-native-markdown-display";
 import markdownItMark from "markdown-it-mark";
@@ -7,14 +7,25 @@ import { Square, CheckSquare } from "lucide-react-native";
 import { useTheme, withAlpha, type Theme } from "@/theme";
 import { findNoteIdByTitle } from "@/db/queries";
 import { CodeBlock } from "@/components/CodeBlock";
-import { MathView } from "@/components/MathView";
-import { MermaidView } from "@/components/MermaidView";
 import {
   preprocessCairnMarkdown,
   noteTitleFromUrl,
   isColorLiteral,
   toggleCheckboxInSource,
 } from "@cairn/shared/notes/markdown";
+import { headingSlug } from "@cairn/shared/notes/toc";
+
+// Mermaid + KaTeX bundle their renderer sources as ~1 MB inline strings
+// (mermaid-assets.ts alone is 3.5k lines). A static import would evaluate those
+// modules — and heap-allocate the strings — at bundle init, i.e. every time ANY
+// note opens, even a plain-text one. Loading them lazily defers that cost until
+// a note actually contains a diagram / math block.
+const MermaidView = lazy(() =>
+  import("@/components/MermaidView").then((m) => ({ default: m.MermaidView })),
+);
+const MathView = lazy(() =>
+  import("@/components/MathView").then((m) => ({ default: m.MathView })),
+);
 
 /**
  * Themed markdown renderer with Cairn desktop parity.
@@ -37,10 +48,15 @@ import {
 export function MarkdownView({
   content,
   onChangeContent,
+  onHeadingLayout,
 }: {
   content: string;
   /** When provided, task-list checkboxes become interactive. */
   onChangeContent?: (next: string) => void;
+  /** Reports each rendered heading's y-offset (relative to this component's
+   *  container) keyed by GitHub-style slug — used to drive scroll-to-heading
+   *  from the Table of Contents. */
+  onHeadingLayout?: (id: string, y: number) => void;
 }) {
   const t = useTheme();
   const router = useRouter();
@@ -58,8 +74,8 @@ export function MarkdownView({
     return false;
   };
   const rules = useMemo(
-    () => makeRules(t, content ?? "", onChangeContent),
-    [t, content, onChangeContent],
+    () => makeRules(t, content ?? "", onChangeContent, onHeadingLayout),
+    [t, content, onChangeContent, onHeadingLayout],
   );
 
   return (
@@ -250,6 +266,7 @@ function makeRules(
   t: Theme,
   source: string,
   onChangeContent?: (next: string) => void,
+  onHeadingLayout?: (id: string, y: number) => void,
 ): RenderRules {
   const CALLOUT_ACCENT: Record<string, string> = {
     note: t.accent,
@@ -267,14 +284,27 @@ function makeRules(
     // Syntax-highlighted fenced / indented code blocks; mermaid → diagram.
     fence: (node) => {
       const lang = extractFenceLang(node);
-      if (lang === "mermaid") return <MermaidView key={node.key} code={node.content} />;
+      if (lang === "mermaid")
+        return (
+          <Suspense key={node.key} fallback={<View style={{ height: 60 }} />}>
+            <MermaidView code={node.content} />
+          </Suspense>
+        );
       return <CodeBlock key={node.key} code={node.content} language={lang} />;
     },
     code_block: (node) => <CodeBlock key={node.key} code={node.content} />,
 
     // KaTeX math (from mathPlugin).
-    math_inline: (node) => <MathView key={node.key} latex={node.content} display={false} />,
-    math_block: (node) => <MathView key={node.key} latex={node.content} display={true} />,
+    math_inline: (node) => (
+      <Suspense key={node.key} fallback={<Text> </Text>}>
+        <MathView latex={node.content} display={false} />
+      </Suspense>
+    ),
+    math_block: (node) => (
+      <Suspense key={node.key} fallback={<View style={{ height: 40 }} />}>
+        <MathView latex={node.content} display={true} />
+      </Suspense>
+    ),
 
     // ==highlight== → mark chip.
     mark: (node, children) => (
@@ -398,7 +428,42 @@ function makeRules(
         </Text>
       );
     },
+
+    // Headings (h1–h3): render as normal but wrap in an onLayout reporter so the
+    // Table of Contents can scroll to each by its GitHub-style slug. h4–h6 fall
+    // through to the library defaults (not shown in the TOC).
+    heading1: (node, children, _parent, styles) =>
+      renderHeading(node, children, styles.heading1, onHeadingLayout),
+    heading2: (node, children, _parent, styles) =>
+      renderHeading(node, children, styles.heading2, onHeadingLayout),
+    heading3: (node, children, _parent, styles) =>
+      renderHeading(node, children, styles.heading3, onHeadingLayout),
   };
+}
+
+/** Flatten an AST node's text content (for heading slugging). */
+function nodeText(node: ASTNode): string {
+  if (node.content) return node.content;
+  const kids = (node.children ?? []) as ASTNode[];
+  return kids.map(nodeText).join("");
+}
+
+/** Render a heading with its themed style, wrapped in an onLayout reporter. */
+function renderHeading(
+  node: ASTNode,
+  children: ReactNode,
+  style: object,
+  onHeadingLayout?: (id: string, y: number) => void,
+): ReactNode {
+  const id = headingSlug(nodeText(node));
+  return (
+    <View
+      key={node.key}
+      onLayout={onHeadingLayout ? (e) => onHeadingLayout(id, e.nativeEvent.layout.y) : undefined}
+    >
+      <Text style={style}>{children}</Text>
+    </View>
+  );
 }
 
 /** Pull the fenced-code language from the token's info string. */

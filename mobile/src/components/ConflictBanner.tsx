@@ -1,7 +1,8 @@
 import { Pressable, Text, StyleSheet } from "react-native";
+import { useMemo } from "react";
 import { useRouter } from "expo-router";
 import { AlertTriangle, ChevronRight } from "lucide-react-native";
-import { useTheme, withAlpha, type Theme } from "@/theme";
+import { useTheme, withAlpha, type as typeScale, type Theme } from "@/theme";
 import { useSyncStatus } from "@/sync/useSyncStatus";
 
 /**
@@ -13,8 +14,8 @@ export function ConflictBanner() {
   const t = useTheme();
   const router = useRouter();
   const { conflicts } = useSyncStatus();
+  const styles = useMemo(() => makeStyles(t), [t]);
   if (conflicts <= 0) return null;
-  const styles = makeStyles(t);
   return (
     <Pressable style={styles.banner} onPress={() => router.push("/conflicts")}>
       <AlertTriangle size={16} color={t.warning} />
@@ -41,6 +42,6 @@ function makeStyles(t: Theme) {
       borderWidth: 1,
       borderColor: withAlpha(t.warning, 0.4),
     },
-    text: { flex: 1, fontSize: 13, fontWeight: "600", color: t.textPrimary },
+    text: { flex: 1, ...typeScale.label, color: t.textPrimary },
   });
 }

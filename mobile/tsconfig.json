@@ -4,6 +4,7 @@
     "strict": true,
     "paths": {
       "@/*": ["./src/*"],
+      "@modules/*": ["./modules/*"],
       "@cairn/shared": ["../shared/sync/index.ts"],
       "@cairn/shared/*": ["../shared/*"]
     }

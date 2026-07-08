@@ -12,6 +12,7 @@ import type {
   GraphNodeType,
   GraphEdgeType,
 } from "@/types";
+import { nodeTypeToken } from "../../../shared/ui/graph";
 
 // ── Slice interface ───────────────────────────────────────────────────────────
 
@@ -138,12 +139,7 @@ export function filterGraphEdges(
 
 /** Node type → CSS variable colour token */
 export function nodeTypeColor(type: GraphNodeType): string {
-  switch (type) {
-    case "project": return "var(--accent)";
-    case "note":    return "var(--info)";
-    case "card":    return "var(--success)";
-    case "tag":     return "var(--warning)";
-  }
+  return `var(--${nodeTypeToken(type)})`;
 }
 
 /** Edge type → display label */

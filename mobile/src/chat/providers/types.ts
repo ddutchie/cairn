@@ -66,6 +66,15 @@ export type StreamEvent =
   | { type: "text-delta"; id?: string; delta: string }
   | { type: "tool-input-start"; toolCallId: string; toolName: string }
   | { type: "tool-input-available"; toolCallId: string; toolName: string; input: unknown }
+  | {
+      // A tool the provider already executed itself (e.g. Apple's native tools).
+      // The agent loop must NOT re-run it — just surface it for display.
+      type: "tool-executed";
+      toolCallId: string;
+      toolName: string;
+      input: unknown;
+      output: unknown;
+    }
   | { type: "finish"; finishReason?: string }
   | { type: "reasoning-delta"; delta?: string }
   | { type: string; [k: string]: unknown };

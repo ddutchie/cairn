@@ -9,7 +9,7 @@ import {
   type ConflictCopy,
 } from "@/db/queries";
 import { useDataChanged } from "@/sync/useSyncStatus";
-import { useTheme, type Theme } from "@/theme";
+import { useTheme, type as typeScale, type Theme } from "@/theme";
 
 /**
  * Manual conflict-resolution screen. Lists every conflict-copy note (created
@@ -121,22 +121,22 @@ function makeStyles(t: Theme) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: t.background },
     scroll: { padding: 16, paddingBottom: 48 },
-    intro: { fontSize: 13, color: t.textSecondary, marginBottom: 14, lineHeight: 19 },
+    intro: { ...typeScale.caption, color: t.textSecondary, marginBottom: 14, lineHeight: 19 },
     card: { backgroundColor: t.surface, borderRadius: 14, borderWidth: 1, borderColor: t.border, padding: 14, marginBottom: 16 },
-    cardTitle: { fontSize: 17, fontWeight: "700", color: t.textPrimary },
-    meta: { fontSize: 12, color: t.textTertiary, marginTop: 4 },
+    cardTitle: { ...typeScale.title, fontWeight: "700", color: t.textPrimary },
+    meta: { ...typeScale.caption, color: t.textTertiary, marginTop: 4 },
     versions: { gap: 10, marginTop: 12 },
     version: { backgroundColor: t.surface2, borderRadius: 10, borderWidth: 1, borderColor: t.borderSubtle, padding: 10 },
     versionLabel: { fontSize: 11, fontWeight: "700", color: t.textTertiary, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 6 },
-    versionBody: { fontSize: 13, color: t.textPrimary, lineHeight: 19 },
+    versionBody: { ...typeScale.caption, color: t.textPrimary, lineHeight: 19 },
     actions: { flexDirection: "row", gap: 10, marginTop: 14 },
     btn: { flex: 1, paddingVertical: 11, borderRadius: 10, alignItems: "center" },
     btnGhost: { backgroundColor: t.surface2, borderWidth: 1, borderColor: t.border },
-    btnGhostText: { color: t.textSecondary, fontWeight: "600", fontSize: 14 },
+    btnGhostText: { ...typeScale.control, color: t.textSecondary },
     btnPrimary: { backgroundColor: t.accent },
-    btnPrimaryText: { color: t.accentFg, fontWeight: "700", fontSize: 14 },
+    btnPrimaryText: { ...typeScale.control, fontWeight: "700", color: t.accentFg },
     empty: { flex: 1, alignItems: "center", justifyContent: "center", padding: 40, gap: 12 },
-    emptyTitle: { fontSize: 18, fontWeight: "700", color: t.textPrimary },
-    emptyText: { fontSize: 13, color: t.textTertiary, textAlign: "center", lineHeight: 19 },
+    emptyTitle: { ...typeScale.title, fontWeight: "700", color: t.textPrimary },
+    emptyText: { ...typeScale.caption, color: t.textTertiary, textAlign: "center", lineHeight: 19 },
   });
 }

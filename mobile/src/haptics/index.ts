@@ -1,0 +1,109 @@
+import { useEffect, useMemo } from "react";
+import * as Haptics from "expo-haptics";
+
+/**
+ * Thin, fire-and-forget wrapper around expo-haptics.
+ *
+ * Every call is non-blocking and swallows errors — haptics are a nicety, never
+ * a failure path (e.g. unsupported device, simulator, or the user disabling
+ * system haptics). Prefer these semantic helpers over calling expo-haptics
+ * directly so intent (not the raw feedback style) reads at the call site, and
+ * so we can tune the mapping in one place.
+ *
+ *   import { haptics } from "@/haptics";
+ *   haptics.impact();          // light tap
+ *   haptics.success();         // completed an action
+ *
+ * In components you can also use the `useHaptics()` hook for a stable object.
+ */
+
+function fire(run: () => Promise<void>): void {
+  // Fire-and-forget: never await, never throw into the caller.
+  run().catch(() => {});
+}
+
+export const haptics = {
+  /** Light impact — subtle confirmation (bounce, toggle, small hit). */
+  impact: () => fire(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)),
+  /** Medium impact — a more noticeable hit (break, drop, commit). */
+  impactMedium: () => fire(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)),
+  /** Heavy impact — a strong hit (collision, big event). */
+  impactHeavy: () => fire(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy)),
+  /** Rigid impact — crisp, sharp (mechanical taps). */
+  rigid: () => fire(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid)),
+  /** Soft impact — cushioned, gentle. */
+  soft: () => fire(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft)),
+  /** Selection tick — for moving through discrete options (pickers, segments). */
+  selection: () => fire(() => Haptics.selectionAsync()),
+  /** Success notification — an operation completed. */
+  success: () => fire(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)),
+  /** Warning notification — caution / recoverable issue. */
+  warning: () => fire(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning)),
+  /** Error notification — an operation failed. */
+  error: () => fire(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error)),
+};
+
+export type HapticsApi = typeof haptics;
+
+/**
+ * Hook form of {@link haptics}. Returns the same stable, fire-and-forget helper
+ * object — handy in components that already destructure hooks.
+ *
+ *   const h = useHaptics();
+ *   <Pressable onPress={() => { h.selection(); onToggle(); }} />
+ */
+export function useHaptics(): HapticsApi {
+  return useMemo(() => haptics, []);
+}
+
+/**
+ * Fire a subtle impact once when a screen mounts — the native-route-modal
+ * equivalent of the BottomSheet open tap. Call once at the top of a screen
+ * presented with `presentation: "modal"` (sync, AI settings, new note/task) so
+ * those modals get the same open feedback as the in-app sheets.
+ */
+export function useModalOpenHaptic(): void {
+  useEffect(() => {
+    haptics.impact();
+  }, []);
+}
+
+/**
+ * Intent of a toolbar action, mapped to the right haptic:
+ *   - "action"  → selection tick (default: navigate, open a menu/picker, toggle)
+ *   - "confirm" → success       (Save / Create / Done — a committed change)
+ *   - "destroy" → warning       (Delete / Archive — a destructive commit)
+ */
+export type ToolbarHaptic = "action" | "confirm" | "destroy";
+
+const TOOLBAR_HAPTIC: Record<ToolbarHaptic, () => void> = {
+  action: haptics.selection,
+  confirm: haptics.success,
+  destroy: haptics.warning,
+};
+
+/**
+ * Wrap a `Stack.Toolbar.Button` / `MenuAction` `onPress` so it fires an
+ * intent-appropriate haptic before running.
+ *
+ * The native toolbar reflects on its children's component identity
+ * (`isChildOfType(child, StackToolbarButton)`), so we can't wrap the button in
+ * a custom component — instead we decorate the handler:
+ *
+ *   <Stack.Toolbar.Button icon={ICON_CHECK} onPress={toolbarPress(onSave, "confirm")} />
+ *
+ * Defaults to `"action"` (a subtle selection tick). Prefer `"action"` whenever
+ * the handler is async or already fires its own outcome haptic
+ * (success/warning/error on completion) — otherwise the tap and the outcome
+ * double-buzz. Reserve `"confirm"`/`"destroy"` for handlers that commit
+ * synchronously and don't signal completion themselves.
+ */
+export function toolbarPress(
+  handler: (() => void) | undefined,
+  intent: ToolbarHaptic = "action",
+): () => void {
+  return () => {
+    TOOLBAR_HAPTIC[intent]();
+    handler?.();
+  };
+}

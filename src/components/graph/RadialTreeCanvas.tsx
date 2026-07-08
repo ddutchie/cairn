@@ -6,6 +6,11 @@ import * as d3 from "d3";
 import type { GraphNode, KnowledgeGraph } from "@/types";
 import { resolveCssVar, withAlpha } from "./analyticsUtils";
 import { useFontScale, useThemeRepaint } from "./analyticsHooks";
+import {
+  buildHierarchy as sharedBuildHierarchy,
+  sunburstTypeToken,
+  type HierarchyNode,
+} from "../../../shared/ui/graph";
 
 interface Props {
   graph: KnowledgeGraph;
@@ -20,66 +25,15 @@ interface Props {
   semanticThreshold?: number;
 }
 
-const TAGS_BRANCH_ID = "__tags__";
-const ORPHAN_BRANCH_ID = "__orphans__";
-const ROOT_ID = "__workspace__";
-
-type HNode = { id: string; title: string; type: string; children?: HNode[] };
-
-/**
- * Build a clean hierarchy for the sunburst:
- *   root → projects → (notes | cards)
- *   root → "Tags" branch → tags (each tag once, shared across the workspace)
- */
-function buildHierarchy(graph: KnowledgeGraph): HNode {
-  const projects = graph.nodes.filter((n) => n.type === "project");
-  const byProject = new Map<string, HNode>();
-  const orphans: HNode[] = [];
-
-  for (const p of projects) {
-    byProject.set(p.id, { id: p.id, title: p.title ?? "", type: "project", children: [] });
-  }
-
-  for (const n of graph.nodes) {
-    if (n.type !== "note" && n.type !== "card") continue;
-    const parent = n.projectId ? byProject.get(n.projectId) : null;
-    if (parent) {
-      parent.children!.push({ id: n.id, title: n.title ?? "", type: n.type });
-    } else {
-      // Note/card whose project isn't present (e.g. the "project" node type is
-      // filtered out, or it has no projectId): keep it visible under a fallback
-      // branch instead of silently dropping it.
-      orphans.push({ id: n.id, title: n.title ?? "", type: n.type });
-    }
-  }
-
-  const tagNodes = graph.nodes.filter((n) => n.type === "tag");
-  const children: HNode[] = [...byProject.values()];
-  if (orphans.length) {
-    children.push({ id: ORPHAN_BRANCH_ID, title: "Other", type: "branch", children: orphans });
-  }
-  if (tagNodes.length) {
-    children.push({
-      id: TAGS_BRANCH_ID,
-      title: "Tags",
-      type: "branch",
-      children: tagNodes.map((t) => ({ id: t.id, title: t.title ?? "", type: "tag" })),
-    });
-  }
-
-  return { id: ROOT_ID, title: "Workspace", type: "workspace", children };
-}
+type HNode = HierarchyNode;
 
 function colorForType(type: string): string {
-  switch (type) {
-    case "project":   return resolveCssVar("--accent");
-    case "note":      return resolveCssVar("--info");
-    case "card":      return resolveCssVar("--success");
-    case "tag":       return resolveCssVar("--warning");
-    case "branch":    return resolveCssVar("--text-secondary");
-    case "workspace": return resolveCssVar("--text-secondary");
-    default:          return resolveCssVar("--text-tertiary");
-  }
+  const token = sunburstTypeToken(type as HNode["type"]);
+  const cssVar = token === "textPrimary" ? "--text-primary"
+    : token === "textSecondary" ? "--text-secondary"
+    : token === "textTertiary" ? "--text-tertiary"
+    : `--${token}`;
+  return resolveCssVar(cssVar);
 }
 
 const INNER_R = 38;
@@ -127,7 +81,7 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
 
   // ── build partitioned hierarchy (rebuilds only when topology changes) ──
   const root = useMemo(() => {
-    const r = d3.hierarchy(buildHierarchy(graph))
+    const r = d3.hierarchy(sharedBuildHierarchy(graph))
       // A node with no children (including an empty project: children === [])
       // still counts as 1 so it gets a visible, nonzero-width wedge.
       .sum((d) => (d.children && d.children.length ? 0 : 1))

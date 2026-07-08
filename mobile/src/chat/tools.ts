@@ -8,13 +8,15 @@
  */
 
 import * as q from "@/db/queries";
+import { semanticSearch } from "@/notes/embeddings";
+import { isAppleEmbeddingsSupported } from "@modules/apple-embeddings";
 
 export interface ToolDef {
   name: string;
   description: string;
   params: string; // human-readable hint (kept for prompts/debug)
   jsonSchema: Record<string, unknown>; // JSON Schema for /agent/chat tools
-  run: (args: Record<string, unknown>) => unknown;
+  run: (args: Record<string, unknown>) => unknown | Promise<unknown>;
 }
 
 const str = (v: unknown): string => (typeof v === "string" ? v : v == null ? "" : String(v));
@@ -52,6 +54,28 @@ export const TOOLS: ToolDef[] = [
     jsonSchema: obj({ query: S }, ["query"]),
     run: (a) =>
       q.searchNotes(str(a.query)).map((n) => ({ id: n.id, title: n.title, folder: n.folder, project_id: n.project_id })),
+  },
+  {
+    name: "semantic_search_notes",
+    description:
+      "Find notes by MEANING, not just literal keywords — use this when the user asks a conceptual question about their notes (e.g. \"what did I decide about auth\", \"anything on offline sync\") and search_notes' exact-text matching would miss relevant notes. Returns the best-matching notes with a relevance score (0-1) and the matching section title. Follow up with get_note to read a match's full content before answering.",
+    params: '{ "query": string, "limit"?: number }',
+    jsonSchema: obj({ query: S, limit: { type: "number" } }, ["query"]),
+    run: async (a) => {
+      if (!isAppleEmbeddingsSupported()) {
+        return { error: "On-device semantic search isn't available on this device; use search_notes instead." };
+      }
+      const limit = typeof a.limit === "number" && a.limit > 0 ? Math.min(a.limit, 20) : 8;
+      const hits = [];
+      for (const ws of q.listWorkspaceIds()) hits.push(...(await semanticSearch(ws, str(a.query), limit)));
+      hits.sort((x, y) => y.rank - x.rank);
+      return hits.slice(0, limit).map((h) => ({
+        id: h.noteId,
+        title: h.title,
+        section: h.sectionTitle,
+        score: Math.round(h.score * 100) / 100,
+      }));
+    },
   },
   {
     name: "list_notes",

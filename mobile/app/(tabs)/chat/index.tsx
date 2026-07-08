@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -12,19 +12,21 @@ import {
 } from "react-native";
 import Animated, { useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { KeyboardStickyView, useKeyboardHandler } from "react-native-keyboard-controller";
-import { Stack } from "expo-router";
+import { Stack, useRouter, useFocusEffect } from "expo-router";
 import { CheckCircle, Bot, User, Send, ImagePlus, X, Settings2 } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { TabScreen } from "@/components/TabScreen";
+import { EmptyState } from "@/components/EmptyState";
 import { GlassBar, glassActive } from "@/components/GlassBar";
 import { MarkdownView } from "@/components/MarkdownView";
-import { AiSettingsSheet } from "@/components/AiSettingsSheet";
-import { ICON_DELETE, ICON_SETTINGS } from "@/components/toolbar-icons";
-import { useTheme, withAlpha, type Theme } from "@/theme";
+import { ICON_DELETE, ICON_AI } from "@/components/toolbar-icons";
+import { useTheme, withAlpha, type as typeScale, type Theme } from "@/theme";
 import { runAgent, userMessage, assistantMessage, type AgentEvent, type Attachment } from "@/chat/agent";
+import { haptics, toolbarPress } from "@/haptics";
 import { pickImages, takePhoto } from "@/chat/attachments";
 import { loadChatHistory, saveChatMessage, clearChatHistory } from "@/db/chat-store";
 import { hasProvider } from "@/chat/providers";
+import { resetAppleSession } from "@/chat/providers/apple";
 import { prettifyToolLabel } from "@cairn/shared/ui/constants";
 import type { UIMessage } from "@/chat/providers/types";
 
@@ -65,45 +67,52 @@ export default function ChatScreen() {
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => makeStyles(t), [t]);
-  const [messages, setMessages] = useState<UiMessage[]>([]);
+  // Restore local (on-device) chat history once, synchronously, when the screen
+  // first mounts — seeding both the UI bubbles (messages) and the persistent
+  // agent conversation (ref) via lazy initializers rather than a
+  // setState-in-effect (which the linter flags as a cascading render).
+  // `useState`'s lazy initializer runs exactly once, so history is read a single
+  // time and shared by both seeds below.
+  const [messages, setMessages] = useState<UiMessage[]>(() =>
+    loadChatHistory().map((h) => ({ role: h.role, content: h.content, images: h.images, tools: h.tools })),
+  );
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [busy, setBusy] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [configured, setConfigured] = useState(true);
   const scrollRef = useRef<ScrollView>(null);
-  // Persistent agent conversation (UIMessage parts format) across turns.
-  const conversation = useRef<UIMessage[]>([]);
-
-  // Whether any AI provider is usable (built-in Rork or a configured OpenAI
-  // key). Re-checked on mount and whenever the settings sheet closes.
-  const refreshConfigured = useCallback(() => {
-    hasProvider().then(setConfigured).catch(() => setConfigured(false));
-  }, []);
-  useEffect(() => {
-    refreshConfigured();
-  }, [refreshConfigured]);
-
-  // Restore local (on-device) chat history once on mount: rebuild both the UI
-  // bubbles and the agent conversation so context survives an app relaunch.
-  useEffect(() => {
-    const history = loadChatHistory();
-    if (history.length === 0) return;
-    setMessages(history.map((h) => ({ role: h.role, content: h.content, images: h.images, tools: h.tools })));
-    for (const h of history) {
+  const router = useRouter();
+  // Persistent agent conversation (UIMessage parts format) across turns. Seeded
+  // once from the same on-device history as `messages` above. A ref's argument
+  // is evaluated on every render (only the first is kept), so the history
+  // load/remap goes behind a null-sentinel one-time initializer instead.
+  const conversation = useRef<UIMessage[]>(null as unknown as UIMessage[]);
+  if (conversation.current === null) {
+    conversation.current = loadChatHistory().map((h) => {
       if (h.role === "user") {
         // Restore image attachments too, so the agent keeps multimodal context
-        // across relaunch (the UI bubble already shows them via setMessages).
+        // across relaunch (the UI bubble already shows them via `messages`).
         const atts = (h.images ?? []).map((url) => ({
           url,
           mediaType: url.match(/^data:([^;,]+)/)?.[1] ?? "image/jpeg",
         }));
-        conversation.current.push(userMessage(h.content, atts));
-      } else {
-        conversation.current.push(assistantMessage(h.content));
+        return userMessage(h.content, atts);
       }
-    }
+      return assistantMessage(h.content);
+    });
+  }
+
+  // Whether any AI provider is usable (built-in Rork or a configured OpenAI
+  // key). Re-checked whenever the chat screen regains focus — e.g. after the
+  // AI settings form-sheet route is dismissed.
+  const refreshConfigured = useCallback(() => {
+    hasProvider().then(setConfigured).catch(() => setConfigured(false));
   }, []);
+  useFocusEffect(
+    useCallback(() => {
+      refreshConfigured();
+    }, [refreshConfigured]),
+  );
 
   const { height: kbHeight } = useGradualAnimation();
   // Approximate the native (translucent) iOS tab bar height. NativeTabs doesn't
@@ -130,6 +139,7 @@ export default function ChatScreen() {
     const text = input.trim();
     const atts = attachments;
     if ((!text && atts.length === 0) || busy) return;
+    haptics.selection(); // message sent
     setInput("");
     setAttachments([]);
     setBusy(true);
@@ -169,6 +179,7 @@ export default function ChatScreen() {
           const ok = !(e.result && typeof e.result === "object" && "error" in (e.result as object));
           toolTrail.push({ tool: e.tool, ok });
           patchAssistant({ tools: [...toolTrail] });
+          haptics.impact(); // agent ran a tool
         }
         setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 20);
       };
@@ -176,12 +187,14 @@ export default function ChatScreen() {
       const finalText = answer || acc;
       patchAssistant({ content: finalText, streaming: false, tools: toolTrail.length ? toolTrail : undefined });
       saveChatMessage({ role: "assistant", content: finalText, tools: toolTrail.length ? toolTrail : undefined });
+      haptics.success(); // response received
     } catch (e) {
       const msg = e instanceof Error && /network|fetch|failed/i.test(e.message)
         ? "Chat needs a connection. Reconnect and try again."
         : `Error: ${e instanceof Error ? e.message : String(e)}`;
       patchAssistant({ content: msg, streaming: false });
       saveChatMessage({ role: "assistant", content: msg });
+      haptics.error(); // request failed
     } finally {
       setBusy(false);
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50);
@@ -226,9 +239,12 @@ export default function ChatScreen() {
         text: "Clear",
         style: "destructive",
         onPress: () => {
+          haptics.warning();
           clearChatHistory();
           conversation.current = [];
           setMessages([]);
+          // Drop the on-device session so a new chat gets a fresh context window.
+          resetAppleSession();
         },
       },
     ]);
@@ -243,12 +259,14 @@ export default function ChatScreen() {
           hidden={messages.length === 0}
           disabled={busy}
           accessibilityLabel="Clear chat"
-          onPress={onClear}
+          // Inline arrow (not a bare toolbarPress(onClear)) so the react-hooks
+          // ref lint doesn't flag onClear's transitive ref access during render.
+          onPress={() => toolbarPress(onClear)()}
         />
         <Stack.Toolbar.Button
-          icon={ICON_SETTINGS}
+          icon={ICON_AI}
           accessibilityLabel="AI settings"
-          onPress={() => setSettingsOpen(true)}
+          onPress={toolbarPress(() => router.push("/settings/ai"))}
         />
       </Stack.Toolbar>
       <View style={{ flex: 1 }}>
@@ -258,25 +276,24 @@ export default function ChatScreen() {
         <ScrollView
           ref={scrollRef}
           style={StyleSheet.absoluteFill}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, messages.length === 0 && styles.listEmpty]}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="interactive"
           onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
         >
           {messages.length === 0 ? (
-            <View style={styles.empty}>
-              <Text style={styles.emptyTitle}>Ask Cairn</Text>
-              <Text style={styles.emptyHint}>
-                Ask about your notes, or tell the assistant to create or edit them. Changes sync to your
-                desktop.
-              </Text>
-              {!configured && (
-                <Pressable style={styles.configureBtn} onPress={() => setSettingsOpen(true)}>
+            <EmptyState
+              title="Ask Cairn"
+              subtitle="Ask about your notes, or tell the assistant to create or edit them. Changes sync to your desktop."
+              align="top"
+            >
+              {!configured ? (
+                <Pressable style={styles.configureBtn} onPress={() => router.push("/settings/ai")}>
                   <Settings2 size={14} color={t.accentFg} />
                   <Text style={styles.configureBtnText}>Set up AI</Text>
                 </Pressable>
-              )}
-            </View>
+              ) : null}
+            </EmptyState>
           ) : (
             messages.map((m, i) => <Bubble key={i} m={m} t={t} styles={styles} />)
           )}
@@ -330,19 +347,14 @@ export default function ChatScreen() {
           </View>
         </KeyboardStickyView>
       </View>
-
-      <AiSettingsSheet
-        visible={settingsOpen}
-        onClose={() => {
-          setSettingsOpen(false);
-          refreshConfigured();
-        }}
-      />
     </TabScreen>
   );
 }
 
-function Bubble({ m, t, styles }: { m: UiMessage; t: Theme; styles: ReturnType<typeof makeStyles> }) {
+// Memoised so a stream-token setMessages (which replaces only the streaming
+// assistant message object) re-renders just that one bubble — not every prior
+// message, each of which would otherwise re-run its MarkdownView parse per token.
+const Bubble = memo(function Bubble({ m, t, styles }: { m: UiMessage; t: Theme; styles: ReturnType<typeof makeStyles> }) {
   const isUser = m.role === "user";
   return (
     <View style={[styles.row, isUser && styles.rowUser]}>
@@ -383,14 +395,14 @@ function Bubble({ m, t, styles }: { m: UiMessage; t: Theme; styles: ReturnType<t
       </View>
     </View>
   );
-}
+});
 
 function makeStyles(t: Theme) {
   return StyleSheet.create({
     list: { padding: 14, paddingBottom: 20 },
-    empty: { alignItems: "center", justifyContent: "center", paddingVertical: 60, paddingHorizontal: 24 },
-    emptyTitle: { fontSize: 18, fontWeight: "700", color: t.textSecondary },
-    emptyHint: { fontSize: 13, color: t.textTertiary, textAlign: "center", marginTop: 8, lineHeight: 19 },
+    // Grow to fill the viewport when empty so the branded EmptyState's top-bias
+    // measures against the full content area (below the header).
+    listEmpty: { flexGrow: 1 },
     configureBtn: {
       flexDirection: "row",
       alignItems: "center",
@@ -401,7 +413,7 @@ function makeStyles(t: Theme) {
       paddingVertical: 10,
       borderRadius: 12,
     },
-    configureBtnText: { color: t.accentFg, fontSize: 14, fontWeight: "600" },
+    configureBtnText: { ...typeScale.control, color: t.accentFg },
 
     // Row: avatar + column (reversed for user), matching the desktop bubble.
     row: { flexDirection: "row", alignItems: "flex-start", gap: 8, marginBottom: 14 },
@@ -425,12 +437,12 @@ function makeStyles(t: Theme) {
       paddingHorizontal: 10,
       paddingVertical: 4,
     },
-    toolChipText: { fontSize: 12, color: t.textSecondary },
+    toolChipText: { ...typeScale.caption, color: t.textSecondary },
 
     bubble: { maxWidth: "94%", paddingHorizontal: 12, paddingVertical: 10, borderRadius: 14 },
     aiBubble: { backgroundColor: t.surface2, borderWidth: 1, borderColor: t.border, borderTopLeftRadius: 4, alignSelf: "flex-start" },
     userBubble: { backgroundColor: t.accent, borderTopRightRadius: 4, alignSelf: "flex-end" },
-    userText: { color: t.accentFg, fontSize: 15, lineHeight: 21 },
+    userText: { ...typeScale.body, lineHeight: 21, color: t.accentFg },
     bubbleImages: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 6 },
     bubbleImg: { width: 120, height: 120, borderRadius: 8, backgroundColor: t.surface3 },
     previewStrip: { maxHeight: 84, marginHorizontal: 12 },
@@ -471,7 +483,7 @@ function makeStyles(t: Theme) {
       minHeight: 36,
       maxHeight: 132,
       color: t.textPrimary,
-      fontSize: 15,
+      ...typeScale.body,
       lineHeight: 21,
       paddingVertical: 6,
       paddingHorizontal: 2,

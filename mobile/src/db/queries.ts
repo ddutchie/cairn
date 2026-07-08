@@ -110,6 +110,45 @@ export function tagsForNotes(notes: { tag_ids: string }[]): TagRow[] {
   return tagsForIds([...seen]);
 }
 
+/**
+ * Batch-resolve tags for a whole list of rows in a SINGLE query, returning a
+ * `Map<rowId, TagRow[]>` that preserves each row's stored tag order.
+ *
+ * This replaces the per-row `tagsForNote()`/`tagsForCard()` calls that fired one
+ * `SELECT … IN` per list item on the JS thread (an N+1 that stalled note-list /
+ * board / calendar renders). Call it once per list (memoised on the rows) and
+ * look each row up by id when rendering.
+ */
+export function tagsByRow<T extends { id: string; tag_ids: string }>(
+  rows: T[],
+): Map<string, TagRow[]> {
+  const result = new Map<string, TagRow[]>();
+  if (rows.length === 0) return result;
+
+  // Collect every distinct tag id across all rows, then resolve them at once.
+  const perRow = new Map<string, string[]>();
+  const all = new Set<string>();
+  for (const r of rows) {
+    const ids = parseIds(r.tag_ids);
+    perRow.set(r.id, ids);
+    for (const id of ids) all.add(id);
+  }
+  if (all.size === 0) {
+    for (const r of rows) result.set(r.id, []);
+    return result;
+  }
+
+  const byId = new Map(tagsForIds([...all]).map((tag) => [tag.id, tag]));
+  for (const r of rows) {
+    const ids = perRow.get(r.id) ?? [];
+    result.set(
+      r.id,
+      ids.map((id) => byId.get(id)).filter((tag): tag is TagRow => !!tag),
+    );
+  }
+  return result;
+}
+
 /** Parse a note/card tag_ids JSON column to an id array (exported for filters). */
 export function noteTagIds(note: { tag_ids: string }): string[] {
   return parseIds(note.tag_ids);
@@ -180,17 +219,30 @@ export interface ProjectSummary extends ProjectRow {
 export function listProjectSummaries(): ProjectSummary[] {
   const db = getDb();
   const projects = listProjects();
-  return projects.map((p) => {
-    const n = db.getFirstSync<{ c: number }>(
-      `SELECT COUNT(*) c FROM notes WHERE ${LIVE} AND type='note' AND ${NOT_CONFLICT} AND project_id = ?`,
-      p.id,
-    );
-    const c = db.getFirstSync<{ c: number }>(
-      `SELECT COUNT(*) c FROM task_cards WHERE ${LIVE} AND project_id = ?`,
-      p.id,
-    );
-    return { ...p, noteCount: n?.c ?? 0, cardCount: c?.c ?? 0 };
-  });
+  if (projects.length === 0) return [];
+
+  // Count notes + cards for ALL projects in two grouped queries instead of two
+  // COUNT(*) per project (an N+1 that scaled the projects list linearly). The
+  // GROUP BY tallies every project in one pass; missing keys default to 0.
+  const noteCounts = new Map<string, number>();
+  for (const r of db.getAllSync<{ project_id: string; c: number }>(
+    `SELECT project_id, COUNT(*) c FROM notes
+     WHERE ${LIVE} AND type='note' AND ${NOT_CONFLICT} GROUP BY project_id`,
+  )) {
+    noteCounts.set(r.project_id, r.c);
+  }
+  const cardCounts = new Map<string, number>();
+  for (const r of db.getAllSync<{ project_id: string; c: number }>(
+    `SELECT project_id, COUNT(*) c FROM task_cards WHERE ${LIVE} GROUP BY project_id`,
+  )) {
+    cardCounts.set(r.project_id, r.c);
+  }
+
+  return projects.map((p) => ({
+    ...p,
+    noteCount: noteCounts.get(p.id) ?? 0,
+    cardCount: cardCounts.get(p.id) ?? 0,
+  }));
 }
 
 /** Distinct folders within a project (empty string = project root). */
@@ -281,6 +333,37 @@ export function searchTasks(query: string): CardRow[] {
 }
 
 /**
+ * A task card that has a due date, enriched with its project name for the
+ * workspace-wide Calendar view. `due_date` is guaranteed non-null here.
+ */
+export interface CalendarCard extends CardRow {
+  due_date: string;
+  project_name: string;
+}
+
+/**
+ * Live task cards that have a due date, for the Calendar view. Ordered by due
+ * date so the agenda groups chronologically. Pass a projectId to scope to one
+ * project (per-project calendar); omit for the workspace-wide calendar.
+ */
+export function listCardsWithDueDates(projectId?: string): CalendarCard[] {
+  const db = getDb();
+  const scope = projectId ? "AND c.project_id = ?" : "";
+  const rows = db.getAllSync<CalendarCard>(
+    `SELECT c.id, c.column_id, c.project_id, c.title, c.description, c.priority,
+            c.tag_ids, c."order", c.due_date, c.assignee, p.name AS project_name
+     FROM task_cards c
+     JOIN projects p ON p.id = c.project_id
+     WHERE c.deleted_at IS NULL AND c.archived_at IS NULL
+       AND c.due_date IS NOT NULL AND c.due_date != ''
+       ${scope}
+     ORDER BY c.due_date ASC, c."order" ASC`,
+    ...((projectId ? [projectId] : []) as never[]),
+  );
+  return rows;
+}
+
+/**
  * Move a card to a different column. Plain UPDATE so capture triggers stage it
  * for sync. Mirrors the desktop moveCard's column change (order left as-is).
  */
@@ -297,6 +380,126 @@ export function moveCardToColumn(cardId: string, columnId: string): void {
 
 function plainText(md: string): string {
   return stripMarkdown(md);
+}
+
+// ── Knowledge graph ─────────────────────────────────────────────────────────
+
+export type GraphNodeType = "project" | "note" | "card" | "tag";
+export type GraphEdgeType =
+  | "project-member"
+  | "note-note"
+  | "note-card"
+  | "tag-member"
+  | "semantic";
+
+export interface GraphNode {
+  id: string;
+  type: GraphNodeType;
+  title: string;
+  /** Tag colour (tag nodes) or priority accent (card nodes), for rendering. */
+  color?: string;
+  priority?: string;
+  /** Owning project id (note/card nodes) — used to draw cluster hulls. */
+  projectId?: string;
+}
+
+export interface GraphEdge {
+  source: string;
+  target: string;
+  type: GraphEdgeType;
+  /** Similarity (0–1) for 'semantic' edges; drives dash-line weight/threshold. */
+  weight?: number;
+}
+
+export interface KnowledgeGraph {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
+
+/**
+ * Build the workspace knowledge graph from the SYNCABLE tables the mobile app
+ * holds: projects, notes, cards and tags, wired by their explicit links
+ * (project membership, note↔note wikilinks, note↔card links, tag membership).
+ *
+ * Unlike desktop this omits idea-flow and auto/semantic edges — mobile has no
+ * idea_flow_* or embeddings tables — so it's a purely structural graph. Only
+ * tags actually referenced by a scoped note/card become nodes, matching the
+ * desktop's "used tags only" behaviour.
+ */
+export function getKnowledgeGraph(): KnowledgeGraph {
+  const db = getDb();
+  const nodes: GraphNode[] = [];
+  const edges: GraphEdge[] = [];
+  const nodeIds = new Set<string>();
+  const add = (n: GraphNode) => {
+    if (nodeIds.has(n.id)) return;
+    nodeIds.add(n.id);
+    nodes.push(n);
+  };
+  const projects = db.getAllSync<{ id: string; name: string }>(
+    `SELECT id, name FROM projects WHERE ${LIVE}`,
+  );
+  for (const p of projects) add({ id: p.id, type: "project", title: p.name });
+
+  const notes = db.getAllSync<{
+    id: string;
+    project_id: string;
+    title: string;
+    tag_ids: string;
+    linked_note_ids: string;
+  }>(
+    `SELECT id, project_id, title, tag_ids, linked_note_ids FROM notes
+     WHERE ${LIVE} AND type='note' AND ${NOT_CONFLICT}`,
+  );
+  for (const n of notes) {
+    add({ id: n.id, type: "note", title: n.title || "Untitled", projectId: n.project_id });
+    if (nodeIds.has(n.project_id)) edges.push({ source: n.project_id, target: n.id, type: "project-member" });
+    // note↔note links: emit once (lower id as source) to avoid duplicate pairs.
+    for (const linked of parseIds(n.linked_note_ids)) {
+      if (n.id < linked) edges.push({ source: n.id, target: linked, type: "note-note" });
+    }
+  }
+
+  const cards = db.getAllSync<{
+    id: string;
+    project_id: string;
+    title: string;
+    priority: string;
+    tag_ids: string;
+    linked_note_ids: string;
+  }>(
+    `SELECT id, project_id, title, priority, tag_ids, linked_note_ids FROM task_cards
+     WHERE ${LIVE}`,
+  );
+  for (const c of cards) {
+    add({ id: c.id, type: "card", title: c.title, priority: c.priority, projectId: c.project_id });
+    if (nodeIds.has(c.project_id)) edges.push({ source: c.project_id, target: c.id, type: "project-member" });
+    for (const noteId of parseIds(c.linked_note_ids)) {
+      if (nodeIds.has(noteId)) edges.push({ source: noteId, target: c.id, type: "note-card" });
+    }
+  }
+
+  // Only tags actually used by a scoped note/card become nodes.
+  const usedTagIds = new Set<string>();
+  for (const n of notes) for (const tid of parseIds(n.tag_ids)) usedTagIds.add(tid);
+  for (const c of cards) for (const tid of parseIds(c.tag_ids)) usedTagIds.add(tid);
+  if (usedTagIds.size > 0) {
+    const tagRows = tagsForIds([...usedTagIds]);
+    const tagById = new Map(tagRows.map((tr) => [tr.id, tr]));
+    for (const tid of usedTagIds) {
+      const tag = tagById.get(tid);
+      if (!tag) continue;
+      add({ id: tag.id, type: "tag", title: tag.name, color: tag.color });
+    }
+    for (const n of notes) for (const tid of parseIds(n.tag_ids)) {
+      if (nodeIds.has(tid)) edges.push({ source: n.id, target: tid, type: "tag-member" });
+    }
+    for (const c of cards) for (const tid of parseIds(c.tag_ids)) {
+      if (nodeIds.has(tid)) edges.push({ source: c.id, target: tid, type: "tag-member" });
+    }
+  }
+
+  return { nodes, edges };
 }
 
 /** Find a note by exact title within a project (for ensure_note upsert). */
@@ -670,4 +873,236 @@ function isTombstoned(id: string): boolean {
     id,
   );
   return !row || row.deleted_at != null;
+}
+
+// ---------------------------------------------------------------------------
+// On-device semantic-search index (note_embeddings). Local-only, never synced.
+// See src/notes/embeddings.ts for the reindex/search logic that drives these.
+// ---------------------------------------------------------------------------
+
+/** A note (with markdown source) needing an embedding pass. */
+export interface EmbeddableNote {
+  id: string;
+  workspace_id: string;
+  title: string;
+  content: string | null;
+}
+
+/** A stored section embedding row (vector kept as JSON text on disk). */
+export interface EmbeddingRow {
+  note_id: string;
+  section_idx: number;
+  workspace_id: string;
+  model: string;
+  section_title: string;
+  content_hash: string;
+  vector: string;
+}
+
+/** All live notes for a workspace that could hold text worth embedding. */
+export function listEmbeddableNotes(workspaceId: string): EmbeddableNote[] {
+  return getDb().getAllSync<EmbeddableNote>(
+    `SELECT id, workspace_id, title, content FROM notes
+     WHERE ${LIVE} AND type = 'note' AND ${NOT_CONFLICT} AND workspace_id = ?`,
+    workspaceId,
+  );
+}
+
+/** One note (id, workspace_id, title, content) for an incremental embed pass. */
+export function getNoteForEmbedding(noteId: string): EmbeddableNote | null {
+  return (
+    getDb().getFirstSync<EmbeddableNote>(
+      `SELECT id, workspace_id, title, content FROM notes WHERE id = ?`,
+      noteId,
+    ) ?? null
+  );
+}
+
+/** Existing section rows for a note (to diff hashes before re-embedding). */
+export function getNoteEmbeddingRows(noteId: string): EmbeddingRow[] {
+  return getDb().getAllSync<EmbeddingRow>(
+    `SELECT note_id, section_idx, workspace_id, model, section_title, content_hash, vector
+     FROM note_embeddings WHERE note_id = ? ORDER BY section_idx`,
+    noteId,
+  );
+}
+
+/** All 'search_document' section rows for a workspace, for brute-force search. */
+export function getWorkspaceEmbeddingRows(workspaceId: string): EmbeddingRow[] {
+  return getDb().getAllSync<EmbeddingRow>(
+    `SELECT note_id, section_idx, workspace_id, model, section_title, content_hash, vector
+     FROM note_embeddings WHERE workspace_id = ?`,
+    workspaceId,
+  );
+}
+
+/** Upsert one section embedding (vector serialised as JSON). */
+export function upsertNoteEmbedding(row: {
+  noteId: string;
+  sectionIdx: number;
+  workspaceId: string;
+  model: string;
+  sectionTitle: string;
+  contentHash: string;
+  vector: number[];
+}): void {
+  getDb().runSync(
+    `INSERT INTO note_embeddings
+       (note_id, section_idx, workspace_id, model, section_title, content_hash, vector, embedded_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(note_id, section_idx) DO UPDATE SET
+       workspace_id = excluded.workspace_id,
+       model        = excluded.model,
+       section_title= excluded.section_title,
+       content_hash = excluded.content_hash,
+       vector       = excluded.vector,
+       embedded_at  = excluded.embedded_at`,
+    row.noteId,
+    row.sectionIdx,
+    row.workspaceId,
+    row.model,
+    row.sectionTitle,
+    row.contentHash,
+    JSON.stringify(row.vector),
+    new Date().toISOString(),
+  );
+}
+
+/** Delete section rows for a note at or above a given index (prune shrinks). */
+export function deleteNoteEmbeddingsFrom(noteId: string, fromIdx: number): void {
+  getDb().runSync(
+    `DELETE FROM note_embeddings WHERE note_id = ? AND section_idx >= ?`,
+    noteId,
+    fromIdx,
+  );
+}
+
+/** Delete every section row for a note (note emptied or removed). */
+export function deleteNoteEmbeddings(noteId: string): void {
+  getDb().runSync(`DELETE FROM note_embeddings WHERE note_id = ?`, noteId);
+}
+
+/** Note ids that currently have any embedding rows (to find orphans). */
+export function embeddedNoteIds(workspaceId: string): string[] {
+  return getDb()
+    .getAllSync<{ note_id: string }>(
+      `SELECT DISTINCT note_id FROM note_embeddings WHERE workspace_id = ?`,
+      workspaceId,
+    )
+    .map((r) => r.note_id);
+}
+
+/** Wipe the whole index (e.g. on model-identifier change). */
+export function clearAllEmbeddings(): void {
+  getDb().runSync(`DELETE FROM note_embeddings`);
+}
+
+/** All live workspace ids (semantic index is maintained per workspace). */
+export function listWorkspaceIds(): string[] {
+  return getDb()
+    .getAllSync<{ id: string }>(
+      `SELECT id FROM workspaces WHERE deleted_at IS NULL AND archived_at IS NULL`,
+    )
+    .map((r) => r.id);
+}
+
+/** Diagnostic counts for the on-device semantic index (indexed vs total notes). */
+export function embeddingIndexStats(workspaceId: string): {
+  liveNotes: number;
+  indexedNotes: number;
+  sections: number;
+} {
+  const db = getDb();
+  const liveNotes =
+    db.getFirstSync<{ n: number }>(
+      `SELECT COUNT(*) n FROM notes WHERE ${LIVE} AND type='note' AND ${NOT_CONFLICT} AND workspace_id = ?`,
+      workspaceId,
+    )?.n ?? 0;
+  const indexedNotes =
+    db.getFirstSync<{ n: number }>(
+      `SELECT COUNT(DISTINCT note_id) n FROM note_embeddings WHERE workspace_id = ?`,
+      workspaceId,
+    )?.n ?? 0;
+  const sections =
+    db.getFirstSync<{ n: number }>(
+      `SELECT COUNT(*) n FROM note_embeddings WHERE workspace_id = ?`,
+      workspaceId,
+    )?.n ?? 0;
+  return { liveNotes, indexedNotes, sections };
+}
+
+/** Resolve a note's title for search-result display. */
+export function noteTitleById(noteId: string): string {
+  const row = getDb().getFirstSync<{ title: string }>(
+    `SELECT title FROM notes WHERE id = ?`,
+    noteId,
+  );
+  return row?.title ?? "Untitled";
+}
+
+/** The workspace id a note belongs to (via its project). */
+export function workspaceIdForNote(noteId: string): string {
+  const row = getDb().getFirstSync<{ workspace_id: string }>(
+    `SELECT workspace_id FROM notes WHERE id = ?`,
+    noteId,
+  );
+  return row?.workspace_id ?? "";
+}
+
+/** Title + plain-text body for a set of notes, for lexical (keyword) scoring in
+ *  hybrid semantic search. Returns a map keyed by note id. */
+export function noteTextByIds(noteIds: string[]): Map<string, { title: string; text: string }> {
+  const out = new Map<string, { title: string; text: string }>();
+  if (noteIds.length === 0) return out;
+  const placeholders = noteIds.map(() => "?").join(",");
+  const rows = getDb().getAllSync<{ id: string; title: string; content_text: string }>(
+    `SELECT id, title, content_text FROM notes WHERE id IN (${placeholders})`,
+    ...noteIds,
+  );
+  for (const r of rows) out.set(r.id, { title: r.title, text: r.content_text ?? "" });
+  return out;
+}
+
+export type BrickKind = "project" | "note" | "card" | "tag";
+export interface BrickLabel {
+  label: string;
+  kind: BrickKind;
+}
+
+/**
+ * A mixed sample of workspace entities (projects, notes, tasks, tags) to use as
+ * bricks in the breakout easter egg. Interleaved by kind so a row of bricks
+ * reads as a colourful cross-section of the workspace. Capped at `limit`.
+ */
+export function listBreakoutBricks(limit = 40): BrickLabel[] {
+  const db = getDb();
+  const projects = db
+    .getAllSync<{ label: string }>(`SELECT name AS label FROM projects WHERE deleted_at IS NULL ORDER BY updated_at DESC LIMIT 12`)
+    .map((r) => ({ label: r.label, kind: "project" as const }));
+  const notes = db
+    .getAllSync<{ label: string }>(`SELECT title AS label FROM notes WHERE deleted_at IS NULL AND type = 'note' ORDER BY updated_at DESC LIMIT 16`)
+    .map((r) => ({ label: r.label, kind: "note" as const }));
+  const cards = db
+    .getAllSync<{ label: string }>(`SELECT title AS label FROM task_cards WHERE deleted_at IS NULL ORDER BY updated_at DESC LIMIT 16`)
+    .map((r) => ({ label: r.label, kind: "card" as const }));
+  const tags = db
+    .getAllSync<{ label: string }>(`SELECT name AS label FROM tags WHERE deleted_at IS NULL ORDER BY name LIMIT 12`)
+    .map((r) => ({ label: r.label, kind: "tag" as const }));
+
+  // Round-robin interleave so bricks alternate kind/colour.
+  const buckets = [projects, notes, cards, tags];
+  const out: BrickLabel[] = [];
+  let added = true;
+  while (added && out.length < limit) {
+    added = false;
+    for (const b of buckets) {
+      const next = b.shift();
+      if (next) {
+        out.push(next);
+        added = true;
+        if (out.length >= limit) break;
+      }
+    }
+  }
+  return out;
 }

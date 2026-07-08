@@ -3,7 +3,7 @@ import { View, Text, ScrollView, Pressable, StyleSheet } from "react-native";
 import { createLowlight, common } from "lowlight";
 import * as Clipboard from "expo-clipboard";
 import { Copy, Check } from "lucide-react-native";
-import { useTheme, useIsDark, type Theme } from "@/theme";
+import { useTheme, useIsDark, type as typeScale, type Theme } from "@/theme";
 import { buildHljsPalette } from "@cairn/shared/notes/syntax-palette";
 
 const lowlight = createLowlight(common);
@@ -118,7 +118,7 @@ function makeStyles(t: Theme) {
     },
     lang: { fontSize: 11, color: t.textTertiary, fontFamily: MONO, textTransform: "lowercase" },
     copyBtn: { flexDirection: "row", alignItems: "center", gap: 4 },
-    copyText: { fontSize: 11, color: t.textTertiary, fontWeight: "600" },
+    copyText: { ...typeScale.micro, fontWeight: "600", color: t.textTertiary },
     codeScroll: { padding: 12 },
     code: { color: t.textPrimary, fontFamily: MONO, fontSize: 13, lineHeight: 19 },
   });

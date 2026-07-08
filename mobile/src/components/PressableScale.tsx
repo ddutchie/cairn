@@ -7,8 +7,18 @@ import Animated, {
   withSpring,
   type AnimatedStyle,
 } from "react-native-reanimated";
+import { haptics } from "@/haptics";
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
+/**
+ * Which haptic (if any) to fire when the press commits. Since virtually every
+ * tappable row/card/chip in the app is a PressableScale, this is the central
+ * place to make navigation-by-tapping feel tactile. Defaults to `"selection"`
+ * (a subtle tick). Pass `false` for presses that shouldn't buzz (e.g. a toggle
+ * that already fires its own richer haptic, or a destructive confirm).
+ */
+export type PressableScaleHaptic = "selection" | "impact" | "success" | false;
 
 export interface PressableScaleProps extends Omit<PressableProps, "style"> {
   /** Scale to shrink to while pressed. Default 0.97 (desktop uses active:scale-95). */
@@ -18,6 +28,13 @@ export interface PressableScaleProps extends Omit<PressableProps, "style"> {
   style?: StyleProp<ViewStyle>;
   /** Extra animated style merged on top (e.g. layout transitions). */
   animatedStyle?: AnimatedStyle<ViewStyle>;
+  /**
+   * Haptic fired on commit (`onPress`). Default `"selection"`. Set `false` to
+   * silence (e.g. when the handler fires its own haptic). Fires on `onPress`
+   * — not `onPressIn` — so a press cancelled by a scroll never buzzes, and it
+   * never double-fires with programmatic navigation.
+   */
+  haptic?: PressableScaleHaptic;
 }
 
 /**
@@ -29,7 +46,7 @@ export interface PressableScaleProps extends Omit<PressableProps, "style"> {
  * Press-in shrinks/dims instantly-ish; release springs back. Honours disabled.
  */
 export const PressableScale = forwardRef<View, PressableScaleProps>(function PressableScale(
-  { scaleTo = 0.97, dimTo = 0.92, style, animatedStyle, onPressIn, onPressOut, disabled, children, ...rest },
+  { scaleTo = 0.97, dimTo = 0.92, style, animatedStyle, onPressIn, onPressOut, onPress, haptic = "selection", disabled, children, ...rest },
   ref,
 ) {
   const scale = useSharedValue(1);
@@ -55,6 +72,14 @@ export const PressableScale = forwardRef<View, PressableScaleProps>(function Pre
     [onPressOut, scale, opacity],
   );
 
+  const handlePress = useCallback<NonNullable<PressableProps["onPress"]>>(
+    (e) => {
+      if (haptic) haptics[haptic]();
+      onPress?.(e);
+    },
+    [haptic, onPress],
+  );
+
   const pressStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
     opacity: opacity.value,
@@ -66,6 +91,7 @@ export const PressableScale = forwardRef<View, PressableScaleProps>(function Pre
       disabled={disabled}
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
+      onPress={handlePress}
       style={[style, pressStyle, animatedStyle]}
       {...rest}
     >

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useMemo, useRef, useState } from "react";
 import { View, Text, ScrollView, Pressable, StyleSheet } from "react-native";
 import { Plus } from "lucide-react-native";
 import Animated, {
@@ -10,13 +10,19 @@ import Animated, {
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { PressableScale } from "@/components/PressableScale";
 import { TagChips } from "@/components/TagChips";
-import { useTheme, withAlpha, PRIORITY_COLOR, elevation, type Theme } from "@/theme";
-import { tagsForCard, type CardRow, type ColumnRow } from "@/db/queries";
+import { haptics } from "@/haptics";
+import { useTheme, withAlpha, PRIORITY_COLOR, elevation, type as typeScale, type Theme } from "@/theme";
+import { tagsByRow, type CardRow, type ColumnRow, type TagRow } from "@/db/queries";
 import { stripMarkdown } from "@cairn/shared/notes/text";
 
 const COLUMN_WIDTH = 260;
 const COLUMN_GAP = 12;
 const LONG_PRESS_MS = 220;
+
+// Stable empty-array reference for columns with no cards, so BoardColumn's
+// memoisation isn't defeated by a fresh `[]` each render (which would re-render
+// empty columns on every drag-state change).
+const EMPTY_CARDS: CardRow[] = [];
 
 /** Absolute window frame of a column, captured via measureInWindow. */
 type ColumnFrame = { x: number; width: number };
@@ -48,6 +54,21 @@ export function DraggableBoard({
   const t = useTheme();
   const styles = useMemo(() => makeStyles(t), [t]);
 
+  // Resolve tags for every card in ONE query, and group cards by column ONCE —
+  // both memoised on `cards` — instead of a per-card `tagsForCard()` query and a
+  // per-column `cards.filter()` on every render (the board re-renders each drag
+  // frame via setHoverColJs, so this ran N queries + M filters per frame).
+  const tagMap = useMemo(() => tagsByRow(cards), [cards]);
+  const cardsByColumn = useMemo(() => {
+    const map = new Map<string, CardRow[]>();
+    for (const c of cards) {
+      const arr = map.get(c.column_id);
+      if (arr) arr.push(c);
+      else map.set(c.column_id, [c]);
+    }
+    return map;
+  }, [cards]);
+
   // Column window frames keyed by column id, filled lazily on layout. Shared so
   // the gesture worklet can read them without a JS round-trip. We keep the View
   // refs around so we can re-measure right before a drag (measureInWindow in the
@@ -61,11 +82,15 @@ export function DraggableBoard({
   const originY = useSharedValue(0);
   const scrollRef = useRef<ScrollView>(null);
 
-  // The card currently lifted (null when idle) and the column the finger hovers.
+  // The card currently lifted (null when idle). Changes only at drag start/end,
+  // not per frame — so it never causes the board to re-render mid-drag.
   const [dragging, setDragging] = useState<CardRow | null>(null);
   const [scrollEnabled, setScrollEnabled] = useState(true);
+  // Which column the finger is over + the drag's source column. Both are shared
+  // values updated entirely on the UI thread by the gesture worklets, and read
+  // by each column's useAnimatedStyle to light up the hover target — so hover
+  // highlighting never crosses back to JS or re-renders the board.
   const hoverColId = useSharedValue<string | null>(null);
-  const [hoverColJs, setHoverColJs] = useState<string | null>(null);
   const sourceColId = useSharedValue<string | null>(null);
 
   // Absolute pointer position of the lifted card's origin, updated each frame.
@@ -108,6 +133,7 @@ export function DraggableBoard({
 
   const beginDrag = useCallback(
     (card: CardRow) => {
+      haptics.impact(); // card picked up (long-press)
       setDragging(card);
       setScrollEnabled(false);
     },
@@ -118,8 +144,10 @@ export function DraggableBoard({
     (cardId: string, target: string | null, source: string | null) => {
       setDragging(null);
       setScrollEnabled(true);
-      setHoverColJs(null);
-      if (target && target !== source) onMove(cardId, target);
+      if (target && target !== source) {
+        haptics.impactMedium(); // dropped into a new column
+        onMove(cardId, target);
+      }
     },
     [onMove],
   );
@@ -142,59 +170,145 @@ export function DraggableBoard({
         contentContainerStyle={[styles.board, { paddingBottom: 12 + bottomInset }]}
         style={styles.boardScroll}
       >
-        {columns.map((col) => {
-          const colCards = cards.filter((c) => c.column_id === col.id);
-          const isHoverTarget = hoverColJs === col.id && dragging?.column_id !== col.id;
-          return (
-            <View
-              key={col.id}
-              ref={(node) => measureColumn(col.id, node)}
-              style={[styles.column, isHoverTarget && styles.columnHover]}
-            >
-              <Text style={styles.columnTitle}>
-                {col.name} <Text style={styles.count}>{colCards.length}</Text>
-              </Text>
-              <ScrollView style={styles.columnCards} showsVerticalScrollIndicator={false}>
-                {colCards.map((card) => (
-                  <DraggableCard
-                    key={card.id}
-                    card={card}
-                    t={t}
-                    styles={styles}
-                    isLifted={dragging?.id === card.id}
-                    frames={frames}
-                    hoverColId={hoverColId}
-                    sourceColId={sourceColId}
-                    dragX={dragX}
-                    dragY={dragY}
-                    dragW={dragW}
-                    onOpen={onOpenCard}
-                    onBeginDrag={beginDrag}
-                    onEndDrag={endDrag}
-                    onHoverChange={setHoverColJs}
-                    onRemeasure={remeasure}
-                  />
-                ))}
-                <Pressable style={styles.addCard} onPress={() => onAddCard(col.id)}>
-                  <Plus size={14} color={t.textTertiary} />
-                  <Text style={styles.addCardText}>New task</Text>
-                </Pressable>
-              </ScrollView>
-            </View>
-          );
-        })}
+        {columns.map((col) => (
+          <BoardColumn
+            key={col.id}
+            column={col}
+            cards={cardsByColumn.get(col.id) ?? EMPTY_CARDS}
+            tagMap={tagMap}
+            draggingId={dragging?.id ?? null}
+            hoverColId={hoverColId}
+            sourceColId={sourceColId}
+            frames={frames}
+            dragX={dragX}
+            dragY={dragY}
+            dragW={dragW}
+            t={t}
+            styles={styles}
+            measureColumn={measureColumn}
+            onOpenCard={onOpenCard}
+            onAddCard={onAddCard}
+            onBeginDrag={beginDrag}
+            onEndDrag={endDrag}
+            onRemeasure={remeasure}
+          />
+        ))}
       </ScrollView>
 
       {dragging ? (
-        <DragOverlay card={dragging} t={t} styles={styles} dragX={dragX} dragY={dragY} dragW={dragW} originX={originX} originY={originY} />
+        <DragOverlay card={dragging} tags={tagMap.get(dragging.id)} t={t} styles={styles} dragX={dragX} dragY={dragY} dragW={dragW} originX={originX} originY={originY} />
       ) : null}
     </View>
   );
 }
 
+/**
+ * A board column: its title/count, the draggable cards, and an "add" button.
+ * The column's hover-highlight (border + tint when the finger drags a card over
+ * it) is driven by a useAnimatedStyle reading the shared hoverColId — so it
+ * lights up on the UI thread without re-rendering the board. Memoised so a
+ * drag-start/end (which only flips draggingId) re-renders just the columns whose
+ * lifted card actually changed.
+ */
+const BoardColumn = memo(function BoardColumn({
+  column,
+  cards,
+  tagMap,
+  draggingId,
+  hoverColId,
+  sourceColId,
+  frames,
+  dragX,
+  dragY,
+  dragW,
+  t,
+  styles,
+  measureColumn,
+  onOpenCard,
+  onAddCard,
+  onBeginDrag,
+  onEndDrag,
+  onRemeasure,
+}: {
+  column: ColumnRow;
+  cards: CardRow[];
+  tagMap: Map<string, TagRow[]>;
+  draggingId: string | null;
+  hoverColId: SharedValue<string | null>;
+  sourceColId: SharedValue<string | null>;
+  frames: SharedValue<Record<string, ColumnFrame>>;
+  dragX: SharedValue<number>;
+  dragY: SharedValue<number>;
+  dragW: SharedValue<number>;
+  t: Theme;
+  styles: ReturnType<typeof makeStyles>;
+  measureColumn: (colId: string, node: View | null) => void;
+  onOpenCard: (id: string) => void;
+  onAddCard: (colId: string) => void;
+  onBeginDrag: (card: CardRow) => void;
+  onEndDrag: (cardId: string, target: string | null, source: string | null) => void;
+  onRemeasure: () => void;
+}) {
+  const colId = column.id;
+  // Precompute both colour states on the JS thread — the worklet below must not
+  // call withAlpha() (a non-worklet JS fn) or it crashes on the UI thread.
+  const activeBorder = t.accent;
+  const activeBg = withAlpha(t.accent, 0.06);
+  // Overlay is invisible when idle (transparent border + fill) and only lights
+  // up while the finger hovers this column and it isn't the drag's source.
+  const hoverStyle = useAnimatedStyle(() => {
+    const active = hoverColId.value === colId && sourceColId.value !== colId;
+    return {
+      borderColor: active ? activeBorder : "transparent",
+      backgroundColor: active ? activeBg : "transparent",
+    };
+  });
+  return (
+    <View
+      ref={(node: View | null) => measureColumn(colId, node)}
+      style={styles.column}
+    >
+      {/* Hover highlight overlay — an absolutely-filled Animated.View so the
+          measured column stays a plain View (reanimated animates the border/bg
+          here on the UI thread). */}
+      <Animated.View pointerEvents="none" style={[styles.columnHighlight, hoverStyle]} />
+      <Text style={styles.columnTitle}>
+        {column.name} <Text style={styles.count}>{cards.length}</Text>
+      </Text>
+      <ScrollView style={styles.columnCards} showsVerticalScrollIndicator={false}>
+        {cards.map((card) => (
+          <DraggableCard
+            key={card.id}
+            card={card}
+            tags={tagMap.get(card.id)}
+            t={t}
+            styles={styles}
+            isLifted={draggingId === card.id}
+            frames={frames}
+            hoverColId={hoverColId}
+            sourceColId={sourceColId}
+            dragX={dragX}
+            dragY={dragY}
+            dragW={dragW}
+            onOpen={onOpenCard}
+            onBeginDrag={onBeginDrag}
+            onEndDrag={onEndDrag}
+            onRemeasure={onRemeasure}
+          />
+        ))}
+        <Pressable style={styles.addCard} onPress={() => onAddCard(colId)}>
+          <Plus size={14} color={t.textTertiary} />
+          <Text style={styles.addCardText}>New task</Text>
+        </Pressable>
+      </ScrollView>
+    </View>
+  );
+});
+
 /** The floating clone that follows the finger while a card is lifted. */
 function DragOverlay({
   card,
+  tags,
   t,
   styles,
   dragX,
@@ -204,6 +318,7 @@ function DragOverlay({
   originY,
 }: {
   card: CardRow;
+  tags?: TagRow[];
   t: Theme;
   styles: ReturnType<typeof makeStyles>;
   dragX: SharedValue<number>;
@@ -227,13 +342,14 @@ function DragOverlay({
   }));
   return (
     <Animated.View pointerEvents="none" style={[style, styles.card, styles.cardLiftedOverlay, elevation.xl]}>
-      <CardBody card={card} t={t} styles={styles} />
+      <CardBody card={card} tags={tags} t={t} styles={styles} />
     </Animated.View>
   );
 }
 
-function DraggableCard({
+const DraggableCard = memo(function DraggableCard({
   card,
+  tags,
   t,
   styles,
   isLifted,
@@ -246,10 +362,10 @@ function DraggableCard({
   onOpen,
   onBeginDrag,
   onEndDrag,
-  onHoverChange,
   onRemeasure,
 }: {
   card: CardRow;
+  tags?: TagRow[];
   t: Theme;
   styles: ReturnType<typeof makeStyles>;
   isLifted: boolean;
@@ -262,7 +378,6 @@ function DraggableCard({
   onOpen: (id: string) => void;
   onBeginDrag: (card: CardRow) => void;
   onEndDrag: (cardId: string, target: string | null, source: string | null) => void;
-  onHoverChange: (colId: string | null) => void;
   onRemeasure: () => void;
 }) {
   const active = useSharedValue(false);
@@ -301,16 +416,16 @@ function DraggableCard({
       const col = columnAt(e.absoluteX);
       hoverColId.value = col;
       runOnJS(onBeginDrag)(card);
-      if (col !== null) runOnJS(onHoverChange)(col);
     })
     .onUpdate((e) => {
       "worklet";
       dragX.value = e.absoluteX - dragW.value / 2;
       dragY.value = e.absoluteY - 30;
       const col = columnAt(e.absoluteX);
+      // Update the shared hover id only when it changes; the column's
+      // useAnimatedStyle reacts on the UI thread — no JS round-trip / re-render.
       if (col !== hoverColId.value) {
         hoverColId.value = col;
-        runOnJS(onHoverChange)(col);
       }
     })
     .onEnd(() => {
@@ -337,53 +452,66 @@ function DraggableCard({
     <GestureDetector gesture={pan}>
       <Animated.View style={slotStyle}>
         <PressableScale style={[styles.card, elevation.sm]} onPress={() => onOpen(card.id)} disabled={isLifted}>
-          <CardBody card={card} t={t} styles={styles} />
+          <CardBody card={card} tags={tags} t={t} styles={styles} />
         </PressableScale>
       </Animated.View>
     </GestureDetector>
   );
-}
+});
 
-function CardBody({ card, t, styles }: { card: CardRow; t: Theme; styles: ReturnType<typeof makeStyles> }) {
-  const tags = tagsForCard(card);
+const CardBody = memo(function CardBody({
+  card,
+  tags,
+  t,
+  styles,
+}: {
+  card: CardRow;
+  tags?: TagRow[];
+  t: Theme;
+  styles: ReturnType<typeof makeStyles>;
+}) {
+  // Tags are resolved once by the parent (tagsByRow) and passed in; the desc is
+  // stripped once per card (memoised) rather than on every board re-render.
+  const desc = useMemo(() => (card.description ? stripMarkdown(card.description) : ""), [card.description]);
+  const shownTags = tags ?? [];
   return (
     <>
       <View style={styles.cardTop}>
         <View style={[styles.priorityDot, { backgroundColor: PRIORITY_COLOR[card.priority] ?? t.accent }]} />
         <Text style={styles.cardTitle}>{card.title}</Text>
       </View>
-      {card.description ? (
+      {desc ? (
         <Text style={styles.cardDesc} numberOfLines={2}>
-          {stripMarkdown(card.description)}
+          {desc}
         </Text>
       ) : null}
-      {tags.length > 0 ? (
+      {shownTags.length > 0 ? (
         <View style={{ marginTop: 8 }}>
-          <TagChips tags={tags} size="sm" />
+          <TagChips tags={shownTags} size="sm" />
         </View>
       ) : null}
     </>
   );
-}
+});
 
 function makeStyles(t: Theme) {
   return StyleSheet.create({
     emptyWrap: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32 },
-    emptyText: { fontSize: 13, color: t.textTertiary, textAlign: "center" },
+    emptyText: { ...typeScale.caption, color: t.textTertiary, textAlign: "center" },
     boardScroll: { flex: 1 },
     board: { padding: 12, paddingTop: 0, gap: COLUMN_GAP, flexDirection: "row", alignItems: "stretch", flexGrow: 1 },
     column: { width: COLUMN_WIDTH, backgroundColor: t.surface, borderRadius: 12, padding: 10, borderWidth: 1, borderColor: t.border },
-    columnHover: { borderColor: t.accent, backgroundColor: withAlpha(t.accent, 0.06) },
+    columnHighlight: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, borderRadius: 12, borderWidth: 1.5 },
     columnCards: { flex: 1 },
     columnTitle: { fontSize: 14, fontWeight: "700", color: t.textPrimary, marginBottom: 8 },
     count: { color: t.textTertiary, fontWeight: "400" },
     card: { backgroundColor: t.surface2, borderRadius: 8, padding: 10, marginBottom: 8, borderWidth: 1, borderColor: t.borderSubtle },
     cardLiftedOverlay: { borderColor: t.accent, backgroundColor: t.surface2 },
     addCard: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 10, borderRadius: 8, borderWidth: 1, borderColor: t.border, borderStyle: "dashed", marginTop: 2 },
-    addCardText: { fontSize: 13, color: t.textTertiary, fontWeight: "600" },
+    addCardText: { ...typeScale.label, color: t.textTertiary },
     cardTop: { flexDirection: "row", alignItems: "center", gap: 8 },
     priorityDot: { width: 8, height: 8, borderRadius: 4 },
-    cardTitle: { flex: 1, fontSize: 13, color: t.textPrimary, fontWeight: "500" },
-    cardDesc: { fontSize: 12, color: t.textSecondary, marginTop: 8, lineHeight: 17 },
+    cardTitle: { flex: 1, ...typeScale.label, fontWeight: "500", color: t.textPrimary },
+    cardDesc: { ...typeScale.caption, color: t.textSecondary, marginTop: 8, lineHeight: 17 },
   });
 }
