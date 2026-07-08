@@ -267,10 +267,13 @@ export function NoteDetailScreen({ nested = false }: { nested?: boolean }) {
 
       {/* Floating Table-of-Contents button — read mode only, and only when the
           note has enough structure to be worth jumping around (≥2 headings).
-          A glass pill bottom-right, lifted clear of the tab bar / home indicator. */}
+          A glass pill bottom-right. `insets.bottom` already reserves the native
+          tab bar's area (the bar extends into the home-indicator inset), so we
+          add only a small fixed gap — NOT TAB_BAR_BASE, which would double-count
+          in the nested (tab-bar-visible) flow and float the button too high. */}
       {!editing && headings.length >= 2 ? (
         <View
-          style={[styles.tocFab, { bottom: 20 + insets.bottom + (nested ? TAB_BAR_BASE : 0) }]}
+          style={[styles.tocFab, { bottom: 12 + insets.bottom }]}
           pointerEvents="box-none"
         >
           <PressableScale onPress={() => setTocOpen(true)} accessibilityLabel="Table of contents">

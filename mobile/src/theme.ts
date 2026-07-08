@@ -154,10 +154,18 @@ export const iconSize = {
 } as const;
 
 /**
- * Standard UIKit tab bar height (excludes the home-indicator safe-area inset).
- * Used to reserve bottom space in the nested Projects-tab flow, where the
- * translucent native tab bar overlays scroll content. NativeTabs doesn't expose
- * its height, so we reconstruct it (see chat composer for the same constant).
+ * Standard UIKit tab bar content height (excludes the home-indicator inset).
+ *
+ * NOTE: on a tab screen the safe-area `insets.bottom` reported to the content
+ * ALREADY INCLUDES the native tab bar (the bar is part of the bottom safe area),
+ * so a fixed bottom overlay only needs `insets.bottom` + a small gap — adding
+ * TAB_BAR_BASE on top double-counts and floats it too high (verified on device
+ * with the note TOC button). Prefer plain `insets.bottom` for overlays.
+ *
+ * This constant remains only for cases that must reserve the bar's height
+ * separately from the inset (e.g. reconstructing a keyboard-sticky offset where
+ * no safe-area inset is in play — see the chat composer). NativeTabs doesn't
+ * expose its height, so we reconstruct it.
  */
 export const TAB_BAR_BASE = 49;
 
