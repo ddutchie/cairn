@@ -1,7 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
-import { useDroppable } from "@dnd-kit/core";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import { SortableContext, verticalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Plus, MoreHorizontal, Pencil, Trash2, GripVertical, ArchiveRestore, ChevronDown, ChevronRight, Gauge, Archive } from "lucide-react";
@@ -43,7 +42,7 @@ interface KanbanColumnProps {
   isHighlighted?: boolean;
 }
 
-export function KanbanColumn({
+function KanbanColumnImpl({
   column, cards, archivedCards, onCardClick, onAddCard, onRename, onSetLimit, onDelete, onRestoreCard, onArchiveAllDone, isDragOver, isColumnDragging, isHighlighted,
 }: KanbanColumnProps) {
   const [isAddingCard, setIsAddingCard] = useState(false);
@@ -58,7 +57,12 @@ export function KanbanColumn({
   const [showArchived, setShowArchived] = useState(false);
   const renameInputRef = useRef<HTMLInputElement>(null);
 
-  const { setNodeRef: setDropRef } = useDroppable({ id: column.id });
+  // The column is both draggable (reorder) and droppable (card target).
+  // useSortable already registers a droppable under `column.id` on the sortable
+  // node, so we must NOT add a second useDroppable with the same id — two
+  // droppables sharing one id collide in dnd-kit's id-keyed registry
+  // (last-write-wins), which breaks card drops onto columns. The whole column
+  // wrapper is therefore the drop target.
   const {
     setNodeRef: setSortableRef,
     attributes,
@@ -70,6 +74,10 @@ export function KanbanColumn({
 
   const accent = COLUMN_COLORS[column.type] ?? COLUMN_COLORS.custom;
   const atLimit = isAtWipLimit(column.cardLimit, cards.length);
+
+  // Stable ids array for SortableContext — a fresh inline .map() each render
+  // makes dnd-kit reconcile the sortable list unnecessarily.
+  const cardIds = useMemo(() => cards.map((c) => c.id), [cards]);
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -321,10 +329,10 @@ export function KanbanColumn({
         </div>
 
         {/* Cards */}
-        <SortableContext items={cards.map((c) => c.id)} strategy={verticalListSortingStrategy}>
-          <div ref={setDropRef} className={cn("flex-1 overflow-y-auto p-2 space-y-2 min-h-[48px]", isDragOver && "min-h-[120px]")}>
+        <SortableContext items={cardIds} strategy={verticalListSortingStrategy}>
+          <div className="flex-1 overflow-y-auto p-2 space-y-2 min-h-[48px]">
             {cards.map((card) => (
-              <KanbanCard key={card.id} card={card} onClick={() => onCardClick(card.id)} />
+              <KanbanCard key={card.id} card={card} onOpenCard={onCardClick} />
             ))}
             {cards.length === 0 && !isAddingCard && (
               <div
@@ -421,3 +429,12 @@ export function KanbanColumn({
     </>
   );
 }
+
+/**
+ * Memoized so a board re-render (e.g. drag hover changing `overId`) only
+ * re-renders columns whose props actually changed — otherwise every column
+ * (and its cards) re-renders on every pointer move during a drag, causing
+ * visible hitches. Relies on the board passing stable callback references
+ * (see BoardColumnItem) and stable `cards` array references.
+ */
+export const KanbanColumn = React.memo(KanbanColumnImpl);

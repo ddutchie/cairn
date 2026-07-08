@@ -142,6 +142,54 @@ function savePersisted(state: PersistedState): void {
 type PartialSetter = (partial: Partial<CairnStore>) => void;
 
 /**
+ * Reconcile a freshly-loaded snapshot array against the current in-memory
+ * array, preserving object identity for entities that haven't changed.
+ *
+ * hydrateFromElectron() fires on every `db:changed` event and replaces
+ * cards/columns/etc wholesale with brand-new objects deserialized from SQLite.
+ * That churns every object's identity, which defeats React.memo across the
+ * board (every card re-renders + re-parses markdown) and causes drag hitches
+ * when a move write triggers a re-hydration. By reusing the previous reference
+ * whenever an entity is deep-equal, unchanged rows keep their identity and the
+ * memoized components skip re-rendering. Also returns the SAME array reference
+ * when nothing changed at all, so top-level selectors bail out too.
+ */
+function reconcileById<T extends { id: string }>(prev: T[], next: T[]): T[] {
+  const prevById = new Map(prev.map((item) => [item.id, item]));
+  let changed = next.length !== prev.length;
+  const result = next.map((item, i) => {
+    const existing = prevById.get(item.id);
+    if (existing && shallowEqualEntity(existing, item)) {
+      if (existing !== prev[i]) changed = true; // same data, different position
+      return existing;
+    }
+    changed = true;
+    return item;
+  });
+  return changed ? result : prev;
+}
+
+/** Shallow field-by-field equality for flat entity records (values may be
+ *  arrays, which are compared element-wise one level deep). */
+function shallowEqualEntity<T extends Record<string, unknown>>(a: T, b: T): boolean {
+  const ak = Object.keys(a);
+  const bk = Object.keys(b);
+  if (ak.length !== bk.length) return false;
+  for (const k of ak) {
+    const av = a[k];
+    const bv = b[k];
+    if (av === bv) continue;
+    if (Array.isArray(av) && Array.isArray(bv)) {
+      if (av.length !== bv.length) return false;
+      for (let i = 0; i < av.length; i++) if (av[i] !== bv[i]) return false;
+      continue;
+    }
+    return false;
+  }
+  return true;
+}
+
+/**
  * Restore theme + font scale from localStorage and apply them to the DOM.
  * Shared by both hydration paths (`hydrate` / `hydrateFromElectron`).
  */
@@ -348,12 +396,12 @@ export const useCairnStore = create<CairnStore>()(
         : snapNotes;
 
       set({
-        workspaces: snap.workspaces ?? [],
-        projects: snap.projects ?? [],
-        notes: mergedNotes,
-        columns: snap.columns ?? [],
-        cards: snap.cards ?? [],
-        tags: snap.tags ?? [],
+        workspaces: reconcileById(current.workspaces, snap.workspaces ?? []),
+        projects: reconcileById(current.projects, snap.projects ?? []),
+        notes: reconcileById(current.notes, mergedNotes),
+        columns: reconcileById(current.columns, snap.columns ?? []),
+        cards: reconcileById(current.cards, snap.cards ?? []),
+        tags: reconcileById(current.tags, snap.tags ?? []),
         // Chat (threads + messages) lives in localStorage and is managed by the
         // store directly — never overwrite it from the SQLite snapshot, which
         // doesn't include chat data. Doing so would zero out in-flight messages.
