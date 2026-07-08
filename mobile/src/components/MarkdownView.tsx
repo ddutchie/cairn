@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo } from "react";
+import { lazy, Suspense, useMemo, type ReactNode } from "react";
 import { Linking, Text, View, Pressable } from "react-native";
 import Markdown, { MarkdownIt, type RenderRules, type ASTNode } from "react-native-markdown-display";
 import markdownItMark from "markdown-it-mark";
@@ -13,6 +13,7 @@ import {
   isColorLiteral,
   toggleCheckboxInSource,
 } from "@cairn/shared/notes/markdown";
+import { headingSlug } from "@cairn/shared/notes/toc";
 
 // Mermaid + KaTeX bundle their renderer sources as ~1 MB inline strings
 // (mermaid-assets.ts alone is 3.5k lines). A static import would evaluate those
@@ -47,10 +48,15 @@ const MathView = lazy(() =>
 export function MarkdownView({
   content,
   onChangeContent,
+  onHeadingLayout,
 }: {
   content: string;
   /** When provided, task-list checkboxes become interactive. */
   onChangeContent?: (next: string) => void;
+  /** Reports each rendered heading's y-offset (relative to this component's
+   *  container) keyed by GitHub-style slug — used to drive scroll-to-heading
+   *  from the Table of Contents. */
+  onHeadingLayout?: (id: string, y: number) => void;
 }) {
   const t = useTheme();
   const router = useRouter();
@@ -68,8 +74,8 @@ export function MarkdownView({
     return false;
   };
   const rules = useMemo(
-    () => makeRules(t, content ?? "", onChangeContent),
-    [t, content, onChangeContent],
+    () => makeRules(t, content ?? "", onChangeContent, onHeadingLayout),
+    [t, content, onChangeContent, onHeadingLayout],
   );
 
   return (
@@ -260,6 +266,7 @@ function makeRules(
   t: Theme,
   source: string,
   onChangeContent?: (next: string) => void,
+  onHeadingLayout?: (id: string, y: number) => void,
 ): RenderRules {
   const CALLOUT_ACCENT: Record<string, string> = {
     note: t.accent,
@@ -421,7 +428,42 @@ function makeRules(
         </Text>
       );
     },
+
+    // Headings (h1–h3): render as normal but wrap in an onLayout reporter so the
+    // Table of Contents can scroll to each by its GitHub-style slug. h4–h6 fall
+    // through to the library defaults (not shown in the TOC).
+    heading1: (node, children, _parent, styles) =>
+      renderHeading(node, children, styles.heading1, onHeadingLayout),
+    heading2: (node, children, _parent, styles) =>
+      renderHeading(node, children, styles.heading2, onHeadingLayout),
+    heading3: (node, children, _parent, styles) =>
+      renderHeading(node, children, styles.heading3, onHeadingLayout),
   };
+}
+
+/** Flatten an AST node's text content (for heading slugging). */
+function nodeText(node: ASTNode): string {
+  if (node.content) return node.content;
+  const kids = (node.children ?? []) as ASTNode[];
+  return kids.map(nodeText).join("");
+}
+
+/** Render a heading with its themed style, wrapped in an onLayout reporter. */
+function renderHeading(
+  node: ASTNode,
+  children: ReactNode,
+  style: object,
+  onHeadingLayout?: (id: string, y: number) => void,
+): ReactNode {
+  const id = headingSlug(nodeText(node));
+  return (
+    <View
+      key={node.key}
+      onLayout={onHeadingLayout ? (e) => onHeadingLayout(id, e.nativeEvent.layout.y) : undefined}
+    >
+      <Text style={style}>{children}</Text>
+    </View>
+  );
 }
 
 /** Pull the fenced-code language from the token's info string. */

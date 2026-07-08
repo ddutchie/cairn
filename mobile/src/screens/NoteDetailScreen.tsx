@@ -8,7 +8,7 @@ import {
   View,
   Alert,
 } from "react-native";
-import { Pin } from "lucide-react-native";
+import { Pin, List } from "lucide-react-native";
 import { KeyboardAwareScrollView, KeyboardStickyView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getNote, updateNote, tagsForNote, noteTagIds, setNoteTags, pinNote, softDeleteNote, workspaceIdForNote } from "@/db/queries";
@@ -18,9 +18,12 @@ import { TagPickerSheet } from "@/components/TagPickerSheet";
 import { NoteEditorToolbar } from "@/components/NoteEditorToolbar";
 import { WikilinkPickerSheet } from "@/components/WikilinkPickerSheet";
 import { PressableScale } from "@/components/PressableScale";
+import { BottomSheet, BottomSheetHeader } from "@/components/BottomSheet";
+import { GlassBar, glassActive } from "@/components/GlassBar";
 import { ICON_CHECK, ICON_CLOSE, ICON_EDIT, ICON_MORE, ICON_PIN, ICON_UNPIN, ICON_TAG, ICON_DELETE } from "@/components/toolbar-icons";
 import { useNoteFormattingToolbar } from "@/notes/useNoteFormattingToolbar";
 import { reindexNote, relatedNotes, type RelatedNote } from "@/notes/embeddings";
+import { extractHeadings } from "@cairn/shared/notes/toc";
 import { isAppleEmbeddingsSupported } from "@modules/apple-embeddings";
 import { useDataChanged } from "@/sync/useSyncStatus";
 import { useTheme, TAB_BAR_BASE, type as typeScale, type Theme } from "@/theme";
@@ -53,6 +56,23 @@ export function NoteDetailScreen({ nested = false }: { nested?: boolean }) {
   // Editing toolbar state.
   const bodyRef = useRef<TextInput>(null);
   const fmt = useNoteFormattingToolbar(body, setBody);
+
+  // Table-of-contents: headings parsed from the current body, the read-mode
+  // scroll view, and per-heading y-offsets reported by MarkdownView (relative to
+  // its own container) plus that container's offset within the scroll content.
+  const [tocOpen, setTocOpen] = useState(false);
+  const scrollRef = useRef<ScrollView>(null);
+  const headingY = useRef<Map<string, number>>(new Map());
+  const mdOffsetY = useRef(0);
+  const headings = useMemo(() => extractHeadings(note?.content ?? ""), [note?.content]);
+
+  const scrollToHeading = useCallback((slugId: string) => {
+    setTocOpen(false);
+    const local = headingY.current.get(slugId);
+    if (local == null) return;
+    const y = Math.max(0, mdOffsetY.current + local - 12);
+    scrollRef.current?.scrollTo({ y, animated: true });
+  }, []);
 
   const styles = useMemo(() => makeStyles(t), [t]);
 
@@ -221,22 +241,69 @@ export function NoteDetailScreen({ nested = false }: { nested?: boolean }) {
           </KeyboardStickyView>
         </>
       ) : (
-        <ScrollView style={styles.scroll} contentContainerStyle={[styles.content, { paddingBottom: viewBottomPad }]}>
+        <ScrollView ref={scrollRef} style={styles.scroll} contentContainerStyle={[styles.content, { paddingBottom: viewBottomPad }]}>
           <View style={styles.titleRow}>
             {isPinned && <Pin size={16} color={t.accent} fill={t.accent} />}
             <Text style={styles.title}>{note.title || "Untitled"}</Text>
           </View>
           {note.folder ? <Text style={styles.folder}>{note.folder}</Text> : null}
           <TagChipsRow note={note} />
-          <View style={styles.md}>
-            <MarkdownView content={note.content ?? ""} onChangeContent={onToggleCheckbox} />
+          <View
+            style={styles.md}
+            onLayout={(e) => { mdOffsetY.current = e.nativeEvent.layout.y; }}
+          >
+            <MarkdownView
+              content={note.content ?? ""}
+              onChangeContent={onToggleCheckbox}
+              onHeadingLayout={(headingId, y) => headingY.current.set(headingId, y)}
+            />
           </View>
           <RelatedNotes
             noteId={note.id}
-            onOpen={(id) => router.push({ pathname: "/note/[id]", params: { id, back: "Note" } })}
+            onOpen={(nid) => router.push({ pathname: "/note/[id]", params: { id: nid, back: "Note" } })}
           />
         </ScrollView>
       )}
+
+      {/* Floating Table-of-Contents button — read mode only, and only when the
+          note has enough structure to be worth jumping around (≥2 headings).
+          A glass pill bottom-right, lifted clear of the tab bar / home indicator. */}
+      {!editing && headings.length >= 2 ? (
+        <View
+          style={[styles.tocFab, { bottom: 20 + insets.bottom + (nested ? TAB_BAR_BASE : 0) }]}
+          pointerEvents="box-none"
+        >
+          <PressableScale onPress={() => setTocOpen(true)} accessibilityLabel="Table of contents">
+            <GlassBar style={[styles.tocFabInner, !glassActive && styles.tocFabFallback]}>
+              <List size={22} color={t.textPrimary} />
+            </GlassBar>
+          </PressableScale>
+        </View>
+      ) : null}
+
+      <BottomSheet visible={tocOpen} onClose={() => setTocOpen(false)} maxHeight="70%">
+        <BottomSheetHeader title="On this page" onCancel={() => setTocOpen(false)} />
+        <ScrollView style={styles.tocList} contentContainerStyle={styles.tocListContent}>
+          {headings.map((h, i) => (
+            <PressableScale
+              key={`${h.id}-${i}`}
+              style={styles.tocRow}
+              onPress={() => scrollToHeading(h.id)}
+            >
+              <Text
+                style={[
+                  styles.tocItem,
+                  h.level === 2 && styles.tocItemL2,
+                  h.level === 3 && styles.tocItemL3,
+                ]}
+                numberOfLines={1}
+              >
+                {h.text}
+              </Text>
+            </PressableScale>
+          ))}
+        </ScrollView>
+      </BottomSheet>
 
       <TagPickerSheet
         visible={tagPickerOpen}
@@ -346,5 +413,26 @@ function makeStyles(t: Theme) {
     },
     relatedTitle: { ...typeScale.control, color: t.textPrimary, flexShrink: 1 },
     relatedScore: { ...typeScale.caption, color: t.textTertiary, marginLeft: "auto", fontVariant: ["tabular-nums"] },
+    // Floating TOC button
+    tocFab: { position: "absolute", right: 18 },
+    tocFabInner: {
+      width: 52,
+      height: 52,
+      borderRadius: 26,
+      alignItems: "center",
+      justifyContent: "center",
+      overflow: "hidden",
+    },
+    tocFabFallback: { backgroundColor: t.surface, borderWidth: 1, borderColor: t.border },
+    // TOC sheet list
+    tocList: { maxHeight: 460 },
+    tocListContent: { paddingHorizontal: 12, paddingVertical: 8 },
+    tocRow: { paddingVertical: 11, paddingHorizontal: 8, borderRadius: 8 },
+    // One uniform text size for every TOC item (control) so it scales with the
+    // font-scale setting; heading hierarchy is conveyed by indent + colour +
+    // weight only, never a per-level font size.
+    tocItem: { ...typeScale.control, color: t.textPrimary, fontWeight: "600" },
+    tocItemL2: { paddingLeft: 16, color: t.textSecondary, fontWeight: "500" },
+    tocItemL3: { paddingLeft: 32, color: t.textTertiary, fontWeight: "400" },
   });
 }
