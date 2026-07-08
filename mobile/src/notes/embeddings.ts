@@ -147,6 +147,32 @@ function dot(a: Float32Array, b: Float32Array): number {
   return s;
 }
 
+/** Subtract the corpus centroid from `v` and L2-renormalise (see semanticSearch). */
+function centerAndNormalise(v: Float32Array, centroid: Float32Array): Float32Array {
+  const dim = v.length;
+  const out = new Float32Array(dim);
+  let norm = 0;
+  for (let i = 0; i < dim; i++) {
+    out[i] = v[i] - centroid[i];
+    norm += out[i] * out[i];
+  }
+  norm = Math.sqrt(norm);
+  if (norm > 1e-9) for (let i = 0; i < dim; i++) out[i] /= norm;
+  return out;
+}
+
+/**
+ * Map a centred cosine score (roughly −0.4..0.8 in practice) to a 0–1 display
+ * value. Clamps negatives to 0 and stretches the useful positive range so the
+ * UI shows a meaningful spread instead of everything reading ~90%.
+ */
+function displayScore(centered: number): number {
+  if (centered <= 0) return 0;
+  // A strong match centres around ~0.4–0.8; scale so 0.5 → ~0.85, 0.8 → ~1.0.
+  const scaled = Math.min(1, centered / 0.8);
+  return Math.round(scaled * 1000) / 1000;
+}
+
 function averageAndNormalise(vecs: Float32Array[]): Float32Array {
   const dim = vecs[0].length;
   const acc = new Float32Array(dim);
@@ -315,21 +341,38 @@ export async function semanticSearch(
     queryCache.set(q, qvec);
   }
 
-  const rows = getWorkspaceEmbeddingRows(workspaceId);
-  const best = new Map<string, { score: number; sectionTitle: string }>();
-  for (const row of rows) {
+  // Parse all current-model doc vectors up front (needed for the centroid).
+  const dim = info.dimension;
+  const parsed: { noteId: string; vec: Float32Array; sectionTitle: string }[] = [];
+  for (const row of getWorkspaceEmbeddingRows(workspaceId)) {
     if (row.model !== modelKey(info)) continue; // stale-model rows ignored
-    let vec: Float32Array;
     try {
-      vec = Float32Array.from(JSON.parse(row.vector) as number[]);
+      const vec = Float32Array.from(JSON.parse(row.vector) as number[]);
+      if (vec.length === dim) parsed.push({ noteId: row.note_id, vec, sectionTitle: row.section_title });
     } catch {
-      continue;
+      // skip malformed row
     }
-    if (vec.length !== info.dimension) continue;
-    const score = dot(qvec, vec);
-    const prev = best.get(row.note_id);
+  }
+  if (parsed.length === 0) return [];
+
+  // Mean-pooled contextual vectors share a large common component that crushes
+  // cosine into a narrow high band (every result reads ~90%). Subtracting the
+  // corpus centroid from BOTH the query and each doc — then renormalising —
+  // removes that shared direction and restores discrimination. (Verified in the
+  // SwiftPM live tests: top-2 spread ~0.0005 → ~0.03+, and rankings flip to
+  // correct.) The centroid is computed over the documents being searched.
+  const centroid = new Float32Array(dim);
+  for (const p of parsed) for (let i = 0; i < dim; i++) centroid[i] += p.vec[i];
+  for (let i = 0; i < dim; i++) centroid[i] /= parsed.length;
+
+  const cq = centerAndNormalise(qvec, centroid);
+
+  const best = new Map<string, { score: number; sectionTitle: string }>();
+  for (const p of parsed) {
+    const score = dot(cq, centerAndNormalise(p.vec, centroid));
+    const prev = best.get(p.noteId);
     if (!prev || score > prev.score) {
-      best.set(row.note_id, { score, sectionTitle: row.section_title });
+      best.set(p.noteId, { score, sectionTitle: p.sectionTitle });
     }
   }
 
@@ -338,7 +381,7 @@ export async function semanticSearch(
       noteId,
       title: noteTitleById(noteId),
       sectionTitle: v.sectionTitle,
-      score: Math.round(v.score * 1000) / 1000,
+      score: displayScore(v.score),
     }))
     .sort((a, b) => b.score - a.score)
     .slice(0, k);
@@ -354,33 +397,44 @@ export interface SemanticEdge {
 
 // Mirrors desktop computeSemanticRelationships: keep the top-K nearest notes
 // per note above a similarity floor, collapsed to canonical (src<tgt) pairs.
-const SEMANTIC_FLOOR = 0.6;
+// Floor is on the CENTRED cosine (see semanticSearch) — raw mean-pooled cosine
+// sits ~0.85+ for everything, so a raw 0.6 floor would connect all notes.
+const SEMANTIC_FLOOR = 0.15;
 const SEMANTIC_TOP_K = 5;
 
 /**
  * All-pairs cosine over stored section vectors → best-per-note-pair semantic
- * edges (weight = cosine similarity, 0.6–1.0). Used to overlay dashed accent
- * "semantic" links on the knowledge graph. Empty when embeddings are
- * unavailable. Best section similarity represents each note pair.
+ * edges. Vectors are centred by the corpus centroid before cosine (same fix as
+ * semanticSearch) so edges reflect real topical similarity, not the shared
+ * common component that makes every pair look ~90% alike. Empty when embeddings
+ * are unavailable.
  */
 export async function semanticEdges(workspaceId: string): Promise<SemanticEdge[]> {
   if (!isAppleEmbeddingsSupported()) return [];
   const info = await embeddingsInfo();
   if (!info) return [];
   const key = modelKey(info);
+  const dim = info.dimension;
 
   // Collapse sections → one representative vector list per note, tracking best
   // pairwise similarity between notes.
   const rows = getWorkspaceEmbeddingRows(workspaceId).filter((r) => r.model === key);
-  const vecs: { noteId: string; vec: Float32Array }[] = [];
+  const raw: { noteId: string; vec: Float32Array }[] = [];
   for (const r of rows) {
     try {
       const v = Float32Array.from(JSON.parse(r.vector) as number[]);
-      if (v.length === info.dimension) vecs.push({ noteId: r.note_id, vec: v });
+      if (v.length === dim) raw.push({ noteId: r.note_id, vec: v });
     } catch {
       // skip malformed row
     }
   }
+  if (raw.length === 0) return [];
+
+  // Centre by the corpus centroid, then renormalise (restores discrimination).
+  const centroid = new Float32Array(dim);
+  for (const p of raw) for (let i = 0; i < dim; i++) centroid[i] += p.vec[i];
+  for (let i = 0; i < dim; i++) centroid[i] /= raw.length;
+  const vecs = raw.map((p) => ({ noteId: p.noteId, vec: centerAndNormalise(p.vec, centroid) }));
 
   // best[noteId] = list of {other, score}; we take top-K per note then union.
   const best = new Map<string, { other: string; score: number }[]>();
