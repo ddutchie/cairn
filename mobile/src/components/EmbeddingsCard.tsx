@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View, Text, Pressable, StyleSheet, ActivityIndicator } from "react-native";
 import { useFocusEffect } from "expo-router";
 import { Sparkles } from "lucide-react-native";
@@ -36,13 +36,20 @@ export function EmbeddingsCard() {
     setStats({ indexed, total });
   }, []);
 
-  // Refresh on open and again whenever a catch-up pass finishes.
+  // Refresh on open and again whenever an indexing pass finishes (running
+  // transitions true → false), so counts stay fresh even after an automatic
+  // catch-up completes while this card is visible.
   useFocusEffect(useCallback(() => refresh(), [refresh]));
+  const wasRunning = useRef(false);
+  useEffect(() => {
+    if (wasRunning.current && !status.running) refresh();
+    wasRunning.current = status.running;
+  }, [status.running, refresh]);
 
   const onReindex = useCallback(() => {
     catchUpIndex()
       .then(refresh)
-      .catch(() => {});
+      .catch((e) => console.warn("[embeddings] reindex failed:", e));
   }, [refresh]);
 
   const busy = status.running;

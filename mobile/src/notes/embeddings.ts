@@ -203,50 +203,57 @@ const singleInFlight = new Set<string>();
  */
 export async function reindexNote(noteId: string): Promise<void> {
   if (!isAppleEmbeddingsSupported()) return;
-  if (singleInFlight.has(noteId)) return;
-  singleInFlight.add(noteId);
-  try {
-    const info = await embeddingsInfo();
-    if (!info) return;
-    const note = getNoteForEmbedding(noteId);
-    if (!note || !note.content) {
-      deleteNoteEmbeddings(noteId);
-      return;
-    }
-    await embedNoteInner(note, info);
-  } finally {
-    singleInFlight.delete(noteId);
-  }
-}
-
-async function embedNoteInner(note: EmbeddableNote, info: AppleEmbeddingsInfo): Promise<void> {
-  const key = modelKey(info);
-  const sections = splitIntoSections(note.title, note.content ?? "");
-  if (sections.length === 0) {
-    deleteNoteEmbeddings(note.id);
+  const info = await embeddingsInfo();
+  if (!info) return;
+  const note = getNoteForEmbedding(noteId);
+  if (!note || !note.content) {
+    deleteNoteEmbeddings(noteId);
     return;
   }
-  const existing = new Map(getNoteEmbeddingRows(note.id).map((r) => [r.section_idx, r]));
+  await embedNoteInner(note, info);
+}
 
-  for (const sec of sections) {
-    const text = sectionEmbedText(note.title, sec);
-    const hash = hashText(text);
-    const prev = existing.get(sec.idx);
-    if (prev && prev.content_hash === hash && prev.model === key) continue; // unchanged
-    const vec = await embedOne(text, info.dimension);
-    if (!vec) continue;
-    upsertNoteEmbedding({
-      noteId: note.id,
-      sectionIdx: sec.idx,
-      workspaceId: note.workspace_id,
-      model: key,
-      sectionTitle: sec.title,
-      contentHash: hash,
-      vector: Array.from(vec),
-    });
+/**
+ * Embed/prune one note's sections. Serialised per note via `singleInFlight` so
+ * a save-triggered reindexNote and a workspace pass can't race the same note's
+ * delete/upsert rows. The guard wraps the entire embed/delete/prune flow, so
+ * concurrent callers for the same id are dropped (last write wins is fine —
+ * both compute the same result from current content).
+ */
+async function embedNoteInner(note: EmbeddableNote, info: AppleEmbeddingsInfo): Promise<void> {
+  if (singleInFlight.has(note.id)) return;
+  singleInFlight.add(note.id);
+  try {
+    const key = modelKey(info);
+    const sections = splitIntoSections(note.title, note.content ?? "");
+    if (sections.length === 0) {
+      deleteNoteEmbeddings(note.id);
+      return;
+    }
+    const existing = new Map(getNoteEmbeddingRows(note.id).map((r) => [r.section_idx, r]));
+
+    for (const sec of sections) {
+      const text = sectionEmbedText(note.title, sec);
+      const hash = hashText(text);
+      const prev = existing.get(sec.idx);
+      if (prev && prev.content_hash === hash && prev.model === key) continue; // unchanged
+      const vec = await embedOne(text, info.dimension);
+      if (!vec) continue;
+      upsertNoteEmbedding({
+        noteId: note.id,
+        sectionIdx: sec.idx,
+        workspaceId: note.workspace_id,
+        model: key,
+        sectionTitle: sec.title,
+        contentHash: hash,
+        vector: Array.from(vec),
+      });
+    }
+    // Prune sections that no longer exist (note shrank).
+    deleteNoteEmbeddingsFrom(note.id, sections.length);
+  } finally {
+    singleInFlight.delete(note.id);
   }
-  // Prune sections that no longer exist (note shrank).
-  deleteNoteEmbeddingsFrom(note.id, sections.length);
 }
 
 export interface ReindexProgress {

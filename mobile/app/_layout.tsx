@@ -61,7 +61,7 @@ export default function RootLayout() {
       catchUpIndex().catch((e) => console.warn("[embeddings] initial catch-up failed:", e));
     }, 1200);
     const unsub = onDataChanged(() => {
-      catchUpIndex().catch(() => {});
+      catchUpIndex().catch((e) => console.warn("[embeddings] catch-up after sync failed:", e));
     });
     return () => {
       clearTimeout(kickoff);

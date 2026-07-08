@@ -81,9 +81,12 @@ export default function ChatScreen() {
   const scrollRef = useRef<ScrollView>(null);
   const router = useRouter();
   // Persistent agent conversation (UIMessage parts format) across turns. Seeded
-  // once from the same on-device history as `messages` above.
-  const conversation = useRef<UIMessage[]>(
-    loadChatHistory().map((h) => {
+  // once from the same on-device history as `messages` above. A ref's argument
+  // is evaluated on every render (only the first is kept), so the history
+  // load/remap goes behind a null-sentinel one-time initializer instead.
+  const conversation = useRef<UIMessage[]>(null as unknown as UIMessage[]);
+  if (conversation.current === null) {
+    conversation.current = loadChatHistory().map((h) => {
       if (h.role === "user") {
         // Restore image attachments too, so the agent keeps multimodal context
         // across relaunch (the UI bubble already shows them via `messages`).
@@ -94,8 +97,8 @@ export default function ChatScreen() {
         return userMessage(h.content, atts);
       }
       return assistantMessage(h.content);
-    }),
-  );
+    });
+  }
 
   // Whether any AI provider is usable (built-in Rork or a configured OpenAI
   // key). Re-checked whenever the chat screen regains focus — e.g. after the

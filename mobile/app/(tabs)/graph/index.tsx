@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useMemo, useRef, useState } from "react";
 import { View, Text, ActivityIndicator, StyleSheet } from "react-native";
 import { Stack, useFocusEffect, useRouter } from "expo-router";
 import { getKnowledgeGraph, listWorkspaceIds, type KnowledgeGraph, type GraphEdge } from "@/db/queries";
@@ -39,6 +39,9 @@ export default function GraphScreen() {
   const [showSemantic, setShowSemantic] = useState(false);
   const [semantic, setSemantic] = useState<GraphEdge[]>([]);
   const semanticAvailable = isAppleEmbeddingsSupported();
+  // Monotonic token so a slow semantic load can't overwrite a newer one (e.g.
+  // the toggle flips or data changes mid-load).
+  const semanticSeq = useRef(0);
 
   const load = useCallback(() => setGraph(getKnowledgeGraph()), []);
   useFocusEffect(useCallback(() => load(), [load]));
@@ -47,16 +50,22 @@ export default function GraphScreen() {
   // Compute semantic edges once the toggle is switched on (and refresh when the
   // underlying data changes while it's on). Cheap no-op when unavailable.
   const loadSemantic = useCallback(async () => {
+    const seq = ++semanticSeq.current;
     if (!showSemantic || !semanticAvailable) {
       setSemantic([]);
       return;
     }
-    const all: GraphEdge[] = [];
-    for (const ws of listWorkspaceIds()) {
-      const edges = await semanticEdges(ws);
-      for (const e of edges) all.push({ source: e.source, target: e.target, type: "semantic", weight: e.weight });
+    try {
+      const all: GraphEdge[] = [];
+      for (const ws of listWorkspaceIds()) {
+        const edges = await semanticEdges(ws);
+        for (const e of edges) all.push({ source: e.source, target: e.target, type: "semantic", weight: e.weight });
+      }
+      // Ignore if a newer load started (toggle flipped / data changed) meanwhile.
+      if (seq === semanticSeq.current) setSemantic(all);
+    } catch (err) {
+      console.warn("[graph] semantic edges failed:", err);
     }
-    setSemantic(all);
   }, [showSemantic, semanticAvailable]);
   useFocusEffect(useCallback(() => { loadSemantic(); }, [loadSemantic]));
   useDataChanged(useCallback(() => { loadSemantic(); }, [loadSemantic]));

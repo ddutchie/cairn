@@ -99,6 +99,13 @@ export function appleEmbeddingsUnavailableReason(): string {
 export async function embedTexts(texts: string[], dim: number): Promise<Float32Array[]> {
   if (!AppleEmbeddings || texts.length === 0) return [];
   const flat = await AppleEmbeddings.embed(texts);
+  // Fail fast on a malformed native payload rather than slicing partial/zero-
+  // padded rows into Float32Array — those would be persisted to note_embeddings
+  // and silently poison search results.
+  const expected = texts.length * dim;
+  if (flat.length !== expected) {
+    throw new Error(`AppleEmbeddings.embed returned ${flat.length} values, expected ${expected} (${texts.length}×${dim})`);
+  }
   const rows: Float32Array[] = [];
   for (let i = 0; i < texts.length; i++) {
     rows.push(Float32Array.from(flat.slice(i * dim, i * dim + dim)));

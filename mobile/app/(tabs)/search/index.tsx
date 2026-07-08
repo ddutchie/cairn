@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react";
-import { Text, View, FlatList, StyleSheet, RefreshControl, Pressable } from "react-native";
+import { Text, View, FlatList, StyleSheet, RefreshControl, Pressable, Alert } from "react-native";
 import { Stack, useRouter, useFocusEffect } from "expo-router";
 import type { SearchBarCommands } from "react-native-screens";
 import { searchNotes, searchTasks, listWorkspaceIds, embeddingIndexStats, type NoteRow, type CardRow } from "@/db/queries";
@@ -48,6 +48,9 @@ export default function SearchScreen() {
   const run = useCallback((text: string, s: Scope) => {
     const q = text.trim();
     if (q.length === 0) {
+      // Invalidate any in-flight semantic query so a slow result can't
+      // repopulate hits after we clear them here.
+      semanticSeq.current++;
       setNotes([]);
       setTasks([]);
       setHits([]);
@@ -63,7 +66,7 @@ export default function SearchScreen() {
         for (const ws of listWorkspaceIds()) all.push(...(await semanticSearch(ws, q, 20)));
         all.sort((a, b) => b.score - a.score);
         if (seq === semanticSeq.current) setHits(all.slice(0, 30));
-      })();
+      })().catch((e) => console.warn("[search] semantic search failed:", e));
     }
   }, []);
 
@@ -130,6 +133,9 @@ export default function SearchScreen() {
       await catchUpIndex();
       refreshStats();
       run(query, "semantic");
+    } catch (e) {
+      console.warn("[search] reindex failed:", e);
+      Alert.alert("Reindex failed", "Couldn't finish indexing notes for semantic search. Pull to try again.");
     } finally {
       setReindexing(false);
     }
