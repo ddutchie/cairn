@@ -151,6 +151,27 @@ export default function SearchScreen() {
   const placeholder =
     scope === "notes" ? "Search notes" : scope === "tasks" ? "Search tasks" : "Search notes by meaning";
 
+  // Which list is active + whether it's empty (drives the centred overlay hint).
+  const activeCount = scope === "notes" ? notes.length : scope === "tasks" ? tasks.length : hits.length;
+  const showEmpty = activeCount === 0;
+  // Primary + secondary hint lines for the centred empty state.
+  const emptyHint: { primary: string; secondary?: string } = (() => {
+    if (scope === "semantic") {
+      if (!semanticAvailable) return { primary: appleEmbeddingsUnavailableReason() };
+      if (hasQuery) return { primary: "No semantically similar notes" };
+      return {
+        primary: "Search your notes by meaning, not just keywords.",
+        secondary: stats
+          ? `${stats.indexedNotes} of ${stats.liveNotes} notes indexed${stats.indexedNotes < stats.liveNotes ? " · pull down to finish indexing" : ""}`
+          : undefined,
+      };
+    }
+    if (scope === "notes") {
+      return { primary: hasQuery ? "No matching notes" : "Search notes by title and content." };
+    }
+    return { primary: hasQuery ? "No matching tasks" : "Search tasks by title and description." };
+  })();
+
   // Shared list scrolling behaviour. `contentInsetAdjustmentBehavior="automatic"`
   // makes the list clear the native search header; `automaticallyAdjustKeyboardInsets`
   // lifts content above the on-screen keyboard; the bottom pad keeps the last row
@@ -192,23 +213,6 @@ export default function SearchScreen() {
               <RefreshControl refreshing={reindexing} onRefresh={forceReindex} tintColor={t.textTertiary} />
             ) : undefined
           }
-          ListEmptyComponent={
-            !semanticAvailable ? (
-              <Text style={styles.hint}>{appleEmbeddingsUnavailableReason()}</Text>
-            ) : hasQuery ? (
-              <Text style={styles.hint}>No semantically similar notes</Text>
-            ) : (
-              <View>
-                <Text style={styles.hint}>Search your notes by meaning, not just keywords.</Text>
-                {stats ? (
-                  <Text style={styles.statHint}>
-                    {stats.indexedNotes} of {stats.liveNotes} notes indexed
-                    {stats.indexedNotes < stats.liveNotes ? " · pull down to finish indexing" : ""}
-                  </Text>
-                ) : null}
-              </View>
-            )
-          }
           renderItem={({ item }) => (
             <PressableScale style={[styles.row, elevation.sm]} onPress={() => router.push({ pathname: "/note/[id]", params: { id: item.noteId, back: "Search" } })}>
               <View style={styles.taskTitleRow}>
@@ -230,7 +234,6 @@ export default function SearchScreen() {
           data={notes}
           keyExtractor={(n) => n.id}
           {...listProps}
-          ListEmptyComponent={hasQuery ? <Text style={styles.hint}>No matching notes</Text> : null}
           renderItem={({ item }) => (
             <PressableScale style={[styles.row, elevation.sm]} onPress={() => router.push({ pathname: "/note/[id]", params: { id: item.id, back: "Search" } })}>
               <Text style={styles.title} numberOfLines={1}>
@@ -247,7 +250,6 @@ export default function SearchScreen() {
           data={tasks}
           keyExtractor={(c) => c.id}
           {...listProps}
-          ListEmptyComponent={hasQuery ? <Text style={styles.hint}>No matching tasks</Text> : null}
           renderItem={({ item }) => (
             <PressableScale style={[styles.row, elevation.sm]} onPress={() => router.push({ pathname: "/card/[id]", params: { id: item.id, back: "Search" } })}>
               <View style={styles.taskTitleRow}>
@@ -266,13 +268,23 @@ export default function SearchScreen() {
         />
       )}
 
+      {/* Centred empty/hint overlay — absolutely positioned over the list area so
+          it stays put (doesn't jump with the keyboard, doesn't hide behind the
+          header the way a list-top ListEmptyComponent does). */}
+      {showEmpty ? (
+        <View style={styles.emptyOverlay} pointerEvents="none">
+          <Text style={styles.hint}>{emptyHint.primary}</Text>
+          {emptyHint.secondary ? <Text style={styles.statHint}>{emptyHint.secondary}</Text> : null}
+        </View>
+      ) : null}
+
       {/* Persistent scope switch, pinned to the bottom just above the native
           search field. With the iOS 26 search tab the search field lives at the
           bottom (above the keyboard), so the toggle rides the keyboard via
           KeyboardStickyView: when closed it sits above the tab-bar search field;
           when open it lifts to clear the field that's now docked on the keyboard. */}
       <KeyboardStickyView
-        offset={{ closed: -(SEARCH_FIELD_H + insets.bottom), opened: -(SEARCH_FIELD_H + SCOPE_GAP) }}
+        offset={{ closed: -insets.bottom, opened: -(SEARCH_FIELD_H + SCOPE_GAP) }}
         style={styles.scopeOverlay}
       >
         <GlassBar style={[styles.scopeBar, !glassActive && styles.scopeBarFallback]}>
@@ -328,7 +340,19 @@ function makeStyles(t: Theme) {
     title: { ...typeScale.control, color: t.textPrimary, flexShrink: 1 },
     preview: { ...typeScale.caption, color: t.textSecondary, marginTop: 2 },
     score: { ...typeScale.caption, color: t.textTertiary, marginLeft: "auto", fontVariant: ["tabular-nums"] },
-    hint: { textAlign: "center", color: t.textTertiary, marginTop: 24 },
+    emptyOverlay: {
+      position: "absolute",
+      top: 0,
+      left: 0,
+      right: 0,
+      // Anchor the hint at ~25% from the top (75% from the bottom) so it stays
+      // clear of the keyboard/scope bar rather than being hidden behind them.
+      bottom: "75%",
+      alignItems: "center",
+      justifyContent: "flex-end",
+      paddingHorizontal: 32,
+    },
+    hint: { textAlign: "center", color: t.textTertiary },
     statHint: { ...typeScale.caption, textAlign: "center", color: t.textTertiary, marginTop: 8 },
   });
 }
