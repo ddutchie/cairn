@@ -181,15 +181,16 @@ export default function SearchScreen() {
   })();
 
   // Shared list scrolling behaviour. `contentInsetAdjustmentBehavior="automatic"`
-  // makes the list clear the native search header; `automaticallyAdjustKeyboardInsets`
-  // lifts content above the on-screen keyboard; the bottom pad keeps the last row
-  // reachable above the tab bar. IndexingBar rides as the list header so the
-  // FlatList stays the screen's first (and only) scroll view — required for iOS
-  // to apply the automatic search-header inset.
+  // makes the list clear the native search header (top). The bottom pad in
+  // `styles.list` already clears the keyboard/scope-bar/tab-bar area, so we do
+  // NOT set `automaticallyAdjustKeyboardInsets` — combined with the automatic
+  // top inset it miscalculates the content offset when the keyboard opens and
+  // scrolls the first result up under the header. IndexingBar rides as the list
+  // header so the FlatList stays the screen's first (and only) scroll view —
+  // required for iOS to apply the automatic search-header inset.
   const listProps = {
     contentContainerStyle: styles.list,
     contentInsetAdjustmentBehavior: "automatic" as const,
-    automaticallyAdjustKeyboardInsets: true,
     keyboardShouldPersistTaps: "handled" as const,
     keyboardDismissMode: "on-drag" as const,
     ListHeaderComponent: <IndexingBar />,
@@ -227,7 +228,7 @@ export default function SearchScreen() {
                 <Text style={styles.title} numberOfLines={1}>
                   {item.title || "Untitled"}
                 </Text>
-                <Text style={styles.score}>{Math.round(item.score * 100)}%</Text>
+                <Text style={styles.score}>{Math.round(item.rank * 100)}%</Text>
               </View>
               {item.sectionTitle ? (
                 <Text style={styles.preview} numberOfLines={1}>
