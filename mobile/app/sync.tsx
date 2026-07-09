@@ -11,10 +11,10 @@ import { useModalOpenHaptic, toolbarPress } from "@/haptics";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 
 /**
- * Sync detail presented as a native form-sheet modal (see the `sync` screen's
- * `presentation: "formSheet"` in the root layout). Reached from the header sync
+ * Sync detail presented as a native modal (see the `sync` screen's
+ * `presentation: "modal"` in the root layout). Reached from the header sync
  * badge (SyncStatusBadge). A native Stack.Toolbar "Done" button — plus the
- * sheet's swipe-down — dismisses it, matching the new-note / AI-settings modal
+ * modal's swipe-down — dismisses it, matching the new-note / AI-settings modal
  * pattern. Owns the things the badge can't: iCloud availability diagnostics, the
  * conflict-resolution entry point, and the last sync result.
  */
@@ -39,7 +39,7 @@ export default function SyncScreen() {
   };
 
   return (
-    <View style={[styles.root, { backgroundColor: t.background }]}>
+    <View style={[styles.root, { backgroundColor: t.surface }]}>
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Button icon={ICON_CHECK} variant="done" accessibilityLabel="Done" onPress={toolbarPress(close)}>
           Done
@@ -113,8 +113,8 @@ export default function SyncScreen() {
 function makeStyles(t: Theme) {
   return StyleSheet.create({
     root: { flex: 1 },
-    container: { padding: 20 },
-    card: { padding: 16, backgroundColor: t.surface, borderRadius: 12, borderWidth: 1, borderColor: t.border },
+    container: { padding: 18 },
+    card: { padding: 16, backgroundColor: t.surface2, borderRadius: 12, borderWidth: 1, borderColor: t.border },
     cardLabel: { fontSize: 12, fontWeight: "600", color: t.textTertiary, textTransform: "uppercase", letterSpacing: 0.5 },
     statusRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 10 },
     dot: { width: 9, height: 9, borderRadius: 5 },
@@ -124,10 +124,10 @@ function makeStyles(t: Theme) {
     buttonDisabled: { opacity: 0.6 },
     buttonText: { ...typeScale.control, color: t.accentFg },
     autoNote: { marginTop: 10, ...typeScale.caption, color: t.textTertiary, lineHeight: 17 },
-    result: { marginTop: 16, padding: 14, backgroundColor: t.surface, borderRadius: 10, borderWidth: 1, borderColor: t.border },
+    result: { marginTop: 16, padding: 14, backgroundColor: t.surface2, borderRadius: 10, borderWidth: 1, borderColor: t.border },
     resultLine: { ...typeScale.caption, color: t.textPrimary, marginBottom: 4 },
-    conflictRow: { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 16, padding: 14, backgroundColor: t.surface, borderRadius: 12, borderWidth: 1, borderColor: t.border },
-    conflictRowActive: { borderColor: t.warning, backgroundColor: t.surface2 },
+    conflictRow: { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 16, padding: 14, backgroundColor: t.surface2, borderRadius: 12, borderWidth: 1, borderColor: t.border },
+    conflictRowActive: { borderColor: t.warning, backgroundColor: t.surface3 },
     conflictTitle: { ...typeScale.control, color: t.textSecondary },
     conflictHelp: { ...typeScale.caption, color: t.textTertiary, marginTop: 2, lineHeight: 16 },
     note: { marginTop: 24, ...typeScale.caption, color: t.textTertiary, lineHeight: 18 },
