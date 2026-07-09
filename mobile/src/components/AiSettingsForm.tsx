@@ -238,8 +238,8 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                     <Cpu size={14} color={t.success} />
                     <Text style={styles.rorkNoteText}>
                       {appleIsServer
-                        ? "Apple Intelligence runs on Private Cloud Compute — private, no API key, with a larger context window and stronger reasoning. Needs a connection and has a daily usage limit."
-                        : "Apple Intelligence runs entirely on your device — private, offline, no API key. Best for quick chats; it has a small context window, so long conversations may need a fresh start."}
+                        ? "Apple Intelligence runs on Private Cloud Compute — private, no API key, with a larger context window and stronger reasoning. Needs a connection and has a daily usage limit. Context window: ~32K tokens."
+                        : "Apple Intelligence runs entirely on your device — private, offline, no API key. Best for quick chats; it has a small context window, so long conversations may need a fresh start. Context window: ~4K tokens."}
                     </Text>
                   </View>
                 )}
@@ -259,7 +259,8 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                     <ShieldCheck size={14} color={t.success} />
                     <Text style={styles.rorkNoteText}>
                       Rork is built into this app — no configuration needed. Switch to
-                      OpenAI-compatible to use your own endpoint and key.
+                      OpenAI-compatible to use your own endpoint and key. Context window:
+                      ~200K tokens (estimated).
                     </Text>
                   </View>
                 )}
