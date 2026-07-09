@@ -102,7 +102,8 @@ async function ensureMap(): Promise<ContextMap> {
       writeSetting(CACHE_AT_KEY, String(Date.now()));
       return map;
     } catch {
-      memoryCache = {};
+      // Don't cache the empty result — leaving memoryCache unset lets the next
+      // ensureMap() call retry (inflight still de-dupes concurrent callers).
       return {};
     } finally {
       inflight = null;

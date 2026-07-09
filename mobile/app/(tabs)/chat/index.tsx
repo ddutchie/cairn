@@ -177,7 +177,10 @@ export default function ChatScreen() {
           patchAssistant({ tools: [...toolTrail] });
           haptics.impact(); // agent ran a tool
         } else if (e.type === "final" && e.usage) {
-          setUsage(e.usage); // context-window ring (Apple provider)
+          // Only drive the ring with valid token counts — a negative prompt
+          // count or non-positive limit renders a broken/empty ring.
+          const u = e.usage;
+          if (u.promptTokens >= 0 && u.contextLimit > 0) setUsage(u);
         }
         setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 20);
       };

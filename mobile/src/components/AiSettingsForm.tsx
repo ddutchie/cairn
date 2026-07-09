@@ -269,7 +269,7 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
               <View style={styles.rorkNote}>
                 <Text style={styles.rorkNoteText}>
                   {appleReason
-                    ? `On-device AI is unavailable: ${appleReason} Configure an OpenAI-compatible endpoint and API key below to enable chat.`
+                    ? `Apple Intelligence is unavailable: ${appleReason} Configure an OpenAI-compatible endpoint and API key below to enable chat.`
                     : "This build has no bundled AI endpoint. Configure an OpenAI-compatible endpoint and API key below to enable chat."}
                 </Text>
               </View>

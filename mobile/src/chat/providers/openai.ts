@@ -121,23 +121,34 @@ function makeStreamer(config: OpenAIConfig) {
       messages: messages.flatMap(mapMessage),
       stream: true,
       // Ask for a final usage chunk (prompt/completion tokens) to drive the
-      // context ring. Harmless on endpoints that ignore it.
+      // context ring. Standard OpenAI honours it; some OpenAI-compatible
+      // gateways reject unknown fields with a 400, so we retry without it below.
       stream_options: { include_usage: true },
     };
     const mapped = mapTools(tools);
     if (mapped.length > 0) body.tools = mapped;
 
     const url = new URL("chat/completions", config.baseUrl.replace(/\/?$/, "/")).toString();
-    const res = await expoFetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "text/event-stream",
-        Authorization: `Bearer ${config.apiKey}`,
-      },
-      body: JSON.stringify(body),
-      signal,
-    });
+    const send = (payload: Record<string, unknown>) =>
+      expoFetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "text/event-stream",
+          Authorization: `Bearer ${config.apiKey}`,
+        },
+        body: JSON.stringify(payload),
+        signal,
+      });
+
+    let res = await send(body);
+    // A 400 may mean the gateway rejected `stream_options`; retry once without
+    // it (we just lose server-reported usage, falling back to no ring).
+    if (res.status === 400 && "stream_options" in body) {
+      const rest = { ...body };
+      delete rest.stream_options;
+      res = await send(rest);
+    }
     if (!res.ok || !res.body) {
       const detail = res.ok ? "no response body" : `HTTP ${res.status}`;
       throw new Error(`OpenAI provider error (${detail})`);

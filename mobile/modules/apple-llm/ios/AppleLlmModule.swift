@@ -278,34 +278,36 @@ public class AppleLlmModule: Module {
   /// PCC daily-quota snapshot as JSON (see the `quotaStatus` Function doc).
   private static func quotaStatusJson() -> String {
     #if CAIRN_PCC_SDK
-    if #available(iOS 27.0, *), case .available = PrivateCloudComputeLanguageModel().availability {
+    if #available(iOS 27.0, *) {
       let model = PrivateCloudComputeLanguageModel()
-      let usage = model.quotaUsage
-      var status = "unknown"
-      var approaching = false
-      if usage.isLimitReached {
-        status = "exceeded"
-      } else if case .belowLimit(let info) = usage.status {
-        approaching = info.isApproachingLimit
-        status = approaching ? "approaching" : "below"
-      }
-      let iso: String
-      if let reset = usage.resetDate {
-        let fmt = ISO8601DateFormatter()
-        iso = fmt.string(from: reset)
-      } else {
-        iso = ""
-      }
-      let dict: [String: Any] = [
-        "available": true,
-        "status": status,
-        "isLimitReached": usage.isLimitReached,
-        "canUpgrade": usage.limitIncreaseSuggestion != nil,
-        "resetDate": iso,
-      ]
-      if let data = try? JSONSerialization.data(withJSONObject: dict),
-         let json = String(data: data, encoding: .utf8) {
-        return json
+      if case .available = model.availability {
+        let usage = model.quotaUsage
+        var status = "unknown"
+        var approaching = false
+        if usage.isLimitReached {
+          status = "exceeded"
+        } else if case .belowLimit(let info) = usage.status {
+          approaching = info.isApproachingLimit
+          status = approaching ? "approaching" : "below"
+        }
+        let iso: String
+        if let reset = usage.resetDate {
+          let fmt = ISO8601DateFormatter()
+          iso = fmt.string(from: reset)
+        } else {
+          iso = ""
+        }
+        let dict: [String: Any] = [
+          "available": true,
+          "status": status,
+          "isLimitReached": usage.isLimitReached,
+          "canUpgrade": usage.limitIncreaseSuggestion != nil,
+          "resetDate": iso,
+        ]
+        if let data = try? JSONSerialization.data(withJSONObject: dict),
+           let json = String(data: data, encoding: .utf8) {
+          return json
+        }
       }
     }
     #endif
@@ -420,7 +422,7 @@ public class AppleLlmModule: Module {
         self.emitError(requestId, .cancelled, "Generation cancelled.")
         self.removeTask(requestId)
       } catch {
-        let (code, message) = Self.mapError(error)
+        let (code, message) = Self.mapError(error, useServer: useServer)
         self.emitError(requestId, code, message)
         self.removeTask(requestId)
       }
@@ -549,7 +551,7 @@ public class AppleLlmModule: Module {
 
 
   @available(iOS 26.0, *)
-  private static func mapError(_ error: Error) -> (AppleLlmCode, String) {
+  private static func mapError(_ error: Error, useServer: Bool) -> (AppleLlmCode, String) {
     // Private Cloud Compute daily-quota exhaustion (iOS 27+). Checked first so
     // the JS side can steer the user to an iCloud+ upgrade instead of retrying.
     #if CAIRN_PCC_SDK
@@ -575,9 +577,10 @@ public class AppleLlmModule: Module {
       return (.toolCallError, toolError.message)
     }
     // A PCC request with no connectivity surfaces as a URL/network error; flag it
-    // so JS can retry on-device.
+    // so JS can retry on-device. Only PCC actually needs the network — on-device
+    // generation is offline, so don't blame connectivity there.
     let ns = error as NSError
-    if ns.domain == NSURLErrorDomain {
+    if useServer, ns.domain == NSURLErrorDomain {
       return (.networkUnavailable, "Private Cloud Compute needs a connection. Reconnect and try again.")
     }
     return (.generationError, error.localizedDescription)
