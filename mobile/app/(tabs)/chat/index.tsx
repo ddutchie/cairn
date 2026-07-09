@@ -572,9 +572,11 @@ function makeStyles(t: Theme) {
       paddingVertical: 8,
       borderRadius: 16,
       overflow: "hidden",
+      // When Liquid Glass is active the GlassView is the visual container, so no
+      // border/fill — the border only defines the fallback (non-glass) surface.
       backgroundColor: glassActive ? undefined : withAlpha(t.surface2, 0.92),
-      borderWidth: 1,
-      borderColor: t.border,
+      borderWidth: glassActive ? 0 : 1,
+      borderColor: glassActive ? undefined : t.border,
       shadowColor: "#000",
       shadowOffset: { width: 0, height: 8 },
       shadowOpacity: 0.12,
