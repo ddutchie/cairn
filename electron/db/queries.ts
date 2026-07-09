@@ -18,8 +18,11 @@
  * handle regardless of which TS file defines them.
  *
  * **Never** construct a `Database` instance in this file. The two bootstrap
- * sites are `electron/db/client.ts` (Electron ABI, `electron-native/`) and
- * `electron/mcp-server.ts` (Node 22 ABI, `pkg-native/`).
+ * sites are `electron/db/client.ts` (Electron ABI, `electron-native/<arch>/`)
+ * and `electron/mcp-server.ts` (pkg Node 24 ABI, `pkg-native/<arch>/`). The
+ * standalone `cairn-mcp` binary must run independently of the app (so agents
+ * can read/write the workspace while Cairn is closed), which is why it ships
+ * its own Node-ABI sqlite binary separate from the Electron one.
  *
  * For knowledge-graph traversal, see `electron/db/graph-queries.ts` which
  * exports `getKnowledgeGraph` and `getNeighbours` (also safe to import from

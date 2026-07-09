@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { MessageAvatar } from "./message-ui";
 import { cn } from "@/lib/utils";
+import { modKey } from "@/components/layout/sidebar-utils";
 import type { PendingQuestion } from "@/hooks/useChatStream";
 
 interface QuestionFormProps {
@@ -16,6 +17,7 @@ interface QuestionFormProps {
 export function QuestionForm({ questions, onSubmit, disabled = false }: QuestionFormProps) {
   const [answers, setAnswers]   = useState<Record<string, string>>({});
   const [submitted, setSubmitted] = useState(false);
+  const [mod] = useState(() => modKey());
 
   const allFilled = questions.every((q) => (answers[q.id] ?? "").trim().length > 0);
 
@@ -58,7 +60,7 @@ export function QuestionForm({ questions, onSubmit, disabled = false }: Question
           <p className="text-[0.714rem] text-[var(--text-tertiary)]">Answers submitted</p>
         ) : (
           <div className="flex items-center justify-between">
-            <p className="text-[0.714rem] text-[var(--text-tertiary)]">⌘↩ to submit</p>
+            <p className="text-[0.714rem] text-[var(--text-tertiary)]">{mod}↩ to submit</p>
             <Button
               variant="accent" size="sm"
               onClick={handleSubmit}

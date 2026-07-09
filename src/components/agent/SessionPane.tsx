@@ -18,6 +18,7 @@ import { useCairnStore } from "@/store";
 import type { ChatThread, ChatMessage } from "@/types";
 import { cn } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
+import { modKey } from "@/components/layout/sidebar-utils";
 import { SpawnAgentModal } from "./SpawnAgentModal";
 import { TerminalManager } from "./TerminalManager";
 import { AgentChatPane } from "./AgentChatPane";
@@ -76,6 +77,7 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
 
   const [spawnOpen, setSpawnOpen] = useState(false);
   const [newMenuOpen, setNewMenuOpen] = useState(false);
+  const [mod] = useState(() => modKey());
   const newMenuRef = useRef<HTMLDivElement>(null);
 
   const createNewThread = useCairnStore((s) => s.createNewThread);
@@ -316,7 +318,7 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
               </button>
             </Tooltip>
           ) : (
-            <Tooltip content="Collapse to sidebar (⌘/)" side="bottom">
+            <Tooltip content={`Collapse to sidebar (${mod}/)`} side="bottom">
               <button
                 onClick={() => setView(lastContentView)}
                 className="flex-shrink-0 px-3 h-full text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--surface-2)] transition-colors border-l border-[var(--border)] flex items-center justify-center"
@@ -326,7 +328,7 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
             </Tooltip>
           )}
 
-          <Tooltip content="Close panel (⌘/)" side="bottom">
+          <Tooltip content={`Close panel (${mod}/)`} side="bottom">
             <button
               onClick={handleClosePanel}
               className="flex-shrink-0 px-3 h-full text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors border-l border-[var(--border)] flex items-center justify-center"

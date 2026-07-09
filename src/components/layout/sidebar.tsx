@@ -19,7 +19,7 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { WorkspaceSwitcher } from "./sidebar/WorkspaceSwitcher";
 import { ProjectCreateForm } from "./sidebar/ProjectCreateForm";
-import { buildShortcutMap, countOpenCardsByProject, dueDateSeverity, dueDateDiffDays } from "./sidebar-utils";
+import { buildShortcutMap, modKey, countOpenCardsByProject, dueDateSeverity, dueDateDiffDays } from "./sidebar-utils";
 import type { Project } from "@/types";
 
 // ── View nav config ───────────────────────────────────────────────────────────
@@ -84,6 +84,9 @@ export function Sidebar() {
     () => buildShortcutMap(visibleNavItems),
     [visibleNavItems],
   );
+  // Platform-appropriate modifier symbol ("⌘" on macOS, "Ctrl+" elsewhere) for
+  // the fixed shortcut hints below — must match buildShortcutMap's prefix.
+  const mod = React.useMemo(() => modKey(), []);
   function shortcutLabel(item: ViewNavItem): string {
     return shortcutMap.get(item.view) ?? "";
   }
@@ -154,14 +157,14 @@ export function Sidebar() {
             </button>
           </Tooltip>
           <div className="w-5 h-px bg-[var(--border)] my-1" />
-          <Tooltip content="Search (⌘K)" side="right">
+          <Tooltip content={`Search (${mod}K)`} side="right">
             <button onClick={toggleSearch}
               className={cn("p-2 rounded-md transition-colors", searchOpen ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
               <Search size={15} />
             </button>
           </Tooltip>
           {!hiddenViews.has("chat") && (
-            <Tooltip content="AI Chat (⌘/)" side="right">
+            <Tooltip content={`AI Chat (${mod}/)`} side="right">
               <button onClick={toggleChat}
                 className={cn("p-2 rounded-md transition-colors", chatOpen ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
                 <MessageSquare size={15} />
@@ -169,13 +172,13 @@ export function Sidebar() {
             </Tooltip>
           )}
           <div className="w-5 h-px bg-[var(--border)] my-1" />
-          <Tooltip content="Overview (⌘1)" side="right">
+          <Tooltip content={`Overview (${mod}1)`} side="right">
             <button onClick={() => setView("overview")}
               className={cn("p-2 rounded-md transition-colors", activeView === "overview" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
               <Hash size={15} />
             </button>
           </Tooltip>
-          <Tooltip content="Notes (⌘2)" side="right">
+          <Tooltip content={`Notes (${mod}2)`} side="right">
             <button onClick={() => setView("notes")}
               className={cn("p-2 rounded-md transition-colors", activeView === "notes" ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
               <FileText size={15} />
@@ -204,16 +207,16 @@ export function Sidebar() {
 
           {/* Quick actions */}
           <div className="flex items-center gap-0.5 px-2 h-9 border-b border-[var(--border-subtle)] flex-shrink-0">
-            <Tooltip content="Search (⌘K)">
+            <Tooltip content={`Search (${mod}K)`}>
               <button onClick={() => { toggleSearch(); closeSidebarOnMobile(); }}
                 className={cn("flex items-center gap-1.5 flex-1 rounded-md px-2 py-1 text-xs transition-colors",
                   searchOpen ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
                 <Search size={12} /><span>Search</span>
-                <span className="ml-auto text-[0.714rem] text-[var(--text-tertiary)] font-mono">⌘K</span>
+                <span className="ml-auto text-[0.714rem] text-[var(--text-tertiary)] font-mono">{mod}K</span>
               </button>
             </Tooltip>
             {!hiddenViews.has("chat") && (
-              <Tooltip content="AI Chat (⌘/)">
+              <Tooltip content={`AI Chat (${mod}/)`}>
                 <button onClick={() => { toggleChat(); closeSidebarOnMobile(); }}
                   className={cn("p-1 rounded-md transition-colors", chatOpen ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
                   <MessageSquare size={13} />
