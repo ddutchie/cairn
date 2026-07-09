@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@expo/material-symbols": "^0.1.1",
+    "@expo/ui": "~57.0.3",
     "@react-native-community/datetimepicker": "9.1.0",
     "ai": "^7.0.15",
     "expo": "~57.0.2",
