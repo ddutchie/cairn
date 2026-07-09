@@ -35,6 +35,7 @@ import {
   isAppleLlmAvailable,
   isAppleServerAvailable,
   type AppleErrorEvent,
+  type AppleReasoningEvent,
   type AppleReasoningLevel,
   type AppleTool,
   type AppleToolCallEvent,
@@ -316,6 +317,7 @@ function makeStreamApple(server: boolean) {
 
     type Item =
       | { kind: "token"; delta: string }
+      | { kind: "reasoning"; delta: string }
       | { kind: "toolCall"; callId: string; toolName: string; input: string }
       | { kind: "done"; finishReason: string; promptTokens?: number; contextLimit?: number }
       | { kind: "error"; err: AppleLLMError };
@@ -328,6 +330,10 @@ function makeStreamApple(server: boolean) {
 
     const subToken = AppleLlm.addListener("onToken", (e) => {
       if (e.requestId === requestId) push({ kind: "token", delta: e.delta });
+    });
+    // PCC reasoning text (iOS 27+); no-op on-device (never emitted there).
+    const subReasoning = AppleLlm.addListener("onReasoning", (e: AppleReasoningEvent) => {
+      if (e.requestId === requestId) push({ kind: "reasoning", delta: e.delta });
     });
     const subDone = AppleLlm.addListener("onDone", (e) => {
       if (e.requestId === requestId)
@@ -378,6 +384,11 @@ function makeStreamApple(server: boolean) {
           continue;
         }
 
+        if (item.kind === "reasoning") {
+          yield { type: "reasoning-delta", delta: item.delta };
+          continue;
+        }
+
         if (item.kind === "toolCall") {
           // Execute locally, surface for the UI tool-trail (as an already-executed
           // tool so agent.ts doesn't re-run it), then resolve back into the native
@@ -419,6 +430,7 @@ function makeStreamApple(server: boolean) {
       }
     } finally {
       subToken.remove();
+      subReasoning.remove();
       subDone.remove();
       subError.remove();
       subTool.remove();

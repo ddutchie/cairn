@@ -23,12 +23,13 @@ import { toolsForAgent, TOOL_MAP } from "./tools";
 const MAX_TURNS = 8;
 
 export interface AgentEvent {
-  type: "text-delta" | "tool" | "final" | "error";
-  delta?: string; // for text-delta
+  type: "text-delta" | "reasoning-delta" | "tool" | "final" | "error";
+  delta?: string; // for text-delta / reasoning-delta
   tool?: string;
   args?: unknown;
   result?: unknown;
   text?: string; // full text for final / error
+  reasoning?: string; // accumulated reasoning text, on "final"
   usage?: ChatUsage; // context-window usage, on "final"
 }
 
@@ -109,6 +110,8 @@ export async function runAgent(
 ): Promise<string> {
   const tools = toolsForAgent();
   let finalText = "";
+  // Accumulated reasoning ("thinking") text across the run's turns (PCC only).
+  let reasoning = "";
   // Context-window usage from the latest turn's finish event (Apple provider).
   let usage: ChatUsage | undefined;
 
@@ -142,6 +145,10 @@ export async function runAgent(
           const delta = (ev as { delta: string }).delta;
           text += delta;
           onEvent?.({ type: "text-delta", delta });
+        } else if (ev.type === "reasoning-delta" && typeof (ev as { delta?: string }).delta === "string") {
+          const delta = (ev as { delta: string }).delta;
+          reasoning += delta;
+          onEvent?.({ type: "reasoning-delta", delta });
         } else if (ev.type === "tool-input-available") {
           const e = ev as { toolCallId: string; toolName: string; input: unknown };
           toolCalls.push({ id: e.toolCallId, name: e.toolName, input: e.input });
@@ -188,7 +195,7 @@ export async function runAgent(
       // Ensure the assistant turn is in history even if empty-ish.
       if (assistant.parts.length === 0) assistant.parts.push({ type: "text", text: finalText });
       conversation.push(assistant);
-      onEvent?.({ type: "final", text: finalText, usage });
+      onEvent?.({ type: "final", text: finalText, reasoning: reasoning || undefined, usage });
       return finalText;
     }
 
@@ -224,13 +231,13 @@ export async function runAgent(
     conversation.push(assistant);
     // Loop for the model's follow-up turn (it now sees the tool outputs).
     if (finishReason === "stop") {
-      onEvent?.({ type: "final", text: finalText, usage });
+      onEvent?.({ type: "final", text: finalText, reasoning: reasoning || undefined, usage });
       return finalText;
     }
   }
 
   const msg = finalText || "I couldn't finish that in a reasonable number of steps.";
-  onEvent?.({ type: "final", text: msg, usage });
+  onEvent?.({ type: "final", text: msg, reasoning: reasoning || undefined, usage });
   return msg;
 }
 

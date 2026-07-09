@@ -13,7 +13,7 @@ import {
 import Animated, { useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { KeyboardStickyView, useKeyboardHandler } from "react-native-keyboard-controller";
 import { Stack, useRouter, useFocusEffect } from "expo-router";
-import { CheckCircle, Bot, User, Send, ImagePlus, X, Settings2 } from "lucide-react-native";
+import { CheckCircle, Bot, User, Send, ImagePlus, X, Settings2, Brain, ChevronRight } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { TabScreen } from "@/components/TabScreen";
 import { EmptyState } from "@/components/EmptyState";
@@ -39,6 +39,9 @@ interface UiMessage {
   content: string;
   images?: string[]; // data URIs for user attachments
   tools?: { tool: string; ok: boolean }[];
+  /** Live reasoning ("thinking") text for PCC turns. Shown collapsibly; like
+   *  images it's session-only and not persisted to chat_local. */
+  reasoning?: string;
   streaming?: boolean;
 }
 
@@ -151,6 +154,7 @@ export default function ChatScreen() {
     // Persist the user turn locally (on-device only — chat never syncs).
     saveChatMessage({ role: "user", content: text, images: atts.map((a) => a.url) });
     let acc = "";
+    let reasoningAcc = "";
     const toolTrail: { tool: string; ok: boolean }[] = [];
 
     const patchAssistant = (patch: Partial<UiMessage>) => {
@@ -171,6 +175,9 @@ export default function ChatScreen() {
         if (e.type === "text-delta" && e.delta) {
           acc += e.delta;
           patchAssistant({ content: acc });
+        } else if (e.type === "reasoning-delta" && e.delta) {
+          reasoningAcc += e.delta;
+          patchAssistant({ reasoning: reasoningAcc });
         } else if (e.type === "tool" && e.tool) {
           const ok = !(e.result && typeof e.result === "object" && "error" in (e.result as object));
           toolTrail.push({ tool: e.tool, ok });
@@ -373,6 +380,46 @@ export default function ChatScreen() {
 // Memoised so a stream-token setMessages (which replaces only the streaming
 // assistant message object) re-renders just that one bubble — not every prior
 // message, each of which would otherwise re-run its MarkdownView parse per token.
+/**
+ * Collapsible "reasoning" (thinking) disclosure for PCC turns. Expanded while
+ * the answer is still streaming so the user sees the model think; collapses to a
+ * one-line summary once done. Session-only (not persisted).
+ */
+function ReasoningBlock({
+  text,
+  streaming,
+  t,
+  styles,
+}: {
+  text: string;
+  streaming?: boolean;
+  t: Theme;
+  styles: ReturnType<typeof makeStyles>;
+}) {
+  const [open, setOpen] = useState(false);
+  const expanded = open || !!streaming;
+  return (
+    <View style={styles.reasoning}>
+      <Pressable
+        style={styles.reasoningHeader}
+        onPress={() => setOpen((v) => !v)}
+        hitSlop={6}
+        accessibilityRole="button"
+        accessibilityLabel={expanded ? "Hide reasoning" : "Show reasoning"}
+      >
+        <Brain size={11} color={t.textTertiary} />
+        <Text style={styles.reasoningLabel}>{streaming ? "Thinking…" : "Reasoning"}</Text>
+        <ChevronRight
+          size={12}
+          color={t.textTertiary}
+          style={{ transform: [{ rotate: expanded ? "90deg" : "0deg" }] }}
+        />
+      </Pressable>
+      {expanded ? <Text style={styles.reasoningText}>{text}</Text> : null}
+    </View>
+  );
+}
+
 const Bubble = memo(function Bubble({ m, t, styles }: { m: UiMessage; t: Theme; styles: ReturnType<typeof makeStyles> }) {
   const isUser = m.role === "user";
   return (
@@ -384,6 +431,9 @@ const Bubble = memo(function Bubble({ m, t, styles }: { m: UiMessage; t: Theme; 
 
       {/* Column: tool chips, bubble, timestamp */}
       <View style={[styles.col, isUser && styles.colUser]}>
+        {!isUser && m.reasoning ? (
+          <ReasoningBlock text={m.reasoning} streaming={m.streaming} t={t} styles={styles} />
+        ) : null}
         {!isUser && m.tools && m.tools.length > 0 && (
           <View style={styles.toolTrail}>
             {m.tools.map((tt, i) => (
@@ -457,6 +507,28 @@ function makeStyles(t: Theme) {
       paddingVertical: 4,
     },
     toolChipText: { ...typeScale.caption, color: t.textSecondary },
+
+    reasoning: {
+      alignSelf: "flex-start",
+      maxWidth: "94%",
+      gap: 4,
+      marginBottom: 2,
+      paddingLeft: 2,
+    },
+    reasoningHeader: { flexDirection: "row", alignItems: "center", gap: 5 },
+    reasoningLabel: {
+      ...typeScale.caption,
+      color: t.textTertiary,
+      textTransform: "uppercase",
+      letterSpacing: 0.5,
+    },
+    reasoningText: {
+      ...typeScale.caption,
+      color: t.textTertiary,
+      fontStyle: "italic",
+      lineHeight: 17,
+      paddingLeft: 16,
+    },
 
     bubble: { maxWidth: "94%", paddingHorizontal: 12, paddingVertical: 10, borderRadius: 14 },
     aiBubble: { backgroundColor: t.surface2, borderWidth: 1, borderColor: t.border, borderTopLeftRadius: 4, alignSelf: "flex-start" },

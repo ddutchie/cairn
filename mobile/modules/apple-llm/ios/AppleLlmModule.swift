@@ -11,6 +11,10 @@ private let EVENT_TOKEN = "onToken"
 private let EVENT_DONE = "onDone"
 private let EVENT_ERROR = "onError"
 private let EVENT_TOOL_CALL = "onToolCall"
+// PCC reasoning text (iOS 27+). Streams the model's thinking before/with the
+// answer. Only emitted on the server (PCC) path; the on-device model has no
+// exposed reasoning channel.
+private let EVENT_REASONING = "onReasoning"
 
 // Stable public error codes mirrored on the JS side (AppleLLMErrorCodes). Treat
 // `code` as the control-flow contract; `message` is display/debug text.
@@ -76,7 +80,7 @@ public class AppleLlmModule: Module {
   public func definition() -> ModuleDefinition {
     Name("AppleLlm")
 
-    Events(EVENT_TOKEN, EVENT_DONE, EVENT_ERROR, EVENT_TOOL_CALL)
+    Events(EVENT_TOKEN, EVENT_DONE, EVENT_ERROR, EVENT_TOOL_CALL, EVENT_REASONING)
 
     // Synchronous availability probe. False on simulators, non-Apple-Intelligence
     // devices, and anything below iOS 26. Safe to call on any OS.
@@ -379,6 +383,7 @@ public class AppleLlmModule: Module {
     let task = Task { [weak self] in
       guard let self else { return }
       var previous = ""
+      var previousReasoning = ""
       do {
         let stream = Self.makeStream(
           session: session,
@@ -393,6 +398,24 @@ public class AppleLlmModule: Module {
             self.removeTask(requestId)
             return
           }
+          // PCC surfaces the model's thinking as reasoning entries in the
+          // snapshot transcript (iOS 27+). Emit the new tail so JS can render a
+          // live "reasoning" block. On-device has no reasoning entries → no-op.
+          #if CAIRN_PCC_SDK
+          if useServer, #available(iOS 27.0, *) {
+            let reasoning = Self.reasoningText(from: snapshot)
+            if reasoning.count > previousReasoning.count, reasoning.hasPrefix(previousReasoning) {
+              let delta = String(reasoning.dropFirst(previousReasoning.count))
+              previousReasoning = reasoning
+              if !delta.isEmpty {
+                self.sendEvent(EVENT_REASONING, ["requestId": requestId, "delta": delta])
+              }
+            } else if reasoning != previousReasoning {
+              previousReasoning = reasoning
+              self.sendEvent(EVENT_REASONING, ["requestId": requestId, "delta": reasoning])
+            }
+          }
+          #endif
           // ResponseStream<String>.Snapshot.content is the cumulative text so
           // far (String.PartiallyGenerated == String). Emit only the new tail.
           let text = snapshot.content
@@ -451,6 +474,25 @@ public class AppleLlmModule: Module {
     #endif
     return session.streamResponse(to: prompt, options: genOptions)
   }
+
+  #if CAIRN_PCC_SDK
+  /// Cumulative reasoning text in a PCC response snapshot (iOS 27+): concatenate
+  /// the text segments of every `.reasoning` transcript entry. Returns "" when
+  /// there's no reasoning (e.g. the model didn't think, or on-device).
+  @available(iOS 27.0, *)
+  private static func reasoningText(from snapshot: LanguageModelSession.ResponseStream<String>.Snapshot) -> String {
+    var out = ""
+    for entry in snapshot.transcriptEntries {
+      guard case .reasoning(let reasoning) = entry else { continue }
+      for segment in reasoning.segments {
+        if case .text(let textSegment) = segment {
+          out += textSegment.content
+        }
+      }
+    }
+    return out
+  }
+  #endif
 
   /// Context-window usage for the ring: (promptTokens, contextLimit).
   /// promptTokens = token count of the session transcript via the on-device
