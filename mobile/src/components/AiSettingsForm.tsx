@@ -9,7 +9,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { Stack } from "expo-router";
-import { Check, ShieldCheck, RefreshCw, Cpu } from "lucide-react-native";
+import { Check, ShieldCheck, RefreshCw, Cpu, Apple, type LucideIcon } from "lucide-react-native";
 import { ICON_CHECK } from "@/components/toolbar-icons";
 import { haptics, toolbarPress } from "@/haptics";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
@@ -19,6 +19,7 @@ import {
   getOpenAIApiKey,
   getOpenAIBaseUrl,
   getOpenAIModel,
+  getOpenAIContextLimit,
   getProviderPref,
   setOpenAIApiKey,
   setOpenAIEndpoint,
@@ -39,6 +40,7 @@ import {
   type AppleQuotaStatus,
 } from "@modules/apple-llm";
 import { listModels } from "@/chat/providers/openai";
+import { contextLimitForModel } from "@/chat/models-dev";
 
 /**
  * AI settings form body. Presented as a native `formSheet` route
@@ -88,7 +90,15 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
   const [pref, setPref] = useState<ProviderPref>(() => getProviderPref(rorkBuiltIn));
   const [baseUrl, setBaseUrl] = useState(() => getOpenAIBaseUrl());
   const [model, setModel] = useState(() => getOpenAIModel());
+  // Optional manual context-window override (blank = auto via models.dev).
+  const [contextLimit, setContextLimit] = useState(() => {
+    const v = getOpenAIContextLimit();
+    return v ? String(v) : "";
+  });
   const [apiKey, setApiKey] = useState("");
+  // Context window detected from models.dev for the current model (null = not
+  // found / not looked up). Shown as a hint when there's no manual override.
+  const [detectedContext, setDetectedContext] = useState<number | null>(null);
   const [loadedKey, setLoadedKey] = useState("");
   const [hadKey, setHadKey] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -113,6 +123,20 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
       cancelled = true;
     };
   }, []);
+
+  // Look up the model's context window from models.dev (cached) so we can show
+  // it as a hint. Only meaningful for the OpenAI provider; re-runs when the
+  // model id changes. Best-effort — null when the model isn't in the catalog.
+  useEffect(() => {
+    let cancelled = false;
+    const id = model.trim();
+    contextLimitForModel(id || "\u0000", 0).then((n) => {
+      if (!cancelled) setDetectedContext(id && n > 0 ? n : null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [model]);
   const fetchModels = async () => {
     const key = apiKey.trim();
     if (!key) {
@@ -138,7 +162,7 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
       // Persist the chosen provider. When there's no chooser (only OpenAI is
       // available), force "openai".
       setProviderPref(showChooser ? pref : "openai");
-      setOpenAIEndpoint(baseUrl, model);
+      setOpenAIEndpoint(baseUrl, model, contextLimit.trim() ? parseInt(contextLimit, 10) : undefined);
       // Only touch the keychain if the key field actually changed from what we
       // loaded — avoids a redundant write (and allows clearing it).
       if (apiKey !== loadedKey) await setOpenAIApiKey(apiKey);
@@ -184,7 +208,8 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                 <View style={styles.segment}>
                   {appleAvailable && (
                     <SegmentButton
-                      label="Apple Intelligence"
+                      label="Intelligence"
+                      icon={Apple}
                       selected={pref === "apple"}
                       onPress={() => setPref("apple")}
                       t={t}
@@ -328,6 +353,24 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                   )}
                 </View>
 
+                <Field
+                  label="Context window (tokens)"
+                  value={contextLimit}
+                  onChangeText={(v) => setContextLimit(v.replace(/[^0-9]/g, ""))}
+                  placeholder={detectedContext ? `Auto — ${detectedContext.toLocaleString()}` : "Auto (from models.dev)"}
+                  keyboardType="number-pad"
+                  t={t}
+                  styles={styles}
+                />
+                <Text style={styles.compatHint}>
+                  Sizes the usage ring.{" "}
+                  {contextLimit.trim()
+                    ? "Using your manual value."
+                    : detectedContext
+                      ? `Detected ${detectedContext.toLocaleString()} tokens for “${model.trim()}”.`
+                      : "Leave blank to detect from the model, or set it for models we can’t look up."}
+                </Text>
+
                 <Text style={styles.compatHint}>
                   Works with OpenAI, Azure OpenAI, OpenRouter, Together, Groq, LM Studio,
                   Ollama, and other OpenAI-compatible APIs.
@@ -342,12 +385,14 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
 
 function SegmentButton({
   label,
+  icon: Icon,
   selected,
   onPress,
   t,
   styles,
 }: {
   label: string;
+  icon?: LucideIcon;
   selected: boolean;
   onPress: () => void;
   t: Theme;
@@ -358,7 +403,11 @@ function SegmentButton({
       style={[styles.segmentBtn, selected && styles.segmentBtnActive]}
       onPress={onPress}
     >
-      {selected && <Check size={13} color={t.accentFg} />}
+      {selected ? (
+        <Check size={13} color={t.accentFg} />
+      ) : Icon ? (
+        <Icon size={13} color={t.textSecondary} />
+      ) : null}
       <Text style={[styles.segmentText, selected && styles.segmentTextActive]} numberOfLines={1}>
         {label}
       </Text>

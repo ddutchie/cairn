@@ -251,7 +251,23 @@ export default function ChatScreen() {
 
   return (
     <TabScreen>
-      <Stack.Screen options={{ title: "Chat" }} />
+      <Stack.Screen
+        options={{
+          title: "Chat",
+          // Context-window usage ring in the header-left when the active provider
+          // reports usage (Apple real, OpenAI real, Rork estimated).
+          headerLeft:
+            usage && messages.length > 0
+              ? () => (
+                  <ContextRing
+                    promptTokens={usage.promptTokens}
+                    contextLimit={usage.contextLimit}
+                    estimated={usage.estimated}
+                  />
+                )
+              : undefined,
+        }}
+      />
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Button
           icon={ICON_DELETE}
@@ -269,15 +285,6 @@ export default function ChatScreen() {
         />
       </Stack.Toolbar>
       <View style={{ flex: 1 }}>
-        {/* Context-window usage ring — floats at the top-right, below the header,
-            when the Apple provider reports usage. Mirrors the desktop ContextRing. */}
-        {usage && messages.length > 0 ? (
-          <View style={[styles.ringOverlay, { top: insets.top + 8 }]} pointerEvents="none">
-            <GlassBar style={[styles.ringBar, !glassActive && styles.ringBarFallback]} interactive={false}>
-              <ContextRing promptTokens={usage.promptTokens} contextLimit={usage.contextLimit} />
-            </GlassBar>
-          </View>
-        ) : null}
         {/* Full-height scroll: messages scroll BEHIND the sticky composer and
             the translucent native tab bar. The animated bottom spacer clears
             both the composer and (when open) the keyboard. */}
@@ -408,9 +415,6 @@ const Bubble = memo(function Bubble({ m, t, styles }: { m: UiMessage; t: Theme; 
 
 function makeStyles(t: Theme) {
   return StyleSheet.create({
-    ringOverlay: { position: "absolute", right: 12, zIndex: 10 },
-    ringBar: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, overflow: "hidden" },
-    ringBarFallback: { backgroundColor: withAlpha(t.surface2, 0.92), borderWidth: 1, borderColor: t.border },
     list: { padding: 14, paddingBottom: 20 },
     // Grow to fill the viewport when empty so the branded EmptyState's top-bias
     // measures against the full content area (below the header).

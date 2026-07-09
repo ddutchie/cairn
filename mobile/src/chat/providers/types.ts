@@ -83,6 +83,10 @@ export type StreamEvent =
 export interface ChatUsage {
   promptTokens: number;
   contextLimit: number;
+  /** True when promptTokens is a client-side estimate (no server usage / wrong
+   *  tokenizer family, e.g. Rork/Gemini counted with o200k_base). The ring shows
+   *  a "~" and an "estimated" hint. */
+  estimated?: boolean;
 }
 
 /** A provider streams normalised events for a turn. */

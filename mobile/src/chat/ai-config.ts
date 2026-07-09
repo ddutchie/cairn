@@ -20,6 +20,7 @@ import { getDb } from "../db";
 
 const KEY_BASE_URL = "ai.openai.baseUrl";
 const KEY_MODEL = "ai.openai.model";
+const KEY_CONTEXT = "ai.openai.contextLimit"; // optional manual override (tokens)
 const KEY_PROVIDER = "ai.provider"; // "rork" | "openai" | "apple"
 const SECURE_KEY_APIKEY = "ai.openai.apiKey"; // secure-store key
 
@@ -40,6 +41,9 @@ export interface OpenAIConfig {
   baseUrl: string;
   model: string;
   apiKey: string;
+  /** Optional manual context-window override (tokens) for the ring, when the
+   *  model isn't in the models.dev catalog. Undefined = use catalog/default. */
+  contextLimit?: number;
 }
 
 function getSetting(key: string): string | null {
@@ -68,10 +72,19 @@ export function getOpenAIModel(): string {
   return getSetting(KEY_MODEL)?.trim() || DEFAULT_OPENAI_MODEL;
 }
 
-/** Persist the non-secret base URL + model. Empty values reset to defaults. */
-export function setOpenAIEndpoint(baseUrl: string, model: string): void {
+/** Optional manual context-window override (tokens), or undefined if unset/invalid. */
+export function getOpenAIContextLimit(): number | undefined {
+  const raw = getSetting(KEY_CONTEXT)?.trim();
+  if (!raw) return undefined;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+/** Persist the non-secret base URL + model + optional context override. */
+export function setOpenAIEndpoint(baseUrl: string, model: string, contextLimit?: number): void {
   setSetting(KEY_BASE_URL, baseUrl.trim());
   setSetting(KEY_MODEL, model.trim());
+  setSetting(KEY_CONTEXT, contextLimit && contextLimit > 0 ? String(Math.floor(contextLimit)) : "");
 }
 
 /**
@@ -127,7 +140,12 @@ function hasCustomBaseUrl(): boolean {
 export async function resolveOpenAIConfig(): Promise<OpenAIConfig | null> {
   const apiKey = (await getOpenAIApiKey()) ?? "";
   if (!apiKey && !hasCustomBaseUrl()) return null;
-  return { baseUrl: getOpenAIBaseUrl(), model: getOpenAIModel(), apiKey };
+  return {
+    baseUrl: getOpenAIBaseUrl(),
+    model: getOpenAIModel(),
+    apiKey,
+    contextLimit: getOpenAIContextLimit(),
+  };
 }
 
 /** Whether the OpenAI provider is usable (has a key, or a custom keyless endpoint). */
