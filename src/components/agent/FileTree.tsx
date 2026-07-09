@@ -203,11 +203,11 @@ export function FileTree({ project }: FileTreeProps) {
   // ⌘⇧F / Ctrl+⇧F — toggle file search
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      const mod = e.metaKey || e.ctrlKey;
+      const modPressed = e.metaKey || e.ctrlKey;
       // e.key is "F" (uppercase) when Shift is held on most platforms,
       // but normalise to lowercase to be safe across keyboard layouts.
       const key = e.key.toLowerCase();
-      if (mod && e.shiftKey && key === "f") {
+      if (modPressed && e.shiftKey && key === "f") {
         e.preventDefault();  // always prevent — even if no codeDirectory, avoid native find-in-page
         e.stopPropagation();
         if (!codeDirectory) return;
