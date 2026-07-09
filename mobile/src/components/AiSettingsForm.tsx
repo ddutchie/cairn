@@ -9,7 +9,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { Stack } from "expo-router";
-import { Check, ShieldCheck, RefreshCw, Cpu, Apple, type LucideIcon } from "lucide-react-native";
+import { Check, ShieldCheck, RefreshCw, Cpu, Apple, Brain, type LucideIcon } from "lucide-react-native";
 import { ICON_CHECK } from "@/components/toolbar-icons";
 import { haptics, toolbarPress } from "@/haptics";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
@@ -24,6 +24,8 @@ import {
   setOpenAIApiKey,
   setOpenAIEndpoint,
   setProviderPref,
+  getAppleReasoningLevel,
+  setAppleReasoningLevel,
   type ProviderPref,
 } from "@/chat/ai-config";
 import { isRorkAvailable } from "@/chat/providers/rork";
@@ -38,6 +40,7 @@ import {
   appleQuotaStatus,
   showAppleQuotaUpgrade,
   type AppleQuotaStatus,
+  type AppleReasoningLevel,
 } from "@modules/apple-llm";
 import { listModels } from "@/chat/providers/openai";
 import { contextLimitForModel } from "@/chat/models-dev";
@@ -80,6 +83,9 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
   const [quota] = useState<AppleQuotaStatus | null>(() =>
     isAppleServerProviderAvailable() ? appleQuotaStatus() : null,
   );
+  // PCC reasoning effort (persisted). Only meaningful when PCC is the active
+  // Apple backend; deeper levels trade latency + context for stronger analysis.
+  const [reasoning, setReasoning] = useState<AppleReasoningLevel>(() => getAppleReasoningLevel());
   // Whether to show the provider chooser at all: only when there's a choice.
   const showChooser = rorkBuiltIn || appleAvailable;
 
@@ -253,6 +259,34 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                     t={t}
                     styles={styles}
                   />
+                )}
+                {pref === "apple" && appleIsServer && (
+                  <View style={styles.reasoningBlock}>
+                    <View style={styles.reasoningHead}>
+                      <Brain size={13} color={t.textSecondary} />
+                      <Text style={styles.sectionLabel}>Reasoning effort</Text>
+                    </View>
+                    <View style={styles.segment}>
+                      {(["light", "moderate", "deep"] as const).map((level) => (
+                        <SegmentButton
+                          key={level}
+                          label={level.charAt(0).toUpperCase() + level.slice(1)}
+                          selected={reasoning === level}
+                          onPress={() => {
+                            haptics.selection();
+                            setReasoning(level);
+                            setAppleReasoningLevel(level);
+                          }}
+                          t={t}
+                          styles={styles}
+                        />
+                      ))}
+                    </View>
+                    <Text style={styles.compatHint}>
+                      Deeper reasoning gives stronger multi-step answers but is slower and
+                      uses more of the context window.
+                    </Text>
+                  </View>
                 )}
                 {pref === "rork" && (
                   <View style={styles.rorkNote}>
@@ -530,6 +564,8 @@ function makeStyles(t: Theme) {
       borderRadius: 12,
       padding: 4,
     },
+    reasoningBlock: { gap: 8 },
+    reasoningHead: { flexDirection: "row", alignItems: "center", gap: 6 },
     segmentBtn: {
       flex: 1,
       flexDirection: "row",

@@ -40,6 +40,7 @@ import {
   type AppleToolCallEvent,
 } from "@modules/apple-llm";
 import { TOOL_MAP } from "../tools";
+import { getAppleReasoningLevel } from "../ai-config";
 import {
   type AiTool,
   type ChatProvider,
@@ -346,8 +347,9 @@ function makeStreamApple(server: boolean) {
     signal?.addEventListener("abort", onAbort);
 
     // Persistent session keeps the transcript; send only the newest user prompt.
-    // PCC gets the 32K window + a reasoning level; on-device a small reply cap.
-    const reasoningLevel: AppleReasoningLevel | undefined = server ? "moderate" : undefined;
+    // PCC gets the 32K window + the user's chosen reasoning level; on-device a
+    // small reply cap and no reasoning (the on-device model doesn't expose it).
+    const reasoningLevel: AppleReasoningLevel | undefined = server ? getAppleReasoningLevel() : undefined;
     void AppleLlm.generate(requestId, sessionId, prompt, nativeTools, {
       system,
       useServer: server,

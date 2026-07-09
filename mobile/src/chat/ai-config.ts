@@ -17,11 +17,13 @@
 
 import * as SecureStore from "expo-secure-store";
 import { getDb } from "../db";
+import type { AppleReasoningLevel } from "@modules/apple-llm";
 
 const KEY_BASE_URL = "ai.openai.baseUrl";
 const KEY_MODEL = "ai.openai.model";
 const KEY_CONTEXT = "ai.openai.contextLimit"; // optional manual override (tokens)
 const KEY_PROVIDER = "ai.provider"; // "rork" | "openai" | "apple"
+const KEY_APPLE_REASONING = "ai.apple.reasoningLevel"; // "light" | "moderate" | "deep"
 const SECURE_KEY_APIKEY = "ai.openai.apiKey"; // secure-store key
 
 /**
@@ -102,6 +104,24 @@ export function getProviderPref(rorkAvailable: boolean): ProviderPref {
 /** Persist the preferred provider. */
 export function setProviderPref(pref: ProviderPref): void {
   setSetting(KEY_PROVIDER, pref);
+}
+
+/** Default PCC reasoning effort when the user hasn't chosen one. */
+export const DEFAULT_APPLE_REASONING: AppleReasoningLevel = "moderate";
+
+/**
+ * The user's chosen PCC reasoning level (Apple Intelligence via Private Cloud
+ * Compute, iOS 27+). Deeper reasoning trades latency + context for stronger
+ * multi-step analysis. Ignored on-device / by non-Apple providers.
+ */
+export function getAppleReasoningLevel(): AppleReasoningLevel {
+  const v = getSetting(KEY_APPLE_REASONING);
+  return v === "light" || v === "moderate" || v === "deep" ? v : DEFAULT_APPLE_REASONING;
+}
+
+/** Persist the PCC reasoning level. */
+export function setAppleReasoningLevel(level: AppleReasoningLevel): void {
+  setSetting(KEY_APPLE_REASONING, level);
 }
 
 /** Read the API key from the keychain (null if none stored). */
