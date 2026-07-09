@@ -1,19 +1,14 @@
 import { memo, useCallback, useMemo, useState } from "react";
-import { View, Text, ScrollView, FlatList, Pressable, StyleSheet, Alert, type ListRenderItem } from "react-native";
+import { View, Text, ScrollView, FlatList, Pressable, StyleSheet, type ListRenderItem } from "react-native";
 import { useLocalSearchParams, useRouter, useFocusEffect, Stack, type Href } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChevronDown, ChevronRight, Folder, FolderOpen, FileText, Pin } from "lucide-react-native";
-import { Button } from "@expo/ui/swift-ui";
 import {
   getProject,
   listNotes,
   listColumns,
   listCards,
   moveCardToColumn,
-  pinNote,
-  updateNote,
-  softDeleteNote,
-  getNote,
   tagsByRow,
   tagsForNotes,
   noteTagIds,
@@ -24,7 +19,6 @@ import {
 } from "@/db/queries";
 import { TagChips } from "@/components/TagChips";
 import { PressableScale } from "@/components/PressableScale";
-import { ContextMenuWrapper } from "@/components/ContextMenuWrapper";
 import { SearchField } from "@/components/SearchField";
 import { ICON_ADD, ICON_CALENDAR } from "@/components/toolbar-icons";
 import { toolbarPress } from "@/haptics";
@@ -344,76 +338,35 @@ const NoteRowItem = memo(function NoteRowItem({
   }, [note.content]);
   const shownTags = useMemo(() => (tags ?? []).slice(0, 3), [tags]);
   const onPress = useCallback(() => onOpen(note.id), [onOpen, note.id]);
-
-  // Long-press context-menu actions. Writes call notifyLocalWrite() internally,
-  // which the project screen's useDataChanged(load) picks up to refresh — no
-  // manual reload needed here.
-  const onRename = useCallback(() => {
-    Alert.prompt(
-      "Rename note",
-      undefined,
-      (text) => {
-        const title = text.trim();
-        if (!title) return;
-        const current = getNote(note.id);
-        updateNote(note.id, title, current?.content ?? "");
-      },
-      "plain-text",
-      note.title || "",
-    );
-  }, [note.id, note.title]);
-
-  const onDelete = useCallback(() => {
-    Alert.alert("Delete note?", `"${note.title || "Untitled"}" will be removed.`, [
-      { text: "Cancel", style: "cancel" },
-      { text: "Delete", style: "destructive", onPress: () => softDeleteNote(note.id) },
-    ]);
-  }, [note.id, note.title]);
-
-  const menuItems = (
-    <>
-      <Button label="Open" systemImage="arrow.up.right.square" onPress={onPress} />
-      <Button
-        label={note.is_pinned ? "Unpin" : "Pin"}
-        systemImage={note.is_pinned ? "pin.slash" : "pin"}
-        onPress={() => pinNote(note.id, !note.is_pinned)}
-      />
-      <Button label="Rename" systemImage="pencil" onPress={onRename} />
-      <Button label="Delete" systemImage="trash" role="destructive" onPress={onDelete} />
-    </>
-  );
-
   return (
-    <ContextMenuWrapper items={menuItems}>
-      <PressableScale
-        scaleTo={1}
-        dimTo={0.5}
-        onPress={onPress}
-        style={{
-          gap: 3,
-          paddingVertical: 10,
-          paddingRight: 14,
-          paddingLeft: 14 + depth * 16,
-          borderBottomWidth: StyleSheet.hairlineWidth,
-          borderBottomColor: t.borderSubtle,
-        }}
-      >
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-          <FileText size={13} color={t.textTertiary} />
-          {note.is_pinned ? <Pin size={11} color={t.accent} fill={t.accent} /> : null}
-          <Text style={{ flex: 1, color: t.textPrimary, ...typeScale.control, fontWeight: "500" }} numberOfLines={1}>
-            {note.title || "Untitled"}
-          </Text>
-        </View>
-        <Text style={{ color: t.textTertiary, ...typeScale.caption, paddingLeft: 21 }} numberOfLines={1}>
-          {preview}
+    <PressableScale
+      scaleTo={1}
+      dimTo={0.5}
+      onPress={onPress}
+      style={{
+        gap: 3,
+        paddingVertical: 10,
+        paddingRight: 14,
+        paddingLeft: 14 + depth * 16,
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        borderBottomColor: t.borderSubtle,
+      }}
+    >
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+        <FileText size={13} color={t.textTertiary} />
+        {note.is_pinned ? <Pin size={11} color={t.accent} fill={t.accent} /> : null}
+        <Text style={{ flex: 1, color: t.textPrimary, ...typeScale.control, fontWeight: "500" }} numberOfLines={1}>
+          {note.title || "Untitled"}
         </Text>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingLeft: 21 }}>
-          <Text style={{ color: t.textTertiary, ...typeScale.micro, fontWeight: "400" }}>{formatRelative(note.updated_at)}</Text>
-          {shownTags.length > 0 && <TagChips tags={shownTags} size="sm" />}
-        </View>
-      </PressableScale>
-    </ContextMenuWrapper>
+      </View>
+      <Text style={{ color: t.textTertiary, ...typeScale.caption, paddingLeft: 21 }} numberOfLines={1}>
+        {preview}
+      </Text>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingLeft: 21 }}>
+        <Text style={{ color: t.textTertiary, ...typeScale.micro, fontWeight: "400" }}>{formatRelative(note.updated_at)}</Text>
+        {shownTags.length > 0 && <TagChips tags={shownTags} size="sm" />}
+      </View>
+    </PressableScale>
   );
 });
 
