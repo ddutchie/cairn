@@ -92,7 +92,16 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
     const electron = window.electron;
     if (!electron) return;
 
+    // Ignore streaming events that belong to a different thread. The chat IPC
+    // channel is shared app-wide (e.g. the note "Spawn tasks" button streams
+    // under threadId "spawn-tasks"); without this filter those events would
+    // toggle THIS panel's loading/message state and leave the input disabled.
+    // Events without a threadId (older payloads) are treated as ours.
+    const isForThisThread = (e: { threadId?: string }) =>
+      e.threadId == null || e.threadId === threadIdRef.current;
+
     const unsubTool = electron.chat.onToolCall((e) => {
+      if (!isForThisThread(e)) return;
       if (e.tool === "ask_questions") {
         const qs = (e.args.questions as PendingQuestion[] | undefined) ?? [];
         setPendingQuestions(qs);
@@ -120,6 +129,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
     });
 
     const unsubToolDone = electron.chat.onToolCallDone?.((e) => {
+      if (!isForThisThread(e)) return;
       setToolCalls((prev) => {
         let idx = -1;
         if (e.callId) {
@@ -140,14 +150,17 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
     });
 
     const unsubToken = electron.chat.onToken((e) => {
+      if (!isForThisThread(e)) return;
       setStreamingContent((prev) => prev + e.delta);
     });
 
     const unsubThought = electron.chat.onThought?.((e) => {
+      if (!isForThisThread(e)) return;
       setStreamingThought((prev) => prev + e.delta);
     });
 
-    const unsubDone = (electron.chat.onDone as (cb: (e: { content: string; reasoning?: string; contextRefs: unknown[]; error?: string; usage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: TokenBreakdown } }) => void) => () => void)((e) => {
+    const unsubDone = (electron.chat.onDone as (cb: (e: { content: string; reasoning?: string; contextRefs: unknown[]; error?: string; threadId?: string; usage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: TokenBreakdown } }) => void) => () => void)((e) => {
+      if (!isForThisThread(e)) return;
       const tid = threadIdRef.current;
       // Mark any still-running tool as done before persisting.
       const finalToolCalls = toolCallsRef.current.map((tc) =>
@@ -191,7 +204,8 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
       }
     });
 
-    const unsubUsage = (electron.chat.onUsage as (cb: (e: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: TokenBreakdown }) => void) => () => void)((e) => {
+    const unsubUsage = (electron.chat.onUsage as (cb: (e: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: TokenBreakdown; threadId?: string }) => void) => () => void)((e) => {
+      if (!isForThisThread(e)) return;
       const tid = threadIdRef.current;
       if (tid) {
         setThreadUsage(tid, e);

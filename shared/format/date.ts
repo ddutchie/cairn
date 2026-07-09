@@ -9,11 +9,25 @@
 
 /** Absolute date: "Jan 5, 2026". */
 export function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", {
+  return parseIsoLocal(iso).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
     year: "numeric",
   });
+}
+
+/**
+ * Parse an ISO string to a Date. A bare `yyyy-MM-dd` (as stored for due dates)
+ * is parsed as a LOCAL calendar date rather than UTC midnight — otherwise
+ * `new Date("2026-07-07")` is UTC midnight, which renders/compares as the
+ * previous day in any negative-offset timezone (e.g. shows "July 6" for a date
+ * set to July 7). Full datetime strings are parsed normally.
+ */
+export function parseIsoLocal(iso: string): Date {
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  return dateOnly
+    ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
+    : new Date(iso);
 }
 
 /** Local calendar-day index — DST-safe (uses UTC math on the LOCAL y/m/d). */
@@ -30,7 +44,7 @@ function localDayNumber(d: Date): number {
  * the absolute {@link formatDate}.
  */
 export function formatDateCompact(iso: string): string {
-  const d = new Date(iso);
+  const d = parseIsoLocal(iso);
   if (Number.isNaN(d.getTime())) return "Invalid date";
 
   // Compare LOCAL calendar days (DST-safe) so "Today"/"Yesterday" match the
@@ -69,13 +83,9 @@ export type DueDateStatus = "overdue" | "today" | "upcoming" | "none";
 export function getDueDateStatus(dueDate: string | null | undefined): DueDateStatus {
   if (!dueDate) return "none";
   // Compare LOCAL calendar days so "today" means the user's today regardless of
-  // the time of day. A bare yyyy-MM-dd is parsed by `new Date` as UTC midnight,
-  // which can land on the previous local day — so parse the date-only form as a
-  // LOCAL date to avoid the timezone shift.
-  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dueDate);
-  const due = dateOnly
-    ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
-    : new Date(dueDate);
+  // the time of day (see parseIsoLocal for the UTC-midnight shift a bare
+  // yyyy-MM-dd would otherwise cause).
+  const due = parseIsoLocal(dueDate);
   if (Number.isNaN(due.getTime())) return "none";
   const today = new Date();
   due.setHours(0, 0, 0, 0);

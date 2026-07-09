@@ -43,6 +43,22 @@ export function ProjectOverview() {
   const [chatInput, setChatInput] = useState("");
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
 
+  // The pinned bottom chat bar (shown only when the chat sidebar is closed) is
+  // absolutely positioned, so it doesn't reserve layout space. Measure its
+  // height and pad the scroll content by that amount so the last items can
+  // scroll fully clear of the bar instead of being trapped behind it. The bar
+  // grows as the textarea expands, so a fixed pb-* class isn't reliable.
+  const bottomBarRef = useRef<HTMLDivElement>(null);
+  const [bottomBarHeight, setBottomBarHeight] = useState(0);
+  useEffect(() => {
+    const el = bottomBarRef.current;
+    if (!el) { setBottomBarHeight(0); return; }
+    const ro = new ResizeObserver(() => setBottomBarHeight(el.offsetHeight));
+    ro.observe(el);
+    setBottomBarHeight(el.offsetHeight);
+    return () => ro.disconnect();
+  }, [chatOpen]);
+
   const mentionSuggestions = useMemo<SuggestionItem[]>(() => {
     if (!metrics) return [];
     const items: SuggestionItem[] = [];
@@ -140,7 +156,10 @@ export function ProjectOverview() {
   return (
     <div className="flex-1 flex flex-col min-h-0 relative w-full min-w-0 overflow-x-hidden">
       <div className="flex-1 overflow-y-auto overflow-x-hidden w-full min-w-0">
-        <div className={cn("max-w-3xl mx-auto px-4 py-4 md:px-8 md:py-8 space-y-6 md:space-y-8", !chatOpen && "pb-32")}>
+        <div
+          className="max-w-3xl mx-auto px-4 pt-4 md:px-8 md:pt-8 space-y-6 md:space-y-8 pb-8"
+          style={{ paddingBottom: bottomBarHeight ? bottomBarHeight + 32 : undefined }}
+        >
 
         {/* ── Header ─────────────────────────────────────────── */}
         <div className="flex flex-col sm:flex-row items-start justify-between gap-4 sm:gap-6 w-full min-w-0">
@@ -413,7 +432,7 @@ export function ProjectOverview() {
 
       {/* Pinned bottom Chat Input (shown only when chat sidebar is closed) */}
       {!chatOpen && (
-        <div className="absolute bottom-0 left-0 right-0 p-6 overview-chat-overlay pointer-events-none z-10">
+        <div ref={bottomBarRef} className="absolute bottom-0 left-0 right-0 p-6 overview-chat-overlay pointer-events-none z-10">
           <div className="max-w-3xl mx-auto pointer-events-auto">
             <ChatInput
               ref={chatInputRef}

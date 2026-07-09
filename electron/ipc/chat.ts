@@ -387,8 +387,15 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
     const isLocalEndpointUrl = isLocalEndpoint(baseUrl);
 
     const send = (ch: string, payload: unknown) => {
-      if (!event.sender.isDestroyed()) event.sender.send(ch, payload);
-      broadcastToChat(ch, payload, event.sender.id);
+      // Tag every streaming event with the originating threadId so renderer
+      // consumers (chat panel vs. the note "Spawn tasks" one-shot) can filter
+      // events that aren't theirs. Without this, a spawn stream's chat:done
+      // would toggle the chat panel's loading state and disable its input.
+      const tagged = (payload && typeof payload === "object")
+        ? { ...(payload as Record<string, unknown>), threadId: req.threadId }
+        : payload;
+      if (!event.sender.isDestroyed()) event.sender.send(ch, tagged);
+      broadcastToChat(ch, tagged, event.sender.id);
     };
 
     if (provider !== "localllm" && !apiKey && !isLocalEndpointUrl) {

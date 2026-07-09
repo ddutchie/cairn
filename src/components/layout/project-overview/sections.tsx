@@ -5,7 +5,7 @@
 
 import React from "react";
 import { FileText, Circle, Pin } from "lucide-react";
-import { cn, formatRelative } from "@/lib/utils";
+import { cn, formatRelative, getDueDateStatus } from "@/lib/utils";
 import { COLUMN_COLORS, PRIORITY_CSS_COLORS } from "@/lib/constants";
 import { revealColumn } from "@/lib/events";
 import { Badge } from "@/components/ui/badge";
@@ -115,10 +115,16 @@ export function ColumnPill({ column, cards, onClick }: { column: BoardColumn; ca
 
 export function DueCard({ card, columns, today, onClick }: { card: TaskCard; columns: BoardColumn[]; today: Date; onClick: () => void }) {
   const col = columns.find((c) => c.id === card.columnId);
+  // Use the shared, timezone-safe status so a task due today reads "Today"
+  // instead of "0d overdue" (a bare yyyy-MM-dd parses to UTC midnight, which
+  // can land on the previous local day and skew a raw timestamp comparison).
+  const status = getDueDateStatus(card.dueDate);
+  const isOverdue = status === "overdue";
+  const isToday   = status === "today";
+  // Whole-calendar-day difference (local), so the count matches the status.
   const due = new Date(card.dueDate!);
-  const isOverdue = due < today;
-  const isToday   = due.getTime() === today.getTime();
-  const daysLeft  = Math.round((due.getTime() - today.getTime()) / 86_400_000);
+  due.setHours(0, 0, 0, 0);
+  const daysLeft = Math.round((due.getTime() - today.getTime()) / 86_400_000);
   const chipLabel = isOverdue ? `${Math.abs(daysLeft)}d overdue` : isToday ? "Today" : `in ${daysLeft}d`;
   return (
     <button onClick={onClick}

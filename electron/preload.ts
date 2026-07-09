@@ -148,39 +148,39 @@ const api = {
     // Fire-and-forget. Listen with onToken / onDone / onToolCall.
     stream: (req: unknown) => ipcRenderer.send("chat:stream", req),
     abort: () => ipcRenderer.send("chat:abort"),
-    onToken: (cb: (e: { delta: string }) => void) => {
+    onToken: (cb: (e: { delta: string; threadId?: string }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { delta: string }) => cb(e);
+      const handler = (_: any, e: { delta: string; threadId?: string }) => cb(e);
       ipcRenderer.on("chat:token", handler);
       return () => ipcRenderer.off("chat:token", handler);
     },
-    onThought: (cb: (e: { delta: string }) => void) => {
+    onThought: (cb: (e: { delta: string; threadId?: string }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { delta: string }) => cb(e);
+      const handler = (_: any, e: { delta: string; threadId?: string }) => cb(e);
       ipcRenderer.on("chat:thought", handler);
       return () => ipcRenderer.off("chat:thought", handler);
     },
-    onDone: (cb: (e: { content: string; reasoning?: string; contextRefs: unknown[]; error?: string; usage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: unknown } }) => void) => {
+    onDone: (cb: (e: { content: string; reasoning?: string; contextRefs: unknown[]; error?: string; threadId?: string; usage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: unknown } }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { content: string; reasoning?: string; contextRefs: unknown[]; error?: string }) => cb(e);
+      const handler = (_: any, e: { content: string; reasoning?: string; contextRefs: unknown[]; error?: string; threadId?: string }) => cb(e);
       ipcRenderer.on("chat:done", handler);
       return () => ipcRenderer.off("chat:done", handler);
     },
-    onToolCall: (cb: (e: { tool: string; label: string; args: Record<string, unknown>; callId?: string }) => void) => {
+    onToolCall: (cb: (e: { tool: string; label: string; args: Record<string, unknown>; callId?: string; threadId?: string }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { tool: string; label: string; args: Record<string, unknown>; callId?: string }) => cb(e);
+      const handler = (_: any, e: { tool: string; label: string; args: Record<string, unknown>; callId?: string; threadId?: string }) => cb(e);
       ipcRenderer.on("chat:tool-call", handler);
       return () => ipcRenderer.off("chat:tool-call", handler);
     },
-    onToolCallDone: (cb: (e: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; output?: string; callId?: string }) => void) => {
+    onToolCallDone: (cb: (e: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; output?: string; callId?: string; threadId?: string }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; output?: string; callId?: string }) => cb(e);
+      const handler = (_: any, e: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; output?: string; callId?: string; threadId?: string }) => cb(e);
       ipcRenderer.on("chat:tool-call-done", handler);
       return () => ipcRenderer.off("chat:tool-call-done", handler);
     },
-    onUsage: (cb: (e: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: unknown }) => void) => {
+    onUsage: (cb: (e: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: unknown; threadId?: string }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: unknown }) => cb(e);
+      const handler = (_: any, e: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: unknown; threadId?: string }) => cb(e);
       ipcRenderer.on("chat:usage", handler);
       return () => ipcRenderer.off("chat:usage", handler);
     },

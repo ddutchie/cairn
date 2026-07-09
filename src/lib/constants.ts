@@ -130,3 +130,6 @@ export const CHAT_PANEL_WIDTH_KEY = "chatPanelWidth";
 
 /** localStorage key for the persisted notes sidebar width (px). */
 export const NOTES_SIDEBAR_WIDTH_KEY = "notesSidebarWidth";
+
+/** localStorage key for the last-used note editor mode ("write" | "read"). */
+export const NOTE_EDITOR_MODE_KEY = "noteEditorMode";

@@ -73,6 +73,17 @@ describe("getDueDateStatus", () => {
   });
 });
 
+describe("formatDate", () => {
+  it("renders a bare yyyy-MM-dd on the same calendar day (no UTC-midnight shift)", () => {
+    // Regression: `new Date("2026-07-07")` is UTC midnight, which renders as
+    // "Jul 6" in any negative-offset timezone. A date-only string must be
+    // parsed as a LOCAL date so the day matches what the user picked.
+    expect(formatDate("2026-07-07")).toBe("Jul 7, 2026");
+    expect(formatDate("2026-01-01")).toBe("Jan 1, 2026");
+    expect(formatDate("2026-12-31")).toBe("Dec 31, 2026");
+  });
+});
+
 describe("prettifyToolLabel", () => {
   it("strips mcp/svc namespace and prettifies the tool part", () => {
     expect(prettifyToolLabel("mcp__BZfTDDlqAOoB__search-designs")).toBe("Search designs");

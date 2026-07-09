@@ -28,6 +28,8 @@ import { remarkCallout, remarkObsidianEmbeds, remarkWikilinks, remarkPromoteDisp
 import { BacklinksPanel, NoteTagBar } from "./BacklinksPanel";
 import { MDPreviewPanel } from "./MDPreviewPanel";
 import { countWords, stripMarkdown, toggleCheckboxInSource } from "./note-editor-utils";
+import { storage } from "@/lib/storage";
+import { NOTE_EDITOR_MODE_KEY } from "@/lib/constants";
 
 interface NoteEditorProps {
   note: Note;
@@ -94,7 +96,15 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const [mode, setMode] = useState<EditorMode>("write");
+  // Remember the last-used editor mode across notes/sessions so readers stay
+  // in Read and writers stay in Write without re-toggling each time.
+  const [mode, setModeState] = useState<EditorMode>(
+    () => storage.get<EditorMode>(NOTE_EDITOR_MODE_KEY) ?? "write"
+  );
+  const setMode = useCallback((next: EditorMode) => {
+    setModeState(next);
+    storage.set(NOTE_EDITOR_MODE_KEY, next);
+  }, []);
   const noteContent0 = note.content ?? "";
   const [wordCount, setWordCount] = useState(() => countWords(noteContent0));
   const [showSemanticPanel, setShowSemanticPanel] = useState(false);
@@ -379,6 +389,7 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
     const electron = window.electron;
     if (!electron) return;
     const unsub = electron.chat.onToolCall((e) => {
+      if (e.threadId != null && e.threadId !== "spawn-tasks") return;
       if (e.tool === "create_task") {
         setSpawnToolCalls((prev) => [...prev, e.label]);
       }
@@ -399,7 +410,12 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
     setSpawnToolCalls([]);
     try {
       const result = await new Promise<{ content: string }>((resolve) => {
-        const unsub = electron.chat.onDone((e) => { unsub(); resolve(e); });
+        const unsub = electron.chat.onDone((e) => {
+          // The chat channel is shared — only resolve on our own spawn stream.
+          if (e.threadId != null && e.threadId !== "spawn-tasks") return;
+          unsub();
+          resolve(e);
+        });
         electron.chat.stream({
           message: `Spawn tasks from the note with id="${note.id}" into column "${backlogCol.id}". Use the spawn_tasks_from_note tool.`,
           threadId: "spawn-tasks",
