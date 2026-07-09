@@ -116,9 +116,9 @@ export default function RootLayout() {
               <Stack.Screen name="note/[id]" options={{ title: "Note" }} />
               <Stack.Screen name="card/new" options={{ title: "New Task", presentation: "modal" }} />
               <Stack.Screen name="card/[id]" options={{ title: "Task" }} />
-              <Stack.Screen name="sync" options={{ title: "Sync", presentation: "modal" }} />
+              <Stack.Screen name="sync" options={{ title: "Sync", presentation: "formSheet" }} />
               <Stack.Screen name="conflicts" options={{ title: "Sync Conflicts" }} />
-              <Stack.Screen name="settings/ai" options={{ title: "AI settings", presentation: "modal" }} />
+              <Stack.Screen name="settings/ai" options={{ title: "AI settings", presentation: "formSheet" }} />
             </Stack>
           </ThemeProvider>
           <UpdateBanner />

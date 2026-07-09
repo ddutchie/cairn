@@ -11,10 +11,10 @@ import { useModalOpenHaptic, toolbarPress } from "@/haptics";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 
 /**
- * Sync detail presented as a native modal (see the `sync` screen's
- * `presentation: "modal"` in the root layout). Reached from the header sync
+ * Sync detail presented as a native form-sheet modal (see the `sync` screen's
+ * `presentation: "formSheet"` in the root layout). Reached from the header sync
  * badge (SyncStatusBadge). A native Stack.Toolbar "Done" button — plus the
- * modal's swipe-down — dismisses it, matching the new-note / AI-settings modal
+ * sheet's swipe-down — dismisses it, matching the new-note / AI-settings modal
  * pattern. Owns the things the badge can't: iCloud availability diagnostics, the
  * conflict-resolution entry point, and the last sync result.
  */
