@@ -406,6 +406,7 @@ function ReasoningBlock({
         hitSlop={6}
         accessibilityRole="button"
         accessibilityLabel={expanded ? "Hide reasoning" : "Show reasoning"}
+        accessibilityState={{ expanded }}
       >
         <Brain size={11} color={t.textTertiary} />
         <Text style={styles.reasoningLabel}>{streaming ? "Thinking…" : "Reasoning"}</Text>
