@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { STATUS_COLORS, PRIORITY_COLORS } from "@/lib/utils";
 import { QuickSettings } from "./QuickSettings";
+import { modKey } from "./sidebar-utils";
 
 const VIEW_TABS = [
   { id: "overview" as const, label: "Overview", icon: Hash },
@@ -74,6 +75,7 @@ export function Topbar() {
     () => projects.find((p) => p.id === activeProjectId),
     [projects, activeProjectId],
   );
+  const mod = useMemo(() => modKey(), []);
 
   if (activeView === "settings") {
     return (
@@ -193,7 +195,7 @@ export function Topbar() {
       {/* Right actions */}
       <div className="flex items-center gap-1">
         {!hiddenViews.has("chat") && (
-          <Tooltip content="AI Chat (⌘/)">
+          <Tooltip content={`AI Chat (${mod}/)`}>
             <Button
               data-tutorial="chat-toggle"
               variant="ghost"

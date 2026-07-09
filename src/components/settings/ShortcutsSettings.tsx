@@ -4,14 +4,15 @@ import React, { useState } from "react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
+import { modKey } from "@/components/layout/sidebar-utils";
 import { SettingsGroup } from "./shared";
 
 export function ShortcutsSettings() {
   const { hiddenViews } = useCairnStore(useShallow((s) => ({ hiddenViews: s.hiddenViews })));
 
-  const [mod] = useState(
-    () => (typeof window !== "undefined" && window.electron?.platform === "win32") ? "Ctrl" : "⌘"
-  );
+  // Platform modifier as a bare token ("⌘" / "Ctrl") so `${mod}+1` reads
+  // "⌘+1" on mac and "Ctrl+1" elsewhere — matches the sidebar/topbar hints.
+  const [mod] = useState(() => modKey().replace(/\+$/, ""));
 
   // Dynamic navigation shortcuts — mirrors page.tsx ORDERED_VIEWS logic
   const navViews = (["board", "flow", "agent", "graph", "insights"] as const).filter(

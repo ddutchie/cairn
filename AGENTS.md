@@ -11,7 +11,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - **Electron + Next.js 16** (App Router, static export) — desktop app
 - **Tailwind CSS v4** — all colours via CSS custom properties (`var(--token)`), never raw Tailwind colour names
 - **Zustand** — domain slices in `src/store/slices/`; composed in `src/store/index.ts`
-- **better-sqlite3** — dual ABI (Electron + pkg/Node 22); all DB access goes through IPC from the renderer
+- **better-sqlite3** — dual ABI (Electron + pkg/Node 24), arch-separated (arm64 + x64); all DB access goes through IPC from the renderer
 - **D3 v7.9.0** — all SVG analytics rendering
 
 ## Styling rules
@@ -20,7 +20,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - **Alpha variants**: `color-mix(in srgb, var(--token) X%, transparent)` — never hardcode `rgba()`
 - **Font sizes**: use `rem`-based Tailwind classes (`text-xs`, `text-sm`, `text-[0.714rem]`, etc.). Never use `text-[Npx]` — pixel classes don't scale with the font size setting.
 - **Font scaling**: `--font-scale` CSS variable is set on `<html>` inline by `applyFontScale()`. Root `font-size: calc(14px * var(--font-scale))`. SVG `fontSize` attributes must be multiplied by `useFontScale()` from `analyticsHooks.ts`.
-- **better-sqlite3 ABI**: the only ABI-sensitive operation is constructing the `Database` instance via `new Database(dbPath, { nativeBinding })`. That happens once in `electron/db/client.ts` (Electron ABI, `electron-native/`) for the main process and once in `mcp-server.ts` (Node 22 ABI, `pkg-native/`) for the MCP runtime. Helper functions in `electron/db/queries.ts` and `electron/db/graph-queries.ts` may be imported from `electron/mcp/tools/*` — they run on the already-constructed `db` handle regardless of which TS file defines them (see `electron/mcp/tools/codebase.ts`, which already does `import * as q from "../../db/queries"`). Never construct a `Database` outside those two bootstrap sites.
+- **better-sqlite3 ABI**: the only ABI-sensitive operation is constructing the `Database` instance via `new Database(dbPath, { nativeBinding })`. That happens once in `electron/db/client.ts` (Electron ABI, `electron-native/<arch>/`) for the main process and once in `mcp-server.ts` (pkg Node 24 ABI, `pkg-native/<arch>/`) for the MCP runtime. Binaries are arch-separated (arm64 + x64), downloaded as prebuilts by `scripts/rebuild-native.js`, and resolved at runtime via `process.arch` — so a single macOS build ships both arches. The standalone `cairn-mcp` binary must run independently of the app (so agents can read/write the workspace while Cairn is closed), which is why it bundles its own Node runtime + sqlite rather than reusing the Electron one. Helper functions in `electron/db/queries.ts` and `electron/db/graph-queries.ts` may be imported from `electron/mcp/tools/*` — they run on the already-constructed `db` handle regardless of which TS file defines them (see `electron/mcp/tools/codebase.ts`, which already does `import * as q from "../../db/queries"`). Never construct a `Database` outside those two bootstrap sites.
 
 ## Build
 

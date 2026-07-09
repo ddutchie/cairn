@@ -16,13 +16,15 @@ import fs from "fs";
 import { app } from "electron";
 import { applySchema } from "./schema";
 
-// Path to the Electron-ABI native binary (built with electron-rebuild).
-// In dev:  __dirname = <project>/dist-electron  →  ../electron-native/
-// In prod: binary is in app.asar.unpacked/electron-native/ (listed in asarUnpack)
+// Path to the Electron-ABI native binary (downloaded per-arch by rebuild-native.js).
+// Binaries are arch-separated so a universal macOS build can ship both arm64 and
+// x64; the resolver keys on process.arch.
+// In dev:  __dirname = <project>/dist-electron  →  ../electron-native/<arch>/
+// In prod: binary is in app.asar.unpacked/electron-native/<arch>/ (asarUnpack)
 //          process.resourcesPath = Contents/Resources
 const ELECTRON_BINDING = app.isPackaged
-  ? path.join(process.resourcesPath, "app.asar.unpacked", "electron-native", "better_sqlite3_electron.node")
-  : path.join(__dirname, "..", "electron-native", "better_sqlite3_electron.node");
+  ? path.join(process.resourcesPath, "app.asar.unpacked", "electron-native", process.arch, "better_sqlite3_electron.node")
+  : path.join(__dirname, "..", "electron-native", process.arch, "better_sqlite3_electron.node");
 
 let _db: Database.Database | null = null;
 

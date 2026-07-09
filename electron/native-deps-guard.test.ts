@@ -64,9 +64,11 @@ function readLockfile(): ProjectRootLockfile {
  *  - `esbuild`            — ships prebuilt per-platform binaries
  *  - `fsevents`           — macOS-only ("os": ["darwin"]); does not run on Win
  *  - `node-pty`           — ships prebuilt binaries incl. win32-arm64
- *  - `onnxruntime-node`   — ships prebuilt binaries; darwin-x64 dropped in
- *                           1.24+ (macOS now arm64-only — darwin-x64 build
- *                           target was dropped from electron-builder.yml)
+ *  - `onnxruntime-node`   — ships prebuilt binaries for every platform/arch
+ *                           incl. darwin-x64. Pinned to 1.21.0 (napi-v3) via
+ *                           @huggingface/transformers 3.7.5, because 1.24+
+ *                           dropped the darwin-x64 prebuilt. This is what
+ *                           lets the macOS build target both arm64 and x64.
  *  - `protobufjs`         — `postinstall` builds protoc-cli fallbacks; not a
  *                           native module, pure JS, safe on every platform
  *  - `unrs-resolver`      — ships prebuilt per-platform binaries

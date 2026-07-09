@@ -20,6 +20,7 @@ import { NoteMarkdownPreview } from "@/components/notes/NoteMarkdownPreview";
 import { Tooltip } from "@/components/ui/tooltip";
 import { FileEditorInner } from "./FileEditorInner";
 import { ImageViewer } from "./ImageViewer";
+import { modKey } from "@/components/layout/sidebar-utils";
 
 // ── AgentEditor ───────────────────────────────────────────────────────────────
 
@@ -41,6 +42,7 @@ export function AgentEditor() {
   const [previewFiles, setPreviewFiles] = useState<Set<string>>(new Set());
   // Preview content cache: path → content string
   const [previewContent, setPreviewContent] = useState<Record<string, string>>({});
+  const [mod] = useState(() => modKey());
 
   const isDark = useIsDark();
 
@@ -171,7 +173,7 @@ export function AgentEditor() {
         {/* Save button for active file */}
         <div className="ml-auto flex items-center px-2 flex-shrink-0">
           {dirtyFiles.has(activeFile) && (
-            <Tooltip content="Save (⌘S)" side="bottom">
+            <Tooltip content={`Save (${mod}S)`} side="bottom">
               <button
                 onClick={() => {
                   document.dispatchEvent(new CustomEvent("agent-editor-save", { detail: activeFile }));
