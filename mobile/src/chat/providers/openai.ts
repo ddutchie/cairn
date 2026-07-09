@@ -204,6 +204,12 @@ function makeStreamer(config: OpenAIConfig) {
             choices?: {
               delta?: {
                 content?: string;
+                // Reasoning ("thinking") text streamed by some OpenAI-compatible
+                // endpoints. DeepSeek uses `reasoning_content`; OpenRouter's
+                // unified field is `reasoning`. First-party OpenAI o-series does
+                // NOT stream reasoning, so this is simply absent there.
+                reasoning_content?: string;
+                reasoning?: string;
                 tool_calls?: {
                   index: number;
                   id?: string;
@@ -226,6 +232,12 @@ function makeStreamer(config: OpenAIConfig) {
           const choice = chunk.choices?.[0];
           if (!choice) continue;
           const delta = choice.delta;
+          // Reasoning tail (if the endpoint streams it) — surface it before the
+          // answer content, mirroring the Apple/PCC reasoning block.
+          const reasoning = delta?.reasoning_content ?? delta?.reasoning;
+          if (reasoning) {
+            yield { type: "reasoning-delta", delta: reasoning };
+          }
           if (delta?.content) {
             yield { type: "text-delta", delta: delta.content };
           }

@@ -39,8 +39,9 @@ interface UiMessage {
   content: string;
   images?: string[]; // data URIs for user attachments
   tools?: { tool: string; ok: boolean }[];
-  /** Live reasoning ("thinking") text for PCC turns. Shown collapsibly; like
-   *  images it's session-only and not persisted to chat_local. */
+  /** Live reasoning ("thinking") text for turns whose model streams it (Apple
+   *  PCC, or OpenAI-compatible endpoints exposing reasoning/reasoning_content).
+   *  Shown collapsibly; like images it's session-only and not persisted. */
   reasoning?: string;
   streaming?: boolean;
 }
@@ -381,9 +382,10 @@ export default function ChatScreen() {
 // assistant message object) re-renders just that one bubble — not every prior
 // message, each of which would otherwise re-run its MarkdownView parse per token.
 /**
- * Collapsible "reasoning" (thinking) disclosure for PCC turns. Expanded while
- * the answer is still streaming so the user sees the model think; collapses to a
- * one-line summary once done. Session-only (not persisted).
+ * Collapsible "reasoning" (thinking) disclosure for models that stream it
+ * (Apple PCC, or OpenAI-compatible endpoints like DeepSeek/OpenRouter).
+ * Expanded while the answer is still streaming so the user sees the model think;
+ * collapses to a one-line summary once done. Session-only (not persisted).
  */
 function ReasoningBlock({
   text,
