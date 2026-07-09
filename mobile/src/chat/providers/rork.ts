@@ -133,6 +133,15 @@ async function* streamRork(
         if (ev.type === "finish") {
           sawFinish = true;
           yield { type: "finish", finishReason: (ev as { finishReason?: string }).finishReason ?? "stop", usage: usageEvent() };
+        } else if (ev.type === "reasoning-delta") {
+          // Some models (e.g. Gemini on tool-calling turns) emit a reasoning part
+          // whose content is redacted — the delta is the literal "[REDACTED]" (or
+          // empty). Don't surface that as a "thinking" block; only forward
+          // reasoning that carries real text.
+          const delta = (ev as { delta?: string }).delta;
+          if (typeof delta === "string" && delta.trim() && delta.trim().toUpperCase() !== "[REDACTED]") {
+            yield ev;
+          }
         } else {
           yield ev;
         }

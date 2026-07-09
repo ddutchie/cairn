@@ -233,9 +233,10 @@ function makeStreamer(config: OpenAIConfig) {
           if (!choice) continue;
           const delta = choice.delta;
           // Reasoning tail (if the endpoint streams it) — surface it before the
-          // answer content, mirroring the Apple/PCC reasoning block.
+          // answer content so it renders as a "thinking" block. Skip redacted /
+          // empty deltas (some providers send a literal "[REDACTED]").
           const reasoning = delta?.reasoning_content ?? delta?.reasoning;
-          if (reasoning) {
+          if (reasoning && reasoning.trim() && reasoning.trim().toUpperCase() !== "[REDACTED]") {
             yield { type: "reasoning-delta", delta: reasoning };
           }
           if (delta?.content) {
