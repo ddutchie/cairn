@@ -30,6 +30,8 @@ import { resetAppleSession } from "@/chat/providers/apple";
 import { prettifyToolLabel } from "@cairn/shared/ui/constants";
 import type { UIMessage, ChatUsage } from "@/chat/providers/types";
 import { ContextRing } from "@/components/ContextRing";
+import { GlassMenu } from "@/components/GlassMenu";
+import { Button } from "@expo/ui/swift-ui";
 
 /** Composer height assumed before its first onLayout measurement. */
 const COMPOSER_FALLBACK_H = 60;
@@ -350,9 +352,16 @@ export default function ChatScreen() {
 
             <View style={styles.composerWrap}>
               <GlassBar style={styles.composer} interactive={false}>
-                <Pressable style={styles.attachBtn} onPress={onAttach} disabled={busy} hitSlop={6}>
-                  <ImagePlus size={16} color={busy ? withAlpha(t.textTertiary, 0.5) : t.textTertiary} />
-                </Pressable>
+                <GlassMenu
+                  trigger={<ImagePlus size={16} color={busy ? withAlpha(t.textTertiary, 0.5) : t.textTertiary} />}
+                  accessibilityLabel="Add image"
+                  disabled={busy}
+                  onFallbackPress={onAttach}
+                  triggerStyle={styles.attachBtn}
+                >
+                  <Button label="Photo Library" systemImage="photo.on.rectangle" onPress={addImages} />
+                  <Button label="Take Photo" systemImage="camera" onPress={capturePhoto} />
+                </GlassMenu>
                 <TextInput
                   style={styles.input}
                   value={input}
