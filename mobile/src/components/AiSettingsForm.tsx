@@ -218,33 +218,16 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                     </Text>
                   </View>
                 )}
-                {pref === "apple" && appleIsServer && quota?.available && quota.status !== "below" && (
-                  <View style={styles.rorkNote}>
-                    <Text
-                      style={[
-                        styles.rorkNoteText,
-                        { color: quota.isLimitReached ? t.danger : t.warning },
-                      ]}
-                    >
-                      {quota.isLimitReached
-                        ? "You've reached your daily Private Cloud Compute limit."
-                        : "You're approaching your daily Private Cloud Compute limit."}
-                      {quota.resetDate ? ` Resets ${new Date(quota.resetDate).toLocaleDateString()}.` : ""}
-                    </Text>
-                    {quota.canUpgrade && (
-                      <Pressable
-                        onPress={() => {
-                          haptics.selection();
-                          showAppleQuotaUpgrade();
-                        }}
-                        hitSlop={8}
-                      >
-                        <Text style={[styles.rorkNoteText, { color: t.accent, fontWeight: "600" }]}>
-                          Show options
-                        </Text>
-                      </Pressable>
-                    )}
-                  </View>
+                {pref === "apple" && appleIsServer && quota?.available && (
+                  <QuotaBar
+                    quota={quota}
+                    onUpgrade={() => {
+                      haptics.selection();
+                      showAppleQuotaUpgrade();
+                    }}
+                    t={t}
+                    styles={styles}
+                  />
                 )}
                 {pref === "rork" && (
                   <View style={styles.rorkNote}>
@@ -405,6 +388,74 @@ function Field({
   );
 }
 
+/**
+ * Private Cloud Compute daily-usage indicator. Apple exposes no exact numbers,
+ * only a 3-state status (below / approaching / reached) + a reset date, so we
+ * render a 3-segment bar that fills to the current state (green → amber → red)
+ * rather than a precise gauge — matching Apple's "communicate the current
+ * status" guidance. Shows a reset date and an iCloud+ upgrade action.
+ */
+function QuotaBar({
+  quota,
+  onUpgrade,
+  t,
+  styles,
+}: {
+  quota: AppleQuotaStatus;
+  onUpgrade: () => void;
+  t: Theme;
+  styles: ReturnType<typeof makeStyles>;
+}) {
+  // How many of the 3 segments are lit, and the fill colour, per state.
+  const level = quota.isLimitReached ? 3 : quota.status === "approaching" ? 2 : 1;
+  const colour = quota.isLimitReached ? t.danger : quota.status === "approaching" ? t.warning : t.success;
+  const label = quota.isLimitReached
+    ? "Daily limit reached"
+    : quota.status === "approaching"
+      ? "Approaching daily limit"
+      : "Within daily limit";
+  const reset =
+    quota.resetDate && quota.status !== "below"
+      ? `Resets ${new Date(quota.resetDate).toLocaleDateString()}`
+      : "";
+
+  return (
+    <View style={styles.quotaCard}>
+      <View style={styles.quotaHeaderRow}>
+        <Text style={styles.quotaTitle}>Private Cloud Compute</Text>
+        <Text style={[styles.quotaStatus, { color: colour }]}>{label}</Text>
+      </View>
+      <View
+        style={styles.quotaTrack}
+        accessibilityRole="progressbar"
+        accessibilityLabel={`Private Cloud Compute usage: ${label}`}
+      >
+        {[0, 1, 2].map((i) => (
+          <View
+            key={i}
+            style={[
+              styles.quotaSeg,
+              { backgroundColor: i < level ? colour : t.border },
+              i === 0 && styles.quotaSegFirst,
+              i === 2 && styles.quotaSegLast,
+            ]}
+          />
+        ))}
+      </View>
+      <View style={styles.quotaFootRow}>
+        <Text style={styles.quotaHint}>
+          {reset || "Usage resets daily. No API key needed."}
+        </Text>
+        {quota.canUpgrade && (
+          <Pressable onPress={onUpgrade} hitSlop={8}>
+            <Text style={styles.quotaUpgrade}>Get more with iCloud+</Text>
+          </Pressable>
+        )}
+      </View>
+    </View>
+  );
+}
+
 function makeStyles(t: Theme) {
   return StyleSheet.create({
     flex: { flex: 1, backgroundColor: t.surface },
@@ -452,6 +503,25 @@ function makeStyles(t: Theme) {
       marginTop: 4,
     },
     rorkNoteText: { flex: 1, ...typeScale.caption, color: t.textSecondary, lineHeight: 18 },
+
+    // PCC daily-usage 3-state bar.
+    quotaCard: {
+      backgroundColor: t.surface2,
+      borderRadius: 10,
+      padding: 12,
+      marginTop: 4,
+      gap: 8,
+    },
+    quotaHeaderRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+    quotaTitle: { ...typeScale.caption, color: t.textSecondary, fontWeight: "600" },
+    quotaStatus: { ...typeScale.caption, fontWeight: "600" },
+    quotaTrack: { flexDirection: "row", gap: 3, height: 6 },
+    quotaSeg: { flex: 1, height: 6 },
+    quotaSegFirst: { borderTopLeftRadius: 3, borderBottomLeftRadius: 3 },
+    quotaSegLast: { borderTopRightRadius: 3, borderBottomRightRadius: 3 },
+    quotaFootRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
+    quotaHint: { flex: 1, ...typeScale.caption, color: t.textTertiary },
+    quotaUpgrade: { ...typeScale.caption, color: t.accent, fontWeight: "600" },
 
     fields: { gap: 14, marginTop: 12 },
     field: { gap: 6 },
