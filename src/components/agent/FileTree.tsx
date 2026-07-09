@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
+import { modKey } from "@/components/layout/sidebar-utils";
 import { useShallow } from "zustand/react/shallow";
 import type { Project } from "@/types";
 
@@ -151,6 +152,7 @@ export function FileTree({ project }: FileTreeProps) {
   // a manual refresh — see refresh().
   const [refreshKey, setRefreshKey] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
+  const [mod] = useState(() => modKey());
 
   // File search mode
   const [searchActive, setSearchActive] = useState(false);
@@ -201,11 +203,11 @@ export function FileTree({ project }: FileTreeProps) {
   // ⌘⇧F / Ctrl+⇧F — toggle file search
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      const mod = e.metaKey || e.ctrlKey;
+      const modPressed = e.metaKey || e.ctrlKey;
       // e.key is "F" (uppercase) when Shift is held on most platforms,
       // but normalise to lowercase to be safe across keyboard layouts.
       const key = e.key.toLowerCase();
-      if (mod && e.shiftKey && key === "f") {
+      if (modPressed && e.shiftKey && key === "f") {
         e.preventDefault();  // always prevent — even if no codeDirectory, avoid native find-in-page
         e.stopPropagation();
         if (!codeDirectory) return;
@@ -319,7 +321,7 @@ export function FileTree({ project }: FileTreeProps) {
           <button
             onClick={() => { setSearchActive(true); setTimeout(() => searchInputRef.current?.focus(), 0); }}
             className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-            title="Search files (⌘⇧F)"
+            title={`Search files (${mod}\u21e7F)`}
           >
             <Search size={11} />
           </button>

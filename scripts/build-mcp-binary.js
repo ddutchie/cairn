@@ -22,8 +22,15 @@ const fs = require("fs");
 
 const root = path.resolve(__dirname, "..");
 const bundlePath = path.join(root, "dist-mcp", "mcp-server.bundle.js");
-const nativePath = path.join(root, "pkg-native", "better_sqlite3.node");
 const outDir = path.join(root, "dist-mcp");
+
+// better-sqlite3 pkg-Node prebuilds are arch-separated (pkg-native/<arch>/).
+// pkg embeds a single asset path, so before each target we stage the matching
+// arch binary at pkg-native/better_sqlite3.node (the path in pkg.config.js).
+const stagedNativePath = path.join(root, "pkg-native", "better_sqlite3.node");
+function nativeForArch(arch) {
+  return path.join(root, "pkg-native", arch, "better_sqlite3.node");
+}
 
 const args = process.argv.slice(2);
 const wantMac   = args.includes("--mac");
@@ -34,17 +41,17 @@ const wantLinux = args.includes("--linux");
 const platform = process.platform;
 const targets = [];
 if (wantMac) {
-  targets.push({ id: "node24-macos-arm64",  out: "cairn-mcp" });
+  targets.push({ id: "node24-macos-arm64",  out: "cairn-mcp",     arch: "arm64" });
 } else if (!wantWin && !wantLinux && platform === "darwin") {
   const arch = process.arch === "x64" ? "x64" : "arm64";
-  targets.push({ id: `node24-macos-${arch}`, out: "cairn-mcp" });
+  targets.push({ id: `node24-macos-${arch}`, out: "cairn-mcp",     arch });
 }
-if (wantWin   || (!wantMac && !wantWin && !wantLinux && platform === "win32"))   targets.push({ id: "node24-win-x64",      out: "cairn-mcp.exe" });
-if (wantLinux || (!wantMac && !wantWin && !wantLinux && platform === "linux"))   targets.push({ id: "node24-linux-x64",    out: "cairn-mcp-linux" });
+if (wantWin   || (!wantMac && !wantWin && !wantLinux && platform === "win32"))   targets.push({ id: "node24-win-x64",      out: "cairn-mcp.exe",   arch: "x64" });
+if (wantLinux || (!wantMac && !wantWin && !wantLinux && platform === "linux"))   targets.push({ id: "node24-linux-x64",    out: "cairn-mcp-linux", arch: "x64" });
 
-// CI: explicit flags add all relevant arches
+// CI: explicit --mac adds the x64 arch too (universal mac release).
 if (wantMac) {
-  targets.push({ id: "node24-macos-x64", out: "cairn-mcp-x64" });
+  targets.push({ id: "node24-macos-x64", out: "cairn-mcp-x64", arch: "x64" });
 }
 
 function run(cmd) {
@@ -58,17 +65,20 @@ if (!fs.existsSync(bundlePath)) {
   process.exit(1);
 }
 
-if (!fs.existsSync(nativePath)) {
-  console.error(`[build-mcp-binary] Native binding not found: ${nativePath}`);
-  console.error("Run npm run rebuild first.");
-  process.exit(1);
-}
-
 fs.mkdirSync(outDir, { recursive: true });
 
 for (const target of targets) {
+  // Stage the matching-arch better-sqlite3 binary for pkg to embed.
+  const archNative = nativeForArch(target.arch);
+  if (!fs.existsSync(archNative)) {
+    console.error(`[build-mcp-binary] Native binding not found: ${archNative}`);
+    console.error("Run npm run rebuild first.");
+    process.exit(1);
+  }
+  fs.copyFileSync(archNative, stagedNativePath);
+
   const outPath = path.join(outDir, target.out);
-  console.log(`\n[build-mcp-binary] Building ${target.id} → ${target.out}`);
+  console.log(`\n[build-mcp-binary] Building ${target.id} (${target.arch}) → ${target.out}`);
   run(
     `npx pkg dist-mcp/mcp-server.bundle.js` +
     ` --target ${target.id}` +

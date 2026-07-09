@@ -4,24 +4,26 @@ import React, { useState } from "react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
+import { modKey } from "@/components/layout/sidebar-utils";
 import { SettingsGroup } from "./shared";
 
 export function ShortcutsSettings() {
   const { hiddenViews } = useCairnStore(useShallow((s) => ({ hiddenViews: s.hiddenViews })));
 
-  const [mod] = useState(
-    () => (typeof window !== "undefined" && window.electron?.platform === "win32") ? "Ctrl" : "⌘"
-  );
+  // Platform modifier prefix from the shared helper: "⌘" on macOS, "Ctrl+"
+  // elsewhere. Concatenated directly (no extra separator) so hints read "⌘K" /
+  // "Ctrl+K" — matching the sidebar/topbar tooltip style.
+  const [mod] = useState(() => modKey());
 
   // Dynamic navigation shortcuts — mirrors page.tsx ORDERED_VIEWS logic
   const navViews = (["board", "flow", "agent", "graph", "insights"] as const).filter(
     (v) => !hiddenViews.has(v)
   );
   const navShortcuts = [
-    { key: `${mod}+1`, action: "Overview" },
-    { key: `${mod}+2`, action: "Notes" },
+    { key: `${mod}1`, action: "Overview" },
+    { key: `${mod}2`, action: "Notes" },
     ...navViews.map((v, i) => ({
-      key: `${mod}+${i + 3}`,
+      key: `${mod}${i + 3}`,
       action: v === "graph" ? "Knowledge Graph" : v === "flow" ? "Idea Flow" : v.charAt(0).toUpperCase() + v.slice(1),
     })),
   ];
@@ -33,18 +35,18 @@ export function ShortcutsSettings() {
     {
       heading: "Actions",
       shortcuts: [
-        { key: `${mod}+K`, action: "Search" },
-        { key: `${mod}+N`, action: "New note" },
-        ...(hiddenViews.has("chat") ? [] : [{ key: `${mod}+/`, action: "Toggle AI chat" }]),
-        { key: `${mod}+\\`, action: "Toggle sidebar" },
+        { key: `${mod}K`, action: "Search" },
+        { key: `${mod}N`, action: "New note" },
+        ...(hiddenViews.has("chat") ? [] : [{ key: `${mod}/`, action: "Toggle AI chat" }]),
+        { key: `${mod}\\`, action: "Toggle sidebar" },
       ],
     },
     {
       heading: "Editing",
       shortcuts: [
-        { key: `${mod}+Z`, action: "Undo" },
-        { key: `${mod}+⇧+Z`, action: "Redo" },
-        { key: `${mod}+S`, action: "Save file (Agent editor)" },
+        { key: `${mod}Z`, action: "Undo" },
+        { key: `${mod}⇧Z`, action: "Redo" },
+        { key: `${mod}S`, action: "Save file (Agent editor)" },
       ],
     },
     {

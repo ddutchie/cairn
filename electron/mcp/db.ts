@@ -29,8 +29,14 @@ export {
 
 export function resolveMcpNativeBinding(): string | undefined {
   const execDir = path.dirname(process.execPath);
+  const arch = process.arch;
   const candidates = [
+    // pkg binary extracts its embedded asset next to the executable.
     path.join(execDir, "better_sqlite3.node"),
+    // Dev / bundled runtime — arch-separated prebuilds.
+    path.join(__dirname, "..", "pkg-native", arch, "better_sqlite3.node"),
+    path.join(__dirname, "..", "..", "pkg-native", arch, "better_sqlite3.node"),
+    // Legacy flat layout (pre-arch-split) — kept as a fallback.
     path.join(__dirname, "..", "pkg-native", "better_sqlite3.node"),
     path.join(__dirname, "..", "..", "pkg-native", "better_sqlite3.node"),
   ];

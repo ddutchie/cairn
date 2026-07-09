@@ -5,6 +5,30 @@
  */
 
 /**
+ * True on macOS, where the modifier key is ⌘ (Command). Prefers the Electron
+ * platform string (reliable in the desktop build) and falls back to
+ * `navigator.platform` for the web/tests. Everything else (Windows, Linux)
+ * uses Ctrl.
+ */
+export function isMacPlatform(): boolean {
+  if (typeof window !== "undefined") {
+    const p = window.electron?.platform;
+    if (p) return p === "darwin";
+  }
+  return typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
+}
+
+/**
+ * The platform-appropriate modifier symbol/label: "⌘" on macOS, "Ctrl+"
+ * elsewhere. Use so shortcut hints (tooltips, kbd chips) match whichever key
+ * the user actually presses — the page.tsx handler accepts both `metaKey`
+ * and `ctrlKey`, but the displayed hint must not hardcode ⌘ on Windows/Linux.
+ */
+export function modKey(isMac = isMacPlatform()): string {
+  return isMac ? "\u2318" : "Ctrl+";
+}
+
+/**
  * Map each visible nav view to its keyboard shortcut label (⌘3, ⌘4, …).
  *
  * Overview is ⌘1 and Notes is ⌘2, so views start at `base` (3). Shortcuts past
@@ -17,10 +41,10 @@
 export function buildShortcutMap(
   visibleNavItems: Array<{ view: string }>,
   base = 3,
-  isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform),
+  isMac = isMacPlatform(),
 ): Map<string, string> {
   const map = new Map<string, string>();
-  const prefix = isMac ? "\u2318" : "Ctrl+";
+  const prefix = modKey(isMac);
   visibleNavItems.forEach((item, idx) => {
     const num = idx + base;
     map.set(item.view, num <= 9 ? `${prefix}${num}` : "");

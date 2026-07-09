@@ -1,15 +1,26 @@
 #!/usr/bin/env node
 /**
- * Cross-platform native module rebuild script.
+ * Cross-platform native binary provisioning script.
  *
- * Replaces the POSIX-only shell one-liner in package.json that used
- * `mkdir -p` and `cp` — neither of which work on Windows.
+ * Historically this COMPILED better-sqlite3 (via @electron/rebuild) and node-pty
+ * from source on every runner. Both ship prebuilt binaries, so we now DOWNLOAD
+ * them instead — which is faster and, crucially, lets a single macOS (arm64)
+ * runner produce BOTH arm64 and x64 binaries for a universal mac build.
  *
- * What this does:
- *   1. Rebuild better-sqlite3 for the pkg-bundled Node ABI (node22)
- *   2. Copy the resulting .node binary to pkg-native/ (embedded in cairn-mcp binary)
- *   3. Rebuild better-sqlite3 for the Electron ABI (via @electron/rebuild)
- *   4. Copy the resulting .node binary to electron-native/ (used by Electron IPC)
+ * better-sqlite3 (per-ABI prebuilds via prebuild-install):
+ *   - Electron ABI  → electron-native/<arch>/better_sqlite3_electron.node
+ *                     (loaded by electron/db/client.ts, arch-selected at runtime)
+ *   - pkg Node ABI  → pkg-native/<arch>/better_sqlite3.node
+ *                     (embedded in cairn-mcp / cairn-mcp-x64 binaries)
+ *   - vitest        → vitest-native/better_sqlite3.node (host Node ABI, tests)
+ *
+ * node-pty ships N-API prebuilds under node_modules/node-pty/prebuilds/
+ * (<platform>-<arch>/). N-API is ABI-stable across Node/Electron versions, so
+ * NO rebuild is needed — electron-builder packages the matching prebuild per
+ * arch. We only sanity-check the prebuilds exist here.
+ *
+ * On macOS both arches are provisioned. On Windows/Linux only the host arch
+ * (x64) is provisioned — the runtime resolver keys on process.arch.
  */
 
 const { execSync } = require("child_process");
@@ -17,86 +28,98 @@ const fs = require("fs");
 const path = require("path");
 
 const root = path.resolve(__dirname, "..");
-const releasePath = path.join(root, "node_modules", "better-sqlite3", "build", "Release", "better_sqlite3.node");
 
-// The Node version baked into the pkg binary — must match PKG_NODE_TARGET in build scripts
+// Node version baked into the pkg binary — must match PKG_NODE_TARGET in build scripts.
 const PKG_NODE_VERSION = "24";
+// Electron version we ship — better-sqlite3 electron prebuilds are keyed by this.
+const ELECTRON_VERSION = require(path.join(root, "node_modules", "electron", "package.json")).version;
 
-function run(cmd) {
+const bsqliteDir = path.join(root, "node_modules", "better-sqlite3");
+const releasePath = path.join(bsqliteDir, "build", "Release", "better_sqlite3.node");
+
+// macOS builds are universal (both arches); other platforms build the host arch only.
+const ARCHES = process.platform === "darwin" ? ["arm64", "x64"] : [process.arch];
+
+const prebuildBin = process.platform === "win32"
+  ? path.join(root, "node_modules", ".bin", "prebuild-install.cmd")
+  : path.join(root, "node_modules", ".bin", "prebuild-install");
+
+function run(cmd, cwd = root) {
   console.log(`\n> ${cmd}`);
-  execSync(cmd, { stdio: "inherit", cwd: root });
+  execSync(cmd, { stdio: "inherit", cwd });
 }
 
 function copyBinary(dest, label) {
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   fs.copyFileSync(releasePath, dest);
-  console.log(`Copied ${label} binary → ${path.relative(root, dest)}`);
+  console.log(`Copied ${label} → ${path.relative(root, dest)}`);
 }
 
-// Step 1: Build/download better-sqlite3 for pkg-bundled Node 24 ABI.
-// Must run from the better-sqlite3 directory so prebuild-install reads its
-// own package.json (not ours) when resolving the GitHub release URL.
-// On Windows, .bin/ contains a bash shebang script — use the .cmd wrapper instead.
-const bsqliteDir = path.join(root, "node_modules", "better-sqlite3");
-const prebuildBin = process.platform === "win32"
-  ? path.join(root, "node_modules", ".bin", "prebuild-install.cmd")
-  : path.join(root, "node_modules", ".bin", "prebuild-install");
-console.log(`\n> prebuild-install --target ${PKG_NODE_VERSION}.0.0 (from ${bsqliteDir})`);
-execSync(
-  `"${prebuildBin}" --target ${PKG_NODE_VERSION}.0.0 --runtime node --verbose`,
-  { stdio: "inherit", cwd: bsqliteDir }
+/**
+ * Download a better-sqlite3 prebuilt binary for the given runtime/arch and copy
+ * it to `dest`. Runs prebuild-install from the better-sqlite3 dir so it reads
+ * its own package.json when resolving the GitHub release URL.
+ */
+function fetchPrebuild({ runtime, target, arch, dest, label }) {
+  console.log(`\n> prebuild-install ${runtime} ${target} ${process.platform}-${arch}`);
+  execSync(
+    `"${prebuildBin}" --runtime ${runtime} --target ${target} --arch ${arch}` +
+      ` --platform ${process.platform} --tag-prefix v --verbose`,
+    { stdio: "inherit", cwd: bsqliteDir },
+  );
+  copyBinary(dest, label);
+}
+
+// ── better-sqlite3: Electron ABI (per arch) ──────────────────────────────────
+for (const arch of ARCHES) {
+  fetchPrebuild({
+    runtime: "electron",
+    target: ELECTRON_VERSION,
+    arch,
+    dest: path.join(root, "electron-native", arch, "better_sqlite3_electron.node"),
+    label: `Electron ${ELECTRON_VERSION} ${arch}`,
+  });
+}
+
+// ── better-sqlite3: pkg Node ABI (per arch, embedded in cairn-mcp) ────────────
+for (const arch of ARCHES) {
+  fetchPrebuild({
+    runtime: "node",
+    target: `${PKG_NODE_VERSION}.0.0`,
+    arch,
+    dest: path.join(root, "pkg-native", arch, "better_sqlite3.node"),
+    label: `pkg Node ${PKG_NODE_VERSION} ${arch}`,
+  });
+}
+
+// ── better-sqlite3: current system Node ABI (for vitest) ─────────────────────
+// Rebuild for the running Node so the vitest sqlite shim can load it.
+run(`npm rebuild better-sqlite3`);
+copyBinary(
+  path.join(root, "vitest-native", "better_sqlite3.node"),
+  `vitest Node ${process.version} (ABI ${process.versions.modules})`,
 );
-copyBinary(path.join(root, "pkg-native", "better_sqlite3.node"), `pkg Node ${PKG_NODE_VERSION}`);
 
-// Step 1b: Save a copy for vitest (current system Node ABI) before Electron rebuild overwrites it.
-// NOTE: At this point node_modules/ has the Node 22 prebuild from step 1, NOT the current Node.
-// We need to rebuild for the current system Node first.
-const currentNodeVersion = process.versions.modules;
-run(`node -e "const d = new (require('better-sqlite3/lib/database.js'))(':memory:', { nativeBinding: require.resolve('better-sqlite3/build/Release/better_sqlite3.node') }); d.close()" || true`);
-// Rebuild specifically for the running Node version
-execSync(`npm rebuild better-sqlite3`, { stdio: "inherit", cwd: root });
-copyBinary(path.join(root, "vitest-native", "better_sqlite3.node"), `vitest Node ${process.version} (ABI ${currentNodeVersion})`);
-
-// Step 2: Build for Electron ABI
-const rebuildBin = process.platform === "win32"
-  ? path.join(root, "node_modules", ".bin", "electron-rebuild.cmd")
-  : path.join(root, "node_modules", ".bin", "electron-rebuild");
-
-run(`"${rebuildBin}" -f -o better-sqlite3`);
-copyBinary(path.join(root, "electron-native", "better_sqlite3_electron.node"), "Electron");
-// Step 3: Rebuild node-pty for Electron ABI
-// On Windows GHA runners, node-pty compilation via MSVC can hang indefinitely.
-// Wrap with a timeout and retry once.
-const NODE_PTY_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
-const NODE_PTY_MAX_RETRIES = 2;
-
-function rebuildNodePty() {
-  const cmd = `"${rebuildBin}" -f -o node-pty`;
-  for (let attempt = 1; attempt <= NODE_PTY_MAX_RETRIES; attempt++) {
-    console.log(`\n> ${cmd}  (attempt ${attempt}/${NODE_PTY_MAX_RETRIES})`);
-    try {
-      execSync(cmd, {
-        stdio: "inherit",
-        cwd: root,
-        timeout: NODE_PTY_TIMEOUT_MS,
-      });
-      return; // success
-    } catch (err) {
-      const timedOut = err.killed || (err.signal === "SIGTERM");
-      if (timedOut && attempt < NODE_PTY_MAX_RETRIES) {
-        console.warn(`\n⚠ node-pty rebuild timed out after ${NODE_PTY_TIMEOUT_MS / 1000}s — retrying...`);
-        // Clean up any stale build artifacts before retry
-        const nodePtyBuild = path.join(root, "node_modules", "node-pty", "build");
-        try { fs.rmSync(nodePtyBuild, { recursive: true, force: true }); } catch {}
-      } else if (timedOut) {
-        throw new Error(`node-pty rebuild timed out after ${NODE_PTY_MAX_RETRIES} attempts`);
-      } else {
-        throw err;
-      }
+// ── node-pty ─────────────────────────────────────────────────────────────────
+// macOS + Windows ship N-API prebuilds (prebuilds/<platform>-<arch>/pty.node),
+// which are ABI-stable — no rebuild needed, electron-builder packages the
+// matching arch. Linux ships no prebuild, so node-pty is compiled there.
+const nodePtyPrebuilds = path.join(root, "node_modules", "node-pty", "prebuilds");
+if (process.platform === "linux") {
+  console.log("\n> node-pty has no Linux prebuild — compiling for Electron ABI");
+  const rebuildBin = path.join(root, "node_modules", ".bin", "electron-rebuild");
+  run(`"${rebuildBin}" -f -o node-pty`);
+} else {
+  for (const arch of ARCHES) {
+    const ptyNode = path.join(nodePtyPrebuilds, `${process.platform}-${arch}`, "pty.node");
+    if (!fs.existsSync(ptyNode)) {
+      throw new Error(
+        `node-pty prebuilt missing: ${path.relative(root, ptyNode)} — ` +
+          `expected a shipped N-API prebuild for ${process.platform}-${arch}.`,
+      );
     }
+    console.log(`node-pty prebuilt present: prebuilds/${process.platform}-${arch}/`);
   }
 }
 
-rebuildNodePty();
-
-console.log("\nNative rebuild complete.");
+console.log("\nNative provisioning complete.");

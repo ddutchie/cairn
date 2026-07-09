@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
+import { modKey } from "@/components/layout/sidebar-utils";
 import { type AITextAction, buildAIActionPrompt } from "../../../shared/notes/ai-actions";
 
 // Re-export so existing importers (note-editor.tsx, tests) keep their paths.
@@ -55,11 +56,11 @@ const AI_ACTIONS: { id: AITextAction; label: string; icon: React.ReactNode }[] =
 
 // ── Format button definitions ─────────────────────────────────────────────────
 
-const FORMAT_GROUPS: { id: FormatAction; label: string; icon: React.ReactNode }[][] = [
+const FORMAT_GROUPS: { id: FormatAction; label: string; shortcut?: string; icon: React.ReactNode }[][] = [
   // Inline formatting
   [
-    { id: "bold",          label: "Bold (⌘B)",        icon: <Bold size={12} /> },
-    { id: "italic",        label: "Italic (⌘I)",      icon: <Italic size={12} /> },
+    { id: "bold",          label: "Bold",              shortcut: "B", icon: <Bold size={12} /> },
+    { id: "italic",        label: "Italic",            shortcut: "I", icon: <Italic size={12} /> },
     { id: "strikethrough", label: "Strikethrough",     icon: <Strikethrough size={12} /> },
     { id: "highlight",     label: "Highlight ==text==",icon: <Highlighter size={12} /> },
     { id: "code",          label: "Inline code",       icon: <Code size={12} /> },
@@ -94,6 +95,7 @@ const REQUIRES_SELECTION = new Set<FormatAction>(["bold", "italic", "strikethrou
 export function AITextToolbar({ onAction, onFormat, loading, onDismiss, hasSelection, aiEnabled }: AITextToolbarProps) {
   const [showCustom, setShowCustom] = useState(false);
   const [customPrompt, setCustomPrompt] = useState("");
+  const [mod] = useState(() => modKey());
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -197,7 +199,7 @@ export function AITextToolbar({ onAction, onFormat, loading, onDismiss, hasSelec
               const needsSel = REQUIRES_SELECTION.has(fmt.id);
               const disabled = needsSel && !hasSelection;
               return (
-                <Tooltip key={fmt.id} content={fmt.label} side="bottom">
+                <Tooltip key={fmt.id} content={fmt.shortcut ? `${fmt.label} (${mod}${fmt.shortcut})` : fmt.label} side="bottom">
                   <button
                     onClick={() => onFormat(fmt.id)}
                     disabled={disabled}

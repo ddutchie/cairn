@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { FileText, Kanban, Workflow, MessageSquare, Check, HelpCircle } from "lucide-react";
+import { modKey } from "@/components/layout/sidebar-utils";
 import { Shell, NavRow } from "./shared";
 
 interface Props {
@@ -14,30 +15,31 @@ const FEATURE_CARDS = [
     icon: <FileText size={18} className="text-[var(--accent)]" />,
     label: "Notes",
     desc: "Markdown files you own. Formatting toolbar, read mode, AI text actions.",
-    shortcut: "⌘2",
+    shortcut: (mod: string) => `${mod}2`,
   },
   {
     icon: <Kanban size={18} className="text-[var(--accent)]" />,
     label: "Board",
     desc: "Kanban with priority, due dates, WIP limits, and drag-and-drop.",
-    shortcut: "⌘3",
+    shortcut: (mod: string) => `${mod}3`,
   },
   {
     icon: <MessageSquare size={18} className="text-[var(--accent)]" />,
     label: "AI Chat",
     desc: "Chat with your project. Creates tasks, edits notes, generates PRDs.",
-    shortcut: "⌘/",
+    shortcut: (mod: string) => `${mod}/`,
   },
   {
     icon: <Workflow size={18} className="text-[var(--accent)]" />,
     label: "Idea Flow",
     desc: "Freeform canvas. Connect ideas to notes and tasks before you build.",
-    shortcut: "⌘4",
+    shortcut: (mod: string) => `${mod}4`,
   },
 ];
 
 export function StepDone({ onBack, onComplete }: Props) {
   const [startTour, setStartTour] = useState(true);
+  const [mod] = useState(() => modKey());
 
   return (
     <Shell step="done">
@@ -56,7 +58,7 @@ export function StepDone({ onBack, onComplete }: Props) {
               <div className="flex items-center justify-between">
                 {f.icon}
                 <kbd className="text-[0.6rem] px-1.5 py-0.5 rounded bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-tertiary)] font-mono">
-                  {f.shortcut}
+                  {f.shortcut(mod)}
                 </kbd>
               </div>
               <p className="text-xs font-semibold text-[var(--text-primary)]">{f.label}</p>
