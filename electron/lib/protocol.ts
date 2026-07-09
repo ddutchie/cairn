@@ -135,7 +135,7 @@ export function setupProtocol(outDir: string): void {
           "font-src 'self' data: https://fonts.gstatic.com",
           "connect-src 'self' http://localhost:* ws://localhost:*",
           "worker-src blob: 'self'",
-          "frame-src blob:",
+          "frame-src blob: https:",
         ].join("; ")
       : [
           "default-src 'self' app:",
@@ -146,7 +146,7 @@ export function setupProtocol(outDir: string): void {
           "font-src 'self' data: app:",
           "connect-src 'self' app: http://localhost:* https:",
           "worker-src blob: 'self' app:",
-          "frame-src blob:",
+          "frame-src blob: https:",
         ].join("; ");
 
     callback({

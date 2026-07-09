@@ -5,7 +5,7 @@
 
 import React from "react";
 import { FileText, Circle, Pin } from "lucide-react";
-import { cn, formatRelative, getDueDateStatus } from "@/lib/utils";
+import { cn, formatRelative, getDueDateStatus, parseIsoLocal } from "@/lib/utils";
 import { COLUMN_COLORS, PRIORITY_CSS_COLORS } from "@/lib/constants";
 import { revealColumn } from "@/lib/events";
 import { Badge } from "@/components/ui/badge";
@@ -122,7 +122,10 @@ export function DueCard({ card, columns, today, onClick }: { card: TaskCard; col
   const isOverdue = status === "overdue";
   const isToday   = status === "today";
   // Whole-calendar-day difference (local), so the count matches the status.
-  const due = new Date(card.dueDate!);
+  // parseIsoLocal keeps a bare yyyy-MM-dd on its local calendar day — using
+  // new Date() here would parse it as UTC midnight and shift the count a day
+  // earlier in negative-offset timezones (e.g. "2d overdue" for a 1-day gap).
+  const due = parseIsoLocal(card.dueDate!);
   due.setHours(0, 0, 0, 0);
   const daysLeft = Math.round((due.getTime() - today.getTime()) / 86_400_000);
   const chipLabel = isOverdue ? `${Math.abs(daysLeft)}d overdue` : isToday ? "Today" : `in ${daysLeft}d`;
