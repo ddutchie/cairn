@@ -82,22 +82,12 @@ export interface AppleToolCallEvent {
   toolName: string;
   input: string;
 }
-/**
- * A chunk of the model's reasoning ("thinking") text, keyed by `requestId`.
- * Only emitted on the PCC path (iOS 27+); the on-device model has no exposed
- * reasoning channel. Deltas are the new tail of the cumulative reasoning.
- */
-export interface AppleReasoningEvent {
-  requestId: string;
-  delta: string;
-}
 
 export type AppleLlmEvents = {
   onToken: (e: AppleTokenEvent) => void;
   onDone: (e: AppleDoneEvent) => void;
   onError: (e: AppleErrorEvent) => void;
   onToolCall: (e: AppleToolCallEvent) => void;
-  onReasoning: (e: AppleReasoningEvent) => void;
 };
 
 /**
