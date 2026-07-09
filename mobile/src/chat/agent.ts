@@ -16,6 +16,7 @@ import {
   type UIPart,
   type ToolPart,
   type FilePart,
+  type ChatUsage,
 } from "./providers/types";
 import { toolsForAgent, TOOL_MAP } from "./tools";
 
@@ -28,6 +29,7 @@ export interface AgentEvent {
   args?: unknown;
   result?: unknown;
   text?: string; // full text for final / error
+  usage?: ChatUsage; // context-window usage, on "final"
 }
 
 /** Build the system message (as a UIMessage part). */
@@ -107,6 +109,8 @@ export async function runAgent(
 ): Promise<string> {
   const tools = toolsForAgent();
   let finalText = "";
+  // Context-window usage from the latest turn's finish event (Apple provider).
+  let usage: ChatUsage | undefined;
 
   // Ensure the conversation is led by an up-to-date system prompt. Refresh it
   // each run so the injected current date doesn't go stale in a long session.
@@ -157,6 +161,8 @@ export async function runAgent(
           onEvent?.({ type: "tool", tool: e.toolName, args: e.input, result: e.output });
         } else if (ev.type === "finish") {
           finishReason = (ev as { finishReason?: string }).finishReason;
+          const u = (ev as { usage?: ChatUsage }).usage;
+          if (u) usage = u;
         }
       }
     } catch (e) {
@@ -182,7 +188,7 @@ export async function runAgent(
       // Ensure the assistant turn is in history even if empty-ish.
       if (assistant.parts.length === 0) assistant.parts.push({ type: "text", text: finalText });
       conversation.push(assistant);
-      onEvent?.({ type: "final", text: finalText });
+      onEvent?.({ type: "final", text: finalText, usage });
       return finalText;
     }
 
@@ -218,13 +224,13 @@ export async function runAgent(
     conversation.push(assistant);
     // Loop for the model's follow-up turn (it now sees the tool outputs).
     if (finishReason === "stop") {
-      onEvent?.({ type: "final", text: finalText });
+      onEvent?.({ type: "final", text: finalText, usage });
       return finalText;
     }
   }
 
   const msg = finalText || "I couldn't finish that in a reasonable number of steps.";
-  onEvent?.({ type: "final", text: msg });
+  onEvent?.({ type: "final", text: msg, usage });
   return msg;
 }
 

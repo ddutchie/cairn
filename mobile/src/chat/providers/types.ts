@@ -75,9 +75,15 @@ export type StreamEvent =
       input: unknown;
       output: unknown;
     }
-  | { type: "finish"; finishReason?: string }
+  | { type: "finish"; finishReason?: string; usage?: ChatUsage }
   | { type: "reasoning-delta"; delta?: string }
   | { type: string; [k: string]: unknown };
+
+/** Context-window usage for the chat ring (prompt tokens over the model limit). */
+export interface ChatUsage {
+  promptTokens: number;
+  contextLimit: number;
+}
 
 /** A provider streams normalised events for a turn. */
 export interface ChatProvider {

@@ -60,6 +60,10 @@ export interface AppleTokenEvent {
 export interface AppleDoneEvent {
   requestId: string;
   finishReason: string;
+  /** Context-window usage for the ring: transcript token count (-1 if unknown). */
+  promptTokens?: number;
+  /** Model context size (32K PCC / 4096 on-device; -1 if unknown). */
+  contextLimit?: number;
 }
 export interface AppleErrorEvent {
   requestId: string;

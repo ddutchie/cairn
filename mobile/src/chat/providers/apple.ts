@@ -314,7 +314,7 @@ function makeStreamApple(server: boolean) {
     type Item =
       | { kind: "token"; delta: string }
       | { kind: "toolCall"; callId: string; toolName: string; input: string }
-      | { kind: "done"; finishReason: string }
+      | { kind: "done"; finishReason: string; promptTokens?: number; contextLimit?: number }
       | { kind: "error"; err: AppleLLMError };
     const queue: Item[] = [];
     let notify: (() => void) | null = null;
@@ -327,7 +327,8 @@ function makeStreamApple(server: boolean) {
       if (e.requestId === requestId) push({ kind: "token", delta: e.delta });
     });
     const subDone = AppleLlm.addListener("onDone", (e) => {
-      if (e.requestId === requestId) push({ kind: "done", finishReason: e.finishReason });
+      if (e.requestId === requestId)
+        push({ kind: "done", finishReason: e.finishReason, promptTokens: e.promptTokens, contextLimit: e.contextLimit });
     });
     const subError = AppleLlm.addListener("onError", (e: AppleErrorEvent) => {
       if (e.requestId === requestId) push({ kind: "error", err: new AppleLLMError(e.code, e.message) });
@@ -402,7 +403,14 @@ function makeStreamApple(server: boolean) {
         }
 
         // done
-        yield { type: "finish", finishReason: item.finishReason || "stop" };
+        yield {
+          type: "finish",
+          finishReason: item.finishReason || "stop",
+          usage:
+            item.promptTokens != null && item.promptTokens >= 0 && item.contextLimit != null && item.contextLimit > 0
+              ? { promptTokens: item.promptTokens, contextLimit: item.contextLimit }
+              : undefined,
+        };
         return;
       }
     } finally {

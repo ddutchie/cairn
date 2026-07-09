@@ -117,10 +117,15 @@ public class AppleLlmModule: Module {
       return Self.showQuotaUpgrade()
     }
 
-    // Best-effort token count. Returns -1 ("unknown"): the current
-    // FoundationModels SDK exposes no public token-counting API. JS surface kept
-    // so a future SDK can fill it in without a bridge change.
-    AsyncFunction("countTokens") { (_: String) -> Int in
+    // Token count of a plain string via the on-device tokenizer (iOS 26.4+).
+    // Returns -1 when unavailable. Usage for the context ring is reported on the
+    // onDone event; this stays for ad-hoc counts.
+    AsyncFunction("countTokens") { (text: String) -> Int in
+      #if canImport(FoundationModels)
+      if #available(iOS 26.4, *) {
+        return (try? await SystemLanguageModel.default.tokenCount(for: text)) ?? -1
+      }
+      #endif
       return -1
     }
 
@@ -400,7 +405,16 @@ public class AppleLlmModule: Module {
             self.sendEvent(EVENT_TOKEN, ["requestId": requestId, "delta": text])
           }
         }
-        self.sendEvent(EVENT_DONE, ["requestId": requestId, "finishReason": "stop"])
+        // Report context-window usage for the ring: token count of the session
+        // transcript (numerator) over the model's context size (denominator).
+        // Best-effort — never fails the turn.
+        let (promptTokens, contextLimit) = await Self.usage(for: session, useServer: useServer)
+        self.sendEvent(EVENT_DONE, [
+          "requestId": requestId,
+          "finishReason": "stop",
+          "promptTokens": promptTokens,
+          "contextLimit": contextLimit,
+        ])
         self.removeTask(requestId)
       } catch is CancellationError {
         self.emitError(requestId, .cancelled, "Generation cancelled.")
@@ -434,6 +448,28 @@ public class AppleLlmModule: Module {
     }
     #endif
     return session.streamResponse(to: prompt, options: genOptions)
+  }
+
+  /// Context-window usage for the ring: (promptTokens, contextLimit).
+  /// promptTokens = token count of the session transcript via the on-device
+  /// tokenizer (iOS 26.4+); on the PCC path this is a close estimate (same
+  /// tokenizer family). contextLimit = PCC contextSize (iOS 27) or the on-device
+  /// 4096. Returns (-1, -1) when unavailable so JS can hide the ring. Best-effort.
+  @available(iOS 26.0, *)
+  private static func usage(for session: LanguageModelSession, useServer: Bool) async -> (Int, Int) {
+    var promptTokens = -1
+    if #available(iOS 26.4, *) {
+      promptTokens = (try? await SystemLanguageModel.default.tokenCount(for: session.transcript)) ?? -1
+    }
+
+    var contextLimit = useServer ? -1 : 4096
+    #if CAIRN_PCC_SDK
+    if useServer, #available(iOS 27.0, *) {
+      contextLimit = (try? await PrivateCloudComputeLanguageModel().contextSize) ?? -1
+    }
+    #endif
+
+    return (promptTokens, contextLimit)
   }
 
   /// Fetch the cached session for `sessionId` (namespaced by model kind), or
