@@ -51,6 +51,7 @@ interface CardContentProps {
 
 const CardContent = React.memo(function CardContent({ card, expanded, canExpand, descRef, onToggleExpand }: CardContentProps) {
   const getTagById = useCairnStore((s) => s.getTagById);
+  const isDone = useCairnStore((s) => s.columns.find((c) => c.id === card.columnId)?.type === "done");
   const isBlocked = (card.blockedByIds ?? []).length > 0;
   const tags = card.tagIds.slice(0, 3).map((id) => getTagById(id)).filter(Boolean);
   const extraTags = card.tagIds.slice(3).map((id) => getTagById(id)).filter(Boolean);
@@ -117,7 +118,9 @@ const CardContent = React.memo(function CardContent({ card, expanded, canExpand,
               </span>
             )}
             {card.dueDate && (() => {
-              const status = getDueDateStatus(card.dueDate);
+              // A completed task is never "overdue" or "due today" — its due
+              // date has been met, so render it plainly without emphasis.
+              const status = isDone ? "upcoming" : getDueDateStatus(card.dueDate);
               return (
                 <span className={cn(
                   "flex items-center gap-1 text-[0.714rem] font-medium rounded px-1 py-0.5",

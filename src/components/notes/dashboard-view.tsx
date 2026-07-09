@@ -337,7 +337,7 @@ export function DashboardView({ note, onBack }: DashboardViewProps) {
           key={rev}
           ref={iframeRef}
           className="w-full h-full border-0"
-          sandbox="allow-scripts"
+          sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms"
           srcDoc={srcdoc}
           title={note.title}
         />
