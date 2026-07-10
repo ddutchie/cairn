@@ -11,13 +11,14 @@ import { ICON_CAIRN } from "@/components/toolbar-icons";
  *
  * Emits a `Stack.Toolbar placement="left"` so it lives in the leading header
  * slot and renders as a true native (Liquid Glass) menu button. It is
- * ICON-ONLY (the Cairn logo) — no `Stack.Toolbar.Label`, so the item never
- * flickers between the icon and a text label as the workspace name resolves;
- * the active workspace name shows as the screen's centered header title
- * instead. Tapping lists the workspaces discovered in the shared folder with a
- * checkmark on the active one. This replaces the earlier custom
- * `GlassMenu`-in-`headerTitle` approach, which the native centered title slot
- * sized/positioned unreliably.
+ * ICON-ONLY (the Cairn logo) — no `Stack.Toolbar.Label` and no `title` prop, so
+ * the item never flickers between the icon and a text label (the native item's
+ * `title` can otherwise bleed into the header title slot on some renders); the
+ * active workspace name shows as the screen's centered header title instead.
+ * Tapping lists the workspaces discovered in the shared folder with a checkmark
+ * on the active one. This replaces the earlier custom `GlassMenu`-in-
+ * `headerTitle` approach, which the native centered title slot sized/positioned
+ * unreliably.
  *
  * Discovery re-runs on focus (`useFocusEffect`); sync itself never scans for new
  * workspaces (it only round-trips the active source), so focusing this surface
@@ -68,7 +69,6 @@ export function WorkspaceHeaderMenu() {
       <Stack.Toolbar.Menu
         icon={ICON_CAIRN}
         iconRenderingMode="template"
-        title="Workspaces"
         accessibilityLabel="Switch workspace"
       >
         {all.map((s) => (

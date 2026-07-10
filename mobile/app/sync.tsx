@@ -1,12 +1,10 @@
 import { useCallback, useMemo, useState } from "react";
 import { View, Text, Pressable, StyleSheet, ActivityIndicator, ScrollView } from "react-native";
 import { Stack, useFocusEffect, useRouter } from "expo-router";
-import { GitMerge, ChevronRight, Check } from "lucide-react-native";
-import { iCloudAvailable, syncFolderLabel, getSyncFolderPath } from "@/sync/folder";
-import { requestSync, switchSource } from "@/sync/controller";
+import { GitMerge, ChevronRight } from "lucide-react-native";
+import { iCloudAvailable, syncFolderLabel } from "@/sync/folder";
+import { requestSync } from "@/sync/controller";
 import { useSyncStatus } from "@/sync/useSyncStatus";
-import { listSources, type SyncSource } from "@/sync/fs-transport";
-import { getActiveSource, getActiveSourceName, getDeviceId } from "@/db";
 import { EmbeddingsCard } from "@/components/EmbeddingsCard";
 import { ICON_CHECK } from "@/components/toolbar-icons";
 import { useModalOpenHaptic, toolbarPress } from "@/haptics";
@@ -19,6 +17,9 @@ import { useTheme, type as typeScale, type Theme } from "@/theme";
  * modal's swipe-down — dismisses it, matching the new-note / AI-settings modal
  * pattern. Owns the things the badge can't: iCloud availability diagnostics, the
  * conflict-resolution entry point, and the last sync result.
+ *
+ * Workspace switching lives in the Projects header (WorkspaceHeaderMenu), not
+ * here — the Sync modal is purely sync status/diagnostics.
  */
 export default function SyncScreen() {
   useModalOpenHaptic();
@@ -26,52 +27,19 @@ export default function SyncScreen() {
   const router = useRouter();
   const { state, pending, conflicts, lastResult: last } = useSyncStatus();
   const [available, setAvailable] = useState<boolean | null>(null);
-  const [sources, setSources] = useState<SyncSource[]>([]);
-  const [activeSource, setActiveSourceState] = useState<string | null>(() => getActiveSource());
-  const [activeName, setActiveName] = useState<string | null>(() => getActiveSourceName());
   const styles = useMemo(() => makeStyles(t), [t]);
   const busy = state === "syncing";
 
   const refresh = useCallback(() => {
     iCloudAvailable().then(setAvailable).catch(() => setAvailable(false));
-    setActiveSourceState(getActiveSource());
-    setActiveName(getActiveSourceName());
-    // Re-scan the shared folder for available sources (workspaces).
-    void (async () => {
-      try {
-        const folder = await getSyncFolderPath();
-        if (!folder) return;
-        setSources(await listSources(folder, getDeviceId()));
-      } catch {
-        /* leave sources as-is */
-      }
-    })();
   }, []);
 
   useFocusEffect(useCallback(() => refresh(), [refresh]));
 
   const onSync = () => void requestSync("manual");
-  const onSwitch = (ws: string) => {
-    switchSource(ws);
-    setActiveSourceState(ws);
-    setActiveName(getActiveSourceName());
-  };
   const close = () => {
     if (router.canGoBack()) router.back();
   };
-
-  // Merge the active workspace (which may not be in the scan yet) with the
-  // discovered ones, keyed by id, so the switcher always includes the current.
-  const allSources = useMemo(() => {
-    const byId = new Map<string, SyncSource>();
-    for (const s of sources) byId.set(s.workspaceId, s);
-    if (activeSource && !byId.has(activeSource)) {
-      byId.set(activeSource, { workspaceId: activeSource, name: activeName });
-    }
-    return [...byId.values()].sort((a, b) =>
-      (a.name ?? a.workspaceId).localeCompare(b.name ?? b.workspaceId),
-    );
-  }, [sources, activeSource, activeName]);
 
   return (
     <View style={[styles.root, { backgroundColor: t.surface }]}>
@@ -93,32 +61,6 @@ export default function SyncScreen() {
               : "Automatic — this folder is your app's iCloud storage, shared with the desktop. No setup needed."}
           </Text>
         </View>
-
-        {allSources.length > 1 && (
-          <View style={styles.card}>
-            <Text style={styles.cardLabel}>Workspace</Text>
-            <Text style={styles.help}>
-              Each workspace syncs from a separate computer. Switching changes what this app
-              shows and edits.
-            </Text>
-            {allSources.map((s) => {
-              const active = s.workspaceId === activeSource;
-              return (
-                <Pressable
-                  key={s.workspaceId}
-                  style={[styles.sourceRow, active && styles.sourceRowActive]}
-                  onPress={() => !active && onSwitch(s.workspaceId)}
-                >
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.sourceTitle}>{s.name ?? "Workspace"}</Text>
-                    <Text style={styles.sourceId}>{s.workspaceId}</Text>
-                  </View>
-                  {active && <Check size={18} color={t.accent} />}
-                </Pressable>
-              );
-            })}
-          </View>
-        )}
 
         <Pressable style={[styles.syncButton, busy && styles.buttonDisabled]} onPress={onSync} disabled={busy}>
           {busy ? (
@@ -192,9 +134,5 @@ function makeStyles(t: Theme) {
     conflictTitle: { ...typeScale.control, color: t.textSecondary },
     conflictHelp: { ...typeScale.caption, color: t.textTertiary, marginTop: 2, lineHeight: 16 },
     note: { marginTop: 24, ...typeScale.caption, color: t.textTertiary, lineHeight: 18 },
-    sourceRow: { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 10, padding: 12, backgroundColor: t.surface, borderRadius: 10, borderWidth: 1, borderColor: t.border },
-    sourceRowActive: { borderColor: t.accent },
-    sourceTitle: { ...typeScale.control, color: t.textPrimary },
-    sourceId: { ...typeScale.caption, color: t.textTertiary, marginTop: 2, fontFamily: "Courier" },
   });
 }
