@@ -31,7 +31,22 @@ npm run type-check:all  # type-check renderer + electron (always run after chang
 
 esbuild is stricter than tsc — backticks inside template literals must be unescaped at the template level. Use `import * as z from "zod"` (not `import { z }`) in all Electron files.
 
-**Never bump the project version** (`version` in `package.json`). The release script handles version bumping automatically. When adding a changelog, name the file for the next version but leave `package.json` untouched.
+**Never bump the project version.** The release scripts (`scripts/release.sh` for desktop, `scripts/releasemobile.sh` for mobile) bump the version and update the JSON automatically at release time — leave `package.json` / `mobile/app.json` untouched.
+
+### Changelog rule (always keep the changelog ahead of the version)
+
+Whenever you make a user-facing change, record it in a changelog **without being asked**. Always write to the changelog whose version is the next release *above the current package version* — never edit a changelog at or below the shipped version.
+
+- **Desktop**: changelogs live in `changelogs/`; the current version is `version` in `package.json`.
+- **Mobile**: changelogs live in `mobile/changelogs/`; the current version is `expo.version` in `mobile/app.json` (not `mobile/package.json`, which is stale).
+
+Procedure for the relevant target (desktop and/or mobile):
+
+1. Find the highest `changelogs/v*.md` file and compare its version to the current package version.
+2. **If the latest changelog version is already `>` the current version**, append your entry to that existing file — it is the pending release. (e.g. version `2.4.6` + latest changelog `v2.4.7.md` → edit `v2.4.7.md`.)
+3. **If no changelog is ahead of the current version** (the latest is `<=` the version), create a new file named for the next version above the current one — default to a patch bump (e.g. version `2.4.7`, latest changelog `v2.4.7.md` → create `v2.4.8.md`), unless the change clearly warrants a minor/major.
+
+This guarantees `release.sh`'s gate (`changelogs/v<next>.md` must exist for the chosen bump) is satisfied, so the pending changelog and the version bump stay in lockstep — you never have to be told which changelog to touch.
 
 ## Views and navigation
 
