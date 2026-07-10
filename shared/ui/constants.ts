@@ -48,6 +48,10 @@ export const PRIORITY_COLOR: Record<string, string> = {
   urgent: "#ef4444",
 };
 
+/** Task priorities, low → urgent. The canonical order for pickers/chips. */
+export const PRIORITIES = ["low", "medium", "high", "urgent"] as const;
+export type Priority = (typeof PRIORITIES)[number];
+
 /**
  * Prettify a tool label/name for display. Both apps show identical tool-call
  * chip labels via this single implementation.

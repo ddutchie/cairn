@@ -1,12 +1,11 @@
 import { useMemo, useState } from "react";
-import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, KeyboardAvoidingView, Platform } from "react-native";
+import { Text, TextInput, ScrollView, StyleSheet, KeyboardAvoidingView, Platform } from "react-native";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
 import { createTask, listColumns, type ColumnRow } from "@/db/queries";
 import { useModalOpenHaptic, toolbarPress } from "@/haptics";
-import { useTheme, PRIORITY_COLOR, type as typeScale, type Theme } from "@/theme";
+import { useTheme, type as typeScale, type Theme } from "@/theme";
 import { ICON_CHECK } from "@/components/toolbar-icons";
-
-const PRIORITIES = ["low", "medium", "high", "urgent"] as const;
+import { PriorityChips, ColumnChips } from "@/components/TaskChips";
 
 /**
  * New-task composer. `project` (id) required; `column` optionally pre-selects
@@ -59,32 +58,12 @@ export default function NewCard() {
         <TextInput style={styles.titleInput} value={title} onChangeText={setTitle} placeholder="Task title" placeholderTextColor={t.textTertiary} autoFocus multiline />
 
         <Text style={styles.label}>Priority</Text>
-        <View style={styles.row}>
-          {PRIORITIES.map((p) => (
-            <Pressable
-              key={p}
-              onPress={() => setPriority(p)}
-              style={[styles.chip, { borderColor: PRIORITY_COLOR[p] }, priority === p && { backgroundColor: PRIORITY_COLOR[p] }]}
-            >
-              <Text style={[styles.chipText, { color: priority === p ? t.accentFg : t.textSecondary }]}>{p}</Text>
-            </Pressable>
-          ))}
-        </View>
+        <PriorityChips value={priority} onChange={setPriority} />
 
         {columns.length > 0 && (
           <>
             <Text style={styles.label}>Column</Text>
-            <View style={styles.row}>
-              {columns.map((c) => (
-                <Pressable
-                  key={c.id}
-                  onPress={() => setColumnId(c.id)}
-                  style={[styles.chip, { borderColor: t.border }, columnId === c.id && { backgroundColor: t.accent, borderColor: t.accent }]}
-                >
-                  <Text style={{ color: columnId === c.id ? t.accentFg : t.textSecondary, ...typeScale.label }}>{c.name}</Text>
-                </Pressable>
-              ))}
-            </View>
+            <ColumnChips columns={columns} value={columnId} onChange={setColumnId} />
           </>
         )}
 
@@ -109,9 +88,6 @@ function makeStyles(t: Theme) {
     content: { padding: 18, paddingBottom: 60 },
     label: { ...typeScale.overline, color: t.textTertiary, marginTop: 18, marginBottom: 8 },
     titleInput: { ...typeScale.title, color: t.textPrimary, backgroundColor: t.surface2, borderWidth: 1, borderColor: t.border, borderRadius: 10, padding: 12 },
-    row: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
-    chip: { paddingVertical: 6, paddingHorizontal: 14, borderRadius: 16, borderWidth: 1 },
-    chipText: { ...typeScale.label, textTransform: "capitalize" },
     descInput: { ...typeScale.body, color: t.textPrimary, backgroundColor: t.surface2, borderWidth: 1, borderColor: t.border, borderRadius: 10, padding: 12, minHeight: 160, fontFamily: "Menlo" },
   });
 }

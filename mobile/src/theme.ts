@@ -74,7 +74,7 @@ export const lightTheme: Theme = {
 };
 
 /** Priority colours — re-exported from shared so desktop + mobile match. */
-export { PRIORITY_COLOR } from "@cairn/shared/ui/constants";
+export { PRIORITY_COLOR, PRIORITIES, type Priority } from "@cairn/shared/ui/constants";
 
 /**
  * Elevation ladder — the RN analogue of the desktop shadow scale

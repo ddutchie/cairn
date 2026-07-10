@@ -3,21 +3,20 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import {
   ScrollView,
   Text,
-  TextInput,
   StyleSheet,
   View,
   Alert,
 } from "react-native";
 import { Pin, List } from "lucide-react-native";
-import { KeyboardAwareScrollView, KeyboardStickyView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getNote, updateNote, tagsForNote, noteTagIds, setNoteTags, pinNote, softDeleteNote, workspaceIdForNote } from "@/db/queries";
 import { MarkdownView } from "@/components/MarkdownView";
 import { TagChips } from "@/components/TagChips";
 import { TagPickerSheet } from "@/components/TagPickerSheet";
-import { NoteEditorToolbar } from "@/components/NoteEditorToolbar";
-import { WikilinkPickerSheet } from "@/components/WikilinkPickerSheet";
+import { NoteEditorBody } from "@/components/NoteEditorBody";
 import { PressableScale } from "@/components/PressableScale";
+import { ResultRow } from "@/components/ResultRow";
+import { NotFound } from "@/components/NotFound";
 import { BottomSheet, BottomSheetHeader } from "@/components/BottomSheet";
 import { GlassBar, glassActive } from "@/components/GlassBar";
 import { ICON_CHECK, ICON_CLOSE, ICON_EDIT, ICON_MORE, ICON_PIN, ICON_UNPIN, ICON_TAG, ICON_DELETE } from "@/components/toolbar-icons";
@@ -56,7 +55,6 @@ export function NoteDetailScreen({ nested = false }: { nested?: boolean }) {
   const [tagPickerOpen, setTagPickerOpen] = useState(false);
 
   // Editing toolbar state.
-  const bodyRef = useRef<TextInput>(null);
   const fmt = useNoteFormattingToolbar(body, setBody);
 
   // Table-of-contents: headings parsed from the current body, the read-mode
@@ -136,11 +134,7 @@ export function NoteDetailScreen({ nested = false }: { nested?: boolean }) {
   }, [note, router]);
 
   if (!note) {
-    return (
-      <View style={styles.center}>
-        <Text style={styles.missing}>Note not found</Text>
-      </View>
-    );
+    return <NotFound label="Note" />;
   }
 
   const onSave = () => {
@@ -206,43 +200,14 @@ export function NoteDetailScreen({ nested = false }: { nested?: boolean }) {
       )}
 
       {editing ? (
-        <>
-          <KeyboardAwareScrollView
-            style={styles.scroll}
-            contentContainerStyle={styles.content}
-            keyboardShouldPersistTaps="handled"
-            bottomOffset={62}
-          >
-            <TextInput style={styles.titleInput} value={title} onChangeText={setTitle} placeholder="Title" placeholderTextColor={t.textTertiary} multiline />
-            <TextInput
-              ref={bodyRef}
-              style={styles.bodyInput}
-              value={body}
-              onChangeText={setBody}
-              selection={fmt.selection}
-              onSelectionChange={fmt.onSelectionChange}
-              placeholder="Write in Markdown…"
-              placeholderTextColor={t.textTertiary}
-              // Lock edits while an AI action is pending: onAIAction splices its
-              // reply into the body snapshot captured at call time, so edits
-              // made mid-request would be clobbered / spliced at stale offsets.
-              editable={!fmt.aiLoading}
-              multiline
-              textAlignVertical="top"
-            />
-          </KeyboardAwareScrollView>
-          <KeyboardStickyView>
-            <NoteEditorToolbar
-              onFormat={fmt.onFormat}
-              onAction={fmt.onAIAction}
-              hasSelection={fmt.hasSelection}
-              aiEnabled
-              loading={fmt.aiLoading}
-              onDismiss={() => bodyRef.current?.blur()}
-              bottomInset={insets.bottom + (nested ? TAB_BAR_BASE : 0)}
-            />
-          </KeyboardStickyView>
-        </>
+        <NoteEditorBody
+          title={title}
+          body={body}
+          onTitle={setTitle}
+          onBody={setBody}
+          fmt={fmt}
+          bottomInset={insets.bottom + (nested ? TAB_BAR_BASE : 0)}
+        />
       ) : (
         <ScrollView ref={scrollRef} style={styles.scroll} contentContainerStyle={[styles.content, { paddingBottom: viewBottomPad }]}>
           <View style={styles.titleRow}>
@@ -317,12 +282,6 @@ export function NoteDetailScreen({ nested = false }: { nested?: boolean }) {
         onDone={onTags}
         onClose={() => setTagPickerOpen(false)}
       />
-
-      <WikilinkPickerSheet
-        visible={fmt.wikilinkOpen}
-        onSelect={fmt.onWikilink}
-        onClose={fmt.closeWikilink}
-      />
     </View>
   );
 }
@@ -368,10 +327,7 @@ function RelatedNotes({ noteId, onOpen }: { noteId: string; onOpen: (id: string)
     <View style={styles.related}>
       <Text style={styles.relatedHeading}>Related notes</Text>
       {items.map((r) => (
-        <PressableScale key={r.noteId} style={styles.relatedRow} onPress={() => onOpen(r.noteId)}>
-          <Text style={styles.relatedTitle} numberOfLines={1}>{r.title || "Untitled"}</Text>
-          <Text style={styles.relatedScore}>{Math.round(r.score * 100)}%</Text>
-        </PressableScale>
+        <ResultRow key={r.noteId} title={r.title} score={r.score} onPress={() => onOpen(r.noteId)} />
       ))}
     </View>
   );
@@ -386,10 +342,6 @@ function makeStyles(t: Theme) {
     title: { ...typeScale.display, color: t.textPrimary, flexShrink: 1 },
     folder: { ...typeScale.caption, color: t.accent, marginTop: 4, marginBottom: 4 },
     md: { marginTop: 12 },
-    titleInput: { ...typeScale.display, color: t.textPrimary, padding: 0 },
-    bodyInput: { ...typeScale.body, color: t.textPrimary, marginTop: 16, fontFamily: "Menlo", minHeight: 320 },
-    center: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: t.background },
-    missing: { color: t.textTertiary },
     // Related notes (semantic neighbours)
     related: {
       marginTop: 28,
@@ -402,20 +354,6 @@ function makeStyles(t: Theme) {
       color: t.textTertiary,
       marginBottom: 8,
     },
-    relatedRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 8,
-      paddingVertical: 10,
-      paddingHorizontal: 12,
-      marginBottom: 8,
-      backgroundColor: t.surface,
-      borderRadius: 10,
-      borderWidth: 1,
-      borderColor: t.border,
-    },
-    relatedTitle: { ...typeScale.control, color: t.textPrimary, flexShrink: 1 },
-    relatedScore: { ...typeScale.caption, color: t.textTertiary, marginLeft: "auto", fontVariant: ["tabular-nums"] },
     // Floating TOC button
     tocFab: { position: "absolute", right: 18 },
     tocFabInner: {
