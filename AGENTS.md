@@ -31,6 +31,8 @@ npm run type-check:all  # type-check renderer + electron (always run after chang
 
 esbuild is stricter than tsc — backticks inside template literals must be unescaped at the template level. Use `import * as z from "zod"` (not `import { z }`) in all Electron files.
 
+**Never bump the project version** (`version` in `package.json`). The release script handles version bumping automatically. When adding a changelog, name the file for the next version but leave `package.json` untouched.
+
 ## Views and navigation
 
 | View | Key | Component |

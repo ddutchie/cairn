@@ -48,7 +48,7 @@ export function Sidebar() {
   const {
     sidebarCollapsed, toggleSidebar,
     activeWorkspaceId, activeProjectId, activeView,
-    workspaces, getWorkspaceProjects,
+    workspaces, projects: allProjects, getWorkspaceProjects,
     setActiveProject, setView, toggleSearch, toggleChat,
     createProject, updateProject, deleteProject,
     cards, chatOpen, searchOpen,
@@ -60,6 +60,7 @@ export function Sidebar() {
     activeProjectId:     s.activeProjectId,
     activeView:          s.activeView,
     workspaces:          s.workspaces,
+    projects:            s.projects,
     getWorkspaceProjects: s.getWorkspaceProjects,
     setActiveProject:    s.setActiveProject,
     setView:             s.setView,
@@ -108,7 +109,7 @@ export function Sidebar() {
   const projects = React.useMemo(
     () => activeWorkspaceId ? getWorkspaceProjects(activeWorkspaceId) : [],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [activeWorkspaceId, workspaces],
+    [activeWorkspaceId, workspaces, allProjects],
   );
 
   function toggleProjectExpand(projectId: string) {
