@@ -1,10 +1,20 @@
+/* eslint-disable react-hooks/refs -- The shared drag controller (src/dnd) bundles
+   reanimated SharedValues alongside plain state + ref-callbacks. The react-hooks
+   `refs` rule mis-flags every `ctrl.*` member access as ref access because of the
+   SharedValues, but those are reanimated UI-thread values only ever read inside
+   worklets / useAnimatedStyle — never during JS render. The plain fields
+   (ctrl.dragging, ctrl.scrollLocked, ctrl.setContainer) are safe to read here. */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { View, Text, ScrollView, Pressable, StyleSheet } from "react-native";
-import { ChevronLeft, ChevronRight, AlertTriangle, Lock } from "lucide-react-native";
+import { ChevronLeft, ChevronRight, AlertTriangle, Lock, ChevronDown, Inbox } from "lucide-react-native";
+import Animated, { useAnimatedStyle } from "react-native-reanimated";
+import { GestureDetector } from "react-native-gesture-handler";
 import { PressableScale } from "@/components/PressableScale";
+import { useDragController, useZoneHighlight, DragOverlay, type DragController } from "@/dnd";
 import { tagsByRow, type CalendarCard, type TagRow } from "@/db/queries";
-import { useTheme, withAlpha, PRIORITY_COLOR, type as typeScale, iconSize, type Theme } from "@/theme";
+import { useTheme, withAlpha, PRIORITY_COLOR, elevation, type as typeScale, iconSize, type Theme } from "@/theme";
 import { getDueDateStatus, formatDate } from "@cairn/shared/format/date";
+import { resolveDateDrop, UNSCHEDULED_DROP_ID } from "@cairn/shared/calendar/dnd";
 
 export type CalendarLayout = "month" | "week";
 
@@ -13,6 +23,12 @@ const MONTHS = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
 ];
+
+/** Stable empty-cards reference so the `unscheduled` default doesn't churn memos. */
+const EMPTY_CARDS: CalendarCard[] = [];
+
+/** Fixed width of the dragged-chip clone, so it looks the same from any source zone. */
+const DRAG_CHIP_WIDTH = 150;
 
 /** A single cell in the grid. */
 interface Cell {
@@ -88,6 +104,8 @@ export function CalendarView({
   layout: layoutProp,
   onLayoutChange,
   todayNonce = 0,
+  unscheduled = EMPTY_CARDS,
+  onReschedule,
 }: {
   cards: CalendarCard[];
   onOpenCard: (cardId: string) => void;
@@ -100,6 +118,12 @@ export function CalendarView({
   /** Bump this (e.g. from a native "Today" toolbar button) to jump the grid +
    *  selection back to today. */
   todayNonce?: number;
+  /** Cards with no due date, shown in the Unscheduled tray. Drag one onto a day
+   *  to schedule it. Omit to hide the tray. */
+  unscheduled?: CalendarCard[];
+  /** Commit a drag-reschedule: `dueDate` is a "yyyy-MM-dd" key, or null to
+   *  clear (dropped on the Unscheduled tray). Omit to disable drag-to-reschedule. */
+  onReschedule?: (cardId: string, dueDate: string | null) => void;
 }) {
   const t = useTheme();
   const styles = useMemo(() => makeStyles(t), [t]);
@@ -129,7 +153,8 @@ export function CalendarView({
   // Bucket EVERY dated card by its day. A separate overdue list drives the tray,
   // but past-due cards are ALSO kept in `byDay` so a past day that's still
   // visible in the grid (e.g. a leading-week day from the previous month) shows
-  // its tasks instead of appearing empty.
+  // its tasks instead of appearing empty. Cards in a done column are complete,
+  // so they're kept out of the overdue tray (they still keep their day chip).
   const { byDay, overdue } = useMemo(() => {
     const map = new Map<string, CalendarCard[]>();
     const over: CalendarCard[] = [];
@@ -139,7 +164,7 @@ export function CalendarView({
       const arr = map.get(key);
       if (arr) arr.push(c);
       else map.set(key, [c]);
-      if (key < todayKey) over.push(c);
+      if (key < todayKey && !c.is_done) over.push(c);
     }
     return { byDay: map, overdue: over };
   }, [cards, todayKey]);
@@ -157,6 +182,23 @@ export function CalendarView({
 
   const maxVisible = layout === "month" ? 2 : 6;
 
+  // Drag-to-reschedule (shared drag core). Drop zones are each day cell (keyed
+  // by its yyyy-MM-dd key) plus the Unscheduled tray (UNSCHEDULED_DROP_ID). On
+  // release we resolve the drop against the card's current due date and, when
+  // it's a real change, hand the new value (or null to clear) to onReschedule.
+  // Disabled entirely when the screen doesn't pass onReschedule.
+  const dragEnabled = !!onReschedule;
+  const ctrl = useDragController<CalendarCard>({
+    getId: (c) => c.id,
+    // Lift the chip well clear of the finger so it stays readable; the tail
+    // (rendered in the overlay below) points down to the actual drop point.
+    liftOffsetY: 52,
+    onDrop: (card, target) => {
+      const patch = resolveDateDrop(target, { dueDate: card.due_date || null });
+      if (patch) onReschedule?.(card.id, patch.dueDate ?? null);
+    },
+  });
+
   const step = (delta: number) =>
     setAnchor((a) =>
       layout === "month"
@@ -170,7 +212,7 @@ export function CalendarView({
       : `Week of ${buildWeekGrid(anchor, todayKey)[0].date.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
 
   return (
-    <View style={styles.root}>
+    <View ref={ctrl.setContainer} style={styles.root} collapsable={false}>
       {/* Toolbar */}
       <View style={styles.toolbar}>
         <View style={styles.navGroup}>
@@ -247,10 +289,29 @@ export function CalendarView({
               {overdue.length} overdue {overdue.length === 1 ? "task" : "tasks"}
             </Text>
           </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.overdueRow}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.overdueRow}
+            // Lock the horizontal scroll while a chip is lifted so the drag
+            // gesture isn't stolen by the scroll view.
+            scrollEnabled={!ctrl.scrollLocked}
+          >
             {overdue.map((card) => (
               <View key={card.id} style={styles.overdueChipWrap}>
-                <TaskChip card={card} overdue onPress={() => onOpenCard(card.id)} t={t} styles={styles} />
+                <DraggableChip
+                  card={card}
+                  // Source zone = the card's (past) due day. Dropping it back on
+                  // that same day is a no-op; dropping on another day / the
+                  // Unscheduled tray reschedules or clears it.
+                  sourceZoneId={dueDayKey(card.due_date)}
+                  ctrl={ctrl}
+                  dragEnabled={dragEnabled}
+                  overdue
+                  onPress={() => onOpenCard(card.id)}
+                  t={t}
+                  styles={styles}
+                />
                 <Text style={styles.overdueWas}>was {formatDate(card.due_date)}</Text>
               </View>
             ))}
@@ -268,69 +329,33 @@ export function CalendarView({
       </View>
 
       {/* Grid + selected-day list (scroll together) */}
-      <ScrollView
+      <Animated.ScrollView
+        ref={ctrl.scrollRef}
+        onScroll={ctrl.scrollHandler}
+        onLayout={ctrl.onScrollLayout}
+        onContentSizeChange={ctrl.onScrollContentSizeChange}
+        scrollEventThrottle={16}
         style={styles.gridScroll}
         contentContainerStyle={{ paddingBottom: bottomInset + 16 }}
         showsVerticalScrollIndicator={false}
+        scrollEnabled={!ctrl.scrollLocked}
       >
         <View style={styles.grid}>
-          {cells.map((cell) => {
-            const dayCards = byDay.get(cell.key) ?? [];
-            const visible = dayCards.slice(0, maxVisible);
-            const overflow = dayCards.length - visible.length;
-            const selected = cell.key === selectedKey;
-            return (
-              <Pressable
-                key={cell.key}
-                onPress={() => setSelectedKey(cell.key)}
-                style={[
-                  styles.cell,
-                  layout === "week" && styles.cellWeek,
-                  { backgroundColor: cell.inMonth ? t.surface : t.background },
-                  cell.isToday && { backgroundColor: withAlpha(t.accent, 0.08) },
-                  selected && { borderColor: t.accent, borderWidth: 1.5 },
-                ]}
-              >
-                <View style={styles.cellHeader}>
-                  <View
-                    style={[
-                      styles.dayNumWrap,
-                      cell.isToday && { backgroundColor: t.accent },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.dayNum,
-                        {
-                          color: cell.isToday
-                            ? t.accentFg
-                            : cell.inMonth
-                              ? t.textSecondary
-                              : t.textTertiary,
-                        },
-                      ]}
-                    >
-                      {cell.date.getDate()}
-                    </Text>
-                  </View>
-                </View>
-                <View style={styles.cellChips}>
-                  {visible.map((card) => (
-                    <TaskChip
-                      key={card.id}
-                      card={card}
-                      onPress={() => setSelectedKey(cell.key)}
-                      t={t}
-                      styles={styles}
-                    />
-                  ))}
-                  {overflow > 0 ? (
-                    <Text style={styles.moreText}>+{overflow} more</Text>
-                  ) : null}
-                </View>
-              </Pressable>
-            );
-          })}
+          {cells.map((cell) => (
+            <DayCell
+              key={cell.key}
+              cell={cell}
+              cards={byDay.get(cell.key) ?? EMPTY_CARDS}
+              maxVisible={maxVisible}
+              selected={cell.key === selectedKey}
+              layoutWeek={layout === "week"}
+              dragEnabled={dragEnabled}
+              ctrl={ctrl}
+              onSelect={setSelectedKey}
+              t={t}
+              styles={styles}
+            />
+          ))}
         </View>
 
         {/* Selected-day item list — the "meet halfway" mobile affordance:
@@ -354,7 +379,32 @@ export function CalendarView({
             ))
           )}
         </View>
-      </ScrollView>
+
+        {/* Unscheduled tray — droppable list of undated tasks. Drag a chip onto
+            a day to schedule it; drag a dated task here to clear its due date. */}
+        {dragEnabled ? (
+          <UnscheduledTray
+            cards={unscheduled}
+            ctrl={ctrl}
+            showProject={showProject}
+            onOpenCard={onOpenCard}
+            t={t}
+            styles={styles}
+          />
+        ) : null}
+      </Animated.ScrollView>
+
+      {/* Floating clone that follows the finger while a chip is lifted. Lifted
+          above the finger (liftOffsetY) with a small tail pointing down to the
+          drop point, so the chip stays readable and unobscured. */}
+      {ctrl.dragging ? (
+        <DragOverlay ctrl={ctrl} scale={1.06}>
+          <View>
+            <TaskChip card={ctrl.dragging} onPress={() => {}} t={t} styles={styles} lifted />
+            <View style={styles.dragTail} />
+          </View>
+        </DragOverlay>
+      ) : null}
     </View>
   );
 }
@@ -377,12 +427,15 @@ function TaskChip({
   onPress,
   t,
   styles,
+  lifted,
 }: {
   card: CalendarCard;
   overdue?: boolean;
   onPress: () => void;
   t: Theme;
   styles: ReturnType<typeof makeStyles>;
+  /** Rendered inside the drag overlay — pins a fixed width so it reads well. */
+  lifted?: boolean;
 }) {
   const dotColor = PRIORITY_COLOR[card.priority] ?? t.textTertiary;
   const blocked = false; // blocked_by_ids not projected here; kept for parity
@@ -399,6 +452,7 @@ function TaskChip({
               borderColor: withAlpha(t.danger, 0.3),
             }
           : { backgroundColor: t.surface2, borderColor: t.borderSubtle },
+        lifted && { borderColor: t.accent, ...elevation.lg },
       ]}
     >
       <View style={[styles.chipDot, { backgroundColor: dotColor }]} />
@@ -412,6 +466,225 @@ function TaskChip({
     </PressableScale>
   );
 }
+
+/**
+ * A draggable task chip inside a day cell. Long-press lifts it (via the shared
+ * drag core) so it can be dropped on another day or the Unscheduled tray; a
+ * short press just selects the day. When drag is disabled it's a plain chip.
+ */
+function DraggableChip({
+  card,
+  sourceZoneId,
+  ctrl,
+  dragEnabled,
+  onPress,
+  overdue,
+  t,
+  styles,
+}: {
+  card: CalendarCard;
+  sourceZoneId: string;
+  ctrl: DragController<CalendarCard>;
+  dragEnabled: boolean;
+  onPress: () => void;
+  /** Render with the red overdue styling (overdue tray chips). */
+  overdue?: boolean;
+  t: Theme;
+  styles: ReturnType<typeof makeStyles>;
+}) {
+  const isLifted = dragEnabled && ctrl.dragging?.id === card.id;
+  // Hooks are always called (never conditionally) to keep order stable; the
+  // gesture is simply not attached when drag is disabled for this screen.
+  // Fixed overlay width so the lifted chip reads the same regardless of source
+  // zone (a day cell is ~narrow, the Unscheduled tray is full-width — without a
+  // fixed width the clone would inherit those very different zone widths).
+  const pan = useMemo(() => ctrl.panGesture(card, sourceZoneId, DRAG_CHIP_WIDTH), [ctrl, card, sourceZoneId]);
+  const slotStyle = useAnimatedStyle(() => ({ opacity: isLifted ? 0.3 : 1 }), [isLifted]);
+
+  const chip = <TaskChip card={card} overdue={overdue} onPress={onPress} t={t} styles={styles} />;
+  if (!dragEnabled) return chip;
+  return (
+    <GestureDetector gesture={pan}>
+      <Animated.View style={slotStyle}>{chip}</Animated.View>
+    </GestureDetector>
+  );
+}
+
+/**
+ * A single calendar day cell: registers itself as a drop zone (keyed by its
+ * yyyy-MM-dd key), shows a hover-highlight overlay while a chip is dragged over
+ * it, and renders its (draggable) task chips.
+ */
+function DayCell({
+  cell,
+  cards,
+  maxVisible,
+  selected,
+  layoutWeek,
+  dragEnabled,
+  ctrl,
+  onSelect,
+  t,
+  styles,
+}: {
+  cell: Cell;
+  cards: CalendarCard[];
+  maxVisible: number;
+  selected: boolean;
+  layoutWeek: boolean;
+  dragEnabled: boolean;
+  ctrl: DragController<CalendarCard>;
+  onSelect: (key: string) => void;
+  t: Theme;
+  styles: ReturnType<typeof makeStyles>;
+}) {
+  const visible = cards.slice(0, maxVisible);
+  const overflow = cards.length - visible.length;
+  const hoverStyle = useZoneHighlight(ctrl, cell.key);
+  return (
+    <Pressable
+      ref={dragEnabled ? (node: View | null) => ctrl.registerZone(cell.key, node) : undefined}
+      collapsable={false}
+      onPress={() => onSelect(cell.key)}
+      style={[
+        styles.cell,
+        layoutWeek && styles.cellWeek,
+        { backgroundColor: cell.inMonth ? t.surface : t.background },
+        // Match desktop: today + the selected day are shown with a soft accent
+        // background wash (no outline). Selected is a touch stronger than today
+        // so it still reads distinctly (mobile keeps a selected day to drive the
+        // day-detail list below the grid).
+        cell.isToday && { backgroundColor: withAlpha(t.accent, 0.08) },
+        selected && { backgroundColor: withAlpha(t.accent, 0.16) },
+      ]}
+    >
+      {dragEnabled ? <Animated.View pointerEvents="none" style={[styles.cellHighlight, hoverStyle]} /> : null}
+      <View style={styles.cellHeader}>
+        <View style={[styles.dayNumWrap, cell.isToday && { backgroundColor: t.accent }]}>
+          <Text
+            style={[
+              styles.dayNum,
+              { color: cell.isToday ? t.accentFg : cell.inMonth ? t.textSecondary : t.textTertiary },
+            ]}
+          >
+            {cell.date.getDate()}
+          </Text>
+        </View>
+      </View>
+      <View style={styles.cellChips}>
+        {visible.map((card) => (
+          <DraggableChip
+            key={card.id}
+            card={card}
+            sourceZoneId={cell.key}
+            ctrl={ctrl}
+            dragEnabled={dragEnabled}
+            onPress={() => onSelect(cell.key)}
+            t={t}
+            styles={styles}
+          />
+        ))}
+        {overflow > 0 ? <Text style={styles.moreText}>+{overflow} more</Text> : null}
+      </View>
+    </Pressable>
+  );
+}
+
+/**
+ * Droppable Unscheduled tray: undated tasks. Drag a chip out onto a day to
+ * schedule it; drag a dated task in to clear its due date. Collapsible.
+ */
+function UnscheduledTray({
+  cards,
+  ctrl,
+  showProject,
+  onOpenCard,
+  t,
+  styles,
+}: {
+  cards: CalendarCard[];
+  ctrl: DragController<CalendarCard>;
+  showProject: boolean;
+  onOpenCard: (id: string) => void;
+  t: Theme;
+  styles: ReturnType<typeof makeStyles>;
+}) {
+  const [open, setOpen] = useState(true);
+  const hoverStyle = useZoneHighlight(ctrl, UNSCHEDULED_DROP_ID);
+  // In the workspace calendar (showProject) group undated tasks by project so a
+  // large backlog is easy to scan; per-project calendars keep a flat list.
+  const groups = useMemo(() => {
+    if (!showProject) return null;
+    const byProject = new Map<string, CalendarCard[]>();
+    for (const c of cards) {
+      const key = c.project_name || "Unknown project";
+      const arr = byProject.get(key);
+      if (arr) arr.push(c);
+      else byProject.set(key, [c]);
+    }
+    return [...byProject.entries()]
+      .map(([name, items]) => ({ name, items }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [cards, showProject]);
+
+  const renderChip = (card: CalendarCard) => (
+    <View key={card.id} style={styles.trayChipWrap}>
+      <DraggableChip
+        card={card}
+        sourceZoneId={UNSCHEDULED_DROP_ID}
+        ctrl={ctrl}
+        dragEnabled
+        onPress={() => onOpenCard(card.id)}
+        t={t}
+        styles={styles}
+      />
+    </View>
+  );
+
+  return (
+    <View
+      ref={(node: View | null) => ctrl.registerZone(UNSCHEDULED_DROP_ID, node)}
+      collapsable={false}
+      style={styles.tray}
+    >
+      <Animated.View pointerEvents="none" style={[styles.trayHighlight, hoverStyle]} />
+      <Pressable style={styles.trayHeader} onPress={() => setOpen((o) => !o)}>
+        <ChevronDown size={13} color={t.textSecondary} style={{ transform: [{ rotate: open ? "0deg" : "-90deg" }] }} />
+        <Inbox size={13} color={t.textSecondary} />
+        <Text style={styles.trayTitle}>Unscheduled</Text>
+        <Text style={styles.trayCount}>{cards.length}</Text>
+      </Pressable>
+      {open ? (
+        cards.length === 0 ? (
+          <Text style={styles.trayEmpty}>No unscheduled tasks. Drag a task here to clear its due date.</Text>
+        ) : (
+          <ScrollView
+            style={styles.trayScroll}
+            nestedScrollEnabled
+            showsVerticalScrollIndicator
+            // While a chip is lifted the outer grid scroll is locked; keep the
+            // tray's own scroll locked too so the drag gesture isn't stolen.
+            scrollEnabled={!ctrl.scrollLocked}
+          >
+            {groups ? (
+              groups.map((g) => (
+                <View key={g.name} style={styles.trayGroup}>
+                  <Text style={styles.trayGroupLabel} numberOfLines={1}>
+                    {g.name} <Text style={styles.trayGroupCount}>{g.items.length}</Text>
+                  </Text>
+                  <View style={styles.trayChips}>{g.items.map(renderChip)}</View>
+                </View>
+              ))
+            ) : (
+              <View style={styles.trayChips}>{cards.map(renderChip)}</View>
+            )}
+          </ScrollView>
+        )
+      ) : null}
+    </View>
+  );
+}
+
 
 function DayDetailRow({
   card,
@@ -541,6 +814,16 @@ function makeStyles(t: Theme) {
       borderColor: t.border,
     },
     cellWeek: { minHeight: 200 },
+    cellHighlight: {
+      position: "absolute",
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      borderWidth: 1.5,
+      borderColor: t.accent,
+      backgroundColor: withAlpha(t.accent, 0.1),
+    },
     cellHeader: { flexDirection: "row", justifyContent: "flex-start" },
     dayNumWrap: {
       minWidth: 18,
@@ -563,6 +846,20 @@ function makeStyles(t: Theme) {
     },
     chipDot: { width: 6, height: 6, borderRadius: 3 },
     chipText: { flex: 1, fontSize: 9.5, lineHeight: 12 },
+    // Downward pointer tail under the lifted drag clone — a CSS triangle,
+    // centred, in the accent colour, tip aligned to the finger (see liftOffsetY).
+    dragTail: {
+      alignSelf: "center",
+      width: 0,
+      height: 0,
+      borderLeftWidth: 6,
+      borderRightWidth: 6,
+      borderTopWidth: 8,
+      borderLeftColor: "transparent",
+      borderRightColor: "transparent",
+      borderTopColor: t.accent,
+      marginTop: -1,
+    },
     moreText: { fontSize: 9.5, fontWeight: "600", color: t.textTertiary, paddingHorizontal: 4, paddingTop: 1 },
     // Selected-day list (below the grid)
     dayList: {
@@ -599,5 +896,39 @@ function makeStyles(t: Theme) {
     },
     tagDot: { width: 6, height: 6, borderRadius: 3 },
     tagText: { ...typeScale.micro, fontWeight: "600", maxWidth: 100 },
+    // Unscheduled tray
+    tray: {
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: t.border,
+      backgroundColor: t.surface,
+      paddingHorizontal: 12,
+      paddingBottom: 8,
+    },
+    trayHighlight: {
+      position: "absolute",
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      borderWidth: 1.5,
+      borderColor: t.accent,
+      backgroundColor: withAlpha(t.accent, 0.08),
+    },
+    trayHeader: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 10 },
+    trayTitle: { ...typeScale.label, color: t.textSecondary },
+    trayCount: { ...typeScale.label, fontWeight: "400", color: t.textTertiary },
+    trayEmpty: { ...typeScale.caption, color: t.textTertiary, paddingBottom: 8 },
+    // Cap the tray so a large backlog of undated tasks scrolls within a fixed
+    // band instead of pushing the calendar grid off-screen.
+    trayScroll: { maxHeight: 168 },
+    trayChips: { flexDirection: "row", flexWrap: "wrap", paddingBottom: 8 },
+    trayGroup: { paddingBottom: 4 },
+    trayGroupLabel: { ...typeScale.micro, fontWeight: "700", color: t.textSecondary, textTransform: "uppercase", letterSpacing: 0.4, paddingBottom: 4 },
+    trayGroupCount: { fontWeight: "400", color: t.textTertiary },
+    // Three chips per row: each wrap is a third of the width, with the gap
+    // created by internal padding (mixing container `gap` with 33.33% widths
+    // would overflow, so spacing lives inside each cell instead).
+    trayChipWrap: { width: "33.33%", paddingRight: 6, paddingBottom: 6, gap: 2 },
+    trayProject: { ...typeScale.micro, color: t.textTertiary, paddingHorizontal: 4 },
   });
 }

@@ -2,7 +2,7 @@
 
 import React, { useEffect, useCallback, useState, useMemo, useRef } from "react";
 import {
-  GitBranch, Circle, RefreshCw, ChevronDown, LayoutGrid, Search, SlidersHorizontal, Type, Network, Hexagon,
+  GitBranch, Circle, RefreshCw, ChevronDown, Search, SlidersHorizontal, Type, Network, Hexagon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
@@ -15,6 +15,7 @@ import { NodeTypeChip } from "./NodeTypeChip";
 import { ForceGraphCanvas } from "./ForceGraphCanvas";
 import { RadialTreeCanvas } from "./RadialTreeCanvas";
 import { Tooltip } from "@/components/ui/tooltip";
+import { ProjectScopePicker } from "@/components/shared/ProjectScopePicker";
 
 const EDGE_LEGEND: Array<{ label: string; color: string; dash: boolean }> = [
   { label: "Linked",   color: "var(--accent)",  dash: false },
@@ -54,7 +55,6 @@ export function KnowledgeGraphView() {
     setSelectedGraphNode:         s.setSelectedGraphNode,
   })));
 
-  const [projectDropdownOpen, setProjectDropdownOpen] = useState(false);
   const [labelDropdownOpen, setLabelDropdownOpen] = useState(false);
   const [recomputing, setRecomputing] = useState(false);
   const [recomputeSeconds, setRecomputeSeconds] = useState(0);
@@ -214,13 +214,6 @@ export function KnowledgeGraphView() {
     setGraphFilters({ nodeTypes: next.length > 0 ? next : current });
   }
 
-  function toggleProject(pid: string) {
-    const current = graphFilters.projectIds;
-    const next = current.includes(pid) ? current.filter((x) => x !== pid) : [...current, pid];
-    setGraphFilters({ projectIds: next });
-    if (activeWorkspaceId) loadGraph(activeWorkspaceId);
-  }
-
   const workspaceProjects = projects.filter(
     (p) => !p.archivedAt
   );
@@ -268,55 +261,20 @@ export function KnowledgeGraphView() {
         </div>
 
         {/* Project filter */}
-        <div className="relative">
-          <button
-            onClick={() => { setProjectDropdownOpen((v) => !v); setLabelDropdownOpen(false); }}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-[var(--border)] text-xs text-[var(--text-secondary)] hover:bg-[var(--surface-2)] transition-colors"
-          >
-            <LayoutGrid size={12} />
-            {graphFilters.projectIds.length === 0
-              ? "All projects"
-              : `${graphFilters.projectIds.length} project${graphFilters.projectIds.length > 1 ? "s" : ""}`}
-            <ChevronDown size={11} />
-          </button>
-          {projectDropdownOpen && (
-            <div className="absolute top-full left-0 mt-1 w-52 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-lg z-20 py-1 max-h-64 overflow-y-auto">
-              <button
-                onClick={() => { setGraphFilters({ projectIds: [] }); setProjectDropdownOpen(false); if (activeWorkspaceId) loadGraph(activeWorkspaceId); }}
-                className={cn(
-                  "flex items-center w-full px-3 py-1.5 text-xs transition-colors",
-                  graphFilters.projectIds.length === 0
-                    ? "text-[var(--accent)]"
-                    : "text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"
-                )}
-              >
-                All projects
-              </button>
-              <div className="h-px bg-[var(--border)] my-1" />
-              {workspaceProjects.map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => toggleProject(p.id)}
-                  className={cn(
-                    "flex items-center gap-2 w-full px-3 py-1.5 text-xs transition-colors",
-                    graphFilters.projectIds.includes(p.id)
-                      ? "text-[var(--accent)] bg-[var(--accent-dim)]"
-                      : "text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"
-                  )}
-                >
-                  <span className="w-2 h-2 rounded-full flex-shrink-0 bg-[var(--accent)]" />
-                  <span className="truncate">{p.name}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        <ProjectScopePicker
+          projects={workspaceProjects}
+          selectedIds={graphFilters.projectIds}
+          onChange={(next) => {
+            setGraphFilters({ projectIds: next });
+            if (activeWorkspaceId) loadGraph(activeWorkspaceId);
+          }}
+        />
 
         {/* Label Mode dropdown — force only (sunburst drills in, no label modes) */}
         {graphLayout === "force" && (
           <div className="relative">
             <button
-              onClick={() => { setLabelDropdownOpen((v) => !v); setProjectDropdownOpen(false); }}
+              onClick={() => { setLabelDropdownOpen((v) => !v); }}
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-[var(--border)] text-xs text-[var(--text-secondary)] hover:bg-[var(--surface-2)] transition-colors"
             >
               <Type size={12} />
@@ -491,7 +449,7 @@ export function KnowledgeGraphView() {
       </div>
 
       {/* Canvas area + detail panel */}
-      <div className="flex flex-1 min-h-0 overflow-hidden" onClick={() => { setProjectDropdownOpen(false); setLabelDropdownOpen(false); }}>
+      <div className="flex flex-1 min-h-0 overflow-hidden" onClick={() => { setLabelDropdownOpen(false); }}>
         {/* Main canvas */}
         <div className="flex flex-1 min-w-0 overflow-hidden relative">
           {graphLoading && (

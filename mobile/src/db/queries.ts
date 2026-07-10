@@ -335,10 +335,13 @@ export function searchTasks(query: string): CardRow[] {
 /**
  * A task card that has a due date, enriched with its project name for the
  * workspace-wide Calendar view. `due_date` is guaranteed non-null here.
+ * `is_done` is 1 when the card lives in a done-type column (so the calendar can
+ * keep completed tasks out of the overdue tray).
  */
 export interface CalendarCard extends CardRow {
   due_date: string;
   project_name: string;
+  is_done: number;
 }
 
 /**
@@ -351,9 +354,11 @@ export function listCardsWithDueDates(projectId?: string): CalendarCard[] {
   const scope = projectId ? "AND c.project_id = ?" : "";
   const rows = db.getAllSync<CalendarCard>(
     `SELECT c.id, c.column_id, c.project_id, c.title, c.description, c.priority,
-            c.tag_ids, c."order", c.due_date, c.assignee, p.name AS project_name
+            c.tag_ids, c."order", c.due_date, c.assignee, p.name AS project_name,
+            CASE WHEN col.type = 'done' THEN 1 ELSE 0 END AS is_done
      FROM task_cards c
      JOIN projects p ON p.id = c.project_id
+     LEFT JOIN board_columns col ON col.id = c.column_id
      WHERE c.deleted_at IS NULL AND c.archived_at IS NULL
        AND c.due_date IS NOT NULL AND c.due_date != ''
        ${scope}
@@ -361,6 +366,30 @@ export function listCardsWithDueDates(projectId?: string): CalendarCard[] {
     ...((projectId ? [projectId] : []) as never[]),
   );
   return rows;
+}
+
+/**
+ * Live task cards WITHOUT a due date, for the calendar's Unscheduled tray. Drag
+ * one onto a day to schedule it. Scope to one project or omit for the
+ * workspace-wide calendar. Ordered by most-recently-updated so freshly-created
+ * tasks surface first.
+ */
+export function listUnscheduledCards(projectId?: string): CalendarCard[] {
+  const db = getDb();
+  const scope = projectId ? "AND c.project_id = ?" : "";
+  return db.getAllSync<CalendarCard>(
+    `SELECT c.id, c.column_id, c.project_id, c.title, c.description, c.priority,
+            c.tag_ids, c."order", COALESCE(c.due_date, '') AS due_date, c.assignee, p.name AS project_name,
+            CASE WHEN col.type = 'done' THEN 1 ELSE 0 END AS is_done
+     FROM task_cards c
+     JOIN projects p ON p.id = c.project_id
+     LEFT JOIN board_columns col ON col.id = c.column_id
+     WHERE c.deleted_at IS NULL AND c.archived_at IS NULL
+       AND (c.due_date IS NULL OR c.due_date = '')
+       ${scope}
+     ORDER BY c.updated_at DESC`,
+     ...((projectId ? [projectId] : []) as never[]),
+  );
 }
 
 /**
@@ -518,6 +547,15 @@ export function findNoteByTitle(projectId: string, title: string): NoteRow | nul
 export function findNoteIdByTitle(title: string): string | null {
   const row = getDb().getFirstSync<{ id: string }>(
     `SELECT id FROM notes WHERE ${LIVE} AND type='note' AND lower(title) = lower(?) LIMIT 1`,
+    title,
+  );
+  return row?.id ?? null;
+}
+
+/** Resolve a card id by title across the whole workspace (case-insensitive) — for wikilinks. */
+export function findCardIdByTitle(title: string): string | null {
+  const row = getDb().getFirstSync<{ id: string }>(
+    `SELECT id FROM task_cards WHERE ${LIVE} AND lower(title) = lower(?) LIMIT 1`,
     title,
   );
   return row?.id ?? null;
@@ -736,6 +774,72 @@ export function getProjectContextPack(projectId: string): unknown {
   proj.columns = columns;
 
   return { project: proj, noteCount: notes.length, pinnedNotes, openTasks, recentActivity };
+ }
+
+/** Project metadata for the Overview header (beyond the id/name/icon ProjectRow). */
+export interface ProjectMeta {
+  id: string;
+  name: string;
+  icon: string | null;
+  description: string | null;
+  status: string;
+  priority: string;
+  due_date: string | null;
+  tag_ids: string;
+}
+
+/** A board column including its `type` (needed to find the done column + order + colour). */
+export interface OverviewColumn extends ColumnRow {
+  type: string;
+}
+
+/** A card with the extra fields the Overview needs (due date + updated_at). */
+export interface OverviewCard extends CardRow {
+  updated_at: string;
+}
+
+export interface ProjectOverviewData {
+  project: ProjectMeta | null;
+  columns: OverviewColumn[];
+  cards: OverviewCard[];
+  notes: NoteRow[];
+}
+
+/**
+ * Single focused read backing the mobile per-project Overview segment. Unlike
+ * listColumns/listCards (which are tuned for the board and omit type/due/updated
+ * fields), this selects exactly what computeProjectMetrics() needs so the
+ * Overview stays self-contained and doesn't widen the hot board queries.
+ */
+export function getProjectOverview(projectId: string): ProjectOverviewData {
+  const db = getDb();
+  const project =
+    db.getFirstSync<ProjectMeta>(
+      `SELECT id, name, icon, description, status, priority, due_date, tag_ids
+       FROM projects WHERE id = ? AND ${LIVE}`,
+      projectId,
+    ) ?? null;
+
+  const columns = db.getAllSync<OverviewColumn>(
+    `SELECT id, project_id, name, type, "order" FROM board_columns
+     WHERE deleted_at IS NULL AND project_id = ? ORDER BY "order"`,
+    projectId,
+  );
+
+  const cards = db.getAllSync<OverviewCard>(
+    `SELECT id, column_id, project_id, title, description, priority, tag_ids, "order", due_date, updated_at
+     FROM task_cards WHERE ${LIVE} AND project_id = ? ORDER BY "order"`,
+    projectId,
+  );
+
+  const notes = db.getAllSync<NoteRow>(
+    `SELECT id, project_id, title, content, folder, tag_ids, updated_at, is_pinned FROM notes
+     WHERE ${LIVE} AND type = 'note' AND ${NOT_CONFLICT} AND project_id = ?
+     ORDER BY is_pinned DESC, updated_at DESC`,
+    projectId,
+  );
+
+  return { project, columns, cards, notes };
 }
 
 /**

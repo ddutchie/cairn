@@ -24,7 +24,7 @@ import { useTheme, withAlpha, tabBarClosedLift, KEYBOARD_OPEN_GAP, type as typeS
 import { runAgent, userMessage, assistantMessage, type AgentEvent, type Attachment } from "@/chat/agent";
 import { haptics, toolbarPress } from "@/haptics";
 import { pickImages, takePhoto } from "@/chat/attachments";
-import { loadChatHistory, saveChatMessage, clearChatHistory } from "@/db/chat-store";
+import { loadChatHistory, saveChatMessage, clearChatHistory, type ToolCall } from "@/db/chat-store";
 import { hasProvider } from "@/chat/providers";
 import { resetAppleSession } from "@/chat/providers/apple";
 import { prettifyToolLabel } from "@cairn/shared/ui/constants";
@@ -36,11 +36,54 @@ import { Button } from "@expo/ui/swift-ui";
 /** Composer height assumed before its first onLayout measurement. */
 const COMPOSER_FALLBACK_H = 60;
 
+/** Tools whose result/args point at a NOTE, and whether the id is in args or result. */
+const NOTE_TOOLS: Record<string, "args" | "result"> = {
+  ensure_note: "result",
+  create_note: "result",
+  get_note: "args",
+  append_to_note: "args",
+  patch_note: "args",
+};
+/** Tools whose result points at a CARD. */
+const CARD_TOOLS: Record<string, "args" | "result"> = {
+  create_task: "result",
+};
+
+/** Pull a string `id` field out of an unknown args/result object. */
+function idFrom(obj: unknown): string | null {
+  if (obj && typeof obj === "object" && "id" in obj) {
+    const id = (obj as { id: unknown }).id;
+    if (typeof id === "string" && id) return id;
+  }
+  return null;
+}
+
+/**
+ * Derive a navigable note/card ref from a completed tool call, so the tool chip
+ * can open the thing it created/touched — the reliable, id-based path (no title
+ * matching). Returns undefined for read-only / non-navigable tools.
+ */
+function toolRef(tool: string, args: unknown, result: unknown): ToolCall["ref"] | undefined {
+  // Never navigate to an errored tool.
+  if (result && typeof result === "object" && "error" in (result as object)) return undefined;
+  const noteWhere = NOTE_TOOLS[tool];
+  if (noteWhere) {
+    const id = idFrom(noteWhere === "args" ? args : result);
+    if (id) return { kind: "note", id };
+  }
+  const cardWhere = CARD_TOOLS[tool];
+  if (cardWhere) {
+    const id = idFrom(cardWhere === "args" ? args : result);
+    if (id) return { kind: "card", id };
+  }
+  return undefined;
+}
+
 interface UiMessage {
   role: "user" | "assistant";
   content: string;
   images?: string[]; // data URIs for user attachments
-  tools?: { tool: string; ok: boolean }[];
+  tools?: ToolCall[];
   /** Live reasoning ("thinking") text for turns whose model streams it (Apple
    *  PCC, or OpenAI-compatible endpoints exposing reasoning/reasoning_content).
    *  Shown collapsibly; like images it's session-only and not persisted. */
@@ -158,7 +201,7 @@ export default function ChatScreen() {
     saveChatMessage({ role: "user", content: text, images: atts.map((a) => a.url) });
     let acc = "";
     let reasoningAcc = "";
-    const toolTrail: { tool: string; ok: boolean }[] = [];
+    const toolTrail: ToolCall[] = [];
 
     const patchAssistant = (patch: Partial<UiMessage>) => {
       setMessages((prev) => {
@@ -183,7 +226,7 @@ export default function ChatScreen() {
           patchAssistant({ reasoning: reasoningAcc });
         } else if (e.type === "tool" && e.tool) {
           const ok = !(e.result && typeof e.result === "object" && "error" in (e.result as object));
-          toolTrail.push({ tool: e.tool, ok });
+          toolTrail.push({ tool: e.tool, ok, ref: toolRef(e.tool, e.args, e.result) });
           patchAssistant({ tools: [...toolTrail] });
           haptics.impact(); // agent ran a tool
         } else if (e.type === "final" && e.usage) {
@@ -357,6 +400,7 @@ export default function ChatScreen() {
                   accessibilityLabel="Add image"
                   disabled={busy}
                   onFallbackPress={onAttach}
+                  containerStyle={styles.attachContainer}
                   triggerStyle={styles.attachBtn}
                 >
                   <Button label="Photo Library" systemImage="photo.on.rectangle" onPress={addImages} />
@@ -434,6 +478,7 @@ function ReasoningBlock({
 
 const Bubble = memo(function Bubble({ m, t, styles }: { m: UiMessage; t: Theme; styles: ReturnType<typeof makeStyles> }) {
   const isUser = m.role === "user";
+  const router = useRouter();
   return (
     <View style={[styles.row, isUser && styles.rowUser]}>
       {/* Avatar */}
@@ -448,12 +493,34 @@ const Bubble = memo(function Bubble({ m, t, styles }: { m: UiMessage; t: Theme; 
         ) : null}
         {!isUser && m.tools && m.tools.length > 0 && (
           <View style={styles.toolTrail}>
-            {m.tools.map((tt, i) => (
-              <View key={i} style={styles.toolChip}>
-                <CheckCircle size={10} color={tt.ok ? t.accent : t.danger} />
-                <Text style={styles.toolChipText}>{prettifyToolLabel(tt.tool, { prettifyBare: true })}</Text>
-              </View>
-            ))}
+            {m.tools.map((tt, i) => {
+              const label = prettifyToolLabel(tt.tool, { prettifyBare: true });
+              // A tool that created/touched a note or card is tappable — opens
+              // it by id (the reliable, collision-proof path).
+              if (tt.ref) {
+                return (
+                  <Pressable
+                    key={i}
+                    style={styles.toolChip}
+                    hitSlop={6}
+                    onPress={() => {
+                      haptics.impact();
+                      router.push(tt.ref!.kind === "card" ? `/card/${tt.ref!.id}` : `/note/${tt.ref!.id}`);
+                    }}
+                  >
+                    <CheckCircle size={10} color={tt.ok ? t.accent : t.danger} />
+                    <Text style={[styles.toolChipText, styles.toolChipLink]}>{label}</Text>
+                    <ChevronRight size={10} color={t.accent} />
+                  </Pressable>
+                );
+              }
+              return (
+                <View key={i} style={styles.toolChip}>
+                  <CheckCircle size={10} color={tt.ok ? t.accent : t.danger} />
+                  <Text style={styles.toolChipText}>{label}</Text>
+                </View>
+              );
+            })}
           </View>
         )}
 
@@ -470,7 +537,7 @@ const Bubble = memo(function Bubble({ m, t, styles }: { m: UiMessage; t: Theme; 
           ) : isUser ? (
             m.content ? <Text style={styles.userText}>{m.content}</Text> : null
           ) : (
-            <MarkdownView content={m.content} />
+            <MarkdownView content={m.content} resolveLinks />
           )}
         </View>
       </View>
@@ -519,6 +586,7 @@ function makeStyles(t: Theme) {
       paddingVertical: 4,
     },
     toolChipText: { ...typeScale.caption, color: t.textSecondary },
+    toolChipLink: { color: t.accent },
 
     reasoning: {
       alignSelf: "flex-start",
@@ -529,10 +597,8 @@ function makeStyles(t: Theme) {
     },
     reasoningHeader: { flexDirection: "row", alignItems: "center", gap: 5 },
     reasoningLabel: {
-      ...typeScale.caption,
+      ...typeScale.overline,
       color: t.textTertiary,
-      textTransform: "uppercase",
-      letterSpacing: 0.5,
     },
     reasoningText: {
       ...typeScale.caption,
@@ -594,6 +660,11 @@ function makeStyles(t: Theme) {
       paddingHorizontal: 2,
     },
     // 32px rounded-xl (12px) icon buttons, vertically centred against the input.
+    // `attachContainer` goes on GlassMenu's OUTERMOST element (the actual flex
+    // child) so the row's `alignItems: flex-end` doesn't push the icon up when
+    // the composer grows / the keyboard opens; `attachBtn` styles the inner tap
+    // target. Both fix the size so the native Host doesn't size to its glyph.
+    attachContainer: { alignSelf: "center" },
     attachBtn: {
       width: 32,
       height: 32,

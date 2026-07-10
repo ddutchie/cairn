@@ -7,6 +7,7 @@ import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { useEscapeKey } from "@/hooks/useEscapeKey";
 import type { Note, Tag } from "@/types";
 
 interface SemanticHit {
@@ -317,6 +318,9 @@ export function NoteTagBar({ note, workspaceTags, onToggleTag, onCreateTag, getT
     if (pickerOpen) inputRef.current?.focus();
   }, [pickerOpen]);
 
+  // Close on Escape regardless of focus (consistent with other overlays).
+  useEscapeKey(() => { setPickerOpen(false); setNewTagName(""); }, pickerOpen);
+
   const assignedTags = note.tagIds.map((id) => getTagById(id)).filter(Boolean) as Tag[];
   const unassignedTags = workspaceTags.filter((t) => !note.tagIds.includes(t.id));
   const filteredUnassigned = newTagName
@@ -365,7 +369,6 @@ export function NoteTagBar({ note, workspaceTags, onToggleTag, onCreateTag, getT
                   if (filteredUnassigned.length === 0 && newTagName.trim()) handleCreateTag();
                   else if (filteredUnassigned.length > 0) { onToggleTag(filteredUnassigned[0].id); setPickerOpen(false); setNewTagName(""); }
                 }
-                if (e.key === "Escape") { setPickerOpen(false); setNewTagName(""); }
               }}
               placeholder="Search or create…"
               className="w-full px-2 py-1 text-xs rounded bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] mb-2"

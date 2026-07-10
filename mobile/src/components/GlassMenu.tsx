@@ -24,6 +24,7 @@ export function GlassMenu({
   accessibilityLabel,
   onFallbackPress,
   triggerStyle,
+  containerStyle,
   hitSlop = 10,
   disabled = false,
 }: {
@@ -35,6 +36,13 @@ export function GlassMenu({
   /** Called on tap when the native menu isn't available (non-iOS). */
   onFallbackPress?: () => void;
   triggerStyle?: StyleProp<ViewStyle>;
+  /**
+   * Style for the OUTERMOST element (the `Host` on iOS / fallback `Pressable`
+   * root) — i.e. the actual flex child when GlassMenu sits in a flex row. Use
+   * this for `alignSelf` / margins so layout applies to the flex item itself,
+   * not the inner trigger (which the parent flexbox can't see).
+   */
+  containerStyle?: StyleProp<ViewStyle>;
   hitSlop?: number;
   /** When true, the trigger is inert and the menu can't be opened. */
   disabled?: boolean;
@@ -47,7 +55,7 @@ export function GlassMenu({
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel}
         accessibilityState={{ disabled: true }}
-        style={[styles.trigger, triggerStyle]}
+        style={[styles.trigger, containerStyle, triggerStyle]}
       >
         {trigger}
       </View>
@@ -56,7 +64,7 @@ export function GlassMenu({
 
   if (Platform.OS === "ios") {
     return (
-      <Host matchContents>
+      <Host matchContents style={containerStyle}>
         <Menu
           label={
             <RNHostView matchContents>
@@ -87,7 +95,7 @@ export function GlassMenu({
         haptics.selection();
         onFallbackPress?.();
       }}
-      style={[styles.trigger, triggerStyle]}
+      style={[styles.trigger, containerStyle, triggerStyle]}
     >
       <View>{trigger}</View>
     </Pressable>

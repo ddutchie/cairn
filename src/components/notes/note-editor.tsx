@@ -439,6 +439,23 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
   // Shared by both list-item checkboxes and table-cell checkboxes so their
   // indices map to a single source-order scan. `el` is the clicked input;
   // its index among all `.prose-cairn` checkboxes equals the source index.
+  // Latest `notes` held in a ref so the `wikilink`/link resolvers can look up a
+  // title without `notes` being a dependency of `mdComponents`. Depending on the
+  // `notes` array there rebuilt the entire ReactMarkdown `components` object on
+  // every store update (any note edit / sync tick), forcing a full re-parse +
+  // re-render of the preview (incl. re-mounting KaTeX). The ref keeps the
+  // component map reference stable while resolution still sees current notes.
+  const notesRef = useRef(notes);
+  useEffect(() => {
+    notesRef.current = notes;
+  }, [notes]);
+  // Latest note content in a ref too, so `toggleCheckbox` (and thus the
+  // memoized component map) doesn't need `note.content` as a dependency.
+  const noteContentRef = useRef(note.content);
+  useEffect(() => {
+    noteContentRef.current = note.content;
+  }, [note.content]);
+
   const toggleCheckbox = useCallback((el: HTMLInputElement) => {
     const root = el.closest(".prose-cairn");
     if (!root) return;
@@ -447,13 +464,13 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
     );
     const idx = checkboxes.indexOf(el);
     if (idx === -1) return;
-    const next = toggleCheckboxInSource(note.content ?? "", idx);
-    if (next !== (note.content ?? "")) {
+    const next = toggleCheckboxInSource(noteContentRef.current ?? "", idx);
+    if (next !== (noteContentRef.current ?? "")) {
       // Keep contentText in sync with content (matching the save flow above) so
       // derived plain-text state doesn't go stale after a preview toggle.
       updateNote(note.id, { content: next, contentText: stripMarkdown(next) });
     }
-  }, [note.id, note.content, updateNote]);
+  }, [note.id, updateNote]);
 
   // Extracted from JSX so ReactMarkdown receives a stable object reference
   // across renders. Only recreated when the note or updateNote changes.
@@ -609,7 +626,7 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
           );
         }
         const stripped = href.replace(/^\.?\//, "").replace(/\.md$/i, "").replace(/^[./]+/, "");
-        const target = notes.find(
+        const target = notesRef.current.find(
           (n) =>
             n.title.toLowerCase() === stripped.toLowerCase() ||
             n.title.toLowerCase() === stripped.replace(/[-_]/g, " ").toLowerCase() ||
@@ -646,7 +663,7 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
     },
     wikilink({ ...props }: React.HTMLAttributes<HTMLElement> & ExtraProps) {
       const title = (props as Record<string, string>)["data-title"] ?? "";
-      const target = notes.find((n) => n.title.toLowerCase() === title.toLowerCase());
+      const target = notesRef.current.find((n) => n.title.toLowerCase() === title.toLowerCase());
       const resolved = target != null;
       return (
         <button
@@ -687,10 +704,11 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
     th({ children, style }: { children?: React.ReactNode; style?: React.CSSProperties }) {
       return <th style={style}>{renderCellWithCheckboxes(children, toggleCheckbox)}</th>;
     },
-  // previewScrollRef is a stable React ref — no need to list it as a dep
-  // notes is needed for wikilink resolution; toggleCheckbox carries the
-  // note id/content/updateNote closure for checkbox source-toggling.
-  }), [notes, toggleCheckbox]) as import("react-markdown").Components;
+  // previewScrollRef is a stable React ref — no need to list it as a dep.
+  // notes is read via notesRef (not a dep) so this component map stays
+  // referentially stable across unrelated store updates; toggleCheckbox carries
+  // the note id/content/updateNote closure for checkbox source-toggling.
+  }), [toggleCheckbox]) as import("react-markdown").Components;
 
   const handleToggleTag = useCallback((tagId: string) => {
     const has = note.tagIds.includes(tagId);

@@ -7,6 +7,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { format, parse, isValid } from "date-fns";
 import { Calendar, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useEscapeKey } from "@/hooks/useEscapeKey";
 
 interface DatePickerProps {
   value?: string; // ISO date string "YYYY-MM-DD"
@@ -39,6 +40,9 @@ export function DatePicker({ value, onChange, placeholder = "Pick a date", class
     document.addEventListener("mousedown", handle);
     return () => document.removeEventListener("mousedown", handle);
   }, [open]);
+
+  // Close on Escape (the popover has no focused input, so it had no Escape at all).
+  useEscapeKey(() => setOpen(false), open);
 
   function handleSelect(day: Date | undefined) {
     onChange(day ? format(day, "yyyy-MM-dd") : undefined);

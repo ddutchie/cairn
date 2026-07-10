@@ -72,7 +72,7 @@ export default function Home() {
     lastContentView:     s.lastContentView,
   })));
   // All navigable views in shortcut order; overview=⌘1, notes=⌘2, then visible extras
-  const ORDERED_VIEWS = (["board", "calendar", "flow", "agent", "graph", "insights"] as const).filter(
+  const ORDERED_VIEWS = (["board", "calendar", "flow", "agent", "calendar-all", "graph", "insights"] as const).filter(
     (v) => !hiddenViews.has(v)
   );
 
@@ -393,6 +393,7 @@ export default function Home() {
             {lastContentView === "notes"     && <NotesView />}
             {lastContentView === "board"     && <KanbanBoard />}
             {lastContentView === "calendar"  && <CalendarView />}
+            {lastContentView === "calendar-all" && <CalendarView scope="workspace" />}
             {lastContentView === "flow"      && <IdeaFlowView />}
            {lastContentView === "graph"     && <KnowledgeGraphView />}
            {lastContentView === "insights"  && <InsightsView />}

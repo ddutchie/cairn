@@ -7,6 +7,7 @@ import { revealNote, revealCard } from "@/lib/events";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useCairnStore, type SearchResult } from "@/store";
 import { useShallow } from "zustand/react/shallow";
+import { useEscapeKey } from "@/hooks/useEscapeKey";
 import {
   filterSearchResults,
   resolveFocusedResult,
@@ -238,10 +239,12 @@ export function SearchPanel() {
       // Focus order matches UI order: notes first, then tasks.
       const result = resolveFocusedResult(focused, noteResults, taskResults);
       if (result) handleSelect(result);
-    } else if (e.key === "Escape") {
-      toggleSearch();
     }
   }
+
+  // Close on Escape regardless of focus (clicking a result/backdrop/filter chip
+  // moves focus off the input, so an input-bound Escape wouldn't fire).
+  useEscapeKey(toggleSearch, searchOpen);
 
   if (!searchOpen) return null;
 

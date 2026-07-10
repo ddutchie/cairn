@@ -4,8 +4,8 @@
  *  - buildMonthGrid: always 42 cells, correct leading/trailing padding and
  *    inMonth/isToday flags (a fixed `today` keeps it deterministic).
  *  - buildWeekGrid: 7 Sunday-start cells.
- *  - bucketByDate: overdue / today+future / unscheduled split, with overdue
- *    kept out of byDate.
+ *  - bucketByDate: overdue / today+future / unscheduled split, with every dated
+ *    card (past included) kept in byDate, and done cards omitted from overdue.
  */
 
 import { describe, it, expect } from "vitest";
@@ -19,10 +19,10 @@ import {
 } from "./calendar-utils";
 import type { TaskCard } from "@/types";
 
-function card(id: string, dueDate?: string): TaskCard {
+function card(id: string, dueDate?: string, columnId = "c"): TaskCard {
   return {
     id,
-    columnId: "c",
+    columnId,
     projectId: "p",
     workspaceId: "w",
     title: id,
@@ -86,7 +86,7 @@ describe("buildWeekGrid", () => {
 });
 
 describe("bucketByDate", () => {
-  it("splits overdue, scheduled, and unscheduled", () => {
+  it("splits overdue, scheduled, and unscheduled — keeping past cards in byDate", () => {
     const cards = [
       card("past", "2026-06-10"),
       card("today", "2026-06-15"),
@@ -99,8 +99,8 @@ describe("bucketByDate", () => {
     expect(unscheduled.map((c) => c.id)).toEqual(["none"]);
     expect(byDate.get("2026-06-15")?.map((c) => c.id)).toEqual(["today"]);
     expect(byDate.get("2026-06-20")?.map((c) => c.id)).toEqual(["future"]);
-    // overdue must NOT leak into byDate
-    expect(byDate.has("2026-06-10")).toBe(false);
+    // A past-due card ALSO stays in byDate so its (visible) past cell isn't empty.
+    expect(byDate.get("2026-06-10")?.map((c) => c.id)).toEqual(["past"]);
   });
 
   it("groups multiple cards on the same day", () => {
@@ -109,6 +109,21 @@ describe("bucketByDate", () => {
       TODAY,
     );
     expect(byDate.get("2026-06-20")?.map((c) => c.id)).toEqual(["a", "b"]);
+  });
+
+  it("omits done-column cards from the overdue tray (but keeps their day chip)", () => {
+    const cards = [
+      card("open-past", "2026-06-10", "todo"),
+      card("done-past", "2026-06-11", "done"),
+    ];
+    const isDone = (c: TaskCard) => c.columnId === "done";
+    const { byDate, overdue } = bucketByDate(cards, TODAY, isDone);
+
+    // Only the open past card is overdue; the done one is not.
+    expect(overdue.map((c) => c.id)).toEqual(["open-past"]);
+    // Both still appear in their day cell.
+    expect(byDate.get("2026-06-10")?.map((c) => c.id)).toEqual(["open-past"]);
+    expect(byDate.get("2026-06-11")?.map((c) => c.id)).toEqual(["done-past"]);
   });
 });
 

@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from "react";
-import { View, Text, Pressable, StyleSheet } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { View, Text, Pressable, ActivityIndicator, StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { WebView, type WebViewMessageEvent } from "react-native-webview";
 import {
@@ -8,6 +8,7 @@ import {
   Hexagon,
   Type,
   ChevronDown,
+  Network,
   Maximize2,
 } from "lucide-react-native";
 import { useTheme, useIsDark, withAlpha, type as typeScale, iconSize, type Theme } from "@/theme";
@@ -78,6 +79,12 @@ export function KnowledgeGraphWebView({
   onSelectNode,
   mode: modeProp,
   onModeChange,
+  labelMode: labelModeProp,
+  onLabelModeChange,
+  showSemantic = false,
+  onToggleSemantic,
+  semanticAvailable = false,
+  semanticLoading = false,
 }: {
   graph: KnowledgeGraph;
   onSelectNode?: (node: { id: string; type: string }) => void;
@@ -85,6 +92,18 @@ export function KnowledgeGraphWebView({
    *  hidden and the parent (native toolbar) drives it. */
   mode?: GraphMode;
   onModeChange?: (mode: GraphMode) => void;
+  /** Controlled label mode. When provided the in-body labels pill is hidden and
+   *  the parent (native left toolbar menu) drives it. */
+  labelMode?: LabelMode;
+  onLabelModeChange?: (mode: LabelMode) => void;
+  /** Semantic-links toggle (force mode only). Rendered as an in-body pill left
+   *  of the Hulls toggle when `semanticAvailable`. */
+  showSemantic?: boolean;
+  onToggleSemantic?: () => void;
+  semanticAvailable?: boolean;
+  /** True while semantic edges are being (re)computed — shows a spinner in the
+   *  pill, since the on-device pass can take a second or two. */
+  semanticLoading?: boolean;
 }) {
   const t = useTheme();
   const isDark = useIsDark();
@@ -102,7 +121,12 @@ export function KnowledgeGraphWebView({
     () => new Set(ALL_NODE_TYPES),
   );
   const [showHulls, setShowHulls] = useState(true);
-  const [labelMode, setLabelMode] = useState<LabelMode>("smart");
+  const [labelModeInternal, setLabelModeInternal] = useState<LabelMode>("smart");
+  const labelMode = labelModeProp ?? labelModeInternal;
+  const setLabelMode = (m: LabelMode) => {
+    if (onLabelModeChange) onLabelModeChange(m);
+    else setLabelModeInternal(m);
+  };
   const [labelOpen, setLabelOpen] = useState(false);
   const [labelAnchorX, setLabelAnchorX] = useState(116);
   const [search, setSearch] = useState("");
@@ -137,6 +161,41 @@ export function KnowledgeGraphWebView({
     const edges = graph.edges.filter((e) => ids.has(e.source) && ids.has(e.target));
     return { nodes, edges };
   }, [graph, activeTypes, search]);
+
+  // Link visual payload — derived from the current edges. Extracted so both the
+  // initial HTML and the in-place window.__update() injection shape links
+  // identically. Depends only on edges + theme (semantic toggle changes edges).
+  const linksPayload = useMemo(
+    () =>
+      filtered.edges.map((e) => {
+        const s = edgeStyle(e.type);
+        // Semantic edges scale with similarity (0.5 + weight) so stronger
+        // matches read bolder; all others are a uniform hairline. (Mobile has
+        // no wikilink edges — those exist only on desktop.)
+        let width = 1;
+        if (e.type === "semantic" && (e.weight ?? 1) < 1) width = 0.5 + (e.weight ?? 0);
+        return {
+          source: e.source,
+          target: e.target,
+          color: tokenColor(s.token, t),
+          opacity: s.opacity,
+          dash: s.dash,
+          width,
+          distance: linkDistance(e.type),
+        };
+      }),
+    [filtered.edges, t],
+  );
+
+  // Structural key: the HTML is rebuilt (full reload) ONLY when the node set,
+  // layout mode, or theme changes. showHulls / labelMode / links ARE read inside
+  // the html memo (so the initial paint is correct) but are intentionally left
+  // out of its dep array — subsequent changes to them are pushed via
+  // window.__update() instead of regenerating `source`.
+  const structuralKey = useMemo(
+    () => `${mode}|${isDark}|${filtered.nodes.map((n) => n.id).join(",")}`,
+    [mode, isDark, filtered.nodes],
+  );
 
   const html = useMemo(() => {
     // ── force layout data ──
@@ -187,23 +246,7 @@ export function KnowledgeGraphWebView({
           isProject: n.type === "project",
         };
       }),
-      links: filtered.edges.map((e) => {
-        const s = edgeStyle(e.type);
-        // Semantic edges scale with similarity (0.5 + weight) so stronger
-        // matches read bolder; all others are a uniform hairline. (Mobile has
-        // no wikilink edges — those exist only on desktop.)
-        let width = 1;
-        if (e.type === "semantic" && (e.weight ?? 1) < 1) width = 0.5 + (e.weight ?? 0);
-        return {
-          source: e.source,
-          target: e.target,
-          color: tokenColor(s.token, t),
-          opacity: s.opacity,
-          dash: s.dash,
-          width,
-          distance: linkDistance(e.type),
-        };
-      }),
+      links: linksPayload,
       hierarchy: colorHierarchy(hierarchy),
       showHulls,
       labelMode,
@@ -226,7 +269,12 @@ export function KnowledgeGraphWebView({
       dark: isDark,
     }).replace(/<\//g, "<\\/");
     return buildGraphHtml(payload);
-  }, [filtered, t, isDark, showHulls, labelMode, mode]);
+    // Rebuild ONLY on structural changes (node set / mode / theme). showHulls,
+    // labelMode and links are read from refs and pushed via window.__update()
+    // so cheap toggles don't reload the WebView. structuralKey encodes mode +
+    // isDark + node ids; `filtered`/`mode` are consistent with it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [structuralKey, t]);
 
   const onMessage = (e: WebViewMessageEvent) => {
     try {
@@ -245,6 +293,33 @@ export function KnowledgeGraphWebView({
     haptics.selection();
     ref.current?.injectJavaScript("window.__fit && window.__fit(); true;");
   };
+
+  // Push cheap force-mode toggles into the live graph via window.__update()
+  // instead of regenerating `source` (which would reload the WebView + restart
+  // the simulation). Each effect skips its first run — the initial HTML already
+  // reflects the current value — and no-ops in radial mode / on the empty WebView.
+  const pushUpdate = useCallback((patch: Record<string, unknown>) => {
+    const json = JSON.stringify(patch).replace(/<\//g, "<\\/");
+    ref.current?.injectJavaScript(`window.__update && window.__update(${json}); true;`);
+  }, []);
+
+  const hullsFirst = useRef(true);
+  useEffect(() => {
+    if (hullsFirst.current) { hullsFirst.current = false; return; }
+    if (mode === "force") pushUpdate({ showHulls });
+  }, [showHulls, mode, pushUpdate]);
+
+  const labelFirst = useRef(true);
+  useEffect(() => {
+    if (labelFirst.current) { labelFirst.current = false; return; }
+    if (mode === "force") pushUpdate({ labelMode });
+  }, [labelMode, mode, pushUpdate]);
+
+  const linksFirst = useRef(true);
+  useEffect(() => {
+    if (linksFirst.current) { linksFirst.current = false; return; }
+    if (mode === "force") pushUpdate({ links: linksPayload });
+  }, [linksPayload, mode, pushUpdate]);
 
   const toggleType = (type: GraphNodeType) => {
     setActiveTypes((cur) => {
@@ -290,8 +365,9 @@ export function KnowledgeGraphWebView({
           </View>
         ) : null}
 
-        {/* Label mode dropdown — force only (radial drills in, no label modes) */}
-        {mode === "force" ? (
+        {/* Label mode dropdown — force only (radial drills in, no label modes).
+            Hidden when the parent (native left toolbar menu) drives labelMode. */}
+        {mode === "force" && !onLabelModeChange ? (
           <Pressable
             onLayout={(e) => setLabelAnchorX(e.nativeEvent.layout.x)}
             onPress={() => setLabelOpen((v) => !v)}
@@ -300,6 +376,30 @@ export function KnowledgeGraphWebView({
             <Type size={iconSize.control} color={t.textSecondary} />
             <Text style={styles.pillLabel}>{labelMode} labels</Text>
             <ChevronDown size={iconSize.hint} color={t.textSecondary} />
+          </Pressable>
+        ) : null}
+
+        {/* Semantic-links toggle — force only, left of Hulls, when available.
+            Shows a spinner while the on-device semantic pass is computing. */}
+        {mode === "force" && semanticAvailable && onToggleSemantic ? (
+          <Pressable
+            onPress={onToggleSemantic}
+            disabled={semanticLoading}
+            style={[
+              styles.pillBtn,
+              showSemantic
+                ? { borderColor: "transparent", backgroundColor: t.accentDim }
+                : { borderColor: t.border },
+            ]}
+          >
+            {semanticLoading ? (
+              <ActivityIndicator size="small" color={showSemantic ? t.accent : t.textTertiary} style={styles.pillSpinner} />
+            ) : (
+              <Network size={iconSize.control} color={showSemantic ? t.accent : t.textTertiary} />
+            )}
+            <Text style={[styles.pillLabel, { color: showSemantic ? t.accent : t.textTertiary }]}>
+              Semantic
+            </Text>
           </Pressable>
         ) : null}
 
@@ -353,8 +453,9 @@ export function KnowledgeGraphWebView({
         </View>
       </View>
 
-      {/* Label-mode dropdown menu (overlay) */}
-      {labelOpen && mode === "force" ? (
+      {/* Label-mode dropdown menu (overlay) — only when the in-body pill is
+          shown (i.e. the parent isn't driving labelMode via the native menu). */}
+      {labelOpen && mode === "force" && !onLabelModeChange ? (
         <>
           <Pressable style={styles.dropdownBackdrop} onPress={() => setLabelOpen(false)} />
           <View style={[styles.dropdownMenu, { left: labelAnchorX }]}>
@@ -509,6 +610,7 @@ function buildGraphHtml(payload: string): string {
             .attr('stroke-dasharray', function (d) { return d.dash ? '3,3' : null; });
 
           var selectedId = null, hoveredId = null;
+          var currentK = 0.85;
           var node = root.append('g').selectAll('g').data(DATA.nodes).join('g').style('cursor', 'pointer');
           var circles = node.append('circle')
             .attr('r', function (d) { return d.r; })
@@ -564,6 +666,7 @@ function buildGraphHtml(payload: string): string {
             });
 
           var zoom = d3.zoom().scaleExtent([0.2, 6]).on('zoom', function (e) {
+            currentK = e.transform.k;
             root.attr('transform', e.transform);
             circles.attr('stroke-width', function (d) {
               return (d.id === selectedId || d.id === hoveredId) ? 1.6 / e.transform.k : 0;
@@ -601,6 +704,41 @@ function buildGraphHtml(payload: string): string {
             .on('start', function (e, d) { if (!e.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
             .on('drag', function (e, d) { d.fx = e.x; d.fy = e.y; })
             .on('end', function (e, d) { if (!e.active) sim.alphaTarget(0); d.fx = null; d.fy = null; }));
+
+          // ── In-place updates for cheap toggles (no full document reload) ──
+          // The native side calls window.__update({...}) via injectJavaScript for
+          // hulls / labels / semantic-link changes so we don't rebuild the whole
+          // graph + restart the simulation from scratch.
+          window.__update = function (patch) {
+            if (patch.showHulls != null) {
+              DATA.showHulls = patch.showHulls;
+              drawHulls();
+            }
+            if (patch.labelMode != null) {
+              DATA.labelMode = patch.labelMode;
+              updateLabels(currentK);
+            }
+            if (patch.links != null) {
+              DATA.links = patch.links;
+              // Rebind link selection (semantic edges added/removed).
+              link = link.data(DATA.links, function (d) {
+                var s = (d.source && d.source.id) || d.source;
+                var tt = (d.target && d.target.id) || d.target;
+                return s + '\u2192' + tt;
+              });
+              link.exit().remove();
+              link = link.enter().append('line')
+                .attr('stroke', function (d) { return d.color; })
+                .attr('stroke-opacity', function (d) { return d.opacity; })
+                .attr('stroke-width', function (d) { return d.width || 1; })
+                .attr('stroke-dasharray', function (d) { return d.dash ? '3,3' : null; })
+                .merge(link);
+              // Re-seed the link force with the new links and give the sim a
+              // gentle nudge (not a full restart) so new edges settle in.
+              sim.force('link').links(DATA.links);
+              sim.alpha(0.3).restart();
+            }
+          };
         }
 
         // ══ RADIAL / SUNBURST ════════════════════════════════════════════════
@@ -846,6 +984,9 @@ function makeStyles(t: Theme) {
       borderWidth: 1,
     },
     pillLabel: { ...typeScale.control, fontWeight: "500", color: t.textSecondary, textTransform: "capitalize" },
+    // Constrain the spinner to the icon footprint so the pill doesn't resize
+    // when it swaps between the Network icon and the ActivityIndicator.
+    pillSpinner: { width: iconSize.control, height: iconSize.control },
     stats: { ...typeScale.caption, color: t.textTertiary, fontVariant: ["tabular-nums"] },
     // Node-type toggles (line 2)
     typeToggles: { flexDirection: "row", alignItems: "center", gap: 6 },

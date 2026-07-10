@@ -25,12 +25,12 @@ import type { Project } from "@/types";
 // ── View nav config ───────────────────────────────────────────────────────────
 
 interface ViewNavItem {
-  view: "board" | "calendar" | "flow" | "agent" | "graph" | "insights" | "chat";
+  view: "board" | "calendar" | "calendar-all" | "flow" | "agent" | "graph" | "insights" | "chat";
   label: string;
   icon: React.ReactNode;
   iconSm: React.ReactNode;
   /** Which hiddenView key this maps to */
-  hiddenKey: "board" | "calendar" | "flow" | "agent" | "graph" | "insights";
+  hiddenKey: "board" | "calendar" | "calendar-all" | "flow" | "agent" | "graph" | "insights";
   /** Whether it lives inside the project tree (true) or bottom bar (false) */
   inProject: boolean;
 }
@@ -40,6 +40,7 @@ const VIEW_NAV: ViewNavItem[] = [
   { view: "calendar", label: "Calendar",         icon: <CalendarDays size={13} />, iconSm: <CalendarDays size={15} />, hiddenKey: "calendar", inProject: true  },
   { view: "flow",     label: "Idea Flow",        icon: <Workflow size={11} />, iconSm: <Workflow size={15} />, hiddenKey: "flow",     inProject: true  },
   { view: "agent",    label: "Agent",            icon: <Terminal size={11} />, iconSm: <Terminal size={15} />, hiddenKey: "agent",   inProject: true  },
+  { view: "calendar-all", label: "Calendar",     icon: <CalendarDays size={13} />, iconSm: <CalendarDays size={15} />, hiddenKey: "calendar-all", inProject: false },
   { view: "graph",    label: "Knowledge Graph",  icon: <GitBranch size={13} />,iconSm: <GitBranch size={15} />,hiddenKey: "graph",    inProject: false },
   { view: "insights", label: "Insights",         icon: <BarChart2 size={13} />,iconSm: <BarChart2 size={15} />,hiddenKey: "insights", inProject: false },
 ];

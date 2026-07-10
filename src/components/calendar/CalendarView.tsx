@@ -35,6 +35,7 @@ import { TaskChip } from "./TaskChip";
 import { OverdueTray } from "./OverdueTray";
 import { UnscheduledTray } from "./UnscheduledTray";
 import { DayDetailModal } from "./DayDetailModal";
+import { ProjectScopePicker } from "@/components/shared/ProjectScopePicker";
 import {
   buildMonthGrid,
   buildWeekGrid,
@@ -48,16 +49,30 @@ import type { TaskCard } from "@/types";
 
 type CalendarLayout = "month" | "week";
 
-export function CalendarView() {
-  const { activeProjectId, cards, updateCard } = useCairnStore(
-    useShallow((s) => ({
-      activeProjectId: s.activeProjectId,
-      // Subscribe to the raw array so the view re-renders when cards change —
-      // the selector function alone is a stable ref and won't trigger updates.
-      cards: s.cards,
-      updateCard: s.updateCard,
-    })),
-  );
+/**
+ * CalendarView — task calendar, in one of two scopes:
+ *   - "project" (default): the active project's cards. Reached from a project's
+ *     sidebar tree; shows a "No project selected" empty state when none is active.
+ *   - "workspace": every non-archived card across the workspace, with a
+ *     multi-select project filter (stored in `calendarProjectIds`). Reached from
+ *     the workspace-level sidebar entry above Knowledge Graph.
+ */
+export function CalendarView({ scope = "project" }: { scope?: "project" | "workspace" }) {
+  const { activeProjectId, cards, columns, projects, calendarProjectIds, setCalendarProjectIds, updateCard } =
+    useCairnStore(
+      useShallow((s) => ({
+        activeProjectId: s.activeProjectId,
+        // Subscribe to the raw array so the view re-renders when cards change —
+        // the selector function alone is a stable ref and won't trigger updates.
+        cards: s.cards,
+        columns: s.columns,
+        projects: s.projects,
+        calendarProjectIds: s.calendarProjectIds,
+        setCalendarProjectIds: s.setCalendarProjectIds,
+        updateCard: s.updateCard,
+      })),
+    );
+  const isWorkspace = scope === "workspace";
 
   const [layout, setLayout] = useState<CalendarLayout>("month");
   const [anchor, setAnchor] = useState<Date>(() => new Date());
@@ -89,17 +104,36 @@ export function CalendarView() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const today = useMemo(() => new Date(), [dayKey]);
 
-  const projectCards = useMemo(
-    () =>
-      activeProjectId
-        ? cards.filter((c) => c.projectId === activeProjectId && !c.archivedAt)
-        : [],
-    [activeProjectId, cards],
+  const workspaceProjects = useMemo(() => projects.filter((p) => !p.archivedAt), [projects]);
+
+  // Project id → name, for grouping the Unscheduled tray in workspace scope.
+  const projectNames = useMemo(() => new Map(projects.map((p) => [p.id, p.name])), [projects]);
+
+  const scopedCards = useMemo(() => {
+    if (isWorkspace) {
+      // All non-archived workspace cards, optionally narrowed to the selected
+      // projects (empty selection = all).
+      const live = cards.filter((c) => !c.archivedAt);
+      return calendarProjectIds.length > 0
+        ? live.filter((c) => calendarProjectIds.includes(c.projectId))
+        : live;
+    }
+    return activeProjectId ? cards.filter((c) => c.projectId === activeProjectId && !c.archivedAt) : [];
+  }, [isWorkspace, cards, calendarProjectIds, activeProjectId]);
+
+  // Cards in a done-type column are complete, so they never count as overdue.
+  const doneColumnIds = useMemo(
+    () => new Set(columns.filter((c) => c.type === "done").map((c) => c.id)),
+    [columns],
+  );
+  const isDone = useMemo(
+    () => (card: TaskCard) => doneColumnIds.has(card.columnId),
+    [doneColumnIds],
   );
 
   const { byDate, unscheduled, overdue } = useMemo(
-    () => bucketByDate(projectCards, today),
-    [projectCards, today],
+    () => bucketByDate(scopedCards, today, isDone),
+    [scopedCards, today, isDone],
   );
 
   const cells = useMemo(
@@ -107,7 +141,7 @@ export function CalendarView() {
     [layout, anchor, today],
   );
 
-  if (!activeProjectId) {
+  if (!isWorkspace && !activeProjectId) {
     return (
       <div className="flex-1 flex items-center justify-center">
         <p className="text-[var(--text-tertiary)] text-sm">No project selected</p>
@@ -177,8 +211,19 @@ export function CalendarView() {
           Today
         </button>
         <span className="text-xs font-medium text-[var(--text-primary)] ml-1">{periodLabel}</span>
-        {projectCards.length === 0 && (
+        {scopedCards.length === 0 && (
           <span className="text-[0.643rem] text-[var(--text-tertiary)] ml-1">· no tasks yet</span>
+        )}
+
+        {/* Workspace scope: multi-select project filter (mirrors Insights/Graph). */}
+        {isWorkspace && (
+          <div className="ml-2">
+            <ProjectScopePicker
+              projects={workspaceProjects}
+              selectedIds={calendarProjectIds}
+              onChange={setCalendarProjectIds}
+            />
+          </div>
         )}
 
         {/* Layout toggle */}
@@ -218,7 +263,12 @@ export function CalendarView() {
             <WeekGrid cells={cells} renderCell={renderCell} />
           )}
         </div>
-        <UnscheduledTray cards={unscheduled} onOpenCard={setDetailCardId} />
+        <UnscheduledTray
+          cards={unscheduled}
+          onOpenCard={setDetailCardId}
+          groupByProject={isWorkspace}
+          projectNames={projectNames}
+        />
         <DragOverlay dropAnimation={null}>
           {draggingCard ? (
             <div className="rotate-2 opacity-90 w-40 shadow-lg">

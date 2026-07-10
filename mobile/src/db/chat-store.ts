@@ -13,7 +13,15 @@ export interface StoredMessage {
   role: "user" | "assistant";
   content: string;
   images?: string[]; // data URIs — shown live in-session, NOT persisted (see below)
-  tools?: { tool: string; ok: boolean }[];
+  tools?: ToolCall[];
+}
+
+/** A tool the agent ran, plus an optional navigable note/card it produced. */
+export interface ToolCall {
+  tool: string;
+  ok: boolean;
+  /** Set when the tool created/returned a note or card, so the chip can open it. */
+  ref?: { kind: "note" | "card"; id: string };
 }
 
 interface ChatLocalRow {
@@ -54,7 +62,7 @@ export function loadChatHistory(): StoredMessage[] {
     const m: StoredMessage = { role: r.role === "user" ? "user" : "assistant", content: r.content };
     const images = parseJsonArray<string>(r.images);
     if (images) m.images = images;
-    const tools = parseJsonArray<{ tool: string; ok: boolean }>(r.tools);
+    const tools = parseJsonArray<ToolCall>(r.tools);
     if (tools) m.tools = tools;
     return m;
   });

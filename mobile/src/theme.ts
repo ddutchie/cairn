@@ -74,7 +74,7 @@ export const lightTheme: Theme = {
 };
 
 /** Priority colours — re-exported from shared so desktop + mobile match. */
-export { PRIORITY_COLOR } from "@cairn/shared/ui/constants";
+export { PRIORITY_COLOR, PRIORITIES, type Priority } from "@cairn/shared/ui/constants";
 
 /**
  * Elevation ladder — the RN analogue of the desktop shadow scale
@@ -121,11 +121,14 @@ export const elevation: Record<"sm" | "md" | "lg" | "xl", Elevation> = {
  *   label    13/600  field labels, tab/segment labels, chips
  *   caption  13/400  meta, previews, timestamps, stat counts
  *   micro    11/500  dense keys — day-cell chips, legend, small tag chips
+ *   overline 12/600  uppercase section/card labels (tracked)
  */
 export interface TypeToken {
   fontSize: number;
   fontWeight: "400" | "500" | "600" | "700";
   lineHeight?: number;
+  textTransform?: "uppercase";
+  letterSpacing?: number;
 }
 
 export const type = {
@@ -138,6 +141,15 @@ export const type = {
   label: { fontSize: 13, fontWeight: "600" } as TypeToken,
   caption: { fontSize: 13, fontWeight: "400" } as TypeToken,
   micro: { fontSize: 11, fontWeight: "500" } as TypeToken,
+  // Uppercase, tracked section/card headers. Consolidates the ad-hoc
+  // { fontSize:12, fontWeight:600, textTransform:"uppercase", letterSpacing:0.5 }
+  // objects that had drifted across the app (11–12px, 600/700, 0.4/0.5).
+  overline: {
+    fontSize: 12,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  } as TypeToken,
 } as const;
 
 /**

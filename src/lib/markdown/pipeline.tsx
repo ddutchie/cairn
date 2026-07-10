@@ -181,7 +181,7 @@ const KNOWN_HTML_TAGS = new Set([
   // MathML (KaTeX)
   "math","semantics","mrow","mi","mo","mn","msup","msub","mfrac","msqrt","annotation",
   // Custom tags this pipeline maps to React components
-  "mark","callout","mathblock",
+  "mark","callout","mathblock","wikilink",
 ]);
 
 export const rehypeEscapeUnknownTags: Plugin<[], Root> = () => (tree) => {

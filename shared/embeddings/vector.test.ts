@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { cosine, topK, toFloat32, dotNormalized, magnitude } from "./cosine";
+import { cosine, topK, toFloat32, dotNormalized, magnitude } from "./vector";
 
 describe("cosine", () => {
   it("returns 1 for identical vectors", () => {

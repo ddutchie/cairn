@@ -5,13 +5,15 @@ import markdownItMark from "markdown-it-mark";
 import { useRouter } from "expo-router";
 import { Square, CheckSquare } from "lucide-react-native";
 import { useTheme, withAlpha, type Theme } from "@/theme";
-import { findNoteIdByTitle } from "@/db/queries";
+import { findNoteIdByTitle, findCardIdByTitle } from "@/db/queries";
 import { CodeBlock } from "@/components/CodeBlock";
 import {
   preprocessCairnMarkdown,
   noteTitleFromUrl,
+  cardIdFromUrl,
   isColorLiteral,
   toggleCheckboxInSource,
+  type WikilinkResolver,
 } from "@cairn/shared/notes/markdown";
 import { headingSlug } from "@cairn/shared/notes/toc";
 
@@ -42,13 +44,15 @@ const MathView = lazy(() =>
  *   - Inline code colour swatches for CSS colour literals.
  *
  * Cairn syntax is rewritten to standard markdown (shared preprocessCairnMarkdown)
- * so markdown-it can parse it; wikilinks become cairn://note/ links intercepted
- * by onLinkPress.
+ * so markdown-it can parse it; wikilinks become cairn://note/ or cairn://task/
+ * links intercepted by onLinkPress. With resolveLinks on, ids are baked in at
+ * preprocess time (desktop parity); otherwise notes resolve by title on tap.
  */
 export function MarkdownView({
   content,
   onChangeContent,
   onHeadingLayout,
+  resolveLinks = false,
 }: {
   content: string;
   /** When provided, task-list checkboxes become interactive. */
@@ -57,16 +61,45 @@ export function MarkdownView({
    *  container) keyed by GitHub-style slug — used to drive scroll-to-heading
    *  from the Table of Contents. */
   onHeadingLayout?: (id: string, y: number) => void;
+  /** When true, `[[wikilinks]]` are resolved to concrete note/card ids at
+   *  preprocess time (baked into the URL) — matching desktop, so taps navigate
+   *  deterministically without tap-time title matching or collision misrouting.
+   *  Cards become linkable too. Off by default (plain note bodies keep the
+   *  cheap title-encoded form, resolved on tap). Turn on for chat. */
+  resolveLinks?: boolean;
 }) {
   const t = useTheme();
   const router = useRouter();
   const styles = useMemo(() => markdownStyles(t), [t]);
-  const src = useMemo(() => preprocessCairnMarkdown(content ?? ""), [content]);
+
+  // Resolve a wikilink title → concrete note/card id (notes win on a tie, as the
+  // AI most often links notes). Only used when resolveLinks is on.
+  const resolve = useMemo<WikilinkResolver | undefined>(() => {
+    if (!resolveLinks) return undefined;
+    return (title: string) => {
+      const noteId = findNoteIdByTitle(title);
+      if (noteId) return { kind: "note", id: noteId };
+      const cardId = findCardIdByTitle(title);
+      if (cardId) return { kind: "card", id: cardId };
+      return null;
+    };
+  }, [resolveLinks]);
+
+  const src = useMemo(() => preprocessCairnMarkdown(content ?? "", resolve), [content, resolve]);
 
   const onLinkPress = (url: string): boolean => {
-    const title = noteTitleFromUrl(url);
-    if (title != null) {
-      const id = findNoteIdByTitle(title);
+    // Card/task links carry an id directly (baked in at preprocess).
+    const cardId = cardIdFromUrl(url);
+    if (cardId != null) {
+      router.push(`/card/${cardId}`);
+      return false;
+    }
+    // Note links carry either a baked id (resolveLinks) or a title (fallback).
+    const noteRef = noteTitleFromUrl(url);
+    if (noteRef != null) {
+      // Treat the value as a title first (note-body fallback); if no note has
+      // that title, it's already a baked id — navigate to it directly.
+      const id = findNoteIdByTitle(noteRef) ?? noteRef;
       if (id) router.push(`/note/${id}`);
       return false; // handled (whether resolved or not) — don't open externally
     }

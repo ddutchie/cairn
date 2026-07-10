@@ -548,11 +548,8 @@ function makeStyles(t: Theme) {
     bodyContent: { padding: 18, gap: 8 },
 
     sectionLabel: {
-      fontSize: 12,
-      fontWeight: "600",
+      ...typeScale.overline,
       color: t.textTertiary,
-      textTransform: "uppercase",
-      letterSpacing: 0.5,
       marginBottom: 2,
     },
     segment: {

@@ -3,7 +3,7 @@ import { Text, View, FlatList, StyleSheet, RefreshControl, Pressable, Alert, Key
 import { Stack, useRouter, useFocusEffect, type Href } from "expo-router";
 import type { SearchBarCommands } from "react-native-screens";
 import { searchNotes, searchTasks, listWorkspaceIds, embeddingIndexStats, type NoteRow, type CardRow } from "@/db/queries";
-import { PressableScale } from "@/components/PressableScale";
+import { ResultRow } from "@/components/ResultRow";
 import { TabScreen } from "@/components/TabScreen";
 import { EmptyState } from "@/components/EmptyState";
 import { IndexingBar } from "@/components/IndexingBar";
@@ -14,7 +14,7 @@ import { semanticSearch, catchUpIndex, type SemanticHit } from "@/notes/embeddin
 import { haptics } from "@/haptics";
 import { isAppleEmbeddingsSupported, appleEmbeddingsUnavailableReason } from "@modules/apple-embeddings";
 import { stripMarkdown } from "@cairn/shared/notes/text";
-import { useTheme, elevation, PRIORITY_COLOR, TAB_BAR_BASE, hasTabBarSearchField, tabBarClosedLift, KEYBOARD_OPEN_GAP, type as typeScale, type Theme } from "@/theme";
+import { useTheme, PRIORITY_COLOR, TAB_BAR_BASE, hasTabBarSearchField, tabBarClosedLift, KEYBOARD_OPEN_GAP, type as typeScale, type Theme } from "@/theme";
 
 type Scope = "notes" | "tasks" | "semantic";
 
@@ -270,19 +270,12 @@ export default function SearchScreen() {
             ) : undefined
           }
           renderItem={({ item }) => (
-            <PressableScale style={[styles.row, elevation.sm]} onPress={() => openResult({ pathname: "/note/[id]", params: { id: item.noteId, back: "Search" } })}>
-              <View style={styles.taskTitleRow}>
-                <Text style={styles.title} numberOfLines={1}>
-                  {item.title || "Untitled"}
-                </Text>
-                <Text style={styles.score}>{Math.round(item.rank * 100)}%</Text>
-              </View>
-              {item.sectionTitle ? (
-                <Text style={styles.preview} numberOfLines={1}>
-                  {item.sectionTitle}
-                </Text>
-              ) : null}
-            </PressableScale>
+            <ResultRow
+              title={item.title}
+              preview={item.sectionTitle}
+              score={item.rank}
+              onPress={() => openResult({ pathname: "/note/[id]", params: { id: item.noteId, back: "Search" } })}
+            />
           )}
         />
       ) : scope === "notes" ? (
@@ -291,14 +284,11 @@ export default function SearchScreen() {
           keyExtractor={(n) => n.id}
           {...listProps}
           renderItem={({ item }) => (
-            <PressableScale style={[styles.row, elevation.sm]} onPress={() => openResult({ pathname: "/note/[id]", params: { id: item.id, back: "Search" } })}>
-              <Text style={styles.title} numberOfLines={1}>
-                {item.title || "Untitled"}
-              </Text>
-              <Text style={styles.preview} numberOfLines={1}>
-                {stripMarkdown(item.content ?? "")}
-              </Text>
-            </PressableScale>
+            <ResultRow
+              title={item.title}
+              preview={stripMarkdown(item.content ?? "")}
+              onPress={() => openResult({ pathname: "/note/[id]", params: { id: item.id, back: "Search" } })}
+            />
           )}
         />
       ) : (
@@ -307,19 +297,12 @@ export default function SearchScreen() {
           keyExtractor={(c) => c.id}
           {...listProps}
           renderItem={({ item }) => (
-            <PressableScale style={[styles.row, elevation.sm]} onPress={() => openResult({ pathname: "/card/[id]", params: { id: item.id, back: "Search" } })}>
-              <View style={styles.taskTitleRow}>
-                <View style={[styles.priorityDot, { backgroundColor: PRIORITY_COLOR[item.priority as keyof typeof PRIORITY_COLOR] ?? t.textTertiary }]} />
-                <Text style={styles.title} numberOfLines={1}>
-                  {item.title || "Untitled"}
-                </Text>
-              </View>
-              {item.description ? (
-                <Text style={styles.preview} numberOfLines={1}>
-                  {stripMarkdown(item.description)}
-                </Text>
-              ) : null}
-            </PressableScale>
+            <ResultRow
+              title={item.title}
+              preview={item.description ? stripMarkdown(item.description) : null}
+              dotColor={PRIORITY_COLOR[item.priority as keyof typeof PRIORITY_COLOR] ?? t.textTertiary}
+              onPress={() => openResult({ pathname: "/card/[id]", params: { id: item.id, back: "Search" } })}
+            />
           )}
         />
       )}
@@ -376,20 +359,6 @@ function makeStyles(t: Theme) {
     // Bottom pad clears the pinned scope bar + tab bar (+ the native search
     // field on iOS ≤26; none on iOS 27, so drop that reservation).
     list: { padding: 12, paddingBottom: 12 + TAB_BAR_BASE + (hasTabBarSearchField ? SEARCH_FIELD_H : 0) + 48 },
-    row: {
-      paddingVertical: 10,
-      paddingHorizontal: 14,
-      marginBottom: 8,
-      backgroundColor: t.surface,
-      borderRadius: 10,
-      borderWidth: 1,
-      borderColor: t.border,
-    },
-    taskTitleRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-    priorityDot: { width: 8, height: 8, borderRadius: 4 },
-    title: { ...typeScale.control, color: t.textPrimary, flexShrink: 1 },
-    preview: { ...typeScale.caption, color: t.textSecondary, marginTop: 2 },
-    score: { ...typeScale.caption, color: t.textTertiary, marginLeft: "auto", fontVariant: ["tabular-nums"] },
     // Lets ListEmptyComponent fill the viewport so the branded state's top-bias
     // is measured against the full content area (below the header).
     listGrow: { flexGrow: 1 },

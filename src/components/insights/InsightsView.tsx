@@ -3,9 +3,10 @@
 import React, { useCallback, useState, useMemo } from "react";
 import {
   Clock, Grid3x3, Table2, Activity, Workflow, Crosshair, BarChart2,
-  LayoutGrid, ChevronDown, Search, RefreshCw, Sparkles,
+  Search, RefreshCw, Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ProjectScopePicker } from "@/components/shared/ProjectScopePicker";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { useLoadGraph } from "@/hooks/useLoadGraph";
@@ -65,7 +66,6 @@ export function InsightsView() {
   })));
 
   const [layout,    setLayout]    = useState<InsightsLayout>("ridgeline");
-  const [projOpen,  setProjOpen]  = useState(false);
   const [tableSearch,     setTableSearch]     = useState("");
   const [tableTypeFilter, setTableTypeFilter] = useState<GraphNodeType[]>([]);
 
@@ -121,13 +121,6 @@ export function InsightsView() {
 
   const workspaceProjects = useMemo(() => projects.filter((p) => !p.archivedAt), [projects]);
 
-  function toggleProject(pid: string) {
-    const current = graphFilters.projectIds;
-    const next = current.includes(pid) ? current.filter((x) => x !== pid) : [...current, pid];
-    setGraphFilters({ projectIds: next });
-    if (activeWorkspaceId) loadGraph(activeWorkspaceId);
-  }
-
   return (
     <div className="flex flex-col h-full w-full overflow-hidden bg-[var(--background)]">
 
@@ -163,41 +156,14 @@ export function InsightsView() {
         </div>
 
         {/* Project filter */}
-        <div className="relative">
-          <button
-            onClick={() => setProjOpen((v) => !v)}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-[var(--border)] text-xs text-[var(--text-secondary)] hover:bg-[var(--surface-2)] transition-colors"
-          >
-            <LayoutGrid size={12} />
-            {graphFilters.projectIds.length === 0
-              ? "All projects"
-              : `${graphFilters.projectIds.length} project${graphFilters.projectIds.length > 1 ? "s" : ""}`}
-            <ChevronDown size={11} />
-          </button>
-          {projOpen && (
-            <div className="absolute top-full left-0 mt-1 w-52 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-lg z-20 py-1 max-h-64 overflow-y-auto">
-              <button
-                onClick={() => { setGraphFilters({ projectIds: [] }); setProjOpen(false); if (activeWorkspaceId) loadGraph(activeWorkspaceId); }}
-                className={cn("flex items-center w-full px-3 py-1.5 text-xs transition-colors",
-                  graphFilters.projectIds.length === 0 ? "text-[var(--accent)]" : "text-[var(--text-secondary)] hover:bg-[var(--surface-2)]")}
-              >
-                All projects
-              </button>
-              <div className="h-px bg-[var(--border)] my-1" />
-              {workspaceProjects.map((p) => (
-                <button key={p.id} onClick={() => toggleProject(p.id)}
-                  className={cn("flex items-center gap-2 w-full px-3 py-1.5 text-xs transition-colors",
-                    graphFilters.projectIds.includes(p.id)
-                      ? "text-[var(--accent)] bg-[var(--accent-dim)]"
-                      : "text-[var(--text-secondary)] hover:bg-[var(--surface-2)]")}
-                >
-                  <span className="w-2 h-2 rounded-full flex-shrink-0 bg-[var(--accent)]" />
-                  <span className="truncate">{p.name}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        <ProjectScopePicker
+          projects={workspaceProjects}
+          selectedIds={graphFilters.projectIds}
+          onChange={(next) => {
+            setGraphFilters({ projectIds: next });
+            if (activeWorkspaceId) loadGraph(activeWorkspaceId);
+          }}
+        />
 
         {/* Table search + type filter */}
         {layout === "table" && (
@@ -270,7 +236,7 @@ export function InsightsView() {
       </div>
 
       {/* Canvas + detail panel */}
-      <div className="flex flex-1 min-h-0 overflow-hidden" onClick={() => setProjOpen(false)}>
+      <div className="flex flex-1 min-h-0 overflow-hidden">
         <div className="flex flex-1 min-w-0 overflow-hidden relative">
 
           {graphLoading && (
