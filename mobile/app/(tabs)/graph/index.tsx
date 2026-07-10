@@ -42,6 +42,7 @@ export default function GraphScreen() {
   // threshold defaults to "off").
   const [showSemantic, setShowSemantic] = useState(false);
   const [semantic, setSemantic] = useState<GraphEdge[]>([]);
+  const [semanticLoading, setSemanticLoading] = useState(false);
   const semanticAvailable = isAppleEmbeddingsSupported();
   // Monotonic token so a slow semantic load can't overwrite a newer one (e.g.
   // the toggle flips or data changes mid-load).
@@ -56,8 +57,10 @@ export default function GraphScreen() {
     const seq = ++semanticSeq.current;
     if (!showSemantic || !semanticAvailable) {
       setSemantic([]);
+      setSemanticLoading(false);
       return;
     }
+    setSemanticLoading(true);
     try {
       const all: GraphEdge[] = [];
       for (const ws of listWorkspaceIds()) {
@@ -68,6 +71,9 @@ export default function GraphScreen() {
       if (seq === semanticSeq.current) setSemantic(all);
     } catch (err) {
       console.warn("[graph] semantic edges failed:", err);
+    } finally {
+      // Only clear the spinner if we're still the latest load.
+      if (seq === semanticSeq.current) setSemanticLoading(false);
     }
   }, [showSemantic, semanticAvailable]);
   useRefreshOnFocus(useCallback(() => { loadSemantic(); }, [loadSemantic]));
@@ -164,6 +170,7 @@ export default function GraphScreen() {
             showSemantic={showSemantic}
             onToggleSemantic={() => setShowSemantic((v) => !v)}
             semanticAvailable={semanticAvailable}
+            semanticLoading={semanticLoading}
             onSelectNode={onSelectNode}
           />
         </Suspense>

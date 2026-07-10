@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import { View, Text, Pressable, StyleSheet } from "react-native";
+import { View, Text, Pressable, ActivityIndicator, StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { WebView, type WebViewMessageEvent } from "react-native-webview";
 import {
@@ -8,7 +8,7 @@ import {
   Hexagon,
   Type,
   ChevronDown,
-  Sparkles,
+  Network,
   Maximize2,
 } from "lucide-react-native";
 import { useTheme, useIsDark, withAlpha, type as typeScale, iconSize, type Theme } from "@/theme";
@@ -84,6 +84,7 @@ export function KnowledgeGraphWebView({
   showSemantic = false,
   onToggleSemantic,
   semanticAvailable = false,
+  semanticLoading = false,
 }: {
   graph: KnowledgeGraph;
   onSelectNode?: (node: { id: string; type: string }) => void;
@@ -100,6 +101,9 @@ export function KnowledgeGraphWebView({
   showSemantic?: boolean;
   onToggleSemantic?: () => void;
   semanticAvailable?: boolean;
+  /** True while semantic edges are being (re)computed — shows a spinner in the
+   *  pill, since the on-device pass can take a second or two. */
+  semanticLoading?: boolean;
 }) {
   const t = useTheme();
   const isDark = useIsDark();
@@ -324,10 +328,12 @@ export function KnowledgeGraphWebView({
           </Pressable>
         ) : null}
 
-        {/* Semantic-links toggle — force only, left of Hulls, when available. */}
+        {/* Semantic-links toggle — force only, left of Hulls, when available.
+            Shows a spinner while the on-device semantic pass is computing. */}
         {mode === "force" && semanticAvailable && onToggleSemantic ? (
           <Pressable
             onPress={onToggleSemantic}
+            disabled={semanticLoading}
             style={[
               styles.pillBtn,
               showSemantic
@@ -335,7 +341,11 @@ export function KnowledgeGraphWebView({
                 : { borderColor: t.border },
             ]}
           >
-            <Sparkles size={iconSize.control} color={showSemantic ? t.accent : t.textTertiary} />
+            {semanticLoading ? (
+              <ActivityIndicator size="small" color={showSemantic ? t.accent : t.textTertiary} style={styles.pillSpinner} />
+            ) : (
+              <Network size={iconSize.control} color={showSemantic ? t.accent : t.textTertiary} />
+            )}
             <Text style={[styles.pillLabel, { color: showSemantic ? t.accent : t.textTertiary }]}>
               Semantic
             </Text>
@@ -886,6 +896,9 @@ function makeStyles(t: Theme) {
       borderWidth: 1,
     },
     pillLabel: { ...typeScale.control, fontWeight: "500", color: t.textSecondary, textTransform: "capitalize" },
+    // Constrain the spinner to the icon footprint so the pill doesn't resize
+    // when it swaps between the Network icon and the ActivityIndicator.
+    pillSpinner: { width: iconSize.control, height: iconSize.control },
     stats: { ...typeScale.caption, color: t.textTertiary, fontVariant: ["tabular-nums"] },
     // Node-type toggles (line 2)
     typeToggles: { flexDirection: "row", alignItems: "center", gap: 6 },
