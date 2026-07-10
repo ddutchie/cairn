@@ -34,6 +34,8 @@ import {
   listWorkspaceIds,
   type EmbeddableNote,
 } from "@/db/queries";
+import { splitIntoSections, type NoteSection } from "@cairn/shared/notes/sections";
+import { dotNormalized as dot } from "@cairn/shared/embeddings/vector";
 
 // Chunk very long sections so we stay near the model's token budget; chunk
 // vectors are averaged + renormalised (same approach as desktop).
@@ -66,47 +68,6 @@ function modelKey(info: AppleEmbeddingsInfo): string {
 
 // --- text helpers ---------------------------------------------------------
 
-export interface NoteSection {
-  idx: number;
-  title: string;
-  text: string;
-}
-
-const HEADER_RE = /^(#{1,6})\s+(.+)$/;
-
-/** Split a note into `#`/`##`-delimited sections (matches desktop splitIntoSections). */
-export function splitIntoSections(noteTitle: string, content: string): NoteSection[] {
-  const trimmed = content.trim();
-  if (!trimmed) return [];
-  const lines = trimmed.split("\n");
-  const sections: NoteSection[] = [];
-  let currentTitle = noteTitle || "Untitled";
-  let currentLines: string[] = [];
-  let idx = 0;
-  const flush = () => {
-    const text = currentLines.join("\n").trim();
-    if (text) {
-      sections.push({ idx, title: currentTitle, text });
-      idx++;
-    }
-  };
-  for (const line of lines) {
-    const m = line.match(HEADER_RE);
-    if (m && m[1].length <= 2) {
-      flush();
-      currentTitle = m[2].trim();
-      currentLines = [];
-    } else {
-      currentLines.push(line);
-    }
-  }
-  flush();
-  if (sections.length === 0) {
-    sections.push({ idx: 0, title: noteTitle || "Untitled", text: trimmed });
-  }
-  return sections;
-}
-
 /** Fast non-cryptographic digest (FNV-1a) for change detection only. */
 function hashText(s: string): string {
   let h = 0x811c9dc5;
@@ -134,14 +95,6 @@ function chunk(text: string): string[] {
 }
 
 // --- vector math ----------------------------------------------------------
-
-/** Dot product of two equal-length L2-normalised vectors == cosine similarity. */
-function dot(a: Float32Array, b: Float32Array): number {
-  if (a.length !== b.length) return 0;
-  let s = 0;
-  for (let i = 0; i < a.length; i++) s += a[i] * b[i];
-  return s;
-}
 
 /** Subtract the corpus centroid from `v` and L2-renormalise (see semanticSearch). */
 function centerAndNormalise(v: Float32Array, centroid: Float32Array): Float32Array {

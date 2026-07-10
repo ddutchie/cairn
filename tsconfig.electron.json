@@ -6,7 +6,6 @@
     "ignoreDeprecations": "6.0",
     "lib": ["ES2020"],
     "outDir": "dist-electron",
-    "rootDir": "electron",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
