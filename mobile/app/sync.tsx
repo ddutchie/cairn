@@ -6,6 +6,7 @@ import { iCloudAvailable, syncFolderLabel } from "@/sync/folder";
 import { requestSync } from "@/sync/controller";
 import { useSyncStatus } from "@/sync/useSyncStatus";
 import { EmbeddingsCard } from "@/components/EmbeddingsCard";
+import { SectionLabel } from "@/components/SectionLabel";
 import { ICON_CHECK } from "@/components/toolbar-icons";
 import { useModalOpenHaptic, toolbarPress } from "@/haptics";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
@@ -50,7 +51,7 @@ export default function SyncScreen() {
       </Stack.Toolbar>
       <ScrollView contentContainerStyle={styles.container} contentInsetAdjustmentBehavior="automatic">
         <View style={styles.card}>
-          <Text style={styles.cardLabel}>iCloud sync folder</Text>
+          <SectionLabel>iCloud sync folder</SectionLabel>
           <View style={styles.statusRow}>
             <View style={[styles.dot, { backgroundColor: available ? t.success : t.textTertiary }]} />
             <Text style={styles.folderName}>{syncFolderLabel()}</Text>
@@ -118,7 +119,7 @@ function makeStyles(t: Theme) {
     root: { flex: 1 },
     container: { padding: 18 },
     card: { padding: 16, backgroundColor: t.surface2, borderRadius: 12, borderWidth: 1, borderColor: t.border },
-    cardLabel: { fontSize: 12, fontWeight: "600", color: t.textTertiary, textTransform: "uppercase", letterSpacing: 0.5 },
+
     statusRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 10 },
     dot: { width: 9, height: 9, borderRadius: 5 },
     folderName: { ...typeScale.control, color: t.textPrimary, flex: 1 },

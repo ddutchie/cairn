@@ -529,10 +529,8 @@ function makeStyles(t: Theme) {
     },
     reasoningHeader: { flexDirection: "row", alignItems: "center", gap: 5 },
     reasoningLabel: {
-      ...typeScale.caption,
+      ...typeScale.overline,
       color: t.textTertiary,
-      textTransform: "uppercase",
-      letterSpacing: 0.5,
     },
     reasoningText: {
       ...typeScale.caption,

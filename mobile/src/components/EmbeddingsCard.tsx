@@ -9,6 +9,7 @@ import {
 } from "@modules/apple-embeddings";
 import { catchUpIndex } from "@/notes/embeddings";
 import { useIndexStatus } from "@/notes/useIndexStatus";
+import { SectionLabel } from "@/components/SectionLabel";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 
 /**
@@ -59,7 +60,7 @@ export function EmbeddingsCard() {
     <View style={styles.card}>
       <View style={styles.header}>
         <Sparkles size={16} color={t.accent} />
-        <Text style={styles.cardLabel}>Semantic search index</Text>
+        <SectionLabel>Semantic search index</SectionLabel>
       </View>
 
       {!supported ? (
@@ -103,7 +104,7 @@ function makeStyles(t: Theme) {
   return StyleSheet.create({
     card: { padding: 16, backgroundColor: t.surface2, borderRadius: 12, borderWidth: 1, borderColor: t.border, marginTop: 16 },
     header: { flexDirection: "row", alignItems: "center", gap: 8 },
-    cardLabel: { fontSize: 12, fontWeight: "600", color: t.textTertiary, textTransform: "uppercase", letterSpacing: 0.5 },
+
     statusRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 10 },
     progress: { ...typeScale.control, color: t.textSecondary },
     count: { ...typeScale.control, color: t.textPrimary, marginTop: 10 },

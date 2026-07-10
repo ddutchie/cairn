@@ -222,7 +222,7 @@ function makeStyles(t: Theme) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: t.background },
     content: { padding: 18, paddingBottom: 60 },
-    label: { ...typeScale.micro, fontWeight: "700", color: t.textTertiary, textTransform: "uppercase", letterSpacing: 0.5, marginTop: 18, marginBottom: 8 },
+    label: { ...typeScale.overline, color: t.textTertiary, marginTop: 18, marginBottom: 8 },
     titleInput: { ...typeScale.title, color: t.textPrimary, backgroundColor: t.surface, borderWidth: 1, borderColor: t.border, borderRadius: 10, padding: 12 },
     priorityRow: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
     priorityChip: { paddingVertical: 6, paddingHorizontal: 14, borderRadius: 16, borderWidth: 1 },

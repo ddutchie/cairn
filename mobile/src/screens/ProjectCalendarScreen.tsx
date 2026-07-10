@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { useLocalSearchParams, useRouter, useFocusEffect, Stack, type Href } from "expo-router";
+import { useLocalSearchParams, useRouter, Stack, type Href } from "expo-router";
 import { View, StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -8,7 +8,7 @@ import {
   type CalendarCard,
 } from "@/db/queries";
 import { CalendarView } from "@/components/CalendarView";
-import { useDataChanged } from "@/sync/useSyncStatus";
+import { useRefreshOnFocus } from "@/sync/useSyncStatus";
 import { useTheme } from "@/theme";
 
 /**
@@ -34,8 +34,7 @@ export function ProjectCalendarScreen({ nested = false }: { nested?: boolean }) 
     setCards(listCardsWithDueDates(project));
     setName(getProject(project)?.name ?? "");
   }, [project]);
-  useFocusEffect(useCallback(() => load(), [load]));
-  useDataChanged(load);
+  useRefreshOnFocus(load);
 
   const cardHref = useCallback(
     (id: string): Href =>

@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { View, Text, FlatList, StyleSheet, RefreshControl } from "react-native";
-import { Stack, useFocusEffect, useRouter } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import { listProjectSummaries, type ProjectSummary } from "@/db/queries";
 import { getActiveSourceName } from "@/db";
 import { PressableScale } from "@/components/PressableScale";
@@ -10,7 +10,7 @@ import { SkeletonList } from "@/components/Skeleton";
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { useSyncBadge } from "@/components/SyncStatusBadge";
 import { WorkspaceHeaderMenu } from "@/components/WorkspaceHeaderMenu";
-import { useDataChanged } from "@/sync/useSyncStatus";
+import { useRefreshOnFocus } from "@/sync/useSyncStatus";
 import { useTheme, elevation, type as typeScale } from "@/theme";
 
 export default function ProjectsScreen() {
@@ -31,8 +31,7 @@ export default function ProjectsScreen() {
     setWorkspaceName(getActiveSourceName());
     setLoaded(true);
   }, []);
-  useFocusEffect(useCallback(() => load(), [load]));
-  useDataChanged(load);
+  useRefreshOnFocus(load);
 
   const header = (
     <>

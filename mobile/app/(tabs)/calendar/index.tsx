@@ -1,12 +1,12 @@
 import { useCallback, useState } from "react";
-import { Stack, useFocusEffect, useRouter } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { listCardsWithDueDates, type CalendarCard } from "@/db/queries";
 import { CalendarView, type CalendarLayout } from "@/components/CalendarView";
 import { TabScreen } from "@/components/TabScreen";
 import { ICON_VIEW_MONTH, ICON_VIEW_WEEK } from "@/components/toolbar-icons";
 import { toolbarPress } from "@/haptics";
-import { useDataChanged } from "@/sync/useSyncStatus";
+import { useRefreshOnFocus } from "@/sync/useSyncStatus";
 
 /**
  * Workspace-wide Calendar: every live task with a due date across all projects,
@@ -26,8 +26,7 @@ export default function CalendarScreen() {
   const [todayNonce, setTodayNonce] = useState(0);
 
   const load = useCallback(() => setCards(listCardsWithDueDates()), []);
-  useFocusEffect(useCallback(() => load(), [load]));
-  useDataChanged(load);
+  useRefreshOnFocus(load);
 
   return (
     <TabScreen>

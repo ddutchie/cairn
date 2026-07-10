@@ -1,6 +1,6 @@
 import { memo, useCallback, useMemo, useState } from "react";
 import { View, Text, ScrollView, FlatList, Pressable, StyleSheet, type ListRenderItem } from "react-native";
-import { useLocalSearchParams, useRouter, useFocusEffect, Stack, type Href } from "expo-router";
+import { useLocalSearchParams, useRouter, Stack, type Href } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChevronDown, ChevronRight, Folder, FolderOpen, FileText, Pin } from "lucide-react-native";
 import {
@@ -24,7 +24,7 @@ import { ICON_ADD, ICON_CALENDAR } from "@/components/toolbar-icons";
 import { toolbarPress } from "@/haptics";
 import { DraggableBoard } from "@/components/DraggableBoard";
 import { EmptyState } from "@/components/EmptyState";
-import { useDataChanged } from "@/sync/useSyncStatus";
+import { useRefreshOnFocus } from "@/sync/useSyncStatus";
 import { useTheme, withAlpha, TAB_BAR_BASE, type as typeScale, type Theme } from "@/theme";
 import { buildFolderTree, type FolderNode } from "@cairn/shared/notes/folder-tree";
 import { stripMarkdown } from "@cairn/shared/notes/text";
@@ -91,8 +91,7 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
     setCards(listCards(id));
   }, [id]);
 
-  useFocusEffect(useCallback(() => load(), [load]));
-  useDataChanged(load);
+  useRefreshOnFocus(load);
 
   // A single stable note-open handler built from the (stable) href builder, so
   // the memoised rows below keep the SAME onOpen reference across renders and

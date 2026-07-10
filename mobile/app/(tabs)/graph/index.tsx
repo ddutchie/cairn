@@ -1,13 +1,13 @@
 import { lazy, Suspense, useCallback, useMemo, useRef, useState } from "react";
 import { View, ActivityIndicator, StyleSheet } from "react-native";
-import { Stack, useFocusEffect, useRouter } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import { getKnowledgeGraph, listWorkspaceIds, type KnowledgeGraph, type GraphEdge } from "@/db/queries";
 import type { GraphMode } from "@/components/KnowledgeGraphWebView";
 import { TabScreen } from "@/components/TabScreen";
 import { EmptyState } from "@/components/EmptyState";
 import { ICON_GRAPH_FORCE, ICON_GRAPH_RADIAL, ICON_SEMANTIC } from "@/components/toolbar-icons";
 import { toolbarPress } from "@/haptics";
-import { useDataChanged } from "@/sync/useSyncStatus";
+import { useRefreshOnFocus } from "@/sync/useSyncStatus";
 import { semanticEdges } from "@/notes/embeddings";
 import { isAppleEmbeddingsSupported } from "@modules/apple-embeddings";
 import { useTheme } from "@/theme";
@@ -46,8 +46,7 @@ export default function GraphScreen() {
   const semanticSeq = useRef(0);
 
   const load = useCallback(() => setGraph(getKnowledgeGraph()), []);
-  useFocusEffect(useCallback(() => load(), [load]));
-  useDataChanged(load);
+  useRefreshOnFocus(load);
 
   // Compute semantic edges once the toggle is switched on (and refresh when the
   // underlying data changes while it's on). Cheap no-op when unavailable.
@@ -69,8 +68,7 @@ export default function GraphScreen() {
       console.warn("[graph] semantic edges failed:", err);
     }
   }, [showSemantic, semanticAvailable]);
-  useFocusEffect(useCallback(() => { loadSemantic(); }, [loadSemantic]));
-  useDataChanged(useCallback(() => { loadSemantic(); }, [loadSemantic]));
+  useRefreshOnFocus(useCallback(() => { loadSemantic(); }, [loadSemantic]));
 
   // Merge structural + semantic edges, keeping only semantic edges whose both
   // endpoints exist as nodes in the current graph.

@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { View, Text, TouchableOpacity, ActivityIndicator, StyleSheet, ScrollView, Image } from "react-native";
 import { useTheme, type Theme } from "@/theme";
-import { setActiveSource, getDeviceId } from "@/db";
-import { getSyncFolderPath, iCloudAvailable } from "@/sync/folder";
-import { listSources, type SyncSource } from "@/sync/fs-transport";
+import { setActiveSource } from "@/db";
+import { useSyncSources } from "@/sync/useSyncSources";
 
 // Same artwork as the launch splash / empty states, so the picker reads as
 // "the app, waiting for a source" rather than a bare screen.
@@ -30,40 +29,14 @@ function Step({ n, t, children }: { n: number; t: Theme; children: ReactNode }) 
  */
 export function SourcePicker({ onSelected }: { onSelected: (workspaceId: string) => void }) {
   const t = useTheme();
-  const [loading, setLoading] = useState(true);
-  const [sources, setSources] = useState<SyncSource[]>([]);
-  const [error, setError] = useState<string | null>(null);
-
-  const scan = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      if (!(await iCloudAvailable())) {
-        setError("iCloud isn't available. Sign in to iCloud in Settings, then reopen Cairn.");
-        setSources([]);
-        return;
-      }
-      const folder = await getSyncFolderPath();
-      if (!folder) {
-        setError("Couldn't open the iCloud Cairn folder.");
-        setSources([]);
-        return;
-      }
-      const found = await listSources(folder, getDeviceId());
-      setSources(found);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const { sources, loading, error, refresh } = useSyncSources({ gateOnICloud: true });
 
   useEffect(() => {
-    // Defer to a microtask so the initial setState in scan() doesn't run
+    // Defer to a microtask so the initial setState in refresh() doesn't run
     // synchronously inside the effect body (avoids cascading-render lint).
-    const id = setTimeout(() => void scan(), 0);
+    const id = setTimeout(() => void refresh(), 0);
     return () => clearTimeout(id);
-  }, [scan]);
+  }, [refresh]);
 
   function pick(workspaceId: string) {
     setActiveSource(workspaceId);
@@ -126,7 +99,7 @@ export function SourcePicker({ onSelected }: { onSelected: (workspaceId: string)
 
       <TouchableOpacity
         style={[styles.refresh, { borderColor: t.border }]}
-        onPress={() => void scan()}
+        onPress={() => void refresh()}
         disabled={loading}
       >
         <Text style={[styles.refreshText, { color: loading ? t.textTertiary : t.accent }]}>Refresh</Text>

@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { View, Text, ScrollView, Pressable, StyleSheet, Alert } from "react-native";
-import { Stack, useRouter, useFocusEffect } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import { GitMerge } from "lucide-react-native";
 import {
   listConflictCopies,
@@ -8,7 +8,7 @@ import {
   resolveConflictKeepOriginal,
   type ConflictCopy,
 } from "@/db/queries";
-import { useDataChanged } from "@/sync/useSyncStatus";
+import { useRefreshOnFocus } from "@/sync/useSyncStatus";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 
 /**
@@ -23,8 +23,7 @@ export default function ConflictsScreen() {
   const styles = useMemo(() => makeStyles(t), [t]);
 
   const load = useCallback(() => setConflicts(listConflictCopies()), []);
-  useFocusEffect(useCallback(() => load(), [load]));
-  useDataChanged(load);
+  useRefreshOnFocus(load);
 
   const keepCopy = (c: ConflictCopy) => {
     // More destructive: this overwrites the live original with the copy. Confirm
@@ -127,7 +126,7 @@ function makeStyles(t: Theme) {
     meta: { ...typeScale.caption, color: t.textTertiary, marginTop: 4 },
     versions: { gap: 10, marginTop: 12 },
     version: { backgroundColor: t.surface2, borderRadius: 10, borderWidth: 1, borderColor: t.borderSubtle, padding: 10 },
-    versionLabel: { fontSize: 11, fontWeight: "700", color: t.textTertiary, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 6 },
+    versionLabel: { ...typeScale.overline, color: t.textTertiary, marginBottom: 6 },
     versionBody: { ...typeScale.caption, color: t.textPrimary, lineHeight: 19 },
     actions: { flexDirection: "row", gap: 10, marginTop: 14 },
     btn: { flex: 1, paddingVertical: 11, borderRadius: 10, alignItems: "center" },

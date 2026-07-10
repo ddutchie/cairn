@@ -26,7 +26,7 @@ import { reindexNote, relatedNotes, type RelatedNote } from "@/notes/embeddings"
 import { haptics, toolbarPress } from "@/haptics";
 import { extractHeadings } from "@cairn/shared/notes/toc";
 import { isAppleEmbeddingsSupported } from "@modules/apple-embeddings";
-import { useDataChanged } from "@/sync/useSyncStatus";
+import { useRefreshOnFocus } from "@/sync/useSyncStatus";
 import { useTheme, TAB_BAR_BASE, type as typeScale, type Theme } from "@/theme";
 
 /**
@@ -89,8 +89,7 @@ export function NoteDetailScreen({ nested = false }: { nested?: boolean }) {
     setTitle(fresh.title ?? "");
     setBody(fresh.content ?? "");
   }, [editing, id]);
-  useFocusEffect(useCallback(() => reload(), [reload]));
-  useDataChanged(reload);
+  useRefreshOnFocus(reload);
 
   const isPinned = !!note?.is_pinned;
 
@@ -399,11 +398,8 @@ function makeStyles(t: Theme) {
       paddingTop: 16,
     },
     relatedHeading: {
-      ...typeScale.caption,
+      ...typeScale.overline,
       color: t.textTertiary,
-      textTransform: "uppercase",
-      letterSpacing: 0.5,
-      fontWeight: "600",
       marginBottom: 8,
     },
     relatedRow: {

@@ -1,9 +1,8 @@
 import { useCallback, useState } from "react";
 import { Stack, useFocusEffect } from "expo-router";
-import { getActiveSource, getActiveSourceName, getDeviceId } from "@/db";
-import { getSyncFolderPath } from "@/sync/folder";
-import { listSources, type SyncSource } from "@/sync/fs-transport";
+import { getActiveSource } from "@/db";
 import { switchSource } from "@/sync/controller";
+import { useSyncSources } from "@/sync/useSyncSources";
 import { ICON_CAIRN } from "@/components/toolbar-icons";
 
 /**
@@ -28,40 +27,23 @@ import { ICON_CAIRN } from "@/components/toolbar-icons";
  * `Stack.Toolbar`, NOT a title component).
  */
 export function WorkspaceHeaderMenu() {
+  // `active` is tracked locally so the checkmark updates the instant the user
+  // switches, before the next folder scan. `sources` (merged with the active
+  // workspace and name-sorted) + `refresh` come from the shared hook.
   const [active, setActive] = useState<string | null>(() => getActiveSource());
-  const [name, setName] = useState<string | null>(() => getActiveSourceName());
-  const [sources, setSources] = useState<SyncSource[]>([]);
+  const { sources, refresh } = useSyncSources({ mergeActive: true });
 
-  const refresh = useCallback(() => {
-    setActive(getActiveSource());
-    setName(getActiveSourceName());
-    void (async () => {
-      try {
-        const folder = await getSyncFolderPath();
-        if (!folder) return;
-        setSources(await listSources(folder, getDeviceId()));
-      } catch {
-        /* keep previous list */
-      }
-    })();
-  }, []);
-
-  useFocusEffect(useCallback(() => refresh(), [refresh]));
-
-  // Merge active (may not be in the scan yet) with discovered, keyed by id, so
-  // the current workspace always appears even before the folder scan resolves.
-  const byId = new Map<string, SyncSource>();
-  for (const s of sources) byId.set(s.workspaceId, s);
-  if (active && !byId.has(active)) byId.set(active, { workspaceId: active, name });
-  const all = [...byId.values()].sort((a, b) =>
-    (a.name ?? a.workspaceId).localeCompare(b.name ?? b.workspaceId),
+  useFocusEffect(
+    useCallback(() => {
+      setActive(getActiveSource());
+      void refresh();
+    }, [refresh]),
   );
 
   const onSwitch = (ws: string) => {
     if (ws === active) return;
     switchSource(ws);
     setActive(ws);
-    setName(getActiveSourceName());
   };
 
   return (
@@ -71,7 +53,7 @@ export function WorkspaceHeaderMenu() {
         iconRenderingMode="template"
         accessibilityLabel="Switch workspace"
       >
-        {all.map((s) => (
+        {sources.map((s) => (
           <Stack.Toolbar.MenuAction
             key={s.workspaceId}
             isOn={s.workspaceId === active}
