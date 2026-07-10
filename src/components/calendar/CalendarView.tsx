@@ -49,12 +49,13 @@ import type { TaskCard } from "@/types";
 type CalendarLayout = "month" | "week";
 
 export function CalendarView() {
-  const { activeProjectId, cards, updateCard } = useCairnStore(
+  const { activeProjectId, cards, columns, updateCard } = useCairnStore(
     useShallow((s) => ({
       activeProjectId: s.activeProjectId,
       // Subscribe to the raw array so the view re-renders when cards change —
       // the selector function alone is a stable ref and won't trigger updates.
       cards: s.cards,
+      columns: s.columns,
       updateCard: s.updateCard,
     })),
   );
@@ -97,9 +98,19 @@ export function CalendarView() {
     [activeProjectId, cards],
   );
 
+  // Cards in a done-type column are complete, so they never count as overdue.
+  const doneColumnIds = useMemo(
+    () => new Set(columns.filter((c) => c.type === "done").map((c) => c.id)),
+    [columns],
+  );
+  const isDone = useMemo(
+    () => (card: TaskCard) => doneColumnIds.has(card.columnId),
+    [doneColumnIds],
+  );
+
   const { byDate, unscheduled, overdue } = useMemo(
-    () => bucketByDate(projectCards, today),
-    [projectCards, today],
+    () => bucketByDate(projectCards, today, isDone),
+    [projectCards, today, isDone],
   );
 
   const cells = useMemo(

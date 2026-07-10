@@ -129,7 +129,8 @@ export function CalendarView({
   // Bucket EVERY dated card by its day. A separate overdue list drives the tray,
   // but past-due cards are ALSO kept in `byDay` so a past day that's still
   // visible in the grid (e.g. a leading-week day from the previous month) shows
-  // its tasks instead of appearing empty.
+  // its tasks instead of appearing empty. Cards in a done column are complete,
+  // so they're kept out of the overdue tray (they still keep their day chip).
   const { byDay, overdue } = useMemo(() => {
     const map = new Map<string, CalendarCard[]>();
     const over: CalendarCard[] = [];
@@ -139,7 +140,7 @@ export function CalendarView({
       const arr = map.get(key);
       if (arr) arr.push(c);
       else map.set(key, [c]);
-      if (key < todayKey) over.push(c);
+      if (key < todayKey && !c.is_done) over.push(c);
     }
     return { byDay: map, overdue: over };
   }, [cards, todayKey]);

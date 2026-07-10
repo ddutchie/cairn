@@ -93,23 +93,32 @@ export function shiftWeek(anchor: Date, delta: number): Date {
 
 /** Result of bucketing cards for a calendar render. */
 export interface BucketedCards {
-  /** dueDate key → cards due that day (today and future). */
+  /** dueDate key → cards due that day (past, today and future). */
   byDate: Map<string, TaskCard[]>;
   /** Cards with no dueDate. */
   unscheduled: TaskCard[];
-  /** Cards whose dueDate is strictly before today. */
+  /** Non-done cards whose dueDate is strictly before today. */
   overdue: TaskCard[];
 }
 
 /**
  * Bucket cards into per-day groups, an unscheduled list, and an overdue list.
  *
- * Overdue = dueDate strictly before `today` (calendar-day comparison, mirroring
- * getDueDateStatus). Overdue cards are kept OUT of `byDate` so they render in
- * the dedicated overdue tray rather than (or in addition to) a past cell that
- * may not even be visible in the current month/week.
+ * Every dated card is placed in `byDate` under its due day — INCLUDING past-due
+ * cards — so a past day that's visible in the grid still shows its tasks rather
+ * than appearing empty. `overdue` is an ADDITIONAL list (for the overdue tray)
+ * of the same cards whose dueDate is strictly before today.
+ *
+ * `isDone(card)` identifies cards in a done-type column: a completed task is
+ * never "overdue", so a past-due done card is omitted from the `overdue` tray
+ * list (it still keeps its day chip in `byDate`). Done cards with a today/future
+ * due date are unaffected.
  */
-export function bucketByDate(cards: TaskCard[], today: Date = new Date()): BucketedCards {
+export function bucketByDate(
+  cards: TaskCard[],
+  today: Date = new Date(),
+  isDone: (card: TaskCard) => boolean = () => false,
+): BucketedCards {
   const byDate = new Map<string, TaskCard[]>();
   const unscheduled: TaskCard[] = [];
   const overdue: TaskCard[] = [];
@@ -120,14 +129,13 @@ export function bucketByDate(cards: TaskCard[], today: Date = new Date()): Bucke
       unscheduled.push(card);
       continue;
     }
-    if (card.dueDate < todayKey) {
-      // Lexicographic compare is safe for the fixed-width "yyyy-MM-dd" format.
-      overdue.push(card);
-      continue;
-    }
+    // Every dated card lands in its day bucket (past cells must not be empty).
     const bucket = byDate.get(card.dueDate);
     if (bucket) bucket.push(card);
     else byDate.set(card.dueDate, [card]);
+    // Additionally surface past-due, not-yet-done cards in the overdue tray.
+    // Lexicographic compare is safe for the fixed-width "yyyy-MM-dd" format.
+    if (card.dueDate < todayKey && !isDone(card)) overdue.push(card);
   }
 
   return { byDate, unscheduled, overdue };

@@ -335,10 +335,13 @@ export function searchTasks(query: string): CardRow[] {
 /**
  * A task card that has a due date, enriched with its project name for the
  * workspace-wide Calendar view. `due_date` is guaranteed non-null here.
+ * `is_done` is 1 when the card lives in a done-type column (so the calendar can
+ * keep completed tasks out of the overdue tray).
  */
 export interface CalendarCard extends CardRow {
   due_date: string;
   project_name: string;
+  is_done: number;
 }
 
 /**
@@ -351,9 +354,11 @@ export function listCardsWithDueDates(projectId?: string): CalendarCard[] {
   const scope = projectId ? "AND c.project_id = ?" : "";
   const rows = db.getAllSync<CalendarCard>(
     `SELECT c.id, c.column_id, c.project_id, c.title, c.description, c.priority,
-            c.tag_ids, c."order", c.due_date, c.assignee, p.name AS project_name
+            c.tag_ids, c."order", c.due_date, c.assignee, p.name AS project_name,
+            CASE WHEN col.type = 'done' THEN 1 ELSE 0 END AS is_done
      FROM task_cards c
      JOIN projects p ON p.id = c.project_id
+     LEFT JOIN board_columns col ON col.id = c.column_id
      WHERE c.deleted_at IS NULL AND c.archived_at IS NULL
        AND c.due_date IS NOT NULL AND c.due_date != ''
        ${scope}
