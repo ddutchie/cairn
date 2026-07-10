@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChevronDown, ChevronRight, Folder, FolderOpen, FileText, Pin } from "lucide-react-native";
 import {
   getProject,
+  getProjectOverview,
   listNotes,
   listColumns,
   listCards,
@@ -16,6 +17,7 @@ import {
   type CardRow,
   type ColumnRow,
   type TagRow,
+  type ProjectOverviewData,
 } from "@/db/queries";
 import { TagChips } from "@/components/TagChips";
 import { PressableScale } from "@/components/PressableScale";
@@ -23,6 +25,7 @@ import { SearchField } from "@/components/SearchField";
 import { ICON_ADD, ICON_CALENDAR } from "@/components/toolbar-icons";
 import { toolbarPress } from "@/haptics";
 import { DraggableBoard } from "@/components/DraggableBoard";
+import { OverviewTab } from "@/components/overview/OverviewTab";
 import { EmptyState } from "@/components/EmptyState";
 import { useRefreshOnFocus } from "@/sync/useSyncStatus";
 import { useTheme, withAlpha, TAB_BAR_BASE, type as typeScale, type Theme } from "@/theme";
@@ -30,7 +33,7 @@ import { buildFolderTree, type FolderNode } from "@cairn/shared/notes/folder-tre
 import { stripMarkdown } from "@cairn/shared/notes/text";
 import { formatRelative } from "@cairn/shared/format/date";
 
-type Tab = "notes" | "board";
+type Tab = "overview" | "notes" | "board";
 
 /** A single virtualized row in the notes list: a folder header or a note. */
 type ListRow =
@@ -61,8 +64,9 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
   // screen (see TAB_BAR_BASE doc), so we no longer add it separately; the +24
   // is scroll slack above the bar / home indicator.
   const listBottomPad = 24 + insets.bottom;
-  const [tab, setTab] = useState<Tab>("notes");
+  const [tab, setTab] = useState<Tab>("overview");
   const [project, setProject] = useState(id ? getProject(id) : null);
+  const [overview, setOverview] = useState<ProjectOverviewData | null>(null);
   const [notes, setNotes] = useState<NoteRow[]>([]);
   const [columns, setColumns] = useState<ColumnRow[]>([]);
   const [cards, setCards] = useState<CardRow[]>([]);
@@ -86,6 +90,7 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
   const load = useCallback(() => {
     if (!id) return;
     setProject(getProject(id));
+    setOverview(getProjectOverview(id));
     setNotes(listNotes(id));
     setColumns(listColumns(id));
     setCards(listCards(id));
@@ -160,9 +165,10 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
   const onAdd = () => {
     if (!id) return;
     // New-note / new-task are modals in the root stack (they present over the
-    // tab bar by design), so they stay absolute for both variants.
-    if (tab === "notes") router.push({ pathname: "/note/new", params: { project: id } });
-    else router.push({ pathname: "/card/new", params: { project: id } });
+    // tab bar by design), so they stay absolute for both variants. On the
+    // Overview segment the + is hidden, so default the action to a new note.
+    if (tab === "board") router.push({ pathname: "/card/new", params: { project: id } });
+    else router.push({ pathname: "/note/new", params: { project: id } });
   };
 
   return (
@@ -191,17 +197,34 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
         />
         <Stack.Toolbar.Button
           icon={ICON_ADD}
-          accessibilityLabel={tab === "notes" ? "New note" : "New task"}
+          accessibilityLabel={tab === "board" ? "New task" : "New note"}
           onPress={toolbarPress(onAdd)}
+          hidden={tab === "overview"}
         />
       </Stack.Toolbar>
 
       <View style={styles.segment}>
+        <Segment label="Overview" active={tab === "overview"} onPress={() => setTab("overview")} t={t} />
         <Segment label="Notes" count={notes.length} active={tab === "notes"} onPress={() => setTab("notes")} t={t} />
         <Segment label="Board" count={cards.length} active={tab === "board"} onPress={() => setTab("board")} t={t} />
       </View>
 
-      {tab === "notes" ? (
+      {tab === "overview" ? (
+        overview ? (
+          <OverviewTab
+            data={overview}
+            bottomPad={listBottomPad}
+            nav={{
+              onOpenNote: (nid) => router.push(noteHref(nid)),
+              onOpenCard: (cid) => router.push(cardHref(cid)),
+              onViewNotes: () => setTab("notes"),
+              onViewBoard: () => setTab("board"),
+            }}
+          />
+        ) : (
+          <View style={{ flex: 1 }} />
+        )
+      ) : tab === "notes" ? (
         notes.length === 0 ? (
           <EmptyState title="No notes yet" subtitle="Tap + to create your first note." align="top" />
         ) : (
@@ -300,14 +323,15 @@ function NoteFilterBar({
   );
 }
 
-function Segment({ label, count, active, onPress, t }: { label: string; count: number; active: boolean; onPress: () => void; t: Theme }) {
+function Segment({ label, count, active, onPress, t }: { label: string; count?: number; active: boolean; onPress: () => void; t: Theme }) {
   return (
     <Pressable
       onPress={onPress}
       style={[{ flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: "center" }, active && { backgroundColor: t.surface }]}
     >
       <Text style={{ color: active ? t.textPrimary : t.textTertiary, fontWeight: active ? "600" : "400", fontSize: typeScale.label.fontSize }}>
-        {label} <Text style={{ color: t.textTertiary }}>{count}</Text>
+        {label}
+        {count !== undefined ? <Text style={{ color: t.textTertiary }}> {count}</Text> : null}
       </Text>
     </Pressable>
   );

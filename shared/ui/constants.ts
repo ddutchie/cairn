@@ -52,6 +52,26 @@ export const PRIORITY_COLOR: Record<string, string> = {
 export const PRIORITIES = ["low", "medium", "high", "urgent"] as const;
 export type Priority = (typeof PRIORITIES)[number];
 
+/** Board column types. Mirrors src/types ColumnType (minus "custom" edge cases). */
+export type ColumnType = "backlog" | "todo" | "in_progress" | "review" | "done" | "custom";
+
+/**
+ * Canonical accent colour per column type. Mirrors desktop src/lib/constants
+ * COLUMN_COLORS so the Overview column breakdown / board snapshot render the
+ * same hues on desktop and mobile.
+ */
+export const COLUMN_COLORS: Record<string, string> = {
+  backlog: "#666360",
+  todo: "#60a5fa",
+  in_progress: "#f59e0b",
+  review: "#a78bfa",
+  done: "#3ecf8e",
+  custom: "#9ca3af",
+};
+
+/** Canonical sort order for column types on the overview / breakdowns. */
+export const COLUMN_TYPE_ORDER: ColumnType[] = ["backlog", "todo", "in_progress", "review", "done"];
+
 /**
  * Prettify a tool label/name for display. Both apps show identical tool-call
  * chip labels via this single implementation.

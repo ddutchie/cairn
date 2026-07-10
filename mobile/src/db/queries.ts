@@ -736,6 +736,72 @@ export function getProjectContextPack(projectId: string): unknown {
   proj.columns = columns;
 
   return { project: proj, noteCount: notes.length, pinnedNotes, openTasks, recentActivity };
+ }
+
+/** Project metadata for the Overview header (beyond the id/name/icon ProjectRow). */
+export interface ProjectMeta {
+  id: string;
+  name: string;
+  icon: string | null;
+  description: string | null;
+  status: string;
+  priority: string;
+  due_date: string | null;
+  tag_ids: string;
+}
+
+/** A board column including its `type` (needed to find the done column + order + colour). */
+export interface OverviewColumn extends ColumnRow {
+  type: string;
+}
+
+/** A card with the extra fields the Overview needs (due date + updated_at). */
+export interface OverviewCard extends CardRow {
+  updated_at: string;
+}
+
+export interface ProjectOverviewData {
+  project: ProjectMeta | null;
+  columns: OverviewColumn[];
+  cards: OverviewCard[];
+  notes: NoteRow[];
+}
+
+/**
+ * Single focused read backing the mobile per-project Overview segment. Unlike
+ * listColumns/listCards (which are tuned for the board and omit type/due/updated
+ * fields), this selects exactly what computeProjectMetrics() needs so the
+ * Overview stays self-contained and doesn't widen the hot board queries.
+ */
+export function getProjectOverview(projectId: string): ProjectOverviewData {
+  const db = getDb();
+  const project =
+    db.getFirstSync<ProjectMeta>(
+      `SELECT id, name, icon, description, status, priority, due_date, tag_ids
+       FROM projects WHERE id = ? AND ${LIVE}`,
+      projectId,
+    ) ?? null;
+
+  const columns = db.getAllSync<OverviewColumn>(
+    `SELECT id, project_id, name, type, "order" FROM board_columns
+     WHERE deleted_at IS NULL AND project_id = ? ORDER BY "order"`,
+    projectId,
+  );
+
+  const cards = db.getAllSync<OverviewCard>(
+    `SELECT id, column_id, project_id, title, description, priority, tag_ids, "order", due_date, updated_at
+     FROM task_cards WHERE ${LIVE} AND project_id = ? ORDER BY "order"`,
+    projectId,
+  );
+
+  const notes = db.getAllSync<NoteRow>(
+    `SELECT id, project_id, title, content, folder, tag_ids, updated_at, is_pinned FROM notes
+     WHERE ${LIVE} AND type = 'note' AND ${NOT_CONFLICT} AND project_id = ?
+     ORDER BY is_pinned DESC, updated_at DESC`,
+    projectId,
+  );
+
+  return { project, columns, cards, notes };
 }
 
 /**
