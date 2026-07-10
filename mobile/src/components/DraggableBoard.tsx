@@ -72,7 +72,7 @@ export function DraggableBoard({
     [onMove],
   );
 
-  const ctrl = useDragController<CardRow>({ getId: (c) => c.id, onDrop });
+  const ctrl = useDragController<CardRow>({ getId: (c) => c.id, onDrop, scrollAxis: "x" });
 
   if (columns.length === 0) {
     return (
@@ -84,7 +84,12 @@ export function DraggableBoard({
 
   return (
     <View ref={ctrl.setContainer} style={{ flex: 1 }} collapsable={false}>
-      <ScrollView
+      <Animated.ScrollView
+        ref={ctrl.scrollRef}
+        onScroll={ctrl.scrollHandler}
+        onLayout={ctrl.onScrollLayout}
+        onContentSizeChange={ctrl.onScrollContentSizeChange}
+        scrollEventThrottle={16}
         horizontal
         scrollEnabled={!ctrl.scrollLocked}
         showsHorizontalScrollIndicator={false}
@@ -104,7 +109,7 @@ export function DraggableBoard({
             onAddCard={onAddCard}
           />
         ))}
-      </ScrollView>
+      </Animated.ScrollView>
 
       {ctrl.dragging ? (
         <DragOverlay ctrl={ctrl}>

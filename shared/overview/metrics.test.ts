@@ -90,6 +90,31 @@ describe("computeProjectMetrics", () => {
     expect(m.recentNotes).toHaveLength(5);
   });
 
+  it("orders pinned/recent by updatedAt desc regardless of input order", () => {
+    const m = computeProjectMetrics({
+      columns: cols,
+      cards: [],
+      notes: [
+        { id: "old", title: "old", isPinned: false, updatedAt: iso(-5), tagIds: [] },
+        { id: "new", title: "new", isPinned: false, updatedAt: iso(0), tagIds: [] },
+        { id: "mid", title: "mid", isPinned: false, updatedAt: iso(-2), tagIds: [] },
+      ],
+    });
+    expect(m.recentNotes.map((n) => n.id)).toEqual(["new", "mid", "old"]);
+  });
+
+  it("treats bare yyyy-MM-dd due dates as local calendar days (no UTC drift)", () => {
+    // A card due today (bare date) must fall inside the 7-day window and not be
+    // shifted to the previous day by UTC-midnight parsing.
+    const m = computeProjectMetrics({
+      columns: cols,
+      cards: [{ id: "due-today", columnId: "todo", title: "T", priority: "high", dueDate: dueDate(0), updatedAt: iso(0) }],
+      notes: [],
+    });
+    expect(m.dueCards.map((c) => c.id)).toEqual(["due-today"]);
+    expect(m.overdueCount).toBe(0);
+  });
+
   it("merges notes + cards into activity, newest first, capped at 20, grouped by day", () => {
     const m = computeProjectMetrics(base);
     const flat = m.activityByDay.flatMap((g) => g.items);

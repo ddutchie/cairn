@@ -19,14 +19,18 @@ export function DragOverlay<T>({
   children: ReactNode;
   scale?: number;
 }) {
+  // Capture only the shared values used here (not the whole `ctrl`), so the
+  // worklet doesn't try to copy non-serialisable members like `scrollHandler`
+  // (a WorkletEventHandlerNative) to the UI thread.
+  const { dragW, dragX, dragY, originX, originY } = ctrl;
   const style = useAnimatedStyle(() => ({
     position: "absolute",
     top: 0,
     left: 0,
-    width: ctrl.dragW.value,
+    width: dragW.value,
     transform: [
-      { translateX: ctrl.dragX.value - ctrl.originX.value },
-      { translateY: ctrl.dragY.value - ctrl.originY.value },
+      { translateX: dragX.value - originX.value },
+      { translateY: dragY.value - originY.value },
       { scale },
     ],
   }));

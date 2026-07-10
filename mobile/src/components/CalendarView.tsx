@@ -27,6 +27,9 @@ const MONTHS = [
 /** Stable empty-cards reference so the `unscheduled` default doesn't churn memos. */
 const EMPTY_CARDS: CalendarCard[] = [];
 
+/** Fixed width of the dragged-chip clone, so it looks the same from any source zone. */
+const DRAG_CHIP_WIDTH = 150;
+
 /** A single cell in the grid. */
 interface Cell {
   key: string;
@@ -187,7 +190,9 @@ export function CalendarView({
   const dragEnabled = !!onReschedule;
   const ctrl = useDragController<CalendarCard>({
     getId: (c) => c.id,
-    liftOffsetY: 20,
+    // Lift the chip well clear of the finger so it stays readable; the tail
+    // (rendered in the overlay below) points down to the actual drop point.
+    liftOffsetY: 52,
     onDrop: (card, target) => {
       const patch = resolveDateDrop(target, { dueDate: card.due_date || null });
       if (patch) onReschedule?.(card.id, patch.dueDate ?? null);
@@ -324,7 +329,12 @@ export function CalendarView({
       </View>
 
       {/* Grid + selected-day list (scroll together) */}
-      <ScrollView
+      <Animated.ScrollView
+        ref={ctrl.scrollRef}
+        onScroll={ctrl.scrollHandler}
+        onLayout={ctrl.onScrollLayout}
+        onContentSizeChange={ctrl.onScrollContentSizeChange}
+        scrollEventThrottle={16}
         style={styles.gridScroll}
         contentContainerStyle={{ paddingBottom: bottomInset + 16 }}
         showsVerticalScrollIndicator={false}
@@ -382,12 +392,17 @@ export function CalendarView({
             styles={styles}
           />
         ) : null}
-      </ScrollView>
+      </Animated.ScrollView>
 
-      {/* Floating clone that follows the finger while a chip is lifted. */}
+      {/* Floating clone that follows the finger while a chip is lifted. Lifted
+          above the finger (liftOffsetY) with a small tail pointing down to the
+          drop point, so the chip stays readable and unobscured. */}
       {ctrl.dragging ? (
         <DragOverlay ctrl={ctrl} scale={1.06}>
-          <TaskChip card={ctrl.dragging} onPress={() => {}} t={t} styles={styles} lifted />
+          <View>
+            <TaskChip card={ctrl.dragging} onPress={() => {}} t={t} styles={styles} lifted />
+            <View style={styles.dragTail} />
+          </View>
         </DragOverlay>
       ) : null}
     </View>
@@ -480,7 +495,10 @@ function DraggableChip({
   const isLifted = dragEnabled && ctrl.dragging?.id === card.id;
   // Hooks are always called (never conditionally) to keep order stable; the
   // gesture is simply not attached when drag is disabled for this screen.
-  const pan = useMemo(() => ctrl.panGesture(card, sourceZoneId), [ctrl, card, sourceZoneId]);
+  // Fixed overlay width so the lifted chip reads the same regardless of source
+  // zone (a day cell is ~narrow, the Unscheduled tray is full-width — without a
+  // fixed width the clone would inherit those very different zone widths).
+  const pan = useMemo(() => ctrl.panGesture(card, sourceZoneId, DRAG_CHIP_WIDTH), [ctrl, card, sourceZoneId]);
   const slotStyle = useAnimatedStyle(() => ({ opacity: isLifted ? 0.3 : 1 }), [isLifted]);
 
   const chip = <TaskChip card={card} overdue={overdue} onPress={onPress} t={t} styles={styles} />;
@@ -828,6 +846,20 @@ function makeStyles(t: Theme) {
     },
     chipDot: { width: 6, height: 6, borderRadius: 3 },
     chipText: { flex: 1, fontSize: 9.5, lineHeight: 12 },
+    // Downward pointer tail under the lifted drag clone — a CSS triangle,
+    // centred, in the accent colour, tip aligned to the finger (see liftOffsetY).
+    dragTail: {
+      alignSelf: "center",
+      width: 0,
+      height: 0,
+      borderLeftWidth: 6,
+      borderRightWidth: 6,
+      borderTopWidth: 8,
+      borderLeftColor: "transparent",
+      borderRightColor: "transparent",
+      borderTopColor: t.accent,
+      marginTop: -1,
+    },
     moreText: { fontSize: 9.5, fontWeight: "600", color: t.textTertiary, paddingHorizontal: 4, paddingTop: 1 },
     // Selected-day list (below the grid)
     dayList: {

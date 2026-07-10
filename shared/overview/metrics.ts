@@ -11,7 +11,7 @@
  * Behaviour is byte-for-byte the same as the desktop original.
  */
 
-import { getDueDateStatus } from "../format/date";
+import { getDueDateStatus, parseIsoLocal } from "../format/date";
 import { COLUMN_TYPE_ORDER, type ColumnType } from "../ui/constants";
 
 /** Normalized note input — only the fields the Overview needs. */
@@ -119,8 +119,11 @@ export function computeProjectMetrics(input: MetricsInput): ProjectMetrics {
 
   const dueCards = openCards
     .filter((c) => c.dueDate)
-    .filter((c) => new Date(c.dueDate as string) <= in7Days)
-    .sort((a, b) => new Date(a.dueDate as string).getTime() - new Date(b.dueDate as string).getTime());
+    // Parse bare yyyy-MM-dd due dates as LOCAL calendar days (not UTC midnight)
+    // so the "due within 7 days" window + ordering match getDueDateStatus and
+    // don't drift by a day in negative-offset timezones.
+    .filter((c) => parseIsoLocal(c.dueDate as string) <= in7Days)
+    .sort((a, b) => parseIsoLocal(a.dueDate as string).getTime() - parseIsoLocal(b.dueDate as string).getTime());
 
   const overdueCount = dueCards.filter((c) => getDueDateStatus(c.dueDate) === "overdue").length;
 
@@ -132,8 +135,13 @@ export function computeProjectMetrics(input: MetricsInput): ProjectMetrics {
   };
   const hasAnyCategorised = Object.values(priorityCounts).some((n) => n > 0);
 
-  const pinnedNotes = notes.filter((n) => n.isPinned).slice(0, 4);
-  const recentNotes = notes.filter((n) => !n.isPinned).slice(0, 5);
+  // Sort by most-recently-updated before splitting, so the pinned/recent lists
+  // are correct regardless of the caller's input ordering.
+  const notesByRecent = [...notes].sort(
+    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+  );
+  const pinnedNotes = notesByRecent.filter((n) => n.isPinned).slice(0, 4);
+  const recentNotes = notesByRecent.filter((n) => !n.isPinned).slice(0, 5);
 
   const activityItems: ActivityItem[] = [
     ...notes.map((n) => ({
