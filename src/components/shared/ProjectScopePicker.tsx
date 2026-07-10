@@ -38,6 +38,7 @@ export function ProjectScopePicker({ projects, selectedIds, onChange, dotColor }
   return (
     <div className="relative">
       <button
+        type="button"
         onClick={() => setOpen((v) => !v)}
         className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-[var(--border)] text-xs text-[var(--text-secondary)] hover:bg-[var(--surface-2)] transition-colors"
       >
@@ -51,6 +52,7 @@ export function ProjectScopePicker({ projects, selectedIds, onChange, dotColor }
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
           <div className="absolute top-full left-0 mt-1 w-52 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-lg z-20 py-1 max-h-64 overflow-y-auto">
             <button
+              type="button"
               onClick={() => {
                 onChange([]);
                 setOpen(false);
@@ -66,6 +68,7 @@ export function ProjectScopePicker({ projects, selectedIds, onChange, dotColor }
             {projects.map((p) => (
               <button
                 key={p.id}
+                type="button"
                 onClick={() => toggle(p.id)}
                 className={cn(
                   "flex items-center gap-2 w-full px-3 py-1.5 text-xs transition-colors",
