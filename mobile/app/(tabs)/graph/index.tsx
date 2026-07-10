@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View, ActivityIndicator, StyleSheet } from "react-native";
 import { Stack, useRouter } from "expo-router";
 import { getKnowledgeGraph, listWorkspaceIds, type KnowledgeGraph, type GraphEdge } from "@/db/queries";
@@ -6,9 +6,9 @@ import type { GraphMode } from "@/components/KnowledgeGraphWebView";
 import type { LabelMode } from "@cairn/shared/ui/graph";
 import { TabScreen } from "@/components/TabScreen";
 import { EmptyState } from "@/components/EmptyState";
-import { ICON_GRAPH_FORCE, ICON_GRAPH_RADIAL, ICON_LABELS } from "@/components/toolbar-icons";
+import { ICON_GRAPH_FORCE, ICON_GRAPH_RADIAL, ICON_LABELS, ICON_LABELS_SMART, ICON_LABELS_ALL, ICON_LABELS_MINIMAL } from "@/components/toolbar-icons";
 import { toolbarPress } from "@/haptics";
-import { useRefreshOnFocus } from "@/sync/useSyncStatus";
+import { useRefreshOnFocus, useDataChanged } from "@/sync/useSyncStatus";
 import { semanticEdges } from "@/notes/embeddings";
 import { isAppleEmbeddingsSupported } from "@modules/apple-embeddings";
 import { useTheme } from "@/theme";
@@ -51,8 +51,8 @@ export default function GraphScreen() {
   const load = useCallback(() => setGraph(getKnowledgeGraph()), []);
   useRefreshOnFocus(load);
 
-  // Compute semantic edges once the toggle is switched on (and refresh when the
-  // underlying data changes while it's on). Cheap no-op when unavailable.
+  // Compute semantic edges when the toggle is switched on, and refresh when the
+  // underlying data changes while it's on. Cheap no-op when unavailable.
   const loadSemantic = useCallback(async () => {
     const seq = ++semanticSeq.current;
     if (!showSemantic || !semanticAvailable) {
@@ -76,7 +76,14 @@ export default function GraphScreen() {
       if (seq === semanticSeq.current) setSemanticLoading(false);
     }
   }, [showSemantic, semanticAvailable]);
-  useRefreshOnFocus(useCallback(() => { loadSemantic(); }, [loadSemantic]));
+  // Recompute whenever the toggle flips (loadSemantic changes with showSemantic).
+  // This is the primary trigger — the spinner shows the moment the pill is tapped.
+  // setState inside loadSemantic is intentional: this effect kicks off an async
+  // load and reflects its lifecycle (loading → result) into state.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { void loadSemantic(); }, [loadSemantic]);
+  // Also recompute when inbound sync changes the underlying notes while it's on.
+  useDataChanged(useCallback(() => { void loadSemantic(); }, [loadSemantic]));
 
   // Merge structural + semantic edges, keeping only semantic edges whose both
   // endpoints exist as nodes in the current graph.
@@ -140,13 +147,13 @@ export default function GraphScreen() {
             <Stack.Toolbar placement="left">
               <Stack.Toolbar.Menu icon={ICON_LABELS} accessibilityLabel="Label density">
                 <Stack.Toolbar.Label>{`${labelMode} labels`}</Stack.Toolbar.Label>
-                <Stack.Toolbar.MenuAction isOn={labelMode === "smart"} onPress={toolbarPress(() => setLabelMode("smart"))}>
+                <Stack.Toolbar.MenuAction icon={ICON_LABELS_SMART} isOn={labelMode === "smart"} onPress={toolbarPress(() => setLabelMode("smart"))}>
                   Smart
                 </Stack.Toolbar.MenuAction>
-                <Stack.Toolbar.MenuAction isOn={labelMode === "all"} onPress={toolbarPress(() => setLabelMode("all"))}>
+                <Stack.Toolbar.MenuAction icon={ICON_LABELS_ALL} isOn={labelMode === "all"} onPress={toolbarPress(() => setLabelMode("all"))}>
                   All
                 </Stack.Toolbar.MenuAction>
-                <Stack.Toolbar.MenuAction isOn={labelMode === "minimal"} onPress={toolbarPress(() => setLabelMode("minimal"))}>
+                <Stack.Toolbar.MenuAction icon={ICON_LABELS_MINIMAL} isOn={labelMode === "minimal"} onPress={toolbarPress(() => setLabelMode("minimal"))}>
                   Minimal
                 </Stack.Toolbar.MenuAction>
               </Stack.Toolbar.Menu>

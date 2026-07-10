@@ -39,6 +39,9 @@ import CloudSyncXml from "@expo/material-symbols/cloud_sync.xml";
 import NoteXml from "@expo/material-symbols/description.xml";
 import TaskXml from "@expo/material-symbols/check_box.xml";
 import TextFieldsXml from "@expo/material-symbols/text_fields.xml";
+import AutoAwesomeXml from "@expo/material-symbols/bolt.xml";
+import TextIncreaseXml from "@expo/material-symbols/text_increase.xml";
+import TextDecreaseXml from "@expo/material-symbols/text_decrease.xml";
 /** An icon usable by both platforms via the toolbar `icon` prop. */
 export type ToolbarIcon = SFSymbol | ImageSourcePropType;
 
@@ -90,6 +93,12 @@ export const ICON_GRAPH_RADIAL: ToolbarIcon = ios ? "chart.pie" : PieChartXml;
 export const ICON_SEMANTIC: ToolbarIcon = ios ? "sparkles" : NeurologyXml;
 /** Label-density mode (graph node labels). */
 export const ICON_LABELS: ToolbarIcon = ios ? "textformat" : TextFieldsXml;
+/** Label density — Smart (auto). */
+export const ICON_LABELS_SMART: ToolbarIcon = ios ? "sparkles" : AutoAwesomeXml;
+/** Label density — All (show every label). */
+export const ICON_LABELS_ALL: ToolbarIcon = ios ? "textformat.size.larger" : TextIncreaseXml;
+/** Label density — Minimal (fewest labels). */
+export const ICON_LABELS_MINIMAL: ToolbarIcon = ios ? "textformat.size.smaller" : TextDecreaseXml;
 /** Note / document (search scope). */
 export const ICON_NOTE: ToolbarIcon = ios ? "doc.text" : NoteXml;
 /** Task / checklist item (search scope). */
