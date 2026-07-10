@@ -369,6 +369,30 @@ export function listCardsWithDueDates(projectId?: string): CalendarCard[] {
 }
 
 /**
+ * Live task cards WITHOUT a due date, for the calendar's Unscheduled tray. Drag
+ * one onto a day to schedule it. Scope to one project or omit for the
+ * workspace-wide calendar. Ordered by most-recently-updated so freshly-created
+ * tasks surface first.
+ */
+export function listUnscheduledCards(projectId?: string): CalendarCard[] {
+  const db = getDb();
+  const scope = projectId ? "AND c.project_id = ?" : "";
+  return db.getAllSync<CalendarCard>(
+    `SELECT c.id, c.column_id, c.project_id, c.title, c.description, c.priority,
+            c.tag_ids, c."order", COALESCE(c.due_date, '') AS due_date, c.assignee, p.name AS project_name,
+            CASE WHEN col.type = 'done' THEN 1 ELSE 0 END AS is_done
+     FROM task_cards c
+     JOIN projects p ON p.id = c.project_id
+     LEFT JOIN board_columns col ON col.id = c.column_id
+     WHERE c.deleted_at IS NULL AND c.archived_at IS NULL
+       AND (c.due_date IS NULL OR c.due_date = '')
+       ${scope}
+     ORDER BY c.updated_at DESC`,
+     ...((projectId ? [projectId] : []) as never[]),
+  );
+}
+
+/**
  * Move a card to a different column. Plain UPDATE so capture triggers stage it
  * for sync. Mirrors the desktop moveCard's column change (order left as-is).
  */

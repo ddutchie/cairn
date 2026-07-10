@@ -1,40 +1,37 @@
-import { memo, useCallback, useMemo, useRef, useState } from "react";
+/* eslint-disable react-hooks/refs -- The shared drag controller (src/dnd) bundles
+   reanimated SharedValues alongside plain state + ref-callbacks. The react-hooks
+   `refs` rule mis-flags every `ctrl.*` member access as ref access because of the
+   SharedValues, but those are reanimated UI-thread values only ever read inside
+   worklets / useAnimatedStyle — never during JS render. The plain fields
+   (ctrl.dragging, ctrl.scrollLocked, ctrl.setContainer) are safe to read here. */
+import { memo, useCallback, useMemo } from "react";
 import { View, Text, ScrollView, Pressable, StyleSheet } from "react-native";
 import { Plus } from "lucide-react-native";
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  runOnJS,
-  type SharedValue,
-} from "react-native-reanimated";
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import Animated, { useAnimatedStyle } from "react-native-reanimated";
+import { GestureDetector } from "react-native-gesture-handler";
 import { PressableScale } from "@/components/PressableScale";
 import { TagChips } from "@/components/TagChips";
-import { haptics } from "@/haptics";
+import { useDragController, useZoneHighlight, DragOverlay, type DragController } from "@/dnd";
 import { useTheme, withAlpha, PRIORITY_COLOR, elevation, type as typeScale, type Theme } from "@/theme";
 import { tagsByRow, type CardRow, type ColumnRow, type TagRow } from "@/db/queries";
 import { stripMarkdown } from "@cairn/shared/notes/text";
 
 const COLUMN_WIDTH = 260;
 const COLUMN_GAP = 12;
-const LONG_PRESS_MS = 220;
 
 // Stable empty-array reference for columns with no cards, so BoardColumn's
-// memoisation isn't defeated by a fresh `[]` each render (which would re-render
-// empty columns on every drag-state change).
+// memoisation isn't defeated by a fresh `[]` each render.
 const EMPTY_CARDS: CardRow[] = [];
-
-/** Absolute window frame of a column, captured via measureInWindow. */
-type ColumnFrame = { x: number; width: number };
 
 /**
  * Trello-style board with long-press drag-and-drop between columns.
  *
- * A short press opens the card; a long-press (220 ms) lifts it so it follows the
- * finger. While a card is lifted the horizontal board scroll is locked and the
- * column under the finger is highlighted; releasing over a different column
- * commits the move. The heavy work happens on the UI thread via reanimated
- * worklets — only the final moveCardToColumn hop crosses back to JS.
+ * A short press opens the card; a long-press lifts it so it follows the finger.
+ * While a card is lifted the horizontal board scroll is locked and the column
+ * under the finger is highlighted; releasing over a different column commits the
+ * move. The gesture + hit-testing run on the UI thread via the shared drag core
+ * (src/dnd) — the same engine the calendar uses — so only the final
+ * moveCardToColumn hop crosses back to JS.
  */
 export function DraggableBoard({
   columns,
@@ -54,10 +51,9 @@ export function DraggableBoard({
   const t = useTheme();
   const styles = useMemo(() => makeStyles(t), [t]);
 
-  // Resolve tags for every card in ONE query, and group cards by column ONCE —
-  // both memoised on `cards` — instead of a per-card `tagsForCard()` query and a
-  // per-column `cards.filter()` on every render (the board re-renders each drag
-  // frame via setHoverColJs, so this ran N queries + M filters per frame).
+  // Resolve tags for every card in ONE query and group cards by column ONCE —
+  // both memoised on `cards` — instead of a per-card query + per-column filter
+  // on every render (the board re-renders on drag start/end).
   const tagMap = useMemo(() => tagsByRow(cards), [cards]);
   const cardsByColumn = useMemo(() => {
     const map = new Map<string, CardRow[]>();
@@ -69,88 +65,14 @@ export function DraggableBoard({
     return map;
   }, [cards]);
 
-  // Column window frames keyed by column id, filled lazily on layout. Shared so
-  // the gesture worklet can read them without a JS round-trip. We keep the View
-  // refs around so we can re-measure right before a drag (measureInWindow in the
-  // ref callback alone can read stale coords before layout settles / on scroll).
-  const frames = useSharedValue<Record<string, ColumnFrame>>({});
-  const colRefs = useRef<Record<string, View | null>>({});
-  const containerRef = useRef<View>(null);
-  // Window origin of the board container, so we can convert the finger's window
-  // coords into container-local coords for the absolutely-positioned overlay.
-  const originX = useSharedValue(0);
-  const originY = useSharedValue(0);
-  const scrollRef = useRef<ScrollView>(null);
-
-  // The card currently lifted (null when idle). Changes only at drag start/end,
-  // not per frame — so it never causes the board to re-render mid-drag.
-  const [dragging, setDragging] = useState<CardRow | null>(null);
-  const [scrollEnabled, setScrollEnabled] = useState(true);
-  // Which column the finger is over + the drag's source column. Both are shared
-  // values updated entirely on the UI thread by the gesture worklets, and read
-  // by each column's useAnimatedStyle to light up the hover target — so hover
-  // highlighting never crosses back to JS or re-renders the board.
-  const hoverColId = useSharedValue<string | null>(null);
-  const sourceColId = useSharedValue<string | null>(null);
-
-  // Absolute pointer position of the lifted card's origin, updated each frame.
-  const dragX = useSharedValue(0);
-  const dragY = useSharedValue(0);
-  const dragW = useSharedValue(COLUMN_WIDTH - 20);
-
-  const measureColumn = useCallback(
-    (colId: string, node: View | null) => {
-      colRefs.current[colId] = node;
-    },
-    [],
-  );
-
-  // Re-measure the board origin + every column's window frame. Called on the JS
-  // thread right when a drag begins so hit-testing uses fresh, laid-out coords
-  // (measuring in the ref callback alone reads x=0 before layout flushes, which
-  // made only the last-settled column a valid drop target).
-  const remeasure = useCallback(() => {
-    containerRef.current?.measureInWindow((x, y) => {
-      originX.value = x;
-      originY.value = y;
-    });
-    const next: Record<string, ColumnFrame> = {};
-    let pending = Object.keys(colRefs.current).length;
-    if (pending === 0) return;
-    for (const id in colRefs.current) {
-      const node = colRefs.current[id];
-      if (!node) {
-        pending -= 1;
-        continue;
-      }
-      node.measureInWindow((x, _y, width) => {
-        next[id] = { x, width };
-        pending -= 1;
-        if (pending === 0) frames.value = next;
-      });
-    }
-  }, [frames, originX, originY]);
-
-  const beginDrag = useCallback(
-    (card: CardRow) => {
-      haptics.impact(); // card picked up (long-press)
-      setDragging(card);
-      setScrollEnabled(false);
-    },
-    [],
-  );
-
-  const endDrag = useCallback(
-    (cardId: string, target: string | null, source: string | null) => {
-      setDragging(null);
-      setScrollEnabled(true);
-      if (target && target !== source) {
-        haptics.impactMedium(); // dropped into a new column
-        onMove(cardId, target);
-      }
+  const onDrop = useCallback(
+    (card: CardRow, target: string | null) => {
+      if (target) onMove(card.id, target);
     },
     [onMove],
   );
+
+  const ctrl = useDragController<CardRow>({ getId: (c) => c.id, onDrop });
 
   if (columns.length === 0) {
     return (
@@ -161,11 +83,10 @@ export function DraggableBoard({
   }
 
   return (
-    <View ref={containerRef} style={{ flex: 1 }} collapsable={false}>
+    <View ref={ctrl.setContainer} style={{ flex: 1 }} collapsable={false}>
       <ScrollView
-        ref={scrollRef}
         horizontal
-        scrollEnabled={scrollEnabled}
+        scrollEnabled={!ctrl.scrollLocked}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={[styles.board, { paddingBottom: 12 + bottomInset }]}
         style={styles.boardScroll}
@@ -176,101 +97,77 @@ export function DraggableBoard({
             column={col}
             cards={cardsByColumn.get(col.id) ?? EMPTY_CARDS}
             tagMap={tagMap}
-            draggingId={dragging?.id ?? null}
-            hoverColId={hoverColId}
-            sourceColId={sourceColId}
-            frames={frames}
-            dragX={dragX}
-            dragY={dragY}
-            dragW={dragW}
+            ctrl={ctrl}
             t={t}
             styles={styles}
-            measureColumn={measureColumn}
             onOpenCard={onOpenCard}
             onAddCard={onAddCard}
-            onBeginDrag={beginDrag}
-            onEndDrag={endDrag}
-            onRemeasure={remeasure}
           />
         ))}
       </ScrollView>
 
-      {dragging ? (
-        <DragOverlay card={dragging} tags={tagMap.get(dragging.id)} t={t} styles={styles} dragX={dragX} dragY={dragY} dragW={dragW} originX={originX} originY={originY} />
+      {ctrl.dragging ? (
+        <DragOverlay ctrl={ctrl}>
+          <BoardDragClone card={ctrl.dragging} tagMap={tagMap} t={t} styles={styles} />
+        </DragOverlay>
       ) : null}
     </View>
   );
 }
 
+/** The card clone rendered inside the drag overlay. Isolated so the tag lookup
+ *  isn't flagged as ref access at the container level. */
+function BoardDragClone({
+  card,
+  tagMap,
+  t,
+  styles,
+}: {
+  card: CardRow;
+  tagMap: Map<string, TagRow[]>;
+  t: Theme;
+  styles: ReturnType<typeof makeStyles>;
+}) {
+  return (
+    <View style={[styles.card, styles.cardLiftedOverlay, elevation.xl]}>
+      <CardBody card={card} tags={tagMap.get(card.id)} t={t} styles={styles} />
+    </View>
+  );
+}
+
 /**
- * A board column: its title/count, the draggable cards, and an "add" button.
- * The column's hover-highlight (border + tint when the finger drags a card over
- * it) is driven by a useAnimatedStyle reading the shared hoverColId — so it
- * lights up on the UI thread without re-rendering the board. Memoised so a
- * drag-start/end (which only flips draggingId) re-renders just the columns whose
- * lifted card actually changed.
+ * A board column: title/count, its draggable cards, and an "add" button. The
+ * hover-highlight (border + tint when a card is dragged over it) is driven by
+ * useZoneHighlight reading the shared hover id — so it lights up on the UI
+ * thread without re-rendering the board. Memoised so a drag start/end only
+ * re-renders the columns whose lifted card actually changed.
  */
 const BoardColumn = memo(function BoardColumn({
   column,
   cards,
   tagMap,
-  draggingId,
-  hoverColId,
-  sourceColId,
-  frames,
-  dragX,
-  dragY,
-  dragW,
+  ctrl,
   t,
   styles,
-  measureColumn,
   onOpenCard,
   onAddCard,
-  onBeginDrag,
-  onEndDrag,
-  onRemeasure,
 }: {
   column: ColumnRow;
   cards: CardRow[];
   tagMap: Map<string, TagRow[]>;
-  draggingId: string | null;
-  hoverColId: SharedValue<string | null>;
-  sourceColId: SharedValue<string | null>;
-  frames: SharedValue<Record<string, ColumnFrame>>;
-  dragX: SharedValue<number>;
-  dragY: SharedValue<number>;
-  dragW: SharedValue<number>;
+  ctrl: DragController<CardRow>;
   t: Theme;
   styles: ReturnType<typeof makeStyles>;
-  measureColumn: (colId: string, node: View | null) => void;
   onOpenCard: (id: string) => void;
   onAddCard: (colId: string) => void;
-  onBeginDrag: (card: CardRow) => void;
-  onEndDrag: (cardId: string, target: string | null, source: string | null) => void;
-  onRemeasure: () => void;
 }) {
   const colId = column.id;
-  // Precompute both colour states on the JS thread — the worklet below must not
-  // call withAlpha() (a non-worklet JS fn) or it crashes on the UI thread.
-  const activeBorder = t.accent;
-  const activeBg = withAlpha(t.accent, 0.06);
-  // Overlay is invisible when idle (transparent border + fill) and only lights
-  // up while the finger hovers this column and it isn't the drag's source.
-  const hoverStyle = useAnimatedStyle(() => {
-    const active = hoverColId.value === colId && sourceColId.value !== colId;
-    return {
-      borderColor: active ? activeBorder : "transparent",
-      backgroundColor: active ? activeBg : "transparent",
-    };
-  });
+  const hoverStyle = useZoneHighlight(ctrl, colId);
+  const draggingId = ctrl.dragging?.id ?? null;
   return (
-    <View
-      ref={(node: View | null) => measureColumn(colId, node)}
-      style={styles.column}
-    >
+    <View ref={(node: View | null) => ctrl.registerZone(colId, node)} style={styles.column} collapsable={false}>
       {/* Hover highlight overlay — an absolutely-filled Animated.View so the
-          measured column stays a plain View (reanimated animates the border/bg
-          here on the UI thread). */}
+          measured column stays a plain View; reanimated animates the opacity. */}
       <Animated.View pointerEvents="none" style={[styles.columnHighlight, hoverStyle]} />
       <Text style={styles.columnTitle}>
         {column.name} <Text style={styles.count}>{cards.length}</Text>
@@ -281,19 +178,11 @@ const BoardColumn = memo(function BoardColumn({
             key={card.id}
             card={card}
             tags={tagMap.get(card.id)}
+            ctrl={ctrl}
+            isLifted={draggingId === card.id}
             t={t}
             styles={styles}
-            isLifted={draggingId === card.id}
-            frames={frames}
-            hoverColId={hoverColId}
-            sourceColId={sourceColId}
-            dragX={dragX}
-            dragY={dragY}
-            dragW={dragW}
             onOpen={onOpenCard}
-            onBeginDrag={onBeginDrag}
-            onEndDrag={onEndDrag}
-            onRemeasure={onRemeasure}
           />
         ))}
         <Pressable style={styles.addCard} onPress={() => onAddCard(colId)}>
@@ -305,149 +194,26 @@ const BoardColumn = memo(function BoardColumn({
   );
 });
 
-/** The floating clone that follows the finger while a card is lifted. */
-function DragOverlay({
-  card,
-  tags,
-  t,
-  styles,
-  dragX,
-  dragY,
-  dragW,
-  originX,
-  originY,
-}: {
-  card: CardRow;
-  tags?: TagRow[];
-  t: Theme;
-  styles: ReturnType<typeof makeStyles>;
-  dragX: SharedValue<number>;
-  dragY: SharedValue<number>;
-  dragW: SharedValue<number>;
-  originX: SharedValue<number>;
-  originY: SharedValue<number>;
-}) {
-  const style = useAnimatedStyle(() => ({
-    position: "absolute",
-    top: 0,
-    left: 0,
-    width: dragW.value,
-    // dragX/Y are window coords; subtract the container's window origin so the
-    // absolutely-positioned overlay lands under the finger, not below it.
-    transform: [
-      { translateX: dragX.value - originX.value },
-      { translateY: dragY.value - originY.value },
-      { scale: 1.04 },
-    ],
-  }));
-  return (
-    <Animated.View pointerEvents="none" style={[style, styles.card, styles.cardLiftedOverlay, elevation.xl]}>
-      <CardBody card={card} tags={tags} t={t} styles={styles} />
-    </Animated.View>
-  );
-}
-
 const DraggableCard = memo(function DraggableCard({
   card,
   tags,
+  ctrl,
+  isLifted,
   t,
   styles,
-  isLifted,
-  frames,
-  hoverColId,
-  sourceColId,
-  dragX,
-  dragY,
-  dragW,
   onOpen,
-  onBeginDrag,
-  onEndDrag,
-  onRemeasure,
 }: {
   card: CardRow;
   tags?: TagRow[];
+  ctrl: DragController<CardRow>;
+  isLifted: boolean;
   t: Theme;
   styles: ReturnType<typeof makeStyles>;
-  isLifted: boolean;
-  frames: SharedValue<Record<string, ColumnFrame>>;
-  hoverColId: SharedValue<string | null>;
-  sourceColId: SharedValue<string | null>;
-  dragX: SharedValue<number>;
-  dragY: SharedValue<number>;
-  dragW: SharedValue<number>;
   onOpen: (id: string) => void;
-  onBeginDrag: (card: CardRow) => void;
-  onEndDrag: (cardId: string, target: string | null, source: string | null) => void;
-  onRemeasure: () => void;
 }) {
-  const active = useSharedValue(false);
-
-  // Resolve which column an absolute X falls into. Worklet — reads shared frames.
-  const columnAt = (absX: number): string | null => {
-    "worklet";
-    const f = frames.value;
-    let match: string | null = null;
-    for (const id in f) {
-      const frame = f[id];
-      if (absX >= frame.x && absX <= frame.x + frame.width) {
-        match = id;
-        break;
-      }
-    }
-    return match;
-  };
-
-  const pan = Gesture.Pan()
-    .activateAfterLongPress(LONG_PRESS_MS)
-    .onBegin(() => {
-      "worklet";
-      // Fresh-measure columns + container origin as soon as the finger lands,
-      // giving the async measure callbacks time to resolve before activation.
-      runOnJS(onRemeasure)();
-    })
-    .onStart((e) => {
-      "worklet";
-      active.value = true;
-      sourceColId.value = card.column_id;
-      dragW.value = frames.value[card.column_id]?.width ? frames.value[card.column_id].width - 20 : 240;
-      // absoluteX/Y are window coords; offset so the card sits under the finger.
-      dragX.value = e.absoluteX - dragW.value / 2;
-      dragY.value = e.absoluteY - 30;
-      const col = columnAt(e.absoluteX);
-      hoverColId.value = col;
-      runOnJS(onBeginDrag)(card);
-    })
-    .onUpdate((e) => {
-      "worklet";
-      dragX.value = e.absoluteX - dragW.value / 2;
-      dragY.value = e.absoluteY - 30;
-      const col = columnAt(e.absoluteX);
-      // Update the shared hover id only when it changes; the column's
-      // useAnimatedStyle reacts on the UI thread — no JS round-trip / re-render.
-      if (col !== hoverColId.value) {
-        hoverColId.value = col;
-      }
-    })
-    .onEnd(() => {
-      "worklet";
-      active.value = false;
-      runOnJS(onEndDrag)(card.id, hoverColId.value, sourceColId.value);
-      hoverColId.value = null;
-      sourceColId.value = null;
-    })
-    .onFinalize(() => {
-      "worklet";
-      if (active.value) {
-        active.value = false;
-        runOnJS(onEndDrag)(card.id, null, sourceColId.value);
-      }
-    });
-
+  const pan = useMemo(() => ctrl.panGesture(card, card.column_id), [ctrl, card]);
   // The in-place slot dims to a ghost while its card is lifted out.
-  const slotStyle = useAnimatedStyle(() => ({
-    opacity: isLifted ? 0.28 : 1,
-  }));
-
+  const slotStyle = useAnimatedStyle(() => ({ opacity: isLifted ? 0.28 : 1 }), [isLifted]);
   return (
     <GestureDetector gesture={pan}>
       <Animated.View style={slotStyle}>
@@ -470,8 +236,6 @@ const CardBody = memo(function CardBody({
   t: Theme;
   styles: ReturnType<typeof makeStyles>;
 }) {
-  // Tags are resolved once by the parent (tagsByRow) and passed in; the desc is
-  // stripped once per card (memoised) rather than on every board re-render.
   const desc = useMemo(() => (card.description ? stripMarkdown(card.description) : ""), [card.description]);
   const shownTags = tags ?? [];
   return (
@@ -501,7 +265,7 @@ function makeStyles(t: Theme) {
     boardScroll: { flex: 1 },
     board: { padding: 12, paddingTop: 0, gap: COLUMN_GAP, flexDirection: "row", alignItems: "stretch", flexGrow: 1 },
     column: { width: COLUMN_WIDTH, backgroundColor: t.surface, borderRadius: 12, padding: 10, borderWidth: 1, borderColor: t.border },
-    columnHighlight: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, borderRadius: 12, borderWidth: 1.5 },
+    columnHighlight: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, borderRadius: 12, borderWidth: 1.5, borderColor: t.accent, backgroundColor: withAlpha(t.accent, 0.06) },
     columnCards: { flex: 1 },
     columnTitle: { fontSize: 14, fontWeight: "700", color: t.textPrimary, marginBottom: 8 },
     count: { color: t.textTertiary, fontWeight: "400" },

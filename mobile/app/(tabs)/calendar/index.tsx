@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import { Stack, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { listCardsWithDueDates, type CalendarCard } from "@/db/queries";
+import { listCardsWithDueDates, listUnscheduledCards, updateTask, type CalendarCard } from "@/db/queries";
 import { CalendarView, type CalendarLayout } from "@/components/CalendarView";
 import { TabScreen } from "@/components/TabScreen";
 import { ICON_VIEW_MONTH, ICON_VIEW_WEEK } from "@/components/toolbar-icons";
@@ -22,11 +22,23 @@ export default function CalendarScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [cards, setCards] = useState<CalendarCard[]>([]);
+  const [unscheduled, setUnscheduled] = useState<CalendarCard[]>([]);
   const [layout, setLayout] = useState<CalendarLayout>("month");
   const [todayNonce, setTodayNonce] = useState(0);
 
-  const load = useCallback(() => setCards(listCardsWithDueDates()), []);
+  const load = useCallback(() => {
+    setCards(listCardsWithDueDates());
+    setUnscheduled(listUnscheduledCards());
+  }, []);
   useRefreshOnFocus(load);
+
+  const reschedule = useCallback(
+    (cardId: string, dueDate: string | null) => {
+      updateTask(cardId, { dueDate });
+      load();
+    },
+    [load],
+  );
 
   return (
     <TabScreen>
@@ -66,6 +78,8 @@ export default function CalendarScreen() {
         layout={layout}
         onLayoutChange={setLayout}
         todayNonce={todayNonce}
+        unscheduled={unscheduled}
+        onReschedule={reschedule}
         onOpenCard={(id) => router.push({ pathname: "/card/[id]", params: { id, back: "Calendar" } })}
       />
     </TabScreen>

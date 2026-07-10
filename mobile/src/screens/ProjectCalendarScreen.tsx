@@ -5,6 +5,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   getProject,
   listCardsWithDueDates,
+  listUnscheduledCards,
+  updateTask,
   type CalendarCard,
 } from "@/db/queries";
 import { CalendarView } from "@/components/CalendarView";
@@ -27,14 +29,24 @@ export function ProjectCalendarScreen({ nested = false }: { nested?: boolean }) 
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const [cards, setCards] = useState<CalendarCard[]>([]);
+  const [unscheduled, setUnscheduled] = useState<CalendarCard[]>([]);
   const [name, setName] = useState<string>("");
 
   const load = useCallback(() => {
     if (!project) return;
     setCards(listCardsWithDueDates(project));
+    setUnscheduled(listUnscheduledCards(project));
     setName(getProject(project)?.name ?? "");
   }, [project]);
   useRefreshOnFocus(load);
+
+  const reschedule = useCallback(
+    (cardId: string, dueDate: string | null) => {
+      updateTask(cardId, { dueDate });
+      load();
+    },
+    [load],
+  );
 
   const cardHref = useCallback(
     (id: string): Href =>
@@ -48,6 +60,8 @@ export function ProjectCalendarScreen({ nested = false }: { nested?: boolean }) 
       <CalendarView
         cards={cards}
         bottomInset={insets.bottom}
+        unscheduled={unscheduled}
+        onReschedule={reschedule}
         onOpenCard={(id) => router.push(cardHref(id))}
       />
     </View>
