@@ -21,46 +21,12 @@
 import fs from "fs";
 import path from "path";
 import type { OplogEntry } from "./engine";
+import { oplogFileName, isOplogForWorkspace, parseWorkspaceIdFromOplogName } from "./oplog-name";
 
-/**
- * Reject ids that could escape the sync folder or corrupt the filename.
- * Ids are minted locally (device: "desktop_ab12cd34…"; workspace: a nanoid,
- * whose alphabet includes "-" and "_"), so we allow those but reject path
- * separators, traversal tokens, and dots-only names. "-" is permitted inside a
- * segment because workspace nanoids can contain it — the filename is matched by
- * the FULL known workspaceId as a suffix (isOplogForWorkspace), never by
- * splitting on "-", so a "-" in an id can't misroute the match.
- */
-function assertSafeId(id: string, kind: "deviceId" | "workspaceId"): void {
-  if (!/^[A-Za-z0-9._-]+$/.test(id) || id === "." || id === "..") {
-    throw new Error(`Unsafe sync ${kind}: ${JSON.stringify(id)}`);
-  }
-}
-
-/**
- * Oplog filename. When `workspaceId` is given, the source (= workspace) is
- * encoded as a suffix: `oplog-<deviceId>-<workspaceId>.ndjson`. This lets many
- * devices AND many workspaces share one sync folder while each reader selects
- * only the files for its workspace (the privacy boundary). Omitting
- * `workspaceId` yields the legacy `oplog-<deviceId>.ndjson` name.
- */
-function oplogFileName(deviceId: string, workspaceId?: string): string {
-  assertSafeId(deviceId, "deviceId");
-  if (workspaceId == null || workspaceId === "") return `oplog-${deviceId}.ndjson`;
-  assertSafeId(workspaceId, "workspaceId");
-  return `oplog-${deviceId}-${workspaceId}.ndjson`;
-}
-
-/**
- * True if `fileName` is an oplog file belonging to `workspaceId`. Matched by
- * the FULL known workspaceId as a suffix rather than splitting on "-" (both
- * device and workspace ids are nanoids that may contain "-"), so a "-" in an
- * id can't misroute the match. Device ids are `desktop_…`/`mobile_…` (no "-"),
- * so `-<workspaceId>.ndjson` unambiguously identifies the workspace segment.
- */
-function isOplogForWorkspace(fileName: string, workspaceId: string): boolean {
-  return fileName.startsWith("oplog-") && fileName.endsWith(`-${workspaceId}.ndjson`);
-}
+// Re-export the pure filename helpers so existing importers of "./transport"
+// keep working; the definitions live in the Node-free ./oplog-name module so
+// the React-Native mobile transport can share them without pulling in fs/path.
+export { oplogFileName, isOplogForWorkspace, parseWorkspaceIdFromOplogName };
 
 const OPS = new Set(["put", "delete"]);
 

@@ -5,8 +5,8 @@ import { GitMerge, ChevronRight, Check } from "lucide-react-native";
 import { iCloudAvailable, syncFolderLabel, getSyncFolderPath } from "@/sync/folder";
 import { requestSync, switchSource } from "@/sync/controller";
 import { useSyncStatus } from "@/sync/useSyncStatus";
-import { listSources } from "@/sync/fs-transport";
-import { getActiveSource, getDeviceId } from "@/db";
+import { listSources, type SyncSource } from "@/sync/fs-transport";
+import { getActiveSource, getActiveSourceName, getDeviceId } from "@/db";
 import { EmbeddingsCard } from "@/components/EmbeddingsCard";
 import { ICON_CHECK } from "@/components/toolbar-icons";
 import { useModalOpenHaptic, toolbarPress } from "@/haptics";
@@ -26,14 +26,16 @@ export default function SyncScreen() {
   const router = useRouter();
   const { state, pending, conflicts, lastResult: last } = useSyncStatus();
   const [available, setAvailable] = useState<boolean | null>(null);
-  const [sources, setSources] = useState<string[]>([]);
+  const [sources, setSources] = useState<SyncSource[]>([]);
   const [activeSource, setActiveSourceState] = useState<string | null>(() => getActiveSource());
+  const [activeName, setActiveName] = useState<string | null>(() => getActiveSourceName());
   const styles = useMemo(() => makeStyles(t), [t]);
   const busy = state === "syncing";
 
   const refresh = useCallback(() => {
     iCloudAvailable().then(setAvailable).catch(() => setAvailable(false));
     setActiveSourceState(getActiveSource());
+    setActiveName(getActiveSourceName());
     // Re-scan the shared folder for available sources (workspaces).
     void (async () => {
       try {
@@ -52,18 +54,24 @@ export default function SyncScreen() {
   const onSwitch = (ws: string) => {
     switchSource(ws);
     setActiveSourceState(ws);
+    setActiveName(getActiveSourceName());
   };
   const close = () => {
     if (router.canGoBack()) router.back();
   };
 
-  // Show the switcher when more than one source exists, or the active one plus
-  // any others discovered in the folder.
+  // Merge the active workspace (which may not be in the scan yet) with the
+  // discovered ones, keyed by id, so the switcher always includes the current.
   const allSources = useMemo(() => {
-    const set = new Set(sources);
-    if (activeSource) set.add(activeSource);
-    return [...set].sort();
-  }, [sources, activeSource]);
+    const byId = new Map<string, SyncSource>();
+    for (const s of sources) byId.set(s.workspaceId, s);
+    if (activeSource && !byId.has(activeSource)) {
+      byId.set(activeSource, { workspaceId: activeSource, name: activeName });
+    }
+    return [...byId.values()].sort((a, b) =>
+      (a.name ?? a.workspaceId).localeCompare(b.name ?? b.workspaceId),
+    );
+  }, [sources, activeSource, activeName]);
 
   return (
     <View style={[styles.root, { backgroundColor: t.surface }]}>
@@ -88,22 +96,22 @@ export default function SyncScreen() {
 
         {allSources.length > 1 && (
           <View style={styles.card}>
-            <Text style={styles.cardLabel}>Source</Text>
+            <Text style={styles.cardLabel}>Workspace</Text>
             <Text style={styles.help}>
-              Each source is a separate workspace synced from a desktop. Switching changes what
-              this app shows and edits.
+              Each workspace syncs from a separate computer. Switching changes what this app
+              shows and edits.
             </Text>
-            {allSources.map((ws) => {
-              const active = ws === activeSource;
+            {allSources.map((s) => {
+              const active = s.workspaceId === activeSource;
               return (
                 <Pressable
-                  key={ws}
+                  key={s.workspaceId}
                   style={[styles.sourceRow, active && styles.sourceRowActive]}
-                  onPress={() => !active && onSwitch(ws)}
+                  onPress={() => !active && onSwitch(s.workspaceId)}
                 >
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.sourceTitle}>Workspace</Text>
-                    <Text style={styles.sourceId}>{ws}</Text>
+                    <Text style={styles.sourceTitle}>{s.name ?? "Workspace"}</Text>
+                    <Text style={styles.sourceId}>{s.workspaceId}</Text>
                   </View>
                   {active && <Check size={18} color={t.accent} />}
                 </Pressable>

@@ -2,12 +2,14 @@ import { useCallback, useState } from "react";
 import { View, Text, FlatList, StyleSheet, RefreshControl } from "react-native";
 import { Stack, useFocusEffect, useRouter } from "expo-router";
 import { listProjectSummaries, type ProjectSummary } from "@/db/queries";
+import { getActiveSourceName } from "@/db";
 import { PressableScale } from "@/components/PressableScale";
 import { TabScreen } from "@/components/TabScreen";
 import { EmptyState } from "@/components/EmptyState";
 import { SkeletonList } from "@/components/Skeleton";
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { useSyncBadge } from "@/components/SyncStatusBadge";
+import { WorkspaceHeaderMenu } from "@/components/WorkspaceHeaderMenu";
 import { useDataChanged } from "@/sync/useSyncStatus";
 import { useTheme, elevation, type as typeScale } from "@/theme";
 
@@ -16,12 +18,17 @@ export default function ProjectsScreen() {
   const t = useTheme();
   const syncBadge = useSyncBadge();
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  // The active workspace name doubles as the header title; it changes when the
+  // user switches workspace from the header-left menu, so track it in state and
+  // refresh it on focus / data change alongside the project list.
+  const [workspaceName, setWorkspaceName] = useState<string | null>(() => getActiveSourceName());
   // Distinguish "still loading the first read" from "genuinely no projects" so
   // we show a skeleton instead of the empty state on cold start.
   const [loaded, setLoaded] = useState(false);
 
   const load = useCallback(() => {
     setProjects(listProjectSummaries());
+    setWorkspaceName(getActiveSourceName());
     setLoaded(true);
   }, []);
   useFocusEffect(useCallback(() => load(), [load]));
@@ -29,7 +36,8 @@ export default function ProjectsScreen() {
 
   const header = (
     <>
-      <Stack.Screen options={{ title: "Projects" }} />
+      <Stack.Screen options={{ title: workspaceName ?? "Projects" }} />
+      <WorkspaceHeaderMenu />
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Button {...syncBadge} />
       </Stack.Toolbar>

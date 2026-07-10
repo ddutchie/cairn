@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, ActivityIndicator, StyleSheet, ScrollView
 import { useTheme, type Theme } from "@/theme";
 import { setActiveSource, getDeviceId } from "@/db";
 import { getSyncFolderPath, iCloudAvailable } from "@/sync/folder";
-import { listSources } from "@/sync/fs-transport";
+import { listSources, type SyncSource } from "@/sync/fs-transport";
 
 // Same artwork as the launch splash / empty states, so the picker reads as
 // "the app, waiting for a source" rather than a bare screen.
@@ -31,7 +31,7 @@ function Step({ n, t, children }: { n: number; t: Theme; children: ReactNode }) 
 export function SourcePicker({ onSelected }: { onSelected: (workspaceId: string) => void }) {
   const t = useTheme();
   const [loading, setLoading] = useState(true);
-  const [sources, setSources] = useState<string[]>([]);
+  const [sources, setSources] = useState<SyncSource[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const scan = useCallback(async () => {
@@ -108,14 +108,16 @@ export function SourcePicker({ onSelected }: { onSelected: (workspaceId: string)
           </View>
         ) : (
           <ScrollView>
-            {sources.map((ws) => (
+            {sources.map((s) => (
               <TouchableOpacity
-                key={ws}
+                key={s.workspaceId}
                 style={[styles.item, { backgroundColor: t.surface, borderColor: t.border }]}
-                onPress={() => pick(ws)}
+                onPress={() => pick(s.workspaceId)}
               >
-                <Text style={[styles.itemTitle, { color: t.textPrimary }]}>Workspace</Text>
-                <Text style={[styles.itemId, { color: t.textTertiary }]}>{ws}</Text>
+                <Text style={[styles.itemTitle, { color: t.textPrimary }]}>
+                  {s.name ?? "Workspace"}
+                </Text>
+                <Text style={[styles.itemId, { color: t.textTertiary }]}>{s.workspaceId}</Text>
               </TouchableOpacity>
             ))}
           </ScrollView>

@@ -3,6 +3,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { writeOplogFile, readPeerOplogs } from "./transport";
+import { parseWorkspaceIdFromOplogName } from "./oplog-name";
 import type { OplogEntry } from "./engine";
 
 function tmpDir(): string {
@@ -112,5 +113,37 @@ describe("transport oplog shape validation", () => {
     );
     const got = readPeerOplogs(dir, "dev_a");
     expect(got.map((e) => e.entity_id).sort()).toEqual(["n1", "n2"]);
+  });
+});
+
+describe("parseWorkspaceIdFromOplogName", () => {
+  it("splits on the first '-' so a workspaceId that ENDS with '-' survives", () => {
+    // Regression: a nanoid workspaceId ending in "-" was truncated to "" by a
+    // lastIndexOf-based parse, silently dropping the source from discovery.
+    expect(
+      parseWorkspaceIdFromOplogName("oplog-desktop_s80fcuzrmre7m4h9-r6B90NrYTEC-.ndjson"),
+    ).toBe("r6B90NrYTEC-");
+  });
+
+  it("preserves internal dashes in the workspaceId", () => {
+    expect(parseWorkspaceIdFromOplogName("oplog-mobile_abc123-w1-w2-w3.ndjson")).toBe("w1-w2-w3");
+  });
+
+  it("handles a plain (dash-free) workspaceId", () => {
+    expect(parseWorkspaceIdFromOplogName("oplog-desktop_abc-ws42.ndjson")).toBe("ws42");
+  });
+
+  it("returns null for legacy unsuffixed oplog files", () => {
+    expect(parseWorkspaceIdFromOplogName("oplog-desktop_abc123.ndjson")).toBeNull();
+  });
+
+  it("returns null for non-oplog names", () => {
+    expect(parseWorkspaceIdFromOplogName("cairn.db")).toBeNull();
+    expect(parseWorkspaceIdFromOplogName("oplog-dev_a.txt")).toBeNull();
+    expect(parseWorkspaceIdFromOplogName("notes.ndjson")).toBeNull();
+  });
+
+  it("returns null when there is no workspace segment after the deviceId", () => {
+    expect(parseWorkspaceIdFromOplogName("oplog-desktop_abc-.ndjson")).toBeNull();
   });
 });

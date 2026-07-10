@@ -85,6 +85,21 @@ export function getActiveSource(): string | null {
   return _activeWorkspaceId;
 }
 
+/** The active workspace's display name from its DB, or null if unknown. */
+export function getActiveSourceName(): string | null {
+  const ws = getActiveSource();
+  if (!ws) return null;
+  try {
+    const row = openSource(ws).db.getFirstSync<{ name: string }>(
+      "SELECT name FROM workspaces WHERE id = ?",
+      ws,
+    );
+    return row?.name ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** Open (or return cached) the DB + engine for a source workspace. */
 function openSource(workspaceId: string): SourceHandle {
   const cached = _sources.get(workspaceId);
