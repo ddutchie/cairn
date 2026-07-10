@@ -4,7 +4,7 @@ import { getActiveSource, getActiveSourceName, getDeviceId } from "@/db";
 import { getSyncFolderPath } from "@/sync/folder";
 import { listSources, type SyncSource } from "@/sync/fs-transport";
 import { switchSource } from "@/sync/controller";
-import { ICON_WORKSPACE } from "@/components/toolbar-icons";
+import { ICON_CAIRN } from "@/components/toolbar-icons";
 
 /**
  * Header-LEFT workspace switcher, rendered as a native `Stack.Toolbar.Menu`.
@@ -65,7 +65,8 @@ export function WorkspaceHeaderMenu() {
   return (
     <Stack.Toolbar placement="left">
       <Stack.Toolbar.Menu
-        icon={ICON_WORKSPACE}
+        icon={ICON_CAIRN}
+        iconRenderingMode="template"
         title="Workspaces"
         accessibilityLabel="Switch workspace"
       >

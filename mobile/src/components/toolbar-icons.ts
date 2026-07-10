@@ -38,7 +38,6 @@ import CloudOffXml from "@expo/material-symbols/cloud_off.xml";
 import CloudSyncXml from "@expo/material-symbols/cloud_sync.xml";
 import NoteXml from "@expo/material-symbols/description.xml";
 import TaskXml from "@expo/material-symbols/check_box.xml";
-import FolderXml from "@expo/material-symbols/folder.xml";
 /** An icon usable by both platforms via the toolbar `icon` prop. */
 export type ToolbarIcon = SFSymbol | ImageSourcePropType;
 
@@ -92,5 +91,15 @@ export const ICON_SEMANTIC: ToolbarIcon = ios ? "sparkles" : NeurologyXml;
 export const ICON_NOTE: ToolbarIcon = ios ? "doc.text" : NoteXml;
 /** Task / checklist item (search scope). */
 export const ICON_TASK: ToolbarIcon = ios ? "checklist" : TaskXml;
-/** Workspace / source (header workspace switcher). */
-export const ICON_WORKSPACE: ToolbarIcon = ios ? "square.stack.3d.up" : FolderXml;
+/**
+ * The Cairn logo as a monochrome TEMPLATE icon for the header workspace
+ * switcher — a solid-black silhouette (derived from public/icon_tray.png's alpha
+ * channel) with transparency, so iOS/Android tint it to the header colour like
+ * an SF Symbol. Rendered with `iconRenderingMode="template"` on the toolbar item.
+ *
+ * Uses a pre-scaled @1x/@2x/@3x set sized for the ~26pt toolbar slot (Metro
+ * resolves the density suffix per device) rather than the 512px source, so the
+ * OS renders a crisp pre-scaled image instead of downscaling at runtime.
+ */
+export const ICON_CAIRN: ToolbarIcon =
+  require("../../assets/toolbar/cairn-glyph.png") as ImageSourcePropType;
