@@ -18,9 +18,11 @@
 
 import { fetch as expoFetch } from "expo/fetch";
 import type { OpenAIConfig } from "../ai-config";
+import { contextLimitForModel } from "../models-dev";
 import {
   type AiTool,
   type ChatProvider,
+  type ChatUsage,
   type FilePart,
   type StreamEvent,
   type TextPart,
@@ -118,21 +120,35 @@ function makeStreamer(config: OpenAIConfig) {
       model: config.model,
       messages: messages.flatMap(mapMessage),
       stream: true,
+      // Ask for a final usage chunk (prompt/completion tokens) to drive the
+      // context ring. Standard OpenAI honours it; some OpenAI-compatible
+      // gateways reject unknown fields with a 400, so we retry without it below.
+      stream_options: { include_usage: true },
     };
     const mapped = mapTools(tools);
     if (mapped.length > 0) body.tools = mapped;
 
     const url = new URL("chat/completions", config.baseUrl.replace(/\/?$/, "/")).toString();
-    const res = await expoFetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "text/event-stream",
-        Authorization: `Bearer ${config.apiKey}`,
-      },
-      body: JSON.stringify(body),
-      signal,
-    });
+    const send = (payload: Record<string, unknown>) =>
+      expoFetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "text/event-stream",
+          Authorization: `Bearer ${config.apiKey}`,
+        },
+        body: JSON.stringify(payload),
+        signal,
+      });
+
+    let res = await send(body);
+    // A 400 may mean the gateway rejected `stream_options`; retry once without
+    // it (we just lose server-reported usage, falling back to no ring).
+    if (res.status === 400 && "stream_options" in body) {
+      const rest = { ...body };
+      delete rest.stream_options;
+      res = await send(rest);
+    }
     if (!res.ok || !res.body) {
       const detail = res.ok ? "no response body" : `HTTP ${res.status}`;
       throw new Error(`OpenAI provider error (${detail})`);
@@ -143,6 +159,16 @@ function makeStreamer(config: OpenAIConfig) {
     let buffer = "";
     const toolAccum = new Map<number, ToolAccum>();
     let finishReason: string | undefined;
+    let promptTokens: number | undefined;
+
+    // Build the ring usage from the server's prompt_tokens + the model's context
+    // window (models.dev, cached). Undefined when the endpoint reported no usage.
+    const buildUsage = async (): Promise<ChatUsage | undefined> => {
+      if (promptTokens == null) return undefined;
+      // Manual override wins; else look up the model in models.dev; else default.
+      const contextLimit = config.contextLimit ?? (await contextLimitForModel(config.model));
+      return { promptTokens, contextLimit };
+    };
 
     const flushTools = function* (): Generator<StreamEvent> {
       for (const acc of toolAccum.values()) {
@@ -171,13 +197,19 @@ function makeStreamer(config: OpenAIConfig) {
           const payload = trimmed.slice(5).trim();
           if (payload === "[DONE]") {
             yield* flushTools();
-            yield { type: "finish", finishReason: finishReason ?? "stop" };
+            yield { type: "finish", finishReason: finishReason ?? "stop", usage: await buildUsage() };
             return;
           }
           let chunk: {
             choices?: {
               delta?: {
                 content?: string;
+                // Reasoning ("thinking") text streamed by some OpenAI-compatible
+                // endpoints. DeepSeek uses `reasoning_content`; OpenRouter's
+                // unified field is `reasoning`. First-party OpenAI o-series does
+                // NOT stream reasoning, so this is simply absent there.
+                reasoning_content?: string;
+                reasoning?: string;
                 tool_calls?: {
                   index: number;
                   id?: string;
@@ -186,15 +218,27 @@ function makeStreamer(config: OpenAIConfig) {
               };
               finish_reason?: string;
             }[];
+            usage?: { prompt_tokens?: number };
           };
           try {
             chunk = JSON.parse(payload);
           } catch {
             continue;
           }
+          // Usage arrives in its own chunk (choices empty) when include_usage is on.
+          if (typeof chunk.usage?.prompt_tokens === "number") {
+            promptTokens = chunk.usage.prompt_tokens;
+          }
           const choice = chunk.choices?.[0];
           if (!choice) continue;
           const delta = choice.delta;
+          // Reasoning tail (if the endpoint streams it) — surface it before the
+          // answer content so it renders as a "thinking" block. Skip redacted /
+          // empty deltas (some providers send a literal "[REDACTED]").
+          const reasoning = delta?.reasoning_content ?? delta?.reasoning;
+          if (reasoning && reasoning.trim() && reasoning.trim().toUpperCase() !== "[REDACTED]") {
+            yield { type: "reasoning-delta", delta: reasoning };
+          }
           if (delta?.content) {
             yield { type: "text-delta", delta: delta.content };
           }
@@ -215,7 +259,7 @@ function makeStreamer(config: OpenAIConfig) {
 
     // Stream ended without an explicit [DONE].
     yield* flushTools();
-    yield { type: "finish", finishReason: finishReason ?? "stop" };
+    yield { type: "finish", finishReason: finishReason ?? "stop", usage: await buildUsage() };
   };
 }
 

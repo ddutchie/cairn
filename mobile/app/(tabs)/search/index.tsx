@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react";
-import { Text, View, FlatList, StyleSheet, RefreshControl, Pressable, Alert, Keyboard } from "react-native";
+import { Text, View, FlatList, StyleSheet, RefreshControl, Pressable, Alert, Keyboard, useWindowDimensions } from "react-native";
 import { Stack, useRouter, useFocusEffect, type Href } from "expo-router";
 import type { SearchBarCommands } from "react-native-screens";
 import { searchNotes, searchTasks, listWorkspaceIds, embeddingIndexStats, type NoteRow, type CardRow } from "@/db/queries";
@@ -14,7 +14,7 @@ import { semanticSearch, catchUpIndex, type SemanticHit } from "@/notes/embeddin
 import { haptics } from "@/haptics";
 import { isAppleEmbeddingsSupported, appleEmbeddingsUnavailableReason } from "@modules/apple-embeddings";
 import { stripMarkdown } from "@cairn/shared/notes/text";
-import { useTheme, elevation, PRIORITY_COLOR, TAB_BAR_BASE, type as typeScale, type Theme } from "@/theme";
+import { useTheme, elevation, PRIORITY_COLOR, TAB_BAR_BASE, hasTabBarSearchField, tabBarClosedLift, KEYBOARD_OPEN_GAP, type as typeScale, type Theme } from "@/theme";
 
 type Scope = "notes" | "tasks" | "semantic";
 
@@ -43,6 +43,14 @@ export default function SearchScreen() {
   const styles = useMemo(() => makeStyles(t), [t]);
   const searchRef = useRef<SearchBarCommands>(null);
   const insets = useSafeAreaInsets();
+  const { height: screenH } = useWindowDimensions();
+  // Match the chat empty state's icon position exactly. Chat's ScrollView fills
+  // the screen and its EmptyState biases 25% down, so its icon lands ~25.7% of
+  // the screen height from the top. Search's FlatList content box isn't the full
+  // screen height on iOS 27 (the search header/insets shrink it), so a relative
+  // 25% would land too high (behind the header). Anchor from the SCREEN TOP with
+  // the same fraction instead, so both screens match on any device.
+  const emptyTop = screenH * 0.257;
   const semanticAvailable = isAppleEmbeddingsSupported();
   // Monotonic token so a slow semantic query can't overwrite a newer one.
   const semanticSeq = useRef(0);
@@ -168,6 +176,9 @@ export default function SearchScreen() {
   );
 
   const hasQuery = query.trim().length > 0;
+  // Whether the active scope's list has zero rows (drives the empty-state layout:
+  // no results padding, no scrolling).
+  const isListEmpty = (scope === "semantic" ? hits : scope === "notes" ? notes : tasks).length === 0;
   // Always show the Semantic scope so it's discoverable; if on-device
   // embeddings aren't usable we explain why in the results area rather than
   // silently hiding the option.
@@ -207,18 +218,24 @@ export default function SearchScreen() {
   // render behind it. With no query it's the branded resting state; during an
   // active search with no matches it's a light top-anchored text hint.
   const listEmpty = hasQuery ? (
-    <View style={styles.emptyHint} pointerEvents="none">
+    <View style={[styles.emptyHint, { paddingTop: emptyTop }]} pointerEvents="none">
       <Text style={styles.hint}>{emptyHint.primary}</Text>
       {emptyHint.secondary ? <Text style={styles.statHint}>{emptyHint.secondary}</Text> : null}
     </View>
   ) : (
-    <EmptyState title={emptyHint.primary} subtitle={emptyHint.secondary} align="top" />
+    // topBias = screen-top-relative position matching chat's icon (~25.7% down),
+    // since the search list frame isn't the full screen on iOS 27.
+    <EmptyState title={emptyHint.primary} subtitle={emptyHint.secondary} align="top" topBias={emptyTop} />
   );
 
   const listProps = {
-    // flexGrow:1 lets ListEmptyComponent fill the viewport (so the branded
-    // state's top-bias is measured against the full content area, below header).
-    contentContainerStyle: [styles.list, styles.listGrow],
+    // Empty state: use flexGrow-only (no results padding) so the content is
+    // exactly the viewport height and the screen doesn't scroll. With results:
+    // apply the list padding that clears the scope bar / tab bar / keyboard.
+    contentContainerStyle: isListEmpty ? styles.listGrow : styles.list,
+    // Nothing to scroll when empty — also stops the anchored empty state from
+    // being draggable past the header.
+    scrollEnabled: !isListEmpty,
     contentInsetAdjustmentBehavior: "automatic" as const,
     keyboardShouldPersistTaps: "handled" as const,
     keyboardDismissMode: "on-drag" as const,
@@ -307,13 +324,17 @@ export default function SearchScreen() {
         />
       )}
 
-      {/* Persistent scope switch, pinned to the bottom just above the native
-          search field. With the iOS 26 search tab the search field lives at the
-          bottom (above the keyboard), so the toggle rides the keyboard via
-          KeyboardStickyView: when closed it sits above the tab-bar search field;
-          when open it lifts to clear the field that's now docked on the keyboard. */}
+      {/* Persistent scope switch, pinned to the bottom. On iOS ≤26 the tab-bar
+          search field docks above the keyboard, so we clear it (SEARCH_FIELD_H)
+          when open and rest on insets.bottom when closed. On iOS 27 there's no
+          tab-bar search field (see hasTabBarSearchField), so it matches the chat
+          composer exactly: rest above the tab bar (tabBarClosedLift) when closed,
+          and clear the keyboard by KEYBOARD_OPEN_GAP when open. */}
       <KeyboardStickyView
-        offset={{ closed: -insets.bottom, opened: -(SEARCH_FIELD_H + SCOPE_GAP) }}
+        offset={{
+          closed: hasTabBarSearchField ? -insets.bottom : -tabBarClosedLift(insets.bottom),
+          opened: hasTabBarSearchField ? -(SEARCH_FIELD_H + SCOPE_GAP) : -KEYBOARD_OPEN_GAP,
+        }}
         style={styles.scopeOverlay}
       >
         <GlassBar style={[styles.scopeBar, !glassActive && styles.scopeBarFallback]}>
@@ -352,9 +373,9 @@ function makeStyles(t: Theme) {
     scopeBtnActive: { backgroundColor: t.accent },
     scopeText: { ...typeScale.control, color: t.textSecondary },
     scopeTextActive: { color: t.accentFg },
-    // Bottom pad clears the pinned scope bar + the native search field + tab bar
-    // so the last result is scrollable into view above them.
-    list: { padding: 12, paddingBottom: 12 + TAB_BAR_BASE + SEARCH_FIELD_H + 48 },
+    // Bottom pad clears the pinned scope bar + tab bar (+ the native search
+    // field on iOS ≤26; none on iOS 27, so drop that reservation).
+    list: { padding: 12, paddingBottom: 12 + TAB_BAR_BASE + (hasTabBarSearchField ? SEARCH_FIELD_H : 0) + 48 },
     row: {
       paddingVertical: 10,
       paddingHorizontal: 14,
@@ -372,9 +393,9 @@ function makeStyles(t: Theme) {
     // Lets ListEmptyComponent fill the viewport so the branded state's top-bias
     // is measured against the full content area (below the header).
     listGrow: { flexGrow: 1 },
-    // Active-search "no matches" hint — top-anchored (~25% down) so it stays
-    // clear of the keyboard rather than centring under it.
-    emptyHint: { flex: 1, alignItems: "center", paddingTop: "25%", paddingHorizontal: 32 },
+    // Active-search "no matches" hint — paddingTop supplied inline (emptyTop) so
+    // it matches the branded state and clears the header / keyboard.
+    emptyHint: { flex: 1, alignItems: "center", paddingHorizontal: 32 },
     hint: { textAlign: "center", color: t.textTertiary },
     statHint: { ...typeScale.caption, textAlign: "center", color: t.textTertiary, marginTop: 8 },
   });

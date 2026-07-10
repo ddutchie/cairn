@@ -75,9 +75,19 @@ export type StreamEvent =
       input: unknown;
       output: unknown;
     }
-  | { type: "finish"; finishReason?: string }
+  | { type: "finish"; finishReason?: string; usage?: ChatUsage }
   | { type: "reasoning-delta"; delta?: string }
   | { type: string; [k: string]: unknown };
+
+/** Context-window usage for the chat ring (prompt tokens over the model limit). */
+export interface ChatUsage {
+  promptTokens: number;
+  contextLimit: number;
+  /** True when promptTokens is a client-side estimate (no server usage / wrong
+   *  tokenizer family, e.g. Rork/Gemini counted with o200k_base). The ring shows
+   *  a "~" and an "estimated" hint. */
+  estimated?: boolean;
+}
 
 /** A provider streams normalised events for a turn. */
 export interface ChatProvider {

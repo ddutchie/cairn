@@ -105,13 +105,13 @@ export default function NewCard() {
 
 function makeStyles(t: Theme) {
   return StyleSheet.create({
-    container: { flex: 1, backgroundColor: t.background },
+    container: { flex: 1, backgroundColor: t.surface },
     content: { padding: 18, paddingBottom: 60 },
     label: { fontSize: 12, fontWeight: "700", color: t.textTertiary, textTransform: "uppercase", letterSpacing: 0.5, marginTop: 18, marginBottom: 8 },
-    titleInput: { ...typeScale.title, color: t.textPrimary, backgroundColor: t.surface, borderWidth: 1, borderColor: t.border, borderRadius: 10, padding: 12 },
+    titleInput: { ...typeScale.title, color: t.textPrimary, backgroundColor: t.surface2, borderWidth: 1, borderColor: t.border, borderRadius: 10, padding: 12 },
     row: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
     chip: { paddingVertical: 6, paddingHorizontal: 14, borderRadius: 16, borderWidth: 1 },
     chipText: { ...typeScale.label, textTransform: "capitalize" },
-    descInput: { ...typeScale.body, color: t.textPrimary, backgroundColor: t.surface, borderWidth: 1, borderColor: t.border, borderRadius: 10, padding: 12, minHeight: 160, fontFamily: "Menlo" },
+    descInput: { ...typeScale.body, color: t.textPrimary, backgroundColor: t.surface2, borderWidth: 1, borderColor: t.border, borderRadius: 10, padding: 12, minHeight: 160, fontFamily: "Menlo" },
   });
 }

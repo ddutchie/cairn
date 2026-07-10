@@ -17,15 +17,19 @@
 
 import * as SecureStore from "expo-secure-store";
 import { getDb } from "../db";
+import type { AppleReasoningLevel } from "@modules/apple-llm";
 
 const KEY_BASE_URL = "ai.openai.baseUrl";
 const KEY_MODEL = "ai.openai.model";
+const KEY_CONTEXT = "ai.openai.contextLimit"; // optional manual override (tokens)
 const KEY_PROVIDER = "ai.provider"; // "rork" | "openai" | "apple"
+const KEY_APPLE_REASONING = "ai.apple.reasoningLevel"; // "light" | "moderate" | "deep"
 const SECURE_KEY_APIKEY = "ai.openai.apiKey"; // secure-store key
 
 /**
  * Which backend the user prefers when more than one is available.
- *   - "apple": on-device Apple Foundation Models (offline, no key; iOS 26+ only)
+ *   - "apple": Apple Intelligence — Private Cloud Compute (iOS 27+, no key,
+ *     privacy-preserving) when available, else the dev on-device model.
  *   - "rork":  built-in first-party endpoint (network)
  *   - "openai": user-supplied OpenAI-compatible endpoint (network)
  */
@@ -39,6 +43,9 @@ export interface OpenAIConfig {
   baseUrl: string;
   model: string;
   apiKey: string;
+  /** Optional manual context-window override (tokens) for the ring, when the
+   *  model isn't in the models.dev catalog. Undefined = use catalog/default. */
+  contextLimit?: number;
 }
 
 function getSetting(key: string): string | null {
@@ -67,10 +74,19 @@ export function getOpenAIModel(): string {
   return getSetting(KEY_MODEL)?.trim() || DEFAULT_OPENAI_MODEL;
 }
 
-/** Persist the non-secret base URL + model. Empty values reset to defaults. */
-export function setOpenAIEndpoint(baseUrl: string, model: string): void {
+/** Optional manual context-window override (tokens), or undefined if unset/invalid. */
+export function getOpenAIContextLimit(): number | undefined {
+  const raw = getSetting(KEY_CONTEXT)?.trim();
+  if (!raw) return undefined;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+/** Persist the non-secret base URL + model + optional context override. */
+export function setOpenAIEndpoint(baseUrl: string, model: string, contextLimit?: number): void {
   setSetting(KEY_BASE_URL, baseUrl.trim());
   setSetting(KEY_MODEL, model.trim());
+  setSetting(KEY_CONTEXT, contextLimit && contextLimit > 0 ? String(Math.floor(contextLimit)) : "");
 }
 
 /**
@@ -88,6 +104,24 @@ export function getProviderPref(rorkAvailable: boolean): ProviderPref {
 /** Persist the preferred provider. */
 export function setProviderPref(pref: ProviderPref): void {
   setSetting(KEY_PROVIDER, pref);
+}
+
+/** Default PCC reasoning effort when the user hasn't chosen one. */
+export const DEFAULT_APPLE_REASONING: AppleReasoningLevel = "moderate";
+
+/**
+ * The user's chosen PCC reasoning level (Apple Intelligence via Private Cloud
+ * Compute, iOS 27+). Deeper reasoning trades latency + context for stronger
+ * multi-step analysis. Ignored on-device / by non-Apple providers.
+ */
+export function getAppleReasoningLevel(): AppleReasoningLevel {
+  const v = getSetting(KEY_APPLE_REASONING);
+  return v === "light" || v === "moderate" || v === "deep" ? v : DEFAULT_APPLE_REASONING;
+}
+
+/** Persist the PCC reasoning level. */
+export function setAppleReasoningLevel(level: AppleReasoningLevel): void {
+  setSetting(KEY_APPLE_REASONING, level);
 }
 
 /** Read the API key from the keychain (null if none stored). */
@@ -126,7 +160,12 @@ function hasCustomBaseUrl(): boolean {
 export async function resolveOpenAIConfig(): Promise<OpenAIConfig | null> {
   const apiKey = (await getOpenAIApiKey()) ?? "";
   if (!apiKey && !hasCustomBaseUrl()) return null;
-  return { baseUrl: getOpenAIBaseUrl(), model: getOpenAIModel(), apiKey };
+  return {
+    baseUrl: getOpenAIBaseUrl(),
+    model: getOpenAIModel(),
+    apiKey,
+    contextLimit: getOpenAIContextLimit(),
+  };
 }
 
 /** Whether the OpenAI provider is usable (has a key, or a custom keyless endpoint). */

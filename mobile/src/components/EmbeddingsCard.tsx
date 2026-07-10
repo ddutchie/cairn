@@ -101,14 +101,14 @@ export function EmbeddingsCard() {
 
 function makeStyles(t: Theme) {
   return StyleSheet.create({
-    card: { padding: 16, backgroundColor: t.surface, borderRadius: 12, borderWidth: 1, borderColor: t.border, marginTop: 16 },
+    card: { padding: 16, backgroundColor: t.surface2, borderRadius: 12, borderWidth: 1, borderColor: t.border, marginTop: 16 },
     header: { flexDirection: "row", alignItems: "center", gap: 8 },
     cardLabel: { fontSize: 12, fontWeight: "600", color: t.textTertiary, textTransform: "uppercase", letterSpacing: 0.5 },
     statusRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 10 },
     progress: { ...typeScale.control, color: t.textSecondary },
     count: { ...typeScale.control, color: t.textPrimary, marginTop: 10 },
     help: { ...typeScale.caption, color: t.textTertiary, marginTop: 10, lineHeight: 18 },
-    button: { backgroundColor: t.surface2, borderWidth: 1, borderColor: t.border, paddingVertical: 12, borderRadius: 10, alignItems: "center", marginTop: 14 },
+    button: { backgroundColor: t.surface3, borderWidth: 1, borderColor: t.border, paddingVertical: 12, borderRadius: 10, alignItems: "center", marginTop: 14 },
     buttonDisabled: { opacity: 0.6 },
     buttonText: { ...typeScale.control, color: t.accent },
   });

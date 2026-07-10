@@ -21,6 +21,7 @@ import { AppState, type AppStateStatus } from "react-native";
 import { syncNow, pendingCount, type SyncResult } from "./sync";
 import { conflictCount } from "@/db/queries";
 import { onLocalWrite } from "./write-signal";
+import { setActiveSource, getActiveSource } from "@/db";
 
 const INTERVAL_MS = 25_000; // light periodic sync while foregrounded
 const WRITE_DEBOUNCE_MS = 1_500; // coalesce bursts of local edits into one sync
@@ -77,6 +78,23 @@ export function onDataChanged(fn: DataChangedListener): () => void {
 
 export function getSnapshot(): SyncSnapshot {
   return snapshot;
+}
+
+/**
+ * Switch the active sync source (workspace). Re-points getDb()/getEngine() to
+ * that source's dedicated DB, refreshes the counts, notifies screens to
+ * re-hydrate against the new DB, and kicks a sync so the switched-to source
+ * pulls its latest peer state. No-op if already active.
+ */
+export function switchSource(workspaceId: string): void {
+  if (getActiveSource() === workspaceId) return;
+  setActiveSource(workspaceId);
+  refreshCounts();
+  snapshot = { ...snapshot, state: "idle", lastResult: null };
+  emit();
+  // Screens re-query their (now source-scoped) data.
+  for (const l of dataListeners) l();
+  void requestSync("source-switch");
 }
 
 /**

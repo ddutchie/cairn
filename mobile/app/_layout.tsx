@@ -9,6 +9,7 @@ import { initDatabase } from "@/db";
 import { startAutoSync, onDataChanged } from "@/sync/controller";
 import { catchUpIndex } from "@/notes/embeddings";
 import { UpdateBanner } from "@/components/UpdateBanner";
+import { SourcePicker } from "@/components/SourcePicker";
 import { useTheme } from "@/theme";
 
 // Keep the native splash up until the DB is ready, so there's no flash between
@@ -19,16 +20,23 @@ SplashScreen.setOptions({ duration: 300, fade: true });
 export default function RootLayout() {
   const t = useTheme();
   const scheme = useColorScheme();
-  // Open the DB once, synchronously, during the first render — the whole app
-  // depends on it, so there's no meaningful "before DB" UI to show. A lazy
-  // useState initializer runs exactly once and keeps the DB init OUT of an
-  // effect (avoids the cascading setState-in-effect the linter flags).
+  // Bootstrap the meta DB and re-open a previously-selected source (if any)
+  // during first render. Multi-source: a fresh install has NO active source yet,
+  // so we show the SourcePicker instead of the app until one is chosen.
   const [{ ready, error }] = useState<{ ready: boolean; error: string | null }>(() => {
     try {
       initDatabase();
       return { ready: true, error: null };
     } catch (e) {
       return { ready: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  });
+  // Track whether a source is active; flips true once the picker selects one.
+  const [hasSource, setHasSource] = useState<boolean>(() => {
+    try {
+      return initDatabase().hasSource;
+    } catch {
+      return false;
     }
   });
 
@@ -42,8 +50,10 @@ export default function RootLayout() {
 
   useEffect(() => {
     // The DB is already open (see the lazy initializer above). If it failed,
-    // skip all startup side-effects — the error screen renders instead.
-    if (error) return;
+    // skip all startup side-effects — the error screen renders instead. Also
+    // wait until a source is selected — auto-sync + indexing operate on the
+    // active source's DB, which doesn't exist until one is chosen.
+    if (error || !hasSource) return;
     // Sync startup is non-fatal: a failure here must NOT show the "Database
     // error" screen (the DB opened fine). Guard it separately.
     try {
@@ -67,7 +77,7 @@ export default function RootLayout() {
       clearTimeout(kickoff);
       unsub();
     };
-  }, [error]);
+  }, [error, hasSource]);
 
   // Hide the native splash once we've either loaded or hit an error, so the
   // splash never lingers past the point the UI is ready to show.
@@ -90,6 +100,18 @@ export default function RootLayout() {
         <ActivityIndicator color={t.accent} />
         <Text style={[styles.loading, { color: t.textTertiary }]}>Opening Cairn…</Text>
       </View>
+    );
+  }
+
+  // No source selected yet — show the picker (scans the shared folder). Once a
+  // source is chosen, getDb()/getEngine() resolve and the app proceeds.
+  if (!hasSource) {
+    return (
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <SafeAreaProvider>
+          <SourcePicker onSelected={() => setHasSource(true)} />
+        </SafeAreaProvider>
+      </GestureHandlerRootView>
     );
   }
 

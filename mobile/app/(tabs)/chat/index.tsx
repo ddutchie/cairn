@@ -13,14 +13,14 @@ import {
 import Animated, { useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { KeyboardStickyView, useKeyboardHandler } from "react-native-keyboard-controller";
 import { Stack, useRouter, useFocusEffect } from "expo-router";
-import { CheckCircle, Bot, User, Send, ImagePlus, X, Settings2 } from "lucide-react-native";
+import { CheckCircle, Bot, User, Send, ImagePlus, X, Settings2, Brain, ChevronRight } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { TabScreen } from "@/components/TabScreen";
 import { EmptyState } from "@/components/EmptyState";
 import { GlassBar, glassActive } from "@/components/GlassBar";
 import { MarkdownView } from "@/components/MarkdownView";
 import { ICON_DELETE, ICON_AI } from "@/components/toolbar-icons";
-import { useTheme, withAlpha, type as typeScale, type Theme } from "@/theme";
+import { useTheme, withAlpha, tabBarClosedLift, KEYBOARD_OPEN_GAP, type as typeScale, type Theme } from "@/theme";
 import { runAgent, userMessage, assistantMessage, type AgentEvent, type Attachment } from "@/chat/agent";
 import { haptics, toolbarPress } from "@/haptics";
 import { pickImages, takePhoto } from "@/chat/attachments";
@@ -28,10 +28,11 @@ import { loadChatHistory, saveChatMessage, clearChatHistory } from "@/db/chat-st
 import { hasProvider } from "@/chat/providers";
 import { resetAppleSession } from "@/chat/providers/apple";
 import { prettifyToolLabel } from "@cairn/shared/ui/constants";
-import type { UIMessage } from "@/chat/providers/types";
+import type { UIMessage, ChatUsage } from "@/chat/providers/types";
+import { ContextRing } from "@/components/ContextRing";
+import { GlassMenu } from "@/components/GlassMenu";
+import { Button } from "@expo/ui/swift-ui";
 
-/** Standard UIKit tab bar content height (excludes the home-indicator inset). */
-const TAB_BAR_BASE = 49;
 /** Composer height assumed before its first onLayout measurement. */
 const COMPOSER_FALLBACK_H = 60;
 
@@ -40,6 +41,10 @@ interface UiMessage {
   content: string;
   images?: string[]; // data URIs for user attachments
   tools?: { tool: string; ok: boolean }[];
+  /** Live reasoning ("thinking") text for turns whose model streams it (Apple
+   *  PCC, or OpenAI-compatible endpoints exposing reasoning/reasoning_content).
+   *  Shown collapsibly; like images it's session-only and not persisted. */
+  reasoning?: string;
   streaming?: boolean;
 }
 
@@ -80,6 +85,8 @@ export default function ChatScreen() {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [busy, setBusy] = useState(false);
   const [configured, setConfigured] = useState(true);
+  // Context-window usage for the ring (Apple provider reports it per turn).
+  const [usage, setUsage] = useState<ChatUsage | null>(null);
   const scrollRef = useRef<ScrollView>(null);
   const router = useRouter();
   // Persistent agent conversation (UIMessage parts format) across turns. Seeded
@@ -115,24 +122,19 @@ export default function ChatScreen() {
   );
 
   const { height: kbHeight } = useGradualAnimation();
-  // Approximate the native (translucent) iOS tab bar height. NativeTabs doesn't
-  // expose BottomTabBarHeightContext, so we reconstruct it: the standard UIKit
-  // tab bar is 49pt tall and sits above the home-indicator safe area.
-  //
-  // Lift the composer just above the tab bar when the keyboard is closed. We
-  // lift by only slightly more than the bar's visible height (not the full
-  // safe-area-inclusive height) so the composer hugs the bar instead of
-  // floating well above it.
-  const closedLift = TAB_BAR_BASE + insets.bottom * 0.5;
+  // Lift the composer just above the tab bar when the keyboard is closed
+  // (shared with the search scope bar so both rest at the same height).
+  const closedLift = tabBarClosedLift(insets.bottom);
   // Height the composer occupies, measured lazily (falls back before layout).
   const [composerH, setComposerH] = useState(COMPOSER_FALLBACK_H);
   // Animated spacer at the BOTTOM of the scroll content. It always keeps the
   // last message clear of the floating composer, and grows to clear the
   // keyboard when it opens (so you can scroll the newest message above the
   // keyboard). When closed it matches where the composer actually rests
-  // (closedLift above the screen bottom) so there's no dead space.
+  // (closedLift above the screen bottom) so there's no dead space. The +GAP on
+  // the open case matches the composer's KEYBOARD_OPEN_GAP lift.
   const bottomSpacer = useAnimatedStyle(() => ({
-    height: composerH + 12 + Math.max(kbHeight.value, closedLift),
+    height: composerH + 12 + Math.max(kbHeight.value + KEYBOARD_OPEN_GAP, closedLift),
   }), [composerH, closedLift]);
 
   const send = useCallback(async () => {
@@ -155,6 +157,7 @@ export default function ChatScreen() {
     // Persist the user turn locally (on-device only — chat never syncs).
     saveChatMessage({ role: "user", content: text, images: atts.map((a) => a.url) });
     let acc = "";
+    let reasoningAcc = "";
     const toolTrail: { tool: string; ok: boolean }[] = [];
 
     const patchAssistant = (patch: Partial<UiMessage>) => {
@@ -175,11 +178,19 @@ export default function ChatScreen() {
         if (e.type === "text-delta" && e.delta) {
           acc += e.delta;
           patchAssistant({ content: acc });
+        } else if (e.type === "reasoning-delta" && e.delta) {
+          reasoningAcc += e.delta;
+          patchAssistant({ reasoning: reasoningAcc });
         } else if (e.type === "tool" && e.tool) {
           const ok = !(e.result && typeof e.result === "object" && "error" in (e.result as object));
           toolTrail.push({ tool: e.tool, ok });
           patchAssistant({ tools: [...toolTrail] });
           haptics.impact(); // agent ran a tool
+        } else if (e.type === "final" && e.usage) {
+          // Only drive the ring with valid token counts — a negative prompt
+          // count or non-positive limit renders a broken/empty ring.
+          const u = e.usage;
+          if (u.promptTokens >= 0 && u.contextLimit > 0) setUsage(u);
         }
         setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 20);
       };
@@ -243,6 +254,7 @@ export default function ChatScreen() {
           clearChatHistory();
           conversation.current = [];
           setMessages([]);
+          setUsage(null);
           // Drop the on-device session so a new chat gets a fresh context window.
           resetAppleSession();
         },
@@ -252,7 +264,23 @@ export default function ChatScreen() {
 
   return (
     <TabScreen>
-      <Stack.Screen options={{ title: "Chat" }} />
+      <Stack.Screen
+        options={{
+          title: "Chat",
+          // Context-window usage ring in the header-left when the active provider
+          // reports usage (Apple real, OpenAI real, Rork estimated).
+          headerLeft:
+            usage && messages.length > 0
+              ? () => (
+                  <ContextRing
+                    promptTokens={usage.promptTokens}
+                    contextLimit={usage.contextLimit}
+                    estimated={usage.estimated}
+                  />
+                )
+              : undefined,
+        }}
+      />
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Button
           icon={ICON_DELETE}
@@ -302,9 +330,10 @@ export default function ChatScreen() {
 
         {/* Sticky composer: pinned to the bottom, rides up with the keyboard
             automatically. When the keyboard is closed it's offset up above the
-            translucent tab bar; when open it sits flush on the keyboard. */}
+            translucent tab bar; when open it sits just above the keyboard with a
+            small gap (KEYBOARD_OPEN_GAP), matching the search scope bar. */}
         <KeyboardStickyView
-          offset={{ closed: -closedLift, opened: 0 }}
+          offset={{ closed: -closedLift, opened: -KEYBOARD_OPEN_GAP }}
           style={styles.composerOverlay}
         >
           <View onLayout={(e) => setComposerH(e.nativeEvent.layout.height)}>
@@ -323,9 +352,16 @@ export default function ChatScreen() {
 
             <View style={styles.composerWrap}>
               <GlassBar style={styles.composer} interactive={false}>
-                <Pressable style={styles.attachBtn} onPress={onAttach} disabled={busy} hitSlop={6}>
-                  <ImagePlus size={16} color={busy ? withAlpha(t.textTertiary, 0.5) : t.textTertiary} />
-                </Pressable>
+                <GlassMenu
+                  trigger={<ImagePlus size={16} color={busy ? withAlpha(t.textTertiary, 0.5) : t.textTertiary} />}
+                  accessibilityLabel="Add image"
+                  disabled={busy}
+                  onFallbackPress={onAttach}
+                  triggerStyle={styles.attachBtn}
+                >
+                  <Button label="Photo Library" systemImage="photo.on.rectangle" onPress={addImages} />
+                  <Button label="Take Photo" systemImage="camera" onPress={capturePhoto} />
+                </GlassMenu>
                 <TextInput
                   style={styles.input}
                   value={input}
@@ -354,6 +390,48 @@ export default function ChatScreen() {
 // Memoised so a stream-token setMessages (which replaces only the streaming
 // assistant message object) re-renders just that one bubble — not every prior
 // message, each of which would otherwise re-run its MarkdownView parse per token.
+/**
+ * Collapsible "reasoning" (thinking) disclosure for models that stream it
+ * (Apple PCC, or OpenAI-compatible endpoints like DeepSeek/OpenRouter).
+ * Expanded while the answer is still streaming so the user sees the model think;
+ * collapses to a one-line summary once done. Session-only (not persisted).
+ */
+function ReasoningBlock({
+  text,
+  streaming,
+  t,
+  styles,
+}: {
+  text: string;
+  streaming?: boolean;
+  t: Theme;
+  styles: ReturnType<typeof makeStyles>;
+}) {
+  const [open, setOpen] = useState(false);
+  const expanded = open || !!streaming;
+  return (
+    <View style={styles.reasoning}>
+      <Pressable
+        style={styles.reasoningHeader}
+        onPress={() => setOpen((v) => !v)}
+        hitSlop={6}
+        accessibilityRole="button"
+        accessibilityLabel={expanded ? "Hide reasoning" : "Show reasoning"}
+        accessibilityState={{ expanded }}
+      >
+        <Brain size={11} color={t.textTertiary} />
+        <Text style={styles.reasoningLabel}>{streaming ? "Thinking…" : "Reasoning"}</Text>
+        <ChevronRight
+          size={12}
+          color={t.textTertiary}
+          style={{ transform: [{ rotate: expanded ? "90deg" : "0deg" }] }}
+        />
+      </Pressable>
+      {expanded ? <Text style={styles.reasoningText}>{text}</Text> : null}
+    </View>
+  );
+}
+
 const Bubble = memo(function Bubble({ m, t, styles }: { m: UiMessage; t: Theme; styles: ReturnType<typeof makeStyles> }) {
   const isUser = m.role === "user";
   return (
@@ -365,6 +443,9 @@ const Bubble = memo(function Bubble({ m, t, styles }: { m: UiMessage; t: Theme; 
 
       {/* Column: tool chips, bubble, timestamp */}
       <View style={[styles.col, isUser && styles.colUser]}>
+        {!isUser && m.reasoning ? (
+          <ReasoningBlock text={m.reasoning} streaming={m.streaming} t={t} styles={styles} />
+        ) : null}
         {!isUser && m.tools && m.tools.length > 0 && (
           <View style={styles.toolTrail}>
             {m.tools.map((tt, i) => (
@@ -439,6 +520,28 @@ function makeStyles(t: Theme) {
     },
     toolChipText: { ...typeScale.caption, color: t.textSecondary },
 
+    reasoning: {
+      alignSelf: "flex-start",
+      maxWidth: "94%",
+      gap: 4,
+      marginBottom: 2,
+      paddingLeft: 2,
+    },
+    reasoningHeader: { flexDirection: "row", alignItems: "center", gap: 5 },
+    reasoningLabel: {
+      ...typeScale.caption,
+      color: t.textTertiary,
+      textTransform: "uppercase",
+      letterSpacing: 0.5,
+    },
+    reasoningText: {
+      ...typeScale.caption,
+      color: t.textTertiary,
+      fontStyle: "italic",
+      lineHeight: 17,
+      paddingLeft: 16,
+    },
+
     bubble: { maxWidth: "94%", paddingHorizontal: 12, paddingVertical: 10, borderRadius: 14 },
     aiBubble: { backgroundColor: t.surface2, borderWidth: 1, borderColor: t.border, borderTopLeftRadius: 4, alignSelf: "flex-start" },
     userBubble: { backgroundColor: t.accent, borderTopRightRadius: 4, alignSelf: "flex-end" },
@@ -469,9 +572,11 @@ function makeStyles(t: Theme) {
       paddingVertical: 8,
       borderRadius: 16,
       overflow: "hidden",
+      // When Liquid Glass is active the GlassView is the visual container, so no
+      // border/fill — the border only defines the fallback (non-glass) surface.
       backgroundColor: glassActive ? undefined : withAlpha(t.surface2, 0.92),
-      borderWidth: 1,
-      borderColor: t.border,
+      borderWidth: glassActive ? 0 : 1,
+      borderColor: glassActive ? undefined : t.border,
       shadowColor: "#000",
       shadowOffset: { width: 0, height: 8 },
       shadowOpacity: 0.12,

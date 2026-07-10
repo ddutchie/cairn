@@ -9,7 +9,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { Stack } from "expo-router";
-import { Check, ShieldCheck, RefreshCw, Cpu } from "lucide-react-native";
+import { Check, ShieldCheck, RefreshCw, Cpu, Apple, Brain, type LucideIcon } from "lucide-react-native";
 import { ICON_CHECK } from "@/components/toolbar-icons";
 import { haptics, toolbarPress } from "@/haptics";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
@@ -19,16 +19,31 @@ import {
   getOpenAIApiKey,
   getOpenAIBaseUrl,
   getOpenAIModel,
+  getOpenAIContextLimit,
   getProviderPref,
   setOpenAIApiKey,
   setOpenAIEndpoint,
   setProviderPref,
+  getAppleReasoningLevel,
+  setAppleReasoningLevel,
   type ProviderPref,
 } from "@/chat/ai-config";
 import { isRorkAvailable } from "@/chat/providers/rork";
-import { isAppleProviderAvailable, isAppleDevEnabled } from "@/chat/providers/apple";
-import { appleLlmUnavailableReason } from "@modules/apple-llm";
+import {
+  isAppleProviderAvailable,
+  isAppleServerProviderAvailable,
+  isAppleDevEnabled,
+} from "@/chat/providers/apple";
+import {
+  appleLlmUnavailableReason,
+  appleServerUnavailableReason,
+  appleQuotaStatus,
+  showAppleQuotaUpgrade,
+  type AppleQuotaStatus,
+  type AppleReasoningLevel,
+} from "@modules/apple-llm";
 import { listModels } from "@/chat/providers/openai";
+import { contextLimitForModel } from "@/chat/models-dev";
 
 /**
  * AI settings form body. Presented as a native `formSheet` route
@@ -50,13 +65,27 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
   const styles = useMemo(() => makeStyles(t), [t]);
   const rorkBuiltIn = isRorkAvailable();
   const appleAvailable = isAppleProviderAvailable();
-  // Only surface an Apple availability reason when Apple is a dev-enabled option
-  // (isAppleProviderAvailable already false when the dev flag is off, so this
-  // stays empty in shipped builds and no Apple messaging leaks to end users).
-  const appleReason = useMemo(
-    () => (isAppleDevEnabled() && !appleAvailable ? appleLlmUnavailableReason() : ""),
-    [appleAvailable],
+  // Which Apple model backs the "Apple Intelligence" option: PCC (user-facing)
+  // or the dev-only on-device model.
+  const appleIsServer = isAppleServerProviderAvailable();
+  // Availability reason, tailored to which Apple backend is expected: PCC first
+  // (user-facing), then the dev on-device model (only when the dev flag is on so
+  // no Apple messaging leaks to shipped builds).
+  const appleReason = useMemo(() => {
+    if (appleAvailable) return "";
+    // Prefer the PCC reason; fall back to the on-device reason under the dev flag.
+    const server = appleServerUnavailableReason();
+    return isAppleDevEnabled() ? appleLlmUnavailableReason() : server;
+  }, [appleAvailable]);
+  // PCC daily-quota snapshot (only meaningful when PCC is the active Apple model).
+  // Seeded from a synchronous native getter via a lazy initializer (like the
+  // provider/baseUrl values below) rather than an effect.
+  const [quota] = useState<AppleQuotaStatus | null>(() =>
+    isAppleServerProviderAvailable() ? appleQuotaStatus() : null,
   );
+  // PCC reasoning effort (persisted). Only meaningful when PCC is the active
+  // Apple backend; deeper levels trade latency + context for stronger analysis.
+  const [reasoning, setReasoning] = useState<AppleReasoningLevel>(() => getAppleReasoningLevel());
   // Whether to show the provider chooser at all: only when there's a choice.
   const showChooser = rorkBuiltIn || appleAvailable;
 
@@ -67,7 +96,15 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
   const [pref, setPref] = useState<ProviderPref>(() => getProviderPref(rorkBuiltIn));
   const [baseUrl, setBaseUrl] = useState(() => getOpenAIBaseUrl());
   const [model, setModel] = useState(() => getOpenAIModel());
+  // Optional manual context-window override (blank = auto via models.dev).
+  const [contextLimit, setContextLimit] = useState(() => {
+    const v = getOpenAIContextLimit();
+    return v ? String(v) : "";
+  });
   const [apiKey, setApiKey] = useState("");
+  // Context window detected from models.dev for the current model (null = not
+  // found / not looked up). Shown as a hint when there's no manual override.
+  const [detectedContext, setDetectedContext] = useState<number | null>(null);
   const [loadedKey, setLoadedKey] = useState("");
   const [hadKey, setHadKey] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -92,6 +129,20 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
       cancelled = true;
     };
   }, []);
+
+  // Look up the model's context window from models.dev (cached) so we can show
+  // it as a hint. Only meaningful for the OpenAI provider; re-runs when the
+  // model id changes. Best-effort — null when the model isn't in the catalog.
+  useEffect(() => {
+    let cancelled = false;
+    const id = model.trim();
+    contextLimitForModel(id || "\u0000", 0).then((n) => {
+      if (!cancelled) setDetectedContext(id && n > 0 ? n : null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [model]);
   const fetchModels = async () => {
     const key = apiKey.trim();
     if (!key) {
@@ -117,7 +168,7 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
       // Persist the chosen provider. When there's no chooser (only OpenAI is
       // available), force "openai".
       setProviderPref(showChooser ? pref : "openai");
-      setOpenAIEndpoint(baseUrl, model);
+      setOpenAIEndpoint(baseUrl, model, contextLimit.trim() ? parseInt(contextLimit, 10) : undefined);
       // Only touch the keychain if the key field actually changed from what we
       // loaded — avoids a redundant write (and allows clearing it).
       if (apiKey !== loadedKey) await setOpenAIApiKey(apiKey);
@@ -163,7 +214,8 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                 <View style={styles.segment}>
                   {appleAvailable && (
                     <SegmentButton
-                      label="On-device"
+                      label="Intelligence"
+                      icon={Apple}
                       selected={pref === "apple"}
                       onPress={() => setPref("apple")}
                       t={t}
@@ -191,9 +243,48 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                   <View style={styles.rorkNote}>
                     <Cpu size={14} color={t.success} />
                     <Text style={styles.rorkNoteText}>
-                      Apple Intelligence runs entirely on your device — private, offline,
-                      no API key. Best for quick chats; it has a small context window, so
-                      long conversations may need a fresh start.
+                      {appleIsServer
+                        ? "Apple Intelligence runs on Private Cloud Compute — private, no API key, with a larger context window and stronger reasoning. Needs a connection and has a daily usage limit. Context window: ~32K tokens."
+                        : "Apple Intelligence runs entirely on your device — private, offline, no API key. Best for quick chats; it has a small context window, so long conversations may need a fresh start. Context window: ~4K tokens."}
+                    </Text>
+                  </View>
+                )}
+                {pref === "apple" && appleIsServer && quota?.available && (
+                  <QuotaBar
+                    quota={quota}
+                    onUpgrade={() => {
+                      haptics.selection();
+                      showAppleQuotaUpgrade();
+                    }}
+                    t={t}
+                    styles={styles}
+                  />
+                )}
+                {pref === "apple" && appleIsServer && (
+                  <View style={styles.reasoningBlock}>
+                    <View style={styles.reasoningHead}>
+                      <Brain size={13} color={t.textSecondary} />
+                      <Text style={styles.sectionLabel}>Reasoning effort</Text>
+                    </View>
+                    <View style={styles.segment}>
+                      {(["light", "moderate", "deep"] as const).map((level) => (
+                        <SegmentButton
+                          key={level}
+                          label={level.charAt(0).toUpperCase() + level.slice(1)}
+                          selected={reasoning === level}
+                          onPress={() => {
+                            haptics.selection();
+                            setReasoning(level);
+                            setAppleReasoningLevel(level);
+                          }}
+                          t={t}
+                          styles={styles}
+                        />
+                      ))}
+                    </View>
+                    <Text style={styles.compatHint}>
+                      Deeper reasoning gives stronger multi-step answers but is slower and
+                      uses more of the context window.
                     </Text>
                   </View>
                 )}
@@ -202,7 +293,8 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                     <ShieldCheck size={14} color={t.success} />
                     <Text style={styles.rorkNoteText}>
                       Rork is built into this app — no configuration needed. Switch to
-                      OpenAI-compatible to use your own endpoint and key.
+                      OpenAI-compatible to use your own endpoint and key. Context window:
+                      ~200K tokens (estimated).
                     </Text>
                   </View>
                 )}
@@ -211,7 +303,7 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
               <View style={styles.rorkNote}>
                 <Text style={styles.rorkNoteText}>
                   {appleReason
-                    ? `On-device AI is unavailable: ${appleReason} Configure an OpenAI-compatible endpoint and API key below to enable chat.`
+                    ? `Apple Intelligence is unavailable: ${appleReason} Configure an OpenAI-compatible endpoint and API key below to enable chat.`
                     : "This build has no bundled AI endpoint. Configure an OpenAI-compatible endpoint and API key below to enable chat."}
                 </Text>
               </View>
@@ -296,6 +388,24 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                   )}
                 </View>
 
+                <Field
+                  label="Context window (tokens)"
+                  value={contextLimit}
+                  onChangeText={(v) => setContextLimit(v.replace(/[^0-9]/g, ""))}
+                  placeholder={detectedContext ? `Auto — ${detectedContext.toLocaleString()}` : "Auto (from models.dev)"}
+                  keyboardType="number-pad"
+                  t={t}
+                  styles={styles}
+                />
+                <Text style={styles.compatHint}>
+                  Sizes the usage ring.{" "}
+                  {contextLimit.trim()
+                    ? "Using your manual value."
+                    : detectedContext
+                      ? `Detected ${detectedContext.toLocaleString()} tokens for “${model.trim()}”.`
+                      : "Leave blank to detect from the model, or set it for models we can’t look up."}
+                </Text>
+
                 <Text style={styles.compatHint}>
                   Works with OpenAI, Azure OpenAI, OpenRouter, Together, Groq, LM Studio,
                   Ollama, and other OpenAI-compatible APIs.
@@ -310,12 +420,14 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
 
 function SegmentButton({
   label,
+  icon: Icon,
   selected,
   onPress,
   t,
   styles,
 }: {
   label: string;
+  icon?: LucideIcon;
   selected: boolean;
   onPress: () => void;
   t: Theme;
@@ -326,7 +438,11 @@ function SegmentButton({
       style={[styles.segmentBtn, selected && styles.segmentBtnActive]}
       onPress={onPress}
     >
-      {selected && <Check size={13} color={t.accentFg} />}
+      {selected ? (
+        <Check size={13} color={t.accentFg} />
+      ) : Icon ? (
+        <Icon size={13} color={t.textSecondary} />
+      ) : null}
       <Text style={[styles.segmentText, selected && styles.segmentTextActive]} numberOfLines={1}>
         {label}
       </Text>
@@ -356,6 +472,74 @@ function Field({
   );
 }
 
+/**
+ * Private Cloud Compute daily-usage indicator. Apple exposes no exact numbers,
+ * only a 3-state status (below / approaching / reached) + a reset date, so we
+ * render a 3-segment bar that fills to the current state (green → amber → red)
+ * rather than a precise gauge — matching Apple's "communicate the current
+ * status" guidance. Shows a reset date and an iCloud+ upgrade action.
+ */
+function QuotaBar({
+  quota,
+  onUpgrade,
+  t,
+  styles,
+}: {
+  quota: AppleQuotaStatus;
+  onUpgrade: () => void;
+  t: Theme;
+  styles: ReturnType<typeof makeStyles>;
+}) {
+  // How many of the 3 segments are lit, and the fill colour, per state.
+  const level = quota.isLimitReached ? 3 : quota.status === "approaching" ? 2 : 1;
+  const colour = quota.isLimitReached ? t.danger : quota.status === "approaching" ? t.warning : t.success;
+  const label = quota.isLimitReached
+    ? "Daily limit reached"
+    : quota.status === "approaching"
+      ? "Approaching daily limit"
+      : "Within daily limit";
+  const reset =
+    quota.resetDate && quota.status !== "below"
+      ? `Resets ${new Date(quota.resetDate).toLocaleDateString()}`
+      : "";
+
+  return (
+    <View style={styles.quotaCard}>
+      <View style={styles.quotaHeaderRow}>
+        <Text style={styles.quotaTitle}>Private Cloud Compute</Text>
+        <Text style={[styles.quotaStatus, { color: colour }]}>{label}</Text>
+      </View>
+      <View
+        style={styles.quotaTrack}
+        accessibilityRole="progressbar"
+        accessibilityLabel={`Private Cloud Compute usage: ${label}`}
+      >
+        {[0, 1, 2].map((i) => (
+          <View
+            key={i}
+            style={[
+              styles.quotaSeg,
+              { backgroundColor: i < level ? colour : t.border },
+              i === 0 && styles.quotaSegFirst,
+              i === 2 && styles.quotaSegLast,
+            ]}
+          />
+        ))}
+      </View>
+      <View style={styles.quotaFootRow}>
+        <Text style={styles.quotaHint}>
+          {reset || "Usage resets daily. No API key needed."}
+        </Text>
+        {quota.canUpgrade && (
+          <Pressable onPress={onUpgrade} hitSlop={8}>
+            <Text style={styles.quotaUpgrade}>Get more with iCloud+</Text>
+          </Pressable>
+        )}
+      </View>
+    </View>
+  );
+}
+
 function makeStyles(t: Theme) {
   return StyleSheet.create({
     flex: { flex: 1, backgroundColor: t.surface },
@@ -380,6 +564,8 @@ function makeStyles(t: Theme) {
       borderRadius: 12,
       padding: 4,
     },
+    reasoningBlock: { gap: 8 },
+    reasoningHead: { flexDirection: "row", alignItems: "center", gap: 6 },
     segmentBtn: {
       flex: 1,
       flexDirection: "row",
@@ -403,6 +589,25 @@ function makeStyles(t: Theme) {
       marginTop: 4,
     },
     rorkNoteText: { flex: 1, ...typeScale.caption, color: t.textSecondary, lineHeight: 18 },
+
+    // PCC daily-usage 3-state bar.
+    quotaCard: {
+      backgroundColor: t.surface2,
+      borderRadius: 10,
+      padding: 12,
+      marginTop: 4,
+      gap: 8,
+    },
+    quotaHeaderRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+    quotaTitle: { ...typeScale.caption, color: t.textSecondary, fontWeight: "600" },
+    quotaStatus: { ...typeScale.caption, fontWeight: "600" },
+    quotaTrack: { flexDirection: "row", gap: 3, height: 6 },
+    quotaSeg: { flex: 1, height: 6 },
+    quotaSegFirst: { borderTopLeftRadius: 3, borderBottomLeftRadius: 3 },
+    quotaSegLast: { borderTopRightRadius: 3, borderBottomRightRadius: 3 },
+    quotaFootRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
+    quotaHint: { flex: 1, ...typeScale.caption, color: t.textTertiary },
+    quotaUpgrade: { ...typeScale.caption, color: t.accent, fontWeight: "600" },
 
     fields: { gap: 14, marginTop: 12 },
     field: { gap: 6 },

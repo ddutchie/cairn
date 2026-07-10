@@ -35,6 +35,7 @@ export function EmptyState({
   children,
   compact = false,
   align = "center",
+  topBias,
 }: {
   title?: string;
   subtitle?: string;
@@ -43,8 +44,13 @@ export function EmptyState({
   /** Smaller icon + tighter spacing, for overlays over a list. */
   compact?: boolean;
   /** "center" (default) fills and centres; "top" biases the content toward the
-   *  upper ~22% so it stays readable when a keyboard covers the lower half. */
+   *  upper third so it stays readable when a keyboard covers the lower half. */
   align?: "center" | "top";
+  /** Overrides the `align="top"` bias (default "25%"). Pass an absolute px value
+   *  when the container height can't be trusted (e.g. an iOS 27 search list
+   *  whose frame isn't the full screen) so the content lands at a screen-top-
+   *  relative position that matches other screens. */
+  topBias?: number | `${number}%`;
 }) {
   const t = useTheme();
   const styles = makeStyles(t);
@@ -64,7 +70,15 @@ export function EmptyState({
   };
 
   return (
-    <View style={[styles.root, align === "top" && styles.rootTop]}>
+    <View
+      style={[
+        styles.root,
+        align === "top" && styles.rootTop,
+        // Override the default "25%" bias when a caller needs an exact position
+        // (e.g. iOS 27 search list — see topBias doc).
+        align === "top" && topBias != null ? { paddingTop: topBias } : null,
+      ]}
+    >
       <View style={styles.brand}>
         <Pressable onPress={onIconTap} accessibilityLabel="Cairn">
           <Image source={CAIRN_ICON} style={{ width: iconSize, height: iconSize }} resizeMode="contain" />

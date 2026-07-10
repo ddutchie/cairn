@@ -7,9 +7,9 @@
  * Async because iCloud I/O is async.
  */
 
-import { getDb, getEngine } from "@/db";
+import { getDb, getEngine, getActiveSource } from "@/db";
 import { getSyncFolderPath, iCloudAvailable } from "./folder";
-import { writeOwnOplog, readPeerOplogs } from "./fs-transport";
+import { writeOwnOplog, readSourceOplog } from "./fs-transport";
 
 export interface SyncResult {
   drained: number;
@@ -45,24 +45,29 @@ export async function syncNow(): Promise<SyncResult> {
     return { drained: 0, peerOpsApplied: 0, conflictCopies: 0, connected: false, reason: "Couldn't open the iCloud Cairn folder." };
   }
 
+  const workspaceId = getActiveSource();
+  if (!workspaceId) {
+    return { drained: 0, peerOpsApplied: 0, conflictCopies: 0, connected: false, reason: "No sync source selected." };
+  }
+
   const engine = getEngine();
 
   try {
     // 1. Stage local writes into the oplog.
     const drained = engine.drainPending();
 
-    // 2. Publish our oplog.
-    await withTimeout(writeOwnOplog(folder, engine.deviceId, engine.exportOplog()), ICLOUD_IO_TIMEOUT_MS, "writeOwnOplog");
+    // 2. Publish our oplog for THIS source (oplog-<deviceId>-<workspaceId>).
+    await withTimeout(writeOwnOplog(folder, engine.deviceId, workspaceId, engine.exportOplog()), ICLOUD_IO_TIMEOUT_MS, "writeOwnOplog");
 
-    // 3. Read peers.
-    const peerEntries = await withTimeout(readPeerOplogs(folder, engine.deviceId), ICLOUD_IO_TIMEOUT_MS, "readPeerOplogs");
+    // 3. Read peers for THIS source only (source-isolation boundary).
+    const peerEntries = await withTimeout(readSourceOplog(folder, workspaceId, engine.deviceId), ICLOUD_IO_TIMEOUT_MS, "readSourceOplog");
 
     // 4. Reconcile.
     const { conflictCopies } = engine.applyRemote(peerEntries);
 
     // 5. Re-publish if reconcile changed our oplog.
     if (peerEntries.length > 0) {
-      await withTimeout(writeOwnOplog(folder, engine.deviceId, engine.exportOplog()), ICLOUD_IO_TIMEOUT_MS, "writeOwnOplog");
+      await withTimeout(writeOwnOplog(folder, engine.deviceId, workspaceId, engine.exportOplog()), ICLOUD_IO_TIMEOUT_MS, "writeOwnOplog");
     }
 
     return {
@@ -81,6 +86,7 @@ export async function syncNow(): Promise<SyncResult> {
 
 /** Count local changes waiting to be drained (for a "N pending" hint). */
 export function pendingCount(): number {
+  if (!getActiveSource()) return 0;
   const row = getDb().getFirstSync<{ n: number }>("SELECT COUNT(*) AS n FROM sync_pending");
   return row?.n ?? 0;
 }

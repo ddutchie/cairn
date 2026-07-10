@@ -7,7 +7,7 @@
  * system colour scheme.
  */
 
-import { useColorScheme } from "react-native";
+import { Platform, useColorScheme } from "react-native";
 
 export interface Theme {
   background: string;
@@ -168,6 +168,42 @@ export const iconSize = {
  * expose its height, so we reconstruct it.
  */
 export const TAB_BAR_BASE = 49;
+
+/**
+ * How far a bottom-pinned floating control (chat composer, search scope bar)
+ * should lift above the screen bottom when the keyboard is CLOSED, so it hugs
+ * the native tab bar instead of the home indicator. Slightly more than the bar's
+ * visible height — `insets.bottom * 0.5` accounts for the home-indicator area
+ * without floating the control well above the bar. Shared so chat + search rest
+ * at the same height. (Verified on device: this is the correct resting spot.)
+ */
+export function tabBarClosedLift(insetBottom: number): number {
+  return TAB_BAR_BASE + insetBottom * 0.5;
+}
+
+/**
+ * Gap between a keyboard-sticky floating control and the top of the keyboard
+ * when it's OPEN. A small breathing space so the control doesn't touch the
+ * keyboard. Shared by chat + search.
+ */
+export const KEYBOARD_OPEN_GAP = 8;
+
+/**
+ * Whether the OS renders the integrated search field inside the tab bar for a
+ * `role="search"` NativeTabs tab.
+ *
+ * iOS ≤26 (via react-native-screens' legacy `UITabBarSystemItemSearch`) shows a
+ * search field docked in the tab bar. The iOS 27 SDK dropped that behaviour for
+ * the legacy system-item (it now needs the modern `UISearchTab`, which rn-screens
+ * hasn't adopted — see the "iOS 27: search tab renders as plain tab" task), so
+ * the search tab is just a normal tab with no extra field.
+ *
+ * Layout that reserved space for that field (padding, keyboard-sticky offsets)
+ * must gate on this so iOS 27 doesn't leave a ~52pt gap where the field used to
+ * be. Android and web never had it.
+ */
+export const hasTabBarSearchField =
+  Platform.OS === "ios" && parseInt(String(Platform.Version), 10) < 27;
 
 
 /** Returns the theme for the current system colour scheme. */

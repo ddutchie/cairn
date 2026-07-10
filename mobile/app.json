@@ -37,6 +37,9 @@
       ],
       "./plugins/withAppleSigning",
       "./plugins/withICloudContainer",
+      "./plugins/withPrivateCloudCompute",
+      "./plugins/withSceneLifecycle",
+      "./plugins/withPodDeploymentTarget",
       "./plugins/withStatusBarStyle",
       "@react-native-community/datetimepicker",
       "expo-secure-store",
@@ -50,6 +53,14 @@
           "dark": {
             "image": "./assets/splashIcon.png",
             "backgroundColor": "#0d0d0d"
+          }
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "16.4"
           }
         }
       ]
