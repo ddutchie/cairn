@@ -74,6 +74,20 @@ export function resetDesktopEngine(): void {
   _engine = null;
 }
 
+/**
+ * The workspace this desktop syncs as its SOURCE. The desktop is single-source:
+ * it takes the first/oldest workspace (matching main.ts boot resolution). Used
+ * as the `<workspaceId>` suffix on the oplog filename so many devices AND
+ * workspaces can share one folder while each reader selects only its workspace.
+ * Returns "" if no workspace exists yet (falls back to legacy unsuffixed name).
+ */
+function getSourceWorkspaceId(db: Database.Database): string {
+  const row = db.prepare("SELECT id FROM workspaces ORDER BY created_at LIMIT 1").get() as
+    | { id?: string }
+    | undefined;
+  return row?.id ?? "";
+}
+
 // ── sync-folder persistence (in sync_state) ─────────────────────────────────
 
 const FOLDER_KEY = "sync_folder_path";
@@ -127,6 +141,8 @@ export async function syncDesktop(db: Database.Database, projectNote?: NoteFileP
   }
   const engine = getDesktopEngine(db);
   const project = projectNote ?? _projector;
+  // The workspace this desktop publishes as its source (filename suffix).
+  const workspaceId = getSourceWorkspaceId(db);
 
   // First-run backfill so the phone receives the whole existing workspace.
   const seeded = engine.backfill();
@@ -134,13 +150,13 @@ export async function syncDesktop(db: Database.Database, projectNote?: NoteFileP
   const drained = engine.drainPending();
   // Publish our full oplog. Folder I/O is async so a slow/network-backed folder
   // (iCloud/Dropbox) doesn't block the Electron main loop.
-  await writeOplogFileAsync(folder, engine.deviceId, engine.exportOplog());
-  // Read + reconcile peers.
-  const peerEntries = await readPeerOplogsAsync(folder, engine.deviceId);
+  await writeOplogFileAsync(folder, engine.deviceId, engine.exportOplog(), workspaceId);
+  // Read + reconcile peers — only files for OUR workspace (source isolation).
+  const peerEntries = await readPeerOplogsAsync(folder, engine.deviceId, workspaceId);
   const { conflictCopies, applied } = engine.applyRemote(peerEntries);
   // Re-publish if reconcile forwarded peer ops / minted conflict copies.
   if (peerEntries.length > 0) {
-    await writeOplogFileAsync(folder, engine.deviceId, engine.exportOplog());
+    await writeOplogFileAsync(folder, engine.deviceId, engine.exportOplog(), workspaceId);
   }
 
   // Project inbound note changes onto disk (.md dual-write parity). Conflict

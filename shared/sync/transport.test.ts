@@ -37,6 +37,60 @@ describe("transport deviceId sanitization", () => {
     dirs.push(dir);
     expect(() => writeOplogFile(dir, "desktop_ab12cd34", [entry])).not.toThrow();
   });
+
+  it("rejects unsafe workspace ids but allows nanoid dashes", () => {
+    const dir = tmpDir();
+    dirs.push(dir);
+    expect(() => writeOplogFile(dir, "dev_a", [entry], "a/b")).toThrow(/Unsafe sync workspaceId/);
+    expect(() => writeOplogFile(dir, "dev_a", [entry], "..")).toThrow(/Unsafe sync workspaceId/);
+    // Workspace ids are nanoids whose alphabet includes "-", so these are valid.
+    expect(() => writeOplogFile(dir, "dev_a", [entry], "Ab-3_xZ9")).not.toThrow();
+  });
+});
+
+describe("transport workspace-scoped source isolation", () => {
+  it("reads only oplogs for the given workspace, excluding self", () => {
+    const dir = tmpDir();
+    dirs.push(dir);
+    // Two workspaces sharing one folder, plus this device's own file.
+    writeOplogFile(dir, "pc", [{ ...entry, entity_id: "pcRow" }], "wsWork");
+    writeOplogFile(dir, "mobile", [{ ...entry, entity_id: "mobileWork" }], "wsWork");
+    writeOplogFile(dir, "mac", [{ ...entry, entity_id: "macRow" }], "wsPersonal");
+
+    // The PC reading its own workspace sees mobile's writeback but NOT the other
+    // workspace's file, and not its own.
+    const pcView = readPeerOplogs(dir, "pc", "wsWork");
+    expect(pcView.map((e) => e.entity_id).sort()).toEqual(["mobileWork"]);
+
+    // A reader on the personal workspace never sees any work-workspace rows.
+    const personalView = readPeerOplogs(dir, "phone", "wsPersonal");
+    expect(personalView.map((e) => e.entity_id).sort()).toEqual(["macRow"]);
+  });
+
+  it("isolates correctly when the workspace id contains a dash", () => {
+    const dir = tmpDir();
+    dirs.push(dir);
+    writeOplogFile(dir, "pc", [{ ...entry, entity_id: "aRow" }], "ws-A_1");
+    writeOplogFile(dir, "pc", [{ ...entry, entity_id: "bRow" }], "ws-B_2");
+    // Suffix match on the full workspace id must not confuse ws-A_1 with ws-B_2.
+    expect(readPeerOplogs(dir, "mobile", "ws-A_1").map((e) => e.entity_id)).toEqual(["aRow"]);
+    expect(readPeerOplogs(dir, "mobile", "ws-B_2").map((e) => e.entity_id)).toEqual(["bRow"]);
+  });
+
+  it("writes the workspace suffix into the filename", () => {
+    const dir = tmpDir();
+    dirs.push(dir);
+    writeOplogFile(dir, "pc", [entry], "wsWork");
+    expect(fs.existsSync(path.join(dir, "oplog-pc-wsWork.ndjson"))).toBe(true);
+  });
+
+  it("legacy unsuffixed reads still see all oplog files", () => {
+    const dir = tmpDir();
+    dirs.push(dir);
+    writeOplogFile(dir, "dev_b", [entry]);
+    const got = readPeerOplogs(dir, "dev_a");
+    expect(got.map((e) => e.entity_id)).toEqual(["n1"]);
+  });
 });
 
 describe("transport oplog shape validation", () => {

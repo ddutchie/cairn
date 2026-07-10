@@ -1,10 +1,12 @@
 import { useCallback, useMemo, useState } from "react";
 import { View, Text, Pressable, StyleSheet, ActivityIndicator, ScrollView } from "react-native";
 import { Stack, useFocusEffect, useRouter } from "expo-router";
-import { GitMerge, ChevronRight } from "lucide-react-native";
-import { iCloudAvailable, syncFolderLabel } from "@/sync/folder";
-import { requestSync } from "@/sync/controller";
+import { GitMerge, ChevronRight, Check } from "lucide-react-native";
+import { iCloudAvailable, syncFolderLabel, getSyncFolderPath } from "@/sync/folder";
+import { requestSync, switchSource } from "@/sync/controller";
 import { useSyncStatus } from "@/sync/useSyncStatus";
+import { listSources } from "@/sync/fs-transport";
+import { getActiveSource, getDeviceId } from "@/db";
 import { EmbeddingsCard } from "@/components/EmbeddingsCard";
 import { ICON_CHECK } from "@/components/toolbar-icons";
 import { useModalOpenHaptic, toolbarPress } from "@/haptics";
@@ -24,19 +26,44 @@ export default function SyncScreen() {
   const router = useRouter();
   const { state, pending, conflicts, lastResult: last } = useSyncStatus();
   const [available, setAvailable] = useState<boolean | null>(null);
+  const [sources, setSources] = useState<string[]>([]);
+  const [activeSource, setActiveSourceState] = useState<string | null>(() => getActiveSource());
   const styles = useMemo(() => makeStyles(t), [t]);
   const busy = state === "syncing";
 
   const refresh = useCallback(() => {
     iCloudAvailable().then(setAvailable).catch(() => setAvailable(false));
+    setActiveSourceState(getActiveSource());
+    // Re-scan the shared folder for available sources (workspaces).
+    void (async () => {
+      try {
+        const folder = await getSyncFolderPath();
+        if (!folder) return;
+        setSources(await listSources(folder, getDeviceId()));
+      } catch {
+        /* leave sources as-is */
+      }
+    })();
   }, []);
 
   useFocusEffect(useCallback(() => refresh(), [refresh]));
 
   const onSync = () => void requestSync("manual");
+  const onSwitch = (ws: string) => {
+    switchSource(ws);
+    setActiveSourceState(ws);
+  };
   const close = () => {
     if (router.canGoBack()) router.back();
   };
+
+  // Show the switcher when more than one source exists, or the active one plus
+  // any others discovered in the folder.
+  const allSources = useMemo(() => {
+    const set = new Set(sources);
+    if (activeSource) set.add(activeSource);
+    return [...set].sort();
+  }, [sources, activeSource]);
 
   return (
     <View style={[styles.root, { backgroundColor: t.surface }]}>
@@ -58,6 +85,32 @@ export default function SyncScreen() {
               : "Automatic — this folder is your app's iCloud storage, shared with the desktop. No setup needed."}
           </Text>
         </View>
+
+        {allSources.length > 1 && (
+          <View style={styles.card}>
+            <Text style={styles.cardLabel}>Source</Text>
+            <Text style={styles.help}>
+              Each source is a separate workspace synced from a desktop. Switching changes what
+              this app shows and edits.
+            </Text>
+            {allSources.map((ws) => {
+              const active = ws === activeSource;
+              return (
+                <Pressable
+                  key={ws}
+                  style={[styles.sourceRow, active && styles.sourceRowActive]}
+                  onPress={() => !active && onSwitch(ws)}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.sourceTitle}>Workspace</Text>
+                    <Text style={styles.sourceId}>{ws}</Text>
+                  </View>
+                  {active && <Check size={18} color={t.accent} />}
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
 
         <Pressable style={[styles.syncButton, busy && styles.buttonDisabled]} onPress={onSync} disabled={busy}>
           {busy ? (
@@ -131,5 +184,9 @@ function makeStyles(t: Theme) {
     conflictTitle: { ...typeScale.control, color: t.textSecondary },
     conflictHelp: { ...typeScale.caption, color: t.textTertiary, marginTop: 2, lineHeight: 16 },
     note: { marginTop: 24, ...typeScale.caption, color: t.textTertiary, lineHeight: 18 },
+    sourceRow: { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 10, padding: 12, backgroundColor: t.surface, borderRadius: 10, borderWidth: 1, borderColor: t.border },
+    sourceRowActive: { borderColor: t.accent },
+    sourceTitle: { ...typeScale.control, color: t.textPrimary },
+    sourceId: { ...typeScale.caption, color: t.textTertiary, marginTop: 2, fontFamily: "Courier" },
   });
 }
