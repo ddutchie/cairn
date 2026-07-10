@@ -31,10 +31,19 @@ import { resolve } from "path";
 import { unified } from "unified";
 import remarkParse from "remark-parse";
 import remarkGfm from "remark-gfm";
+import remarkBreaks from "remark-breaks";
 import remarkMath from "remark-math";
 import remarkRehype from "remark-rehype";
+import rehypeRaw from "rehype-raw";
 import rehypeKatex from "rehype-katex";
-import { remarkCallout, remarkPromoteDisplayMath, makeLatexPlugins } from "@/lib/markdown/pipeline";
+import {
+  remarkCallout,
+  remarkPromoteDisplayMath,
+  remarkObsidianEmbeds,
+  remarkWikilinks,
+  rehypeEscapeUnknownTags,
+  makeLatexPlugins,
+} from "@/lib/markdown/pipeline";
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -97,7 +106,11 @@ const CEILINGS: Record<string, Record<FixtureName, number>> = {
   "remark-gfm+math":       { small: 15,  medium: 30,  large: 100  },
   "remark-callout":        { small: 10,  medium: 15,  large: 60   },
   "remark-promoteDisplay": { small: 10,  medium: 15,  large: 45   },
+  "remark-obsidianEmbeds": { small: 10,  medium: 15,  large: 60   },
+  "remark-wikilinks":      { small: 10,  medium: 15,  large: 60   },
   "remark→hast":           { small: 15,  medium: 45,  large: 150  },
+  "rehype-raw":            { small: 15,  medium: 30,  large: 90   },
+  "rehype-escapeUnknown":  { small: 15,  medium: 30,  large: 90   },
   "rehype-captureLatex":   { small: 10,  medium: 15,  large: 45   },
   "rehype-katex":          { small: 60,  medium: 180, large: 600  },
   "rehype-mergedPass":     { small: 15,  medium: 45,  large: 150  },
@@ -112,9 +125,11 @@ const remarkProcessor = unified()
   .use(remarkParse).use(remarkGfm).use(remarkMath);
 
 // Full remark stack (produces transformed mdast ready for remark-rehype)
+// Full remark stack (produces transformed mdast ready for remark-rehype).
+// Mirrors note-editor.tsx's remarkPlugins order exactly.
 const fullRemarkProcessor = unified()
-  .use(remarkParse).use(remarkGfm).use(remarkMath)
-  .use(remarkCallout).use(remarkPromoteDisplayMath);
+  .use(remarkParse).use(remarkGfm).use(remarkBreaks).use(remarkMath)
+  .use(remarkPromoteDisplayMath).use(remarkCallout).use(remarkObsidianEmbeds).use(remarkWikilinks);
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
@@ -158,14 +173,54 @@ describe("Markdown pipeline benchmarks", () => {
         expect(r.p95).toBeLessThan(CEILINGS["remark-promoteDisplay"][fixtureName]);
       }, BENCH_TIMEOUT_MS);
 
+      // ── Stage 4b: remarkObsidianEmbeds transformer ───────────────────────
+      it("remarkObsidianEmbeds plugin", () => {
+        const mdast = remarkProcessor.runSync(remarkProcessor.parse(md));
+        const transformer = (remarkObsidianEmbeds as any)();
+        const r = bench(() => transformer(structuredClone(mdast)));
+        console.log(`  [${fixtureName}] remark-obsidianEmbeds ${fmt(r)}`);
+        expect(r.p95).toBeLessThan(CEILINGS["remark-obsidianEmbeds"][fixtureName]);
+      }, BENCH_TIMEOUT_MS);
+
+      // ── Stage 4c: remarkWikilinks transformer ────────────────────────────
+      it("remarkWikilinks plugin", () => {
+        const mdast = remarkProcessor.runSync(remarkProcessor.parse(md));
+        const transformer = (remarkWikilinks as any)();
+        const r = bench(() => transformer(structuredClone(mdast)));
+        console.log(`  [${fixtureName}] remark-wikilinks      ${fmt(r)}`);
+        expect(r.p95).toBeLessThan(CEILINGS["remark-wikilinks"][fixtureName]);
+      }, BENCH_TIMEOUT_MS);
+
       // ── Stage 5: remark-rehype (mdast → hast) ───────────────────────────
       // Input: fully transformed mdast (callout + promoteDisplay applied).
       it("remark-rehype: mdast → hast", () => {
         const mdast = fullRemarkProcessor.runSync(fullRemarkProcessor.parse(md));
-        const toHast = unified().use(remarkRehype);
+        const toHast = unified().use(remarkRehype, { allowDangerousHtml: true });
         const r = bench(() => toHast.runSync(structuredClone(mdast) as any));
         console.log(`  [${fixtureName}] remark→hast           ${fmt(r)}`);
         expect(r.p95).toBeLessThan(CEILINGS["remark→hast"][fixtureName]);
+      }, BENCH_TIMEOUT_MS);
+
+      // ── Stage 5b: rehype-raw (reparse embedded HTML) ─────────────────────
+      it("rehypeRaw plugin", () => {
+        const mdast = fullRemarkProcessor.runSync(fullRemarkProcessor.parse(md));
+        const preRaw = unified().use(remarkRehype, { allowDangerousHtml: true }).runSync(structuredClone(mdast) as any);
+        const transformer = (rehypeRaw as any)();
+        const r = bench(() => transformer(structuredClone(preRaw)));
+        console.log(`  [${fixtureName}] rehype-raw            ${fmt(r)}`);
+        expect(r.p95).toBeLessThan(CEILINGS["rehype-raw"][fixtureName]);
+      }, BENCH_TIMEOUT_MS);
+
+      // ── Stage 5c: rehypeEscapeUnknownTags (visit every element) ──────────
+      it("rehypeEscapeUnknownTags plugin", () => {
+        const mdast = fullRemarkProcessor.runSync(fullRemarkProcessor.parse(md));
+        const preEscape = unified()
+          .use(remarkRehype, { allowDangerousHtml: true }).use(rehypeRaw)
+          .runSync(structuredClone(mdast) as any);
+        const transformer = (rehypeEscapeUnknownTags as any)();
+        const r = bench(() => transformer(structuredClone(preEscape)));
+        console.log(`  [${fixtureName}] rehype-escapeUnknown  ${fmt(r)}`);
+        expect(r.p95).toBeLessThan(CEILINGS["rehype-escapeUnknown"][fixtureName]);
       }, BENCH_TIMEOUT_MS);
 
       // ── Stage 6: rehypeCaptureLatex ──────────────────────────────────────
@@ -213,16 +268,23 @@ describe("Markdown pipeline benchmarks", () => {
       }, BENCH_TIMEOUT_MS);
 
       // ── Full pipeline ────────────────────────────────────────────────────
-      // Times the complete string → final hast path as ReactMarkdown runs it.
+      // Times the complete string → final hast path as ReactMarkdown runs it,
+      // matching note-editor.tsx's exact remark + rehype plugin stacks
+      // (including rehypeRaw + rehypeEscapeUnknownTags, the heaviest hast passes).
       it("full pipeline: string → final hast", () => {
         const { rehypeCaptureLatex, rehypeMergedPass } = makeLatexPlugins();
         const processor = unified()
           .use(remarkParse)
           .use(remarkGfm)
+          .use(remarkBreaks)
           .use(remarkMath)
-          .use(remarkCallout)
           .use(remarkPromoteDisplayMath)
-          .use(remarkRehype)
+          .use(remarkCallout)
+          .use(remarkObsidianEmbeds)
+          .use(remarkWikilinks)
+          .use(remarkRehype, { allowDangerousHtml: true })
+          .use(rehypeRaw)
+          .use(rehypeEscapeUnknownTags as any)
           .use(rehypeCaptureLatex as any)
           .use(rehypeKatex)
           .use(rehypeMergedPass as any);
