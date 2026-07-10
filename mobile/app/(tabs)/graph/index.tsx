@@ -61,6 +61,12 @@ export default function GraphScreen() {
       return;
     }
     setSemanticLoading(true);
+    // Yield a frame so the spinner actually paints before the on-device
+    // embedding pass (synchronous CPU work) blocks the JS thread — otherwise
+    // React batches the loading:true with the eventual loading:false and the
+    // spinner never renders.
+    await new Promise((r) => requestAnimationFrame(() => r(null)));
+    if (seq !== semanticSeq.current) return; // superseded during the yield
     try {
       const all: GraphEdge[] = [];
       for (const ws of listWorkspaceIds()) {
