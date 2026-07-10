@@ -552,6 +552,15 @@ export function findNoteIdByTitle(title: string): string | null {
   return row?.id ?? null;
 }
 
+/** Resolve a card id by title across the whole workspace (case-insensitive) — for wikilinks. */
+export function findCardIdByTitle(title: string): string | null {
+  const row = getDb().getFirstSync<{ id: string }>(
+    `SELECT id FROM task_cards WHERE ${LIVE} AND lower(title) = lower(?) LIMIT 1`,
+    title,
+  );
+  return row?.id ?? null;
+}
+
 /** Create a note. Returns its id. Plain INSERT so capture triggers stage it. */
 export function createNote(projectId: string, title: string, content: string, folder = ""): string {
   const id = genId();
