@@ -357,6 +357,7 @@ export default function ChatScreen() {
                   accessibilityLabel="Add image"
                   disabled={busy}
                   onFallbackPress={onAttach}
+                  containerStyle={styles.attachContainer}
                   triggerStyle={styles.attachBtn}
                 >
                   <Button label="Photo Library" systemImage="photo.on.rectangle" onPress={addImages} />
@@ -592,6 +593,11 @@ function makeStyles(t: Theme) {
       paddingHorizontal: 2,
     },
     // 32px rounded-xl (12px) icon buttons, vertically centred against the input.
+    // `attachContainer` goes on GlassMenu's OUTERMOST element (the actual flex
+    // child) so the row's `alignItems: flex-end` doesn't push the icon up when
+    // the composer grows / the keyboard opens; `attachBtn` styles the inner tap
+    // target. Both fix the size so the native Host doesn't size to its glyph.
+    attachContainer: { alignSelf: "center" },
     attachBtn: {
       width: 32,
       height: 32,

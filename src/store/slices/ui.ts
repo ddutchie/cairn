@@ -11,7 +11,7 @@ import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KE
 // ── View visibility ───────────────────────────────────────────────────────────
 
 /** Views that can be hidden. Overview and Notes are always visible. */
-export type ToggleableView = "board" | "flow" | "calendar" | "agent" | "graph" | "insights" | "chat";
+export type ToggleableView = "board" | "flow" | "calendar" | "calendar-all" | "agent" | "graph" | "insights" | "chat";
 
 export const HIDDEN_VIEWS_KEY = "hiddenViews";
 export const SEEN_FEATURES_KEY = "seenFeatures";
@@ -163,6 +163,11 @@ export interface UISlice extends AppUIState {
   settingsSection: SettingsSection | null;
   setSettingsSection: (section: SettingsSection | null) => void;
 
+  /** Project scope for the workspace-wide Calendar view ([] = all projects).
+   *  Dedicated to the calendar so it doesn't affect the graph/insights scope. */
+  calendarProjectIds: string[];
+  setCalendarProjectIds: (ids: string[]) => void;
+
   // Seen features for What's New modal
   seenFeatures: string[];
   markFeatureAsSeen: (id: string) => void;
@@ -199,8 +204,8 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
   chatPanelResizing: false,
   lastContentView: "overview",
   settingsSection: null,
-  seenFeatures: [],
-  tutorialActive: false,
+  calendarProjectIds: [],
+  seenFeatures: [],  tutorialActive: false,
   tutorialStepIndex: 0,
 
   aiConfig: DEFAULT_AI_CONFIG,
@@ -323,6 +328,10 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
 
   setSettingsSection(section) {
     set({ settingsSection: section });
+  },
+
+  setCalendarProjectIds(ids) {
+    set({ calendarProjectIds: ids });
   },
 
   setActivePreviewItem(item) {

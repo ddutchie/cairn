@@ -473,13 +473,13 @@ export type SettingsSection =
 export interface AppUIState {
   activeWorkspaceId: ID | null;
   activeProjectId: ID | null;
-  activeView: "overview" | "notes" | "board" | "flow" | "calendar" | "graph" | "insights" | "chat" | "search" | "settings" | "agent";
+  activeView: "overview" | "notes" | "board" | "flow" | "calendar" | "calendar-all" | "graph" | "insights" | "chat" | "search" | "settings" | "agent";
   sidebarCollapsed: boolean;
   chatOpen: boolean;
   searchOpen: boolean;
   activePreviewItem: { type: "note" | "task"; id: ID } | null;
   chatPanelResizing: boolean;
-  lastContentView: "overview" | "notes" | "board" | "flow" | "calendar" | "graph" | "insights" | "settings" | "agent";
+  lastContentView: "overview" | "notes" | "board" | "flow" | "calendar" | "calendar-all" | "graph" | "insights" | "settings" | "agent";
   seenFeatures: string[];
   tutorialActive: boolean;
   tutorialStepIndex: number;
