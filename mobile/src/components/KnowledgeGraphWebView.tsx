@@ -8,6 +8,7 @@ import {
   Hexagon,
   Type,
   ChevronDown,
+  Sparkles,
   Maximize2,
 } from "lucide-react-native";
 import { useTheme, useIsDark, withAlpha, type as typeScale, iconSize, type Theme } from "@/theme";
@@ -78,6 +79,11 @@ export function KnowledgeGraphWebView({
   onSelectNode,
   mode: modeProp,
   onModeChange,
+  labelMode: labelModeProp,
+  onLabelModeChange,
+  showSemantic = false,
+  onToggleSemantic,
+  semanticAvailable = false,
 }: {
   graph: KnowledgeGraph;
   onSelectNode?: (node: { id: string; type: string }) => void;
@@ -85,6 +91,15 @@ export function KnowledgeGraphWebView({
    *  hidden and the parent (native toolbar) drives it. */
   mode?: GraphMode;
   onModeChange?: (mode: GraphMode) => void;
+  /** Controlled label mode. When provided the in-body labels pill is hidden and
+   *  the parent (native left toolbar menu) drives it. */
+  labelMode?: LabelMode;
+  onLabelModeChange?: (mode: LabelMode) => void;
+  /** Semantic-links toggle (force mode only). Rendered as an in-body pill left
+   *  of the Hulls toggle when `semanticAvailable`. */
+  showSemantic?: boolean;
+  onToggleSemantic?: () => void;
+  semanticAvailable?: boolean;
 }) {
   const t = useTheme();
   const isDark = useIsDark();
@@ -102,7 +117,12 @@ export function KnowledgeGraphWebView({
     () => new Set(ALL_NODE_TYPES),
   );
   const [showHulls, setShowHulls] = useState(true);
-  const [labelMode, setLabelMode] = useState<LabelMode>("smart");
+  const [labelModeInternal, setLabelModeInternal] = useState<LabelMode>("smart");
+  const labelMode = labelModeProp ?? labelModeInternal;
+  const setLabelMode = (m: LabelMode) => {
+    if (onLabelModeChange) onLabelModeChange(m);
+    else setLabelModeInternal(m);
+  };
   const [labelOpen, setLabelOpen] = useState(false);
   const [labelAnchorX, setLabelAnchorX] = useState(116);
   const [search, setSearch] = useState("");
@@ -290,8 +310,9 @@ export function KnowledgeGraphWebView({
           </View>
         ) : null}
 
-        {/* Label mode dropdown — force only (radial drills in, no label modes) */}
-        {mode === "force" ? (
+        {/* Label mode dropdown — force only (radial drills in, no label modes).
+            Hidden when the parent (native left toolbar menu) drives labelMode. */}
+        {mode === "force" && !onLabelModeChange ? (
           <Pressable
             onLayout={(e) => setLabelAnchorX(e.nativeEvent.layout.x)}
             onPress={() => setLabelOpen((v) => !v)}
@@ -300,6 +321,24 @@ export function KnowledgeGraphWebView({
             <Type size={iconSize.control} color={t.textSecondary} />
             <Text style={styles.pillLabel}>{labelMode} labels</Text>
             <ChevronDown size={iconSize.hint} color={t.textSecondary} />
+          </Pressable>
+        ) : null}
+
+        {/* Semantic-links toggle — force only, left of Hulls, when available. */}
+        {mode === "force" && semanticAvailable && onToggleSemantic ? (
+          <Pressable
+            onPress={onToggleSemantic}
+            style={[
+              styles.pillBtn,
+              showSemantic
+                ? { borderColor: "transparent", backgroundColor: t.accentDim }
+                : { borderColor: t.border },
+            ]}
+          >
+            <Sparkles size={iconSize.control} color={showSemantic ? t.accent : t.textTertiary} />
+            <Text style={[styles.pillLabel, { color: showSemantic ? t.accent : t.textTertiary }]}>
+              Semantic
+            </Text>
           </Pressable>
         ) : null}
 
@@ -353,8 +392,9 @@ export function KnowledgeGraphWebView({
         </View>
       </View>
 
-      {/* Label-mode dropdown menu (overlay) */}
-      {labelOpen && mode === "force" ? (
+      {/* Label-mode dropdown menu (overlay) — only when the in-body pill is
+          shown (i.e. the parent isn't driving labelMode via the native menu). */}
+      {labelOpen && mode === "force" && !onLabelModeChange ? (
         <>
           <Pressable style={styles.dropdownBackdrop} onPress={() => setLabelOpen(false)} />
           <View style={[styles.dropdownMenu, { left: labelAnchorX }]}>

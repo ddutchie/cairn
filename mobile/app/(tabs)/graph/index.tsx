@@ -3,9 +3,10 @@ import { View, ActivityIndicator, StyleSheet } from "react-native";
 import { Stack, useRouter } from "expo-router";
 import { getKnowledgeGraph, listWorkspaceIds, type KnowledgeGraph, type GraphEdge } from "@/db/queries";
 import type { GraphMode } from "@/components/KnowledgeGraphWebView";
+import type { LabelMode } from "@cairn/shared/ui/graph";
 import { TabScreen } from "@/components/TabScreen";
 import { EmptyState } from "@/components/EmptyState";
-import { ICON_GRAPH_FORCE, ICON_GRAPH_RADIAL, ICON_SEMANTIC } from "@/components/toolbar-icons";
+import { ICON_GRAPH_FORCE, ICON_GRAPH_RADIAL, ICON_LABELS } from "@/components/toolbar-icons";
 import { toolbarPress } from "@/haptics";
 import { useRefreshOnFocus } from "@/sync/useSyncStatus";
 import { semanticEdges } from "@/notes/embeddings";
@@ -34,6 +35,7 @@ export default function GraphScreen() {
   const t = useTheme();
   const [graph, setGraph] = useState<KnowledgeGraph | null>(null);
   const [mode, setMode] = useState<GraphMode>("force");
+  const [labelMode, setLabelMode] = useState<LabelMode>("smart");
   // On-device semantic edges (dashed accent links), loaded lazily and merged
   // only when the toggle is on. Off by default so the graph opens showing the
   // explicit/structural links first (matches desktop, where the semantic
@@ -104,37 +106,47 @@ export default function GraphScreen() {
     <TabScreen>
       <Stack.Screen options={{ title: "Knowledge Graph" }} />
       {!isEmpty ? (
-        <Stack.Toolbar placement="right">
-          <Stack.Toolbar.Menu
-            icon={mode === "force" ? ICON_GRAPH_FORCE : ICON_GRAPH_RADIAL}
-            accessibilityLabel="Graph layout"
-          >
-            <Stack.Toolbar.Label>{mode === "force" ? "Force" : "Radial"}</Stack.Toolbar.Label>
-            <Stack.Toolbar.MenuAction
-              icon={ICON_GRAPH_FORCE}
-              isOn={mode === "force"}
-              onPress={toolbarPress(() => setMode("force"))}
+        <>
+          <Stack.Toolbar placement="right">
+            <Stack.Toolbar.Menu
+              icon={mode === "force" ? ICON_GRAPH_FORCE : ICON_GRAPH_RADIAL}
+              accessibilityLabel="Graph layout"
             >
-              Force
-            </Stack.Toolbar.MenuAction>
-            <Stack.Toolbar.MenuAction
-              icon={ICON_GRAPH_RADIAL}
-              isOn={mode === "radial"}
-              onPress={toolbarPress(() => setMode("radial"))}
-            >
-              Radial
-            </Stack.Toolbar.MenuAction>
-            {semanticAvailable && mode === "force" ? (
+              <Stack.Toolbar.Label>{mode === "force" ? "Force" : "Radial"}</Stack.Toolbar.Label>
               <Stack.Toolbar.MenuAction
-                icon={ICON_SEMANTIC}
-                isOn={showSemantic}
-                onPress={toolbarPress(() => setShowSemantic((v) => !v))}
+                icon={ICON_GRAPH_FORCE}
+                isOn={mode === "force"}
+                onPress={toolbarPress(() => setMode("force"))}
               >
-                Semantic links
+                Force
               </Stack.Toolbar.MenuAction>
-            ) : null}
-          </Stack.Toolbar.Menu>
-        </Stack.Toolbar>
+              <Stack.Toolbar.MenuAction
+                icon={ICON_GRAPH_RADIAL}
+                isOn={mode === "radial"}
+                onPress={toolbarPress(() => setMode("radial"))}
+              >
+                Radial
+              </Stack.Toolbar.MenuAction>
+            </Stack.Toolbar.Menu>
+          </Stack.Toolbar>
+          {/* Label-density menu (force only — radial drills in, no label modes). */}
+          {mode === "force" ? (
+            <Stack.Toolbar placement="left">
+              <Stack.Toolbar.Menu icon={ICON_LABELS} accessibilityLabel="Label density">
+                <Stack.Toolbar.Label>{`${labelMode} labels`}</Stack.Toolbar.Label>
+                <Stack.Toolbar.MenuAction isOn={labelMode === "smart"} onPress={toolbarPress(() => setLabelMode("smart"))}>
+                  Smart
+                </Stack.Toolbar.MenuAction>
+                <Stack.Toolbar.MenuAction isOn={labelMode === "all"} onPress={toolbarPress(() => setLabelMode("all"))}>
+                  All
+                </Stack.Toolbar.MenuAction>
+                <Stack.Toolbar.MenuAction isOn={labelMode === "minimal"} onPress={toolbarPress(() => setLabelMode("minimal"))}>
+                  Minimal
+                </Stack.Toolbar.MenuAction>
+              </Stack.Toolbar.Menu>
+            </Stack.Toolbar>
+          ) : null}
+        </>
       ) : null}
       {isEmpty ? (
         <EmptyState
@@ -143,7 +155,17 @@ export default function GraphScreen() {
         />
       ) : graph ? (
         <Suspense fallback={<View style={styles.empty}><ActivityIndicator color={t.textTertiary} /></View>}>
-          <KnowledgeGraphWebView graph={mergedGraph ?? graph} mode={mode} onModeChange={setMode} onSelectNode={onSelectNode} />
+          <KnowledgeGraphWebView
+            graph={mergedGraph ?? graph}
+            mode={mode}
+            onModeChange={setMode}
+            labelMode={labelMode}
+            onLabelModeChange={setLabelMode}
+            showSemantic={showSemantic}
+            onToggleSemantic={() => setShowSemantic((v) => !v)}
+            semanticAvailable={semanticAvailable}
+            onSelectNode={onSelectNode}
+          />
         </Suspense>
       ) : null}
     </TabScreen>
