@@ -269,7 +269,7 @@ export default function SearchScreen() {
     <TabScreen>
       <Stack.Screen
         options={{
-          title: "Search",
+          title: "",
           headerSearchBarOptions: {
             ref: searchRef,
             placeholder,
