@@ -68,7 +68,10 @@ step "Lint"
 npm run lint
 
 step "Unit tests (compile + vitest run)"
-npm test
+# Skip the opt-in live LLM experiment tests (prompt/tool-schema/tool-error) — they
+# make real network calls to an LLM endpoint and must not gate a release. They
+# still run in a normal local `vitest run` / `npm run test:fast`.
+CAIRN_SKIP_LIVE_TESTS=1 npm test
 
 step "Bundle self-containment guard"
 # Already exercised by `npm test`, but re-run explicitly so a failure here

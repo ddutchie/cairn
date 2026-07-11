@@ -31,11 +31,19 @@ import { parseMobileTools } from "./mobile-tools-fixture";
 loadDotenv({ path: path.resolve(__dirname, "../../.env.test"), override: false });
 loadDotenv({ path: path.resolve(__dirname, "../../mobile/.env"), override: false });
 
-const BASE_URL = (
+// Canonicalise to exactly one `/v1` suffix so `${base}/chat/completions` works
+// whether the configured base URL includes `/v1` or not (TEST_LLM_BASE_URL is
+// stored WITHOUT it — see .env.test).
+function normalizeV1(raw: string): string {
+  const trimmed = raw.replace(/\/+$/, "").replace(/\/v1$/, "");
+  return `${trimmed}/v1`;
+}
+
+const BASE_URL = normalizeV1(
   process.env.PROMPT_TEST_BASE_URL?.trim() ||
   process.env.TEST_LLM_BASE_URL?.trim() ||
-  "http://localhost:3042/v1"
-).replace(/\/$/, "");
+  "http://localhost:3042/v1",
+);
 const MODEL = process.env.PROMPT_TEST_MODEL?.trim() || process.env.TEST_LLM_MODEL?.trim() || "gpt-4o";
 const API_KEY = process.env.PROMPT_TEST_API_KEY?.trim() || process.env.TEST_LLM_API_KEY?.trim() || "";
 
@@ -360,7 +368,7 @@ const MULTI_TURN: MultiTurn[] = [
   },
 ];
 
-describe("tool-schema compression — selection + argument correctness (live)", () => {
+describe.skipIf(!!process.env.CAIRN_SKIP_LIVE_TESTS)("tool-schema compression — selection + argument correctness (live)", () => {
   const full = fullOpenaiTools();
   const safe = safeOpenaiTools();
   const aggressive = aggressiveOpenaiTools();
