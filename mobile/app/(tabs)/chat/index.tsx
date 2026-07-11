@@ -24,7 +24,7 @@ import { useTheme, withAlpha, tabBarClosedLift, KEYBOARD_OPEN_GAP, type as typeS
 import { runAgent, userMessage, assistantMessage, type AgentEvent, type Attachment } from "@/chat/agent";
 import { haptics, toolbarPress } from "@/haptics";
 import { pickImages, takePhoto } from "@/chat/attachments";
-import { loadChatHistory, saveChatMessage, clearChatHistory, type ToolCall } from "@/db/chat-store";
+import { loadChatHistory, saveChatMessage, clearChatHistory, loadLastChatUsage, saveLastChatUsage, type ToolCall } from "@/db/chat-store";
 import { hasProvider } from "@/chat/providers";
 import { resetAppleSession } from "@/chat/providers/apple";
 import { prettifyToolLabel } from "@cairn/shared/ui/constants";
@@ -132,7 +132,9 @@ export default function ChatScreen() {
   const [busy, setBusy] = useState(false);
   const [configured, setConfigured] = useState(true);
   // Context-window usage for the ring (Apple provider reports it per turn).
-  const [usage, setUsage] = useState<ChatUsage | null>(null);
+  // Seeded from the last persisted value so the ring survives closing/reopening
+  // the Chat tab (it's session state otherwise, lost on unmount).
+  const [usage, setUsage] = useState<ChatUsage | null>(() => loadLastChatUsage());
   const scrollRef = useRef<ScrollView>(null);
   const router = useRouter();
   // Persistent agent conversation (UIMessage parts format) across turns. Seeded
@@ -245,7 +247,10 @@ export default function ChatScreen() {
           // Only drive the ring with valid token counts — a negative prompt
           // count or non-positive limit renders a broken/empty ring.
           const u = e.usage;
-          if (u.promptTokens >= 0 && u.contextLimit > 0) setUsage(u);
+          if (u.promptTokens >= 0 && u.contextLimit > 0) {
+            setUsage(u);
+            saveLastChatUsage(u); // persist so the ring survives tab close/reopen
+          }
         }
         setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 20);
       };
@@ -686,10 +691,9 @@ function makeStyles(t: Theme) {
     // of row flex-end alignment, multiline growth, or keyboard state. Bottom-
     // aligned so it tracks the send button as the input grows upward.
     attachSlot: { height: 36, justifyContent: "center", alignSelf: "center" },
-    // Explicit 32x32 frame on the native Host so it doesn't rely on async
-    // `matchContents` measurement — without a fixed size the Host reports its
-    // height a beat after first mount, so the attach icon isn't vertically
-    // centred until a re-layout (e.g. tab change) forces a remeasure.
+    // 32x32 matches the trigger (attachBtn), giving the native Host a concrete
+    // size hint; GlassMenu also re-lays-out once via onLayoutContent so the icon
+    // is centred on first paint (not only after a keyboard/tab re-layout).
     attachContainer: { width: 32, height: 32, alignSelf: "center" },
     attachBtn: {
       width: 32,

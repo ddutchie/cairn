@@ -109,4 +109,41 @@ export function hasChatHistory(): boolean {
 /** Delete all local chat history. */
 export function clearChatHistory(): void {
   getDb().runSync(`DELETE FROM chat_local`);
+  clearLastChatUsage();
+}
+
+// ── Last context-window usage ────────────────────────────────────────────────
+// The context ring is per-conversation session state; persist the latest value
+// (local-only, in app_settings — no capture trigger) so reopening the Chat tab
+// restores the ring instead of showing nothing until the next turn.
+
+const USAGE_KEY = "chat.lastUsage";
+
+/** Persist the most recent context-window usage for the ring. */
+export function saveLastChatUsage(usage: { promptTokens: number; contextLimit: number; estimated?: boolean }): void {
+  getDb().runSync(
+    "INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+    USAGE_KEY,
+    JSON.stringify(usage),
+  );
+}
+
+/** Load the last persisted context-window usage, or null. */
+export function loadLastChatUsage(): { promptTokens: number; contextLimit: number; estimated?: boolean } | null {
+  const row = getDb().getFirstSync<{ value: string }>("SELECT value FROM app_settings WHERE key = ?", USAGE_KEY);
+  if (!row?.value) return null;
+  try {
+    const u = JSON.parse(row.value) as { promptTokens?: number; contextLimit?: number; estimated?: boolean };
+    if (typeof u.promptTokens === "number" && typeof u.contextLimit === "number" && u.contextLimit > 0) {
+      return { promptTokens: u.promptTokens, contextLimit: u.contextLimit, estimated: u.estimated };
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+/** Clear the persisted usage (on chat clear). */
+export function clearLastChatUsage(): void {
+  getDb().runSync("DELETE FROM app_settings WHERE key = ?", USAGE_KEY);
 }
