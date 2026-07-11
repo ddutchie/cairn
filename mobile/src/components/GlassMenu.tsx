@@ -27,7 +27,6 @@ export function GlassMenu({
   containerStyle,
   hitSlop = 10,
   disabled = false,
-  fixedContent = false,
 }: {
   /** The always-visible view that opens the menu when tapped. */
   trigger: ReactNode;
@@ -47,15 +46,6 @@ export function GlassMenu({
   hitSlop?: number;
   /** When true, the trigger is inert and the menu can't be opened. */
   disabled?: boolean;
-  /**
-   * When true, size the `Host` to the explicit `containerStyle` frame instead of
-   * `matchContents`. SwiftUI reserves a ~44pt min tap height for a `Menu` label,
-   * so `matchContents` makes the Host taller than the icon and the glyph lands
-   * off-centre inside a fixed-height row slot. A fixed frame lets SwiftUI centre
-   * the label within a known box. Use when the trigger sits in a tight row (e.g.
-   * the chat composer) and needs to line up with sibling buttons.
-   */
-  fixedContent?: boolean;
 }) {
   // Bumped once when the native Host reports its content layout (see below) to
   // force a single re-layout so the trigger settles in the right position.
@@ -82,14 +72,9 @@ export function GlassMenu({
     // later re-layout (keyboard/tab change) forces a remeasure. `onLayoutContent`
     // fires once the content is measured; bumping state then forces one RN
     // re-layout so the final position is correct without user interaction.
-    //
-    // `fixedContent`: use the explicit containerStyle frame (not matchContents) so
-    // SwiftUI centres the label inside a known box — matchContents inherits the
-    // Menu's ~44pt min tap height and shoves a small glyph off-centre in a tight
-    // row. When false we keep matchContents (Host sizes to its content).
     return (
       <Host
-        matchContents={!fixedContent}
+        matchContents
         style={containerStyle}
         onLayoutContent={() => setLayoutTick((n) => (n === 0 ? 1 : n))}
       >
