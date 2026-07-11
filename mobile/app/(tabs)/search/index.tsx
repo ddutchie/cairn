@@ -9,32 +9,37 @@ import { EmptyState } from "@/components/EmptyState";
 import { IndexingBar } from "@/components/IndexingBar";
 import { GlassBar, glassActive } from "@/components/GlassBar";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
+import { Sparkles } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { semanticSearch, semanticSearchTasks, catchUpIndex, type SemanticHit } from "@/notes/embeddings";
 import { haptics } from "@/haptics";
 import { isAppleEmbeddingsSupported, appleEmbeddingsUnavailableReason } from "@modules/apple-embeddings";
 import { stripMarkdown } from "@cairn/shared/notes/text";
-import { useTheme, PRIORITY_COLOR, TAB_BAR_BASE, hasTabBarSearchField, tabBarClosedLift, KEYBOARD_OPEN_GAP, type as typeScale, type Theme } from "@/theme";
+import { useTheme, withAlpha, PRIORITY_COLOR, TAB_BAR_BASE, hasTabBarSearchField, tabBarClosedLift, KEYBOARD_OPEN_GAP, type as typeScale, type Theme } from "@/theme";
 
-type Scope = "notes" | "tasks" | "semantic";
+type TypeFilter = "all" | "notes" | "tasks";
 
 // Approx height of the native iOS 26 tab-bar search field (used to lift the
-// scope bar clear of it, both docked-on-keyboard and resting above the tab bar).
+// filter bar clear of it, both docked-on-keyboard and resting above the tab bar).
 const SEARCH_FIELD_H = 52;
-// Breathing room between the scope bar and the search field.
+// Breathing room between the filter bar and the search field.
 const SCOPE_GAP = 8;
 
 /**
- * Search screen using the native iOS search bar (headerSearchBarOptions) — the
- * platform UISearchController integrated into the large-title header. A
- * segmented control switches between searching notes and task cards; the query
- * re-runs against the active scope. Results render in a themed list below.
+ * Search screen using the native iOS search bar (headerSearchBarOptions).
+ * Two independent axes:
+ *   - RANKING mode: semantic (meaning-based, on-device) vs keyword. Toggled by
+ *     the ✨ header button; defaults ON when the device supports embeddings.
+ *   - TYPE filter: All / Notes / Tasks (the bottom bar), applied in both modes.
  */
 export default function SearchScreen() {
   const router = useRouter();
   const t = useTheme();
+  const semanticAvailable = isAppleEmbeddingsSupported();
   const [query, setQuery] = useState("");
-  const [scope, setScope] = useState<Scope>("notes");
+  // Semantic ranking on by default when available; the header ✨ toggles it.
+  const [semanticMode, setSemanticMode] = useState(semanticAvailable);
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [notes, setNotes] = useState<NoteRow[]>([]);
   const [tasks, setTasks] = useState<CardRow[]>([]);
   const [hits, setHits] = useState<SemanticHit[]>([]);
@@ -51,71 +56,75 @@ export default function SearchScreen() {
   // 25% would land too high (behind the header). Anchor from the SCREEN TOP with
   // the same fraction instead, so both screens match on any device.
   const emptyTop = screenH * 0.257;
-  const semanticAvailable = isAppleEmbeddingsSupported();
   // Monotonic token so a slow semantic query can't overwrite a newer one.
   const semanticSeq = useRef(0);
 
-  const run = useCallback((text: string, s: Scope) => {
+  const run = useCallback((text: string, semantic: boolean, type: TypeFilter) => {
     const q = text.trim();
     if (q.length === 0) {
-      // Invalidate any in-flight semantic query so a slow result can't
-      // repopulate hits after we clear them here.
       semanticSeq.current++;
       setNotes([]);
       setTasks([]);
       setHits([]);
       return;
     }
-    if (s === "notes") setNotes(searchNotes(q));
-    else if (s === "tasks") setTasks(searchTasks(q));
-    else {
-      // Semantic: embed the query and rank across all workspaces, over BOTH
-      // notes and task cards, merged and sorted ONCE by the hybrid `rank`
-      // (dense+lexical) — slicing per workspace/kind would drop a strong match.
+    if (semantic) {
+      // Embed the query and rank across all workspaces, over notes and/or cards
+      // per the type filter, merged and sorted ONCE by the hybrid `rank`.
       const seq = ++semanticSeq.current;
       (async () => {
         const all: SemanticHit[] = [];
         for (const ws of listWorkspaceIds()) {
-          all.push(...(await semanticSearch(ws, q)));
-          all.push(...(await semanticSearchTasks(ws, q)));
+          if (type !== "tasks") all.push(...(await semanticSearch(ws, q)));
+          if (type !== "notes") all.push(...(await semanticSearchTasks(ws, q)));
         }
         all.sort((a, b) => b.rank - a.rank);
         if (seq === semanticSeq.current) setHits(all.slice(0, 30));
       })().catch((e) => console.warn("[search] semantic search failed:", e));
+    } else {
+      // Keyword mode: run the SQL LIKE queries for the selected type(s).
+      setNotes(type !== "tasks" ? searchNotes(q) : []);
+      setTasks(type !== "notes" ? searchTasks(q) : []);
     }
   }, []);
 
-  // Debounce search-as-you-type so a burst of keystrokes fires one SQLite query
-  // after input settles, not one per character.
+  // Debounce search-as-you-type so a burst of keystrokes fires one query after
+  // input settles, not one per character.
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const runDebounced = useCallback(
-    (text: string, s: Scope) => {
+    (text: string, semantic: boolean, type: TypeFilter) => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
-      debounceRef.current = setTimeout(() => run(text, s), 200);
+      debounceRef.current = setTimeout(() => run(text, semantic, type), 200);
     },
     [run],
   );
 
   const onChange = (text: string) => {
     setQuery(text);
-    runDebounced(text, scope);
+    runDebounced(text, semanticMode, typeFilter);
   };
 
-  const switchScope = (s: Scope) => {
-    if (s !== scope) haptics.selection();
-    setScope(s);
-    // Selecting Semantic ensures the on-device index is built (downloads model
-    // assets on first use + embeds any not-yet-indexed notes). The IndexingBar
-    // shows progress; re-run the query when it finishes so results appear.
-    if (s === "semantic") {
+  const setType = (type: TypeFilter) => {
+    if (type !== typeFilter) haptics.selection();
+    setTypeFilter(type);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    run(query, semanticMode, type);
+  };
+
+  const toggleSemantic = () => {
+    if (!semanticAvailable) return;
+    haptics.selection();
+    const next = !semanticMode;
+    setSemanticMode(next);
+    if (next) {
+      // Ensure the on-device index is built (downloads model assets on first use
+      // + embeds not-yet-indexed items). IndexingBar shows progress; re-run when done.
       catchUpIndex()
-        .then(() => run(query, "semantic"))
+        .then(() => run(query, true, typeFilter))
         .catch(() => {});
     }
-    // Scope changes are deliberate (not rapid) — run immediately, and cancel any
-    // pending debounced query so it can't overwrite this with the old scope.
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    run(query, s);
+    run(query, next, typeFilter);
   };
 
   // Focus the native search bar (and raise the keyboard) every time the tab is
@@ -155,46 +164,57 @@ export default function SearchScreen() {
   }, []);
 
   // Pull-to-refresh on the Semantic list: force a full catch-up (embeds any
-  // not-yet-indexed notes — e.g. ones just synced from desktop), then re-run
-  // the query + refresh the stats readout.
+  // not-yet-indexed notes/cards — e.g. ones just synced from desktop), then
+  // re-run the query + refresh the stats readout.
   const forceReindex = useCallback(async () => {
     setReindexing(true);
     try {
       await catchUpIndex();
       refreshStats();
-      run(query, "semantic");
+      run(query, true, typeFilter);
     } catch (e) {
       console.warn("[search] reindex failed:", e);
-      Alert.alert("Reindex failed", "Couldn't finish indexing notes for semantic search. Pull to try again.");
+      Alert.alert("Reindex failed", "Couldn't finish indexing for semantic search. Pull to try again.");
     } finally {
       setReindexing(false);
     }
-  }, [query, run, refreshStats]);
+  }, [query, typeFilter, run, refreshStats]);
 
-  // Refresh stats whenever the Semantic scope is shown or the tab regains focus.
+  // Refresh stats whenever semantic mode is on or the tab regains focus.
   useFocusEffect(
     useCallback(() => {
-      if (scope === "semantic") refreshStats();
-    }, [scope, refreshStats]),
+      if (semanticMode) refreshStats();
+    }, [semanticMode, refreshStats]),
   );
 
   const hasQuery = query.trim().length > 0;
-  // Whether the active scope's list has zero rows (drives the empty-state layout:
-  // no results padding, no scrolling).
-  const isListEmpty = (scope === "semantic" ? hits : scope === "notes" ? notes : tasks).length === 0;
-  // Always show the Semantic scope so it's discoverable; if on-device
-  // embeddings aren't usable we explain why in the results area rather than
-  // silently hiding the option.
-  const scopes: Scope[] = ["notes", "tasks", "semantic"];
-  const scopeLabel = (s: Scope) => (s === "notes" ? "Notes" : s === "tasks" ? "Tasks" : "Semantic");
-  const placeholder =
-    scope === "notes" ? "Search notes" : scope === "tasks" ? "Search tasks" : "Search notes by meaning";
+
+  // Keyword mode merges notes + tasks into one list (tagged with kind) so the
+  // Type filter's "All" can show both. Semantic mode uses `hits` directly.
+  interface KeywordRow { id: string; title: string; preview: string; kind: "note" | "card"; priority?: string }
+  const keywordResults: KeywordRow[] = useMemo(() => {
+    if (semanticMode) return [];
+    const rows: KeywordRow[] = [];
+    if (typeFilter !== "tasks") {
+      for (const n of notes) rows.push({ id: n.id, title: n.title, preview: stripMarkdown(n.content ?? "").slice(0, 100), kind: "note" });
+    }
+    if (typeFilter !== "notes") {
+      for (const c of tasks) rows.push({ id: c.id, title: c.title, preview: stripMarkdown(c.description ?? "").slice(0, 100), kind: "card", priority: c.priority });
+    }
+    return rows;
+  }, [semanticMode, typeFilter, notes, tasks]);
+
+  const isListEmpty = (semanticMode ? hits.length : keywordResults.length) === 0;
+
+  const typeFilters: TypeFilter[] = ["all", "notes", "tasks"];
+  const typeLabel = (f: TypeFilter) => (f === "all" ? "All" : f === "notes" ? "Notes" : "Tasks");
+  const placeholder = semanticMode ? "Search by meaning…" : "Search notes and tasks";
 
   // Primary + secondary hint lines for the empty state (ListEmptyComponent).
   const emptyHint: { primary: string; secondary?: string } = (() => {
-    if (scope === "semantic") {
+    if (semanticMode) {
       if (!semanticAvailable) return { primary: appleEmbeddingsUnavailableReason() };
-      if (hasQuery) return { primary: "No semantically similar notes" };
+      if (hasQuery) return { primary: "No semantically similar results" };
       return {
         primary: "Search your notes and tasks by meaning, not just keywords.",
         secondary: stats
@@ -202,10 +222,8 @@ export default function SearchScreen() {
           : undefined,
       };
     }
-    if (scope === "notes") {
-      return { primary: hasQuery ? "No matching notes" : "Search notes by title and content." };
-    }
-    return { primary: hasQuery ? "No matching tasks" : "Search tasks by title and description." };
+    const what = typeFilter === "notes" ? "notes" : typeFilter === "tasks" ? "tasks" : "notes and tasks";
+    return { primary: hasQuery ? `No matching ${what}` : `Search ${what} by keyword.` };
   })();
 
   // Shared list scrolling behaviour. `contentInsetAdjustmentBehavior="automatic"`
@@ -237,9 +255,9 @@ export default function SearchScreen() {
     // apply the list padding that clears the scope bar / tab bar / keyboard.
     contentContainerStyle: isListEmpty ? styles.listGrow : styles.list,
     // Nothing to scroll when empty — also stops the anchored empty state from
-    // being draggable past the header. EXCEPT the semantic scope, which needs to
-    // stay scrollable when empty so its pull-to-reindex RefreshControl works.
-    scrollEnabled: !isListEmpty || scope === "semantic",
+    // being draggable past the header. EXCEPT semantic mode, which needs to stay
+    // scrollable when empty so its pull-to-reindex RefreshControl works.
+    scrollEnabled: !isListEmpty || semanticMode,
     contentInsetAdjustmentBehavior: "automatic" as const,
     keyboardShouldPersistTaps: "handled" as const,
     keyboardDismissMode: "on-drag" as const,
@@ -260,18 +278,32 @@ export default function SearchScreen() {
             hideWhenScrolling: false,
             onChangeText: (e) => onChange(e.nativeEvent.text),
           },
+          // ✨ Semantic ranking toggle (on by default when supported). Hidden
+          // entirely when the device can't do on-device embeddings.
+          headerRight: semanticAvailable
+            ? () => (
+                <Pressable
+                  onPress={toggleSemantic}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel="Semantic search"
+                  accessibilityState={{ selected: semanticMode }}
+                  style={[styles.semBtn, semanticMode ? styles.semBtnOn : styles.semBtnOff]}
+                >
+                  <Sparkles size={16} color={semanticMode ? t.accent : t.textTertiary} />
+                </Pressable>
+              )
+            : undefined,
         }}
       />
 
-      {scope === "semantic" ? (
+      {semanticMode ? (
         <FlatList
           data={hits}
           keyExtractor={(h) => `${h.kind ?? "note"}:${h.noteId}`}
           {...listProps}
           refreshControl={
-            semanticAvailable ? (
-              <RefreshControl refreshing={reindexing} onRefresh={forceReindex} tintColor={t.textTertiary} />
-            ) : undefined
+            <RefreshControl refreshing={reindexing} onRefresh={forceReindex} tintColor={t.textTertiary} />
           }
           renderItem={({ item }) => (
             <ResultRow
@@ -289,41 +321,32 @@ export default function SearchScreen() {
             />
           )}
         />
-      ) : scope === "notes" ? (
-        <FlatList
-          data={notes}
-          keyExtractor={(n) => n.id}
-          {...listProps}
-          renderItem={({ item }) => (
-            <ResultRow
-              title={item.title}
-              preview={stripMarkdown(item.content ?? "")}
-              onPress={() => openResult({ pathname: "/note/[id]", params: { id: item.id, back: "Search" } })}
-            />
-          )}
-        />
       ) : (
         <FlatList
-          data={tasks}
-          keyExtractor={(c) => c.id}
+          data={keywordResults}
+          keyExtractor={(r) => `${r.kind}:${r.id}`}
           {...listProps}
           renderItem={({ item }) => (
             <ResultRow
               title={item.title}
-              preview={item.description ? stripMarkdown(item.description) : null}
-              dotColor={PRIORITY_COLOR[item.priority as keyof typeof PRIORITY_COLOR] ?? t.textTertiary}
-              onPress={() => openResult({ pathname: "/card/[id]", params: { id: item.id, back: "Search" } })}
+              preview={item.kind === "card" ? `Task · ${item.preview}` : item.preview}
+              accentColor={item.kind === "card" ? t.success : t.info}
+              dotColor={item.kind === "card" ? PRIORITY_COLOR[item.priority as keyof typeof PRIORITY_COLOR] ?? undefined : undefined}
+              onPress={() =>
+                openResult(
+                  item.kind === "card"
+                    ? { pathname: "/card/[id]", params: { id: item.id, back: "Search" } }
+                    : { pathname: "/note/[id]", params: { id: item.id, back: "Search" } },
+                )
+              }
             />
           )}
         />
       )}
 
-      {/* Persistent scope switch, pinned to the bottom. On iOS ≤26 the tab-bar
-          search field docks above the keyboard, so we clear it (SEARCH_FIELD_H)
-          when open and rest on insets.bottom when closed. On iOS 27 there's no
-          tab-bar search field (see hasTabBarSearchField), so it matches the chat
-          composer exactly: rest above the tab bar (tabBarClosedLift) when closed,
-          and clear the keyboard by KEYBOARD_OPEN_GAP when open. */}
+      {/* Type filter, pinned to the bottom. Positioning mirrors the old scope
+          bar (docks above the tab-bar search field on iOS ≤26 / above the tab
+          bar on iOS 27). Content type only — the ranking mode is the header ✨. */}
       <KeyboardStickyView
         offset={{
           closed: hasTabBarSearchField ? -insets.bottom : -tabBarClosedLift(insets.bottom),
@@ -332,16 +355,16 @@ export default function SearchScreen() {
         style={styles.scopeOverlay}
       >
         <GlassBar style={[styles.scopeBar, !glassActive && styles.scopeBarFallback]}>
-          {scopes.map((s) => (
+          {typeFilters.map((f) => (
             <Pressable
-              key={s}
-              onPress={() => switchScope(s)}
-              style={[styles.scopeBtn, scope === s && styles.scopeBtnActive]}
+              key={f}
+              onPress={() => setType(f)}
+              style={[styles.scopeBtn, typeFilter === f && styles.scopeBtnActive]}
               accessibilityRole="button"
-              accessibilityState={{ selected: scope === s }}
+              accessibilityState={{ selected: typeFilter === f }}
             >
-              <Text style={[styles.scopeText, scope === s && styles.scopeTextActive]}>
-                {scopeLabel(s)}
+              <Text style={[styles.scopeText, typeFilter === f && styles.scopeTextActive]}>
+                {typeLabel(f)}
               </Text>
             </Pressable>
           ))}
@@ -367,6 +390,10 @@ function makeStyles(t: Theme) {
     scopeBtnActive: { backgroundColor: t.accent },
     scopeText: { ...typeScale.control, color: t.textSecondary },
     scopeTextActive: { color: t.accentFg },
+    // Header ✨ semantic toggle: accent-washed when on, plain when off.
+    semBtn: { width: 30, height: 30, borderRadius: 8, alignItems: "center", justifyContent: "center" },
+    semBtnOn: { backgroundColor: withAlpha(t.accent, 0.15) },
+    semBtnOff: { backgroundColor: "transparent" },
     // Bottom pad clears the pinned scope bar + tab bar (+ the native search
     // field on iOS ≤26; none on iOS 27, so drop that reservation).
     list: { padding: 12, paddingBottom: 12 + TAB_BAR_BASE + (hasTabBarSearchField ? SEARCH_FIELD_H : 0) + 48 },
