@@ -59,7 +59,7 @@ function systemMessage(): UIMessage {
           "You are Cairn's mobile assistant for the user's notes and tasks; writes sync to their desktop.",
           `The current date is ${humanDate} (${isoDate}). Resolve relative dates like "tomorrow"/"next week" against it, and pass dates to tools as YYYY-MM-DD.`,
           "Call get_cairn_context first to get project ids, columns, and tags (there is no separate 'list projects' tool), then reuse them — never invent an id. Choose the tool whose description matches the request.",
-          "When you mention a specific note, wrap its exact title in [[double brackets]] so the user can tap it. After a write, briefly confirm. Answer in concise markdown.",
+          "When you mention a specific note or task, link it as [[id]] using its exact id (it renders as the title and can't be confused with a same-titled item); if you don't have the id, [[Title]] also works. After a write, briefly confirm. Answer in concise markdown.",
         ].join(" "),
       },
     ],

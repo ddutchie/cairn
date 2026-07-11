@@ -584,22 +584,42 @@ export function findNoteByTitle(projectId: string, title: string): NoteRow | nul
   );
 }
 
-/** Resolve a note id by title across the whole workspace (case-insensitive) — for wikilinks. */
+/** Resolve a note id by title across the whole workspace (case-insensitive) — for wikilinks.
+ *  Deterministic: on a title collision, the most-recently-updated note wins (not arbitrary). */
 export function findNoteIdByTitle(title: string): string | null {
   const row = getDb().getFirstSync<{ id: string }>(
-    `SELECT id FROM notes WHERE ${LIVE} AND type='note' AND lower(title) = lower(?) LIMIT 1`,
+    `SELECT id FROM notes WHERE ${LIVE} AND type='note' AND lower(title) = lower(?) ORDER BY updated_at DESC LIMIT 1`,
     title,
   );
   return row?.id ?? null;
 }
 
-/** Resolve a card id by title across the whole workspace (case-insensitive) — for wikilinks. */
+/** Resolve a card id by title across the whole workspace (case-insensitive) — for wikilinks.
+ *  Deterministic on collision (most-recently-updated wins). */
 export function findCardIdByTitle(title: string): string | null {
   const row = getDb().getFirstSync<{ id: string }>(
-    `SELECT id FROM task_cards WHERE ${LIVE} AND lower(title) = lower(?) LIMIT 1`,
+    `SELECT id FROM task_cards WHERE ${LIVE} AND lower(title) = lower(?) ORDER BY updated_at DESC LIMIT 1`,
     title,
   );
   return row?.id ?? null;
+}
+
+/** Look up a live note's canonical title by id (null if not a live note) — for [[id]] wikilinks. */
+export function liveNoteTitleById(id: string): string | null {
+  const row = getDb().getFirstSync<{ title: string }>(
+    `SELECT title FROM notes WHERE id = ? AND ${LIVE} AND type='note'`,
+    id,
+  );
+  return row?.title ?? null;
+}
+
+/** Look up a live card's canonical title by id (null if not a live card) — for [[id]] wikilinks. */
+export function liveCardTitleById(id: string): string | null {
+  const row = getDb().getFirstSync<{ title: string }>(
+    `SELECT title FROM task_cards WHERE id = ? AND ${LIVE}`,
+    id,
+  );
+  return row?.title ?? null;
 }
 
 /** Create a note. Returns its id. Plain INSERT so capture triggers stage it. */

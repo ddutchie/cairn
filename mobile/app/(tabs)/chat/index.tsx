@@ -11,7 +11,7 @@ import {
   Alert,
 } from "react-native";
 import Animated, { useAnimatedStyle, useSharedValue } from "react-native-reanimated";
-import { KeyboardStickyView, useKeyboardHandler } from "react-native-keyboard-controller";
+import { KeyboardStickyView, useKeyboardHandler, KeyboardController } from "react-native-keyboard-controller";
 import { Stack, useRouter, useFocusEffect } from "expo-router";
 import { CheckCircle, Bot, User, Send, ImagePlus, X, Settings2, Brain, ChevronRight } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -164,6 +164,11 @@ export default function ChatScreen() {
   useFocusEffect(
     useCallback(() => {
       refreshConfigured();
+      // On blur (e.g. switching tabs/apps) make sure the keyboard doesn't linger
+      // stuck-open — dismiss via the keyboard-controller API on the way out.
+      return () => {
+        KeyboardController.dismiss().catch(() => {});
+      };
     }, [refreshConfigured]),
   );
 
@@ -188,6 +193,10 @@ export default function ChatScreen() {
     const atts = attachments;
     if ((!text && atts.length === 0) || busy) return;
     haptics.selection(); // message sent
+    // Dismiss via the keyboard-controller API (not RN's Keyboard.dismiss, which
+    // can desync with this library and leave the keyboard stuck open until an
+    // app switch). Fire-and-forget; don't block the send.
+    KeyboardController.dismiss().catch(() => {});
     setInput("");
     setAttachments([]);
     setBusy(true);
@@ -398,17 +407,22 @@ export default function ChatScreen() {
 
             <View style={styles.composerWrap}>
               <GlassBar style={styles.composer} interactive={false}>
-                <GlassMenu
-                  trigger={<ImagePlus size={16} color={busy ? withAlpha(t.textTertiary, 0.5) : t.textTertiary} />}
-                  accessibilityLabel="Add image"
-                  disabled={busy}
-                  onFallbackPress={onAttach}
-                  containerStyle={styles.attachContainer}
-                  triggerStyle={styles.attachBtn}
-                >
-                  <Button label="Photo Library" systemImage="photo.on.rectangle" onPress={addImages} />
-                  <Button label="Take Photo" systemImage="camera" onPress={capturePhoto} />
-                </GlassMenu>
+                {/* Fixed-height RN wrapper so the native Host can't drift when the
+                    row is flex-end aligned (multiline input grows / keyboard
+                    opens). The Host's own alignSelf isn't honoured reliably. */}
+                <View style={styles.attachSlot}>
+                  <GlassMenu
+                    trigger={<ImagePlus size={16} color={busy ? withAlpha(t.textTertiary, 0.5) : t.textTertiary} />}
+                    accessibilityLabel="Add image"
+                    disabled={busy}
+                    onFallbackPress={onAttach}
+                    containerStyle={styles.attachContainer}
+                    triggerStyle={styles.attachBtn}
+                  >
+                    <Button label="Photo Library" systemImage="photo.on.rectangle" onPress={addImages} />
+                    <Button label="Take Photo" systemImage="camera" onPress={capturePhoto} />
+                  </GlassMenu>
+                </View>
                 <TextInput
                   style={styles.input}
                   value={input}
@@ -667,6 +681,11 @@ function makeStyles(t: Theme) {
     // child) so the row's `alignItems: flex-end` doesn't push the icon up when
     // the composer grows / the keyboard opens; `attachBtn` styles the inner tap
     // target. Both fix the size so the native Host doesn't size to its glyph.
+    // Fixed 36px slot (matches input minHeight) as a normal RN flex child; keeps
+    // the attach button level with the first input line + send button regardless
+    // of row flex-end alignment, multiline growth, or keyboard state. Bottom-
+    // aligned so it tracks the send button as the input grows upward.
+    attachSlot: { height: 36, justifyContent: "center" },
     attachContainer: { alignSelf: "center" },
     attachBtn: {
       width: 32,
