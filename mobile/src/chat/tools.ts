@@ -86,10 +86,23 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: "get_note",
-    description: "Get a note's full content by id.",
-    params: '{ "id": string }',
-    jsonSchema: obj({ id: S }, ["id"]),
-    run: (a) => q.getNote(str(a.id)),
+    description:
+      "Get a note by id. Small notes return full content; large notes return a line-numbered outline + intro (call get_note_range to read a section). Pass full=true to force the entire content.",
+    params: '{ "id": string, "full"?: boolean }',
+    jsonSchema: obj({ id: S, full: { type: "boolean" } }, ["id"]),
+    run: (a) => (a.full === true ? q.getNote(str(a.id)) : q.getNoteForAgent(str(a.id))),
+  },
+  {
+    name: "get_note_range",
+    description:
+      "Read an inclusive line range of a note (1-based). Use after get_note returns an outline, passing the line numbers around the section you need. Omit end_line to read to the end.",
+    params: '{ "id": string, "start_line": number, "end_line"?: number }',
+    jsonSchema: obj({ id: S, start_line: { type: "number" }, end_line: { type: "number" } }, ["id", "start_line"]),
+    run: (a) => {
+      const start = typeof a.start_line === "number" ? a.start_line : 1;
+      const end = typeof a.end_line === "number" ? a.end_line : undefined;
+      return q.getNoteRange(str(a.id), start, end);
+    },
   },
   {
     name: "ensure_note",

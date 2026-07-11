@@ -6,6 +6,7 @@
 import { getDb } from "./index";
 import { inspectConflict, cleanConflictTitle } from "@cairn/shared/sync/conflict";
 import { stripMarkdown } from "@cairn/shared/notes/text";
+import { buildNoteOutline, sliceLines } from "@cairn/shared/notes/toc";
 import { notifyLocalWrite } from "@/sync/write-signal";
 
 /** Client-generated collision-free id (mirrors desktop nanoid(12) scheme). */
@@ -281,6 +282,46 @@ export function getNote(id: string): NoteRow | null {
       id,
     ) ?? null
   );
+}
+
+/**
+ * Token-cheap note read for the chat agent. Small notes return full content;
+ * long ones return a line-numbered outline + short intro + totalLines instead of
+ * the whole body (the model then calls getNoteRange for the slice it needs).
+ * `fullCharBudget` is the content length under which we just return everything.
+ */
+export function getNoteForAgent(id: string, fullCharBudget = 1500): unknown {
+  const note = getNote(id);
+  if (!note) return { error: "Note not found" };
+  const content = note.content ?? "";
+  if (content.length <= fullCharBudget) {
+    return { id: note.id, title: note.title, folder: note.folder ?? "", content, mode: "full" };
+  }
+  const outline = buildNoteOutline(content);
+  const intro = content.slice(0, 400);
+  return {
+    id: note.id,
+    title: note.title,
+    folder: note.folder ?? "",
+    mode: "outline",
+    totalLines: outline.totalLines,
+    intro: intro + (content.length > 400 ? "…" : ""),
+    outline: outline.headings,
+    hint: "Large note — call get_note_range(id, startLine, endLine) to read a section, or get_note for the whole thing.",
+  };
+}
+
+/** Return an inclusive 1-based line range of a note's content (for get_note_range). */
+export function getNoteRange(id: string, startLine: number, endLine?: number): unknown {
+  const note = getNote(id);
+  if (!note) return { error: "Note not found" };
+  return {
+    id: note.id,
+    title: note.title,
+    startLine,
+    endLine: endLine ?? null,
+    content: sliceLines(note.content ?? "", startLine, endLine),
+  };
 }
 
 export function listColumns(projectId: string): ColumnRow[] {
@@ -742,13 +783,17 @@ export function getProjectContextPack(projectId: string): unknown {
     projectId,
   );
 
-  const pinnedNotes = notes
-    .filter((n) => n.is_pinned)
-    .map((n) => {
-      const content = n.content ?? "";
-      const truncated = content.length > 1000 ? content.slice(0, 1000) + "\n\n... (truncated, use get_note)" : content;
-      return { id: n.id, title: n.title, folder: n.folder ?? "", content: truncated };
-    });
+  // Cap pinned notes: 5 most-recent (notes are already ORDER BY updated_at DESC)
+  // with a short excerpt. The model uses get_note to read the rest. Uncapped this
+  // was a major context-overflow source (1000 chars × unbounded count).
+  const PINNED_CAP = 5;
+  const PINNED_EXCERPT = 300;
+  const pinnedAll = notes.filter((n) => n.is_pinned);
+  const pinnedNotes = pinnedAll.slice(0, PINNED_CAP).map((n) => {
+    const content = n.content ?? "";
+    const truncated = content.length > PINNED_EXCERPT ? content.slice(0, PINNED_EXCERPT) + "… (use get_note)" : content;
+    return { id: n.id, title: n.title, folder: n.folder ?? "", content: truncated };
+  });
 
   const cards = db.getAllSync<CardRow & { due_date: string | null; updated_at: string }>(
     `SELECT id, column_id, project_id, title, description, priority, tag_ids, "order", due_date, updated_at FROM task_cards
@@ -756,6 +801,11 @@ export function getProjectContextPack(projectId: string): unknown {
     projectId,
   );
 
+  // Cap open tasks to a total budget across columns, with a short description
+  // preview. The model uses get_task for full detail.
+  const TASK_CAP = 20;
+  const TASK_PREVIEW = 120;
+  let taskBudget = TASK_CAP;
   const openTasks = columns
     .filter((c) => c.type !== "done")
     .map((col) => ({
@@ -763,10 +813,12 @@ export function getProjectContextPack(projectId: string): unknown {
       columnId: col.id,
       tasks: cards
         .filter((c) => c.column_id === col.id)
+        .slice(0, Math.max(0, taskBudget))
         .map((c) => {
+          taskBudget -= 1;
           const desc = c.description ?? "";
           const t: Record<string, unknown> = { id: c.id, title: c.title, priority: c.priority };
-          if (desc) t.description = desc.length > 400 ? desc.slice(0, 400) + "\n... (truncated, use get_note)" : desc;
+          if (desc) t.description = desc.length > TASK_PREVIEW ? desc.slice(0, TASK_PREVIEW) + "… (use get_task)" : desc;
           if (c.due_date) t.dueDate = c.due_date;
           return t;
         }),
@@ -788,7 +840,20 @@ export function getProjectContextPack(projectId: string): unknown {
   if (project.due_date) proj.dueDate = project.due_date;
   proj.columns = columns;
 
-  return { project: proj, noteCount: notes.length, pinnedNotes, openTasks, recentActivity };
+  const openTaskCount = cards.filter((c) => {
+    const col = columns.find((x) => x.id === c.column_id);
+    return col && col.type !== "done";
+  }).length;
+
+  return {
+    project: proj,
+    noteCount: notes.length,
+    pinnedNotes,
+    pinnedNotesTotal: pinnedAll.length,
+    openTasks,
+    openTaskCount,
+    recentActivity,
+  };
  }
 
 /** Project metadata for the Overview header (beyond the id/name/icon ProjectRow). */
