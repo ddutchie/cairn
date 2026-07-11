@@ -404,11 +404,11 @@ Unit/integration tests (`electron/**/*.test.ts`) cover SQLite queries, file I/O,
 
 ## Star History
 <p align="center">
-<a href="https://www.star-history.com/?repos=ddutchie%2Fcairn&type=date&legend=top-left">
+<a href="https://www.star-history.com/?repos=ddutchie%2Fcairn&type=date&legend=bottom-right">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=ddutchie/cairn&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=ddutchie/cairn&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=ddutchie/cairn&type=date&legend=top-left" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=ddutchie/cairn&type=date&theme=dark&legend=bottom-right&sealed_token=gaTjy9B4KXJYY2tjt1lWuTxZHL2F-HZBa4drw4LZiG8HyHu4VItVT3Milarsc7LQd56kRacKeYnNFdtus8dp6WMn6dNB61zTm1oYMWCgPIJkREq8xf93-0jzRXGoTTqbW4NxE2LQ12oR6c_dsvoExhpXri_zIcQftFid2HwSMUcrJephPz4pnlUx-5iz" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=ddutchie/cairn&type=date&legend=bottom-right&sealed_token=gaTjy9B4KXJYY2tjt1lWuTxZHL2F-HZBa4drw4LZiG8HyHu4VItVT3Milarsc7LQd56kRacKeYnNFdtus8dp6WMn6dNB61zTm1oYMWCgPIJkREq8xf93-0jzRXGoTTqbW4NxE2LQ12oR6c_dsvoExhpXri_zIcQftFid2HwSMUcrJephPz4pnlUx-5iz" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=ddutchie/cairn&type=date&legend=bottom-right&sealed_token=gaTjy9B4KXJYY2tjt1lWuTxZHL2F-HZBa4drw4LZiG8HyHu4VItVT3Milarsc7LQd56kRacKeYnNFdtus8dp6WMn6dNB61zTm1oYMWCgPIJkREq8xf93-0jzRXGoTTqbW4NxE2LQ12oR6c_dsvoExhpXri_zIcQftFid2HwSMUcrJephPz4pnlUx-5iz" />
  </picture>
 </a>
 </p>

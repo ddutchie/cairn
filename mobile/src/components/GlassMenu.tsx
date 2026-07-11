@@ -1,4 +1,4 @@
-import { type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Platform, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
 import { Host, Menu, RNHostView } from "@expo/ui/swift-ui";
 import { haptics } from "@/haptics";
@@ -47,6 +47,10 @@ export function GlassMenu({
   /** When true, the trigger is inert and the menu can't be opened. */
   disabled?: boolean;
 }) {
+  // Bumped once when the native Host reports its content layout (see below) to
+  // force a single re-layout so the trigger settles in the right position.
+  const [layoutTick, setLayoutTick] = useState(0);
+
   // Disabled: render the trigger only, no menu / no tap handling. Works on all
   // platforms and keeps callers from having to swap components while busy.
   if (disabled) {
@@ -63,9 +67,19 @@ export function GlassMenu({
   }
 
   if (Platform.OS === "ios") {
+    // The SwiftUI Host measures its content asynchronously after mount, so on the
+    // first paint the trigger can render mis-aligned within a flex row until some
+    // later re-layout (keyboard/tab change) forces a remeasure. `onLayoutContent`
+    // fires once the content is measured; bumping state then forces one RN
+    // re-layout so the final position is correct without user interaction.
     return (
-      <Host matchContents style={containerStyle}>
+      <Host
+        matchContents
+        style={containerStyle}
+        onLayoutContent={() => setLayoutTick((n) => (n === 0 ? 1 : n))}
+      >
         <Menu
+          key={layoutTick}
           label={
             <RNHostView matchContents>
               <Pressable

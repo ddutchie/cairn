@@ -5,7 +5,7 @@ import markdownItMark from "markdown-it-mark";
 import { useRouter } from "expo-router";
 import { Square, CheckSquare } from "lucide-react-native";
 import { useTheme, withAlpha, type Theme } from "@/theme";
-import { findNoteIdByTitle, findCardIdByTitle } from "@/db/queries";
+import { findNoteIdByTitle, findCardIdByTitle, liveNoteTitleById, liveCardTitleById } from "@/db/queries";
 import { CodeBlock } from "@/components/CodeBlock";
 import {
   preprocessCairnMarkdown,
@@ -72,14 +72,22 @@ export function MarkdownView({
   const router = useRouter();
   const styles = useMemo(() => markdownStyles(t), [t]);
 
-  // Resolve a wikilink title → concrete note/card id (notes win on a tie, as the
-  // AI most often links notes). Only used when resolveLinks is on.
+  // Resolve a wikilink target: the inner text of [[X]] may be an exact note/card
+  // ID (preferred — the assistant emits [[id]] which we render as the title, so
+  // duplicate titles never misroute) OR a human title (fallback, deterministic).
+  // Only used when resolveLinks is on (chat).
   const resolve = useMemo<WikilinkResolver | undefined>(() => {
     if (!resolveLinks) return undefined;
-    return (title: string) => {
-      const noteId = findNoteIdByTitle(title);
+    return (ref: string) => {
+      // 1. Exact id match (note, then card) → render the canonical title.
+      const noteTitle = liveNoteTitleById(ref);
+      if (noteTitle) return { kind: "note", id: ref, title: noteTitle };
+      const cardTitle = liveCardTitleById(ref);
+      if (cardTitle) return { kind: "card", id: ref, title: cardTitle };
+      // 2. Title match (notes win a tie, as the AI most often links notes).
+      const noteId = findNoteIdByTitle(ref);
       if (noteId) return { kind: "note", id: noteId };
-      const cardId = findCardIdByTitle(title);
+      const cardId = findCardIdByTitle(ref);
       if (cardId) return { kind: "card", id: cardId };
       return null;
     };

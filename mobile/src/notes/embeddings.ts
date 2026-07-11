@@ -325,7 +325,7 @@ const QUERY_CACHE_MAX = 32;
 export async function semanticSearch(
   workspaceId: string,
   query: string,
-  k = 20,
+  k?: number,
 ): Promise<SemanticHit[]> {
   const q = query.trim();
   if (!q || !isAppleEmbeddingsSupported()) return [];
@@ -395,7 +395,7 @@ export async function semanticSearch(
   const texts = noteTextByIds(noteIds);
   const terms = queryTerms(q);
 
-  return noteIds
+  const ranked = noteIds
     .map((noteId) => {
       const sem = bestSem.get(noteId)!;
       const semN = (sem.score - lo) / span;
@@ -412,8 +412,13 @@ export async function semanticSearch(
         rank: blended,
       };
     })
-    .sort((a, b) => b.rank - a.rank)
-    .slice(0, k);
+    .sort((a, b) => b.rank - a.rank);
+  // NOTE: only slice when the caller asks. When searching across multiple
+  // workspaces (one DB per source can hold several), callers must merge the
+  // FULL ranked candidate lists and slice ONCE after a combined re-rank —
+  // slicing per-workspace here would drop a note that ranks low in its own
+  // workspace but high globally (the "correct note buried at #36" case).
+  return typeof k === "number" ? ranked.slice(0, k) : ranked;
 }
 
 // --- semantic graph edges --------------------------------------------------

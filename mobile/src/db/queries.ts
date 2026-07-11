@@ -6,6 +6,7 @@
 import { getDb } from "./index";
 import { inspectConflict, cleanConflictTitle } from "@cairn/shared/sync/conflict";
 import { stripMarkdown } from "@cairn/shared/notes/text";
+import { buildNoteOutline, sliceLines, noteDigest } from "@cairn/shared/notes/toc";
 import { notifyLocalWrite } from "@/sync/write-signal";
 
 /** Client-generated collision-free id (mirrors desktop nanoid(12) scheme). */
@@ -283,6 +284,46 @@ export function getNote(id: string): NoteRow | null {
   );
 }
 
+/**
+ * Token-cheap note read for the chat agent. Small notes return full content;
+ * long ones return a line-numbered outline + short intro + totalLines instead of
+ * the whole body (the model then calls getNoteRange for the slice it needs).
+ * `fullCharBudget` is the content length under which we just return everything.
+ */
+export function getNoteForAgent(id: string, fullCharBudget = 1500): unknown {
+  const note = getNote(id);
+  if (!note) return { error: "Note not found" };
+  const content = note.content ?? "";
+  if (content.length <= fullCharBudget) {
+    return { id: note.id, title: note.title, folder: note.folder ?? "", content, mode: "full" };
+  }
+  const outline = buildNoteOutline(content);
+  const intro = content.slice(0, 400);
+  return {
+    id: note.id,
+    title: note.title,
+    folder: note.folder ?? "",
+    mode: "outline",
+    totalLines: outline.totalLines,
+    intro: intro + (content.length > 400 ? "…" : ""),
+    outline: outline.headings,
+    hint: "Large note — call get_note_range(id, startLine, endLine) to read a section, or get_note for the whole thing.",
+  };
+}
+
+/** Return an inclusive 1-based line range of a note's content (for get_note_range). */
+export function getNoteRange(id: string, startLine: number, endLine?: number): unknown {
+  const note = getNote(id);
+  if (!note) return { error: "Note not found" };
+  return {
+    id: note.id,
+    title: note.title,
+    startLine,
+    endLine: endLine ?? null,
+    content: sliceLines(note.content ?? "", startLine, endLine),
+  };
+}
+
 export function listColumns(projectId: string): ColumnRow[] {
   return getDb().getAllSync<ColumnRow>(
     `SELECT id, project_id, name, "order" FROM board_columns
@@ -543,22 +584,42 @@ export function findNoteByTitle(projectId: string, title: string): NoteRow | nul
   );
 }
 
-/** Resolve a note id by title across the whole workspace (case-insensitive) — for wikilinks. */
+/** Resolve a note id by title across the whole workspace (case-insensitive) — for wikilinks.
+ *  Deterministic: on a title collision, the most-recently-updated note wins (not arbitrary). */
 export function findNoteIdByTitle(title: string): string | null {
   const row = getDb().getFirstSync<{ id: string }>(
-    `SELECT id FROM notes WHERE ${LIVE} AND type='note' AND lower(title) = lower(?) LIMIT 1`,
+    `SELECT id FROM notes WHERE ${LIVE} AND type='note' AND lower(title) = lower(?) ORDER BY updated_at DESC LIMIT 1`,
     title,
   );
   return row?.id ?? null;
 }
 
-/** Resolve a card id by title across the whole workspace (case-insensitive) — for wikilinks. */
+/** Resolve a card id by title across the whole workspace (case-insensitive) — for wikilinks.
+ *  Deterministic on collision (most-recently-updated wins). */
 export function findCardIdByTitle(title: string): string | null {
   const row = getDb().getFirstSync<{ id: string }>(
-    `SELECT id FROM task_cards WHERE ${LIVE} AND lower(title) = lower(?) LIMIT 1`,
+    `SELECT id FROM task_cards WHERE ${LIVE} AND lower(title) = lower(?) ORDER BY updated_at DESC LIMIT 1`,
     title,
   );
   return row?.id ?? null;
+}
+
+/** Look up a live note's canonical title by id (null if not a live note) — for [[id]] wikilinks. */
+export function liveNoteTitleById(id: string): string | null {
+  const row = getDb().getFirstSync<{ title: string }>(
+    `SELECT title FROM notes WHERE id = ? AND ${LIVE} AND type='note'`,
+    id,
+  );
+  return row?.title ?? null;
+}
+
+/** Look up a live card's canonical title by id (null if not a live card) — for [[id]] wikilinks. */
+export function liveCardTitleById(id: string): string | null {
+  const row = getDb().getFirstSync<{ title: string }>(
+    `SELECT title FROM task_cards WHERE id = ? AND ${LIVE}`,
+    id,
+  );
+  return row?.title ?? null;
 }
 
 /** Create a note. Returns its id. Plain INSERT so capture triggers stage it. */
@@ -675,6 +736,21 @@ export function archiveCard(cardId: string): void {
   notifyLocalWrite();
 }
 
+/**
+ * Soft-delete a task card (set deleted_at). LIVE-scoped lists exclude it and the
+ * capture triggers publish the tombstone to peers — mirrors softDeleteNote.
+ */
+export function deleteCard(cardId: string): void {
+  const now = new Date().toISOString();
+  getDb().runSync(
+    `UPDATE task_cards SET deleted_at = ?, updated_at = ?, version = version + 1 WHERE id = ?`,
+    now,
+    now,
+    cardId,
+  );
+  notifyLocalWrite();
+}
+
 // ── Aggregate context tools (mirror desktop read-tools-pure) ────────────────
 
 /**
@@ -727,13 +803,19 @@ export function getProjectContextPack(projectId: string): unknown {
     projectId,
   );
 
-  const pinnedNotes = notes
-    .filter((n) => n.is_pinned)
-    .map((n) => {
-      const content = n.content ?? "";
-      const truncated = content.length > 1000 ? content.slice(0, 1000) + "\n\n... (truncated, use get_note)" : content;
-      return { id: n.id, title: n.title, folder: n.folder ?? "", content: truncated };
-    });
+  // Cap pinned notes: 5 most-recent (notes are already ORDER BY updated_at DESC)
+  // with a short excerpt. The model uses get_note to read the rest. Uncapped this
+  // was a major context-overflow source (1000 chars × unbounded count).
+  const PINNED_CAP = 5;
+  const pinnedAll = notes.filter((n) => n.is_pinned);
+  const pinnedNotes = pinnedAll.slice(0, PINNED_CAP).map((n) => ({
+    id: n.id,
+    title: n.title,
+    folder: n.folder ?? "",
+    // Outline (headings) when the note is structured — a compact semantic
+    // summary; short excerpt otherwise. The model reads full text via get_note.
+    ...noteDigest(n.content ?? "", 300),
+  }));
 
   const cards = db.getAllSync<CardRow & { due_date: string | null; updated_at: string }>(
     `SELECT id, column_id, project_id, title, description, priority, tag_ids, "order", due_date, updated_at FROM task_cards
@@ -741,6 +823,11 @@ export function getProjectContextPack(projectId: string): unknown {
     projectId,
   );
 
+  // Cap open tasks to a total budget across columns, with a short description
+  // preview. The model uses get_task for full detail.
+  const TASK_CAP = 20;
+  const TASK_PREVIEW = 120;
+  let taskBudget = TASK_CAP;
   const openTasks = columns
     .filter((c) => c.type !== "done")
     .map((col) => ({
@@ -748,10 +835,12 @@ export function getProjectContextPack(projectId: string): unknown {
       columnId: col.id,
       tasks: cards
         .filter((c) => c.column_id === col.id)
+        .slice(0, Math.max(0, taskBudget))
         .map((c) => {
+          taskBudget -= 1;
           const desc = c.description ?? "";
           const t: Record<string, unknown> = { id: c.id, title: c.title, priority: c.priority };
-          if (desc) t.description = desc.length > 400 ? desc.slice(0, 400) + "\n... (truncated, use get_note)" : desc;
+          if (desc) t.description = desc.length > TASK_PREVIEW ? desc.slice(0, TASK_PREVIEW) + "… (use get_task)" : desc;
           if (c.due_date) t.dueDate = c.due_date;
           return t;
         }),
@@ -773,7 +862,20 @@ export function getProjectContextPack(projectId: string): unknown {
   if (project.due_date) proj.dueDate = project.due_date;
   proj.columns = columns;
 
-  return { project: proj, noteCount: notes.length, pinnedNotes, openTasks, recentActivity };
+  const openTaskCount = cards.filter((c) => {
+    const col = columns.find((x) => x.id === c.column_id);
+    return col && col.type !== "done";
+  }).length;
+
+  return {
+    project: proj,
+    noteCount: notes.length,
+    pinnedNotes,
+    pinnedNotesTotal: pinnedAll.length,
+    openTasks,
+    openTaskCount,
+    recentActivity,
+  };
  }
 
 /** Project metadata for the Overview header (beyond the id/name/icon ProjectRow). */
@@ -860,6 +962,76 @@ export function updateNote(id: string, title: string, content: string): void {
     id,
   );
   notifyLocalWrite();
+}
+
+/**
+ * Rename a note and rewrite inbound `[[wikilinks]]` in other notes so links stay
+ * intact — mirrors the desktop rename_note (minus the .md file write; mobile is
+ * SQLite-only). Rejects a title collision within the same project. Returns an
+ * error object on failure, or the new title on success.
+ */
+export function renameNote(id: string, newTitle: string): { error: string } | { title: string } {
+  const title = newTitle.trim();
+  if (!title) return { error: "newTitle is required" };
+  const note = getNote(id);
+  if (!note) return { error: "Note not found" };
+  if (note.title === title) return { title };
+
+  // Reject a same-project title collision (case-insensitive, live notes only).
+  const collision = getDb().getFirstSync<{ id: string }>(
+    `SELECT id FROM notes WHERE ${LIVE} AND type='note' AND project_id = ? AND id <> ? AND lower(title) = lower(?) LIMIT 1`,
+    note.project_id,
+    id,
+    title,
+  );
+  if (collision) return { error: `A note titled "${title}" already exists in this project` };
+
+  const oldLink = `[[${note.title}]]`;
+  const newLink = `[[${title}]]`;
+  const now = new Date().toISOString();
+
+  // Rewrite wikilinks in every other live note that references the old title.
+  const linked = getDb().getAllSync<{ id: string; content: string }>(
+    `SELECT id, content FROM notes WHERE ${LIVE} AND id <> ? AND content LIKE ?`,
+    id,
+    `%${oldLink}%`,
+  );
+  getDb().withTransactionSync(() => {
+    getDb().runSync(
+      `UPDATE notes SET title = ?, updated_at = ?, version = version + 1 WHERE id = ?`,
+      title,
+      now,
+      id,
+    );
+    for (const other of linked) {
+      const next = other.content.split(oldLink).join(newLink);
+      getDb().runSync(
+        `UPDATE notes SET content = ?, content_text = ?, updated_at = ?, version = version + 1 WHERE id = ?`,
+        next,
+        stripMarkdown(next),
+        now,
+        other.id,
+      );
+    }
+  });
+  notifyLocalWrite();
+  return { title };
+}
+
+/** Move notes to a folder (empty string = project root). Returns the count moved. */
+export function moveNotesToFolder(noteIds: string[], folder: string): number {
+  if (noteIds.length === 0) return 0;
+  const now = new Date().toISOString();
+  const placeholders = noteIds.map(() => "?").join(", ");
+  const res = getDb().runSync(
+    `UPDATE notes SET folder = ?, updated_at = ?, version = version + 1
+     WHERE ${LIVE} AND type='note' AND id IN (${placeholders})`,
+    folder,
+    now,
+    ...(noteIds as never[]),
+  );
+  notifyLocalWrite();
+  return res.changes ?? 0;
 }
 
 /** Pin or unpin a note. Plain UPDATE so the capture triggers publish it. */

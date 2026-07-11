@@ -5,6 +5,8 @@
  * (including Electron main process, IPC handlers, and standalone MCP server).
  */
 
+import { noteDigest } from "../../shared/notes/toc";
+
 export interface CairnSnapshot {
   workspaces: Array<{ id: string; name: string; [k: string]: unknown }>;
   projects: Array<{
@@ -120,16 +122,28 @@ export function executeGetProjectContextPack(snap: CairnSnapshot, args: Args): u
     .filter((c) => c.projectId === project.id)
     .sort((a, b) => a.order - b.order);
   const notes = snap.notes.filter((n) => n.projectId === project.id && !n.archivedAt);
-  const pinnedNotes = notes
+  // Cap pinned notes to the most-recent few with a short excerpt — uncapped this
+  // was a context-overflow source (1000 chars × unbounded pinned count). The
+  // agent reads the rest with get_note. `pinnedNotesTotal` signals there's more.
+  const PINNED_CAP = 5;
+  const pinnedAll = notes
     .filter((n) => n.isPinned)
-    .map((n) => {
-      const limit = 1000;
-      const content = n.content ?? "";
-      const truncated = content.length > limit
-        ? content.slice(0, limit) + "\n\n... (content truncated, use get_note to read full note)"
-        : content;
-      return { id: n.id, title: n.title, folder: n.folder ?? "", content: truncated };
-    });
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  const pinnedNotes = pinnedAll
+    .slice(0, PINNED_CAP)
+    .map((n) => ({
+      id: n.id,
+      title: n.title,
+      folder: n.folder ?? "",
+      // Outline (headings) when the note is structured — a compact semantic
+      // summary; short excerpt otherwise. The agent reads full text via get_note.
+      ...noteDigest(n.content ?? "", 300),
+    }));
+  // Cap open tasks to a total budget across columns with a short description
+  // preview; the agent uses get_task for full detail.
+  const TASK_CAP = 20;
+  const TASK_PREVIEW = 120;
+  let taskBudget = TASK_CAP;
   const openCards = columns
     .filter((col) => col.type !== "done")
     .map((col) => ({
@@ -141,11 +155,12 @@ export function executeGetProjectContextPack(snap: CairnSnapshot, args: Args): u
       columnId: col.id,
       tasks: snap.cards
         .filter((c) => c.columnId === col.id && !c.archivedAt)
+        .slice(0, Math.max(0, taskBudget))
         .map((c) => {
-          const limit = 400;
+          taskBudget -= 1;
           const desc = c.description ?? "";
-          const truncated = desc.length > limit
-            ? desc.slice(0, limit) + "\n... (description truncated, use get_task to read full description)"
+          const truncated = desc.length > TASK_PREVIEW
+            ? desc.slice(0, TASK_PREVIEW) + "… (use get_task for full description)"
             : (c.description ?? null);
           const t: Record<string, unknown> = { id: c.id, title: c.title, priority: c.priority };
           if (truncated !== null) t.description = truncated;
@@ -185,6 +200,7 @@ export function executeGetProjectContextPack(snap: CairnSnapshot, args: Args): u
     project: proj,
     noteCount: notes.length,
     pinnedNotes,
+    pinnedNotesTotal: pinnedAll.length,
     openTasks: openCards,
     recentActivity,
   };

@@ -8,7 +8,7 @@
  */
 
 import * as q from "@/db/queries";
-import { semanticSearch } from "@/notes/embeddings";
+import { semanticSearch, catchUpIndex } from "@/notes/embeddings";
 import { isAppleEmbeddingsSupported } from "@modules/apple-embeddings";
 
 export interface ToolDef {
@@ -65,31 +65,52 @@ export const TOOLS: ToolDef[] = [
       if (!isAppleEmbeddingsSupported()) {
         return { error: "On-device semantic search isn't available on this device; use search_notes instead." };
       }
+      // Index any not-yet-embedded notes first (downloads assets on first use),
+      // so the agent searches the SAME fresh index as the user-facing Search tab
+      // — otherwise recently created/edited notes are missed. Idempotent.
+      await catchUpIndex();
       const limit = typeof a.limit === "number" && a.limit > 0 ? Math.min(a.limit, 20) : 8;
+      // Gather the FULL ranked candidate list per workspace, merge, re-rank by
+      // the hybrid `rank`, and slice ONCE — so a note that ranks low within its
+      // workspace but high globally isn't dropped before the merge. Matches the
+      // Search tab.
       const hits = [];
-      for (const ws of q.listWorkspaceIds()) hits.push(...(await semanticSearch(ws, str(a.query), limit)));
+      for (const ws of q.listWorkspaceIds()) hits.push(...(await semanticSearch(ws, str(a.query))));
       hits.sort((x, y) => y.rank - x.rank);
       return hits.slice(0, limit).map((h) => ({
         id: h.noteId,
         title: h.title,
         section: h.sectionTitle,
-        score: Math.round(h.score * 100) / 100,
+        score: h.score,
       }));
     },
   },
   {
     name: "list_notes",
-    description: "List notes in a project. Returns id, title, folder.",
+    description: "List notes in a project (id, title, folder).",
     params: '{ "project_id": string }',
     jsonSchema: obj({ project_id: S }, ["project_id"]),
     run: (a) => q.listNotes(str(a.project_id)).map((n) => ({ id: n.id, title: n.title, folder: n.folder })),
   },
   {
     name: "get_note",
-    description: "Get a note's full content by id.",
-    params: '{ "id": string }',
-    jsonSchema: obj({ id: S }, ["id"]),
-    run: (a) => q.getNote(str(a.id)),
+    description:
+      "Get a note by id. Small notes return full content; large notes return a line-numbered outline + intro (call get_note_range to read a section). Pass full=true to force the entire content.",
+    params: '{ "id": string, "full"?: boolean }',
+    jsonSchema: obj({ id: S, full: { type: "boolean" } }, ["id"]),
+    run: (a) => (a.full === true ? q.getNote(str(a.id)) : q.getNoteForAgent(str(a.id))),
+  },
+  {
+    name: "get_note_range",
+    description:
+      "Read an inclusive line range of a note (1-based). Use after get_note returns an outline, passing the line numbers around the section you need. Omit end_line to read to the end.",
+    params: '{ "id": string, "start_line": number, "end_line"?: number }',
+    jsonSchema: obj({ id: S, start_line: { type: "number" }, end_line: { type: "number" } }, ["id", "start_line"]),
+    run: (a) => {
+      const start = typeof a.start_line === "number" ? a.start_line : 1;
+      const end = typeof a.end_line === "number" ? a.end_line : undefined;
+      return q.getNoteRange(str(a.id), start, end);
+    },
   },
   {
     name: "ensure_note",
@@ -111,6 +132,38 @@ export const TOOLS: ToolDef[] = [
     params: '{ "id": string, "oldString": string, "newString": string }',
     jsonSchema: obj({ id: S, oldString: S, newString: S }, ["id", "oldString", "newString"]),
     run: (a) => ({ ok: q.patchNote(str(a.id), str(a.oldString), str(a.newString)) }),
+  },
+  {
+    name: "rename_note",
+    description:
+      "Rename a note and rewrite inbound [[wikilinks]] in other notes so links stay intact. Rejects a duplicate title in the same project.",
+    params: '{ "id": string, "newTitle": string }',
+    jsonSchema: obj({ id: S, newTitle: S }, ["id", "newTitle"]),
+    run: (a) => q.renameNote(str(a.id), str(a.newTitle)),
+  },
+  {
+    name: "bulk_move_notes",
+    description: 'Move one or more notes to a folder (use "" for the project root). Returns the count moved.',
+    params: '{ "note_ids": string[], "folder": string }',
+    jsonSchema: obj({ note_ids: { type: "array", items: S }, folder: S }, ["note_ids", "folder"]),
+    run: (a) => ({ moved: q.moveNotesToFolder(Array.isArray(a.note_ids) ? a.note_ids.map(str) : [], str(a.folder)) }),
+  },
+  {
+    name: "list_folders",
+    description: "List all folder paths used by a project's notes.",
+    params: '{ "project_id": string }',
+    jsonSchema: obj({ project_id: S }, ["project_id"]),
+    run: (a) => q.listFolders(str(a.project_id)),
+  },
+  {
+    name: "delete_note",
+    description: "Delete a note by id. This is a soft delete synced as a tombstone; confirm intent before calling.",
+    params: '{ "id": string }',
+    jsonSchema: obj({ id: S }, ["id"]),
+    run: (a) => {
+      q.softDeleteNote(str(a.id));
+      return { ok: true };
+    },
   },
   {
     name: "list_columns",
@@ -138,6 +191,45 @@ export const TOOLS: ToolDef[] = [
     jsonSchema: obj({ project_id: S }, ["project_id"]),
     run: (a) =>
       q.listCards(str(a.project_id)).map((c) => ({ id: c.id, title: c.title, priority: c.priority, column_id: c.column_id })),
+  },
+  {
+    name: "get_task",
+    description: "Get a task card's full detail by id (title, description, priority, column, due date, assignee, tags).",
+    params: '{ "id": string }',
+    jsonSchema: obj({ id: S }, ["id"]),
+    run: (a) => q.getCard(str(a.id)),
+  },
+  {
+    name: "update_task",
+    description:
+      "Update a task card. Any provided field is changed; pass column_id to move it to another column. priority = low|medium|high|urgent. Set due_date to \"\" to clear it.",
+    params:
+      '{ "id": string, "title"?: string, "description"?: string, "priority"?: string, "column_id"?: string, "due_date"?: string, "assignee"?: string }',
+    jsonSchema: obj(
+      { id: S, title: S, description: S, priority: S, column_id: S, due_date: S, assignee: S },
+      ["id"],
+    ),
+    run: (a) => {
+      const patch: { title?: string; description?: string; priority?: string; dueDate?: string | null; assignee?: string | null } = {};
+      if (a.title !== undefined) patch.title = str(a.title);
+      if (a.description !== undefined) patch.description = str(a.description);
+      if (a.priority !== undefined) patch.priority = str(a.priority);
+      if (a.due_date !== undefined) patch.dueDate = str(a.due_date) || null;
+      if (a.assignee !== undefined) patch.assignee = str(a.assignee) || null;
+      if (Object.keys(patch).length > 0) q.updateTask(str(a.id), patch);
+      if (a.column_id !== undefined && str(a.column_id)) q.moveCardToColumn(str(a.id), str(a.column_id));
+      return { ok: true };
+    },
+  },
+  {
+    name: "delete_task",
+    description: "Delete a task card by id. This is a soft delete synced as a tombstone; confirm intent before calling.",
+    params: '{ "id": string }',
+    jsonSchema: obj({ id: S }, ["id"]),
+    run: (a) => {
+      q.deleteCard(str(a.id));
+      return { ok: true };
+    },
   },
 ];
 
