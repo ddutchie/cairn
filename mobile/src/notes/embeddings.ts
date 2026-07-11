@@ -331,14 +331,23 @@ const queryCache = new Map<string, Float32Array>();
 const QUERY_CACHE_MAX = 32;
 
 /**
- * Brute-force cosine search: embed the query, dot-product against every stored
- * section vector, keep the best-scoring section per note, return top-`k`. Empty
- * result (not an error) when embeddings are unavailable so the UI can fall back.
+ * Shared hybrid-search pipeline for notes and task cards. Notes and cards use an
+ * identical ranking recipe — query-vector cache, corpus-centroid centring,
+ * best-centred-cosine section per entity, min-max normalisation, and a
+ * dense+lexical blend — so both delegate here to prevent divergence. The caller
+ * supplies only what differs: the row source, the id→text/title lookups, and the
+ * result `kind` tag. See semanticSearch for the reasoning behind each step.
  */
-export async function semanticSearch(
+async function rankSemantic(
   workspaceId: string,
   query: string,
-  k?: number,
+  k: number | undefined,
+  opts: {
+    getRows: (workspaceId: string) => import("../db/queries").EmbeddingRow[];
+    getText: (ids: string[]) => Map<string, { title: string; text: string }>;
+    getTitle: (ids: string[]) => (id: string) => string;
+    kind: "note" | "card";
+  },
 ): Promise<SemanticHit[]> {
   const q = query.trim();
   if (!q || !isAppleEmbeddingsSupported()) return [];
@@ -359,12 +368,12 @@ export async function semanticSearch(
 
   // Parse all current-model doc vectors up front (needed for the centroid).
   const dim = info.dimension;
-  const parsed: { noteId: string; vec: Float32Array; sectionTitle: string }[] = [];
-  for (const row of getWorkspaceEmbeddingRows(workspaceId)) {
+  const parsed: { entityId: string; vec: Float32Array; sectionTitle: string }[] = [];
+  for (const row of opts.getRows(workspaceId)) {
     if (row.model !== modelKey(info)) continue; // stale-model rows ignored
     try {
       const vec = Float32Array.from(JSON.parse(row.vector) as number[]);
-      if (vec.length === dim) parsed.push({ noteId: row.note_id, vec, sectionTitle: row.section_title });
+      if (vec.length === dim) parsed.push({ entityId: row.note_id, vec, sectionTitle: row.section_title });
     } catch {
       // skip malformed row
     }
@@ -374,64 +383,81 @@ export async function semanticSearch(
   // Mean-pooled contextual vectors share a large common component that crushes
   // cosine into a narrow high band (every result reads ~90%). Subtracting the
   // corpus centroid from BOTH the query and each doc — then renormalising —
-  // removes that shared direction and restores discrimination. (Verified in the
-  // SwiftPM live tests: top-2 spread ~0.0005 → ~0.03+, and rankings flip to
-  // correct.) The centroid is computed over the documents being searched.
+  // removes that shared direction and restores discrimination.
   const centroid = new Float32Array(dim);
   for (const p of parsed) for (let i = 0; i < dim; i++) centroid[i] += p.vec[i];
   for (let i = 0; i < dim; i++) centroid[i] /= parsed.length;
 
   const cq = centerAndNormalise(qvec, centroid);
 
-  // Best (highest) centred-cosine section score per note.
+  // Best (highest) centred-cosine section score per entity.
   const bestSem = new Map<string, { score: number; sectionTitle: string }>();
   for (const p of parsed) {
     const score = dot(cq, centerAndNormalise(p.vec, centroid));
-    const prev = bestSem.get(p.noteId);
+    const prev = bestSem.get(p.entityId);
     if (!prev || score > prev.score) {
-      bestSem.set(p.noteId, { score, sectionTitle: p.sectionTitle });
+      bestSem.set(p.entityId, { score, sectionTitle: p.sectionTitle });
     }
   }
   if (bestSem.size === 0) return [];
 
   // Hybrid re-rank: blend the dense (embedding) score with a title-weighted
-  // lexical score. Pure cosine alone buries the obviously-correct note on a
-  // homogeneous corpus (see lexicalScore comment); the blend fixes that.
-  // Min-max normalise the semantic scores across candidate notes so they sit in
-  // the same 0–1 range as the lexical score before mixing.
+  // lexical score, min-max normalising the semantic scores into 0–1 first.
   const semScores = [...bestSem.values()].map((v) => v.score);
   const lo = Math.min(...semScores);
   const hi = Math.max(...semScores);
   const span = Math.max(hi - lo, 1e-6);
 
-  const noteIds = [...bestSem.keys()];
-  const texts = noteTextByIds(noteIds);
+  const ids = [...bestSem.keys()];
+  const texts = opts.getText(ids);
+  const titleOf = opts.getTitle(ids);
   const terms = queryTerms(q);
 
-  const ranked = noteIds
-    .map((noteId) => {
-      const sem = bestSem.get(noteId)!;
+  const ranked = ids
+    .map((id) => {
+      const sem = bestSem.get(id)!;
       const semN = (sem.score - lo) / span;
-      const info2 = texts.get(noteId);
+      const info2 = texts.get(id);
       const lex = lexicalScore(terms, info2?.title ?? "", info2?.text ?? "");
       const blended = SEMANTIC_WEIGHT * semN + (1 - SEMANTIC_WEIGHT) * lex;
       return {
-        noteId,
-        title: noteTitleById(noteId),
+        noteId: id, // SemanticHit reuses `noteId`; for cards it's the card id
+        title: titleOf(id),
         sectionTitle: sem.sectionTitle,
-        // Display uses the raw centred cosine (a real similarity the user can
-        // reason about); ranking uses the blended score.
+        // Display uses the raw centred cosine; ranking uses the blended score.
         score: displayScore(sem.score),
         rank: blended,
+        kind: opts.kind,
       };
     })
     .sort((a, b) => b.rank - a.rank);
-  // NOTE: only slice when the caller asks. When searching across multiple
-  // workspaces (one DB per source can hold several), callers must merge the
-  // FULL ranked candidate lists and slice ONCE after a combined re-rank —
-  // slicing per-workspace here would drop a note that ranks low in its own
-  // workspace but high globally (the "correct note buried at #36" case).
+  // Only slice when the caller asks. When merging across workspaces, callers
+  // must merge the FULL ranked lists and slice ONCE (see original comment).
   return typeof k === "number" ? ranked.slice(0, k) : ranked;
+}
+
+/**
+ * Brute-force cosine search over notes: embed the query, rank every stored note
+ * section, keep the best per note, hybrid-rerank, return top-`k`. Empty result
+ * (not an error) when embeddings are unavailable so the UI can fall back.
+ *
+ * NOTE on slicing: only slice when the caller asks. When searching across
+ * multiple workspaces (one DB per source can hold several), callers must merge
+ * the FULL ranked candidate lists and slice ONCE after a combined re-rank —
+ * slicing per-workspace here would drop a note that ranks low in its own
+ * workspace but high globally (the "correct note buried at #36" case).
+ */
+export async function semanticSearch(
+  workspaceId: string,
+  query: string,
+  k?: number,
+): Promise<SemanticHit[]> {
+  return rankSemantic(workspaceId, query, k, {
+    getRows: getWorkspaceEmbeddingRows,
+    getText: noteTextByIds,
+    getTitle: () => noteTitleById,
+    kind: "note",
+  });
 }
 
 // --- task-card index + search ---------------------------------------------
@@ -500,86 +526,25 @@ export async function reindexWorkspaceCards(
 
 /**
  * Semantic search over TASK CARDS. Same centroid-centring + hybrid rerank as
- * semanticSearch (Apple's mean-pooled model needs both). `k` optional: omit to
- * get the full ranked candidate list (callers merge across workspaces then slice
- * once — no per-workspace burying).
+ * semanticSearch (Apple's mean-pooled model needs both) — delegates to the
+ * shared rankSemantic pipeline with card row/text/title sources. `k` optional:
+ * omit to get the full ranked candidate list (callers merge across workspaces
+ * then slice once — no per-workspace burying).
  */
 export async function semanticSearchTasks(
   workspaceId: string,
   query: string,
   k?: number,
 ): Promise<SemanticHit[]> {
-  const q = query.trim();
-  if (!q || !isAppleEmbeddingsSupported()) return [];
-  const info = await embeddingsInfo();
-  if (!info) return [];
-
-  let qvec = queryCache.get(q);
-  if (!qvec) {
-    const v = await embedOne(q, info.dimension);
-    if (!v) return [];
-    qvec = v;
-    if (queryCache.size >= QUERY_CACHE_MAX) {
-      const first = queryCache.keys().next().value;
-      if (first !== undefined) queryCache.delete(first);
-    }
-    queryCache.set(q, qvec);
-  }
-
-  const dim = info.dimension;
-  const parsed: { cardId: string; vec: Float32Array; sectionTitle: string }[] = [];
-  for (const row of getWorkspaceCardEmbeddingRows(workspaceId)) {
-    if (row.model !== modelKey(info)) continue;
-    try {
-      const vec = Float32Array.from(JSON.parse(row.vector) as number[]);
-      if (vec.length === dim) parsed.push({ cardId: row.note_id, vec, sectionTitle: row.section_title });
-    } catch {
-      // skip malformed row
-    }
-  }
-  if (parsed.length === 0) return [];
-
-  const centroid = new Float32Array(dim);
-  for (const p of parsed) for (let i = 0; i < dim; i++) centroid[i] += p.vec[i];
-  for (let i = 0; i < dim; i++) centroid[i] /= parsed.length;
-  const cq = centerAndNormalise(qvec, centroid);
-
-  const bestSem = new Map<string, { score: number; sectionTitle: string }>();
-  for (const p of parsed) {
-    const score = dot(cq, centerAndNormalise(p.vec, centroid));
-    const prev = bestSem.get(p.cardId);
-    if (!prev || score > prev.score) bestSem.set(p.cardId, { score, sectionTitle: p.sectionTitle });
-  }
-  if (bestSem.size === 0) return [];
-
-  const semScores = [...bestSem.values()].map((v) => v.score);
-  const lo = Math.min(...semScores);
-  const hi = Math.max(...semScores);
-  const span = Math.max(hi - lo, 1e-6);
-
-  const cardIds = [...bestSem.keys()];
-  const texts = cardTextByIds(cardIds);
-  const titles = cardTitlesByIds(cardIds);
-  const terms = queryTerms(q);
-
-  const ranked = cardIds
-    .map((cardId) => {
-      const sem = bestSem.get(cardId)!;
-      const semN = (sem.score - lo) / span;
-      const info2 = texts.get(cardId);
-      const lex = lexicalScore(terms, info2?.title ?? "", info2?.text ?? "");
-      const blended = SEMANTIC_WEIGHT * semN + (1 - SEMANTIC_WEIGHT) * lex;
-      return {
-        noteId: cardId, // SemanticHit reuses `noteId`; here it's the card id
-        title: titles.get(cardId) ?? cardId,
-        sectionTitle: sem.sectionTitle,
-        score: displayScore(sem.score),
-        rank: blended,
-        kind: "card" as const,
-      };
-    })
-    .sort((a, b) => b.rank - a.rank);
-  return typeof k === "number" ? ranked.slice(0, k) : ranked;
+  return rankSemantic(workspaceId, query, k, {
+    getRows: getWorkspaceCardEmbeddingRows,
+    getText: cardTextByIds,
+    getTitle: (ids) => {
+      const titles = cardTitlesByIds(ids);
+      return (id) => titles.get(id) ?? id;
+    },
+    kind: "card",
+  });
 }
 
 // --- semantic graph edges --------------------------------------------------

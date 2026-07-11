@@ -128,10 +128,14 @@ export function registerEmbeddingsHandlers(ctx: DbContext): void {
     // Check for any row whose model doesn't match the current configured model.
     // Using WHERE model != ? returns a row only if a mismatch exists, regardless
     // of how many distinct models are stored (handles partial reindex states).
-    const row = ctx.db.prepare(
+    // Check BOTH note and task embeddings so a model change forces both to reindex.
+    const noteRow = ctx.db.prepare(
       "SELECT 1 FROM note_embeddings WHERE model != ? LIMIT 1",
     ).get(model) as { 1?: number } | undefined;
-    if (row) {
+    const taskRow = ctx.db.prepare(
+      "SELECT 1 FROM task_embeddings WHERE model != ? LIMIT 1",
+    ).get(model) as { 1?: number } | undefined;
+    if (noteRow || taskRow) {
       return { needed: true, reason: "model_changed" as const };
     }
     return { needed: false, reason: null };
@@ -146,17 +150,21 @@ export function registerEmbeddingsHandlers(ctx: DbContext): void {
     const result = await withLock(
       reindexSlot,
       ctx.getWin(),
-      (onProgress) => reindexNotes(ctx.db, args.workspaceId, args.noteIds, model, undefined, onProgress),
+      async (onProgress) => {
+        const r = await reindexNotes(ctx.db, args.workspaceId, args.noteIds, model, undefined, onProgress);
+        // On a full pass (no specific noteIds), also (re)embed all task cards so
+        // semantic task search stays current. Runs INSIDE the lock so it completes
+        // before the "done" status broadcasts. Best-effort; failures don't block notes.
+        if (!args.noteIds) {
+          try {
+            await reindexTasks(ctx.db, args.workspaceId, undefined, model);
+          } catch (e) {
+            console.warn("[embeddings] task reindex during full pass failed:", e instanceof Error ? e.message : e);
+          }
+        }
+        return r;
+      },
     ) as ReindexResult;
-    // On a full pass (no specific noteIds), also (re)embed all task cards so
-    // semantic task search stays current. Best-effort; failures don't block notes.
-    if (!args.noteIds) {
-      try {
-        await reindexTasks(ctx.db, args.workspaceId, undefined, model);
-      } catch (e) {
-        console.warn("[embeddings] task reindex during full pass failed:", e instanceof Error ? e.message : e);
-      }
-    }
     if (result.total > 0) {
       try {
         computeSemanticRelationships(ctx.db, args.workspaceId, args.noteIds);

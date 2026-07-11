@@ -354,10 +354,19 @@ export function registerDbHandlers(ctx: DbContext): void {
         }
         return q.restoreCard(ctx.db, id);
       })();
+      // A restored card must be re-embedded — archiving removed it from search
+      // (below), so restoring has to bring it back.
+      if (card.workspaceId) recomputeCardSemanticEdges(ctx, id, card.workspaceId);
       return card;
     }
     const card = q.updateCard(ctx.db, id, patch);
     invalidateRelationshipCache(ctx.db, id);
+    // Archiving is a soft delete (row stays, so the FK cascade doesn't fire) —
+    // drop its embeddings so an archived card can't surface in semantic search.
+    if (card.archivedAt) {
+      q.deleteTaskEmbeddingSections(ctx.db, id);
+      return card;
+    }
     if (card.workspaceId) {
       computeAutoRelationships(ctx.db, card.workspaceId, [id]);
       recomputeCardSemanticEdges(ctx, id, card.workspaceId);
@@ -371,6 +380,8 @@ export function registerDbHandlers(ctx: DbContext): void {
     const now = new Date().toISOString();
     for (const c of cards) {
       q.updateCard(ctx.db, c.id, { archivedAt: now, columnId });
+      // Remove archived cards from semantic search (soft delete → no FK cascade).
+      q.deleteTaskEmbeddingSections(ctx.db, c.id);
     }
     return { archived: cards.length };
   }));

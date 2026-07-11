@@ -406,16 +406,21 @@ export async function searchAdjacentTasks(
 
   const idToTitle = new Map<string, string>();
   const placeholders = top.map(() => "?").join(",");
+  // Restrict to live cards — archived cards may still have stale embedding rows
+  // (e.g. archived outside the app), so exclude them from results here too.
   const rows = db.prepare(
-    `SELECT id, title FROM task_cards WHERE id IN (${placeholders})`,
+    `SELECT id, title FROM task_cards WHERE id IN (${placeholders}) AND archived_at IS NULL`,
   ).all(...top.map((r) => r.cardId)) as Array<{ id: string; title: string }>;
   for (const r of rows) idToTitle.set(r.id, r.title);
-  return top.map((r) => ({
-    cardId: r.cardId,
-    title: idToTitle.get(r.cardId) ?? r.cardId,
-    score: Math.round(r.score * 1000) / 1000,
-    sectionTitle: r.sectionTitle,
-  }));
+  // Drop any ranked card that didn't resolve to a live row (archived/deleted).
+  return top
+    .filter((r) => idToTitle.has(r.cardId))
+    .map((r) => ({
+      cardId: r.cardId,
+      title: idToTitle.get(r.cardId) ?? r.cardId,
+      score: Math.round(r.score * 1000) / 1000,
+      sectionTitle: r.sectionTitle,
+    }));
 }
 
 export interface ProjectionResult {
