@@ -319,11 +319,40 @@ export interface SemanticHit {
   /** Human-readable similarity (centred cosine, 0–1) shown in the UI. */
   score: number;
   /** Blended dense+lexical score used for ORDERING. Callers merging results
-   *  across workspaces must sort by this, not `score` (see semanticSearch). */
+   *  across workspaces must call finalizeRanking() on the merged list first, so
+   *  the min-max normalisation spans the combined corpus (see finalizeRanking). */
   rank: number;
   /** What `noteId` refers to. Defaults to "note"; task search sets "card" so
    *  callers can route to /note or /card. */
   kind?: "note" | "card";
+  /** Raw centred-cosine (dense) score, retained so a merged multi-workspace list
+   *  can be re-normalised globally before blending. */
+  _sem: number;
+  /** Raw title-weighted lexical score (already 0–1, corpus-independent). */
+  _lex: number;
+}
+
+/**
+ * Compute the ordering `rank` for a set of hits from their raw dense/lexical
+ * components, min-max normalising the DENSE scores across the WHOLE set (so the
+ * result is comparable across whatever corpus the set spans). Callers that merge
+ * per-workspace results MUST call this on the merged list before sorting/slicing
+ * — otherwise each workspace's `rank` was normalised only within its own corpus
+ * and isn't comparable (a small workspace's top hit would outrank a large one's
+ * unfairly). Mutates and returns the same array, sorted by `rank` desc.
+ */
+export function finalizeRanking<T extends SemanticHit>(hits: T[]): T[] {
+  if (hits.length === 0) return hits;
+  const sems = hits.map((h) => h._sem);
+  const lo = Math.min(...sems);
+  const hi = Math.max(...sems);
+  const span = Math.max(hi - lo, 1e-6);
+  for (const h of hits) {
+    const semN = (h._sem - lo) / span;
+    h.rank = SEMANTIC_WEIGHT * semN + (1 - SEMANTIC_WEIGHT) * h._lex;
+  }
+  hits.sort((a, b) => b.rank - a.rank);
+  return hits;
 }
 
 // Small LRU-ish cache of recent query vectors (queries repeat as the user types).
@@ -401,39 +430,35 @@ async function rankSemantic(
   }
   if (bestSem.size === 0) return [];
 
-  // Hybrid re-rank: blend the dense (embedding) score with a title-weighted
-  // lexical score, min-max normalising the semantic scores into 0–1 first.
-  const semScores = [...bestSem.values()].map((v) => v.score);
-  const lo = Math.min(...semScores);
-  const hi = Math.max(...semScores);
-  const span = Math.max(hi - lo, 1e-6);
-
   const ids = [...bestSem.keys()];
   const texts = opts.getText(ids);
   const titleOf = opts.getTitle(ids);
   const terms = queryTerms(q);
 
-  const ranked = ids
-    .map((id) => {
-      const sem = bestSem.get(id)!;
-      const semN = (sem.score - lo) / span;
-      const info2 = texts.get(id);
-      const lex = lexicalScore(terms, info2?.title ?? "", info2?.text ?? "");
-      const blended = SEMANTIC_WEIGHT * semN + (1 - SEMANTIC_WEIGHT) * lex;
-      return {
-        noteId: id, // SemanticHit reuses `noteId`; for cards it's the card id
-        title: titleOf(id),
-        sectionTitle: sem.sectionTitle,
-        // Display uses the raw centred cosine; ranking uses the blended score.
-        score: displayScore(sem.score),
-        rank: blended,
-        kind: opts.kind,
-      };
-    })
-    .sort((a, b) => b.rank - a.rank);
+  // Build hits carrying the RAW dense (centred cosine) + lexical components.
+  // finalizeRanking computes the blended `rank` with a min-max over this set;
+  // when a caller merges multiple workspaces it re-runs finalizeRanking over the
+  // combined list so normalisation spans the whole corpus (see finalizeRanking).
+  const hits: SemanticHit[] = ids.map((id) => {
+    const sem = bestSem.get(id)!;
+    const info2 = texts.get(id);
+    const lex = lexicalScore(terms, info2?.title ?? "", info2?.text ?? "");
+    return {
+      noteId: id, // SemanticHit reuses `noteId`; for cards it's the card id
+      title: titleOf(id),
+      sectionTitle: sem.sectionTitle,
+      // Display uses the raw centred cosine; ordering uses the blended `rank`.
+      score: displayScore(sem.score),
+      rank: 0, // set by finalizeRanking below
+      kind: opts.kind,
+      _sem: sem.score,
+      _lex: lex,
+    };
+  });
+  finalizeRanking(hits); // sorts by rank desc (single-corpus normalisation here)
   // Only slice when the caller asks. When merging across workspaces, callers
-  // must merge the FULL ranked lists and slice ONCE (see original comment).
-  return typeof k === "number" ? ranked.slice(0, k) : ranked;
+  // must merge the FULL lists and call finalizeRanking ONCE, then slice.
+  return typeof k === "number" ? hits.slice(0, k) : hits;
 }
 
 /**

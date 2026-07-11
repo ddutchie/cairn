@@ -8,7 +8,7 @@
  */
 
 import * as q from "@/db/queries";
-import { semanticSearch, semanticSearchTasks, catchUpIndex } from "@/notes/embeddings";
+import { semanticSearch, semanticSearchTasks, catchUpIndex, finalizeRanking, type SemanticHit } from "@/notes/embeddings";
 import { isAppleEmbeddingsSupported } from "@modules/apple-embeddings";
 
 export interface ToolDef {
@@ -74,9 +74,9 @@ export const TOOLS: ToolDef[] = [
       // the hybrid `rank`, and slice ONCE — so a note that ranks low within its
       // workspace but high globally isn't dropped before the merge. Matches the
       // Search tab.
-      const hits = [];
+      const hits: SemanticHit[] = [];
       for (const ws of q.listWorkspaceIds()) hits.push(...(await semanticSearch(ws, str(a.query))));
-      hits.sort((x, y) => y.rank - x.rank);
+      finalizeRanking(hits);
       return hits.slice(0, limit).map((h) => ({
         id: h.noteId,
         title: h.title,
@@ -99,9 +99,9 @@ export const TOOLS: ToolDef[] = [
       await catchUpIndex();
       const limit = typeof a.limit === "number" && a.limit > 0 ? Math.min(a.limit, 20) : 8;
       // Full ranked list per workspace, merge, re-rank, slice ONCE (no burying).
-      const hits = [];
+      const hits: SemanticHit[] = [];
       for (const ws of q.listWorkspaceIds()) hits.push(...(await semanticSearchTasks(ws, str(a.query))));
-      hits.sort((x, y) => y.rank - x.rank);
+      finalizeRanking(hits);
       return hits.slice(0, limit).map((h) => ({
         id: h.noteId, // card id
         title: h.title,

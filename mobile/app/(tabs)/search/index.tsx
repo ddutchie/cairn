@@ -11,7 +11,7 @@ import { GlassBar, glassActive } from "@/components/GlassBar";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
 import { Sparkles } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { semanticSearch, semanticSearchTasks, catchUpIndex, type SemanticHit } from "@/notes/embeddings";
+import { semanticSearch, semanticSearchTasks, catchUpIndex, finalizeRanking, type SemanticHit } from "@/notes/embeddings";
 import { haptics } from "@/haptics";
 import { isAppleEmbeddingsSupported, appleEmbeddingsUnavailableReason } from "@modules/apple-embeddings";
 import { stripMarkdown } from "@cairn/shared/notes/text";
@@ -70,7 +70,8 @@ export default function SearchScreen() {
     }
     if (semantic) {
       // Embed the query and rank across all workspaces, over notes and/or cards
-      // per the type filter, merged and sorted ONCE by the hybrid `rank`.
+      // per the type filter, merged then ranked ONCE across the combined corpus
+      // (finalizeRanking min-max-normalises over all workspaces, not per-DB).
       const seq = ++semanticSeq.current;
       (async () => {
         const all: SemanticHit[] = [];
@@ -78,7 +79,7 @@ export default function SearchScreen() {
           if (type !== "tasks") all.push(...(await semanticSearch(ws, q)));
           if (type !== "notes") all.push(...(await semanticSearchTasks(ws, q)));
         }
-        all.sort((a, b) => b.rank - a.rank);
+        finalizeRanking(all);
         if (seq === semanticSeq.current) setHits(all.slice(0, 30));
       })().catch((e) => console.warn("[search] semantic search failed:", e));
     } else {

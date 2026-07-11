@@ -9,6 +9,8 @@ import {
   ActivityIndicator,
   Image,
   Alert,
+  ActionSheetIOS,
+  Platform,
 } from "react-native";
 import Animated, { useSharedValue } from "react-native-reanimated";
 import { KeyboardStickyView, KeyboardController, KeyboardChatScrollView } from "react-native-keyboard-controller";
@@ -30,8 +32,6 @@ import { resetAppleSession } from "@/chat/providers/apple";
 import { prettifyToolLabel } from "@cairn/shared/ui/constants";
 import type { UIMessage, ChatUsage } from "@/chat/providers/types";
 import { ContextRing } from "@/components/ContextRing";
-import { GlassMenu } from "@/components/GlassMenu";
-import { Button } from "@expo/ui/swift-ui";
 
 /** Composer height assumed before its first onLayout measurement. */
 const COMPOSER_FALLBACK_H = 60;
@@ -280,7 +280,24 @@ export default function ChatScreen() {
     }
   }, []);
 
+  // Opens the "add image" chooser. Uses the native iOS action sheet (matches the
+  // system look of the old SwiftUI glass menu) and falls back to an Alert
+  // elsewhere. Deliberately NOT a SwiftUI menu Host: the composer rides the
+  // keyboard via KeyboardStickyView's transform, and a native Host anchored in
+  // window coords jumps out of place once its menu re-measures — a plain RN
+  // Pressable trigger tracks the transform exactly like the send button does.
   const onAttach = useCallback(() => {
+    haptics.selection();
+    if (Platform.OS === "ios") {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options: ["Photo Library", "Take Photo", "Cancel"], cancelButtonIndex: 2, title: "Add image" },
+        (i) => {
+          if (i === 0) void addImages();
+          else if (i === 1) void capturePhoto();
+        },
+      );
+      return;
+    }
     Alert.alert("Add image", undefined, [
       { text: "Photo Library", onPress: addImages },
       { text: "Take Photo", onPress: capturePhoto },
@@ -412,22 +429,20 @@ export default function ChatScreen() {
 
             <View style={styles.composerWrap}>
               <GlassBar style={styles.composer} interactive={false}>
-                {/* Fixed-height RN wrapper so the native Host can't drift when the
-                    row is flex-end aligned (multiline input grows / keyboard
-                    opens). The Host's own alignSelf isn't honoured reliably. */}
-                <View style={styles.attachSlot}>
-                  <GlassMenu
-                    trigger={<ImagePlus size={16} color={busy ? withAlpha(t.textTertiary, 0.5) : t.textTertiary} />}
-                    accessibilityLabel="Add image"
-                    disabled={busy}
-                    onFallbackPress={onAttach}
-                    containerStyle={styles.attachContainer}
-                    triggerStyle={styles.attachBtn}
-                  >
-                    <Button label="Photo Library" systemImage="photo.on.rectangle" onPress={addImages} />
-                    <Button label="Take Photo" systemImage="camera" onPress={capturePhoto} />
-                  </GlassMenu>
-                </View>
+                {/* Plain RN Pressable trigger (NOT a SwiftUI menu Host): it rides
+                    the KeyboardStickyView transform exactly like the send button,
+                    so it can't drift when the keyboard opens. Tapping opens the
+                    native photo action sheet. */}
+                <Pressable
+                  style={styles.attachBtn}
+                  onPress={onAttach}
+                  disabled={busy}
+                  hitSlop={10}
+                  accessibilityRole="button"
+                  accessibilityLabel="Add image"
+                >
+                  <ImagePlus size={16} color={busy ? withAlpha(t.textTertiary, 0.5) : t.textTertiary} />
+                </Pressable>
                 <TextInput
                   style={styles.input}
                   value={input}
@@ -687,20 +702,10 @@ function makeStyles(t: Theme) {
       paddingVertical: 6,
       paddingHorizontal: 2,
     },
-    // 32px rounded-xl (12px) icon buttons, vertically centred against the input.
-    // `attachContainer` goes on GlassMenu's OUTERMOST element (the actual flex
-    // child) so the row's `alignItems: flex-end` doesn't push the icon up when
-    // the composer grows / the keyboard opens; `attachBtn` styles the inner tap
-    // target. Both fix the size so the native Host doesn't size to its glyph.
-    // Fixed 36px slot (matches input minHeight) as a normal RN flex child; keeps
-    // the attach button level with the first input line + send button regardless
-    // of row flex-end alignment, multiline growth, or keyboard state. Bottom-
-    // aligned so it tracks the send button as the input grows upward.
-    attachSlot: { height: 36, justifyContent: "center", alignSelf: "center" },
-    // 32x32 matches the trigger (attachBtn), giving the native Host a concrete
-    // size hint; GlassMenu also re-lays-out once via onLayoutContent so the icon
-    // is centred on first paint (not only after a keyboard/tab re-layout).
-    attachContainer: { width: 32, height: 32, alignSelf: "center" },
+    // 32px rounded icon button, vertically centred against the input (alignSelf
+    // overrides the row's flex-end so it doesn't ride up as the input grows). A
+    // plain RN Pressable like sendBtn — no SwiftUI Host — so it tracks the
+    // keyboard transform without drifting.
     attachBtn: {
       width: 32,
       height: 32,

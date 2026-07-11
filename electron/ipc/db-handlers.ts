@@ -380,7 +380,10 @@ export function registerDbHandlers(ctx: DbContext): void {
     const now = new Date().toISOString();
     for (const c of cards) {
       q.updateCard(ctx.db, c.id, { archivedAt: now, columnId });
-      // Remove archived cards from semantic search (soft delete → no FK cascade).
+      // Drop cached relationship edges + embeddings for the archived card so it
+      // leaves both the graph and semantic search (soft delete → no FK cascade),
+      // mirroring the db:card:update archive path.
+      invalidateRelationshipCache(ctx.db, c.id);
       q.deleteTaskEmbeddingSections(ctx.db, c.id);
     }
     return { archived: cards.length };
