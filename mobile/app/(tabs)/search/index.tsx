@@ -276,17 +276,13 @@ export default function SearchScreen() {
             autoCapitalize: "none",
             autoFocus: true,
             hideWhenScrolling: false,
-            // iOS 26+: dock the field on the trailing edge of the nav bar so the
-            // ✨ headerRight toggle sits right beside it (falls back to inline on
-            // older iOS). Makes the toggle read as part of the search bar.
-            placement: "integrated",
             onChangeText: (e) => onChange(e.nativeEvent.text),
           },
           // ✨ Semantic ranking toggle (on by default when supported). Hidden
-          // entirely when the device can't do on-device embeddings. No custom
-          // background — on iOS 26+ the system wraps headerRight items in their
-          // own glass toolbar button, so we render just the bare icon and let
-          // colour signal on/off.
+          // entirely when the device can't do on-device embeddings. Sits at the
+          // trailing edge beside the full-width search field; iOS 26+ wraps it in
+          // its own glass toolbar button, so we render just the bare icon and let
+          // colour (accent vs tertiary) signal on/off.
           headerRight: semanticAvailable
             ? () => (
                 <Pressable
