@@ -10,7 +10,7 @@ import {
   Image,
   Alert,
 } from "react-native";
-import Animated, { useAnimatedStyle, useSharedValue } from "react-native-reanimated";
+import Animated, { useAnimatedStyle, useSharedValue, runOnJS } from "react-native-reanimated";
 import { KeyboardStickyView, useKeyboardHandler, KeyboardController } from "react-native-keyboard-controller";
 import { Stack, useRouter, useFocusEffect } from "expo-router";
 import { CheckCircle, Bot, User, Send, ImagePlus, X, Settings2, Brain, ChevronRight } from "lucide-react-native";
@@ -100,7 +100,7 @@ interface UiMessage {
  * View off this gives frame-perfect avoidance with no dead space — unlike
  * KeyboardAvoidingView (see Expo keyboard docs).
  */
-function useGradualAnimation() {
+function useGradualAnimation(onKeyboardOpened?: () => void) {
   const height = useSharedValue(0);
   useKeyboardHandler(
     {
@@ -108,8 +108,17 @@ function useGradualAnimation() {
         "worklet";
         height.value = e.height;
       },
+      // Fires once the keyboard finishes animating. When it opened (height > 0),
+      // let the caller settle the transcript to the bottom — a fixed timeout on
+      // focus fires before the layout/keyboard settle, landing short so the last
+      // message stays hidden under the keyboard.
+      onEnd: (e) => {
+        "worklet";
+        height.value = e.height;
+        if (e.height > 0 && onKeyboardOpened) runOnJS(onKeyboardOpened)();
+      },
     },
-    [],
+    [onKeyboardOpened],
   );
   return { height };
 }
@@ -178,7 +187,14 @@ export default function ChatScreen() {
     }, [refreshConfigured]),
   );
 
-  const { height: kbHeight } = useGradualAnimation();
+  // Settle the transcript to the newest message once the keyboard finishes
+  // opening — but only if the user meant to be at the bottom (focusing the
+  // composer sets nearBottom), so opening the keyboard while scrolled up reading
+  // history doesn't yank the view down.
+  const scrollToBottomIfFollowing = useCallback(() => {
+    if (nearBottom.current) scrollRef.current?.scrollToEnd({ animated: true });
+  }, []);
+  const { height: kbHeight } = useGradualAnimation(scrollToBottomIfFollowing);
   // Lift the composer just above the tab bar when the keyboard is closed
   // (shared with the search scope bar so both rest at the same height).
   const closedLift = tabBarClosedLift(insets.bottom);
@@ -438,6 +454,7 @@ export default function ChatScreen() {
                     onFallbackPress={onAttach}
                     containerStyle={styles.attachContainer}
                     triggerStyle={styles.attachBtn}
+                    fixedContent
                   >
                     <Button label="Photo Library" systemImage="photo.on.rectangle" onPress={addImages} />
                     <Button label="Take Photo" systemImage="camera" onPress={capturePhoto} />
@@ -449,9 +466,11 @@ export default function ChatScreen() {
                   onChangeText={setInput}
                   onFocus={() => {
                     // Focusing the composer to type = intent to be at the latest
-                    // message; follow to the bottom as the keyboard opens.
+                    // message. Mark the intent; the keyboard's onEnd handler
+                    // (useGradualAnimation) does the actual scroll once the
+                    // keyboard finishes animating, so it lands accurately instead
+                    // of on a guessed timeout that fires mid-animation.
                     nearBottom.current = true;
-                    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50);
                   }}
                   placeholder="Message Cairn…"
                   placeholderTextColor={t.textTertiary}
