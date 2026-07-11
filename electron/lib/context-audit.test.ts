@@ -1,7 +1,7 @@
 /**
  * Context Audit — real token counts for every LLM surface: chat, pi-agent, MCP.
  *
- * Uses gpt-tokenizer (cl100k_base) which matches gpt-4o / gpt-4-turbo encoding.
+ * Uses gpt-tokenizer's default encoder (o200k_base) — the gpt-4o encoding.
  * OpenAI serialises each tool as:
  *   {"type":"function","function":{"name":"...","description":"...","parameters":{...}}}
  * We count that exact JSON string, which matches what the API receives.
@@ -154,7 +154,7 @@ function grand(label: string, tokens: number) {
 
 // ── Tests ────────────────────────────────────────────────────────────────────
 
-describe("Context Audit (real tokens via gpt-tokenizer / cl100k_base)", () => {
+describe("Context Audit (real tokens via gpt-tokenizer / o200k_base)", () => {
 
   it("EXECUTE MODE — pi-agent", () => {
     const defs = executeDefs();
