@@ -309,3 +309,40 @@ export async function search_notes_semantic(db: Database.Database, args: Record<
     return { error: msg };
   }
 }
+
+/** Semantic search over TASK CARDS (parallel to search_notes_semantic). */
+export async function search_tasks_semantic(db: Database.Database, args: Record<string, any>) {
+  const { workspaceId, query, k } = args;
+  if (!workspaceId) return { error: "workspaceId is required" };
+  if (!query || typeof query !== "string" || !query.trim()) {
+    return { error: "query is required" };
+  }
+  const { embedViaRuntime } = await import("../../runtime/port-discovery");
+  const { searchAdjacentTasks } = await import("../../embeddings/service");
+  const { getEmbeddingsSettingsCached } = await import("../../lib/config-cache");
+  const { EMBED_MODEL_ID } = await import("../../embeddings/types");
+
+  const settings = getEmbeddingsSettingsCached();
+  if (!settings.enabled) {
+    return { error: "Embeddings are not enabled. Enable them in Settings → Embeddings first." };
+  }
+  const model = settings.modelId ?? EMBED_MODEL_ID;
+  const kVal = typeof k === "number" && k > 0 ? Math.min(Math.floor(k), 100) : 5;
+
+  const embedFn = async (texts: string[], task: import("../../embeddings/types").EmbedTask): Promise<number[][]> => {
+    const vectors = await embedViaRuntime(texts, task, model);
+    if (vectors === null) {
+      throw new Error("Embeddings runtime is not available. Start the Cairn app to enable semantic search.");
+    }
+    return vectors;
+  };
+
+  try {
+    const results = await searchAdjacentTasks(db, workspaceId as string, query as string, kVal, model, embedFn);
+    insertNotification(db, "search_tasks_semantic", "Semantic task search", `query="${String(query).slice(0, 60)}" → ${results.length} hits`);
+    return { query, model, results };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { error: msg };
+  }
+}

@@ -20,7 +20,7 @@ import { executeTool as executeMcpTool } from "../mcp/tools";
 import { executeReadTool } from "../lib/read-tools";
 import { DEFAULT_COLUMNS } from "../db/defaults";
 import { invalidateRelationshipCache, computeAutoRelationships, computeSemanticRelationships } from "../db/graph-queries";
-import { reindexNotes } from "../embeddings/service";
+import { reindexNotes, reindexTasks } from "../embeddings/service";
 import { getDefaultModelId as getEmbeddingModelId } from "../embeddings/client";
 import { getEmbeddingsSettingsCached } from "../lib/config-cache";
 
@@ -51,6 +51,32 @@ async function reindexSingleNoteEmbedding(ctx: DbContext, noteId: string, worksp
     return await p;
   } finally {
     if (reindexInFlight.get(noteId) === p) reindexInFlight.delete(noteId);
+  }
+}
+
+/** Incrementally (re)embed a single task card after a create/update — symmetric
+ *  to reindexSingleNoteEmbedding. Fire-and-forget; no-op when embeddings off. */
+async function reindexSingleCardEmbedding(ctx: DbContext, cardId: string, workspaceId: string): Promise<void> {
+  const settings = getEmbeddingsSettingsCached();
+  if (!settings?.enabled) return;
+  const model = settings.modelId || getEmbeddingModelId();
+  const key = `card:${cardId}`;
+  const existing = reindexInFlight.get(key);
+  if (existing) await existing.catch(() => {});
+  const p = (async () => {
+    try {
+      await reindexTasks(ctx.db, workspaceId, [cardId], model);
+      return true;
+    } catch (e) {
+      console.warn("[embeddings] incremental card reindex failed:", e instanceof Error ? e.message : e);
+      return false;
+    }
+  })();
+  reindexInFlight.set(key, p);
+  try {
+    await p;
+  } finally {
+    if (reindexInFlight.get(key) === p) reindexInFlight.delete(key);
   }
 }
 
@@ -297,7 +323,9 @@ export function registerDbHandlers(ctx: DbContext): void {
   registerIpcHandle("db:card:create", (_e, args: Parameters<typeof q.createCard>[1]) => handle(() => {
     const title = (args?.title as string | null | undefined)?.trim();
     if (!title) throw new Error("Task title is required");
-    return q.createCard(ctx.db, { ...args, title });
+    const card = q.createCard(ctx.db, { ...args, title });
+    if (card.workspaceId) void reindexSingleCardEmbedding(ctx, card.id, card.workspaceId).catch(() => {});
+    return card;
   }));
   registerIpcHandle("db:card:update", (_e, { id, patch }) => handle(() => {
     // archivedAt: null means "restore" — COALESCE cannot clear to NULL
@@ -314,7 +342,10 @@ export function registerDbHandlers(ctx: DbContext): void {
     }
     const card = q.updateCard(ctx.db, id, patch);
     invalidateRelationshipCache(ctx.db, id);
-    if (card.workspaceId) computeAutoRelationships(ctx.db, card.workspaceId, [id]);
+    if (card.workspaceId) {
+      computeAutoRelationships(ctx.db, card.workspaceId, [id]);
+      void reindexSingleCardEmbedding(ctx, id, card.workspaceId).catch(() => {});
+    }
     return card;
   }));
   registerIpcHandle("db:card:delete", (_e, { id }) => handle(() => q.deleteCard(ctx.db, id)));

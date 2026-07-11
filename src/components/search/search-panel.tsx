@@ -306,30 +306,36 @@ export function SearchPanel() {
           </kbd>
         </div>
 
-        {/* Filter bar */}
-        <div className="flex items-center gap-2 px-4 py-2 border-b border-[var(--border)] flex-wrap">
-          {(["all", "notes", "tasks"] as FilterType[]).map((t) => (
-            <button key={t} onClick={() => { setFilterType(t); setFocused(0); }}
-              className={cn("px-2.5 py-0.5 rounded-full text-[0.786rem] font-medium border transition-colors",
-                filterType === t
-                  ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
-                  : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
-              )}>
-              {t === "all" ? "All" : t === "notes" ? "Notes" : "Tasks"}
-            </button>
-          ))}
+        {/* Filter bar — two distinct axes on separate rows: content TYPE (pills)
+            and project SCOPE (squarer, surface-filled chips), each under its own
+            label so they don't read as one uniform group. */}
+        <div className="flex flex-col gap-2 px-4 py-2 border-b border-[var(--border)]">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[0.643rem] uppercase tracking-wide text-[var(--text-tertiary)] w-[52px] shrink-0 select-none">Type</span>
+            {(["all", "notes", "tasks"] as FilterType[]).map((t) => (
+              <button key={t} onClick={() => { setFilterType(t); setFocused(0); }}
+                className={cn("px-2.5 py-0.5 rounded-full text-[0.786rem] font-medium border transition-colors",
+                  filterType === t
+                    ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
+                    : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
+                )}>
+                {t === "all" ? "All" : t === "notes" ? "Notes" : "Tasks"}
+              </button>
+            ))}
+          </div>
           {workspaceProjects.length > 1 && (
-            <div className="flex items-center gap-1 ml-auto flex-wrap">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[0.643rem] uppercase tracking-wide text-[var(--text-tertiary)] w-[52px] shrink-0 select-none">Project</span>
               {filterProject && (
                 <button onClick={() => setFilterProject(null)}
-                  className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[0.786rem] border border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]">
+                  className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[0.786rem] border border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]">
                   <X size={9} />
                   {workspaceProjects.find((p) => p.id === filterProject)?.name ?? "Project"}
                 </button>
               )}
               {!filterProject && workspaceProjects.map((p) => (
                 <button key={p.id} onClick={() => { setFilterProject(p.id); setFocused(0); }}
-                  className="px-2 py-0.5 rounded-full text-[0.786rem] border border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:border-[var(--border)] transition-colors truncate max-w-[100px]">
+                  className="px-2 py-0.5 rounded-md text-[0.786rem] border border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:border-[var(--text-tertiary)] transition-colors truncate max-w-[100px]">
                   {p.name}
                 </button>
               ))}

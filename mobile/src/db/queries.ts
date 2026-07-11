@@ -1271,6 +1271,119 @@ export function embeddedNoteIds(workspaceId: string): string[] {
 /** Wipe the whole index (e.g. on model-identifier change). */
 export function clearAllEmbeddings(): void {
   getDb().runSync(`DELETE FROM note_embeddings`);
+  getDb().runSync(`DELETE FROM task_embeddings`);
+}
+
+// ── Task-card embeddings (task_embeddings) ───────────────────────────────────
+// Card rows are aliased to the SAME EmbeddingRow shape (card_id AS note_id) so
+// the existing brute-force search internals work unchanged for cards.
+
+/** A card that could hold text worth embedding (title + description). */
+export interface EmbeddableCard {
+  id: string;
+  workspace_id: string;
+  title: string;
+  description: string | null;
+}
+
+/** All live cards for a workspace. */
+export function listEmbeddableCards(workspaceId: string): EmbeddableCard[] {
+  return getDb().getAllSync<EmbeddableCard>(
+    `SELECT id, workspace_id, title, description FROM task_cards
+     WHERE ${LIVE} AND workspace_id = ?`,
+    workspaceId,
+  );
+}
+
+/** Existing section rows for a card (aliased to note_id for shape reuse). */
+export function getCardEmbeddingRows(cardId: string): EmbeddingRow[] {
+  return getDb().getAllSync<EmbeddingRow>(
+    `SELECT card_id AS note_id, section_idx, workspace_id, model, section_title, content_hash, vector
+     FROM task_embeddings WHERE card_id = ? ORDER BY section_idx`,
+    cardId,
+  );
+}
+
+/** All card section rows for a workspace (aliased to note_id for shape reuse). */
+export function getWorkspaceCardEmbeddingRows(workspaceId: string): EmbeddingRow[] {
+  return getDb().getAllSync<EmbeddingRow>(
+    `SELECT card_id AS note_id, section_idx, workspace_id, model, section_title, content_hash, vector
+     FROM task_embeddings WHERE workspace_id = ?`,
+    workspaceId,
+  );
+}
+
+export function upsertCardEmbedding(row: {
+  cardId: string;
+  sectionIdx: number;
+  workspaceId: string;
+  model: string;
+  sectionTitle: string;
+  contentHash: string;
+  vector: number[];
+}): void {
+  getDb().runSync(
+    `INSERT INTO task_embeddings
+       (card_id, section_idx, workspace_id, model, section_title, content_hash, vector, embedded_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(card_id, section_idx) DO UPDATE SET
+       workspace_id = excluded.workspace_id,
+       model        = excluded.model,
+       section_title= excluded.section_title,
+       content_hash = excluded.content_hash,
+       vector       = excluded.vector,
+       embedded_at  = excluded.embedded_at`,
+    row.cardId,
+    row.sectionIdx,
+    row.workspaceId,
+    row.model,
+    row.sectionTitle,
+    row.contentHash,
+    JSON.stringify(row.vector),
+    new Date().toISOString(),
+  );
+}
+
+export function deleteCardEmbeddingsFrom(cardId: string, fromIdx: number): void {
+  getDb().runSync(`DELETE FROM task_embeddings WHERE card_id = ? AND section_idx >= ?`, cardId, fromIdx);
+}
+
+export function deleteCardEmbeddings(cardId: string): void {
+  getDb().runSync(`DELETE FROM task_embeddings WHERE card_id = ?`, cardId);
+}
+
+export function embeddedCardIds(workspaceId: string): string[] {
+  return getDb()
+    .getAllSync<{ card_id: string }>(`SELECT DISTINCT card_id FROM task_embeddings WHERE workspace_id = ?`, workspaceId)
+    .map((r) => r.card_id);
+}
+
+/** Look up card titles by id (for search result display). */
+export function cardTitlesByIds(cardIds: string[]): Map<string, string> {
+  const out = new Map<string, string>();
+  if (cardIds.length === 0) return out;
+  const placeholders = cardIds.map(() => "?").join(", ");
+  for (const r of getDb().getAllSync<{ id: string; title: string }>(
+    `SELECT id, title FROM task_cards WHERE id IN (${placeholders})`,
+    ...(cardIds as never[]),
+  )) {
+    out.set(r.id, r.title);
+  }
+  return out;
+}
+
+/** Card title+description text by ids (for the hybrid lexical re-rank). */
+export function cardTextByIds(cardIds: string[]): Map<string, { title: string; text: string }> {
+  const out = new Map<string, { title: string; text: string }>();
+  if (cardIds.length === 0) return out;
+  const placeholders = cardIds.map(() => "?").join(", ");
+  for (const r of getDb().getAllSync<{ id: string; title: string; description: string | null }>(
+    `SELECT id, title, description FROM task_cards WHERE id IN (${placeholders})`,
+    ...(cardIds as never[]),
+  )) {
+    out.set(r.id, { title: r.title, text: r.description ?? "" });
+  }
+  return out;
 }
 
 /** All live workspace ids (semantic index is maintained per workspace). */

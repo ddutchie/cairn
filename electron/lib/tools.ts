@@ -20,6 +20,7 @@ export const TOOL_LABELS: Record<string, (args: ToolArgs) => string> = {
   get_note:               () => "Reading note",
   search_notes:           (a) => `Searching notes for "${a.query}"`,
   search_notes_semantic:  (a) => `Semantic search for "${a.query}"`,
+  search_tasks_semantic:  (a) => `Semantic task search for "${a.query}"`,
   search_tasks:           (a) => `Searching tasks for "${a.query}"`,
   get_task:               () => "Reading task",
   ensure_note:            (a) => `Ensuring note "${a.title}"`,

@@ -1610,3 +1610,113 @@ export function pruneOrphanedClusteringRows(db: Database.Database): number {
 export function deleteWorkspaceEmbeddings(db: Database.Database, workspaceId: string): void {
   db.prepare("DELETE FROM note_embeddings WHERE workspace_id = ?").run(workspaceId);
 }
+
+// ── Task-card embeddings (task_embeddings) — parallel to note_embeddings ──────
+// Same shape minus the graph-projection fields. Keyed by card_id.
+
+export interface TaskEmbeddingRecord {
+  cardId: string;
+  sectionIdx: number;
+  sectionTitle: string;
+  workspaceId: string;
+  model: string;
+  task: string;
+  contentHash: string;
+  vector: number[];
+  embeddedAt: string;
+}
+interface TaskEmbeddingRow {
+  card_id: string;
+  section_idx: number;
+  section_title: string;
+  workspace_id: string;
+  model: string;
+  task: string;
+  content_hash: string;
+  vector: string;
+  embedded_at: string;
+}
+function toTaskEmbedding(row: TaskEmbeddingRow): TaskEmbeddingRecord {
+  return {
+    cardId: row.card_id,
+    sectionIdx: row.section_idx,
+    sectionTitle: row.section_title,
+    workspaceId: row.workspace_id,
+    model: row.model,
+    task: row.task,
+    contentHash: row.content_hash,
+    vector: JSON.parse(row.vector) as number[],
+    embeddedAt: row.embedded_at,
+  };
+}
+
+/** Workspace-scoped card fetch for reindexing (mirrors fetchNotes' selection). */
+export interface CardStub {
+  id: string;
+  workspace_id: string;
+  title: string;
+  description: string | null;
+  archived_at: string | null;
+}
+export function fetchCardsForEmbedding(db: Database.Database, workspaceId: string, cardIds?: string[]): CardStub[] {
+  if (cardIds?.length) {
+    const placeholders = cardIds.map(() => "?").join(",");
+    return db.prepare(
+      `SELECT id, workspace_id, title, description, archived_at FROM task_cards
+       WHERE workspace_id = ? AND id IN (${placeholders})`,
+    ).all(workspaceId, ...cardIds) as CardStub[];
+  }
+  return db.prepare(
+    `SELECT id, workspace_id, title, description, archived_at FROM task_cards
+     WHERE workspace_id = ? AND archived_at IS NULL`,
+  ).all(workspaceId) as CardStub[];
+}
+
+export function getCardEmbeddings(db: Database.Database, cardId: string): TaskEmbeddingRecord[] {
+  const rows = db.prepare("SELECT * FROM task_embeddings WHERE card_id = ? ORDER BY section_idx").all(cardId) as TaskEmbeddingRow[];
+  return rows.map(toTaskEmbedding);
+}
+
+export function getAllTaskEmbeddingsForWorkspace(db: Database.Database, workspaceId: string, task: string): TaskEmbeddingRecord[] {
+  const rows = db.prepare(
+    "SELECT * FROM task_embeddings WHERE workspace_id = ? AND task = ? ORDER BY card_id, section_idx",
+  ).all(workspaceId, task) as TaskEmbeddingRow[];
+  return rows.map(toTaskEmbedding);
+}
+
+export function upsertTaskEmbedding(
+  db: Database.Database,
+  e: {
+    cardId: string;
+    sectionIdx: number;
+    sectionTitle: string;
+    workspaceId: string;
+    model: string;
+    task: string;
+    contentHash: string;
+    vector: number[];
+  },
+): void {
+  const now = ts();
+  db.prepare(`
+    INSERT INTO task_embeddings
+      (card_id, section_idx, section_title, workspace_id, model, task, content_hash, vector, embedded_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(card_id, section_idx) DO UPDATE SET
+      section_title = excluded.section_title,
+      workspace_id  = excluded.workspace_id,
+      model         = excluded.model,
+      task          = excluded.task,
+      content_hash  = excluded.content_hash,
+      vector        = excluded.vector,
+      embedded_at   = excluded.embedded_at
+  `).run(e.cardId, e.sectionIdx, e.sectionTitle, e.workspaceId, e.model, e.task, e.contentHash, JSON.stringify(e.vector), now);
+}
+
+export function deleteTaskEmbeddingSections(db: Database.Database, cardId: string, keepFromIdx?: number): void {
+  if (keepFromIdx !== undefined) {
+    db.prepare("DELETE FROM task_embeddings WHERE card_id = ? AND section_idx >= ?").run(cardId, keepFromIdx);
+  } else {
+    db.prepare("DELETE FROM task_embeddings WHERE card_id = ?").run(cardId);
+  }
+}

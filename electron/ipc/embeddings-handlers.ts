@@ -4,6 +4,7 @@ import { registerIpcHandle } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
 import {
   reindexNotes,
+  reindexTasks,
   searchAdjacent,
   recomputeProjections,
   type ReindexResult,
@@ -147,6 +148,15 @@ export function registerEmbeddingsHandlers(ctx: DbContext): void {
       ctx.getWin(),
       (onProgress) => reindexNotes(ctx.db, args.workspaceId, args.noteIds, model, undefined, onProgress),
     ) as ReindexResult;
+    // On a full pass (no specific noteIds), also (re)embed all task cards so
+    // semantic task search stays current. Best-effort; failures don't block notes.
+    if (!args.noteIds) {
+      try {
+        await reindexTasks(ctx.db, args.workspaceId, undefined, model);
+      } catch (e) {
+        console.warn("[embeddings] task reindex during full pass failed:", e instanceof Error ? e.message : e);
+      }
+    }
     if (result.total > 0) {
       try {
         computeSemanticRelationships(ctx.db, args.workspaceId, args.noteIds);

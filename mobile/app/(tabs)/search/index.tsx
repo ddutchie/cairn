@@ -10,7 +10,7 @@ import { IndexingBar } from "@/components/IndexingBar";
 import { GlassBar, glassActive } from "@/components/GlassBar";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { semanticSearch, catchUpIndex, type SemanticHit } from "@/notes/embeddings";
+import { semanticSearch, semanticSearchTasks, catchUpIndex, type SemanticHit } from "@/notes/embeddings";
 import { haptics } from "@/haptics";
 import { isAppleEmbeddingsSupported, appleEmbeddingsUnavailableReason } from "@modules/apple-embeddings";
 import { stripMarkdown } from "@cairn/shared/notes/text";
@@ -69,15 +69,16 @@ export default function SearchScreen() {
     if (s === "notes") setNotes(searchNotes(q));
     else if (s === "tasks") setTasks(searchTasks(q));
     else {
-      // Semantic: embed the query and rank across all workspaces. Gather the
-      // FULL ranked candidate list per workspace, then sort by the hybrid `rank`
-      // (dense+lexical) and slice ONCE — slicing per workspace would drop a note
-      // that ranks low in its workspace but high globally. Rank by `rank`, NOT
-      // the displayed `score` (raw cosine), which reintroduces the buried-note bug.
+      // Semantic: embed the query and rank across all workspaces, over BOTH
+      // notes and task cards, merged and sorted ONCE by the hybrid `rank`
+      // (dense+lexical) — slicing per workspace/kind would drop a strong match.
       const seq = ++semanticSeq.current;
       (async () => {
         const all: SemanticHit[] = [];
-        for (const ws of listWorkspaceIds()) all.push(...(await semanticSearch(ws, q)));
+        for (const ws of listWorkspaceIds()) {
+          all.push(...(await semanticSearch(ws, q)));
+          all.push(...(await semanticSearchTasks(ws, q)));
+        }
         all.sort((a, b) => b.rank - a.rank);
         if (seq === semanticSeq.current) setHits(all.slice(0, 30));
       })().catch((e) => console.warn("[search] semantic search failed:", e));
@@ -264,7 +265,7 @@ export default function SearchScreen() {
       {scope === "semantic" ? (
         <FlatList
           data={hits}
-          keyExtractor={(h) => h.noteId}
+          keyExtractor={(h) => `${h.kind ?? "note"}:${h.noteId}`}
           {...listProps}
           refreshControl={
             semanticAvailable ? (
@@ -274,9 +275,15 @@ export default function SearchScreen() {
           renderItem={({ item }) => (
             <ResultRow
               title={item.title}
-              preview={item.sectionTitle}
+              preview={item.kind === "card" ? `Task · ${item.sectionTitle}` : item.sectionTitle}
               score={item.rank}
-              onPress={() => openResult({ pathname: "/note/[id]", params: { id: item.noteId, back: "Search" } })}
+              onPress={() =>
+                openResult(
+                  item.kind === "card"
+                    ? { pathname: "/card/[id]", params: { id: item.noteId, back: "Search" } }
+                    : { pathname: "/note/[id]", params: { id: item.noteId, back: "Search" } },
+                )
+              }
             />
           )}
         />

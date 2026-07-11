@@ -385,6 +385,15 @@ export const TOOL_SCHEMAS = {
     }),
   },
 
+  search_tasks_semantic: {
+    description: "Semantic search over task cards using local embeddings. Embeds a natural-language query and returns matching cards ranked by similarity — use when keyword search (search_tasks) would miss conceptually related cards (e.g. 'login is broken' should find a card titled 'Auth token refresh bug'). Requires embeddings enabled + indexed. Returns cardId, title, score (0–1), sectionTitle per match.",
+    schema: z.object({
+      workspaceId: sId,
+      query:      sStr.describe("Natural-language query"),
+      k:          z.number().int().min(1).max(100).optional().describe("Max results (default: 5, max: 100)"),
+    }),
+  },
+
   // ── Tags ──────────────────────────────────────────────────────────────────────
 
   create_tag: {

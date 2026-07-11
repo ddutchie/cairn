@@ -689,6 +689,32 @@ const MIGRATIONS: Migration[] = [
       `);
     }
   },
+
+  // v27: task_embeddings — semantic search over task cards. A PARALLEL table
+  // (not a `kind` column on note_embeddings) because note_embeddings has a
+  // FK+cascade to notes(id) and a composite PK; reusing it for cards would
+  // require an FK-relaxing table rebuild and risk the notes path. This keeps the
+  // notes pipeline untouched. Same column shape as note_embeddings minus the
+  // graph-projection fields (dim_x/dim_y/proj_stale) — task search doesn't
+  // project into the knowledge graph.
+  (db) => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS task_embeddings (
+        card_id        TEXT NOT NULL REFERENCES task_cards(id) ON DELETE CASCADE,
+        section_idx    INTEGER NOT NULL DEFAULT 0,
+        workspace_id   TEXT NOT NULL,
+        model          TEXT NOT NULL,
+        task           TEXT NOT NULL,
+        section_title  TEXT NOT NULL DEFAULT '',
+        content_hash   TEXT NOT NULL,
+        vector         TEXT NOT NULL,
+        embedded_at    TEXT NOT NULL,
+        PRIMARY KEY (card_id, section_idx)
+      );
+      CREATE INDEX IF NOT EXISTS idx_task_emb_workspace ON task_embeddings(workspace_id);
+      CREATE INDEX IF NOT EXISTS idx_task_emb_task ON task_embeddings(task);
+    `);
+  },
 ];
 
 export function applySchema(db: Database.Database): void {

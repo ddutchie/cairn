@@ -15,7 +15,7 @@ import {
   delete_idea_flow_edge,
   layout_idea_flow
 } from "./flow";
-import { get_knowledge_graph, get_neighbors, get_semantic_neighbors, search_notes_semantic } from "./graph";
+import { get_knowledge_graph, get_neighbors, get_semantic_neighbors, search_notes_semantic, search_tasks_semantic } from "./graph";
 import {
   codebase_reindex,
   codebase_search_symbols,
@@ -142,6 +142,8 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
 
     case "search_notes_semantic":
       return search_notes_semantic(db, args);
+    case "search_tasks_semantic":
+      return search_tasks_semantic(db, args);
 
     case "codebase_reindex":
       return codebase_reindex(db, args as Parameters<typeof codebase_reindex>[1]);

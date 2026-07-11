@@ -36,6 +36,24 @@ const MIGRATIONS: ((db: SQLite.SQLiteDatabase) => void)[] = [
       );
       CREATE INDEX IF NOT EXISTS idx_note_emb_note ON note_embeddings(note_id);
     `),
+  // v3: task-card embedding index (semantic task search). Fresh installs have it
+  // from the base schema; this back-fills existing installs.
+  (db) =>
+    db.execSync(`
+      CREATE TABLE IF NOT EXISTS task_embeddings (
+        card_id       TEXT NOT NULL,
+        section_idx   INTEGER NOT NULL DEFAULT 0,
+        workspace_id  TEXT NOT NULL DEFAULT '',
+        model         TEXT NOT NULL DEFAULT '',
+        section_title TEXT NOT NULL DEFAULT '',
+        content_hash  TEXT NOT NULL DEFAULT '',
+        vector        TEXT NOT NULL DEFAULT '[]',
+        embedded_at   TEXT NOT NULL DEFAULT '',
+        PRIMARY KEY (card_id, section_idx)
+      );
+      CREATE INDEX IF NOT EXISTS idx_task_emb_card ON task_embeddings(card_id);
+      CREATE INDEX IF NOT EXISTS idx_task_emb_ws ON task_embeddings(workspace_id);
+    `),
 ];
 
 /** The schema version this build expects (base schema = 1, plus each migration). */

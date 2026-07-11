@@ -32,7 +32,17 @@ import {
   noteTextByIds,
   getNoteForEmbedding,
   listWorkspaceIds,
+  listEmbeddableCards,
+  getCardEmbeddingRows,
+  getWorkspaceCardEmbeddingRows,
+  upsertCardEmbedding,
+  deleteCardEmbeddingsFrom,
+  deleteCardEmbeddings,
+  embeddedCardIds,
+  cardTitlesByIds,
+  cardTextByIds,
   type EmbeddableNote,
+  type EmbeddableCard,
 } from "@/db/queries";
 import { splitIntoSections, type NoteSection } from "@cairn/shared/notes/sections";
 import { dotNormalized as dot } from "@cairn/shared/embeddings/vector";
@@ -311,6 +321,9 @@ export interface SemanticHit {
   /** Blended dense+lexical score used for ORDERING. Callers merging results
    *  across workspaces must sort by this, not `score` (see semanticSearch). */
   rank: number;
+  /** What `noteId` refers to. Defaults to "note"; task search sets "card" so
+   *  callers can route to /note or /card. */
+  kind?: "note" | "card";
 }
 
 // Small LRU-ish cache of recent query vectors (queries repeat as the user types).
@@ -418,6 +431,154 @@ export async function semanticSearch(
   // FULL ranked candidate lists and slice ONCE after a combined re-rank —
   // slicing per-workspace here would drop a note that ranks low in its own
   // workspace but high globally (the "correct note buried at #36" case).
+  return typeof k === "number" ? ranked.slice(0, k) : ranked;
+}
+
+// --- task-card index + search ---------------------------------------------
+
+const singleCardInFlight = new Set<string>();
+
+/** Embed/prune one card's sections (title + description). Mirrors embedNoteInner. */
+async function embedCardInner(card: EmbeddableCard, info: AppleEmbeddingsInfo): Promise<void> {
+  if (singleCardInFlight.has(card.id)) return;
+  singleCardInFlight.add(card.id);
+  try {
+    const key = modelKey(info);
+    // Always embed at least the title; description is the body.
+    const sections = splitIntoSections(card.title, card.description ?? card.title);
+    if (sections.length === 0) {
+      deleteCardEmbeddings(card.id);
+      return;
+    }
+    const existing = new Map(getCardEmbeddingRows(card.id).map((r) => [r.section_idx, r]));
+    for (const sec of sections) {
+      const text = sectionEmbedText(card.title, sec);
+      const hash = hashText(text);
+      const prev = existing.get(sec.idx);
+      if (prev && prev.content_hash === hash && prev.model === key) continue;
+      const vec = await embedOne(text, info.dimension);
+      if (!vec) continue;
+      upsertCardEmbedding({
+        cardId: card.id,
+        sectionIdx: sec.idx,
+        workspaceId: card.workspace_id,
+        model: key,
+        sectionTitle: sec.title,
+        contentHash: hash,
+        vector: Array.from(vec),
+      });
+    }
+    deleteCardEmbeddingsFrom(card.id, sections.length);
+  } finally {
+    singleCardInFlight.delete(card.id);
+  }
+}
+
+/** Full card reindex for a workspace (skips unchanged sections). */
+export async function reindexWorkspaceCards(
+  workspaceId: string,
+  onProgress?: (p: ReindexProgress) => void,
+): Promise<void> {
+  if (!isAppleEmbeddingsSupported()) return;
+  const info = await embeddingsInfo();
+  if (!info) return;
+  const cards = listEmbeddableCards(workspaceId);
+  const liveIds = new Set(cards.map((c) => c.id));
+  let done = 0;
+  for (let i = 0; i < cards.length; i += EMBED_BATCH) {
+    const batch = cards.slice(i, i + EMBED_BATCH);
+    for (const c of batch) {
+      await embedCardInner(c, info);
+      done++;
+    }
+    onProgress?.({ done, total: cards.length });
+  }
+  for (const id of embeddedCardIds(workspaceId)) {
+    if (!liveIds.has(id)) deleteCardEmbeddings(id);
+  }
+}
+
+/**
+ * Semantic search over TASK CARDS. Same centroid-centring + hybrid rerank as
+ * semanticSearch (Apple's mean-pooled model needs both). `k` optional: omit to
+ * get the full ranked candidate list (callers merge across workspaces then slice
+ * once — no per-workspace burying).
+ */
+export async function semanticSearchTasks(
+  workspaceId: string,
+  query: string,
+  k?: number,
+): Promise<SemanticHit[]> {
+  const q = query.trim();
+  if (!q || !isAppleEmbeddingsSupported()) return [];
+  const info = await embeddingsInfo();
+  if (!info) return [];
+
+  let qvec = queryCache.get(q);
+  if (!qvec) {
+    const v = await embedOne(q, info.dimension);
+    if (!v) return [];
+    qvec = v;
+    if (queryCache.size >= QUERY_CACHE_MAX) {
+      const first = queryCache.keys().next().value;
+      if (first !== undefined) queryCache.delete(first);
+    }
+    queryCache.set(q, qvec);
+  }
+
+  const dim = info.dimension;
+  const parsed: { cardId: string; vec: Float32Array; sectionTitle: string }[] = [];
+  for (const row of getWorkspaceCardEmbeddingRows(workspaceId)) {
+    if (row.model !== modelKey(info)) continue;
+    try {
+      const vec = Float32Array.from(JSON.parse(row.vector) as number[]);
+      if (vec.length === dim) parsed.push({ cardId: row.note_id, vec, sectionTitle: row.section_title });
+    } catch {
+      // skip malformed row
+    }
+  }
+  if (parsed.length === 0) return [];
+
+  const centroid = new Float32Array(dim);
+  for (const p of parsed) for (let i = 0; i < dim; i++) centroid[i] += p.vec[i];
+  for (let i = 0; i < dim; i++) centroid[i] /= parsed.length;
+  const cq = centerAndNormalise(qvec, centroid);
+
+  const bestSem = new Map<string, { score: number; sectionTitle: string }>();
+  for (const p of parsed) {
+    const score = dot(cq, centerAndNormalise(p.vec, centroid));
+    const prev = bestSem.get(p.cardId);
+    if (!prev || score > prev.score) bestSem.set(p.cardId, { score, sectionTitle: p.sectionTitle });
+  }
+  if (bestSem.size === 0) return [];
+
+  const semScores = [...bestSem.values()].map((v) => v.score);
+  const lo = Math.min(...semScores);
+  const hi = Math.max(...semScores);
+  const span = Math.max(hi - lo, 1e-6);
+
+  const cardIds = [...bestSem.keys()];
+  const texts = cardTextByIds(cardIds);
+  const titles = cardTitlesByIds(cardIds);
+  const terms = queryTerms(q);
+
+  const ranked = cardIds
+    .map((cardId) => {
+      const sem = bestSem.get(cardId)!;
+      const semN = (sem.score - lo) / span;
+      const info2 = texts.get(cardId);
+      const lex = lexicalScore(terms, info2?.title ?? "", info2?.text ?? "");
+      const blended = SEMANTIC_WEIGHT * semN + (1 - SEMANTIC_WEIGHT) * lex;
+      return {
+        noteId: cardId, // SemanticHit reuses `noteId`; here it's the card id
+        title: titles.get(cardId) ?? cardId,
+        sectionTitle: sem.sectionTitle,
+        score: displayScore(sem.score),
+        rank: blended,
+        kind: "card" as const,
+      };
+    })
+    .sort((a, b) => b.rank - a.rank);
   return typeof k === "number" ? ranked.slice(0, k) : ranked;
 }
 
@@ -637,6 +798,7 @@ export async function catchUpIndex(): Promise<void> {
       const workspaces = listWorkspaceIds();
       for (const ws of workspaces) {
         await reindexWorkspace(ws, (p) => setStatus({ done: p.done, total: p.total }));
+        await reindexWorkspaceCards(ws, (p) => setStatus({ done: p.done, total: p.total }));
       }
     } catch (e) {
       console.warn("[embeddings] catch-up failed:", e);
