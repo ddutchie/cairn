@@ -8,7 +8,7 @@
  */
 
 import * as q from "@/db/queries";
-import { semanticSearch } from "@/notes/embeddings";
+import { semanticSearch, catchUpIndex } from "@/notes/embeddings";
 import { isAppleEmbeddingsSupported } from "@modules/apple-embeddings";
 
 export interface ToolDef {
@@ -65,15 +65,23 @@ export const TOOLS: ToolDef[] = [
       if (!isAppleEmbeddingsSupported()) {
         return { error: "On-device semantic search isn't available on this device; use search_notes instead." };
       }
+      // Index any not-yet-embedded notes first (downloads assets on first use),
+      // so the agent searches the SAME fresh index as the user-facing Search tab
+      // — otherwise recently created/edited notes are missed. Idempotent.
+      await catchUpIndex();
       const limit = typeof a.limit === "number" && a.limit > 0 ? Math.min(a.limit, 20) : 8;
+      // Gather the FULL ranked candidate list per workspace, merge, re-rank by
+      // the hybrid `rank`, and slice ONCE — so a note that ranks low within its
+      // workspace but high globally isn't dropped before the merge. Matches the
+      // Search tab.
       const hits = [];
-      for (const ws of q.listWorkspaceIds()) hits.push(...(await semanticSearch(ws, str(a.query), limit)));
+      for (const ws of q.listWorkspaceIds()) hits.push(...(await semanticSearch(ws, str(a.query))));
       hits.sort((x, y) => y.rank - x.rank);
       return hits.slice(0, limit).map((h) => ({
         id: h.noteId,
         title: h.title,
         section: h.sectionTitle,
-        score: Math.round(h.score * 100) / 100,
+        score: h.score,
       }));
     },
   },

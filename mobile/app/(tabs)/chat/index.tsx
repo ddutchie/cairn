@@ -447,6 +447,12 @@ export default function ChatScreen() {
                   style={styles.input}
                   value={input}
                   onChangeText={setInput}
+                  onFocus={() => {
+                    // Focusing the composer to type = intent to be at the latest
+                    // message; follow to the bottom as the keyboard opens.
+                    nearBottom.current = true;
+                    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50);
+                  }}
                   placeholder="Message Cairn…"
                   placeholderTextColor={t.textTertiary}
                   multiline
