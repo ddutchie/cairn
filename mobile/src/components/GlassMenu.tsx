@@ -63,8 +63,15 @@ export function GlassMenu({
   }
 
   if (Platform.OS === "ios") {
+    // If the caller pins an explicit width+height on the container, give the Host
+    // that fixed frame and DON'T use matchContents — matchContents measures the
+    // SwiftUI content asynchronously after mount, which leaves the trigger
+    // mis-centred until a re-layout (e.g. a tab change) forces a remeasure. A
+    // fixed frame lays out correctly on first paint.
+    const flat = StyleSheet.flatten(containerStyle) as ViewStyle | undefined;
+    const hasFixedSize = flat != null && typeof flat.width === "number" && typeof flat.height === "number";
     return (
-      <Host matchContents style={containerStyle}>
+      <Host matchContents={!hasFixedSize} style={containerStyle}>
         <Menu
           label={
             <RNHostView matchContents>

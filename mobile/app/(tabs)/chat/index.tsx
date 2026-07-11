@@ -686,7 +686,11 @@ function makeStyles(t: Theme) {
     // of row flex-end alignment, multiline growth, or keyboard state. Bottom-
     // aligned so it tracks the send button as the input grows upward.
     attachSlot: { height: 36, justifyContent: "center", alignSelf: "center" },
-    attachContainer: { alignSelf: "center" },
+    // Explicit 32x32 frame on the native Host so it doesn't rely on async
+    // `matchContents` measurement — without a fixed size the Host reports its
+    // height a beat after first mount, so the attach icon isn't vertically
+    // centred until a re-layout (e.g. tab change) forces a remeasure.
+    attachContainer: { width: 32, height: 32, alignSelf: "center" },
     attachBtn: {
       width: 32,
       height: 32,
