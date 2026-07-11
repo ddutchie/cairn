@@ -927,13 +927,20 @@ describe("get_project_context_pack", () => {
     expect(allIds).not.toContain("done-card");
   });
 
-  it("pinnedNotes includes full content", async () => {
+  it("pinnedNotes carry a digest — outline for structured notes, excerpt for flat ones", async () => {
     const db = makeDb();
     seed(db);
-    createNote(db, { id: "pinned", projectId: "proj1", workspaceId: "ws1", title: "Pinned", content: "# Overview\nDetails here", isPinned: true });
+    // Structured note (multiple sections) → outline digest.
+    createNote(db, { id: "pinnedStruct", projectId: "proj1", workspaceId: "ws1", title: "Design", content: "# Design\n\n## Goals\ng\n\n## Approach\na", isPinned: true });
+    // Flat note (title only) → excerpt digest.
+    createNote(db, { id: "pinnedFlat", projectId: "proj1", workspaceId: "ws1", title: "Note", content: "just some prose here", isPinned: true });
     const result = await exec(db, "get_project_context_pack", { projectId: "proj1" }) as Record<string, unknown>;
-    const pinned = result.pinnedNotes as Array<{ id: string; content: string }>;
-    expect(pinned.find((n) => n.id === "pinned")?.content).toContain("Overview");
+    const pinned = result.pinnedNotes as Array<{ id: string; outline?: string[]; excerpt?: string }>;
+    const struct = pinned.find((n) => n.id === "pinnedStruct");
+    const flat = pinned.find((n) => n.id === "pinnedFlat");
+    expect(struct?.outline).toContain("Goals");
+    expect(flat?.excerpt).toContain("prose");
+    expect(result).toHaveProperty("pinnedNotesTotal");
   });
 
   it("returns { error } for unknown project", async () => {

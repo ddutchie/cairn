@@ -5,6 +5,8 @@
  * (including Electron main process, IPC handlers, and standalone MCP server).
  */
 
+import { noteDigest } from "../../shared/notes/toc";
+
 export interface CairnSnapshot {
   workspaces: Array<{ id: string; name: string; [k: string]: unknown }>;
   projects: Array<{
@@ -124,19 +126,19 @@ export function executeGetProjectContextPack(snap: CairnSnapshot, args: Args): u
   // was a context-overflow source (1000 chars × unbounded pinned count). The
   // agent reads the rest with get_note. `pinnedNotesTotal` signals there's more.
   const PINNED_CAP = 5;
-  const PINNED_EXCERPT = 300;
   const pinnedAll = notes
     .filter((n) => n.isPinned)
     .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
   const pinnedNotes = pinnedAll
     .slice(0, PINNED_CAP)
-    .map((n) => {
-      const content = n.content ?? "";
-      const truncated = content.length > PINNED_EXCERPT
-        ? content.slice(0, PINNED_EXCERPT) + "… (use get_note for full note)"
-        : content;
-      return { id: n.id, title: n.title, folder: n.folder ?? "", content: truncated };
-    });
+    .map((n) => ({
+      id: n.id,
+      title: n.title,
+      folder: n.folder ?? "",
+      // Outline (headings) when the note is structured — a compact semantic
+      // summary; short excerpt otherwise. The agent reads full text via get_note.
+      ...noteDigest(n.content ?? "", 300),
+    }));
   // Cap open tasks to a total budget across columns with a short description
   // preview; the agent uses get_task for full detail.
   const TASK_CAP = 20;

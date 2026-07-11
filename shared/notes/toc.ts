@@ -90,3 +90,24 @@ export function sliceLines(markdown: string, startLine: number, endLine?: number
   if (start > lines.length) return "";
   return lines.slice(start - 1, end).join("\n");
 }
+
+/**
+ * A compact, token-cheap representation of a note for context-pack style tool
+ * responses. When the note has headings, its OUTLINE (heading texts) is a
+ * structured semantic summary that conveys the whole note's shape in fewer
+ * tokens than a raw prose excerpt — and with more signal. When the note is flat
+ * (no headings), fall back to a short excerpt. This is the practical answer to
+ * "return the note's meaning, not a raw excerpt" — embeddings are one-way and
+ * can't be decoded to text, but human-authored headings already are the summary.
+ */
+export function noteDigest(content: string, excerptChars = 300): { outline: string[] } | { excerpt: string } {
+  const src = content ?? "";
+  const { headings } = buildNoteOutline(src);
+  // Only worthwhile when there's real structure (>1 heading, or 1 non-title heading).
+  const meaningful = headings.filter((h) => h.level >= 2);
+  if (meaningful.length >= 1) {
+    return { outline: headings.map((h) => h.text) };
+  }
+  const excerpt = src.length > excerptChars ? src.slice(0, excerptChars) + "…" : src;
+  return { excerpt };
+}

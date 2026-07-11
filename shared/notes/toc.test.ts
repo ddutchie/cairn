@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildNoteOutline, sliceLines, extractHeadings } from "./toc";
+import { buildNoteOutline, sliceLines, extractHeadings, noteDigest } from "./toc";
 
 const DOC = [
   "# Title",              // 1
@@ -53,5 +53,28 @@ describe("sliceLines", () => {
   });
   it("returns empty when start is past the end", () => {
     expect(sliceLines(DOC, 999)).toBe("");
+  });
+});
+
+describe("noteDigest", () => {
+  it("returns the heading outline when the note has section headings", () => {
+    const d = noteDigest(DOC);
+    expect(d).toEqual({ outline: ["Title", "Section A", "Sub A1", "Section B"] });
+  });
+
+  it("falls back to an excerpt for a flat note with no headings", () => {
+    const flat = "Just some prose with no structure at all, going on for a while.";
+    const d = noteDigest(flat, 20);
+    expect(d).toEqual({ excerpt: "Just some prose with…" });
+  });
+
+  it("treats a title-only note (single h1) as flat → excerpt", () => {
+    const titleOnly = "# Only a title\n\nbody text here";
+    const d = noteDigest(titleOnly, 100);
+    expect("excerpt" in d).toBe(true);
+  });
+
+  it("does not truncate a short flat note", () => {
+    expect(noteDigest("short", 300)).toEqual({ excerpt: "short" });
   });
 });

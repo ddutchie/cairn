@@ -6,7 +6,7 @@
 import { getDb } from "./index";
 import { inspectConflict, cleanConflictTitle } from "@cairn/shared/sync/conflict";
 import { stripMarkdown } from "@cairn/shared/notes/text";
-import { buildNoteOutline, sliceLines } from "@cairn/shared/notes/toc";
+import { buildNoteOutline, sliceLines, noteDigest } from "@cairn/shared/notes/toc";
 import { notifyLocalWrite } from "@/sync/write-signal";
 
 /** Client-generated collision-free id (mirrors desktop nanoid(12) scheme). */
@@ -787,13 +787,15 @@ export function getProjectContextPack(projectId: string): unknown {
   // with a short excerpt. The model uses get_note to read the rest. Uncapped this
   // was a major context-overflow source (1000 chars × unbounded count).
   const PINNED_CAP = 5;
-  const PINNED_EXCERPT = 300;
   const pinnedAll = notes.filter((n) => n.is_pinned);
-  const pinnedNotes = pinnedAll.slice(0, PINNED_CAP).map((n) => {
-    const content = n.content ?? "";
-    const truncated = content.length > PINNED_EXCERPT ? content.slice(0, PINNED_EXCERPT) + "… (use get_note)" : content;
-    return { id: n.id, title: n.title, folder: n.folder ?? "", content: truncated };
-  });
+  const pinnedNotes = pinnedAll.slice(0, PINNED_CAP).map((n) => ({
+    id: n.id,
+    title: n.title,
+    folder: n.folder ?? "",
+    // Outline (headings) when the note is structured — a compact semantic
+    // summary; short excerpt otherwise. The model reads full text via get_note.
+    ...noteDigest(n.content ?? "", 300),
+  }));
 
   const cards = db.getAllSync<CardRow & { due_date: string | null; updated_at: string }>(
     `SELECT id, column_id, project_id, title, description, priority, tag_ids, "order", due_date, updated_at FROM task_cards
