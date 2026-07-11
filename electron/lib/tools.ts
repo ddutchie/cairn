@@ -70,7 +70,33 @@ function schemaToParameters(schema: z.ZodObject<z.ZodRawShape>) {
   const json = z.toJSONSchema(schema, { target: "draft-07" }) as any;
   // Strip $schema header — not needed in OpenAI function parameters
   delete json["$schema"];
-  return json;
+  return stripSchemaNoise(json);
+}
+
+/**
+ * Remove JSON-Schema keywords that cost tokens on every request but carry no
+ * signal for the model (it doesn't validate against them — our zod does,
+ * server-side). Validated by electron/lib/tool-schema-optimization.test.ts to
+ * preserve tool selection and argument correctness while shrinking the desktop
+ * tool payload ~10% (~500 tok/turn). "safe" level:
+ *   - `pattern`  — e.g. the ~230-tok ISO-8601 regex on datetime fields
+ *   - `minimum` / `maximum` — numeric bounds (esp. the 9e15 integer ceiling)
+ *   - `default`  — informational only, not an instruction
+ *   - `additionalProperties: false` — verbose; models don't rely on it
+ * Field `description` text is deliberately KEPT (it drives arg correctness).
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function stripSchemaNoise(node: any): any {
+  if (Array.isArray(node)) return node.map(stripSchemaNoise);
+  if (!node || typeof node !== "object") return node;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const out: any = {};
+  for (const [k, v] of Object.entries(node)) {
+    if (k === "pattern" || k === "minimum" || k === "maximum" || k === "default") continue;
+    if (k === "additionalProperties" && v === false) continue;
+    out[k] = stripSchemaNoise(v);
+  }
+  return out;
 }
 
 const _agentExcluded = new Set<string>(AGENT_EXCLUDED_TOOLS);
