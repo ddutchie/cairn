@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -10,8 +10,8 @@ import {
   Image,
   Alert,
 } from "react-native";
-import Animated, { useAnimatedStyle, useSharedValue } from "react-native-reanimated";
-import { KeyboardStickyView, useKeyboardHandler, KeyboardController } from "react-native-keyboard-controller";
+import Animated, { useSharedValue } from "react-native-reanimated";
+import { KeyboardStickyView, KeyboardController, KeyboardChatScrollView } from "react-native-keyboard-controller";
 import { Stack, useRouter, useFocusEffect } from "expo-router";
 import { CheckCircle, Bot, User, Send, ImagePlus, X, Settings2, Brain, ChevronRight } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -94,26 +94,6 @@ interface UiMessage {
   streaming?: boolean;
 }
 
-/**
- * Track the keyboard height as a shared value that animates in lockstep with
- * the system keyboard (react-native-keyboard-controller). Driving a spacer
- * View off this gives frame-perfect avoidance with no dead space — unlike
- * KeyboardAvoidingView (see Expo keyboard docs).
- */
-function useGradualAnimation() {
-  const height = useSharedValue(0);
-  useKeyboardHandler(
-    {
-      onMove: (e) => {
-        "worklet";
-        height.value = e.height;
-      },
-    },
-    [],
-  );
-  return { height };
-}
-
 export default function ChatScreen() {
   const t = useTheme();
   const insets = useSafeAreaInsets();
@@ -135,7 +115,7 @@ export default function ChatScreen() {
   // Seeded from the last persisted value so the ring survives closing/reopening
   // the Chat tab (it's session state otherwise, lost on unmount).
   const [usage, setUsage] = useState<ChatUsage | null>(() => loadLastChatUsage());
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<Animated.ScrollView>(null);
   // Whether the user is at/near the bottom of the transcript. Auto-follow on
   // content growth only when true, so expanding a past message's reasoning block
   // (or other layout changes while scrolled up) doesn't yank the view to the end.
@@ -178,21 +158,24 @@ export default function ChatScreen() {
     }, [refreshConfigured]),
   );
 
-  const { height: kbHeight } = useGradualAnimation();
   // Lift the composer just above the tab bar when the keyboard is closed
   // (shared with the search scope bar so both rest at the same height).
   const closedLift = tabBarClosedLift(insets.bottom);
   // Height the composer occupies, measured lazily (falls back before layout).
   const [composerH, setComposerH] = useState(COMPOSER_FALLBACK_H);
-  // Animated spacer at the BOTTOM of the scroll content. It always keeps the
-  // last message clear of the floating composer, and grows to clear the
-  // keyboard when it opens (so you can scroll the newest message above the
-  // keyboard). When closed it matches where the composer actually rests
-  // (closedLift above the screen bottom) so there's no dead space. The +GAP on
-  // the open case matches the composer's KEYBOARD_OPEN_GAP lift.
-  const bottomSpacer = useAnimatedStyle(() => ({
-    height: composerH + 12 + Math.max(kbHeight.value + KEYBOARD_OPEN_GAP, closedLift),
-  }), [composerH, closedLift]);
+  // Bottom padding the transcript keeps clear below the last message so it's not
+  // hidden by the floating composer. This is the CLOSED-keyboard clearance:
+  // composer height + margin + where the composer rests above the tab bar
+  // (closedLift). When the keyboard opens, KeyboardChatScrollView adds
+  // (keyboardHeight - offset); with offset = closedLift - KEYBOARD_OPEN_GAP that
+  // resolves to composerH + 12 + keyboardHeight + KEYBOARD_OPEN_GAP — i.e. the
+  // content clears the composer (which itself rides KEYBOARD_OPEN_GAP above the
+  // keyboard) without double-counting closedLift. Shared value because the
+  // component consumes it on the UI thread.
+  const extraContentPadding = useSharedValue(COMPOSER_FALLBACK_H + 12 + closedLift);
+  useEffect(() => {
+    extraContentPadding.value = composerH + 12 + closedLift;
+  }, [composerH, closedLift, extraContentPadding]);
 
   const send = useCallback(async () => {
     const text = input.trim();
@@ -363,21 +346,24 @@ export default function ChatScreen() {
         />
       </Stack.Toolbar>
       <View style={{ flex: 1 }}>
-        {/* Full-height scroll: messages scroll BEHIND the sticky composer and
-            the translucent native tab bar. The animated bottom spacer clears
-            both the composer and (when open) the keyboard. */}
-        <ScrollView
+        {/* Full-height chat scroll: messages scroll BEHIND the sticky composer
+            and the translucent native tab bar. KeyboardChatScrollView manages
+            the keyboard lift natively via content inset (keyboardLiftBehavior
+            "whenAtEnd" = only follow the bottom when the user is already there,
+            ChatGPT-style), so the last message stays visible above the keyboard.
+            extraContentPadding keeps the last message clear of the floating
+            composer even when the keyboard is closed. */}
+        <KeyboardChatScrollView
           ref={scrollRef}
           style={StyleSheet.absoluteFill}
           contentContainerStyle={[styles.list, messages.length === 0 && styles.listEmpty]}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="interactive"
+          keyboardLiftBehavior="whenAtEnd"
+          offset={Math.max(closedLift - KEYBOARD_OPEN_GAP, 0)}
+          extraContentPadding={extraContentPadding}
           scrollEventThrottle={16}
-          onScroll={(e) => {
-            const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-            const distanceFromBottom = contentSize.height - (contentOffset.y + layoutMeasurement.height);
-            nearBottom.current = distanceFromBottom < 80;
-          }}
+          onEndVisible={(visible) => { nearBottom.current = visible; }}
           onContentSizeChange={() => {
             // Follow new content only when the user is already near the bottom
             // (e.g. streaming) — never when they've scrolled up to read/expand.
@@ -400,8 +386,7 @@ export default function ChatScreen() {
           ) : (
             messages.map((m, i) => <Bubble key={i} m={m} t={t} styles={styles} />)
           )}
-          <Animated.View style={bottomSpacer} />
-        </ScrollView>
+        </KeyboardChatScrollView>
 
         {/* Sticky composer: pinned to the bottom, rides up with the keyboard
             automatically. When the keyboard is closed it's offset up above the
@@ -448,10 +433,10 @@ export default function ChatScreen() {
                   value={input}
                   onChangeText={setInput}
                   onFocus={() => {
-                    // Focusing the composer to type = intent to be at the latest
-                    // message; follow to the bottom as the keyboard opens.
+                    // Mark intent to follow the latest message; the actual lift
+                    // above the keyboard is handled natively by
+                    // KeyboardChatScrollView (keyboardLiftBehavior="whenAtEnd").
                     nearBottom.current = true;
-                    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50);
                   }}
                   placeholder="Message Cairn…"
                   placeholderTextColor={t.textTertiary}
