@@ -70,6 +70,7 @@ async function runWithInjectedError(
       method: "POST",
       headers: { "Content-Type": "application/json", ...(API_KEY ? { Authorization: `Bearer ${API_KEY}` } : {}) },
       body: JSON.stringify({ model: MODEL, messages, tools, tool_choice: "auto", temperature: 0.2, stream: false }),
+      signal: AbortSignal.timeout(30_000),
     });
     if (!res.ok) throw new Error(`LLM ${res.status}: ${await res.text().catch(() => "")}`);
     const json = (await res.json()) as {

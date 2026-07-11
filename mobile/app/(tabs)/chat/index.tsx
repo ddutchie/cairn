@@ -685,7 +685,7 @@ function makeStyles(t: Theme) {
     // the attach button level with the first input line + send button regardless
     // of row flex-end alignment, multiline growth, or keyboard state. Bottom-
     // aligned so it tracks the send button as the input grows upward.
-    attachSlot: { height: 36, justifyContent: "center" },
+    attachSlot: { height: 36, justifyContent: "center", alignSelf: "center" },
     attachContainer: { alignSelf: "center" },
     attachBtn: {
       width: 32,

@@ -20,13 +20,13 @@
  */
 
 import { describe, it, expect, beforeAll } from "vitest";
-import fs from "fs";
 import path from "path";
 import { config as loadDotenv } from "dotenv";
 import { encode } from "gpt-tokenizer";
 import * as z from "zod";
 import { TOOLS } from "./tools";
 import { TOOL_SCHEMAS, AGENT_EXCLUDED_TOOLS } from "./tool-schemas";
+import { parseMobileTools } from "./mobile-tools-fixture";
 
 loadDotenv({ path: path.resolve(__dirname, "../../.env.test"), override: false });
 loadDotenv({ path: path.resolve(__dirname, "../../mobile/.env"), override: false });
@@ -154,6 +154,7 @@ async function taskToolCall(
       method: "POST",
       headers: { "Content-Type": "application/json", ...(API_KEY ? { Authorization: `Bearer ${API_KEY}` } : {}) },
       body: JSON.stringify({ model: MODEL, messages, tools, tool_choice: "auto", temperature: 0.2, stream: false }),
+      signal: AbortSignal.timeout(30_000),
     });
     if (!res.ok) throw new Error(`LLM error ${res.status}: ${await res.text().catch(() => "")}`);
     const json = (await res.json()) as {
@@ -195,6 +196,7 @@ async function runConversation(
       method: "POST",
       headers: { "Content-Type": "application/json", ...(API_KEY ? { Authorization: `Bearer ${API_KEY}` } : {}) },
       body: JSON.stringify({ model: MODEL, messages, tools, tool_choice: "auto", temperature: 0.2, stream: false }),
+      signal: AbortSignal.timeout(30_000),
     });
     if (!res.ok) throw new Error(`LLM error ${res.status}: ${await res.text().catch(() => "")}`);
     const json = (await res.json()) as {
@@ -215,25 +217,10 @@ async function runConversation(
   return calls;
 }
 
-/** Parse mobile tools (name + description) from mobile/src/chat/tools.ts so the
- *  compression transform can be validated against mobile's hand-written shape
- *  too, without importing the RN module. jsonSchema is generic (selection test). */
+/** Parse mobile tools via the shared fixture so the compression transform can be
+ *  validated against mobile's hand-written shape without a divergent parser. */
 function mobileTools() {
-  const src = fs.readFileSync(path.resolve(__dirname, "../../mobile/src/chat/tools.ts"), "utf8");
-  const re = /name:\s*"([a-z_]+)",\s*\n\s*description:\s*\n?\s*"((?:[^"\\]|\\.)*)"/g;
-  const out: { type: "function"; function: { name: string; description: string; parameters: unknown } }[] = [];
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(src)) !== null) {
-    out.push({
-      type: "function",
-      function: {
-        name: m[1],
-        description: m[2].replace(/\\"/g, '"'),
-        parameters: { type: "object", properties: {}, additionalProperties: false },
-      },
-    });
-  }
-  return out;
+  return parseMobileTools();
 }
 
 const SYS = "You are the Cairn AI assistant. Use the tools to act on the workspace; IDs are already known (workspaceId ws_1, projectId proj_1, columns col_todo/col_done/col_prog, note note_1='Auth'/note_5, card card_2='Login bug'/card_9). Never ask for IDs; call exactly the tool the user asks for.";

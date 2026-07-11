@@ -1024,7 +1024,8 @@ export function moveNotesToFolder(noteIds: string[], folder: string): number {
   const now = new Date().toISOString();
   const placeholders = noteIds.map(() => "?").join(", ");
   const res = getDb().runSync(
-    `UPDATE notes SET folder = ?, updated_at = ?, version = version + 1 WHERE id IN (${placeholders})`,
+    `UPDATE notes SET folder = ?, updated_at = ?, version = version + 1
+     WHERE ${LIVE} AND type='note' AND id IN (${placeholders})`,
     folder,
     now,
     ...(noteIds as never[]),

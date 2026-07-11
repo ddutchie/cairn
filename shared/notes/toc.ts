@@ -23,23 +23,37 @@ export interface Heading {
   id: string;
 }
 
-/** Parse h1/h2/h3 headings from raw markdown source (skips fenced code). */
-export function extractHeadings(markdown: string): Heading[] {
-  const headings: Heading[] = [];
+/**
+ * Scan raw markdown for h1/h2/h3 headings, skipping fenced code blocks. Invokes
+ * `onHeading` for each with the parsed level, trimmed text, and 0-based line
+ * index. Single source of the fence-tracking + `^(#{1,3})` matching logic shared
+ * by extractHeadings and buildNoteOutline.
+ */
+function scanHeadings(
+  markdown: string,
+  onHeading: (level: 1 | 2 | 3, text: string, lineIndex: number) => void,
+): number {
+  const lines = markdown.split("\n");
   let inFence = false;
-  for (const line of markdown.split("\n")) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     if (line.startsWith("```")) {
       inFence = !inFence;
       continue;
     }
     if (inFence) continue;
     const m = line.match(/^(#{1,3})\s+(.+)/);
-    if (m) {
-      const level = m[1].length as 1 | 2 | 3;
-      const text = m[2].trim();
-      headings.push({ level, text, id: headingSlug(text) });
-    }
+    if (m) onHeading(m[1].length as 1 | 2 | 3, m[2].trim(), i);
   }
+  return lines.length;
+}
+
+/** Parse h1/h2/h3 headings from raw markdown source (skips fenced code). */
+export function extractHeadings(markdown: string): Heading[] {
+  const headings: Heading[] = [];
+  scanHeadings(markdown, (level, text) => {
+    headings.push({ level, text, id: headingSlug(text) });
+  });
   return headings;
 }
 
@@ -62,20 +76,11 @@ export interface NoteOutline {
 
 /** Build a line-numbered outline (h1–h3, skipping fenced code). Lines 1-based. */
 export function buildNoteOutline(markdown: string): NoteOutline {
-  const lines = markdown.split("\n");
   const headings: OutlineEntry[] = [];
-  let inFence = false;
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (line.startsWith("```")) {
-      inFence = !inFence;
-      continue;
-    }
-    if (inFence) continue;
-    const m = line.match(/^(#{1,3})\s+(.+)/);
-    if (m) headings.push({ level: m[1].length as 1 | 2 | 3, text: m[2].trim(), line: i + 1 });
-  }
-  return { totalLines: lines.length, headings };
+  const totalLines = scanHeadings(markdown, (level, text, lineIndex) => {
+    headings.push({ level, text, line: lineIndex + 1 });
+  });
+  return { totalLines, headings };
 }
 
 /**

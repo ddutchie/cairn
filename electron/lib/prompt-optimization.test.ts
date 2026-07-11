@@ -21,11 +21,11 @@
  */
 
 import { describe, it, expect, beforeAll } from "vitest";
-import fs from "fs";
 import path from "path";
 import { config as loadDotenv } from "dotenv";
 import { encode } from "gpt-tokenizer";
 import { buildSystemPrompt, TOOLS } from "./tools";
+import { parseMobileTools } from "./mobile-tools-fixture";
 
 // Load .env.test so TEST_LLM_* are available (git-ignored). mobile/.env too, in
 // case an endpoint is configured there.
@@ -119,6 +119,7 @@ async function taskToolCall(
         temperature: 0.2,
         stream: false,
       }),
+      signal: AbortSignal.timeout(30_000),
     });
     if (!res.ok) throw new Error(`LLM error ${res.status}: ${await res.text().catch(() => "")}`);
     const json = (await res.json()) as {
@@ -192,30 +193,14 @@ const PROD_MOBILE = [
   "You are Cairn's mobile assistant for the user's notes and tasks; writes sync to their desktop.",
   `The current date is ${humanDate} (${isoDate}). Resolve relative dates like "tomorrow"/"next week" against it, and pass dates to tools as YYYY-MM-DD.`,
   "Call get_cairn_context first to get project ids, columns, and tags (there is no separate 'list projects' tool), then reuse them — never invent an id. Choose the tool whose description matches the request.",
-  "When you mention a specific note, wrap its exact title in [[double brackets]] so the user can tap it. After a write, briefly confirm. Answer in concise markdown.",
+  "When you mention a specific note or task, link it as [[id]] using its exact id (it renders as the title and can't be confused with a same-titled item); if you don't have the id, [[Title]] also works. After a write, briefly confirm. Answer in concise markdown.",
 ].join(" ");
 
-/** Mobile tools, parsed from mobile/src/chat/tools.ts (name + description) so
- *  they stay in sync without importing the RN module. jsonSchema is not needed
- *  for a selection test — a generic object schema is enough for the model to
- *  emit a tool_call. */
+/** Mobile tools, parsed from mobile/src/chat/tools.ts via the shared fixture so
+ *  the two AI experiment tests don't maintain divergent parsers and stay in sync
+ *  with the source. jsonSchema is generic (name + description drive selection). */
 function mobileTools() {
-  const srcPath = path.resolve(__dirname, "../../mobile/src/chat/tools.ts");
-  const src = fs.readFileSync(srcPath, "utf8");
-  const re = /name:\s*"([a-z_]+)",\s*\n\s*description:\s*\n?\s*"((?:[^"\\]|\\.)*)"/g;
-  const out: { type: "function"; function: { name: string; description: string; parameters: unknown } }[] = [];
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(src)) !== null) {
-    out.push({
-      type: "function",
-      function: {
-        name: m[1],
-        description: m[2].replace(/\\"/g, '"'),
-        parameters: { type: "object", properties: {}, additionalProperties: true },
-      },
-    });
-  }
-  return out;
+  return parseMobileTools();
 }
 
 // Realistic requests → the tool we EXPECT the model to select. Asks give the
