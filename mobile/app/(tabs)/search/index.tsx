@@ -39,7 +39,7 @@ export default function SearchScreen() {
   const [tasks, setTasks] = useState<CardRow[]>([]);
   const [hits, setHits] = useState<SemanticHit[]>([]);
   const [reindexing, setReindexing] = useState(false);
-  const [stats, setStats] = useState<{ liveNotes: number; indexedNotes: number } | null>(null);
+  const [stats, setStats] = useState<{ live: number; indexed: number } | null>(null);
   const styles = useMemo(() => makeStyles(t), [t]);
   const searchRef = useRef<SearchBarCommands>(null);
   const insets = useSafeAreaInsets();
@@ -148,10 +148,10 @@ export default function SearchScreen() {
     let indexed = 0;
     for (const ws of listWorkspaceIds()) {
       const s = embeddingIndexStats(ws);
-      live += s.liveNotes;
-      indexed += s.indexedNotes;
+      live += s.liveNotes + s.liveCards;
+      indexed += s.indexedNotes + s.indexedCards;
     }
-    setStats({ liveNotes: live, indexedNotes: indexed });
+    setStats({ live, indexed });
   }, []);
 
   // Pull-to-refresh on the Semantic list: force a full catch-up (embeds any
@@ -196,9 +196,9 @@ export default function SearchScreen() {
       if (!semanticAvailable) return { primary: appleEmbeddingsUnavailableReason() };
       if (hasQuery) return { primary: "No semantically similar notes" };
       return {
-        primary: "Search your notes by meaning, not just keywords.",
+        primary: "Search your notes and tasks by meaning, not just keywords.",
         secondary: stats
-          ? `${stats.indexedNotes} of ${stats.liveNotes} notes indexed${stats.indexedNotes < stats.liveNotes ? " · pull down to finish indexing" : ""}`
+          ? `${stats.indexed} of ${stats.live} items indexed${stats.indexed < stats.live ? " · pull down to finish indexing" : ""}`
           : undefined,
       };
     }
@@ -237,8 +237,9 @@ export default function SearchScreen() {
     // apply the list padding that clears the scope bar / tab bar / keyboard.
     contentContainerStyle: isListEmpty ? styles.listGrow : styles.list,
     // Nothing to scroll when empty — also stops the anchored empty state from
-    // being draggable past the header.
-    scrollEnabled: !isListEmpty,
+    // being draggable past the header. EXCEPT the semantic scope, which needs to
+    // stay scrollable when empty so its pull-to-reindex RefreshControl works.
+    scrollEnabled: !isListEmpty || scope === "semantic",
     contentInsetAdjustmentBehavior: "automatic" as const,
     keyboardShouldPersistTaps: "handled" as const,
     keyboardDismissMode: "on-drag" as const,
@@ -277,6 +278,7 @@ export default function SearchScreen() {
               title={item.title}
               preview={item.kind === "card" ? `Task · ${item.sectionTitle}` : item.sectionTitle}
               score={item.rank}
+              accentColor={item.kind === "card" ? t.success : t.info}
               onPress={() =>
                 openResult(
                   item.kind === "card"

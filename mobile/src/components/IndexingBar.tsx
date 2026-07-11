@@ -47,7 +47,7 @@ export function IndexingBar() {
         <Animated.View style={[styles.fill, { width }]} />
       </View>
       <Text style={styles.label} numberOfLines={1}>
-        {total > 0 ? `Indexing notes for semantic search… ${done}/${total}` : "Preparing semantic search…"}
+        {total > 0 ? `Indexing for semantic search… ${done}/${total}` : "Preparing semantic search…"}
       </Text>
     </View>
   );

@@ -1399,6 +1399,8 @@ export function listWorkspaceIds(): string[] {
 export function embeddingIndexStats(workspaceId: string): {
   liveNotes: number;
   indexedNotes: number;
+  liveCards: number;
+  indexedCards: number;
   sections: number;
 } {
   const db = getDb();
@@ -1412,12 +1414,22 @@ export function embeddingIndexStats(workspaceId: string): {
       `SELECT COUNT(DISTINCT note_id) n FROM note_embeddings WHERE workspace_id = ?`,
       workspaceId,
     )?.n ?? 0;
+  const liveCards =
+    db.getFirstSync<{ n: number }>(
+      `SELECT COUNT(*) n FROM task_cards WHERE ${LIVE} AND workspace_id = ?`,
+      workspaceId,
+    )?.n ?? 0;
+  const indexedCards =
+    db.getFirstSync<{ n: number }>(
+      `SELECT COUNT(DISTINCT card_id) n FROM task_embeddings WHERE workspace_id = ?`,
+      workspaceId,
+    )?.n ?? 0;
   const sections =
     db.getFirstSync<{ n: number }>(
       `SELECT COUNT(*) n FROM note_embeddings WHERE workspace_id = ?`,
       workspaceId,
     )?.n ?? 0;
-  return { liveNotes, indexedNotes, sections };
+  return { liveNotes, indexedNotes, liveCards, indexedCards, sections };
 }
 
 /** Resolve a note's title for search-result display. */
