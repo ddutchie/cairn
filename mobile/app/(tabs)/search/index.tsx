@@ -15,7 +15,7 @@ import { semanticSearch, semanticSearchTasks, catchUpIndex, type SemanticHit } f
 import { haptics } from "@/haptics";
 import { isAppleEmbeddingsSupported, appleEmbeddingsUnavailableReason } from "@modules/apple-embeddings";
 import { stripMarkdown } from "@cairn/shared/notes/text";
-import { useTheme, withAlpha, PRIORITY_COLOR, TAB_BAR_BASE, hasTabBarSearchField, tabBarClosedLift, KEYBOARD_OPEN_GAP, type as typeScale, type Theme } from "@/theme";
+import { useTheme, PRIORITY_COLOR, TAB_BAR_BASE, hasTabBarSearchField, tabBarClosedLift, KEYBOARD_OPEN_GAP, type as typeScale, type Theme } from "@/theme";
 
 type TypeFilter = "all" | "notes" | "tasks";
 
@@ -276,10 +276,17 @@ export default function SearchScreen() {
             autoCapitalize: "none",
             autoFocus: true,
             hideWhenScrolling: false,
+            // iOS 26+: dock the field on the trailing edge of the nav bar so the
+            // ✨ headerRight toggle sits right beside it (falls back to inline on
+            // older iOS). Makes the toggle read as part of the search bar.
+            placement: "integrated",
             onChangeText: (e) => onChange(e.nativeEvent.text),
           },
           // ✨ Semantic ranking toggle (on by default when supported). Hidden
-          // entirely when the device can't do on-device embeddings.
+          // entirely when the device can't do on-device embeddings. No custom
+          // background — on iOS 26+ the system wraps headerRight items in their
+          // own glass toolbar button, so we render just the bare icon and let
+          // colour signal on/off.
           headerRight: semanticAvailable
             ? () => (
                 <Pressable
@@ -288,9 +295,9 @@ export default function SearchScreen() {
                   accessibilityRole="button"
                   accessibilityLabel="Semantic search"
                   accessibilityState={{ selected: semanticMode }}
-                  style={[styles.semBtn, semanticMode ? styles.semBtnOn : styles.semBtnOff]}
+                  style={styles.semBtn}
                 >
-                  <Sparkles size={16} color={semanticMode ? t.accent : t.textTertiary} />
+                  <Sparkles size={18} color={semanticMode ? t.accent : t.textTertiary} />
                 </Pressable>
               )
             : undefined,
@@ -390,10 +397,9 @@ function makeStyles(t: Theme) {
     scopeBtnActive: { backgroundColor: t.accent },
     scopeText: { ...typeScale.control, color: t.textSecondary },
     scopeTextActive: { color: t.accentFg },
-    // Header ✨ semantic toggle: accent-washed when on, plain when off.
-    semBtn: { width: 30, height: 30, borderRadius: 8, alignItems: "center", justifyContent: "center" },
-    semBtnOn: { backgroundColor: withAlpha(t.accent, 0.15) },
-    semBtnOff: { backgroundColor: "transparent" },
+    // Header ✨ semantic toggle: bare icon, no background — iOS supplies its own
+    // toggle chrome. Colour (accent vs tertiary) is the on/off signal.
+    semBtn: { alignItems: "center", justifyContent: "center", paddingHorizontal: 4 },
     // Bottom pad clears the pinned scope bar + tab bar (+ the native search
     // field on iOS ≤26; none on iOS 27, so drop that reservation).
     list: { padding: 12, paddingBottom: 12 + TAB_BAR_BASE + (hasTabBarSearchField ? SEARCH_FIELD_H : 0) + 48 },
