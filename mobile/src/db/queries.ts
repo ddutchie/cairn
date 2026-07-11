@@ -491,10 +491,12 @@ export interface KnowledgeGraph {
  * holds: projects, notes, cards and tags, wired by their explicit links
  * (project membership, note↔note wikilinks, note↔card links, tag membership).
  *
- * Unlike desktop this omits idea-flow and auto/semantic edges — mobile has no
- * idea_flow_* or embeddings tables — so it's a purely structural graph. Only
- * tags actually referenced by a scoped note/card become nodes, matching the
- * desktop's "used tags only" behaviour.
+ * Unlike desktop this omits idea-flow edges — mobile has no idea_flow_* tables.
+ * It also emits only STRUCTURAL edges here; semantic edges (note↔note, task↔task
+ * and note↔task, derived from on-device embeddings) are computed separately by
+ * semanticEdges() in src/notes/embeddings.ts and merged in the graph screen
+ * behind an opt-in toggle. Only tags actually referenced by a scoped note/card
+ * become nodes, matching the desktop's "used tags only" behaviour.
  */
 export function getKnowledgeGraph(): KnowledgeGraph {
   const db = getDb();

@@ -6,7 +6,10 @@ import {
   createWorkspace,
   createProject,
   createNote,
+  createColumn,
+  createCard,
   upsertNoteEmbedding,
+  upsertTaskEmbedding,
 } from "./queries";
 import {
   computeSemanticRelationships,
@@ -71,6 +74,37 @@ function upsertSection(
 
 function semEdges(db: Database.Database) {
   return getKnowledgeGraph(db, "ws1").edges.filter((e) => e.type === "semantic");
+}
+
+/** Create a board column + card so the card exists as a graph node, then embed
+ *  it — used to exercise task↔task and note↔task semantic edges. */
+function upsertCardEmbedding(
+  db: Database.Database,
+  cardId: string,
+  vector: number[],
+  title: string = cardId,
+  sectionIdx: number = 0,
+  sectionTitle: string = "",
+) {
+  const columnId = "col1";
+  const existing = db.prepare("SELECT id FROM board_columns WHERE id = ?").get(columnId);
+  if (!existing) {
+    createColumn(db, { id: columnId, projectId: "p1", workspaceId: "ws1", name: "Todo", type: "todo", order: 0 });
+  }
+  const card = db.prepare("SELECT id FROM task_cards WHERE id = ?").get(cardId);
+  if (!card) {
+    createCard(db, { id: cardId, columnId, projectId: "p1", workspaceId: "ws1", title });
+  }
+  upsertTaskEmbedding(db, {
+    cardId,
+    sectionIdx,
+    sectionTitle,
+    workspaceId: "ws1",
+    model: "test-model",
+    task: "search_document",
+    contentHash: "chash-" + cardId + "-" + sectionIdx,
+    vector,
+  });
 }
 
 function findEdge(edges: ReturnType<typeof semEdges>, a: string, b: string) {
@@ -456,6 +490,27 @@ describe("getKnowledgeGraph — semantic edge integration", () => {
     computeSemanticRelationships(db, "ws1");
     const graph = getKnowledgeGraph(db, "ws1", { includeAuto: true, edgeTypes: ["note-note", "project-member"] });
     expect(graph.edges.filter((e) => e.type === "semantic")).toHaveLength(0);
+  });
+
+  it("forms task↔task and note↔task semantic edges across kinds", () => {
+    // One note + two cards, all pointing the same direction → all similar.
+    upsertEmbedding(db, "na", vec(1, 0, 0, 0));
+    upsertCardEmbedding(db, "ca", vec(0.98, 0.2, 0, 0), "Card A");
+    upsertCardEmbedding(db, "cb", vec(0.97, 0.24, 0, 0), "Card B");
+    // An unrelated card that must NOT link.
+    upsertCardEmbedding(db, "cz", vec(0, 0, 0, 1), "Card Z");
+
+    computeSemanticRelationships(db, "ws1");
+    const edges = semEdges(db);
+
+    // task↔task
+    expect(findEdge(edges, "ca", "cb")).toBeDefined();
+    // note↔task (both directions of the pair covered by findEdge)
+    expect(findEdge(edges, "na", "ca")).toBeDefined();
+    expect(findEdge(edges, "na", "cb")).toBeDefined();
+    // unrelated card stays disconnected
+    expect(findEdge(edges, "na", "cz")).toBeUndefined();
+    expect(findEdge(edges, "ca", "cz")).toBeUndefined();
   });
 
   it("semantic edges absent when includeAuto is false", () => {

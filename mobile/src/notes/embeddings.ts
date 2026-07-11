@@ -598,11 +598,16 @@ const SEMANTIC_FLOOR = 0.15;
 const SEMANTIC_TOP_K = 5;
 
 /**
- * All-pairs cosine over stored section vectors → best-per-note-pair semantic
- * edges. Vectors are centred by the corpus centroid before cosine (same fix as
+ * All-pairs cosine over stored section vectors → best-per-entity-pair semantic
+ * edges. Pools BOTH note sections and task-card sections into one corpus so
+ * edges can form across kinds: note↔note, task↔task, and note↔task. Vectors are
+ * centred by the (combined) corpus centroid before cosine (same fix as
  * semanticSearch) so edges reflect real topical similarity, not the shared
  * common component that makes every pair look ~90% alike. Empty when embeddings
  * are unavailable.
+ *
+ * Edges are keyed by entity id (note id or card id); the graph screen already
+ * has both notes and cards as nodes, so no per-kind handling is needed there.
  */
 export async function semanticEdges(workspaceId: string): Promise<SemanticEdge[]> {
   if (!isAppleEmbeddingsSupported()) return [];
@@ -611,9 +616,14 @@ export async function semanticEdges(workspaceId: string): Promise<SemanticEdge[]
   const key = modelKey(info);
   const dim = info.dimension;
 
-  // Collapse sections → one representative vector list per note, tracking best
-  // pairwise similarity between notes.
-  const rows = getWorkspaceEmbeddingRows(workspaceId).filter((r) => r.model === key);
+  // Collapse sections → representative vectors per entity (note OR card),
+  // tracking best pairwise similarity between entities. Note and card rows share
+  // the EmbeddingRow shape (card rows alias card_id AS note_id), so a single
+  // combined pool is all we need — the entity id namespace is disjoint.
+  const rows = [
+    ...getWorkspaceEmbeddingRows(workspaceId),
+    ...getWorkspaceCardEmbeddingRows(workspaceId),
+  ].filter((r) => r.model === key);
   const raw: { noteId: string; vec: Float32Array }[] = [];
   for (const r of rows) {
     try {

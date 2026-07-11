@@ -14,8 +14,8 @@
  */
 
 import type Database from "better-sqlite3";
-import { getAllEmbeddingsForWorkspace } from "./queries";
-import type { NoteEmbeddingRecord } from "./queries";
+import { getAllEmbeddingsForWorkspace, getAllTaskEmbeddingsForWorkspace } from "./queries";
+import type { NoteEmbeddingRecord, TaskEmbeddingRecord } from "./queries";
 import { cosine, toFloat32 } from "../embeddings/cosine";
 
 // ── Public types ──────────────────────────────────────────────────────────────
@@ -742,33 +742,47 @@ export function computeSemanticRelationships(
   workspaceId: string,
   entityIds?: string[]
 ): void {
-  const stored = getAllEmbeddingsForWorkspace(db, workspaceId, "search_document");
-  if (stored.length === 0) return;
+  // Pool BOTH note sections and task-card sections so semantic edges can form
+  // across kinds: note↔note, task↔task, and note↔task. All are stored as a
+  // single "semantic" edge type keyed by entity id — getKnowledgeGraph pass 6
+  // only checks that both endpoints exist as nodes (card nodes already do), so
+  // no per-kind handling is needed downstream.
+  const storedNotes = getAllEmbeddingsForWorkspace(db, workspaceId, "search_document");
+  const storedCards = getAllTaskEmbeddingsForWorkspace(db, workspaceId, "search_document");
+  if (storedNotes.length + storedCards.length === 0) return;
 
   interface SectionVec {
-    noteId: string;
+    entityId: string;
     sectionIdx: number;
     sectionTitle: string;
     vec: Float32Array;
   }
-  const fullPool: SectionVec[] = stored.map((r: NoteEmbeddingRecord) => ({
-    noteId: r.noteId,
-    sectionIdx: r.sectionIdx,
-    sectionTitle: r.sectionTitle,
-    vec: toFloat32(r.vector),
-  }));
+  const fullPool: SectionVec[] = [
+    ...storedNotes.map((r: NoteEmbeddingRecord) => ({
+      entityId: r.noteId,
+      sectionIdx: r.sectionIdx,
+      sectionTitle: r.sectionTitle,
+      vec: toFloat32(r.vector),
+    })),
+    ...storedCards.map((r: TaskEmbeddingRecord) => ({
+      entityId: r.cardId,
+      sectionIdx: r.sectionIdx,
+      sectionTitle: r.sectionTitle,
+      vec: toFloat32(r.vector),
+    })),
+  ];
 
-  const noteIdsInPool = new Set(fullPool.map((s) => s.noteId));
-  if (noteIdsInPool.size < 2) return;
+  const entityIdsInPool = new Set(fullPool.map((s) => s.entityId));
+  if (entityIdsInPool.size < 2) return;
 
   let activePool: SectionVec[] = fullPool;
   let activeIds: Set<string> | null = null;
   if (entityIds && entityIds.length > 0) {
     activeIds = new Set(entityIds);
-    activePool = fullPool.filter((s) => activeIds!.has(s.noteId));
+    activePool = fullPool.filter((s) => activeIds!.has(s.entityId));
   }
 
-  const k = Math.min(SEMANTIC_TOP_K, Math.max(1, noteIdsInPool.size - 1));
+  const k = Math.min(SEMANTIC_TOP_K, Math.max(1, entityIdsInPool.size - 1));
 
   const now = Math.floor(Date.now() / 1000);
   const upsert = db.prepare(`
@@ -788,7 +802,7 @@ export function computeSemanticRelationships(
     if (activeIds) {
       for (const id of activeIds) deleteOld.run(id, id);
     } else {
-      for (const id of noteIdsInPool) deleteOld.run(id, id);
+      for (const id of entityIdsInPool) deleteOld.run(id, id);
     }
 
     const bestPerPair = new Map<string, { weight: number; sourceTitle: string; targetTitle: string }>();
@@ -796,7 +810,7 @@ export function computeSemanticRelationships(
     for (const a of activePool) {
       const scored: Array<{ sec: SectionVec; sim: number }> = [];
       for (const b of fullPool) {
-        if (a.noteId === b.noteId) continue;
+        if (a.entityId === b.entityId) continue;
         const sim = cosine(a.vec, b.vec);
         if (sim >= SEMANTIC_TOP_K_FLOOR) {
           scored.push({ sec: b, sim });
@@ -805,11 +819,11 @@ export function computeSemanticRelationships(
       scored.sort((x, y) => y.sim - x.sim);
       const top = scored.slice(0, k);
       for (const t of top) {
-        const [srcNote, tgtNote, srcSec, tgtSec] =
-          a.noteId < t.sec.noteId
-            ? [a.noteId, t.sec.noteId, a.sectionTitle, t.sec.sectionTitle]
-            : [t.sec.noteId, a.noteId, t.sec.sectionTitle, a.sectionTitle];
-        const key = `${srcNote}|${tgtNote}`;
+        const [srcId, tgtId, srcSec, tgtSec] =
+          a.entityId < t.sec.entityId
+            ? [a.entityId, t.sec.entityId, a.sectionTitle, t.sec.sectionTitle]
+            : [t.sec.entityId, a.entityId, t.sec.sectionTitle, a.sectionTitle];
+        const key = `${srcId}|${tgtId}`;
         const ex = bestPerPair.get(key);
         if (!ex || t.sim > ex.weight) {
           bestPerPair.set(key, { weight: t.sim, sourceTitle: srcSec, targetTitle: tgtSec });

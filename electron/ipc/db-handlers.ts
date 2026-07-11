@@ -55,10 +55,12 @@ async function reindexSingleNoteEmbedding(ctx: DbContext, noteId: string, worksp
 }
 
 /** Incrementally (re)embed a single task card after a create/update — symmetric
- *  to reindexSingleNoteEmbedding. Fire-and-forget; no-op when embeddings off. */
-async function reindexSingleCardEmbedding(ctx: DbContext, cardId: string, workspaceId: string): Promise<void> {
+ *  to reindexSingleNoteEmbedding. Fire-and-forget; no-op when embeddings off.
+ *  Returns true when a reindex actually ran (embeddings enabled), so callers can
+ *  gate a semantic-edge recompute on it. */
+async function reindexSingleCardEmbedding(ctx: DbContext, cardId: string, workspaceId: string): Promise<boolean> {
   const settings = getEmbeddingsSettingsCached();
-  if (!settings?.enabled) return;
+  if (!settings?.enabled) return false;
   const model = settings.modelId || getEmbeddingModelId();
   const key = `card:${cardId}`;
   const existing = reindexInFlight.get(key);
@@ -74,10 +76,24 @@ async function reindexSingleCardEmbedding(ctx: DbContext, cardId: string, worksp
   })();
   reindexInFlight.set(key, p);
   try {
-    await p;
+    return await p;
   } finally {
     if (reindexInFlight.get(key) === p) reindexInFlight.delete(key);
   }
+}
+
+/** After a card's embedding is refreshed, recompute the semantic edges that
+ *  touch it (scoped to that card id). Cross-kind edges (note↔task) fall out of
+ *  computeSemanticRelationships pooling notes + cards. */
+function recomputeCardSemanticEdges(ctx: DbContext, cardId: string, workspaceId: string): void {
+  void reindexSingleCardEmbedding(ctx, cardId, workspaceId).then((didReindex) => {
+    if (!didReindex) return;
+    try {
+      computeSemanticRelationships(ctx.db, workspaceId, [cardId]);
+    } catch (e) {
+      console.warn("[embeddings] semantic recompute skipped:", e instanceof Error ? e.message : e);
+    }
+  }).catch(() => { /* already warned */ });
 }
 
 export function registerDbHandlers(ctx: DbContext): void {
@@ -324,7 +340,7 @@ export function registerDbHandlers(ctx: DbContext): void {
     const title = (args?.title as string | null | undefined)?.trim();
     if (!title) throw new Error("Task title is required");
     const card = q.createCard(ctx.db, { ...args, title });
-    if (card.workspaceId) void reindexSingleCardEmbedding(ctx, card.id, card.workspaceId).catch(() => {});
+    if (card.workspaceId) recomputeCardSemanticEdges(ctx, card.id, card.workspaceId);
     return card;
   }));
   registerIpcHandle("db:card:update", (_e, { id, patch }) => handle(() => {
@@ -344,7 +360,7 @@ export function registerDbHandlers(ctx: DbContext): void {
     invalidateRelationshipCache(ctx.db, id);
     if (card.workspaceId) {
       computeAutoRelationships(ctx.db, card.workspaceId, [id]);
-      void reindexSingleCardEmbedding(ctx, id, card.workspaceId).catch(() => {});
+      recomputeCardSemanticEdges(ctx, id, card.workspaceId);
     }
     return card;
   }));
