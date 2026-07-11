@@ -136,6 +136,10 @@ export default function ChatScreen() {
   // the Chat tab (it's session state otherwise, lost on unmount).
   const [usage, setUsage] = useState<ChatUsage | null>(() => loadLastChatUsage());
   const scrollRef = useRef<ScrollView>(null);
+  // Whether the user is at/near the bottom of the transcript. Auto-follow on
+  // content growth only when true, so expanding a past message's reasoning block
+  // (or other layout changes while scrolled up) doesn't yank the view to the end.
+  const nearBottom = useRef(true);
   const router = useRouter();
   // Persistent agent conversation (UIMessage parts format) across turns. Seeded
   // once from the same on-device history as `messages` above. A ref's argument
@@ -199,6 +203,7 @@ export default function ChatScreen() {
     // can desync with this library and leave the keyboard stuck open until an
     // app switch). Fire-and-forget; don't block the send.
     KeyboardController.dismiss().catch(() => {});
+    nearBottom.current = true; // sending jumps to the end; follow the reply
     setInput("");
     setAttachments([]);
     setBusy(true);
@@ -367,7 +372,17 @@ export default function ChatScreen() {
           contentContainerStyle={[styles.list, messages.length === 0 && styles.listEmpty]}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="interactive"
-          onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
+          scrollEventThrottle={16}
+          onScroll={(e) => {
+            const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+            const distanceFromBottom = contentSize.height - (contentOffset.y + layoutMeasurement.height);
+            nearBottom.current = distanceFromBottom < 80;
+          }}
+          onContentSizeChange={() => {
+            // Follow new content only when the user is already near the bottom
+            // (e.g. streaming) — never when they've scrolled up to read/expand.
+            if (nearBottom.current) scrollRef.current?.scrollToEnd({ animated: true });
+          }}
         >
           {messages.length === 0 ? (
             <EmptyState
