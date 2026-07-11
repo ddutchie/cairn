@@ -79,7 +79,7 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: "list_notes",
-    description: "List notes in a project. Returns id, title, folder.",
+    description: "List notes in a project (id, title, folder).",
     params: '{ "project_id": string }',
     jsonSchema: obj({ project_id: S }, ["project_id"]),
     run: (a) => q.listNotes(str(a.project_id)).map((n) => ({ id: n.id, title: n.title, folder: n.folder })),
@@ -113,6 +113,38 @@ export const TOOLS: ToolDef[] = [
     run: (a) => ({ ok: q.patchNote(str(a.id), str(a.oldString), str(a.newString)) }),
   },
   {
+    name: "rename_note",
+    description:
+      "Rename a note and rewrite inbound [[wikilinks]] in other notes so links stay intact. Rejects a duplicate title in the same project.",
+    params: '{ "id": string, "newTitle": string }',
+    jsonSchema: obj({ id: S, newTitle: S }, ["id", "newTitle"]),
+    run: (a) => q.renameNote(str(a.id), str(a.newTitle)),
+  },
+  {
+    name: "bulk_move_notes",
+    description: 'Move one or more notes to a folder (use "" for the project root). Returns the count moved.',
+    params: '{ "note_ids": string[], "folder": string }',
+    jsonSchema: obj({ note_ids: { type: "array", items: S }, folder: S }, ["note_ids", "folder"]),
+    run: (a) => ({ moved: q.moveNotesToFolder(Array.isArray(a.note_ids) ? a.note_ids.map(str) : [], str(a.folder)) }),
+  },
+  {
+    name: "list_folders",
+    description: "List all folder paths used by a project's notes.",
+    params: '{ "project_id": string }',
+    jsonSchema: obj({ project_id: S }, ["project_id"]),
+    run: (a) => q.listFolders(str(a.project_id)),
+  },
+  {
+    name: "delete_note",
+    description: "Delete a note by id. This is a soft delete synced as a tombstone; confirm intent before calling.",
+    params: '{ "id": string }',
+    jsonSchema: obj({ id: S }, ["id"]),
+    run: (a) => {
+      q.softDeleteNote(str(a.id));
+      return { ok: true };
+    },
+  },
+  {
     name: "list_columns",
     description: "List board columns for a project (id, name).",
     params: '{ "project_id": string }',
@@ -138,6 +170,45 @@ export const TOOLS: ToolDef[] = [
     jsonSchema: obj({ project_id: S }, ["project_id"]),
     run: (a) =>
       q.listCards(str(a.project_id)).map((c) => ({ id: c.id, title: c.title, priority: c.priority, column_id: c.column_id })),
+  },
+  {
+    name: "get_task",
+    description: "Get a task card's full detail by id (title, description, priority, column, due date, assignee, tags).",
+    params: '{ "id": string }',
+    jsonSchema: obj({ id: S }, ["id"]),
+    run: (a) => q.getCard(str(a.id)),
+  },
+  {
+    name: "update_task",
+    description:
+      "Update a task card. Any provided field is changed; pass column_id to move it to another column. priority = low|medium|high|urgent. Set due_date to \"\" to clear it.",
+    params:
+      '{ "id": string, "title"?: string, "description"?: string, "priority"?: string, "column_id"?: string, "due_date"?: string, "assignee"?: string }',
+    jsonSchema: obj(
+      { id: S, title: S, description: S, priority: S, column_id: S, due_date: S, assignee: S },
+      ["id"],
+    ),
+    run: (a) => {
+      const patch: { title?: string; description?: string; priority?: string; dueDate?: string | null; assignee?: string | null } = {};
+      if (a.title !== undefined) patch.title = str(a.title);
+      if (a.description !== undefined) patch.description = str(a.description);
+      if (a.priority !== undefined) patch.priority = str(a.priority);
+      if (a.due_date !== undefined) patch.dueDate = str(a.due_date) || null;
+      if (a.assignee !== undefined) patch.assignee = str(a.assignee) || null;
+      if (Object.keys(patch).length > 0) q.updateTask(str(a.id), patch);
+      if (a.column_id !== undefined && str(a.column_id)) q.moveCardToColumn(str(a.id), str(a.column_id));
+      return { ok: true };
+    },
+  },
+  {
+    name: "delete_task",
+    description: "Delete a task card by id. This is a soft delete synced as a tombstone; confirm intent before calling.",
+    params: '{ "id": string }',
+    jsonSchema: obj({ id: S }, ["id"]),
+    run: (a) => {
+      q.deleteCard(str(a.id));
+      return { ok: true };
+    },
   },
 ];
 

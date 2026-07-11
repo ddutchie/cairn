@@ -675,6 +675,21 @@ export function archiveCard(cardId: string): void {
   notifyLocalWrite();
 }
 
+/**
+ * Soft-delete a task card (set deleted_at). LIVE-scoped lists exclude it and the
+ * capture triggers publish the tombstone to peers — mirrors softDeleteNote.
+ */
+export function deleteCard(cardId: string): void {
+  const now = new Date().toISOString();
+  getDb().runSync(
+    `UPDATE task_cards SET deleted_at = ?, updated_at = ?, version = version + 1 WHERE id = ?`,
+    now,
+    now,
+    cardId,
+  );
+  notifyLocalWrite();
+}
+
 // ── Aggregate context tools (mirror desktop read-tools-pure) ────────────────
 
 /**
@@ -860,6 +875,75 @@ export function updateNote(id: string, title: string, content: string): void {
     id,
   );
   notifyLocalWrite();
+}
+
+/**
+ * Rename a note and rewrite inbound `[[wikilinks]]` in other notes so links stay
+ * intact — mirrors the desktop rename_note (minus the .md file write; mobile is
+ * SQLite-only). Rejects a title collision within the same project. Returns an
+ * error object on failure, or the new title on success.
+ */
+export function renameNote(id: string, newTitle: string): { error: string } | { title: string } {
+  const title = newTitle.trim();
+  if (!title) return { error: "newTitle is required" };
+  const note = getNote(id);
+  if (!note) return { error: "Note not found" };
+  if (note.title === title) return { title };
+
+  // Reject a same-project title collision (case-insensitive, live notes only).
+  const collision = getDb().getFirstSync<{ id: string }>(
+    `SELECT id FROM notes WHERE ${LIVE} AND type='note' AND project_id = ? AND id <> ? AND lower(title) = lower(?) LIMIT 1`,
+    note.project_id,
+    id,
+    title,
+  );
+  if (collision) return { error: `A note titled "${title}" already exists in this project` };
+
+  const oldLink = `[[${note.title}]]`;
+  const newLink = `[[${title}]]`;
+  const now = new Date().toISOString();
+
+  // Rewrite wikilinks in every other live note that references the old title.
+  const linked = getDb().getAllSync<{ id: string; content: string }>(
+    `SELECT id, content FROM notes WHERE ${LIVE} AND id <> ? AND content LIKE ?`,
+    id,
+    `%${oldLink}%`,
+  );
+  getDb().withTransactionSync(() => {
+    getDb().runSync(
+      `UPDATE notes SET title = ?, updated_at = ?, version = version + 1 WHERE id = ?`,
+      title,
+      now,
+      id,
+    );
+    for (const other of linked) {
+      const next = other.content.split(oldLink).join(newLink);
+      getDb().runSync(
+        `UPDATE notes SET content = ?, content_text = ?, updated_at = ?, version = version + 1 WHERE id = ?`,
+        next,
+        stripMarkdown(next),
+        now,
+        other.id,
+      );
+    }
+  });
+  notifyLocalWrite();
+  return { title };
+}
+
+/** Move notes to a folder (empty string = project root). Returns the count moved. */
+export function moveNotesToFolder(noteIds: string[], folder: string): number {
+  if (noteIds.length === 0) return 0;
+  const now = new Date().toISOString();
+  const placeholders = noteIds.map(() => "?").join(", ");
+  const res = getDb().runSync(
+    `UPDATE notes SET folder = ?, updated_at = ?, version = version + 1 WHERE id IN (${placeholders})`,
+    folder,
+    now,
+    ...(noteIds as never[]),
+  );
+  notifyLocalWrite();
+  return res.changes ?? 0;
 }
 
 /** Pin or unpin a note. Plain UPDATE so the capture triggers publish it. */

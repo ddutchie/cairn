@@ -43,10 +43,13 @@ const NOTE_TOOLS: Record<string, "args" | "result"> = {
   get_note: "args",
   append_to_note: "args",
   patch_note: "args",
+  rename_note: "args",
 };
 /** Tools whose result points at a CARD. */
 const CARD_TOOLS: Record<string, "args" | "result"> = {
   create_task: "result",
+  get_task: "args",
+  update_task: "args",
 };
 
 /** Pull a string `id` field out of an unknown args/result object. */
