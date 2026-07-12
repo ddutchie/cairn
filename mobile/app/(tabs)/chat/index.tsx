@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from "react";
 import {
   View,
   Text,
@@ -12,8 +12,8 @@ import {
   ActionSheetIOS,
   Platform,
 } from "react-native";
-import Animated, { useSharedValue } from "react-native-reanimated";
-import { KeyboardStickyView, KeyboardController, KeyboardChatScrollView } from "react-native-keyboard-controller";
+import { useSharedValue, withTiming } from "react-native-reanimated";
+import { KeyboardStickyView, KeyboardController, KeyboardChatScrollView, KeyboardGestureArea } from "react-native-keyboard-controller";
 import { Stack, useRouter, useFocusEffect } from "expo-router";
 import { CheckCircle, Bot, User, Send, ImagePlus, X, Settings2, Brain, ChevronRight } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -115,7 +115,7 @@ export default function ChatScreen() {
   // Seeded from the last persisted value so the ring survives closing/reopening
   // the Chat tab (it's session state otherwise, lost on unmount).
   const [usage, setUsage] = useState<ChatUsage | null>(() => loadLastChatUsage());
-  const scrollRef = useRef<Animated.ScrollView>(null);
+  const scrollRef = useRef<ComponentRef<typeof KeyboardChatScrollView>>(null);
   // Whether the user is at/near the bottom of the transcript. Auto-follow on
   // content growth only when true, so expanding a past message's reasoning block
   // (or other layout changes while scrolled up) doesn't yank the view to the end.
@@ -174,7 +174,10 @@ export default function ChatScreen() {
   // component consumes it on the UI thread.
   const extraContentPadding = useSharedValue(COMPOSER_FALLBACK_H + 12 + closedLift);
   useEffect(() => {
-    extraContentPadding.value = composerH + 12 + closedLift;
+    // Animate (not snap) so the transcript padding eases when the composer grows
+    // to multiple lines or the tab-bar lift changes, matching the keyboard's own
+    // motion instead of jumping.
+    extraContentPadding.value = withTiming(composerH + 12 + closedLift);
   }, [composerH, closedLift, extraContentPadding]);
 
   const send = useCallback(async () => {
@@ -369,41 +372,49 @@ export default function ChatScreen() {
             "whenAtEnd" = only follow the bottom when the user is already there,
             ChatGPT-style), so the last message stays visible above the keyboard.
             extraContentPadding keeps the last message clear of the floating
-            composer even when the keyboard is closed. */}
-        <KeyboardChatScrollView
-          ref={scrollRef}
+            composer even when the keyboard is closed. Wrapped in
+            KeyboardGestureArea (full-region) so keyboardDismissMode="interactive"
+            gets proper swipe-to-dismiss gesture handling (per the library's chat
+            example) — iOS follow-finger + Android gesture control. */}
+        <KeyboardGestureArea
+          interpolator="ios"
           style={StyleSheet.absoluteFill}
-          contentContainerStyle={[styles.list, messages.length === 0 && styles.listEmpty]}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="interactive"
-          keyboardLiftBehavior="whenAtEnd"
-          offset={Math.max(closedLift - KEYBOARD_OPEN_GAP, 0)}
-          extraContentPadding={extraContentPadding}
-          scrollEventThrottle={16}
-          onEndVisible={(visible) => { nearBottom.current = visible; }}
-          onContentSizeChange={() => {
-            // Follow new content only when the user is already near the bottom
-            // (e.g. streaming) — never when they've scrolled up to read/expand.
-            if (nearBottom.current) scrollRef.current?.scrollToEnd({ animated: true });
-          }}
         >
-          {messages.length === 0 ? (
-            <EmptyState
-              title="Ask Cairn"
-              subtitle="Ask about your notes, or tell the assistant to create or edit them. Changes sync to your desktop."
-              align="top"
-            >
-              {!configured ? (
-                <Pressable style={styles.configureBtn} onPress={() => router.push("/settings/ai")}>
-                  <Settings2 size={14} color={t.accentFg} />
-                  <Text style={styles.configureBtnText}>Set up AI</Text>
-                </Pressable>
-              ) : null}
-            </EmptyState>
-          ) : (
-            messages.map((m, i) => <Bubble key={i} m={m} t={t} styles={styles} />)
-          )}
-        </KeyboardChatScrollView>
+          <KeyboardChatScrollView
+            ref={scrollRef}
+            style={StyleSheet.absoluteFill}
+            contentContainerStyle={[styles.list, messages.length === 0 && styles.listEmpty]}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
+            keyboardLiftBehavior="whenAtEnd"
+            offset={Math.max(closedLift - KEYBOARD_OPEN_GAP, 0)}
+            extraContentPadding={extraContentPadding}
+            scrollEventThrottle={16}
+            onEndVisible={(visible) => { nearBottom.current = visible; }}
+            onContentSizeChange={() => {
+              // Follow new content only when the user is already near the bottom
+              // (e.g. streaming) — never when they've scrolled up to read/expand.
+              if (nearBottom.current) scrollRef.current?.scrollToEnd({ animated: true });
+            }}
+          >
+            {messages.length === 0 ? (
+              <EmptyState
+                title="Ask Cairn"
+                subtitle="Ask about your notes, or tell the assistant to create or edit them. Changes sync to your desktop."
+                align="top"
+              >
+                {!configured ? (
+                  <Pressable style={styles.configureBtn} onPress={() => router.push("/settings/ai")}>
+                    <Settings2 size={14} color={t.accentFg} />
+                    <Text style={styles.configureBtnText}>Set up AI</Text>
+                  </Pressable>
+                ) : null}
+              </EmptyState>
+            ) : (
+              messages.map((m, i) => <Bubble key={i} m={m} t={t} styles={styles} />)
+            )}
+          </KeyboardChatScrollView>
+        </KeyboardGestureArea>
 
         {/* Sticky composer: pinned to the bottom, rides up with the keyboard
             automatically. When the keyboard is closed it's offset up above the
