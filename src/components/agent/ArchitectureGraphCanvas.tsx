@@ -94,9 +94,11 @@ export function ArchitectureGraphCanvas({ nodes: allNodes, edges: allEdges, root
   const drawRef = useRef<() => void>(() => {});
   const zoomRef = useRef<d3.ZoomBehavior<HTMLCanvasElement, unknown> | null>(null);
   const dimsRef = useRef(dims);
+  // eslint-disable-next-line react-hooks/refs -- keep latest value for ref-only consumers (render loop / fit)
   dimsRef.current = dims;
   const userInteractedRef = useRef(false);
   const selectedRef = useRef(selectedId);
+  // eslint-disable-next-line react-hooks/refs -- keep latest value for ref-only consumers (render loop)
   selectedRef.current = selectedId;
 
   // Highlight the selected node + its direct neighbours.
@@ -110,6 +112,7 @@ export function ArchitectureGraphCanvas({ nodes: allNodes, edges: allEdges, root
     return ids;
   }, [selectedId, edges]);
   const connectedRef = useRef(connectedIds);
+  // eslint-disable-next-line react-hooks/refs -- keep latest value for ref-only consumers (render loop)
   connectedRef.current = connectedIds;
 
   const nodeFingerprint = useMemo(() => nodes.map((n) => n.id).join("|"), [nodes]);
@@ -271,7 +274,7 @@ export function ArchitectureGraphCanvas({ nodes: allNodes, edges: allEdges, root
     }
     ctx.restore();
   }, [fs]);
-  drawRef.current = draw;
+  useEffect(() => { drawRef.current = draw; }, [draw]);
 
   // ── canvas sizing (DPR-aware) ──
   useEffect(() => {

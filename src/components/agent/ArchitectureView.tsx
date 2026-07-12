@@ -154,6 +154,7 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
   }, [cwd]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset + reload the whole view when the code directory changes
     setOverview(null);
     setExpanded(new Set());
     setFileSymbols({});
@@ -222,6 +223,7 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
   useEffect(() => {
     if ((view !== "graph" && view !== "matrix") || !cwd || graph) return;
     let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- kicks off the lazy graph fetch when a graph view opens
     setGraphLoading(true);
     window.electron?.agent
       .codebaseGraph(cwd)

@@ -26,7 +26,6 @@ import {
   Hash,
   Layers,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { CairnEvents } from "@/lib/events";
 
 interface CodebaseSymbol {
@@ -91,8 +90,8 @@ export function ArchitectureSidebar() {
     return () => { cancelled = true; };
   }, [filePath]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- loads/resets symbol state when the active file changes
   useEffect(() => loadSymbols(), [loadSymbols]);
-
   // Refresh after the file is re-indexed (debounced auto-reindex on save fires
   // agentFilesChanged), so the panel reflects newly added/removed symbols.
   useEffect(() => {
