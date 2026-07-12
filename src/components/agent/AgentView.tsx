@@ -216,11 +216,12 @@ export function AgentView() {
         mobileTab === "terminal" ? "hidden md:flex" : "flex"
       )}>
 
-        {/* Left pane — file tree */}
+        {/* Left pane — file tree. No border-r on desktop: the resize divider to
+            its right provides the visible separator (avoids a double line). */}
         <div
           ref={treePaneRef}
           className={cn(
-            "flex-shrink-0 flex flex-col border-r border-[var(--border)] overflow-hidden",
+            "flex-shrink-0 flex flex-col overflow-hidden",
             "w-full md:w-auto max-md:!w-full",
             mobileTab === "files" ? "flex flex-1" : "hidden md:flex"
           )}
@@ -228,14 +229,17 @@ export function AgentView() {
           <FileTree project={project} />
         </div>
 
-        {/* Left resize divider */}
+        {/* Left resize divider — a real 1.5-wide column with a centred 1px line
+            that brightens to accent on hover (matches the bottom terminal
+            divider so both handles read the same). */}
         <div
           ref={leftDividerRef}
-          className="w-0 flex-shrink-0 cursor-col-resize relative z-10 hidden md:block"
-          style={{ marginLeft: "-3px", marginRight: "-3px", padding: "0 3px" }}
+          className="group w-1.5 flex-shrink-0 cursor-col-resize bg-[var(--background)] flex justify-center hidden md:flex"
           role="separator"
           aria-label="Resize file tree"
-        />
+        >
+          <div className="w-px h-full bg-[var(--border)] group-hover:bg-[var(--accent)] transition-colors" />
+        </div>
 
         {/* Centre pane — tab bar + editor/diff */}
         <div className={cn(
@@ -327,15 +331,23 @@ export function AgentView() {
       {/* ── Bottom terminal (only when a codeDirectory is set) ─────────────── */}
       {codeDirectory && (
         <>
-          {/* Horizontal drag divider */}
+          {/* Horizontal drag divider — a real 6px-tall row (no negative-margin
+              overlap trick, so nothing can bleed across it) with a centred 1px
+              line that brightens to accent on hover to signal it's grabbable. */}
           <div
             ref={bottomDividerRef}
-            className="h-0 flex-shrink-0 cursor-row-resize relative z-10 border-t border-[var(--border)] hidden md:block"
-            style={{ marginTop: "-3px", marginBottom: "-3px", padding: "3px 0" }}
+            className="group h-1.5 flex-shrink-0 cursor-row-resize bg-[var(--background)] flex items-center hidden md:flex"
             role="separator"
             aria-label="Resize bottom terminal"
-          />
-          <div className={cn("flex-shrink-0", mobileTab === "terminal" ? "flex flex-1 h-full w-full" : "hidden md:flex w-full")}>
+          >
+            <div className="h-px w-full bg-[var(--border)] group-hover:bg-[var(--accent)] transition-colors" />
+          </div>
+          <div
+            className={cn(
+              "flex-shrink-0",
+              mobileTab === "terminal" ? "flex flex-1 h-full w-full" : "hidden md:flex w-full",
+            )}
+          >
             <AgentBottomTerminal cwd={codeDirectory} height={bottomHeight} visible={mobileTab === "terminal"} />
           </div>
         </>
