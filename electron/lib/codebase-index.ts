@@ -46,15 +46,26 @@ export function isIgnoredDir(name: string): boolean {
   return IGNORED_DIR_PREFIXES.some((p) => name === p || name.startsWith(`${p}-`));
 }
 
-// Keywords and built-ins to ignore in relation extraction
+// Keywords and built-ins to ignore — both as relation targets AND as symbol
+// names (a construct whose parsed name lands here is dropped, so keywords like
+// `function`/`return`/`string` never pollute the index or the call graph).
 const REJECTED_RELATION_TARGETS = new Set([
+  // Control flow / declarations
   "if", "for", "while", "switch", "catch", "try", "using", "lock", "synchronized",
   "with", "function", "class", "def", "struct", "interface", "module", "import", "export",
   "return", "break", "continue", "default", "else", "elif", "except", "finally", "let", "var",
-  "const", "print", "console", "log", "error", "warn", "info", "debug", "int", "float",
-  "str", "bool", "list", "dict", "set", "tuple", "len", "range", "isinstance", "type",
+  "const", "enum", "namespace", "package", "public", "private", "protected", "static",
+  "abstract", "readonly", "extends", "implements", "typeof", "instanceof", "in", "of", "as",
+  "new", "delete", "throw", "void", "yield", "await", "async", "do", "goto", "case",
+  // Common calls / logging
+  "print", "println", "console", "log", "error", "warn", "info", "debug", "len", "range",
+  "isinstance", "type", "require",
+  // Primitive / built-in type names (TS/JS, Python, Rust, Go, C-family)
+  "int", "float", "double", "long", "short", "byte", "char", "str", "string", "number",
+  "bool", "boolean", "object", "any", "unknown", "never", "symbol", "bigint",
+  "list", "dict", "set", "map", "tuple", "array", "vec", "option", "result",
+  // Literals / this-likes
   "true", "false", "null", "undefined", "nil", "none", "self", "this", "super",
-  "new", "delete", "throw", "void", "yield", "await", "async"
 ]);
 
 export interface ExtractedSymbol {
@@ -364,7 +375,7 @@ export function parseFileContent(content: string, ext: string): ExtractedSymbol[
       }
     }
     
-    if (matched && name) {
+    if (matched && name && !REJECTED_RELATION_TARGETS.has(name)) {
       const docstring = commentBuffer.length > 0 ? commentBuffer.join("\n").trim() : null;
       symbols.push({
         name,

@@ -393,8 +393,8 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
           {/* Right column — selected symbol + call graph */}
           <div className="w-80 flex-shrink-0 flex flex-col overflow-hidden hidden xl:flex">
             {selected ? (
-              <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
-                <div>
+              <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 min-h-0">
+                <div className="flex-shrink-0">
                   <div className="flex items-center gap-2 mb-1">
                     <KindGlyph kind={selected.kind} size={14} />
                     <span className="text-sm font-semibold text-[var(--text-primary)] font-mono break-all">
@@ -407,13 +407,13 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
                 </div>
 
                 {selected.signature && (
-                  <pre className="text-[0.7rem] leading-relaxed font-mono text-[var(--text-secondary)] bg-[var(--surface-2)] border border-[var(--border)] rounded-md p-2.5 overflow-x-auto whitespace-pre-wrap break-words">
+                  <pre className="flex-shrink-0 text-[0.7rem] leading-relaxed font-mono text-[var(--text-secondary)] bg-[var(--surface-2)] border border-[var(--border)] rounded-md p-2.5 overflow-x-auto whitespace-pre-wrap break-words m-0">
                     {selected.signature}
                   </pre>
                 )}
 
                 {selected.docstring && (
-                  <div className="text-xs text-[var(--text-secondary)] leading-relaxed whitespace-pre-wrap break-words">
+                  <div className="flex-shrink-0 text-xs text-[var(--text-secondary)] leading-relaxed whitespace-pre-wrap break-words">
                     {selected.docstring}
                   </div>
                 )}

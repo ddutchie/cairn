@@ -123,6 +123,26 @@ describe("Codebase Semantic Indexer", () => {
       expect(fn!.kind).toBe("function");
     });
 
+    it("does not extract language keywords / built-ins as symbols", () => {
+      // Constructs whose parsed 'name' collides with a keyword/built-in must be
+      // dropped, otherwise they pollute the index (and show up as bogus
+      // 'calls / uses' targets in the Architecture view).
+      const f = path.join(tmpDir, "keywords.ts");
+      fs.writeFileSync(f, `
+        function string() { return 1; }
+        function return_() { return 2; }
+        class function {}
+        const real = () => {};
+        function properName() { return 3; }
+      `);
+      const names = parseFile(f).map((s) => s.name);
+      expect(names).not.toContain("string");
+      expect(names).not.toContain("function");
+      expect(names).not.toContain("return");
+      // Legitimately-named symbols are still extracted.
+      expect(names).toContain("properName");
+    });
+
     it("parses Python symbols with indentation-based methods", () => {
       const pyFile = path.join(tmpDir, "sample.py");
       fs.writeFileSync(pyFile, `
