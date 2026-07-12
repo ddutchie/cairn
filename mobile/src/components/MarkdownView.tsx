@@ -3,8 +3,19 @@ import { Linking, Text, View, Pressable } from "react-native";
 import Markdown, { MarkdownIt, type RenderRules, type ASTNode } from "react-native-markdown-display";
 import markdownItMark from "markdown-it-mark";
 import { useRouter } from "expo-router";
-import { Square, CheckSquare } from "lucide-react-native";
-import { useTheme, withAlpha, type Theme } from "@/theme";
+import {
+  Square,
+  CheckSquare,
+  Info,
+  Lightbulb,
+  AlertTriangle,
+  AlertCircle,
+  CheckCircle2,
+  HelpCircle,
+  Quote,
+  type LucideIcon,
+} from "lucide-react-native";
+import { useTheme, withAlpha, surfaceTint, type Theme } from "@/theme";
 import { findNoteIdByTitle, findCardIdByTitle, liveNoteTitleById, liveCardTitleById } from "@/db/queries";
 import { CodeBlock } from "@/components/CodeBlock";
 import {
@@ -99,23 +110,29 @@ export function MarkdownView({
     // Card/task links carry an id directly (baked in at preprocess).
     const cardId = cardIdFromUrl(url);
     if (cardId != null) {
-      router.push(`/card/${cardId}`);
-      return false;
+      // Only navigate if the card actually exists — a baked id always does, but
+      // a title-encoded fallback might not resolve. Never route to an empty screen.
+      const id = liveCardTitleById(cardId) != null ? cardId : findCardIdByTitle(cardId);
+      if (id) router.push(`/card/${id}`);
+      return false; // handled — swallow the tap even when unresolved
     }
     // Note links carry either a baked id (resolveLinks) or a title (fallback).
     const noteRef = noteTitleFromUrl(url);
     if (noteRef != null) {
-      // Treat the value as a title first (note-body fallback); if no note has
-      // that title, it's already a baked id — navigate to it directly.
-      const id = findNoteIdByTitle(noteRef) ?? noteRef;
+      // Resolve to a real note: by title first (note-body fallback), else treat
+      // the value as a baked id only if it names a live note. An unresolved
+      // wikilink must NOT navigate (desktop parity — it's a dead link that just
+      // renders dimmed), so we swallow the tap instead of pushing to an empty
+      // /note/<garbage> screen.
+      const id = findNoteIdByTitle(noteRef) ?? (liveNoteTitleById(noteRef) ? noteRef : null);
       if (id) router.push(`/note/${id}`);
-      return false; // handled (whether resolved or not) — don't open externally
+      return false; // handled (resolved or not) — don't open externally
     }
     Linking.openURL(url).catch(() => {});
     return false;
   };
   const rules = useMemo(
-    () => makeRules(t, content ?? "", onChangeContent, onHeadingLayout),
+    () => makeRules(t, content ?? "", onChangeContent, onHeadingLayout, onLinkPress),
     [t, content, onChangeContent, onHeadingLayout],
   );
 
@@ -308,17 +325,36 @@ function makeRules(
   source: string,
   onChangeContent?: (next: string) => void,
   onHeadingLayout?: (id: string, y: number) => void,
+  onLinkPress?: (url: string) => void,
 ): RenderRules {
-  const CALLOUT_ACCENT: Record<string, string> = {
-    note: t.accent,
-    info: t.info,
-    tip: t.success,
-    success: t.success,
-    warning: t.warning,
-    danger: t.danger,
-    error: t.danger,
-    question: t.info,
-    quote: t.textTertiary,
+  // Callout type → { colour token, icon }. Mirrors the desktop getCalloutConfig
+  // (src/components/notes/Callout.tsx) exactly, including aliases, so a note
+  // renders identically on both platforms. Every colour is a theme token, so
+  // callouts flip with the OS colour scheme (full dark-mode support).
+  const calloutConfig = (type: string): { color: string; Icon: LucideIcon } => {
+    switch (type) {
+      case "tip":
+        return { color: t.success, Icon: Lightbulb };
+      case "warning":
+        return { color: t.warning, Icon: AlertTriangle };
+      case "danger":
+      case "caution":
+      case "error":
+        return { color: t.danger, Icon: AlertCircle };
+      case "success":
+      case "check":
+      case "done":
+        return { color: t.success, Icon: CheckCircle2 };
+      case "question":
+      case "faq":
+        return { color: t.accent, Icon: HelpCircle };
+      case "quote":
+      case "cite":
+        return { color: t.textTertiary, Icon: Quote };
+      // note / info / fallback
+      default:
+        return { color: t.accent, Icon: Info };
+    }
   };
 
   return {
@@ -347,12 +383,12 @@ function makeRules(
       </Suspense>
     ),
 
-    // ==highlight== → mark chip.
+    // ==highlight== → mark chip. Matches desktop: accent @ 22%.
     mark: (node, children) => (
       <Text
         key={node.key}
         style={{
-          backgroundColor: withAlpha(t.warning, 0.28),
+          backgroundColor: withAlpha(t.accent, 0.22),
           color: t.textPrimary,
         }}
       >
@@ -366,32 +402,46 @@ function makeRules(
       const meta = (node as { sourceMeta?: { callout?: { type: string; title?: string } } }).sourceMeta;
       const callout = meta?.callout;
       if (callout) {
-        const accent = CALLOUT_ACCENT[callout.type] ?? t.accent;
+        const { color, Icon } = calloutConfig(callout.type);
+        const title =
+          callout.title ||
+          callout.type.charAt(0).toUpperCase() + callout.type.slice(1);
         return (
           <View
             key={node.key}
             style={{
-              backgroundColor: withAlpha(accent, 0.1),
-              borderLeftColor: accent,
-              borderLeftWidth: 3,
-              borderRadius: 6,
+              // Opaque surface-anchored fill + muted border, matching the desktop
+              // color-mix(... var(--surface)) / 30%-transparent border.
+              backgroundColor: surfaceTint(color, 0.08, t.surface),
+              borderColor: withAlpha(color, 0.3),
+              borderWidth: 1,
+              borderRadius: 8,
               paddingHorizontal: 12,
               paddingVertical: 8,
               marginBottom: 12,
             }}
           >
-            <Text
+            <View
               style={{
-                color: accent,
-                fontWeight: "700",
-                fontSize: 13,
-                textTransform: "capitalize",
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 6,
                 marginBottom: 4,
               }}
             >
-              {callout.title || callout.type}
-            </Text>
-            {children}
+              <Icon size={14} color={color} />
+              <Text
+                style={{
+                  color,
+                  fontWeight: "600",
+                  fontSize: 13,
+                  flex: 1,
+                }}
+              >
+                {title}
+              </Text>
+            </View>
+            <View style={{ opacity: 0.92 }}>{children}</View>
           </View>
         );
       }
@@ -470,6 +520,41 @@ function makeRules(
       );
     },
 
+    // Links. Cairn wikilinks (cairn://note|task/…) are resolved live against the
+    // local DB: resolved → accent wikilink chip that navigates; UNRESOLVED →
+    // dimmed, non-tappable text (desktop parity — a dead [[link]] must not
+    // navigate to an empty note screen). External links render as a plain accent
+    // underline link.
+    link: (node, children, _parent, styles) => {
+      const href = (node.attributes as { href?: string } | undefined)?.href ?? "";
+      if (cairnLinkResolution(href) === "cairn") {
+        if (!isCairnLinkResolved(href)) {
+          // Dead wikilink — dim and swallow taps (matches desktop text-tertiary/60%).
+          return (
+            <Text key={node.key} style={{ color: t.textTertiary, opacity: 0.6 }} onPress={() => {}}>
+              {children}
+            </Text>
+          );
+        }
+        // Resolved wikilink — accent chip on a faint accent wash (desktop parity).
+        return (
+          <Text
+            key={node.key}
+            style={{ color: t.accent, backgroundColor: withAlpha(t.accent, 0.1), fontWeight: "500" }}
+            onPress={() => onLinkPress?.(href)}
+          >
+            {children}
+          </Text>
+        );
+      }
+      // External / other link — plain accent underline.
+      return (
+        <Text key={node.key} style={styles.link} onPress={() => onLinkPress?.(href)}>
+          {children}
+        </Text>
+      );
+    },
+
     // Headings (h1–h3): render as normal but wrap in an onLayout reporter so the
     // Table of Contents can scroll to each by its GitHub-style slug. h4–h6 fall
     // through to the library defaults (not shown in the TOC).
@@ -487,6 +572,29 @@ function nodeText(node: ASTNode): string {
   if (node.content) return node.content;
   const kids = (node.children ?? []) as ASTNode[];
   return kids.map(nodeText).join("");
+}
+
+/** Classify a link href: "cairn" for internal note/task wikilinks, else "external". */
+function cairnLinkResolution(href: string): "cairn" | "external" {
+  return noteTitleFromUrl(href) != null || cardIdFromUrl(href) != null ? "cairn" : "external";
+}
+
+/**
+ * True if a cairn:// wikilink resolves to a live note or card. A note-body link
+ * carries a title (resolve by title, or by id if it names a live note); a chat
+ * link carries a baked id (resolve by id, or title as a fallback). Mirrors the
+ * desktop "resolved" check so unresolved links can render dimmed + inert.
+ */
+function isCairnLinkResolved(href: string): boolean {
+  const cardId = cardIdFromUrl(href);
+  if (cardId != null) {
+    return liveCardTitleById(cardId) != null || findCardIdByTitle(cardId) != null;
+  }
+  const noteRef = noteTitleFromUrl(href);
+  if (noteRef != null) {
+    return findNoteIdByTitle(noteRef) != null || liveNoteTitleById(noteRef) != null;
+  }
+  return false;
 }
 
 /** Render a heading with its themed style, wrapped in an onLayout reporter. */
@@ -540,12 +648,17 @@ function markdownStyles(t: Theme) {
     s: { textDecorationLine: "line-through" as const, color: t.textTertiary },
     link: { color: t.accent, textDecorationLine: "underline" as const },
     blockquote: {
-      borderLeftColor: t.accent,
+      // The library default fills blockquotes with #F5F5F5 / #CCC — override
+      // both so plain (non-callout) blockquotes read on dark. Desktop: no fill,
+      // left border = border token, text = text-secondary (RN can't cascade the
+      // text colour into nested paragraphs, so those stay text-primary).
+      backgroundColor: "transparent",
+      borderColor: t.border,
+      borderLeftColor: t.border,
       borderLeftWidth: 3,
       paddingHorizontal: 14,
       paddingVertical: 4,
       marginVertical: 12,
-      // desktop: text-secondary, no fill
     },
     code_inline: {
       color: t.textPrimary,

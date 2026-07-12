@@ -7,6 +7,7 @@ import { getDb } from "./index";
 import { inspectConflict, cleanConflictTitle } from "@cairn/shared/sync/conflict";
 import { stripMarkdown } from "@cairn/shared/notes/text";
 import { buildNoteOutline, sliceLines, noteDigest } from "@cairn/shared/notes/toc";
+import { dedupeFoldersCaseInsensitive } from "@cairn/shared/notes/folder-tree";
 import { notifyLocalWrite } from "@/sync/write-signal";
 
 /** Client-generated collision-free id (mirrors desktop nanoid(12) scheme). */
@@ -246,13 +247,15 @@ export function listProjectSummaries(): ProjectSummary[] {
   }));
 }
 
-/** Distinct folders within a project (empty string = project root). */
+/** Distinct folders within a project. Case-insensitively de-duplicated
+ *  (first-seen casing wins) so "Mobile" and "mobile" list as one — mirrors the
+ *  notes-tree grouping. Root (empty folder) is excluded. */
 export function listFolders(projectId: string): string[] {
   const rows = getDb().getAllSync<{ folder: string }>(
     `SELECT DISTINCT folder FROM notes WHERE ${LIVE} AND type='note' AND project_id = ? ORDER BY folder`,
     projectId,
   );
-  return rows.map((r) => r.folder ?? "");
+  return dedupeFoldersCaseInsensitive(rows.map((r) => r.folder));
 }
 
 export function listNotes(projectId?: string): NoteRow[] {
