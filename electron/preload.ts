@@ -50,6 +50,15 @@ interface CodebaseRelationEdge {
 interface CodebaseRelations {
   incoming: CodebaseRelationEdge[]; outgoing: CodebaseRelationEdge[];
 }
+interface CodebaseGraphNode {
+  id: string; file_path: string; root_path: string; symbol_count: number;
+}
+interface CodebaseGraphEdge {
+  source: string; target: string; weight: number;
+}
+interface CodebaseGraph {
+  folder: string; nodes: CodebaseGraphNode[]; edges: CodebaseGraphEdge[];
+}
 // ── Inline types for the git API (not shared with the renderer bundle) ──────
 
 interface GitStatusEntry {
@@ -409,6 +418,7 @@ const api = {
     gitDiff: (cwd: string) => invoke<string>("agent:gitDiff", { cwd }),
     // Codebase index (Architecture tab) — read-only views over the semantic index.
     codebaseOverview: (folder: string) => invoke<CodebaseOverview>("agent:codebaseOverview", { folder }),
+    codebaseGraph: (folder: string) => invoke<CodebaseGraph>("agent:codebaseGraph", { folder }),
     codebaseFileSymbols: (filePath: string) =>
       invoke<CodebaseSymbol[]>("agent:codebaseFileSymbols", { filePath }),
     codebaseRelations: (name: string, folder?: string) =>

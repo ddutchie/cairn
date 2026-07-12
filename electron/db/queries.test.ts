@@ -38,6 +38,7 @@ import {
   insertCodebaseSymbol,
   insertCodebaseRelation,
   getCodebaseOverview,
+  getCodebaseGraph,
 } from "./queries";
 
 // ── Shared fixture builders ───────────────────────────────────────────────
@@ -683,5 +684,35 @@ describe("getCodebaseOverview", () => {
     expect(o.totalRelations).toBe(0);
     expect(o.kinds).toEqual([]);
     expect(o.lastIndexedAt).toBeNull();
+  });
+});
+
+describe("getCodebaseGraph", () => {
+  let db: Database.Database;
+  const root = "/tmp/cairn-graph-repo";
+
+  beforeEach(() => {
+    db = makeDb();
+    upsertCodebaseFile(db, { id: "f1", rootPath: root, filePath: `${root}/a.ts`, hash: "h1" });
+    upsertCodebaseFile(db, { id: "f2", rootPath: root, filePath: `${root}/b.ts`, hash: "h2" });
+    // a.ts defines caller; b.ts defines helper. caller → helper (cross-file).
+    insertCodebaseSymbol(db, { id: "s1", fileId: "f1", name: "caller", kind: "function", line: 1, signature: "", docstring: null });
+    insertCodebaseSymbol(db, { id: "s2", fileId: "f2", name: "helper", kind: "function", line: 1, signature: "", docstring: null });
+    // a self-reference within a.ts must NOT become a file→file edge.
+    insertCodebaseSymbol(db, { id: "s3", fileId: "f1", name: "sibling", kind: "function", line: 2, signature: "", docstring: null });
+    insertCodebaseRelation(db, { sourceId: "s1", targetName: "helper", type: "call" });
+    insertCodebaseRelation(db, { sourceId: "s1", targetName: "sibling", type: "call" });
+  });
+
+  it("returns file nodes with symbol counts", () => {
+    const g = getCodebaseGraph(db, root);
+    expect(g.nodes.map((n) => n.id).sort()).toEqual(["f1", "f2"]);
+    expect(g.nodes.find((n) => n.id === "f1")!.symbol_count).toBe(2);
+  });
+
+  it("aggregates a directed cross-file edge and drops self-references", () => {
+    const g = getCodebaseGraph(db, root);
+    expect(g.edges).toHaveLength(1);
+    expect(g.edges[0]).toMatchObject({ source: "f1", target: "f2", weight: 1 });
   });
 });

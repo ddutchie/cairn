@@ -19,6 +19,7 @@ import { AgentBottomTerminal } from "./AgentBottomTerminal";
 import { DiffViewer } from "./DiffViewer";
 import { GitView } from "./GitView";
 import { ArchitectureView } from "./ArchitectureView";
+import { ArchitectureSidebar } from "./ArchitectureSidebar";
 import { TerminalManager } from "./TerminalManager";
 import { Bot, FolderOpen, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -310,9 +311,16 @@ export function AgentView() {
             </button>
           </div>
 
-          {/* Editor content */}
-          <div className={cn("flex-1 min-h-0 overflow-hidden flex flex-col", centreTab !== "editor" && "md:hidden", mobileTab !== "editor" && "max-md:hidden")}>
-            <AgentEditor />
+          {/* Editor content — editor + contextual architecture sidebar (desktop) */}
+          <div className={cn("flex-1 min-h-0 overflow-hidden flex flex-row", centreTab !== "editor" && "md:hidden", mobileTab !== "editor" && "max-md:hidden")}>
+            <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+              <AgentEditor />
+            </div>
+            {codeDirectory && (
+              <div className="hidden lg:flex">
+                <ArchitectureSidebar />
+              </div>
+            )}
           </div>
 
           {/* Diff content */}

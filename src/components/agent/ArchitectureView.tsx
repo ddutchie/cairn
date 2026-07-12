@@ -26,9 +26,12 @@ import {
   Braces,
   Box,
   Hash,
+  List,
+  Share2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { ArchitectureGraphCanvas } from "./ArchitectureGraphCanvas";
 
 interface ArchitectureViewProps {
   cwd: string;
@@ -53,6 +56,11 @@ interface CodebaseRelationEdge {
 }
 interface CodebaseRelations {
   incoming: CodebaseRelationEdge[]; outgoing: CodebaseRelationEdge[];
+}
+interface CodebaseGraph {
+  folder: string;
+  nodes: { id: string; file_path: string; root_path: string; symbol_count: number }[];
+  edges: { source: string; target: string; weight: number }[];
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -112,6 +120,10 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
   // Files with no extracted symbols (e.g. plain .md docs, config) are hidden by
   // default — they'd otherwise clutter the list with "0" rows. Toggleable.
   const [showEmpty, setShowEmpty] = useState(false);
+  // List (file tree) vs. Graph (file-dependency diagram) view.
+  const [view, setView] = useState<"list" | "graph">("list");
+  const [graph, setGraph] = useState<CodebaseGraph | null>(null);
+  const [graphLoading, setGraphLoading] = useState(false);
 
   // Per-file expansion → lazily loaded symbols.
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -120,6 +132,8 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
   // Selected symbol → its call graph.
   const [selected, setSelected] = useState<CodebaseSymbol | null>(null);
   const [relations, setRelations] = useState<CodebaseRelations | null>(null);
+  // Selected file node in graph view.
+  const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!cwd) return;
@@ -141,6 +155,8 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
     setFileSymbols({});
     setSelected(null);
     setRelations(null);
+    setGraph(null);
+    setSelectedFileId(null);
     void load();
   }, [load]);
 
@@ -156,6 +172,8 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
         setFileSymbols({});
         setSelected(null);
         setRelations(null);
+        setGraph(null); // force graph refetch next time graph view opens
+        setSelectedFileId(null);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -191,6 +209,31 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
       /* no relations on error */
     }
   }, [cwd]);
+
+  // Lazily load the file-dependency graph the first time graph view opens (and
+  // after a reindex clears it). Cheap enough to just refetch on demand.
+  useEffect(() => {
+    if (view !== "graph" || !cwd || graph) return;
+    let cancelled = false;
+    setGraphLoading(true);
+    window.electron?.agent
+      .codebaseGraph(cwd)
+      .then((data) => { if (!cancelled && data) setGraph(data); })
+      .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : String(e)); })
+      .finally(() => { if (!cancelled) setGraphLoading(false); });
+    return () => { cancelled = true; };
+  }, [view, cwd, graph]);
+
+  // Load a file's symbols into the shared cache (used by the graph side panel).
+  const openFileInPanel = useCallback(async (fileId: string, filePath: string) => {
+    if (fileSymbols[fileId]) return;
+    try {
+      const data = await window.electron?.agent.codebaseFileSymbols(filePath);
+      if (data) setFileSymbols((prev) => ({ ...prev, [fileId]: data }));
+    } catch {
+      /* leave empty on error */
+    }
+  }, [fileSymbols]);
 
   const root = overview?.roots[0] ?? overview?.folder ?? cwd;
   const maxKind = useMemo(
@@ -237,17 +280,46 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
             indexed {formatWhen(overview?.lastIndexedAt ?? null)}
           </span>
         </div>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={reindex}
-          disabled={reindexing || loading}
-          className="ml-auto flex-shrink-0 gap-1.5"
-          title="Rebuild the codebase index"
-        >
-          <RefreshCw size={13} className={cn(reindexing && "animate-spin")} />
-          {reindexing ? "Indexing…" : "Reindex"}
-        </Button>
+        <div className="ml-auto flex items-center gap-2 flex-shrink-0">
+          {/* List / Graph view toggle */}
+          <div className="flex items-center rounded-md border border-[var(--border)] overflow-hidden">
+            <button
+              onClick={() => setView("list")}
+              className={cn(
+                "flex items-center gap-1 px-2 py-1 text-[0.7rem] font-semibold transition-colors",
+                view === "list"
+                  ? "bg-[var(--surface-3)] text-[var(--text-primary)]"
+                  : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]",
+              )}
+              title="List view"
+            >
+              <List size={12} /> List
+            </button>
+            <button
+              onClick={() => setView("graph")}
+              className={cn(
+                "flex items-center gap-1 px-2 py-1 text-[0.7rem] font-semibold transition-colors border-l border-[var(--border)]",
+                view === "graph"
+                  ? "bg-[var(--surface-3)] text-[var(--text-primary)]"
+                  : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]",
+              )}
+              title="Dependency graph"
+            >
+              <Share2 size={12} /> Graph
+            </button>
+          </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={reindex}
+            disabled={reindexing || loading}
+            className="gap-1.5"
+            title="Rebuild the codebase index"
+          >
+            <RefreshCw size={13} className={cn(reindexing && "animate-spin")} />
+            {reindexing ? "Indexing…" : "Reindex"}
+          </Button>
+        </div>
       </div>
 
       {error && (
@@ -271,6 +343,52 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
             <RefreshCw size={13} className={cn(reindexing && "animate-spin")} />
             {reindexing ? "Indexing…" : "Build index"}
           </Button>
+        </div>
+      ) : overview && view === "graph" ? (
+        <div className="flex-1 min-h-0 flex overflow-hidden">
+          {graphLoading && !graph ? (
+            <div className="flex-1 flex items-center justify-center text-sm text-[var(--text-tertiary)] gap-2">
+              <RefreshCw size={14} className="animate-spin" /> Building graph…
+            </div>
+          ) : (
+            <ArchitectureGraphCanvas
+              nodes={graph?.nodes ?? []}
+              edges={graph?.edges ?? []}
+              root={root}
+              selectedId={selectedFileId}
+              onSelect={(n) => {
+                setSelectedFileId(n?.id ?? null);
+                if (n) void openFileInPanel(n.id, n.file_path);
+              }}
+            />
+          )}
+          {/* Selected-file symbol panel */}
+          <div className="w-72 flex-shrink-0 border-l border-[var(--border)] overflow-y-auto hidden lg:block">
+            {selectedFileId ? (
+              <div className="p-3">
+                <div className="text-xs font-mono text-[var(--text-primary)] break-all mb-2">
+                  {relPath(graph?.nodes.find((n) => n.id === selectedFileId)?.file_path ?? "", root)}
+                </div>
+                {(fileSymbols[selectedFileId] ?? []).length === 0 ? (
+                  <div className="text-[0.7rem] text-[var(--text-tertiary)]">No symbols in this file.</div>
+                ) : (
+                  <div className="flex flex-col">
+                    {(fileSymbols[selectedFileId] ?? []).map((sym) => (
+                      <div key={sym.id} className="flex items-center gap-2 py-1">
+                        <KindGlyph kind={sym.kind} />
+                        <span className="text-xs text-[var(--text-secondary)] font-mono truncate flex-1">{sym.name}</span>
+                        <span className="text-[0.65rem] text-[var(--text-tertiary)] tabular-nums">:{sym.line}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="p-4 text-center text-xs text-[var(--text-tertiary)]">
+                Click a file node to see its symbols. Node size = number of symbols; arrows point from a file to the files it references.
+              </div>
+            )}
+          </div>
         </div>
       ) : overview ? (
         <div className="flex-1 min-h-0 flex overflow-hidden">

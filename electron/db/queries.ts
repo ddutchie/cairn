@@ -1497,6 +1497,54 @@ export function getCodebaseOverview(db: Database.Database, folder: string) {
   };
 }
 
+/**
+ * File-level dependency graph for the Architecture graph view. Resolves each
+ * call/reference edge (source symbol → target symbol name) to the files that
+ * define them, then aggregates a weighted, directed file→file edge (self-loops
+ * within a file are dropped). Also returns the file nodes (with symbol counts)
+ * so the renderer can lay out a module-dependency diagram, plus a lightweight
+ * per-file symbol list for expand-in-place. Scoped like getCodebaseOverview.
+ */
+export function getCodebaseGraph(db: Database.Database, folder: string) {
+  const normalized = path.resolve(folder);
+  const scope = `(f.root_path = ? OR f.file_path = ? OR f.file_path LIKE ?)`;
+  const scopeParams = [normalized, normalized, `${normalized}${path.sep}%`];
+
+  const nodes = db.prepare(`
+    SELECT
+      f.id,
+      f.file_path,
+      f.root_path,
+      (SELECT COUNT(*) FROM codebase_symbols s WHERE s.file_id = f.id) AS symbol_count
+    FROM codebase_files f
+    WHERE ${scope}
+    ORDER BY f.file_path
+  `).all(...scopeParams) as Array<{
+    id: string; file_path: string; root_path: string; symbol_count: number;
+  }>;
+
+  // Directed, weighted file→file edges. A relation's source symbol lives in one
+  // file (sf); its target NAME may be defined in one or more files (tf) — we
+  // join target symbols by name. Aggregate by (source file, target file),
+  // excluding self-references. Both endpoints must be in scope.
+  const edges = db.prepare(`
+    SELECT sf.id AS source, tf.id AS target, COUNT(*) AS weight
+    FROM codebase_relations r
+    JOIN codebase_symbols ss ON r.source_id = ss.id
+    JOIN codebase_files   sf ON ss.file_id = sf.id
+    JOIN codebase_symbols ts ON ts.name = r.target_name
+    JOIN codebase_files   tf ON ts.file_id = tf.id
+    WHERE sf.id != tf.id
+      AND (sf.root_path = ? OR sf.file_path = ? OR sf.file_path LIKE ?)
+      AND (tf.root_path = ? OR tf.file_path = ? OR tf.file_path LIKE ?)
+    GROUP BY sf.id, tf.id
+  `).all(...scopeParams, ...scopeParams) as Array<{
+    source: string; target: string; weight: number;
+  }>;
+
+  return { folder: normalized, nodes, edges };
+}
+
 // ── Note Embeddings ───────────────────────────
 // Vectors are stored as JSON-in-TEXT (sqlite-vec-bridge shape).
 // Since v18, one note can have multiple rows — one per markdown section.
