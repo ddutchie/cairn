@@ -175,4 +175,33 @@ export function registerAiHandlers(ctx: DbContext): void {
       return { title: parsed.primary, description: parsed.secondary };
     });
   });
+
+  // ── AI architecture explanation (Module Map "Explain" action) ─────────────
+  // Takes a compact, pre-computed description of the module graph (folder names,
+  // sizes, and inter-module dependencies) — NOT source code — and returns a
+  // short prose overview plus a one-line responsibility per module. Cheap +
+  // privacy-friendly (only structure is sent).
+  registerIpcHandle("ai:explainArchitecture", async (_e, args: {
+    summary: string;
+    config: { baseUrl: string; model: string; apiKey: string };
+  }) => {
+    const resolved = resolveConfig(args.config, "agent");
+    if ("error" in resolved) {
+      return err(resolved.error);
+    }
+    return handle(async () => {
+      const systemPrompt =
+        "You are a senior engineer explaining a codebase's architecture to a new teammate. "
+        + "You are given a project's module structure: top-level folders (modules) with their file/symbol counts and the dependencies between them. "
+        + "Infer each module's likely responsibility from its name, size and dependencies. "
+        + "Respond in this exact format:\n\n"
+        + "OVERVIEW\n<2-4 sentence plain-English summary of what this project is and how it's structured>\n\n"
+        + "MODULES\n<one line per module: `- name — its responsibility in <=12 words`>\n\n"
+        + "Be concise and concrete. Do not invent modules that aren't listed.";
+      const userPrompt = `Explain this project's architecture:\n\n${args.summary.slice(0, 6000)}`;
+      const result = await callLLM(resolved, systemPrompt, userPrompt);
+      const parsed = parseLLMResponse(result, { primary: "OVERVIEW", secondary: "MODULES" }, { primary: "", secondary: "" });
+      return { overview: parsed.primary, modules: parsed.secondary };
+    });
+  });
 }

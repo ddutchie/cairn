@@ -19,8 +19,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import * as d3 from "d3";
-import { ChevronRight, RefreshCw, Home } from "lucide-react";
+import { ChevronRight, RefreshCw, Home, Sparkles } from "lucide-react";
 import { useFontScale } from "../graph/analyticsHooks";
+import { useCairnStore } from "@/store";
+import { useShallow } from "zustand/react/shallow";
 
 interface ModuleNode {
   id: string;
@@ -75,7 +77,16 @@ export function ModuleMap({ cwd }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [hoverId, setHoverId] = useState<string | null>(null);
 
+  const agentConfig = useCairnStore(useShallow((s) => s.agentConfig));
+  const [aiExplain, setAiExplain] = useState<{ overview: string; modules: string } | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+
   const scope = path.length ? path[path.length - 1] : cwd;
+
+  // Reset any AI explanation when we navigate to a different scope.
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- clear stale AI explanation when the scoped folder changes
+  useEffect(() => { setAiExplain(null); setAiError(null); }, [scope]);
 
   useEffect(() => {
     if (!cwd) return;
@@ -172,6 +183,55 @@ export function ModuleMap({ cwd }: Props) {
 
   const maxWeight = useMemo(() => Math.max(1, ...(graph?.edges.map((e) => e.weight) ?? [1])), [graph]);
 
+  // ── Heuristic one-line summary (always shown, no LLM) ──
+  const heuristicSummary = useMemo(() => {
+    if (!graph || graph.nodes.length === 0) return null;
+    const byId = new Map(graph.nodes.map((n) => [n.id, n]));
+    const top = [...graph.nodes].sort((a, b) => b.symbolCount - a.symbolCount).slice(0, 3);
+    // biggest dependency edges
+    const bigEdges = [...graph.edges]
+      .filter((e) => e.source !== e.target)
+      .sort((a, b) => b.weight - a.weight)
+      .slice(0, 2)
+      .map((e) => `${e.source} → ${e.target}`);
+    const parts: string[] = [];
+    if (top.length) parts.push(`Largest: ${top.map((t) => `${t.id} (${t.symbolCount} sym)`).join(", ")}`);
+    if (bigEdges.length) parts.push(`Main dependencies: ${bigEdges.join(", ")}`);
+    void byId;
+    return parts.join(" · ");
+  }, [graph]);
+
+  // Compact text description of the module graph, sent to the LLM on demand.
+  const llmSummary = useMemo(() => {
+    if (!graph) return "";
+    const nodeLines = graph.nodes
+      .map((n) => `- ${n.id}: ${n.fileCount} files, ${n.symbolCount} symbols`)
+      .join("\n");
+    const edgeLines = graph.edges
+      .filter((e) => e.source !== e.target)
+      .sort((a, b) => b.weight - a.weight)
+      .slice(0, 40)
+      .map((e) => `- ${e.source} depends on ${e.target} (${e.weight} refs)`)
+      .join("\n");
+    const rootName = scope.split(/[/\\]/).pop() || scope;
+    return `Project/folder: ${rootName}\n\nModules:\n${nodeLines}\n\nDependencies:\n${edgeLines || "(none)"}`;
+  }, [graph, scope]);
+
+  const explainWithAI = async () => {
+    if (aiLoading || !llmSummary) return;
+    setAiLoading(true);
+    setAiError(null);
+    try {
+      const config = { baseUrl: agentConfig.baseUrl, model: agentConfig.model, apiKey: agentConfig.apiKey };
+      const res = await window.electron?.ai.explainArchitecture({ summary: llmSummary, config });
+      if (res) setAiExplain(res);
+    } catch (e) {
+      setAiError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
   const drillInto = (mod: ModuleNode) => {
     if (mod.fileCount <= 1) return; // nothing to expand
     // Resolve the module's absolute folder path and push it.
@@ -213,6 +273,38 @@ export function ModuleMap({ cwd }: Props) {
         ))}
         {loading && <RefreshCw size={12} className="animate-spin ml-2 text-[var(--text-tertiary)]" />}
       </div>
+
+      {/* Summary header — heuristic by default, replaced by the AI explanation. */}
+      {graph && graph.nodes.length > 0 && (
+        <div className="px-3 py-2 border-b border-[var(--border)] flex-shrink-0 bg-[var(--surface-2)]">
+          {aiExplain ? (
+            <div className="flex flex-col gap-1.5">
+              <div className="text-xs text-[var(--text-secondary)] leading-relaxed">{aiExplain.overview}</div>
+              {aiExplain.modules && (
+                <div className="text-[0.7rem] text-[var(--text-tertiary)] font-mono whitespace-pre-wrap leading-relaxed">
+                  {aiExplain.modules}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center gap-3">
+              <div className="text-[0.7rem] text-[var(--text-tertiary)] flex-1 min-w-0 truncate">
+                {heuristicSummary}
+              </div>
+              <button
+                onClick={explainWithAI}
+                disabled={aiLoading}
+                className="flex items-center gap-1 px-2 py-1 rounded-md text-[0.7rem] font-semibold text-[var(--accent)] hover:bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] transition-colors flex-shrink-0 disabled:opacity-60"
+                title="Summarise this architecture with AI"
+              >
+                <Sparkles size={12} className={aiLoading ? "animate-pulse" : ""} />
+                {aiLoading ? "Explaining…" : "Explain with AI"}
+              </button>
+            </div>
+          )}
+          {aiError && <div className="text-[0.7rem] text-[var(--danger)] mt-1">{aiError}</div>}
+        </div>
+      )}
 
       {error && (
         <div className="px-3 py-2 text-xs text-[var(--danger)] border-b border-[var(--border)]">{error}</div>

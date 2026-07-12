@@ -287,6 +287,8 @@ const api = {
       invoke<{ subject: string; body: string }>("ai:generateCommitMessage", args),
     generatePrDescription: (args: { diff: string; config: { baseUrl: string; model: string; apiKey: string }; template?: string }) =>
       invoke<{ title: string; description: string }>("ai:generatePrDescription", args),
+    explainArchitecture: (args: { summary: string; config: { baseUrl: string; model: string; apiKey: string } }) =>
+      invoke<{ overview: string; modules: string }>("ai:explainArchitecture", args),
     localLLMStatus: () => invoke<{ available: boolean; reason?: string }>("ai:localLLMStatus"),
   },
 
