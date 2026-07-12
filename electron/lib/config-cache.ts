@@ -41,7 +41,7 @@ function getCachePath(): string {
     // Lazy, defensive require: `electron` resolves to a real module only inside
     // the Electron process; in the MCP runtime the require itself throws, so we
     // swallow it and fall back below.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const electron = require("electron") as { app?: Electron.App };
     if (electron.app && electron.app.isReady()) {
       userData = electron.app.getPath("userData");
