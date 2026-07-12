@@ -28,10 +28,12 @@ import {
   Hash,
   List,
   Share2,
+  Grid3x3,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ArchitectureGraphCanvas } from "./ArchitectureGraphCanvas";
+import { DependencyMatrix } from "./DependencyMatrix";
 
 interface ArchitectureViewProps {
   cwd: string;
@@ -120,8 +122,8 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
   // Files with no extracted symbols (e.g. plain .md docs, config) are hidden by
   // default — they'd otherwise clutter the list with "0" rows. Toggleable.
   const [showEmpty, setShowEmpty] = useState(false);
-  // List (file tree) vs. Graph (file-dependency diagram) view.
-  const [view, setView] = useState<"list" | "graph">("list");
+  // List (file tree) vs. Matrix (DSM) vs. Graph (spotlight force graph).
+  const [view, setView] = useState<"list" | "matrix" | "graph">("matrix");
   const [graph, setGraph] = useState<CodebaseGraph | null>(null);
   const [graphLoading, setGraphLoading] = useState(false);
 
@@ -210,10 +212,10 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
     }
   }, [cwd]);
 
-  // Lazily load the file-dependency graph the first time graph view opens (and
-  // after a reindex clears it). Cheap enough to just refetch on demand.
+  // Lazily load the file-dependency graph the first time a graph-based view
+  // (matrix or spotlight) opens, and after a reindex clears it.
   useEffect(() => {
-    if (view !== "graph" || !cwd || graph) return;
+    if ((view !== "graph" && view !== "matrix") || !cwd || graph) return;
     let cancelled = false;
     setGraphLoading(true);
     window.electron?.agent
@@ -281,19 +283,19 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
           </span>
         </div>
         <div className="ml-auto flex items-center gap-2 flex-shrink-0">
-          {/* List / Graph view toggle */}
+          {/* Matrix / Graph / List view toggle */}
           <div className="flex items-center rounded-md border border-[var(--border)] overflow-hidden">
             <button
-              onClick={() => setView("list")}
+              onClick={() => setView("matrix")}
               className={cn(
                 "flex items-center gap-1 px-2 py-1 text-[0.7rem] font-semibold transition-colors",
-                view === "list"
+                view === "matrix"
                   ? "bg-[var(--surface-3)] text-[var(--text-primary)]"
                   : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]",
               )}
-              title="List view"
+              title="Dependency matrix"
             >
-              <List size={12} /> List
+              <Grid3x3 size={12} /> Matrix
             </button>
             <button
               onClick={() => setView("graph")}
@@ -306,6 +308,18 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
               title="Dependency graph"
             >
               <Share2 size={12} /> Graph
+            </button>
+            <button
+              onClick={() => setView("list")}
+              className={cn(
+                "flex items-center gap-1 px-2 py-1 text-[0.7rem] font-semibold transition-colors border-l border-[var(--border)]",
+                view === "list"
+                  ? "bg-[var(--surface-3)] text-[var(--text-primary)]"
+                  : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]",
+              )}
+              title="File list"
+            >
+              <List size={12} /> List
             </button>
           </div>
           <Button
@@ -344,6 +358,41 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
             {reindexing ? "Indexing…" : "Build index"}
           </Button>
         </div>
+      ) : overview && view === "matrix" ? (
+        <div className="flex-1 min-h-0 flex overflow-hidden">
+          {graphLoading && !graph ? (
+            <div className="flex-1 flex items-center justify-center text-sm text-[var(--text-tertiary)] gap-2">
+              <RefreshCw size={14} className="animate-spin" /> Building matrix…
+            </div>
+          ) : (
+            <DependencyMatrix
+              nodes={graph?.nodes ?? []}
+              edges={graph?.edges ?? []}
+              root={root}
+              selectedId={selectedFileId}
+              onSelect={(id) => {
+                setSelectedFileId(id);
+                const f = graph?.nodes.find((n) => n.id === id);
+                if (f) void openFileInPanel(f.id, f.file_path);
+              }}
+            />
+          )}
+          {/* Selected-file symbol panel (shared with graph view) */}
+          <div className="w-72 flex-shrink-0 border-l border-[var(--border)] overflow-y-auto hidden lg:block">
+            {selectedFileId ? (
+              <SelectedFilePanel
+                filePath={graph?.nodes.find((n) => n.id === selectedFileId)?.file_path ?? ""}
+                root={root}
+                symbols={fileSymbols[selectedFileId] ?? []}
+                onFocusInGraph={() => setView("graph")}
+              />
+            ) : (
+              <div className="p-4 text-center text-xs text-[var(--text-tertiary)]">
+                Rows and columns are files (ordered by path). A cell means the row&apos;s file references the column&apos;s file — darker = more references. Red marks a dependency cycle. Click a row to inspect a file.
+              </div>
+            )}
+          </div>
+        </div>
       ) : overview && view === "graph" ? (
         <div className="flex-1 min-h-0 flex overflow-hidden">
           {graphLoading && !graph ? (
@@ -351,41 +400,46 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
               <RefreshCw size={14} className="animate-spin" /> Building graph…
             </div>
           ) : (
-            <ArchitectureGraphCanvas
-              nodes={graph?.nodes ?? []}
-              edges={graph?.edges ?? []}
-              root={root}
-              selectedId={selectedFileId}
-              onSelect={(n) => {
-                setSelectedFileId(n?.id ?? null);
-                if (n) void openFileInPanel(n.id, n.file_path);
-              }}
-            />
+            <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+              {/* Spotlight banner when focused on one file */}
+              {selectedFileId && (
+                <div className="flex items-center gap-2 px-3 py-1.5 border-b border-[var(--border)] bg-[var(--surface-2)] flex-shrink-0 text-[0.7rem]">
+                  <Share2 size={12} className="text-[var(--accent)]" />
+                  <span className="text-[var(--text-secondary)]">
+                    Focused on <span className="font-mono">{relPath(graph?.nodes.find((n) => n.id === selectedFileId)?.file_path ?? "", root)}</span> and its direct dependencies
+                  </span>
+                  <button
+                    onClick={() => setSelectedFileId(null)}
+                    className="ml-auto text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+                  >
+                    Show all
+                  </button>
+                </div>
+              )}
+              <ArchitectureGraphCanvas
+                nodes={graph?.nodes ?? []}
+                edges={graph?.edges ?? []}
+                root={root}
+                focusId={selectedFileId}
+                selectedId={selectedFileId}
+                onSelect={(n) => {
+                  setSelectedFileId(n?.id ?? null);
+                  if (n) void openFileInPanel(n.id, n.file_path);
+                }}
+              />
+            </div>
           )}
           {/* Selected-file symbol panel */}
           <div className="w-72 flex-shrink-0 border-l border-[var(--border)] overflow-y-auto hidden lg:block">
             {selectedFileId ? (
-              <div className="p-3">
-                <div className="text-xs font-mono text-[var(--text-primary)] break-all mb-2">
-                  {relPath(graph?.nodes.find((n) => n.id === selectedFileId)?.file_path ?? "", root)}
-                </div>
-                {(fileSymbols[selectedFileId] ?? []).length === 0 ? (
-                  <div className="text-[0.7rem] text-[var(--text-tertiary)]">No symbols in this file.</div>
-                ) : (
-                  <div className="flex flex-col">
-                    {(fileSymbols[selectedFileId] ?? []).map((sym) => (
-                      <div key={sym.id} className="flex items-center gap-2 py-1">
-                        <KindGlyph kind={sym.kind} />
-                        <span className="text-xs text-[var(--text-secondary)] font-mono truncate flex-1">{sym.name}</span>
-                        <span className="text-[0.65rem] text-[var(--text-tertiary)] tabular-nums">:{sym.line}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+              <SelectedFilePanel
+                filePath={graph?.nodes.find((n) => n.id === selectedFileId)?.file_path ?? ""}
+                root={root}
+                symbols={fileSymbols[selectedFileId] ?? []}
+              />
             ) : (
               <div className="p-4 text-center text-xs text-[var(--text-tertiary)]">
-                Click a file node to see its symbols. Node size = number of symbols; arrows point from a file to the files it references.
+                Click a file node to spotlight it — the graph will focus on that file and its direct dependencies. Node size = number of symbols; arrows point from a file to the files it references.
               </div>
             )}
           </div>
@@ -568,8 +622,45 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
 
 // ── Sub-components ──────────────────────────────────────────────────────────
 
-function Stat({ label, value }: { label: string; value: number | string }) {
+/** Shared side panel: the selected file's path + its symbols (matrix + graph). */
+function SelectedFilePanel({
+  filePath, root, symbols, onFocusInGraph,
+}: {
+  filePath: string;
+  root: string;
+  symbols: CodebaseSymbol[];
+  onFocusInGraph?: () => void;
+}) {
+  const rel = (p: string) => (root && p.startsWith(root) ? p.slice(root.length).replace(/^[/\\]/, "") || p : p);
   return (
+    <div className="p-3">
+      <div className="text-xs font-mono text-[var(--text-primary)] break-all mb-2">{rel(filePath)}</div>
+      {onFocusInGraph && (
+        <button
+          onClick={onFocusInGraph}
+          className="mb-2 text-[0.7rem] text-[var(--accent)] hover:underline"
+        >
+          Focus in graph →
+        </button>
+      )}
+      {symbols.length === 0 ? (
+        <div className="text-[0.7rem] text-[var(--text-tertiary)]">No symbols in this file.</div>
+      ) : (
+        <div className="flex flex-col">
+          {symbols.map((sym) => (
+            <div key={sym.id} className="flex items-center gap-2 py-1">
+              <KindGlyph kind={sym.kind} />
+              <span className="text-xs text-[var(--text-secondary)] font-mono truncate flex-1">{sym.name}</span>
+              <span className="text-[0.65rem] text-[var(--text-tertiary)] tabular-nums">:{sym.line}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: number | string }) {  return (
     <span className="flex items-baseline gap-1 flex-shrink-0">
       <span className="text-sm font-semibold text-[var(--text-primary)] tabular-nums">{value}</span>
       <span className="text-[var(--text-tertiary)]">{label}</span>

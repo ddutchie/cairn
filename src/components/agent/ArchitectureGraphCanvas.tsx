@@ -35,6 +35,8 @@ interface Props {
   root: string;
   selectedId: string | null;
   onSelect: (node: ArchGraphNode | null) => void;
+  /** When set, render only this file + its direct neighbours (spotlight mode). */
+  focusId?: string | null;
 }
 
 type SimNode = d3.SimulationNodeDatum & {
@@ -60,11 +62,26 @@ function radiusFor(symbolCount: number): number {
   return 5 + Math.sqrt(symbolCount) * 2.2;
 }
 
-export function ArchitectureGraphCanvas({ nodes, edges, root, selectedId, onSelect }: Props) {
+export function ArchitectureGraphCanvas({ nodes: allNodes, edges: allEdges, root, selectedId, onSelect, focusId }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dims = useContainerDims(containerRef);
   const fs = useFontScale();
+
+  // Spotlight mode: restrict to the focus node + its direct neighbours so the
+  // graph is always legible ("what touches this file?") instead of a hairball.
+  const { nodes, edges } = useMemo(() => {
+    if (!focusId) return { nodes: allNodes, edges: allEdges };
+    const keep = new Set<string>([focusId]);
+    for (const e of allEdges) {
+      if (e.source === focusId) keep.add(e.target);
+      if (e.target === focusId) keep.add(e.source);
+    }
+    return {
+      nodes: allNodes.filter((n) => keep.has(n.id)),
+      edges: allEdges.filter((e) => keep.has(e.source) && keep.has(e.target)),
+    };
+  }, [allNodes, allEdges, focusId]);
 
   const [hoverLabel, setHoverLabel] = useState<string | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
