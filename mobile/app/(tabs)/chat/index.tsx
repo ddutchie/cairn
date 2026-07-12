@@ -12,8 +12,8 @@ import {
   ActionSheetIOS,
   Platform,
 } from "react-native";
-import { useSharedValue, withTiming } from "react-native-reanimated";
-import { KeyboardStickyView, KeyboardController, KeyboardChatScrollView, KeyboardGestureArea } from "react-native-keyboard-controller";
+import Animated, { useSharedValue, withTiming, useAnimatedStyle, interpolate } from "react-native-reanimated";
+import { KeyboardStickyView, KeyboardController, KeyboardChatScrollView, KeyboardGestureArea, useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
 import { Stack, useRouter, useFocusEffect } from "expo-router";
 import { CheckCircle, Bot, User, Send, ImagePlus, X, Settings2, Brain, ChevronRight } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -32,9 +32,20 @@ import { resetAppleSession } from "@/chat/providers/apple";
 import { prettifyToolLabel } from "@cairn/shared/ui/constants";
 import type { UIMessage, ChatUsage } from "@/chat/providers/types";
 import { ContextRing } from "@/components/ContextRing";
+import { GlassMenu } from "@/components/GlassMenu";
+import { Button } from "@expo/ui/swift-ui";
 
 /** Composer height assumed before its first onLayout measurement. */
 const COMPOSER_FALLBACK_H = 60;
+
+/**
+ * Downward shift applied to the native attach GlassMenu when the keyboard is
+ * open, to counter the SwiftUI Host mis-tracking the composer's KeyboardStickyView
+ * OPENED offset (it double-counts KEYBOARD_OPEN_GAP, so the icon otherwise sits
+ * high). DEVICE-TUNED — measured ≈ 2×KEYBOARD_OPEN_GAP; not derivable from the
+ * transform math, so re-verify on device if the composer's sticky offsets change.
+ */
+const ATTACH_OPEN_NUDGE = 2 * KEYBOARD_OPEN_GAP;
 
 /** Tools whose result/args point at a NOTE, and whether the id is in args or result. */
 const NOTE_TOOLS: Record<string, "args" | "result"> = {
@@ -153,7 +164,7 @@ export default function ChatScreen() {
       // On blur (e.g. switching tabs/apps) make sure the keyboard doesn't linger
       // stuck-open — dismiss via the keyboard-controller API on the way out.
       return () => {
-        KeyboardController.dismiss().catch(() => {});
+        KeyboardController.dismiss().catch(() => { });
       };
     }, [refreshConfigured]),
   );
@@ -161,6 +172,16 @@ export default function ChatScreen() {
   // Lift the composer just above the tab bar when the keyboard is closed
   // (shared with the search scope bar so both rest at the same height).
   const closedLift = tabBarClosedLift(insets.bottom);
+
+  // The native attach GlassMenu's SwiftUI Host tracks the composer's
+  // KeyboardStickyView transform, but not its OPENED offset — when the keyboard
+  // opens the icon sits too high (centered at rest, so only the open state is
+  // wrong). Counter it with ATTACH_OPEN_NUDGE, gliding on the same `progress`
+  // the composer animates with: 0 when closed, ATTACH_OPEN_NUDGE (down) when open.
+  const { progress: kbProgress } = useReanimatedKeyboardAnimation();
+  const attachCounterStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: interpolate(kbProgress.value, [0, 1], [0, ATTACH_OPEN_NUDGE]) }],
+  }));
   // Height the composer occupies, measured lazily (falls back before layout).
   const [composerH, setComposerH] = useState(COMPOSER_FALLBACK_H);
   // Bottom padding the transcript keeps clear below the last message so it's not
@@ -188,7 +209,7 @@ export default function ChatScreen() {
     // Dismiss via the keyboard-controller API (not RN's Keyboard.dismiss, which
     // can desync with this library and leave the keyboard stuck open until an
     // app switch). Fire-and-forget; don't block the send.
-    KeyboardController.dismiss().catch(() => {});
+    KeyboardController.dismiss().catch(() => { });
     nearBottom.current = true; // sending jumps to the end; follow the reply
     setInput("");
     setAttachments([]);
@@ -340,12 +361,12 @@ export default function ChatScreen() {
           headerLeft:
             usage && messages.length > 0
               ? () => (
-                  <ContextRing
-                    promptTokens={usage.promptTokens}
-                    contextLimit={usage.contextLimit}
-                    estimated={usage.estimated}
-                  />
-                )
+                <ContextRing
+                  promptTokens={usage.promptTokens}
+                  contextLimit={usage.contextLimit}
+                  estimated={usage.estimated}
+                />
+              )
               : undefined,
         }}
       />
@@ -440,20 +461,27 @@ export default function ChatScreen() {
 
             <View style={styles.composerWrap}>
               <GlassBar style={styles.composer} interactive={false}>
-                {/* Plain RN Pressable trigger (NOT a SwiftUI menu Host): it rides
-                    the KeyboardStickyView transform exactly like the send button,
-                    so it can't drift when the keyboard opens. Tapping opens the
-                    native photo action sheet. */}
-                <Pressable
-                  style={styles.attachBtn}
-                  onPress={onAttach}
-                  disabled={busy}
-                  hitSlop={10}
-                  accessibilityRole="button"
-                  accessibilityLabel="Add image"
-                >
-                  <ImagePlus size={16} color={busy ? withAlpha(t.textTertiary, 0.5) : t.textTertiary} />
-                </Pressable>
+                {/* Native SwiftUI GlassMenu (Liquid Glass tap-menu), wrapped in
+                    a fixed-size slot so the async-measuring Host can't reflow the
+                    row. NOTE: the composer rides KeyboardStickyView's transform;
+                    a SwiftUI Host re-anchors in window coords on menu-open, which
+                    historically made the icon drift after tapping with the
+                    keyboard open. Verifying the raw behaviour before mitigating. */}
+                <View style={styles.attachSlot}>
+                  <Animated.View style={attachCounterStyle}>
+                    <GlassMenu
+                      trigger={<ImagePlus size={16} color={busy ? withAlpha(t.textTertiary, 0.5) : t.textTertiary} />}
+                      accessibilityLabel="Add image"
+                      disabled={busy}
+                      onFallbackPress={onAttach}
+                      containerStyle={styles.attachContainer}
+                      triggerStyle={styles.attachBtn}
+                    >
+                      <Button label="Photo Library" systemImage="photo.on.rectangle" onPress={addImages} />
+                      <Button label="Take Photo" systemImage="camera" onPress={capturePhoto} />
+                    </GlassMenu>
+                  </Animated.View>
+                </View>
                 <TextInput
                   style={styles.input}
                   value={input}
@@ -713,10 +741,15 @@ function makeStyles(t: Theme) {
       paddingVertical: 6,
       paddingHorizontal: 2,
     },
+    // Fixed-height RN wrapper so the native Host can't reflow the composer row
+    // when it (async) measures its content. Centered like the send button.
+    attachSlot: { height: 36, justifyContent: "center", alignSelf: "center" },
+    // Host frame hint (the outermost @expo/ui Host element / flex child).
+    attachContainer: { width: 32, height: 32, alignSelf: "center" },
     // 32px rounded icon button, vertically centred against the input (alignSelf
-    // overrides the row's flex-end so it doesn't ride up as the input grows). A
-    // plain RN Pressable like sendBtn — no SwiftUI Host — so it tracks the
-    // keyboard transform without drifting.
+    // overrides the row's flex-end so it doesn't ride up as the input grows).
+    // Used as the GlassMenu trigger; a counter-transform keeps the native Host
+    // from drifting when the keyboard opens (see attachCounterStyle).
     attachBtn: {
       width: 32,
       height: 32,

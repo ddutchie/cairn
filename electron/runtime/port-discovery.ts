@@ -10,8 +10,11 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 /**
  * Finds the Cairn userData directory by scanning known locations.
  * Mirrors the logic in `mcp/db.ts` `findDbPath()` — checks Cairn, cairn, Electron.
+ * Exported so Electron-agnostic modules (e.g. `lib/config-cache.ts`, which must
+ * load in the standalone MCP runtime that has no working `electron` module) can
+ * resolve userData without importing `electron`.
  */
-function findUserDataDir(): string | null {
+export function findUserDataDir(): string | null {
   const home = os.homedir();
   const platform = process.platform;
   let base: string;
