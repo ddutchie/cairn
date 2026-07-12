@@ -400,5 +400,44 @@ def format_username(user):
       const helperSymsUpdated = q.getCodebaseFileSymbols(db, helperFile);
       expect(helperSymsUpdated[0].docstring).toBe("Updated simple helper");
     });
+
+    it("reindexFile incrementally updates a single file's symbols + relations", async () => {
+      fs.mkdirSync(path.join(tmpDir, "src"), { recursive: true });
+      const mainFile = path.join(tmpDir, "src", "main.ts");
+      const helperFile = path.join(tmpDir, "src", "helper.ts");
+      fs.writeFileSync(mainFile, `function main() {\n  return helper();\n}\n`);
+      fs.writeFileSync(helperFile, `export function helper() {\n  return 1;\n}\n`);
+      await indexCodebase(db, tmpDir);
+
+      const { reindexFile } = await import("./codebase-index");
+
+      // Add a new symbol + a call to helper, then reindex ONLY main.ts.
+      fs.writeFileSync(
+        mainFile,
+        `function main() {\n  return helper();\n}\nfunction extra() {\n  return helper();\n}\n`,
+      );
+      const changed = await reindexFile(db, tmpDir, mainFile);
+      expect(changed).toBe(true);
+
+      const mainSyms = q.getCodebaseFileSymbols(db, mainFile).map((s) => s.name).sort();
+      expect(mainSyms).toEqual(["extra", "main"]);
+
+      // helper is now referenced from two symbols in main.ts.
+      const rels = q.getCodebaseRelations(db, "helper", tmpDir);
+      expect(rels.incoming.map((r) => r.source_name).sort()).toEqual(["extra", "main"]);
+    });
+
+    it("reindexFile drops a file that was deleted from disk", async () => {
+      const f = path.join(tmpDir, "gone.ts");
+      fs.writeFileSync(f, `export function willVanish() { return 1; }\n`);
+      await indexCodebase(db, tmpDir);
+      expect(q.getCodebaseFileByPath(db, f)).toBeDefined();
+
+      const { reindexFile } = await import("./codebase-index");
+      fs.rmSync(f);
+      const changed = await reindexFile(db, tmpDir, f);
+      expect(changed).toBe(false);
+      expect(q.getCodebaseFileByPath(db, f)).toBeUndefined();
+    });
   });
 });

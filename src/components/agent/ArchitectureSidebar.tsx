@@ -27,6 +27,7 @@ import {
   Layers,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { CairnEvents } from "@/lib/events";
 
 interface CodebaseSymbol {
   id: string; file_id: string; name: string; kind: string; line: number;
@@ -72,10 +73,9 @@ export function ArchitectureSidebar() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [relations, setRelations] = useState<Record<string, CodebaseRelations>>({});
 
-  useEffect(() => {
-    setExpanded(null);
-    setRelations({});
-    if (!filePath) { setSymbols([]); setNotIndexed(false); return; }
+  const loadSymbols = useCallback((keepExpansion = false) => {
+    if (!keepExpansion) { setExpanded(null); setRelations({}); }
+    if (!filePath) { setSymbols([]); setNotIndexed(false); return () => {}; }
     let cancelled = false;
     setLoading(true);
     setNotIndexed(false);
@@ -91,9 +91,21 @@ export function ArchitectureSidebar() {
     return () => { cancelled = true; };
   }, [filePath]);
 
+  useEffect(() => loadSymbols(), [loadSymbols]);
+
+  // Refresh after the file is re-indexed (debounced auto-reindex on save fires
+  // agentFilesChanged), so the panel reflects newly added/removed symbols.
+  useEffect(() => {
+    const handler = () => loadSymbols(true);
+    window.addEventListener("cairn:agent-files-changed", handler);
+    return () => window.removeEventListener("cairn:agent-files-changed", handler);
+  }, [loadSymbols]);
+
   const toggleSymbol = useCallback(async (sym: CodebaseSymbol) => {
     const next = expanded === sym.id ? null : sym.id;
     setExpanded(next);
+    // Jump the editor to the symbol's line (the file is already the active one).
+    if (filePath) window.dispatchEvent(CairnEvents.openFileAtLine(filePath, sym.line));
     if (next && !relations[sym.id]) {
       try {
         const data = await window.electron?.agent.codebaseRelations(sym.name);
@@ -102,7 +114,7 @@ export function ArchitectureSidebar() {
         /* ignore */
       }
     }
-  }, [expanded, relations]);
+  }, [expanded, relations, filePath]);
 
   if (collapsed) {
     return (

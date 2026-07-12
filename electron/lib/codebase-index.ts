@@ -599,3 +599,103 @@ export async function indexCodebase(db: Database.Database, rootPath: string): Pr
     await new Promise(resolve => setImmediate(resolve));
   }
 }
+
+/** Extract this file's outgoing relations (call syntax → known symbol names). */
+function extractFileRelations(
+  content: string,
+  fileSymbols: Array<{ id: string; name: string; line: number }>,
+  knownSymbolNames: Set<string>,
+): Array<{ sourceId: string; targetName: string }> {
+  const lines = content.split(/\r?\n/);
+  const out: Array<{ sourceId: string; targetName: string }> = [];
+  for (let i = 0; i < lines.length; i++) {
+    const lineNum = i + 1;
+    let enclosing: { id: string; name: string; line: number } | null = null;
+    for (const sym of fileSymbols) {
+      if (sym.line <= lineNum && (!enclosing || sym.line > enclosing.line)) enclosing = sym;
+    }
+    if (!enclosing) continue;
+    const callRe = /([A-Za-z_$][A-Za-z0-9_$]*)\s*\(/g;
+    let m: RegExpExecArray | null;
+    while ((m = callRe.exec(lines[i])) !== null) {
+      const token = m[1];
+      if (token.length < 3) continue;
+      if (REJECTED_RELATION_TARGETS.has(token)) continue;
+      if (knownSymbolNames.has(token) && token !== enclosing.name) {
+        out.push({ sourceId: enclosing.id, targetName: token });
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Incrementally re-index a SINGLE file (used by the debounced auto-reindex on
+ * save/change). Re-parses the file's symbols and its outgoing relations without
+ * re-walking the whole tree — cheap enough to run on every save. Skipped for
+ * ignored/generated files and unsupported extensions. Returns true if the file
+ * was (re)indexed.
+ */
+export async function reindexFile(
+  db: Database.Database,
+  rootPath: string,
+  filePath: string,
+): Promise<boolean> {
+  const absoluteRoot = path.resolve(rootPath);
+  const absFile = path.resolve(filePath);
+  const ext = path.extname(absFile).toLowerCase();
+  if (!SUPPORTED_EXTENSIONS.has(ext)) return false;
+  if (isGeneratedOrMinifiedSource(absFile)) return false;
+
+  let stat: fs.Stats;
+  try {
+    stat = await fs.promises.stat(absFile);
+  } catch {
+    // File gone — drop it from the index.
+    const existing = q.getCodebaseFileByPath(db, absFile);
+    if (existing) q.deleteCodebaseFile(db, existing.id);
+    return false;
+  }
+
+  let content: string;
+  try {
+    content = await fs.promises.readFile(absFile, "utf-8");
+  } catch {
+    return false;
+  }
+
+  const symbols = parseFileContent(content, ext);
+  const existing = q.getCodebaseFileByPath(db, absFile);
+  const fileId = existing?.id ?? newId();
+  const hash = `${stat.size}-${stat.mtimeMs}`;
+
+  db.transaction(() => {
+    q.upsertCodebaseFile(db, { id: fileId, rootPath: absoluteRoot, filePath: absFile, hash });
+    q.clearCodebaseFileData(db, fileId); // clears this file's symbols (+ cascades its relations)
+    for (const sym of symbols) {
+      q.insertCodebaseSymbol(db, {
+        id: newId(), fileId, name: sym.name, kind: sym.kind,
+        line: sym.line, signature: sym.signature, docstring: sym.docstring,
+      });
+    }
+  })();
+
+  // Recompute this file's outgoing relations against all known symbol names in
+  // the root (so new calls to symbols elsewhere are captured).
+  const allNames = new Set(
+    (db.prepare(`
+      SELECT DISTINCT s.name FROM codebase_symbols s
+      JOIN codebase_files f ON s.file_id = f.id WHERE f.root_path = ?
+    `).all(absoluteRoot) as Array<{ name: string }>).map((r) => r.name),
+  );
+  const fileSymbols = q.getCodebaseFileSymbols(db, absFile).map((s) => ({ id: s.id, name: s.name, line: s.line }));
+  const relations = extractFileRelations(content, fileSymbols, allNames);
+  if (relations.length > 0) {
+    db.transaction(() => {
+      for (const rel of relations) {
+        q.insertCodebaseRelation(db, { sourceId: rel.sourceId, targetName: rel.targetName, type: "calls" });
+      }
+    })();
+  }
+  return true;
+}

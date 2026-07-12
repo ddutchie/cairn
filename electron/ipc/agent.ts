@@ -27,7 +27,7 @@ import type { Database } from "better-sqlite3";
 import * as nodePty from "node-pty";
 import * as q from "../db/queries";
 import { newId } from "../db/utils";
-import { indexCodebase } from "../lib/codebase-index";
+import { indexCodebase, reindexFile } from "../lib/codebase-index";
 
 type IPty = nodePty.IPty;
 
@@ -298,6 +298,14 @@ export function registerAgentHandlers(db: Database): void {
       const realPath = await assertWithinCodeDirectory(db, folder);
       await indexCodebase(db, realPath);
       return q.getCodebaseOverview(db, realPath);
+    })
+  );
+
+  registerIpcHandle("agent:codebaseReindexFile", (_e, { folder, filePath }: { folder: string; filePath: string }) =>
+    handle(async () => {
+      const realFolder = await assertWithinCodeDirectory(db, folder);
+      const realFile = await assertWithinCodeDirectory(db, filePath);
+      return reindexFile(db, realFolder, realFile);
     })
   );
 

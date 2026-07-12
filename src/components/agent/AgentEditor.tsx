@@ -10,11 +10,12 @@
  * - Dirty dot per tab.
  */
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { X, Save, FileCode, Eye, ImageIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useIsDark } from "@/hooks/useIsDark";
 import { useCairnStore } from "@/store";
+import { CairnEvents } from "@/lib/events";
 import { useShallow } from "zustand/react/shallow";
 import { NoteMarkdownPreview } from "@/components/notes/NoteMarkdownPreview";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -54,6 +55,29 @@ export function AgentEditor() {
     });
   }, []);
 
+  // Debounced per-file re-index timers, keyed by file path. On save we schedule
+  // an incremental reindex ~800ms later; rapid saves coalesce into one, and the
+  // whole tree is never re-walked.
+  const reindexTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  useEffect(() => {
+    const timers = reindexTimers.current;
+    return () => { for (const t of timers.values()) clearTimeout(t); };
+  }, []);
+  const scheduleReindex = useCallback((path: string) => {
+    const root = projects.find((p) => p.id === activeProjectId)?.codeDirectory;
+    if (!root || !window.electron) return;
+    const timers = reindexTimers.current;
+    const existing = timers.get(path);
+    if (existing) clearTimeout(existing);
+    timers.set(path, setTimeout(() => {
+      timers.delete(path);
+      window.electron?.agent
+        .codebaseReindexFile(root, path)
+        .then((changed) => { if (changed) window.dispatchEvent(CairnEvents.agentFilesChanged()); })
+        .catch(() => {});
+    }, 800));
+  }, [projects, activeProjectId]);
+
   const handleSave = useCallback(async (path: string, content: string) => {
     if (!window.electron) return;
     setSavingFiles((prev) => new Set(prev).add(path));
@@ -62,10 +86,13 @@ export function AgentEditor() {
       handleDirtyChange(path, false);
       // Refresh preview content if in preview mode
       setPreviewContent((prev) => ({ ...prev, [path]: content }));
+      // Debounced incremental re-index of this file so the Architecture views
+      // stay current as you edit, without re-walking the whole tree.
+      scheduleReindex(path);
     } finally {
       setSavingFiles((prev) => { const n = new Set(prev); n.delete(path); return n; });
     }
-  }, [handleDirtyChange]);
+  }, [handleDirtyChange, scheduleReindex]);
 
   const togglePreview = useCallback(async (path: string) => {
     setPreviewFiles((prev) => {

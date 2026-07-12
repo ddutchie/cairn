@@ -32,6 +32,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { useCairnStore } from "@/store";
+import { CairnEvents } from "@/lib/events";
 import { ArchitectureGraphCanvas } from "./ArchitectureGraphCanvas";
 import { DependencyMatrix } from "./DependencyMatrix";
 
@@ -204,6 +206,9 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
   const selectSymbol = useCallback(async (sym: CodebaseSymbol) => {
     setSelected(sym);
     setRelations(null);
+    // Open the file in the editor and jump to the symbol's line.
+    useCairnStore.getState().openEditorFile(sym.file_path);
+    window.dispatchEvent(CairnEvents.openFileAtLine(sym.file_path, sym.line));
     try {
       const data = await window.electron?.agent.codebaseRelations(sym.name, cwd);
       if (data) setRelations(data);

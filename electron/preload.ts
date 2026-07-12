@@ -424,6 +424,8 @@ const api = {
     codebaseRelations: (name: string, folder?: string) =>
       invoke<CodebaseRelations>("agent:codebaseRelations", { name, folder }),
     codebaseReindex: (folder: string) => invoke<CodebaseOverview>("agent:codebaseReindex", { folder }),
+    codebaseReindexFile: (folder: string, filePath: string) =>
+      invoke<boolean>("agent:codebaseReindexFile", { folder, filePath }),
     // Pickers bypass invoke() — they return { data: T } directly from the handler
     // and are not wrapped via handle(), so we keep them as raw invokes.
     pickDirectory: () => ipcRenderer.invoke("agent:pickDirectory"),

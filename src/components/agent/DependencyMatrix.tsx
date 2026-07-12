@@ -1,19 +1,17 @@
 "use client";
 
 /**
- * DependencyMatrix — a Design-Structure-Matrix (DSM) view of the file
- * dependency graph. Rows and columns are files ordered by path (so files in the
- * same directory form contiguous blocks along the diagonal); a shaded cell at
- * (row i, col j) means file i references file j, darker = more references.
+ * DependencyMatrix — a Design-Structure-Matrix (DSM) of the codebase, aggregated
+ * to DIRECTORY level so it stays legible on large repos (a raw file×file matrix
+ * of 700+ files is unreadable). Rows/columns are folders (grouped to a chosen
+ * path depth); a shaded cell at (row i, col j) means files in folder i reference
+ * files in folder j, darker = more references. Directory self-references (the
+ * diagonal) show internal cohesion. Mutual references (i↔j) are tinted red as
+ * potential architectural cycles.
  *
- * Why a matrix instead of a force graph: it never becomes a hairball, scales to
- * thousands of files, and makes structure legible — directory clusters appear
- * as blocks on the diagonal, and dependency *cycles* show up as symmetric
- * off-diagonal marks (i→j AND j→i). Standard tool for architecture (Structure101
- * / NDepend style).
- *
- * Canvas-rendered for performance; hovering highlights the row/column and shows
- * which files are involved, clicking a row selects that file.
+ * Why directory-level: it collapses hundreds of files into ~10–40 modules, so
+ * the blocks are readable and the big cross-cutting dependencies stand out.
+ * A depth selector controls granularity (top-level folders → deeper).
  */
 
 import { useRef, useEffect, useMemo, useState, useCallback } from "react";
@@ -36,6 +34,7 @@ interface Props {
   nodes: MatrixNode[];
   edges: MatrixEdge[];
   root: string;
+  /** Selected file id — its directory group is highlighted. */
   selectedId: string | null;
   onSelect: (id: string | null) => void;
 }
@@ -47,46 +46,66 @@ function relPath(filePath: string, root: string): string {
   return filePath;
 }
 
+/** The directory group for a file, truncated to `depth` path segments. */
+function groupOf(filePath: string, root: string, depth: number): string {
+  const rel = relPath(filePath, root);
+  const parts = rel.split(/[/\\]/);
+  if (parts.length <= 1) return "(root)";
+  const dir = parts.slice(0, -1); // drop the filename
+  return dir.slice(0, depth).join("/") || "(root)";
+}
+
 export function DependencyMatrix({ nodes, edges, root, selectedId, onSelect }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fs = useFontScale();
   const [hover, setHover] = useState<{ r: number; c: number; x: number; y: number } | null>(null);
+  const [depth, setDepth] = useState(2);
 
-  // Order files by path so directories cluster along the diagonal. Only include
-  // files that participate in at least one edge (keeps the matrix meaningful).
-  const ordered = useMemo(() => {
-    const connected = new Set<string>();
-    for (const e of edges) { connected.add(e.source); connected.add(e.target); }
-    return nodes
-      .filter((n) => connected.has(n.id))
-      .slice()
-      .sort((a, b) => relPath(a.file_path, root).localeCompare(relPath(b.file_path, root)));
-  }, [nodes, edges, root]);
+  // Map each file → directory group, then build the ordered list of groups.
+  const { groups, groupOfFile } = useMemo(() => {
+    const gof = new Map<string, string>();
+    const set = new Set<string>();
+    for (const n of nodes) {
+      const g = groupOf(n.file_path, root, depth);
+      gof.set(n.id, g);
+      set.add(g);
+    }
+    const list = [...set].sort((a, b) => a.localeCompare(b));
+    return { groups: list, groupOfFile: gof };
+  }, [nodes, root, depth]);
 
-  const indexOf = useMemo(() => {
+  const groupIndex = useMemo(() => {
     const m = new Map<string, number>();
-    ordered.forEach((n, i) => m.set(n.id, i));
+    groups.forEach((g, i) => m.set(g, i));
     return m;
-  }, [ordered]);
+  }, [groups]);
 
-  // Adjacency weight (i references j) + reverse lookup for cycle detection.
-  const { weight, maxWeight } = useMemo(() => {
+  // Aggregate edge weights between directory groups + track cycles.
+  const { weight, maxWeight, fileCountPerGroup } = useMemo(() => {
     const w = new Map<string, number>();
     let mx = 1;
     for (const e of edges) {
-      const si = indexOf.get(e.source), ti = indexOf.get(e.target);
-      if (si == null || ti == null) continue;
-      w.set(`${si},${ti}`, e.weight);
-      if (e.weight > mx) mx = e.weight;
+      const gs = groupOfFile.get(e.source), gt = groupOfFile.get(e.target);
+      if (gs == null || gt == null) continue;
+      const si = groupIndex.get(gs)!, ti = groupIndex.get(gt)!;
+      const key = `${si},${ti}`;
+      const nw = (w.get(key) ?? 0) + e.weight;
+      w.set(key, nw);
+      if (nw > mx) mx = nw;
     }
-    return { weight: w, maxWeight: mx };
-  }, [edges, indexOf]);
+    const fc = new Map<string, number>();
+    for (const n of nodes) {
+      const g = groupOfFile.get(n.id)!;
+      fc.set(g, (fc.get(g) ?? 0) + 1);
+    }
+    return { weight: w, maxWeight: mx, fileCountPerGroup: fc };
+  }, [edges, groupOfFile, groupIndex, nodes]);
 
-  const n = ordered.length;
+  const n = groups.length;
+  const selGroup = selectedId != null ? groupOfFile.get(selectedId) ?? null : null;
+  const selIdx = selGroup != null ? groupIndex.get(selGroup) ?? -1 : -1;
 
-  // Cell size adapts so the whole matrix fits the smaller viewport dimension
-  // (min 4px so big repos stay pannable via the scroll container).
   const [dims, setDims] = useState({ width: 600, height: 600 });
   useEffect(() => {
     const el = containerRef.current;
@@ -97,9 +116,10 @@ export function DependencyMatrix({ nodes, edges, root, selectedId, onSelect }: P
     return () => ro.disconnect();
   }, []);
 
-  const LABEL_W = 150;
-  const avail = Math.min(dims.width - LABEL_W, dims.height - LABEL_W);
-  const cell = Math.max(4, Math.min(20, Math.floor(avail / Math.max(1, n))));
+  const LABEL_W = 190;
+  // Directory-level → far fewer rows, so cells can be big and labelled.
+  const avail = Math.min(dims.width - LABEL_W, dims.height - LABEL_W - 40);
+  const cell = Math.max(10, Math.min(36, Math.floor(avail / Math.max(1, n))));
   const gridSize = cell * n;
 
   const draw = useCallback(() => {
@@ -120,23 +140,17 @@ export function DependencyMatrix({ nodes, edges, root, selectedId, onSelect }: P
     const accent = resolveCssVar("--accent");
     const danger = resolveCssVar("--danger");
     const border = resolveCssVar("--border");
-    const surface2 = resolveCssVar("--surface-2");
     const textCol = resolveCssVar("--text-secondary");
     const textDim = resolveCssVar("--text-tertiary");
 
-    const selIdx = selectedId != null ? indexOf.get(selectedId) ?? -1 : -1;
-
-    // grid background
-    ctx.fillStyle = withAlpha(border, 0.15);
+    ctx.fillStyle = withAlpha(border, 0.12);
     ctx.fillRect(LABEL_W, LABEL_W, gridSize, gridSize);
 
-    // selected row/col highlight band
     if (selIdx >= 0) {
       ctx.fillStyle = withAlpha(accent, 0.1);
       ctx.fillRect(LABEL_W, LABEL_W + selIdx * cell, gridSize, cell);
       ctx.fillRect(LABEL_W + selIdx * cell, LABEL_W, cell, gridSize);
     }
-    // hover band
     if (hover) {
       ctx.fillStyle = withAlpha(accent, 0.08);
       ctx.fillRect(LABEL_W, LABEL_W + hover.r * cell, gridSize, cell);
@@ -146,109 +160,138 @@ export function DependencyMatrix({ nodes, edges, root, selectedId, onSelect }: P
     // cells
     for (const [key, w] of weight) {
       const [r, c] = key.split(",").map(Number);
-      const intensity = 0.25 + 0.75 * (w / maxWeight);
-      // Below the diagonal (r > c) = a reference that goes "backwards" in the
-      // ordering. If the reverse edge also exists it's a cycle → tint danger.
-      const isCycle = weight.has(`${c},${r}`);
-      const col = isCycle ? danger : accent;
+      const intensity = 0.2 + 0.8 * Math.sqrt(w / maxWeight);
+      const isCycle = r !== c && weight.has(`${c},${r}`);
+      const col = r === c ? textDim : isCycle ? danger : accent;
       ctx.fillStyle = withAlpha(col, intensity);
-      ctx.fillRect(LABEL_W + c * cell + 0.5, LABEL_W + r * cell + 0.5, cell - 1, cell - 1);
+      ctx.fillRect(LABEL_W + c * cell + 1, LABEL_W + r * cell + 1, cell - 2, cell - 2);
+      // show the count when cells are large enough
+      if (cell >= 22) {
+        ctx.font = `${9 * fs}px ui-sans-serif, system-ui, sans-serif`;
+        ctx.fillStyle = intensity > 0.55 ? resolveCssVar("--background") : withAlpha(textCol, 0.8);
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(String(w), LABEL_W + c * cell + cell / 2, LABEL_W + r * cell + cell / 2);
+      }
     }
 
-    // diagonal
-    ctx.strokeStyle = withAlpha(border, 0.6);
+    // grid lines + diagonal
+    ctx.strokeStyle = withAlpha(border, 0.5);
     ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(LABEL_W, LABEL_W);
-    ctx.lineTo(LABEL_W + gridSize, LABEL_W + gridSize);
-    ctx.stroke();
     for (let i = 0; i <= n; i++) {
       const p = LABEL_W + i * cell + 0.5;
       ctx.beginPath(); ctx.moveTo(p, LABEL_W); ctx.lineTo(p, LABEL_W + gridSize); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(LABEL_W, p); ctx.lineTo(LABEL_W + gridSize, p); ctx.stroke();
     }
 
-    // row labels (only when cells are tall enough to be legible)
-    if (cell >= 8) {
-      ctx.font = `${Math.min(11, cell - 1) * fs}px ui-sans-serif, system-ui, sans-serif`;
-      ctx.textBaseline = "middle";
-      for (let i = 0; i < n; i++) {
-        const label = relPath(ordered[i].file_path, root);
-        const short = label.length > 22 ? "…" + label.slice(-21) : label;
-        ctx.fillStyle = i === selIdx ? accent : (i === hover?.r ? textCol : textDim);
-        ctx.textAlign = "right";
-        ctx.fillText(short, LABEL_W - 6, LABEL_W + i * cell + cell / 2);
-      }
+    // labels — rows (right-aligned) + columns (rotated)
+    ctx.font = `${Math.min(12, cell - 2) * fs}px ui-sans-serif, system-ui, sans-serif`;
+    ctx.textBaseline = "middle";
+    for (let i = 0; i < n; i++) {
+      const label = groups[i];
+      const short = label.length > 26 ? "…" + label.slice(-25) : label;
+      const isSel = i === selIdx;
+      const isHov = i === hover?.r || i === hover?.c;
+      ctx.fillStyle = isSel ? accent : isHov ? textCol : textDim;
+      // row label
+      ctx.textAlign = "right";
+      ctx.fillText(short, LABEL_W - 8, LABEL_W + i * cell + cell / 2);
+      // column label (rotated -45°)
+      ctx.save();
+      ctx.translate(LABEL_W + i * cell + cell / 2, LABEL_W - 8);
+      ctx.rotate(-Math.PI / 4);
+      ctx.textAlign = "left";
+      ctx.fillText(short, 0, 0);
+      ctx.restore();
     }
-    // A small hint of surface behind labels for contrast
-    void surface2;
-  }, [gridSize, cell, n, weight, maxWeight, indexOf, selectedId, hover, ordered, root, fs]);
+  }, [gridSize, cell, n, weight, maxWeight, selIdx, hover, groups, fs]);
 
   useEffect(() => { draw(); }, [draw]);
 
-  const onMouseMove = useCallback((ev: React.MouseEvent<HTMLDivElement>) => {
+  const cellFromEvent = useCallback((ev: React.MouseEvent<HTMLDivElement>) => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas) return null;
     const rect = canvas.getBoundingClientRect();
     const x = ev.clientX - rect.left, y = ev.clientY - rect.top;
     const c = Math.floor((x - LABEL_W) / cell);
     const r = Math.floor((y - LABEL_W) / cell);
-    if (r >= 0 && r < n && c >= 0 && c < n) {
-      setHover({ r, c, x, y });
-    } else if (r >= 0 && r < n && x < LABEL_W) {
-      setHover({ r, c: -1, x, y }); // hovering a row label
-    } else {
-      setHover(null);
-    }
-  }, [cell, n]);
+    return { r, c, x, y };
+  }, [cell]);
+
+  const onMouseMove = useCallback((ev: React.MouseEvent<HTMLDivElement>) => {
+    const p = cellFromEvent(ev);
+    if (p && p.r >= 0 && p.r < n && p.c >= 0 && p.c < n) setHover(p);
+    else if (p && p.r >= 0 && p.r < n && p.x < LABEL_W) setHover({ ...p, c: -1 });
+    else setHover(null);
+  }, [cellFromEvent, n]);
 
   const onClick = useCallback((ev: React.MouseEvent<HTMLDivElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const y = ev.clientY - rect.top;
-    const r = Math.floor((y - LABEL_W) / cell);
-    if (r >= 0 && r < n) onSelect(ordered[r].id);
-    else onSelect(null);
-  }, [cell, n, ordered, onSelect]);
+    const p = cellFromEvent(ev);
+    if (!p || p.r < 0 || p.r >= n) { onSelect(null); return; }
+    // Select the first file in the clicked row's group so the side panel fills.
+    const g = groups[p.r];
+    const firstFile = nodes.find((f) => groupOfFile.get(f.id) === g);
+    onSelect(firstFile?.id ?? null);
+  }, [cellFromEvent, n, groups, nodes, groupOfFile, onSelect]);
 
-  if (n === 0) {
+  const maxDepth = useMemo(
+    () => Math.max(1, ...nodes.map((f) => relPath(f.file_path, root).split(/[/\\]/).length - 1)),
+    [nodes, root],
+  );
+
+  if (nodes.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center text-xs text-[var(--text-tertiary)]">
-        No file dependencies to chart yet. Reindex, or check that files reference each other.
+        No file dependencies to chart yet.
       </div>
     );
   }
 
   const hoverLabel = hover
     ? hover.c === -1
-      ? relPath(ordered[hover.r].file_path, root)
-      : `${relPath(ordered[hover.r].file_path, root)}  →  ${relPath(ordered[hover.c].file_path, root)}` +
-        (weight.has(`${hover.r},${hover.c}`) ? `  (${weight.get(`${hover.r},${hover.c}`)}×)` : "  (no reference)")
+      ? `${groups[hover.r]} · ${fileCountPerGroup.get(groups[hover.r]) ?? 0} files`
+      : `${groups[hover.r]}  →  ${groups[hover.c]}` +
+        (weight.has(`${hover.r},${hover.c}`) ? `  (${weight.get(`${hover.r},${hover.c}`)} refs)` : "  (none)")
     : null;
 
   return (
-    <div ref={containerRef} className="flex-1 min-h-0 overflow-auto relative">
-      <div className="p-2" onMouseMove={onMouseMove} onMouseLeave={() => setHover(null)} onClick={onClick}>
-        <canvas ref={canvasRef} className="block cursor-pointer" />
-      </div>
-      {hoverLabel && (
-        <div
-          className="fixed pointer-events-none px-2 py-1 rounded-md text-[0.7rem] font-mono bg-[var(--surface)] border border-[var(--border)] text-[var(--text-secondary)] shadow-md max-w-md truncate z-50"
-          style={{ left: (hover?.x ?? 0) + 170, top: (hover?.y ?? 0) + 60 }}
-        >
-          {hoverLabel}
+    <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+      {/* Depth control */}
+      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-[var(--border)] flex-shrink-0 text-[0.7rem] text-[var(--text-tertiary)]">
+        <span>{n} folders · grouped by directory depth</span>
+        <div className="flex items-center rounded-md border border-[var(--border)] overflow-hidden ml-1">
+          {Array.from({ length: Math.min(4, maxDepth) }, (_, i) => i + 1).map((d) => (
+            <button
+              key={d}
+              onClick={() => setDepth(d)}
+              className={`px-2 py-0.5 transition-colors ${
+                depth === d
+                  ? "bg-[var(--surface-3)] text-[var(--text-primary)]"
+                  : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
+              } ${d > 1 ? "border-l border-[var(--border)]" : ""}`}
+            >
+              {d}
+            </button>
+          ))}
         </div>
-      )}
-      {/* Legend */}
-      <div className="sticky bottom-0 left-0 flex items-center gap-3 px-3 py-1.5 text-[0.65rem] text-[var(--text-tertiary)] bg-[color-mix(in_srgb,var(--surface)_85%,transparent)] border-t border-[var(--border)]">
-        <span className="flex items-center gap-1">
-          <span className="w-2.5 h-2.5 rounded-sm" style={{ background: "var(--accent)" }} /> references
+        <span className="ml-auto flex items-center gap-3">
+          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: "var(--accent)" }} /> refs</span>
+          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: "var(--danger)" }} /> cycle</span>
         </span>
-        <span className="flex items-center gap-1">
-          <span className="w-2.5 h-2.5 rounded-sm" style={{ background: "var(--danger)" }} /> cycle (mutual)
-        </span>
-        <span>row i → column j = file i references file j · darker = more</span>
+      </div>
+
+      <div ref={containerRef} className="flex-1 min-h-0 overflow-auto relative">
+        <div className="p-2" onMouseMove={onMouseMove} onMouseLeave={() => setHover(null)} onClick={onClick}>
+          <canvas ref={canvasRef} className="block cursor-pointer" />
+        </div>
+        {hoverLabel && (
+          <div
+            className="fixed pointer-events-none px-2 py-1 rounded-md text-[0.7rem] font-mono bg-[var(--surface)] border border-[var(--border)] text-[var(--text-secondary)] shadow-md max-w-md truncate z-50"
+            style={{ left: (hover?.x ?? 0) + 210, top: (hover?.y ?? 0) + 80 }}
+          >
+            {hoverLabel}
+          </div>
+        )}
       </div>
     </div>
   );

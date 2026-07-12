@@ -31,6 +31,13 @@ export const CairnEvents = {
    */
   agentFilesChanged: () =>
     new CustomEvent("cairn:agent-files-changed"),
+  /**
+   * Opens a file in the Agent editor and scrolls to a 1-based line. Fired by the
+   * Architecture sidebar/tab when you click a symbol; FileEditorInner listens
+   * (once the file's view is mounted) and reveals the line centred.
+   */
+  openFileAtLine: (filePath: string, line: number) =>
+    new CustomEvent("cairn:open-file-at-line", { detail: { filePath, line } }),
 };
 
 /**
