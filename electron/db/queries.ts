@@ -1524,21 +1524,31 @@ export function getCodebaseGraph(db: Database.Database, folder: string) {
   }>;
 
   // Directed, weighted file→file edges. A relation's source symbol lives in one
-  // file (sf); its target NAME may be defined in one or more files (tf) — we
-  // join target symbols by name. Aggregate by (source file, target file),
-  // excluding self-references. Both endpoints must be in scope.
+  // file (sf); its target NAME is resolved to the file that defines it (tf). To
+  // avoid the graph exploding with false edges, we ONLY link target names that
+  // are UNAMBIGUOUS — defined in exactly one file within scope. A name defined
+  // in many files (e.g. `dispose`, `makeDb`) can't be attributed to a single
+  // file, so linking it to all of them is noise; we drop those. Self-references
+  // are excluded. Both endpoints must be in scope.
   const edges = db.prepare(`
-    SELECT sf.id AS source, tf.id AS target, COUNT(*) AS weight
+    WITH scoped_syms AS (
+      SELECT s.id, s.name, s.file_id
+      FROM codebase_symbols s
+      JOIN codebase_files f ON s.file_id = f.id
+      WHERE ${scope}
+    ),
+    unambiguous AS (
+      SELECT name FROM scoped_syms GROUP BY name HAVING COUNT(DISTINCT file_id) = 1
+    )
+    SELECT sf.id AS source, ts.file_id AS target, COUNT(*) AS weight
     FROM codebase_relations r
-    JOIN codebase_symbols ss ON r.source_id = ss.id
-    JOIN codebase_files   sf ON ss.file_id = sf.id
-    JOIN codebase_symbols ts ON ts.name = r.target_name
-    JOIN codebase_files   tf ON ts.file_id = tf.id
-    WHERE sf.id != tf.id
-      AND (sf.root_path = ? OR sf.file_path = ? OR sf.file_path LIKE ?)
-      AND (tf.root_path = ? OR tf.file_path = ? OR tf.file_path LIKE ?)
-    GROUP BY sf.id, tf.id
-  `).all(...scopeParams, ...scopeParams) as Array<{
+    JOIN scoped_syms ss ON r.source_id = ss.id
+    JOIN codebase_files sf ON ss.file_id = sf.id
+    JOIN scoped_syms ts ON ts.name = r.target_name
+    WHERE r.target_name IN (SELECT name FROM unambiguous)
+      AND ss.file_id != ts.file_id
+    GROUP BY sf.id, ts.file_id
+  `).all(...scopeParams) as Array<{
     source: string; target: string; weight: number;
   }>;
 

@@ -715,4 +715,16 @@ describe("getCodebaseGraph", () => {
     expect(g.edges).toHaveLength(1);
     expect(g.edges[0]).toMatchObject({ source: "f1", target: "f2", weight: 1 });
   });
+
+  it("does NOT create edges for ambiguous target names (defined in >1 file)", () => {
+    // Add a second file that ALSO defines a symbol named `helper`. Now `helper`
+    // is ambiguous, so caller→helper can't be attributed to one file — the edge
+    // must be dropped rather than fanning out to every `helper` definition.
+    upsertCodebaseFile(db, { id: "f3", rootPath: root, filePath: `${root}/c.ts`, hash: "h3" });
+    insertCodebaseSymbol(db, { id: "s4", fileId: "f3", name: "helper", kind: "function", line: 1, signature: "", docstring: null });
+    const g = getCodebaseGraph(db, root);
+    // The caller→helper edge (f1→f2) is gone because `helper` is now ambiguous.
+    expect(g.edges.find((e) => e.target === "f2" || e.target === "f3")).toBeUndefined();
+    expect(g.nodes.map((n) => n.id).sort()).toEqual(["f1", "f2", "f3"]);
+  });
 });

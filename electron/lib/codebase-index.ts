@@ -46,6 +46,50 @@ export function isIgnoredDir(name: string): boolean {
   return IGNORED_DIR_PREFIXES.some((p) => name === p || name.startsWith(`${p}-`));
 }
 
+// Filename patterns for generated / vendored / minified files that should never
+// be treated as source (their mangled identifiers collide with real symbols and
+// turn the graph into a hairball). `mermaid-assets.ts` etc. are the motivating
+// case, but this generalises to bundles and minified drops.
+const IGNORED_FILE_SUFFIXES = [
+  "-assets.ts", "-assets.js",           // our generated webview asset bundles
+  ".min.js", ".min.css", ".min.ts",
+  ".bundle.js", ".bundle.ts",
+  ".generated.ts", ".generated.js",
+  ".d.ts",                               // type decls — not implementation
+];
+
+/**
+ * True if a file looks generated/vendored/minified and should be skipped, based
+ * on (1) its name, or (2) a cheap content sniff of the first chunk: an explicit
+ * "@generated" / "AUTO-GENERATED" marker, or minification (very long lines with
+ * almost no line breaks). Reading only the first ~4KB keeps this fast.
+ */
+export function isGeneratedOrMinifiedSource(filePath: string): boolean {
+  const base = path.basename(filePath).toLowerCase();
+  if (IGNORED_FILE_SUFFIXES.some((s) => base.endsWith(s))) return true;
+  let head = "";
+  try {
+    const fd = fs.openSync(filePath, "r");
+    const buf = Buffer.alloc(4096);
+    const n = fs.readSync(fd, buf, 0, buf.length, 0);
+    fs.closeSync(fd);
+    head = buf.toString("utf-8", 0, n);
+  } catch {
+    return false;
+  }
+  // Explicit generated markers (checked case-insensitively).
+  const lower = head.toLowerCase();
+  if (lower.includes("@generated") || lower.includes("auto-generated") || lower.includes("do not edit")) {
+    return true;
+  }
+  // Minified heuristic: the longest line in the head is huge and there are very
+  // few newlines (typical of a single-line bundle).
+  const newlines = (head.match(/\n/g) || []).length;
+  const longestLine = head.split("\n").reduce((m, l) => Math.max(m, l.length), 0);
+  if (longestLine > 1000 && newlines < 5) return true;
+  return false;
+}
+
 // Keywords and built-ins to ignore — both as relation targets AND as symbol
 // names (a construct whose parsed name lands here is dropped, so keywords like
 // `function`/`return`/`string` never pollute the index or the call graph).
@@ -96,7 +140,7 @@ export async function walkDir(dir: string, fileList: string[] = []): Promise<str
       await walkDir(filePath, fileList);
     } else if (stat.isFile()) {
       const ext = path.extname(file).toLowerCase();
-      if (SUPPORTED_EXTENSIONS.has(ext)) {
+      if (SUPPORTED_EXTENSIONS.has(ext) && !isGeneratedOrMinifiedSource(filePath)) {
         fileList.push(filePath);
       }
     }
@@ -520,15 +564,24 @@ export async function indexCodebase(db: Database.Database, rootPath: string): Pr
       }
       
       if (!enclosingSymbol) continue;
-      
-      const tokens = line.split(/[^a-zA-Z0-9_$]+/);
-      for (const token of tokens) {
-        if (!token) continue;
+
+      // Only treat a name as a CALL/reference when it's actually invoked —
+      // i.e. followed by `(` (optionally with whitespace). This excludes bare
+      // variables, property values, type annotations and stray identifiers
+      // that merely happen to share a name with a symbol (which previously
+      // exploded the graph with false edges — e.g. `.status`, `row`, `p`, or
+      // the vitest global `it`). We still guard against keywords and require a
+      // known symbol name that isn't the enclosing symbol itself.
+      const callRe = /([A-Za-z_$][A-Za-z0-9_$]*)\s*\(/g;
+      let m: RegExpExecArray | null;
+      while ((m = callRe.exec(line)) !== null) {
+        const token = m[1];
+        if (token.length < 3) continue; // skip 1–2 char names (p, b, ts, on…)
         if (REJECTED_RELATION_TARGETS.has(token)) continue;
         if (knownSymbolNames.has(token) && token !== enclosingSymbol.name) {
           fileRelations.push({
             sourceId: enclosingSymbol.id,
-            targetName: token
+            targetName: token,
           });
         }
       }
