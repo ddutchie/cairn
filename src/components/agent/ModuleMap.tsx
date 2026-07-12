@@ -76,6 +76,9 @@ export function ModuleMap({ cwd }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hoverId, setHoverId] = useState<string | null>(null);
+  // Hide inter-module edges below this reference count — cuts the clutter of
+  // one small module (e.g. scripts/) weakly touching everything.
+  const [minWeight, setMinWeight] = useState(1);
 
   const agentConfig = useCairnStore(useShallow((s) => s.agentConfig));
   const [aiExplain, setAiExplain] = useState<{ overview: string; modules: string } | null>(null);
@@ -84,9 +87,21 @@ export function ModuleMap({ cwd }: Props) {
 
   const scope = path.length ? path[path.length - 1] : cwd;
 
+  // The full edge-weight range (for the slider) and the filtered view of the
+  // graph that everything visual (layout, edges, isolation, summary) reads from.
+  const maxRawWeight = useMemo(
+    () => Math.max(1, ...(graph?.edges.filter((e) => e.source !== e.target).map((e) => e.weight) ?? [1])),
+    [graph],
+  );
+  const viewGraph = useMemo<ModuleGraph | null>(() => {
+    if (!graph) return null;
+    if (minWeight <= 1) return graph;
+    return { ...graph, edges: graph.edges.filter((e) => e.source === e.target || e.weight >= minWeight) };
+  }, [graph, minWeight]);
+
   // Reset any AI explanation when we navigate to a different scope.
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- clear stale AI explanation when the scoped folder changes
-  useEffect(() => { setAiExplain(null); setAiError(null); }, [scope]);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- clear stale AI explanation + edge filter when the scoped folder changes
+  useEffect(() => { setAiExplain(null); setAiError(null); setMinWeight(1); }, [scope]);
 
   useEffect(() => {
     if (!cwd) return;
@@ -106,14 +121,14 @@ export function ModuleMap({ cwd }: Props) {
   // no dependency edges (docs, .github, changelogs…) are parked in a tidy row
   // along the bottom instead of being flung to the corners by charge repulsion.
   const { positioned, isolated } = useMemo<{ positioned: Positioned[]; isolated: Positioned[] }>(() => {
-    if (!graph || graph.nodes.length === 0) return { positioned: [], isolated: [] };
-    const maxSym = Math.max(1, ...graph.nodes.map((n) => n.symbolCount));
+    if (!viewGraph || viewGraph.nodes.length === 0) return { positioned: [], isolated: [] };
+    const maxSym = Math.max(1, ...viewGraph.nodes.map((n) => n.symbolCount));
 
     const connectedIds = new Set<string>();
-    for (const e of graph.edges) { if (e.source !== e.target) { connectedIds.add(e.source); connectedIds.add(e.target); } }
+    for (const e of viewGraph.edges) { if (e.source !== e.target) { connectedIds.add(e.source); connectedIds.add(e.target); } }
 
-    const connectedNodes = graph.nodes.filter((n) => connectedIds.has(n.id));
-    const isolatedNodes = graph.nodes.filter((n) => !connectedIds.has(n.id));
+    const connectedNodes = viewGraph.nodes.filter((n) => connectedIds.has(n.id));
+    const isolatedNodes = viewGraph.nodes.filter((n) => !connectedIds.has(n.id));
 
     // ── connected: force layout in the upper ~75% of the canvas ──
     const layoutH = isolatedNodes.length ? H - 90 : H;
@@ -127,7 +142,7 @@ export function ModuleMap({ cwd }: Props) {
         y: layoutH / 2 + Math.sin(ang) * 150,
       };
     }) as (Positioned & d3.SimulationNodeDatum)[];
-    const links = graph.edges
+    const links = viewGraph.edges
       .filter((e) => e.source !== e.target && connectedIds.has(e.source) && connectedIds.has(e.target))
       .map((e) => ({ source: e.source, target: e.target }));
     d3.forceSimulation(sim)
@@ -161,7 +176,7 @@ export function ModuleMap({ cwd }: Props) {
     }) as Positioned[];
 
     return { positioned: sim as Positioned[], isolated: iso };
-  }, [graph]);
+  }, [viewGraph]);
 
   const posById = useMemo(() => {
     const m = new Map<string, Positioned>();
@@ -173,15 +188,15 @@ export function ModuleMap({ cwd }: Props) {
   // Detect mutual (cyclic) module pairs.
   const mutual = useMemo(() => {
     const set = new Set<string>();
-    if (!graph) return set;
-    const has = new Set(graph.edges.map((e) => `${e.source}\u0000${e.target}`));
-    for (const e of graph.edges) {
+    if (!viewGraph) return set;
+    const has = new Set(viewGraph.edges.map((e) => `${e.source}\u0000${e.target}`));
+    for (const e of viewGraph.edges) {
       if (has.has(`${e.target}\u0000${e.source}`)) set.add(`${e.source}\u0000${e.target}`);
     }
     return set;
-  }, [graph]);
+  }, [viewGraph]);
 
-  const maxWeight = useMemo(() => Math.max(1, ...(graph?.edges.map((e) => e.weight) ?? [1])), [graph]);
+  const maxWeight = useMemo(() => Math.max(1, ...(viewGraph?.edges.map((e) => e.weight) ?? [1])), [viewGraph]);
 
   // ── Heuristic one-line summary (always shown, no LLM) ──
   const heuristicSummary = useMemo(() => {
@@ -303,6 +318,30 @@ export function ModuleMap({ cwd }: Props) {
             </div>
           )}
           {aiError && <div className="text-[0.7rem] text-[var(--danger)] mt-1">{aiError}</div>}
+
+          {/* Edge-weight threshold — declutter weak dependencies. */}
+          {maxRawWeight > 2 && (
+            <div className="flex items-center gap-2 mt-2 text-[0.65rem] text-[var(--text-tertiary)]">
+              <span className="flex-shrink-0">Min references</span>
+              <input
+                type="range"
+                min={1}
+                max={maxRawWeight}
+                value={minWeight}
+                onChange={(e) => setMinWeight(Number(e.target.value))}
+                className="flex-1 max-w-[180px] accent-[var(--accent)] h-1 cursor-pointer"
+              />
+              <span className="tabular-nums w-6 text-[var(--text-secondary)] flex-shrink-0">≥{minWeight}</span>
+              {minWeight > 1 && (
+                <button
+                  onClick={() => setMinWeight(1)}
+                  className="text-[var(--accent)] hover:underline flex-shrink-0"
+                >
+                  reset
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -331,7 +370,7 @@ export function ModuleMap({ cwd }: Props) {
             </defs>
 
             {/* edges — thin, curved, subtle; width scales gently with weight */}
-            {graph?.edges.map((e, i) => {
+            {viewGraph?.edges.map((e, i) => {
               const s = posById.get(e.source), t = posById.get(e.target);
               if (!s || !t || s === t) return null;
               const isCycle = mutual.has(`${e.source}\u0000${e.target}`);
