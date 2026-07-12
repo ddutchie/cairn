@@ -279,6 +279,13 @@ export function registerAgentHandlers(db: Database): void {
     })
   );
 
+  registerIpcHandle("agent:codebaseModuleGraph", (_e, { folder, depth }: { folder: string; depth?: number }) =>
+    handle(async () => {
+      const realPath = await assertWithinCodeDirectory(db, folder);
+      return q.getCodebaseModuleGraph(db, realPath, depth ?? 1);
+    })
+  );
+
   registerIpcHandle("agent:codebaseFileSymbols", (_e, { filePath }: { filePath: string }) =>
     handle(async () => {
       const realPath = await assertWithinCodeDirectory(db, filePath);

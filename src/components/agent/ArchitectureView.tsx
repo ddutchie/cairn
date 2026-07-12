@@ -29,6 +29,7 @@ import {
   List,
   Share2,
   Grid3x3,
+  LayoutGrid,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -36,6 +37,7 @@ import { useCairnStore } from "@/store";
 import { CairnEvents } from "@/lib/events";
 import { ArchitectureGraphCanvas } from "./ArchitectureGraphCanvas";
 import { DependencyMatrix } from "./DependencyMatrix";
+import { ModuleMap } from "./ModuleMap";
 
 interface ArchitectureViewProps {
   cwd: string;
@@ -124,8 +126,8 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
   // Files with no extracted symbols (e.g. plain .md docs, config) are hidden by
   // default — they'd otherwise clutter the list with "0" rows. Toggleable.
   const [showEmpty, setShowEmpty] = useState(false);
-  // List (file tree) vs. Matrix (DSM) vs. Graph (spotlight force graph).
-  const [view, setView] = useState<"list" | "matrix" | "graph">("matrix");
+  // Map (module overview, default) · Matrix (DSM) · Graph (spotlight) · List.
+  const [view, setView] = useState<"map" | "list" | "matrix" | "graph">("map");
   const [graph, setGraph] = useState<CodebaseGraph | null>(null);
   const [graphLoading, setGraphLoading] = useState(false);
 
@@ -290,12 +292,24 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
           </span>
         </div>
         <div className="ml-auto flex items-center gap-2 flex-shrink-0">
-          {/* Matrix / Graph / List view toggle */}
+          {/* Map / Matrix / Graph / List view toggle */}
           <div className="flex items-center rounded-md border border-[var(--border)] overflow-hidden">
+            <button
+              onClick={() => setView("map")}
+              className={cn(
+                "flex items-center gap-1 px-2 py-1 text-[0.7rem] font-semibold transition-colors",
+                view === "map"
+                  ? "bg-[var(--surface-3)] text-[var(--text-primary)]"
+                  : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]",
+              )}
+              title="Module map (overview)"
+            >
+              <LayoutGrid size={12} /> Map
+            </button>
             <button
               onClick={() => setView("matrix")}
               className={cn(
-                "flex items-center gap-1 px-2 py-1 text-[0.7rem] font-semibold transition-colors",
+                "flex items-center gap-1 px-2 py-1 text-[0.7rem] font-semibold transition-colors border-l border-[var(--border)]",
                 view === "matrix"
                   ? "bg-[var(--surface-3)] text-[var(--text-primary)]"
                   : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]",
@@ -365,6 +379,8 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
             {reindexing ? "Indexing…" : "Build index"}
           </Button>
         </div>
+      ) : overview && view === "map" ? (
+        <ModuleMap cwd={cwd} />
       ) : overview && view === "matrix" ? (
         <div className="flex-1 min-h-0 flex overflow-hidden">
           {graphLoading && !graph ? (

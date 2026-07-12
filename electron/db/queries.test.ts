@@ -39,6 +39,7 @@ import {
   insertCodebaseRelation,
   getCodebaseOverview,
   getCodebaseGraph,
+  getCodebaseModuleGraph,
 } from "./queries";
 
 // ── Shared fixture builders ───────────────────────────────────────────────
@@ -726,5 +727,43 @@ describe("getCodebaseGraph", () => {
     // The caller→helper edge (f1→f2) is gone because `helper` is now ambiguous.
     expect(g.edges.find((e) => e.target === "f2" || e.target === "f3")).toBeUndefined();
     expect(g.nodes.map((n) => n.id).sort()).toEqual(["f1", "f2", "f3"]);
+  });
+});
+
+describe("getCodebaseModuleGraph", () => {
+  let db: Database.Database;
+  const root = "/tmp/cairn-module-repo";
+
+  beforeEach(() => {
+    db = makeDb();
+    // Two modules: core/ (a.ts caller, c.ts sibling) and util/ (b.ts helper).
+    upsertCodebaseFile(db, { id: "f1", rootPath: root, filePath: `${root}/core/a.ts`, hash: "h1" });
+    upsertCodebaseFile(db, { id: "f2", rootPath: root, filePath: `${root}/util/b.ts`, hash: "h2" });
+    upsertCodebaseFile(db, { id: "f3", rootPath: root, filePath: `${root}/core/c.ts`, hash: "h3" });
+    insertCodebaseSymbol(db, { id: "s1", fileId: "f1", name: "caller", kind: "function", line: 1, signature: "", docstring: null });
+    insertCodebaseSymbol(db, { id: "s2", fileId: "f2", name: "helper", kind: "function", line: 1, signature: "", docstring: null });
+    insertCodebaseSymbol(db, { id: "s3", fileId: "f3", name: "sibling", kind: "function", line: 1, signature: "", docstring: null });
+    // core/a → util/b (cross-module), and core/a → core/c (intra-module cohesion).
+    insertCodebaseRelation(db, { sourceId: "s1", targetName: "helper", type: "call" });
+    insertCodebaseRelation(db, { sourceId: "s1", targetName: "sibling", type: "call" });
+  });
+
+  it("rolls files up into directory modules with aggregated sizes", () => {
+    const g = getCodebaseModuleGraph(db, root, 1);
+    expect(g.grouping).toBe("directory");
+    const core = g.nodes.find((n) => n.id === "core")!;
+    const util = g.nodes.find((n) => n.id === "util")!;
+    expect(core.fileCount).toBe(2);
+    expect(core.symbolCount).toBe(2);
+    expect(util.fileCount).toBe(1);
+    expect(util.symbolCount).toBe(1);
+  });
+
+  it("aggregates cross-module edges and counts intra-module refs as cohesion", () => {
+    const g = getCodebaseModuleGraph(db, root, 1);
+    // Only the core→util edge crosses modules; core→core is cohesion, not an edge.
+    expect(g.edges).toHaveLength(1);
+    expect(g.edges[0]).toMatchObject({ source: "core", target: "util", weight: 1 });
+    expect(g.nodes.find((n) => n.id === "core")!.internalRefs).toBe(1);
   });
 });

@@ -1555,6 +1555,75 @@ export function getCodebaseGraph(db: Database.Database, folder: string) {
   return { folder: normalized, nodes, edges };
 }
 
+/**
+ * Directory-aggregated MODULE graph for the Architecture overview (module map).
+ * Rolls the de-noised file→file dependency graph up to "modules" — directory
+ * paths truncated to `depth` segments (relative to the scoped root) — and
+ * aggregates weighted inter-module edges (intra-module edges are dropped; they
+ * become the module's internal cohesion count instead). Module size is the
+ * total symbol count of its files.
+ *
+ * Grouping is done in JS (not SQL) so the strategy stays pluggable: today it's
+ * directory-based; a future import-clustering strategy can slot in here without
+ * touching the renderer. Reuses getCodebaseGraph for the (already unambiguous,
+ * call-syntax-only) file edges.
+ */
+export function getCodebaseModuleGraph(
+  db: Database.Database,
+  folder: string,
+  depth = 1,
+) {
+  const { folder: normalized, nodes: files, edges: fileEdges } = getCodebaseGraph(db, folder);
+  const d = Math.max(1, Math.floor(depth));
+
+  // Map a file → its module id (directory truncated to `depth` segments).
+  const moduleOf = (filePath: string): string => {
+    let rel = filePath;
+    if (normalized && filePath.startsWith(normalized)) {
+      rel = filePath.slice(normalized.length).replace(/^[/\\]/, "");
+    }
+    const parts = rel.split(/[/\\]/);
+    if (parts.length <= 1) return "(root)";
+    return parts.slice(0, -1).slice(0, d).join("/") || "(root)";
+  };
+
+  // Build module nodes: aggregate symbol + file counts.
+  const modules = new Map<string, { id: string; label: string; fileCount: number; symbolCount: number; internalRefs: number }>();
+  const fileModule = new Map<string, string>();
+  for (const f of files) {
+    const m = moduleOf(f.file_path);
+    fileModule.set(f.id, m);
+    const node = modules.get(m) ?? { id: m, label: m, fileCount: 0, symbolCount: 0, internalRefs: 0 };
+    node.fileCount += 1;
+    node.symbolCount += f.symbol_count;
+    modules.set(m, node);
+  }
+
+  // Aggregate inter-module edges; count intra-module edges as cohesion.
+  const edgeMap = new Map<string, { source: string; target: string; weight: number }>();
+  for (const e of fileEdges) {
+    const sm = fileModule.get(e.source), tm = fileModule.get(e.target);
+    if (sm == null || tm == null) continue;
+    if (sm === tm) {
+      const node = modules.get(sm);
+      if (node) node.internalRefs += e.weight;
+      continue;
+    }
+    const key = `${sm}\u0000${tm}`;
+    const agg = edgeMap.get(key) ?? { source: sm, target: tm, weight: 0 };
+    agg.weight += e.weight;
+    edgeMap.set(key, agg);
+  }
+
+  return {
+    folder: normalized,
+    depth: d,
+    grouping: "directory" as const,
+    nodes: Array.from(modules.values()).sort((a, b) => a.id.localeCompare(b.id)),
+    edges: Array.from(edgeMap.values()),
+  };
+}
+
 // ── Note Embeddings ───────────────────────────
 // Vectors are stored as JSON-in-TEXT (sqlite-vec-bridge shape).
 // Since v18, one note can have multiple rows — one per markdown section.

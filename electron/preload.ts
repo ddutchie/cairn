@@ -59,6 +59,14 @@ interface CodebaseGraphEdge {
 interface CodebaseGraph {
   folder: string; nodes: CodebaseGraphNode[]; edges: CodebaseGraphEdge[];
 }
+interface CodebaseModuleNode {
+  id: string; label: string; fileCount: number; symbolCount: number; internalRefs: number;
+}
+interface CodebaseModuleGraph {
+  folder: string; depth: number; grouping: "directory";
+  nodes: CodebaseModuleNode[];
+  edges: CodebaseGraphEdge[];
+}
 // ── Inline types for the git API (not shared with the renderer bundle) ──────
 
 interface GitStatusEntry {
@@ -419,6 +427,8 @@ const api = {
     // Codebase index (Architecture tab) — read-only views over the semantic index.
     codebaseOverview: (folder: string) => invoke<CodebaseOverview>("agent:codebaseOverview", { folder }),
     codebaseGraph: (folder: string) => invoke<CodebaseGraph>("agent:codebaseGraph", { folder }),
+    codebaseModuleGraph: (folder: string, depth?: number) =>
+      invoke<CodebaseModuleGraph>("agent:codebaseModuleGraph", { folder, depth }),
     codebaseFileSymbols: (filePath: string) =>
       invoke<CodebaseSymbol[]>("agent:codebaseFileSymbols", { filePath }),
     codebaseRelations: (name: string, folder?: string) =>
