@@ -286,8 +286,8 @@ export function DependencyMatrix({ nodes, edges, root, selectedId, onSelect }: P
         </div>
         {hoverLabel && (
           <div
-            className="fixed pointer-events-none px-2 py-1 rounded-md text-[0.7rem] font-mono bg-[var(--surface)] border border-[var(--border)] text-[var(--text-secondary)] shadow-md max-w-md truncate z-50"
-            style={{ left: (hover?.x ?? 0) + 210, top: (hover?.y ?? 0) + 80 }}
+            className="absolute pointer-events-none px-2 py-1 rounded-md text-[0.7rem] font-mono bg-[var(--surface)] border border-[var(--border)] text-[var(--text-secondary)] shadow-md max-w-md truncate z-50"
+            style={{ left: (hover?.x ?? 0) + 14, top: (hover?.y ?? 0) + 14 }}
           >
             {hoverLabel}
           </div>

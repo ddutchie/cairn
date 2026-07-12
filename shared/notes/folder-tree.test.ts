@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildFolderTree, type FolderNode } from "./folder-tree";
+import { buildFolderTree, dedupeFoldersCaseInsensitive, type FolderNode } from "./folder-tree";
 
 interface N {
   id: string;
@@ -80,5 +80,28 @@ describe("buildFolderTree", () => {
     const child = findByPath(folders, "Mobile/AI");
     expect(child).toBeDefined();
     expect(child!.notes.map((n) => n.id)).toEqual(["a"]);
+  });
+});
+
+describe("dedupeFoldersCaseInsensitive", () => {
+  it("drops null, undefined and blank/whitespace entries", () => {
+    expect(dedupeFoldersCaseInsensitive([null, undefined, "", "   ", "Mobile"])).toEqual(["Mobile"]);
+  });
+
+  it("merges case-variant paths, keeping the first-seen casing", () => {
+    expect(dedupeFoldersCaseInsensitive(["Mobile", "mobile", "MOBILE"])).toEqual(["Mobile"]);
+    expect(dedupeFoldersCaseInsensitive(["mobile/AI", "Mobile/ai"])).toEqual(["mobile/AI"]);
+  });
+
+  it("keeps genuinely distinct folders and preserves input order", () => {
+    expect(dedupeFoldersCaseInsensitive(["src", "Mobile", "docs"])).toEqual(["src", "Mobile", "docs"]);
+  });
+
+  it("trims surrounding whitespace on kept entries", () => {
+    expect(dedupeFoldersCaseInsensitive(["  Mobile  "])).toEqual(["Mobile"]);
+  });
+
+  it("returns an empty array for an all-empty input", () => {
+    expect(dedupeFoldersCaseInsensitive([null, undefined, "", "  "])).toEqual([]);
   });
 });

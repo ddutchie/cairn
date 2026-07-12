@@ -69,6 +69,12 @@ function moduleColor(id: string, index: number): string {
 }
 
 export function ModuleMap({ cwd }: Props) {
+  // NOTE: intentionally outside the analytics-canvas convention (useContainerDims
+  // + useScopedData). This is an SVG with a fixed viewBox that self-scales via
+  // preserveAspectRatio, so it needs no measured pixel dims; and its data is the
+  // codebase module graph (fetched here), not the knowledge-graph nodes that
+  // useScopedData derives. Only useFontScale applies — SVG font sizes must scale
+  // with the app font-size setting.
   const fs = useFontScale();
   // Breadcrumb of folders we've drilled into (absolute paths). [] = root (cwd).
   const [path, setPath] = useState<string[]>([]);
@@ -322,10 +328,10 @@ export function ModuleMap({ cwd }: Props) {
             preserveAspectRatio="xMidYMid meet"
           >
             <defs>
-              <marker id="mm-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <marker id="mm-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
                 <path d="M0,1 L9,5 L0,9" fill="none" stroke="var(--text-secondary)" strokeWidth="1.6" />
               </marker>
-              <marker id="mm-arrow-cycle" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <marker id="mm-arrow-cycle" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
                 <path d="M0,1 L9,5 L0,9" fill="none" stroke="var(--danger)" strokeWidth="1.6" />
               </marker>
             </defs>

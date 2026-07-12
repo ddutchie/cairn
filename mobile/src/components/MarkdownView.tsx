@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useMemo, type ReactNode } from "react";
 import { Linking, Text, View, Pressable } from "react-native";
 import Markdown, { MarkdownIt, type RenderRules, type ASTNode } from "react-native-markdown-display";
 import markdownItMark from "markdown-it-mark";
@@ -106,7 +106,7 @@ export function MarkdownView({
 
   const src = useMemo(() => preprocessCairnMarkdown(content ?? "", resolve), [content, resolve]);
 
-  const onLinkPress = (url: string): boolean => {
+  const onLinkPress = useCallback((url: string): boolean => {
     // Card/task links carry an id directly (baked in at preprocess).
     const cardId = cardIdFromUrl(url);
     if (cardId != null) {
@@ -130,10 +130,10 @@ export function MarkdownView({
     }
     Linking.openURL(url).catch(() => {});
     return false;
-  };
+  }, [router]);
   const rules = useMemo(
     () => makeRules(t, content ?? "", onChangeContent, onHeadingLayout, onLinkPress),
-    [t, content, onChangeContent, onHeadingLayout],
+    [t, content, onChangeContent, onHeadingLayout, onLinkPress],
   );
 
   return (

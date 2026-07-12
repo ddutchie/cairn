@@ -234,12 +234,9 @@ export function useIsDark(): boolean {
  * color-mix / `/20` alpha usage (e.g. accent border at 20%).
  */
 export function withAlpha(hex: string, alpha: number): string {
-  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
-  if (!m) return hex;
-  const n = parseInt(m[1], 16);
-  const r = (n >> 16) & 255;
-  const g = (n >> 8) & 255;
-  const b = n & 255;
+  const rgb = hexToRgb(hex);
+  if (!rgb) return hex;
+  const [r, g, b] = rgb;
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 

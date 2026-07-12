@@ -247,7 +247,7 @@ export function AgentView() {
         {/* Centre pane — tab bar + editor/diff */}
         <div className={cn(
           "flex-1 min-w-0 flex flex-col overflow-hidden",
-          (mobileTab === "editor" || mobileTab === "diff" || mobileTab === "git") ? "flex h-full" : "hidden md:flex"
+          (mobileTab === "editor" || mobileTab === "diff" || mobileTab === "git" || mobileTab === "architecture") ? "flex h-full" : "hidden md:flex"
         )}>
           {/* Tab selector for editor / diff (only if not on mobile, since mobile has its own tabs) */}
           <div className="hidden md:flex items-center gap-1 px-3 h-9 border-b border-[var(--border)] bg-[var(--surface-2)] flex-shrink-0">

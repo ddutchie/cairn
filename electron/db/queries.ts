@@ -1289,6 +1289,23 @@ export function insertCodebaseRelation(db: Database.Database, relation: {
   `).run(relation.sourceId, relation.targetName, relation.type);
 }
 
+/**
+ * Build the SQL fragment + params that scope a codebase query to `folder` (an
+ * exact root/file match, or any file under it). The subtree match uses SQL LIKE,
+ * so any LIKE metacharacters (`%`, `_`, and the `\` escape char) in the folder
+ * path are escaped and an explicit `ESCAPE '\'` clause is emitted — otherwise a
+ * path containing e.g. `_` would match sibling folders too. Assumes the caller
+ * aliases the files table as `f`. Shared by every codebase read query.
+ */
+function codebaseScope(folder: string): { sql: string; params: string[] } {
+  const normalized = path.resolve(folder);
+  const escaped = normalized.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+  return {
+    sql: `(f.root_path = ? OR f.file_path = ? OR f.file_path LIKE ? ESCAPE '\\')`,
+    params: [normalized, normalized, `${escaped}${path.sep}%`],
+  };
+}
+
 export function searchCodebaseSymbols(db: Database.Database, opts: { query: string; folder?: string; limit?: number }) {
   const q = opts.query.toLowerCase();
   const limit = opts.limit ?? 50;
@@ -1302,9 +1319,9 @@ export function searchCodebaseSymbols(db: Database.Database, opts: { query: stri
   const params: unknown[] = [`%${q}%`, `%${q}%`, `%${q}%`];
   
   if (opts.folder) {
-    const normalized = path.resolve(opts.folder);
-    sql += ` AND (f.root_path = ? OR f.file_path = ? OR f.file_path LIKE ?)`;
-    params.push(normalized, normalized, `${normalized}${path.sep}%`);
+    const scope = codebaseScope(opts.folder);
+    sql += ` AND ${scope.sql}`;
+    params.push(...scope.params);
   }
   
   sql += ` ORDER BY s.name LIMIT ?`;
@@ -1333,9 +1350,9 @@ export function getCodebaseSymbolDefinition(db: Database.Database, name: string,
   const params: unknown[] = [name];
   
   if (folder) {
-    const normalized = path.resolve(folder);
-    sql += ` AND (f.root_path = ? OR f.file_path = ? OR f.file_path LIKE ?)`;
-    params.push(normalized, normalized, `${normalized}${path.sep}%`);
+    const scope = codebaseScope(folder);
+    sql += ` AND ${scope.sql}`;
+    params.push(...scope.params);
   }
   
   return db.prepare(sql).all(...params) as Array<{
@@ -1361,9 +1378,9 @@ export function getCodebaseRelations(db: Database.Database, name: string, folder
   `;
   const params1: unknown[] = [name];
   if (folder) {
-    const normalized = path.resolve(folder);
-    sql1 += ` AND (f.root_path = ? OR f.file_path = ? OR f.file_path LIKE ?)`;
-    params1.push(normalized, normalized, `${normalized}${path.sep}%`);
+    const scope = codebaseScope(folder);
+    sql1 += ` AND ${scope.sql}`;
+    params1.push(...scope.params);
   }
   const outgoing = db.prepare(sql1).all(...params1) as Array<{
     type: string;
@@ -1381,9 +1398,9 @@ export function getCodebaseRelations(db: Database.Database, name: string, folder
   `;
   const params2: unknown[] = [name];
   if (folder) {
-    const normalized = path.resolve(folder);
-    sql2 += ` AND (f.root_path = ? OR f.file_path = ? OR f.file_path LIKE ?)`;
-    params2.push(normalized, normalized, `${normalized}${path.sep}%`);
+    const scope = codebaseScope(folder);
+    sql2 += ` AND ${scope.sql}`;
+    params2.push(...scope.params);
   }
   const incoming = db.prepare(sql2).all(...params2) as Array<{
     type: string;
@@ -1443,8 +1460,7 @@ export function deleteCodebaseFile(db: Database.Database, fileId: string) {
  */
 export function getCodebaseOverview(db: Database.Database, folder: string) {
   const normalized = path.resolve(folder);
-  const scope = `(f.root_path = ? OR f.file_path = ? OR f.file_path LIKE ?)`;
-  const scopeParams = [normalized, normalized, `${normalized}${path.sep}%`];
+  const { sql: scope, params: scopeParams } = codebaseScope(folder);
 
   const files = db.prepare(`
     SELECT
@@ -1507,8 +1523,7 @@ export function getCodebaseOverview(db: Database.Database, folder: string) {
  */
 export function getCodebaseGraph(db: Database.Database, folder: string) {
   const normalized = path.resolve(folder);
-  const scope = `(f.root_path = ? OR f.file_path = ? OR f.file_path LIKE ?)`;
-  const scopeParams = [normalized, normalized, `${normalized}${path.sep}%`];
+  const { sql: scope, params: scopeParams } = codebaseScope(folder);
 
   const nodes = db.prepare(`
     SELECT

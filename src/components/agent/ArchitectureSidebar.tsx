@@ -107,7 +107,9 @@ export function ArchitectureSidebar() {
     if (filePath) window.dispatchEvent(CairnEvents.openFileAtLine(filePath, sym.line));
     if (next && !relations[sym.id]) {
       try {
-        const data = await window.electron?.agent.codebaseRelations(sym.name);
+        // Scope to this file's codebase root so relations don't leak across
+        // other indexed projects that happen to share a symbol name.
+        const data = await window.electron?.agent.codebaseRelations(sym.name, sym.root_path);
         if (data) setRelations((prev) => ({ ...prev, [sym.id]: data }));
       } catch {
         /* ignore */

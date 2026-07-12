@@ -9,6 +9,8 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import BetterSqlite3 from "better-sqlite3";
 import type Database from "better-sqlite3";
+import * as os from "os";
+import * as path from "path";
 import { applySchema } from "./schema";
 import {
   createWorkspace,
@@ -630,14 +632,15 @@ describe("deleteNote (hard delete)", () => {
 
 describe("getCodebaseOverview", () => {
   let db: Database.Database;
-  // Absolute root so it survives path.resolve() inside the query unchanged.
-  const root = "/tmp/cairn-test-repo";
+  // Absolute, platform-portable root so it survives path.resolve()/path.sep
+  // inside the query unchanged (POSIX literals would break the scope match on Windows).
+  const root = path.join(os.tmpdir(), "cairn-test-repo");
 
   beforeEach(() => {
     db = makeDb();
     // Two files under the root, with symbols + one relation.
-    upsertCodebaseFile(db, { id: "f1", rootPath: root, filePath: `${root}/a.ts`, hash: "h1" });
-    upsertCodebaseFile(db, { id: "f2", rootPath: root, filePath: `${root}/sub/b.ts`, hash: "h2" });
+    upsertCodebaseFile(db, { id: "f1", rootPath: root, filePath: path.join(root, "a.ts"), hash: "h1" });
+    upsertCodebaseFile(db, { id: "f2", rootPath: root, filePath: path.join(root, "sub", "b.ts"), hash: "h2" });
     insertCodebaseSymbol(db, { id: "s1", fileId: "f1", name: "Alpha", kind: "class", line: 1, signature: "class Alpha", docstring: null });
     insertCodebaseSymbol(db, { id: "s2", fileId: "f1", name: "doThing", kind: "method", line: 5, signature: "doThing()", docstring: "Does a thing." });
     insertCodebaseSymbol(db, { id: "s3", fileId: "f2", name: "helper", kind: "function", line: 2, signature: "function helper()", docstring: null });
@@ -672,30 +675,44 @@ describe("getCodebaseOverview", () => {
   });
 
   it("scopes to a subfolder (only files under it)", () => {
-    const o = getCodebaseOverview(db, `${root}/sub`);
+    const o = getCodebaseOverview(db, path.join(root, "sub"));
     expect(o.fileCount).toBe(1);
-    expect(o.files[0].file_path).toBe(`${root}/sub/b.ts`);
+    expect(o.files[0].file_path).toBe(path.join(root, "sub", "b.ts"));
     expect(o.totalSymbols).toBe(1);
   });
 
   it("returns empty aggregates for an unindexed folder", () => {
-    const o = getCodebaseOverview(db, "/tmp/nothing-here");
+    const o = getCodebaseOverview(db, path.join(os.tmpdir(), "nothing-here"));
     expect(o.fileCount).toBe(0);
     expect(o.totalSymbols).toBe(0);
     expect(o.totalRelations).toBe(0);
     expect(o.kinds).toEqual([]);
     expect(o.lastIndexedAt).toBeNull();
   });
+
+  it("does not match sibling folders when the path contains a LIKE wildcard", () => {
+    // A root literally containing `_` must not act as a wildcard and pull in a
+    // sibling folder like `aXb` (where `_` would match any single char).
+    const wild = path.join(os.tmpdir(), "cairn_scope");
+    const sibling = path.join(os.tmpdir(), "cairnXscope");
+    upsertCodebaseFile(db, { id: "w1", rootPath: wild, filePath: path.join(wild, "in.ts"), hash: "hw" });
+    upsertCodebaseFile(db, { id: "x1", rootPath: sibling, filePath: path.join(sibling, "out.ts"), hash: "hx" });
+    insertCodebaseSymbol(db, { id: "ws", fileId: "w1", name: "inFn", kind: "function", line: 1, signature: "", docstring: null });
+    insertCodebaseSymbol(db, { id: "xs", fileId: "x1", name: "outFn", kind: "function", line: 1, signature: "", docstring: null });
+    const o = getCodebaseOverview(db, wild);
+    expect(o.fileCount).toBe(1);
+    expect(o.files[0].file_path).toBe(path.join(wild, "in.ts"));
+  });
 });
 
 describe("getCodebaseGraph", () => {
   let db: Database.Database;
-  const root = "/tmp/cairn-graph-repo";
+  const root = path.join(os.tmpdir(), "cairn-graph-repo");
 
   beforeEach(() => {
     db = makeDb();
-    upsertCodebaseFile(db, { id: "f1", rootPath: root, filePath: `${root}/a.ts`, hash: "h1" });
-    upsertCodebaseFile(db, { id: "f2", rootPath: root, filePath: `${root}/b.ts`, hash: "h2" });
+    upsertCodebaseFile(db, { id: "f1", rootPath: root, filePath: path.join(root, "a.ts"), hash: "h1" });
+    upsertCodebaseFile(db, { id: "f2", rootPath: root, filePath: path.join(root, "b.ts"), hash: "h2" });
     // a.ts defines caller; b.ts defines helper. caller → helper (cross-file).
     insertCodebaseSymbol(db, { id: "s1", fileId: "f1", name: "caller", kind: "function", line: 1, signature: "", docstring: null });
     insertCodebaseSymbol(db, { id: "s2", fileId: "f2", name: "helper", kind: "function", line: 1, signature: "", docstring: null });
@@ -721,7 +738,7 @@ describe("getCodebaseGraph", () => {
     // Add a second file that ALSO defines a symbol named `helper`. Now `helper`
     // is ambiguous, so caller→helper can't be attributed to one file — the edge
     // must be dropped rather than fanning out to every `helper` definition.
-    upsertCodebaseFile(db, { id: "f3", rootPath: root, filePath: `${root}/c.ts`, hash: "h3" });
+    upsertCodebaseFile(db, { id: "f3", rootPath: root, filePath: path.join(root, "c.ts"), hash: "h3" });
     insertCodebaseSymbol(db, { id: "s4", fileId: "f3", name: "helper", kind: "function", line: 1, signature: "", docstring: null });
     const g = getCodebaseGraph(db, root);
     // The caller→helper edge (f1→f2) is gone because `helper` is now ambiguous.
@@ -732,14 +749,14 @@ describe("getCodebaseGraph", () => {
 
 describe("getCodebaseModuleGraph", () => {
   let db: Database.Database;
-  const root = "/tmp/cairn-module-repo";
+  const root = path.join(os.tmpdir(), "cairn-module-repo");
 
   beforeEach(() => {
     db = makeDb();
     // Two modules: core/ (a.ts caller, c.ts sibling) and util/ (b.ts helper).
-    upsertCodebaseFile(db, { id: "f1", rootPath: root, filePath: `${root}/core/a.ts`, hash: "h1" });
-    upsertCodebaseFile(db, { id: "f2", rootPath: root, filePath: `${root}/util/b.ts`, hash: "h2" });
-    upsertCodebaseFile(db, { id: "f3", rootPath: root, filePath: `${root}/core/c.ts`, hash: "h3" });
+    upsertCodebaseFile(db, { id: "f1", rootPath: root, filePath: path.join(root, "core", "a.ts"), hash: "h1" });
+    upsertCodebaseFile(db, { id: "f2", rootPath: root, filePath: path.join(root, "util", "b.ts"), hash: "h2" });
+    upsertCodebaseFile(db, { id: "f3", rootPath: root, filePath: path.join(root, "core", "c.ts"), hash: "h3" });
     insertCodebaseSymbol(db, { id: "s1", fileId: "f1", name: "caller", kind: "function", line: 1, signature: "", docstring: null });
     insertCodebaseSymbol(db, { id: "s2", fileId: "f2", name: "helper", kind: "function", line: 1, signature: "", docstring: null });
     insertCodebaseSymbol(db, { id: "s3", fileId: "f3", name: "sibling", kind: "function", line: 1, signature: "", docstring: null });
