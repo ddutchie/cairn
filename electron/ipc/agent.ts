@@ -27,6 +27,7 @@ import type { Database } from "better-sqlite3";
 import * as nodePty from "node-pty";
 import * as q from "../db/queries";
 import { newId } from "../db/utils";
+import { indexCodebase } from "../lib/codebase-index";
 
 type IPty = nodePty.IPty;
 
@@ -256,6 +257,40 @@ export function registerAgentHandlers(db: Database): void {
       } catch {
         return false;
       }
+    })
+  );
+
+  // ── Codebase index (Architecture tab) ────────────────────────────────────
+  // Read-only views over the semantic codebase index (codebase_files/symbols/
+  // relations) so the renderer can visualise what the agent has indexed. The
+  // folder is validated against the project's code_directory before use.
+
+  registerIpcHandle("agent:codebaseOverview", (_e, { folder }: { folder: string }) =>
+    handle(async () => {
+      const realPath = await assertWithinCodeDirectory(db, folder);
+      return q.getCodebaseOverview(db, realPath);
+    })
+  );
+
+  registerIpcHandle("agent:codebaseFileSymbols", (_e, { filePath }: { filePath: string }) =>
+    handle(async () => {
+      const realPath = await assertWithinCodeDirectory(db, filePath);
+      return q.getCodebaseFileSymbols(db, realPath);
+    })
+  );
+
+  registerIpcHandle("agent:codebaseRelations", (_e, { name, folder }: { name: string; folder?: string }) =>
+    handle(async () => {
+      const scoped = folder ? await assertWithinCodeDirectory(db, folder) : undefined;
+      return q.getCodebaseRelations(db, name, scoped);
+    })
+  );
+
+  registerIpcHandle("agent:codebaseReindex", (_e, { folder }: { folder: string }) =>
+    handle(async () => {
+      const realPath = await assertWithinCodeDirectory(db, folder);
+      await indexCodebase(db, realPath);
+      return q.getCodebaseOverview(db, realPath);
     })
   );
 

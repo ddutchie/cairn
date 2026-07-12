@@ -12,13 +12,39 @@ const SUPPORTED_EXTENSIONS = new Set([
   ".cs", ".sh", ".md"
 ]);
 
-// Ignored directory names
+// Ignored directory names (exact match). Covers VCS, dependency, build/output,
+// cache and editor/tool dirs across the ecosystems we index.
 const IGNORED_DIRS = new Set([
-  "node_modules", ".git", ".next",
-  "dist", "out", "build", "target",
-  "bin", "obj", ".idea", ".vscode",
-  ".venv", "venv", "env", ".env"
+  // VCS / editor / tooling
+  ".git", ".hg", ".svn", ".idea", ".vscode", ".vs",
+  // JS/TS deps + build output + caches
+  "node_modules", ".next", "out", "build", ".turbo", ".cache",
+  ".parcel-cache", ".svelte-kit", ".nuxt", ".expo", ".vercel", ".output",
+  "coverage", ".nyc_output", "storybook-static",
+  // Native / packaging
+  "Pods", ".gradle", "DerivedData",
+  // Python
+  ".venv", "venv", "env", ".env", "__pycache__", ".pytest_cache",
+  ".mypy_cache", ".ruff_cache", ".tox", "site-packages",
+  // Rust / Go / JVM / C#
+  "target", "bin", "obj", "vendor",
 ]);
+
+// Ignored directory PREFIXES. Packaged/build output in this repo (and many
+// others) lives in dist-prefixed folders — `dist`, `dist-app` (a full .app
+// bundle with thousands of minified JS files), `dist-electron`, `dist-mcp`,
+// `dist-web`, etc. Exact-name matching missed those, so the walker descended
+// into the packaged app and indexed its bundles. Prefix-match `dist` to catch
+// them all while still allowing legitimately-named source dirs.
+const IGNORED_DIR_PREFIXES = ["dist"];
+
+/** True if a directory entry name should be skipped by the walker. */
+export function isIgnoredDir(name: string): boolean {
+  if (IGNORED_DIRS.has(name)) return true;
+  // Any macOS/iOS app bundle (packaged output) — never source.
+  if (name.endsWith(".app") || name.endsWith(".framework") || name.endsWith(".xcarchive")) return true;
+  return IGNORED_DIR_PREFIXES.some((p) => name === p || name.startsWith(`${p}-`));
+}
 
 // Keywords and built-ins to ignore in relation extraction
 const REJECTED_RELATION_TARGETS = new Set([
@@ -47,7 +73,7 @@ export async function walkDir(dir: string, fileList: string[] = []): Promise<str
     return fileList;
   }
   for (const file of files) {
-    if (IGNORED_DIRS.has(file)) continue;
+    if (isIgnoredDir(file)) continue;
     const filePath = path.join(dir, file);
     let stat: fs.Stats;
     try {

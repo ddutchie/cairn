@@ -6,7 +6,7 @@ import BetterSqlite3 from "better-sqlite3";
 import type Database from "better-sqlite3";
 import { applySchema } from "../db/schema";
 import * as q from "../db/queries";
-import { indexCodebase, parseFile, walkDir } from "./codebase-index";
+import { indexCodebase, parseFile, walkDir, isIgnoredDir } from "./codebase-index";
 
 let tmpDir: string;
 let db: Database.Database;
@@ -45,6 +45,38 @@ describe("Codebase Semantic Indexer", () => {
       expect(files).not.toContain(path.join("node_modules", "package.ts"));
       expect(files).not.toContain(path.join(".git", "config.js"));
       expect(files).not.toContain(path.join(".venv", "dep.py"));
+    });
+
+    it("skips dist-prefixed build output and packaged .app bundles", async () => {
+      // Packaged Electron output — a full .app bundle full of minified JS —
+      // plus other dist-* output dirs. None of these are source.
+      fs.mkdirSync(path.join(tmpDir, "src"), { recursive: true });
+      fs.mkdirSync(path.join(tmpDir, "dist-app", "mac", "Cairn.app", "Contents", "Resources"), { recursive: true });
+      fs.mkdirSync(path.join(tmpDir, "dist-electron"), { recursive: true });
+      fs.mkdirSync(path.join(tmpDir, "dist"), { recursive: true });
+
+      fs.writeFileSync(path.join(tmpDir, "src", "app.ts"), "export const x = 1;");
+      fs.writeFileSync(path.join(tmpDir, "dist-app", "mac", "Cairn.app", "Contents", "Resources", "bundle.js"), "var a=1;");
+      fs.writeFileSync(path.join(tmpDir, "dist-electron", "main.js"), "var b=2;");
+      fs.writeFileSync(path.join(tmpDir, "dist", "out.js"), "var c=3;");
+
+      const files = (await walkDir(tmpDir)).map((f) => path.relative(tmpDir, f));
+      expect(files).toEqual([path.join("src", "app.ts")]);
+    });
+
+    it("isIgnoredDir matches exact names, dist- prefixes and app bundles", () => {
+      expect(isIgnoredDir("node_modules")).toBe(true);
+      expect(isIgnoredDir("dist")).toBe(true);
+      expect(isIgnoredDir("dist-app")).toBe(true);
+      expect(isIgnoredDir("dist-electron")).toBe(true);
+      expect(isIgnoredDir("dist-mcp")).toBe(true);
+      expect(isIgnoredDir("Cairn.app")).toBe(true);
+      expect(isIgnoredDir("Something.framework")).toBe(true);
+      // Not ignored: legitimate source dirs, incl. a "distribution" folder that
+      // isn't a dist-<x> build output.
+      expect(isIgnoredDir("src")).toBe(false);
+      expect(isIgnoredDir("distribution")).toBe(false);
+      expect(isIgnoredDir("distances")).toBe(false);
     });
   });
 

@@ -34,6 +34,10 @@ import {
   getToolAttachments,
   setToolAttachment,
   clearToolAttachment,
+  upsertCodebaseFile,
+  insertCodebaseSymbol,
+  insertCodebaseRelation,
+  getCodebaseOverview,
 } from "./queries";
 
 // ── Shared fixture builders ───────────────────────────────────────────────
@@ -617,5 +621,67 @@ describe("deleteNote (hard delete)", () => {
 
   it("is a no-op for an unknown id", () => {
     expect(() => deleteNote(db, "does-not-exist")).not.toThrow();
+  });
+});
+
+// ── Codebase index overview ───────────────────────────────────────────────
+
+describe("getCodebaseOverview", () => {
+  let db: Database.Database;
+  // Absolute root so it survives path.resolve() inside the query unchanged.
+  const root = "/tmp/cairn-test-repo";
+
+  beforeEach(() => {
+    db = makeDb();
+    // Two files under the root, with symbols + one relation.
+    upsertCodebaseFile(db, { id: "f1", rootPath: root, filePath: `${root}/a.ts`, hash: "h1" });
+    upsertCodebaseFile(db, { id: "f2", rootPath: root, filePath: `${root}/sub/b.ts`, hash: "h2" });
+    insertCodebaseSymbol(db, { id: "s1", fileId: "f1", name: "Alpha", kind: "class", line: 1, signature: "class Alpha", docstring: null });
+    insertCodebaseSymbol(db, { id: "s2", fileId: "f1", name: "doThing", kind: "method", line: 5, signature: "doThing()", docstring: "Does a thing." });
+    insertCodebaseSymbol(db, { id: "s3", fileId: "f2", name: "helper", kind: "function", line: 2, signature: "function helper()", docstring: null });
+    insertCodebaseRelation(db, { sourceId: "s2", targetName: "helper", type: "call" });
+  });
+
+  it("aggregates file, symbol and relation counts", () => {
+    const o = getCodebaseOverview(db, root);
+    expect(o.fileCount).toBe(2);
+    expect(o.totalSymbols).toBe(3);
+    expect(o.totalRelations).toBe(1);
+    expect(o.roots).toEqual([root]);
+  });
+
+  it("breaks symbols down by kind, sorted by count desc", () => {
+    const o = getCodebaseOverview(db, root);
+    const map = Object.fromEntries(o.kinds.map((k) => [k.kind, k.count]));
+    expect(map).toEqual({ class: 1, method: 1, function: 1 });
+    // counts are non-increasing
+    const counts = o.kinds.map((k) => k.count);
+    expect([...counts].sort((a, b) => b - a)).toEqual(counts);
+  });
+
+  it("reports per-file symbol and relation counts", () => {
+    const o = getCodebaseOverview(db, root);
+    const f1 = o.files.find((f) => f.id === "f1")!;
+    const f2 = o.files.find((f) => f.id === "f2")!;
+    expect(f1.symbol_count).toBe(2);
+    expect(f1.relation_count).toBe(1); // doThing → helper originates in f1
+    expect(f2.symbol_count).toBe(1);
+    expect(f2.relation_count).toBe(0);
+  });
+
+  it("scopes to a subfolder (only files under it)", () => {
+    const o = getCodebaseOverview(db, `${root}/sub`);
+    expect(o.fileCount).toBe(1);
+    expect(o.files[0].file_path).toBe(`${root}/sub/b.ts`);
+    expect(o.totalSymbols).toBe(1);
+  });
+
+  it("returns empty aggregates for an unindexed folder", () => {
+    const o = getCodebaseOverview(db, "/tmp/nothing-here");
+    expect(o.fileCount).toBe(0);
+    expect(o.totalSymbols).toBe(0);
+    expect(o.totalRelations).toBe(0);
+    expect(o.kinds).toEqual([]);
+    expect(o.lastIndexedAt).toBeNull();
   });
 });

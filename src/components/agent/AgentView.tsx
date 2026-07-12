@@ -18,6 +18,7 @@ import { SessionPane } from "./SessionPane";
 import { AgentBottomTerminal } from "./AgentBottomTerminal";
 import { DiffViewer } from "./DiffViewer";
 import { GitView } from "./GitView";
+import { ArchitectureView } from "./ArchitectureView";
 import { TerminalManager } from "./TerminalManager";
 import { Bot, FolderOpen, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -30,7 +31,7 @@ const MIN_BOTTOM_HEIGHT = 80;
 const MAX_BOTTOM_HEIGHT = 600;
 const DEFAULT_BOTTOM_HEIGHT = 220;
 
-type CentreTab = "editor" | "diff" | "git";
+type CentreTab = "editor" | "diff" | "git" | "architecture";
 
 export function AgentView() {
   const { activeProjectId, projects, updateProject } = useCairnStore(useShallow((s) => ({ activeProjectId: s.activeProjectId, projects: s.projects, updateProject: s.updateProject })));
@@ -44,7 +45,7 @@ export function AgentView() {
   }
 
   const [centreTab, setCentreTab] = useState<CentreTab>("editor");
-  const [mobileTab, setMobileTab] = useState<"agent" | "files" | "editor" | "diff" | "git" | "terminal">("agent");
+  const [mobileTab, setMobileTab] = useState<"agent" | "files" | "editor" | "diff" | "git" | "architecture" | "terminal">("agent");
   // Bottom terminal height lives in React state so AgentBottomTerminal re-renders with the new height
   const [bottomHeight, setBottomHeight] = useState(DEFAULT_BOTTOM_HEIGHT);
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
@@ -181,6 +182,7 @@ export function AgentView() {
             { id: "editor" as const, label: "Editor" },
             ...(codeDirectory ? [{ id: "diff" as const, label: "Diff" }] : []),
             ...(codeDirectory ? [{ id: "git" as const, label: "Git" }] : []),
+            ...(codeDirectory ? [{ id: "architecture" as const, label: "Architecture" }] : []),
             ...(codeDirectory ? [{ id: "terminal" as const, label: "Terminal" }] : []),
           ].map((t) => (
             <button
@@ -285,6 +287,19 @@ export function AgentView() {
                 Git
               </button>
             )}
+            {codeDirectory && (
+              <button
+                onClick={() => setCentreTab("architecture")}
+                className={cn(
+                  "px-2.5 py-1 rounded text-xs font-semibold transition-colors",
+                  centreTab === "architecture"
+                    ? "text-[var(--text-primary)] bg-[var(--surface-2)]"
+                    : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
+                )}
+              >
+                Architecture
+              </button>
+            )}
             <button
               onClick={() => setProjectSettingsOpen(true)}
               className="ml-auto p-1.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors flex items-center justify-center"
@@ -311,6 +326,13 @@ export function AgentView() {
           {codeDirectory && (
             <div className={cn("flex-1 min-h-0 overflow-hidden flex flex-col", centreTab !== "git" && "md:hidden", mobileTab !== "git" && "max-md:hidden")}>
               <GitView cwd={codeDirectory} />
+            </div>
+          )}
+
+          {/* Architecture content */}
+          {codeDirectory && (
+            <div className={cn("flex-1 min-h-0 overflow-hidden flex flex-col", centreTab !== "architecture" && "md:hidden", mobileTab !== "architecture" && "max-md:hidden")}>
+              <ArchitectureView cwd={codeDirectory} />
             </div>
           )}
         </div>

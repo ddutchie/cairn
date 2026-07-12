@@ -1433,6 +1433,70 @@ export function deleteCodebaseFile(db: Database.Database, fileId: string) {
   db.prepare("DELETE FROM codebase_files WHERE id = ?").run(fileId);
 }
 
+/**
+ * Aggregate view of the codebase index for a given root folder — powers the
+ * human-facing Architecture tab. Returns the indexed files (with per-file
+ * symbol counts + relation edge counts), a symbol-kind breakdown, and headline
+ * totals. `folder` matches a file's `root_path` OR any file under it, so an
+ * indexed sub-tree is picked up regardless of the exact root string. All reads
+ * hit the already-constructed db handle (no new Database).
+ */
+export function getCodebaseOverview(db: Database.Database, folder: string) {
+  const normalized = path.resolve(folder);
+  const scope = `(f.root_path = ? OR f.file_path = ? OR f.file_path LIKE ?)`;
+  const scopeParams = [normalized, normalized, `${normalized}${path.sep}%`];
+
+  const files = db.prepare(`
+    SELECT
+      f.id,
+      f.file_path,
+      f.root_path,
+      f.indexed_at,
+      (SELECT COUNT(*) FROM codebase_symbols s WHERE s.file_id = f.id) AS symbol_count,
+      (SELECT COUNT(*) FROM codebase_relations r
+         JOIN codebase_symbols s2 ON r.source_id = s2.id
+        WHERE s2.file_id = f.id) AS relation_count
+    FROM codebase_files f
+    WHERE ${scope}
+    ORDER BY f.file_path
+  `).all(...scopeParams) as Array<{
+    id: string;
+    file_path: string;
+    root_path: string;
+    indexed_at: string;
+    symbol_count: number;
+    relation_count: number;
+  }>;
+
+  const kinds = db.prepare(`
+    SELECT s.kind, COUNT(*) AS count
+    FROM codebase_symbols s
+    JOIN codebase_files f ON s.file_id = f.id
+    WHERE ${scope}
+    GROUP BY s.kind
+    ORDER BY count DESC
+  `).all(...scopeParams) as Array<{ kind: string; count: number }>;
+
+  const totalSymbols = kinds.reduce((sum, k) => sum + k.count, 0);
+  const totalRelations = files.reduce((sum, fl) => sum + fl.relation_count, 0);
+  const roots = Array.from(new Set(files.map((fl) => fl.root_path)));
+  const lastIndexedAt = files.reduce<string | null>(
+    (max, fl) => (max == null || fl.indexed_at > max ? fl.indexed_at : max),
+    null,
+  );
+
+  return {
+    folder: normalized,
+    roots,
+    fileCount: files.length,
+    totalSymbols,
+    totalRelations,
+    lastIndexedAt,
+    kinds,
+    files,
+  };
+}
+
 // ── Note Embeddings ───────────────────────────
 // Vectors are stored as JSON-in-TEXT (sqlite-vec-bridge shape).
 // Since v18, one note can have multiple rows — one per markdown section.

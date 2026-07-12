@@ -29,6 +29,27 @@ interface CustomServiceConfig {
 interface ToolAttachment {
   projectId: string; toolType: "mcp" | "service"; toolId: string; enabled: boolean;
 }
+// ── Inline types for the codebase index / Architecture tab ──────────────────
+interface CodebaseSymbol {
+  id: string; file_id: string; name: string; kind: string; line: number;
+  signature: string; docstring: string | null; file_path: string; root_path: string;
+}
+interface CodebaseOverviewFile {
+  id: string; file_path: string; root_path: string; indexed_at: string;
+  symbol_count: number; relation_count: number;
+}
+interface CodebaseOverview {
+  folder: string; roots: string[]; fileCount: number; totalSymbols: number;
+  totalRelations: number; lastIndexedAt: string | null;
+  kinds: { kind: string; count: number }[];
+  files: CodebaseOverviewFile[];
+}
+interface CodebaseRelationEdge {
+  type: string; target_name: string; source_name: string; source_file: string;
+}
+interface CodebaseRelations {
+  incoming: CodebaseRelationEdge[]; outgoing: CodebaseRelationEdge[];
+}
 // ── Inline types for the git API (not shared with the renderer bundle) ──────
 
 interface GitStatusEntry {
@@ -386,6 +407,13 @@ const api = {
     validateDirectory: (dirPath: string) =>
       invoke<boolean>("agent:validateDirectory", { dirPath }),
     gitDiff: (cwd: string) => invoke<string>("agent:gitDiff", { cwd }),
+    // Codebase index (Architecture tab) — read-only views over the semantic index.
+    codebaseOverview: (folder: string) => invoke<CodebaseOverview>("agent:codebaseOverview", { folder }),
+    codebaseFileSymbols: (filePath: string) =>
+      invoke<CodebaseSymbol[]>("agent:codebaseFileSymbols", { filePath }),
+    codebaseRelations: (name: string, folder?: string) =>
+      invoke<CodebaseRelations>("agent:codebaseRelations", { name, folder }),
+    codebaseReindex: (folder: string) => invoke<CodebaseOverview>("agent:codebaseReindex", { folder }),
     // Pickers bypass invoke() — they return { data: T } directly from the handler
     // and are not wrapped via handle(), so we keep them as raw invokes.
     pickDirectory: () => ipcRenderer.invoke("agent:pickDirectory"),
