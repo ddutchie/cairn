@@ -65,8 +65,11 @@ export function NotePickerSheet({
             const on = item.value === selectedValue;
             return (
               <Pressable
-                style={[styles.row, on && { backgroundColor: withAlpha(t.accent, 0.1) }]}
-                onPress={() => onSelect(item.value)}
+                style={[styles.row, on && { backgroundColor: withAlpha(t.accent, 0.1), opacity: 0.6 }]}
+                // The current project/folder is where the note already lives —
+                // selecting it is a no-op, so disable it (and show it as such).
+                disabled={on}
+                onPress={() => { if (!on) onSelect(item.value); }}
               >
                 {variant === "folder" ? (
                   on ? (

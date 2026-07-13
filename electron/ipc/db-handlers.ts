@@ -238,7 +238,7 @@ export function registerDbHandlers(ctx: DbContext): void {
 
   registerIpcHandle(
     "db:note:moveToProject",
-    (_e, { id, projectId, workspaceId }: { id: string; projectId: string; workspaceId: string }) =>
+    (_e, { id, projectId }: { id: string; projectId: string; workspaceId?: string }) =>
       handle(() => {
         // Moving a note between projects was previously routed through
         // updateNote(), whose UPDATE has no project_id/workspace_id columns — so
@@ -251,18 +251,34 @@ export function registerDbHandlers(ctx: DbContext): void {
         // project.
         const before = q.getNoteById(ctx.db, id);
         if (!before) throw new Error(`Note not found: ${id}`);
-        const oldProjectName = getProjectName(ctx.db, before.projectId);
+        const oldProjectId = before.projectId;
+        const oldProjectName = getProjectName(ctx.db, oldProjectId);
 
+        // moveNoteToProject rejects a missing target project (and resolves the
+        // authoritative workspace itself), so the DB move is validated before we
+        // touch any files.
         suppressNextChange(id);
-        const note = q.moveNoteToProject(ctx.db, id, projectId, workspaceId);
+        const note = q.moveNoteToProject(ctx.db, id, projectId);
 
-        if (note.type !== "dashboard") {
-          // Remove the note's file from the OLD project folder (its id-matched
-          // copy), then write it fresh under the NEW project folder.
-          if (oldProjectName !== getProjectName(ctx.db, projectId)) {
-            deleteNoteFile(ctx.workspacePath, oldProjectName, id);
+        if (note.type !== "dashboard" && oldProjectName !== getProjectName(ctx.db, projectId)) {
+          // Failure-safe relocation: write the note into the NEW project folder
+          // FIRST, then remove the old copy. If the write throws, roll the DB
+          // row back to the old project so ownership and the on-disk file stay
+          // consistent (the old file is still present and authoritative).
+          try {
+            writeNoteFile(ctx.workspacePath, { ...note, projectName: getProjectName(ctx.db, note.projectId) });
+          } catch (e) {
+            q.moveNoteToProject(ctx.db, id, oldProjectId);
+            throw e;
           }
-          writeNoteFile(ctx.workspacePath, { ...note, projectName: getProjectName(ctx.db, note.projectId) });
+          // New file is in place; deleting the stale old copy is best-effort
+          // (a failure here only leaves a duplicate that the watcher would
+          // re-import into the old project — non-fatal, and the DB move stands).
+          try {
+            deleteNoteFile(ctx.workspacePath, oldProjectName, id);
+          } catch (e) {
+            console.warn("[notes] failed to remove old-project file after move:", e instanceof Error ? e.message : e);
+          }
         }
 
         // Membership changed → auto/semantic relationships and the embedding

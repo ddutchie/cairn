@@ -125,8 +125,10 @@ const api = {
     update:       (id: string, patch: unknown) => invoke("db:note:update", { id, patch }),
     delete:       (id: string) => invoke("db:note:delete", { id }),
     moveToFolder: (id: string, folder: string) => invoke("db:note:moveToFolder", { id, folder }),
-    moveToProject: (id: string, projectId: string, workspaceId: string) =>
-      invoke("db:note:moveToProject", { id, projectId, workspaceId }),
+    // workspaceId is derived from the target project by the handler; accepted for
+    // backwards-compatible call sites but no longer required.
+    moveToProject: (id: string, projectId: string, _workspaceId?: string) =>
+      invoke("db:note:moveToProject", { id, projectId }),
   },
 
   // ── Board columns ─────────────────────────────

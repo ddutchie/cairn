@@ -241,7 +241,12 @@ export async function runAgent(
     }
   }
 
-  const msg = finalText || `I reached the maximum of ${MAX_TURNS} steps. Any changes made have been saved — try a more focused request.`;
+  // Reaching here means every turn requested tools and we ran out of turns. The
+  // limit MUST be reported even if an earlier turn produced partial text — a
+  // bare `finalText || …` would silently swallow the notice and pass the
+  // half-finished answer off as complete.
+  const limitNote = `I reached the maximum of ${MAX_TURNS} steps. Any changes made have been saved — try a more focused request.`;
+  const msg = finalText ? `${finalText}\n\n${limitNote}` : limitNote;
   onEvent?.({ type: "final", text: msg, reasoning: reasoning || undefined, usage });
   return msg;
 }

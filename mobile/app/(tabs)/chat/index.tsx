@@ -136,10 +136,12 @@ export default function ChatScreen() {
   // the next paint, leaving translucent vertical "ghost bands" over the
   // transformed scroll content (tool chips + avatar column) until the user
   // interacts. Bumping this key on the "active" transition remounts that content
-  // so the stale backdrop is invalidated immediately. Only glass builds are
-  // affected, so it's a no-op remount elsewhere.
+  // so the stale backdrop is invalidated immediately. iOS-only — the artifact is
+  // specific to the native glass layer, and remounting on Android would only
+  // throw away scroll state for no benefit.
   const [resumeKey, setResumeKey] = useState(0);
   useEffect(() => {
+    if (Platform.OS !== "ios") return;
     const sub = AppState.addEventListener("change", (next: AppStateStatus) => {
       if (next === "active") setResumeKey((k) => k + 1);
     });

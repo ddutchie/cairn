@@ -186,8 +186,14 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
   const onPickProject = useCallback((projectId: string) => {
     if (actionNote) {
       const res = moveNoteToProject(actionNote.id, projectId);
-      if ("error" in res) haptics.error();
-      else haptics.success();
+      if ("error" in res) {
+        // Surface the failure and keep the picker open (state intact) so the
+        // user can retry or pick a different target — don't silently swallow it.
+        haptics.error();
+        Alert.alert("Couldn't move note", res.error);
+        return;
+      }
+      haptics.success();
     }
     setPicker(null);
     setActionNote(null);

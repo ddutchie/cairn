@@ -272,12 +272,20 @@ export function moveNoteFolder(db: Database.Database, id: string, folder: string
  * resurface the note where it started. Callers must also move the .md file
  * (delete the old project's copy, write into the new one) — see the
  * db:note:moveToProject IPC handler.
+ *
+ * The destination workspace is resolved from the target project itself (not
+ * trusted from the caller) so the note can never land in a project/workspace
+ * mismatch; a missing target project is rejected.
  */
-export function moveNoteToProject(db: Database.Database, id: string, projectId: string, workspaceId: string) {
+export function moveNoteToProject(db: Database.Database, id: string, projectId: string) {
+  const project = db.prepare("SELECT workspace_id FROM projects WHERE id = ?").get(projectId) as
+    | { workspace_id: string }
+    | undefined;
+  if (!project) throw new Error(`Target project not found: ${projectId}`);
   const now = ts();
   db.prepare(
     "UPDATE notes SET project_id = ?, workspace_id = ?, updated_at = ?, version = version + 1 WHERE id = ?",
-  ).run(projectId, workspaceId, now, id);
+  ).run(projectId, project.workspace_id, now, id);
   return toNote(db.prepare("SELECT * FROM notes WHERE id = ?").get(id));
 }
 
