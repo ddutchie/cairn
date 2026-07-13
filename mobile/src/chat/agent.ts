@@ -20,7 +20,12 @@ import {
 } from "./providers/types";
 import { toolsForAgent, TOOL_MAP } from "./tools";
 
-const MAX_TURNS = 8;
+// Max model round-trips per user turn. Each turn is one model call; a turn that
+// requests tools runs them all, then loops for the model's follow-up (which sees
+// the outputs). Introspective research chains many single-tool reads (get note →
+// search → get note range → …), so this must be generous — matched to the
+// desktop default (DEFAULT_AGENT_CONFIG.maxSteps in src/lib/constants.ts).
+const MAX_TURNS = 30;
 
 export interface AgentEvent {
   type: "text-delta" | "reasoning-delta" | "tool" | "final" | "error";
@@ -236,7 +241,7 @@ export async function runAgent(
     }
   }
 
-  const msg = finalText || "I couldn't finish that in a reasonable number of steps.";
+  const msg = finalText || `I reached the maximum of ${MAX_TURNS} steps. Any changes made have been saved — try a more focused request.`;
   onEvent?.({ type: "final", text: msg, reasoning: reasoning || undefined, usage });
   return msg;
 }
