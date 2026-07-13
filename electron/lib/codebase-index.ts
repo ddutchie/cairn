@@ -12,23 +12,104 @@ const SUPPORTED_EXTENSIONS = new Set([
   ".cs", ".sh", ".md"
 ]);
 
-// Ignored directory names
+// Ignored directory names (exact match). Covers VCS, dependency, build/output,
+// cache and editor/tool dirs across the ecosystems we index.
 const IGNORED_DIRS = new Set([
-  "node_modules", ".git", ".next",
-  "dist", "out", "build", "target",
-  "bin", "obj", ".idea", ".vscode",
-  ".venv", "venv", "env", ".env"
+  // VCS / editor / tooling
+  ".git", ".hg", ".svn", ".idea", ".vscode", ".vs",
+  // JS/TS deps + build output + caches
+  "node_modules", ".next", "out", "build", ".turbo", ".cache",
+  ".parcel-cache", ".svelte-kit", ".nuxt", ".expo", ".vercel", ".output",
+  "coverage", ".nyc_output", "storybook-static",
+  // Native / packaging
+  "Pods", ".gradle", "DerivedData",
+  // Python
+  ".venv", "venv", "env", ".env", "__pycache__", ".pytest_cache",
+  ".mypy_cache", ".ruff_cache", ".tox", "site-packages",
+  // Rust / Go / JVM / C#
+  "target", "bin", "obj", "vendor",
 ]);
 
-// Keywords and built-ins to ignore in relation extraction
+// Ignored directory PREFIXES. Packaged/build output in this repo (and many
+// others) lives in dist-prefixed folders — `dist`, `dist-app` (a full .app
+// bundle with thousands of minified JS files), `dist-electron`, `dist-mcp`,
+// `dist-web`, etc. Exact-name matching missed those, so the walker descended
+// into the packaged app and indexed its bundles. Prefix-match `dist` to catch
+// them all while still allowing legitimately-named source dirs.
+const IGNORED_DIR_PREFIXES = ["dist"];
+
+/** True if a directory entry name should be skipped by the walker. */
+export function isIgnoredDir(name: string): boolean {
+  if (IGNORED_DIRS.has(name)) return true;
+  // Any macOS/iOS app bundle (packaged output) — never source.
+  if (name.endsWith(".app") || name.endsWith(".framework") || name.endsWith(".xcarchive")) return true;
+  return IGNORED_DIR_PREFIXES.some((p) => name === p || name.startsWith(`${p}-`));
+}
+
+// Filename patterns for generated / vendored / minified files that should never
+// be treated as source (their mangled identifiers collide with real symbols and
+// turn the graph into a hairball). `mermaid-assets.ts` etc. are the motivating
+// case, but this generalises to bundles and minified drops.
+const IGNORED_FILE_SUFFIXES = [
+  "-assets.ts", "-assets.js",           // our generated webview asset bundles
+  ".min.js", ".min.css", ".min.ts",
+  ".bundle.js", ".bundle.ts",
+  ".generated.ts", ".generated.js",
+  ".d.ts",                               // type decls — not implementation
+];
+
+/**
+ * True if a file looks generated/vendored/minified and should be skipped, based
+ * on (1) its name, or (2) a cheap content sniff of the first chunk: an explicit
+ * "@generated" / "AUTO-GENERATED" marker, or minification (very long lines with
+ * almost no line breaks). Reading only the first ~4KB keeps this fast.
+ */
+export function isGeneratedOrMinifiedSource(filePath: string): boolean {
+  const base = path.basename(filePath).toLowerCase();
+  if (IGNORED_FILE_SUFFIXES.some((s) => base.endsWith(s))) return true;
+  let head = "";
+  try {
+    const fd = fs.openSync(filePath, "r");
+    const buf = Buffer.alloc(4096);
+    const n = fs.readSync(fd, buf, 0, buf.length, 0);
+    fs.closeSync(fd);
+    head = buf.toString("utf-8", 0, n);
+  } catch {
+    return false;
+  }
+  // Explicit generated markers (checked case-insensitively).
+  const lower = head.toLowerCase();
+  if (lower.includes("@generated") || lower.includes("auto-generated") || lower.includes("do not edit")) {
+    return true;
+  }
+  // Minified heuristic: the longest line in the head is huge and there are very
+  // few newlines (typical of a single-line bundle).
+  const newlines = (head.match(/\n/g) || []).length;
+  const longestLine = head.split("\n").reduce((m, l) => Math.max(m, l.length), 0);
+  if (longestLine > 1000 && newlines < 5) return true;
+  return false;
+}
+
+// Keywords and built-ins to ignore — both as relation targets AND as symbol
+// names (a construct whose parsed name lands here is dropped, so keywords like
+// `function`/`return`/`string` never pollute the index or the call graph).
 const REJECTED_RELATION_TARGETS = new Set([
+  // Control flow / declarations
   "if", "for", "while", "switch", "catch", "try", "using", "lock", "synchronized",
   "with", "function", "class", "def", "struct", "interface", "module", "import", "export",
   "return", "break", "continue", "default", "else", "elif", "except", "finally", "let", "var",
-  "const", "print", "console", "log", "error", "warn", "info", "debug", "int", "float",
-  "str", "bool", "list", "dict", "set", "tuple", "len", "range", "isinstance", "type",
+  "const", "enum", "namespace", "package", "public", "private", "protected", "static",
+  "abstract", "readonly", "extends", "implements", "typeof", "instanceof", "in", "of", "as",
+  "new", "delete", "throw", "void", "yield", "await", "async", "do", "goto", "case",
+  // Common calls / logging
+  "print", "println", "console", "log", "error", "warn", "info", "debug", "len", "range",
+  "isinstance", "type", "require",
+  // Primitive / built-in type names (TS/JS, Python, Rust, Go, C-family)
+  "int", "float", "double", "long", "short", "byte", "char", "str", "string", "number",
+  "bool", "boolean", "object", "any", "unknown", "never", "symbol", "bigint",
+  "list", "dict", "set", "map", "tuple", "array", "vec", "option", "result",
+  // Literals / this-likes
   "true", "false", "null", "undefined", "nil", "none", "self", "this", "super",
-  "new", "delete", "throw", "void", "yield", "await", "async"
 ]);
 
 export interface ExtractedSymbol {
@@ -47,7 +128,7 @@ export async function walkDir(dir: string, fileList: string[] = []): Promise<str
     return fileList;
   }
   for (const file of files) {
-    if (IGNORED_DIRS.has(file)) continue;
+    if (isIgnoredDir(file)) continue;
     const filePath = path.join(dir, file);
     let stat: fs.Stats;
     try {
@@ -59,7 +140,7 @@ export async function walkDir(dir: string, fileList: string[] = []): Promise<str
       await walkDir(filePath, fileList);
     } else if (stat.isFile()) {
       const ext = path.extname(file).toLowerCase();
-      if (SUPPORTED_EXTENSIONS.has(ext)) {
+      if (SUPPORTED_EXTENSIONS.has(ext) && !isGeneratedOrMinifiedSource(filePath)) {
         fileList.push(filePath);
       }
     }
@@ -338,7 +419,7 @@ export function parseFileContent(content: string, ext: string): ExtractedSymbol[
       }
     }
     
-    if (matched && name) {
+    if (matched && name && !REJECTED_RELATION_TARGETS.has(name)) {
       const docstring = commentBuffer.length > 0 ? commentBuffer.join("\n").trim() : null;
       symbols.push({
         name,
@@ -483,15 +564,24 @@ export async function indexCodebase(db: Database.Database, rootPath: string): Pr
       }
       
       if (!enclosingSymbol) continue;
-      
-      const tokens = line.split(/[^a-zA-Z0-9_$]+/);
-      for (const token of tokens) {
-        if (!token) continue;
+
+      // Only treat a name as a CALL/reference when it's actually invoked —
+      // i.e. followed by `(` (optionally with whitespace). This excludes bare
+      // variables, property values, type annotations and stray identifiers
+      // that merely happen to share a name with a symbol (which previously
+      // exploded the graph with false edges — e.g. `.status`, `row`, `p`, or
+      // the vitest global `it`). We still guard against keywords and require a
+      // known symbol name that isn't the enclosing symbol itself.
+      const callRe = /([A-Za-z_$][A-Za-z0-9_$]*)\s*\(/g;
+      let m: RegExpExecArray | null;
+      while ((m = callRe.exec(line)) !== null) {
+        const token = m[1];
+        if (token.length < 3) continue; // skip 1–2 char names (p, b, ts, on…)
         if (REJECTED_RELATION_TARGETS.has(token)) continue;
         if (knownSymbolNames.has(token) && token !== enclosingSymbol.name) {
           fileRelations.push({
             sourceId: enclosingSymbol.id,
-            targetName: token
+            targetName: token,
           });
         }
       }
@@ -508,4 +598,104 @@ export async function indexCodebase(db: Database.Database, rootPath: string): Pr
     // Yield to the event loop after every single relation file scanned
     await new Promise(resolve => setImmediate(resolve));
   }
+}
+
+/** Extract this file's outgoing relations (call syntax → known symbol names). */
+function extractFileRelations(
+  content: string,
+  fileSymbols: Array<{ id: string; name: string; line: number }>,
+  knownSymbolNames: Set<string>,
+): Array<{ sourceId: string; targetName: string }> {
+  const lines = content.split(/\r?\n/);
+  const out: Array<{ sourceId: string; targetName: string }> = [];
+  for (let i = 0; i < lines.length; i++) {
+    const lineNum = i + 1;
+    let enclosing: { id: string; name: string; line: number } | null = null;
+    for (const sym of fileSymbols) {
+      if (sym.line <= lineNum && (!enclosing || sym.line > enclosing.line)) enclosing = sym;
+    }
+    if (!enclosing) continue;
+    const callRe = /([A-Za-z_$][A-Za-z0-9_$]*)\s*\(/g;
+    let m: RegExpExecArray | null;
+    while ((m = callRe.exec(lines[i])) !== null) {
+      const token = m[1];
+      if (token.length < 3) continue;
+      if (REJECTED_RELATION_TARGETS.has(token)) continue;
+      if (knownSymbolNames.has(token) && token !== enclosing.name) {
+        out.push({ sourceId: enclosing.id, targetName: token });
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Incrementally re-index a SINGLE file (used by the debounced auto-reindex on
+ * save/change). Re-parses the file's symbols and its outgoing relations without
+ * re-walking the whole tree — cheap enough to run on every save. Skipped for
+ * ignored/generated files and unsupported extensions. Returns true if the file
+ * was (re)indexed.
+ */
+export async function reindexFile(
+  db: Database.Database,
+  rootPath: string,
+  filePath: string,
+): Promise<boolean> {
+  const absoluteRoot = path.resolve(rootPath);
+  const absFile = path.resolve(filePath);
+  const ext = path.extname(absFile).toLowerCase();
+  if (!SUPPORTED_EXTENSIONS.has(ext)) return false;
+  if (isGeneratedOrMinifiedSource(absFile)) return false;
+
+  let stat: fs.Stats;
+  try {
+    stat = await fs.promises.stat(absFile);
+  } catch {
+    // File gone — drop it from the index.
+    const existing = q.getCodebaseFileByPath(db, absFile);
+    if (existing) q.deleteCodebaseFile(db, existing.id);
+    return false;
+  }
+
+  let content: string;
+  try {
+    content = await fs.promises.readFile(absFile, "utf-8");
+  } catch {
+    return false;
+  }
+
+  const symbols = parseFileContent(content, ext);
+  const existing = q.getCodebaseFileByPath(db, absFile);
+  const fileId = existing?.id ?? newId();
+  const hash = `${stat.size}-${stat.mtimeMs}`;
+
+  db.transaction(() => {
+    q.upsertCodebaseFile(db, { id: fileId, rootPath: absoluteRoot, filePath: absFile, hash });
+    q.clearCodebaseFileData(db, fileId); // clears this file's symbols (+ cascades its relations)
+    for (const sym of symbols) {
+      q.insertCodebaseSymbol(db, {
+        id: newId(), fileId, name: sym.name, kind: sym.kind,
+        line: sym.line, signature: sym.signature, docstring: sym.docstring,
+      });
+    }
+  })();
+
+  // Recompute this file's outgoing relations against all known symbol names in
+  // the root (so new calls to symbols elsewhere are captured).
+  const allNames = new Set(
+    (db.prepare(`
+      SELECT DISTINCT s.name FROM codebase_symbols s
+      JOIN codebase_files f ON s.file_id = f.id WHERE f.root_path = ?
+    `).all(absoluteRoot) as Array<{ name: string }>).map((r) => r.name),
+  );
+  const fileSymbols = q.getCodebaseFileSymbols(db, absFile).map((s) => ({ id: s.id, name: s.name, line: s.line }));
+  const relations = extractFileRelations(content, fileSymbols, allNames);
+  if (relations.length > 0) {
+    db.transaction(() => {
+      for (const rel of relations) {
+        q.insertCodebaseRelation(db, { sourceId: rel.sourceId, targetName: rel.targetName, type: "calls" });
+      }
+    })();
+  }
+  return true;
 }

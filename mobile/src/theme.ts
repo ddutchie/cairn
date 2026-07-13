@@ -234,11 +234,34 @@ export function useIsDark(): boolean {
  * color-mix / `/20` alpha usage (e.g. accent border at 20%).
  */
 export function withAlpha(hex: string, alpha: number): string {
-  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
-  if (!m) return hex;
-  const n = parseInt(m[1], 16);
-  const r = (n >> 16) & 255;
-  const g = (n >> 8) & 255;
-  const b = n & 255;
+  const rgb = hexToRgb(hex);
+  if (!rgb) return hex;
+  const [r, g, b] = rgb;
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+/** Parse a 6-digit hex to an [r,g,b] triple, or null if not a plain hex. */
+function hexToRgb(hex: string): [number, number, number] | null {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return null;
+  const n = parseInt(m[1], 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+/**
+ * Opaque tint: mix `pct` (0–1) of `color` over the `surface` colour, producing
+ * a solid hex. Mirrors the desktop `color-mix(in srgb, {color} X%, var(--surface))`
+ * used for callout fills — unlike withAlpha this is anchored to the surface
+ * token (not transparent), so callouts read correctly on both themes regardless
+ * of what sits behind them. Falls back to `color` if either input isn't hex.
+ */
+export function surfaceTint(color: string, pct: number, surface: string): string {
+  const c = hexToRgb(color);
+  const s = hexToRgb(surface);
+  if (!c || !s) return color;
+  const mix = (a: number, b: number) => Math.round(a * pct + b * (1 - pct));
+  const r = mix(c[0], s[0]);
+  const g = mix(c[1], s[1]);
+  const b = mix(c[2], s[2]);
+  return `#${((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1)}`;
 }

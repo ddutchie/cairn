@@ -14,6 +14,7 @@ export function ResultRow({
   preview,
   score,
   dotColor,
+  accentColor,
   onPress,
 }: {
   title: string;
@@ -23,6 +24,9 @@ export function ResultRow({
   score?: number;
   /** Optional leading dot colour (task priority). */
   dotColor?: string;
+  /** Optional left edge-strip colour — used to distinguish result kinds
+   *  (e.g. notes vs tasks) using the same tokens as the knowledge graph. */
+  accentColor?: string;
   onPress: () => void;
 }) {
   const t = useTheme();
@@ -34,7 +38,15 @@ export function ResultRow({
   );
 
   return (
-    <PressableScale style={[styles.row, { backgroundColor: t.surface, borderColor: t.border }, elevation.sm]} onPress={onPress}>
+    <PressableScale
+      style={[
+        styles.row,
+        { backgroundColor: t.surface, borderColor: t.border },
+        accentColor != null && { borderLeftColor: accentColor, borderLeftWidth: 3 },
+        elevation.sm,
+      ]}
+      onPress={onPress}
+    >
       {hasHeaderRow ? (
         <View style={styles.headerRow}>
           {dotColor != null && <View style={[styles.dot, { backgroundColor: dotColor }]} />}

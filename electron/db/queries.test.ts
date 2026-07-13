@@ -9,6 +9,8 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import BetterSqlite3 from "better-sqlite3";
 import type Database from "better-sqlite3";
+import * as os from "os";
+import * as path from "path";
 import { applySchema } from "./schema";
 import {
   createWorkspace,
@@ -34,6 +36,12 @@ import {
   getToolAttachments,
   setToolAttachment,
   clearToolAttachment,
+  upsertCodebaseFile,
+  insertCodebaseSymbol,
+  insertCodebaseRelation,
+  getCodebaseOverview,
+  getCodebaseGraph,
+  getCodebaseModuleGraph,
 } from "./queries";
 
 // ── Shared fixture builders ───────────────────────────────────────────────
@@ -617,5 +625,162 @@ describe("deleteNote (hard delete)", () => {
 
   it("is a no-op for an unknown id", () => {
     expect(() => deleteNote(db, "does-not-exist")).not.toThrow();
+  });
+});
+
+// ── Codebase index overview ───────────────────────────────────────────────
+
+describe("getCodebaseOverview", () => {
+  let db: Database.Database;
+  // Absolute, platform-portable root so it survives path.resolve()/path.sep
+  // inside the query unchanged (POSIX literals would break the scope match on Windows).
+  const root = path.join(os.tmpdir(), "cairn-test-repo");
+
+  beforeEach(() => {
+    db = makeDb();
+    // Two files under the root, with symbols + one relation.
+    upsertCodebaseFile(db, { id: "f1", rootPath: root, filePath: path.join(root, "a.ts"), hash: "h1" });
+    upsertCodebaseFile(db, { id: "f2", rootPath: root, filePath: path.join(root, "sub", "b.ts"), hash: "h2" });
+    insertCodebaseSymbol(db, { id: "s1", fileId: "f1", name: "Alpha", kind: "class", line: 1, signature: "class Alpha", docstring: null });
+    insertCodebaseSymbol(db, { id: "s2", fileId: "f1", name: "doThing", kind: "method", line: 5, signature: "doThing()", docstring: "Does a thing." });
+    insertCodebaseSymbol(db, { id: "s3", fileId: "f2", name: "helper", kind: "function", line: 2, signature: "function helper()", docstring: null });
+    insertCodebaseRelation(db, { sourceId: "s2", targetName: "helper", type: "call" });
+  });
+
+  it("aggregates file, symbol and relation counts", () => {
+    const o = getCodebaseOverview(db, root);
+    expect(o.fileCount).toBe(2);
+    expect(o.totalSymbols).toBe(3);
+    expect(o.totalRelations).toBe(1);
+    expect(o.roots).toEqual([root]);
+  });
+
+  it("breaks symbols down by kind, sorted by count desc", () => {
+    const o = getCodebaseOverview(db, root);
+    const map = Object.fromEntries(o.kinds.map((k) => [k.kind, k.count]));
+    expect(map).toEqual({ class: 1, method: 1, function: 1 });
+    // counts are non-increasing
+    const counts = o.kinds.map((k) => k.count);
+    expect([...counts].sort((a, b) => b - a)).toEqual(counts);
+  });
+
+  it("reports per-file symbol and relation counts", () => {
+    const o = getCodebaseOverview(db, root);
+    const f1 = o.files.find((f) => f.id === "f1")!;
+    const f2 = o.files.find((f) => f.id === "f2")!;
+    expect(f1.symbol_count).toBe(2);
+    expect(f1.relation_count).toBe(1); // doThing → helper originates in f1
+    expect(f2.symbol_count).toBe(1);
+    expect(f2.relation_count).toBe(0);
+  });
+
+  it("scopes to a subfolder (only files under it)", () => {
+    const o = getCodebaseOverview(db, path.join(root, "sub"));
+    expect(o.fileCount).toBe(1);
+    expect(o.files[0].file_path).toBe(path.join(root, "sub", "b.ts"));
+    expect(o.totalSymbols).toBe(1);
+  });
+
+  it("returns empty aggregates for an unindexed folder", () => {
+    const o = getCodebaseOverview(db, path.join(os.tmpdir(), "nothing-here"));
+    expect(o.fileCount).toBe(0);
+    expect(o.totalSymbols).toBe(0);
+    expect(o.totalRelations).toBe(0);
+    expect(o.kinds).toEqual([]);
+    expect(o.lastIndexedAt).toBeNull();
+  });
+
+  it("does not match sibling folders when the path contains a LIKE wildcard", () => {
+    // A root literally containing `_` must not act as a wildcard and pull in a
+    // sibling folder like `aXb` (where `_` would match any single char).
+    const wild = path.join(os.tmpdir(), "cairn_scope");
+    const sibling = path.join(os.tmpdir(), "cairnXscope");
+    upsertCodebaseFile(db, { id: "w1", rootPath: wild, filePath: path.join(wild, "in.ts"), hash: "hw" });
+    upsertCodebaseFile(db, { id: "x1", rootPath: sibling, filePath: path.join(sibling, "out.ts"), hash: "hx" });
+    insertCodebaseSymbol(db, { id: "ws", fileId: "w1", name: "inFn", kind: "function", line: 1, signature: "", docstring: null });
+    insertCodebaseSymbol(db, { id: "xs", fileId: "x1", name: "outFn", kind: "function", line: 1, signature: "", docstring: null });
+    const o = getCodebaseOverview(db, wild);
+    expect(o.fileCount).toBe(1);
+    expect(o.files[0].file_path).toBe(path.join(wild, "in.ts"));
+  });
+});
+
+describe("getCodebaseGraph", () => {
+  let db: Database.Database;
+  const root = path.join(os.tmpdir(), "cairn-graph-repo");
+
+  beforeEach(() => {
+    db = makeDb();
+    upsertCodebaseFile(db, { id: "f1", rootPath: root, filePath: path.join(root, "a.ts"), hash: "h1" });
+    upsertCodebaseFile(db, { id: "f2", rootPath: root, filePath: path.join(root, "b.ts"), hash: "h2" });
+    // a.ts defines caller; b.ts defines helper. caller → helper (cross-file).
+    insertCodebaseSymbol(db, { id: "s1", fileId: "f1", name: "caller", kind: "function", line: 1, signature: "", docstring: null });
+    insertCodebaseSymbol(db, { id: "s2", fileId: "f2", name: "helper", kind: "function", line: 1, signature: "", docstring: null });
+    // a self-reference within a.ts must NOT become a file→file edge.
+    insertCodebaseSymbol(db, { id: "s3", fileId: "f1", name: "sibling", kind: "function", line: 2, signature: "", docstring: null });
+    insertCodebaseRelation(db, { sourceId: "s1", targetName: "helper", type: "call" });
+    insertCodebaseRelation(db, { sourceId: "s1", targetName: "sibling", type: "call" });
+  });
+
+  it("returns file nodes with symbol counts", () => {
+    const g = getCodebaseGraph(db, root);
+    expect(g.nodes.map((n) => n.id).sort()).toEqual(["f1", "f2"]);
+    expect(g.nodes.find((n) => n.id === "f1")!.symbol_count).toBe(2);
+  });
+
+  it("aggregates a directed cross-file edge and drops self-references", () => {
+    const g = getCodebaseGraph(db, root);
+    expect(g.edges).toHaveLength(1);
+    expect(g.edges[0]).toMatchObject({ source: "f1", target: "f2", weight: 1 });
+  });
+
+  it("does NOT create edges for ambiguous target names (defined in >1 file)", () => {
+    // Add a second file that ALSO defines a symbol named `helper`. Now `helper`
+    // is ambiguous, so caller→helper can't be attributed to one file — the edge
+    // must be dropped rather than fanning out to every `helper` definition.
+    upsertCodebaseFile(db, { id: "f3", rootPath: root, filePath: path.join(root, "c.ts"), hash: "h3" });
+    insertCodebaseSymbol(db, { id: "s4", fileId: "f3", name: "helper", kind: "function", line: 1, signature: "", docstring: null });
+    const g = getCodebaseGraph(db, root);
+    // The caller→helper edge (f1→f2) is gone because `helper` is now ambiguous.
+    expect(g.edges.find((e) => e.target === "f2" || e.target === "f3")).toBeUndefined();
+    expect(g.nodes.map((n) => n.id).sort()).toEqual(["f1", "f2", "f3"]);
+  });
+});
+
+describe("getCodebaseModuleGraph", () => {
+  let db: Database.Database;
+  const root = path.join(os.tmpdir(), "cairn-module-repo");
+
+  beforeEach(() => {
+    db = makeDb();
+    // Two modules: core/ (a.ts caller, c.ts sibling) and util/ (b.ts helper).
+    upsertCodebaseFile(db, { id: "f1", rootPath: root, filePath: path.join(root, "core", "a.ts"), hash: "h1" });
+    upsertCodebaseFile(db, { id: "f2", rootPath: root, filePath: path.join(root, "util", "b.ts"), hash: "h2" });
+    upsertCodebaseFile(db, { id: "f3", rootPath: root, filePath: path.join(root, "core", "c.ts"), hash: "h3" });
+    insertCodebaseSymbol(db, { id: "s1", fileId: "f1", name: "caller", kind: "function", line: 1, signature: "", docstring: null });
+    insertCodebaseSymbol(db, { id: "s2", fileId: "f2", name: "helper", kind: "function", line: 1, signature: "", docstring: null });
+    insertCodebaseSymbol(db, { id: "s3", fileId: "f3", name: "sibling", kind: "function", line: 1, signature: "", docstring: null });
+    // core/a → util/b (cross-module), and core/a → core/c (intra-module cohesion).
+    insertCodebaseRelation(db, { sourceId: "s1", targetName: "helper", type: "call" });
+    insertCodebaseRelation(db, { sourceId: "s1", targetName: "sibling", type: "call" });
+  });
+
+  it("rolls files up into directory modules with aggregated sizes", () => {
+    const g = getCodebaseModuleGraph(db, root, 1);
+    expect(g.grouping).toBe("directory");
+    const core = g.nodes.find((n) => n.id === "core")!;
+    const util = g.nodes.find((n) => n.id === "util")!;
+    expect(core.fileCount).toBe(2);
+    expect(core.symbolCount).toBe(2);
+    expect(util.fileCount).toBe(1);
+    expect(util.symbolCount).toBe(1);
+  });
+
+  it("aggregates cross-module edges and counts intra-module refs as cohesion", () => {
+    const g = getCodebaseModuleGraph(db, root, 1);
+    // Only the core→util edge crosses modules; core→core is cohesion, not an edge.
+    expect(g.edges).toHaveLength(1);
+    expect(g.edges[0]).toMatchObject({ source: "core", target: "util", weight: 1 });
+    expect(g.nodes.find((n) => n.id === "core")!.internalRefs).toBe(1);
   });
 });

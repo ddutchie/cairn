@@ -198,6 +198,22 @@ CREATE TABLE IF NOT EXISTS note_embeddings (
 );
 CREATE INDEX IF NOT EXISTS idx_note_emb_note ON note_embeddings(note_id);
 
+-- Task-card embeddings — parallel to note_embeddings, keyed by card_id. Local
+-- only (no capture trigger). Mirrors desktop's task_embeddings.
+CREATE TABLE IF NOT EXISTS task_embeddings (
+  card_id       TEXT NOT NULL,
+  section_idx   INTEGER NOT NULL DEFAULT 0,
+  workspace_id  TEXT NOT NULL DEFAULT '',
+  model         TEXT NOT NULL DEFAULT '',
+  section_title TEXT NOT NULL DEFAULT '',
+  content_hash  TEXT NOT NULL DEFAULT '',
+  vector        TEXT NOT NULL DEFAULT '[]',
+  embedded_at   TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (card_id, section_idx)
+);
+CREATE INDEX IF NOT EXISTS idx_task_emb_card ON task_embeddings(card_id);
+CREATE INDEX IF NOT EXISTS idx_task_emb_ws ON task_embeddings(workspace_id);
+
 -- Sync engine tables (mirror desktop migrations v25/v26).
 CREATE TABLE IF NOT EXISTS sync_oplog (
   seq        INTEGER PRIMARY KEY AUTOINCREMENT,

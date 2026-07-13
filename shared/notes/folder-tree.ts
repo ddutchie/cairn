@@ -18,11 +18,36 @@ export interface FolderNode<T extends NoteWithFolder> {
   children: FolderNode<T>[];
 }
 
+/**
+ * De-duplicate a list of folder paths CASE-INSENSITIVELY, keeping the first-seen
+ * casing of each path as the canonical entry. Shared by both platforms'
+ * `list_folders` so the AI never sees "Mobile" and "mobile" as two folders
+ * (mirrors the case-insensitive grouping in buildFolderTree). Blank/whitespace
+ * entries are dropped. Input order is preserved.
+ */
+export function dedupeFoldersCaseInsensitive(paths: Array<string | null | undefined>): string[] {
+  const seen = new Map<string, string>();
+  for (const p of paths) {
+    if (typeof p !== "string") continue;
+    const trimmed = p.trim();
+    if (trimmed === "") continue;
+    const key = trimmed.toLowerCase();
+    if (!seen.has(key)) seen.set(key, trimmed);
+  }
+  return Array.from(seen.values());
+}
+
 export function buildFolderTree<T extends NoteWithFolder>(
   notes: T[],
 ): { rootNotes: T[]; folders: FolderNode<T>[] } {
   const rootNotes: T[] = [];
+  // Grouping is CASE-INSENSITIVE: notes filed under "Mobile" and "mobile" (or
+  // "Mobile/AI" and "mobile/ai") collapse into one folder. The Map is keyed by
+  // the case-folded path; the FolderNode keeps the FIRST-SEEN original casing
+  // as its display name/path (so the canonical label is deterministic — the
+  // casing of whichever variant is encountered first in the note list).
   const folderMap = new Map<string, FolderNode<T>>();
+  const keyOf = (path: string) => path.toLowerCase();
 
   for (const note of notes) {
     const folder = note.folder ?? "";
@@ -35,18 +60,19 @@ export function buildFolderTree<T extends NoteWithFolder>(
     let built = "";
     for (const seg of segments) {
       built = built ? `${built}/${seg}` : seg;
-      if (!folderMap.has(built)) {
-        folderMap.set(built, { name: seg, path: built, notes: [], children: [] });
+      const key = keyOf(built);
+      if (!folderMap.has(key)) {
+        folderMap.set(key, { name: seg, path: built, notes: [], children: [] });
       }
     }
-    folderMap.get(normalizedFolder)!.notes.push(note);
+    folderMap.get(keyOf(normalizedFolder))!.notes.push(note);
   }
 
   for (const node of folderMap.values()) {
     const lastSlash = node.path.lastIndexOf("/");
     if (lastSlash === -1) continue;
     const parentPath = node.path.slice(0, lastSlash);
-    folderMap.get(parentPath)?.children.push(node);
+    folderMap.get(keyOf(parentPath))?.children.push(node);
   }
 
   const topLevel: FolderNode<T>[] = [];

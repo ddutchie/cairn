@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from "react";
 import {
   View,
   Text,
@@ -9,9 +9,11 @@ import {
   ActivityIndicator,
   Image,
   Alert,
+  ActionSheetIOS,
+  Platform,
 } from "react-native";
-import Animated, { useAnimatedStyle, useSharedValue } from "react-native-reanimated";
-import { KeyboardStickyView, useKeyboardHandler, KeyboardController } from "react-native-keyboard-controller";
+import Animated, { useSharedValue, withTiming, useAnimatedStyle, interpolate } from "react-native-reanimated";
+import { KeyboardStickyView, KeyboardController, KeyboardChatScrollView, KeyboardGestureArea, useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
 import { Stack, useRouter, useFocusEffect } from "expo-router";
 import { CheckCircle, Bot, User, Send, ImagePlus, X, Settings2, Brain, ChevronRight } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -35,6 +37,15 @@ import { Button } from "@expo/ui/swift-ui";
 
 /** Composer height assumed before its first onLayout measurement. */
 const COMPOSER_FALLBACK_H = 60;
+
+/**
+ * Downward shift applied to the native attach GlassMenu when the keyboard is
+ * open, to counter the SwiftUI Host mis-tracking the composer's KeyboardStickyView
+ * OPENED offset (it double-counts KEYBOARD_OPEN_GAP, so the icon otherwise sits
+ * high). DEVICE-TUNED — measured ≈ 2×KEYBOARD_OPEN_GAP; not derivable from the
+ * transform math, so re-verify on device if the composer's sticky offsets change.
+ */
+const ATTACH_OPEN_NUDGE = 2 * KEYBOARD_OPEN_GAP;
 
 /** Tools whose result/args point at a NOTE, and whether the id is in args or result. */
 const NOTE_TOOLS: Record<string, "args" | "result"> = {
@@ -94,26 +105,6 @@ interface UiMessage {
   streaming?: boolean;
 }
 
-/**
- * Track the keyboard height as a shared value that animates in lockstep with
- * the system keyboard (react-native-keyboard-controller). Driving a spacer
- * View off this gives frame-perfect avoidance with no dead space — unlike
- * KeyboardAvoidingView (see Expo keyboard docs).
- */
-function useGradualAnimation() {
-  const height = useSharedValue(0);
-  useKeyboardHandler(
-    {
-      onMove: (e) => {
-        "worklet";
-        height.value = e.height;
-      },
-    },
-    [],
-  );
-  return { height };
-}
-
 export default function ChatScreen() {
   const t = useTheme();
   const insets = useSafeAreaInsets();
@@ -135,7 +126,7 @@ export default function ChatScreen() {
   // Seeded from the last persisted value so the ring survives closing/reopening
   // the Chat tab (it's session state otherwise, lost on unmount).
   const [usage, setUsage] = useState<ChatUsage | null>(() => loadLastChatUsage());
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ComponentRef<typeof KeyboardChatScrollView>>(null);
   // Whether the user is at/near the bottom of the transcript. Auto-follow on
   // content growth only when true, so expanding a past message's reasoning block
   // (or other layout changes while scrolled up) doesn't yank the view to the end.
@@ -173,26 +164,42 @@ export default function ChatScreen() {
       // On blur (e.g. switching tabs/apps) make sure the keyboard doesn't linger
       // stuck-open — dismiss via the keyboard-controller API on the way out.
       return () => {
-        KeyboardController.dismiss().catch(() => {});
+        KeyboardController.dismiss().catch(() => { });
       };
     }, [refreshConfigured]),
   );
 
-  const { height: kbHeight } = useGradualAnimation();
   // Lift the composer just above the tab bar when the keyboard is closed
   // (shared with the search scope bar so both rest at the same height).
   const closedLift = tabBarClosedLift(insets.bottom);
+
+  // The native attach GlassMenu's SwiftUI Host tracks the composer's
+  // KeyboardStickyView transform, but not its OPENED offset — when the keyboard
+  // opens the icon sits too high (centered at rest, so only the open state is
+  // wrong). Counter it with ATTACH_OPEN_NUDGE, gliding on the same `progress`
+  // the composer animates with: 0 when closed, ATTACH_OPEN_NUDGE (down) when open.
+  const { progress: kbProgress } = useReanimatedKeyboardAnimation();
+  const attachCounterStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: interpolate(kbProgress.value, [0, 1], [0, ATTACH_OPEN_NUDGE]) }],
+  }));
   // Height the composer occupies, measured lazily (falls back before layout).
   const [composerH, setComposerH] = useState(COMPOSER_FALLBACK_H);
-  // Animated spacer at the BOTTOM of the scroll content. It always keeps the
-  // last message clear of the floating composer, and grows to clear the
-  // keyboard when it opens (so you can scroll the newest message above the
-  // keyboard). When closed it matches where the composer actually rests
-  // (closedLift above the screen bottom) so there's no dead space. The +GAP on
-  // the open case matches the composer's KEYBOARD_OPEN_GAP lift.
-  const bottomSpacer = useAnimatedStyle(() => ({
-    height: composerH + 12 + Math.max(kbHeight.value + KEYBOARD_OPEN_GAP, closedLift),
-  }), [composerH, closedLift]);
+  // Bottom padding the transcript keeps clear below the last message so it's not
+  // hidden by the floating composer. This is the CLOSED-keyboard clearance:
+  // composer height + margin + where the composer rests above the tab bar
+  // (closedLift). When the keyboard opens, KeyboardChatScrollView adds
+  // (keyboardHeight - offset); with offset = closedLift - KEYBOARD_OPEN_GAP that
+  // resolves to composerH + 12 + keyboardHeight + KEYBOARD_OPEN_GAP — i.e. the
+  // content clears the composer (which itself rides KEYBOARD_OPEN_GAP above the
+  // keyboard) without double-counting closedLift. Shared value because the
+  // component consumes it on the UI thread.
+  const extraContentPadding = useSharedValue(COMPOSER_FALLBACK_H + 12 + closedLift);
+  useEffect(() => {
+    // Animate (not snap) so the transcript padding eases when the composer grows
+    // to multiple lines or the tab-bar lift changes, matching the keyboard's own
+    // motion instead of jumping.
+    extraContentPadding.value = withTiming(composerH + 12 + closedLift);
+  }, [composerH, closedLift, extraContentPadding]);
 
   const send = useCallback(async () => {
     const text = input.trim();
@@ -202,7 +209,7 @@ export default function ChatScreen() {
     // Dismiss via the keyboard-controller API (not RN's Keyboard.dismiss, which
     // can desync with this library and leave the keyboard stuck open until an
     // app switch). Fire-and-forget; don't block the send.
-    KeyboardController.dismiss().catch(() => {});
+    KeyboardController.dismiss().catch(() => { });
     nearBottom.current = true; // sending jumps to the end; follow the reply
     setInput("");
     setAttachments([]);
@@ -297,7 +304,24 @@ export default function ChatScreen() {
     }
   }, []);
 
+  // Opens the "add image" chooser. Uses the native iOS action sheet (matches the
+  // system look of the old SwiftUI glass menu) and falls back to an Alert
+  // elsewhere. Deliberately NOT a SwiftUI menu Host: the composer rides the
+  // keyboard via KeyboardStickyView's transform, and a native Host anchored in
+  // window coords jumps out of place once its menu re-measures — a plain RN
+  // Pressable trigger tracks the transform exactly like the send button does.
   const onAttach = useCallback(() => {
+    haptics.selection();
+    if (Platform.OS === "ios") {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options: ["Photo Library", "Take Photo", "Cancel"], cancelButtonIndex: 2, title: "Add image" },
+        (i) => {
+          if (i === 0) void addImages();
+          else if (i === 1) void capturePhoto();
+        },
+      );
+      return;
+    }
     Alert.alert("Add image", undefined, [
       { text: "Photo Library", onPress: addImages },
       { text: "Take Photo", onPress: capturePhoto },
@@ -337,12 +361,12 @@ export default function ChatScreen() {
           headerLeft:
             usage && messages.length > 0
               ? () => (
-                  <ContextRing
-                    promptTokens={usage.promptTokens}
-                    contextLimit={usage.contextLimit}
-                    estimated={usage.estimated}
-                  />
-                )
+                <ContextRing
+                  promptTokens={usage.promptTokens}
+                  contextLimit={usage.contextLimit}
+                  estimated={usage.estimated}
+                />
+              )
               : undefined,
         }}
       />
@@ -363,45 +387,55 @@ export default function ChatScreen() {
         />
       </Stack.Toolbar>
       <View style={{ flex: 1 }}>
-        {/* Full-height scroll: messages scroll BEHIND the sticky composer and
-            the translucent native tab bar. The animated bottom spacer clears
-            both the composer and (when open) the keyboard. */}
-        <ScrollView
-          ref={scrollRef}
+        {/* Full-height chat scroll: messages scroll BEHIND the sticky composer
+            and the translucent native tab bar. KeyboardChatScrollView manages
+            the keyboard lift natively via content inset (keyboardLiftBehavior
+            "whenAtEnd" = only follow the bottom when the user is already there,
+            ChatGPT-style), so the last message stays visible above the keyboard.
+            extraContentPadding keeps the last message clear of the floating
+            composer even when the keyboard is closed. Wrapped in
+            KeyboardGestureArea (full-region) so keyboardDismissMode="interactive"
+            gets proper swipe-to-dismiss gesture handling (per the library's chat
+            example) — iOS follow-finger + Android gesture control. */}
+        <KeyboardGestureArea
+          interpolator="ios"
           style={StyleSheet.absoluteFill}
-          contentContainerStyle={[styles.list, messages.length === 0 && styles.listEmpty]}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="interactive"
-          scrollEventThrottle={16}
-          onScroll={(e) => {
-            const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-            const distanceFromBottom = contentSize.height - (contentOffset.y + layoutMeasurement.height);
-            nearBottom.current = distanceFromBottom < 80;
-          }}
-          onContentSizeChange={() => {
-            // Follow new content only when the user is already near the bottom
-            // (e.g. streaming) — never when they've scrolled up to read/expand.
-            if (nearBottom.current) scrollRef.current?.scrollToEnd({ animated: true });
-          }}
         >
-          {messages.length === 0 ? (
-            <EmptyState
-              title="Ask Cairn"
-              subtitle="Ask about your notes, or tell the assistant to create or edit them. Changes sync to your desktop."
-              align="top"
-            >
-              {!configured ? (
-                <Pressable style={styles.configureBtn} onPress={() => router.push("/settings/ai")}>
-                  <Settings2 size={14} color={t.accentFg} />
-                  <Text style={styles.configureBtnText}>Set up AI</Text>
-                </Pressable>
-              ) : null}
-            </EmptyState>
-          ) : (
-            messages.map((m, i) => <Bubble key={i} m={m} t={t} styles={styles} />)
-          )}
-          <Animated.View style={bottomSpacer} />
-        </ScrollView>
+          <KeyboardChatScrollView
+            ref={scrollRef}
+            style={StyleSheet.absoluteFill}
+            contentContainerStyle={[styles.list, messages.length === 0 && styles.listEmpty]}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
+            keyboardLiftBehavior="whenAtEnd"
+            offset={Math.max(closedLift - KEYBOARD_OPEN_GAP, 0)}
+            extraContentPadding={extraContentPadding}
+            scrollEventThrottle={16}
+            onEndVisible={(visible) => { nearBottom.current = visible; }}
+            onContentSizeChange={() => {
+              // Follow new content only when the user is already near the bottom
+              // (e.g. streaming) — never when they've scrolled up to read/expand.
+              if (nearBottom.current) scrollRef.current?.scrollToEnd({ animated: true });
+            }}
+          >
+            {messages.length === 0 ? (
+              <EmptyState
+                title="Ask Cairn"
+                subtitle="Ask about your notes, or tell the assistant to create or edit them. Changes sync to your desktop."
+                align="top"
+              >
+                {!configured ? (
+                  <Pressable style={styles.configureBtn} onPress={() => router.push("/settings/ai")}>
+                    <Settings2 size={14} color={t.accentFg} />
+                    <Text style={styles.configureBtnText}>Set up AI</Text>
+                  </Pressable>
+                ) : null}
+              </EmptyState>
+            ) : (
+              messages.map((m, i) => <Bubble key={i} m={m} t={t} styles={styles} />)
+            )}
+          </KeyboardChatScrollView>
+        </KeyboardGestureArea>
 
         {/* Sticky composer: pinned to the bottom, rides up with the keyboard
             automatically. When the keyboard is closed it's offset up above the
@@ -427,31 +461,36 @@ export default function ChatScreen() {
 
             <View style={styles.composerWrap}>
               <GlassBar style={styles.composer} interactive={false}>
-                {/* Fixed-height RN wrapper so the native Host can't drift when the
-                    row is flex-end aligned (multiline input grows / keyboard
-                    opens). The Host's own alignSelf isn't honoured reliably. */}
+                {/* Native SwiftUI GlassMenu (Liquid Glass tap-menu), wrapped in
+                    a fixed-size slot so the async-measuring Host can't reflow the
+                    row. NOTE: the composer rides KeyboardStickyView's transform;
+                    a SwiftUI Host re-anchors in window coords on menu-open, which
+                    historically made the icon drift after tapping with the
+                    keyboard open. Verifying the raw behaviour before mitigating. */}
                 <View style={styles.attachSlot}>
-                  <GlassMenu
-                    trigger={<ImagePlus size={16} color={busy ? withAlpha(t.textTertiary, 0.5) : t.textTertiary} />}
-                    accessibilityLabel="Add image"
-                    disabled={busy}
-                    onFallbackPress={onAttach}
-                    containerStyle={styles.attachContainer}
-                    triggerStyle={styles.attachBtn}
-                  >
-                    <Button label="Photo Library" systemImage="photo.on.rectangle" onPress={addImages} />
-                    <Button label="Take Photo" systemImage="camera" onPress={capturePhoto} />
-                  </GlassMenu>
+                  <Animated.View style={attachCounterStyle}>
+                    <GlassMenu
+                      trigger={<ImagePlus size={16} color={busy ? withAlpha(t.textTertiary, 0.5) : t.textTertiary} />}
+                      accessibilityLabel="Add image"
+                      disabled={busy}
+                      onFallbackPress={onAttach}
+                      containerStyle={styles.attachContainer}
+                      triggerStyle={styles.attachBtn}
+                    >
+                      <Button label="Photo Library" systemImage="photo.on.rectangle" onPress={addImages} />
+                      <Button label="Take Photo" systemImage="camera" onPress={capturePhoto} />
+                    </GlassMenu>
+                  </Animated.View>
                 </View>
                 <TextInput
                   style={styles.input}
                   value={input}
                   onChangeText={setInput}
                   onFocus={() => {
-                    // Focusing the composer to type = intent to be at the latest
-                    // message; follow to the bottom as the keyboard opens.
+                    // Mark intent to follow the latest message; the actual lift
+                    // above the keyboard is handled natively by
+                    // KeyboardChatScrollView (keyboardLiftBehavior="whenAtEnd").
                     nearBottom.current = true;
-                    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50);
                   }}
                   placeholder="Message Cairn…"
                   placeholderTextColor={t.textTertiary}
@@ -702,20 +741,15 @@ function makeStyles(t: Theme) {
       paddingVertical: 6,
       paddingHorizontal: 2,
     },
-    // 32px rounded-xl (12px) icon buttons, vertically centred against the input.
-    // `attachContainer` goes on GlassMenu's OUTERMOST element (the actual flex
-    // child) so the row's `alignItems: flex-end` doesn't push the icon up when
-    // the composer grows / the keyboard opens; `attachBtn` styles the inner tap
-    // target. Both fix the size so the native Host doesn't size to its glyph.
-    // Fixed 36px slot (matches input minHeight) as a normal RN flex child; keeps
-    // the attach button level with the first input line + send button regardless
-    // of row flex-end alignment, multiline growth, or keyboard state. Bottom-
-    // aligned so it tracks the send button as the input grows upward.
+    // Fixed-height RN wrapper so the native Host can't reflow the composer row
+    // when it (async) measures its content. Centered like the send button.
     attachSlot: { height: 36, justifyContent: "center", alignSelf: "center" },
-    // 32x32 matches the trigger (attachBtn), giving the native Host a concrete
-    // size hint; GlassMenu also re-lays-out once via onLayoutContent so the icon
-    // is centred on first paint (not only after a keyboard/tab re-layout).
+    // Host frame hint (the outermost @expo/ui Host element / flex child).
     attachContainer: { width: 32, height: 32, alignSelf: "center" },
+    // 32px rounded icon button, vertically centred against the input (alignSelf
+    // overrides the row's flex-end so it doesn't ride up as the input grows).
+    // Used as the GlassMenu trigger; a counter-transform keeps the native Host
+    // from drifting when the keyboard opens (see attachCounterStyle).
     attachBtn: {
       width: 32,
       height: 32,

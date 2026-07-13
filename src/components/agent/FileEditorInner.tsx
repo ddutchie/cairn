@@ -106,6 +106,34 @@ export function FileEditorInner({ filePath, isActive, isDark, onDirtyChange, onS
     return () => document.removeEventListener("agent-editor-save", handler);
   }, [filePath]);
 
+  // Scroll to a line (from the Architecture sidebar/tab). Reveals the 1-based
+  // line centred and places the cursor there. The editor may still be loading
+  // its document, so retry briefly until the view exists and the line is in range.
+  useEffect(() => {
+    function handler(e: Event) {
+      const detail = (e as CustomEvent<{ filePath: string; line: number }>).detail;
+      if (!detail || detail.filePath !== filePath) return;
+      const targetLine = Math.max(1, detail.line);
+      let tries = 0;
+      const attempt = () => {
+        const view = viewRef.current;
+        if (view && targetLine <= view.state.doc.lines) {
+          const pos = view.state.doc.line(targetLine).from;
+          view.dispatch({
+            selection: { anchor: pos },
+            effects: EditorView.scrollIntoView(pos, { y: "center" }),
+          });
+          view.focus();
+          return;
+        }
+        if (tries++ < 20) setTimeout(attempt, 60);
+      };
+      attempt();
+    }
+    window.addEventListener("cairn:open-file-at-line", handler);
+    return () => window.removeEventListener("cairn:open-file-at-line", handler);
+  }, [filePath]);
+
   return (
     <div className="absolute inset-0 flex flex-col overflow-hidden">
       {loadError && (

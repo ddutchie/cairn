@@ -4,6 +4,7 @@ import * as q from "../../db/queries";
 import { newId } from "../../db/utils";
 import { stripMarkdown, normalizeNoteTitle } from "../../shared/text-utils";
 import { executeSearchNotes } from "../../shared/read-tools-pure";
+import { dedupeFoldersCaseInsensitive } from "../../../shared/notes/folder-tree";
 import {
   Snapshot,
   insertNotification,
@@ -341,6 +342,8 @@ export function list_folders(db: Database.Database, snap: Snapshot, args: Record
   if (!project) return { error: "Project not found" };
 
   const rows = db.prepare("SELECT DISTINCT folder FROM notes WHERE project_id = ? AND archived_at IS NULL").all(projectId) as Array<{ folder: string }>;
-  const folders = Array.from(new Set(rows.map((r) => r.folder).filter((f) => typeof f === "string" && f.trim() !== "")));
+  // Case-insensitive dedupe (first-seen casing wins) so the AI sees "Mobile"
+  // and "mobile" as one folder — mirrors the notes-tree grouping.
+  const folders = dedupeFoldersCaseInsensitive(rows.map((r) => r.folder));
   return { projectId, folders };
 }

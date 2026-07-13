@@ -20,7 +20,7 @@ import { executeTool as executeMcpTool } from "../mcp/tools";
 import { executeReadTool } from "../lib/read-tools";
 import { DEFAULT_COLUMNS } from "../db/defaults";
 import { invalidateRelationshipCache, computeAutoRelationships, computeSemanticRelationships } from "../db/graph-queries";
-import { reindexNotes } from "../embeddings/service";
+import { reindexNotes, reindexTasks } from "../embeddings/service";
 import { getDefaultModelId as getEmbeddingModelId } from "../embeddings/client";
 import { getEmbeddingsSettingsCached } from "../lib/config-cache";
 
@@ -52,6 +52,48 @@ async function reindexSingleNoteEmbedding(ctx: DbContext, noteId: string, worksp
   } finally {
     if (reindexInFlight.get(noteId) === p) reindexInFlight.delete(noteId);
   }
+}
+
+/** Incrementally (re)embed a single task card after a create/update — symmetric
+ *  to reindexSingleNoteEmbedding. Fire-and-forget; no-op when embeddings off.
+ *  Returns true when a reindex actually ran (embeddings enabled), so callers can
+ *  gate a semantic-edge recompute on it. */
+async function reindexSingleCardEmbedding(ctx: DbContext, cardId: string, workspaceId: string): Promise<boolean> {
+  const settings = getEmbeddingsSettingsCached();
+  if (!settings?.enabled) return false;
+  const model = settings.modelId || getEmbeddingModelId();
+  const key = `card:${cardId}`;
+  const existing = reindexInFlight.get(key);
+  if (existing) await existing.catch(() => {});
+  const p = (async () => {
+    try {
+      await reindexTasks(ctx.db, workspaceId, [cardId], model);
+      return true;
+    } catch (e) {
+      console.warn("[embeddings] incremental card reindex failed:", e instanceof Error ? e.message : e);
+      return false;
+    }
+  })();
+  reindexInFlight.set(key, p);
+  try {
+    return await p;
+  } finally {
+    if (reindexInFlight.get(key) === p) reindexInFlight.delete(key);
+  }
+}
+
+/** After a card's embedding is refreshed, recompute the semantic edges that
+ *  touch it (scoped to that card id). Cross-kind edges (note↔task) fall out of
+ *  computeSemanticRelationships pooling notes + cards. */
+function recomputeCardSemanticEdges(ctx: DbContext, cardId: string, workspaceId: string): void {
+  void reindexSingleCardEmbedding(ctx, cardId, workspaceId).then((didReindex) => {
+    if (!didReindex) return;
+    try {
+      computeSemanticRelationships(ctx.db, workspaceId, [cardId]);
+    } catch (e) {
+      console.warn("[embeddings] semantic recompute skipped:", e instanceof Error ? e.message : e);
+    }
+  }).catch(() => { /* already warned */ });
 }
 
 export function registerDbHandlers(ctx: DbContext): void {
@@ -297,7 +339,9 @@ export function registerDbHandlers(ctx: DbContext): void {
   registerIpcHandle("db:card:create", (_e, args: Parameters<typeof q.createCard>[1]) => handle(() => {
     const title = (args?.title as string | null | undefined)?.trim();
     if (!title) throw new Error("Task title is required");
-    return q.createCard(ctx.db, { ...args, title });
+    const card = q.createCard(ctx.db, { ...args, title });
+    if (card.workspaceId) recomputeCardSemanticEdges(ctx, card.id, card.workspaceId);
+    return card;
   }));
   registerIpcHandle("db:card:update", (_e, { id, patch }) => handle(() => {
     // archivedAt: null means "restore" — COALESCE cannot clear to NULL
@@ -310,11 +354,23 @@ export function registerDbHandlers(ctx: DbContext): void {
         }
         return q.restoreCard(ctx.db, id);
       })();
+      // A restored card must be re-embedded — archiving removed it from search
+      // (below), so restoring has to bring it back.
+      if (card.workspaceId) recomputeCardSemanticEdges(ctx, id, card.workspaceId);
       return card;
     }
     const card = q.updateCard(ctx.db, id, patch);
     invalidateRelationshipCache(ctx.db, id);
-    if (card.workspaceId) computeAutoRelationships(ctx.db, card.workspaceId, [id]);
+    // Archiving is a soft delete (row stays, so the FK cascade doesn't fire) —
+    // drop its embeddings so an archived card can't surface in semantic search.
+    if (card.archivedAt) {
+      q.deleteTaskEmbeddingSections(ctx.db, id);
+      return card;
+    }
+    if (card.workspaceId) {
+      computeAutoRelationships(ctx.db, card.workspaceId, [id]);
+      recomputeCardSemanticEdges(ctx, id, card.workspaceId);
+    }
     return card;
   }));
   registerIpcHandle("db:card:delete", (_e, { id }) => handle(() => q.deleteCard(ctx.db, id)));
@@ -324,6 +380,11 @@ export function registerDbHandlers(ctx: DbContext): void {
     const now = new Date().toISOString();
     for (const c of cards) {
       q.updateCard(ctx.db, c.id, { archivedAt: now, columnId });
+      // Drop cached relationship edges + embeddings for the archived card so it
+      // leaves both the graph and semantic search (soft delete → no FK cascade),
+      // mirroring the db:card:update archive path.
+      invalidateRelationshipCache(ctx.db, c.id);
+      q.deleteTaskEmbeddingSections(ctx.db, c.id);
     }
     return { archived: cards.length };
   }));

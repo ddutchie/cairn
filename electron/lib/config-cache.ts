@@ -1,6 +1,6 @@
-import { app } from "electron";
 import fs from "fs";
 import path from "path";
+import { findUserDataDir } from "../runtime/port-discovery";
 
 const CONFIG_CACHE_FILE = "ai-settings-cache.json";
 
@@ -30,11 +30,29 @@ export interface CachedConfig {
 }
 
 function getCachePath(): string {
-  // Guard if app is not yet ready or running in tests
-  if (!app || !app.isReady()) {
-    return "";
+  // Resolve the userData dir WITHOUT a static `electron` import so this module
+  // can also load in the standalone MCP runtime (pkg/Node, no working `electron`
+  // module — importing it throws "Electron failed to install correctly"). In the
+  // Electron main process, `app.getPath("userData")` is authoritative; elsewhere
+  // (MCP server, tests before app-ready) fall back to the filesystem scan that
+  // mirrors mcp/db.ts. Both point at the same on-disk cache file.
+  let userData = "";
+  try {
+    // Lazy, defensive require: `electron` resolves to a real module only inside
+    // the Electron process; in the MCP runtime the require itself throws, so we
+    // swallow it and fall back below.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const electron = require("electron") as { app?: Electron.App };
+    if (electron.app && electron.app.isReady()) {
+      userData = electron.app.getPath("userData");
+    }
+  } catch {
+    // Not running under Electron (MCP runtime / tests) — fall through to scan.
   }
-  const userData = app.getPath("userData");
+  if (!userData) {
+    userData = findUserDataDir() ?? "";
+  }
+  if (!userData) return "";
   return path.join(userData, CONFIG_CACHE_FILE);
 }
 

@@ -9,6 +9,11 @@ import {
   pruneOrphanedClusteringRows,
   deleteNoteEmbedding,
   deleteNoteEmbeddingSections,
+  fetchCardsForEmbedding,
+  getCardEmbeddings,
+  getAllTaskEmbeddingsForWorkspace,
+  upsertTaskEmbedding,
+  deleteTaskEmbeddingSections,
 } from "../db/queries";
 import type { NoteEmbeddingRecord } from "../db/queries";
 import { projectTo2d, normaliseProjection } from "./projection";
@@ -279,6 +284,143 @@ function cosineDot(a: Float32Array, b: Float32Array): number {
   const len = Math.min(a.length, b.length);
   for (let i = 0; i < len; i++) dot += a[i] * b[i];
   return dot;
+}
+
+// ── Task-card embeddings ─────────────────────────────────────────────────────
+// Mirrors reindexNotes/searchAdjacent against the parallel task_embeddings table.
+// bge-small is discriminative on its own, so (like notes) no centroid/hybrid
+// rerank is needed — that's Apple-model-specific on mobile.
+
+/** (Re)embed task cards for a workspace (all, or a specific set of card ids). */
+export async function reindexTasks(
+  db: Database.Database,
+  workspaceId: string,
+  cardIds: string[] | undefined,
+  model: string = EMBED_MODEL_ID,
+  embed: EmbedFn = defaultEmbed,
+  onProgress?: (done: number, total: number) => void,
+): Promise<ReindexResult> {
+  const cards = fetchCardsForEmbedding(db, workspaceId, cardIds);
+  let indexed = 0;
+  let skipped = 0;
+  let done = 0;
+  const total = cards.length;
+  if (total > 0) onProgress?.(done, total);
+
+  for (let i = 0; i < cards.length; i += BATCH_SIZE) {
+    const batch = cards.slice(i, i + BATCH_SIZE);
+    for (const c of batch) {
+      const body = (c.description ?? "").trim();
+      // A card always has a title; embed "title + description" as one document.
+      // If archived (only reachable via an explicit cardIds request), drop it.
+      if (c.archived_at) {
+        deleteTaskEmbeddingSections(db, c.id);
+        skipped++; done++; onProgress?.(done, total);
+        continue;
+      }
+      const sections = splitIntoSections(c.title, body || c.title);
+      const existing = getCardEmbeddings(db, c.id);
+      const existingBySectionIdx = new Map(existing.map((e) => [e.sectionIdx, e]));
+
+      const todo: SectionToEmbed[] = [];
+      for (const s of sections) {
+        const text = `${c.title}\n\n## ${s.title}\n${s.text}`;
+        const hash = sha256(text);
+        const ex = existingBySectionIdx.get(s.idx);
+        if (ex && ex.contentHash === hash && ex.model === model && ex.task === "search_document") continue;
+        todo.push({ noteId: c.id, idx: s.idx, title: s.title, text, hash });
+      }
+      if (sections.length > 0) deleteTaskEmbeddingSections(db, c.id, sections.length);
+
+      if (todo.length === 0) {
+        skipped++; done++; onProgress?.(done, total);
+        continue;
+      }
+      for (const s of todo) {
+        const [v] = await embed([s.text], "search_document", model);
+        upsertTaskEmbedding(db, {
+          cardId: s.noteId,
+          sectionIdx: s.idx,
+          sectionTitle: s.title,
+          workspaceId,
+          model,
+          task: "search_document",
+          contentHash: s.hash,
+          vector: v,
+        });
+        indexed++;
+      }
+      done++; onProgress?.(done, total);
+    }
+  }
+  return { indexed, skipped, total };
+}
+
+export interface AdjacentTask {
+  cardId: string;
+  title: string;
+  score: number;
+  sectionTitle: string;
+}
+
+/** Semantic search over task cards (parallel to searchAdjacent for notes). */
+export async function searchAdjacentTasks(
+  db: Database.Database,
+  workspaceId: string,
+  queryText: string,
+  k: number = 5,
+  model: string = EMBED_MODEL_ID,
+  embed: EmbedFn = defaultEmbed,
+): Promise<AdjacentTask[]> {
+  const trimmed = queryText.trim();
+  if (!trimmed) return [];
+  const queryHash = sha256(`q|${model}|${trimmed}`);
+  let queryVec = queryCache.get(queryHash);
+  if (queryVec) {
+    queryCache.delete(queryHash);
+    queryCache.set(queryHash, queryVec);
+  } else {
+    queryVec = await embedSectionText(embed, trimmed, "search_query", model);
+    if (queryCache.size >= QUERY_CACHE_MAX) {
+      const firstKey = queryCache.keys().next().value;
+      if (firstKey) queryCache.delete(firstKey);
+    }
+    queryCache.set(queryHash, queryVec);
+  }
+  const stored = getAllTaskEmbeddingsForWorkspace(db, workspaceId, "search_document");
+  if (stored.length === 0) return [];
+  const query = toFloat32(queryVec);
+
+  // Rank the WHOLE corpus (best section per card), then slice — never a
+  // per-batch cut, so a card that ranks low in one section isn't dropped early.
+  const bestPerCard = new Map<string, { cardId: string; score: number; sectionTitle: string }>();
+  for (const s of stored) {
+    const sim = cosineDot(query, toFloat32(s.vector));
+    const cur = bestPerCard.get(s.cardId);
+    if (!cur || sim > cur.score) {
+      bestPerCard.set(s.cardId, { cardId: s.cardId, score: sim, sectionTitle: s.sectionTitle });
+    }
+  }
+  const top = Array.from(bestPerCard.values()).sort((a, b) => b.score - a.score).slice(0, k);
+  if (top.length === 0) return [];
+
+  const idToTitle = new Map<string, string>();
+  const placeholders = top.map(() => "?").join(",");
+  // Restrict to live cards — archived cards may still have stale embedding rows
+  // (e.g. archived outside the app), so exclude them from results here too.
+  const rows = db.prepare(
+    `SELECT id, title FROM task_cards WHERE id IN (${placeholders}) AND archived_at IS NULL`,
+  ).all(...top.map((r) => r.cardId)) as Array<{ id: string; title: string }>;
+  for (const r of rows) idToTitle.set(r.id, r.title);
+  // Drop any ranked card that didn't resolve to a live row (archived/deleted).
+  return top
+    .filter((r) => idToTitle.has(r.cardId))
+    .map((r) => ({
+      cardId: r.cardId,
+      title: idToTitle.get(r.cardId) ?? r.cardId,
+      score: Math.round(r.score * 1000) / 1000,
+      sectionTitle: r.sectionTitle,
+    }));
 }
 
 export interface ProjectionResult {

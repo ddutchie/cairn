@@ -140,6 +140,7 @@ export async function executeTool(
     case "get_neighbors":
     case "get_semantic_neighbors":
     case "search_notes_semantic":
+    case "search_tasks_semantic":
     case "codebase_reindex":
     case "codebase_search_symbols":
     case "codebase_get_symbol_definition":

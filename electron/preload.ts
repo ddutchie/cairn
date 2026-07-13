@@ -29,6 +29,44 @@ interface CustomServiceConfig {
 interface ToolAttachment {
   projectId: string; toolType: "mcp" | "service"; toolId: string; enabled: boolean;
 }
+// ── Inline types for the codebase index / Architecture tab ──────────────────
+interface CodebaseSymbol {
+  id: string; file_id: string; name: string; kind: string; line: number;
+  signature: string; docstring: string | null; file_path: string; root_path: string;
+}
+interface CodebaseOverviewFile {
+  id: string; file_path: string; root_path: string; indexed_at: string;
+  symbol_count: number; relation_count: number;
+}
+interface CodebaseOverview {
+  folder: string; roots: string[]; fileCount: number; totalSymbols: number;
+  totalRelations: number; lastIndexedAt: string | null;
+  kinds: { kind: string; count: number }[];
+  files: CodebaseOverviewFile[];
+}
+interface CodebaseRelationEdge {
+  type: string; target_name: string; source_name: string; source_file: string;
+}
+interface CodebaseRelations {
+  incoming: CodebaseRelationEdge[]; outgoing: CodebaseRelationEdge[];
+}
+interface CodebaseGraphNode {
+  id: string; file_path: string; root_path: string; symbol_count: number;
+}
+interface CodebaseGraphEdge {
+  source: string; target: string; weight: number;
+}
+interface CodebaseGraph {
+  folder: string; nodes: CodebaseGraphNode[]; edges: CodebaseGraphEdge[];
+}
+interface CodebaseModuleNode {
+  id: string; label: string; fileCount: number; symbolCount: number; internalRefs: number;
+}
+interface CodebaseModuleGraph {
+  folder: string; depth: number; grouping: "directory";
+  nodes: CodebaseModuleNode[];
+  edges: CodebaseGraphEdge[];
+}
 // ── Inline types for the git API (not shared with the renderer bundle) ──────
 
 interface GitStatusEntry {
@@ -249,6 +287,8 @@ const api = {
       invoke<{ subject: string; body: string }>("ai:generateCommitMessage", args),
     generatePrDescription: (args: { diff: string; config: { baseUrl: string; model: string; apiKey: string }; template?: string }) =>
       invoke<{ title: string; description: string }>("ai:generatePrDescription", args),
+    explainArchitecture: (args: { summary: string; config: { baseUrl: string; model: string; apiKey: string } }) =>
+      invoke<{ overview: string; modules: string }>("ai:explainArchitecture", args),
     localLLMStatus: () => invoke<{ available: boolean; reason?: string }>("ai:localLLMStatus"),
   },
 
@@ -386,6 +426,18 @@ const api = {
     validateDirectory: (dirPath: string) =>
       invoke<boolean>("agent:validateDirectory", { dirPath }),
     gitDiff: (cwd: string) => invoke<string>("agent:gitDiff", { cwd }),
+    // Codebase index (Architecture tab) — read-only views over the semantic index.
+    codebaseOverview: (folder: string) => invoke<CodebaseOverview>("agent:codebaseOverview", { folder }),
+    codebaseGraph: (folder: string) => invoke<CodebaseGraph>("agent:codebaseGraph", { folder }),
+    codebaseModuleGraph: (folder: string, depth?: number) =>
+      invoke<CodebaseModuleGraph>("agent:codebaseModuleGraph", { folder, depth }),
+    codebaseFileSymbols: (filePath: string) =>
+      invoke<CodebaseSymbol[]>("agent:codebaseFileSymbols", { filePath }),
+    codebaseRelations: (name: string, folder?: string) =>
+      invoke<CodebaseRelations>("agent:codebaseRelations", { name, folder }),
+    codebaseReindex: (folder: string) => invoke<CodebaseOverview>("agent:codebaseReindex", { folder }),
+    codebaseReindexFile: (folder: string, filePath: string) =>
+      invoke<boolean>("agent:codebaseReindexFile", { folder, filePath }),
     // Pickers bypass invoke() — they return { data: T } directly from the handler
     // and are not wrapped via handle(), so we keep them as raw invokes.
     pickDirectory: () => ipcRenderer.invoke("agent:pickDirectory"),
