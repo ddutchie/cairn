@@ -236,6 +236,53 @@ export function registerDbHandlers(ctx: DbContext): void {
     return note;
   }));
 
+  registerIpcHandle(
+    "db:note:moveToProject",
+    (_e, { id, projectId, workspaceId }: { id: string; projectId: string; workspaceId: string }) =>
+      handle(() => {
+        // Moving a note between projects was previously routed through
+        // updateNote(), whose UPDATE has no project_id/workspace_id columns — so
+        // the move was silently dropped and the note re-surfaced in the old
+        // project (via a DB refresh, file-watcher re-import, or sync reconcile).
+        // Persist the move with a dedicated direct-SET query, and — crucially —
+        // relocate the .md file: writeNoteFile only unlinks a stale file it finds
+        // *within the target project's* folder, so the old project's copy must be
+        // deleted explicitly or the file-watcher will re-import it into the old
+        // project.
+        const before = q.getNoteById(ctx.db, id);
+        if (!before) throw new Error(`Note not found: ${id}`);
+        const oldProjectName = getProjectName(ctx.db, before.projectId);
+
+        suppressNextChange(id);
+        const note = q.moveNoteToProject(ctx.db, id, projectId, workspaceId);
+
+        if (note.type !== "dashboard") {
+          // Remove the note's file from the OLD project folder (its id-matched
+          // copy), then write it fresh under the NEW project folder.
+          if (oldProjectName !== getProjectName(ctx.db, projectId)) {
+            deleteNoteFile(ctx.workspacePath, oldProjectName, id);
+          }
+          writeNoteFile(ctx.workspacePath, { ...note, projectName: getProjectName(ctx.db, note.projectId) });
+        }
+
+        // Membership changed → auto/semantic relationships and the embedding
+        // index are scoped by workspace, so recompute for the new workspace.
+        invalidateRelationshipCache(ctx.db, id);
+        if (note.workspaceId) {
+          computeAutoRelationships(ctx.db, note.workspaceId, [id]);
+          void reindexSingleNoteEmbedding(ctx, id, note.workspaceId).then((didReindex) => {
+            if (!didReindex) return;
+            try {
+              computeSemanticRelationships(ctx.db, note.workspaceId, [id]);
+            } catch (e) {
+              console.warn("[embeddings] semantic recompute skipped:", e instanceof Error ? e.message : e);
+            }
+          }).catch(() => { /* already warned */ });
+        }
+        return note;
+      }),
+  );
+
   registerIpcHandle("db:note:delete", (_e, { id }) => handle(() => {
     const note = q.getNoteById(ctx.db, id);
     if (note) {

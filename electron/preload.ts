@@ -125,6 +125,8 @@ const api = {
     update:       (id: string, patch: unknown) => invoke("db:note:update", { id, patch }),
     delete:       (id: string) => invoke("db:note:delete", { id }),
     moveToFolder: (id: string, folder: string) => invoke("db:note:moveToFolder", { id, folder }),
+    moveToProject: (id: string, projectId: string, workspaceId: string) =>
+      invoke("db:note:moveToProject", { id, projectId, workspaceId }),
   },
 
   // ── Board columns ─────────────────────────────

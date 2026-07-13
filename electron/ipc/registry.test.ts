@@ -32,6 +32,7 @@ describe("isWriteChannel", () => {
       "db:note:update",
       "db:note:delete",
       "db:note:moveToFolder",
+      "db:note:moveToProject",
       "db:card:addBlocker",
       "db:card:removeBlocker",
       "db:cards:archive-done",

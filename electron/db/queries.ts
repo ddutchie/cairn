@@ -264,6 +264,24 @@ export function moveNoteFolder(db: Database.Database, id: string, folder: string
 }
 
 /**
+ * Move a note to a different project (and its owning workspace).
+ * Uses a direct SET rather than updateNote()'s COALESCE list, which has no
+ * project_id/workspace_id columns at all — so a project move sent through
+ * updateNote() was silently dropped, leaving the row (and its .md file) in the
+ * old project and letting a DB refresh / file-watcher re-import / sync reconcile
+ * resurface the note where it started. Callers must also move the .md file
+ * (delete the old project's copy, write into the new one) — see the
+ * db:note:moveToProject IPC handler.
+ */
+export function moveNoteToProject(db: Database.Database, id: string, projectId: string, workspaceId: string) {
+  const now = ts();
+  db.prepare(
+    "UPDATE notes SET project_id = ?, workspace_id = ?, updated_at = ?, version = version + 1 WHERE id = ?",
+  ).run(projectId, workspaceId, now, id);
+  return toNote(db.prepare("SELECT * FROM notes WHERE id = ?").get(id));
+}
+
+/**
  * Explicitly clear archived_at for a note (cannot use COALESCE for NULL clears).
  */
 export function restoreNote(db: Database.Database, id: string) {

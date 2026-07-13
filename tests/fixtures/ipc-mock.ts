@@ -229,6 +229,7 @@ export function buildIpcMock(opts?: { needsWorkspaceSetup?: boolean }): string {
       update:       noop,
       delete:       noop,
       moveToFolder: noop,
+      moveToProject: noop,
     },
 
     // ── Board columns ─────────────────────────────────────────

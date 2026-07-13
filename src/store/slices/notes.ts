@@ -149,7 +149,7 @@ export const createNotesSlice: StateCreator<CairnStore, [], [], NotesSlice> = (
     }));
     get().persist();
     markOwnNoteWrite(noteId);
-    ipc((e) => e.note.update(noteId, { projectId: targetProjectId }));
+    ipc((e) => e.note.moveToProject(noteId, targetProjectId, targetProject.workspaceId));
     historyManager.push(makeMoveNoteCmd(
       noteId, prevProjectId, prevWorkspaceId,
       targetProjectId, targetProject.workspaceId,
