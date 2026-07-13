@@ -1039,6 +1039,36 @@ export function moveNotesToFolder(noteIds: string[], folder: string): number {
   return res.changes ?? 0;
 }
 
+/**
+ * Move a note to a different project (and its owning workspace).
+ *
+ * Mobile is DB-only (no .md files), so this is a plain UPDATE of project_id +
+ * workspace_id — no file relocation like the desktop equivalent. Writing both
+ * columns matters: notes are scoped by project_id everywhere (lists, search,
+ * graph), and the sync engine carries them in the row's full snapshot, so a
+ * partial move (project without workspace) would desync. Returns the new
+ * project/workspace, or an error if the target project doesn't exist.
+ */
+export function moveNoteToProject(
+  noteId: string,
+  targetProjectId: string,
+): { error: string } | { projectId: string; workspaceId: string } {
+  const note = getNote(noteId);
+  if (!note) return { error: "Note not found" };
+  const workspaceId = workspaceIdForProject(targetProjectId);
+  if (!workspaceId) return { error: "Target project not found" };
+  const now = new Date().toISOString();
+  getDb().runSync(
+    `UPDATE notes SET project_id = ?, workspace_id = ?, updated_at = ?, version = version + 1 WHERE id = ?`,
+    targetProjectId,
+    workspaceId,
+    now,
+    noteId,
+  );
+  notifyLocalWrite();
+  return { projectId: targetProjectId, workspaceId };
+}
+
 /** Pin or unpin a note. Plain UPDATE so the capture triggers publish it. */
 export function pinNote(id: string, pinned: boolean): void {
   const now = new Date().toISOString();

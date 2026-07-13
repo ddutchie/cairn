@@ -174,6 +174,14 @@ export const TOOLS: ToolDef[] = [
     run: (a) => ({ moved: q.moveNotesToFolder(Array.isArray(a.note_ids) ? a.note_ids.map(str) : [], str(a.folder)) }),
   },
   {
+    name: "move_note_to_project",
+    description:
+      "Move a note to a different project (call get_cairn_context for project ids). The note's owning workspace is updated automatically. Returns the new project_id/workspace_id, or an error.",
+    params: '{ "id": string, "project_id": string }',
+    jsonSchema: obj({ id: S, project_id: S }, ["id", "project_id"]),
+    run: (a) => q.moveNoteToProject(str(a.id), str(a.project_id)),
+  },
+  {
     name: "list_folders",
     description: "List all folder paths used by a project's notes.",
     params: '{ "project_id": string }',
