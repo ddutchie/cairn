@@ -1,5 +1,5 @@
 import { memo, useCallback, useMemo, useState } from "react";
-import { View, Text, ScrollView, FlatList, Pressable, StyleSheet, type ListRenderItem } from "react-native";
+import { View, Text, ScrollView, FlatList, Pressable, StyleSheet, ActionSheetIOS, Alert, Platform, type ListRenderItem } from "react-native";
 import { useLocalSearchParams, useRouter, Stack, type Href } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChevronDown, ChevronRight, Folder, FolderOpen, FileText, Pin } from "lucide-react-native";
@@ -9,7 +9,13 @@ import {
   listNotes,
   listColumns,
   listCards,
+  listProjects,
+  listFolders,
   moveCardToColumn,
+  moveNoteToProject,
+  moveNotesToFolder,
+  pinNote,
+  softDeleteNote,
   tagsByRow,
   tagsForNotes,
   noteTagIds,
@@ -22,8 +28,9 @@ import {
 import { TagChips } from "@/components/TagChips";
 import { PressableScale } from "@/components/PressableScale";
 import { SearchField } from "@/components/SearchField";
+import { NotePickerSheet, type PickerOption } from "@/components/NotePickerSheet";
 import { ICON_ADD, ICON_CALENDAR } from "@/components/toolbar-icons";
-import { toolbarPress } from "@/haptics";
+import { haptics, toolbarPress } from "@/haptics";
 import { DraggableBoard } from "@/components/DraggableBoard";
 import { OverviewTab } from "@/components/overview/OverviewTab";
 import { EmptyState } from "@/components/EmptyState";
@@ -73,6 +80,10 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [filter, setFilter] = useState("");
   const [activeTagId, setActiveTagId] = useState<string | null>(null);
+  // The note currently targeted by the long-press action menu, and which
+  // move-picker sheet (if any) is open for it. `null` = no menu/sheet.
+  const [actionNote, setActionNote] = useState<NoteRow | null>(null);
+  const [picker, setPicker] = useState<null | "project" | "folder">(null);
 
   // Onward-navigation targets. Kept as typed Href builders so the nested vs.
   // root path families both satisfy typed routes.
@@ -103,6 +114,124 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
   // actually skip re-rendering when unrelated state (filter text, collapse)
   // changes. Passing a fresh `() => push(...)` per row would defeat React.memo.
   const openNote = useCallback((nid: string) => router.push(noteHref(nid)), [router, noteHref]);
+
+  // ── Long-press note actions ────────────────────────────────────────────────
+  // A per-note contextual menu mirroring the desktop note ⋯ menu (Pin/Unpin,
+  // Move to project, Move to folder, Delete). Presented as a native action
+  // sheet (iOS) / Alert action list (Android) on long-press; the two "Move"
+  // actions open a themed BottomSheet picker (NotePickerSheet). Kept as stable
+  // callbacks so the memoised NoteRowItem rows don't re-render.
+
+  const togglePin = useCallback((note: NoteRow) => {
+    pinNote(note.id, !note.is_pinned);
+    haptics.success();
+    load();
+  }, [load]);
+
+  const confirmDelete = useCallback((note: NoteRow) => {
+    haptics.warning();
+    Alert.alert(
+      "Delete note?",
+      `"${note.title || "Untitled"}" will be deleted. This syncs to your other devices.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            softDeleteNote(note.id);
+            load();
+          },
+        },
+      ],
+    );
+  }, [load]);
+
+  const showNoteActions = useCallback((note: NoteRow) => {
+    haptics.selection();
+    const pinLabel = note.is_pinned ? "Unpin" : "Pin";
+    const run = (choice: "pin" | "project" | "folder" | "delete") => {
+      if (choice === "pin") togglePin(note);
+      else if (choice === "project") { setActionNote(note); setPicker("project"); }
+      else if (choice === "folder") { setActionNote(note); setPicker("folder"); }
+      else if (choice === "delete") confirmDelete(note);
+    };
+    if (Platform.OS === "ios") {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          title: note.title || "Untitled",
+          options: [pinLabel, "Move to project", "Move to folder", "Delete", "Cancel"],
+          destructiveButtonIndex: 3,
+          cancelButtonIndex: 4,
+        },
+        (i) => {
+          if (i === 0) run("pin");
+          else if (i === 1) run("project");
+          else if (i === 2) run("folder");
+          else if (i === 3) run("delete");
+        },
+      );
+    } else {
+      Alert.alert(note.title || "Untitled", undefined, [
+        { text: pinLabel, onPress: () => run("pin") },
+        { text: "Move to project", onPress: () => run("project") },
+        { text: "Move to folder", onPress: () => run("folder") },
+        { text: "Delete", style: "destructive", onPress: () => run("delete") },
+        { text: "Cancel", style: "cancel" },
+      ]);
+    }
+  }, [togglePin, confirmDelete]);
+
+  // Commit a picker selection, then close the menu + sheet and refresh the list.
+  const onPickProject = useCallback((projectId: string) => {
+    if (actionNote) {
+      const res = moveNoteToProject(actionNote.id, projectId);
+      if ("error" in res) {
+        // Surface the failure and keep the picker open (state intact) so the
+        // user can retry or pick a different target — don't silently swallow it.
+        haptics.error();
+        Alert.alert("Couldn't move note", res.error);
+        return;
+      }
+      haptics.success();
+    }
+    setPicker(null);
+    setActionNote(null);
+    load();
+  }, [actionNote, load]);
+
+  const onPickFolder = useCallback((folder: string) => {
+    if (actionNote) {
+      moveNotesToFolder([actionNote.id], folder);
+      haptics.success();
+    }
+    setPicker(null);
+    setActionNote(null);
+    load();
+  }, [actionNote, load]);
+
+  const closePicker = useCallback(() => { setPicker(null); setActionNote(null); }, []);
+
+  // Picker option lists, computed only while the relevant sheet is open. The
+  // project list excludes the current project; the folder list is prefixed with
+  // an explicit "Root" (folder="") option, matching the desktop folder picker.
+  const projectOptions = useMemo<PickerOption[]>(
+    () =>
+      picker === "project"
+        ? listProjects()
+            .filter((p) => p.id !== id)
+            .map((p) => ({ value: p.id, label: p.name, icon: p.icon }))
+        : [],
+    [picker, id],
+  );
+  const folderOptions = useMemo<PickerOption[]>(() => {
+    if (picker !== "folder" || !id) return [];
+    const opts: PickerOption[] = [{ value: "", label: "Root" }];
+    for (const f of listFolders(id)) {
+      if (f) opts.push({ value: f, label: f });
+    }
+    return opts;
+  }, [picker, id]);
 
   const tree = useMemo(() => buildFolderTree(notes), [notes]);
   const styles = useMemo(() => makeStyles(t), [t]);
@@ -157,9 +286,9 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
       item.kind === "folder" ? (
         <FolderRow node={item.node} depth={item.depth} collapsed={!!collapsed[item.node.path]} onToggle={toggle} t={t} />
       ) : (
-        <NoteRowItem note={item.note} depth={item.depth} tags={tagMap.get(item.note.id)} onOpen={openNote} t={t} />
+        <NoteRowItem note={item.note} depth={item.depth} tags={tagMap.get(item.note.id)} onOpen={openNote} onLongPress={showNoteActions} t={t} />
       ),
-    [collapsed, toggle, t, tagMap, openNote],
+    [collapsed, toggle, t, tagMap, openNote, showNoteActions],
   );
 
   const onAdd = () => {
@@ -270,6 +399,29 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
           onAddCard={(colId) => router.push({ pathname: "/card/new", params: { project: id, column: colId } })}
         />
       )}
+
+      {/* Long-press move pickers. Options are read lazily (only while the sheet
+          is open) so they reflect the current DB without polling. */}
+      <NotePickerSheet
+        visible={picker === "project"}
+        title="Move to project"
+        variant="project"
+        options={projectOptions}
+        selectedValue={id}
+        emptyText="No other projects in this workspace."
+        onSelect={onPickProject}
+        onClose={closePicker}
+      />
+      <NotePickerSheet
+        visible={picker === "folder"}
+        title="Move to folder"
+        variant="folder"
+        options={folderOptions}
+        selectedValue={actionNote?.folder ?? ""}
+        emptyText="No folders in this project yet."
+        onSelect={onPickFolder}
+        onClose={closePicker}
+      />
     </View>
   );
 }
@@ -342,30 +494,35 @@ const NoteRowItem = memo(function NoteRowItem({
   depth,
   tags,
   onOpen,
+  onLongPress,
   t,
 }: {
   note: NoteRow;
   depth: number;
   tags?: TagRow[];
   onOpen: (id: string) => void;
+  onLongPress: (note: NoteRow) => void;
   t: Theme;
 }) {
   // Mirror the desktop NoteListItem: title, a 1-line content preview, then a
   // meta row of relative time + up to 3 tag chips. Tags are resolved once by the
   // parent (tagsByRow) and passed in, so this row does no DB work on render.
-  // `onOpen` is a stable ref → this memoised row skips re-render when unrelated
-  // parent state changes.
+  // `onOpen` / `onLongPress` are stable refs → this memoised row skips re-render
+  // when unrelated parent state changes.
   const preview = useMemo(() => {
     const text = stripMarkdown(note.content ?? "").trim();
     return text ? text.slice(0, 80) : "Empty note";
   }, [note.content]);
   const shownTags = useMemo(() => (tags ?? []).slice(0, 3), [tags]);
   const onPress = useCallback(() => onOpen(note.id), [onOpen, note.id]);
+  const handleLongPress = useCallback(() => onLongPress(note), [onLongPress, note]);
   return (
     <PressableScale
       scaleTo={1}
       dimTo={0.5}
       onPress={onPress}
+      onLongPress={handleLongPress}
+      delayLongPress={350}
       style={{
         gap: 3,
         paddingVertical: 10,

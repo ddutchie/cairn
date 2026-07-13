@@ -171,7 +171,7 @@ export function makeMoveNoteCmd(
             : n,
         ),
       }));
-      ipc((e) => e.note.update(noteId, { projectId: prevProjectId }));
+      ipc((e) => e.note.moveToProject(noteId, prevProjectId, prevWorkspaceId));
     },
     async redo() {
       set((s) => ({
@@ -181,7 +181,7 @@ export function makeMoveNoteCmd(
             : n,
         ),
       }));
-      ipc((e) => e.note.update(noteId, { projectId: targetProjectId }));
+      ipc((e) => e.note.moveToProject(noteId, targetProjectId, targetWorkspaceId));
     },
   };
 }

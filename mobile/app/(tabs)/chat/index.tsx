@@ -11,6 +11,8 @@ import {
   Alert,
   ActionSheetIOS,
   Platform,
+  AppState,
+  type AppStateStatus,
 } from "react-native";
 import Animated, { useSharedValue, withTiming, useAnimatedStyle, interpolate } from "react-native-reanimated";
 import { KeyboardStickyView, KeyboardController, KeyboardChatScrollView, KeyboardGestureArea, useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
@@ -55,6 +57,7 @@ const NOTE_TOOLS: Record<string, "args" | "result"> = {
   append_to_note: "args",
   patch_note: "args",
   rename_note: "args",
+  move_note_to_project: "args",
 };
 /** Tools whose result points at a CARD. */
 const CARD_TOOLS: Record<string, "args" | "result"> = {
@@ -127,6 +130,23 @@ export default function ChatScreen() {
   // the Chat tab (it's session state otherwise, lost on unmount).
   const [usage, setUsage] = useState<ChatUsage | null>(() => loadLastChatUsage());
   const scrollRef = useRef<ComponentRef<typeof KeyboardChatScrollView>>(null);
+  // Resume-repaint key. iOS composites its cached UIKit snapshot over the live
+  // hierarchy when the app returns from background; the composer's native Liquid
+  // Glass layer (GlassBar → GlassView) samples a backdrop that stays stale until
+  // the next paint, leaving translucent vertical "ghost bands" over the
+  // transformed scroll content (tool chips + avatar column) until the user
+  // interacts. Bumping this key on the "active" transition remounts that content
+  // so the stale backdrop is invalidated immediately. iOS-only — the artifact is
+  // specific to the native glass layer, and remounting on Android would only
+  // throw away scroll state for no benefit.
+  const [resumeKey, setResumeKey] = useState(0);
+  useEffect(() => {
+    if (Platform.OS !== "ios") return;
+    const sub = AppState.addEventListener("change", (next: AppStateStatus) => {
+      if (next === "active") setResumeKey((k) => k + 1);
+    });
+    return () => sub.remove();
+  }, []);
   // Whether the user is at/near the bottom of the transcript. Auto-follow on
   // content growth only when true, so expanding a past message's reasoning block
   // (or other layout changes while scrolled up) doesn't yank the view to the end.
@@ -402,6 +422,7 @@ export default function ChatScreen() {
           style={StyleSheet.absoluteFill}
         >
           <KeyboardChatScrollView
+            key={resumeKey}
             ref={scrollRef}
             style={StyleSheet.absoluteFill}
             contentContainerStyle={[styles.list, messages.length === 0 && styles.listEmpty]}

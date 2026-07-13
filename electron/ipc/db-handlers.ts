@@ -236,6 +236,69 @@ export function registerDbHandlers(ctx: DbContext): void {
     return note;
   }));
 
+  registerIpcHandle(
+    "db:note:moveToProject",
+    (_e, { id, projectId }: { id: string; projectId: string; workspaceId?: string }) =>
+      handle(() => {
+        // Moving a note between projects was previously routed through
+        // updateNote(), whose UPDATE has no project_id/workspace_id columns — so
+        // the move was silently dropped and the note re-surfaced in the old
+        // project (via a DB refresh, file-watcher re-import, or sync reconcile).
+        // Persist the move with a dedicated direct-SET query, and — crucially —
+        // relocate the .md file: writeNoteFile only unlinks a stale file it finds
+        // *within the target project's* folder, so the old project's copy must be
+        // deleted explicitly or the file-watcher will re-import it into the old
+        // project.
+        const before = q.getNoteById(ctx.db, id);
+        if (!before) throw new Error(`Note not found: ${id}`);
+        const oldProjectId = before.projectId;
+        const oldProjectName = getProjectName(ctx.db, oldProjectId);
+
+        // moveNoteToProject rejects a missing target project (and resolves the
+        // authoritative workspace itself), so the DB move is validated before we
+        // touch any files.
+        suppressNextChange(id);
+        const note = q.moveNoteToProject(ctx.db, id, projectId);
+
+        if (note.type !== "dashboard" && oldProjectName !== getProjectName(ctx.db, projectId)) {
+          // Failure-safe relocation: write the note into the NEW project folder
+          // FIRST, then remove the old copy. If the write throws, roll the DB
+          // row back to the old project so ownership and the on-disk file stay
+          // consistent (the old file is still present and authoritative).
+          try {
+            writeNoteFile(ctx.workspacePath, { ...note, projectName: getProjectName(ctx.db, note.projectId) });
+          } catch (e) {
+            q.moveNoteToProject(ctx.db, id, oldProjectId);
+            throw e;
+          }
+          // New file is in place; deleting the stale old copy is best-effort
+          // (a failure here only leaves a duplicate that the watcher would
+          // re-import into the old project — non-fatal, and the DB move stands).
+          try {
+            deleteNoteFile(ctx.workspacePath, oldProjectName, id);
+          } catch (e) {
+            console.warn("[notes] failed to remove old-project file after move:", e instanceof Error ? e.message : e);
+          }
+        }
+
+        // Membership changed → auto/semantic relationships and the embedding
+        // index are scoped by workspace, so recompute for the new workspace.
+        invalidateRelationshipCache(ctx.db, id);
+        if (note.workspaceId) {
+          computeAutoRelationships(ctx.db, note.workspaceId, [id]);
+          void reindexSingleNoteEmbedding(ctx, id, note.workspaceId).then((didReindex) => {
+            if (!didReindex) return;
+            try {
+              computeSemanticRelationships(ctx.db, note.workspaceId, [id]);
+            } catch (e) {
+              console.warn("[embeddings] semantic recompute skipped:", e instanceof Error ? e.message : e);
+            }
+          }).catch(() => { /* already warned */ });
+        }
+        return note;
+      }),
+  );
+
   registerIpcHandle("db:note:delete", (_e, { id }) => handle(() => {
     const note = q.getNoteById(ctx.db, id);
     if (note) {

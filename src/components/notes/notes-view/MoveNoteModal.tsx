@@ -4,6 +4,7 @@ import React from "react";
 import { FolderInput, FolderOpen } from "lucide-react";
 import type { Project } from "@/types";
 import { ModalShell } from "@/components/ui/modal-shell";
+import { ProjectIcon } from "@/lib/workspace-icons";
 
 interface MoveNoteModalProps {
   workspaceProjects: Project[];
@@ -33,7 +34,7 @@ export function MoveNoteModal({ workspaceProjects, activeProjectId, onMove, onCl
               onClick={() => { onMove(p.id); onClose(); }}
               className="w-full text-left px-3 py-2 rounded-lg text-sm text-[var(--text-secondary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)] transition-colors flex items-center gap-2"
             >
-              <span className="text-base leading-none">{p.icon ?? "📁"}</span>
+              <ProjectIcon name={p.icon} size={14} className="text-[var(--text-tertiary)] shrink-0" />
               {p.name}
             </button>
           ))}

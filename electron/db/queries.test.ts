@@ -19,6 +19,7 @@ import {
   updateNote,
   deleteNote,
   getNoteById,
+  moveNoteToProject,
   createColumn,
   createCard,
   updateCard,
@@ -184,6 +185,68 @@ describe("updateNote", () => {
 
     const results = searchNotes(db, { query: "Original Title" });
     expect(results.find((n) => n.id === "note1")).toBeUndefined();
+  });
+});
+
+describe("moveNoteToProject", () => {
+  let db: Database.Database;
+
+  beforeEach(() => {
+    db = makeDb();
+    seedWorkspace(db);
+    seedProject(db);
+    // A second project in a different workspace to move into.
+    createWorkspace(db, { id: "ws2", name: "Other Workspace" });
+    createProject(db, { id: "proj2", workspaceId: "ws2", name: "Other Project" });
+    createNote(db, {
+      id: "note1",
+      projectId: "proj1",
+      workspaceId: "ws1",
+      title: "Movable Note",
+      content: "content",
+    });
+  });
+
+  it("persists the new project_id and workspace_id (regression: updateNote drops them)", () => {
+    const moved = moveNoteToProject(db, "note1", "proj2");
+    expect(moved.projectId).toBe("proj2");
+    expect(moved.workspaceId).toBe("ws2");
+
+    // Re-read from the DB — the move must be durable, not just on the return value.
+    const reloaded = getNoteById(db, "note1");
+    expect(reloaded?.projectId).toBe("proj2");
+    expect(reloaded?.workspaceId).toBe("ws2");
+  });
+
+  it("resolves the destination workspace from the target project, not a caller arg", () => {
+    // proj2 belongs to ws2 (see beforeEach) — the note's workspace must follow
+    // the project regardless of what any caller might have wanted.
+    const moved = moveNoteToProject(db, "note1", "proj2");
+    expect(moved.workspaceId).toBe("ws2");
+  });
+
+  it("rejects a move to a non-existent project (note stays put)", () => {
+    expect(() => moveNoteToProject(db, "note1", "nope")).toThrow();
+    const reloaded = getNoteById(db, "note1");
+    expect(reloaded?.projectId).toBe("proj1");
+    expect(reloaded?.workspaceId).toBe("ws1");
+  });
+
+  it("does NOT re-surface under the old project after the move", () => {
+    moveNoteToProject(db, "note1", "proj2");
+    const inOldProject = searchNotes(db, { query: "Movable Note", projectId: "proj1" });
+    expect(inOldProject.find((n) => n.id === "note1")).toBeUndefined();
+    const inNewProject = searchNotes(db, { query: "Movable Note", projectId: "proj2" });
+    expect(inNewProject.find((n) => n.id === "note1")).toBeDefined();
+  });
+
+  it("bumps version and updated_at", async () => {
+    const before = getNoteById(db, "note1");
+    // Small delay so the ISO timestamp is strictly later (same-ms writes would tie).
+    await new Promise((r) => setTimeout(r, 5));
+    const moved = moveNoteToProject(db, "note1", "proj2");
+    expect(moved.version).toBeGreaterThan(before?.version ?? -1);
+    expect(moved.updatedAt > (before?.updatedAt ?? "")).toBe(true);
   });
 });
 
