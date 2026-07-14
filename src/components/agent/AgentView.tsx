@@ -69,7 +69,10 @@ export function AgentView() {
     const listener = (e: MediaQueryListEvent) => setIsMobile(e.matches);
     media.addEventListener("change", listener);
     return () => media.removeEventListener("change", listener);
-  }, []);
+    // Re-run when codeDirectory appears: the tree pane only mounts once a codebase
+    // is connected, so an empty dep array would leave its width unset (the ref is
+    // null at first mount when there's no codebase).
+  }, [codeDirectory]);
 
   // ── Drag logic ─────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -138,7 +141,12 @@ export function AgentView() {
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup",   onMouseUp);
     };
-  }, []);
+    // Re-run when the codebase becomes available: the divider elements only exist
+    // in the DOM once `codeDirectory` is set (the no-codebase branch returns early),
+    // so an empty dep array would register mousedown listeners against null refs and
+    // drag-resize would never work. Keying on codeDirectory re-attaches them once
+    // the resizable layout mounts.
+  }, [codeDirectory]);
 
   // No codebase on this project — show only chat, not the coding-agent workspace.
   // Chat is provided by the RightPanel drawer (auto-opened on agent view in page.tsx)
@@ -232,16 +240,16 @@ export function AgentView() {
           <FileTree project={project} />
         </div>
 
-        {/* Left resize divider — a real 1.5-wide column with a centred 1px line
-            that brightens to accent on hover (matches the bottom terminal
-            divider so both handles read the same). */}
+        {/* Left resize divider — a real 1.5-wide column with a centred 1px line.
+            Washes to a 50% accent glow on hover to match every other resize
+            handle in the app (see PreviewPane / UnifiedChatPanel). */}
         <div
           ref={leftDividerRef}
-          className="group w-1.5 flex-shrink-0 cursor-col-resize bg-[var(--background)] flex justify-center hidden md:flex"
+          className="group w-1.5 flex-shrink-0 cursor-col-resize bg-[var(--background)] flex justify-center hidden md:flex hover:bg-[color-mix(in_srgb,var(--accent)_50%,transparent)] transition-colors"
           role="separator"
           aria-label="Resize file tree"
         >
-          <div className="w-px h-full bg-[var(--border)] group-hover:bg-[var(--accent)] transition-colors" />
+          <div className="w-px h-full bg-[var(--border)] group-hover:bg-transparent transition-colors" />
         </div>
 
         {/* Centre pane — tab bar + editor/diff */}
@@ -363,14 +371,15 @@ export function AgentView() {
         <>
           {/* Horizontal drag divider — a real 6px-tall row (no negative-margin
               overlap trick, so nothing can bleed across it) with a centred 1px
-              line that brightens to accent on hover to signal it's grabbable. */}
+              line. Washes to a 50% accent glow on hover to match every other
+              resize handle in the app. */}
           <div
             ref={bottomDividerRef}
-            className="group h-1.5 flex-shrink-0 cursor-row-resize bg-[var(--background)] flex items-center hidden md:flex"
+            className="group h-1.5 flex-shrink-0 cursor-row-resize bg-[var(--background)] flex items-center hidden md:flex hover:bg-[color-mix(in_srgb,var(--accent)_50%,transparent)] transition-colors"
             role="separator"
             aria-label="Resize bottom terminal"
           >
-            <div className="h-px w-full bg-[var(--border)] group-hover:bg-[var(--accent)] transition-colors" />
+            <div className="h-px w-full bg-[var(--border)] group-hover:bg-transparent transition-colors" />
           </div>
           <div
             className={cn(

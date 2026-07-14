@@ -135,7 +135,7 @@ export function UnifiedChatPanel({ prefill, onPrefillConsumed }: UnifiedChatPane
       {!isCenterMode && (
         <div
           ref={dividerRef}
-          className="absolute left-0 top-0 h-full w-1 cursor-col-resize z-40 select-none hover:bg-[var(--accent)]/50 transition-colors"
+          className="absolute left-0 top-0 h-full w-1 cursor-col-resize z-40 select-none hover:bg-[color-mix(in_srgb,var(--accent)_50%,transparent)] transition-colors"
           style={{ marginLeft: -2 }}
           aria-hidden
         />

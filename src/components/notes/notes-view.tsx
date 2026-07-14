@@ -504,11 +504,13 @@ export function NotesView() {
           </Button>
         </div>
 
-        {/* Drag-to-resize handle — sits on the right edge of the sidebar */}
+        {/* Drag-to-resize handle — sits on the right edge of the sidebar.
+            Washes to a 50% accent glow on hover to match every other resize
+            handle in the app (PreviewPane / chat / agent). */}
         <div
           ref={sidebarDividerRef}
-          className="absolute right-0 top-0 h-full w-0 flex-shrink-0 cursor-col-resize z-10 select-none hidden md:block"
-          style={{ marginRight: -3, padding: "0 3px" }}
+          className="absolute right-0 top-0 h-full w-1 flex-shrink-0 cursor-col-resize z-10 select-none hidden md:block hover:bg-[color-mix(in_srgb,var(--accent)_50%,transparent)] transition-colors"
+          style={{ marginRight: -2 }}
           aria-hidden
         />
       </div>
