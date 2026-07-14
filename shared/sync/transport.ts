@@ -67,16 +67,28 @@ function serializeOplog(entries: OplogEntry[]): string {
  *     tracks rather than a placeholder replace. Peers already tolerate a partially
  *     synced read (parseInto skips corrupt/partial lines), so an in-place rewrite
  *     is safe here.
+ *
+ * NO-OP GUARD: the desktop calls this on every sync tick regardless of whether
+ * the oplog changed. If the on-disk content is already byte-identical we skip
+ * the write entirely — otherwise every idle tick would re-touch the file, and
+ * the cloud provider would needlessly re-upload it (and peers re-download it).
+ * Returns true if bytes were written, false if the write was skipped as a no-op.
  */
-export function writeOplogFile(syncFolder: string, deviceId: string, entries: OplogEntry[], workspaceId?: string): void {
+export function writeOplogFile(syncFolder: string, deviceId: string, entries: OplogEntry[], workspaceId?: string): boolean {
   fs.mkdirSync(syncFolder, { recursive: true });
   const target = path.join(syncFolder, oplogFileName(deviceId, workspaceId));
   const body = serializeOplog(entries);
 
   if (fs.existsSync(target)) {
+    // Skip if nothing changed — avoids churning the synced file on idle ticks.
+    try {
+      if (fs.readFileSync(target, "utf-8") === body) return false;
+    } catch {
+      // Unreadable (e.g. dehydrated placeholder) — fall through and rewrite.
+    }
     // (opt 3) Overwrite in place — do NOT rename a sibling over an iCloud placeholder.
     fs.writeFileSync(target, body, "utf-8");
-    return;
+    return true;
   }
 
   // (opt 1) First creation: stage in the OS temp dir (outside the synced folder)
@@ -91,6 +103,7 @@ export function writeOplogFile(syncFolder: string, deviceId: string, entries: Op
     fs.writeFileSync(target, body, "utf-8");
     try { fs.unlinkSync(tmp); } catch { /* best effort */ }
   }
+  return true;
 }
 
 /**
@@ -131,8 +144,9 @@ function parseInto(out: OplogEntry[], line: string): void {
 // main loop on slow I/O. The sync versions above remain for tests and any
 // caller that is already off the hot path.
 
-/** Async: write (replace) this device's oplog file. iCloud-Windows-safe — see writeOplogFile. */
-export async function writeOplogFileAsync(syncFolder: string, deviceId: string, entries: OplogEntry[], workspaceId?: string): Promise<void> {
+/** Async: write (replace) this device's oplog file. iCloud-Windows-safe — see writeOplogFile.
+ *  Returns true if bytes were written, false if skipped as an unchanged no-op. */
+export async function writeOplogFileAsync(syncFolder: string, deviceId: string, entries: OplogEntry[], workspaceId?: string): Promise<boolean> {
   await fs.promises.mkdir(syncFolder, { recursive: true });
   const target = path.join(syncFolder, oplogFileName(deviceId, workspaceId));
   const body = serializeOplog(entries);
@@ -145,9 +159,15 @@ export async function writeOplogFileAsync(syncFolder: string, deviceId: string, 
   }
 
   if (exists) {
+    // Skip if nothing changed — avoids re-touching the synced file on idle ticks.
+    try {
+      if ((await fs.promises.readFile(target, "utf-8")) === body) return false;
+    } catch {
+      // Unreadable (e.g. dehydrated placeholder) — fall through and rewrite.
+    }
     // (opt 3) In-place overwrite — avoids the iCloud placeholder-replace path.
     await fs.promises.writeFile(target, body, "utf-8");
-    return;
+    return true;
   }
 
   // (opt 1) First creation: stage outside the synced folder, then rename in.
@@ -160,6 +180,7 @@ export async function writeOplogFileAsync(syncFolder: string, deviceId: string, 
     await fs.promises.writeFile(target, body, "utf-8");
     try { await fs.promises.unlink(tmp); } catch { /* best effort */ }
   }
+  return true;
 }
 
 /**

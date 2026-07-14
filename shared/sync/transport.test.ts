@@ -116,6 +116,40 @@ describe("transport oplog shape validation", () => {
   });
 });
 
+describe("transport write behaviour", () => {
+  it("returns true on create, false on an unchanged rewrite (no-op guard)", () => {
+    const dir = tmpDir();
+    dirs.push(dir);
+    // First write creates the file.
+    expect(writeOplogFile(dir, "pc", [entry], "wsWork")).toBe(true);
+    // Re-writing identical content is skipped — no churn on idle sync ticks.
+    expect(writeOplogFile(dir, "pc", [entry], "wsWork")).toBe(false);
+    // A changed body writes again.
+    expect(writeOplogFile(dir, "pc", [{ ...entry, entity_id: "n2" }], "wsWork")).toBe(true);
+  });
+
+  it("does not preserve the file's mtime across an unchanged rewrite", () => {
+    const dir = tmpDir();
+    dirs.push(dir);
+    const file = path.join(dir, "oplog-pc-wsWork.ndjson");
+    writeOplogFile(dir, "pc", [entry], "wsWork");
+    const mtime1 = fs.statSync(file).mtimeMs;
+    // A skipped no-op write must not touch the file (mtime unchanged) — this is
+    // what stops the cloud provider re-uploading on every idle tick.
+    const wrote = writeOplogFile(dir, "pc", [entry], "wsWork");
+    expect(wrote).toBe(false);
+    expect(fs.statSync(file).mtimeMs).toBe(mtime1);
+  });
+
+  it("leaves no .tmp file inside the synced folder after a create", () => {
+    const dir = tmpDir();
+    dirs.push(dir);
+    writeOplogFile(dir, "pc", [entry], "wsWork");
+    const leftovers = fs.readdirSync(dir).filter((f) => f.endsWith(".tmp"));
+    expect(leftovers).toEqual([]);
+  });
+});
+
 describe("parseWorkspaceIdFromOplogName", () => {
   it("splits on the first '-' so a workspaceId that ENDS with '-' survives", () => {
     // Regression: a nanoid workspaceId ending in "-" was truncated to "" by a
