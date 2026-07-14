@@ -19,6 +19,7 @@
  */
 
 import fs from "fs";
+import os from "os";
 import path from "path";
 import type { OplogEntry } from "./engine";
 import { oplogFileName, isOplogForWorkspace, parseWorkspaceIdFromOplogName } from "./oplog-name";
@@ -45,14 +46,51 @@ function isOplogEntry(v: unknown): v is OplogEntry {
   );
 }
 
-/** Write (replace) this device's full oplog file. Atomic via tmp+rename. */
+/** Serialise entries to the ndjson body written to disk (trailing newline when non-empty). */
+function serializeOplog(entries: OplogEntry[]): string {
+  return entries.map((e) => JSON.stringify(e)).join("\n") + (entries.length ? "\n" : "");
+}
+
+/**
+ * Write (replace) this device's oplog file, resilient to iCloud Drive on Windows.
+ *
+ * The old strategy — write a sibling `<target>.tmp` inside the synced folder, then
+ * `rename` it over `target` — breaks under iCloud-on-Windows: iCloud tracks
+ * `target` as a placeholder and often holds a handle on it, so the rename-over-
+ * existing is rejected/deferred and iCloud resolves the conflict by minting a
+ * numbered copy (`oplog-...-2.ndjson`, `-3`, …). It also synced the transient
+ * `.tmp` file. To avoid both:
+ *   • FIRST write (target absent): stage into the OS temp dir — never inside the
+ *     synced folder, so iCloud never sees the tmp — then rename it in.
+ *   • SUBSEQUENT writes (target present): overwrite the existing file's contents
+ *     IN PLACE, so iCloud sees an in-place modification of the inode it already
+ *     tracks rather than a placeholder replace. Peers already tolerate a partially
+ *     synced read (parseInto skips corrupt/partial lines), so an in-place rewrite
+ *     is safe here.
+ */
 export function writeOplogFile(syncFolder: string, deviceId: string, entries: OplogEntry[], workspaceId?: string): void {
   fs.mkdirSync(syncFolder, { recursive: true });
   const target = path.join(syncFolder, oplogFileName(deviceId, workspaceId));
-  const tmp = `${target}.tmp`;
-  const body = entries.map((e) => JSON.stringify(e)).join("\n") + (entries.length ? "\n" : "");
+  const body = serializeOplog(entries);
+
+  if (fs.existsSync(target)) {
+    // (opt 3) Overwrite in place — do NOT rename a sibling over an iCloud placeholder.
+    fs.writeFileSync(target, body, "utf-8");
+    return;
+  }
+
+  // (opt 1) First creation: stage in the OS temp dir (outside the synced folder)
+  // then rename in, so iCloud never races or syncs the transient tmp file.
+  const tmp = path.join(os.tmpdir(), `${oplogFileName(deviceId, workspaceId)}.${process.pid}.${Date.now()}.tmp`);
   fs.writeFileSync(tmp, body, "utf-8");
-  fs.renameSync(tmp, target);
+  try {
+    fs.renameSync(tmp, target);
+  } catch {
+    // Cross-device rename (temp dir on a different volume) or iCloud rejection —
+    // fall back to copy + in-place write, then clean up the staged tmp.
+    fs.writeFileSync(target, body, "utf-8");
+    try { fs.unlinkSync(tmp); } catch { /* best effort */ }
+  }
 }
 
 /**
@@ -93,14 +131,35 @@ function parseInto(out: OplogEntry[], line: string): void {
 // main loop on slow I/O. The sync versions above remain for tests and any
 // caller that is already off the hot path.
 
-/** Async: write (replace) this device's full oplog file. Atomic via tmp+rename. */
+/** Async: write (replace) this device's oplog file. iCloud-Windows-safe — see writeOplogFile. */
 export async function writeOplogFileAsync(syncFolder: string, deviceId: string, entries: OplogEntry[], workspaceId?: string): Promise<void> {
   await fs.promises.mkdir(syncFolder, { recursive: true });
   const target = path.join(syncFolder, oplogFileName(deviceId, workspaceId));
-  const tmp = `${target}.tmp`;
-  const body = entries.map((e) => JSON.stringify(e)).join("\n") + (entries.length ? "\n" : "");
+  const body = serializeOplog(entries);
+
+  let exists = true;
+  try {
+    await fs.promises.access(target);
+  } catch {
+    exists = false;
+  }
+
+  if (exists) {
+    // (opt 3) In-place overwrite — avoids the iCloud placeholder-replace path.
+    await fs.promises.writeFile(target, body, "utf-8");
+    return;
+  }
+
+  // (opt 1) First creation: stage outside the synced folder, then rename in.
+  const tmp = path.join(os.tmpdir(), `${oplogFileName(deviceId, workspaceId)}.${process.pid}.${Date.now()}.tmp`);
   await fs.promises.writeFile(tmp, body, "utf-8");
-  await fs.promises.rename(tmp, target);
+  try {
+    await fs.promises.rename(tmp, target);
+  } catch {
+    // Cross-device rename or iCloud rejection — copy in place, then clean up.
+    await fs.promises.writeFile(target, body, "utf-8");
+    try { await fs.promises.unlink(tmp); } catch { /* best effort */ }
+  }
 }
 
 /**
