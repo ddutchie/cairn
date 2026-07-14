@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { View, Text, ScrollView, Pressable, StyleSheet, type StyleProp, type ViewStyle } from "react-native";
+import { View, Text, ScrollView, Pressable, StyleSheet, RefreshControl, type StyleProp, type ViewStyle } from "react-native";
 import { FileText, Circle as CircleIcon, Pin, StickyNote, ListTodo, AlertTriangle } from "lucide-react-native";
 import { computeProjectMetrics } from "@cairn/shared/overview/metrics";
 import { COLUMN_COLORS, PRIORITY_COLOR } from "@cairn/shared/ui/constants";
@@ -45,7 +45,7 @@ export interface OverviewNav {
  * agree. Read-only for now (no edit popover / code-dir / tools panel — those are
  * desktop-only concepts, tracked as mobile follow-ups).
  */
-export function OverviewTab({ data, nav, bottomPad }: { data: ProjectOverviewData; nav: OverviewNav; bottomPad: number }) {
+export function OverviewTab({ data, nav, bottomPad, onRefresh, refreshing }: { data: ProjectOverviewData; nav: OverviewNav; bottomPad: number; onRefresh?: () => void; refreshing?: boolean }) {
   const t = useTheme();
   const styles = useMemo(() => makeStyles(t), [t]);
 
@@ -87,6 +87,9 @@ export function OverviewTab({ data, nav, bottomPad }: { data: ProjectOverviewDat
       style={{ flex: 1, backgroundColor: t.background }}
       contentContainerStyle={[styles.content, { paddingBottom: bottomPad }]}
       showsVerticalScrollIndicator={false}
+      refreshControl={
+        onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor={t.textTertiary} /> : undefined
+      }
     >
       {/* Header: icon + status/priority/due pills, progress ring */}
       {project ? (

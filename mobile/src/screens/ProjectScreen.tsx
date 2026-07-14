@@ -84,6 +84,8 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
   // move-picker sheet (if any) is open for it. `null` = no menu/sheet.
   const [actionNote, setActionNote] = useState<NoteRow | null>(null);
   const [picker, setPicker] = useState<null | "project" | "folder">(null);
+  // Brief spinner state for the Overview pull-to-refresh gesture.
+  const [refreshing, setRefreshing] = useState(false);
 
   // Onward-navigation targets. Kept as typed Href builders so the nested vs.
   // root path families both satisfy typed routes.
@@ -108,6 +110,16 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
   }, [id]);
 
   useRefreshOnFocus(load);
+
+  // Pull-to-refresh on the Overview tab. load() is synchronous (local SQLite),
+  // so hold the spinner briefly for tactile feedback rather than flashing it off
+  // instantly. A short delay also lets any in-flight background sync settle.
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    haptics.selection();
+    load();
+    setTimeout(() => setRefreshing(false), 500);
+  }, [load]);
 
   // A single stable note-open handler built from the (stable) href builder, so
   // the memoised rows below keep the SAME onOpen reference across renders and
@@ -343,6 +355,8 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
           <OverviewTab
             data={overview}
             bottomPad={listBottomPad}
+            onRefresh={onRefresh}
+            refreshing={refreshing}
             nav={{
               onOpenNote: (nid) => router.push(noteHref(nid)),
               onOpenCard: (cid) => router.push(cardHref(cid)),
