@@ -5,6 +5,7 @@ import { FolderSync, RefreshCw, FolderOpen, AlertCircle, CheckCircle2 } from "lu
 import { Button } from "@/components/ui/button";
 import { SettingsGroup, SettingsRow } from "./shared";
 import { cn } from "@/lib/utils";
+import { openConflictModal } from "@/lib/sync-client";
 
 interface SyncNowResult {
   drained: number;
@@ -120,8 +121,18 @@ export function SyncSettings() {
             <div className="grid grid-cols-3 gap-2 text-center">
               <Stat label="Sent" value={last.seeded + last.drained} />
               <Stat label="Received" value={last.peerOpsApplied} />
-              <Stat label="Conflicts" value={last.conflictCopies} />
+              <Stat label="Conflicts" value={last.conflictCopies} onClick={last.conflictCopies > 0 ? openConflictModal : undefined} />
             </div>
+          )}
+
+          {last && last.connected && last.conflictCopies > 0 && (
+            <button
+              type="button"
+              onClick={openConflictModal}
+              className="w-full text-[0.714rem] font-medium text-[var(--warning)] hover:underline"
+            >
+              Review {last.conflictCopies} {last.conflictCopies === 1 ? "conflict" : "conflicts"}…
+            </button>
           )}
         </div>
       )}
@@ -143,11 +154,23 @@ export function SyncSettings() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="p-2 rounded-lg border border-[var(--border)] bg-[var(--surface-3)]">
+function Stat({ label, value, onClick }: { label: string; value: number; onClick?: () => void }) {
+  const inner = (
+    <>
       <div className="text-lg font-bold text-[var(--text-primary)]">{value}</div>
       <div className="text-[0.714rem] text-[var(--text-tertiary)] uppercase tracking-wide">{label}</div>
-    </div>
+    </>
   );
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className="p-2 rounded-lg border border-[color-mix(in_srgb,var(--warning)_40%,transparent)] bg-[var(--surface-3)] hover:bg-[color-mix(in_srgb,var(--warning)_10%,transparent)] transition-colors"
+      >
+        {inner}
+      </button>
+    );
+  }
+  return <div className="p-2 rounded-lg border border-[var(--border)] bg-[var(--surface-3)]">{inner}</div>;
 }

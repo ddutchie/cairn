@@ -43,7 +43,16 @@ export function SyncStatusIndicator() {
   const status = useSyncStatus();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Bumped on a timer while the popover is open so the "Last synced" relative
+  // time stays current between (sparse) status pushes instead of freezing.
+  const [, setNowTick] = useState(0);
   const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const id = setInterval(() => setNowTick((n) => n + 1), 30_000);
+    return () => clearInterval(id);
+  }, [open]);
 
   // Close the popover on outside click / Escape.
   useEffect(() => {

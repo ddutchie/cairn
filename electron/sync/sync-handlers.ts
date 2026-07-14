@@ -77,7 +77,13 @@ export function registerSyncHandlers(
     return { ok: true };
   })) as never);
 
-  register("sync:now", (() => wrap(() => syncDesktop(ctx.db))) as never);
+  register("sync:now", (() => wrap(async () => {
+    const result = await syncDesktop(ctx.db);
+    // Parity with the background sync loop (main.ts): if peer ops were applied,
+    // tell the renderer/mobile clients to re-hydrate so pulled edits show up.
+    if (result.peerOpsApplied > 0 || result.conflictCopies > 0) ctx.broadcastDbChanged();
+    return result;
+  })) as never);
 
   // Current live status snapshot (the renderer also subscribes to pushed
   // `sync:status` events; this is the initial fetch on mount).
@@ -90,10 +96,17 @@ export function registerSyncHandlers(
     "sync:resolveConflict",
     (((_e: never, args: { copyId: string; action: "keepCopy" | "keepOriginal" | "keepMerged"; mergedContent?: string }) =>
       wrap(() => {
-        const resolveArg =
-          args.action === "keepMerged"
-            ? ({ action: "keepMerged", mergedContent: args.mergedContent ?? "" } as const)
-            : ({ action: args.action } as const);
+        let resolveArg: { action: "keepCopy" | "keepOriginal" } | { action: "keepMerged"; mergedContent: string };
+        if (args.action === "keepMerged") {
+          // Guard against a caller sending keepMerged without a body — writing
+          // an empty string would silently blank the note. Reject instead.
+          if (typeof args.mergedContent !== "string") {
+            throw new Error("sync:resolveConflict keepMerged requires mergedContent");
+          }
+          resolveArg = { action: "keepMerged", mergedContent: args.mergedContent };
+        } else {
+          resolveArg = { action: args.action };
+        }
         const res = resolveConflict(ctx.db, args.copyId, resolveArg, ctx.conflictDeps);
         refreshSyncStatus(ctx.db);
         ctx.broadcastDbChanged();

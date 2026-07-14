@@ -93,15 +93,20 @@ function ensureStarted(): void {
 function subscribe(cb: () => void): () => void {
   ensureStarted();
   listeners.add(cb);
-  return () => {
-    listeners.delete(cb);
-    // Tear down the IPC subscription when the last consumer unmounts.
-    if (listeners.size === 0 && unsub) {
-      unsub();
-      unsub = null;
-      started = false;
-    }
-  };
+  return () => removeListener(cb);
+}
+
+/** Remove a listener and tear down the IPC subscription when the last one goes. */
+function removeListener(cb: () => void): void {
+  listeners.delete(cb);
+  if (listeners.size === 0 && unsub) {
+    unsub();
+    unsub = null;
+    started = false;
+    // Reset so a later remount doesn't briefly render a stale snapshot (e.g.
+    // "connected" after sync was disconnected while nothing was subscribed).
+    current = DEFAULT_STATUS;
+  }
 }
 
 /** Live sync status snapshot. Returns "disabled" outside Electron. */
@@ -146,7 +151,9 @@ export function onSyncStatus(cb: (s: SyncStatus) => void): () => void {
   ensureStarted();
   const wrapped = () => cb(current);
   listeners.add(wrapped);
-  return () => listeners.delete(wrapped);
+  // Use the shared teardown so unsubscribing the last listener still releases
+  // the IPC subscription (otherwise it would leak).
+  return () => removeListener(wrapped);
 }
 
 /** No-op export kept for symmetry; the hook auto-starts on first mount. */

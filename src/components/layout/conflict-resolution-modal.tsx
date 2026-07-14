@@ -27,14 +27,25 @@ export function ConflictResolutionModal({ open, onClose }: { open: boolean; onCl
   // Per-conflict merge editor state (id → draft text). Presence = editor open.
   const [mergeDraft, setMergeDraft] = useState<Record<string, string>>({});
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
+  // `showSpinner` only on the initial open — background db:changed refetches
+  // should update the list silently (no loading flicker).
+  const refresh = useCallback(async (showSpinner = false) => {
+    if (showSpinner) setLoading(true);
     setConflicts(await fetchConflicts());
     setLoading(false);
   }, []);
 
   useEffect(() => {
-    if (open) void refresh();
+    if (open) void refresh(true);
+  }, [open, refresh]);
+
+  // While the modal is open, keep the list live: a background sync that mints a
+  // new conflict copy (or a resolution on another window) fires db:changed, so
+  // refetch rather than showing a stale list until reopen.
+  useEffect(() => {
+    if (!open || typeof window === "undefined" || !window.electron?.onDbChanged) return;
+    const unsub = window.electron.onDbChanged(() => void refresh(false));
+    return () => { unsub(); };
   }, [open, refresh]);
 
   const removeLocal = (copyId: string) => {
