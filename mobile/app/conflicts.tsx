@@ -1,33 +1,44 @@
 import { useCallback, useMemo, useState } from "react";
-import { View, Text, ScrollView, Pressable, StyleSheet, Alert } from "react-native";
+import { View, Text, ScrollView, Pressable, StyleSheet, Alert, TextInput } from "react-native";
 import { Stack, useRouter } from "expo-router";
 import { GitMerge } from "lucide-react-native";
 import {
   listConflictCopies,
   resolveConflictKeepCopy,
   resolveConflictKeepOriginal,
+  resolveConflictKeepMerged,
   type ConflictCopy,
 } from "@/db/queries";
+import { merge3 } from "@cairn/shared/sync/merge3";
 import { useRefreshOnFocus } from "@/sync/useSyncStatus";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 
 /**
  * Manual conflict-resolution screen. Lists every conflict-copy note (created
  * when the same note body diverged on two devices while offline) side-by-side
- * with its original, and lets the user keep either version. Never silent loss.
+ * with its original, and lets the user keep either version OR merge them.
+ * Merge auto-combines non-overlapping edits (e.g. two different checklist items
+ * added); overlapping edits open an editable box. Never silent loss.
  */
 export default function ConflictsScreen() {
   const t = useTheme();
   const router = useRouter();
   const [conflicts, setConflicts] = useState<ConflictCopy[]>([]);
+  // Per-conflict manual-merge draft (id → text). Presence = editor open.
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
   const styles = useMemo(() => makeStyles(t), [t]);
 
   const load = useCallback(() => setConflicts(listConflictCopies()), []);
   useRefreshOnFocus(load);
 
+  const closeDraft = (id: string) =>
+    setDrafts((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+
   const keepCopy = (c: ConflictCopy) => {
-    // More destructive: this overwrites the live original with the copy. Confirm
-    // first (mirrors keepOriginal) so the overwrite is never silent.
     Alert.alert("Replace the original?", "This copy overwrites the original note. The original version is discarded.", [
       { text: "Cancel", style: "cancel" },
       { text: "Replace original", style: "destructive", onPress: () => { resolveConflictKeepCopy(c.id); load(); } },
@@ -38,6 +49,25 @@ export default function ConflictsScreen() {
       { text: "Cancel", style: "cancel" },
       { text: "Discard copy", style: "destructive", onPress: () => { resolveConflictKeepOriginal(c.id); load(); } },
     ]);
+  };
+  const merge = (c: ConflictCopy) => {
+    const ours = c.original?.content ?? "";
+    const theirs = c.content ?? "";
+    const result = merge3(c.baseBody, ours, theirs);
+    if (result.clean) {
+      Alert.alert("Merge both versions?", "The changes from both devices are combined into the original note.", [
+        { text: "Cancel", style: "cancel" },
+        { text: "Merge", onPress: () => { resolveConflictKeepMerged(c.id, result.merged); load(); } },
+      ]);
+    } else {
+      // Overlapping edits — open the editable draft for manual reconciliation.
+      setDrafts((prev) => ({ ...prev, [c.id]: result.merged }));
+    }
+  };
+  const saveMerged = (c: ConflictCopy) => {
+    resolveConflictKeepMerged(c.id, drafts[c.id] ?? "");
+    closeDraft(c.id);
+    load();
   };
 
   return (
@@ -54,40 +84,68 @@ export default function ConflictsScreen() {
       ) : (
         <ScrollView contentContainerStyle={styles.scroll}>
           <Text style={styles.intro}>
-            {conflicts.length} note{conflicts.length === 1 ? "" : "s"} diverged. Choose which version to keep — the other is discarded.
+            {conflicts.length} note{conflicts.length === 1 ? "" : "s"} diverged. Keep one version, or merge both.
           </Text>
-          {conflicts.map((c) => (
-            <View key={c.id} style={styles.card}>
-              <Pressable onPress={() => router.push(`/note/${c.id}`)}>
-                <Text style={styles.cardTitle} numberOfLines={2}>{c.title}</Text>
-              </Pressable>
-              {c.deviceId ? <Text style={styles.meta}>Copy from {c.deviceId}</Text> : null}
-
-              <View style={styles.versions}>
-                <VersionBlock
-                  label="This device (original)"
-                  body={c.original ? (c.original.content ?? "") : "(original was deleted)"}
-                  onOpen={c.original ? () => router.push(`/note/${c.original!.id}`) : undefined}
-                  styles={styles}
-                />
-                <VersionBlock
-                  label="Conflicted copy"
-                  body={c.content ?? ""}
-                  onOpen={() => router.push(`/note/${c.id}`)}
-                  styles={styles}
-                />
-              </View>
-
-              <View style={styles.actions}>
-                <Pressable style={[styles.btn, styles.btnGhost]} onPress={() => keepOriginal(c)}>
-                  <Text style={styles.btnGhostText}>Keep original</Text>
+          {conflicts.map((c) => {
+            const editing = c.id in drafts;
+            return (
+              <View key={c.id} style={styles.card}>
+                <Pressable onPress={() => router.push(`/note/${c.id}`)}>
+                  <Text style={styles.cardTitle} numberOfLines={2}>{c.title}</Text>
                 </Pressable>
-                <Pressable style={[styles.btn, styles.btnPrimary]} onPress={() => keepCopy(c)}>
-                  <Text style={styles.btnPrimaryText}>Keep this copy</Text>
-                </Pressable>
+                {c.deviceId ? <Text style={styles.meta}>Copy from {c.deviceId}</Text> : null}
+
+                {editing ? (
+                  <View style={styles.mergeBox}>
+                    <Text style={styles.mergeHint}>Overlapping edits — review before saving</Text>
+                    <TextInput
+                      style={styles.mergeInput}
+                      multiline
+                      value={drafts[c.id]}
+                      onChangeText={(text) => setDrafts((prev) => ({ ...prev, [c.id]: text }))}
+                    />
+                    <View style={styles.actions}>
+                      <Pressable style={[styles.btn, styles.btnGhost]} onPress={() => closeDraft(c.id)}>
+                        <Text style={styles.btnGhostText}>Cancel</Text>
+                      </Pressable>
+                      <Pressable style={[styles.btn, styles.btnPrimary]} onPress={() => saveMerged(c)}>
+                        <Text style={styles.btnPrimaryText}>Save merged</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                ) : (
+                  <>
+                    <View style={styles.versions}>
+                      <VersionBlock
+                        label="This device (original)"
+                        body={c.original ? (c.original.content ?? "") : "(original was deleted)"}
+                        onOpen={c.original ? () => router.push(`/note/${c.original!.id}`) : undefined}
+                        styles={styles}
+                      />
+                      <VersionBlock
+                        label="Conflicted copy"
+                        body={c.content ?? ""}
+                        onOpen={() => router.push(`/note/${c.id}`)}
+                        styles={styles}
+                      />
+                    </View>
+
+                    <View style={styles.actions}>
+                      <Pressable style={[styles.btn, styles.btnGhost]} onPress={() => keepOriginal(c)}>
+                        <Text style={styles.btnGhostText}>Keep original</Text>
+                      </Pressable>
+                      <Pressable style={[styles.btn, styles.btnGhost]} onPress={() => keepCopy(c)}>
+                        <Text style={styles.btnGhostText}>Keep copy</Text>
+                      </Pressable>
+                      <Pressable style={[styles.btn, styles.btnPrimary]} onPress={() => merge(c)}>
+                        <Text style={styles.btnPrimaryText}>Merge</Text>
+                      </Pressable>
+                    </View>
+                  </>
+                )}
               </View>
-            </View>
-          ))}
+            );
+          })}
         </ScrollView>
       )}
     </View>
@@ -134,6 +192,19 @@ function makeStyles(t: Theme) {
     btnGhostText: { ...typeScale.control, color: t.textSecondary },
     btnPrimary: { backgroundColor: t.accent },
     btnPrimaryText: { ...typeScale.control, fontWeight: "700", color: t.accentFg },
+    mergeBox: { marginTop: 12, gap: 8 },
+    mergeHint: { ...typeScale.overline, color: t.warning },
+    mergeInput: {
+      minHeight: 160,
+      backgroundColor: t.surface2,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: t.border,
+      padding: 10,
+      color: t.textPrimary,
+      ...typeScale.caption,
+      textAlignVertical: "top",
+    },
     empty: { flex: 1, alignItems: "center", justifyContent: "center", padding: 40, gap: 12 },
     emptyTitle: { ...typeScale.title, fontWeight: "700", color: t.textPrimary },
     emptyText: { ...typeScale.caption, color: t.textTertiary, textAlign: "center", lineHeight: 19 },

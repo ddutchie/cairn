@@ -23,6 +23,9 @@ import { AgentView } from "@/components/agent/AgentView";
 import { Onboarding } from "@/components/onboarding";
 import { UnifiedChatPanel } from "@/components/chat/UnifiedChatPanel";
 import { UpdateBanner, ErrorToasts } from "@/components/layout/app-chrome";
+import { ConflictBanner } from "@/components/layout/conflict-banner";
+import { ConflictResolutionModal } from "@/components/layout/conflict-resolution-modal";
+import { useSyncStatus, useConflictModalOpen, closeConflictModal } from "@/lib/sync-client";
 import { NewFeatureModal } from "@/components/layout/NewFeatureModal";
 import { AppTutorial } from "@/components/tutorial/AppTutorial";
 import { cn } from "@/lib/utils";
@@ -90,6 +93,10 @@ export default function Home() {
   // Auto-updater state — tracked separately so event order doesn't matter
   const [updateVersion, setUpdateVersion] = useState<string | null>(null);
   const [updateDownloaded, setUpdateDownloaded] = useState(false);
+
+  // Live sync status (for the conflict banner + resolution modal chrome).
+  const { conflicts: syncConflicts } = useSyncStatus();
+  const conflictModalOpen = useConflictModalOpen();
 
   // Chat pre-fill — set by cairn:open-chat event (e.g. from "Fix with AI" button)
   const [chatPrefill, setChatPrefill] = useState<{ text: string; autoSend?: boolean } | null>(null);
@@ -356,7 +363,10 @@ export default function Home() {
   // --font-scale root sizing. The chat panel anchors to this so it never
   // overlaps the banner's download button and aligns with the Topbar.
   const updateBannerVisible = !!(updateVersion || updateDownloaded);
-  const chromeTop = updateBannerVisible ? "calc(41px + 2.25rem)" : "41px";
+  const conflictBannerVisible = syncConflicts > 0;
+  // Each banner is h-9 (2.25rem). Stack their heights onto the 41px title bar.
+  const bannerRems = (updateBannerVisible ? 2.25 : 0) + (conflictBannerVisible ? 2.25 : 0);
+  const chromeTop = bannerRems > 0 ? `calc(41px + ${bannerRems}rem)` : "41px";
   return (
     <main
       className="flex flex-col h-dvh w-screen overflow-hidden bg-[var(--background)]"
@@ -372,6 +382,12 @@ export default function Home() {
         onInstall={() => window.electron?.updater.install()}
         onDismiss={() => { setUpdateVersion(null); setUpdateDownloaded(false); }}
       />
+
+      {/* Sync conflict banner — only when unresolved conflict copies exist */}
+      <ConflictBanner />
+
+      {/* Sync conflict resolution modal (opened from the banner or title-bar indicator) */}
+      <ConflictResolutionModal open={conflictModalOpen} onClose={closeConflictModal} />
 
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* Left sidebar */}

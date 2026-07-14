@@ -18,6 +18,7 @@
  */
 
 import { useState, useEffect } from "react";
+import { SyncStatusIndicator } from "./sync-status-indicator";
 
 export function TitleBar() {
   // Start as null on both server and client so SSR output matches the initial
@@ -62,6 +63,11 @@ export function TitleBar() {
 
       {/* Windows: spacer pushes nothing, but we need the right zone clear for the overlay buttons */}
       <div style={{ flex: 1 }} />
+
+      {/* Live sync status (icon + popover). Sets its own no-drag region. */}
+      <div className="flex items-center pr-2" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
+        <SyncStatusIndicator />
+      </div>
 
       {/* Windows: 138px right clearance for native min/max/close overlay (Electron default button width) */}
       {isWin && <div style={{ width: 138, flexShrink: 0 }} />}

@@ -1,5 +1,6 @@
 /**
- * IPC handlers for desktop sync (folder connect + manual sync + status).
+ * IPC handlers for desktop sync (folder connect + manual sync + status +
+ * conflict resolution).
  *
  * Lives under electron/sync/ (type-checked via tsconfig.shared.json) so it can
  * import the repo-root shared sync engine without tripping the electron
@@ -8,11 +9,30 @@
 
 import { dialog } from "electron";
 import type Database from "better-sqlite3";
-import { getSyncFolder, setSyncFolder, clearSyncFolder, syncDesktop } from "./desktop-sync";
+import {
+  getSyncFolder,
+  setSyncFolder,
+  clearSyncFolder,
+  syncDesktop,
+  getSyncStatus,
+  refreshSyncStatus,
+  listConflictCopies,
+  resolveConflict,
+  type ConflictResolveDeps,
+} from "./desktop-sync";
 
 interface SyncHandlerCtx {
   db: Database.Database;
   getWin: () => import("electron").BrowserWindow | null;
+  /**
+   * How to apply a conflict resolution to a note + its .md file. Supplied by
+   * ipc/handlers.ts (which owns the electron-scoped notes-files helpers and the
+   * file-watcher echo-suppression) so this shared-scoped module stays free of
+   * electron-tsconfig imports.
+   */
+  conflictDeps: ConflictResolveDeps;
+  /** Ask the renderer/mobile to re-hydrate after a resolution changed rows. */
+  broadcastDbChanged: () => void;
 }
 
 // Loosely typed to match ipc/registry's registerIpcHandle without importing it
@@ -46,14 +66,38 @@ export function registerSyncHandlers(
         if (result.canceled || result.filePaths.length === 0) return null;
         const chosen = result.filePaths[0];
         setSyncFolder(ctx.db, chosen);
+        refreshSyncStatus(ctx.db);
         return chosen;
       })) as never,
   );
 
   register("sync:clearFolder", (() => wrap(() => {
     clearSyncFolder(ctx.db);
+    refreshSyncStatus(ctx.db);
     return { ok: true };
   })) as never);
 
   register("sync:now", (() => wrap(() => syncDesktop(ctx.db))) as never);
+
+  // Current live status snapshot (the renderer also subscribes to pushed
+  // `sync:status` events; this is the initial fetch on mount).
+  register("sync:status", (() => wrap(() => getSyncStatus())) as never);
+
+  // Conflict copies awaiting manual resolution.
+  register("sync:listConflicts", (() => wrap(() => listConflictCopies(ctx.db))) as never);
+
+  register(
+    "sync:resolveConflict",
+    (((_e: never, args: { copyId: string; action: "keepCopy" | "keepOriginal" | "keepMerged"; mergedContent?: string }) =>
+      wrap(() => {
+        const resolveArg =
+          args.action === "keepMerged"
+            ? ({ action: "keepMerged", mergedContent: args.mergedContent ?? "" } as const)
+            : ({ action: args.action } as const);
+        const res = resolveConflict(ctx.db, args.copyId, resolveArg, ctx.conflictDeps);
+        refreshSyncStatus(ctx.db);
+        ctx.broadcastDbChanged();
+        return res;
+      })) as never),
+  );
 }

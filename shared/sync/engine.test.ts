@@ -544,4 +544,144 @@ describe("sync engine — trigger→drain capture of real queries.ts writes", ()
     const base = db.prepare("SELECT base_body FROM sync_row_base WHERE entity='notes' AND entity_id='n1'").get() as { base_body: string } | undefined;
     expect(base?.base_body).toBe("hello");
   });
+
+  // ── hard-delete propagation (desktop physically removes the row) ────────────
+  // The desktop's q.deleteNote does a physical `DELETE FROM notes` (not a
+  // soft-delete), because desktop live queries don't filter tombstones. The
+  // AFTER DELETE capture trigger stages a 'delete' op, and drainPending appends
+  // a delete oplog entry even though the local row is already gone. These tests
+  // pin that the deletion reaches the peer and both devices converge — the
+  // concern behind "delete is hard on Windows; does it remove the item on
+  // mobile?". (It does; the physical delete still tombstones the peer.)
+  describe("hard-delete propagation + convergence", () => {
+    let dir: string;
+    beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), "cairn-del-")); });
+    afterEach(() => { fs.rmSync(dir, { recursive: true, force: true }); });
+
+    function seedNoteOnBoth(A: ReturnType<typeof makeDevice>, B: ReturnType<typeof makeDevice>) {
+      q.createWorkspace(A.db, { id: "ws1", name: "WS" });
+      q.createProject(A.db, { id: "p1", workspaceId: "ws1", name: "P" });
+      q.createNote(A.db, { id: "n1", projectId: "p1", workspaceId: "ws1", title: "Shared", content: "line 1\nline 2" });
+      A.engine.drainPending();
+      syncFolder(dir, A.engine, B.engine);
+    }
+
+    it("removes a note on the peer after a desktop hard-delete, and both converge", () => {
+      const clkA = clockFrom(12_000_000);
+      const clkB = clockFrom(12_000_000);
+      const A = makeDevice("A", clkA.now);
+      const B = makeDevice("B", clkB.now);
+      seedNoteOnBoth(A, B);
+      expect((B.db.prepare("SELECT COUNT(*) c FROM notes WHERE id='n1' AND deleted_at IS NULL").get() as { c: number }).c).toBe(1);
+
+      clkA.advance(10);
+      q.deleteNote(A.db, "n1"); // physical DELETE
+      A.engine.drainPending();
+      syncFolder(dir, A.engine, B.engine);
+
+      // Gone on the peer, and no live-state divergence between the devices.
+      expect((B.db.prepare("SELECT COUNT(*) c FROM notes WHERE id='n1' AND deleted_at IS NULL").get() as { c: number }).c).toBe(0);
+      expect(liveState(A.db)).toEqual(liveState(B.db));
+    });
+
+    it("the delete op survives compaction and keeps propagating to a late peer", () => {
+      const clkA = clockFrom(12_100_000);
+      const A = makeDevice("A", clkA.now);
+      q.createWorkspace(A.db, { id: "ws1", name: "WS" });
+      q.createProject(A.db, { id: "p1", workspaceId: "ws1", name: "P" });
+      q.createNote(A.db, { id: "n1", projectId: "p1", workspaceId: "ws1", title: "N", content: "x" });
+      A.engine.drainPending();
+      clkA.advance(5);
+      q.deleteNote(A.db, "n1");
+      A.engine.drainPending();
+
+      // A fresh peer that has NEVER seen n1 still receives the tombstone op and
+      // never materialises the note as live.
+      const B = makeDevice("B", clockFrom(12_100_000).now);
+      const exported = A.engine.exportOplog(); // compacts first
+      const n1Ops = exported.filter((e) => e.entity === "notes" && e.entity_id === "n1");
+      expect(n1Ops.length).toBe(1);
+      expect(n1Ops[0].op).toBe("delete");
+      writeOplogFile(dir, "A", exported);
+      B.engine.applyRemote(readPeerOplogs(dir, "B"));
+      expect((B.db.prepare("SELECT COUNT(*) c FROM notes WHERE id='n1' AND deleted_at IS NULL").get() as { c: number }).c).toBe(0);
+    });
+
+    it("a concurrent higher-HLC peer edit wins over an earlier hard-delete (row comes back on both)", () => {
+      // Desktop hard-deletes n1, but the phone had a LATER edit it hadn't synced
+      // yet. LWW: the higher-HLC edit wins, so the note is restored — and both
+      // devices must agree (no split-brain where the desktop stays empty).
+      const clkA = clockFrom(12_200_000);
+      const clkB = clockFrom(12_200_000);
+      const A = makeDevice("A", clkA.now);
+      const B = makeDevice("B", clkB.now);
+      seedNoteOnBoth(A, B);
+
+      clkA.advance(1);
+      q.deleteNote(A.db, "n1"); // desktop delete (earlier)
+      A.engine.drainPending();
+
+      clkB.advance(50);
+      q.updateNote(B.db, "n1", { content: "phone kept editing" }); // later edit wins
+      B.engine.drainPending();
+
+      syncFolder(dir, A.engine, B.engine);
+
+      // Both converge to the surviving edit — and identically.
+      const liveA = A.db.prepare("SELECT content FROM notes WHERE id='n1' AND deleted_at IS NULL").get() as { content: string } | undefined;
+      expect(liveA?.content).toBe("phone kept editing");
+      expect(liveState(A.db)).toEqual(liveState(B.db));
+    });
+
+    it("a hard-delete with the higher HLC wins over an earlier peer edit (stays deleted)", () => {
+      const clkA = clockFrom(12_300_000);
+      const clkB = clockFrom(12_300_000);
+      const A = makeDevice("A", clkA.now);
+      const B = makeDevice("B", clkB.now);
+      seedNoteOnBoth(A, B);
+
+      clkB.advance(1);
+      q.updateNote(B.db, "n1", { content: "phone edit (earlier)" });
+      B.engine.drainPending();
+
+      clkA.advance(50);
+      q.deleteNote(A.db, "n1"); // delete is later → wins
+      A.engine.drainPending();
+
+      syncFolder(dir, A.engine, B.engine);
+
+      for (const dev of [A, B]) {
+        expect((dev.db.prepare("SELECT COUNT(*) c FROM notes WHERE id='n1' AND deleted_at IS NULL").get() as { c: number }).c).toBe(0);
+      }
+      expect(liveState(A.db)).toEqual(liveState(B.db));
+    });
+
+    it("deleting a checklist LINE is a body edit (put), not a row delete — no resurrection risk", () => {
+      // The user's real scenario: removing "- [ ] Item 2" from a note is an
+      // UPDATE to the body, which syncs as a 'put' and merges/LWW like any edit.
+      // It must NOT stage a row 'delete' (that would tombstone the whole note).
+      const clkA = clockFrom(12_400_000);
+      const clkB = clockFrom(12_400_000);
+      const A = makeDevice("A", clkA.now);
+      const B = makeDevice("B", clkB.now);
+      q.createWorkspace(A.db, { id: "ws1", name: "WS" });
+      q.createProject(A.db, { id: "p1", workspaceId: "ws1", name: "P" });
+      q.createNote(A.db, { id: "n1", projectId: "p1", workspaceId: "ws1", title: "TODO", content: "- [ ] Item 1\n- [ ] Item 2" });
+      A.engine.drainPending();
+      syncFolder(dir, A.engine, B.engine);
+
+      clkA.advance(5);
+      q.updateNote(A.db, "n1", { content: "- [ ] Item 1" }); // removed Item 2
+      // The staged op for this edit must be a 'put', not a 'delete'.
+      const pend = A.db.prepare("SELECT op FROM sync_pending WHERE entity='notes' AND entity_id='n1' ORDER BY seq DESC LIMIT 1").get() as { op: string } | undefined;
+      expect(pend?.op).toBe("put");
+      A.engine.drainPending();
+      syncFolder(dir, A.engine, B.engine);
+
+      // The note is still live on the peer, just with the line removed.
+      const onB = B.db.prepare("SELECT content FROM notes WHERE id='n1' AND deleted_at IS NULL").get() as { content: string } | undefined;
+      expect(onB?.content).toBe("- [ ] Item 1");
+      expect(liveState(A.db)).toEqual(liveState(B.db));
+    });
+  });
 });

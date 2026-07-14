@@ -381,6 +381,52 @@ const api = {
         conflictCopies: number;
         connected: boolean;
       }>("sync:now"),
+    // Current live status snapshot (state + pending/conflict counts + lastSyncAt).
+    status: () =>
+      invoke<{
+        state: "disabled" | "idle" | "syncing" | "offline";
+        pending: number;
+        conflicts: number;
+        lastSyncAt: string | null;
+        connected: boolean;
+      }>("sync:status"),
+    // Subscribe to pushed status transitions. Returns an unsubscribe fn.
+    onStatus: (cb: (status: {
+      state: "disabled" | "idle" | "syncing" | "offline";
+      pending: number;
+      conflicts: number;
+      lastSyncAt: string | null;
+      connected: boolean;
+    }) => void) => {
+      const handler = (_e: unknown, status: {
+        state: "disabled" | "idle" | "syncing" | "offline";
+        pending: number;
+        conflicts: number;
+        lastSyncAt: string | null;
+        connected: boolean;
+      }) => cb(status);
+      ipcRenderer.on("sync:status", handler as (event: unknown, ...args: unknown[]) => void);
+      return () => ipcRenderer.off("sync:status", handler as (event: unknown, ...args: unknown[]) => void);
+    },
+    // Conflict copies awaiting manual resolution.
+    listConflicts: () =>
+      invoke<Array<{
+        id: string;
+        title: string;
+        content: string | null;
+        projectId: string;
+        folder: string;
+        updatedAt: string;
+        deviceId: string | null;
+        originalId: string | null;
+        original: { id: string; title: string; content: string | null; updatedAt: string } | null;
+        baseBody: string | null;
+      }>>("sync:listConflicts"),
+    resolveConflict: (
+      copyId: string,
+      action: "keepCopy" | "keepOriginal" | "keepMerged",
+      mergedContent?: string,
+    ) => invoke<{ resolvedOriginalId: string | null }>("sync:resolveConflict", { copyId, action, mergedContent }),
   },
 
   // ── AI write lock events ──────────────────────

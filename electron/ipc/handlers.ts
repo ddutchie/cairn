@@ -46,6 +46,11 @@ import { registerSettingsHandlers } from "./settings-handlers";
 
 import { readWorkspaceConfig, writeWorkspaceConfig } from "../workspace-config";
 import { markMcpNotificationsRead } from "../db/queries";
+import * as q from "../db/queries";
+import { writeNoteFile, deleteNoteFile } from "../notes-files";
+import { suppressNextChange } from "../file-watcher";
+import { getProjectName } from "./result-helpers";
+import { broadcastEvent } from "./registry";
 
 /**
  * Register the DB + chat + flow + ai + llama + graph IPC handlers.
@@ -209,5 +214,33 @@ export function registerAppHandlers(
   // resolves the require at build time.
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const syncHandlers = require("../sync/sync-handlers");
-  syncHandlers.registerSyncHandlers({ db: ctx.db, getWin: ctx.getWin }, registerIpcHandle, handle);
+  syncHandlers.registerSyncHandlers(
+    {
+      db: ctx.db,
+      getWin: ctx.getWin,
+      // Apply a conflict resolution to the DB row AND its .md file, mirroring the
+      // db:note:update / db:note:delete handlers (echo-suppressed so the file
+      // watcher doesn't re-import our own write).
+      conflictDeps: {
+        updateNoteBody: (id: string, title: string, content: string) => {
+          suppressNextChange(id);
+          const note = q.updateNote(ctx.db, id, { title, content, contentText: content });
+          if (note && note.type !== "dashboard") {
+            writeNoteFile(ctx.workspacePath, { ...note, projectName: getProjectName(ctx.db, note.projectId) });
+          }
+        },
+        deleteNoteRow: (id: string) => {
+          const note = q.getNoteById(ctx.db, id);
+          suppressNextChange(id);
+          q.deleteNote(ctx.db, id);
+          if (note && note.type !== "dashboard") {
+            deleteNoteFile(ctx.workspacePath, getProjectName(ctx.db, note.projectId), id);
+          }
+        },
+      },
+      broadcastDbChanged: () => broadcastEvent("db:changed", null),
+    },
+    registerIpcHandle,
+    handle,
+  );
 }

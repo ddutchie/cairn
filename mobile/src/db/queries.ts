@@ -1098,6 +1098,8 @@ export interface ConflictCopy {
   originalId: string | null;
   /** The current live original note (null if it was deleted). */
   original: NoteRow | null;
+  /** Common-ancestor body (sync_row_base) for a true 3-way merge, if known. */
+  baseBody: string | null;
 }
 
 /**
@@ -1113,6 +1115,12 @@ export function listConflictCopies(): ConflictCopy[] {
   );
   return rows.map((r) => {
     const info = inspectConflict(r.id, r.title);
+    const base = info.originalId
+      ? db.getFirstSync<{ base_body: string | null }>(
+          `SELECT base_body FROM sync_row_base WHERE entity = 'notes' AND entity_id = ?`,
+          info.originalId,
+        )
+      : null;
     return {
       id: r.id,
       title: cleanConflictTitle(r.title),
@@ -1123,6 +1131,7 @@ export function listConflictCopies(): ConflictCopy[] {
       deviceId: info.deviceId,
       originalId: info.originalId,
       original: info.originalId ? getNote(info.originalId) : null,
+      baseBody: base ? base.base_body : null,
     };
   });
 }
@@ -1164,6 +1173,27 @@ export function resolveConflictKeepCopy(copyId: string): void {
  */
 export function resolveConflictKeepOriginal(copyId: string): void {
   softDeleteNote(copyId);
+}
+
+/**
+ * Resolve a conflict by writing a MERGED body onto the original note, then
+ * deleting the copy. `mergedContent` is produced by the shared 3-way merge (or
+ * the user's manual edit) in the conflict UI. If the original is gone, the copy
+ * is promoted with the merged body.
+ */
+export function resolveConflictKeepMerged(copyId: string, mergedContent: string): void {
+  const copy = getNote(copyId);
+  if (!copy) return;
+  const info = inspectConflict(copy.id, copy.title);
+  const cleanTitle = cleanConflictTitle(copy.title);
+  const original = info.originalId ? getNote(info.originalId) : null;
+
+  if (original && !isTombstoned(original.id)) {
+    updateNote(original.id, cleanTitle, mergedContent);
+    softDeleteNote(copy.id);
+  } else {
+    updateNote(copy.id, cleanTitle, mergedContent);
+  }
 }
 
 /** Soft-delete a note (tombstone) so the deletion propagates via sync. */
