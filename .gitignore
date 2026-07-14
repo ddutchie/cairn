@@ -86,3 +86,6 @@ cairn.db-wal
 /tests/fixtures/obsidian-vault/
 scripts/runtime-baselines/
 /mobile/node_modules
+
+# scratch experiments (Needle finetune spike, venvs, checkpoints)
+/scratch
