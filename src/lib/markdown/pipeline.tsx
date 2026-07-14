@@ -5,10 +5,15 @@ import type { Plugin as RemarkPlugin } from "unified";
 import type { Root as MdastRoot, Blockquote, Paragraph, Text as MdastText } from "mdast";
 import type { InlineMath } from "mdast-util-math";
 import { visit as mdastVisit } from "unist-util-visit";
-import type { Plugin } from "unified";
+import type { Plugin, PluggableList } from "unified";
 import type { Root, Element, Text, ElementContent, Parent } from "hast";
 import { visit, SKIP } from "unist-util-visit";
 import { WIKILINK_RE } from "@/lib/wikilink-parser";
+import remarkGfm from "remark-gfm";
+import remarkBreaks from "remark-breaks";
+import remarkMath from "remark-math";
+import rehypeRaw from "rehype-raw";
+import rehypeKatex from "rehype-katex";
 
 // ── Remark plugin: callout blockquotes ────────────────────────────────────────
 const CALLOUT_RE = /^\[!([^\]]+)\]([\+\-]?)([\s\S]*)/;
@@ -196,6 +201,43 @@ export const rehypeEscapeUnknownTags: Plugin<[], Root> = () => (tree) => {
   });
 };
 
+// ── Rehype plugin: "what's new" changed-line highlight (read/preview mode) ────
+// Adds the `cm-changed-line` class to block-level rendered elements whose source
+// lines overlap `changedLines` (1-indexed source line numbers). This mirrors the
+// CodeMirror decoration in the Write-mode editor so the read-mode preview shows
+// the same fading highlight. Uses each hast node's `position` (source mapping)
+// which remark-rehype preserves. Highlighting is applied to top-level blocks and
+// list items; a hit on any covered line lights up the whole block.
+export function makeRehypeChangedLines(changedLines: number[]): Plugin<[], Root> {
+  const changed = new Set(changedLines);
+  // Block-level tags we highlight. Deliberately excludes inline tags so we tint
+  // whole blocks rather than fragments.
+  const BLOCK_TAGS = new Set([
+    "p", "li", "h1", "h2", "h3", "h4", "h5", "h6",
+    "blockquote", "pre", "table", "tr", "hr", "img",
+  ]);
+  return () => (tree) => {
+    if (changed.size === 0) return;
+    visit(tree, "element", (node: Element) => {
+      const tag = node.tagName?.toLowerCase();
+      if (!tag || !BLOCK_TAGS.has(tag)) return;
+      const pos = node.position;
+      if (!pos?.start?.line || !pos?.end?.line) return;
+      // Any source line in [start, end] that's in the changed set marks the block.
+      let hit = false;
+      for (let ln = pos.start.line; ln <= pos.end.line; ln++) {
+        if (changed.has(ln)) { hit = true; break; }
+      }
+      if (!hit) return;
+      const props = (node.properties ??= {});
+      const cls = props.className;
+      const existing = Array.isArray(cls) ? cls.map(String) : cls ? [String(cls)] : [];
+      if (!existing.includes("cm-changed-line")) existing.push("cm-changed-line");
+      props.className = existing;
+    });
+  };
+}
+
 /** Minimal HAST → HTML-source serializer (attributes + recursive children). */
 function serializeHast(node: ElementContent): string {
   if (node.type === "text") return (node as Text).value;
@@ -222,11 +264,38 @@ function hastPropName(k: string): string {
 }
 
 // ── Rehype plugins: math tagging + ==highlight== marks ───────────────────────
-export function makeLatexPlugins() {
+
+/**
+ * Cheap source-level probes so the LaTeX/highlight passes can skip their
+ * full-tree traversals when the document can't possibly contain the relevant
+ * syntax. KaTeX rendering + the two custom hast passes are ~12ms on a large
+ * note; the vast majority of notes have no math, so gating on a single
+ * substring check avoids that cost entirely.
+ */
+export function contentHasMath(content: string): boolean {
+  return content.includes("$");
+}
+export function contentHasHighlight(content: string): boolean {
+  return content.includes("==");
+}
+
+/**
+ * Build the LaTeX capture + merge passes. When `content` is provided, the passes
+ * short-circuit based on cheap source probes:
+ *  - `rehypeCaptureLatex` does nothing when there's no `$` in the source.
+ *  - `rehypeMergedPass` skips its traversal entirely when there's neither math
+ *    (`$`, which produces katex-display spans to rename) nor `==` highlights.
+ * Omitting `content` preserves the original always-run behaviour (used by the
+ * benchmark harness, which measures worst-case cost).
+ */
+export function makeLatexPlugins(content?: string) {
   const latexBlocks: string[] = [];
+  const mayHaveMath = content === undefined || contentHasMath(content);
+  const mayHaveHighlight = content === undefined || contentHasHighlight(content);
 
   const rehypeCaptureLatex: Plugin<[], Root> = () => (tree) => {
     latexBlocks.length = 0;
+    if (!mayHaveMath) return; // no `$` in source → no math-display nodes to capture
     visit(tree, "element", (node: Element) => {
       const cls = (node.properties?.className as string[] | undefined) ?? [];
       if (cls.includes("math-display")) {
@@ -237,10 +306,13 @@ export function makeLatexPlugins() {
   };
 
   const rehypeMergedPass: Plugin<[], Root> = () => (tree) => {
+    // Nothing to do if the source has neither math (katex-display spans to
+    // rename) nor `==highlight==` marks to split.
+    if (!mayHaveMath && !mayHaveHighlight) return;
     let i = 0;
     visit(tree, (node, index, parent) => {
       // ── Job 1: rename katex-display spans to <mathblock> ──────────────────
-      if (node.type === "element") {
+      if (mayHaveMath && node.type === "element") {
         const cls = ((node as Element).properties?.className as string[] | undefined) ?? [];
         if (cls.includes("katex-display")) {
           if (latexBlocks[i] !== undefined) {
@@ -255,6 +327,7 @@ export function makeLatexPlugins() {
 
       // ── Job 2: ==highlight== marks → <mark> elements ──────────────────────
       if (
+        mayHaveHighlight &&
         node.type === "text" &&
         (node as Text).value.includes("==") &&
         parent &&
@@ -286,6 +359,62 @@ export function makeLatexPlugins() {
   };
 
   return { rehypeCaptureLatex, rehypeMergedPass };
+}
+
+// ── Content-aware plugin-array builders ───────────────────────────────────────
+//
+// react-markdown rebuilds and re-runs its unified processor whenever the
+// remark/rehype plugin arrays change *by reference*. The note renderers used to
+// hardcode inline arrays that (a) allocated a new array every render and (b)
+// always included the full math stack (remark-math + rehype-katex + the two
+// custom LaTeX passes ≈ 12ms on a large note) even for the common math-free
+// note. These builders return arrays that omit the math plugins when the source
+// has no `$`, so callers can `useMemo` them keyed on content and skip that cost.
+//
+// The builders take the already-memoized custom-LaTeX pair (from
+// `makeLatexPlugins(content)`) plus any note-specific extras (wikilinks,
+// changed-line highlight) so a single helper serves both note renderers.
+
+interface RemarkBuildOpts {
+  /** Include remarkWikilinks (`[[Note]]` → <wikilink>). Note editor: true. */
+  wikilinks?: boolean;
+}
+
+/** Assemble the remark plugin list for a note renderer, omitting remark-math
+ *  when the source has no `$`. */
+export function buildNoteRemarkPlugins(content: string, opts: RemarkBuildOpts = {}): PluggableList {
+  const plugins: PluggableList = [remarkGfm, remarkBreaks];
+  if (contentHasMath(content)) {
+    // remarkMath must precede remarkPromoteDisplayMath (which reshapes math nodes).
+    plugins.push(remarkMath, remarkPromoteDisplayMath);
+  }
+  plugins.push(remarkCallout, remarkObsidianEmbeds);
+  if (opts.wikilinks) plugins.push(remarkWikilinks);
+  return plugins;
+}
+
+interface RehypeBuildOpts {
+  /** The memoized LaTeX pair from makeLatexPlugins(content). */
+  latex: ReturnType<typeof makeLatexPlugins>;
+  /** Optional read-mode changed-line highlight plugin (note editor only). */
+  changedLines?: Plugin<[], Root>;
+}
+
+/** Assemble the rehype plugin list for a note renderer, omitting rehype-katex
+ *  and the LaTeX capture pass when the source has no `$`. The merge pass is
+ *  always included (it also handles `==highlight==`) but self-skips cheaply. */
+export function buildNoteRehypePlugins(content: string, opts: RehypeBuildOpts): PluggableList {
+  const { latex, changedLines } = opts;
+  const plugins: PluggableList = [rehypeRaw];
+  if (changedLines) plugins.push(changedLines);
+  plugins.push(rehypeEscapeUnknownTags);
+  if (contentHasMath(content)) {
+    plugins.push(latex.rehypeCaptureLatex, rehypeKatex);
+  }
+  // The merged pass renames katex-display spans (only present when math ran) and
+  // splits ==highlight== marks; it self-skips when neither is possible.
+  plugins.push(latex.rehypeMergedPass);
+  return plugins;
 }
 
 // ── Color swatch inline code renderer ────────────────────────────────────────

@@ -14,14 +14,12 @@
  *  - theme-aware: dark uses One Dark-style palette, light uses a softer palette
  */
 
-import { useMemo, useCallback } from "react";
-import { common, createLowlight } from "lowlight";
+import { useMemo, useCallback, useState, useEffect } from "react";
 import { Check, Copy } from "lucide-react";
 import { useIsDark } from "@/hooks/useIsDark";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
 import { SYNTAX_COLORS } from "@/lib/syntax-palette";
-
-const lowlight = createLowlight(common);
+import { ensureLanguage, isLanguageReady, highlightCode, onLanguageReady } from "@/lib/lazy-lowlight";
 
 // ── Token colour map ──────────────────────────────────────────────────────────
 //
@@ -135,18 +133,32 @@ export function CodeBlock({ code, language }: Props) {
 
   const palette = isDark ? DARK : LIGHT;
 
-  // Tokenise — memoised so it doesn't re-run on every copy-button hover
-  const tokens = useMemo(() => {
-    if (!language) return null;
-    try {
-      const registered = lowlight.listLanguages();
-      const lang = registered.includes(language) ? language : null;
-      if (!lang) return null;
-      return lowlight.highlight(lang, code).children as HastNode[];
-    } catch {
-      return null;
+  // Grammars load lazily (per-language dynamic import). `ready` flips to true
+  // once the requested language's grammar chunk has resolved, triggering a
+  // re-highlight. Until then the block renders as plain text (a brief flash on
+  // the first-ever view of a given language).
+  const [ready, setReady] = useState(() => isLanguageReady(language));
+  useEffect(() => {
+    // Kick off the load (no-op if already registered/unknown) and subscribe so
+    // this block re-renders when ANY grammar finishes — cheap, and we re-check
+    // our own language below.
+    if (ensureLanguage(language)) {
+      setReady(true);
+      return;
     }
-  }, [code, language]);
+    if (isLanguageReady(language)) { setReady(true); return; }
+    const off = onLanguageReady(() => {
+      if (isLanguageReady(language)) setReady(true);
+    });
+    return off;
+  }, [language]);
+
+  // Tokenise — memoised so it doesn't re-run on every copy-button hover. Only
+  // produces tokens once the grammar is ready; otherwise renders plain text.
+  const tokens = useMemo(() => {
+    if (!language || !ready) return null;
+    return highlightCode(language, code) as HastNode[] | null;
+  }, [code, language, ready]);
 
   const handleCopy = useCallback(() => {
     copy(code);

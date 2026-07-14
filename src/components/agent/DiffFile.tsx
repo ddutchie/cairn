@@ -7,10 +7,8 @@
 
 import React, { useMemo, useState, useEffect, useRef } from "react";
 import type { File, Change } from "parse-diff";
-import { common, createLowlight } from "lowlight";
 import { ChevronRight, ChevronDown } from "lucide-react";
-
-const lowlight = createLowlight(common);
+import { ensureLanguage, isLanguageReady, highlightCode, onLanguageReady } from "@/lib/lazy-lowlight";
 
 // ── Palette ───────────────────────────────────────────────────────────────────
 
@@ -66,16 +64,33 @@ function langFrom(filename: string): string | null {
   return EXT_LANG[filename.split(".").pop()?.toLowerCase() ?? ""] ?? null;
 }
 
+/**
+ * Ensure a diff file's language grammar is loaded (lazily, per-language) and
+ * return whether it's ready to highlight. Subscribes once per file (not per
+ * line) so a diff with hundreds of lines registers a single listener. Returns
+ * false for unknown/absent languages → lines render as plain text.
+ */
+function useLangReady(lang: string | null): boolean {
+  const [ready, setReady] = useState(() => isLanguageReady(lang ?? undefined));
+  useEffect(() => {
+    if (!lang) { setReady(false); return; }
+    if (ensureLanguage(lang)) { setReady(true); return; }
+    if (isLanguageReady(lang)) { setReady(true); return; }
+    const off = onLanguageReady(() => {
+      if (isLanguageReady(lang)) setReady(true);
+    });
+    return off;
+  }, [lang]);
+  return ready;
+}
+
 // ── Highlighted line ──────────────────────────────────────────────────────────
 
-const HL = React.memo(function HL({ content, lang, palette }: { content: string; lang: string | null; palette: Palette }) {
+const HL = React.memo(function HL({ content, lang, palette, ready }: { content: string; lang: string | null; palette: Palette; ready: boolean }) {
   const tokens = useMemo(() => {
-    if (!lang || !content) return null;
-    try {
-      if (!lowlight.listLanguages().includes(lang)) return null;
-      return lowlight.highlight(lang, content).children as HastNode[];
-    } catch { return null; }
-  }, [content, lang]);
+    if (!lang || !content || !ready) return null;
+    return highlightCode(lang, content) as HastNode[] | null;
+  }, [content, lang, ready]);
   return (
     <code className="font-mono text-[0.8rem] whitespace-pre">
       {tokens ? tokens.map((n, i) => renderHast(n, palette, String(i))) : content}
@@ -106,6 +121,7 @@ function ln(change: Change, side: "old" | "new"): number | "" {
 export const UnifiedFile = React.memo(function UnifiedFile({ file, palette, changesOnly, hunkTop }: { file: File; palette: Palette; changesOnly: boolean; hunkTop: number }) {
   const filename = file.to ?? file.from ?? "unknown";
   const lang = langFrom(filename);
+  const ready = useLangReady(lang);
   return (
     <>
       {file.chunks.map((chunk, ci) => {
@@ -152,7 +168,7 @@ export const UnifiedFile = React.memo(function UnifiedFile({ file, palette, chan
                   </span>
                   <span className="flex-1 px-2 min-w-0 overflow-x-auto"
                     style={{ color: isAdd ? addColor : isDel ? delColor : "var(--text-primary)" }}>
-                    <HL content={content} lang={lang} palette={palette} />
+                    <HL content={content} lang={lang} palette={palette} ready={ready} />
                   </span>
                 </div>
               );
@@ -193,6 +209,7 @@ function buildSplitRows(changes: Change[]): SplitRow[] {
 export const SplitFile = React.memo(function SplitFile({ file, palette, hunkTop }: { file: File; palette: Palette; hunkTop: number }) {
   const filename = file.to ?? file.from ?? "unknown";
   const lang = langFrom(filename);
+  const ready = useLangReady(lang);
   const addBg = "color-mix(in srgb, var(--success) 10%, transparent)";
   const delBg = "color-mix(in srgb, var(--danger) 10%, transparent)";
   const splitRows = useMemo(() => file.chunks.map((chunk) => buildSplitRows(chunk.changes)), [file]);
@@ -223,7 +240,7 @@ export const SplitFile = React.memo(function SplitFile({ file, palette, hunkTop 
                     {row.old?.type === "del" ? "-" : row.old ? " " : ""}
                   </span>
                   <span className="flex-1 px-2 min-w-0 overflow-x-auto" style={{ color: oldColor }}>
-                    {row.old && <HL content={oldContent} lang={lang} palette={palette} />}
+                    {row.old && <HL content={oldContent} lang={lang} palette={palette} ready={ready} />}
                   </span>
                 </div>
                 <div className="flex flex-1 min-w-0" style={{ background: newBg }}>
@@ -234,7 +251,7 @@ export const SplitFile = React.memo(function SplitFile({ file, palette, hunkTop 
                     {row.new?.type === "add" ? "+" : row.new ? " " : ""}
                   </span>
                   <span className="flex-1 px-2 min-w-0 overflow-x-auto" style={{ color: newColor }}>
-                    {row.new && <HL content={newContent} lang={lang} palette={palette} />}
+                    {row.new && <HL content={newContent} lang={lang} palette={palette} ready={ready} />}
                   </span>
                 </div>
               </div>

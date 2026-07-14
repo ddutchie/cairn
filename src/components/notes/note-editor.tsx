@@ -2,11 +2,6 @@
 
 import React, { useRef, useCallback, useState, useEffect, useMemo } from "react";
 import ReactMarkdown, { type ExtraProps } from "react-markdown";
-import remarkGfm from "remark-gfm";
-import remarkBreaks from "remark-breaks";
-import remarkMath from "remark-math";
-import rehypeKatex from "rehype-katex";
-import rehypeRaw from "rehype-raw";
 import "katex/dist/katex.min.css";
 import { Pin, PinOff, Calendar, Eye, Pencil, Wand2, Loader2, CheckCircle2, FileDown, ChevronLeft, Sparkles, Sun, Moon, ChevronDown as Chevron } from "lucide-react";import { WikilinkPicker } from "./WikilinkPicker";
 import { getActiveWikilink } from "@/lib/wikilink-parser";
@@ -24,10 +19,10 @@ import { Callout } from "./Callout";
 import { MathBlock } from "./MathBlock";
 import { AITextToolbar, buildAIActionPrompt, applyFormat, type AITextAction, type FormatAction } from "./ai-text-toolbar";
 import { MarkdownEditor, type MarkdownEditorHandle } from "./markdown-editor";
-import { remarkCallout, remarkObsidianEmbeds, remarkWikilinks, remarkPromoteDisplayMath, makeLatexPlugins, InlineCode, rehypeEscapeUnknownTags } from "@/lib/markdown/pipeline";
+import { makeLatexPlugins, InlineCode, makeRehypeChangedLines, buildNoteRemarkPlugins, buildNoteRehypePlugins, contentHasMath, contentHasHighlight } from "@/lib/markdown/pipeline";
 import { BacklinksPanel, NoteTagBar } from "./BacklinksPanel";
 import { MDPreviewPanel } from "./MDPreviewPanel";
-import { countWords, stripMarkdown, toggleCheckboxInSource } from "./note-editor-utils";
+import { countWords, stripMarkdown, toggleCheckboxInSource, diffChangedLines } from "./note-editor-utils";
 import { storage } from "@/lib/storage";
 import { NOTE_EDITOR_MODE_KEY } from "@/lib/constants";
 
@@ -78,7 +73,7 @@ function renderCellWithCheckboxes(
 }
 
 export function NoteEditor({ note, onBack }: NoteEditorProps) {
-  const { updateNote, aiConfig, activeProjectId, getProjectColumns, tags, createTag, getTagById, activeWorkspaceId, setView, notes, projects } = useCairnStore(useShallow((s) => ({
+  const { updateNote, aiConfig, activeProjectId, getProjectColumns, tags, createTag, getTagById, activeWorkspaceId, setView, notes, projects, noteChangeMarks, clearNoteChangeMark } = useCairnStore(useShallow((s) => ({
     updateNote:        s.updateNote,
     aiConfig:          s.aiConfig,
     activeProjectId:   s.activeProjectId,
@@ -90,6 +85,8 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
     setView:           s.setView,
     notes:             s.notes,
     projects:          s.projects,
+    noteChangeMarks:   s.noteChangeMarks,
+    clearNoteChangeMark: s.clearNoteChangeMark,
   })));
   const aiEnabled = aiConfig.aiEnabled ?? true;
   const editorRef = useRef<MarkdownEditorHandle>(null);
@@ -118,6 +115,37 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
     setSemanticContent(noteContent0);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [noteId]);
+
+  // ── "What's new" highlight ──────────────────────────────────────────────────
+  // When this note was changed externally (AI chat / MCP / device sync) since we
+  // last looked, the store carries a change mark with the pre-edit content. We
+  // diff it against the current body to find the new/changed lines, flash them in
+  // the editor, then clear the mark so it only shows once. `changedLines` is
+  // 1-indexed line numbers; empty when there's nothing new.
+  const changeMark = noteChangeMarks[noteId];
+  const [changedLines, setChangedLines] = useState<number[]>([]);
+  const changeCount = changedLines.length;
+  useEffect(() => {
+    if (!changeMark) {
+      setChangedLines([]);
+      return;
+    }
+    const lines = diffChangedLines(changeMark.previousContent, noteContent0);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setChangedLines(lines);
+    // Clear the store mark now that we've captured its diff — it's a one-shot
+    // "since you last looked" signal. The local `changedLines` keeps driving the
+    // fade animation and the banner until the user dismisses / it times out.
+    clearNoteChangeMark(noteId);
+    // Auto-dismiss the highlight after the fade completes so stale highlights
+    // don't linger if the user leaves the note open.
+    const t = setTimeout(() => setChangedLines([]), 6500);
+    return () => clearTimeout(t);
+    // Depend on the mark's timestamp so a fresh external edit re-triggers.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [noteId, changeMark?.changedAt]);
+
+  const dismissChangeHighlight = useCallback(() => setChangedLines([]), []);
 
   // ── AI write lock ─────────────────────────────────────────────────────────
   // When the in-app AI or MCP server is actively writing this note, the editor
@@ -162,10 +190,42 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
 
   // ── Math plugins (stable per note) ────────────────────────────────────────
   // makeLatexPlugins() creates a shared mutable latexBlocks array coupled
-  // across the capture and merge passes. Re-create the pair on note change
-  // so the array resets cleanly. The inline wrapper satisfies react-hooks/use-memo.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const { rehypeCaptureLatex, rehypeMergedPass } = useMemo(() => makeLatexPlugins(), [note.id]);
+  // across the capture and merge passes. Pass the current content so the passes
+  // can self-skip when there's no math / no ==highlight==. Re-create the pair
+  // when the note changes OR when math/highlight presence flips (not on every
+  // keystroke) so the mutable latexBlocks array resets cleanly and the skip
+  // flags stay accurate.
+  const noteBody = note.content ?? "";
+  const mathPresence = contentHasMath(noteBody);
+  const highlightPresence = contentHasHighlight(noteBody);
+  const latex = useMemo(
+    () => makeLatexPlugins(noteBody),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [note.id, mathPresence, highlightPresence],
+  );
+
+  // Read-mode "what's new" highlight — a rehype plugin that tints the block
+  // elements whose source lines changed externally, mirroring the write-mode
+  // CodeMirror decoration. Rebuilt only when the changed-line set changes.
+  const rehypeChangedLines = useMemo(
+    () => makeRehypeChangedLines(changedLines),
+    [changedLines],
+  );
+
+  // Memoized plugin arrays — omit the math stack for math-free notes and give
+  // react-markdown stable array references so it doesn't rebuild the processor
+  // on unrelated re-renders. Keyed on math presence (a boolean), the changed-
+  // line plugin, and the latex pair — NOT on every content keystroke.
+  const remarkPlugins = useMemo(
+    () => buildNoteRemarkPlugins(noteBody, { wikilinks: true }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [mathPresence],
+  );
+  const rehypePlugins = useMemo(
+    () => buildNoteRehypePlugins(noteBody, { latex, changedLines: rehypeChangedLines }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [mathPresence, latex, rehypeChangedLines],
+  );
 
   // ── Save ──────────────────────────────────────────────────────────────────
   // pendingContent tracks the latest unsaved markdown so the flush can write
@@ -1003,8 +1063,33 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
             AI is editing this note…
           </div>
         )}
+        {/* "What's new" banner — shown when this note changed externally since we
+            last looked. Clicking it jumps to Write mode (where the changed lines
+            are highlighted) and dismisses the banner. */}
+        {!isAiWriting && changeCount > 0 && (
+          <div
+            className="absolute top-0 inset-x-0 z-10 flex items-center gap-2 px-4 py-1.5 text-xs animate-fade-in"
+            style={{
+              background: "color-mix(in srgb, var(--accent) 12%, transparent)",
+              borderBottom: "1px solid color-mix(in srgb, var(--accent) 30%, transparent)",
+              color: "var(--accent)",
+            }}
+          >
+            <Sparkles size={12} className="shrink-0" />
+            <span className="flex-1">
+              {changeCount === 1 ? "1 line changed" : `${changeCount} lines changed`} since you last viewed this note
+            </span>
+            <button
+              onClick={dismissChangeHighlight}
+              className="ml-1 opacity-70 hover:opacity-100"
+              aria-label="Dismiss"
+            >
+              ✕
+            </button>
+          </div>
+        )}
         {/* CodeMirror — always mounted so state is preserved when toggling */}
-        <div className={cn("absolute inset-0 overflow-auto", mode === "read" && "invisible pointer-events-none", isAiWriting && "pt-8")}>
+        <div className={cn("absolute inset-0 overflow-auto", mode === "read" && "invisible pointer-events-none", (isAiWriting || changeCount > 0) && "pt-8")}>
           <MarkdownEditor
             key={note.id}
             ref={editorRef}
@@ -1014,6 +1099,7 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
             onCursorActivity={handleCursorActivity}
             placeholder="Write here…"
             readOnly={isAiWriting}
+            changedLines={changedLines}
           />
         </div>
 
@@ -1031,7 +1117,7 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
 
         {/* Read / preview pane */}
         {mode === "read" && (
-          <div ref={previewScrollRef} className="absolute inset-0 overflow-y-auto overflow-x-hidden">
+          <div ref={previewScrollRef} className={cn("absolute inset-0 overflow-y-auto overflow-x-hidden", (isAiWriting || changeCount > 0) && "pt-8")}>
             {/* TOC — floats to the right of the content column on wide viewports */}
             {note.content && (
               <TableOfContents
@@ -1044,8 +1130,8 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
               {note.content ? (
                 <div className="prose-cairn" ref={proseRef}>
                    <ReactMarkdown
-                     remarkPlugins={[remarkGfm, remarkBreaks, remarkMath, remarkPromoteDisplayMath, remarkCallout, remarkObsidianEmbeds, remarkWikilinks]}
-                      rehypePlugins={[rehypeRaw, rehypeEscapeUnknownTags, rehypeCaptureLatex, rehypeKatex, rehypeMergedPass]}
+                     remarkPlugins={remarkPlugins}
+                      rehypePlugins={rehypePlugins}
                      urlTransform={urlTransform}
                      components={mdComponents}
                    >

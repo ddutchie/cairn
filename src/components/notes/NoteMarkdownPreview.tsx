@@ -11,16 +11,11 @@
 import React, { useMemo, useState, useEffect } from "react";
 import ReactMarkdown, { type ExtraProps } from "react-markdown";
 import { urlTransform } from "@/lib/utils";
-import remarkGfm from "remark-gfm";
-import remarkBreaks from "remark-breaks";
-import remarkMath from "remark-math";
-import rehypeKatex from "rehype-katex";
-import rehypeRaw from "rehype-raw";
 import "katex/dist/katex.min.css";
 import { renderCodeFence } from "./markdown-code-fence";
 import { Callout } from "./Callout";
 import { MathBlock } from "./MathBlock";
-import { remarkCallout, remarkObsidianEmbeds, remarkPromoteDisplayMath, makeLatexPlugins, InlineCode, rehypeEscapeUnknownTags } from "@/lib/markdown/pipeline";
+import { makeLatexPlugins, InlineCode, buildNoteRemarkPlugins, buildNoteRehypePlugins, contentHasMath, contentHasHighlight } from "@/lib/markdown/pipeline";
 
 // ── NoteMarkdownPreview ───────────────────────────────────────────────────────
 
@@ -158,7 +153,27 @@ function MarkdownImage({ src, alt, title, filePath, projectRoot, ...props }: Mar
 }
 
 function NoteMarkdownPreviewImpl({ content, className, filePath, projectRoot }: NoteMarkdownPreviewProps) {
-  const { rehypeCaptureLatex, rehypeMergedPass } = useMemo(() => makeLatexPlugins(), []);
+  // Content-aware plugins: omit the math stack (remark-math + rehype-katex + the
+  // two custom LaTeX passes ≈ 12ms on a large note) when the source has no `$`.
+  // Keyed on math/highlight *presence* (booleans), not raw content, so the
+  // arrays stay referentially stable while content is edited but math-free.
+  const mathPresence = contentHasMath(content);
+  const highlightPresence = contentHasHighlight(content);
+  const latex = useMemo(
+    () => makeLatexPlugins(content),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [mathPresence, highlightPresence],
+  );
+  const remarkPlugins = useMemo(
+    () => buildNoteRemarkPlugins(content),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [mathPresence],
+  );
+  const rehypePlugins = useMemo(
+    () => buildNoteRehypePlugins(content, { latex }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [mathPresence, latex],
+  );
 
   if (!content.trim()) {
     return (
@@ -171,8 +186,8 @@ function NoteMarkdownPreviewImpl({ content, className, filePath, projectRoot }: 
   return (
     <div className={`prose-cairn px-6 py-5 overflow-y-auto h-full ${className ?? ""}`}>
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkBreaks, remarkMath, remarkPromoteDisplayMath, remarkCallout, remarkObsidianEmbeds]}
-        rehypePlugins={[rehypeRaw, rehypeEscapeUnknownTags, rehypeCaptureLatex, rehypeKatex, rehypeMergedPass]}
+        remarkPlugins={remarkPlugins}
+        rehypePlugins={rehypePlugins}
         urlTransform={urlTransform}
         components={({
           mark({ children }: React.HTMLAttributes<HTMLElement> & ExtraProps) {

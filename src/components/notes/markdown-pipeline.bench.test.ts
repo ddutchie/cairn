@@ -43,6 +43,8 @@ import {
   remarkWikilinks,
   rehypeEscapeUnknownTags,
   makeLatexPlugins,
+  buildNoteRemarkPlugins,
+  buildNoteRehypePlugins,
 } from "@/lib/markdown/pipeline";
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -292,6 +294,37 @@ describe("Markdown pipeline benchmarks", () => {
         const r = bench(() => processor.runSync(processor.parse(md)), 50);
         console.log(`  [${fixtureName}] FULL PIPELINE         ${fmt(r)}`);
         expect(r.p95).toBeLessThan(CEILINGS["full-pipeline"][fixtureName]);
+      }, BENCH_TIMEOUT_MS);
+
+      // ── Content-aware pipeline (production path) ─────────────────────────
+      // Mirrors the real renderer: the plugin arrays are built by
+      // buildNoteRemarkPlugins / buildNoteRehypePlugins, which omit the math
+      // stack (remark-math + rehype-katex + the LaTeX passes) when the source
+      // has no `$`. We measure BOTH the doc as-is and a math-free variant so the
+      // saving for the common (math-free) note is visible.
+      it("content-aware pipeline: as-is vs math-free", () => {
+        function runFor(source: string): BenchResult {
+          const latex = makeLatexPlugins(source);
+          const remarkPlugins = buildNoteRemarkPlugins(source, { wikilinks: true });
+          const rehypePlugins = buildNoteRehypePlugins(source, { latex });
+          const processor = unified().use(remarkParse);
+          for (const p of remarkPlugins) processor.use(p as any);
+          processor.use(remarkRehype, { allowDangerousHtml: true });
+          for (const p of rehypePlugins) processor.use(p as any);
+          return bench(() => processor.runSync(processor.parse(source)), 50);
+        }
+
+        const asIs = runFor(md);
+        // Strip math + highlight markers to simulate the common math-free note.
+        const mathFree = md.replace(/\$/g, "").replace(/==/g, "");
+        const free = runFor(mathFree);
+
+        console.log(`  [${fixtureName}] content-aware (as-is)  ${fmt(asIs)}`);
+        console.log(`  [${fixtureName}] content-aware (nomath) ${fmt(free)}`);
+        // The math-free path must not be slower than the full path.
+        expect(free.p95).toBeLessThanOrEqual(asIs.p95 * 1.25 + 2);
+        // And it must stay under the full-pipeline ceiling.
+        expect(free.p95).toBeLessThan(CEILINGS["full-pipeline"][fixtureName]);
       }, BENCH_TIMEOUT_MS);
     });
   }

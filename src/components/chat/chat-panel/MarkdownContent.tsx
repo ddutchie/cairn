@@ -22,10 +22,18 @@ function preprocessMarkdown(
   cards: TaskCard[],
   cwd: string | null
 ): string {
+  // Fast path: if the message has neither a `[[wikilink]]` nor any backtick
+  // span, there's nothing to rewrite — skip the parseWikilinks scan and the
+  // backtick regex entirely. This is the common case for assistant prose and
+  // matters most during streaming, where this runs on every token.
+  const hasWikilink = content.includes("[[");
+  const hasBacktick = content.includes("`");
+  if (!hasWikilink && !hasBacktick) return content;
+
   let processed = content;
 
   // 1. Replace wikilinks [[Title]]
-  const wikilinks = parseWikilinks(content);
+  const wikilinks = hasWikilink ? parseWikilinks(content) : [];
   const sortedWikilinks = [...wikilinks].sort((a, b) => b.index - a.index);
 
   for (const wl of sortedWikilinks) {

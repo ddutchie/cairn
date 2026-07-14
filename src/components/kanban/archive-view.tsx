@@ -5,7 +5,7 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
-import { NoteMarkdownPreview } from "@/components/notes/NoteMarkdownPreview";
+import { stripMarkdown } from "@/components/notes/note-editor-utils";
 
 interface ArchiveViewProps {
   projectId: string;
@@ -119,8 +119,12 @@ export function ArchiveView({ projectId, filter, onFilterChange, onOpenCard }: A
                   >
                     <span className="text-xs font-medium text-[var(--text-primary)] leading-snug line-clamp-2">{card.title}</span>
                     {card.description && (
-                      <div className="text-[0.714rem] text-[var(--text-tertiary)] line-clamp-2">
-                        <NoteMarkdownPreview content={card.description} className="!px-0 !py-0" />
+                      <div className="text-[0.714rem] text-[var(--text-tertiary)] line-clamp-2 whitespace-pre-wrap break-words">
+                        {/* Plain-text preview — the card is clamped to 2 lines, so
+                            running the full markdown pipeline (code fences, KaTeX,
+                            callouts…) per archived card just to truncate it is pure
+                            waste. Matches the collapsed-board-card convention. */}
+                        {stripMarkdown(card.description)}
                       </div>
                     )}
                     <div className="flex items-center gap-1.5 mt-auto pt-1">

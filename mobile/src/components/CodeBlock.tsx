@@ -6,7 +6,18 @@ import { Copy, Check } from "lucide-react-native";
 import { useTheme, useIsDark, type as typeScale, type Theme } from "@/theme";
 import { buildHljsPalette } from "@cairn/shared/notes/syntax-palette";
 
-const lowlight = createLowlight(common);
+// Lazily construct the lowlight instance on first use rather than at module
+// import. Registering the ~37 `common` grammars is a non-trivial startup cost;
+// deferring it until a code block is actually rendered keeps app launch and the
+// first notes/chat render lighter (Metro bundles the grammars either way, so
+// there's no code-split win as on desktop — this defers evaluation only).
+type Lowlight = ReturnType<typeof createLowlight>;
+let _lowlight: Lowlight | null = null;
+function getLowlight(): Lowlight {
+  if (!_lowlight) _lowlight = createLowlight(common);
+  return _lowlight;
+}
+
 const MONO = "Menlo";
 
 const DARK_PALETTE = buildHljsPalette("dark");
@@ -40,8 +51,9 @@ export function CodeBlock({ code, language }: { code: string; language?: string 
   const tree = useMemo(() => {
     const source = code.replace(/\n$/, "");
     try {
-      if (lang && lowlight.registered(lang)) {
-        return lowlight.highlight(lang, source).children as HastNode[];
+      const ll = getLowlight();
+      if (lang && ll.registered(lang)) {
+        return ll.highlight(lang, source).children as HastNode[];
       }
     } catch {
       // fall through to plain text
