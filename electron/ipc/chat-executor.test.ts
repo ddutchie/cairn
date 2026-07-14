@@ -687,6 +687,10 @@ describe("patch_note", () => {
     seed(db);
     const result = await exec(db, "patch_note", { noteId: "note1", oldString: "nothere", newString: "x" }) as Record<string, unknown>;
     expect(result).toHaveProperty("error");
+    // Error must be actionable — steer the model away from blindly retrying the
+    // same failing call (see tool-error-audit.test.ts).
+    expect(String(result.error)).toMatch(/not retry/i);
+    expect(String(result.error)).toMatch(/get_note/);
   });
 
   it("returns error when oldString matches multiple times and replaceAll not set", async () => {
@@ -696,6 +700,7 @@ describe("patch_note", () => {
     const result = await exec(db, "patch_note", { noteId: "note1", oldString: "TODO fix", newString: "done" }) as Record<string, unknown>;
     expect(result).toHaveProperty("error");
     expect(String(result.error)).toMatch(/2/);
+    expect(String(result.error)).toMatch(/replaceAll/);
   });
 
   it("replaceAll: true replaces all occurrences", async () => {
@@ -722,6 +727,7 @@ describe("patch_note", () => {
     seed(db);
     const result = await exec(db, "patch_note", { noteId: "nope", oldString: "x", newString: "y" }) as Record<string, unknown>;
     expect(result).toHaveProperty("error");
+    expect(String(result.error)).toMatch(/search_notes/);
   });
 });
 

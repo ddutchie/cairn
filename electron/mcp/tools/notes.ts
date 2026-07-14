@@ -166,17 +166,17 @@ export function patch_note(db: Database.Database, snap: Snapshot, workspacePath:
     noteId: string; oldString: string; newString: string; replaceAll?: boolean; expectedVersion?: number;
   };
   const note = snap.notes.find((n) => n.id === noteId);
-  if (!note) return { error: "Note not found" };
+  if (!note) return { error: `Note not found: no note has id '${noteId}'. The id may be wrong or stale — call search_notes to find the correct note id, then retry. Do not retry with the same id.` };
   if (patchExpectedVersion !== undefined) {
     const currentVersion = getNoteVersion(db, noteId);
     if (currentVersion !== null && currentVersion !== patchExpectedVersion) {
-      return { error: `Version conflict: note has been modified (expected v${patchExpectedVersion}, got v${currentVersion}). Fetch the latest content before retrying.` };
+      return { error: `Version conflict: note has been modified (expected v${patchExpectedVersion}, got v${currentVersion}). Call get_note to fetch the latest content, then retry with oldString copied from that fresh content.` };
     }
   }
   const existing = (note.content as string) ?? "";
   const count = existing.split(oldString).length - 1;
-  if (count === 0) return { error: "oldString not found in note content" };
-  if (count > 1 && !all) return { error: `oldString matches ${count} times — set replaceAll: true to replace all, or provide more surrounding context to make it unique` };
+  if (count === 0) return { error: `oldString not found in note content — the exact text you provided does not appear in the note, so nothing was changed. Do NOT retry with the same oldString; it will fail again. Call get_note to read the current content, copy the exact text (including whitespace/markdown) you want to replace, then retry. To add new content instead, use append_to_note.` };
+  if (count > 1 && !all) return { error: `oldString matches ${count} times — set replaceAll: true to replace every occurrence, or add more surrounding context to oldString so it matches exactly one location. Do not retry the same oldString without one of these changes.` };
   const newContent = all ? existing.split(oldString).join(replacement) : existing.replace(oldString, replacement);
   lockNote(db, noteId);
   try {

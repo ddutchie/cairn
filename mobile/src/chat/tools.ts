@@ -156,7 +156,7 @@ export const TOOLS: ToolDef[] = [
     description: "Replace an exact substring in a note's body (include enough context to be unique).",
     params: '{ "id": string, "oldString": string, "newString": string }',
     jsonSchema: obj({ id: S, oldString: S, newString: S }, ["id", "oldString", "newString"]),
-    run: (a) => ({ ok: q.patchNote(str(a.id), str(a.oldString), str(a.newString)) }),
+    run: (a) => q.patchNote(str(a.id), str(a.oldString), str(a.newString)),
   },
   {
     name: "rename_note",

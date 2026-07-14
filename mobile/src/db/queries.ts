@@ -668,11 +668,26 @@ export function appendToNote(noteId: string, text: string): boolean {
 }
 
 /** Replace an exact substring in a note's body. Returns false if not found. */
-export function patchNote(noteId: string, oldString: string, newString: string): boolean {
+export function patchNote(
+  noteId: string,
+  oldString: string,
+  newString: string,
+): { ok: true } | { ok: false; error: string } {
   const note = getNote(noteId);
-  if (!note || !note.content || !note.content.includes(oldString)) return false;
+  if (!note) {
+    return {
+      ok: false,
+      error: `Note not found: no note has id '${noteId}'. The id may be wrong or stale — call search_notes to find the correct note id, then retry. Do not retry with the same id.`,
+    };
+  }
+  if (!note.content || !note.content.includes(oldString)) {
+    return {
+      ok: false,
+      error: `oldString not found in note content — the exact text you provided does not appear in the note, so nothing was changed. Do NOT retry with the same oldString; it will fail again. Call get_note to read the current content, copy the exact text (including whitespace/markdown) you want to replace, then retry. To add new content instead, use append_to_note.`,
+    };
+  }
   updateNote(noteId, note.title, note.content.replace(oldString, newString));
-  return true;
+  return { ok: true };
 }
 
 /** Create a task card in a column. Returns its id. */
