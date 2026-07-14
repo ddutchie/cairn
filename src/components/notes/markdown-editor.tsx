@@ -8,8 +8,8 @@
  */
 
 import React, { useEffect, useRef, useImperativeHandle, forwardRef } from "react";
-import { EditorView, ViewUpdate, keymap, placeholder as cmPlaceholder } from "@codemirror/view";
-import { EditorState, Compartment } from "@codemirror/state";
+import { EditorView, ViewUpdate, keymap, placeholder as cmPlaceholder, Decoration, type DecorationSet } from "@codemirror/view";
+import { EditorState, StateField, StateEffect, RangeSetBuilder, Compartment } from "@codemirror/state";
 import {
   markdown,
   markdownLanguage,
@@ -38,7 +38,50 @@ interface MarkdownEditorProps {
   className?: string;
   /** When true, the editor is read-only (used during AI writes). */
   readOnly?: boolean;
+  /**
+   * 1-indexed line numbers to highlight as "recently changed" (e.g. edited by
+   * the AI while the user was away). Highlighted with a fading accent wash.
+   * Pass an empty array (or omit) to clear.
+   */
+  changedLines?: number[];
 }
+
+// ── Changed-line highlight (StateField + effect) ───────────────────────────
+// A line decoration that tints lines the AI/sync recently changed so the user
+// can see "what's new" when they open the note. Set via the setChangedLines
+// effect; the CSS class handles the fade-out animation.
+const setChangedLines = StateEffect.define<number[]>();
+
+const changedLineField = StateField.define<DecorationSet>({
+  create() {
+    return Decoration.none;
+  },
+  update(deco, tr) {
+    let lines: number[] | null = null;
+    for (const e of tr.effects) {
+      if (e.is(setChangedLines)) lines = e.value;
+    }
+    if (lines === null) {
+      // No explicit change this transaction — map existing decorations through
+      // any doc edits so they stay on the right lines.
+      return deco.map(tr.changes);
+    }
+    if (lines.length === 0) return Decoration.none;
+    const builder = new RangeSetBuilder<Decoration>();
+    const deco2 = Decoration.line({ class: "cm-changed-line" });
+    const doc = tr.state.doc;
+    // Line numbers must be sorted + in-range for RangeSetBuilder.
+    const valid = Array.from(new Set(lines))
+      .filter((ln) => ln >= 1 && ln <= doc.lines)
+      .sort((x, y) => x - y);
+    for (const ln of valid) {
+      const line = doc.line(ln);
+      builder.add(line.from, line.from, deco2);
+    }
+    return builder.finish();
+  },
+  provide: (f) => EditorView.decorations.from(f),
+});
 
 // ── Cairn theme ────────────────────────────────────────────────────────────
 // Reads CSS variables so it automatically matches light/dark mode.
@@ -121,11 +164,21 @@ function buildTheme() {
     // Active line — very subtle highlight
     ".cm-activeLine": { background: "transparent" },
 
+    // Recently-changed lines (AI / sync edits) — an accent wash that fades out.
+    // The keyframe `cairn-changed-line-fade` is defined globally in globals.css
+    // so it's shared with the read-mode markdown preview.
+    ".cm-changed-line": {
+      background: "color-mix(in srgb, var(--accent) 14%, transparent)",
+      boxShadow: "inset 2px 0 0 0 var(--accent)",
+      borderRadius: "2px",
+      animation: "cairn-changed-line-fade 6s ease-out forwards",
+    },
+
   }, { dark: false });
 }
 
 const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(
-  ({ initialValue, onChange, onSelectionChange, onCursorActivity, placeholder = "Write here…", className, readOnly = false }, ref) => {
+  ({ initialValue, onChange, onSelectionChange, onCursorActivity, placeholder = "Write here…", className, readOnly = false, changedLines }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const viewRef = useRef<EditorView | null>(null);
     // Compartment allows reconfiguring editability after the editor is created
@@ -271,6 +324,7 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(
           updateListener,
           pasteHandler,
           EditorView.lineWrapping,
+          changedLineField,
           // Compartment-controlled editability — reconfigured via readOnly prop
           editableCompartment.current.of(EditorView.editable.of(true)),
         ],
@@ -313,6 +367,15 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(
         });
       }
     }, [initialValue]);
+
+    // Push changed-line highlights into the editor whenever the prop changes.
+    // Runs after the doc-sync effect above so line numbers resolve against the
+    // freshly-set content.
+    useEffect(() => {
+      const view = viewRef.current;
+      if (!view) return;
+      view.dispatch({ effects: setChangedLines.of(changedLines ?? []) });
+    }, [changedLines]);
 
     return (
       <div

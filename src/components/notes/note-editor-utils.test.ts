@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { toggleCheckboxInSource } from "./note-editor-utils";
+import { toggleCheckboxInSource, diffChangedLines } from "./note-editor-utils";
 
 describe("toggleCheckboxInSource — list-item checkboxes", () => {
   it("toggles an unchecked list item to checked", () => {
@@ -122,5 +122,46 @@ describe("toggleCheckboxInSource — boundaries", () => {
   it("only mutates the targeted checkbox, leaving others untouched", () => {
     const src = "- [x] a\n- [ ] b";
     expect(toggleCheckboxInSource(src, 0)).toBe("- [ ] a\n- [ ] b");
+  });
+});
+
+describe("diffChangedLines", () => {
+  it("returns [] when content is identical", () => {
+    expect(diffChangedLines("a\nb\nc", "a\nb\nc")).toEqual([]);
+  });
+
+  it("marks every line as new when prev is empty", () => {
+    expect(diffChangedLines("", "a\nb\nc")).toEqual([1, 2, 3]);
+  });
+
+  it("marks an appended line", () => {
+    // "c" is added at line 3.
+    expect(diffChangedLines("a\nb", "a\nb\nc")).toEqual([3]);
+  });
+
+  it("marks a modified line (1-indexed) and leaves unchanged lines alone", () => {
+    // line 2 changed from "b" → "B".
+    expect(diffChangedLines("a\nb\nc", "a\nB\nc")).toEqual([2]);
+  });
+
+  it("marks an inserted line in the middle", () => {
+    // "x" inserted between a and b → new line 2.
+    expect(diffChangedLines("a\nb", "a\nx\nb")).toEqual([2]);
+  });
+
+  it("does not mark lines that were only deleted", () => {
+    // "b" removed; nothing added, so no new lines to highlight.
+    expect(diffChangedLines("a\nb\nc", "a\nc")).toEqual([]);
+  });
+
+  it("handles a mix of insert + append", () => {
+    // a, (insert x at 2), b, (append y at 4)
+    expect(diffChangedLines("a\nb", "a\nx\nb\ny")).toEqual([2, 4]);
+  });
+
+  it("returns sorted, de-duplicated line numbers", () => {
+    const out = diffChangedLines("a\nb\nc", "a\nB\nC\nD");
+    expect(out).toEqual([...out].sort((x, y) => x - y));
+    expect(new Set(out).size).toBe(out.length);
   });
 });

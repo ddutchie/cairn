@@ -395,10 +395,42 @@ export const useCairnStore = create<CairnStore>()(
           })
         : snapNotes;
 
+      // Record "what's new" marks: on an external refresh (AI / MCP / sync), when
+      // a note we already had in memory arrives with DIFFERENT body content, stash
+      // the pre-change content so the editor can highlight the new lines the next
+      // time the user opens it (or immediately, if that note is already open). We
+      // only mark notes whose content we're actually adopting from the snapshot
+      // (i.e. not the own-write ones we just preserved above), so the user's own
+      // live typing is never flagged as "new".
+      let nextChangeMarks = current.noteChangeMarks;
+      if (isRefresh) {
+        const currentById = new Map(current.notes.map((n) => [n.id, n]));
+        for (const merged of mergedNotes) {
+          const prevNote = currentById.get(merged.id);
+          if (!prevNote) continue; // brand-new note — nothing to diff against
+          // Skip own-writes we preserved (merged === prevNote reference).
+          if (merged === prevNote) continue;
+          const prevContent = prevNote.content ?? "";
+          const nextContent = merged.content ?? "";
+          if (prevContent === nextContent) continue; // unchanged body
+          if (nextChangeMarks === current.noteChangeMarks) {
+            nextChangeMarks = { ...current.noteChangeMarks };
+          }
+          // Keep the EARLIEST previous content if a mark already exists, so a
+          // burst of edits before the user looks shows the full delta.
+          if (!nextChangeMarks[merged.id]) {
+            nextChangeMarks[merged.id] = { previousContent: prevContent, changedAt: Date.now() };
+          } else {
+            nextChangeMarks[merged.id] = { ...nextChangeMarks[merged.id], changedAt: Date.now() };
+          }
+        }
+      }
+
       set({
         workspaces: reconcileById(current.workspaces, snap.workspaces ?? []),
         projects: reconcileById(current.projects, snap.projects ?? []),
         notes: reconcileById(current.notes, mergedNotes),
+        noteChangeMarks: nextChangeMarks,
         columns: reconcileById(current.columns, snap.columns ?? []),
         cards: reconcileById(current.cards, snap.cards ?? []),
         tags: reconcileById(current.tags, snap.tags ?? []),

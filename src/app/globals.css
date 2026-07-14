@@ -330,6 +330,26 @@ select:focus {
   animation: slideInRight 0.25s ease-out;
 }
 
+/* "What's new" changed-line highlight — shared by the CodeMirror editor
+   (write mode) and the rendered markdown preview (read mode). An accent wash
+   that fades out over a few seconds. In read mode the class is added to block
+   elements by makeRehypeChangedLines(); in write mode by a line decoration. */
+@keyframes cairn-changed-line-fade {
+  0%   { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+  70%  { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+  100% { background: transparent; box-shadow: inset 2px 0 0 0 transparent; }
+}
+
+.prose-cairn .cm-changed-line {
+  animation: cairn-changed-line-fade 6s ease-out forwards;
+  box-shadow: inset 3px 0 0 0 var(--accent);
+  border-radius: 3px;
+  /* Pull the accent bar just outside the text column so it reads as a margin
+     marker rather than shifting the content. */
+  margin-left: -0.75rem;
+  padding-left: 0.75rem;
+}
+
 .animate-slide-in-up {
   animation: slideInUp 0.25s ease-out;
 }

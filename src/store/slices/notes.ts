@@ -20,8 +20,23 @@ import {
 
 // ── Slice interface ───────────────────────────────────────────────────────────
 
+/**
+ * Records the pre-change content of a note that was edited externally (by the
+ * AI chat executor / MCP server, or a sync from another device) while the user
+ * wasn't looking. Used to highlight what's new when the note is next opened.
+ * Session-only — deliberately NOT persisted (see savePersisted in store/index).
+ */
+export interface NoteChangeMark {
+  /** The note's content BEFORE the external edit landed. */
+  previousContent: string;
+  /** When the external edit was applied (Date.now()). */
+  changedAt: number;
+}
+
 export interface NotesSlice {
   notes: Note[];
+  /** noteId → unseen external-change mark. Cleared once the user views the note. */
+  noteChangeMarks: Record<ID, NoteChangeMark>;
 
   createNote: (projectId: ID, title: string, type?: NoteType, folder?: string, content?: string) => Note;
   updateNote: (id: ID, patch: Partial<Note>) => void;
@@ -36,6 +51,10 @@ export interface NotesSlice {
   revealNote: (noteId: ID, projectId: ID) => void;
   /** Generate a PRD note via the AI. Returns { error } on failure. */
   generatePrd: (projectId: ID, title: string, requirements: string) => Promise<unknown>;
+  /** Record that a note changed externally (previousContent = pre-edit body). */
+  recordNoteChangeMark: (noteId: ID, previousContent: string) => void;
+  /** Clear a note's unseen-change mark (called once the user has viewed it). */
+  clearNoteChangeMark: (noteId: ID) => void;
 }
 
 // ── Slice creator ─────────────────────────────────────────────────────────────
@@ -45,6 +64,7 @@ export const createNotesSlice: StateCreator<CairnStore, [], [], NotesSlice> = (
   get
 ) => ({
   notes: [],
+  noteChangeMarks: {},
 
   createNote(projectId, title, type = "note", folder = "", content = "") {
     const proj = get().projects.find((p) => p.id === projectId);
@@ -223,5 +243,24 @@ export const createNotesSlice: StateCreator<CairnStore, [], [], NotesSlice> = (
     } catch (e: unknown) {
       return { error: e instanceof Error ? e.message : "Failed to generate PRD" };
     }
+  },
+
+  recordNoteChangeMark(noteId, previousContent) {
+    set((s) => ({
+      noteChangeMarks: {
+        ...s.noteChangeMarks,
+        [noteId]: { previousContent, changedAt: Date.now() },
+      },
+    }));
+    // Not persisted — see savePersisted() which whitelists the keys it saves.
+  },
+
+  clearNoteChangeMark(noteId) {
+    set((s) => {
+      if (!s.noteChangeMarks[noteId]) return {};
+      const next = { ...s.noteChangeMarks };
+      delete next[noteId];
+      return { noteChangeMarks: next };
+    });
   },
 });
