@@ -177,7 +177,7 @@ export function getNotes(db: Database.Database, projectId?: string) {
 
 export function createNote(db: Database.Database, n: {
   id: string; projectId: string; workspaceId: string; title: string;
-  content?: string; contentText?: string; type?: "note" | "dashboard";
+  content?: string; contentText?: string; type?: "note" | "dashboard" | "template";
   tagIds?: string[]; isPinned?: boolean; folder?: string;
 }) {
   const now = ts();
@@ -198,7 +198,7 @@ export function createNote(db: Database.Database, n: {
 export function updateNote(db: Database.Database, id: string, patch: Partial<{
   title: string; content: string; contentText: string;
   tagIds: string[]; linkedNoteIds: string[]; linkedCardIds: string[];
-  isPinned: boolean; archivedAt: string; type: "note" | "dashboard"; folder: string;
+  isPinned: boolean; archivedAt: string; type: "note" | "dashboard" | "template"; folder: string;
 }>) {
   const now = ts();
   db.prepare(`

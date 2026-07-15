@@ -12,6 +12,7 @@ import { matchesQuery } from "../../../shared/notes/text";
 
 export interface SelectorsSlice {
   getProjectNotes: (projectId: ID) => Note[];
+  getProjectTemplates: (projectId: ID) => Note[];
   getArchivedProjectNotes: (projectId: ID) => Note[];
   getProjectColumns: (projectId: ID) => BoardColumn[];
   getColumnCards: (columnId: ID) => TaskCard[];
@@ -32,7 +33,7 @@ export const createSelectorsSlice: StateCreator<
 > = (_set, get) => ({
   getProjectNotes(projectId) {
     return get()
-      .notes.filter((n) => n.projectId === projectId && !n.archivedAt)
+      .notes.filter((n) => n.projectId === projectId && !n.archivedAt && n.type !== "template")
       .sort((a, b) => {
         if (a.isPinned && !b.isPinned) return -1;
         if (!a.isPinned && b.isPinned) return 1;
@@ -40,6 +41,12 @@ export const createSelectorsSlice: StateCreator<
           new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
         );
       });
+  },
+
+  getProjectTemplates(projectId) {
+    return get()
+      .notes.filter((n) => n.projectId === projectId && !n.archivedAt && n.type === "template")
+      .sort((a, b) => a.title.localeCompare(b.title));
   },
 
   getArchivedProjectNotes(projectId) {

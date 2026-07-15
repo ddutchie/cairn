@@ -22,7 +22,7 @@ import type Database from "better-sqlite3";
 import { applySchema } from "../db/schema";
 import {
   createWorkspace, createProject, createNote, updateNote,
-  createColumn, createCard, getCardById,
+  createColumn, createCard, getCardById, getNoteById,
 } from "../db/queries";
 import { executeTool } from "./chat-executor";
 import type { LLMConfig } from "../lib/llm";
@@ -207,6 +207,215 @@ describe("update_task", () => {
   });
 });
 
+// ── tag_note / tag_task ───────────────────────────────────────────────────────
+
+describe("tag_note", () => {
+  it("adds tags by name, creating them if missing", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "tag_note", { noteId: "note1", tagNames: ["urgent", "review"] }) as Record<string, unknown>;
+    const tagIds = result.tagIds as string[];
+    expect(tagIds.length).toBe(2);
+    expect((getNoteById(db, "note1")!.tagIds as string[]).length).toBe(2);
+  });
+
+  it("mode 'remove' drops the named tag", async () => {
+    const db = makeDb();
+    seed(db);
+    await exec(db, "tag_note", { noteId: "note1", tagNames: ["a", "b"] });
+    const after = await exec(db, "tag_note", { noteId: "note1", tagNames: ["a"], mode: "remove" }) as Record<string, unknown>;
+    expect((after.tagIds as string[]).length).toBe(1);
+  });
+
+  it("mode 'set' replaces all tags", async () => {
+    const db = makeDb();
+    seed(db);
+    await exec(db, "tag_note", { noteId: "note1", tagNames: ["a", "b", "c"] });
+    const after = await exec(db, "tag_note", { noteId: "note1", tagNames: ["only"], mode: "set" }) as Record<string, unknown>;
+    expect((after.tagIds as string[]).length).toBe(1);
+  });
+
+  it("is idempotent — adding the same tag twice does not duplicate", async () => {
+    const db = makeDb();
+    seed(db);
+    await exec(db, "tag_note", { noteId: "note1", tagNames: ["dup"] });
+    const after = await exec(db, "tag_note", { noteId: "note1", tagNames: ["dup"] }) as Record<string, unknown>;
+    expect((after.tagIds as string[]).length).toBe(1);
+  });
+
+  it("mode 'remove' does NOT create a tag that doesn't exist", async () => {
+    const db = makeDb();
+    seed(db);
+    const tagsBefore = (db.prepare("SELECT COUNT(*) c FROM tags").get() as { c: number }).c;
+    const after = await exec(db, "tag_note", { noteId: "note1", tagNames: ["ghost"], mode: "remove" }) as Record<string, unknown>;
+    // No tag was created, and the note gained none.
+    const tagsAfter = (db.prepare("SELECT COUNT(*) c FROM tags").get() as { c: number }).c;
+    expect(tagsAfter).toBe(tagsBefore);
+    expect((after.tagIds as string[]).length).toBe(0);
+  });
+
+  it("returns { error } for missing note", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "tag_note", { noteId: "nope", tagNames: ["x"] }) as Record<string, unknown>;
+    expect(result).toHaveProperty("error");
+  });
+
+  it("stages a sync-pending row (write is captured for sync)", async () => {
+    const db = makeDb();
+    seed(db);
+    const before = (db.prepare("SELECT COUNT(*) c FROM sync_pending WHERE entity_id = ?").get("note1") as { c: number }).c;
+    await exec(db, "tag_note", { noteId: "note1", tagNames: ["synced"] });
+    const after = (db.prepare("SELECT COUNT(*) c FROM sync_pending WHERE entity_id = ?").get("note1") as { c: number }).c;
+    expect(after).toBeGreaterThan(before);
+  });
+});
+
+describe("tag_task", () => {
+  it("adds tags by name to a card", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "tag_task", { cardId: "card1", tagNames: ["blocker"] }) as Record<string, unknown>;
+    expect((result.tagIds as string[]).length).toBe(1);
+    expect((getCardById(db, "card1")!.tagIds as string[]).length).toBe(1);
+  });
+
+  it("returns { error } for missing task", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "tag_task", { cardId: "nope", tagNames: ["x"] }) as Record<string, unknown>;
+    expect(result).toHaveProperty("error");
+  });
+
+  it("returns { error } when tagNames is empty", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "tag_task", { cardId: "card1", tagNames: [] }) as Record<string, unknown>;
+    expect(result).toHaveProperty("error");
+  });
+});
+
+// ── list_templates / instantiate_template ─────────────────────────────────────
+
+describe("templates", () => {
+  function seedTemplate(db: Database.Database) {
+    createNote(db, {
+      id: "tpl1", projectId: "proj1", workspaceId: "ws1",
+      title: "Template: Standup",
+      content: "# Standup — {{date}}\n\n**Yesterday:**\n**Today:**",
+      contentText: "Standup",
+      type: "template",
+    });
+  }
+
+  it("list_templates returns templates with the prefix stripped", async () => {
+    const db = makeDb();
+    seed(db);
+    seedTemplate(db);
+    const res = await exec(db, "list_templates", { projectId: "proj1" }) as Array<Record<string, unknown>>;
+    expect(res).toHaveLength(1);
+    expect(res[0]).toMatchObject({ id: "tpl1", name: "Standup" });
+    expect(res.find((t) => t.id === "note1")).toBeUndefined();
+  });
+
+  it("instantiate_template creates a real note from a template id, filling date vars", async () => {
+    const db = makeDb();
+    seed(db);
+    seedTemplate(db);
+    const res = await exec(db, "instantiate_template", { projectId: "proj1", templateId: "tpl1" }) as Record<string, unknown>;
+    expect(res.action).toBe("created");
+    expect(res.fromTemplate).toBe("Standup");
+    const created = getNoteById(db, res.id as string)!;
+    expect(created.type).toBe("note");
+    expect(created.content).not.toContain("{{date}}");
+    expect(created.content).toContain("# Standup —");
+  });
+
+  it("instantiate_template matches by name (case-insensitive)", async () => {
+    const db = makeDb();
+    seed(db);
+    seedTemplate(db);
+    const res = await exec(db, "instantiate_template", { projectId: "proj1", templateName: "standup" }) as Record<string, unknown>;
+    expect(res.action).toBe("created");
+  });
+
+  it("instantiate_template errors and lists options when the template is missing", async () => {
+    const db = makeDb();
+    seed(db);
+    seedTemplate(db);
+    const res = await exec(db, "instantiate_template", { projectId: "proj1", templateName: "nonexistent" }) as Record<string, unknown>;
+    expect(res).toHaveProperty("error");
+    expect(String(res.error)).toContain("Standup");
+  });
+
+  it("instantiate_template respects an explicit title", async () => {
+    const db = makeDb();
+    seed(db);
+    seedTemplate(db);
+    const res = await exec(db, "instantiate_template", { projectId: "proj1", templateId: "tpl1", title: "Monday Standup" }) as Record<string, unknown>;
+    expect(res.title).toBe("Monday Standup");
+  });
+});
+
+// ── list_overdue_tasks / list_tasks_due ───────────────────────────────────────
+
+describe("due-date queries", () => {
+  function ymd(offset: number): string {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() + offset);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+  function seedDue(db: Database.Database) {
+    createCard(db, { id: "past", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Overdue", order: 1, dueDate: ymd(-2) });
+    createCard(db, { id: "soon", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Soon", order: 2, dueDate: ymd(3) });
+    createCard(db, { id: "far",  columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Far", order: 3, dueDate: ymd(30) });
+    createCard(db, { id: "done", columnId: "col2", projectId: "proj1", workspaceId: "ws1", title: "Done overdue", order: 4, dueDate: ymd(-5) });
+  }
+
+  it("list_overdue_tasks returns only past-due open cards (done excluded)", async () => {
+    const db = makeDb();
+    seed(db);
+    seedDue(db);
+    const res = await exec(db, "list_overdue_tasks", { projectId: "proj1" }) as Array<Record<string, unknown>>;
+    const ids = res.map((r) => r.id);
+    expect(ids).toContain("past");
+    expect(ids).not.toContain("done");
+    expect(ids).not.toContain("soon");
+    expect(ids).not.toContain("far");
+  });
+
+  it("list_tasks_due (7d) includes soon + overdue by default, excludes far and done", async () => {
+    const db = makeDb();
+    seed(db);
+    seedDue(db);
+    const res = await exec(db, "list_tasks_due", { projectId: "proj1", days: 7 }) as Array<Record<string, unknown>>;
+    const ids = res.map((r) => r.id);
+    expect(ids).toContain("soon");
+    expect(ids).toContain("past");
+    expect(ids).not.toContain("far");
+    expect(ids).not.toContain("done");
+  });
+
+  it("list_tasks_due with includeOverdue=false drops overdue", async () => {
+    const db = makeDb();
+    seed(db);
+    seedDue(db);
+    const res = await exec(db, "list_tasks_due", { projectId: "proj1", days: 7, includeOverdue: false }) as Array<Record<string, unknown>>;
+    const ids = res.map((r) => r.id);
+    expect(ids).toContain("soon");
+    expect(ids).not.toContain("past");
+  });
+
+  it("results are sorted soonest-first by due date", async () => {
+    const db = makeDb();
+    seed(db);
+    seedDue(db);
+    const res = await exec(db, "list_tasks_due", { projectId: "proj1", days: 60 }) as Array<Record<string, unknown>>;
+    expect(res.map((r) => r.id)).toEqual(["past", "soon", "far"]);
+  });
+});
+
 // ── bulk_update_task_status ───────────────────────────────────────────────────
 
 describe("bulk_update_task_status", () => {
@@ -247,6 +456,22 @@ describe("bulk_update_task_status", () => {
     seed(db);
     const result = await exec(db, "bulk_update_task_status", { cardIds: [], targetColumnId: "col2" }) as Record<string, unknown>;
     expect(result).toHaveProperty("error");
+  });
+
+  it("skips cards from a different project than the target column", async () => {
+    const db = makeDb();
+    seed(db);
+    // A second project with its own column + card.
+    createProject(db, { id: "proj2", workspaceId: "ws1", name: "Other" });
+    createColumn(db, { id: "p2col", projectId: "proj2", workspaceId: "ws1", name: "Todo", type: "todo", order: 0 });
+    createCard(db, { id: "p2card", columnId: "p2col", projectId: "proj2", workspaceId: "ws1", title: "Foreign", order: 0 });
+    // Try to move proj1's card1 and proj2's p2card into proj1's col2.
+    const result = await exec(db, "bulk_update_task_status", { cardIds: ["card1", "p2card"], targetColumnId: "col2" }) as Record<string, unknown>;
+    expect(result.moved).toBe(1);
+    const failed = result.failed as Array<Record<string, unknown>>;
+    expect(failed.map((f) => f.id)).toEqual(["p2card"]);
+    // The foreign card stayed put.
+    expect(getCardById(db, "p2card")?.columnId).toBe("p2col");
   });
 });
 

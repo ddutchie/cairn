@@ -307,6 +307,12 @@ const api = {
   exportNotePdf: (title: string, html: string, options?: { returnBuffer?: boolean; theme?: "light" | "dark" }) =>
     invoke<{ filePath?: string; pdfBase64?: string } | null>("app:exportNotePdf", { title, html, options }),
 
+  // ── Export note / project as Markdown ─────────
+  exportMarkdown: (kind: "note" | "project", id: string, options?: { returnText?: boolean }) =>
+    invoke<{ filePath?: string; markdown?: string; title?: string } | null>(
+      "app:exportMarkdown", { kind, id, returnText: options?.returnText },
+    ),
+
   // ── Open a URL in the system default browser ──
   openExternal: (url: string) => ipcRenderer.send("app:openExternal", url),
 

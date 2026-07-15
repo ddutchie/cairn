@@ -157,7 +157,7 @@ export function toNote(row: any) {
     linkedNoteIds: p(row.linked_note_ids) as string[],
     linkedCardIds: p(row.linked_card_ids) as string[],
     isPinned: b(row.is_pinned),
-    type: (row.type ?? "note") as "note" | "dashboard",
+    type: (row.type ?? "note") as "note" | "dashboard" | "template",
     folder: (row.folder ?? "") as string,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,

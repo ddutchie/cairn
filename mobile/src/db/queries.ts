@@ -10,6 +10,7 @@ import { inspectConflict, cleanConflictTitle } from "@cairn/shared/sync/conflict
 import { stripMarkdown, queryTerms } from "@cairn/shared/notes/text";
 import { buildNoteOutline, sliceLines, noteDigest } from "@cairn/shared/notes/toc";
 import { dedupeFoldersCaseInsensitive } from "@cairn/shared/notes/folder-tree";
+import { buildNoteMarkdown } from "@cairn/shared/notes/export";
 import { notifyLocalWrite } from "@/sync/write-signal";
 import type {
   NoteRow,
@@ -148,6 +149,108 @@ export function setCardTags(cardId: string, tagIds: string[]): void {
     cardId,
   );
   notifyLocalWrite();
+}
+
+/**
+ * Resolve tag NAMES to ids within a workspace, creating any that don't exist
+ * (mirrors desktop `resolveTagNames`). Case-insensitive match on name.
+ */
+export function resolveTagNames(workspaceId: string, tagNames: string[]): string[] {
+  const db = getDb();
+  const ids: string[] = [];
+  for (const raw of tagNames) {
+    const name = (raw ?? "").trim();
+    if (!name) continue;
+    const existing = db.getFirstSync<{ id: string }>(
+      "SELECT id FROM tags WHERE workspace_id = ? AND LOWER(name) = ? AND deleted_at IS NULL",
+      workspaceId,
+      name.toLowerCase(),
+    );
+    if (existing) {
+      ids.push(existing.id);
+    } else {
+      const id = genId();
+      const now = new Date().toISOString();
+      db.runSync(
+        "INSERT INTO tags (id, workspace_id, name, color, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+        id, workspaceId, name, "#6366f1", now, now,
+      );
+      ids.push(id);
+    }
+  }
+  notifyLocalWrite();
+  return ids;
+}
+
+type TagMode = "add" | "remove" | "set";
+
+/**
+ * Resolve tag NAMES to ids WITHOUT creating missing ones — used for `remove`,
+ * where a name that doesn't exist should be a no-op rather than creating (then
+ * removing) a tag.
+ */
+function resolveExistingTagNames(workspaceId: string, tagNames: string[]): string[] {
+  const db = getDb();
+  const ids: string[] = [];
+  for (const raw of tagNames) {
+    const name = (raw ?? "").trim();
+    if (!name) continue;
+    const row = db.getFirstSync<{ id: string }>(
+      "SELECT id FROM tags WHERE workspace_id = ? AND LOWER(name) = ? AND deleted_at IS NULL",
+      workspaceId, name.toLowerCase(),
+    );
+    if (row) ids.push(row.id);
+  }
+  return ids;
+}
+
+function mergeTagIds(current: string[], resolved: string[], mode: TagMode): string[] {
+  if (mode === "remove") return current.filter((id) => !resolved.includes(id));
+  if (mode === "set") return Array.from(new Set(resolved));
+  return Array.from(new Set([...current, ...resolved])); // add
+}
+
+/**
+ * Apply tags by NAME to an existing note. Returns the resulting tag ids, or an
+ * error object if the note is missing. `add`/`set` create missing tags; `remove`
+ * only matches existing ones.
+ */
+export function tagNote(noteId: string, tagNames: string[], mode: TagMode = "add"): { error: string } | { id: string; tagIds: string[] } {
+  const note = getNote(noteId);
+  if (!note) return { error: "Note not found" };
+  const wsId = workspaceIdForProject(note.project_id);
+  const resolved = mode === "remove"
+    ? resolveExistingTagNames(wsId, tagNames)
+    : resolveTagNames(wsId, tagNames);
+  const next = mergeTagIds(parseIds(note.tag_ids), resolved, mode);
+  setNoteTags(noteId, next);
+  return { id: noteId, tagIds: next };
+}
+
+/** Apply tags by NAME to an existing task card. */
+export function tagTask(cardId: string, tagNames: string[], mode: TagMode = "add"): { error: string } | { id: string; tagIds: string[] } {
+  const card = getCard(cardId);
+  if (!card) return { error: "Task not found" };
+  const wsId = workspaceIdForProject(card.project_id);
+  const resolved = mode === "remove"
+    ? resolveExistingTagNames(wsId, tagNames)
+    : resolveTagNames(wsId, tagNames);
+  const next = mergeTagIds(parseIds(card.tag_ids), resolved, mode);
+  setCardTags(cardId, next);
+  return { id: cardId, tagIds: next };
+}
+
+/** Export a single note as a clean, self-contained markdown document. */
+export function exportNote(noteId: string): { error: string } | { markdown: string; title: string } {
+  const note = getNote(noteId);
+  if (!note) return { error: "Note not found" };
+  const markdown = buildNoteMarkdown({
+    title: note.title,
+    content: note.content ?? "",
+    tagNames: tagsForNote(note).map((t) => t.name),
+    folder: note.folder,
+  });
+  return { markdown, title: note.title };
 }
 
 export function listProjects(): ProjectRow[] {
@@ -486,6 +589,83 @@ export function moveCardToColumn(cardId: string, columnId: string): void {
     cardId,
   );
   notifyLocalWrite();
+}
+
+/**
+ * Bidirectionally link a note and a task card (mirrors desktop
+ * link_note_to_task). Updates notes.linked_card_ids + task_cards.linked_note_ids.
+ * Idempotent. Returns an error object if either side is missing.
+ */
+export function linkNoteToTask(noteId: string, cardId: string): { error: string } | { noteId: string; cardId: string; linked: true } {
+  return applyLinkChange(noteId, cardId, true);
+}
+
+/** Bidirectionally remove a note↔task link. */
+export function unlinkNoteFromTask(noteId: string, cardId: string): { error: string } | { noteId: string; cardId: string; unlinked: true } {
+  const r = applyLinkChange(noteId, cardId, false);
+  if ("error" in r) return r;
+  return { noteId, cardId, unlinked: true };
+}
+
+function applyLinkChange(noteId: string, cardId: string, add: boolean): { error: string } | { noteId: string; cardId: string; linked: true } {
+  const db = getDb();
+  const note = db.getFirstSync<{ linked_card_ids: string }>(
+    "SELECT linked_card_ids FROM notes WHERE id = ? AND deleted_at IS NULL", noteId,
+  );
+  if (!note) return { error: "Note not found" };
+  const card = db.getFirstSync<{ linked_note_ids: string }>(
+    "SELECT linked_note_ids FROM task_cards WHERE id = ? AND deleted_at IS NULL", cardId,
+  );
+  if (!card) return { error: "Task not found" };
+
+  const cardIds = parseIds(note.linked_card_ids);
+  const noteIds = parseIds(card.linked_note_ids);
+  const nextCardIds = add
+    ? Array.from(new Set([...cardIds, cardId]))
+    : cardIds.filter((id) => id !== cardId);
+  const nextNoteIds = add
+    ? Array.from(new Set([...noteIds, noteId]))
+    : noteIds.filter((id) => id !== noteId);
+
+  const now = new Date().toISOString();
+  db.withTransactionSync(() => {
+    db.runSync(
+      "UPDATE notes SET linked_card_ids = ?, updated_at = ?, version = version + 1 WHERE id = ?",
+      JSON.stringify(nextCardIds), now, noteId,
+    );
+    db.runSync(
+      "UPDATE task_cards SET linked_note_ids = ?, updated_at = ?, version = version + 1 WHERE id = ?",
+      JSON.stringify(nextNoteIds), now, cardId,
+    );
+  });
+  notifyLocalWrite();
+  return { noteId, cardId, linked: true };
+}
+
+/**
+ * Move a batch of cards to one column in a single call (mirrors desktop
+ * bulk_update_task_status). Reports which ids moved vs. were not found.
+ */
+export function bulkUpdateTaskStatus(cardIds: string[], targetColumnId: string): { error: string } | { moved: number; failed: string[]; targetColumnId: string } {
+  const db = getDb();
+  const col = db.getFirstSync<{ project_id: string }>("SELECT project_id FROM board_columns WHERE id = ? AND deleted_at IS NULL", targetColumnId);
+  if (!col) return { error: "Target column not found" };
+  const now = new Date().toISOString();
+  const failed: string[] = [];
+  let moved = 0;
+  for (const id of cardIds) {
+    const card = db.getFirstSync<{ project_id: string }>("SELECT project_id FROM task_cards WHERE id = ? AND deleted_at IS NULL", id);
+    // Skip missing cards, and cards from a different project (a column only
+    // belongs to one project — a cross-project move would orphan the card).
+    if (!card || card.project_id !== col.project_id) { failed.push(id); continue; }
+    db.runSync(
+      "UPDATE task_cards SET column_id = ?, updated_at = ?, version = version + 1 WHERE id = ?",
+      targetColumnId, now, id,
+    );
+    moved++;
+  }
+  if (moved > 0) notifyLocalWrite();
+  return { moved, failed, targetColumnId };
 }
 
 function plainText(md: string): string {

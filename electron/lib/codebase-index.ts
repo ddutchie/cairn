@@ -114,7 +114,7 @@ const REJECTED_RELATION_TARGETS = new Set([
 
 export interface ExtractedSymbol {
   name: string;
-  kind: "class" | "function" | "method" | "struct" | "interface" | "module";
+  kind: "class" | "function" | "method" | "struct" | "interface" | "module" | "type" | "enum" | "variable";
   line: number;
   signature: string;
   docstring: string | null;
@@ -236,14 +236,40 @@ export function parseFileContent(content: string, ext: string): ExtractedSymbol[
               kind = "interface";
               matched = true;
             } else {
-              const methodMatch = trimmed.match(/^\s*(?:public|private|protected|async|static|get|set)*\s*([a-zA-Z0-9_$]+)\s*\([^)]*\)\s*[:{]/);
-              if (methodMatch) {
-                const possibleName = methodMatch[1];
-                const keywords = new Set(["if", "for", "while", "switch", "catch", "with", "function"]);
-                if (!keywords.has(possibleName)) {
-                  name = possibleName;
-                  kind = "method";
+              const typeMatch = trimmed.match(/(?:export\s+)?type\s+([a-zA-Z0-9_$]+)\s*[=<]/);
+              if (typeMatch) {
+                name = typeMatch[1];
+                kind = "type";
+                matched = true;
+              } else {
+                const enumMatch = trimmed.match(/(?:export\s+)?(?:const\s+)?enum\s+([a-zA-Z0-9_$]+)/);
+                if (enumMatch) {
+                  name = enumMatch[1];
+                  kind = "enum";
                   matched = true;
+                } else {
+                  // Top-level EXPORTED const/let/var bindings that aren't arrow
+                  // functions (object literals, arrays, primitives) — e.g.
+                  // `export const TOOL_SCHEMAS = {`. Restricted to `export` so
+                  // local bindings inside function bodies don't flood the index.
+                  // Arrow functions were already captured above.
+                  const varMatch = trimmed.match(/^export\s+(?:const|let|var)\s+([a-zA-Z0-9_$]+)\s*(?::[^=]+)?=/);
+                  if (varMatch) {
+                    name = varMatch[1];
+                    kind = "variable";
+                    matched = true;
+                  } else {
+                    const methodMatch = trimmed.match(/^\s*(?:(?:public|private|protected|async|static|get|set)\s+)*([a-zA-Z0-9_$]+)\s*\([^)]*\)\s*[:{]/);
+                    if (methodMatch) {
+                      const possibleName = methodMatch[1];
+                      const keywords = new Set(["if", "for", "while", "switch", "catch", "with", "function"]);
+                      if (!keywords.has(possibleName)) {
+                        name = possibleName;
+                        kind = "method";
+                        matched = true;
+                      }
+                    }
+                  }
                 }
               }
             }

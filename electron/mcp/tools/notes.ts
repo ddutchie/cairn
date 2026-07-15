@@ -5,6 +5,7 @@ import { newId } from "../../db/utils";
 import { stripMarkdown, normalizeNoteTitle } from "../../shared/text-utils";
 import { executeSearchNotes } from "../../shared/read-tools-pure";
 import { dedupeFoldersCaseInsensitive } from "../../../shared/notes/folder-tree";
+import { instantiateTemplate, defaultTitleFromTemplate } from "../../../shared/notes/templates";
 import {
   Snapshot,
   insertNotification,
@@ -38,6 +39,81 @@ export function get_note(db: Database.Database, snap: Snapshot, args: Record<str
 
 export function search_notes(db: Database.Database, snap: Snapshot, args: Record<string, any>) {
   return executeSearchNotes(snap, args);
+}
+
+export function list_templates(db: Database.Database, snap: Snapshot, args: Record<string, any>) {
+  const { projectId } = args;
+  if (!snap.projects.find((p) => p.id === projectId)) return { error: "Project not found" };
+  return snap.notes
+    .filter((n) => n.projectId === projectId && !n.archivedAt && n.type === "template")
+    .map((n) => ({
+      id: n.id,
+      name: (n.title as string).replace(/^Template:\s*/i, ""),
+      preview: ((n.content as string) ?? "").slice(0, 200),
+    }));
+}
+
+export function instantiate_template(db: Database.Database, snap: Snapshot, workspacePath: string, args: Record<string, any>) {
+  const { projectId, templateId, templateName, folder } = args;
+  const project = snap.projects.find((p) => p.id === projectId);
+  if (!project) return { error: "Project not found" };
+
+  const templates = snap.notes.filter(
+    (n) => n.projectId === projectId && !n.archivedAt && n.type === "template",
+  );
+  if (templates.length === 0) return { error: "This project has no templates. Create one first (save a note as a template)." };
+
+  const stripPrefix = (t: string) => t.replace(/^Template:\s*/i, "");
+  let template = templateId
+    ? templates.find((t) => t.id === templateId)
+    : undefined;
+  if (!template && typeof templateName === "string") {
+    const want = templateName.trim().toLowerCase();
+    template = templates.find((t) => stripPrefix(t.title as string).toLowerCase() === want)
+      ?? templates.find((t) => stripPrefix(t.title as string).toLowerCase().includes(want));
+  }
+  if (!template) {
+    return {
+      error: "Template not found. Available templates: " + templates.map((t) => stripPrefix(t.title as string)).join(", "),
+    };
+  }
+
+  const now = new Date();
+  const baseName = stripPrefix(template.title as string);
+  const title = (typeof args.title === "string" && args.title.trim())
+    ? args.title.trim()
+    : defaultTitleFromTemplate(baseName, { now });
+  const content = instantiateTemplate((template.content as string) ?? "", { title, now });
+  const newFolder = typeof folder === "string" ? folder : "";
+  const noteId = newId();
+
+  lockNote(db, noteId);
+  try {
+    const note = db.transaction(() => {
+      const n = q.createNote(db, {
+        id: noteId,
+        projectId: projectId as string,
+        workspaceId: project.workspaceId as string,
+        title,
+        content,
+        contentText: stripMarkdown(content),
+        tagIds: (template.tagIds as string[]) ?? [],
+        folder: newFolder,
+        type: "note",
+      });
+      insertNotification(db, "create_note", "Note created", `"${title}" created from template "${baseName}"`);
+      return n;
+    })();
+    writeNoteFile(workspacePath, {
+      id: noteId, projectId, workspaceId: project.workspaceId, title, content,
+      tagIds: (template.tagIds as string[]) ?? [], linkedNoteIds: [], linkedCardIds: [],
+      isPinned: false, folder: newFolder, createdAt: note.createdAt, updatedAt: note.updatedAt,
+      projectName: project.name,
+    });
+    return { id: noteId, title, folder: newFolder, fromTemplate: baseName, action: "created", createdAt: note.createdAt };
+  } finally {
+    unlockNote(db, noteId);
+  }
 }
 
 export function ensure_note(db: Database.Database, snap: Snapshot, workspacePath: string, args: Record<string, any>) {
@@ -108,11 +184,23 @@ export function ensure_note(db: Database.Database, snap: Snapshot, workspacePath
         insertNotification(db, "create_note", "Note created", `"${title}" added to ${project.name}${newFolder ? ` (${newFolder})` : ""} (ensure_note)`);
         return n;
       })();
-      writeNoteFile(workspacePath, {
-        id: ensureNoteId, projectId, workspaceId: project.workspaceId, title, content: markdown,
-        tagIds: newTagIds, linkedNoteIds: [], linkedCardIds: [], isPinned: newIsPinned,
-        folder: newFolder, createdAt: note.createdAt, updatedAt: note.updatedAt, projectName: project.name,
-      });
+      try {
+        writeNoteFile(workspacePath, {
+          id: ensureNoteId, projectId, workspaceId: project.workspaceId, title, content: markdown,
+          tagIds: newTagIds, linkedNoteIds: [], linkedCardIds: [], isPinned: newIsPinned,
+          folder: newFolder, createdAt: note.createdAt, updatedAt: note.updatedAt, projectName: project.name,
+        });
+      } catch (fileErr) {
+        // The DB row committed but the .md file couldn't be written — roll the
+        // DB back so we don't leave an orphan note (and its create notification)
+        // that has no file. deleteNote also stages a sync tombstone.
+        try {
+          q.deleteNote(db, ensureNoteId);
+          db.prepare("DELETE FROM mcp_notifications WHERE tool = 'create_note' AND body LIKE ?")
+            .run(`"${title}"%`);
+        } catch { /* best-effort cleanup */ }
+        throw fileErr;
+      }
       return { id: ensureNoteId, title, folder: newFolder, action: "created", createdAt: note.createdAt };
     }
   } finally {

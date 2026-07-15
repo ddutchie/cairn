@@ -99,18 +99,22 @@ describe("executeReadTool: get_project_summary", () => {
 // ── executeReadTool — list_tasks ──────────────────────────────────────────────
 
 describe("executeReadTool: list_tasks", () => {
-  it("returns columns grouped with tasks", () => {
+  it("returns { tasksByColumn } keyed by column id (documented dashboard shape)", () => {
     const db = makeDb();
     seed(db);
     const snap = q.getFullSnapshot(db) as Parameters<typeof executeReadTool>[1];
     const res = executeReadTool(db, snap, "list_tasks", { projectId: "proj1" });
     expect(res.handled).toBe(true);
     if (!res.handled) return;
-    const cols = res.result as Array<Record<string, unknown>>;
-    expect(Array.isArray(cols)).toBe(true);
-    const backlog = cols.find((c) => c.columnId === "col1");
-    expect(backlog).toBeDefined();
-    expect((backlog!.tasks as unknown[]).length).toBe(1);
+    const result = res.result as { tasksByColumn: Record<string, Array<Record<string, unknown>>> };
+    expect(result.tasksByColumn).toBeDefined();
+    expect(typeof result.tasksByColumn).toBe("object");
+    // Object.values(...).flat() is the documented usage — must not throw.
+    const all = Object.values(result.tasksByColumn).flat();
+    expect(all.length).toBe(1);
+    expect(all[0]).toMatchObject({ columnId: "col1", columnType: "backlog" });
+    expect(all[0]).toHaveProperty("dueDate");
+    expect(all[0]).toHaveProperty("updatedAt");
   });
 });
 

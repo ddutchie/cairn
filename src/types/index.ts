@@ -52,7 +52,7 @@ export interface Project {
 }
 
 // ── Note ─────────────────────────────────────
-export type NoteType = "note" | "dashboard";
+export type NoteType = "note" | "dashboard" | "template";
 
 export interface Note {
   id: ID;

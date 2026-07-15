@@ -215,6 +215,40 @@ export const TOOL_SCHEMAS = {
     }),
   },
 
+  list_overdue_tasks: {
+    description: "List open tasks whose due date is in the past (excludes done/archived cards), soonest-overdue first. Use for 'what's overdue?'.",
+    schema: z.object({
+      projectId: sId.optional().describe("Limit to one project; omit for the whole workspace."),
+    }),
+  },
+
+  list_tasks_due: {
+    description: "List open tasks due within the next N days (default 7), excluding done/archived cards. By default also includes overdue tasks. Use for 'what's due this week?'.",
+    schema: z.object({
+      projectId:      sId.optional(),
+      days:           z.number().int().min(0).optional().describe("Window size in days (default 7). 0 = due today only."),
+      includeOverdue: z.boolean().optional().describe("Include already-overdue tasks too (default true)."),
+    }),
+  },
+
+  instantiate_template: {
+    description: "Create a new note from a saved template, filling in date/title placeholders. Templates are per-project notes of type 'template' (find them with list_templates). Use this when asked to 'start my weekly review', 'new meeting notes', etc.",
+    schema: z.object({
+      projectId:    sId,
+      templateId:   sIdOpt.describe("Template note id (preferred). Omit to match by name."),
+      templateName: sStrOpt.describe("Template name to match (case-insensitive) when templateId is not given."),
+      title:        sStrOpt.describe("Title for the new note; defaults to the template name with date vars filled."),
+      folder:       sStrOpt.describe("Optional folder for the new note."),
+    }),
+  },
+
+  list_templates: {
+    description: "List the reusable note templates in a project (notes of type 'template'). Returns id, name, and a content preview.",
+    schema: z.object({
+      projectId: sId,
+    }),
+  },
+
   // ── Projects ──────────────────────────────────────────────────────────────────
 
   upsert_project: {
@@ -402,6 +436,24 @@ export const TOOL_SCHEMAS = {
       workspaceId: sId,
       name:        sStr,
       color:       sColor,
+    }),
+  },
+
+  tag_note: {
+    description: "Apply or remove tags on an existing note by tag NAME (tags are created if they don't exist yet). Use mode 'add' to add tags, 'remove' to remove them, or 'set' to replace all tags. This is the tool to reach for when asked to organise/categorise notes.",
+    schema: z.object({
+      noteId:   sId,
+      tagNames: z.array(z.string().trim().min(1)).min(1).describe("Non-empty tag names to add, remove, or set (resolved to ids; created if missing)"),
+      mode:     z.enum(["add", "remove", "set"]).optional().describe("add (default) | remove | set"),
+    }),
+  },
+
+  tag_task: {
+    description: "Apply or remove tags on an existing task card by tag NAME (tags are created if they don't exist yet). Use mode 'add' to add tags, 'remove' to remove them, or 'set' to replace all tags. This is the tool to reach for when asked to organise/categorise tasks.",
+    schema: z.object({
+      cardId:   sId,
+      tagNames: z.array(z.string().trim().min(1)).min(1).describe("Non-empty tag names to add, remove, or set (resolved to ids; created if missing)"),
+      mode:     z.enum(["add", "remove", "set"]).optional().describe("add (default) | remove | set"),
     }),
   },
 

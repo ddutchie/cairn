@@ -27,6 +27,7 @@ import SettingsXml from "@expo/material-symbols/settings.xml";
 import PinXml from "@expo/material-symbols/keep.xml";
 import UnpinXml from "@expo/material-symbols/keep_off.xml";
 import TagXml from "@expo/material-symbols/sell.xml";
+import ShareXml from "@expo/material-symbols/ios_share.xml";
 import CalendarXml from "@expo/material-symbols/calendar_month.xml";
 import CalendarViewMonthXml from "@expo/material-symbols/calendar_view_month.xml";
 import CalendarViewWeekXml from "@expo/material-symbols/calendar_view_week.xml";
@@ -67,6 +68,8 @@ export const ICON_UNARCHIVE: ToolbarIcon = ios ? "tray.and.arrow.up" : Unarchive
 export const ICON_SETTINGS: ToolbarIcon = ios ? "gearshape" : SettingsXml;
 /** AI / model settings (brain). */
 export const ICON_AI: ToolbarIcon = ios ? "brain" : NeurologyXml;
+/** Export / share (share sheet). */
+export const ICON_EXPORT: ToolbarIcon = ios ? "square.and.arrow.up" : ShareXml;
 /** iCloud sync — synced/idle. */
 export const ICON_ICLOUD: ToolbarIcon = ios ? "icloud" : CloudXml;
 /** iCloud sync — offline / unavailable. */

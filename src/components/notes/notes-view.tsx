@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
   FileText, Plus, Search, Wand2,
-  LayoutDashboard, FolderPlus,
+  LayoutDashboard, FolderPlus, LayoutTemplate,
   ChevronDown, ChevronRight, Trash2, X,
 } from "lucide-react";
 import { useCairnStore } from "@/store";
@@ -23,15 +23,19 @@ import { NoteListItem } from "./notes-view/NoteListItem";
 import { ArchivedNoteListItem } from "./notes-view/ArchivedNoteListItem";
 import { FolderTreeNode } from "./notes-view/FolderTreeNode";
 import { FolderPickerDialog } from "./notes-view/FolderPickerDialog";
+import { instantiateTemplate, defaultTitleFromTemplate } from "../../../shared/notes/templates";
+import { STARTER_TEMPLATES } from "../../../shared/notes/starter-templates";
+import { stripMarkdown } from "./note-editor-utils";
 import type { Note } from "@/types";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown";
 
 // ── NotesView orchestrator ──────────────────────────────────────────────────
 
 export function NotesView() {
   const {
     activeProjectId, activeWorkspaceId,
-    getProjectNotes, getArchivedProjectNotes,
+    getProjectNotes, getArchivedProjectNotes, getProjectTemplates,
     createNote, updateNote, deleteNote,
     archiveNote, restoreNote, moveNoteToProject, moveNoteToFolder,
     revealNote,
@@ -46,6 +50,7 @@ export function NotesView() {
     activeWorkspaceId:       s.activeWorkspaceId,
     getProjectNotes:         s.getProjectNotes,
     getArchivedProjectNotes: s.getArchivedProjectNotes,
+    getProjectTemplates:     s.getProjectTemplates,
     createNote:              s.createNote,
     updateNote:              s.updateNote,
     deleteNote:              s.deleteNote,
@@ -188,6 +193,11 @@ export function NotesView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [activeProjectId, allNotes],
   );
+  const templates = useMemo(
+    () => activeProjectId ? getProjectTemplates(activeProjectId) : [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activeProjectId, allNotes],
+  );
   const workspaceProjects = useMemo(
     () => activeWorkspaceId ? getWorkspaceProjects(activeWorkspaceId) : [],
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -199,7 +209,13 @@ export function NotesView() {
   }, [notes, getTagById]);
 
   const filtered   = useNoteFilter(notes, filter, activeTagId);
-  const activeNote = notes.find((n) => n.id === activeNoteId) ?? notes[0] ?? null;
+  // Resolve the active note across notes and templates (templates are excluded
+  // from `notes`, but a just-saved/opened template can be the active id), then
+  // fall back to the first note.
+  const activeNote = notes.find((n) => n.id === activeNoteId)
+    ?? templates.find((n) => n.id === activeNoteId)
+    ?? notes[0]
+    ?? null;
 
   // Folder tree — only built when not filtering
   const isFiltering = !!(filter || activeTagId);
@@ -213,17 +229,20 @@ export function NotesView() {
   // Auto-select first note / newly created note in a single unified effect.
   // Merging the two previous competing effects eliminates the race where both
   // could fire in the same render cycle and produce two setState calls.
-  const prevNoteCountRef = useRef(notes.length);
+  const prevNoteIdsRef = useRef<string[]>(notes.map((n) => n.id));
   useEffect(() => {
-    if (notes.length > prevNoteCountRef.current) {
-      // A new note was added — select it (it lands at index 0 after sort)
-      setActiveNoteId(notes[0].id);
+    const prevIds = prevNoteIdsRef.current;
+    if (notes.length > prevIds.length) {
+      // A new note was added — select the id that wasn't there before, rather
+      // than assuming it sorted to index 0 (pinned notes can sort ahead of it).
+      const prevSet = new Set(prevIds);
+      const added = notes.find((n) => !prevSet.has(n.id));
+      setActiveNoteId((added ?? notes[0]).id);
     } else if (!activeNoteId && notes.length > 0) {
       // No active note yet — select the first one
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setActiveNoteId(notes[0].id);
     }
-    prevNoteCountRef.current = notes.length;
+    prevNoteIdsRef.current = notes.map((n) => n.id);
   }, [notes, activeNoteId]);
 
   function handleCreateNote(inFolder = "") {
@@ -258,6 +277,49 @@ export function NotesView() {
     setActiveNoteId(note.id);
     setDashboardTemplateOpen(false);
     setMobileShowEditor(true);
+  }
+
+  // Instantiate a new note from a template: substitute {{vars}} and create a
+  // normal note (type="note"). No live link back — templates are a starting point.
+  function handleNewFromTemplate(template: Note) {
+    if (!activeProjectId) return;
+    const now = new Date();
+    const title = defaultTitleFromTemplate(template.title.replace(/^Template:\s*/i, ""), { now });
+    const content = instantiateTemplate(template.content ?? "", { title, now });
+    const note = createNote(activeProjectId, title, "note");
+    updateNote(note.id, {
+      content,
+      contentText: stripMarkdown(content),
+      tagIds: template.tagIds ?? [],
+    });
+    setActiveNoteId(note.id);
+    setMobileShowEditor(true);
+  }
+
+  // Turn the active note into a reusable template (type="template").
+  function handleSaveAsTemplate(note: Note) {
+    if (!activeProjectId) return;
+    const title = /^Template:/i.test(note.title) ? note.title : `Template: ${note.title}`;
+    const tpl = createNote(activeProjectId, title, "template");
+    updateNote(tpl.id, {
+      content: note.content ?? "",
+      contentText: note.contentText ?? "",
+      tagIds: note.tagIds ?? [],
+    });
+    setActiveNoteId(tpl.id);
+    setMobileShowEditor(true);
+  }
+
+  // Seed the built-in starter templates into this project (one-time convenience).
+  function handleAddStarterTemplates() {
+    if (!activeProjectId) return;
+    const existing = new Set(templates.map((t) => t.title.toLowerCase()));
+    for (const s of STARTER_TEMPLATES) {
+      const title = `Template: ${s.name}`;
+      if (existing.has(title.toLowerCase())) continue;
+      const tpl = createNote(activeProjectId, title, "template");
+      updateNote(tpl.id, { content: s.body, contentText: stripMarkdown(s.body) });
+    }
   }
 
   // ⌘N global shortcut — use a ref so the handler always sees the latest
@@ -344,6 +406,39 @@ export function NotesView() {
             <Tooltip content="New note">
               <Button variant="ghost" size="icon" onClick={() => handleCreateNote()}><Plus size={14} /></Button>
             </Tooltip>
+            <DropdownMenu>
+              <Tooltip content="New from template">
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon"><LayoutTemplate size={13} /></Button>
+                </DropdownMenuTrigger>
+              </Tooltip>
+              <DropdownMenuContent align="end" className="w-52">
+                {templates.length === 0 ? (
+                  <DropdownMenuItem onClick={handleAddStarterTemplates} className="flex items-center gap-2 text-xs">
+                    <Plus size={11} />Add starter templates
+                  </DropdownMenuItem>
+                ) : (
+                  templates.map((t) => (
+                    <DropdownMenuItem
+                      key={t.id}
+                      onClick={() => handleNewFromTemplate(t)}
+                      className="flex items-center gap-2 text-xs"
+                    >
+                      <LayoutTemplate size={11} />
+                      {t.title.replace(/^Template:\s*/i, "")}
+                    </DropdownMenuItem>
+                  ))
+                )}
+                {activeNote && activeNote.type === "note" && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => handleSaveAsTemplate(activeNote)} className="flex items-center gap-2 text-xs">
+                      <Plus size={11} />Save current note as template
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Tooltip content="New dashboard">
               <Button variant="ghost" size="icon" onClick={handleCreateDashboard}><LayoutDashboard size={13} /></Button>
             </Tooltip>

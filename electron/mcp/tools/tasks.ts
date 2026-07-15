@@ -2,7 +2,7 @@
 import Database from "better-sqlite3";
 import * as q from "../../db/queries";
 import { newId } from "../../db/utils";
-import { executeSearchTasks } from "../../shared/read-tools-pure";
+import { executeSearchTasks, executeListOverdueTasks, executeListTasksDue } from "../../shared/read-tools-pure";
 import {
   Snapshot,
   getCardVersion,
@@ -76,6 +76,10 @@ export function bulk_update_task_status(db: Database.Database, snap: Snapshot, a
     const card = snap.cards.find((c) => c.id === id);
     if (!card) {
       results.push({ id, ok: false, error: "Task not found" });
+    } else if (card.projectId !== col.projectId) {
+      // A column belongs to exactly one project — moving a card across
+      // projects would orphan it against a column not in its board.
+      results.push({ id, ok: false, error: "Card is in a different project than the target column" });
     } else {
       q.updateCard(db, id, { columnId: targetColumnId });
       results.push({ id, ok: true });
@@ -172,6 +176,14 @@ export function delete_task(db: Database.Database, snap: Snapshot, args: Record<
   q.deleteCard(db, args.cardId as string); // also cleans blocked_by_ids in other cards
   insertNotification(db, "delete_task", "Task deleted", `"${card.title}" was deleted`);
   return { deleted: true, id: args.cardId, title: card.title };
+}
+
+export function list_overdue_tasks(db: Database.Database, snap: Snapshot, args: Record<string, any>) {
+  return executeListOverdueTasks(snap, args);
+}
+
+export function list_tasks_due(db: Database.Database, snap: Snapshot, args: Record<string, any>) {
+  return executeListTasksDue(snap, args);
 }
 
 export function list_ready_tasks(db: Database.Database, snap: Snapshot, args: Record<string, any>) {
