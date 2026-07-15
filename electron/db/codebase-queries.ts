@@ -87,22 +87,31 @@ export function insertCodebaseRelation(db: Database.Database, relation: {
  */
 function codebaseScope(folder: string): { sql: string; params: string[] } {
   const normalized = path.resolve(folder);
-  const escaped = normalized.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+  const escapeLike = (s: string) => s.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+  // Escape the folder AND the trailing separator: on Windows path.sep is `\`,
+  // which is the LIKE ESCAPE char — if left raw it would escape the `%` wildcard
+  // (matching a literal `%`) and never match descendant paths.
+  const escaped = escapeLike(normalized) + escapeLike(path.sep);
   return {
     sql: `(f.root_path = ? OR f.file_path = ? OR f.file_path LIKE ? ESCAPE '\\')`,
-    params: [normalized, normalized, `${escaped}${path.sep}%`],
+    params: [normalized, normalized, `${escaped}%`],
   };
 }
 
+/** Escape SQL LIKE metacharacters so a user query matches them literally. */
+function escapeLikePattern(s: string): string {
+  return s.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
 export function searchCodebaseSymbols(db: Database.Database, opts: { query: string; folder?: string; limit?: number }) {
-  const q = opts.query.toLowerCase();
+  const q = escapeLikePattern(opts.query.toLowerCase());
   const limit = opts.limit ?? 50;
   
   let sql = `
     SELECT s.*, f.file_path, f.root_path
     FROM codebase_symbols s
     JOIN codebase_files f ON s.file_id = f.id
-    WHERE (lower(s.name) LIKE ? OR lower(s.signature) LIKE ? OR lower(s.docstring) LIKE ?)
+    WHERE (lower(s.name) LIKE ? ESCAPE '\\' OR lower(s.signature) LIKE ? ESCAPE '\\' OR lower(s.docstring) LIKE ? ESCAPE '\\')
   `;
   const params: unknown[] = [`%${q}%`, `%${q}%`, `%${q}%`];
   

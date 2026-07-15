@@ -238,7 +238,7 @@ export function cardTextByIds(cardIds: string[]): Map<string, { title: string; t
   const placeholders = cardIds.map(() => "?").join(", ");
   for (const r of getDb().getAllSync<{ id: string; title: string; description: string | null }>(
     `SELECT id, title, description FROM task_cards WHERE id IN (${placeholders})`,
-    ...(cardIds as never[]),
+    ...cardIds,
   )) {
     out.set(r.id, { title: r.title, text: r.description ?? "" });
   }

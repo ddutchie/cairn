@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import { View, Text, ScrollView, Pressable, StyleSheet, Alert, TextInput } from "react-native";
 import { Stack, useRouter } from "expo-router";
 import { GitMerge } from "lucide-react-native";
@@ -153,7 +153,7 @@ export default function ConflictsScreen() {
  * opaque text previews. Falls back to a plain preview when the original was
  * deleted (nothing to diff against).
  */
-function DiffView({
+const DiffView = memo(function DiffView({
   current,
   copy,
   originalDeleted,
@@ -224,7 +224,7 @@ function DiffView({
       </ScrollView>
     </View>
   );
-}
+});
 
 function makeStyles(t: Theme) {
   return StyleSheet.create({

@@ -26,6 +26,8 @@ export function ToolTrail({ tools }: { tools: ToolCall[] }) {
               key={i}
               style={styles.toolChip}
               hitSlop={6}
+              accessibilityRole="button"
+              accessibilityLabel={`Open ${label}`}
               onPress={() => {
                 haptics.impact();
                 router.push(tt.ref!.kind === "card" ? `/card/${tt.ref!.id}` : `/note/${tt.ref!.id}`);

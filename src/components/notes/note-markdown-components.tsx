@@ -11,6 +11,23 @@ import { InlineCode } from "@/lib/markdown/pipeline";
 import type { Note } from "@/types";
 
 /**
+ * Flatten React children to their plain-text content. Heading slugs must be
+ * derived from the text, not `String(children)` — for inline markdown (e.g.
+ * `# **Bold** heading`) children is an element array whose String() is
+ * "[object Object]", which would produce a wrong `data-heading-id` anchor that
+ * mismatches the TOC slug (computed from raw text).
+ */
+function childrenToText(node: React.ReactNode): string {
+  if (node == null || typeof node === "boolean") return "";
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(childrenToText).join("");
+  if (React.isValidElement(node)) {
+    return childrenToText((node.props as { children?: React.ReactNode }).children);
+  }
+  return "";
+}
+
+/**
  * Render a table cell's children, converting any leading `[ ]` / `[x]` token
  * into a clickable checkbox. GFM table cells only parse inline content, so
  * remark-gfm never emits checkbox nodes inside `<td>`/`<th>` — we recover them
@@ -39,7 +56,7 @@ export function renderCellWithCheckboxes(
     <>
       <input
         type="checkbox"
-        defaultChecked={checked}
+        checked={checked}
         className="cursor-pointer accent-[var(--accent)] w-3.5 h-3.5 relative top-[1px] mr-1"
         onChange={(e) => onToggle(e.currentTarget)}
       />
@@ -139,7 +156,7 @@ export function useNoteMarkdownComponents({
       return (
         <input
           type="checkbox"
-          defaultChecked={checked}
+          checked={checked}
           className="cursor-pointer accent-[var(--accent)] w-3.5 h-3.5 relative top-[1px]"
           onChange={(e) => toggleCheckbox(e.currentTarget)}
         />
@@ -152,15 +169,15 @@ export function useNoteMarkdownComponents({
       return <InlineCode className={className}>{children}</InlineCode>;
     },
     h1({ children }: { children?: React.ReactNode }) {
-      const text = String(children); const id = headingSlug(text);
+      const text = childrenToText(children); const id = headingSlug(text);
       return <h1 id={id} data-heading-id={id}>{children}</h1>;
     },
     h2({ children }: { children?: React.ReactNode }) {
-      const text = String(children); const id = headingSlug(text);
+      const text = childrenToText(children); const id = headingSlug(text);
       return <h2 id={id} data-heading-id={id}>{children}</h2>;
     },
     h3({ children }: { children?: React.ReactNode }) {
-      const text = String(children); const id = headingSlug(text);
+      const text = childrenToText(children); const id = headingSlug(text);
       return <h3 id={id} data-heading-id={id}>{children}</h3>;
     },
     sup({ children, ...props }: React.HTMLAttributes<HTMLElement> & ExtraProps) {

@@ -18,6 +18,21 @@ import { cn } from "@/lib/utils";
  * position (after the console body, before the connection-status line) so the
  * layout order is identical to before the extraction.
  */
+/**
+ * A downloadable/installed local Llama model, as returned (untyped) by
+ * `runtime.llm.models()`. Only the fields this console reads are declared.
+ */
+interface LlamaModel {
+  id: string;
+  name: string;
+  repo: string;
+  status: string;
+  downloadProgress?: number;
+  downloadSpeed?: string;
+  sizeBytes: number;
+  meta?: { quant?: string; filename?: string };
+}
+
 export function LlamaServerConsole({
   contextLimit,
   onContextLimitChange,
@@ -27,8 +42,7 @@ export function LlamaServerConsole({
   onContextLimitChange: (n: number) => void;
   maxStepsRow: React.ReactNode;
 }) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [llamaModels, setLlamaModels] = useState<any[]>([]);
+  const [llamaModels, setLlamaModels] = useState<LlamaModel[]>([]);
   const [serverStatus, setServerStatus] = useState<{
     running: boolean;
     port: number | null;
@@ -69,30 +83,18 @@ export function LlamaServerConsole({
     }
   }
 
-  async function refreshLlamaState() {
+  async function refreshLlamaState(quiet = false) {
     if (typeof window === "undefined" || !window.electron || !window.electron.runtime) return;
-    setIsRefreshing(true);
+    if (!quiet) setIsRefreshing(true);
     try {
       const { models: list } = await window.electron.runtime.llm.models();
-      setLlamaModels(list);
+      setLlamaModels(list as unknown as LlamaModel[]);
       const status = await window.electron.runtime.llm.server.status();
       setServerStatus(status);
     } catch (e) {
       console.error("Failed to fetch llama state:", e);
     } finally {
-      setIsRefreshing(false);
-    }
-  }
-
-  async function refreshLlamaStateQuiet() {
-    if (typeof window === "undefined" || !window.electron || !window.electron.runtime) return;
-    try {
-      const { models: list } = await window.electron.runtime.llm.models();
-      setLlamaModels(list);
-      const status = await window.electron.runtime.llm.server.status();
-      setServerStatus(status);
-    } catch (e) {
-      console.error("Failed to fetch llama state:", e);
+      if (!quiet) setIsRefreshing(false);
     }
   }
 
@@ -110,19 +112,20 @@ export function LlamaServerConsole({
           ...prev,
           [event.modelId]: {
             progress: event.progress ?? 0,
+            speed: event.speed,
             status: event.status,
             error: event.error
           }
         }));
         // Periodically refresh list to update manifest statuses
-        refreshLlamaStateQuiet();
+        refreshLlamaState(true);
       });
 
       // Listen to binary installer progress
       const unsubBinary = window.electron.runtime.llm.binary.onProgress((event) => {
         setBinaryProgress(event);
         if (event.status === "installed") {
-          refreshLlamaStateQuiet();
+          refreshLlamaState(true);
           setTimeout(() => setBinaryProgress(null), 3000);
         }
       });
@@ -176,6 +179,13 @@ export function LlamaServerConsole({
       await refreshLlamaState();
     } catch (e) {
       console.error("Failed to trigger install:", e);
+      // Clear the optimistic "downloading" entry so the UI drops the stuck
+      // progress bar / cancel control instead of hanging on a failed install.
+      setDownloadProgresses((prev) => {
+        const next = { ...prev };
+        delete next[modelId];
+        return next;
+      });
     }
   }
 
@@ -354,7 +364,7 @@ export function LlamaServerConsole({
             <div className="bg-[var(--surface-3)] p-3 rounded-lg border border-[var(--border)] mb-4 space-y-2">
               <div className="flex justify-between text-[0.714rem]">
                 <span className="text-[var(--text-primary)] font-medium capitalize flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 bg-yellow-500 rounded-full animate-ping" />
+                  <span className="w-1.5 h-1.5 bg-[var(--warning)] rounded-full animate-ping" />
                   Upgrading: {binaryProgress.status.replace("_", " ")}...
                 </span>
                 <span className="text-[var(--text-tertiary)] font-mono">
@@ -368,7 +378,7 @@ export function LlamaServerConsole({
                 />
               </div>
               {binaryProgress.error && (
-                <p className="text-[0.65rem] text-red-400 font-mono">Error: {binaryProgress.error}</p>
+                <p className="text-[0.65rem] text-[var(--danger)] font-mono">Error: {binaryProgress.error}</p>
               )}
             </div>
           )}
@@ -460,7 +470,7 @@ export function LlamaServerConsole({
                 </label>
 
                 <button
-                  onClick={refreshLlamaState}
+                  onClick={() => refreshLlamaState()}
                   disabled={isRefreshing}
                   className="text-[0.714rem] text-[var(--accent)] hover:underline flex items-center gap-1 cursor-pointer"
                 >
@@ -472,7 +482,7 @@ export function LlamaServerConsole({
 
             <div className="space-y-3">
               {llamaModels.map((model) => {
-                const dl = downloadProgresses[model.id] || { progress: model.downloadProgress, status: model.status, speed: model.downloadSpeed };
+                const dl = downloadProgresses[model.id] || { progress: model.downloadProgress ?? 0, status: model.status, speed: model.downloadSpeed };
                 const isDownloading = dl.status === "downloading";
                 const isInstalled = dl.status === "installed" || model.status === "installed";
                 const isActive = serverStatus.running && serverStatus.activeModelId === model.id;

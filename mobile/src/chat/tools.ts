@@ -235,7 +235,7 @@ export const TOOLS: ToolDef[] = [
       // and returned ALL cards — a behavior/name mismatch the model tripped on).
       // With no query, fall back to listing the whole project.
       const cards = query
-        ? q.searchTasks(query).filter((c) => c.project_id === projectId)
+        ? q.searchTasks(query, projectId)
         : q.listCards(projectId);
       return cards.map((c) => ({ id: c.id, title: c.title, priority: c.priority, column_id: c.column_id }));
     },

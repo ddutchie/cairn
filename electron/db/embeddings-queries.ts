@@ -240,7 +240,11 @@ export interface CardStub {
   archived_at: string | null;
 }
 export function fetchCardsForEmbedding(db: Database.Database, workspaceId: string, cardIds?: string[]): CardStub[] {
-  if (cardIds?.length) {
+  // An explicitly-empty id list means "no cards" — return nothing rather than
+  // falling through to the all-active-cards query (which would re-embed the
+  // whole workspace). Only an omitted (undefined) argument selects all cards.
+  if (cardIds !== undefined) {
+    if (cardIds.length === 0) return [];
     const placeholders = cardIds.map(() => "?").join(",");
     return db.prepare(
       `SELECT id, workspace_id, title, description, archived_at FROM task_cards

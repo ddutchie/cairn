@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { View, Text, ScrollView, Pressable } from "react-native";
 import { ChevronDown, Inbox } from "lucide-react-native";
 import Animated from "react-native-reanimated";
@@ -30,6 +30,12 @@ export function UnscheduledTray({
 }) {
   const [open, setOpen] = useState(true);
   const hoverStyle = useZoneHighlight(ctrl, UNSCHEDULED_DROP_ID);
+  // Stable ref callback so the zone isn't re-registered (detach + reattach) on
+  // every render; ctrl.registerZone is itself referentially stable.
+  const registerTrayZone = useCallback(
+    (node: View | null) => ctrl.registerZone(UNSCHEDULED_DROP_ID, node),
+    [ctrl],
+  );
   // In the workspace calendar (showProject) group undated tasks by project so a
   // large backlog is easy to scan; per-project calendars keep a flat list.
   const groups = useMemo(() => {
@@ -62,7 +68,7 @@ export function UnscheduledTray({
 
   return (
     <View
-      ref={(node: View | null) => ctrl.registerZone(UNSCHEDULED_DROP_ID, node)}
+      ref={registerTrayZone}
       collapsable={false}
       style={styles.tray}
     >

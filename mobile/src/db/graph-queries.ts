@@ -84,7 +84,7 @@ export function getKnowledgeGraph(): KnowledgeGraph {
     const placeholders = ids.map(() => "?").join(",");
     const tagRows = db.getAllSync<TagRow>(
       `SELECT id, name, color FROM tags WHERE deleted_at IS NULL AND id IN (${placeholders})`,
-      ...(ids as never[]),
+      ...ids,
     );
     const tagById = new Map(tagRows.map((tr) => [tr.id, tr]));
     for (const tid of usedTagIds) {

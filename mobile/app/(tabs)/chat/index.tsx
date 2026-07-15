@@ -36,10 +36,11 @@ export default function ChatScreen() {
 
   // Restore local (on-device) chat history once, synchronously, when the screen
   // first mounts — seeding both the UI bubbles (messages) and the persistent
-  // agent conversation (ref) from a SINGLE history read. useMemo(…, []) runs
-  // once during the first render and never again, so history is loaded exactly
-  // once and shared by both seeds below (the previous code read it twice).
-  const initial = useMemo(() => loadInitialChat(), []);
+  // agent conversation (ref) from a SINGLE history read. A lazy useState
+  // initializer is guaranteed to run exactly once (unlike useMemo, which React
+  // may discard and recompute), so the DB read happens once and both seeds below
+  // share the same result.
+  const [initial] = useState(() => loadInitialChat());
   const [messages, setMessages] = useState<UiMessage[]>(initial.uiMessages);
   const conversation = useRef<UIMessage[]>(null as unknown as UIMessage[]);
   if (conversation.current === null) {

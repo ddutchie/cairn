@@ -31,7 +31,7 @@ export function HeaderEditor({
           />
           <input
             value={row.value}
-            type={row.isSecret && row.value.startsWith("secret://") ? "password" : "text"}
+            type={row.isSecret ? "password" : "text"}
             onChange={(e) =>
               onChange(rows.map((r, j) => (j === i ? { ...r, value: e.target.value, isSecret: looksSecret(e.target.value) } : r)))
             }

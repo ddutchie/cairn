@@ -79,7 +79,7 @@ export function Composer({
             {attachments.map((a, i) => (
               <View key={i} style={styles.previewItem}>
                 <Image source={{ uri: a.url }} style={styles.previewImg} />
-                <Pressable style={styles.previewRemove} onPress={() => onRemoveAttachment(i)} hitSlop={6}>
+                <Pressable style={styles.previewRemove} onPress={() => onRemoveAttachment(i)} hitSlop={6} accessibilityRole="button" accessibilityLabel="Remove attachment">
                   <X size={12} color="#fff" />
                 </Pressable>
               </View>
@@ -124,6 +124,9 @@ export function Composer({
               style={[styles.sendBtn, !canSend && styles.sendBtnDisabled]}
               onPress={onSend}
               disabled={!canSend}
+              accessibilityRole="button"
+              accessibilityLabel="Send message"
+              accessibilityState={{ disabled: !canSend }}
             >
               {busy ? <ActivityIndicator color={t.accentFg} size="small" /> : <Send size={14} color={t.accentFg} />}
             </Pressable>

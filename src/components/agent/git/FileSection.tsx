@@ -16,8 +16,13 @@ export function FileSection({
   return (
     <div>
       <div
+        role="button"
+        tabIndex={0}
         className="flex items-center gap-2 px-4 py-1.5 cursor-pointer hover:bg-[var(--surface-2)] transition-colors select-none"
         onClick={onToggle}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(); }
+        }}
       >
         {expanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
         <span className="text-[0.65rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)]">{label}</span>

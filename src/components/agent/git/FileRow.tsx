@@ -26,10 +26,15 @@ export function FileRow({
   return (
     <>
       <div
+        role="button"
+        tabIndex={0}
         className="flex items-center gap-2 px-6 py-1.5 hover:bg-[var(--surface-2)] transition-colors group cursor-pointer"
         onClick={onToggle}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(); }
+        }}
       >
-        <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
           <Tooltip content={actionLabel === "+" ? "Stage changes in this file" : "Unstage changes in this file"}>
             <button
               onClick={onAction}

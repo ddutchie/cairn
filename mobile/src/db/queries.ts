@@ -346,14 +346,18 @@ export function searchNotes(query: string): NoteRow[] {
 }
 
 /** Search live (non-archived) task cards by title or description. */
-export function searchTasks(query: string): CardRow[] {
+export function searchTasks(query: string, projectId?: string): CardRow[] {
   const clause = buildTermClause(query, ["title", "description"]);
   if (!clause) return [];
+  // Scope to the project BEFORE the LIMIT so a project's matches aren't dropped
+  // when the workspace-wide match set exceeds the cap.
+  const projectClause = projectId ? "AND project_id = ?" : "";
+  const params = projectId ? [...clause.params, projectId] : clause.params;
   return getDb().getAllSync<CardRow>(
     `SELECT id, column_id, project_id, title, description, priority, tag_ids, "order", due_date, assignee FROM task_cards
-     WHERE ${LIVE} ${clause.sql}
+     WHERE ${LIVE} ${clause.sql} ${projectClause}
      ORDER BY updated_at DESC LIMIT 50`,
-    ...clause.params,
+    ...params,
   );
 }
 
@@ -378,29 +382,34 @@ export function listReadyCards(projectId?: string): CardRow[] {
   );
   if (candidates.length === 0) return [];
 
-  // Resolve blockers: a blocker is "cleared" when its card is deleted/archived or
-  // lives in a done column (or no longer exists — an orphaned blocker is cleared).
-  const doneOrGone = new Map<string, boolean>();
-  const isCleared = (blockerId: string): boolean => {
-    const cached = doneOrGone.get(blockerId);
-    if (cached !== undefined) return cached;
-    const row = getDb().getFirstSync<{ archived_at: string | null; deleted_at: string | null; type: string }>(
-      `SELECT c.archived_at, c.deleted_at, col.type
+  // Resolve blockers in one batched query (mirrors getKnowledgeGraph's IN(...)
+  // pattern) instead of a per-blocker DB round-trip. A blocker is "cleared" when
+  // its card is deleted/archived, lives in a done column, or no longer exists
+  // (an orphaned blocker is cleared).
+  const blockersByCard = candidates.map((c) => parseIds(c.blocked_by_ids));
+  const distinctBlockerIds = [...new Set(blockersByCard.flat())];
+
+  const cleared = new Set<string>();
+  if (distinctBlockerIds.length > 0) {
+    const placeholders = distinctBlockerIds.map(() => "?").join(",");
+    const rows = getDb().getAllSync<{ id: string; archived_at: string | null; deleted_at: string | null; type: string }>(
+      `SELECT c.id, c.archived_at, c.deleted_at, col.type
        FROM task_cards c JOIN board_columns col ON col.id = c.column_id
-       WHERE c.id = ?`,
-      blockerId,
+       WHERE c.id IN (${placeholders})`,
+      ...distinctBlockerIds,
     );
-    const cleared = !row || row.archived_at !== null || row.deleted_at !== null || row.type === "done";
-    doneOrGone.set(blockerId, cleared);
-    return cleared;
-  };
+    const rowById = new Map(rows.map((r) => [r.id, r]));
+    for (const id of distinctBlockerIds) {
+      const row = rowById.get(id);
+      // Missing (orphaned) → cleared; otherwise cleared when gone or done.
+      if (!row || row.archived_at !== null || row.deleted_at !== null || row.type === "done") {
+        cleared.add(id);
+      }
+    }
+  }
 
   return candidates
-    .filter((c) => {
-      let blockers: string[] = [];
-      try { blockers = JSON.parse(c.blocked_by_ids || "[]"); } catch { blockers = []; }
-      return blockers.every(isCleared);
-    })
+    .filter((_c, i) => blockersByCard[i].every((id) => cleared.has(id)))
     .map(({ blocked_by_ids: _omit, ...card }) => card);
 }
 

@@ -217,7 +217,7 @@ const SCENARIOS: { ask: string; expect: string[] }[] = [
   { ask: "Rename the note with id note_42 to 'Q3 Planning'.", expect: ["rename_note"] },
   { ask: "Move the card id card_7 to the Done column (col_done).", expect: ["update_task", "bulk_update_task_status"] },
   { ask: "Make a dashboard showing task counts per column.", expect: ["create_dashboard", "get_dashboard_constants"] },
-  { ask: "What notes talk about authentication? Search by meaning, not keywords.", expect: ["search_notes_semantic", "semantic_search_notes"] },
+  { ask: "What notes talk about authentication? Search by meaning, not keywords.", expect: ["search_notes_semantic"] },
   { ask: "Create a task 'Write release notes' in the Todo column (col_todo).", expect: ["create_task"] },
   { ask: "Move notes note_1, note_2 and note_3 into a folder called 'Research'.", expect: ["bulk_move_notes"] },
   { ask: "Add a node to the idea canvas in project proj_1 for a new caching-layer idea.", expect: ["create_idea_flow_node"] },
@@ -230,7 +230,7 @@ const SCENARIOS: { ask: string; expect: string[] }[] = [
 const MOBILE_SCENARIOS: { ask: string; expect: string[] }[] = [
   { ask: "Rename the note with id note_42 to 'Q3 Planning'.", expect: ["rename_note"] },
   { ask: "Move the card id card_7 to the Done column (col_done).", expect: ["update_task"] },
-  { ask: "What notes talk about authentication? Search by meaning, not keywords.", expect: ["semantic_search_notes"] },
+  { ask: "What notes talk about authentication? Search by meaning, not keywords.", expect: ["search_notes_semantic"] },
   { ask: "Create a task 'Write release notes' in the Todo column (col_todo).", expect: ["create_task"] },
   { ask: "Move notes note_1, note_2 and note_3 into a folder called 'Research'.", expect: ["bulk_move_notes"] },
   { ask: "Delete the note with id note_9.", expect: ["delete_note"] },

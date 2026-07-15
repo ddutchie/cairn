@@ -41,7 +41,8 @@ export function statusLabel(s: string): string {
 /** CSS-variable colour for a git status code (added/deleted/renamed/untracked). */
 export function statusColor(s: string): string {
   if (s.startsWith("A")) return "var(--success)";
-  if (s.startsWith("D")) return "var(--danger)";
+  // Staged ("D ") or unstaged (" D") deletions both map to danger.
+  if (s.startsWith("D") || s === " D") return "var(--danger)";
   if (s.startsWith("R")) return "var(--accent)";
   if (s.startsWith("?")) return "var(--text-tertiary)";
   return "var(--warning)";
