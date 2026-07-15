@@ -80,17 +80,30 @@ export function executeGetProjectSummary(snap: CairnSnapshot, args: Args): unkno
 export function executeListTasks(snap: CairnSnapshot, args: Args): unknown {
   const cols = snap.columns
     .filter((c) => !args.projectId || c.projectId === args.projectId)
-    .sort((a, b) => a.order - b.order);
-  return cols
     .filter((c) => !args.columnType || c.type === args.columnType)
-    .map((col) => ({
-      columnName: col.name,
-      columnType: col.type,
-      columnId: col.id,
-      tasks: snap.cards
-        .filter((c) => c.columnId === col.id && !c.archivedAt)
-        .map((c) => ({ id: c.id, title: c.title, priority: c.priority, description: c.description })),
-    }));
+    .sort((a, b) => a.order - b.order);
+  // Documented contract (get_dashboard_constants / DashboardApiModal):
+  //   { tasksByColumn: { COLUMN_ID: [{ id, title, priority, description,
+  //     dueDate, columnId, columnName, columnType, updatedAt }] } }
+  // Consumers use Object.values(result.tasksByColumn).flat(), so this MUST be
+  // an object keyed by column id — not an array.
+  const tasksByColumn: Record<string, Array<Record<string, unknown>>> = {};
+  for (const col of cols) {
+    tasksByColumn[col.id] = snap.cards
+      .filter((c) => c.columnId === col.id && !c.archivedAt)
+      .map((c) => ({
+        id: c.id,
+        title: c.title,
+        priority: c.priority,
+        description: c.description,
+        dueDate: c.dueDate ?? null,
+        columnId: col.id,
+        columnName: col.name,
+        columnType: col.type,
+        updatedAt: c.updatedAt,
+      }));
+  }
+  return { tasksByColumn };
 }
 
 export function executeListNotes(snap: CairnSnapshot, args: Args): unknown {
