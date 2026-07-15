@@ -407,9 +407,11 @@ export function NotesView() {
               <Button variant="ghost" size="icon" onClick={() => handleCreateNote()}><Plus size={14} /></Button>
             </Tooltip>
             <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" title="New from template"><LayoutTemplate size={13} /></Button>
-              </DropdownMenuTrigger>
+              <Tooltip content="New from template">
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon"><LayoutTemplate size={13} /></Button>
+                </DropdownMenuTrigger>
+              </Tooltip>
               <DropdownMenuContent align="end" className="w-52">
                 {templates.length === 0 ? (
                   <DropdownMenuItem onClick={handleAddStarterTemplates} className="flex items-center gap-2 text-xs">
