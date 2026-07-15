@@ -62,6 +62,14 @@ export default defineConfig({
       },
       {
         resolve: { alias: mobileAlias },
+        // Disable tsconfig auto-discovery for the oxc transform so it does NOT
+        // walk up and load mobile/tsconfig.json — that file
+        // `extends "expo/tsconfig.base"`, which is only installed under
+        // mobile/node_modules and is unresolvable from the repo-root vitest run
+        // (CI installs root deps only, so the transform fails with "Tsconfig
+        // not found"). These are plain-TS pure-logic tests; path aliases
+        // resolve via resolve.alias above, so no tsconfig paths are needed.
+        oxc: { tsconfig: false },
         test: {
           name: "mobile",
           environment: "node",
