@@ -8,10 +8,11 @@
  * Pipeline: calloutsToHtml -> wikilinksToChips (outside callouts) -> markdown-it
  * (html:true) -> wrap in buildPdfHtml.
  */
-import { buildPdfHtml, type PdfTheme } from "@cairn/shared/notes/pdf-template";
+import { buildPdfHtml, type PdfTheme, pdfSafeFilename } from "@cairn/shared/notes/pdf-template";
 import { calloutsToHtml, wikilinksToChips } from "@cairn/shared/notes/note-html";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
+import { File, Paths } from "expo-file-system";
 
 // markdown-it has no bundled @types here; require + minimal typing. These use
 // require (not import) because the packages ship no ESM/type entrypoint in this
@@ -58,15 +59,30 @@ export async function exportNoteToPdf(
   try {
     const html = noteMarkdownToPdfHtml(title, markdown, theme);
     const { uri } = await Print.printToFileAsync({ html });
+
+    // Print writes to a random cache filename; rename it to the note title so
+    // the shared/saved PDF is "<Title>.pdf". Best-effort — if the move fails
+    // for any reason we still share the original file.
+    let shareUri = uri;
+    try {
+      const named = new File(Paths.cache, `${pdfSafeFilename(title)}.pdf`);
+      if (named.exists) named.delete(); // avoid DestinationAlreadyExists on repeat exports
+      const src = new File(uri);
+      src.moveSync(named);
+      shareUri = named.uri;
+    } catch {
+      /* keep the original uri */
+    }
+
     if (await Sharing.isAvailableAsync()) {
-      await Sharing.shareAsync(uri, {
+      await Sharing.shareAsync(shareUri, {
         mimeType: "application/pdf",
         dialogTitle: title,
         UTI: "com.adobe.pdf",
       });
       return { ok: true, shared: true };
     }
-    // Sharing unavailable (rare) — the PDF still exists at `uri`.
+    // Sharing unavailable (rare) — the PDF still exists at `shareUri`.
     return { ok: true, shared: false };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };

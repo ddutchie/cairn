@@ -14,6 +14,16 @@
  */
 export type PdfTheme = "light" | "dark";
 
+/**
+ * Strip characters that are invalid in filenames on macOS/Windows/iOS and
+ * collapse to a safe base name, so an exported PDF is named after its note
+ * title. Mirrors the desktop `sanitizeFilename` / `pdfSafeTitle`. Returns
+ * "untitled" when nothing usable remains. Does NOT include an extension.
+ */
+export function pdfSafeFilename(title: string): string {
+  return (title ?? "").replace(/[\/\\:*?"<>|]/g, "_").trim() || "untitled";
+}
+
 const LIGHT_VARS = {
   bg: "#ffffff",
   textPrimary: "#1a1917",
