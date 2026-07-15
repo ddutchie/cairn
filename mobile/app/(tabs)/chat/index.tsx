@@ -152,6 +152,29 @@ export default function ChatScreen() {
   // (or other layout changes while scrolled up) doesn't yank the view to the end.
   const nearBottom = useRef(true);
   const router = useRouter();
+
+  // Jump to the latest message on first mount, on resume-remount, and whenever a
+  // NEW message is added while at/near the bottom. Without this the transcript
+  // opened scrolled to the TOP with restored history — `onContentSizeChange`
+  // only fires `scrollToEnd` when `nearBottom` is already true, and a first-paint
+  // `onEndVisible(false)` (overflowing restored history) could flip it false and
+  // strand the view until a manual send. We scroll after paint (rAF + a short
+  // fallback) so the ScrollView has measured its content + insets. Mount/resume
+  // force the jump (they reset intent to "follow"); count growth respects
+  // `nearBottom` so we don't yank a user who scrolled up to read.
+  const msgCount = messages.length;
+  const prevMsgCount = useRef(msgCount);
+  useEffect(() => {
+    const isMountOrResume = prevMsgCount.current === msgCount; // effect ran w/o a count change → mount/resumeKey
+    const grew = msgCount > prevMsgCount.current;
+    prevMsgCount.current = msgCount;
+    if (msgCount === 0) return;
+    if (isMountOrResume) nearBottom.current = true; // opening the transcript = follow the end
+    if (!isMountOrResume && grew && !nearBottom.current) return; // user scrolled up; don't yank
+    const raf = requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: false }));
+    const timer = setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 80);
+    return () => { cancelAnimationFrame(raf); clearTimeout(timer); };
+  }, [msgCount, resumeKey]);
   // Persistent agent conversation (UIMessage parts format) across turns. Seeded
   // once from the same on-device history as `messages` above. A ref's argument
   // is evaluated on every render (only the first is kept), so the history
@@ -424,7 +447,7 @@ export default function ChatScreen() {
           <KeyboardChatScrollView
             key={resumeKey}
             ref={scrollRef}
-            style={StyleSheet.absoluteFill}
+            style={styles.scroll}
             contentContainerStyle={[styles.list, messages.length === 0 && styles.listEmpty]}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="interactive"
@@ -650,6 +673,12 @@ const Bubble = memo(function Bubble({ m, t, styles }: { m: UiMessage; t: Theme; 
 
 function makeStyles(t: Theme) {
   return StyleSheet.create({
+    // flex:1 (not absoluteFill) so the scroll viewport has a deterministic height
+    // that tracks the parent box — the library's inner container is flexGrow/
+    // flexShrink with no fixed height, so an absolutely-filled outer left the
+    // viewport measurement lagging content/keyboard-inset changes (chat "wrong
+    // size"). It sits inside the absoluteFill KeyboardGestureArea.
+    scroll: { flex: 1 },
     list: { padding: 14, paddingBottom: 20 },
     // Grow to fill the viewport when empty so the branded EmptyState's top-bias
     // measures against the full content area (below the header).
