@@ -457,6 +457,22 @@ describe("bulk_update_task_status", () => {
     const result = await exec(db, "bulk_update_task_status", { cardIds: [], targetColumnId: "col2" }) as Record<string, unknown>;
     expect(result).toHaveProperty("error");
   });
+
+  it("skips cards from a different project than the target column", async () => {
+    const db = makeDb();
+    seed(db);
+    // A second project with its own column + card.
+    createProject(db, { id: "proj2", workspaceId: "ws1", name: "Other" });
+    createColumn(db, { id: "p2col", projectId: "proj2", workspaceId: "ws1", name: "Todo", type: "todo", order: 0 });
+    createCard(db, { id: "p2card", columnId: "p2col", projectId: "proj2", workspaceId: "ws1", title: "Foreign", order: 0 });
+    // Try to move proj1's card1 and proj2's p2card into proj1's col2.
+    const result = await exec(db, "bulk_update_task_status", { cardIds: ["card1", "p2card"], targetColumnId: "col2" }) as Record<string, unknown>;
+    expect(result.moved).toBe(1);
+    const failed = result.failed as Array<Record<string, unknown>>;
+    expect(failed.map((f) => f.id)).toEqual(["p2card"]);
+    // The foreign card stayed put.
+    expect(getCardById(db, "p2card")?.columnId).toBe("p2col");
+  });
 });
 
 // ── upsert_project ────────────────────────────────────────────────────────────

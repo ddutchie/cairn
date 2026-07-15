@@ -76,6 +76,10 @@ export function bulk_update_task_status(db: Database.Database, snap: Snapshot, a
     const card = snap.cards.find((c) => c.id === id);
     if (!card) {
       results.push({ id, ok: false, error: "Task not found" });
+    } else if (card.projectId !== col.projectId) {
+      // A column belongs to exactly one project — moving a card across
+      // projects would orphan it against a column not in its board.
+      results.push({ id, ok: false, error: "Card is in a different project than the target column" });
     } else {
       q.updateCard(db, id, { columnId: targetColumnId });
       results.push({ id, ok: true });
