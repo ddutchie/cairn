@@ -4,6 +4,16 @@ import type Database from "better-sqlite3";
 import * as q from "../db/queries";
 import { newId } from "../db/utils";
 
+/**
+ * Bump when the symbol/relation EXTRACTION logic changes (new kinds, regex
+ * fixes, etc.). The per-file cache key folds this in, so a parser upgrade
+ * invalidates every previously-indexed file on the next reindex — otherwise
+ * files whose content (size+mtime) hasn't changed keep symbols parsed by the
+ * OLD binary and `codebase_reindex` silently no-ops them.
+ *   v2: capture exported const/let/var (variable), type-alias, enum.
+ */
+const PARSER_VERSION = 2;
+
 // Supported file extensions for codebase indexing
 const SUPPORTED_EXTENSIONS = new Set([
   ".ts", ".tsx", ".js", ".jsx",
@@ -465,7 +475,7 @@ export function parseFileContent(content: string, ext: string): ExtractedSymbol[
   return symbols;
 }
 
-export async function indexCodebase(db: Database.Database, rootPath: string): Promise<void> {
+export async function indexCodebase(db: Database.Database, rootPath: string, opts: { force?: boolean } = {}): Promise<void> {
   const absoluteRoot = path.resolve(rootPath);
   
   // 1. Walk files
@@ -473,7 +483,19 @@ export async function indexCodebase(db: Database.Database, rootPath: string): Pr
   const filePathsSet = new Set(files);
   
   // 2. Fetch existing files in DB
-  const dbFiles = q.getCodebaseFilesByRoot(db, absoluteRoot);
+  let dbFiles = q.getCodebaseFilesByRoot(db, absoluteRoot);
+
+  // force: drop all cached rows for this root so every file is re-parsed
+  // (escape hatch when the on-disk content is unchanged but the index is
+  // stale — e.g. a manual DB edit; the PARSER_VERSION bump handles the
+  // parser-upgrade case automatically).
+  if (opts.force && dbFiles.length > 0) {
+    db.transaction(() => {
+      for (const dbFile of dbFiles) q.deleteCodebaseFile(db, dbFile.id);
+    })();
+    dbFiles = [];
+  }
+
   const dbFilesMap = new Map(dbFiles.map(f => [f.file_path, f]));
   
   // Clean up any files that no longer exist on disk (wrapped in transaction)
@@ -513,7 +535,7 @@ export async function indexCodebase(db: Database.Database, rootPath: string): Pr
       continue;
     }
     
-    const hash = `${stat.size}-${stat.mtimeMs}`;
+    const hash = `${stat.size}-${stat.mtimeMs}-p${PARSER_VERSION}`;
     const dbFile = dbFilesMap.get(filePath);
     
     let fileId: string;
@@ -693,7 +715,7 @@ export async function reindexFile(
   const symbols = parseFileContent(content, ext);
   const existing = q.getCodebaseFileByPath(db, absFile);
   const fileId = existing?.id ?? newId();
-  const hash = `${stat.size}-${stat.mtimeMs}`;
+  const hash = `${stat.size}-${stat.mtimeMs}-p${PARSER_VERSION}`;
 
   db.transaction(() => {
     q.upsertCodebaseFile(db, { id: fileId, rootPath: absoluteRoot, filePath: absFile, hash });

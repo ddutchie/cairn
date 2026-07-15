@@ -503,9 +503,10 @@ export const TOOL_SCHEMAS = {
   // ── Codebase Semantic Indexer ─────────────────────────────────────────────────
 
   codebase_reindex: {
-    description: "Scan and semantic-index a codebase folder. Updates the SQLite cache of file paths, classes, functions, methods, docstrings, and call dependencies.",
+    description: "Scan and semantic-index a codebase folder. Updates the SQLite cache of file paths, classes, functions, methods, docstrings, and call dependencies. Unchanged files are skipped via a content hash; pass force:true to drop the cache and re-parse everything.",
     schema: z.object({
       folder: sStr.describe("Absolute path to the codebase root folder"),
+      force:  z.boolean().optional().describe("Re-parse every file even if unchanged (rebuild the index)."),
     }),
   },
 

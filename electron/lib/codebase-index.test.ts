@@ -472,5 +472,25 @@ def format_username(user):
       expect(changed).toBe(false);
       expect(q.getCodebaseFileByPath(db, f)).toBeUndefined();
     });
+
+    it("force:true re-parses even when file content is unchanged (repairs a stale index)", async () => {
+      const f = path.join(tmpDir, "reg.ts");
+      fs.writeFileSync(f, `export const REGISTRY = { a: 1 };\n`);
+      await indexCodebase(db, tmpDir);
+      expect(q.getCodebaseFileSymbols(db, f).map((s) => s.name)).toContain("REGISTRY");
+
+      // Simulate a stale index left by an OLD parser: wipe this file's symbols
+      // WITHOUT touching the file on disk. A normal reindex would skip it
+      // (hash unchanged); force must re-parse and restore the symbol.
+      const dbFile = q.getCodebaseFileByPath(db, f)!;
+      q.clearCodebaseFileData(db, dbFile.id);
+      expect(q.getCodebaseFileSymbols(db, f)).toHaveLength(0);
+
+      await indexCodebase(db, tmpDir); // no-op: content hash matches
+      expect(q.getCodebaseFileSymbols(db, f)).toHaveLength(0);
+
+      await indexCodebase(db, tmpDir, { force: true }); // rebuild
+      expect(q.getCodebaseFileSymbols(db, f).map((s) => s.name)).toContain("REGISTRY");
+    });
   });
 });
