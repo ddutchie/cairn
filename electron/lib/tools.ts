@@ -51,6 +51,8 @@ export const TOOL_LABELS: Record<string, (args: ToolArgs) => string> = {
   get_knowledge_graph:    () => "Reading knowledge graph",
   get_neighbors:          (a) => `Getting neighbours of ${(a.nodeId as string) ?? "node"}`,
   create_tag:             (a) => `Creating tag "${a.name}"`,
+  tag_note:               (a) => `Tagging note (${((a.tagNames as string[]) ?? []).join(", ")})`,
+  tag_task:               (a) => `Tagging task (${((a.tagNames as string[]) ?? []).join(", ")})`,
   create_dashboard:       (a) => `Creating dashboard "${a.title}"`,
   update_dashboard:       () => "Updating dashboard",
   get_dashboard_constants: () => "Reading dashboard API reference",

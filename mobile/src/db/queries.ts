@@ -150,6 +150,68 @@ export function setCardTags(cardId: string, tagIds: string[]): void {
   notifyLocalWrite();
 }
 
+/**
+ * Resolve tag NAMES to ids within a workspace, creating any that don't exist
+ * (mirrors desktop `resolveTagNames`). Case-insensitive match on name.
+ */
+export function resolveTagNames(workspaceId: string, tagNames: string[]): string[] {
+  const db = getDb();
+  const ids: string[] = [];
+  for (const raw of tagNames) {
+    const name = (raw ?? "").trim();
+    if (!name) continue;
+    const existing = db.getFirstSync<{ id: string }>(
+      "SELECT id FROM tags WHERE workspace_id = ? AND LOWER(name) = ? AND deleted_at IS NULL",
+      workspaceId,
+      name.toLowerCase(),
+    );
+    if (existing) {
+      ids.push(existing.id);
+    } else {
+      const id = genId();
+      const now = new Date().toISOString();
+      db.runSync(
+        "INSERT INTO tags (id, workspace_id, name, color, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+        id, workspaceId, name, "#6366f1", now, now,
+      );
+      ids.push(id);
+    }
+  }
+  notifyLocalWrite();
+  return ids;
+}
+
+type TagMode = "add" | "remove" | "set";
+
+function mergeTagIds(current: string[], resolved: string[], mode: TagMode): string[] {
+  if (mode === "remove") return current.filter((id) => !resolved.includes(id));
+  if (mode === "set") return Array.from(new Set(resolved));
+  return Array.from(new Set([...current, ...resolved])); // add
+}
+
+/**
+ * Apply tags by NAME to an existing note. Returns the resulting tag ids, or an
+ * error object if the note is missing. Creates tags as needed.
+ */
+export function tagNote(noteId: string, tagNames: string[], mode: TagMode = "add"): { error: string } | { id: string; tagIds: string[] } {
+  const note = getNote(noteId);
+  if (!note) return { error: "Note not found" };
+  const resolved = resolveTagNames(workspaceIdForProject(note.project_id), tagNames);
+  const next = mergeTagIds(parseIds(note.tag_ids), resolved, mode);
+  setNoteTags(noteId, next);
+  return { id: noteId, tagIds: next };
+}
+
+/** Apply tags by NAME to an existing task card. */
+export function tagTask(cardId: string, tagNames: string[], mode: TagMode = "add"): { error: string } | { id: string; tagIds: string[] } {
+  const card = getCard(cardId);
+  if (!card) return { error: "Task not found" };
+  const resolved = resolveTagNames(workspaceIdForProject(card.project_id), tagNames);
+  const next = mergeTagIds(parseIds(card.tag_ids), resolved, mode);
+  setCardTags(cardId, next);
+  return { id: cardId, tagIds: next };
+}
+
 export function listProjects(): ProjectRow[] {
   return getDb().getAllSync<ProjectRow>(
     `SELECT id, name, icon FROM projects WHERE ${LIVE} ORDER BY name`,

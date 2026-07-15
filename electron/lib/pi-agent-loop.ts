@@ -223,6 +223,8 @@ const CAIRN_TOOL_NAMES = new Set([
   "link_note_to_task",
   // ── Tags ────────────────────────────────────────────────────────────────────
   "create_tag",
+  "tag_note",
+  "tag_task",
   // ── Idea Flow ───────────────────────────────────────────────────────────────
   "get_idea_flow",
   "get_idea_flow_rules",

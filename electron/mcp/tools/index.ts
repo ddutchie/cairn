@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import { getSnapshot } from "../db";
 import { getCairnContext, getProjectContextPack, DASHBOARD_CONSTANTS, IDEA_FLOW_RULES } from "./metadata";
-import { create_tag } from "./tags";
+import { create_tag, tag_note, tag_task } from "./tags";
 import { upsert_project, delete_project } from "./projects";
 import { get_note, search_notes, ensure_note, append_to_note, patch_note, delete_note, rename_note, bulk_move_notes, list_folders } from "./notes";
 import { get_task, search_tasks, create_task, bulk_update_task_status, link_note_to_task, unlink_note_from_task, delete_task, list_ready_tasks, update_task } from "./tasks";
@@ -88,6 +88,12 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
 
     case "create_tag":
       return create_tag(db, args);
+
+    case "tag_note":
+      return tag_note(db, args);
+
+    case "tag_task":
+      return tag_task(db, args);
 
     case "delete_project":
       return delete_project(db, snap, workspacePath, args);

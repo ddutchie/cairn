@@ -21,6 +21,12 @@ export interface ToolDef {
 
 const str = (v: unknown): string => (typeof v === "string" ? v : v == null ? "" : String(v));
 
+const strArray = (v: unknown): string[] =>
+  Array.isArray(v) ? v.map((x) => str(x)).filter((s) => s.length > 0) : [];
+
+const tagMode = (v: unknown): "add" | "remove" | "set" =>
+  v === "remove" || v === "set" ? v : "add";
+
 // Small helpers to keep tool schemas terse.
 const obj = (props: Record<string, unknown>, required: string[] = []) => ({
   type: "object",
@@ -295,6 +301,28 @@ export const TOOLS: ToolDef[] = [
       q.deleteCard(str(a.id));
       return { ok: true };
     },
+  },
+  {
+    name: "tag_note",
+    description:
+      "Apply or remove tags on an existing note by tag NAME (tags are created if missing). mode = add (default) | remove | set. Reach for this when asked to organise/categorise notes.",
+    params: '{ "note_id": string, "tag_names": string[], "mode"?: "add"|"remove"|"set" }',
+    jsonSchema: obj(
+      { note_id: S, tag_names: { type: "array", items: S }, mode: S },
+      ["note_id", "tag_names"],
+    ),
+    run: (a) => q.tagNote(str(a.note_id), strArray(a.tag_names), tagMode(a.mode)),
+  },
+  {
+    name: "tag_task",
+    description:
+      "Apply or remove tags on an existing task card by tag NAME (tags are created if missing). mode = add (default) | remove | set. Reach for this when asked to organise/categorise tasks.",
+    params: '{ "card_id": string, "tag_names": string[], "mode"?: "add"|"remove"|"set" }',
+    jsonSchema: obj(
+      { card_id: S, tag_names: { type: "array", items: S }, mode: S },
+      ["card_id", "tag_names"],
+    ),
+    run: (a) => q.tagTask(str(a.card_id), strArray(a.tag_names), tagMode(a.mode)),
   },
 ];
 

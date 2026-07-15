@@ -22,7 +22,7 @@ import type Database from "better-sqlite3";
 import { applySchema } from "../db/schema";
 import {
   createWorkspace, createProject, createNote, updateNote,
-  createColumn, createCard, getCardById,
+  createColumn, createCard, getCardById, getNoteById,
 } from "../db/queries";
 import { executeTool } from "./chat-executor";
 import type { LLMConfig } from "../lib/llm";
@@ -203,6 +203,83 @@ describe("update_task", () => {
     const db = makeDb();
     seed(db);
     const result = await exec(db, "update_task", { cardId: "nope", title: "X" }) as Record<string, unknown>;
+    expect(result).toHaveProperty("error");
+  });
+});
+
+// ── tag_note / tag_task ───────────────────────────────────────────────────────
+
+describe("tag_note", () => {
+  it("adds tags by name, creating them if missing", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "tag_note", { noteId: "note1", tagNames: ["urgent", "review"] }) as Record<string, unknown>;
+    const tagIds = result.tagIds as string[];
+    expect(tagIds.length).toBe(2);
+    expect((getNoteById(db, "note1")!.tagIds as string[]).length).toBe(2);
+  });
+
+  it("mode 'remove' drops the named tag", async () => {
+    const db = makeDb();
+    seed(db);
+    await exec(db, "tag_note", { noteId: "note1", tagNames: ["a", "b"] });
+    const after = await exec(db, "tag_note", { noteId: "note1", tagNames: ["a"], mode: "remove" }) as Record<string, unknown>;
+    expect((after.tagIds as string[]).length).toBe(1);
+  });
+
+  it("mode 'set' replaces all tags", async () => {
+    const db = makeDb();
+    seed(db);
+    await exec(db, "tag_note", { noteId: "note1", tagNames: ["a", "b", "c"] });
+    const after = await exec(db, "tag_note", { noteId: "note1", tagNames: ["only"], mode: "set" }) as Record<string, unknown>;
+    expect((after.tagIds as string[]).length).toBe(1);
+  });
+
+  it("is idempotent — adding the same tag twice does not duplicate", async () => {
+    const db = makeDb();
+    seed(db);
+    await exec(db, "tag_note", { noteId: "note1", tagNames: ["dup"] });
+    const after = await exec(db, "tag_note", { noteId: "note1", tagNames: ["dup"] }) as Record<string, unknown>;
+    expect((after.tagIds as string[]).length).toBe(1);
+  });
+
+  it("returns { error } for missing note", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "tag_note", { noteId: "nope", tagNames: ["x"] }) as Record<string, unknown>;
+    expect(result).toHaveProperty("error");
+  });
+
+  it("stages a sync-pending row (write is captured for sync)", async () => {
+    const db = makeDb();
+    seed(db);
+    const before = (db.prepare("SELECT COUNT(*) c FROM sync_pending WHERE entity_id = ?").get("note1") as { c: number }).c;
+    await exec(db, "tag_note", { noteId: "note1", tagNames: ["synced"] });
+    const after = (db.prepare("SELECT COUNT(*) c FROM sync_pending WHERE entity_id = ?").get("note1") as { c: number }).c;
+    expect(after).toBeGreaterThan(before);
+  });
+});
+
+describe("tag_task", () => {
+  it("adds tags by name to a card", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "tag_task", { cardId: "card1", tagNames: ["blocker"] }) as Record<string, unknown>;
+    expect((result.tagIds as string[]).length).toBe(1);
+    expect((getCardById(db, "card1")!.tagIds as string[]).length).toBe(1);
+  });
+
+  it("returns { error } for missing task", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "tag_task", { cardId: "nope", tagNames: ["x"] }) as Record<string, unknown>;
+    expect(result).toHaveProperty("error");
+  });
+
+  it("returns { error } when tagNames is empty", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "tag_task", { cardId: "card1", tagNames: [] }) as Record<string, unknown>;
     expect(result).toHaveProperty("error");
   });
 });

@@ -129,6 +129,7 @@ export async function executeTool(
     case "upsert_project":
     case "delete_project":
     case "create_tag":
+    case "tag_task":
     case "get_idea_flow":
     case "create_idea_flow_node":
     case "update_idea_flow_node":
@@ -194,6 +195,16 @@ export async function executeTool(
     }
     case "update_task": {
       return executeMcpTool(db, workspacePath, name, args);
+    }
+    case "tag_note": {
+      const win = getWin?.() ?? null;
+      const noteId = args.noteId as string;
+      aiWriteLock.lock(noteId, win);
+      try {
+        return executeMcpTool(db, workspacePath, name, args);
+      } finally {
+        aiWriteLock.unlock(noteId, win);
+      }
     }
     case "ask_questions": {
       return { ok: true, questions: args.questions };

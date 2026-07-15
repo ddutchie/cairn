@@ -405,6 +405,24 @@ export const TOOL_SCHEMAS = {
     }),
   },
 
+  tag_note: {
+    description: "Apply or remove tags on an existing note by tag NAME (tags are created if they don't exist yet). Use mode 'add' to add tags, 'remove' to remove them, or 'set' to replace all tags. This is the tool to reach for when asked to organise/categorise notes.",
+    schema: z.object({
+      noteId:   sId,
+      tagNames: z.array(z.string()).describe("Tag names to add, remove, or set (resolved to ids; created if missing)"),
+      mode:     z.enum(["add", "remove", "set"]).optional().describe("add (default) | remove | set"),
+    }),
+  },
+
+  tag_task: {
+    description: "Apply or remove tags on an existing task card by tag NAME (tags are created if they don't exist yet). Use mode 'add' to add tags, 'remove' to remove them, or 'set' to replace all tags. This is the tool to reach for when asked to organise/categorise tasks.",
+    schema: z.object({
+      cardId:   sId,
+      tagNames: z.array(z.string()).describe("Tag names to add, remove, or set (resolved to ids; created if missing)"),
+      mode:     z.enum(["add", "remove", "set"]).optional().describe("add (default) | remove | set"),
+    }),
+  },
+
   // ── Interactive clarification (chat-only, renderer-handled) ─────────────────
 
   ask_questions: {
