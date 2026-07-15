@@ -125,6 +125,7 @@ export async function executeTool(
     case "create_task":
     case "list_ready_tasks":
     case "list_folders":
+    case "list_templates":
     case "bulk_move_notes":
     case "upsert_project":
     case "delete_project":
@@ -206,6 +207,11 @@ export async function executeTool(
         aiWriteLock.unlock(noteId, win);
       }
     }
+    case "instantiate_template": {
+      // Creates a fresh note; result carries the new id, but we can't lock a
+      // not-yet-created id, so just delegate (createNote handles its own lock).
+      return executeMcpTool(db, workspacePath, name, args);
+    }
     case "ask_questions": {
       return { ok: true, questions: args.questions };
     }
@@ -286,7 +292,7 @@ export async function executeTool(
     
     // For note tools, the result contains ID and title.
     const isNote = [
-      "get_note", "ensure_note", "patch_note", "append_to_note", "rename_note"
+      "get_note", "ensure_note", "patch_note", "append_to_note", "rename_note", "instantiate_template"
     ].includes(name);
     
     // For task tools, the result contains ID and title.

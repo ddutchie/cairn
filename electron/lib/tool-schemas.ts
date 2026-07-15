@@ -215,6 +215,24 @@ export const TOOL_SCHEMAS = {
     }),
   },
 
+  instantiate_template: {
+    description: "Create a new note from a saved template, filling in date/title placeholders. Templates are per-project notes of type 'template' (find them with list_templates). Use this when asked to 'start my weekly review', 'new meeting notes', etc.",
+    schema: z.object({
+      projectId:    sId,
+      templateId:   sIdOpt.describe("Template note id (preferred). Omit to match by name."),
+      templateName: sStrOpt.describe("Template name to match (case-insensitive) when templateId is not given."),
+      title:        sStrOpt.describe("Title for the new note; defaults to the template name with date vars filled."),
+      folder:       sStrOpt.describe("Optional folder for the new note."),
+    }),
+  },
+
+  list_templates: {
+    description: "List the reusable note templates in a project (notes of type 'template'). Returns id, name, and a content preview.",
+    schema: z.object({
+      projectId: sId,
+    }),
+  },
+
   // ── Projects ──────────────────────────────────────────────────────────────────
 
   upsert_project: {

@@ -53,6 +53,8 @@ export const TOOL_LABELS: Record<string, (args: ToolArgs) => string> = {
   create_tag:             (a) => `Creating tag "${a.name}"`,
   tag_note:               (a) => `Tagging note (${((a.tagNames as string[]) ?? []).join(", ")})`,
   tag_task:               (a) => `Tagging task (${((a.tagNames as string[]) ?? []).join(", ")})`,
+  list_templates:         () => "Listing templates",
+  instantiate_template:   (a) => `Creating note from template${a.templateName ? ` "${a.templateName}"` : ""}`,
   create_dashboard:       (a) => `Creating dashboard "${a.title}"`,
   update_dashboard:       () => "Updating dashboard",
   get_dashboard_constants: () => "Reading dashboard API reference",

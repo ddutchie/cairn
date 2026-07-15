@@ -284,6 +284,68 @@ describe("tag_task", () => {
   });
 });
 
+// ── list_templates / instantiate_template ─────────────────────────────────────
+
+describe("templates", () => {
+  function seedTemplate(db: Database.Database) {
+    createNote(db, {
+      id: "tpl1", projectId: "proj1", workspaceId: "ws1",
+      title: "Template: Standup",
+      content: "# Standup — {{date}}\n\n**Yesterday:**\n**Today:**",
+      contentText: "Standup",
+      type: "template",
+    });
+  }
+
+  it("list_templates returns templates with the prefix stripped", async () => {
+    const db = makeDb();
+    seed(db);
+    seedTemplate(db);
+    const res = await exec(db, "list_templates", { projectId: "proj1" }) as Array<Record<string, unknown>>;
+    expect(res).toHaveLength(1);
+    expect(res[0]).toMatchObject({ id: "tpl1", name: "Standup" });
+    expect(res.find((t) => t.id === "note1")).toBeUndefined();
+  });
+
+  it("instantiate_template creates a real note from a template id, filling date vars", async () => {
+    const db = makeDb();
+    seed(db);
+    seedTemplate(db);
+    const res = await exec(db, "instantiate_template", { projectId: "proj1", templateId: "tpl1" }) as Record<string, unknown>;
+    expect(res.action).toBe("created");
+    expect(res.fromTemplate).toBe("Standup");
+    const created = getNoteById(db, res.id as string)!;
+    expect(created.type).toBe("note");
+    expect(created.content).not.toContain("{{date}}");
+    expect(created.content).toContain("# Standup —");
+  });
+
+  it("instantiate_template matches by name (case-insensitive)", async () => {
+    const db = makeDb();
+    seed(db);
+    seedTemplate(db);
+    const res = await exec(db, "instantiate_template", { projectId: "proj1", templateName: "standup" }) as Record<string, unknown>;
+    expect(res.action).toBe("created");
+  });
+
+  it("instantiate_template errors and lists options when the template is missing", async () => {
+    const db = makeDb();
+    seed(db);
+    seedTemplate(db);
+    const res = await exec(db, "instantiate_template", { projectId: "proj1", templateName: "nonexistent" }) as Record<string, unknown>;
+    expect(res).toHaveProperty("error");
+    expect(String(res.error)).toContain("Standup");
+  });
+
+  it("instantiate_template respects an explicit title", async () => {
+    const db = makeDb();
+    seed(db);
+    seedTemplate(db);
+    const res = await exec(db, "instantiate_template", { projectId: "proj1", templateId: "tpl1", title: "Monday Standup" }) as Record<string, unknown>;
+    expect(res.title).toBe("Monday Standup");
+  });
+});
+
 // ── bulk_update_task_status ───────────────────────────────────────────────────
 
 describe("bulk_update_task_status", () => {
