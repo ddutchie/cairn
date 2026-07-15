@@ -177,6 +177,39 @@ describe("Codebase Semantic Indexer", () => {
       expect(names).toContain("properName");
     });
 
+    it("captures exported const/type/interface/enum declarations", () => {
+      // Regression for the v2.5.0 dogfooding finding: the indexer previously
+      // only captured functions/classes/methods, so exported data bindings like
+      // TOOL_SCHEMAS (a const object) and type aliases were invisible to the
+      // codebase-navigation tools.
+      const f = path.join(tmpDir, "registry.ts");
+      fs.writeFileSync(f, `
+        export const TOOL_SCHEMAS = {
+          get_note: { description: "read a note" },
+        };
+        export const MCP_TOOLS: string[] = ["get_note"];
+        export type ToolName = keyof typeof TOOL_SCHEMAS;
+        export interface ToolDef { name: string; }
+        export enum ToolKind { Read, Write }
+        export const doThing = (x: number) => x + 1;
+        function localHelper() { return 1; }
+        const notExported = { a: 1 };
+      `);
+      const symbols = parseFile(f);
+      const byName = new Map(symbols.map((s) => [s.name, s.kind]));
+
+      expect(byName.get("TOOL_SCHEMAS")).toBe("variable");
+      expect(byName.get("MCP_TOOLS")).toBe("variable");
+      expect(byName.get("ToolName")).toBe("type");
+      expect(byName.get("ToolDef")).toBe("interface");
+      expect(byName.get("ToolKind")).toBe("enum");
+      // Arrow functions are still classified as functions, not variables.
+      expect(byName.get("doThing")).toBe("function");
+      expect(byName.get("localHelper")).toBe("function");
+      // Non-exported bindings must NOT flood the index.
+      expect(byName.has("notExported")).toBe(false);
+    });
+
     it("parses Python symbols with indentation-based methods", () => {
       const pyFile = path.join(tmpDir, "sample.py");
       fs.writeFileSync(pyFile, `
