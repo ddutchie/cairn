@@ -2,7 +2,7 @@
 import Database from "better-sqlite3";
 import * as q from "../../db/queries";
 import { newId } from "../../db/utils";
-import { executeSearchTasks } from "../../shared/read-tools-pure";
+import { executeSearchTasks, executeListOverdueTasks, executeListTasksDue } from "../../shared/read-tools-pure";
 import {
   Snapshot,
   getCardVersion,
@@ -172,6 +172,14 @@ export function delete_task(db: Database.Database, snap: Snapshot, args: Record<
   q.deleteCard(db, args.cardId as string); // also cleans blocked_by_ids in other cards
   insertNotification(db, "delete_task", "Task deleted", `"${card.title}" was deleted`);
   return { deleted: true, id: args.cardId, title: card.title };
+}
+
+export function list_overdue_tasks(db: Database.Database, snap: Snapshot, args: Record<string, any>) {
+  return executeListOverdueTasks(snap, args);
+}
+
+export function list_tasks_due(db: Database.Database, snap: Snapshot, args: Record<string, any>) {
+  return executeListTasksDue(snap, args);
 }
 
 export function list_ready_tasks(db: Database.Database, snap: Snapshot, args: Record<string, any>) {

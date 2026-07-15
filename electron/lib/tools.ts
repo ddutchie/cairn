@@ -30,6 +30,8 @@ export const TOOL_LABELS: Record<string, (args: ToolArgs) => string> = {
   bulk_update_task_status:   (a) => `Moving ${(a.cardIds as string[])?.length ?? 0} tasks`,
   update_task:            (a) => a.archived === true ? "Archiving task" : a.archived === false ? "Restoring task" : a.blockedBy ? "Blocking task" : a.unblockFrom ? "Unblocking task" : "Updating task",
   list_ready_tasks:       () => "Listing ready tasks",
+  list_overdue_tasks:     () => "Listing overdue tasks",
+  list_tasks_due:         (a) => `Listing tasks due${typeof a.days === "number" ? ` in ${a.days}d` : " soon"}`,
   upsert_project:         (a) => a.projectId ? `Updating project "${a.projectId}"` : `Creating project "${a.name}"`,
   delete_project:         (a) => `Deleting project "${a.projectId}"`,
   delete_note:            () => "Deleting note",

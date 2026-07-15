@@ -4,7 +4,7 @@ import { getCairnContext, getProjectContextPack, DASHBOARD_CONSTANTS, IDEA_FLOW_
 import { create_tag, tag_note, tag_task } from "./tags";
 import { upsert_project, delete_project } from "./projects";
 import { get_note, search_notes, ensure_note, append_to_note, patch_note, delete_note, rename_note, bulk_move_notes, list_folders, instantiate_template, list_templates } from "./notes";
-import { get_task, search_tasks, create_task, bulk_update_task_status, link_note_to_task, unlink_note_from_task, delete_task, list_ready_tasks, update_task } from "./tasks";
+import { get_task, search_tasks, create_task, bulk_update_task_status, link_note_to_task, unlink_note_from_task, delete_task, list_ready_tasks, list_overdue_tasks, list_tasks_due, update_task } from "./tasks";
 import { create_dashboard, update_dashboard } from "./dashboards";
 import {
   get_idea_flow,
@@ -82,6 +82,12 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
 
     case "list_ready_tasks":
       return list_ready_tasks(db, snap, args);
+
+    case "list_overdue_tasks":
+      return list_overdue_tasks(db, snap, args);
+
+    case "list_tasks_due":
+      return list_tasks_due(db, snap, args);
 
     case "update_task":
       return update_task(db, snap, args);

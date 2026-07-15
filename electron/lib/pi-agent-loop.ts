@@ -222,6 +222,8 @@ const CAIRN_TOOL_NAMES = new Set([
   "bulk_update_task_status",
   "search_tasks",
   "list_ready_tasks",
+  "list_overdue_tasks",
+  "list_tasks_due",
   "link_note_to_task",
   // ── Tags ────────────────────────────────────────────────────────────────────
   "create_tag",
@@ -252,6 +254,7 @@ const PLAN_MODE_ALLOWED = new Set([
   "get_active_context", "get_project_context_pack",
   "get_note", "search_notes",
   "get_task", "search_tasks", "list_ready_tasks",
+  "list_overdue_tasks", "list_tasks_due",
   "search_notes_semantic",
   "search_tasks_semantic",
   "list_templates",

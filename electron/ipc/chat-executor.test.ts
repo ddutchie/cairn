@@ -346,6 +346,65 @@ describe("templates", () => {
   });
 });
 
+// ── list_overdue_tasks / list_tasks_due ───────────────────────────────────────
+
+describe("due-date queries", () => {
+  function ymd(offset: number): string {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() + offset);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+  function seedDue(db: Database.Database) {
+    createCard(db, { id: "past", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Overdue", order: 1, dueDate: ymd(-2) });
+    createCard(db, { id: "soon", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Soon", order: 2, dueDate: ymd(3) });
+    createCard(db, { id: "far",  columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Far", order: 3, dueDate: ymd(30) });
+    createCard(db, { id: "done", columnId: "col2", projectId: "proj1", workspaceId: "ws1", title: "Done overdue", order: 4, dueDate: ymd(-5) });
+  }
+
+  it("list_overdue_tasks returns only past-due open cards (done excluded)", async () => {
+    const db = makeDb();
+    seed(db);
+    seedDue(db);
+    const res = await exec(db, "list_overdue_tasks", { projectId: "proj1" }) as Array<Record<string, unknown>>;
+    const ids = res.map((r) => r.id);
+    expect(ids).toContain("past");
+    expect(ids).not.toContain("done");
+    expect(ids).not.toContain("soon");
+    expect(ids).not.toContain("far");
+  });
+
+  it("list_tasks_due (7d) includes soon + overdue by default, excludes far and done", async () => {
+    const db = makeDb();
+    seed(db);
+    seedDue(db);
+    const res = await exec(db, "list_tasks_due", { projectId: "proj1", days: 7 }) as Array<Record<string, unknown>>;
+    const ids = res.map((r) => r.id);
+    expect(ids).toContain("soon");
+    expect(ids).toContain("past");
+    expect(ids).not.toContain("far");
+    expect(ids).not.toContain("done");
+  });
+
+  it("list_tasks_due with includeOverdue=false drops overdue", async () => {
+    const db = makeDb();
+    seed(db);
+    seedDue(db);
+    const res = await exec(db, "list_tasks_due", { projectId: "proj1", days: 7, includeOverdue: false }) as Array<Record<string, unknown>>;
+    const ids = res.map((r) => r.id);
+    expect(ids).toContain("soon");
+    expect(ids).not.toContain("past");
+  });
+
+  it("results are sorted soonest-first by due date", async () => {
+    const db = makeDb();
+    seed(db);
+    seedDue(db);
+    const res = await exec(db, "list_tasks_due", { projectId: "proj1", days: 60 }) as Array<Record<string, unknown>>;
+    expect(res.map((r) => r.id)).toEqual(["past", "soon", "far"]);
+  });
+});
+
 // ── bulk_update_task_status ───────────────────────────────────────────────────
 
 describe("bulk_update_task_status", () => {

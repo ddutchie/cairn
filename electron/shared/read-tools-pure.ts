@@ -8,6 +8,7 @@
 import { noteDigest } from "../../shared/notes/toc";
 import { matchesQuery } from "../../shared/notes/text";
 import { buildNoteMarkdown, buildProjectMarkdown } from "../../shared/notes/export";
+import { isOverdue, isDueWithin } from "../../shared/notes/due";
 
 export interface CairnSnapshot {
   workspaces: Array<{ id: string; name: string; [k: string]: unknown }>;
@@ -341,4 +342,47 @@ export function serializeProjectMarkdown(snap: CairnSnapshot, projectId: string)
     notes,
   });
   return { markdown, title: project.name };
+}
+
+// ── Due-date-aware task queries ─────────────────────────────────────────────
+// Open (non-done, non-archived) cards filtered by due date. Reuses the shared
+// isOverdue / isDueWithin predicates so semantics match the board & calendar.
+
+function openDatedCards(snap: CairnSnapshot, projectId?: string) {
+  const doneColIds = new Set(snap.columns.filter((c) => c.type === "done").map((c) => c.id));
+  return snap.cards.filter((c) =>
+    !c.archivedAt
+    && c.dueDate
+    && !doneColIds.has(c.columnId)
+    && (!projectId || c.projectId === projectId),
+  );
+}
+
+function shapeDueCard(snap: CairnSnapshot, c: CairnSnapshot["cards"][number]) {
+  const col = snap.columns.find((cc) => cc.id === c.columnId);
+  return {
+    id: c.id,
+    title: c.title,
+    priority: c.priority,
+    dueDate: c.dueDate,
+    columnId: c.columnId,
+    columnName: col?.name ?? "Unknown",
+    projectId: c.projectId,
+  };
+}
+
+export function executeListOverdueTasks(snap: CairnSnapshot, args: Args): unknown {
+  return openDatedCards(snap, args.projectId as string | undefined)
+    .filter((c) => isOverdue(c.dueDate))
+    .sort((a, b) => (a.dueDate ?? "").localeCompare(b.dueDate ?? ""))
+    .map((c) => shapeDueCard(snap, c));
+}
+
+export function executeListTasksDue(snap: CairnSnapshot, args: Args): unknown {
+  const days = typeof args.days === "number" ? args.days : 7;
+  const includeOverdue = args.includeOverdue !== false; // default true
+  return openDatedCards(snap, args.projectId as string | undefined)
+    .filter((c) => isDueWithin(c.dueDate, days) || (includeOverdue && isOverdue(c.dueDate)))
+    .sort((a, b) => (a.dueDate ?? "").localeCompare(b.dueDate ?? ""))
+    .map((c) => shapeDueCard(snap, c));
 }

@@ -215,6 +215,22 @@ export const TOOL_SCHEMAS = {
     }),
   },
 
+  list_overdue_tasks: {
+    description: "List open tasks whose due date is in the past (excludes done/archived cards), soonest-overdue first. Use for 'what's overdue?'.",
+    schema: z.object({
+      projectId: sId.optional().describe("Limit to one project; omit for the whole workspace."),
+    }),
+  },
+
+  list_tasks_due: {
+    description: "List open tasks due within the next N days (default 7), excluding done/archived cards. By default also includes overdue tasks. Use for 'what's due this week?'.",
+    schema: z.object({
+      projectId:      sId.optional(),
+      days:           z.number().optional().describe("Window size in days (default 7). 0 = due today only."),
+      includeOverdue: z.boolean().optional().describe("Include already-overdue tasks too (default true)."),
+    }),
+  },
+
   instantiate_template: {
     description: "Create a new note from a saved template, filling in date/title placeholders. Templates are per-project notes of type 'template' (find them with list_templates). Use this when asked to 'start my weekly review', 'new meeting notes', etc.",
     schema: z.object({

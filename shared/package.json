@@ -21,6 +21,7 @@
     "./notes/export": "./notes/export.ts",
     "./notes/templates": "./notes/templates.ts",
     "./notes/starter-templates": "./notes/starter-templates.ts",
+    "./notes/due": "./notes/due.ts",
     "./notes/syntax-palette": "./notes/syntax-palette.ts",
     "./notes/text": "./notes/text.ts",
     "./format/date": "./format/date.ts",

@@ -124,6 +124,8 @@ export async function executeTool(
     case "unlink_note_from_task":
     case "create_task":
     case "list_ready_tasks":
+    case "list_overdue_tasks":
+    case "list_tasks_due":
     case "list_folders":
     case "list_templates":
     case "bulk_move_notes":
