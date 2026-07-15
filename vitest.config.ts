@@ -13,6 +13,19 @@ const sharedAlias = {
   "@": path.resolve(__dirname, "./src"),
 };
 
+// Mobile (Expo) lives in its own root with its own `@` → mobile/src alias, so
+// its pure-logic tests get a dedicated project. Kept node-only + narrow: mobile
+// test files must import only framework-free logic (no react-native/expo at
+// module load), matching what plain-Node vitest can evaluate.
+const mobileAlias = {
+  // Order matters: the subpath entry must precede the bare package entry so
+  // "@cairn/shared/foo" doesn't get swallowed by the "@cairn/shared" alias.
+  "@cairn/shared/": path.resolve(__dirname, "./shared") + "/",
+  "@cairn/shared": path.resolve(__dirname, "./shared/sync/index.ts"),
+  "@": path.resolve(__dirname, "./mobile/src"),
+};
+
+
 export default defineConfig({
   resolve: { alias: sharedAlias },
   test: {
@@ -45,6 +58,15 @@ export default defineConfig({
           globals: true,
           include: ["src/**/*.component.test.tsx"],
           setupFiles: ["./vitest.setup.components.ts"],
+        },
+      },
+      {
+        resolve: { alias: mobileAlias },
+        test: {
+          name: "mobile",
+          environment: "node",
+          globals: true,
+          include: ["mobile/**/*.test.ts"],
         },
       },
     ],
