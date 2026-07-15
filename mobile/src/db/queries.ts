@@ -5,11 +5,26 @@
 
 import { getDb } from "./index";
 import { LIVE, NOT_CONFLICT } from "./sql";
+import { parseIds } from "./row-helpers";
 import { inspectConflict, cleanConflictTitle } from "@cairn/shared/sync/conflict";
 import { stripMarkdown, queryTerms } from "@cairn/shared/notes/text";
 import { buildNoteOutline, sliceLines, noteDigest } from "@cairn/shared/notes/toc";
 import { dedupeFoldersCaseInsensitive } from "@cairn/shared/notes/folder-tree";
 import { notifyLocalWrite } from "@/sync/write-signal";
+import type {
+  NoteRow,
+  ProjectRow,
+  ColumnRow,
+  CardRow,
+  TagRow,
+} from "./types";
+
+// Row/graph types now live in ./types; the knowledge-graph builder and the
+// breakout brick sampler are their own leaf modules. Re-export all three (plus
+// the embeddings queries below) so existing `@/db/queries` imports are unchanged.
+export * from "./types";
+export * from "./graph-queries";
+export * from "./breakout";
 
 /** Client-generated collision-free id (mirrors desktop nanoid(12) scheme). */
 const ID_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_";
@@ -26,60 +41,6 @@ function workspaceIdForProject(projectId: string): string {
     projectId,
   );
   return row?.workspace_id ?? "";
-}
-
-export interface NoteRow {
-  id: string;
-  project_id: string;
-  title: string;
-  content: string | null;
-  folder: string;
-  tag_ids: string;
-  updated_at: string;
-  is_pinned?: number;
-}
-
-export interface ProjectRow {
-  id: string;
-  name: string;
-  icon: string | null;
-}
-
-export interface ColumnRow {
-  id: string;
-  project_id: string;
-  name: string;
-  order: number;
-}
-
-export interface CardRow {
-  id: string;
-  column_id: string;
-  project_id: string;
-  title: string;
-  description: string | null;
-  priority: string;
-  tag_ids: string;
-  order: number;
-  due_date?: string | null;
-  assignee?: string | null;
-}
-
-export interface TagRow {
-  id: string;
-  name: string;
-  color: string;
-}
-
-/** Parse a JSON `tag_ids` column into an id array (tolerant of bad data). */
-function parseIds(json: string | null | undefined): string[] {
-  if (!json) return [];
-  try {
-    const v = JSON.parse(json);
-    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
-  } catch {
-    return [];
-  }
 }
 
 /** Resolve an array of tag ids to full tag rows (name + colour), skipping unknowns. */
@@ -520,128 +481,6 @@ export function moveCardToColumn(cardId: string, columnId: string): void {
 
 function plainText(md: string): string {
   return stripMarkdown(md);
-}
-
-// ── Knowledge graph ─────────────────────────────────────────────────────────
-
-export type GraphNodeType = "project" | "note" | "card" | "tag";
-export type GraphEdgeType =
-  | "project-member"
-  | "note-note"
-  | "note-card"
-  | "tag-member"
-  | "semantic";
-
-export interface GraphNode {
-  id: string;
-  type: GraphNodeType;
-  title: string;
-  /** Tag colour (tag nodes) or priority accent (card nodes), for rendering. */
-  color?: string;
-  priority?: string;
-  /** Owning project id (note/card nodes) — used to draw cluster hulls. */
-  projectId?: string;
-}
-
-export interface GraphEdge {
-  source: string;
-  target: string;
-  type: GraphEdgeType;
-  /** Similarity (0–1) for 'semantic' edges; drives dash-line weight/threshold. */
-  weight?: number;
-}
-
-export interface KnowledgeGraph {
-  nodes: GraphNode[];
-  edges: GraphEdge[];
-}
-
-/**
- * Build the workspace knowledge graph from the SYNCABLE tables the mobile app
- * holds: projects, notes, cards and tags, wired by their explicit links
- * (project membership, note↔note wikilinks, note↔card links, tag membership).
- *
- * Unlike desktop this omits idea-flow edges — mobile has no idea_flow_* tables.
- * It also emits only STRUCTURAL edges here; semantic edges (note↔note, task↔task
- * and note↔task, derived from on-device embeddings) are computed separately by
- * semanticEdges() in src/notes/embeddings.ts and merged in the graph screen
- * behind an opt-in toggle. Only tags actually referenced by a scoped note/card
- * become nodes, matching the desktop's "used tags only" behaviour.
- */
-export function getKnowledgeGraph(): KnowledgeGraph {
-  const db = getDb();
-  const nodes: GraphNode[] = [];
-  const edges: GraphEdge[] = [];
-  const nodeIds = new Set<string>();
-  const add = (n: GraphNode) => {
-    if (nodeIds.has(n.id)) return;
-    nodeIds.add(n.id);
-    nodes.push(n);
-  };
-  const projects = db.getAllSync<{ id: string; name: string }>(
-    `SELECT id, name FROM projects WHERE ${LIVE}`,
-  );
-  for (const p of projects) add({ id: p.id, type: "project", title: p.name });
-
-  const notes = db.getAllSync<{
-    id: string;
-    project_id: string;
-    title: string;
-    tag_ids: string;
-    linked_note_ids: string;
-  }>(
-    `SELECT id, project_id, title, tag_ids, linked_note_ids FROM notes
-     WHERE ${LIVE} AND type='note' AND ${NOT_CONFLICT}`,
-  );
-  for (const n of notes) {
-    add({ id: n.id, type: "note", title: n.title || "Untitled", projectId: n.project_id });
-    if (nodeIds.has(n.project_id)) edges.push({ source: n.project_id, target: n.id, type: "project-member" });
-    // note↔note links: emit once (lower id as source) to avoid duplicate pairs.
-    for (const linked of parseIds(n.linked_note_ids)) {
-      if (n.id < linked) edges.push({ source: n.id, target: linked, type: "note-note" });
-    }
-  }
-
-  const cards = db.getAllSync<{
-    id: string;
-    project_id: string;
-    title: string;
-    priority: string;
-    tag_ids: string;
-    linked_note_ids: string;
-  }>(
-    `SELECT id, project_id, title, priority, tag_ids, linked_note_ids FROM task_cards
-     WHERE ${LIVE}`,
-  );
-  for (const c of cards) {
-    add({ id: c.id, type: "card", title: c.title, priority: c.priority, projectId: c.project_id });
-    if (nodeIds.has(c.project_id)) edges.push({ source: c.project_id, target: c.id, type: "project-member" });
-    for (const noteId of parseIds(c.linked_note_ids)) {
-      if (nodeIds.has(noteId)) edges.push({ source: noteId, target: c.id, type: "note-card" });
-    }
-  }
-
-  // Only tags actually used by a scoped note/card become nodes.
-  const usedTagIds = new Set<string>();
-  for (const n of notes) for (const tid of parseIds(n.tag_ids)) usedTagIds.add(tid);
-  for (const c of cards) for (const tid of parseIds(c.tag_ids)) usedTagIds.add(tid);
-  if (usedTagIds.size > 0) {
-    const tagRows = tagsForIds([...usedTagIds]);
-    const tagById = new Map(tagRows.map((tr) => [tr.id, tr]));
-    for (const tid of usedTagIds) {
-      const tag = tagById.get(tid);
-      if (!tag) continue;
-      add({ id: tag.id, type: "tag", title: tag.name, color: tag.color });
-    }
-    for (const n of notes) for (const tid of parseIds(n.tag_ids)) {
-      if (nodeIds.has(tid)) edges.push({ source: n.id, target: tid, type: "tag-member" });
-    }
-    for (const c of cards) for (const tid of parseIds(c.tag_ids)) {
-      if (nodeIds.has(tid)) edges.push({ source: c.id, target: tid, type: "tag-member" });
-    }
-  }
-
-  return { nodes, edges };
 }
 
 /** Find a note by exact title within a project (for ensure_note upsert). */
@@ -1302,48 +1141,3 @@ function isTombstoned(id: string): boolean {
 // The note_embeddings / task_embeddings queries live in embeddings-queries.ts;
 // re-exported here so existing `@/db/queries` imports keep working unchanged.
 export * from "./embeddings-queries";
-
-
-export type BrickKind = "project" | "note" | "card" | "tag";
-export interface BrickLabel {
-  label: string;
-  kind: BrickKind;
-}
-
-/**
- * A mixed sample of workspace entities (projects, notes, tasks, tags) to use as
- * bricks in the breakout easter egg. Interleaved by kind so a row of bricks
- * reads as a colourful cross-section of the workspace. Capped at `limit`.
- */
-export function listBreakoutBricks(limit = 40): BrickLabel[] {
-  const db = getDb();
-  const projects = db
-    .getAllSync<{ label: string }>(`SELECT name AS label FROM projects WHERE deleted_at IS NULL ORDER BY updated_at DESC LIMIT 12`)
-    .map((r) => ({ label: r.label, kind: "project" as const }));
-  const notes = db
-    .getAllSync<{ label: string }>(`SELECT title AS label FROM notes WHERE deleted_at IS NULL AND type = 'note' ORDER BY updated_at DESC LIMIT 16`)
-    .map((r) => ({ label: r.label, kind: "note" as const }));
-  const cards = db
-    .getAllSync<{ label: string }>(`SELECT title AS label FROM task_cards WHERE deleted_at IS NULL ORDER BY updated_at DESC LIMIT 16`)
-    .map((r) => ({ label: r.label, kind: "card" as const }));
-  const tags = db
-    .getAllSync<{ label: string }>(`SELECT name AS label FROM tags WHERE deleted_at IS NULL ORDER BY name LIMIT 12`)
-    .map((r) => ({ label: r.label, kind: "tag" as const }));
-
-  // Round-robin interleave so bricks alternate kind/colour.
-  const buckets = [projects, notes, cards, tags];
-  const out: BrickLabel[] = [];
-  let added = true;
-  while (added && out.length < limit) {
-    added = false;
-    for (const b of buckets) {
-      const next = b.shift();
-      if (next) {
-        out.push(next);
-        added = true;
-        if (out.length >= limit) break;
-      }
-    }
-  }
-  return out;
-}
