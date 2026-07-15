@@ -3,7 +3,7 @@
 import React, { useRef, useCallback, useState, useEffect, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import "katex/dist/katex.min.css";
-import { Pin, PinOff, Calendar, Eye, Pencil, Wand2, Loader2, CheckCircle2, FileDown, ChevronLeft, Sparkles, Sun, Moon, ChevronDown as Chevron } from "lucide-react";import { WikilinkPicker } from "./WikilinkPicker";
+import { Pin, PinOff, Calendar, Eye, Pencil, Wand2, Loader2, CheckCircle2, FileDown, FileText, ChevronLeft, Sparkles, Sun, Moon, ChevronDown as Chevron } from "lucide-react";import { WikilinkPicker } from "./WikilinkPicker";
 import { getActiveWikilink } from "@/lib/wikilink-parser";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -566,6 +566,44 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
     }
   }, [note.title]);
 
+  const handleExportMarkdown = useCallback(async () => {
+    setShowExportMenu(false);
+    setExportState("exporting");
+    try {
+      if (window.electron?.exportMarkdown) {
+        // Desktop: native save dialog. Mobile webview: return text + share/download.
+        const isElectron = typeof navigator !== "undefined" && navigator.userAgent.includes("Electron");
+        if (isElectron) {
+          await window.electron.exportMarkdown("note", note.id);
+        } else {
+          const res = await window.electron.exportMarkdown("note", note.id, { returnText: true });
+          if (res?.markdown) {
+            const blob = new Blob([res.markdown], { type: "text/markdown" });
+            const safeTitle = pdfSafeTitle(note.title);
+            const file = new File([blob], `${safeTitle}.md`, { type: "text/markdown" });
+            if (navigator.canShare && navigator.canShare({ files: [file] })) {
+              await navigator.share({ files: [file], title: note.title });
+            } else {
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `${safeTitle}.md`;
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              URL.revokeObjectURL(url);
+            }
+          }
+        }
+      }
+      setExportState("done");
+      setTimeout(() => setExportState("idle"), 2000);
+    } catch (err) {
+      console.error("Markdown export failed:", err);
+      setExportState("idle");
+    }
+  }, [note.id, note.title]);
+
   return (
     <div
       ref={containerRef}
@@ -659,7 +697,7 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
 
           {mode === "read" && (
             <div className="relative">
-              <Tooltip content="Export as PDF">
+              <Tooltip content="Export note">
                 <button
                   onClick={() => setShowExportMenu((v) => !v)}
                   disabled={exportState === "exporting"}
@@ -694,6 +732,13 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
                       className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
                     >
                       <Moon size={12} /> Dark
+                    </button>
+                    <div className="h-px bg-[var(--border)] my-0.5" />
+                    <button
+                      onClick={handleExportMarkdown}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
+                    >
+                      <FileText size={12} /> Markdown
                     </button>
                   </div>
                 </>

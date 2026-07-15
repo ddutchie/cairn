@@ -39,6 +39,7 @@ import { registerEmbeddingsHandlers } from "./embeddings-handlers";
 import { registerRuntimeHandlers } from "./runtime-handlers";
 import { registerChatHandler } from "./chat";
 import { registerPdfExportHandler } from "./pdf-export";
+import { registerMarkdownExportHandler } from "./markdown-export";
 import { registerUrlMetadataHandler } from "./url-metadata";
 import { registerMobileHandlers } from "./mobile-handlers";
 import { registerMigrationHandlers } from "./migration-handlers";
@@ -198,6 +199,7 @@ export function registerAppHandlers(
 
   // PDF export + URL metadata (each module owns its own channel registration).
   registerPdfExportHandler(ctx);
+  registerMarkdownExportHandler(ctx);
   registerUrlMetadataHandler();
 
   // Migration tool (Obsidian → Cairn import).

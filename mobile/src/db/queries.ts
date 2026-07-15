@@ -10,6 +10,7 @@ import { inspectConflict, cleanConflictTitle } from "@cairn/shared/sync/conflict
 import { stripMarkdown, queryTerms } from "@cairn/shared/notes/text";
 import { buildNoteOutline, sliceLines, noteDigest } from "@cairn/shared/notes/toc";
 import { dedupeFoldersCaseInsensitive } from "@cairn/shared/notes/folder-tree";
+import { buildNoteMarkdown } from "@cairn/shared/notes/export";
 import { notifyLocalWrite } from "@/sync/write-signal";
 import type {
   NoteRow,
@@ -210,6 +211,19 @@ export function tagTask(cardId: string, tagNames: string[], mode: TagMode = "add
   const next = mergeTagIds(parseIds(card.tag_ids), resolved, mode);
   setCardTags(cardId, next);
   return { id: cardId, tagIds: next };
+}
+
+/** Export a single note as a clean, self-contained markdown document. */
+export function exportNote(noteId: string): { error: string } | { markdown: string; title: string } {
+  const note = getNote(noteId);
+  if (!note) return { error: "Note not found" };
+  const markdown = buildNoteMarkdown({
+    title: note.title,
+    content: note.content ?? "",
+    tagNames: tagsForNote(note).map((t) => t.name),
+    folder: note.folder,
+  });
+  return { markdown, title: note.title };
 }
 
 export function listProjects(): ProjectRow[] {

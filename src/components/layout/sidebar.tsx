@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   FileText, Kanban, Settings, Search, MessageSquare,
   ChevronDown, ChevronRight, Plus, MoreHorizontal,
-  FolderOpen, Hash, Layers, Pencil, Trash2, GitBranch, BarChart2, Workflow, Terminal, CalendarDays,
+  FolderOpen, Hash, Layers, Pencil, Trash2, GitBranch, BarChart2, Workflow, Terminal, CalendarDays, Download,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
@@ -391,6 +391,15 @@ function ProjectItem({ project, isActive, isExpanded, onToggleExpand, onSelectPr
             <DropdownMenuContent align="start" side="right" className="w-40">
               <DropdownMenuItem onClick={(e: React.MouseEvent) => { e.stopPropagation(); setRenaming(true); }} className="flex items-center gap-2 text-xs">
                 <Pencil size={11} />Rename
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={(e: React.MouseEvent) => {
+                  e.stopPropagation();
+                  window.electron?.exportMarkdown?.("project", project.id);
+                }}
+                className="flex items-center gap-2 text-xs"
+              >
+                <Download size={11} />Export as Markdown
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={(e: React.MouseEvent) => { e.stopPropagation(); setDeleteDialogOpen(true); }}

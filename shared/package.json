@@ -18,6 +18,7 @@
     "./notes/ai-actions": "./notes/ai-actions.ts",
     "./notes/format": "./notes/format.ts",
     "./notes/markdown": "./notes/markdown.ts",
+    "./notes/export": "./notes/export.ts",
     "./notes/syntax-palette": "./notes/syntax-palette.ts",
     "./notes/text": "./notes/text.ts",
     "./format/date": "./format/date.ts",

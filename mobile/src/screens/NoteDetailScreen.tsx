@@ -6,10 +6,11 @@ import {
   StyleSheet,
   View,
   Alert,
+  Share,
 } from "react-native";
 import { Pin, List } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { getNote, updateNote, tagsForNote, noteTagIds, setNoteTags, pinNote, softDeleteNote, workspaceIdForNote } from "@/db/queries";
+import { getNote, updateNote, tagsForNote, noteTagIds, setNoteTags, pinNote, softDeleteNote, workspaceIdForNote, exportNote } from "@/db/queries";
 import { MarkdownView } from "@/components/MarkdownView";
 import { TagChips } from "@/components/TagChips";
 import { TagPickerSheet } from "@/components/TagPickerSheet";
@@ -19,7 +20,7 @@ import { ResultRow } from "@/components/ResultRow";
 import { NotFound } from "@/components/NotFound";
 import { BottomSheet, BottomSheetHeader } from "@/components/BottomSheet";
 import { GlassBar, glassActive } from "@/components/GlassBar";
-import { ICON_CHECK, ICON_CLOSE, ICON_EDIT, ICON_MORE, ICON_PIN, ICON_UNPIN, ICON_TAG, ICON_DELETE } from "@/components/toolbar-icons";
+import { ICON_CHECK, ICON_CLOSE, ICON_EDIT, ICON_MORE, ICON_PIN, ICON_UNPIN, ICON_TAG, ICON_DELETE, ICON_EXPORT } from "@/components/toolbar-icons";
 import { useNoteFormattingToolbar } from "@/notes/useNoteFormattingToolbar";
 import { reindexNote, relatedNotes, type RelatedNote } from "@/notes/embeddings";
 import { haptics, toolbarPress } from "@/haptics";
@@ -133,6 +134,20 @@ export function NoteDetailScreen({ nested = false }: { nested?: boolean }) {
     ]);
   }, [note, router]);
 
+  const onExport = useCallback(async () => {
+    if (!note) return;
+    const res = exportNote(note.id);
+    if ("error" in res) {
+      Alert.alert("Export failed", res.error);
+      return;
+    }
+    try {
+      await Share.share({ message: res.markdown, title: res.title });
+    } catch {
+      /* user dismissed the share sheet */
+    }
+  }, [note]);
+
   if (!note) {
     return <NotFound label="Note" />;
   }
@@ -188,6 +203,9 @@ export function NoteDetailScreen({ nested = false }: { nested?: boolean }) {
             </Stack.Toolbar.MenuAction>
             <Stack.Toolbar.MenuAction icon={ICON_TAG} onPress={toolbarPress(() => setTagPickerOpen(true))}>
               Edit tags
+            </Stack.Toolbar.MenuAction>
+            <Stack.Toolbar.MenuAction icon={ICON_EXPORT} onPress={toolbarPress(onExport)}>
+              Export as Markdown
             </Stack.Toolbar.MenuAction>
             <Stack.Toolbar.MenuAction icon={ICON_DELETE} destructive onPress={toolbarPress(onDelete)}>
               Delete

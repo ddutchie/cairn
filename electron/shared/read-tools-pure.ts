@@ -7,6 +7,7 @@
 
 import { noteDigest } from "../../shared/notes/toc";
 import { matchesQuery } from "../../shared/notes/text";
+import { buildNoteMarkdown, buildProjectMarkdown } from "../../shared/notes/export";
 
 export interface CairnSnapshot {
   workspaces: Array<{ id: string; name: string; [k: string]: unknown }>;
@@ -269,4 +270,75 @@ export function executeSearchTasks(snap: CairnSnapshot, args: Args): unknown {
       if (c.dueDate) out.dueDate = c.dueDate;
       return out;
     });
+}
+
+// ── Export (pure markdown serialisers) ──────────────────────────────────────
+// Assemble the platform-neutral export inputs from the snapshot, then delegate
+// to the shared builders so desktop + mobile produce identical markdown.
+
+function tagNamesFor(snap: CairnSnapshot, tagIds: string[]): string[] {
+  return tagIds
+    .map((id) => snap.tags.find((t) => t.id === id)?.name)
+    .filter((n): n is string => !!n);
+}
+
+/** Serialise a single note to a self-contained markdown document. */
+export function serializeNoteMarkdown(snap: CairnSnapshot, noteId: string): { error: string } | { markdown: string; title: string } {
+  const note = snap.notes.find((n) => n.id === noteId && !n.archivedAt);
+  if (!note) return { error: "Note not found" };
+  const markdown = buildNoteMarkdown({
+    title: note.title,
+    content: note.content,
+    tagNames: tagNamesFor(snap, note.tagIds),
+    folder: note.folder,
+  });
+  return { markdown, title: note.title };
+}
+
+/**
+ * Serialise a whole project — metadata, board grouped by column, and all
+ * non-archived notes (folder-sorted) — to one markdown document.
+ */
+export function serializeProjectMarkdown(snap: CairnSnapshot, projectId: string): { error: string } | { markdown: string; title: string } {
+  const project = snap.projects.find((p) => p.id === projectId);
+  if (!project) return { error: "Project not found" };
+
+  const columns = snap.columns
+    .filter((c) => c.projectId === projectId)
+    .sort((a, b) => a.order - b.order)
+    .map((col) => ({
+      name: col.name,
+      cards: snap.cards
+        .filter((c) => c.columnId === col.id && !c.archivedAt)
+        .sort((a, b) => a.order - b.order)
+        .map((c) => ({
+          title: c.title,
+          description: c.description ?? null,
+          priority: c.priority,
+          dueDate: c.dueDate ?? null,
+          assignee: c.assignee ?? null,
+          tagNames: tagNamesFor(snap, c.tagIds),
+        })),
+    }));
+
+  const notes = snap.notes
+    .filter((n) => n.projectId === projectId && !n.archivedAt && n.type !== "dashboard")
+    .sort((a, b) => (a.folder ?? "").localeCompare(b.folder ?? "") || a.title.localeCompare(b.title))
+    .map((n) => ({
+      title: n.title,
+      content: n.content,
+      tagNames: tagNamesFor(snap, n.tagIds),
+      folder: n.folder,
+    }));
+
+  const markdown = buildProjectMarkdown({
+    name: project.name,
+    description: project.description ?? null,
+    status: project.status,
+    priority: project.priority,
+    dueDate: project.dueDate ?? null,
+    columns,
+    notes,
+  });
+  return { markdown, title: project.name };
 }
