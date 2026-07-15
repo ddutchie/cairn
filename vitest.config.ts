@@ -1,4 +1,5 @@
 import { defineConfig } from "vitest/config";
+import type { UserConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
 import { config as loadDotenv } from "dotenv";
@@ -72,6 +73,11 @@ export default defineConfig({
         plugins: [
           {
             name: "mobile-standalone-tsconfig",
+            // Vite's public OxcOptions type omits `tsconfig`, but the underlying
+            // oxc transform reads it at runtime (it's spread straight into the
+            // native transformSync call). An inline raw tsconfig here makes the
+            // transform skip its filesystem walk-up entirely. Cast because the
+            // field isn't in the exposed type surface.
             config() {
               return {
                 oxc: {
@@ -82,7 +88,7 @@ export default defineConfig({
                       verbatimModuleSyntax: false,
                     },
                   },
-                },
+                } as unknown as UserConfig["oxc"],
               };
             },
           },
