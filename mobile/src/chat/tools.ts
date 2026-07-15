@@ -303,6 +303,27 @@ export const TOOLS: ToolDef[] = [
     },
   },
   {
+    name: "link_note_to_task",
+    description: "Bidirectionally link a note and a task card (creates the note↔task relationship both ways).",
+    params: '{ "note_id": string, "card_id": string }',
+    jsonSchema: obj({ note_id: S, card_id: S }, ["note_id", "card_id"]),
+    run: (a) => q.linkNoteToTask(str(a.note_id), str(a.card_id)),
+  },
+  {
+    name: "unlink_note_from_task",
+    description: "Remove a note↔task link (both directions).",
+    params: '{ "note_id": string, "card_id": string }',
+    jsonSchema: obj({ note_id: S, card_id: S }, ["note_id", "card_id"]),
+    run: (a) => q.unlinkNoteFromTask(str(a.note_id), str(a.card_id)),
+  },
+  {
+    name: "bulk_update_task_status",
+    description: "Move several task cards to the same column in one call (batch triage). Returns how many moved.",
+    params: '{ "card_ids": string[], "target_column_id": string }',
+    jsonSchema: obj({ card_ids: { type: "array", items: S }, target_column_id: S }, ["card_ids", "target_column_id"]),
+    run: (a) => q.bulkUpdateTaskStatus(strArray(a.card_ids), str(a.target_column_id)),
+  },
+  {
     name: "tag_note",
     description:
       "Apply or remove tags on an existing note by tag NAME (tags are created if missing). mode = add (default) | remove | set. Reach for this when asked to organise/categorise notes.",

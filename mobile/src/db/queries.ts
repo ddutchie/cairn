@@ -564,6 +564,79 @@ export function moveCardToColumn(cardId: string, columnId: string): void {
   notifyLocalWrite();
 }
 
+/**
+ * Bidirectionally link a note and a task card (mirrors desktop
+ * link_note_to_task). Updates notes.linked_card_ids + task_cards.linked_note_ids.
+ * Idempotent. Returns an error object if either side is missing.
+ */
+export function linkNoteToTask(noteId: string, cardId: string): { error: string } | { noteId: string; cardId: string; linked: true } {
+  return applyLinkChange(noteId, cardId, true);
+}
+
+/** Bidirectionally remove a note↔task link. */
+export function unlinkNoteFromTask(noteId: string, cardId: string): { error: string } | { noteId: string; cardId: string; unlinked: true } {
+  const r = applyLinkChange(noteId, cardId, false);
+  if ("error" in r) return r;
+  return { noteId, cardId, unlinked: true };
+}
+
+function applyLinkChange(noteId: string, cardId: string, add: boolean): { error: string } | { noteId: string; cardId: string; linked: true } {
+  const db = getDb();
+  const note = db.getFirstSync<{ linked_card_ids: string }>(
+    "SELECT linked_card_ids FROM notes WHERE id = ? AND deleted_at IS NULL", noteId,
+  );
+  if (!note) return { error: "Note not found" };
+  const card = db.getFirstSync<{ linked_note_ids: string }>(
+    "SELECT linked_note_ids FROM task_cards WHERE id = ? AND deleted_at IS NULL", cardId,
+  );
+  if (!card) return { error: "Task not found" };
+
+  const cardIds = parseIds(note.linked_card_ids);
+  const noteIds = parseIds(card.linked_note_ids);
+  const nextCardIds = add
+    ? Array.from(new Set([...cardIds, cardId]))
+    : cardIds.filter((id) => id !== cardId);
+  const nextNoteIds = add
+    ? Array.from(new Set([...noteIds, noteId]))
+    : noteIds.filter((id) => id !== noteId);
+
+  const now = new Date().toISOString();
+  db.runSync(
+    "UPDATE notes SET linked_card_ids = ?, updated_at = ?, version = version + 1 WHERE id = ?",
+    JSON.stringify(nextCardIds), now, noteId,
+  );
+  db.runSync(
+    "UPDATE task_cards SET linked_note_ids = ?, updated_at = ?, version = version + 1 WHERE id = ?",
+    JSON.stringify(nextNoteIds), now, cardId,
+  );
+  notifyLocalWrite();
+  return { noteId, cardId, linked: true };
+}
+
+/**
+ * Move a batch of cards to one column in a single call (mirrors desktop
+ * bulk_update_task_status). Reports which ids moved vs. were not found.
+ */
+export function bulkUpdateTaskStatus(cardIds: string[], targetColumnId: string): { error: string } | { moved: number; failed: string[]; targetColumnId: string } {
+  const db = getDb();
+  const col = db.getFirstSync<{ id: string }>("SELECT id FROM board_columns WHERE id = ? AND deleted_at IS NULL", targetColumnId);
+  if (!col) return { error: "Target column not found" };
+  const now = new Date().toISOString();
+  const failed: string[] = [];
+  let moved = 0;
+  for (const id of cardIds) {
+    const exists = db.getFirstSync<{ id: string }>("SELECT id FROM task_cards WHERE id = ? AND deleted_at IS NULL", id);
+    if (!exists) { failed.push(id); continue; }
+    db.runSync(
+      "UPDATE task_cards SET column_id = ?, updated_at = ?, version = version + 1 WHERE id = ?",
+      targetColumnId, now, id,
+    );
+    moved++;
+  }
+  if (moved > 0) notifyLocalWrite();
+  return { moved, failed, targetColumnId };
+}
+
 function plainText(md: string): string {
   return stripMarkdown(md);
 }
