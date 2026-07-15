@@ -19,6 +19,8 @@
     "./notes/format": "./notes/format.ts",
     "./notes/markdown": "./notes/markdown.ts",
     "./notes/export": "./notes/export.ts",
+    "./notes/templates": "./notes/templates.ts",
+    "./notes/starter-templates": "./notes/starter-templates.ts",
     "./notes/syntax-palette": "./notes/syntax-palette.ts",
     "./notes/text": "./notes/text.ts",
     "./format/date": "./format/date.ts",

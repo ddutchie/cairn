@@ -166,6 +166,30 @@ describe("getProjectNotes", () => {
     });
     expect(get().getProjectNotes("p1").map((n: Note) => n.id)).toEqual(["keep"]);
   });
+
+  it("excludes templates from the notes list", () => {
+    const { get } = setup({
+      notes: [
+        note("real", "p1"),
+        note("tpl", "p1", { type: "template" } as any),
+      ],
+    });
+    expect(get().getProjectNotes("p1").map((n: Note) => n.id)).toEqual(["real"]);
+  });
+});
+
+describe("getProjectTemplates", () => {
+  it("returns only templates for the project, sorted by title", () => {
+    const { get } = setup({
+      notes: [
+        note("real", "p1"),
+        note("Zeta", "p1", { title: "Zeta", type: "template" } as any),
+        note("Alpha", "p1", { title: "Alpha", type: "template" } as any),
+        note("otherProjTpl", "p2", { type: "template" } as any),
+      ],
+    });
+    expect(get().getProjectTemplates("p1").map((n: Note) => n.title)).toEqual(["Alpha", "Zeta"]);
+  });
 });
 
 describe("getWorkspaceProjects", () => {
