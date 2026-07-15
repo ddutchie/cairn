@@ -62,6 +62,31 @@ export default defineConfig({
       },
       {
         resolve: { alias: mobileAlias },
+        // The mobile app's tsconfig `extends "expo/tsconfig.base"`, which only
+        // resolves when `mobile/node_modules` is installed. CI installs only the
+        // root deps, so oxc's automatic tsconfig walk-up for mobile test files
+        // hits mobile/tsconfig.json and fails with TSCONFIG_ERROR (Tsconfig not
+        // found). Disable oxc's tsconfig lookup for this project and feed it a
+        // self-contained config instead, so the transform never touches the
+        // expo-extended mobile/tsconfig.json.
+        plugins: [
+          {
+            name: "mobile-standalone-tsconfig",
+            config() {
+              return {
+                oxc: {
+                  tsconfig: {
+                    compilerOptions: {
+                      target: "es2022",
+                      jsx: "react-jsx",
+                      verbatimModuleSyntax: false,
+                    },
+                  },
+                },
+              };
+            },
+          },
+        ],
         test: {
           name: "mobile",
           environment: "node",
