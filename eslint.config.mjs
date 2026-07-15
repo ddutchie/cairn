@@ -68,6 +68,9 @@ const eslintConfig = defineConfig([
     "mobile/**",
     // Remotion video compositions — separate build pipeline, not part of app
     "remotion/**",
+    // Scratch experiments (Needle finetune spike, venvs, checkpoints) —
+    // gitignored + untracked; not part of the app and not seen by CI.
+    "scratch/**",
     // Plain Node.js CJS build/helper scripts
     "scripts/**",
     // Vitest SQLite shim — CJS, require() is intentional
