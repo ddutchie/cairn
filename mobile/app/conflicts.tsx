@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import { View, Text, ScrollView, Pressable, StyleSheet, Alert, TextInput } from "react-native";
 import { Stack, useRouter } from "expo-router";
 import { GitMerge } from "lucide-react-native";
@@ -10,8 +10,9 @@ import {
   type ConflictCopy,
 } from "@/db/queries";
 import { merge3 } from "@cairn/shared/sync/merge3";
+import { diffLines, diffStats, type DiffRow } from "@cairn/shared/sync/line-diff";
 import { useRefreshOnFocus } from "@/sync/useSyncStatus";
-import { useTheme, type as typeScale, type Theme } from "@/theme";
+import { useTheme, type as typeScale, type Theme, withAlpha } from "@/theme";
 
 /**
  * Manual conflict-resolution screen. Lists every conflict-copy note (created
@@ -115,20 +116,13 @@ export default function ConflictsScreen() {
                   </View>
                 ) : (
                   <>
-                    <View style={styles.versions}>
-                      <VersionBlock
-                        label="This device (original)"
-                        body={c.original ? (c.original.content ?? "") : "(original was deleted)"}
-                        onOpen={c.original ? () => router.push(`/note/${c.original!.id}`) : undefined}
-                        styles={styles}
-                      />
-                      <VersionBlock
-                        label="Conflicted copy"
-                        body={c.content ?? ""}
-                        onOpen={() => router.push(`/note/${c.id}`)}
-                        styles={styles}
-                      />
-                    </View>
+                    <DiffView
+                      current={c.original ? (c.original.content ?? "") : ""}
+                      copy={c.content ?? ""}
+                      originalDeleted={!c.original}
+                      styles={styles}
+                      t={t}
+                    />
 
                     <View style={styles.actions}>
                       <Pressable style={[styles.btn, styles.btnGhost]} onPress={() => keepOriginal(c)}>
@@ -152,27 +146,85 @@ export default function ConflictsScreen() {
   );
 }
 
-function VersionBlock({
-  label,
-  body,
-  onOpen,
+/**
+ * Unified line-diff of the current note vs the conflicted copy. Lines only in
+ * the current note are shown red ("−"), lines only in the copy green ("+"),
+ * unchanged lines dimmed — so it's clear exactly what differs rather than two
+ * opaque text previews. Falls back to a plain preview when the original was
+ * deleted (nothing to diff against).
+ */
+const DiffView = memo(function DiffView({
+  current,
+  copy,
+  originalDeleted,
   styles,
+  t,
 }: {
-  label: string;
-  body: string;
-  onOpen?: () => void;
+  current: string;
+  copy: string;
+  originalDeleted: boolean;
   styles: ReturnType<typeof makeStyles>;
+  t: Theme;
 }) {
-  const preview = body.replace(/\s+/g, " ").trim().slice(0, 240);
+  if (originalDeleted) {
+    return (
+      <View style={styles.diffWrap}>
+        <Text style={styles.versionLabel}>Original was deleted — conflicted copy</Text>
+        <Text style={styles.versionBody} numberOfLines={6}>
+          {copy.trim().length > 0 ? copy.replace(/\s+/g, " ").trim().slice(0, 240) : "(empty)"}
+        </Text>
+      </View>
+    );
+  }
+
+  const rows: DiffRow[] = diffLines(current, copy);
+  const { added, removed } = diffStats(rows);
+  const identical = added === 0 && removed === 0;
+
+  if (identical) {
+    return (
+      <View style={styles.diffWrap}>
+        <Text style={styles.versionLabel}>Current vs conflicted copy</Text>
+        <Text style={styles.diffSame}>Both versions have the same body — the conflict is in metadata only.</Text>
+      </View>
+    );
+  }
+
   return (
-    <Pressable style={styles.version} onPress={onOpen} disabled={!onOpen}>
-      <Text style={styles.versionLabel}>{label}</Text>
-      <Text style={styles.versionBody} numberOfLines={5}>
-        {preview || "(empty)"}
-      </Text>
-    </Pressable>
+    <View style={styles.diffWrap}>
+      <View style={styles.diffHeader}>
+        <Text style={styles.versionLabel}>Current vs conflicted copy</Text>
+        <View style={styles.diffCounts}>
+          {added > 0 ? <Text style={[styles.diffCount, { color: t.success }]}>+{added} in copy</Text> : null}
+          {removed > 0 ? <Text style={[styles.diffCount, { color: t.danger }]}>−{removed} in current</Text> : null}
+        </View>
+      </View>
+      <ScrollView style={styles.diffScroll} nestedScrollEnabled>
+        {rows.map((row, i) => {
+          const isAdd = row.op === "add";
+          const isRemove = row.op === "remove";
+          return (
+            <View
+              key={i}
+              style={[
+                styles.diffRow,
+                isAdd && styles.diffRowAdd,
+                isRemove && styles.diffRowRemove,
+              ]}
+            >
+              <Text style={[styles.diffSign, { color: isAdd ? t.success : isRemove ? t.danger : "transparent" }]}>
+                {isAdd ? "+" : isRemove ? "−" : " "}
+              </Text>
+              <Text style={[styles.diffLine, { color: row.op === "equal" ? t.textTertiary : t.textPrimary }]}>
+                {row.text.length > 0 ? row.text : " "}
+              </Text>
+            </View>
+          );
+        })}
+      </ScrollView>
+    </View>
   );
-}
+});
 
 function makeStyles(t: Theme) {
   return StyleSheet.create({
@@ -182,10 +234,20 @@ function makeStyles(t: Theme) {
     card: { backgroundColor: t.surface, borderRadius: 14, borderWidth: 1, borderColor: t.border, padding: 14, marginBottom: 16 },
     cardTitle: { ...typeScale.title, fontWeight: "700", color: t.textPrimary },
     meta: { ...typeScale.caption, color: t.textTertiary, marginTop: 4 },
-    versions: { gap: 10, marginTop: 12 },
-    version: { backgroundColor: t.surface2, borderRadius: 10, borderWidth: 1, borderColor: t.borderSubtle, padding: 10 },
     versionLabel: { ...typeScale.overline, color: t.textTertiary, marginBottom: 6 },
     versionBody: { ...typeScale.caption, color: t.textPrimary, lineHeight: 19 },
+    // Unified diff view
+    diffWrap: { marginTop: 12, backgroundColor: t.surface2, borderRadius: 10, borderWidth: 1, borderColor: t.borderSubtle, padding: 10 },
+    diffHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 },
+    diffCounts: { flexDirection: "row", gap: 10 },
+    diffCount: { ...typeScale.micro, fontWeight: "600" },
+    diffScroll: { maxHeight: 220 },
+    diffRow: { flexDirection: "row", paddingHorizontal: 4, borderRadius: 3 },
+    diffRowAdd: { backgroundColor: withAlpha(t.success, 0.16) },
+    diffRowRemove: { backgroundColor: withAlpha(t.danger, 0.16) },
+    diffSign: { width: 14, fontFamily: "Menlo", fontSize: 12, lineHeight: 19 },
+    diffLine: { flex: 1, fontFamily: "Menlo", fontSize: 12, lineHeight: 19 },
+    diffSame: { ...typeScale.caption, color: t.textTertiary, fontStyle: "italic", lineHeight: 19 },
     actions: { flexDirection: "row", gap: 10, marginTop: 14 },
     btn: { flex: 1, paddingVertical: 11, borderRadius: 10, alignItems: "center" },
     btnGhost: { backgroundColor: t.surface2, borderWidth: 1, borderColor: t.border },

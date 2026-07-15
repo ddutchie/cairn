@@ -4,15 +4,14 @@ import {
   Text,
   TextInput,
   Pressable,
-  StyleSheet,
   ScrollView,
   ActivityIndicator,
 } from "react-native";
 import { Stack } from "expo-router";
-import { Check, ShieldCheck, RefreshCw, Cpu, Apple, Brain, type LucideIcon } from "lucide-react-native";
+import { Check, ShieldCheck, RefreshCw, Cpu, Apple, Brain } from "lucide-react-native";
 import { ICON_CHECK } from "@/components/toolbar-icons";
 import { haptics, toolbarPress } from "@/haptics";
-import { useTheme, type as typeScale, type Theme } from "@/theme";
+import { useTheme } from "@/theme";
 import {
   DEFAULT_OPENAI_BASE_URL,
   DEFAULT_OPENAI_MODEL,
@@ -44,6 +43,10 @@ import {
 } from "@modules/apple-llm";
 import { listModels } from "@/chat/providers/openai";
 import { contextLimitForModel } from "@/chat/models-dev";
+import { useAiSettingsStyles } from "./ai-settings/styles";
+import { SegmentButton } from "./ai-settings/SegmentButton";
+import { Field } from "./ai-settings/Field";
+import { QuotaBar } from "./ai-settings/QuotaBar";
 
 /**
  * AI settings form body. Presented as a native `formSheet` route
@@ -62,7 +65,7 @@ import { contextLimitForModel } from "@/chat/models-dev";
  */
 export function AiSettingsForm({ onClose }: { onClose: () => void }) {
   const t = useTheme();
-  const styles = useMemo(() => makeStyles(t), [t]);
+  const styles = useAiSettingsStyles();
   const rorkBuiltIn = isRorkAvailable();
   const appleAvailable = isAppleProviderAvailable();
   // Which Apple model backs the "Apple Intelligence" option: PCC (user-facing)
@@ -418,238 +421,3 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
   );
 }
 
-function SegmentButton({
-  label,
-  icon: Icon,
-  selected,
-  onPress,
-  t,
-  styles,
-}: {
-  label: string;
-  icon?: LucideIcon;
-  selected: boolean;
-  onPress: () => void;
-  t: Theme;
-  styles: ReturnType<typeof makeStyles>;
-}) {
-  return (
-    <Pressable
-      style={[styles.segmentBtn, selected && styles.segmentBtnActive]}
-      onPress={onPress}
-    >
-      {selected ? (
-        <Check size={13} color={t.accentFg} />
-      ) : Icon ? (
-        <Icon size={13} color={t.textSecondary} />
-      ) : null}
-      <Text style={[styles.segmentText, selected && styles.segmentTextActive]} numberOfLines={1}>
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
-function Field({
-  label,
-  t,
-  styles,
-  ...input
-}: {
-  label: string;
-  t: Theme;
-  styles: ReturnType<typeof makeStyles>;
-} & React.ComponentProps<typeof TextInput>) {
-  return (
-    <View style={styles.field}>
-      <Text style={styles.fieldLabel}>{label}</Text>
-      <TextInput
-        style={styles.fieldInput}
-        placeholderTextColor={t.textTertiary}
-        {...input}
-      />
-    </View>
-  );
-}
-
-/**
- * Private Cloud Compute daily-usage indicator. Apple exposes no exact numbers,
- * only a 3-state status (below / approaching / reached) + a reset date, so we
- * render a 3-segment bar that fills to the current state (green → amber → red)
- * rather than a precise gauge — matching Apple's "communicate the current
- * status" guidance. Shows a reset date and an iCloud+ upgrade action.
- */
-function QuotaBar({
-  quota,
-  onUpgrade,
-  t,
-  styles,
-}: {
-  quota: AppleQuotaStatus;
-  onUpgrade: () => void;
-  t: Theme;
-  styles: ReturnType<typeof makeStyles>;
-}) {
-  // How many of the 3 segments are lit, and the fill colour, per state.
-  const level = quota.isLimitReached ? 3 : quota.status === "approaching" ? 2 : 1;
-  const colour = quota.isLimitReached ? t.danger : quota.status === "approaching" ? t.warning : t.success;
-  const label = quota.isLimitReached
-    ? "Daily limit reached"
-    : quota.status === "approaching"
-      ? "Approaching daily limit"
-      : "Within daily limit";
-  const reset =
-    quota.resetDate && quota.status !== "below"
-      ? `Resets ${new Date(quota.resetDate).toLocaleDateString()}`
-      : "";
-
-  return (
-    <View style={styles.quotaCard}>
-      <View style={styles.quotaHeaderRow}>
-        <Text style={styles.quotaTitle}>Private Cloud Compute</Text>
-        <Text style={[styles.quotaStatus, { color: colour }]}>{label}</Text>
-      </View>
-      <View
-        style={styles.quotaTrack}
-        accessibilityRole="progressbar"
-        accessibilityLabel={`Private Cloud Compute usage: ${label}`}
-      >
-        {[0, 1, 2].map((i) => (
-          <View
-            key={i}
-            style={[
-              styles.quotaSeg,
-              { backgroundColor: i < level ? colour : t.border },
-              i === 0 && styles.quotaSegFirst,
-              i === 2 && styles.quotaSegLast,
-            ]}
-          />
-        ))}
-      </View>
-      <View style={styles.quotaFootRow}>
-        <Text style={styles.quotaHint}>
-          {reset || "Usage resets daily. No API key needed."}
-        </Text>
-        {quota.canUpgrade && (
-          <Pressable onPress={onUpgrade} hitSlop={8}>
-            <Text style={styles.quotaUpgrade}>Get more with iCloud+</Text>
-          </Pressable>
-        )}
-      </View>
-    </View>
-  );
-}
-
-function makeStyles(t: Theme) {
-  return StyleSheet.create({
-    flex: { flex: 1, backgroundColor: t.surface },
-    loadingBox: { paddingVertical: 48, alignItems: "center" },
-    body: { flex: 1 },
-    bodyContent: { padding: 18, gap: 8 },
-
-    sectionLabel: {
-      ...typeScale.overline,
-      color: t.textTertiary,
-      marginBottom: 2,
-    },
-    segment: {
-      flexDirection: "row",
-      gap: 6,
-      backgroundColor: t.surface2,
-      borderWidth: 1,
-      borderColor: t.border,
-      borderRadius: 12,
-      padding: 4,
-    },
-    reasoningBlock: { gap: 8 },
-    reasoningHead: { flexDirection: "row", alignItems: "center", gap: 6 },
-    segmentBtn: {
-      flex: 1,
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 5,
-      paddingVertical: 9,
-      borderRadius: 9,
-    },
-    segmentBtnActive: { backgroundColor: t.accent },
-    segmentText: { ...typeScale.control, color: t.textSecondary },
-    segmentTextActive: { color: t.accentFg },
-
-    rorkNote: {
-      flexDirection: "row",
-      gap: 8,
-      alignItems: "flex-start",
-      backgroundColor: t.surface2,
-      borderRadius: 10,
-      padding: 12,
-      marginTop: 4,
-    },
-    rorkNoteText: { flex: 1, ...typeScale.caption, color: t.textSecondary, lineHeight: 18 },
-
-    // PCC daily-usage 3-state bar.
-    quotaCard: {
-      backgroundColor: t.surface2,
-      borderRadius: 10,
-      padding: 12,
-      marginTop: 4,
-      gap: 8,
-    },
-    quotaHeaderRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-    quotaTitle: { ...typeScale.caption, color: t.textSecondary, fontWeight: "600" },
-    quotaStatus: { ...typeScale.caption, fontWeight: "600" },
-    quotaTrack: { flexDirection: "row", gap: 3, height: 6 },
-    quotaSeg: { flex: 1, height: 6 },
-    quotaSegFirst: { borderTopLeftRadius: 3, borderBottomLeftRadius: 3 },
-    quotaSegLast: { borderTopRightRadius: 3, borderBottomRightRadius: 3 },
-    quotaFootRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
-    quotaHint: { flex: 1, ...typeScale.caption, color: t.textTertiary },
-    quotaUpgrade: { ...typeScale.caption, color: t.accent, fontWeight: "600" },
-
-    fields: { gap: 14, marginTop: 12 },
-    field: { gap: 6 },
-    fieldLabel: { ...typeScale.label, color: t.textSecondary },
-    fieldInput: {
-      backgroundColor: t.surface2,
-      borderWidth: 1,
-      borderColor: t.border,
-      borderRadius: 10,
-      paddingHorizontal: 12,
-      paddingVertical: 11,
-      ...typeScale.body,
-      color: t.textPrimary,
-    },
-    keyNote: { flexDirection: "row", gap: 6, alignItems: "flex-start", marginTop: -2 },
-    keyNoteText: { flex: 1, ...typeScale.caption, color: t.textTertiary, lineHeight: 16 },
-    compatHint: { ...typeScale.caption, color: t.textTertiary, lineHeight: 16, marginTop: 2 },
-
-    modelHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-    fetchBtn: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 5,
-      paddingHorizontal: 10,
-      paddingVertical: 5,
-      borderRadius: 8,
-      backgroundColor: t.accentDim,
-    },
-    fetchBtnText: { ...typeScale.label, color: t.accent },
-    modelsError: { ...typeScale.caption, color: t.danger, lineHeight: 16 },
-    modelChips: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 2 },
-    modelChip: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 4,
-      maxWidth: "100%",
-      backgroundColor: t.surface2,
-      borderWidth: 1,
-      borderColor: t.border,
-      borderRadius: 8,
-      paddingHorizontal: 10,
-      paddingVertical: 6,
-    },
-    modelChipActive: { backgroundColor: t.accent, borderColor: t.accent },
-    modelChipText: { ...typeScale.caption, color: t.textSecondary, flexShrink: 1 },
-    modelChipTextActive: { color: t.accentFg, fontWeight: "600" },
-  });
-}

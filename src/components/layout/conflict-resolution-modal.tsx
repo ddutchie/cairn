@@ -19,6 +19,7 @@ import { ModalShell } from "@/components/ui/modal-shell";
 import { Button } from "@/components/ui/button";
 import { fetchConflicts, resolveConflict, type ConflictCopy } from "@/lib/sync-client";
 import { merge3 } from "@/lib/merge3";
+import { diffLines, diffStats } from "@/lib/line-diff";
 
 export function ConflictResolutionModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [conflicts, setConflicts] = useState<ConflictCopy[]>([]);
@@ -36,6 +37,7 @@ export function ConflictResolutionModal({ open, onClose }: { open: boolean; onCl
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (open) void refresh(true);
   }, [open, refresh]);
 
@@ -168,13 +170,11 @@ export function ConflictResolutionModal({ open, onClose }: { open: boolean; onCl
                   </div>
                 ) : (
                   <>
-                    <div className="grid grid-cols-2 divide-x divide-[var(--border)]">
-                      <VersionBlock
-                        heading="This device (current)"
-                        body={c.original ? c.original.content : "(the original was deleted)"}
-                      />
-                      <VersionBlock heading="Conflicted copy" body={c.content} />
-                    </div>
+                    <DiffView
+                      current={c.original ? (c.original.content ?? "") : ""}
+                      copy={c.content ?? ""}
+                      originalDeleted={!c.original}
+                    />
 
                     <div className="px-3 py-2.5 border-t border-[var(--border)] flex items-center justify-end gap-2">
                       <Button variant="ghost" size="sm" disabled={busyId === c.id} onClick={() => onResolve(c.id, "keepOriginal")}>
@@ -200,13 +200,79 @@ export function ConflictResolutionModal({ open, onClose }: { open: boolean; onCl
   );
 }
 
-function VersionBlock({ heading, body }: { heading: string; body: string | null }) {
+/**
+ * Unified line-diff of the current note vs the conflicted copy. Lines only in
+ * the current note are shown red ("−"); lines only in the copy are shown green
+ * ("+"); unchanged lines are dimmed. A summary counts the changes so you can
+ * tell at a glance how much differs — replacing the old opaque side-by-side
+ * plain-text blocks.
+ */
+function DiffView({ current, copy, originalDeleted }: { current: string; copy: string; originalDeleted: boolean }) {
+  if (originalDeleted) {
+    return (
+      <div className="p-3">
+        <div className="text-[0.65rem] uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
+          Original was deleted — this is the conflicted copy
+        </div>
+        <pre className="text-[0.714rem] text-[var(--text-secondary)] whitespace-pre-wrap break-words max-h-56 overflow-y-auto font-mono leading-relaxed">
+          {copy.trim().length > 0 ? copy : <span className="italic text-[var(--text-tertiary)]">(empty)</span>}
+        </pre>
+      </div>
+    );
+  }
+
+  const rows = diffLines(current, copy);
+  const { added, removed } = diffStats(rows);
+  const identical = added === 0 && removed === 0;
+
   return (
-    <div className="p-3 min-w-0">
-      <div className="text-[0.65rem] uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">{heading}</div>
-      <pre className="text-[0.714rem] text-[var(--text-secondary)] whitespace-pre-wrap break-words max-h-40 overflow-y-auto font-sans leading-relaxed">
-        {body && body.trim().length > 0 ? body : <span className="italic text-[var(--text-tertiary)]">(empty)</span>}
-      </pre>
+    <div>
+      <div className="px-3 pt-2.5 pb-1.5 flex items-center gap-3 text-[0.65rem] uppercase tracking-wide">
+        <span className="text-[var(--text-tertiary)]">Current vs conflicted copy</span>
+        {identical ? (
+          <span className="text-[var(--text-tertiary)]">identical body</span>
+        ) : (
+          <span className="ml-auto flex items-center gap-2 normal-case tracking-normal">
+            {added > 0 && <span className="text-[var(--success)]">+{added} in copy</span>}
+            {removed > 0 && <span className="text-[var(--danger)]">−{removed} in current</span>}
+          </span>
+        )}
+      </div>
+      <div className="px-1 pb-2 max-h-64 overflow-y-auto">
+        {identical ? (
+          <div className="px-2 py-3 text-[0.714rem] text-[var(--text-tertiary)] italic">
+            Both versions have the same body — the conflict is in metadata only.
+          </div>
+        ) : (
+          <pre className="text-[0.714rem] font-mono leading-relaxed whitespace-pre-wrap break-words m-0">
+            {rows.map((row, i) => {
+              const isAdd = row.op === "add";
+              const isRemove = row.op === "remove";
+              return (
+                <div
+                  key={i}
+                  className="px-2"
+                  style={
+                    isAdd
+                      ? { background: "color-mix(in srgb, var(--success) 12%, transparent)", color: "var(--text-primary)" }
+                      : isRemove
+                      ? { background: "color-mix(in srgb, var(--danger) 12%, transparent)", color: "var(--text-primary)" }
+                      : { color: "var(--text-tertiary)" }
+                  }
+                >
+                  <span
+                    className="select-none inline-block w-3 opacity-70"
+                    style={{ color: isAdd ? "var(--success)" : isRemove ? "var(--danger)" : "transparent" }}
+                  >
+                    {isAdd ? "+" : isRemove ? "−" : " "}
+                  </span>
+                  {row.text.length > 0 ? row.text : "\u00A0"}
+                </div>
+              );
+            })}
+          </pre>
+        )}
+      </div>
     </div>
   );
 }

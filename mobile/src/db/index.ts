@@ -68,6 +68,19 @@ function metaSet(key: string, value: string): void {
   );
 }
 
+/**
+ * Device-global key/value access to the meta DB, for config that must survive
+ * source (workspace) switches AND the legacy-DB wipe on upgrade — e.g. the AI
+ * provider endpoint/model. Do NOT use for workspace data (that belongs in the
+ * source DB so it syncs / stays scoped). Meta is never synced.
+ */
+export function getMeta(key: string): string | null {
+  return metaGet(key);
+}
+export function setMeta(key: string, value: string): void {
+  metaSet(key, value);
+}
+
 /** Stable per-install device id (shared across all source DBs). */
 export function getDeviceId(): string {
   const existing = metaGet("device_id");

@@ -1,15 +1,12 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { RefreshCw, GitBranch, GitCommit, ArrowUp, Sparkles, File, Check, X, ChevronRight, ChevronDown, GitPullRequest, RotateCcw } from "lucide-react";
+import { RefreshCw, GitBranch, GitCommit, ArrowUp, Sparkles, Check, X, ChevronDown, GitPullRequest } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useIsDark } from "@/hooks/useIsDark";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
 import { CairnEvents } from "@/lib/events";
-import parseDiff from "parse-diff";
-import { UnifiedFile, PALETTE_DARK, PALETTE_LIGHT } from "./DiffFile";
 import type { ProjectSettings } from "@/types";
 import {
   DropdownMenu,
@@ -26,54 +23,18 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Tooltip } from "@/components/ui/tooltip";
+import {
+  type GitStatusData,
+  type GitLogData,
+  diffKey,
+} from "./git/git-helpers";
+import { FileSection } from "./git/FileSection";
+import { FileRow } from "./git/FileRow";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
 interface GitViewProps {
   cwd: string;
-}
-
-// Inline types matching the preload's ElectronAPI return shapes
-interface GitFileEntry {
-  path: string;
-  status: string;
-}
-interface GitStatusData {
-  branch: string;
-  ahead: string;
-  behind: string;
-  hasUpstream: boolean;
-  defaultBranch: string;
-  staged: GitFileEntry[];
-  unstaged: GitFileEntry[];
-  untracked: GitFileEntry[];
-}
-type GitLogData = Array<{
-  hash: string;
-  author: string;
-  date: string;
-  subject: string;
-}>;
-
-// ── Helpers ─────────────────────────────────────────────────────────────────
-
-function statusLabel(s: string): string {
-  if (s === "??") return "untracked";
-  if (s === "M ") return "modified";
-  if (s === "A ") return "added";
-  if (s === "D ") return "deleted";
-  if (s === "R ") return "renamed";
-  if (s === " M") return "modified";
-  if (s === " D") return "deleted";
-  return s.trim() || "changed";
-}
-
-function statusColor(s: string): string {
-  if (s.startsWith("A")) return "var(--success)";
-  if (s.startsWith("D")) return "var(--danger)";
-  if (s.startsWith("R")) return "var(--accent)";
-  if (s.startsWith("?")) return "var(--text-tertiary)";
-  return "var(--warning)";
 }
 
 // ── GitView ─────────────────────────────────────────────────────────────────
@@ -108,10 +69,6 @@ export function GitView({ cwd }: GitViewProps) {
   const [fileDiffs, setFileDiffs] = useState<Record<string, { added: number; deleted: number; diff: string }>>({});
   const [loadingFile, setLoadingFile] = useState<string | null>(null);
 
-  // A file can appear in BOTH staged and unstaged sections (e.g. status "MM").
-  // Key diffs/expanded/loading by section+path so the two sections don't
-  // clobber each other's state.
-  const diffKey = (path: string, staged: boolean) => `${staged ? "s" : "u"}:${path}`;
   const [creatingPr, setCreatingPr] = useState(false);
   const [prTitle, setPrTitle] = useState("");
   const [prBody, setPrBody] = useState("");
@@ -955,144 +912,3 @@ export function GitView({ cwd }: GitViewProps) {
   );
 }
 
-// ── Sub-components ──────────────────────────────────────────────────────────
-
-function FileSection({
-  label, count, expanded, onToggle, action, children,
-}: {
-  label: string;
-  count: number;
-  expanded: boolean;
-  onToggle: () => void;
-  action?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <div
-        className="flex items-center gap-2 px-4 py-1.5 cursor-pointer hover:bg-[var(--surface-2)] transition-colors select-none"
-        onClick={onToggle}
-      >
-        {expanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
-        <span className="text-[0.65rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)]">{label}</span>
-        <span className="text-[0.65rem] text-[var(--text-tertiary)] opacity-60">{count}</span>
-        {action && (
-          <div className="ml-auto flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-            {action}
-          </div>
-        )}
-      </div>
-      {expanded && (
-        <div className="divide-y divide-[var(--border-subtle)] border-b border-[var(--border-subtle)]">
-          {children}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function FileRow({
-  path, status, onAction, actionLabel, actionColor,
-  stat, rawDiff, expanded, loading, onToggle, onDiscard,
-}: {
-  path: string;
-  status: string;
-  onAction: () => void;
-  actionLabel: string;
-  actionColor: string;
-  stat?: { added: number; deleted: number };
-  rawDiff: string;
-  expanded: boolean;
-  loading: boolean;
-  onToggle: () => void;
-  onDiscard: () => void;
-}) {
-  const hasDiffStats = stat && (stat.added > 0 || stat.deleted > 0);
-  return (
-    <>
-      <div
-        className="flex items-center gap-2 px-6 py-1.5 hover:bg-[var(--surface-2)] transition-colors group cursor-pointer"
-        onClick={onToggle}
-      >
-        <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
-          <Tooltip content={actionLabel === "+" ? "Stage changes in this file" : "Unstage changes in this file"}>
-            <button
-              onClick={onAction}
-              className="w-4 h-4 rounded flex items-center justify-center text-[0.65rem] font-bold hover:scale-110 transition-transform cursor-pointer"
-              style={{ color: actionColor, backgroundColor: `color-mix(in srgb, ${actionColor} 15%, transparent)` }}
-            >
-              {actionLabel}
-            </button>
-          </Tooltip>
-          <Tooltip content="Discard all changes in this file">
-            <button
-              onClick={onDiscard}
-              className="w-4 h-4 rounded flex items-center justify-center text-[var(--danger)] hover:scale-110 transition-transform cursor-pointer"
-              style={{ backgroundColor: `color-mix(in srgb, var(--danger) 15%, transparent)` }}
-            >
-              <RotateCcw size={10} />
-            </button>
-          </Tooltip>
-        </div>
-        <File size={9} className="text-[var(--text-tertiary)] flex-shrink-0 opacity-50" />
-        <span className="text-[0.714rem] text-[var(--text-primary)] font-mono truncate flex-1">{path}</span>
-        {hasDiffStats && (
-          <span className="text-[0.65rem] font-mono flex-shrink-0 space-x-1">
-            <span className="text-[var(--success)]">+{stat.added}</span>
-            <span className="text-[var(--danger)]">-{stat.deleted}</span>
-          </span>
-        )}
-        {loading && (
-          <RefreshCw size={10} className="animate-spin text-[var(--text-tertiary)]" />
-        )}
-        <span
-          className="text-[0.65rem] font-mono px-1.5 py-0.5 rounded flex-shrink-0"
-          style={{ color: statusColor(status), backgroundColor: `color-mix(in srgb, ${statusColor(status)} 10%, transparent)` }}
-        >
-          {statusLabel(status)}
-        </span>
-      </div>
-      {expanded && (
-        <Inlinediff rawDiff={rawDiff} loading={loading} />
-      )}
-    </>
-  );
-}
-
-function Inlinediff({ rawDiff, loading }: { rawDiff: string; loading: boolean }) {
-  const isDark = useIsDark();
-  const palette = isDark ? PALETTE_DARK : PALETTE_LIGHT;
-
-  const parsed = useMemo(() => {
-    if (!rawDiff) return [];
-    try { return parseDiff(rawDiff); } catch { return []; }
-  }, [rawDiff]);
-
-  if (loading) {
-    return (
-      <div className="px-10 py-2 text-[0.65rem] text-[var(--text-tertiary)]">
-        Loading diff...
-      </div>
-    );
-  }
-  if (parsed.length === 0) {
-    return (
-      <div className="px-10 py-2 text-[0.65rem] text-[var(--text-tertiary)]">
-        No diff content
-      </div>
-    );
-  }
-  return (
-    <div className="border-y border-[var(--border-subtle)]">
-      {parsed.map((file, i) => (
-        <UnifiedFile
-          key={file.to ?? file.from ?? i}
-          file={file}
-          palette={palette}
-          changesOnly={false}
-          hunkTop={0}
-        />
-      ))}
-    </div>
-  );
-}

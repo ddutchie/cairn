@@ -4,11 +4,27 @@
  */
 
 import { getDb } from "./index";
+import { LIVE, NOT_CONFLICT } from "./sql";
+import { parseIds } from "./row-helpers";
 import { inspectConflict, cleanConflictTitle } from "@cairn/shared/sync/conflict";
-import { stripMarkdown } from "@cairn/shared/notes/text";
+import { stripMarkdown, queryTerms } from "@cairn/shared/notes/text";
 import { buildNoteOutline, sliceLines, noteDigest } from "@cairn/shared/notes/toc";
 import { dedupeFoldersCaseInsensitive } from "@cairn/shared/notes/folder-tree";
 import { notifyLocalWrite } from "@/sync/write-signal";
+import type {
+  NoteRow,
+  ProjectRow,
+  ColumnRow,
+  CardRow,
+  TagRow,
+} from "./types";
+
+// Row/graph types now live in ./types; the knowledge-graph builder and the
+// breakout brick sampler are their own leaf modules. Re-export all three (plus
+// the embeddings queries below) so existing `@/db/queries` imports are unchanged.
+export * from "./types";
+export * from "./graph-queries";
+export * from "./breakout";
 
 /** Client-generated collision-free id (mirrors desktop nanoid(12) scheme). */
 const ID_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_";
@@ -25,60 +41,6 @@ function workspaceIdForProject(projectId: string): string {
     projectId,
   );
   return row?.workspace_id ?? "";
-}
-
-export interface NoteRow {
-  id: string;
-  project_id: string;
-  title: string;
-  content: string | null;
-  folder: string;
-  tag_ids: string;
-  updated_at: string;
-  is_pinned?: number;
-}
-
-export interface ProjectRow {
-  id: string;
-  name: string;
-  icon: string | null;
-}
-
-export interface ColumnRow {
-  id: string;
-  project_id: string;
-  name: string;
-  order: number;
-}
-
-export interface CardRow {
-  id: string;
-  column_id: string;
-  project_id: string;
-  title: string;
-  description: string | null;
-  priority: string;
-  tag_ids: string;
-  order: number;
-  due_date?: string | null;
-  assignee?: string | null;
-}
-
-export interface TagRow {
-  id: string;
-  name: string;
-  color: string;
-}
-
-/** Parse a JSON `tag_ids` column into an id array (tolerant of bad data). */
-function parseIds(json: string | null | undefined): string[] {
-  if (!json) return [];
-  try {
-    const v = JSON.parse(json);
-    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
-  } catch {
-    return [];
-  }
 }
 
 /** Resolve an array of tag ids to full tag rows (name + colour), skipping unknowns. */
@@ -187,15 +149,6 @@ export function setCardTags(cardId: string, tagIds: string[]): void {
   );
   notifyLocalWrite();
 }
-
-const LIVE = "deleted_at IS NULL AND archived_at IS NULL";
-
-/**
- * SQL fragment excluding conflict-copy note rows (id like `..._conflict_...`).
- * Conflict copies are surfaced separately via listConflictCopies() so they
- * don't clutter the normal note lists / counts.
- */
-const NOT_CONFLICT = `id NOT LIKE '%\\_conflict\\_%' ESCAPE '\\'`;
 
 export function listProjects(): ProjectRow[] {
   return getDb().getAllSync<ProjectRow>(
@@ -353,27 +306,111 @@ export function getCard(id: string): CardRow | null {
   );
 }
 
+/**
+ * Build an AND-of-terms SQL fragment for keyword search: every whitespace-
+ * separated term in `query` must appear (case-insensitively) in AT LEAST ONE of
+ * the given columns. Returns the `AND (...)` SQL and the bound params, or null
+ * when the query has no terms (caller can early-return / list all).
+ *
+ * This replaces the old single whole-query `LIKE '%q%'`, which under-matched
+ * multi-word queries — "auth flow" now matches "Authentication flow" and
+ * "flow for auth", not only the literal phrase. LIKE wildcards in a term are
+ * escaped so they match literally (ESCAPE '\').
+ */
+function buildTermClause(query: string, columns: string[]): { sql: string; params: string[] } | null {
+  const terms = queryTerms(query);
+  if (terms.length === 0) return null;
+  const params: string[] = [];
+  const groups = terms.map((term) => {
+    // Escape %, _ and the escape char itself so they're matched literally.
+    const escaped = term.replace(/[\\%_]/g, (m) => `\\${m}`);
+    const like = `%${escaped}%`;
+    const ors = columns.map((col) => {
+      params.push(like);
+      return `${col} LIKE ? ESCAPE '\\'`;
+    });
+    return `(${ors.join(" OR ")})`;
+  });
+  return { sql: `AND (${groups.join(" AND ")})`, params };
+}
+
 export function searchNotes(query: string): NoteRow[] {
-  const q = `%${query}%`;
+  const clause = buildTermClause(query, ["title", "content_text"]);
+  if (!clause) return [];
   return getDb().getAllSync<NoteRow>(
     `SELECT id, project_id, title, content, folder, tag_ids, updated_at FROM notes
-     WHERE ${LIVE} AND type = 'note' AND ${NOT_CONFLICT} AND (title LIKE ? OR content_text LIKE ?)
+     WHERE ${LIVE} AND type = 'note' AND ${NOT_CONFLICT} ${clause.sql}
      ORDER BY updated_at DESC LIMIT 50`,
-    q,
-    q,
+    ...clause.params,
   );
 }
 
 /** Search live (non-archived) task cards by title or description. */
-export function searchTasks(query: string): CardRow[] {
-  const q = `%${query}%`;
+export function searchTasks(query: string, projectId?: string): CardRow[] {
+  const clause = buildTermClause(query, ["title", "description"]);
+  if (!clause) return [];
+  // Scope to the project BEFORE the LIMIT so a project's matches aren't dropped
+  // when the workspace-wide match set exceeds the cap.
+  const projectClause = projectId ? "AND project_id = ?" : "";
+  const params = projectId ? [...clause.params, projectId] : clause.params;
   return getDb().getAllSync<CardRow>(
     `SELECT id, column_id, project_id, title, description, priority, tag_ids, "order", due_date, assignee FROM task_cards
-     WHERE ${LIVE} AND (title LIKE ? OR description LIKE ?)
+     WHERE ${LIVE} ${clause.sql} ${projectClause}
      ORDER BY updated_at DESC LIMIT 50`,
-    q,
-    q,
+    ...params,
   );
+}
+
+/**
+ * Ready-to-work cards: live (not deleted/archived), NOT in a done-type column,
+ * and with every blocker resolved (each blocker card is deleted/archived or in a
+ * done column). Mirrors the desktop `getReadyCards` semantics so "what should I
+ * work on now?" behaves the same across surfaces. Optionally scoped to a project.
+ */
+export function listReadyCards(projectId?: string): CardRow[] {
+  const whereProject = projectId ? "AND c.project_id = ?" : "";
+  const params = projectId ? [projectId] : [];
+  const candidates = getDb().getAllSync<CardRow & { blocked_by_ids: string }>(
+    `SELECT c.id, c.column_id, c.project_id, c.title, c.description, c.priority,
+            c.tag_ids, c."order", c.due_date, c.assignee, c.blocked_by_ids
+     FROM task_cards c
+     JOIN board_columns col ON col.id = c.column_id
+     WHERE c.deleted_at IS NULL AND c.archived_at IS NULL AND col.type != 'done'
+       ${whereProject}
+     ORDER BY c."order"`,
+    ...params,
+  );
+  if (candidates.length === 0) return [];
+
+  // Resolve blockers in one batched query (mirrors getKnowledgeGraph's IN(...)
+  // pattern) instead of a per-blocker DB round-trip. A blocker is "cleared" when
+  // its card is deleted/archived, lives in a done column, or no longer exists
+  // (an orphaned blocker is cleared).
+  const blockersByCard = candidates.map((c) => parseIds(c.blocked_by_ids));
+  const distinctBlockerIds = [...new Set(blockersByCard.flat())];
+
+  const cleared = new Set<string>();
+  if (distinctBlockerIds.length > 0) {
+    const placeholders = distinctBlockerIds.map(() => "?").join(",");
+    const rows = getDb().getAllSync<{ id: string; archived_at: string | null; deleted_at: string | null; type: string }>(
+      `SELECT c.id, c.archived_at, c.deleted_at, col.type
+       FROM task_cards c JOIN board_columns col ON col.id = c.column_id
+       WHERE c.id IN (${placeholders})`,
+      ...distinctBlockerIds,
+    );
+    const rowById = new Map(rows.map((r) => [r.id, r]));
+    for (const id of distinctBlockerIds) {
+      const row = rowById.get(id);
+      // Missing (orphaned) → cleared; otherwise cleared when gone or done.
+      if (!row || row.archived_at !== null || row.deleted_at !== null || row.type === "done") {
+        cleared.add(id);
+      }
+    }
+  }
+
+  return candidates
+    .filter((_c, i) => blockersByCard[i].every((id) => cleared.has(id)))
+    .map(({ blocked_by_ids: _omit, ...card }) => card);
 }
 
 /**
@@ -453,128 +490,6 @@ export function moveCardToColumn(cardId: string, columnId: string): void {
 
 function plainText(md: string): string {
   return stripMarkdown(md);
-}
-
-// ── Knowledge graph ─────────────────────────────────────────────────────────
-
-export type GraphNodeType = "project" | "note" | "card" | "tag";
-export type GraphEdgeType =
-  | "project-member"
-  | "note-note"
-  | "note-card"
-  | "tag-member"
-  | "semantic";
-
-export interface GraphNode {
-  id: string;
-  type: GraphNodeType;
-  title: string;
-  /** Tag colour (tag nodes) or priority accent (card nodes), for rendering. */
-  color?: string;
-  priority?: string;
-  /** Owning project id (note/card nodes) — used to draw cluster hulls. */
-  projectId?: string;
-}
-
-export interface GraphEdge {
-  source: string;
-  target: string;
-  type: GraphEdgeType;
-  /** Similarity (0–1) for 'semantic' edges; drives dash-line weight/threshold. */
-  weight?: number;
-}
-
-export interface KnowledgeGraph {
-  nodes: GraphNode[];
-  edges: GraphEdge[];
-}
-
-/**
- * Build the workspace knowledge graph from the SYNCABLE tables the mobile app
- * holds: projects, notes, cards and tags, wired by their explicit links
- * (project membership, note↔note wikilinks, note↔card links, tag membership).
- *
- * Unlike desktop this omits idea-flow edges — mobile has no idea_flow_* tables.
- * It also emits only STRUCTURAL edges here; semantic edges (note↔note, task↔task
- * and note↔task, derived from on-device embeddings) are computed separately by
- * semanticEdges() in src/notes/embeddings.ts and merged in the graph screen
- * behind an opt-in toggle. Only tags actually referenced by a scoped note/card
- * become nodes, matching the desktop's "used tags only" behaviour.
- */
-export function getKnowledgeGraph(): KnowledgeGraph {
-  const db = getDb();
-  const nodes: GraphNode[] = [];
-  const edges: GraphEdge[] = [];
-  const nodeIds = new Set<string>();
-  const add = (n: GraphNode) => {
-    if (nodeIds.has(n.id)) return;
-    nodeIds.add(n.id);
-    nodes.push(n);
-  };
-  const projects = db.getAllSync<{ id: string; name: string }>(
-    `SELECT id, name FROM projects WHERE ${LIVE}`,
-  );
-  for (const p of projects) add({ id: p.id, type: "project", title: p.name });
-
-  const notes = db.getAllSync<{
-    id: string;
-    project_id: string;
-    title: string;
-    tag_ids: string;
-    linked_note_ids: string;
-  }>(
-    `SELECT id, project_id, title, tag_ids, linked_note_ids FROM notes
-     WHERE ${LIVE} AND type='note' AND ${NOT_CONFLICT}`,
-  );
-  for (const n of notes) {
-    add({ id: n.id, type: "note", title: n.title || "Untitled", projectId: n.project_id });
-    if (nodeIds.has(n.project_id)) edges.push({ source: n.project_id, target: n.id, type: "project-member" });
-    // note↔note links: emit once (lower id as source) to avoid duplicate pairs.
-    for (const linked of parseIds(n.linked_note_ids)) {
-      if (n.id < linked) edges.push({ source: n.id, target: linked, type: "note-note" });
-    }
-  }
-
-  const cards = db.getAllSync<{
-    id: string;
-    project_id: string;
-    title: string;
-    priority: string;
-    tag_ids: string;
-    linked_note_ids: string;
-  }>(
-    `SELECT id, project_id, title, priority, tag_ids, linked_note_ids FROM task_cards
-     WHERE ${LIVE}`,
-  );
-  for (const c of cards) {
-    add({ id: c.id, type: "card", title: c.title, priority: c.priority, projectId: c.project_id });
-    if (nodeIds.has(c.project_id)) edges.push({ source: c.project_id, target: c.id, type: "project-member" });
-    for (const noteId of parseIds(c.linked_note_ids)) {
-      if (nodeIds.has(noteId)) edges.push({ source: noteId, target: c.id, type: "note-card" });
-    }
-  }
-
-  // Only tags actually used by a scoped note/card become nodes.
-  const usedTagIds = new Set<string>();
-  for (const n of notes) for (const tid of parseIds(n.tag_ids)) usedTagIds.add(tid);
-  for (const c of cards) for (const tid of parseIds(c.tag_ids)) usedTagIds.add(tid);
-  if (usedTagIds.size > 0) {
-    const tagRows = tagsForIds([...usedTagIds]);
-    const tagById = new Map(tagRows.map((tr) => [tr.id, tr]));
-    for (const tid of usedTagIds) {
-      const tag = tagById.get(tid);
-      if (!tag) continue;
-      add({ id: tag.id, type: "tag", title: tag.name, color: tag.color });
-    }
-    for (const n of notes) for (const tid of parseIds(n.tag_ids)) {
-      if (nodeIds.has(tid)) edges.push({ source: n.id, target: tid, type: "tag-member" });
-    }
-    for (const c of cards) for (const tid of parseIds(c.tag_ids)) {
-      if (nodeIds.has(tid)) edges.push({ source: c.id, target: tid, type: "tag-member" });
-    }
-  }
-
-  return { nodes, edges };
 }
 
 /** Find a note by exact title within a project (for ensure_note upsert). */
@@ -1231,359 +1146,7 @@ function isTombstoned(id: string): boolean {
   return !row || row.deleted_at != null;
 }
 
-// ---------------------------------------------------------------------------
-// On-device semantic-search index (note_embeddings). Local-only, never synced.
-// See src/notes/embeddings.ts for the reindex/search logic that drives these.
-// ---------------------------------------------------------------------------
-
-/** A note (with markdown source) needing an embedding pass. */
-export interface EmbeddableNote {
-  id: string;
-  workspace_id: string;
-  title: string;
-  content: string | null;
-}
-
-/** A stored section embedding row (vector kept as JSON text on disk). */
-export interface EmbeddingRow {
-  note_id: string;
-  section_idx: number;
-  workspace_id: string;
-  model: string;
-  section_title: string;
-  content_hash: string;
-  vector: string;
-}
-
-/** All live notes for a workspace that could hold text worth embedding. */
-export function listEmbeddableNotes(workspaceId: string): EmbeddableNote[] {
-  return getDb().getAllSync<EmbeddableNote>(
-    `SELECT id, workspace_id, title, content FROM notes
-     WHERE ${LIVE} AND type = 'note' AND ${NOT_CONFLICT} AND workspace_id = ?`,
-    workspaceId,
-  );
-}
-
-/** One note (id, workspace_id, title, content) for an incremental embed pass. */
-export function getNoteForEmbedding(noteId: string): EmbeddableNote | null {
-  return (
-    getDb().getFirstSync<EmbeddableNote>(
-      `SELECT id, workspace_id, title, content FROM notes WHERE id = ?`,
-      noteId,
-    ) ?? null
-  );
-}
-
-/** Existing section rows for a note (to diff hashes before re-embedding). */
-export function getNoteEmbeddingRows(noteId: string): EmbeddingRow[] {
-  return getDb().getAllSync<EmbeddingRow>(
-    `SELECT note_id, section_idx, workspace_id, model, section_title, content_hash, vector
-     FROM note_embeddings WHERE note_id = ? ORDER BY section_idx`,
-    noteId,
-  );
-}
-
-/** All 'search_document' section rows for a workspace, for brute-force search. */
-export function getWorkspaceEmbeddingRows(workspaceId: string): EmbeddingRow[] {
-  return getDb().getAllSync<EmbeddingRow>(
-    `SELECT note_id, section_idx, workspace_id, model, section_title, content_hash, vector
-     FROM note_embeddings WHERE workspace_id = ?`,
-    workspaceId,
-  );
-}
-
-/** Upsert one section embedding (vector serialised as JSON). */
-export function upsertNoteEmbedding(row: {
-  noteId: string;
-  sectionIdx: number;
-  workspaceId: string;
-  model: string;
-  sectionTitle: string;
-  contentHash: string;
-  vector: number[];
-}): void {
-  getDb().runSync(
-    `INSERT INTO note_embeddings
-       (note_id, section_idx, workspace_id, model, section_title, content_hash, vector, embedded_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(note_id, section_idx) DO UPDATE SET
-       workspace_id = excluded.workspace_id,
-       model        = excluded.model,
-       section_title= excluded.section_title,
-       content_hash = excluded.content_hash,
-       vector       = excluded.vector,
-       embedded_at  = excluded.embedded_at`,
-    row.noteId,
-    row.sectionIdx,
-    row.workspaceId,
-    row.model,
-    row.sectionTitle,
-    row.contentHash,
-    JSON.stringify(row.vector),
-    new Date().toISOString(),
-  );
-}
-
-/** Delete section rows for a note at or above a given index (prune shrinks). */
-export function deleteNoteEmbeddingsFrom(noteId: string, fromIdx: number): void {
-  getDb().runSync(
-    `DELETE FROM note_embeddings WHERE note_id = ? AND section_idx >= ?`,
-    noteId,
-    fromIdx,
-  );
-}
-
-/** Delete every section row for a note (note emptied or removed). */
-export function deleteNoteEmbeddings(noteId: string): void {
-  getDb().runSync(`DELETE FROM note_embeddings WHERE note_id = ?`, noteId);
-}
-
-/** Note ids that currently have any embedding rows (to find orphans). */
-export function embeddedNoteIds(workspaceId: string): string[] {
-  return getDb()
-    .getAllSync<{ note_id: string }>(
-      `SELECT DISTINCT note_id FROM note_embeddings WHERE workspace_id = ?`,
-      workspaceId,
-    )
-    .map((r) => r.note_id);
-}
-
-/** Wipe the whole index (e.g. on model-identifier change). */
-export function clearAllEmbeddings(): void {
-  getDb().runSync(`DELETE FROM note_embeddings`);
-  getDb().runSync(`DELETE FROM task_embeddings`);
-}
-
-// ── Task-card embeddings (task_embeddings) ───────────────────────────────────
-// Card rows are aliased to the SAME EmbeddingRow shape (card_id AS note_id) so
-// the existing brute-force search internals work unchanged for cards.
-
-/** A card that could hold text worth embedding (title + description). */
-export interface EmbeddableCard {
-  id: string;
-  workspace_id: string;
-  title: string;
-  description: string | null;
-}
-
-/** All live cards for a workspace. */
-export function listEmbeddableCards(workspaceId: string): EmbeddableCard[] {
-  return getDb().getAllSync<EmbeddableCard>(
-    `SELECT id, workspace_id, title, description FROM task_cards
-     WHERE ${LIVE} AND workspace_id = ?`,
-    workspaceId,
-  );
-}
-
-/** Existing section rows for a card (aliased to note_id for shape reuse). */
-export function getCardEmbeddingRows(cardId: string): EmbeddingRow[] {
-  return getDb().getAllSync<EmbeddingRow>(
-    `SELECT card_id AS note_id, section_idx, workspace_id, model, section_title, content_hash, vector
-     FROM task_embeddings WHERE card_id = ? ORDER BY section_idx`,
-    cardId,
-  );
-}
-
-/** All card section rows for a workspace (aliased to note_id for shape reuse). */
-export function getWorkspaceCardEmbeddingRows(workspaceId: string): EmbeddingRow[] {
-  return getDb().getAllSync<EmbeddingRow>(
-    `SELECT card_id AS note_id, section_idx, workspace_id, model, section_title, content_hash, vector
-     FROM task_embeddings WHERE workspace_id = ?`,
-    workspaceId,
-  );
-}
-
-export function upsertCardEmbedding(row: {
-  cardId: string;
-  sectionIdx: number;
-  workspaceId: string;
-  model: string;
-  sectionTitle: string;
-  contentHash: string;
-  vector: number[];
-}): void {
-  getDb().runSync(
-    `INSERT INTO task_embeddings
-       (card_id, section_idx, workspace_id, model, section_title, content_hash, vector, embedded_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(card_id, section_idx) DO UPDATE SET
-       workspace_id = excluded.workspace_id,
-       model        = excluded.model,
-       section_title= excluded.section_title,
-       content_hash = excluded.content_hash,
-       vector       = excluded.vector,
-       embedded_at  = excluded.embedded_at`,
-    row.cardId,
-    row.sectionIdx,
-    row.workspaceId,
-    row.model,
-    row.sectionTitle,
-    row.contentHash,
-    JSON.stringify(row.vector),
-    new Date().toISOString(),
-  );
-}
-
-export function deleteCardEmbeddingsFrom(cardId: string, fromIdx: number): void {
-  getDb().runSync(`DELETE FROM task_embeddings WHERE card_id = ? AND section_idx >= ?`, cardId, fromIdx);
-}
-
-export function deleteCardEmbeddings(cardId: string): void {
-  getDb().runSync(`DELETE FROM task_embeddings WHERE card_id = ?`, cardId);
-}
-
-export function embeddedCardIds(workspaceId: string): string[] {
-  return getDb()
-    .getAllSync<{ card_id: string }>(`SELECT DISTINCT card_id FROM task_embeddings WHERE workspace_id = ?`, workspaceId)
-    .map((r) => r.card_id);
-}
-
-/** Look up card titles by id (for search result display). */
-export function cardTitlesByIds(cardIds: string[]): Map<string, string> {
-  const out = new Map<string, string>();
-  if (cardIds.length === 0) return out;
-  const placeholders = cardIds.map(() => "?").join(", ");
-  for (const r of getDb().getAllSync<{ id: string; title: string }>(
-    `SELECT id, title FROM task_cards WHERE id IN (${placeholders})`,
-    ...(cardIds as never[]),
-  )) {
-    out.set(r.id, r.title);
-  }
-  return out;
-}
-
-/** Card title+description text by ids (for the hybrid lexical re-rank). */
-export function cardTextByIds(cardIds: string[]): Map<string, { title: string; text: string }> {
-  const out = new Map<string, { title: string; text: string }>();
-  if (cardIds.length === 0) return out;
-  const placeholders = cardIds.map(() => "?").join(", ");
-  for (const r of getDb().getAllSync<{ id: string; title: string; description: string | null }>(
-    `SELECT id, title, description FROM task_cards WHERE id IN (${placeholders})`,
-    ...(cardIds as never[]),
-  )) {
-    out.set(r.id, { title: r.title, text: r.description ?? "" });
-  }
-  return out;
-}
-
-/** All live workspace ids (semantic index is maintained per workspace). */
-export function listWorkspaceIds(): string[] {
-  return getDb()
-    .getAllSync<{ id: string }>(
-      `SELECT id FROM workspaces WHERE deleted_at IS NULL AND archived_at IS NULL`,
-    )
-    .map((r) => r.id);
-}
-
-/** Diagnostic counts for the on-device semantic index (indexed vs total notes). */
-export function embeddingIndexStats(workspaceId: string): {
-  liveNotes: number;
-  indexedNotes: number;
-  liveCards: number;
-  indexedCards: number;
-  sections: number;
-} {
-  const db = getDb();
-  const liveNotes =
-    db.getFirstSync<{ n: number }>(
-      `SELECT COUNT(*) n FROM notes WHERE ${LIVE} AND type='note' AND ${NOT_CONFLICT} AND workspace_id = ?`,
-      workspaceId,
-    )?.n ?? 0;
-  const indexedNotes =
-    db.getFirstSync<{ n: number }>(
-      `SELECT COUNT(DISTINCT note_id) n FROM note_embeddings WHERE workspace_id = ?`,
-      workspaceId,
-    )?.n ?? 0;
-  const liveCards =
-    db.getFirstSync<{ n: number }>(
-      `SELECT COUNT(*) n FROM task_cards WHERE ${LIVE} AND workspace_id = ?`,
-      workspaceId,
-    )?.n ?? 0;
-  const indexedCards =
-    db.getFirstSync<{ n: number }>(
-      `SELECT COUNT(DISTINCT card_id) n FROM task_embeddings WHERE workspace_id = ?`,
-      workspaceId,
-    )?.n ?? 0;
-  const sections =
-    db.getFirstSync<{ n: number }>(
-      `SELECT COUNT(*) n FROM note_embeddings WHERE workspace_id = ?`,
-      workspaceId,
-    )?.n ?? 0;
-  return { liveNotes, indexedNotes, liveCards, indexedCards, sections };
-}
-
-/** Resolve a note's title for search-result display. */
-export function noteTitleById(noteId: string): string {
-  const row = getDb().getFirstSync<{ title: string }>(
-    `SELECT title FROM notes WHERE id = ?`,
-    noteId,
-  );
-  return row?.title ?? "Untitled";
-}
-
-/** The workspace id a note belongs to (via its project). */
-export function workspaceIdForNote(noteId: string): string {
-  const row = getDb().getFirstSync<{ workspace_id: string }>(
-    `SELECT workspace_id FROM notes WHERE id = ?`,
-    noteId,
-  );
-  return row?.workspace_id ?? "";
-}
-
-/** Title + plain-text body for a set of notes, for lexical (keyword) scoring in
- *  hybrid semantic search. Returns a map keyed by note id. */
-export function noteTextByIds(noteIds: string[]): Map<string, { title: string; text: string }> {
-  const out = new Map<string, { title: string; text: string }>();
-  if (noteIds.length === 0) return out;
-  const placeholders = noteIds.map(() => "?").join(",");
-  const rows = getDb().getAllSync<{ id: string; title: string; content_text: string }>(
-    `SELECT id, title, content_text FROM notes WHERE id IN (${placeholders})`,
-    ...noteIds,
-  );
-  for (const r of rows) out.set(r.id, { title: r.title, text: r.content_text ?? "" });
-  return out;
-}
-
-export type BrickKind = "project" | "note" | "card" | "tag";
-export interface BrickLabel {
-  label: string;
-  kind: BrickKind;
-}
-
-/**
- * A mixed sample of workspace entities (projects, notes, tasks, tags) to use as
- * bricks in the breakout easter egg. Interleaved by kind so a row of bricks
- * reads as a colourful cross-section of the workspace. Capped at `limit`.
- */
-export function listBreakoutBricks(limit = 40): BrickLabel[] {
-  const db = getDb();
-  const projects = db
-    .getAllSync<{ label: string }>(`SELECT name AS label FROM projects WHERE deleted_at IS NULL ORDER BY updated_at DESC LIMIT 12`)
-    .map((r) => ({ label: r.label, kind: "project" as const }));
-  const notes = db
-    .getAllSync<{ label: string }>(`SELECT title AS label FROM notes WHERE deleted_at IS NULL AND type = 'note' ORDER BY updated_at DESC LIMIT 16`)
-    .map((r) => ({ label: r.label, kind: "note" as const }));
-  const cards = db
-    .getAllSync<{ label: string }>(`SELECT title AS label FROM task_cards WHERE deleted_at IS NULL ORDER BY updated_at DESC LIMIT 16`)
-    .map((r) => ({ label: r.label, kind: "card" as const }));
-  const tags = db
-    .getAllSync<{ label: string }>(`SELECT name AS label FROM tags WHERE deleted_at IS NULL ORDER BY name LIMIT 12`)
-    .map((r) => ({ label: r.label, kind: "tag" as const }));
-
-  // Round-robin interleave so bricks alternate kind/colour.
-  const buckets = [projects, notes, cards, tags];
-  const out: BrickLabel[] = [];
-  let added = true;
-  while (added && out.length < limit) {
-    added = false;
-    for (const b of buckets) {
-      const next = b.shift();
-      if (next) {
-        out.push(next);
-        added = true;
-        if (out.length >= limit) break;
-      }
-    }
-  }
-  return out;
-}
+// ── On-device semantic-search index ─────────────────────────────────────────
+// The note_embeddings / task_embeddings queries live in embeddings-queries.ts;
+// re-exported here so existing `@/db/queries` imports keep working unchanged.
+export * from "./embeddings-queries";

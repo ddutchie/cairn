@@ -143,6 +143,7 @@ export function CodeBlock({ code, language }: Props) {
     // this block re-renders when ANY grammar finishes — cheap, and we re-check
     // our own language below.
     if (ensureLanguage(language)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setReady(true);
       return;
     }

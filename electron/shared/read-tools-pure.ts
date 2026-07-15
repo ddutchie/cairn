@@ -6,6 +6,7 @@
  */
 
 import { noteDigest } from "../../shared/notes/toc";
+import { matchesQuery } from "../../shared/notes/text";
 
 export interface CairnSnapshot {
   workspaces: Array<{ id: string; name: string; [k: string]: unknown }>;
@@ -208,13 +209,16 @@ export function executeGetProjectContextPack(snap: CairnSnapshot, args: Args): u
 
 export function executeSearchNotes(snap: CairnSnapshot, args: Args): unknown {
   const { query, projectId, limit = 10, offset = 0, updatedAfter } = args;
-  const qr = String(query).toLowerCase();
+  const qr = String(query);
+  // Documented contract: an empty query lists all (matching notes). A non-empty
+  // query uses AND-of-terms (every whitespace term must appear in title+body).
+  const listAll = qr.trim().length === 0;
   const updatedAfterMs = updatedAfter ? new Date(updatedAfter).getTime() : undefined;
   const matches = snap.notes.filter((n) => {
     if (n.archivedAt) return false;
     if (projectId && n.projectId !== projectId) return false;
     if (updatedAfterMs !== undefined && new Date(n.updatedAt).getTime() < updatedAfterMs) return false;
-    return n.title.toLowerCase().includes(qr) || n.contentText.toLowerCase().includes(qr);
+    return listAll || matchesQuery(qr, `${n.title}\n${n.contentText}`);
   });
   // Sort by updatedAt DESC to ensure stable pagination ordering
   matches.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
@@ -232,7 +236,8 @@ export function executeSearchNotes(snap: CairnSnapshot, args: Args): unknown {
 
 export function executeSearchTasks(snap: CairnSnapshot, args: Args): unknown {
   const { query, projectId, columnType, limit = 10 } = args;
-  const qr = String(query).toLowerCase();
+  const qr = String(query);
+  const listAll = qr.trim().length === 0; // empty query lists all (matching tasks)
   return snap.cards
     .filter((c) => {
       if (c.archivedAt) return false;
@@ -241,7 +246,7 @@ export function executeSearchTasks(snap: CairnSnapshot, args: Args): unknown {
         const col = snap.columns.find((col) => col.id === c.columnId);
         if (!col || col.type !== columnType) return false;
       }
-      return c.title.toLowerCase().includes(qr) || (c.description && c.description.toLowerCase().includes(qr));
+      return listAll || matchesQuery(qr, `${c.title}\n${c.description ?? ""}`);
     })
     .slice(0, limit)
     .map((c) => {

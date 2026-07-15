@@ -56,7 +56,7 @@ export const TOOLS: ToolDef[] = [
       q.searchNotes(str(a.query)).map((n) => ({ id: n.id, title: n.title, folder: n.folder, project_id: n.project_id })),
   },
   {
-    name: "semantic_search_notes",
+    name: "search_notes_semantic",
     description:
       "Find notes by MEANING, not just literal keywords — use this when the user asks a conceptual question about their notes (e.g. \"what did I decide about auth\", \"anything on offline sync\") and search_notes' exact-text matching would miss relevant notes. Returns the best-matching notes with a relevance score (0-1) and the matching section title. Follow up with get_note to read a match's full content before answering.",
     params: '{ "query": string, "limit"?: number }',
@@ -86,7 +86,7 @@ export const TOOLS: ToolDef[] = [
     },
   },
   {
-    name: "semantic_search_tasks",
+    name: "search_tasks_semantic",
     description:
       "Find task cards by MEANING, not just literal keywords — use for conceptual questions about tasks (e.g. \"what's blocking the login work\", \"anything about offline sync\") where search_tasks' exact-text matching would miss related cards. Returns the best-matching cards with a relevance score (0-1). Follow up with get_task to read a card's full detail.",
     params: '{ "query": string, "limit"?: number }',
@@ -224,11 +224,38 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: "search_tasks",
-    description: "List task cards in a project (id, title, priority, column_id).",
-    params: '{ "project_id": string }',
-    jsonSchema: obj({ project_id: S }, ["project_id"]),
-    run: (a) =>
-      q.listCards(str(a.project_id)).map((c) => ({ id: c.id, title: c.title, priority: c.priority, column_id: c.column_id })),
+    description:
+      "Search task cards by text in their title or description. Returns id, title, priority, column_id. Omit query (or pass \"\") to list every card in the project.",
+    params: '{ "project_id": string, "query"?: string }',
+    jsonSchema: obj({ project_id: S, query: S }, ["project_id"]),
+    run: (a) => {
+      const query = str(a.query).trim();
+      const projectId = str(a.project_id);
+      // Actually filter when a query is given (previously this ignored the query
+      // and returned ALL cards — a behavior/name mismatch the model tripped on).
+      // With no query, fall back to listing the whole project.
+      const cards = query
+        ? q.searchTasks(query, projectId)
+        : q.listCards(projectId);
+      return cards.map((c) => ({ id: c.id, title: c.title, priority: c.priority, column_id: c.column_id }));
+    },
+  },
+  {
+    name: "list_ready_tasks",
+    description:
+      "List tasks that can be worked on RIGHT NOW — live, not in a Done column, and with no unresolved blockers. Use this to answer \"what should I work on?\". Omit project_id to span all projects in the active workspace.",
+    params: '{ "project_id"?: string }',
+    jsonSchema: obj({ project_id: S }),
+    run: (a) => {
+      const projectId = str(a.project_id).trim() || undefined;
+      return q.listReadyCards(projectId).map((c) => ({
+        id: c.id,
+        title: c.title,
+        priority: c.priority,
+        column_id: c.column_id,
+        project_id: c.project_id,
+      }));
+    },
   },
   {
     name: "get_task",

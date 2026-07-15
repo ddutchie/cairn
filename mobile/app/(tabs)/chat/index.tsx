@@ -1,126 +1,52 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
-  TextInput,
   Pressable,
   StyleSheet,
-  ScrollView,
-  ActivityIndicator,
-  Image,
   Alert,
   ActionSheetIOS,
   Platform,
-  AppState,
-  type AppStateStatus,
 } from "react-native";
-import Animated, { useSharedValue, withTiming, useAnimatedStyle, interpolate } from "react-native-reanimated";
-import { KeyboardStickyView, KeyboardController, KeyboardChatScrollView, KeyboardGestureArea, useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
+import { KeyboardController, KeyboardChatScrollView, KeyboardGestureArea } from "react-native-keyboard-controller";
 import { Stack, useRouter, useFocusEffect } from "expo-router";
-import { CheckCircle, Bot, User, Send, ImagePlus, X, Settings2, Brain, ChevronRight } from "lucide-react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Settings2 } from "lucide-react-native";
 import { TabScreen } from "@/components/TabScreen";
 import { EmptyState } from "@/components/EmptyState";
-import { GlassBar, glassActive } from "@/components/GlassBar";
-import { MarkdownView } from "@/components/MarkdownView";
 import { ICON_DELETE, ICON_AI } from "@/components/toolbar-icons";
-import { useTheme, withAlpha, tabBarClosedLift, KEYBOARD_OPEN_GAP, type as typeScale, type Theme } from "@/theme";
-import { runAgent, userMessage, assistantMessage, type AgentEvent, type Attachment } from "@/chat/agent";
+import { useTheme, type as typeScale, type Theme } from "@/theme";
+import { runAgent, userMessage, type AgentEvent, type Attachment } from "@/chat/agent";
 import { haptics, toolbarPress } from "@/haptics";
 import { pickImages, takePhoto } from "@/chat/attachments";
-import { loadChatHistory, saveChatMessage, clearChatHistory, loadLastChatUsage, saveLastChatUsage, type ToolCall } from "@/db/chat-store";
+import { saveChatMessage, clearChatHistory, loadLastChatUsage, saveLastChatUsage, type ToolCall } from "@/db/chat-store";
 import { hasProvider } from "@/chat/providers";
 import { resetAppleSession } from "@/chat/providers/apple";
-import { prettifyToolLabel } from "@cairn/shared/ui/constants";
 import type { UIMessage, ChatUsage } from "@/chat/providers/types";
 import { ContextRing } from "@/components/ContextRing";
-import { GlassMenu } from "@/components/GlassMenu";
-import { Button } from "@expo/ui/swift-ui";
-
-/** Composer height assumed before its first onLayout measurement. */
-const COMPOSER_FALLBACK_H = 60;
-
-/**
- * Downward shift applied to the native attach GlassMenu when the keyboard is
- * open, to counter the SwiftUI Host mis-tracking the composer's KeyboardStickyView
- * OPENED offset (it double-counts KEYBOARD_OPEN_GAP, so the icon otherwise sits
- * high). DEVICE-TUNED — measured ≈ 2×KEYBOARD_OPEN_GAP; not derivable from the
- * transform math, so re-verify on device if the composer's sticky offsets change.
- */
-const ATTACH_OPEN_NUDGE = 2 * KEYBOARD_OPEN_GAP;
-
-/** Tools whose result/args point at a NOTE, and whether the id is in args or result. */
-const NOTE_TOOLS: Record<string, "args" | "result"> = {
-  ensure_note: "result",
-  create_note: "result",
-  get_note: "args",
-  append_to_note: "args",
-  patch_note: "args",
-  rename_note: "args",
-  move_note_to_project: "args",
-};
-/** Tools whose result points at a CARD. */
-const CARD_TOOLS: Record<string, "args" | "result"> = {
-  create_task: "result",
-  get_task: "args",
-  update_task: "args",
-};
-
-/** Pull a string `id` field out of an unknown args/result object. */
-function idFrom(obj: unknown): string | null {
-  if (obj && typeof obj === "object" && "id" in obj) {
-    const id = (obj as { id: unknown }).id;
-    if (typeof id === "string" && id) return id;
-  }
-  return null;
-}
-
-/**
- * Derive a navigable note/card ref from a completed tool call, so the tool chip
- * can open the thing it created/touched — the reliable, id-based path (no title
- * matching). Returns undefined for read-only / non-navigable tools.
- */
-function toolRef(tool: string, args: unknown, result: unknown): ToolCall["ref"] | undefined {
-  // Never navigate to an errored tool.
-  if (result && typeof result === "object" && "error" in (result as object)) return undefined;
-  const noteWhere = NOTE_TOOLS[tool];
-  if (noteWhere) {
-    const id = idFrom(noteWhere === "args" ? args : result);
-    if (id) return { kind: "note", id };
-  }
-  const cardWhere = CARD_TOOLS[tool];
-  if (cardWhere) {
-    const id = idFrom(cardWhere === "args" ? args : result);
-    if (id) return { kind: "card", id };
-  }
-  return undefined;
-}
-
-interface UiMessage {
-  role: "user" | "assistant";
-  content: string;
-  images?: string[]; // data URIs for user attachments
-  tools?: ToolCall[];
-  /** Live reasoning ("thinking") text for turns whose model streams it (Apple
-   *  PCC, or OpenAI-compatible endpoints exposing reasoning/reasoning_content).
-   *  Shown collapsibly; like images it's session-only and not persisted. */
-  reasoning?: string;
-  streaming?: boolean;
-}
+import { toolRef } from "@cairn/shared/chat/tool-ref";
+import { loadInitialChat, type UiMessage } from "@/chat/history";
+import { useChatScroll } from "@/chat/useChatScroll";
+import { MessageBubble } from "@/components/chat/MessageBubble";
+import { Composer } from "@/components/chat/Composer";
 
 export default function ChatScreen() {
   const t = useTheme();
-  const insets = useSafeAreaInsets();
   const styles = useMemo(() => makeStyles(t), [t]);
+  const router = useRouter();
+
   // Restore local (on-device) chat history once, synchronously, when the screen
   // first mounts — seeding both the UI bubbles (messages) and the persistent
-  // agent conversation (ref) via lazy initializers rather than a
-  // setState-in-effect (which the linter flags as a cascading render).
-  // `useState`'s lazy initializer runs exactly once, so history is read a single
-  // time and shared by both seeds below.
-  const [messages, setMessages] = useState<UiMessage[]>(() =>
-    loadChatHistory().map((h) => ({ role: h.role, content: h.content, images: h.images, tools: h.tools })),
-  );
+  // agent conversation (ref) from a SINGLE history read. A lazy useState
+  // initializer is guaranteed to run exactly once (unlike useMemo, which React
+  // may discard and recompute), so the DB read happens once and both seeds below
+  // share the same result.
+  const [initial] = useState(() => loadInitialChat());
+  const [messages, setMessages] = useState<UiMessage[]>(initial.uiMessages);
+  const conversation = useRef<UIMessage[]>(null as unknown as UIMessage[]);
+  if (conversation.current === null) {
+    conversation.current = initial.conversation;
+  }
+
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [busy, setBusy] = useState(false);
@@ -129,48 +55,21 @@ export default function ChatScreen() {
   // Seeded from the last persisted value so the ring survives closing/reopening
   // the Chat tab (it's session state otherwise, lost on unmount).
   const [usage, setUsage] = useState<ChatUsage | null>(() => loadLastChatUsage());
-  const scrollRef = useRef<ComponentRef<typeof KeyboardChatScrollView>>(null);
-  // Resume-repaint key. iOS composites its cached UIKit snapshot over the live
-  // hierarchy when the app returns from background; the composer's native Liquid
-  // Glass layer (GlassBar → GlassView) samples a backdrop that stays stale until
-  // the next paint, leaving translucent vertical "ghost bands" over the
-  // transformed scroll content (tool chips + avatar column) until the user
-  // interacts. Bumping this key on the "active" transition remounts that content
-  // so the stale backdrop is invalidated immediately. iOS-only — the artifact is
-  // specific to the native glass layer, and remounting on Android would only
-  // throw away scroll state for no benefit.
-  const [resumeKey, setResumeKey] = useState(0);
-  useEffect(() => {
-    if (Platform.OS !== "ios") return;
-    const sub = AppState.addEventListener("change", (next: AppStateStatus) => {
-      if (next === "active") setResumeKey((k) => k + 1);
-    });
-    return () => sub.remove();
-  }, []);
-  // Whether the user is at/near the bottom of the transcript. Auto-follow on
-  // content growth only when true, so expanding a past message's reasoning block
-  // (or other layout changes while scrolled up) doesn't yank the view to the end.
-  const nearBottom = useRef(true);
-  const router = useRouter();
-  // Persistent agent conversation (UIMessage parts format) across turns. Seeded
-  // once from the same on-device history as `messages` above. A ref's argument
-  // is evaluated on every render (only the first is kept), so the history
-  // load/remap goes behind a null-sentinel one-time initializer instead.
-  const conversation = useRef<UIMessage[]>(null as unknown as UIMessage[]);
-  if (conversation.current === null) {
-    conversation.current = loadChatHistory().map((h) => {
-      if (h.role === "user") {
-        // Restore image attachments too, so the agent keeps multimodal context
-        // across relaunch (the UI bubble already shows them via `messages`).
-        const atts = (h.images ?? []).map((url) => ({
-          url,
-          mediaType: url.match(/^data:([^;,]+)/)?.[1] ?? "image/jpeg",
-        }));
-        return userMessage(h.content, atts);
-      }
-      return assistantMessage(h.content);
-    });
-  }
+
+  // All keyboard/scroll choreography (resume repaint, follow-end, composer
+  // height → transcript padding, attach-menu counter-transform).
+  const {
+    scrollRef,
+    resumeKey,
+    nearBottom,
+    offset,
+    extraContentPadding,
+    attachCounterStyle,
+    closedLift,
+    setComposerH,
+    followEnd,
+    scrollToEndSoon,
+  } = useChatScroll(messages.length);
 
   // Whether any AI provider is usable (built-in Rork or a configured OpenAI
   // key). Re-checked whenever the chat screen regains focus — e.g. after the
@@ -189,38 +88,6 @@ export default function ChatScreen() {
     }, [refreshConfigured]),
   );
 
-  // Lift the composer just above the tab bar when the keyboard is closed
-  // (shared with the search scope bar so both rest at the same height).
-  const closedLift = tabBarClosedLift(insets.bottom);
-
-  // The native attach GlassMenu's SwiftUI Host tracks the composer's
-  // KeyboardStickyView transform, but not its OPENED offset — when the keyboard
-  // opens the icon sits too high (centered at rest, so only the open state is
-  // wrong). Counter it with ATTACH_OPEN_NUDGE, gliding on the same `progress`
-  // the composer animates with: 0 when closed, ATTACH_OPEN_NUDGE (down) when open.
-  const { progress: kbProgress } = useReanimatedKeyboardAnimation();
-  const attachCounterStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: interpolate(kbProgress.value, [0, 1], [0, ATTACH_OPEN_NUDGE]) }],
-  }));
-  // Height the composer occupies, measured lazily (falls back before layout).
-  const [composerH, setComposerH] = useState(COMPOSER_FALLBACK_H);
-  // Bottom padding the transcript keeps clear below the last message so it's not
-  // hidden by the floating composer. This is the CLOSED-keyboard clearance:
-  // composer height + margin + where the composer rests above the tab bar
-  // (closedLift). When the keyboard opens, KeyboardChatScrollView adds
-  // (keyboardHeight - offset); with offset = closedLift - KEYBOARD_OPEN_GAP that
-  // resolves to composerH + 12 + keyboardHeight + KEYBOARD_OPEN_GAP — i.e. the
-  // content clears the composer (which itself rides KEYBOARD_OPEN_GAP above the
-  // keyboard) without double-counting closedLift. Shared value because the
-  // component consumes it on the UI thread.
-  const extraContentPadding = useSharedValue(COMPOSER_FALLBACK_H + 12 + closedLift);
-  useEffect(() => {
-    // Animate (not snap) so the transcript padding eases when the composer grows
-    // to multiple lines or the tab-bar lift changes, matching the keyboard's own
-    // motion instead of jumping.
-    extraContentPadding.value = withTiming(composerH + 12 + closedLift);
-  }, [composerH, closedLift, extraContentPadding]);
-
   const send = useCallback(async () => {
     const text = input.trim();
     const atts = attachments;
@@ -230,7 +97,7 @@ export default function ChatScreen() {
     // can desync with this library and leave the keyboard stuck open until an
     // app switch). Fire-and-forget; don't block the send.
     KeyboardController.dismiss().catch(() => { });
-    nearBottom.current = true; // sending jumps to the end; follow the reply
+    followEnd(); // sending jumps to the end; follow the reply
     setInput("");
     setAttachments([]);
     setBusy(true);
@@ -284,7 +151,7 @@ export default function ChatScreen() {
             saveLastChatUsage(u); // persist so the ring survives tab close/reopen
           }
         }
-        setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 20);
+        setTimeout(() => scrollToEndSoon(true), 20);
       };
       const answer = await runAgent(conversation.current, onEvent);
       const finalText = answer || acc;
@@ -300,9 +167,9 @@ export default function ChatScreen() {
       haptics.error(); // request failed
     } finally {
       setBusy(false);
-      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50);
+      setTimeout(() => scrollToEndSoon(true), 50);
     }
-  }, [input, attachments, busy]);
+  }, [input, attachments, busy, followEnd, scrollToEndSoon]);
 
   const addImages = useCallback(async () => {
     try {
@@ -349,7 +216,7 @@ export default function ChatScreen() {
     ]);
   }, [addImages, capturePhoto]);
 
-  const removeAttachment = (idx: number) => setAttachments((prev) => prev.filter((_, i) => i !== idx));
+  const removeAttachment = useCallback((idx: number) => setAttachments((prev) => prev.filter((_, i) => i !== idx)), []);
 
   const onClear = useCallback(() => {
     if (messages.length === 0 || busy) return;
@@ -370,6 +237,8 @@ export default function ChatScreen() {
       },
     ]);
   }, [messages.length, busy]);
+
+  const canSend = (!!input.trim() || attachments.length > 0) && !busy;
 
   return (
     <TabScreen>
@@ -417,26 +286,22 @@ export default function ChatScreen() {
             KeyboardGestureArea (full-region) so keyboardDismissMode="interactive"
             gets proper swipe-to-dismiss gesture handling (per the library's chat
             example) — iOS follow-finger + Android gesture control. */}
-        <KeyboardGestureArea
-          interpolator="ios"
-          style={StyleSheet.absoluteFill}
-        >
+        <KeyboardGestureArea interpolator="ios" style={StyleSheet.absoluteFill}>
           <KeyboardChatScrollView
-            key={resumeKey}
             ref={scrollRef}
-            style={StyleSheet.absoluteFill}
+            style={styles.scroll}
             contentContainerStyle={[styles.list, messages.length === 0 && styles.listEmpty]}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="interactive"
             keyboardLiftBehavior="whenAtEnd"
-            offset={Math.max(closedLift - KEYBOARD_OPEN_GAP, 0)}
+            offset={offset}
             extraContentPadding={extraContentPadding}
             scrollEventThrottle={16}
             onEndVisible={(visible) => { nearBottom.current = visible; }}
             onContentSizeChange={() => {
               // Follow new content only when the user is already near the bottom
               // (e.g. streaming) — never when they've scrolled up to read/expand.
-              if (nearBottom.current) scrollRef.current?.scrollToEnd({ animated: true });
+              if (nearBottom.current) scrollToEndSoon(true);
             }}
           >
             {messages.length === 0 ? (
@@ -453,203 +318,53 @@ export default function ChatScreen() {
                 ) : null}
               </EmptyState>
             ) : (
-              messages.map((m, i) => <Bubble key={i} m={m} t={t} styles={styles} />)
+              // Remount ONLY the message content (not the KeyboardChatScrollView)
+              // on resume, keyed by resumeKey. This invalidates the stale iOS
+              // Liquid-Glass backdrop the composer samples over the transformed
+              // content (the "ghost bands" artifact) WITHOUT tearing down the
+              // scroll view — remounting the scroll view itself reset its native
+              // layout/content-size state (which onContentSizeChange doesn't
+              // always re-fire for identical content), leaving the keyboard
+              // engine unable to lift content above the keyboard until a cold
+              // app relaunch forced a native re-layout.
+              <View key={resumeKey}>
+                {messages.map((m, i) => <MessageBubble key={i} m={m} />)}
+              </View>
             )}
           </KeyboardChatScrollView>
         </KeyboardGestureArea>
 
-        {/* Sticky composer: pinned to the bottom, rides up with the keyboard
-            automatically. When the keyboard is closed it's offset up above the
-            translucent tab bar; when open it sits just above the keyboard with a
-            small gap (KEYBOARD_OPEN_GAP), matching the search scope bar. */}
-        <KeyboardStickyView
-          offset={{ closed: -closedLift, opened: -KEYBOARD_OPEN_GAP }}
-          style={styles.composerOverlay}
-        >
-          <View onLayout={(e) => setComposerH(e.nativeEvent.layout.height)}>
-            {attachments.length > 0 && (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.previewStrip} contentContainerStyle={styles.previewContent}>
-                {attachments.map((a, i) => (
-                  <View key={i} style={styles.previewItem}>
-                    <Image source={{ uri: a.url }} style={styles.previewImg} />
-                    <Pressable style={styles.previewRemove} onPress={() => removeAttachment(i)} hitSlop={6}>
-                      <X size={12} color="#fff" />
-                    </Pressable>
-                  </View>
-                ))}
-              </ScrollView>
-            )}
-
-            <View style={styles.composerWrap}>
-              <GlassBar style={styles.composer} interactive={false}>
-                {/* Native SwiftUI GlassMenu (Liquid Glass tap-menu), wrapped in
-                    a fixed-size slot so the async-measuring Host can't reflow the
-                    row. NOTE: the composer rides KeyboardStickyView's transform;
-                    a SwiftUI Host re-anchors in window coords on menu-open, which
-                    historically made the icon drift after tapping with the
-                    keyboard open. Verifying the raw behaviour before mitigating. */}
-                <View style={styles.attachSlot}>
-                  <Animated.View style={attachCounterStyle}>
-                    <GlassMenu
-                      trigger={<ImagePlus size={16} color={busy ? withAlpha(t.textTertiary, 0.5) : t.textTertiary} />}
-                      accessibilityLabel="Add image"
-                      disabled={busy}
-                      onFallbackPress={onAttach}
-                      containerStyle={styles.attachContainer}
-                      triggerStyle={styles.attachBtn}
-                    >
-                      <Button label="Photo Library" systemImage="photo.on.rectangle" onPress={addImages} />
-                      <Button label="Take Photo" systemImage="camera" onPress={capturePhoto} />
-                    </GlassMenu>
-                  </Animated.View>
-                </View>
-                <TextInput
-                  style={styles.input}
-                  value={input}
-                  onChangeText={setInput}
-                  onFocus={() => {
-                    // Mark intent to follow the latest message; the actual lift
-                    // above the keyboard is handled natively by
-                    // KeyboardChatScrollView (keyboardLiftBehavior="whenAtEnd").
-                    nearBottom.current = true;
-                  }}
-                  placeholder="Message Cairn…"
-                  placeholderTextColor={t.textTertiary}
-                  multiline
-                  editable={!busy}
-                />
-                <Pressable
-                  style={[styles.sendBtn, ((!input.trim() && attachments.length === 0) || busy) && styles.sendBtnDisabled]}
-                  onPress={send}
-                  disabled={(!input.trim() && attachments.length === 0) || busy}
-                >
-                  {busy ? <ActivityIndicator color={t.accentFg} size="small" /> : <Send size={14} color={t.accentFg} />}
-                </Pressable>
-              </GlassBar>
-            </View>
-          </View>
-        </KeyboardStickyView>
+        <Composer
+          input={input}
+          onChangeInput={setInput}
+          attachments={attachments}
+          onRemoveAttachment={removeAttachment}
+          busy={busy}
+          canSend={canSend}
+          onSend={send}
+          // Mark intent to follow the latest message; the actual lift above the
+          // keyboard is handled natively by KeyboardChatScrollView.
+          onInputFocus={followEnd}
+          onAddImages={addImages}
+          onCapturePhoto={capturePhoto}
+          onAttachFallback={onAttach}
+          attachCounterStyle={attachCounterStyle}
+          closedLift={closedLift}
+          onLayoutHeight={setComposerH}
+        />
       </View>
     </TabScreen>
   );
 }
 
-// Memoised so a stream-token setMessages (which replaces only the streaming
-// assistant message object) re-renders just that one bubble — not every prior
-// message, each of which would otherwise re-run its MarkdownView parse per token.
-/**
- * Collapsible "reasoning" (thinking) disclosure for models that stream it
- * (Apple PCC, or OpenAI-compatible endpoints like DeepSeek/OpenRouter).
- * Expanded while the answer is still streaming so the user sees the model think;
- * collapses to a one-line summary once done. Session-only (not persisted).
- */
-function ReasoningBlock({
-  text,
-  streaming,
-  t,
-  styles,
-}: {
-  text: string;
-  streaming?: boolean;
-  t: Theme;
-  styles: ReturnType<typeof makeStyles>;
-}) {
-  const [open, setOpen] = useState(false);
-  const expanded = open || !!streaming;
-  return (
-    <View style={styles.reasoning}>
-      <Pressable
-        style={styles.reasoningHeader}
-        onPress={() => setOpen((v) => !v)}
-        hitSlop={6}
-        accessibilityRole="button"
-        accessibilityLabel={expanded ? "Hide reasoning" : "Show reasoning"}
-        accessibilityState={{ expanded }}
-      >
-        <Brain size={11} color={t.textTertiary} />
-        <Text style={styles.reasoningLabel}>{streaming ? "Thinking…" : "Reasoning"}</Text>
-        <ChevronRight
-          size={12}
-          color={t.textTertiary}
-          style={{ transform: [{ rotate: expanded ? "90deg" : "0deg" }] }}
-        />
-      </Pressable>
-      {expanded ? <Text style={styles.reasoningText}>{text}</Text> : null}
-    </View>
-  );
-}
-
-const Bubble = memo(function Bubble({ m, t, styles }: { m: UiMessage; t: Theme; styles: ReturnType<typeof makeStyles> }) {
-  const isUser = m.role === "user";
-  const router = useRouter();
-  return (
-    <View style={[styles.row, isUser && styles.rowUser]}>
-      {/* Avatar */}
-      <View style={[styles.avatar, isUser ? styles.avatarUser : styles.avatarBot]}>
-        {isUser ? <User size={12} color={t.textTertiary} /> : <Bot size={12} color={t.accent} />}
-      </View>
-
-      {/* Column: tool chips, bubble, timestamp */}
-      <View style={[styles.col, isUser && styles.colUser]}>
-        {!isUser && m.reasoning ? (
-          <ReasoningBlock text={m.reasoning} streaming={m.streaming} t={t} styles={styles} />
-        ) : null}
-        {!isUser && m.tools && m.tools.length > 0 && (
-          <View style={styles.toolTrail}>
-            {m.tools.map((tt, i) => {
-              const label = prettifyToolLabel(tt.tool, { prettifyBare: true });
-              // A tool that created/touched a note or card is tappable — opens
-              // it by id (the reliable, collision-proof path).
-              if (tt.ref) {
-                return (
-                  <Pressable
-                    key={i}
-                    style={styles.toolChip}
-                    hitSlop={6}
-                    onPress={() => {
-                      haptics.impact();
-                      router.push(tt.ref!.kind === "card" ? `/card/${tt.ref!.id}` : `/note/${tt.ref!.id}`);
-                    }}
-                  >
-                    <CheckCircle size={10} color={tt.ok ? t.accent : t.danger} />
-                    <Text style={[styles.toolChipText, styles.toolChipLink]}>{label}</Text>
-                    <ChevronRight size={10} color={t.accent} />
-                  </Pressable>
-                );
-              }
-              return (
-                <View key={i} style={styles.toolChip}>
-                  <CheckCircle size={10} color={tt.ok ? t.accent : t.danger} />
-                  <Text style={styles.toolChipText}>{label}</Text>
-                </View>
-              );
-            })}
-          </View>
-        )}
-
-        <View style={[styles.bubble, isUser ? styles.userBubble : styles.aiBubble]}>
-          {isUser && m.images && m.images.length > 0 && (
-            <View style={styles.bubbleImages}>
-              {m.images.map((uri, i) => (
-                <Image key={i} source={{ uri }} style={styles.bubbleImg} />
-              ))}
-            </View>
-          )}
-          {m.role === "assistant" && m.streaming && !m.content ? (
-            <ActivityIndicator color={t.textTertiary} size="small" />
-          ) : isUser ? (
-            m.content ? <Text style={styles.userText}>{m.content}</Text> : null
-          ) : (
-            <MarkdownView content={m.content} resolveLinks />
-          )}
-        </View>
-      </View>
-    </View>
-  );
-});
-
 function makeStyles(t: Theme) {
   return StyleSheet.create({
+    // flex:1 (not absoluteFill) so the scroll viewport has a deterministic height
+    // that tracks the parent box — the library's inner container is flexGrow/
+    // flexShrink with no fixed height, so an absolutely-filled outer left the
+    // viewport measurement lagging content/keyboard-inset changes (chat "wrong
+    // size"). It sits inside the absoluteFill KeyboardGestureArea.
+    scroll: { flex: 1 },
     list: { padding: 14, paddingBottom: 20 },
     // Grow to fill the viewport when empty so the branded EmptyState's top-bias
     // measures against the full content area (below the header).
@@ -665,129 +380,5 @@ function makeStyles(t: Theme) {
       borderRadius: 12,
     },
     configureBtnText: { ...typeScale.control, color: t.accentFg },
-
-    // Row: avatar + column (reversed for user), matching the desktop bubble.
-    row: { flexDirection: "row", alignItems: "flex-start", gap: 8, marginBottom: 14 },
-    rowUser: { flexDirection: "row-reverse" },
-    avatar: { width: 24, height: 24, borderRadius: 12, alignItems: "center", justifyContent: "center", marginTop: 2, borderWidth: 1 },
-    avatarBot: { backgroundColor: t.accentDim, borderColor: withAlpha(t.accent, 0.2) },
-    avatarUser: { backgroundColor: t.surface3, borderColor: t.border },
-    col: { flex: 1, minWidth: 0, gap: 6 },
-    colUser: { alignItems: "flex-end" },
-
-    toolTrail: { flexDirection: "column", gap: 4, alignSelf: "flex-start" },
-    toolChip: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 6,
-      alignSelf: "flex-start",
-      backgroundColor: t.surface2,
-      borderWidth: 1,
-      borderColor: t.border,
-      borderRadius: 8,
-      paddingHorizontal: 10,
-      paddingVertical: 4,
-    },
-    toolChipText: { ...typeScale.caption, color: t.textSecondary },
-    toolChipLink: { color: t.accent },
-
-    reasoning: {
-      alignSelf: "flex-start",
-      maxWidth: "94%",
-      gap: 4,
-      marginBottom: 2,
-      paddingLeft: 2,
-    },
-    reasoningHeader: { flexDirection: "row", alignItems: "center", gap: 5 },
-    reasoningLabel: {
-      ...typeScale.overline,
-      color: t.textTertiary,
-    },
-    reasoningText: {
-      ...typeScale.caption,
-      color: t.textTertiary,
-      fontStyle: "italic",
-      lineHeight: 17,
-      paddingLeft: 16,
-    },
-
-    bubble: { maxWidth: "94%", paddingHorizontal: 12, paddingVertical: 10, borderRadius: 14 },
-    aiBubble: { backgroundColor: t.surface2, borderWidth: 1, borderColor: t.border, borderTopLeftRadius: 4, alignSelf: "flex-start" },
-    userBubble: { backgroundColor: t.accent, borderTopRightRadius: 4, alignSelf: "flex-end" },
-    userText: { ...typeScale.body, lineHeight: 21, color: t.accentFg },
-    bubbleImages: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 6 },
-    bubbleImg: { width: 120, height: 120, borderRadius: 8, backgroundColor: t.surface3 },
-    previewStrip: { maxHeight: 84, marginHorizontal: 12 },
-    previewContent: { gap: 8, paddingVertical: 6 },
-    previewItem: { position: "relative" },
-    previewImg: { width: 68, height: 68, borderRadius: 10, backgroundColor: t.surface3 },
-    previewRemove: { position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: 10, backgroundColor: "rgba(0,0,0,0.7)", alignItems: "center", justifyContent: "center" },
-    // The composer overlay is absolutely pinned to the bottom of the screen and
-    // lifted above the tab bar / keyboard via an animated transform. It sits ON
-    // TOP of the scroll content so messages scroll behind it.
-    composerOverlay: { position: "absolute", left: 0, right: 0, bottom: 0 },
-    // Outer padding around the pinned composer (mirrors desktop overview `p-6`
-    // overlay, trimmed for mobile).
-    composerWrap: { paddingHorizontal: 12, paddingTop: 8 },
-    // Single unified rounded container holding attach + input + send inline,
-    // mirroring the desktop overview ChatInput: rounded-2xl (16px), frosted
-    // surface-2 at ~85%, 1px border, soft drop shadow. Buttons align to the
-    // bottom edge (items-end) so a multiline field grows upward.
-    composer: {
-      flexDirection: "row",
-      alignItems: "flex-end",
-      gap: 10,
-      paddingHorizontal: 8,
-      paddingVertical: 8,
-      borderRadius: 16,
-      overflow: "hidden",
-      // When Liquid Glass is active the GlassView is the visual container, so no
-      // border/fill — the border only defines the fallback (non-glass) surface.
-      backgroundColor: glassActive ? undefined : withAlpha(t.surface2, 0.92),
-      borderWidth: glassActive ? 0 : 1,
-      borderColor: glassActive ? undefined : t.border,
-      shadowColor: "#000",
-      shadowOffset: { width: 0, height: 8 },
-      shadowOpacity: 0.12,
-      shadowRadius: 30,
-      elevation: 4,
-    },
-    input: {
-      flex: 1,
-      minHeight: 36,
-      maxHeight: 132,
-      color: t.textPrimary,
-      ...typeScale.body,
-      lineHeight: 21,
-      paddingVertical: 6,
-      paddingHorizontal: 2,
-    },
-    // Fixed-height RN wrapper so the native Host can't reflow the composer row
-    // when it (async) measures its content. Centered like the send button.
-    attachSlot: { height: 36, justifyContent: "center", alignSelf: "center" },
-    // Host frame hint (the outermost @expo/ui Host element / flex child).
-    attachContainer: { width: 32, height: 32, alignSelf: "center" },
-    // 32px rounded icon button, vertically centred against the input (alignSelf
-    // overrides the row's flex-end so it doesn't ride up as the input grows).
-    // Used as the GlassMenu trigger; a counter-transform keeps the native Host
-    // from drifting when the keyboard opens (see attachCounterStyle).
-    attachBtn: {
-      width: 32,
-      height: 32,
-      borderRadius: 12,
-      alignItems: "center",
-      justifyContent: "center",
-      alignSelf: "center",
-    },
-    sendBtn: {
-      width: 32,
-      height: 32,
-      borderRadius: 12,
-      backgroundColor: t.accent,
-      alignItems: "center",
-      justifyContent: "center",
-      alignSelf: "center",
-    },
-    sendBtnDisabled: { opacity: 0.4 },
   });
 }

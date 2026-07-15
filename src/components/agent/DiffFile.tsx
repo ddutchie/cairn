@@ -73,6 +73,7 @@ function langFrom(filename: string): string | null {
 function useLangReady(lang: string | null): boolean {
   const [ready, setReady] = useState(() => isLanguageReady(lang ?? undefined));
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!lang) { setReady(false); return; }
     if (ensureLanguage(lang)) { setReady(true); return; }
     if (isLanguageReady(lang)) { setReady(true); return; }

@@ -6,6 +6,7 @@ import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
 import type { Note, BoardColumn, TaskCard, Project, ID } from "@/types";
 import type { SearchResult } from "../index";
+import { matchesQuery } from "../../../shared/notes/text";
 
 // ── Slice interface ───────────────────────────────────────────────────────────
 
@@ -96,16 +97,13 @@ export const createSelectorsSlice: StateCreator<
 
   searchAll(query) {
     if (!query.trim()) return [];
-    const q = query.toLowerCase();
+    const q = query;
     const s = get();
     const results: SearchResult[] = [];
 
     s.notes.forEach((n) => {
       if (n.archivedAt) return;
-      if (
-        n.title.toLowerCase().includes(q) ||
-        n.contentText.toLowerCase().includes(q)
-      ) {
+      if (matchesQuery(q, `${n.title}\n${n.contentText}`)) {
         const proj = s.projects.find((p) => p.id === n.projectId);
         results.push({
           type: "note",
@@ -120,10 +118,7 @@ export const createSelectorsSlice: StateCreator<
 
     s.cards.forEach((c) => {
       if (c.archivedAt) return;
-      if (
-        c.title.toLowerCase().includes(q) ||
-        (c.description ?? "").toLowerCase().includes(q)
-      ) {
+      if (matchesQuery(q, `${c.title}\n${c.description ?? ""}`)) {
         const proj = s.projects.find((p) => p.id === c.projectId);
         results.push({
           type: "card",

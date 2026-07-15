@@ -2,10 +2,14 @@
  * AI configuration store (local-only, on-device).
  *
  * Two backends, chosen by secrecy:
- *   - Non-secret config (OpenAI-compatible base URL + model) lives in the
- *     `app_settings` SQLite table — local-only, never synced.
+ *   - Non-secret config (OpenAI-compatible base URL + model + provider) lives in
+ *     the DEVICE-GLOBAL meta DB (`getMeta`/`setMeta`) — local-only, never synced,
+ *     and shared across all workspace sources. It deliberately does NOT live in a
+ *     source's `app_settings` table: that DB is per-workspace and is wiped/rebuilt
+ *     from the oplog, so config stored there was lost on upgrade and diverged when
+ *     switching workspaces (the "endpoint resets on restart" bug).
  *   - The API key (a secret) lives in expo-secure-store (iOS keychain /
- *     Android keystore), never in SQLite and never synced.
+ *     Android keystore), never in SQLite and never synced. It was already global.
  *
  * Provider selection (see providers/index.ts):
  *   - If the build injected a Rork toolkit URL (EXPO_PUBLIC_TOOLKIT_URL), the
@@ -16,7 +20,7 @@
  */
 
 import * as SecureStore from "expo-secure-store";
-import { getDb } from "../db";
+import { getMeta, setMeta, getDb } from "../db";
 import type { AppleReasoningLevel } from "@modules/apple-llm";
 
 const KEY_BASE_URL = "ai.openai.baseUrl";
@@ -25,6 +29,10 @@ const KEY_CONTEXT = "ai.openai.contextLimit"; // optional manual override (token
 const KEY_PROVIDER = "ai.provider"; // "rork" | "openai" | "apple"
 const KEY_APPLE_REASONING = "ai.apple.reasoningLevel"; // "light" | "moderate" | "deep"
 const SECURE_KEY_APIKEY = "ai.openai.apiKey"; // secure-store key
+
+/** Keys migrated once from the (per-workspace) app_settings table to meta. */
+const MIGRATED_KEYS = [KEY_BASE_URL, KEY_MODEL, KEY_CONTEXT, KEY_PROVIDER, KEY_APPLE_REASONING];
+const MIGRATION_FLAG = "ai.config.migratedToMeta";
 
 /**
  * Which backend the user prefers when more than one is available.
@@ -48,20 +56,42 @@ export interface OpenAIConfig {
   contextLimit?: number;
 }
 
+/**
+ * One-time migration: copy any AI config the user previously saved into the
+ * active source's `app_settings` table over to the device-global meta DB. Runs
+ * lazily on first access and is idempotent (guarded by a meta flag). Best-effort
+ * — if no source is active yet or the table is empty, it just sets the flag.
+ */
+function migrateFromAppSettingsOnce(): void {
+  if (getMeta(MIGRATION_FLAG) === "1") return;
+  try {
+    const db = getDb(); // active source DB; throws if no source selected
+    for (const key of MIGRATED_KEYS) {
+      // Don't clobber a value already in meta (e.g. set on a newer build).
+      if (getMeta(key) !== null) continue;
+      const row = db.getFirstSync<{ value: string }>(
+        "SELECT value FROM app_settings WHERE key = ?",
+        key,
+      );
+      if (row?.value != null) setMeta(key, row.value);
+    }
+    setMeta(MIGRATION_FLAG, "1");
+  } catch {
+    // No active source yet — leave unmigrated; we'll retry on the next access.
+    // (Do NOT set the flag, so the migration still runs once a source exists.)
+  }
+}
+
 function getSetting(key: string): string | null {
-  const row = getDb().getFirstSync<{ value: string }>(
-    "SELECT value FROM app_settings WHERE key = ?",
-    key,
-  );
-  return row?.value ?? null;
+  migrateFromAppSettingsOnce();
+  return getMeta(key);
 }
 
 function setSetting(key: string, value: string): void {
-  getDb().runSync(
-    "INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-    key,
-    value,
-  );
+  // Ensure any legacy app_settings value is migrated before we start writing to
+  // meta, so a partial write can't leave stale reads split across both stores.
+  migrateFromAppSettingsOnce();
+  setMeta(key, value);
 }
 
 /** The configured OpenAI-compatible base URL (or the default). */
