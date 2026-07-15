@@ -4,7 +4,7 @@
 // All are presentational (no local state, no effects, no store deps).
 
 import React from "react";
-import { FileText, Circle, Pin } from "lucide-react";
+import { FileText, Circle, Pin, LayoutDashboard } from "lucide-react";
 import { cn, formatRelative, getDueDateStatus, parseIsoLocal } from "@/lib/utils";
 import { COLUMN_COLORS, PRIORITY_CSS_COLORS } from "@/lib/constants";
 import { revealColumn } from "@/lib/events";
@@ -162,7 +162,7 @@ export function PinnedNoteCard({ note, onClick }: { note: Note; onClick: () => v
       </div>
       <div className="text-sm font-semibold text-[var(--text-primary)] mb-1.5 truncate group-hover:text-[var(--accent)] transition-colors">{note.title}</div>
       <div className="text-[11.5px] text-[var(--text-tertiary)] line-clamp-2 leading-relaxed mb-3">
-        {note.contentText.slice(0, 120) || "Empty note"}
+        {note.contentText.slice(0, 120) || (note.type === "dashboard" ? "Dashboard" : "Empty note")}
       </div>
       <div className="flex items-center justify-between">
         <span className="text-[0.714rem] text-[var(--text-tertiary)]">{formatRelative(note.updatedAt)}</span>
@@ -180,10 +180,12 @@ export function NoteRow({ note, onClick }: { note: Note; onClick: () => void }) 
   return (
     <button onClick={onClick}
       className="flex items-center gap-3 w-full px-3 py-2 rounded-lg hover:bg-[var(--surface-2)] transition-colors group text-left">
-      <FileText size={13} className="text-[var(--text-tertiary)] flex-shrink-0" />
+      {note.type === "dashboard"
+        ? <LayoutDashboard size={13} className="text-[var(--text-tertiary)] flex-shrink-0" />
+        : <FileText size={13} className="text-[var(--text-tertiary)] flex-shrink-0" />}
       <div className="flex-1 min-w-0">
         <div className="text-sm text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] transition-colors truncate">{note.title}</div>
-        <div className="text-[0.786rem] text-[var(--text-tertiary)] truncate">{note.contentText.slice(0, 80) || "Empty note"}</div>
+        <div className="text-[0.786rem] text-[var(--text-tertiary)] truncate">{note.contentText.slice(0, 80) || (note.type === "dashboard" ? "Dashboard" : "Empty note")}</div>
       </div>
       <span className="text-[0.786rem] text-[var(--text-tertiary)] flex-shrink-0 tabular-nums">{formatRelative(note.updatedAt)}</span>
     </button>
