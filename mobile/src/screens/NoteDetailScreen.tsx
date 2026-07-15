@@ -20,14 +20,15 @@ import { ResultRow } from "@/components/ResultRow";
 import { NotFound } from "@/components/NotFound";
 import { BottomSheet, BottomSheetHeader } from "@/components/BottomSheet";
 import { GlassBar, glassActive } from "@/components/GlassBar";
-import { ICON_CHECK, ICON_CLOSE, ICON_EDIT, ICON_MORE, ICON_PIN, ICON_UNPIN, ICON_TAG, ICON_DELETE, ICON_EXPORT } from "@/components/toolbar-icons";
+import { ICON_CHECK, ICON_CLOSE, ICON_EDIT, ICON_MORE, ICON_PIN, ICON_UNPIN, ICON_TAG, ICON_DELETE, ICON_EXPORT, ICON_PDF } from "@/components/toolbar-icons";
 import { useNoteFormattingToolbar } from "@/notes/useNoteFormattingToolbar";
 import { reindexNote, relatedNotes, type RelatedNote } from "@/notes/embeddings";
+import { exportNoteToPdf } from "@/notes/note-pdf";
 import { haptics, toolbarPress } from "@/haptics";
 import { extractHeadings } from "@cairn/shared/notes/toc";
 import { isAppleEmbeddingsSupported } from "@modules/apple-embeddings";
 import { useRefreshOnFocus } from "@/sync/useSyncStatus";
-import { useTheme, TAB_BAR_BASE, type as typeScale, type Theme } from "@/theme";
+import { useTheme, useIsDark, TAB_BAR_BASE, type as typeScale, type Theme } from "@/theme";
 
 /**
  * Note viewer / editor. A leaf screen (navigates only back), so both its routes
@@ -42,6 +43,7 @@ export function NoteDetailScreen({ nested = false }: { nested?: boolean }) {
   const { id, back } = useLocalSearchParams<{ id: string; back?: string }>();
   const router = useRouter();
   const t = useTheme();
+  const isDark = useIsDark();
   const insets = useSafeAreaInsets();
   // Bottom padding so the note body scrolls clear of the bottom safe area.
   // `insets.bottom` already includes the native tab bar on a tab screen (see
@@ -150,6 +152,19 @@ export function NoteDetailScreen({ nested = false }: { nested?: boolean }) {
     }
   }, [note]);
 
+  const onExportPdf = useCallback(async () => {
+    if (!note) return;
+    const md = exportNote(note.id);
+    if ("error" in md) {
+      Alert.alert("Export failed", md.error);
+      return;
+    }
+    const res = await exportNoteToPdf(md.title, md.markdown, isDark ? "dark" : "light");
+    if (!res.ok) {
+      Alert.alert("PDF export failed", res.error);
+    }
+  }, [note, isDark]);
+
   if (!note) {
     return <NotFound label="Note" />;
   }
@@ -208,6 +223,9 @@ export function NoteDetailScreen({ nested = false }: { nested?: boolean }) {
             </Stack.Toolbar.MenuAction>
             <Stack.Toolbar.MenuAction icon={ICON_EXPORT} onPress={toolbarPress(onExport)}>
               Export as Markdown
+            </Stack.Toolbar.MenuAction>
+            <Stack.Toolbar.MenuAction icon={ICON_PDF} onPress={toolbarPress(onExportPdf)}>
+              Export as PDF
             </Stack.Toolbar.MenuAction>
             <Stack.Toolbar.MenuAction icon={ICON_DELETE} destructive onPress={toolbarPress(onDelete)}>
               Delete

@@ -18,6 +18,8 @@
     "./notes/ai-actions": "./notes/ai-actions.ts",
     "./notes/format": "./notes/format.ts",
     "./notes/markdown": "./notes/markdown.ts",
+    "./notes/note-html": "./notes/note-html.ts",
+    "./notes/pdf-template": "./notes/pdf-template.ts",
     "./notes/export": "./notes/export.ts",
     "./notes/templates": "./notes/templates.ts",
     "./notes/starter-templates": "./notes/starter-templates.ts",
