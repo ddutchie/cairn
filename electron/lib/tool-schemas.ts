@@ -226,7 +226,7 @@ export const TOOL_SCHEMAS = {
     description: "List open tasks due within the next N days (default 7), excluding done/archived cards. By default also includes overdue tasks. Use for 'what's due this week?'.",
     schema: z.object({
       projectId:      sId.optional(),
-      days:           z.number().optional().describe("Window size in days (default 7). 0 = due today only."),
+      days:           z.number().int().min(0).optional().describe("Window size in days (default 7). 0 = due today only."),
       includeOverdue: z.boolean().optional().describe("Include already-overdue tasks too (default true)."),
     }),
   },
@@ -443,7 +443,7 @@ export const TOOL_SCHEMAS = {
     description: "Apply or remove tags on an existing note by tag NAME (tags are created if they don't exist yet). Use mode 'add' to add tags, 'remove' to remove them, or 'set' to replace all tags. This is the tool to reach for when asked to organise/categorise notes.",
     schema: z.object({
       noteId:   sId,
-      tagNames: z.array(z.string()).describe("Tag names to add, remove, or set (resolved to ids; created if missing)"),
+      tagNames: z.array(z.string().trim().min(1)).min(1).describe("Non-empty tag names to add, remove, or set (resolved to ids; created if missing)"),
       mode:     z.enum(["add", "remove", "set"]).optional().describe("add (default) | remove | set"),
     }),
   },
@@ -452,7 +452,7 @@ export const TOOL_SCHEMAS = {
     description: "Apply or remove tags on an existing task card by tag NAME (tags are created if they don't exist yet). Use mode 'add' to add tags, 'remove' to remove them, or 'set' to replace all tags. This is the tool to reach for when asked to organise/categorise tasks.",
     schema: z.object({
       cardId:   sId,
-      tagNames: z.array(z.string()).describe("Tag names to add, remove, or set (resolved to ids; created if missing)"),
+      tagNames: z.array(z.string().trim().min(1)).min(1).describe("Non-empty tag names to add, remove, or set (resolved to ids; created if missing)"),
       mode:     z.enum(["add", "remove", "set"]).optional().describe("add (default) | remove | set"),
     }),
   },

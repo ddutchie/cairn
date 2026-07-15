@@ -574,7 +574,13 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
         // Desktop: native save dialog. Mobile webview: return text + share/download.
         const isElectron = typeof navigator !== "undefined" && navigator.userAgent.includes("Electron");
         if (isElectron) {
-          await window.electron.exportMarkdown("note", note.id);
+          const result = await window.electron.exportMarkdown("note", note.id);
+          // Desktop returns null when the save dialog was cancelled — don't
+          // flash a "Saved" state for a no-op.
+          if (!result) {
+            setExportState("idle");
+            return;
+          }
         } else {
           const res = await window.electron.exportMarkdown("note", note.id, { returnText: true });
           if (res?.markdown) {

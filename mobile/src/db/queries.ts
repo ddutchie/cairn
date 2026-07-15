@@ -184,6 +184,26 @@ export function resolveTagNames(workspaceId: string, tagNames: string[]): string
 
 type TagMode = "add" | "remove" | "set";
 
+/**
+ * Resolve tag NAMES to ids WITHOUT creating missing ones — used for `remove`,
+ * where a name that doesn't exist should be a no-op rather than creating (then
+ * removing) a tag.
+ */
+function resolveExistingTagNames(workspaceId: string, tagNames: string[]): string[] {
+  const db = getDb();
+  const ids: string[] = [];
+  for (const raw of tagNames) {
+    const name = (raw ?? "").trim();
+    if (!name) continue;
+    const row = db.getFirstSync<{ id: string }>(
+      "SELECT id FROM tags WHERE workspace_id = ? AND LOWER(name) = ? AND deleted_at IS NULL",
+      workspaceId, name.toLowerCase(),
+    );
+    if (row) ids.push(row.id);
+  }
+  return ids;
+}
+
 function mergeTagIds(current: string[], resolved: string[], mode: TagMode): string[] {
   if (mode === "remove") return current.filter((id) => !resolved.includes(id));
   if (mode === "set") return Array.from(new Set(resolved));
@@ -192,12 +212,16 @@ function mergeTagIds(current: string[], resolved: string[], mode: TagMode): stri
 
 /**
  * Apply tags by NAME to an existing note. Returns the resulting tag ids, or an
- * error object if the note is missing. Creates tags as needed.
+ * error object if the note is missing. `add`/`set` create missing tags; `remove`
+ * only matches existing ones.
  */
 export function tagNote(noteId: string, tagNames: string[], mode: TagMode = "add"): { error: string } | { id: string; tagIds: string[] } {
   const note = getNote(noteId);
   if (!note) return { error: "Note not found" };
-  const resolved = resolveTagNames(workspaceIdForProject(note.project_id), tagNames);
+  const wsId = workspaceIdForProject(note.project_id);
+  const resolved = mode === "remove"
+    ? resolveExistingTagNames(wsId, tagNames)
+    : resolveTagNames(wsId, tagNames);
   const next = mergeTagIds(parseIds(note.tag_ids), resolved, mode);
   setNoteTags(noteId, next);
   return { id: noteId, tagIds: next };
@@ -207,7 +231,10 @@ export function tagNote(noteId: string, tagNames: string[], mode: TagMode = "add
 export function tagTask(cardId: string, tagNames: string[], mode: TagMode = "add"): { error: string } | { id: string; tagIds: string[] } {
   const card = getCard(cardId);
   if (!card) return { error: "Task not found" };
-  const resolved = resolveTagNames(workspaceIdForProject(card.project_id), tagNames);
+  const wsId = workspaceIdForProject(card.project_id);
+  const resolved = mode === "remove"
+    ? resolveExistingTagNames(wsId, tagNames)
+    : resolveTagNames(wsId, tagNames);
   const next = mergeTagIds(parseIds(card.tag_ids), resolved, mode);
   setCardTags(cardId, next);
   return { id: cardId, tagIds: next };
@@ -601,14 +628,16 @@ function applyLinkChange(noteId: string, cardId: string, add: boolean): { error:
     : noteIds.filter((id) => id !== noteId);
 
   const now = new Date().toISOString();
-  db.runSync(
-    "UPDATE notes SET linked_card_ids = ?, updated_at = ?, version = version + 1 WHERE id = ?",
-    JSON.stringify(nextCardIds), now, noteId,
-  );
-  db.runSync(
-    "UPDATE task_cards SET linked_note_ids = ?, updated_at = ?, version = version + 1 WHERE id = ?",
-    JSON.stringify(nextNoteIds), now, cardId,
-  );
+  db.withTransactionSync(() => {
+    db.runSync(
+      "UPDATE notes SET linked_card_ids = ?, updated_at = ?, version = version + 1 WHERE id = ?",
+      JSON.stringify(nextCardIds), now, noteId,
+    );
+    db.runSync(
+      "UPDATE task_cards SET linked_note_ids = ?, updated_at = ?, version = version + 1 WHERE id = ?",
+      JSON.stringify(nextNoteIds), now, cardId,
+    );
+  });
   notifyLocalWrite();
   return { noteId, cardId, linked: true };
 }
@@ -619,14 +648,16 @@ function applyLinkChange(noteId: string, cardId: string, add: boolean): { error:
  */
 export function bulkUpdateTaskStatus(cardIds: string[], targetColumnId: string): { error: string } | { moved: number; failed: string[]; targetColumnId: string } {
   const db = getDb();
-  const col = db.getFirstSync<{ id: string }>("SELECT id FROM board_columns WHERE id = ? AND deleted_at IS NULL", targetColumnId);
+  const col = db.getFirstSync<{ project_id: string }>("SELECT project_id FROM board_columns WHERE id = ? AND deleted_at IS NULL", targetColumnId);
   if (!col) return { error: "Target column not found" };
   const now = new Date().toISOString();
   const failed: string[] = [];
   let moved = 0;
   for (const id of cardIds) {
-    const exists = db.getFirstSync<{ id: string }>("SELECT id FROM task_cards WHERE id = ? AND deleted_at IS NULL", id);
-    if (!exists) { failed.push(id); continue; }
+    const card = db.getFirstSync<{ project_id: string }>("SELECT project_id FROM task_cards WHERE id = ? AND deleted_at IS NULL", id);
+    // Skip missing cards, and cards from a different project (a column only
+    // belongs to one project — a cross-project move would orphan the card).
+    if (!card || card.project_id !== col.project_id) { failed.push(id); continue; }
     db.runSync(
       "UPDATE task_cards SET column_id = ?, updated_at = ?, version = version + 1 WHERE id = ?",
       targetColumnId, now, id,

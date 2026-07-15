@@ -142,9 +142,11 @@ export function NoteDetailScreen({ nested = false }: { nested?: boolean }) {
       return;
     }
     try {
+      // A resolved result (incl. dismissedAction) is a normal outcome; only a
+      // thrown/rejected call is a real failure worth surfacing.
       await Share.share({ message: res.markdown, title: res.title });
-    } catch {
-      /* user dismissed the share sheet */
+    } catch (err) {
+      Alert.alert("Export failed", err instanceof Error ? err.message : "Could not share the note.");
     }
   }, [note]);
 

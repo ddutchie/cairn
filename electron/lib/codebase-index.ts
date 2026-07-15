@@ -259,7 +259,7 @@ export function parseFileContent(content: string, ext: string): ExtractedSymbol[
                     kind = "variable";
                     matched = true;
                   } else {
-                    const methodMatch = trimmed.match(/^\s*(?:public|private|protected|async|static|get|set)*\s*([a-zA-Z0-9_$]+)\s*\([^)]*\)\s*[:{]/);
+                    const methodMatch = trimmed.match(/^\s*(?:(?:public|private|protected|async|static|get|set)\s+)*([a-zA-Z0-9_$]+)\s*\([^)]*\)\s*[:{]/);
                     if (methodMatch) {
                       const possibleName = methodMatch[1];
                       const keywords = new Set(["if", "for", "while", "switch", "catch", "with", "function"]);

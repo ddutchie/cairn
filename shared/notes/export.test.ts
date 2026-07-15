@@ -23,6 +23,18 @@ describe("buildNoteMarkdown", () => {
     const md = buildNoteMarkdown({ title: "T", content: "body", tagNames: [] });
     expect(md).not.toContain("**Tags:**");
   });
+
+  it("strips a duplicate title H1 even with no trailing newline", () => {
+    const md = buildNoteMarkdown({ title: "Solo", content: "# Solo", tagNames: [] });
+    // Only the generated H1 remains — the duplicate body H1 is removed.
+    expect((md.match(/^# /gm) || []).length).toBe(1);
+  });
+
+  it("strips a duplicate title H1 with CRLF line endings", () => {
+    const md = buildNoteMarkdown({ title: "CR", content: "# CR\r\n\r\nbody", tagNames: [] });
+    expect((md.match(/# CR/g) || []).length).toBe(1);
+    expect(md).toContain("body");
+  });
 });
 
 describe("buildProjectMarkdown", () => {

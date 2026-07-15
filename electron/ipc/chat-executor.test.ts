@@ -243,6 +243,17 @@ describe("tag_note", () => {
     expect((after.tagIds as string[]).length).toBe(1);
   });
 
+  it("mode 'remove' does NOT create a tag that doesn't exist", async () => {
+    const db = makeDb();
+    seed(db);
+    const tagsBefore = (db.prepare("SELECT COUNT(*) c FROM tags").get() as { c: number }).c;
+    const after = await exec(db, "tag_note", { noteId: "note1", tagNames: ["ghost"], mode: "remove" }) as Record<string, unknown>;
+    // No tag was created, and the note gained none.
+    const tagsAfter = (db.prepare("SELECT COUNT(*) c FROM tags").get() as { c: number }).c;
+    expect(tagsAfter).toBe(tagsBefore);
+    expect((after.tagIds as string[]).length).toBe(0);
+  });
+
   it("returns { error } for missing note", async () => {
     const db = makeDb();
     seed(db);

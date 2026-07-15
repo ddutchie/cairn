@@ -209,7 +209,13 @@ export function NotesView() {
   }, [notes, getTagById]);
 
   const filtered   = useNoteFilter(notes, filter, activeTagId);
-  const activeNote = notes.find((n) => n.id === activeNoteId) ?? notes[0] ?? null;
+  // Resolve the active note across notes and templates (templates are excluded
+  // from `notes`, but a just-saved/opened template can be the active id), then
+  // fall back to the first note.
+  const activeNote = notes.find((n) => n.id === activeNoteId)
+    ?? templates.find((n) => n.id === activeNoteId)
+    ?? notes[0]
+    ?? null;
 
   // Folder tree — only built when not filtering
   const isFiltering = !!(filter || activeTagId);
@@ -223,17 +229,20 @@ export function NotesView() {
   // Auto-select first note / newly created note in a single unified effect.
   // Merging the two previous competing effects eliminates the race where both
   // could fire in the same render cycle and produce two setState calls.
-  const prevNoteCountRef = useRef(notes.length);
+  const prevNoteIdsRef = useRef<string[]>(notes.map((n) => n.id));
   useEffect(() => {
-    if (notes.length > prevNoteCountRef.current) {
-      // A new note was added — select it (it lands at index 0 after sort)
-      setActiveNoteId(notes[0].id);
+    const prevIds = prevNoteIdsRef.current;
+    if (notes.length > prevIds.length) {
+      // A new note was added — select the id that wasn't there before, rather
+      // than assuming it sorted to index 0 (pinned notes can sort ahead of it).
+      const prevSet = new Set(prevIds);
+      const added = notes.find((n) => !prevSet.has(n.id));
+      setActiveNoteId((added ?? notes[0]).id);
     } else if (!activeNoteId && notes.length > 0) {
       // No active note yet — select the first one
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setActiveNoteId(notes[0].id);
     }
-    prevNoteCountRef.current = notes.length;
+    prevNoteIdsRef.current = notes.map((n) => n.id);
   }, [notes, activeNoteId]);
 
   function handleCreateNote(inFolder = "") {

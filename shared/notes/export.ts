@@ -41,8 +41,11 @@ export interface ExportProjectInput {
 
 /** Strip a leading H1 that merely repeats the title, to avoid doubling it. */
 function stripDuplicateTitleH1(content: string, title: string): string {
-  return content.replace(/^\s*#\s+.*\n+/, (m) =>
-    m.trim().slice(2).trim() === title.trim() ? "" : m);
+  // Match a leading `# Heading` with or without a trailing line ending, and
+  // support both LF and CRLF. `[^\n\r]*` captures the heading text without
+  // consuming the terminator so CRLF is handled by the optional `\r?\n+`.
+  return content.replace(/^\s*#\s+([^\n\r]*)(?:\r?\n)*/, (m, heading: string) =>
+    heading.trim() === title.trim() ? "" : m);
 }
 
 function tagLine(tagNames: string[]): string | null {

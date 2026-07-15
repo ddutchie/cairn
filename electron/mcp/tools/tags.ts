@@ -31,6 +31,23 @@ function applyTagMode(current: string[], resolved: string[], mode: TagMode): str
   }
 }
 
+/**
+ * Resolve tag NAMES to ids WITHOUT creating any that are missing — used for
+ * `remove`, where a name that doesn't exist should be a no-op rather than
+ * creating (then removing) a tag.
+ */
+function resolveExistingTagNames(db: Database.Database, workspaceId: string, tagNames: string[]): string[] {
+  const ids: string[] = [];
+  for (const raw of tagNames) {
+    const name = (raw ?? "").trim();
+    if (!name) continue;
+    const row = db.prepare("SELECT id FROM tags WHERE workspace_id = ? AND LOWER(name) = ?")
+      .get(workspaceId, name.toLowerCase()) as { id: string } | undefined;
+    if (row) ids.push(row.id);
+  }
+  return ids;
+}
+
 export function tag_note(db: Database.Database, args: Record<string, any>) {
   const { noteId, tagNames, mode = "add" } = args;
   if (!noteId) return { error: "noteId is required" };
@@ -40,11 +57,16 @@ export function tag_note(db: Database.Database, args: Record<string, any>) {
   const note = q.getNoteById(db, noteId as string);
   if (!note) return { error: "Note not found" };
 
-  const resolved = resolveTagNames(db, note.workspaceId as string, tagNames as string[]);
-  const current = (note.tagIds as string[]) ?? [];
-  const nextTagIds = applyTagMode(current, resolved, mode as TagMode);
+  // add/set create missing tags + update in one transaction (roll back tag
+  // creation if the update fails); remove never creates.
+  const updated = db.transaction(() => {
+    const resolved = mode === "remove"
+      ? resolveExistingTagNames(db, note.workspaceId as string, tagNames as string[])
+      : resolveTagNames(db, note.workspaceId as string, tagNames as string[]);
+    const nextTagIds = applyTagMode((note.tagIds as string[]) ?? [], resolved, mode as TagMode);
+    return q.updateNote(db, noteId as string, { tagIds: nextTagIds });
+  })();
 
-  const updated = q.updateNote(db, noteId as string, { tagIds: nextTagIds });
   insertNotification(db, "tag_note", "Note tags updated", `Tags on "${note.title}" were updated`);
   return { id: noteId, title: note.title, tagIds: updated.tagIds, mode };
 }
@@ -58,11 +80,14 @@ export function tag_task(db: Database.Database, args: Record<string, any>) {
   const card = q.getCardById(db, cardId as string);
   if (!card) return { error: "Task not found" };
 
-  const resolved = resolveTagNames(db, card.workspaceId as string, tagNames as string[]);
-  const current = (card.tagIds as string[]) ?? [];
-  const nextTagIds = applyTagMode(current, resolved, mode as TagMode);
+  const updated = db.transaction(() => {
+    const resolved = mode === "remove"
+      ? resolveExistingTagNames(db, card.workspaceId as string, tagNames as string[])
+      : resolveTagNames(db, card.workspaceId as string, tagNames as string[]);
+    const nextTagIds = applyTagMode((card.tagIds as string[]) ?? [], resolved, mode as TagMode);
+    return q.updateCard(db, cardId as string, { tagIds: nextTagIds });
+  })();
 
-  const updated = q.updateCard(db, cardId as string, { tagIds: nextTagIds });
   insertNotification(db, "tag_task", "Task tags updated", `Tags on "${card.title}" were updated`);
   return { id: cardId, title: card.title, tagIds: updated.tagIds, mode };
 }

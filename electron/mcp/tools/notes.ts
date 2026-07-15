@@ -184,11 +184,23 @@ export function ensure_note(db: Database.Database, snap: Snapshot, workspacePath
         insertNotification(db, "create_note", "Note created", `"${title}" added to ${project.name}${newFolder ? ` (${newFolder})` : ""} (ensure_note)`);
         return n;
       })();
-      writeNoteFile(workspacePath, {
-        id: ensureNoteId, projectId, workspaceId: project.workspaceId, title, content: markdown,
-        tagIds: newTagIds, linkedNoteIds: [], linkedCardIds: [], isPinned: newIsPinned,
-        folder: newFolder, createdAt: note.createdAt, updatedAt: note.updatedAt, projectName: project.name,
-      });
+      try {
+        writeNoteFile(workspacePath, {
+          id: ensureNoteId, projectId, workspaceId: project.workspaceId, title, content: markdown,
+          tagIds: newTagIds, linkedNoteIds: [], linkedCardIds: [], isPinned: newIsPinned,
+          folder: newFolder, createdAt: note.createdAt, updatedAt: note.updatedAt, projectName: project.name,
+        });
+      } catch (fileErr) {
+        // The DB row committed but the .md file couldn't be written — roll the
+        // DB back so we don't leave an orphan note (and its create notification)
+        // that has no file. deleteNote also stages a sync tombstone.
+        try {
+          q.deleteNote(db, ensureNoteId);
+          db.prepare("DELETE FROM mcp_notifications WHERE tool = 'create_note' AND body LIKE ?")
+            .run(`"${title}"%`);
+        } catch { /* best-effort cleanup */ }
+        throw fileErr;
+      }
       return { id: ensureNoteId, title, folder: newFolder, action: "created", createdAt: note.createdAt };
     }
   } finally {
