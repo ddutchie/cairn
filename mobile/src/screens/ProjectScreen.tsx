@@ -1,8 +1,7 @@
-import { memo, useCallback, useMemo, useState } from "react";
-import { View, Text, ScrollView, FlatList, Pressable, StyleSheet, ActionSheetIOS, Alert, Platform, type ListRenderItem } from "react-native";
+import { useCallback, useMemo, useState } from "react";
+import { View, FlatList, StyleSheet, ActionSheetIOS, Alert, Platform, type ListRenderItem } from "react-native";
 import { useLocalSearchParams, useRouter, Stack, type Href } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ChevronDown, ChevronRight, Folder, FolderOpen, FileText, Pin } from "lucide-react-native";
 import {
   getProject,
   getProjectOverview,
@@ -22,12 +21,8 @@ import {
   type NoteRow,
   type CardRow,
   type ColumnRow,
-  type TagRow,
   type ProjectOverviewData,
 } from "@/db/queries";
-import { TagChips } from "@/components/TagChips";
-import { PressableScale } from "@/components/PressableScale";
-import { SearchField } from "@/components/SearchField";
 import { NotePickerSheet, type PickerOption } from "@/components/NotePickerSheet";
 import { ICON_ADD, ICON_CALENDAR } from "@/components/toolbar-icons";
 import { haptics, toolbarPress } from "@/haptics";
@@ -35,17 +30,16 @@ import { DraggableBoard } from "@/components/DraggableBoard";
 import { OverviewTab } from "@/components/overview/OverviewTab";
 import { EmptyState } from "@/components/EmptyState";
 import { useRefreshOnFocus } from "@/sync/useSyncStatus";
-import { useTheme, withAlpha, TAB_BAR_BASE, type as typeScale, type Theme } from "@/theme";
+import { useTheme, TAB_BAR_BASE, type Theme } from "@/theme";
 import { buildFolderTree, type FolderNode } from "@cairn/shared/notes/folder-tree";
-import { stripMarkdown } from "@cairn/shared/notes/text";
-import { formatRelative } from "@cairn/shared/format/date";
+import { NoteRowItem } from "./project/NoteRowItem";
+import { FolderRow } from "./project/FolderRow";
+import { Segment } from "./project/Segment";
+import { Empty } from "./project/Empty";
+import { NoteFilterBar } from "./project/NoteFilterBar";
+import { type ListRow, rowKey } from "./project/list-rows";
 
 type Tab = "overview" | "notes" | "board";
-
-/** A single virtualized row in the notes list: a folder header or a note. */
-type ListRow =
-  | { kind: "folder"; node: FolderNode<NoteRow>; depth: number }
-  | { kind: "note"; note: NoteRow; depth: number };
 
 /**
  * Project detail (notes tree + board). Shared by two routes:
@@ -378,8 +372,6 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
               tags={projectTags}
               activeTagId={activeTagId}
               onToggleTag={(tid) => setActiveTagId((cur) => (cur === tid ? null : tid))}
-              t={t}
-              styles={styles}
             />
             {isFiltering && filtered.length === 0 ? (
               <Empty text="No notes match your filter." t={t} />
@@ -440,194 +432,10 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
   );
 }
 
-function NoteFilterBar({
-  filter,
-  onFilter,
-  tags,
-  activeTagId,
-  onToggleTag,
-  t,
-  styles,
-}: {
-  filter: string;
-  onFilter: (v: string) => void;
-  tags: TagRow[];
-  activeTagId: string | null;
-  onToggleTag: (id: string) => void;
-  t: Theme;
-  styles: ReturnType<typeof makeStyles>;
-}) {
-  return (
-    <View style={styles.filterWrap}>
-      <SearchField value={filter} onChangeText={onFilter} placeholder="Filter notes…" />
-      {tags.length > 0 && (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tagFilterRow} keyboardShouldPersistTaps="handled">
-          {tags.map((tag) => {
-            const active = activeTagId === tag.id;
-            return (
-              <Pressable
-                key={tag.id}
-                onPress={() => onToggleTag(tag.id)}
-                style={[
-                  styles.tagFilterChip,
-                  {
-                    backgroundColor: active ? tag.color : withAlpha(tag.color, 0.14),
-                    borderColor: active ? tag.color : withAlpha(tag.color, 0.35),
-                  },
-                ]}
-              >
-                {!active && <View style={[styles.tagFilterDot, { backgroundColor: tag.color }]} />}
-                <Text style={[styles.tagFilterText, { color: active ? t.accentFg : t.textSecondary }]} numberOfLines={1}>
-                  {tag.name}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-      )}
-    </View>
-  );
-}
-
-function Segment({ label, count, active, onPress, t }: { label: string; count?: number; active: boolean; onPress: () => void; t: Theme }) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={[{ flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: "center" }, active && { backgroundColor: t.surface }]}
-    >
-      <Text style={{ color: active ? t.textPrimary : t.textTertiary, fontWeight: active ? "600" : "400", fontSize: typeScale.label.fontSize }}>
-        {label}
-        {count !== undefined ? <Text style={{ color: t.textTertiary }}> {count}</Text> : null}
-      </Text>
-    </Pressable>
-  );
-}
-
-const NoteRowItem = memo(function NoteRowItem({
-  note,
-  depth,
-  tags,
-  onOpen,
-  onLongPress,
-  t,
-}: {
-  note: NoteRow;
-  depth: number;
-  tags?: TagRow[];
-  onOpen: (id: string) => void;
-  onLongPress: (note: NoteRow) => void;
-  t: Theme;
-}) {
-  // Mirror the desktop NoteListItem: title, a 1-line content preview, then a
-  // meta row of relative time + up to 3 tag chips. Tags are resolved once by the
-  // parent (tagsByRow) and passed in, so this row does no DB work on render.
-  // `onOpen` / `onLongPress` are stable refs → this memoised row skips re-render
-  // when unrelated parent state changes.
-  const preview = useMemo(() => {
-    const text = stripMarkdown(note.content ?? "").trim();
-    return text ? text.slice(0, 80) : "Empty note";
-  }, [note.content]);
-  const shownTags = useMemo(() => (tags ?? []).slice(0, 3), [tags]);
-  const onPress = useCallback(() => onOpen(note.id), [onOpen, note.id]);
-  const handleLongPress = useCallback(() => onLongPress(note), [onLongPress, note]);
-  return (
-    <PressableScale
-      scaleTo={1}
-      dimTo={0.5}
-      onPress={onPress}
-      onLongPress={handleLongPress}
-      delayLongPress={350}
-      style={{
-        gap: 3,
-        paddingVertical: 10,
-        paddingRight: 14,
-        paddingLeft: 14 + depth * 16,
-        borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: t.borderSubtle,
-      }}
-    >
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-        <FileText size={13} color={t.textTertiary} />
-        {note.is_pinned ? <Pin size={11} color={t.accent} fill={t.accent} /> : null}
-        <Text style={{ flex: 1, color: t.textPrimary, ...typeScale.control, fontWeight: "500" }} numberOfLines={1}>
-          {note.title || "Untitled"}
-        </Text>
-      </View>
-      <Text style={{ color: t.textTertiary, ...typeScale.caption, paddingLeft: 21 }} numberOfLines={1}>
-        {preview}
-      </Text>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingLeft: 21 }}>
-        <Text style={{ color: t.textTertiary, ...typeScale.micro, fontWeight: "400" }}>{formatRelative(note.updated_at)}</Text>
-        {shownTags.length > 0 && <TagChips tags={shownTags} size="sm" />}
-      </View>
-    </PressableScale>
-  );
-});
-
-/** FlatList key for a flattened row — folder path or note id, both unique. */
-function rowKey(item: ListRow): string {
-  return item.kind === "folder" ? `f:${item.node.path}` : `n:${item.note.id}`;
-}
-
-/**
- * A single folder header row. Non-recursive: the tree is flattened by the parent
- * so each folder + its (visible) descendants are separate FlatList rows. Toggling
- * only flips `collapsed[path]`, which re-derives the flattened row list.
- */
-const FolderRow = memo(function FolderRow({
-  node,
-  depth,
-  collapsed,
-  onToggle,
-  t,
-}: {
-  node: FolderNode<NoteRow>;
-  depth: number;
-  collapsed: boolean;
-  onToggle: (p: string) => void;
-  t: Theme;
-}) {
-  const onPress = useCallback(() => onToggle(node.path), [onToggle, node.path]);
-  return (
-    <Pressable
-      onPress={onPress}
-      style={{
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 6,
-        paddingVertical: 9,
-        paddingRight: 14,
-        paddingLeft: 12 + depth * 16,
-        backgroundColor: t.surface2,
-      }}
-    >
-      {collapsed ? <ChevronRight size={14} color={t.textTertiary} /> : <ChevronDown size={14} color={t.textTertiary} />}
-      {collapsed ? <Folder size={14} color={t.accent} /> : <FolderOpen size={14} color={t.accent} />}
-      <Text style={{ flex: 1, color: t.textSecondary, ...typeScale.label }} numberOfLines={1}>
-        {node.name}
-      </Text>
-      <Text style={{ color: t.textTertiary, ...typeScale.micro, fontWeight: "400" }}>{node.notes.length}</Text>
-    </Pressable>
-  );
-});
-
-function Empty({ text, t }: { text: string; t: Theme }) {
-  return (
-    <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 32 }}>
-        <Text style={{ ...typeScale.caption, color: t.textTertiary, textAlign: "center" }}>{text}</Text>
-    </View>
-  );
-}
-
 function makeStyles(t: Theme) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: t.background },
     segment: { flexDirection: "row", gap: 4, margin: 12, padding: 4, backgroundColor: t.surface2, borderRadius: 10 },
-    filterWrap: { paddingHorizontal: 12, paddingBottom: 8, gap: 8 },
-    tagFilterRow: { gap: 8, paddingRight: 12 },
-    tagFilterChip: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 5, paddingHorizontal: 12, borderRadius: 14, borderWidth: 1 },
-    tagFilterDot: { width: 7, height: 7, borderRadius: 4 },
-    tagFilterText: { ...typeScale.label, maxWidth: 140 },
     notesScroll: { flexGrow: 1 },
   });
 }
