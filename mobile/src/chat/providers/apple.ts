@@ -266,7 +266,7 @@ async function runToolToJson(toolName: string, inputJson: string): Promise<{ res
     args = {};
   }
   try {
-    // Tools may be sync or async (e.g. semantic_search_notes) — await either so
+    // Tools may be sync or async (e.g. search_notes_semantic) — await either so
     // a Promise isn't stringified as "{}" and the real output lost.
     const result = await tool.run(args);
     return { resultJson: JSON.stringify(result ?? {}) };

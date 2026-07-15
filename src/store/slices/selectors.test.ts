@@ -72,6 +72,23 @@ describe("searchAll", () => {
     expect(results[0]).toMatchObject({ type: "note", id: "n1", title: "Meeting Notes", projectName: "Alpha" });
   });
 
+  it("multi-word query matches terms out of order / across title+body (AND-of-terms)", () => {
+    const { get } = setup({
+      notes: [
+        note("n1", "p1", { title: "Authentication flow" }),
+        note("n2", "p1", { title: "Login pipeline", contentText: "covers auth and refresh" }),
+        note("n3", "p1", { title: "Unrelated", contentText: "nothing here" }),
+      ],
+    });
+    // "auth flow" is NOT a contiguous phrase in either note, but both terms are
+    // present in n1 (title) and n2 (title has "flow"? no) — verify per-note:
+    expect(get().searchAll("auth flow").map((r: any) => r.id)).toEqual(["n1"]);
+    // Terms spread across title + body still match (n2: "auth" in body).
+    expect(get().searchAll("login auth").map((r: any) => r.id)).toEqual(["n2"]);
+    // A term absent everywhere excludes the note.
+    expect(get().searchAll("auth missing")).toEqual([]);
+  });
+
   it("matches notes by contentText and builds a 120-char snippet", () => {
     const longText = "x".repeat(200);
     const { get } = setup({

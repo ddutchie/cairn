@@ -5,7 +5,7 @@
 
 import { getDb } from "./index";
 import { inspectConflict, cleanConflictTitle } from "@cairn/shared/sync/conflict";
-import { stripMarkdown } from "@cairn/shared/notes/text";
+import { stripMarkdown, queryTerms } from "@cairn/shared/notes/text";
 import { buildNoteOutline, sliceLines, noteDigest } from "@cairn/shared/notes/toc";
 import { dedupeFoldersCaseInsensitive } from "@cairn/shared/notes/folder-tree";
 import { notifyLocalWrite } from "@/sync/write-signal";
@@ -353,27 +353,102 @@ export function getCard(id: string): CardRow | null {
   );
 }
 
+/**
+ * Build an AND-of-terms SQL fragment for keyword search: every whitespace-
+ * separated term in `query` must appear (case-insensitively) in AT LEAST ONE of
+ * the given columns. Returns the `AND (...)` SQL and the bound params, or null
+ * when the query has no terms (caller can early-return / list all).
+ *
+ * This replaces the old single whole-query `LIKE '%q%'`, which under-matched
+ * multi-word queries — "auth flow" now matches "Authentication flow" and
+ * "flow for auth", not only the literal phrase. LIKE wildcards in a term are
+ * escaped so they match literally (ESCAPE '\').
+ */
+function buildTermClause(query: string, columns: string[]): { sql: string; params: string[] } | null {
+  const terms = queryTerms(query);
+  if (terms.length === 0) return null;
+  const params: string[] = [];
+  const groups = terms.map((term) => {
+    // Escape %, _ and the escape char itself so they're matched literally.
+    const escaped = term.replace(/[\\%_]/g, (m) => `\\${m}`);
+    const like = `%${escaped}%`;
+    const ors = columns.map((col) => {
+      params.push(like);
+      return `${col} LIKE ? ESCAPE '\\'`;
+    });
+    return `(${ors.join(" OR ")})`;
+  });
+  return { sql: `AND (${groups.join(" AND ")})`, params };
+}
+
 export function searchNotes(query: string): NoteRow[] {
-  const q = `%${query}%`;
+  const clause = buildTermClause(query, ["title", "content_text"]);
+  if (!clause) return [];
   return getDb().getAllSync<NoteRow>(
     `SELECT id, project_id, title, content, folder, tag_ids, updated_at FROM notes
-     WHERE ${LIVE} AND type = 'note' AND ${NOT_CONFLICT} AND (title LIKE ? OR content_text LIKE ?)
+     WHERE ${LIVE} AND type = 'note' AND ${NOT_CONFLICT} ${clause.sql}
      ORDER BY updated_at DESC LIMIT 50`,
-    q,
-    q,
+    ...clause.params,
   );
 }
 
 /** Search live (non-archived) task cards by title or description. */
 export function searchTasks(query: string): CardRow[] {
-  const q = `%${query}%`;
+  const clause = buildTermClause(query, ["title", "description"]);
+  if (!clause) return [];
   return getDb().getAllSync<CardRow>(
     `SELECT id, column_id, project_id, title, description, priority, tag_ids, "order", due_date, assignee FROM task_cards
-     WHERE ${LIVE} AND (title LIKE ? OR description LIKE ?)
+     WHERE ${LIVE} ${clause.sql}
      ORDER BY updated_at DESC LIMIT 50`,
-    q,
-    q,
+    ...clause.params,
   );
+}
+
+/**
+ * Ready-to-work cards: live (not deleted/archived), NOT in a done-type column,
+ * and with every blocker resolved (each blocker card is deleted/archived or in a
+ * done column). Mirrors the desktop `getReadyCards` semantics so "what should I
+ * work on now?" behaves the same across surfaces. Optionally scoped to a project.
+ */
+export function listReadyCards(projectId?: string): CardRow[] {
+  const whereProject = projectId ? "AND c.project_id = ?" : "";
+  const params = projectId ? [projectId] : [];
+  const candidates = getDb().getAllSync<CardRow & { blocked_by_ids: string }>(
+    `SELECT c.id, c.column_id, c.project_id, c.title, c.description, c.priority,
+            c.tag_ids, c."order", c.due_date, c.assignee, c.blocked_by_ids
+     FROM task_cards c
+     JOIN board_columns col ON col.id = c.column_id
+     WHERE c.deleted_at IS NULL AND c.archived_at IS NULL AND col.type != 'done'
+       ${whereProject}
+     ORDER BY c."order"`,
+    ...params,
+  );
+  if (candidates.length === 0) return [];
+
+  // Resolve blockers: a blocker is "cleared" when its card is deleted/archived or
+  // lives in a done column (or no longer exists — an orphaned blocker is cleared).
+  const doneOrGone = new Map<string, boolean>();
+  const isCleared = (blockerId: string): boolean => {
+    const cached = doneOrGone.get(blockerId);
+    if (cached !== undefined) return cached;
+    const row = getDb().getFirstSync<{ archived_at: string | null; deleted_at: string | null; type: string }>(
+      `SELECT c.archived_at, c.deleted_at, col.type
+       FROM task_cards c JOIN board_columns col ON col.id = c.column_id
+       WHERE c.id = ?`,
+      blockerId,
+    );
+    const cleared = !row || row.archived_at !== null || row.deleted_at !== null || row.type === "done";
+    doneOrGone.set(blockerId, cleared);
+    return cleared;
+  };
+
+  return candidates
+    .filter((c) => {
+      let blockers: string[] = [];
+      try { blockers = JSON.parse(c.blocked_by_ids || "[]"); } catch { blockers = []; }
+      return blockers.every(isCleared);
+    })
+    .map(({ blocked_by_ids: _omit, ...card }) => card);
 }
 
 /**
