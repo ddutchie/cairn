@@ -37,6 +37,7 @@ export function ConflictResolutionModal({ open, onClose }: { open: boolean; onCl
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (open) void refresh(true);
   }, [open, refresh]);
 

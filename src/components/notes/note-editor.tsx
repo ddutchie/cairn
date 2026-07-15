@@ -86,11 +86,11 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
   const changeCount = changedLines.length;
   useEffect(() => {
     if (!changeMark) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setChangedLines([]);
       return;
     }
     const lines = diffChangedLines(changeMark.previousContent, noteContent0);
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setChangedLines(lines);
     // Clear the store mark now that we've captured its diff — it's a one-shot
     // "since you last looked" signal. The local `changedLines` keeps driving the
