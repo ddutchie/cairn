@@ -499,6 +499,12 @@ export function KnowledgeGraphWebView({
           javaScriptEnabled
           setSupportMultipleWindows={false}
           scrollEnabled={false}
+          // iOS kills the WKWebView content process when the app is backgrounded
+          // under memory pressure, leaving the graph blank (live updates go via
+          // injectJavaScript, which silently no-ops on a dead process). Reload to
+          // rebuild the D3 document. Android equivalent is onRenderProcessGone.
+          onContentProcessDidTerminate={() => ref.current?.reload()}
+          onRenderProcessGone={() => ref.current?.reload()}
         />
 
         {/* Legend + zoom-to-fit — bottom row. Keys are left-aligned, the fit
