@@ -18,6 +18,9 @@ import {
   createNote,
   updateNote,
   deleteNote,
+  getNotes,
+  findTombstonedNotes,
+  findNestedConflictCopies,
   getNoteById,
   moveNoteToProject,
   createColumn,
@@ -688,6 +691,75 @@ describe("deleteNote (hard delete)", () => {
 
   it("is a no-op for an unknown id", () => {
     expect(() => deleteNote(db, "does-not-exist")).not.toThrow();
+  });
+});
+
+describe("findTombstonedNotes + getNotes tombstone filtering", () => {
+  let db: Database.Database;
+
+  beforeEach(() => {
+    db = makeDb();
+    seedWorkspace(db);
+    seedProject(db);
+  });
+
+  it("lists tombstoned rows WITHOUT removing them, and getNotes hides them", () => {
+    createNote(db, { id: "live", projectId: "proj1", workspaceId: "ws1", title: "Live", content: "x" });
+    createNote(db, { id: "dead", projectId: "proj1", workspaceId: "ws1", title: "Dead", content: "y" });
+    // Simulate a delete that arrived via sync: the row is tombstoned, not removed.
+    db.prepare("UPDATE notes SET deleted_at = ? WHERE id = ?").run(new Date().toISOString(), "dead");
+
+    const found = findTombstonedNotes(db);
+    expect(found.map((p) => p.id)).toEqual(["dead"]);
+    expect(found[0].projectId).toBe("proj1");
+
+    // The tombstone row is KEPT (so the sync staleness guard trips) …
+    expect(getNoteById(db, "dead")).not.toBeNull();
+    // … but getNotes filters it out, so it doesn't show in the UI.
+    const listed = getNotes(db, "proj1").map((n: { id: string }) => n.id);
+    expect(listed).toContain("live");
+    expect(listed).not.toContain("dead");
+  });
+
+  it("returns an empty array when there are no tombstones", () => {
+    createNote(db, { id: "n1", projectId: "proj1", workspaceId: "ws1", title: "Fine", content: "x" });
+    expect(findTombstonedNotes(db)).toEqual([]);
+    expect(getNotes(db, "proj1").map((n: { id: string }) => n.id)).toEqual(["n1"]);
+  });
+});
+
+describe("findNestedConflictCopies", () => {
+  let db: Database.Database;
+
+  beforeEach(() => {
+    db = makeDb();
+    seedWorkspace(db);
+    seedProject(db);
+  });
+
+  it("identifies only conflict-of-conflict rows, ignoring originals and single copies", () => {
+    createNote(db, { id: "orig", projectId: "proj1", workspaceId: "ws1", title: "Original", content: "x" });
+    // A legitimate single-level conflict copy — must NOT be flagged (awaits resolution).
+    createNote(db, { id: "orig_conflict_mobile_abc", projectId: "proj1", workspaceId: "ws1", title: "Original (conflicted copy — mobile)", content: "y" });
+    // Two nested (junk) copies — must be flagged.
+    createNote(db, { id: "orig_conflict_mobile_abc_conflict_desktop_def", projectId: "proj1", workspaceId: "ws1", title: "nested", content: "z" });
+    createNote(db, { id: "orig_conflict_desktop_a_conflict_mobile_b_conflict_desktop_c", projectId: "proj1", workspaceId: "ws1", title: "deep", content: "w" });
+
+    const found = findNestedConflictCopies(db);
+    expect(found.map((p) => p.id).sort()).toEqual(
+      [
+        "orig_conflict_desktop_a_conflict_mobile_b_conflict_desktop_c",
+        "orig_conflict_mobile_abc_conflict_desktop_def",
+      ].sort(),
+    );
+    // It only reports — it does not delete.
+    expect(getNoteById(db, "orig_conflict_mobile_abc_conflict_desktop_def")).not.toBeNull();
+  });
+
+  it("returns an empty array when there are no nested conflict copies", () => {
+    createNote(db, { id: "orig", projectId: "proj1", workspaceId: "ws1", title: "Original", content: "x" });
+    createNote(db, { id: "orig_conflict_mobile_abc", projectId: "proj1", workspaceId: "ws1", title: "copy", content: "y" });
+    expect(findNestedConflictCopies(db)).toEqual([]);
   });
 });
 

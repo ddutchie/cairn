@@ -169,9 +169,14 @@ export function updateProjectSettings(db: Database.Database, projectId: string, 
 // ── Notes ─────────────────────────────────────
 
 export function getNotes(db: Database.Database, projectId?: string) {
+  // Exclude tombstoned rows (deleted_at set). A delete arriving via sync keeps a
+  // tombstone row (so the sync staleness guard trips and the delete doesn't
+  // re-apply/re-publish every cycle — the "sent=31 forever" loop); filtering it
+  // here is what makes such a note vanish from the UI, without physically
+  // removing the row.
   const rows = projectId
-    ? db.prepare("SELECT * FROM notes WHERE project_id = ? ORDER BY updated_at DESC").all(projectId)
-    : db.prepare("SELECT * FROM notes ORDER BY updated_at DESC").all();
+    ? db.prepare("SELECT * FROM notes WHERE project_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC").all(projectId)
+    : db.prepare("SELECT * FROM notes WHERE deleted_at IS NULL ORDER BY updated_at DESC").all();
   return rows.map(toNote);
 }
 
@@ -244,6 +249,47 @@ export function updateNote(db: Database.Database, id: string, patch: Partial<{
  */
 export function deleteNote(db: Database.Database, id: string) {
   db.prepare("DELETE FROM notes WHERE id = ?").run(id);
+}
+
+/**
+ * List tombstoned (deleted_at set) note rows, so a caller can clean up their
+ * orphaned `.md` files. Does NOT delete the rows — a delete arriving via sync
+ * KEEPS a tombstone row so the sync staleness guard trips (physically removing
+ * it made every peer delete op re-apply and re-stage — the "sent=31 never
+ * settles" loop). Live reads filter `deleted_at IS NULL`, so tombstones don't
+ * show in the UI. Dashboards are excluded (no .md file).
+ */
+export function findTombstonedNotes(
+  db: Database.Database,
+): { id: string; projectId: string; type: string }[] {
+  return db
+    .prepare("SELECT id, project_id AS projectId, type FROM notes WHERE deleted_at IS NOT NULL")
+    .all() as { id: string; projectId: string; type: string }[];
+}
+
+/**
+ * Find NESTED conflict-copy notes — rows whose id contains the `_conflict_`
+ * marker more than once (e.g. `n_conflict_mobile_x_conflict_desktop_y`). These
+ * are junk: a conflict copy of a conflict copy, which should never be created
+ * (the engine now guards against it). Left behind by an earlier bug where two
+ * devices each cloned the other's copy, they piled up and churned as perpetual
+ * delete tombstones (the "N pending never settles" storm). A SINGLE `_conflict_`
+ * copy is legitimate (awaiting the user's resolution) and is NOT returned.
+ *
+ * This only IDENTIFIES them — it does not delete. The caller must tombstone them
+ * through the sync engine (engine.remove) so the delete propagates with a fresh
+ * HLC and BOTH devices converge; a raw physical DELETE here would be re-created
+ * on the next sync from the peer's oplog (which still holds the row).
+ */
+export function findNestedConflictCopies(
+  db: Database.Database,
+): { id: string; projectId: string; type: string }[] {
+  const candidates = db
+    .prepare(
+      "SELECT id, project_id AS projectId, type FROM notes WHERE deleted_at IS NULL AND id LIKE '%\\_conflict\\_%\\_conflict\\_%' ESCAPE '\\'",
+    )
+    .all() as { id: string; projectId: string; type: string }[];
+  return candidates.filter((r) => (r.id.match(/_conflict_/g)?.length ?? 0) >= 2);
 }
 
 export function getNoteById(db: Database.Database, id: string) {
@@ -339,13 +385,16 @@ export function deleteColumn(db: Database.Database, id: string) {
 // ── Task Cards ────────────────────────────────
 
 export function getCards(db: Database.Database, opts?: { projectId?: string; columnId?: string }) {
+  // Filter tombstones (deleted_at) — a card deleted on a peer keeps a tombstone
+  // row so sync converges; it must not show on the board. (Same rationale as
+  // getNotes.)
   let rows;
   if (opts?.columnId) {
-    rows = db.prepare(`SELECT * FROM task_cards WHERE column_id = ? ORDER BY "order"`).all(opts.columnId);
+    rows = db.prepare(`SELECT * FROM task_cards WHERE column_id = ? AND deleted_at IS NULL ORDER BY "order"`).all(opts.columnId);
   } else if (opts?.projectId) {
-    rows = db.prepare(`SELECT * FROM task_cards WHERE project_id = ? ORDER BY "order"`).all(opts.projectId);
+    rows = db.prepare(`SELECT * FROM task_cards WHERE project_id = ? AND deleted_at IS NULL ORDER BY "order"`).all(opts.projectId);
   } else {
-    rows = db.prepare(`SELECT * FROM task_cards ORDER BY "order"`).all();
+    rows = db.prepare(`SELECT * FROM task_cards WHERE deleted_at IS NULL ORDER BY "order"`).all();
   }
   return rows.map(toCard);
 }
@@ -855,7 +904,7 @@ export function searchNotes(db: Database.Database, opts: SearchNotesOpts) {
   return db
     .prepare(
       `SELECT * FROM notes
-       WHERE archived_at IS NULL
+       WHERE archived_at IS NULL AND deleted_at IS NULL
          AND (? IS NULL OR project_id = ?)
          AND (lower(title) LIKE ? OR lower(content_text) LIKE ?)
        LIMIT ?`
@@ -871,7 +920,7 @@ export function searchTasks(db: Database.Database, opts: SearchTasksOpts) {
   return db
     .prepare(
       `SELECT * FROM task_cards
-       WHERE archived_at IS NULL
+       WHERE archived_at IS NULL AND deleted_at IS NULL
          AND (? IS NULL OR project_id = ?)
          AND (lower(title) LIKE ? OR lower(description) LIKE ?)
        LIMIT ?`

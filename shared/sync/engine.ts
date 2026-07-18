@@ -16,6 +16,7 @@
 import type { SyncDb } from "./db-adapter";
 import { Hlc, compareHlc, decodeHlc } from "./hlc";
 import { SYNCABLE_TABLES, type SyncableTable } from "./schema";
+import { inspectConflict } from "./conflict";
 
 export type Op = "put" | "delete";
 
@@ -437,6 +438,12 @@ export class SyncEngine {
     const run = this.db.transaction(() => {
       this.setSuppress(true); // reconcile writes must not be re-captured as local ops
       for (const entry of sorted) {
+        // Ignore ops for entities we no longer sync (e.g. chat_threads /
+        // chat_messages, removed in v28). A peer still running an old build — or
+        // an oplog file it published before upgrading — can carry these; without
+        // this guard we'd re-apply them AND re-forward them via recordForwardedOp,
+        // keeping the loop alive. Skipping makes the un-sync self-healing.
+        if (!(SYNCABLE_TABLES as readonly string[]).includes(entry.entity)) continue;
         this.hlc.receive(entry.hlc);
         const res = this.reconcileOne(entry);
         if (res.applied) applied.push({ entity: entry.entity, entity_id: entry.entity_id, op: entry.op });
@@ -500,12 +507,20 @@ export class SyncEngine {
       // sides changed the body since the common ancestor and they now disagree.
       // A one-sided remote edit (local == ancestor) is NOT a conflict — this is
       // what prevents spurious conflict copies on notes the user never touched.
+      //
+      // NEVER make a conflict copy OF a conflict copy. If this row's id is
+      // already a `_conflict_…` clone, a further divergence must resolve by plain
+      // LWW, not by minting `_conflict_…_conflict_…` nests. Two devices each
+      // cloning the other's copy produced an exploding pile of junk notes that
+      // then churned as perpetual delete tombstones (the "31 pending" storm).
+      const isConflictClone = inspectConflict(String(entity_id)).isConflict;
       const ancestor = this.getBaseBody(entity, entity_id); // undefined = unknown
       const localBody = local[bodyCol];
       const remoteBody = remote[bodyCol];
       const localChanged = ancestor === undefined ? false : String(localBody ?? "") !== String(ancestor ?? "");
       const remoteChanged = ancestor === undefined ? false : String(remoteBody ?? "") !== String(ancestor ?? "");
       if (
+        !isConflictClone &&
         localChanged &&
         remoteChanged &&
         localBody !== remoteBody &&
@@ -522,7 +537,22 @@ export class SyncEngine {
     // merged row is a new logical state. Re-stamp it with a fresh local HLC and
     // log it so the union propagates back to peers (otherwise the two devices
     // diverge: each keeps only its own additions).
-    if (local && this.unionChangedBeyondRemote(entity, remote, merged)) {
+    //
+    // BUT only when the union ALSO changed the LOCAL row — i.e. the remote
+    // genuinely contributed at least one element we didn't already have. If our
+    // local row already held the full union (merged == local for every array
+    // column), the remote is simply behind: re-stamping here would mint a new,
+    // higher HLC op that the peer applies (no real change) and, because the HLC
+    // keeps advancing on every exchange, the staleness guard (compareHlc <= 0)
+    // never trips — so the same rows ping-pong on EVERY sync forever (the
+    // "pending N regenerates after each sync, never settles" bug). Requiring a
+    // real local change guarantees convergence: once both sides hold the union,
+    // neither re-stamps and the exchange stops.
+    if (
+      local &&
+      this.unionChangedBeyondRemote(entity, remote, merged) &&
+      this.unionChangedBeyondLocal(entity, local, merged)
+    ) {
       const stamp = this.hlc.send();
       this.persistHlc();
       merged.hlc = stamp;
@@ -546,6 +576,28 @@ export class SyncEngine {
       const remoteSet = new Set(parseArray(remote[arrCol]));
       const mergedArr = parseArray(merged[arrCol]);
       if (mergedArr.some((v) => !remoteSet.has(v))) return true;
+    }
+    return false;
+  }
+
+  /**
+   * True if the union added at least one element the LOCAL row didn't already
+   * have — i.e. the merge genuinely changed our row. Paired with
+   * unionChangedBeyondRemote to gate the re-stamp/republish: we only propagate
+   * when BOTH sides are missing something, which is exactly the "concurrent
+   * additions" case. When our local row already held everything, the remote is
+   * just catching up and no re-stamp is needed (prevents the never-converging
+   * re-stamp loop — see reconcileOne).
+   */
+  private unionChangedBeyondLocal(
+    entity: SyncableTable,
+    local: Record<string, unknown>,
+    merged: Record<string, unknown>,
+  ): boolean {
+    for (const arrCol of ARRAY_MERGE_COLUMNS[entity] ?? []) {
+      const localSet = new Set(parseArray(local[arrCol]));
+      const mergedArr = parseArray(merged[arrCol]);
+      if (mergedArr.some((v) => !localSet.has(v))) return true;
     }
     return false;
   }

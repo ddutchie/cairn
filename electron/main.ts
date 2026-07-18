@@ -28,7 +28,7 @@ import { registerPiAgentHandler } from "./ipc/pi-agent";
 import { readWorkspaceConfig, getDbPathForWorkspace } from "./workspace-config";
 import { startFileWatcher, suppressNextChange } from "./file-watcher";
 import { syncNotesFromDisk, writeNoteFile, deleteNoteFile } from "./notes-files";
-import { markMcpNotificationsRead, getNoteById } from "./db/queries";
+import { markMcpNotificationsRead, getNoteById, findNestedConflictCopies } from "./db/queries";
 import { getProjectName } from "./ipc/result-helpers";
 import { setupProtocol, registerAssetProtocol, setAssetWorkspacePath } from "./lib/protocol";
 import { createTray } from "./lib/tray";
@@ -433,7 +433,7 @@ app.whenReady().then(async () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const desktopSync = require("./sync/desktop-sync");
   const drainDesktop: (db: unknown) => number = desktopSync.drainDesktop;
-  const syncDesktop: (db: unknown, projectNote?: (noteId: string, op: "put" | "delete") => void) => Promise<{ seeded: number; drained: number; peerOpsApplied: number; conflictCopies: number; connected: boolean }> = desktopSync.syncDesktop;
+  const syncDesktop: (db: unknown, projectNote?: (noteId: string, op: "put" | "delete") => void) => Promise<{ seeded: number; drained: number; peerOpsApplied: number; peerOpsRead: number; conflictCopies: number; connected: boolean }> = desktopSync.syncDesktop;
   const getSyncFolder: (db: unknown) => string | null = desktopSync.getSyncFolder;
   const setSyncStatusListener: (fn: ((s: unknown) => void) | null) => void = desktopSync.setSyncStatusListener;
   const refreshSyncStatus: (db: unknown) => void = desktopSync.refreshSyncStatus;
@@ -458,10 +458,45 @@ app.whenReady().then(async () => {
     } else {
       writeNoteFile(ctx.workspacePath, { ...note, projectName });
     }
+    // NOTE: on a synced delete we intentionally do NOT physically delete the DB
+    // row. The engine keeps it tombstoned (deleted_at set); getNotes() and the
+    // other live reads filter `deleted_at IS NULL`, so it disappears from the UI
+    // just the same. Physically deleting it here was a mistake: it left the row
+    // absent, so every subsequent peer `delete` op re-applied (insertTombstoneShell
+    // re-creates a shell → applied=true) and this projector re-ran, and the
+    // physical delete fired the capture trigger OUTSIDE the engine's suppression
+    // window — re-staging the delete on every sync (the "sent=31 never settles"
+    // loop). Keeping the tombstone lets the staleness guard stop the re-apply.
   }
   // Register once so both the periodic loop and the manual sync:now IPC handler
   // re-emit .md files for inbound note changes.
   desktopSync.setNoteFileProjector(projectNoteToDisk);
+
+  // One-time cleanup of NESTED conflict-copy junk (`…_conflict_…_conflict_…`)
+  // left by the old "conflict copy of a conflict copy" bug — an exploding pile
+  // that churned as perpetual pending deletes ("N pending never settles"). It
+  // MUST run through the sync engine (tombstone + fresh HLC) so the delete wins
+  // over the peer's re-broadcast and BOTH devices converge; a raw physical
+  // delete would be re-created from the peer's oplog on the next sync. Only runs
+  // when a sync folder is connected (otherwise there's no peer to converge with,
+  // and boot already handles local rows). Best-effort; also drops their .md.
+  try {
+    if (getSyncFolder(ctx.db)) {
+      const nested = findNestedConflictCopies(ctx.db);
+      if (nested.length > 0) {
+        const n = desktopSync.tombstoneNotesViaSync(ctx.db, nested.map((r: { id: string }) => r.id));
+        for (const r of nested) {
+          if (r.type === "dashboard") continue;
+          try {
+            deleteNoteFile(ctx.workspacePath, getProjectName(ctx.db, r.projectId), r.id);
+          } catch { /* file may already be gone */ }
+        }
+        console.log(`[sync] Tombstoned ${n} nested conflict-copy note(s) (junk cleanup).`);
+      }
+    }
+  } catch (err) {
+    console.error("[sync] Nested conflict-copy cleanup failed:", err);
+  }
 
   async function runFullSync(reason: string) {
     try {
@@ -474,8 +509,11 @@ app.whenReady().then(async () => {
         return;
       }
       const r = await syncDesktop(ctx.db);
+      // Only log when something real happened (seeded / sent / actually applied).
+      // A converged sync that merely READS the peer snapshot (peerOpsRead > 0 but
+      // peerOpsApplied === 0) is silent — that steady read is normal, not a loop.
       if (r.seeded || r.drained || r.peerOpsApplied) {
-        console.log(`[sync] ${reason}: seeded=${r.seeded} sent=${r.drained} applied=${r.peerOpsApplied} conflicts=${r.conflictCopies}`);
+        console.log(`[sync] ${reason}: seeded=${r.seeded} sent=${r.drained} applied=${r.peerOpsApplied} (read=${r.peerOpsRead}) conflicts=${r.conflictCopies}`);
         // If peers changed our data, tell the renderer to re-hydrate.
         if (r.peerOpsApplied > 0 && !win.isDestroyed()) win.webContents.send("db:changed");
       }

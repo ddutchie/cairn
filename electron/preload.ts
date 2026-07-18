@@ -384,6 +384,7 @@ const api = {
         drained: number;
         seeded: number;
         peerOpsApplied: number;
+        peerOpsRead: number;
         conflictCopies: number;
         connected: boolean;
       }>("sync:now"),
@@ -396,6 +397,13 @@ const api = {
         lastSyncAt: string | null;
         connected: boolean;
       }>("sync:status"),
+    // Diagnostic: what's staged in sync_pending (entity/op/count + sample ids).
+    pendingBreakdown: () =>
+      invoke<{
+        total: number;
+        groups: { entity: string; op: string; count: number }[];
+        sampleIds: Record<string, string[]>;
+      }>("sync:pendingBreakdown"),
     // Subscribe to pushed status transitions. Returns an unsubscribe fn.
     onStatus: (cb: (status: {
       state: "disabled" | "idle" | "syncing" | "offline";

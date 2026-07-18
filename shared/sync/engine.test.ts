@@ -178,6 +178,45 @@ describe("sync engine — Phase 0 convergence spike", () => {
     expect(copiesB.map((c) => c.content)).toEqual(["A edited this"]);
   });
 
+  it("never makes a conflict copy OF a conflict copy (no _conflict_…_conflict_ nesting)", () => {
+    // Regression for the "31 pending" storm: a conflict-copy row whose body then
+    // diverged across devices used to spawn ANOTHER conflict copy, nesting
+    // `_conflict_…_conflict_…` ids that piled up and churned as delete
+    // tombstones. Such a row must now resolve by plain LWW — no further clone.
+    const clkA = clockFrom(3_700_000);
+    const clkB = clockFrom(3_700_000);
+    const A = makeDevice("A", clkA.now);
+    const B = makeDevice("B", clkB.now);
+    seedBase(A.engine);
+
+    // A pre-existing conflict copy, already shared and converged on both devices.
+    const copyId = "n1_conflict_deviceX_abc123";
+    clkA.advance(1);
+    A.engine.put("notes", {
+      id: copyId, project_id: "p1", workspace_id: "ws1",
+      title: "Note (conflicted copy — deviceX)", content: "base", created_at: "t", updated_at: "t", content_text: "",
+    });
+    syncFolder(dir, A.engine, B.engine);
+
+    // Now BOTH devices edit that conflict copy's body offline.
+    clkA.advance(1);
+    A.engine.put("notes", { id: copyId, content: "A edit of the copy" });
+    clkB.advance(50);
+    B.engine.put("notes", { id: copyId, content: "B edit of the copy" });
+    syncFolder(dir, A.engine, B.engine);
+
+    // Converged by LWW (B wins), and NO nested `_conflict_…_conflict_` row minted.
+    expect(liveState(A.db)).toEqual(liveState(B.db));
+    for (const dev of [A, B]) {
+      const winner = dev.db.prepare("SELECT content FROM notes WHERE id = ?").get(copyId) as { content: string };
+      expect(winner.content).toBe("B edit of the copy");
+      const nested = dev.db
+        .prepare("SELECT id FROM notes WHERE id LIKE '%\\_conflict\\_%\\_conflict\\_%' ESCAPE '\\'")
+        .all() as { id: string }[];
+      expect(nested).toHaveLength(0);
+    }
+  });
+
   it("does NOT create a conflict for a one-sided remote edit (no local change)", () => {
     // Regression: a note edited only on B must apply cleanly on A without
     // spawning a spurious 'conflicted copy' on A — the user never touched it.
@@ -316,6 +355,44 @@ describe("sync engine — Phase 0 convergence spike", () => {
     expect(liveState(A.db)).toEqual(liveState(B.db));
   });
 
+  it("stops re-exchanging array-merge rows once both sides converge (no perpetual re-stamp)", () => {
+    // Regression: the array-union re-stamp used to fire whenever the merged row
+    // had an element the REMOTE payload lacked — even when the LOCAL row already
+    // held the full union. That minted a fresh, higher-HLC op every sync, so the
+    // same rows ping-ponged forever and the "pending/changed" count regenerated
+    // after every sync instead of settling. After convergence, a further sync
+    // must apply NOTHING on either side.
+    const clkA = clockFrom(6_500_000);
+    const clkB = clockFrom(6_500_000);
+    const A = makeDevice("A", clkA.now);
+    const B = makeDevice("B", clkB.now);
+    seedBase(A.engine);
+    A.engine.put("notes", { id: "n1", project_id: "p1", workspace_id: "ws1", title: "Tagged", content: "x", tag_ids: JSON.stringify(["base"]), created_at: "t", updated_at: "t", content_text: "" });
+    syncFolder(dir, A.engine, B.engine);
+
+    // Concurrent tag additions on both sides.
+    clkA.advance(1);
+    A.engine.put("notes", { id: "n1", tag_ids: JSON.stringify(["base", "from-a"]) });
+    clkB.advance(2);
+    B.engine.put("notes", { id: "n1", tag_ids: JSON.stringify(["base", "from-b"]) });
+
+    // First reconciling sync: unions merge, both converge to the full set.
+    syncFolder(dir, A.engine, B.engine);
+    expect(liveState(A.db)).toEqual(liveState(B.db));
+
+    // A SECOND sync with no new local edits must be a complete no-op — neither
+    // side re-stamps the converged row.
+    const { aResult, bResult } = syncFolder(dir, A.engine, B.engine);
+    expect(aResult.applied).toHaveLength(0);
+    expect(bResult.applied).toHaveLength(0);
+
+    // And a THIRD, to prove it's not merely delayed by one round.
+    const third = syncFolder(dir, A.engine, B.engine);
+    expect(third.aResult.applied).toHaveLength(0);
+    expect(third.bResult.applied).toHaveLength(0);
+    expect(liveState(A.db)).toEqual(liveState(B.db));
+  });
+
   it("is idempotent and safe under repeated / partial sync", () => {
     const clkA = clockFrom(7_000_000);
     const clkB = clockFrom(7_000_000);
@@ -344,6 +421,31 @@ describe("sync engine — Phase 0 convergence spike", () => {
     expect(compareHlc("00000000000a:0001:A", "00000000000a:0002:A")).toBeLessThan(0);
     expect(compareHlc("00000000000b:0000:A", "00000000000a:ffff:A")).toBeGreaterThan(0);
     expect(compareHlc("00000000000a:0001:A", "00000000000a:0001:B")).toBeLessThan(0);
+  });
+
+  it("ignores oplog entries for non-syncable entities (e.g. chat from an old peer)", () => {
+    // Regression: chat_threads/chat_messages were removed from the synced set
+    // (v28). A peer still on an old build can publish chat ops; applyRemote must
+    // SKIP them — not apply them and not re-forward them (which would keep the
+    // "hundreds of chat puts re-applied every sync" loop alive).
+    const B = makeDevice("B", clockFrom(9_000_000).now);
+    // Hand-craft an oplog entry for a table the engine no longer syncs.
+    const staleChatOp = {
+      hlc: "0000000f0000:0000:oldpeer",
+      origin: "oldpeer",
+      entity: "chat_threads" as unknown as (typeof SYNCABLE_TABLES)[number],
+      entity_id: "thread-1",
+      op: "put" as const,
+      payload: { id: "thread-1", workspace_id: "ws1", created_at: "t", updated_at: "t", hlc: "0000000f0000:0000:oldpeer" },
+    };
+    const { applied } = B.engine.applyRemote([staleChatOp]);
+    // Nothing applied…
+    expect(applied).toHaveLength(0);
+    // …and it was NOT recorded into our oplog for re-forwarding.
+    const forwarded = B.db
+      .prepare("SELECT COUNT(*) c FROM sync_oplog WHERE entity = 'chat_threads'")
+      .get() as { c: number };
+    expect(forwarded.c).toBe(0);
   });
 });
 

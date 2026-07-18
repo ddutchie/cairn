@@ -16,6 +16,7 @@ import {
   syncDesktop,
   getSyncStatus,
   refreshSyncStatus,
+  pendingBreakdown,
   listConflictCopies,
   resolveConflict,
   type ConflictResolveDeps,
@@ -88,6 +89,10 @@ export function registerSyncHandlers(
   // Current live status snapshot (the renderer also subscribes to pushed
   // `sync:status` events; this is the initial fetch on mount).
   register("sync:status", (() => wrap(() => getSyncStatus())) as never);
+
+  // Diagnostic: what's staged in sync_pending right now (entity/op/count +
+  // sample ids). Used to explain a stuck / regenerating "pending N" count.
+  register("sync:pendingBreakdown", (() => wrap(() => pendingBreakdown(ctx.db))) as never);
 
   // Conflict copies awaiting manual resolution.
   register("sync:listConflicts", (() => wrap(() => listConflictCopies(ctx.db))) as never);
