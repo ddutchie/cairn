@@ -210,6 +210,66 @@ export function deleteProjectNotesDir(
   }
 }
 
+/**
+ * Rename a project's on-disk notes directory when the project is renamed, so
+ * the `.md` files follow the new project name (their folder is derived from
+ * `toSlug(projectName)`). Without this, a rename left the files under the old
+ * slug and future writes went to a NEW folder — splitting one project across
+ * two directories on disk.
+ *
+ * Best-effort and safe:
+ *   - No-op when the slug is unchanged (e.g. a case-only rename that slugifies
+ *     the same, or names that collapse to the same slug).
+ *   - No-op when the old directory doesn't exist yet (no notes written).
+ *   - If a directory already exists at the new slug, its files are MERGED in
+ *     (moved individually, skipping any name collisions) rather than clobbered,
+ *     then the emptied old directory is removed — never deletes note data.
+ *
+ * Returns true if anything was moved/renamed.
+ */
+export function renameProjectNotesDir(
+  workspacePath: string,
+  oldProjectName: string,
+  newProjectName: string,
+): boolean {
+  const oldDir = projectNotesDir(workspacePath, oldProjectName);
+  const newDir = projectNotesDir(workspacePath, newProjectName);
+  if (oldDir === newDir) return false; // same slug — nothing to do
+  if (!fs.existsSync(oldDir)) return false; // no files on disk yet
+
+  try {
+    if (!fs.existsSync(newDir)) {
+      // Simple case: target free — rename the whole directory atomically.
+      fs.renameSync(oldDir, newDir);
+      return true;
+    }
+    // Target exists (rare): merge children instead of overwriting, so we never
+    // lose notes. Move each entry that doesn't collide; recurse into subdirs.
+    mergeDirInto(oldDir, newDir);
+    // Remove the old dir if it's now empty (a collision may leave files behind).
+    try { fs.rmdirSync(oldDir); } catch { /* not empty / ignore */ }
+    return true;
+  } catch {
+    return false; // best-effort — leave files where they are on failure
+  }
+}
+
+/** Recursively move entries from `src` into `dst`, skipping name collisions. */
+function mergeDirInto(src: string, dst: string): void {
+  fs.mkdirSync(dst, { recursive: true });
+  for (const entry of fs.readdirSync(src)) {
+    const from = path.join(src, entry);
+    const to = path.join(dst, entry);
+    const stat = fs.lstatSync(from);
+    if (stat.isDirectory()) {
+      mergeDirInto(from, to);
+      try { fs.rmdirSync(from); } catch { /* ignore */ }
+    } else if (!fs.existsSync(to)) {
+      try { fs.renameSync(from, to); } catch { /* ignore collision/error */ }
+    }
+  }
+}
+
 export function parseNoteFile(filePath: string): NoteFileData | null {
   try {
     const raw = fs.readFileSync(filePath, "utf-8");

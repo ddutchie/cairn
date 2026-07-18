@@ -9,7 +9,7 @@ import { parseIds } from "./row-helpers";
 import { inspectConflict, cleanConflictTitle } from "@cairn/shared/sync/conflict";
 import { stripMarkdown, queryTerms } from "@cairn/shared/notes/text";
 import { buildNoteOutline, sliceLines, noteDigest } from "@cairn/shared/notes/toc";
-import { dedupeFoldersCaseInsensitive } from "@cairn/shared/notes/folder-tree";
+import { dedupeFoldersCaseInsensitive, normalizeFolderPath } from "@cairn/shared/notes/folder-tree";
 import { buildNoteMarkdown } from "@cairn/shared/notes/export";
 import { notifyLocalWrite } from "@/sync/write-signal";
 import type {
@@ -726,6 +726,10 @@ export function liveCardTitleById(id: string): string | null {
 export function createNote(projectId: string, title: string, content: string, folder = ""): string {
   const id = genId();
   const now = new Date().toISOString();
+  // Canonicalise the folder at the write boundary so a whitespace/slash-only
+  // value (e.g. from an AI tool call) can never persist as a phantom "unnamed"
+  // folder — it collapses to "" (project root). Mirrors buildFolderTree.
+  const normalizedFolder = normalizeFolderPath(folder);
   getDb().runSync(
     `INSERT INTO notes (id, project_id, workspace_id, title, content, content_text, folder, type, created_at, updated_at, version)
      VALUES (?, ?, ?, ?, ?, ?, ?, 'note', ?, ?, 0)`,
@@ -735,7 +739,7 @@ export function createNote(projectId: string, title: string, content: string, fo
     title,
     content,
     plainText(content),
-    folder,
+    normalizedFolder,
     now,
     now,
   );
@@ -1137,11 +1141,14 @@ export function renameNote(id: string, newTitle: string): { error: string } | { 
 export function moveNotesToFolder(noteIds: string[], folder: string): number {
   if (noteIds.length === 0) return 0;
   const now = new Date().toISOString();
+  // Canonicalise so a whitespace/slash-only target collapses to root rather
+  // than creating a phantom "unnamed" folder (mirrors createNote).
+  const normalizedFolder = normalizeFolderPath(folder);
   const placeholders = noteIds.map(() => "?").join(", ");
   const res = getDb().runSync(
     `UPDATE notes SET folder = ?, updated_at = ?, version = version + 1
      WHERE ${LIVE} AND type='note' AND id IN (${placeholders})`,
-    folder,
+    normalizedFolder,
     now,
     ...(noteIds as never[]),
   );

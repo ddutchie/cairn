@@ -12,7 +12,7 @@ import os from "os";
 import BetterSqlite3 from "better-sqlite3";
 import type Database from "better-sqlite3";
 import { applySchema } from "./db/schema";
-import { createWorkspace, createProject } from "./db/queries";
+import { createWorkspace, createProject, updateProject } from "./db/queries";
 import {
   toSlug,
   writeNoteFile,
@@ -22,6 +22,8 @@ import {
   stripMarkdown,
   projectNotesDir,
   notesDir,
+  renameProjectNotesDir,
+  reconcileProjectFolders,
   adoptExternalNoteFile,
   syncNotesFromDisk,
 } from "./notes-files";
@@ -510,5 +512,126 @@ describe("syncNotesFromDisk", () => {
     expect(all[0].project_id).toBe("proj1");
     expect(all[1].title).toBe("Note B");
     expect(all[1].project_id).toBe("proj2");
+  });
+});
+
+describe("renameProjectNotesDir", () => {
+  it("moves the whole directory when the new slug is free", () => {
+    const oldDir = path.join(notesDir(tmpDir), toSlug("Test Project"));
+    fs.mkdirSync(oldDir, { recursive: true });
+    fs.writeFileSync(path.join(oldDir, "Test Note.md"), "# Test Note\n", "utf-8");
+
+    const moved = renameProjectNotesDir(tmpDir, "Test Project", "Misc");
+    expect(moved).toBe(true);
+
+    const newDir = path.join(notesDir(tmpDir), toSlug("Misc"));
+    expect(fs.existsSync(oldDir)).toBe(false);
+    expect(fs.existsSync(path.join(newDir, "Test Note.md"))).toBe(true);
+  });
+
+  it("is a no-op when the slug is unchanged", () => {
+    const dir = path.join(notesDir(tmpDir), toSlug("Test Project"));
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "n.md"), "x", "utf-8");
+
+    // Identical name → identical slug → the same-slug guard short-circuits.
+    const moved = renameProjectNotesDir(tmpDir, "Test Project", "Test Project");
+    expect(moved).toBe(false);
+    expect(fs.existsSync(path.join(dir, "n.md"))).toBe(true);
+  });
+
+  it("does nothing when the old directory doesn't exist", () => {
+    const moved = renameProjectNotesDir(tmpDir, "Never Written", "New Name");
+    expect(moved).toBe(false);
+  });
+
+  it("merges into an existing target without clobbering, keeping both files", () => {
+    const oldDir = path.join(notesDir(tmpDir), toSlug("Old"));
+    const newDir = path.join(notesDir(tmpDir), toSlug("New"));
+    fs.mkdirSync(oldDir, { recursive: true });
+    fs.mkdirSync(newDir, { recursive: true });
+    fs.writeFileSync(path.join(oldDir, "From Old.md"), "old", "utf-8");
+    fs.writeFileSync(path.join(newDir, "Existing.md"), "existing", "utf-8");
+    // A collision: same filename in both — the existing (target) copy must win.
+    fs.writeFileSync(path.join(oldDir, "Existing.md"), "old-dup", "utf-8");
+
+    const moved = renameProjectNotesDir(tmpDir, "Old", "New");
+    expect(moved).toBe(true);
+
+    expect(fs.readFileSync(path.join(newDir, "From Old.md"), "utf-8")).toBe("old");
+    expect(fs.readFileSync(path.join(newDir, "Existing.md"), "utf-8")).toBe("existing");
+    // The colliding source file is left behind (not lost); the rest moved out.
+    expect(fs.existsSync(path.join(oldDir, "From Old.md"))).toBe(false);
+    expect(fs.existsSync(path.join(oldDir, "Existing.md"))).toBe(true);
+  });
+});
+
+describe("reconcileProjectFolders", () => {
+  let db: Database.Database;
+
+  beforeEach(() => {
+    db = new BetterSqlite3(":memory:");
+    applySchema(db);
+    createWorkspace(db, { id: "ws1", name: "WS" });
+  });
+
+  it("relocates a project's notes to match its current (renamed) name", () => {
+    createProject(db, { id: "proj1", workspaceId: "ws1", name: "Test Project" });
+    // Write a note into the ORIGINAL project folder on disk.
+    writeNoteFile(tmpDir, {
+      id: "n1",
+      projectId: "proj1",
+      workspaceId: "ws1",
+      title: "Furniture Shopping - Ikea",
+      content: "# List\n",
+      tagIds: [],
+      linkedNoteIds: [],
+      linkedCardIds: [],
+      isPinned: false,
+      createdAt: "2025-01-01T00:00:00.000Z",
+      updatedAt: "2025-01-01T00:00:00.000Z",
+      projectName: "Test Project",
+    });
+    const oldDir = path.join(notesDir(tmpDir), toSlug("Test Project"));
+    expect(fs.existsSync(path.join(oldDir, "Furniture Shopping - Ikea.md"))).toBe(true);
+
+    // Rename the project in the DB only (simulating the pre-fix behaviour).
+    updateProject(db, "proj1", { name: "Misc" });
+
+    const moved = reconcileProjectFolders(db, tmpDir);
+    expect(moved).toBe(1);
+
+    const newDir = path.join(notesDir(tmpDir), toSlug("Misc"));
+    expect(fs.existsSync(oldDir)).toBe(false);
+    expect(fs.existsSync(path.join(newDir, "Furniture Shopping - Ikea.md"))).toBe(true);
+  });
+
+  it("is a no-op when every project folder already matches", () => {
+    createProject(db, { id: "proj1", workspaceId: "ws1", name: "Aligned" });
+    writeNoteFile(tmpDir, {
+      id: "n1",
+      projectId: "proj1",
+      workspaceId: "ws1",
+      title: "Note",
+      content: "x",
+      tagIds: [],
+      linkedNoteIds: [],
+      linkedCardIds: [],
+      isPinned: false,
+      createdAt: "2025-01-01T00:00:00.000Z",
+      updatedAt: "2025-01-01T00:00:00.000Z",
+      projectName: "Aligned",
+    });
+    expect(reconcileProjectFolders(db, tmpDir)).toBe(0);
+  });
+
+  it("ignores directories that hold no Cairn notes", () => {
+    createProject(db, { id: "proj1", workspaceId: "ws1", name: "Real" });
+    const strayDir = path.join(notesDir(tmpDir), "not-a-project");
+    fs.mkdirSync(strayDir, { recursive: true });
+    fs.writeFileSync(path.join(strayDir, "readme.txt"), "hello", "utf-8");
+    expect(reconcileProjectFolders(db, tmpDir)).toBe(0);
+    // Untouched.
+    expect(fs.existsSync(path.join(strayDir, "readme.txt"))).toBe(true);
   });
 });
