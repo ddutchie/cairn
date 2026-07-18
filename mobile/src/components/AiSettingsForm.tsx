@@ -140,26 +140,24 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
   // provider/baseUrl/model values are already seeded above.
   useEffect(() => {
     let cancelled = false;
-    getOpenAIApiKey().then((k) => {
-      if (cancelled) return;
-      setHadKey(k != null);
-      setApiKey(k ?? "");
-      setLoadedKey(k ?? "");
-      setLoading(false);
-    });
-    // Web-search keys (secure store) load in parallel; failures leave them blank.
-    getTavilyApiKey().then((k) => {
-      if (cancelled) return;
-      setHadTavilyKey(k != null);
-      setTavilyKey(k ?? "");
-      setLoadedTavilyKey(k ?? "");
-    });
-    getBraveApiKey().then((k) => {
-      if (cancelled) return;
-      setHadBraveKey(k != null);
-      setBraveKey(k ?? "");
-      setLoadedBraveKey(k ?? "");
-    });
+    // Load all three secure-store keys together and only clear the loading state
+    // once every one has resolved, so the form never renders with some key
+    // fields still blank/half-populated.
+    Promise.all([getOpenAIApiKey(), getTavilyApiKey(), getBraveApiKey()]).then(
+      ([openai, tavily, brave]) => {
+        if (cancelled) return;
+        setHadKey(openai != null);
+        setApiKey(openai ?? "");
+        setLoadedKey(openai ?? "");
+        setHadTavilyKey(tavily != null);
+        setTavilyKey(tavily ?? "");
+        setLoadedTavilyKey(tavily ?? "");
+        setHadBraveKey(brave != null);
+        setBraveKey(brave ?? "");
+        setLoadedBraveKey(brave ?? "");
+        setLoading(false);
+      },
+    );
     return () => {
       cancelled = true;
     };

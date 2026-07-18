@@ -533,26 +533,20 @@ export class SyncEngine {
 
     const merged = this.mergeForPut(entity, local, remote, hlc);
 
-    // If array-union produced a value the remote payload did NOT contain, the
-    // merged row is a new logical state. Re-stamp it with a fresh local HLC and
-    // log it so the union propagates back to peers (otherwise the two devices
-    // diverge: each keeps only its own additions).
+    // If the merged (union) row contains array elements the WINNING remote
+    // payload lacked, re-stamp with a fresh local HLC and publish it, so the
+    // complete union propagates to peers. This must fire even when merged equals
+    // our local row: the remote won LWW (higher HLC) but may carry an OLDER array
+    // subset (e.g. a later scalar edit that shipped a stale tag_ids), so if we
+    // don't republish, the peer never learns the elements only we hold and the
+    // two devices diverge.
     //
-    // BUT only when the union ALSO changed the LOCAL row — i.e. the remote
-    // genuinely contributed at least one element we didn't already have. If our
-    // local row already held the full union (merged == local for every array
-    // column), the remote is simply behind: re-stamping here would mint a new,
-    // higher HLC op that the peer applies (no real change) and, because the HLC
-    // keeps advancing on every exchange, the staleness guard (compareHlc <= 0)
-    // never trips — so the same rows ping-pong on EVERY sync forever (the
-    // "pending N regenerates after each sync, never settles" bug). Requiring a
-    // real local change guarantees convergence: once both sides hold the union,
-    // neither re-stamps and the exchange stops.
-    if (
-      local &&
-      this.unionChangedBeyondRemote(entity, remote, merged) &&
-      this.unionChangedBeyondLocal(entity, local, merged)
-    ) {
+    // This does NOT loop: once a peer applies our published union, its own
+    // subsequently-published op for this row CONTAINS the union, so
+    // unionChangedBeyondRemote goes false on the next exchange and neither side
+    // re-stamps. compactOplog keeps the highest-HLC (full-union) op, so a peer
+    // reading a stale earlier subset still converges on the next round.
+    if (local && this.unionChangedBeyondRemote(entity, remote, merged)) {
       const stamp = this.hlc.send();
       this.persistHlc();
       merged.hlc = stamp;
@@ -576,28 +570,6 @@ export class SyncEngine {
       const remoteSet = new Set(parseArray(remote[arrCol]));
       const mergedArr = parseArray(merged[arrCol]);
       if (mergedArr.some((v) => !remoteSet.has(v))) return true;
-    }
-    return false;
-  }
-
-  /**
-   * True if the union added at least one element the LOCAL row didn't already
-   * have — i.e. the merge genuinely changed our row. Paired with
-   * unionChangedBeyondRemote to gate the re-stamp/republish: we only propagate
-   * when BOTH sides are missing something, which is exactly the "concurrent
-   * additions" case. When our local row already held everything, the remote is
-   * just catching up and no re-stamp is needed (prevents the never-converging
-   * re-stamp loop — see reconcileOne).
-   */
-  private unionChangedBeyondLocal(
-    entity: SyncableTable,
-    local: Record<string, unknown>,
-    merged: Record<string, unknown>,
-  ): boolean {
-    for (const arrCol of ARRAY_MERGE_COLUMNS[entity] ?? []) {
-      const localSet = new Set(parseArray(local[arrCol]));
-      const mergedArr = parseArray(merged[arrCol]);
-      if (mergedArr.some((v) => !localSet.has(v))) return true;
     }
     return false;
   }

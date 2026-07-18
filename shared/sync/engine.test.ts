@@ -393,6 +393,46 @@ describe("sync engine — Phase 0 convergence spike", () => {
     expect(liveState(A.db)).toEqual(liveState(B.db));
   });
 
+  it("propagates the full union when the winning remote carries an older array subset", () => {
+    // Regression: a remote edit can WIN by HLC (e.g. a later title change) while
+    // its payload carries a STALE tag_ids that lacks an element only the local
+    // side has. The merge keeps the union locally, but if we don't republish it
+    // (because the union didn't change OUR row) the peer never learns our extra
+    // element and the two devices diverge. The union must always propagate.
+    const clkA = clockFrom(6_800_000);
+    const clkB = clockFrom(6_800_000);
+    const A = makeDevice("A", clkA.now);
+    const B = makeDevice("B", clkB.now);
+    seedBase(A.engine);
+    A.engine.put("notes", { id: "n1", project_id: "p1", workspace_id: "ws1", title: "T", content: "x", tag_ids: JSON.stringify(["base"]), created_at: "t", updated_at: "t", content_text: "" });
+    syncFolder(dir, A.engine, B.engine); // both: ["base"]
+
+    // A adds a tag locally (now ["base","from-a"]).
+    clkA.advance(1);
+    A.engine.put("notes", { id: "n1", tag_ids: JSON.stringify(["base", "from-a"]) });
+
+    // B makes a LATER (higher-HLC) SCALAR edit whose payload still carries the
+    // OLD tag set ["base"] — the classic "winning remote with a stale subset".
+    clkB.advance(10);
+    B.engine.put("notes", { id: "n1", title: "T renamed", tag_ids: JSON.stringify(["base"]) });
+
+    syncFolder(dir, A.engine, B.engine);
+
+    // Converged: B's title wins (higher HLC) AND A's tag survives the union on
+    // BOTH devices — nothing was dropped.
+    for (const dev of [A, B]) {
+      const row = dev.db.prepare("SELECT title, tag_ids FROM notes WHERE id='n1'").get() as { title: string; tag_ids: string };
+      expect(row.title).toBe("T renamed");
+      expect(new Set(JSON.parse(row.tag_ids))).toEqual(new Set(["base", "from-a"]));
+    }
+    expect(liveState(A.db)).toEqual(liveState(B.db));
+
+    // …and it still settles: a further sync applies nothing.
+    const again = syncFolder(dir, A.engine, B.engine);
+    expect(again.aResult.applied).toHaveLength(0);
+    expect(again.bResult.applied).toHaveLength(0);
+  });
+
   it("is idempotent and safe under repeated / partial sync", () => {
     const clkA = clockFrom(7_000_000);
     const clkB = clockFrom(7_000_000);

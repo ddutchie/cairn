@@ -472,18 +472,28 @@ app.whenReady().then(async () => {
   // re-emit .md files for inbound note changes.
   desktopSync.setNoteFileProjector(projectNoteToDisk);
 
-  // One-time cleanup of NESTED conflict-copy junk (`…_conflict_…_conflict_…`)
-  // left by the old "conflict copy of a conflict copy" bug — an exploding pile
-  // that churned as perpetual pending deletes ("N pending never settles"). It
-  // MUST run through the sync engine (tombstone + fresh HLC) so the delete wins
-  // over the peer's re-broadcast and BOTH devices converge; a raw physical
-  // delete would be re-created from the peer's oplog on the next sync. Only runs
-  // when a sync folder is connected (otherwise there's no peer to converge with,
-  // and boot already handles local rows). Best-effort; also drops their .md.
-  try {
-    if (getSyncFolder(ctx.db)) {
-      const nested = findNestedConflictCopies(ctx.db);
-      if (nested.length > 0) {
+  // Clean up NESTED conflict-copy junk (`…_conflict_…_conflict_…`) left by the
+  // old "conflict copy of a conflict copy" bug — an exploding pile that churned
+  // as perpetual pending deletes ("N pending never settles"). Tombstoning MUST
+  // go through the sync engine (fresh HLC) so the delete wins over the peer's
+  // re-broadcast and BOTH devices converge; a raw physical delete would be
+  // re-created from the peer's oplog. Best-effort; also drops their .md.
+  //
+  // Runs AFTER a sync has imported peer ops (not just at startup), because the
+  // junk often lives only in the PEER's oplog and doesn't exist locally until
+  // it's pulled in — a startup-only pass would miss it this session. Loops (with
+  // a safety cap) so a batch that surfaces mid-session still converges. Returns
+  // how many it tombstoned.
+  function cleanupNestedConflictCopies(): number {
+    let total = 0;
+    try {
+      if (!getSyncFolder(ctx.db)) return 0; // no peer to converge with
+      // Each pass tombstones the current candidates (which then drop out of the
+      // deleted_at-filtered finder); a handful of passes covers anything that
+      // becomes visible as prior tombstones settle. Cap guards against a bug.
+      for (let pass = 0; pass < 5; pass++) {
+        const nested = findNestedConflictCopies(ctx.db);
+        if (nested.length === 0) break;
         const n = desktopSync.tombstoneNotesViaSync(ctx.db, nested.map((r: { id: string }) => r.id));
         for (const r of nested) {
           if (r.type === "dashboard") continue;
@@ -491,11 +501,15 @@ app.whenReady().then(async () => {
             deleteNoteFile(ctx.workspacePath, getProjectName(ctx.db, r.projectId), r.id);
           } catch { /* file may already be gone */ }
         }
-        console.log(`[sync] Tombstoned ${n} nested conflict-copy note(s) (junk cleanup).`);
+        total += n;
       }
+      if (total > 0) {
+        console.log(`[sync] Tombstoned ${total} nested conflict-copy note(s) (junk cleanup).`);
+      }
+    } catch (err) {
+      console.error("[sync] Nested conflict-copy cleanup failed:", err);
     }
-  } catch (err) {
-    console.error("[sync] Nested conflict-copy cleanup failed:", err);
+    return total;
   }
 
   async function runFullSync(reason: string) {
@@ -509,6 +523,11 @@ app.whenReady().then(async () => {
         return;
       }
       const r = await syncDesktop(ctx.db);
+      // After peer ops are imported, sweep any nested conflict-copy junk that
+      // arrived from the peer (it only exists locally once pulled in). If it
+      // tombstoned anything, publish those deletes so the peer converges too.
+      const cleaned = r.peerOpsApplied > 0 ? cleanupNestedConflictCopies() : 0;
+      if (cleaned > 0) await syncDesktop(ctx.db);
       // Only log when something real happened (seeded / sent / actually applied).
       // A converged sync that merely READS the peer snapshot (peerOpsRead > 0 but
       // peerOpsApplied === 0) is silent — that steady read is normal, not a loop.

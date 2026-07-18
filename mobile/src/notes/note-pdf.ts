@@ -5,11 +5,23 @@
  * wikilinks are converted to the same HTML the desktop PDF template styles, so
  * mobile PDFs match desktop.
  *
- * Pipeline: calloutsToHtml -> wikilinksToChips (outside callouts) -> markdown-it
- * (html:true) -> wrap in buildPdfHtml.
+ * Security + correctness of the pipeline:
+ *   - markdown-it runs with `html: false`, so ANY raw HTML a user typed into
+ *     their note is neutralised (escaped) rather than passed to Expo Print.
+ *   - Our OWN trusted fragments (callout wrappers, wikilink chips) are injected
+ *     via opaque sentinel placeholders that survive markdown-it untouched, then
+ *     swapped back to real HTML after rendering — so only the fragments WE
+ *     generate become live HTML, never arbitrary note content.
+ *   - Cairn transforms run only OUTSIDE fenced/inline code (transformOutsideCode
+ *     + code-aware calloutsToHtml), so `[[x]]` / `> [!note]` inside code render
+ *     literally.
+ *
+ * Pipeline: calloutsToHtml (code-aware) -> chip wikilinks outside code ->
+ * fragments to sentinels -> markdown-it (html:false) -> sentinels back to HTML
+ * -> wrap in buildPdfHtml.
  */
 import { buildPdfHtml, type PdfTheme, pdfSafeFilename } from "@cairn/shared/notes/pdf-template";
-import { calloutsToHtml, wikilinksToChips } from "@cairn/shared/notes/note-html";
+import { calloutsToHtml, wikilinksToChips, transformOutsideCode } from "@cairn/shared/notes/note-html";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import { File, Paths } from "expo-file-system";
@@ -25,25 +37,44 @@ const MarkdownIt = require("markdown-it") as new (opts?: Record<string, unknown>
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const markdownItMark = require("markdown-it-mark");
 
-const md = new MarkdownIt({ html: true, linkify: true, breaks: false });
+// html:false — user-authored raw HTML is escaped, not emitted. Our trusted
+// fragments reach the output only via the sentinel swap below.
+const md = new MarkdownIt({ html: false, linkify: true, breaks: false });
 md.use(markdownItMark);
+
+// Opaque, collision-proof sentinel wrapping a trusted HTML fragment. Uses
+// private-use unicode + a random token so it cannot appear in note content or
+// be produced by markdown-it escaping. Captured group is the fragment index.
+const SENTINEL_TAG = `\uE000CAIRN${Math.random().toString(36).slice(2, 10)}`;
+const SENTINEL_RE = new RegExp(`${SENTINEL_TAG}(\\d+)\uE001`, "g");
 
 /** Render note markdown to a full PDF-ready HTML document. */
 export function noteMarkdownToPdfHtml(title: string, markdown: string, theme: PdfTheme = "light"): string {
-  // 1. Callout blocks -> [data-callout] HTML (also chips wikilinks inside them).
-  const withCallouts = calloutsToHtml(markdown ?? "");
-  // 2. Wikilinks in the remaining (non-callout) markdown -> chips. The callout
-  //    HTML already chipped its own; the wrapper divs contain no [[…]] so this
-  //    pass only touches ordinary text.
-  const withWikilinks = wikilinksToChips(withCallouts);
-  // 3. Render markdown (html:true lets our injected HTML pass through).
-  const body = md.render(withWikilinks);
-  // 4. Wrap in the shared template.
+  const fragments: string[] = [];
+  const stash = (html: string): string => `${SENTINEL_TAG}${fragments.push(html) - 1}\uE001`;
+
+  // 1. Callout blocks -> trusted [data-callout] HTML (code-aware; also chips
+  //    wikilinks inside their bodies). Stash each block behind a sentinel.
+  const withCallouts = calloutsToHtml(markdown ?? "").replace(
+    /<div data-callout[\s\S]*?<\/div><\/div>/g,
+    (block) => stash(block),
+  );
+  // 2. Wikilinks in the remaining (non-callout, non-code) markdown -> chips,
+  //    each stashed behind a sentinel so markdown-it can't touch the HTML.
+  const withWikilinks = transformOutsideCode(withCallouts, (text) =>
+    wikilinksToChips(text).replace(/<span class="wikilink-chip">[\s\S]*?<\/span>/g, (chip) => stash(chip)),
+  );
+  // 3. Render markdown with raw HTML disabled — user HTML is escaped here.
+  const rendered = md.render(withWikilinks);
+  // 4. Swap our trusted fragments back in.
+  const body = rendered.replace(SENTINEL_RE, (_all, idx: string) => fragments[Number(idx)] ?? "");
+  // 5. Wrap in the shared template.
   return buildPdfHtml(title, body, theme);
 }
 
 export type PdfExportResult =
-  | { ok: true; shared: boolean }
+  | { ok: true; shared: true }
+  | { ok: true; shared: false; fileUri: string }
   | { ok: false; error: string };
 
 /**
@@ -82,8 +113,9 @@ export async function exportNoteToPdf(
       });
       return { ok: true, shared: true };
     }
-    // Sharing unavailable (rare) — the PDF still exists at `shareUri`.
-    return { ok: true, shared: false };
+    // Sharing unavailable (rare) — return the file's uri so the caller can still
+    // surface / open it, rather than reporting a bare success with no handle.
+    return { ok: true, shared: false, fileUri: shareUri };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
