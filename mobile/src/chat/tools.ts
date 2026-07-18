@@ -10,6 +10,7 @@
 import * as q from "@/db/queries";
 import { semanticSearch, semanticSearchTasks, catchUpIndex, finalizeRanking, type SemanticHit } from "@/notes/embeddings";
 import { isAppleEmbeddingsSupported } from "@modules/apple-embeddings";
+import { webSearch, webExtract } from "./web-tools";
 
 export interface ToolDef {
   name: string;
@@ -348,6 +349,22 @@ export const TOOLS: ToolDef[] = [
       ["card_id", "tag_names"],
     ),
     run: (a) => q.tagTask(str(a.card_id), strArray(a.tag_names), tagMode(a.mode)),
+  },
+  {
+    name: "web_search",
+    description:
+      "Search the live web for CURRENT or external information the user's notes/tasks can't answer — news, docs, facts, product info, anything post-training. Returns a compact list of { title, url, snippet }. Use web_extract on a returned url to read a page in full. Requires a web-search API key configured in AI settings.",
+    params: '{ "query": string, "count"?: number }',
+    jsonSchema: obj({ query: S, count: { type: "number" } }, ["query"]),
+    run: (a) => webSearch(str(a.query), typeof a.count === "number" ? a.count : undefined),
+  },
+  {
+    name: "web_extract",
+    description:
+      "Read the full cleaned content (markdown) of a single web page by URL — use after web_search to dig into a result, or when the user gives a link to summarise. Content is truncated to stay within context. Requires a Tavily API key (page extraction isn't available with Brave).",
+    params: '{ "url": string }',
+    jsonSchema: obj({ url: S }, ["url"]),
+    run: (a) => webExtract(str(a.url)),
   },
 ];
 
