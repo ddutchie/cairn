@@ -69,7 +69,7 @@ export function executeTool(db: Database.Database, workspacePath: string, toolNa
       return get_note(db, snap, args);
 
     case "upsert_project":
-      return upsert_project(db, snap, args);
+      return upsert_project(db, snap, workspacePath, args);
 
     case "get_task":
       return get_task(db, snap, args);

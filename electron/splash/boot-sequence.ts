@@ -23,8 +23,10 @@ import { reindexNotes } from "../embeddings/service";
 import { getEmbeddingsSettingsCached } from "../lib/config-cache";
 import { resolveEmbeddingModelId, getDefaultModelId } from "../embeddings/client";
 import * as manifest from "../embeddings/manifest";
-import { syncNotesFromDisk } from "../notes-files";
+import { syncNotesFromDisk, deleteNoteFile, reconcileProjectFolders } from "../notes-files";
 import { computeSemanticRelationships } from "../db/graph-queries";
+import { findTombstonedNotes } from "../db/queries";
+import { getProjectName } from "../ipc/result-helpers";
 import { saveCachedConfig } from "../lib/config-cache";
 import * as runtime from "../runtime/client";
 
@@ -312,6 +314,46 @@ export async function runBootSequence(
       label: "Syncing notes…",
       pct: 0,
     });
+
+    // Relocate any project note folders left under an old name by a rename that
+    // happened before folder-relocation shipped (e.g. "Test Project" → "Misc"
+    // but the .md files still sit in <ws>/Test Project/). Must run BEFORE the
+    // disk scan so notes are imported from their correct, current location.
+    try {
+      const relocated = reconcileProjectFolders(ctx.db, ctx.workspacePath);
+      if (relocated > 0) {
+        console.log(`[boot] Relocated ${relocated} stale project folder(s).`);
+      }
+    } catch (err) {
+      console.error("[boot] Project-folder reconcile failed:", err);
+    }
+
+    // Remove the orphaned `.md` files of notes that are TOMBSTONED (deleted on a
+    // peer). We KEEP the tombstone rows themselves (getNotes filters
+    // deleted_at IS NULL, so they don't show) — physically deleting them made
+    // every subsequent peer delete op re-apply and re-stage (the "sent=31 never
+    // settles" loop). But their .md files must go so the disk scan below can't
+    // re-adopt them as new notes. Best-effort per note.
+    try {
+      const tombstoned = findTombstonedNotes(ctx.db);
+      for (const n of tombstoned) {
+        if (n.type === "dashboard") continue; // no .md file
+        try {
+          deleteNoteFile(ctx.workspacePath, getProjectName(ctx.db, n.projectId), n.id);
+        } catch { /* file may already be gone */ }
+      }
+      if (tombstoned.length > 0) {
+        console.log(`[boot] Cleaned up ${tombstoned.length} tombstoned note file(s).`);
+      }
+    } catch (err) {
+      console.error("[boot] Tombstone file cleanup failed:", err);
+    }
+
+    // NOTE: nested conflict-copy junk (`…_conflict_…_conflict_…`) is cleaned up
+    // separately in main.ts AFTER the sync engine is wired, because those rows
+    // must be tombstoned THROUGH the engine (so the delete propagates to the
+    // peer and both devices converge) — a physical delete here would just be
+    // re-created from the peer's oplog on the next sync.
 
     // syncNotesFromDisk is synchronous but potentially slow for large
     // workspaces. We run it in a microtask to let the splash paint.

@@ -14,7 +14,7 @@ import path from "path";
 import { registerIpcHandle, registerIpcOn } from "./registry";
 import { handle, getProjectName, type DbContext } from "./result-helpers";
 import * as q from "../db/queries";
-import { writeNoteFile, deleteNoteFile, deleteProjectNotesDir, stripMarkdown, findNoteFilePath } from "../notes-files";
+import { writeNoteFile, deleteNoteFile, deleteProjectNotesDir, renameProjectNotesDir, stripMarkdown, findNoteFilePath } from "../notes-files";
 import { suppressNextChange } from "../file-watcher";
 import { executeTool as executeMcpTool } from "../mcp/tools";
 import { executeReadTool } from "../lib/read-tools";
@@ -143,7 +143,18 @@ export function registerDbHandlers(ctx: DbContext): void {
       return { project, columns: [] };
     })();
   }));
-  registerIpcHandle("db:project:update", (_e, { id, patch }) => handle(() => q.updateProject(ctx.db, id, patch)));
+  registerIpcHandle("db:project:update", (_e, { id, patch }) => handle(() => {
+    // Capture the old name BEFORE the update so we can relocate the project's
+    // on-disk notes directory when the name (and thus its slug) changes —
+    // otherwise the .md files stay under the old slug and future writes split
+    // the project across two folders on disk.
+    const before = q.getProjectById(ctx.db, id);
+    const project = q.updateProject(ctx.db, id, patch);
+    if (before && project && before.name !== project.name) {
+      renameProjectNotesDir(ctx.workspacePath, before.name, project.name);
+    }
+    return project;
+  }));
   registerIpcHandle("db:project:updateSettings", (_e, { id, settings }: { id: string; settings: Record<string, unknown> }) => handle(() => q.updateProjectSettings(ctx.db, id, settings)));
   registerIpcHandle("db:project:delete", (_e, { id }) => handle(() => {
     const project = q.getProjectById(ctx.db, id);

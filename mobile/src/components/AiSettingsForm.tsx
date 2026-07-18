@@ -8,7 +8,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { Stack } from "expo-router";
-import { Check, ShieldCheck, RefreshCw, Cpu, Apple, Brain } from "lucide-react-native";
+import { Check, ShieldCheck, RefreshCw, Cpu, Apple, Brain, Globe } from "lucide-react-native";
 import { ICON_CHECK } from "@/components/toolbar-icons";
 import { haptics, toolbarPress } from "@/haptics";
 import { useTheme } from "@/theme";
@@ -27,8 +27,16 @@ import {
   setAppleReasoningLevel,
   type ProviderPref,
 } from "@/chat/ai-config";
-import { isRorkAvailable } from "@/chat/providers/rork";
 import {
+  getWebProvider,
+  setWebProvider,
+  getTavilyApiKey,
+  setTavilyApiKey,
+  getBraveApiKey,
+  setBraveApiKey,
+  type WebProvider,
+} from "@/chat/web-config";
+import { isRorkAvailable } from "@/chat/providers/rork";import {
   isAppleProviderAvailable,
   isAppleServerProviderAvailable,
   isAppleDevEnabled,
@@ -117,17 +125,39 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
   const [fetchingModels, setFetchingModels] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
 
+  // Web search / extract config. Provider is synchronous (meta DB); the keys are
+  // async (secure store) so they load in the mount effect below alongside the
+  // OpenAI key. Both keys are held so switching provider doesn't lose the other.
+  const [webProvider, setWebProviderState] = useState<WebProvider>(() => getWebProvider());
+  const [tavilyKey, setTavilyKey] = useState("");
+  const [braveKey, setBraveKey] = useState("");
+  const [loadedTavilyKey, setLoadedTavilyKey] = useState("");
+  const [loadedBraveKey, setLoadedBraveKey] = useState("");
+  const [hadTavilyKey, setHadTavilyKey] = useState(false);
+  const [hadBraveKey, setHadBraveKey] = useState(false);
+
   // Load the API key (async, from secure store) once on mount. The synchronous
   // provider/baseUrl/model values are already seeded above.
   useEffect(() => {
     let cancelled = false;
-    getOpenAIApiKey().then((k) => {
-      if (cancelled) return;
-      setHadKey(k != null);
-      setApiKey(k ?? "");
-      setLoadedKey(k ?? "");
-      setLoading(false);
-    });
+    // Load all three secure-store keys together and only clear the loading state
+    // once every one has resolved, so the form never renders with some key
+    // fields still blank/half-populated.
+    Promise.all([getOpenAIApiKey(), getTavilyApiKey(), getBraveApiKey()]).then(
+      ([openai, tavily, brave]) => {
+        if (cancelled) return;
+        setHadKey(openai != null);
+        setApiKey(openai ?? "");
+        setLoadedKey(openai ?? "");
+        setHadTavilyKey(tavily != null);
+        setTavilyKey(tavily ?? "");
+        setLoadedTavilyKey(tavily ?? "");
+        setHadBraveKey(brave != null);
+        setBraveKey(brave ?? "");
+        setLoadedBraveKey(brave ?? "");
+        setLoading(false);
+      },
+    );
     return () => {
       cancelled = true;
     };
@@ -175,6 +205,10 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
       // Only touch the keychain if the key field actually changed from what we
       // loaded — avoids a redundant write (and allows clearing it).
       if (apiKey !== loadedKey) await setOpenAIApiKey(apiKey);
+      // Web search: persist the chosen provider + any changed keys.
+      setWebProvider(webProvider);
+      if (tavilyKey !== loadedTavilyKey) await setTavilyApiKey(tavilyKey);
+      if (braveKey !== loadedBraveKey) await setBraveApiKey(braveKey);
       haptics.success(); // settings persisted
       onClose();
     } finally {
@@ -415,6 +449,87 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                 </Text>
               </View>
             )}
+
+            <View style={styles.fields}>
+              <View style={styles.reasoningHead}>
+                <Globe size={13} color={t.textSecondary} />
+                <Text style={styles.sectionLabel}>Web search</Text>
+              </View>
+              <Text style={styles.compatHint}>
+                Lets the assistant search the live web and read pages — for news, docs,
+                and facts beyond your notes. Works with any chat provider above.
+              </Text>
+              <View style={styles.segment}>
+                <SegmentButton
+                  label="Tavily"
+                  selected={webProvider === "tavily"}
+                  onPress={() => {
+                    haptics.selection();
+                    setWebProviderState("tavily");
+                  }}
+                  t={t}
+                  styles={styles}
+                />
+                <SegmentButton
+                  label="Brave"
+                  selected={webProvider === "brave"}
+                  onPress={() => {
+                    haptics.selection();
+                    setWebProviderState("brave");
+                  }}
+                  t={t}
+                  styles={styles}
+                />
+              </View>
+              {webProvider === "tavily" ? (
+                <Field
+                  label={hadTavilyKey ? "Tavily API key (stored)" : "Tavily API key"}
+                  value={tavilyKey}
+                  onChangeText={setTavilyKey}
+                  placeholder={hadTavilyKey ? "•••••••• — edit to replace" : "tvly-…"}
+                  autoCapitalize="none"
+                  secureTextEntry
+                  t={t}
+                  styles={styles}
+                />
+              ) : (
+                <>
+                  <Field
+                    label={hadBraveKey ? "Brave API key (stored)" : "Brave API key"}
+                    value={braveKey}
+                    onChangeText={setBraveKey}
+                    placeholder={hadBraveKey ? "•••••••• — edit to replace" : "BSA…"}
+                    autoCapitalize="none"
+                    secureTextEntry
+                    t={t}
+                    styles={styles}
+                  />
+                  {/* Extraction is Tavily-only, so a Tavily key is still useful
+                      alongside Brave to let the assistant read full pages. */}
+                  <Field
+                    label={hadTavilyKey ? "Tavily API key — for reading pages (stored)" : "Tavily API key — for reading pages (optional)"}
+                    value={tavilyKey}
+                    onChangeText={setTavilyKey}
+                    placeholder={hadTavilyKey ? "•••••••• — edit to replace" : "tvly-…"}
+                    autoCapitalize="none"
+                    secureTextEntry
+                    t={t}
+                    styles={styles}
+                  />
+                  <Text style={styles.compatHint}>
+                    Brave covers search. Page reading (web_extract) needs a Tavily key —
+                    add one above to let the assistant open a result in full.
+                  </Text>
+                </>
+              )}
+              <View style={styles.keyNote}>
+                <ShieldCheck size={13} color={t.textTertiary} />
+                <Text style={styles.keyNoteText}>
+                  Stored securely in the device keychain. Never synced or sent anywhere
+                  except your chosen search provider.
+                </Text>
+              </View>
+            </View>
           </ScrollView>
         )}
     </View>

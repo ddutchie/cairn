@@ -25,6 +25,24 @@ export interface FolderNode<T extends NoteWithFolder> {
  * (mirrors the case-insensitive grouping in buildFolderTree). Blank/whitespace
  * entries are dropped. Input order is preserved.
  */
+/**
+ * Canonicalise a folder path: trim, drop empty segments (so leading/trailing/
+ * double slashes and whitespace-only input collapse), and re-join with single
+ * slashes. Returns "" for the project root — including for input that is null,
+ * whitespace, "/", or "///". Use this at every write boundary so a note can
+ * never be filed under a phantom "unnamed" folder (a whitespace/slashy value
+ * that isn't empty enough to be treated as root but renders as a blank folder).
+ */
+export function normalizeFolderPath(folder: string | null | undefined): string {
+  if (typeof folder !== "string") return "";
+  return folder
+    .trim()
+    .split("/")
+    .map((seg) => seg.trim())
+    .filter(Boolean)
+    .join("/");
+}
+
 export function dedupeFoldersCaseInsensitive(paths: Array<string | null | undefined>): string[] {
   const seen = new Map<string, string>();
   for (const p of paths) {
@@ -50,12 +68,13 @@ export function buildFolderTree<T extends NoteWithFolder>(
   const keyOf = (path: string) => path.toLowerCase();
 
   for (const note of notes) {
-    const folder = note.folder ?? "";
-    if (!folder) {
+    // Canonicalise first so a whitespace-only / slash-only folder (e.g. " ",
+    // "/", "//") collapses to root instead of rendering as an unnamed folder.
+    const normalizedFolder = normalizeFolderPath(note.folder);
+    if (!normalizedFolder) {
       rootNotes.push(note);
       continue;
     }
-    const normalizedFolder = folder.split("/").filter(Boolean).join("/");
     const segments = normalizedFolder.split("/");
     let built = "";
     for (const seg of segments) {

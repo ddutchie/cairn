@@ -7,8 +7,9 @@ import { newId } from "../../db/utils";
 import { DEFAULT_COLUMNS } from "../../db/defaults";
 import { Snapshot, insertNotification } from "../db";
 import { toSlug } from "../../shared/text-utils";
+import { renameProjectNotesDir } from "../../shared/notes-io";
 
-export function upsert_project(db: Database.Database, snap: Snapshot, args: Record<string, any>) {
+export function upsert_project(db: Database.Database, snap: Snapshot, workspacePath: string, args: Record<string, any>) {
   if (args.projectId) {
     // ── update path ──────────────────────────────────────────────────────
     const project = snap.projects.find((p) => p.id === args.projectId);
@@ -20,6 +21,11 @@ export function upsert_project(db: Database.Database, snap: Snapshot, args: Reco
     if (args.priority !== undefined) patch.priority = args.priority;
     if (args.icon !== undefined) patch.icon = args.icon;
     const updatedProject = q.updateProject(db, args.projectId as string, patch);
+    // Relocate the on-disk notes directory when the name (slug) changed, so the
+    // .md files follow the rename instead of being orphaned under the old slug.
+    if (updatedProject && project.name !== updatedProject.name) {
+      renameProjectNotesDir(workspacePath, project.name, updatedProject.name);
+    }
     insertNotification(db, "upsert_project", "Project updated", `"${args.name ?? project.name}" was updated`);
     return updatedProject;
   } else {

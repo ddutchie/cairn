@@ -54,6 +54,25 @@ const MIGRATIONS: ((db: SQLite.SQLiteDatabase) => void)[] = [
       CREATE INDEX IF NOT EXISTS idx_task_emb_card ON task_embeddings(card_id);
       CREATE INDEX IF NOT EXISTS idx_task_emb_ws ON task_embeddings(workspace_id);
     `),
+  // v4: stop syncing chat. chat_threads/chat_messages were wrongly part of the
+  // synced set, so the desktop replicated every AI conversation into the oplog
+  // and this device received + re-applied hundreds of chat puts on every sync
+  // (mirrors desktop migration v28). Chat is online-only + device-local; mobile
+  // already keeps its own local `chat_local` table. Drop the chat capture
+  // triggers created from the old SYNCABLE_TABLES list and purge chat rows from
+  // the sync buffers. The chat_threads/chat_messages tables (received from the
+  // desktop) are left as-is; they're just no longer synced.
+  (db) => {
+    for (const t of ["chat_threads", "chat_messages"]) {
+      db.execSync(`
+        DROP TRIGGER IF EXISTS trg_sync_${t}_ins;
+        DROP TRIGGER IF EXISTS trg_sync_${t}_upd;
+        DROP TRIGGER IF EXISTS trg_sync_${t}_del;
+        DELETE FROM sync_pending WHERE entity = '${t}';
+        DELETE FROM sync_oplog WHERE entity = '${t}';
+      `);
+    }
+  },
 ];
 
 /** The schema version this build expects (base schema = 1, plus each migration). */

@@ -63,7 +63,8 @@
             "deploymentTarget": "16.4"
           }
         }
-      ]
+      ],
+      "expo-status-bar"
     ],
     "experiments": {
       "typedRoutes": true

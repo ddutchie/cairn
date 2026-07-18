@@ -16,6 +16,7 @@
 import type { SyncDb } from "./db-adapter";
 import { Hlc, compareHlc, decodeHlc } from "./hlc";
 import { SYNCABLE_TABLES, type SyncableTable } from "./schema";
+import { inspectConflict } from "./conflict";
 
 export type Op = "put" | "delete";
 
@@ -437,6 +438,12 @@ export class SyncEngine {
     const run = this.db.transaction(() => {
       this.setSuppress(true); // reconcile writes must not be re-captured as local ops
       for (const entry of sorted) {
+        // Ignore ops for entities we no longer sync (e.g. chat_threads /
+        // chat_messages, removed in v28). A peer still running an old build — or
+        // an oplog file it published before upgrading — can carry these; without
+        // this guard we'd re-apply them AND re-forward them via recordForwardedOp,
+        // keeping the loop alive. Skipping makes the un-sync self-healing.
+        if (!(SYNCABLE_TABLES as readonly string[]).includes(entry.entity)) continue;
         this.hlc.receive(entry.hlc);
         const res = this.reconcileOne(entry);
         if (res.applied) applied.push({ entity: entry.entity, entity_id: entry.entity_id, op: entry.op });
@@ -500,12 +507,20 @@ export class SyncEngine {
       // sides changed the body since the common ancestor and they now disagree.
       // A one-sided remote edit (local == ancestor) is NOT a conflict — this is
       // what prevents spurious conflict copies on notes the user never touched.
+      //
+      // NEVER make a conflict copy OF a conflict copy. If this row's id is
+      // already a `_conflict_…` clone, a further divergence must resolve by plain
+      // LWW, not by minting `_conflict_…_conflict_…` nests. Two devices each
+      // cloning the other's copy produced an exploding pile of junk notes that
+      // then churned as perpetual delete tombstones (the "31 pending" storm).
+      const isConflictClone = inspectConflict(String(entity_id)).isConflict;
       const ancestor = this.getBaseBody(entity, entity_id); // undefined = unknown
       const localBody = local[bodyCol];
       const remoteBody = remote[bodyCol];
       const localChanged = ancestor === undefined ? false : String(localBody ?? "") !== String(ancestor ?? "");
       const remoteChanged = ancestor === undefined ? false : String(remoteBody ?? "") !== String(ancestor ?? "");
       if (
+        !isConflictClone &&
         localChanged &&
         remoteChanged &&
         localBody !== remoteBody &&
@@ -518,10 +533,19 @@ export class SyncEngine {
 
     const merged = this.mergeForPut(entity, local, remote, hlc);
 
-    // If array-union produced a value the remote payload did NOT contain, the
-    // merged row is a new logical state. Re-stamp it with a fresh local HLC and
-    // log it so the union propagates back to peers (otherwise the two devices
-    // diverge: each keeps only its own additions).
+    // If the merged (union) row contains array elements the WINNING remote
+    // payload lacked, re-stamp with a fresh local HLC and publish it, so the
+    // complete union propagates to peers. This must fire even when merged equals
+    // our local row: the remote won LWW (higher HLC) but may carry an OLDER array
+    // subset (e.g. a later scalar edit that shipped a stale tag_ids), so if we
+    // don't republish, the peer never learns the elements only we hold and the
+    // two devices diverge.
+    //
+    // This does NOT loop: once a peer applies our published union, its own
+    // subsequently-published op for this row CONTAINS the union, so
+    // unionChangedBeyondRemote goes false on the next exchange and neither side
+    // re-stamps. compactOplog keeps the highest-HLC (full-union) op, so a peer
+    // reading a stale earlier subset still converges on the next round.
     if (local && this.unionChangedBeyondRemote(entity, remote, merged)) {
       const stamp = this.hlc.send();
       this.persistHlc();

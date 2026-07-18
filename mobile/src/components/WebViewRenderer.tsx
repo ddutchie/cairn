@@ -60,6 +60,11 @@ export function WebViewRenderer({
         onShouldStartLoadWithRequest={(req) =>
           req.url === "about:blank" || req.url.startsWith("data:") || req.navigationType === "other"
         }
+        // iOS terminates the WKWebView content process when the app is
+        // backgrounded under memory pressure, leaving math/diagram blocks blank.
+        // Reload to re-render (Android: onRenderProcessGone).
+        onContentProcessDidTerminate={() => { setLoading(true); ref.current?.reload(); }}
+        onRenderProcessGone={() => { setLoading(true); ref.current?.reload(); }}
         javaScriptEnabled
         setSupportMultipleWindows={false}
       />

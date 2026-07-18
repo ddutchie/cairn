@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildFolderTree, dedupeFoldersCaseInsensitive, type FolderNode } from "./folder-tree";
+import { buildFolderTree, dedupeFoldersCaseInsensitive, normalizeFolderPath, type FolderNode } from "./folder-tree";
 
 interface N {
   id: string;
@@ -80,6 +80,32 @@ describe("buildFolderTree", () => {
     const child = findByPath(folders, "Mobile/AI");
     expect(child).toBeDefined();
     expect(child!.notes.map((n) => n.id)).toEqual(["a"]);
+  });
+
+  it("treats a whitespace/slash-only folder as root, not an unnamed folder", () => {
+    // Regression: an AI tool call could pass folder=" " / "/" — buildFolderTree
+    // used to render these as a blank ("unnamed") folder node instead of root.
+    const { rootNotes, folders } = buildFolderTree<N>([
+      { id: "a", folder: " " },
+      { id: "b", folder: "/" },
+      { id: "c", folder: "  //  " },
+    ]);
+    expect(rootNotes.map((n) => n.id).sort()).toEqual(["a", "b", "c"]);
+    expect(folders).toHaveLength(0);
+  });
+});
+
+describe("normalizeFolderPath", () => {
+  it("collapses null/undefined/whitespace/slash-only input to root", () => {
+    for (const v of [null, undefined, "", "   ", "/", "//", "  //  "]) {
+      expect(normalizeFolderPath(v)).toBe("");
+    }
+  });
+
+  it("trims and drops empty segments, keeping single slashes", () => {
+    expect(normalizeFolderPath("  Mobile  ")).toBe("Mobile");
+    expect(normalizeFolderPath("/Mobile//AI/")).toBe("Mobile/AI");
+    expect(normalizeFolderPath("Mobile / AI")).toBe("Mobile/AI");
   });
 });
 

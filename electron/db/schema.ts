@@ -715,6 +715,31 @@ const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_task_emb_task ON task_embeddings(task);
     `);
   },
+
+  // v28: stop syncing chat. chat_threads/chat_messages were wrongly included in
+  // the synced-table set (v25/v26), so every AI conversation replicated across
+  // devices and dominated the oplog — hundreds of chat `put` ops re-applied on
+  // every sync (the "applied=1802 / pending never settles" reports). Chat is an
+  // online-only, device-local surface (docs/plans/mobile-app-viability.md §5.1,
+  // §7.3); mobile already keeps a separate local-only `chat_local` table.
+  //
+  // This migration:
+  //   1. Drops the chat capture triggers created by v26 so new chat writes no
+  //      longer stage into sync_pending.
+  //   2. Purges chat rows already sitting in sync_pending and sync_oplog so they
+  //      stop being drained/published/re-applied. (The chat tables themselves are
+  //      untouched — your chat history stays intact locally.)
+  (db) => {
+    for (const t of ["chat_threads", "chat_messages"]) {
+      db.exec(`
+        DROP TRIGGER IF EXISTS trg_sync_${t}_ins;
+        DROP TRIGGER IF EXISTS trg_sync_${t}_upd;
+        DROP TRIGGER IF EXISTS trg_sync_${t}_del;
+      `);
+      db.prepare("DELETE FROM sync_pending WHERE entity = ?").run(t);
+      db.prepare("DELETE FROM sync_oplog WHERE entity = ?").run(t);
+    }
+  },
 ];
 
 export function applySchema(db: Database.Database): void {

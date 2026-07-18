@@ -25,7 +25,8 @@ import { inspectConflict, cleanConflictTitle } from "../../shared/sync/conflict"
 export interface DesktopSyncResult {
   drained: number;
   seeded: number; // rows seeded by first-run backfill
-  peerOpsApplied: number;
+  peerOpsApplied: number; // ops that actually changed our DB (0 when converged)
+  peerOpsRead: number; // ops read from the peer snapshot (steady-state size)
   conflictCopies: number;
   connected: boolean;
 }
@@ -118,6 +119,38 @@ export function pendingCount(db: Database.Database): number {
   return row?.c ?? 0;
 }
 
+/**
+ * Diagnostic breakdown of what is currently staged in sync_pending, grouped by
+ * (entity, op). Answers "why is my pending count non-zero / regenerating after
+ * every sync?" — a persistent batch of the same rows points at a writer that
+ * re-stages without the capture-trigger suppression (e.g. the file-watcher
+ * re-importing .md files on a cloud-backed folder). Also returns the distinct
+ * entity_ids per entity (capped) so a specific note/card can be traced.
+ */
+export function pendingBreakdown(db: Database.Database): {
+  total: number;
+  groups: { entity: string; op: string; count: number }[];
+  sampleIds: Record<string, string[]>;
+} {
+  const groups = db
+    .prepare(
+      `SELECT entity, op, COUNT(*) AS count
+         FROM sync_pending
+        GROUP BY entity, op
+        ORDER BY count DESC`,
+    )
+    .all() as { entity: string; op: string; count: number }[];
+  const total = groups.reduce((n, g) => n + g.count, 0);
+  const sampleIds: Record<string, string[]> = {};
+  for (const g of groups) {
+    const ids = db
+      .prepare("SELECT DISTINCT entity_id FROM sync_pending WHERE entity = ? LIMIT 20")
+      .all(g.entity) as { entity_id: string }[];
+    sampleIds[g.entity] = ids.map((r) => r.entity_id);
+  }
+  return { total, groups, sampleIds };
+}
+
 let _engine: SyncEngine | null = null;
 
 /** Stable per-install device id (persisted in sync_state by the engine ctor). */
@@ -145,6 +178,29 @@ export function getDesktopEngine(db: Database.Database): SyncEngine {
 /** Reset the cached engine (call when the workspace DB is swapped). */
 export function resetDesktopEngine(): void {
   _engine = null;
+}
+
+/**
+ * Tombstone the given note ids THROUGH the sync engine (delete-safe) so the
+ * deletion propagates to peers with a fresh, winning HLC and both devices
+ * converge. Used by the boot cleanup for nested conflict-copy junk: a raw
+ * physical DELETE would be re-created on the next sync from the peer's oplog
+ * (which still holds the row) — the engine tombstone + high HLC makes the delete
+ * stick everywhere. Returns the count tombstoned.
+ */
+export function tombstoneNotesViaSync(db: Database.Database, ids: string[]): number {
+  if (ids.length === 0) return 0;
+  const engine = getDesktopEngine(db);
+  let n = 0;
+  for (const id of ids) {
+    try {
+      engine.remove("notes", id);
+      n++;
+    } catch {
+      /* best-effort per id */
+    }
+  }
+  return n;
 }
 
 /**
@@ -372,7 +428,7 @@ export async function syncDesktop(db: Database.Database, projectNote?: NoteFileP
   const folder = getSyncFolder(db);
   if (!folder) {
     updateStatus(db, { connected: false, state: "disabled" });
-    return { drained: 0, seeded: 0, peerOpsApplied: 0, conflictCopies: 0, connected: false };
+    return { drained: 0, seeded: 0, peerOpsApplied: 0, peerOpsRead: 0, conflictCopies: 0, connected: false };
   }
   const engine = getDesktopEngine(db);
   const project = projectNote ?? _projector;
@@ -419,7 +475,13 @@ export async function syncDesktop(db: Database.Database, projectNote?: NoteFileP
     return {
       drained,
       seeded,
-      peerOpsApplied: peerEntries.length,
+      // Ops actually applied to our DB (new/changed rows). On a converged
+      // workspace this is 0 even though we READ the peer's full snapshot.
+      peerOpsApplied: applied.length,
+      // How many ops we read from the peer file this round (the snapshot size).
+      // Distinct from peerOpsApplied — a steady non-zero read with 0 applied is
+      // NORMAL convergence, not a loop.
+      peerOpsRead: peerEntries.length,
       conflictCopies: conflictCopies.length,
       connected: true,
     };
