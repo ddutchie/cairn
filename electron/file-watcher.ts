@@ -17,9 +17,11 @@
 
 import chokidar, { type FSWatcher } from "chokidar";
 import fs from "fs";
+import path from "path";
+import matter from "gray-matter";
 import type Database from "better-sqlite3";
 import { parseNoteFile, upsertNoteFromFile, adoptExternalNoteFile } from "./notes-files";
-import { findNoteFilePath } from "./shared/notes-io";
+import { findNoteFilePath, noteDir } from "./shared/notes-io";
 import * as q from "./db/queries";
 
 let watcher: FSWatcher | null = null;
@@ -206,20 +208,53 @@ function handleFileChange(filePath: string, workspacePath: string, db: Database.
  * fired without the write lock covering it (file re-materialised under the new
  * path). Best-effort: on any lookup failure we return false so a genuine delete
  * is never suppressed.
+ *
+ * Fast path: after a relocation the DB row already carries the note's new
+ * `folder`/`title`, so its file must sit in exactly one directory — the one
+ * `noteDir(folder)` resolves to. We scan just that directory for a matching id
+ * (one readdir + a few frontmatter reads) instead of walking the whole project
+ * tree on every unlink. Only if that directory yields no match do we fall back
+ * to the recursive `findNoteFilePath` scan, so correctness is unchanged for the
+ * edge cases (row folder/title out of sync with disk).
  */
 function noteFileStillExists(db: Database.Database, noteId: string): boolean {
   if (!savedWorkspacePath) return false;
   try {
     const row = db
       .prepare(
-        "SELECT p.name AS projectName FROM notes n JOIN projects p ON p.id = n.project_id WHERE n.id = ?",
+        "SELECT p.name AS projectName, n.folder AS folder FROM notes n JOIN projects p ON p.id = n.project_id WHERE n.id = ?",
       )
-      .get(noteId) as { projectName: string } | undefined;
+      .get(noteId) as { projectName: string; folder: string | null } | undefined;
     if (!row?.projectName) return false;
+
+    // Fast path: only the note's expected folder.
+    const dir = noteDir(savedWorkspacePath, row.projectName, row.folder ?? "");
+    if (idPresentInDir(dir, noteId)) return true;
+
+    // Fallback: full project-tree scan (row/disk out of sync, e.g. a title or
+    // folder change that hasn't been projected yet).
     return findNoteFilePath(savedWorkspacePath, row.projectName, noteId) !== null;
   } catch {
     return false;
   }
+}
+
+/** True if any *.md directly in `dir` has frontmatter `id === noteId`. Non-recursive. */
+function idPresentInDir(dir: string, noteId: string): boolean {
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(dir);
+  } catch {
+    return false; // dir missing/unreadable
+  }
+  for (const entry of entries) {
+    if (!entry.endsWith(".md")) continue;
+    try {
+      const { data } = matter(fs.readFileSync(path.join(dir, entry), "utf-8"));
+      if (data.id === noteId) return true;
+    } catch { /* skip unreadable */ }
+  }
+  return false;
 }
 
 function handleFileDelete(filePath: string, db: Database.Database, onChanged: () => void): void {

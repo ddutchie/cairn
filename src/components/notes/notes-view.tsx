@@ -395,8 +395,9 @@ export function NotesView() {
 
   return (
     <div className="flex flex-1 min-h-0 overflow-hidden">
-      {/* Notes list — hidden in distraction-free mode (only while a note is open) */}
-      <div ref={sidebarRef} className={cn("flex-shrink-0 border-r border-[var(--border)] flex flex-col bg-[var(--surface)] relative", (notesFullscreen && activeNote) ? "hidden" : mobileShowEditor ? "hidden md:flex" : "flex")} style={{ width: `${notesSidebarWidth}px` }}>
+      {/* Notes list — hidden in distraction-free mode at the desktop breakpoint only;
+          mobile visibility stays governed by mobileShowEditor (Back restores the list). */}
+      <div ref={sidebarRef} className={cn("flex-shrink-0 border-r border-[var(--border)] flex flex-col bg-[var(--surface)] relative", mobileShowEditor ? "hidden" : "flex", (notesFullscreen && activeNote) ? "md:hidden" : "md:flex")} style={{ width: `${notesSidebarWidth}px` }}>
         {/* Header */}
         <div className="flex items-center justify-between px-3 h-9 border-b border-[var(--border)] flex-shrink-0">
           <span className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider">Notes</span>

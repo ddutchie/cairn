@@ -90,4 +90,13 @@ describe("shouldDeleteOnUnlink", () => {
     db.prepare("DELETE FROM mcp_active_writes WHERE note_id = ?").run("n1");
     expect(shouldDeleteOnUnlink(db, "n1")).toBe(true);
   });
+
+  it("finds the file via the full-tree fallback when the DB folder is out of sync with disk", () => {
+    // DB row says the note is at root, but the file actually lives in a
+    // subfolder (row/disk temporarily out of sync). The fast path (expected
+    // dir = root) misses; the recursive fallback must still find it → no delete.
+    seedNoteRow("n1", "");
+    writeFile("n1", "Note n1", "Elsewhere");
+    expect(shouldDeleteOnUnlink(db, "n1")).toBe(false);
+  });
 });
