@@ -386,7 +386,11 @@ export function buildNoteRemarkPlugins(content: string, opts: RemarkBuildOpts = 
   const plugins: PluggableList = [remarkGfm, remarkBreaks];
   if (contentHasMath(content)) {
     // remarkMath must precede remarkPromoteDisplayMath (which reshapes math nodes).
-    plugins.push(remarkMath, remarkPromoteDisplayMath);
+    // singleDollarTextMath:false — require $$…$$ for math so ordinary currency
+    // like "$145.000 - $250.000" is NOT parsed as inline math (which would eat
+    // the $ signs and reformat the middle via KaTeX). Display math ($$) is
+    // unaffected; a lone-paragraph $$…$$ is still promoted to a mathblock.
+    plugins.push([remarkMath, { singleDollarTextMath: false }], remarkPromoteDisplayMath);
   }
   plugins.push(remarkCallout, remarkObsidianEmbeds);
   if (opts.wikilinks) plugins.push(remarkWikilinks);

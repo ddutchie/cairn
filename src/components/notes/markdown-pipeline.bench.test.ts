@@ -308,9 +308,12 @@ describe("Markdown pipeline benchmarks", () => {
           const remarkPlugins = buildNoteRemarkPlugins(source, { wikilinks: true });
           const rehypePlugins = buildNoteRehypePlugins(source, { latex });
           const processor = unified().use(remarkParse);
-          for (const p of remarkPlugins) processor.use(p as any);
+          // Apply the whole PluggableList in one call so tuple entries such as
+          // [remarkMath, { singleDollarTextMath: false }] keep their options
+          // (iterating + processor.use(tuple) misreads the options as a preset).
+          processor.use(remarkPlugins);
           processor.use(remarkRehype, { allowDangerousHtml: true });
-          for (const p of rehypePlugins) processor.use(p as any);
+          processor.use(rehypePlugins);
           return bench(() => processor.runSync(processor.parse(source)), 50);
         }
 
