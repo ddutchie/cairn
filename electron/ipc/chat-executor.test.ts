@@ -22,7 +22,7 @@ import type Database from "better-sqlite3";
 import { applySchema } from "../db/schema";
 import {
   createWorkspace, createProject, createNote, updateNote,
-  createColumn, createCard, getCardById, getNoteById,
+  createColumn, createCard, getCardById, getNoteById, findLiveNoteByTitle,
 } from "../db/queries";
 import { executeTool } from "./chat-executor";
 import type { LLMConfig } from "../lib/llm";
@@ -745,6 +745,22 @@ describe("ensure_note", () => {
     expect(result.action).toBe("created");
   });
 
+  it("normalizes a messy folder path on create", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "ensure_note", { projectId: "proj1", title: "Spec", content: "x", folder: " /A// B / " }) as Record<string, unknown>;
+    expect(result.folder).toBe("A/B");
+    const note = await exec(db, "get_note", { noteId: result.id }) as Record<string, unknown>;
+    expect(note.folder).toBe("A/B");
+  });
+
+  it("collapses a whitespace/slash-only folder to the project root", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "ensure_note", { projectId: "proj1", title: "Rooted", content: "x", folder: " / / " }) as Record<string, unknown>;
+    expect(result.folder).toBe("");
+  });
+
   it("archived note with same title triggers a new create", async () => {
     const db = makeDb();
     seed(db);
@@ -760,6 +776,52 @@ describe("ensure_note", () => {
     seed(db);
     const result = await exec(db, "ensure_note", { projectId: "nope", title: "X" }) as Record<string, unknown>;
     expect(result).toHaveProperty("error");
+  });
+
+  it("updates an existing note found in the LIVE DB, not a stale snapshot", async () => {
+    const db = makeDb();
+    seed(db);
+    // Insert a note directly into the DB — it exists in the live DB. A snapshot
+    // taken before this call would still see it (executeTool re-snapshots), but
+    // this pins that the authoritative match is by live title lookup.
+    createNote(db, { id: "live1", projectId: "proj1", workspaceId: "ws1", title: "Roadmap", content: "v1", contentText: "v1" });
+    const result = await exec(db, "ensure_note", { projectId: "proj1", title: "Roadmap", content: "v2" }) as Record<string, unknown>;
+    expect(result.action).toBe("updated");
+    expect(result.id).toBe("live1");
+    // Exactly one live "Roadmap" note — no duplicate created.
+    const count = (db.prepare("SELECT COUNT(*) c FROM notes WHERE project_id='proj1' AND title='Roadmap' AND deleted_at IS NULL AND archived_at IS NULL").get() as { c: number }).c;
+    expect(count).toBe(1);
+  });
+
+  it("matches titles that differ only by surrounding/inner whitespace (idempotent, no duplicate)", async () => {
+    const db = makeDb();
+    seed(db);
+    const r1 = await exec(db, "ensure_note", { projectId: "proj1", title: "Weekly Review", content: "a" }) as Record<string, unknown>;
+    // Same title with padding + a double space — normalizeNoteTitle collapses it.
+    const r2 = await exec(db, "ensure_note", { projectId: "proj1", title: "  Weekly   Review  ", content: "b" }) as Record<string, unknown>;
+    expect(r2.action).toBe("updated");
+    expect(r2.id).toBe(r1.id);
+    const count = (db.prepare("SELECT COUNT(*) c FROM notes WHERE project_id='proj1' AND deleted_at IS NULL AND archived_at IS NULL AND title LIKE 'Weekly%'").get() as { c: number }).c;
+    expect(count).toBe(1);
+  });
+});
+
+describe("findLiveNoteByTitle", () => {
+  it("finds a live note by normalized title and ignores archived / deleted / other-project rows", () => {
+    const db = makeDb();
+    seed(db);
+    createProject(db, { id: "proj2", workspaceId: "ws1", name: "Other" });
+    createNote(db, { id: "a", projectId: "proj1", workspaceId: "ws1", title: "Design Doc", content: "" });
+    createNote(db, { id: "b", projectId: "proj2", workspaceId: "ws1", title: "Design Doc", content: "" }); // other project
+    createNote(db, { id: "c", projectId: "proj1", workspaceId: "ws1", title: "Archived One", content: "" });
+    db.prepare("UPDATE notes SET archived_at = '2024-01-01T00:00:00.000Z' WHERE id='c'").run();
+
+    // Normalized whitespace match, scoped to the project.
+    expect(findLiveNoteByTitle(db, "proj1", "  Design   Doc ")?.id).toBe("a");
+    // Archived rows are not matched.
+    expect(findLiveNoteByTitle(db, "proj1", "Archived One")).toBeUndefined();
+    // No match returns undefined.
+    expect(findLiveNoteByTitle(db, "proj1", "Nonexistent")).toBeUndefined();
   });
 });
 
@@ -799,6 +861,32 @@ describe("bulk_move_notes", () => {
 
     const note2 = await exec(db, "get_note", { noteId: "note2" }) as Record<string, unknown>;
     expect(note2.folder).toBe("Archive/Old");
+  });
+
+  it("normalizes a messy folder path (trim / stray slashes / spaced segments)", async () => {
+    const db = makeDb();
+    seed(db);
+
+    const result = await exec(db, "bulk_move_notes", { noteIds: ["note1"], folder: " /Archive// Old / " }) as Record<string, unknown>;
+    expect(result.moved).toBe(1);
+    expect(result.folder).toBe("Archive/Old");
+
+    const note1 = await exec(db, "get_note", { noteId: "note1" }) as Record<string, unknown>;
+    expect(note1.folder).toBe("Archive/Old");
+  });
+
+  it("moves a note to the project root when folder is empty (direct SET, not COALESCE)", async () => {
+    const db = makeDb();
+    seed(db);
+    // Put note1 in a folder first.
+    await exec(db, "bulk_move_notes", { noteIds: ["note1"], folder: "Archive" });
+    expect((await exec(db, "get_note", { noteId: "note1" }) as Record<string, unknown>).folder).toBe("Archive");
+
+    // Now move it back to root — an empty string must not be silently ignored.
+    const result = await exec(db, "bulk_move_notes", { noteIds: ["note1"], folder: "" }) as Record<string, unknown>;
+    expect(result.moved).toBe(1);
+    expect(result.folder).toBe("");
+    expect((await exec(db, "get_note", { noteId: "note1" }) as Record<string, unknown>).folder).toBe("");
   });
 });
 

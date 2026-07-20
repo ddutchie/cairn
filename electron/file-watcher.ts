@@ -17,8 +17,11 @@
 
 import chokidar, { type FSWatcher } from "chokidar";
 import fs from "fs";
+import path from "path";
+import matter from "gray-matter";
 import type Database from "better-sqlite3";
 import { parseNoteFile, upsertNoteFromFile, adoptExternalNoteFile } from "./notes-files";
+import { findNoteFilePath, noteDir } from "./shared/notes-io";
 import * as q from "./db/queries";
 
 let watcher: FSWatcher | null = null;
@@ -90,6 +93,14 @@ export function startFileWatcher(
     .on("unlink", (fp) => handleFileDelete(fp, db, onChanged));
 }
 
+/**
+ * Test-only: seed the workspace path used by `shouldDeleteOnUnlink`'s
+ * disk-existence backstop without starting a real chokidar watcher.
+ */
+export function __setWorkspacePathForTest(workspacePath: string | null): void {
+  savedWorkspacePath = workspacePath;
+}
+
 export function stopFileWatcher(): void {
   if (watcher) {
     watcher.close();
@@ -131,6 +142,16 @@ export function resumeFileWatcher(): void {
  *
  * `hadCairnId` is true when parseNoteFile (not adoption) produced the note, i.e.
  * the file already claimed an existing id. Returns true if it handled (skipped).
+ *
+ * IMPORTANT: this must never fire for a note that is *currently being created*.
+ * When a note is written by the in-app AI chat executor or the MCP server, the
+ * `.md` file lands on disk and chokidar fires `add` before the SQLite row is
+ * necessarily visible to this (separate-statement) read — especially when the
+ * target folder is already watched, so the `add` arrives with near-zero delay.
+ * Without the in-flight guards below, we would misclassify a brand-new note as
+ * a deleted-note orphan and unlink the file we just wrote (note vanishes). We
+ * therefore skip the orphan verdict while the id is suppressed (our own write)
+ * or present in `mcp_active_writes` (an in-flight MCP-side write).
  */
 function skipIfOrphan(
   filePath: string,
@@ -139,6 +160,10 @@ function skipIfOrphan(
   db: Database.Database,
 ): boolean {
   if (!hadCairnId) return false; // adopted/new note — not an orphan
+  // In-flight write (this process) — the row may not be committed/visible yet.
+  if (suppressedNoteIds.has(noteId)) return false;
+  // In-flight write (MCP server process) — same reasoning, cross-process signal.
+  if (q.getActiveMcpWrites(db).has(noteId)) return false;
   const exists = db.prepare("SELECT 1 FROM notes WHERE id = ?").get(noteId);
   if (exists) return false; // live note — normal upsert
   // Real Cairn id, no row → orphan of a deleted note. Remove it.
@@ -176,6 +201,62 @@ function handleFileChange(filePath: string, workspacePath: string, db: Database.
   onChanged();
 }
 
+/**
+ * True if a .md file carrying this note's id still exists somewhere in the
+ * note's project directory. Used by the delete handler to distinguish a real
+ * external deletion (no file left) from a relocation whose old-path `unlink`
+ * fired without the write lock covering it (file re-materialised under the new
+ * path). Best-effort: on any lookup failure we return false so a genuine delete
+ * is never suppressed.
+ *
+ * Fast path: after a relocation the DB row already carries the note's new
+ * `folder`/`title`, so its file must sit in exactly one directory — the one
+ * `noteDir(folder)` resolves to. We scan just that directory for a matching id
+ * (one readdir + a few frontmatter reads) instead of walking the whole project
+ * tree on every unlink. Only if that directory yields no match do we fall back
+ * to the recursive `findNoteFilePath` scan, so correctness is unchanged for the
+ * edge cases (row folder/title out of sync with disk).
+ */
+function noteFileStillExists(db: Database.Database, noteId: string): boolean {
+  if (!savedWorkspacePath) return false;
+  try {
+    const row = db
+      .prepare(
+        "SELECT p.name AS projectName, n.folder AS folder FROM notes n JOIN projects p ON p.id = n.project_id WHERE n.id = ?",
+      )
+      .get(noteId) as { projectName: string; folder: string | null } | undefined;
+    if (!row?.projectName) return false;
+
+    // Fast path: only the note's expected folder.
+    const dir = noteDir(savedWorkspacePath, row.projectName, row.folder ?? "");
+    if (idPresentInDir(dir, noteId)) return true;
+
+    // Fallback: full project-tree scan (row/disk out of sync, e.g. a title or
+    // folder change that hasn't been projected yet).
+    return findNoteFilePath(savedWorkspacePath, row.projectName, noteId) !== null;
+  } catch {
+    return false;
+  }
+}
+
+/** True if any *.md directly in `dir` has frontmatter `id === noteId`. Non-recursive. */
+function idPresentInDir(dir: string, noteId: string): boolean {
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(dir);
+  } catch {
+    return false; // dir missing/unreadable
+  }
+  for (const entry of entries) {
+    if (!entry.endsWith(".md")) continue;
+    try {
+      const { data } = matter(fs.readFileSync(path.join(dir, entry), "utf-8"));
+      if (data.id === noteId) return true;
+    } catch { /* skip unreadable */ }
+  }
+  return false;
+}
+
 function handleFileDelete(filePath: string, db: Database.Database, onChanged: () => void): void {
   if (!filePath.endsWith(".md")) return;
 
@@ -185,10 +266,7 @@ function handleFileDelete(filePath: string, db: Database.Database, onChanged: ()
 
   if (!noteId) return; // file was never tracked (e.g. not a Cairn note)
 
-  // If the note is suppressed, the file was deleted by the app itself as part
-  // of a rename/move (writeNoteFile deletes the old path before writing the new
-  // one). The note still exists in SQLite under the new path — do not delete it.
-  if (suppressedNoteIds.has(noteId)) return;
+  if (!shouldDeleteOnUnlink(db, noteId)) return;
 
   try {
     q.deleteNote(db, noteId);
@@ -196,4 +274,26 @@ function handleFileDelete(filePath: string, db: Database.Database, onChanged: ()
   } catch {
     // Note may not exist in DB — ignore
   }
+}
+
+/**
+ * Decide whether an `unlink` of a tracked note file means the note was really
+ * deleted (return true) or merely relocated / being written (return false).
+ *
+ * A note's `.md` is unlinked from its old path during a rename or folder move
+ * (writeNoteFile writes the new path first, then removes the old one). If we
+ * deleted the row on every unlink, those relocations would wipe the note. We
+ * therefore suppress the delete when any of these hold:
+ *   - the id is in `suppressedNoteIds` (this process just wrote it), or
+ *   - the id is in `mcp_active_writes` (an in-flight MCP-side write), or
+ *   - a `.md` for this id still exists elsewhere in the project (moved, not
+ *     deleted) — the timing-independent backstop for the two locks above.
+ *
+ * Exported for unit testing; `handleFileDelete` is the sole runtime caller.
+ */
+export function shouldDeleteOnUnlink(db: Database.Database, noteId: string): boolean {
+  if (suppressedNoteIds.has(noteId)) return false;
+  if (q.getActiveMcpWrites(db).has(noteId)) return false;
+  if (noteFileStillExists(db, noteId)) return false;
+  return true;
 }

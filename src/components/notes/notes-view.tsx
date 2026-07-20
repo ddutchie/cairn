@@ -45,6 +45,8 @@ export function NotesView() {
     aiConfig,
     notesSidebarWidth,
     setNotesSidebarWidth,
+    notesFullscreen,
+    toggleNotesFullscreen,
   } = useCairnStore(useShallow((s) => ({
     activeProjectId:         s.activeProjectId,
     activeWorkspaceId:       s.activeWorkspaceId,
@@ -65,6 +67,8 @@ export function NotesView() {
     aiConfig:                s.aiConfig,
     notesSidebarWidth:       s.notesSidebarWidth,
     setNotesSidebarWidth:    s.setNotesSidebarWidth,
+    notesFullscreen:         s.notesFullscreen,
+    toggleNotesFullscreen:   s.toggleNotesFullscreen,
   })));
   const aiEnabled = aiConfig.aiEnabled ?? true;
 
@@ -133,6 +137,7 @@ export function NotesView() {
 
   // ⌘F / Ctrl+F — focus the filter input, but only when the CM6 editor
   // is NOT focused (CM6's own searchKeymap handles it when the editor is active).
+  // ⌘. / Ctrl+. — toggle distraction-free mode (works from anywhere in the view).
   const filterInputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -142,11 +147,14 @@ export function NotesView() {
         e.preventDefault();
         filterInputRef.current?.focus();
         filterInputRef.current?.select();
+      } else if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key === ".") {
+        e.preventDefault();
+        toggleNotesFullscreen();
       }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [toggleNotesFullscreen]);
 
   // "Move to folder" for a specific note
   const [folderMoveNoteId, setFolderMoveNoteId]  = useState<string | null>(null);
@@ -387,8 +395,9 @@ export function NotesView() {
 
   return (
     <div className="flex flex-1 min-h-0 overflow-hidden">
-      {/* Notes list */}
-      <div ref={sidebarRef} className={cn("flex-shrink-0 border-r border-[var(--border)] flex flex-col bg-[var(--surface)] relative", mobileShowEditor ? "hidden md:flex" : "flex")} style={{ width: `${notesSidebarWidth}px` }}>
+      {/* Notes list — hidden in distraction-free mode at the desktop breakpoint only;
+          mobile visibility stays governed by mobileShowEditor (Back restores the list). */}
+      <div ref={sidebarRef} className={cn("flex-shrink-0 border-r border-[var(--border)] flex flex-col bg-[var(--surface)] relative", mobileShowEditor ? "hidden" : "flex", (notesFullscreen && activeNote) ? "md:hidden" : "md:flex")} style={{ width: `${notesSidebarWidth}px` }}>
         {/* Header */}
         <div className="flex items-center justify-between px-3 h-9 border-b border-[var(--border)] flex-shrink-0">
           <span className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider">Notes</span>

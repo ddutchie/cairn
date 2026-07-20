@@ -4,7 +4,7 @@ import * as q from "../../db/queries";
 import { newId } from "../../db/utils";
 import { stripMarkdown, normalizeNoteTitle } from "../../shared/text-utils";
 import { executeSearchNotes } from "../../shared/read-tools-pure";
-import { dedupeFoldersCaseInsensitive } from "../../../shared/notes/folder-tree";
+import { dedupeFoldersCaseInsensitive, normalizeFolderPath } from "../../../shared/notes/folder-tree";
 import { instantiateTemplate, defaultTitleFromTemplate } from "../../../shared/notes/templates";
 import {
   Snapshot,
@@ -84,7 +84,7 @@ export function instantiate_template(db: Database.Database, snap: Snapshot, work
     ? args.title.trim()
     : defaultTitleFromTemplate(baseName, { now });
   const content = instantiateTemplate((template.content as string) ?? "", { title, now });
-  const newFolder = typeof folder === "string" ? folder : "";
+  const newFolder = normalizeFolderPath(folder);
   const noteId = newId();
 
   lockNote(db, noteId);
@@ -122,22 +122,30 @@ export function ensure_note(db: Database.Database, snap: Snapshot, workspacePath
   const { projectId, title, content, tagIds: ensureTagIds, tagNames, isPinned: ensureIsPinned } = args;
   const project = snap.projects.find((p) => p.id === projectId);
   if (!project) return { error: "Project not found" };
-  const matchTitle = normalizeNoteTitle(title as string);
-  const existing = snap.notes.find(
-    (n) => !n.archivedAt && n.projectId === projectId && normalizeNoteTitle(n.title as string) === matchTitle
-  );
-  traceTool("lookup", {
-    toolName: "ensure_note",
-    requestedTitle: typeof title === "string" ? title : "",
-    matchedId: existing?.id ?? "none",
-  });
   const resolvedFromNameIds = resolveTagNames(db, project.workspaceId, tagNames);
   let ensureResolvedTagIds = Array.isArray(ensureTagIds) ? ensureTagIds as string[] : undefined;
   if (resolvedFromNameIds.length > 0) {
     ensureResolvedTagIds = Array.from(new Set([...(ensureResolvedTagIds ?? []), ...resolvedFromNameIds]));
   }
   const ensureResolvedIsPinned = typeof ensureIsPinned === "boolean" ? ensureIsPinned : undefined;
-  const ensureFolder = typeof args.folder === "string" ? args.folder : undefined;
+  // Canonicalise the folder so a whitespace/slash-only value can't file the
+  // note under a phantom "unnamed" folder. `undefined` means "leave folder
+  // unchanged on update"; an empty string means the project root.
+  const ensureFolder = typeof args.folder === "string" ? normalizeFolderPath(args.folder) : undefined;
+
+  // Authoritative existence check against the LIVE DB (not the pre-call
+  // snapshot). Two ensure_note calls for the same title can arrive in one agent
+  // turn (pi-agent-loop runs a turn's tools concurrently); a snapshot taken
+  // before either committed would make both create a duplicate. better-sqlite3
+  // is synchronous, so this lookup + the create/update below happen with no
+  // interleaving as long as they aren't separated by an await — which they are
+  // not. The create path additionally re-checks inside its transaction.
+  const existing = q.findLiveNoteByTitle(db, projectId as string, title as string);
+  traceTool("lookup", {
+    toolName: "ensure_note",
+    requestedTitle: typeof title === "string" ? title : "",
+    matchedId: existing?.id ?? "none",
+  });
   const ensureNoteId = existing?.id ?? newId();
   lockNote(db, ensureNoteId);
   try {
@@ -168,7 +176,24 @@ export function ensure_note(db: Database.Database, snap: Snapshot, workspacePath
       const newIsPinned = ensureResolvedIsPinned ?? false;
       const newFolder = ensureFolder ?? "";
       const markdown = (content as string | undefined) ?? "";
+      // action carries what the transaction actually did: a racing call that
+      // created the row first turns this into an in-transaction update.
+      let raceUpdate = false;
       const note = db.transaction(() => {
+        // Re-check inside the transaction: if a concurrent ensure_note committed
+        // the same-title note between our lookup and here, adopt it (update)
+        // instead of inserting a duplicate. Atomic because better-sqlite3 runs
+        // the whole transaction synchronously.
+        const raced = q.findLiveNoteByTitle(db, projectId as string, title as string);
+        if (raced) {
+          raceUpdate = true;
+          return q.updateNote(db, raced.id, {
+            ...(content !== undefined ? { content: markdown, contentText: stripMarkdown(markdown) } : {}),
+            ...(ensureResolvedTagIds ? { tagIds: ensureResolvedTagIds } : {}),
+            ...(ensureResolvedIsPinned !== undefined ? { isPinned: ensureResolvedIsPinned } : {}),
+            ...(ensureFolder !== undefined ? { folder: ensureFolder } : {}),
+          });
+        }
         const n = q.createNote(db, {
           id: ensureNoteId,
           projectId: projectId as string,
@@ -184,24 +209,28 @@ export function ensure_note(db: Database.Database, snap: Snapshot, workspacePath
         insertNotification(db, "create_note", "Note created", `"${title}" added to ${project.name}${newFolder ? ` (${newFolder})` : ""} (ensure_note)`);
         return n;
       })();
+      const resolvedId = note.id;
       try {
         writeNoteFile(workspacePath, {
-          id: ensureNoteId, projectId, workspaceId: project.workspaceId, title, content: markdown,
-          tagIds: newTagIds, linkedNoteIds: [], linkedCardIds: [], isPinned: newIsPinned,
-          folder: newFolder, createdAt: note.createdAt, updatedAt: note.updatedAt, projectName: project.name,
+          id: resolvedId, projectId, workspaceId: project.workspaceId, title: note.title as string, content: note.content as string,
+          tagIds: note.tagIds as string[], linkedNoteIds: note.linkedNoteIds as string[], linkedCardIds: note.linkedCardIds as string[], isPinned: note.isPinned as boolean,
+          folder: note.folder as string, createdAt: note.createdAt as string, updatedAt: note.updatedAt as string, projectName: project.name,
         });
       } catch (fileErr) {
         // The DB row committed but the .md file couldn't be written — roll the
         // DB back so we don't leave an orphan note (and its create notification)
-        // that has no file. deleteNote also stages a sync tombstone.
-        try {
-          q.deleteNote(db, ensureNoteId);
-          db.prepare("DELETE FROM mcp_notifications WHERE tool = 'create_note' AND body LIKE ?")
-            .run(`"${title}"%`);
-        } catch { /* best-effort cleanup */ }
+        // that has no file. deleteNote also stages a sync tombstone. Only do this
+        // when WE created the row (not when we adopted a raced one).
+        if (!raceUpdate) {
+          try {
+            q.deleteNote(db, resolvedId);
+            db.prepare("DELETE FROM mcp_notifications WHERE tool = 'create_note' AND body LIKE ?")
+              .run(`"${title}"%`);
+          } catch { /* best-effort cleanup */ }
+        }
         throw fileErr;
       }
-      return { id: ensureNoteId, title, folder: newFolder, action: "created", createdAt: note.createdAt };
+      return { id: resolvedId, title, folder: note.folder, action: raceUpdate ? "updated" : "created", createdAt: note.createdAt };
     }
   } finally {
     unlockNote(db, ensureNoteId);
@@ -335,44 +364,54 @@ export function rename_note(db: Database.Database, snap: Snapshot, workspacePath
 
   // Write files to disk after the transaction commits — a failure here
   // won't roll back SQLite while leaving files half-changed.
-  for (const otherNote of linkedNotes) {
-    const newContent = otherNote.content.split(oldLink).join(newLink);
-    const otherProj = snap.projects.find((p) => p.id === otherNote.projectId);
-    writeNoteFile(workspacePath, {
-      id: otherNote.id,
-      projectId: otherNote.projectId,
-      workspaceId: otherNote.workspaceId as string,
-      title: otherNote.title as string,
-      content: newContent,
-      tagIds: otherNote.tagIds as string[],
-      linkedNoteIds: otherNote.linkedNoteIds as string[],
-      linkedCardIds: otherNote.linkedCardIds as string[],
-      isPinned: otherNote.isPinned as boolean,
-      folder: (otherNote.folder as string) ?? "",
-      createdAt: otherNote.createdAt as string,
-      updatedAt: new Date().toISOString(),
-      archivedAt: otherNote.archivedAt as string | undefined,
-      projectName: otherProj?.name ?? otherNote.projectId as string,
-    });
-  }
+  //
+  // Lock the renamed note across the file writes: the title change relocates
+  // its .md (new slug path), so writeNoteFile unlinks the old path. Without the
+  // lock, the file watcher would see that unlink, find no matching suppression,
+  // and delete the row — destroying the note we just renamed.
+  lockNote(db, noteId as string);
+  try {
+    for (const otherNote of linkedNotes) {
+      const newContent = otherNote.content.split(oldLink).join(newLink);
+      const otherProj = snap.projects.find((p) => p.id === otherNote.projectId);
+      writeNoteFile(workspacePath, {
+        id: otherNote.id,
+        projectId: otherNote.projectId,
+        workspaceId: otherNote.workspaceId as string,
+        title: otherNote.title as string,
+        content: newContent,
+        tagIds: otherNote.tagIds as string[],
+        linkedNoteIds: otherNote.linkedNoteIds as string[],
+        linkedCardIds: otherNote.linkedCardIds as string[],
+        isPinned: otherNote.isPinned as boolean,
+        folder: (otherNote.folder as string) ?? "",
+        createdAt: otherNote.createdAt as string,
+        updatedAt: new Date().toISOString(),
+        archivedAt: otherNote.archivedAt as string | undefined,
+        projectName: otherProj?.name ?? otherNote.projectId as string,
+      });
+    }
 
-  // Write note file to disk (writeNoteFile renames/moves the path dynamically if title changes)
-  writeNoteFile(workspacePath, {
-    id: note.id,
-    projectId: note.projectId,
-    workspaceId: note.workspaceId as string,
-    title: newTitle,
-    content: updatedNote?.content ?? note.content as string,
-    tagIds: note.tagIds as string[],
-    linkedNoteIds: note.linkedNoteIds as string[],
-    linkedCardIds: note.linkedCardIds as string[],
-    isPinned: note.isPinned as boolean,
-    folder: (note.folder as string) ?? "",
-    createdAt: note.createdAt as string,
-    updatedAt: updatedNote?.updatedAt ?? new Date().toISOString(),
-    archivedAt: note.archivedAt as string | undefined,
-    projectName: project?.name ?? note.projectId as string,
-  });
+    // Write note file to disk (writeNoteFile renames/moves the path dynamically if title changes)
+    writeNoteFile(workspacePath, {
+      id: note.id,
+      projectId: note.projectId,
+      workspaceId: note.workspaceId as string,
+      title: newTitle,
+      content: updatedNote?.content ?? note.content as string,
+      tagIds: note.tagIds as string[],
+      linkedNoteIds: note.linkedNoteIds as string[],
+      linkedCardIds: note.linkedCardIds as string[],
+      isPinned: note.isPinned as boolean,
+      folder: (note.folder as string) ?? "",
+      createdAt: note.createdAt as string,
+      updatedAt: updatedNote?.updatedAt ?? new Date().toISOString(),
+      archivedAt: note.archivedAt as string | undefined,
+      projectName: project?.name ?? note.projectId as string,
+    });
+  } finally {
+    unlockNote(db, noteId as string);
+  }
 
   insertNotification(db, "update_note", "Note renamed", `"${note.title}" renamed to "${newTitle}"`);
   return { id: note.id, title: newTitle, action: "renamed", updatedAt: updatedNote?.updatedAt };
@@ -381,7 +420,10 @@ export function rename_note(db: Database.Database, snap: Snapshot, workspacePath
 export function bulk_move_notes(db: Database.Database, snap: Snapshot, workspacePath: string, args: Record<string, any>) {
   const { noteIds, folder } = args;
   if (!Array.isArray(noteIds) || noteIds.length === 0) return { error: "noteIds must be a non-empty array" };
-  const targetFolder = typeof folder === "string" ? folder : "";
+  // Canonicalise the target: trim, drop empty/whitespace segments, collapse
+  // stray slashes — so a note can never be filed under a phantom "unnamed"
+  // folder. An empty result means the project root.
+  const targetFolder = normalizeFolderPath(folder);
   const results: Array<{ id: string; ok: boolean; error?: string }> = [];
 
   for (const noteId of noteIds) {
@@ -393,7 +435,10 @@ export function bulk_move_notes(db: Database.Database, snap: Snapshot, workspace
     lockNote(db, noteId);
     try {
       const project = snap.projects.find((p) => p.id === note.projectId);
-      const updatedNote = q.updateNote(db, noteId, { folder: targetFolder });
+      // Use moveNoteFolder (direct SET) rather than updateNote (COALESCE) so a
+      // move to root (folder="") is never silently ignored — matching the
+      // desktop db:note:moveToFolder handler.
+      const updatedNote = q.moveNoteFolder(db, noteId, targetFolder);
       writeNoteFile(workspacePath, {
         id: note.id,
         projectId: note.projectId,

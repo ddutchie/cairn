@@ -144,6 +144,12 @@ export interface UISlice extends AppUIState {
   notesSidebarWidth: number;
   setNotesSidebarWidth: (width: number) => void;
 
+  // Distraction-free note editing: hides the notes-list sidebar (and app rail)
+  // so the editor fills the window. Session-scoped (not persisted).
+  notesFullscreen: boolean;
+  toggleNotesFullscreen: () => void;
+  setNotesFullscreen: (on: boolean) => void;
+
   // Pop-out chat
   chatPoppedOut: boolean;
   setChatPoppedOut: (popped: boolean) => void;
@@ -216,7 +222,7 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
   chatPanelWidth: DEFAULT_CHAT_PANEL_WIDTH,
   notesSidebarWidth: DEFAULT_NOTES_SIDEBAR_WIDTH,
   chatPoppedOut: false,
-
+  notesFullscreen: false,
   // ── AI config ──────────────────────────────────
   setAIConfig(patch) {
     set((s) => {
@@ -294,6 +300,14 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
     const clamped = Math.min(MAX_NOTES_SIDEBAR_WIDTH, Math.max(MIN_NOTES_SIDEBAR_WIDTH, width));
     set({ notesSidebarWidth: clamped });
     storage.set(NOTES_SIDEBAR_WIDTH_KEY, clamped);
+  },
+
+  // ── Distraction-free note editing ──────────────
+  toggleNotesFullscreen() {
+    set((s) => ({ notesFullscreen: !s.notesFullscreen }));
+  },
+  setNotesFullscreen(on) {
+    set({ notesFullscreen: on });
   },
 
   // ── Pop-out chat ───────────────────────────────

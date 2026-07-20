@@ -748,7 +748,15 @@ export async function runAgentLoop(
     // All tools in a turn fire concurrently. Results are appended to
     // session.messages in original source order regardless of completion order.
     // onToolEnd fires as each tool finishes (may be out of order for UI updates).
-    // The file mutex in file-mutex.ts serialises concurrent writes to the same path.
+    //
+    // Concurrency safety differs by tool family:
+    //   - Coding-agent file tools (write.ts / edit.ts) serialise same-path
+    //     writes via withFileMutex (lib/coding-tools/file-mutex.ts).
+    //   - Note tools (ensure_note, bulk_move_notes, rename_note, …) do NOT use
+    //     that mutex. They guard the .md ↔ SQLite round-trip with the
+    //     mcp_active_writes lock (lockNote/unlockNote) plus the file-watcher's
+    //     in-flight / disk-existence checks, so a relocation's old-path unlink
+    //     is never mistaken for a delete.
     if (signal.aborted) { callbacks.onDone(); return; }
 
     type ToolOutcome = { tcIdx: number; tc: ToolCallSpec; ok: boolean; resultContent: string; pendingCallId?: string };
