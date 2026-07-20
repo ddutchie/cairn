@@ -52,6 +52,7 @@ import {
   toIdeaFlowEdge,
   type McpNotification
 } from "../shared/db-mappers";
+import { normalizeNoteTitle } from "../shared/text-utils";
 
 /** Re-export for callers that only need a new ID without importing utils directly. */
 export { newId as generateId };
@@ -178,6 +179,34 @@ export function getNotes(db: Database.Database, projectId?: string) {
     ? db.prepare("SELECT * FROM notes WHERE project_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC").all(projectId)
     : db.prepare("SELECT * FROM notes WHERE deleted_at IS NULL ORDER BY updated_at DESC").all();
   return rows.map(toNote);
+}
+
+/**
+ * Find a live (non-archived, non-deleted) note in a project whose title matches
+ * `title` under the same normalization ensure_note uses (trim + collapse inner
+ * whitespace, case-sensitive). Returns the note or undefined.
+ *
+ * This is the AUTHORITATIVE existence check for ensure_note — it reads the live
+ * DB rather than a pre-call snapshot, so it stays correct when two ensure_note
+ * calls for the same title run in the same agent turn (the pi-agent-loop fires a
+ * turn's tool calls concurrently). better-sqlite3 is synchronous, so pairing
+ * this lookup with the createNote INSERT inside a single db.transaction() makes
+ * the check-then-create atomic — no other JS callback can interleave between the
+ * SELECT and the INSERT.
+ *
+ * Matching is done in JS (not SQL) so it is byte-for-byte identical to
+ * normalizeNoteTitle — SQL TRIM/REPLACE can't reproduce arbitrary whitespace-run
+ * collapse (tabs, newlines) reliably.
+ */
+export function findLiveNoteByTitle(db: Database.Database, projectId: string, title: string) {
+  const target = normalizeNoteTitle(title);
+  const rows = db
+    .prepare(
+      "SELECT * FROM notes WHERE project_id = ? AND type = 'note' AND archived_at IS NULL AND deleted_at IS NULL",
+    )
+    .all(projectId) as Record<string, unknown>[];
+  const hit = rows.find((r) => normalizeNoteTitle(String(r.title ?? "")) === target);
+  return hit ? toNote(hit) : undefined;
 }
 
 export function createNote(db: Database.Database, n: {

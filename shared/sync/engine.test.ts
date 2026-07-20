@@ -826,4 +826,136 @@ describe("sync engine — trigger→drain capture of real queries.ts writes", ()
       expect(liveState(A.db)).toEqual(liveState(B.db));
     });
   });
+
+  // A folder move is a plain UPDATE to the `folder` scalar (via moveNoteFolder),
+  // NOT a delete. It must sync as a 'put' carrying the new folder, apply by LWW,
+  // and never tombstone, resurrect, or conflict-copy the note. These pin the
+  // "could the oplog mishandle a move like the file-watcher did?" concern: it
+  // doesn't — a move is an ordinary scalar put.
+  describe("folder-move propagation + convergence", () => {
+    let dir: string;
+    beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), "cairn-move-")); });
+    afterEach(() => { fs.rmSync(dir, { recursive: true, force: true }); });
+
+    function seedNoteOnBoth(A: ReturnType<typeof makeDevice>, B: ReturnType<typeof makeDevice>, folder = "") {
+      q.createWorkspace(A.db, { id: "ws1", name: "WS" });
+      q.createProject(A.db, { id: "p1", workspaceId: "ws1", name: "P" });
+      q.createNote(A.db, { id: "n1", projectId: "p1", workspaceId: "ws1", title: "Spec", content: "body", folder });
+      A.engine.drainPending();
+      syncFolder(dir, A.engine, B.engine);
+    }
+
+    const noConflictCopies = (db: Database.Database) =>
+      (db.prepare("SELECT COUNT(*) c FROM notes WHERE id LIKE '%\\_conflict\\_%' ESCAPE '\\'").get() as { c: number }).c;
+
+    it("stages a folder move as a 'put' (never a 'delete') and replicates the new folder", () => {
+      const clkA = clockFrom(13_000_000);
+      const clkB = clockFrom(13_000_000);
+      const A = makeDevice("A", clkA.now);
+      const B = makeDevice("B", clkB.now);
+      seedNoteOnBoth(A, B);
+
+      clkA.advance(5);
+      q.moveNoteFolder(A.db, "n1", "Archive/Old");
+      // The staged op must be a 'put' — a move must never look like a deletion.
+      const pend = A.db.prepare("SELECT op FROM sync_pending WHERE entity='notes' AND entity_id='n1' ORDER BY seq DESC LIMIT 1").get() as { op: string } | undefined;
+      expect(pend?.op).toBe("put");
+      A.engine.drainPending();
+      syncFolder(dir, A.engine, B.engine);
+
+      // Peer now shows the note live under the new folder — not tombstoned.
+      const onB = B.db.prepare("SELECT folder FROM notes WHERE id='n1' AND deleted_at IS NULL").get() as { folder: string } | undefined;
+      expect(onB?.folder).toBe("Archive/Old");
+      expect(noConflictCopies(B.db)).toBe(0);
+      expect(liveState(A.db)).toEqual(liveState(B.db));
+    });
+
+    it("replicates a move to the project root (folder='') without dropping it", () => {
+      const clkA = clockFrom(13_100_000);
+      const clkB = clockFrom(13_100_000);
+      const A = makeDevice("A", clkA.now);
+      const B = makeDevice("B", clkB.now);
+      seedNoteOnBoth(A, B, "Inbox");
+      expect((B.db.prepare("SELECT folder FROM notes WHERE id='n1'").get() as { folder: string }).folder).toBe("Inbox");
+
+      clkA.advance(5);
+      q.moveNoteFolder(A.db, "n1", ""); // back to root
+      A.engine.drainPending();
+      syncFolder(dir, A.engine, B.engine);
+
+      expect((B.db.prepare("SELECT folder FROM notes WHERE id='n1' AND deleted_at IS NULL").get() as { folder: string }).folder).toBe("");
+      expect(liveState(A.db)).toEqual(liveState(B.db));
+    });
+
+    it("resolves concurrent moves to different folders by LWW (higher HLC wins, no conflict copy)", () => {
+      const clkA = clockFrom(13_200_000);
+      const clkB = clockFrom(13_200_000);
+      const A = makeDevice("A", clkA.now);
+      const B = makeDevice("B", clkB.now);
+      seedNoteOnBoth(A, B);
+
+      clkA.advance(1);
+      q.moveNoteFolder(A.db, "n1", "FolderA"); // earlier
+      A.engine.drainPending();
+
+      clkB.advance(50);
+      q.moveNoteFolder(B.db, "n1", "FolderB"); // later → wins
+      B.engine.drainPending();
+
+      syncFolder(dir, A.engine, B.engine);
+
+      for (const dev of [A, B]) {
+        const folder = (dev.db.prepare("SELECT folder FROM notes WHERE id='n1' AND deleted_at IS NULL").get() as { folder: string }).folder;
+        expect(folder).toBe("FolderB");
+        // folder is a plain LWW scalar — no conflict copy (that's body-only).
+        expect(noConflictCopies(dev.db)).toBe(0);
+      }
+      expect(liveState(A.db)).toEqual(liveState(B.db));
+    });
+
+    it("a move made offline does not resurrect a note the peer deleted with a higher HLC", () => {
+      // Mirrors the file-watcher fix at the sync layer: moving a note must not
+      // bring back a note that was legitimately deleted elsewhere (later).
+      const clkA = clockFrom(13_300_000);
+      const clkB = clockFrom(13_300_000);
+      const A = makeDevice("A", clkA.now);
+      const B = makeDevice("B", clkB.now);
+      seedNoteOnBoth(A, B);
+
+      clkA.advance(1);
+      q.moveNoteFolder(A.db, "n1", "Somewhere"); // earlier move
+      A.engine.drainPending();
+
+      clkB.advance(50);
+      q.deleteNote(B.db, "n1"); // later delete → wins
+      B.engine.drainPending();
+
+      syncFolder(dir, A.engine, B.engine);
+
+      for (const dev of [A, B]) {
+        expect((dev.db.prepare("SELECT COUNT(*) c FROM notes WHERE id='n1' AND deleted_at IS NULL").get() as { c: number }).c).toBe(0);
+      }
+      expect(liveState(A.db)).toEqual(liveState(B.db));
+    });
+
+    it("keeps converging (no re-exchange) after repeated syncs of a move", () => {
+      const clkA = clockFrom(13_400_000);
+      const clkB = clockFrom(13_400_000);
+      const A = makeDevice("A", clkA.now);
+      const B = makeDevice("B", clkB.now);
+      seedNoteOnBoth(A, B);
+
+      clkA.advance(5);
+      q.moveNoteFolder(A.db, "n1", "Archive");
+      A.engine.drainPending();
+      syncFolder(dir, A.engine, B.engine);
+      syncFolder(dir, A.engine, B.engine); // extra passes must be no-ops
+
+      expect((B.db.prepare("SELECT folder FROM notes WHERE id='n1' AND deleted_at IS NULL").get() as { folder: string }).folder).toBe("Archive");
+      // Nothing new staged on either side once converged.
+      expect(A.engine.drainPending()).toBe(0);
+      expect(B.engine.drainPending()).toBe(0);
+      expect(liveState(A.db)).toEqual(liveState(B.db));
+    });
+  });
 });

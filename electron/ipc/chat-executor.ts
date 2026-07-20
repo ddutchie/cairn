@@ -16,7 +16,6 @@ import { callLLM, type LLMConfig } from "../lib/llm";
 import { TOOL_LABELS, type ChatRequest, type ToolArgs } from "../lib/tools";
 import { aiWriteLock } from "../lib/ai-write-lock";
 import { executeTool as executeMcpTool } from "../mcp/tools";
-import { normalizeNoteTitle } from "../shared/text-utils";
 
 // ── Static reference constants (returned by get_dashboard_constants / get_idea_flow_rules) ──
 
@@ -153,10 +152,9 @@ export async function executeTool(
       return executeMcpTool(db, workspacePath, name, args);
     }
     case "ensure_note": {
-      const matchTitle = normalizeNoteTitle(args.title as string);
-      const existing = snap.notes.find(
-        (n) => !n.archivedAt && n.projectId === args.projectId && normalizeNoteTitle(n.title as string) === matchTitle
-      );
+      // Use the same authoritative live-DB lookup ensure_note uses, so the
+      // aiWriteLock id can't diverge from the id the tool actually writes.
+      const existing = q.findLiveNoteByTitle(db, args.projectId as string, args.title as string);
       const ensureNoteId = existing?.id ?? newId();
       const win = getWin?.() ?? null;
       aiWriteLock.lock(ensureNoteId, win);

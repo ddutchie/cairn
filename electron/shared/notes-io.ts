@@ -182,6 +182,47 @@ export function writeNoteFile(workspacePath: string, note: NoteFileData): void {
   // Now safe to remove the old file (rename already succeeded)
   if (existingPath && existingPath !== newPath) {
     try { fs.unlinkSync(existingPath); } catch { /* ignore */ }
+    // A folder move can leave the old subfolder empty. Prune it (and any
+    // parents it emptied) so stale, note-less folders don't linger in the
+    // notes tree — but never remove the project root itself.
+    pruneEmptyDirsUpTo(path.dirname(existingPath), projectNotesDir(workspacePath, projectName));
+  }
+}
+
+/**
+ * Remove `startDir` and each of its ancestors if — and only if — they are
+ * empty, walking upward until (but never including) `stopDir` (the project
+ * notes root). Best-effort: any non-empty directory or filesystem error halts
+ * the walk. Used after a note is moved or deleted so the folder it vacated
+ * doesn't remain as a phantom empty entry in the notes tree.
+ *
+ * `startDir` and `stopDir` are compared as resolved absolute paths so a
+ * relative/absolute mix (or trailing separators) can't let the walk escape
+ * above the project root.
+ */
+export function pruneEmptyDirsUpTo(startDir: string, stopDir: string): void {
+  try {
+    const stop = path.resolve(stopDir);
+    let dir = path.resolve(startDir);
+    // Only prune inside the project root — bail if startDir is the root itself
+    // or somewhere outside/above it.
+    while (dir !== stop && dir.startsWith(stop + path.sep)) {
+      let entries: string[];
+      try {
+        entries = fs.readdirSync(dir);
+      } catch {
+        return; // dir already gone or unreadable — stop
+      }
+      if (entries.length > 0) return; // not empty — leave it and everything above
+      try {
+        fs.rmdirSync(dir);
+      } catch {
+        return; // couldn't remove (race, permissions) — stop
+      }
+      dir = path.dirname(dir);
+    }
+  } catch {
+    /* best-effort — never throw out of a file write */
   }
 }
 
@@ -193,6 +234,9 @@ export function deleteNoteFile(
   const fp = findNoteFilePath(workspacePath, projectName, noteId);
   if (fp) {
     try { fs.unlinkSync(fp); } catch { /* ignore */ }
+    // Deleting the last note in a subfolder empties it — prune the vacated
+    // folder(s), stopping at the project root.
+    pruneEmptyDirsUpTo(path.dirname(fp), projectNotesDir(workspacePath, projectName));
   }
 }
 

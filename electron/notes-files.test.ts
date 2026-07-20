@@ -27,6 +27,7 @@ import {
   adoptExternalNoteFile,
   syncNotesFromDisk,
 } from "./notes-files";
+import { pruneEmptyDirsUpTo } from "./shared/notes-io";
 import type { NoteData } from "./notes-files";
 
 // ── Temp dir helpers ──────────────────────────────────────────────────────
@@ -633,5 +634,109 @@ describe("reconcileProjectFolders", () => {
     expect(reconcileProjectFolders(db, tmpDir)).toBe(0);
     // Untouched.
     expect(fs.existsSync(path.join(strayDir, "readme.txt"))).toBe(true);
+  });
+});
+
+// ── Empty-folder pruning after move / delete ───────────────────────────────
+
+describe("empty-folder pruning", () => {
+  const PROJECT = "My Project";
+  const projRoot = () => projectNotesDir(tmpDir, PROJECT);
+  const folderDir = (folder: string) => path.join(projRoot(), ...folder.split("/").map(toSlug));
+
+  it("removes the vacated subfolder when a note is moved out of it", () => {
+    const note = makeNote({ id: "n1", title: "Spec", folder: "Old", projectName: PROJECT });
+    writeNoteFile(tmpDir, note);
+    expect(fs.existsSync(folderDir("Old"))).toBe(true);
+
+    // Move to a different folder (same title/id → writeNoteFile relocates the file).
+    writeNoteFile(tmpDir, { ...note, folder: "New" });
+
+    expect(fs.existsSync(folderDir("New"))).toBe(true);
+    expect(fs.existsSync(folderDir("Old"))).toBe(false); // pruned
+    expect(fs.existsSync(projRoot())).toBe(true);         // root untouched
+  });
+
+  it("collapses nested empty parents up to the project root", () => {
+    const note = makeNote({ id: "n1", title: "Spec", folder: "A/B/C", projectName: PROJECT });
+    writeNoteFile(tmpDir, note);
+    expect(fs.existsSync(folderDir("A/B/C"))).toBe(true);
+
+    writeNoteFile(tmpDir, { ...note, folder: "" }); // move to root
+
+    expect(fs.existsSync(folderDir("A"))).toBe(false); // whole empty chain gone
+    expect(fs.existsSync(projRoot())).toBe(true);
+    expect(fs.existsSync(path.join(projRoot(), `${toSlug("Spec")}.md`))).toBe(true);
+  });
+
+  it("leaves a folder in place when other notes still live there", () => {
+    const keep = makeNote({ id: "keep", title: "Keeper", folder: "Shared", projectName: PROJECT });
+    const move = makeNote({ id: "move", title: "Mover", folder: "Shared", projectName: PROJECT });
+    writeNoteFile(tmpDir, keep);
+    writeNoteFile(tmpDir, move);
+
+    writeNoteFile(tmpDir, { ...move, folder: "Elsewhere" });
+
+    // Shared still holds "Keeper" → must NOT be pruned.
+    expect(fs.existsSync(folderDir("Shared"))).toBe(true);
+    expect(fs.existsSync(path.join(folderDir("Shared"), `${toSlug("Keeper")}.md`))).toBe(true);
+    expect(fs.existsSync(folderDir("Elsewhere"))).toBe(true);
+  });
+
+  it("prunes the folder when the last note in it is deleted", () => {
+    const note = makeNote({ id: "n1", title: "Spec", folder: "Solo", projectName: PROJECT });
+    writeNoteFile(tmpDir, note);
+    expect(fs.existsSync(folderDir("Solo"))).toBe(true);
+
+    deleteNoteFile(tmpDir, PROJECT, "n1");
+
+    expect(fs.existsSync(folderDir("Solo"))).toBe(false);
+    expect(fs.existsSync(projRoot())).toBe(true);
+  });
+
+  it("never removes the project root, even when it becomes empty", () => {
+    const note = makeNote({ id: "n1", title: "Spec", folder: "", projectName: PROJECT });
+    writeNoteFile(tmpDir, note);
+    deleteNoteFile(tmpDir, PROJECT, "n1");
+
+    // Root-level note deleted → the folder is empty, but the project root dir
+    // must remain (pruning stops at, and never removes, the root).
+    // deleteNoteFile prunes from the file's dir (the root) upward, and the
+    // stopDir guard means the root itself is never rmdir'd.
+    expect(fs.existsSync(projRoot())).toBe(true);
+  });
+
+  describe("pruneEmptyDirsUpTo (unit)", () => {
+    it("stops at a non-empty ancestor", () => {
+      const root = path.join(tmpDir, "root");
+      const a = path.join(root, "a");
+      const b = path.join(a, "b");
+      fs.mkdirSync(b, { recursive: true });
+      fs.writeFileSync(path.join(a, "sentinel.txt"), "x", "utf-8"); // makes `a` non-empty
+
+      pruneEmptyDirsUpTo(b, root);
+
+      expect(fs.existsSync(b)).toBe(false); // empty leaf removed
+      expect(fs.existsSync(a)).toBe(true);  // non-empty → kept
+      expect(fs.existsSync(root)).toBe(true);
+    });
+
+    it("does nothing when startDir is the stopDir", () => {
+      const root = path.join(tmpDir, "root");
+      fs.mkdirSync(root, { recursive: true });
+      pruneEmptyDirsUpTo(root, root);
+      expect(fs.existsSync(root)).toBe(true);
+    });
+
+    it("never escapes above stopDir", () => {
+      const root = path.join(tmpDir, "root");
+      const outside = path.join(tmpDir, "outside");
+      fs.mkdirSync(root, { recursive: true });
+      fs.mkdirSync(outside, { recursive: true });
+      // startDir is a sibling of root, not under it → must be a no-op.
+      pruneEmptyDirsUpTo(outside, root);
+      expect(fs.existsSync(outside)).toBe(true);
+      expect(fs.existsSync(tmpDir)).toBe(true);
+    });
   });
 });

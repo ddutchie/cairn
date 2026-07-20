@@ -3,7 +3,7 @@
 import React, { useRef, useCallback, useState, useEffect, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import "katex/dist/katex.min.css";
-import { Pin, PinOff, Calendar, Eye, Pencil, Wand2, Loader2, CheckCircle2, FileDown, FileText, ChevronLeft, Sparkles, Sun, Moon, ChevronDown as Chevron } from "lucide-react";import { WikilinkPicker } from "./WikilinkPicker";
+import { Pin, PinOff, Calendar, Eye, Pencil, Wand2, Loader2, CheckCircle2, FileDown, FileText, ChevronLeft, Sparkles, Sun, Moon, Maximize2, Minimize2, ChevronDown as Chevron } from "lucide-react";import { WikilinkPicker } from "./WikilinkPicker";
 import { getActiveWikilink } from "@/lib/wikilink-parser";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -32,7 +32,7 @@ interface NoteEditorProps {
 type EditorMode = "write" | "read";
 
 export function NoteEditor({ note, onBack }: NoteEditorProps) {
-  const { updateNote, aiConfig, activeProjectId, getProjectColumns, tags, createTag, getTagById, activeWorkspaceId, setView, notes, projects, noteChangeMarks, clearNoteChangeMark } = useCairnStore(useShallow((s) => ({
+  const { updateNote, aiConfig, activeProjectId, getProjectColumns, tags, createTag, getTagById, activeWorkspaceId, setView, notes, projects, noteChangeMarks, clearNoteChangeMark, notesFullscreen, toggleNotesFullscreen } = useCairnStore(useShallow((s) => ({
     updateNote:        s.updateNote,
     aiConfig:          s.aiConfig,
     activeProjectId:   s.activeProjectId,
@@ -46,6 +46,8 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
     projects:          s.projects,
     noteChangeMarks:   s.noteChangeMarks,
     clearNoteChangeMark: s.clearNoteChangeMark,
+    notesFullscreen:   s.notesFullscreen,
+    toggleNotesFullscreen: s.toggleNotesFullscreen,
   })));
   const aiEnabled = aiConfig.aiEnabled ?? true;
   const editorRef = useRef<MarkdownEditorHandle>(null);
@@ -775,6 +777,19 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
               )}
             >
               <Sparkles size={13} />
+            </button>
+          </Tooltip>
+          <Tooltip content={notesFullscreen ? "Exit distraction-free (⌘.)" : "Distraction-free mode (⌘.)"}>
+            <button
+              onClick={() => toggleNotesFullscreen()}
+              className={cn(
+                "p-1.5 rounded-md transition-colors",
+                notesFullscreen
+                  ? "text-[var(--accent)] bg-[var(--accent-dim)]"
+                  : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]"
+              )}
+            >
+              {notesFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
             </button>
           </Tooltip>
           <span className="text-[0.786rem] text-[var(--text-tertiary)]">
