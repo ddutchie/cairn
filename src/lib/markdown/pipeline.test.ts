@@ -190,11 +190,12 @@ function runBuilders(md: string): Root {
   const remarkPlugins = buildNoteRemarkPlugins(md, { wikilinks: true });
   const rehypePlugins = buildNoteRehypePlugins(md, { latex });
   const proc = unified().use(remarkParse);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  for (const p of remarkPlugins) proc.use(p as any);
+  // Pass the whole PluggableList at once so tuple entries like
+  // [remarkMath, { singleDollarTextMath: false }] are applied with their
+  // options (iterating + proc.use(tuple) would misread the options as a preset).
+  proc.use(remarkPlugins);
   proc.use(remarkRehype, { allowDangerousHtml: true });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  for (const p of rehypePlugins) proc.use(p as any);
+  proc.use(rehypePlugins);
   return proc.runSync(proc.parse(md)) as Root;
 }
 
@@ -240,5 +241,31 @@ describe("buildNote{Remark,Rehype}Plugins — content-aware assembly", () => {
     const tags = tagNames(tree);
     expect(tags).toContain("mark");
     expect(tags).toContain("mathblock");
+  });
+
+  it("does NOT treat currency like '$145.000 - $250.000' as inline math", () => {
+    // singleDollarTextMath is disabled, so a $…$ pair on a line is plain text,
+    // not KaTeX. The $ signs must survive and no katex/math node is produced.
+    const tree = runBuilders("Budget: $145.000 - $250.000 total.");
+
+    // No KaTeX artifacts.
+    expect(tagNames(tree)).not.toContain("mathblock");
+    let hasKatex = false;
+    visit(tree, "element", (n: Element) => {
+      const cls = Array.isArray(n.properties?.className) ? n.properties!.className.map(String) : [];
+      if (cls.some((c) => c.startsWith("katex"))) hasKatex = true;
+    });
+    expect(hasKatex).toBe(false);
+
+    // Both dollar signs survive in the rendered text.
+    let text = "";
+    visit(tree, "text", (n: { value?: string }) => { text += n.value ?? ""; });
+    expect(text).toContain("$145.000");
+    expect(text).toContain("$250.000");
+  });
+
+  it("still renders explicit $$…$$ display math (currency fix does not disable block math)", () => {
+    const tree = runBuilders("Total cost model:\n\n$$c = 145 + 250$$\n");
+    expect(tagNames(tree)).toContain("mathblock");
   });
 });
