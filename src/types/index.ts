@@ -228,6 +228,8 @@ export interface ChatThread {
   title?: string;
   createdAt: string;
   updatedAt: string;
+  /** When true, this thread runs the dispatch → research/write subagent architecture instead of the single-agent loop. Per-thread, persisted. */
+  useSubagents?: boolean;
   lastUsage?: {
     promptTokens: number;
     completionTokens: number;
@@ -266,6 +268,33 @@ export interface ChatToolCallRecord {
   callId?: string;
   args?: string;      // JSON arguments string
   output?: string;    // JSON output string
+}
+
+/**
+ * A single subagent run inside a subagent-mode chat turn (dispatch → research/
+ * write). Captures the subagent's role, the dispatcher's instruction, its own
+ * streamed content + tool calls, and the brief it returned. Rendered as an
+ * expandable inline block so the user can step into what each subagent did.
+ */
+export interface ChatSubagent {
+  /** Unique child id: `${threadId}:sub:<n>` */
+  childId: string;
+  /** "research" | "write" */
+  role: string;
+  /** The dispatcher's instruction to this subagent */
+  instruction: string;
+  /** Content streamed by the subagent (its findings brief / confirmation) */
+  content: string;
+  /** Reasoning/thinking streamed by the subagent */
+  reasoning?: string;
+  /** Tool calls the subagent made */
+  toolCalls?: ChatToolCallRecord[];
+  /** Whether the subagent is still running */
+  running: boolean;
+  /** Final result returned to the dispatcher (usually == content) */
+  result?: string;
+  /** This subagent's OWN latest context-window usage — drives its dedicated ring. */
+  lastUsage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number };
 }
 
 export type SuggestedAction =
@@ -308,6 +337,8 @@ export interface ChatMessage {
   actions?: SuggestedAction[];
   /** Images attached to this message — inline base64 data URLs, ephemeral (not persisted to disk) */
   images?: Array<{ url: string; name: string }>;
+  /** Subagent runs during this turn (subagent mode) — expandable inline traces. */
+  subagents?: ChatSubagent[];
   createdAt: string;
 }
 

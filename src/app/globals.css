@@ -587,3 +587,11 @@ input[type="url"] {
   background: var(--danger);
   color: #fff;
 }
+
+/* Cross-project drop target: a project sidebar row highlighted while a task
+   card is dragged over it (from the kanban board). */
+.cairn-cross-project-drop-active {
+  background: color-mix(in srgb, var(--accent) 18%, transparent) !important;
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}

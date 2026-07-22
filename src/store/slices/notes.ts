@@ -7,6 +7,7 @@ import type { CairnStore } from "../index";
 import type { Note, ID, NoteType } from "@/types";
 import { id, now } from "@/lib/utils";
 import { ipc, isElectron, markOwnNoteWrite } from "../ipc";
+import { normalizeFolderPath } from "../../../shared/notes/folder-tree";
 import { historyManager } from "@/lib/history";
 import {
   makeCreateNoteCmd,
@@ -17,6 +18,20 @@ import {
   makeRestoreNoteCmd,
   makeLinkNoteToCardCmd,
 } from "@/lib/commands/note-commands";
+
+/**
+ * Notes in `projectId` that live at `source` (a normalized folder path) or any
+ * descendant of it. Folder matching is case-insensitive. Shared by moveFolder
+ * and moveFolderToProject so their subtree selection stays identical.
+ */
+function notesInFolderSubtree(notes: Note[], projectId: ID, source: string): Note[] {
+  const srcLower = source.toLowerCase();
+  return notes.filter((n) => {
+    if (n.projectId !== projectId) return false;
+    const f = normalizeFolderPath(n.folder).toLowerCase();
+    return f === srcLower || f.startsWith(`${srcLower}/`);
+  });
+}
 
 // ── Slice interface ───────────────────────────────────────────────────────────
 
@@ -46,6 +61,21 @@ export interface NotesSlice {
   moveNoteToProject: (noteId: ID, targetProjectId: ID) => void;
   /** Move a note to a subfolder within its current project. folder="" moves to root. */
   moveNoteToFolder: (noteId: ID, folder: string) => void;
+  /**
+   * Move (reparent) an entire folder and everything under it within a project.
+   * `sourcePath` is the folder being dragged (e.g. "Design/Typography");
+   * `destParentPath` is the folder it should live inside ("" = project root).
+   * Every note under `sourcePath` has its `folder` re-prefixed accordingly.
+   * No-op if the move would nest a folder inside itself.
+   */
+  moveFolder: (projectId: ID, sourcePath: string, destParentPath: string) => void;
+  /**
+   * Move an entire folder subtree to another PROJECT, preserving its internal
+   * folder structure. Every note under `sourcePath` in `sourceProjectId` is
+   * moved to `targetProjectId` keeping its `folder` path. No-op if the target
+   * project doesn't exist or nothing matches.
+   */
+  moveFolderToProject: (sourceProjectId: ID, sourcePath: string, targetProjectId: ID) => void;
   linkNoteToCard: (noteId: ID, cardId: ID) => void;
   /** Reveal the note's .md file in the OS file explorer. No-op outside Electron. */
   revealNote: (noteId: ID, projectId: ID) => void;
@@ -186,6 +216,68 @@ export const createNotesSlice: StateCreator<CairnStore, [], [], NotesSlice> = (
     get().persist();
     markOwnNoteWrite(noteId);
     ipc((e) => e.note.moveToFolder(noteId, folder));
+  },
+
+  moveFolder(projectId, sourcePath, destParentPath) {
+    const source = normalizeFolderPath(sourcePath);
+    const destParent = normalizeFolderPath(destParentPath);
+    if (!source) return; // can't move the root itself
+
+    const folderName = source.split("/").pop()!;
+    const newBase = destParent ? `${destParent}/${folderName}` : folderName;
+
+    // No-op: dropping onto the same parent, or onto itself / a descendant (which
+    // would nest the folder inside itself and orphan the notes).
+    if (newBase === source || newBase.startsWith(`${source}/`)) return;
+
+    const affected = notesInFolderSubtree(get().notes, projectId, source);
+    if (affected.length === 0) return;
+
+    const nowTs = now();
+    const remap = new Map<ID, string>();
+    for (const n of affected) {
+      const f = normalizeFolderPath(n.folder);
+      // Replace the source prefix with the new base, preserving the suffix path.
+      const suffix = f.slice(source.length); // "" or "/sub/deeper"
+      remap.set(n.id, `${newBase}${suffix}`);
+    }
+
+    set((s) => ({
+      notes: s.notes.map((n) =>
+        remap.has(n.id) ? { ...n, folder: remap.get(n.id)!, updatedAt: nowTs } : n
+      ),
+    }));
+    get().persist();
+    for (const [noteId, folder] of remap) {
+      markOwnNoteWrite(noteId);
+      ipc((e) => e.note.moveToFolder(noteId, folder));
+    }
+  },
+
+  moveFolderToProject(sourceProjectId, sourcePath, targetProjectId) {
+    if (sourceProjectId === targetProjectId) return;
+    const source = normalizeFolderPath(sourcePath);
+    if (!source) return;
+    const targetProject = get().projects.find((p) => p.id === targetProjectId);
+    if (!targetProject) return;
+
+    const affected = notesInFolderSubtree(get().notes, sourceProjectId, source);
+    if (affected.length === 0) return;
+
+    const nowTs = now();
+    const ids = affected.map((n) => n.id);
+    set((s) => ({
+      notes: s.notes.map((n) =>
+        ids.includes(n.id)
+          ? { ...n, projectId: targetProjectId, workspaceId: targetProject.workspaceId, updatedAt: nowTs }
+          : n
+      ),
+    }));
+    get().persist();
+    for (const noteId of ids) {
+      markOwnNoteWrite(noteId);
+      ipc((e) => e.note.moveToProject(noteId, targetProjectId, targetProject.workspaceId));
+    }
   },
 
   linkNoteToCard(noteId, cardId) {

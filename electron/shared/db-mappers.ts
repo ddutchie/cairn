@@ -218,6 +218,7 @@ export function toChatThread(row: any) {
     workspaceId: row.workspace_id as string,
     projectId: row.project_id as string | undefined,
     title: row.title as string | undefined,
+    useSubagents: row.use_subagents ? true : false,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   };
@@ -232,6 +233,7 @@ export function toChatMessage(row: any) {
     reasoning: (row.reasoning as string | null) ?? undefined,
     contextRefs: row.context_refs ? JSON.parse(row.context_refs) : undefined,
     toolCalls: row.tool_calls ? JSON.parse(row.tool_calls) : undefined,
+    subagents: row.subagents ? JSON.parse(row.subagents) : undefined,
     createdAt: row.created_at as string,
   };
 }

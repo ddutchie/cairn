@@ -20,6 +20,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@
 import { WorkspaceSwitcher } from "./sidebar/WorkspaceSwitcher";
 import { ProjectCreateForm } from "./sidebar/ProjectCreateForm";
 import { buildShortcutMap, modKey, countOpenCardsByProject, dueDateSeverity, dueDateDiffDays } from "./sidebar-utils";
+import { getActiveCrossProjectDrag, setActiveCrossProjectDrag } from "@/lib/cross-project-dnd";
 import type { Project } from "@/types";
 
 // ── View nav config ───────────────────────────────────────────────────────────
@@ -54,8 +55,8 @@ export function Sidebar() {
     createProject, updateProject, deleteProject,
     cards, chatOpen, searchOpen,
     hiddenViews,
-  } = useCairnStore(useShallow((s) => ({
-    sidebarCollapsed:    s.sidebarCollapsed,
+    moveFolderToProject, moveCardToProject, moveNoteToProject,
+  } = useCairnStore(useShallow((s) => ({    sidebarCollapsed:    s.sidebarCollapsed,
     toggleSidebar:       s.toggleSidebar,
     activeWorkspaceId:   s.activeWorkspaceId,
     activeProjectId:     s.activeProjectId,
@@ -74,6 +75,9 @@ export function Sidebar() {
     chatOpen:            s.chatOpen,
     searchOpen:          s.searchOpen,
     hiddenViews:         s.hiddenViews,
+    moveFolderToProject: s.moveFolderToProject,
+    moveCardToProject:   s.moveCardToProject,
+    moveNoteToProject:   s.moveNoteToProject,
   })));
 
   // All navigable views in order (overview + notes always first)
@@ -98,6 +102,23 @@ export function Sidebar() {
       toggleSidebar();
     }
   }, [sidebarCollapsed, toggleSidebar]);
+
+  // Cross-project drop: a notes folder or a task card dragged onto a project row.
+  // Returns true if a move was dispatched. Reads the active drag payload from the
+  // shared cross-project-dnd module (works for both native and dnd-kit sources).
+  const handleCrossProjectDrop = useCallback((targetProjectId: string): boolean => {
+    const drag = getActiveCrossProjectDrag();
+    if (!drag || drag.sourceProjectId === targetProjectId) return false;
+    if (drag.kind === "folder") {
+      moveFolderToProject(drag.sourceProjectId, drag.folderPath, targetProjectId);
+    } else if (drag.kind === "note") {
+      moveNoteToProject(drag.noteId, targetProjectId);
+    } else {
+      moveCardToProject(drag.cardId, targetProjectId);
+    }
+    setActiveCrossProjectDrag(null);
+    return true;
+  }, [moveFolderToProject, moveCardToProject, moveNoteToProject]);
 
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set([activeProjectId ?? ""]));
   const [creatingProject, setCreatingProject]   = useState(false);
@@ -258,6 +279,7 @@ export function Sidebar() {
                     openCardCount={openCardCountByProject.get(project.id) ?? 0}
                     hiddenViews={hiddenViews}
                     visibleNavItems={visibleNavItems}
+                    onCrossProjectDrop={handleCrossProjectDrop}
                   />
                 ));
               })()}
@@ -317,12 +339,14 @@ interface ProjectItemProps {
   openCardCount: number;
   hiddenViews: Set<string>;
   visibleNavItems: ViewNavItem[];
+  onCrossProjectDrop: (targetProjectId: string) => boolean;
 }
 
-function ProjectItem({ project, isActive, isExpanded, onToggleExpand, onSelectProject, activeView, onSelectView, onRename, onDelete, openCardCount, hiddenViews: _hiddenViews, visibleNavItems }: ProjectItemProps) {
+function ProjectItem({ project, isActive, isExpanded, onToggleExpand, onSelectProject, activeView, onSelectView, onRename, onDelete, openCardCount, hiddenViews: _hiddenViews, visibleNavItems, onCrossProjectDrop }: ProjectItemProps) {
   const [renaming, setRenaming]             = useState(false);
   const [renameValue, setRenameValue]       = useState(project.name);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [isDropTarget, setIsDropTarget]     = useState(false);
   const renameInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -360,8 +384,29 @@ function ProjectItem({ project, isActive, isExpanded, onToggleExpand, onSelectPr
         </DialogContent>
       </Dialog>
       <div>
-        <div className={cn("flex items-center gap-1 rounded-md px-2 py-1.5 group cursor-pointer transition-colors",
-          isActive ? "bg-[var(--surface-2)] text-[var(--text-primary)]" : "text-[var(--text-secondary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)]")}>
+        <div
+          data-project-drop-id={project.id}
+          className={cn("flex items-center gap-1 rounded-md px-2 py-1.5 group cursor-pointer transition-colors",
+          isDropTarget
+            ? "bg-[color-mix(in_srgb,var(--accent)_18%,transparent)] outline outline-1 outline-[var(--accent)] outline-offset-[-1px]"
+            : isActive ? "bg-[var(--surface-2)] text-[var(--text-primary)]" : "text-[var(--text-secondary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)]")}
+          onDragOver={(e) => {
+            const drag = getActiveCrossProjectDrag();
+            if (!drag || drag.sourceProjectId === project.id) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+            if (!isDropTarget) setIsDropTarget(true);
+          }}
+          onDragLeave={() => { if (isDropTarget) setIsDropTarget(false); }}
+          onDrop={(e) => {
+            const drag = getActiveCrossProjectDrag();
+            if (!drag || drag.sourceProjectId === project.id) return;
+            e.preventDefault();
+            e.stopPropagation();
+            setIsDropTarget(false);
+            onCrossProjectDrop(project.id);
+          }}
+        >
           <button onClick={onToggleExpand} className="flex-shrink-0 p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]">
             {isExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
           </button>

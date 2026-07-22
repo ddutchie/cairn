@@ -145,6 +145,8 @@ export interface ChatRequest {
   config?: { baseUrl?: string; model?: string; apiKey?: string; maxSteps?: number; temperature?: number };
   systemPrompt?: string;
   images?: Array<{ name: string; dataUrl: string }>;
+  /** When true, run the dispatch → research/write subagent loop instead of the single-agent tool loop. */
+  useSubagents?: boolean;
 }
 
 export function buildSystemPrompt(req: ChatRequest): string {

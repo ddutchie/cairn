@@ -7,6 +7,7 @@ import { cn, formatRelative, prettifyToolLabel } from "@/lib/utils";
 import { MarkdownContent } from "./MarkdownContent";
 import { ActionsList } from "./ActionsList";
 import { ThinkingPanel } from "./ThinkingPanel";
+import { ChatSubagentBlock } from "./ChatSubagentBlock";
 import { MessageAvatar } from "./message-ui";
 import { CairnRefChip } from "@/components/shared/cairn-ref-chip";
 import type { ChatMessage, LinkedContextReference, ChatToolCallRecord } from "@/types";
@@ -60,6 +61,13 @@ export const ChatMessageBubble = React.memo(function ChatMessageBubble({ message
     <div className={cn("group flex gap-2 items-start", isUser && "flex-row-reverse")}>
       <MessageAvatar role={isUser ? "user" : "bot"} size="lg" />
       <div className={cn("flex-1 min-w-0 space-y-1.5", isUser && "items-end flex flex-col")}>
+        {!isUser && message.subagents && message.subagents.length > 0 && (
+          <div className="flex flex-col gap-1 mb-1">
+            {message.subagents.map((sub) => (
+              <ChatSubagentBlock key={sub.childId} sub={sub} />
+            ))}
+          </div>
+        )}
         {!isUser && message.toolCalls && message.toolCalls.length > 0 && (
           <div className="flex flex-col gap-1 mb-1">
             {message.toolCalls.map((tc, i) => (

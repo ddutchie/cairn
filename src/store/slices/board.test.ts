@@ -260,3 +260,64 @@ describe("getReadyCards", () => {
     expect(get().getReadyCards("proj-1").map((c: TaskCard) => c.id)).toEqual(["a"]);
   });
 });
+
+describe("moveCardToProject", () => {
+  const projects = [
+    { id: "proj-1", workspaceId: "ws-1", name: "P1" },
+    { id: "proj-2", workspaceId: "ws-1", name: "P2" },
+  ];
+
+  it("lands the card in the target project's column of the SAME type", () => {
+    const { get } = setup({
+      projects,
+      columns: [
+        col("s-todo", "proj-1", "todo", 1),
+        col("s-prog", "proj-1", "in_progress", 2),
+        col("t-backlog", "proj-2", "backlog", 0),
+        col("t-todo", "proj-2", "todo", 1),
+        col("t-prog", "proj-2", "in_progress", 2),
+      ],
+      cards: [card("x", "s-prog", 0, { projectId: "proj-1" })],
+    });
+
+    get().moveCardToProject("x", "proj-2");
+
+    const moved = get().cards.find((c: TaskCard) => c.id === "x");
+    expect(moved.projectId).toBe("proj-2");
+    expect(moved.columnId).toBe("t-prog"); // in_progress → in_progress
+  });
+
+  it("falls back to backlog when the target has no same-type column", () => {
+    const { get } = setup({
+      projects,
+      columns: [
+        col("s-review", "proj-1", "review", 3),
+        col("t-backlog", "proj-2", "backlog", 0),
+        col("t-todo", "proj-2", "todo", 1),
+      ],
+      cards: [card("x", "s-review", 0, { projectId: "proj-1" })],
+    });
+
+    get().moveCardToProject("x", "proj-2");
+
+    const moved = get().cards.find((c: TaskCard) => c.id === "x");
+    expect(moved.columnId).toBe("t-backlog"); // no review column → backlog
+  });
+
+  it("falls back to the first column when the target has neither same-type nor backlog", () => {
+    const { get } = setup({
+      projects,
+      columns: [
+        col("s-review", "proj-1", "review", 3),
+        col("t-first", "proj-2", "todo", 0),
+        col("t-done", "proj-2", "done", 1),
+      ],
+      cards: [card("x", "s-review", 0, { projectId: "proj-1" })],
+    });
+
+    get().moveCardToProject("x", "proj-2");
+
+    const moved = get().cards.find((c: TaskCard) => c.id === "x");
+    expect(moved.columnId).toBe("t-first"); // lowest order
+  });
+});
