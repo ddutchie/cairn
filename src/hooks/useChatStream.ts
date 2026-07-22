@@ -267,12 +267,17 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
       // Only trigger for tools that actually persist state — exclude read-only
       // tools (get_*/list_*/search_*) and suggestion-only tools that stage
       // pendingActionsRef without writing to the DB.
-      const hasPersistedWrite = finalToolCalls.some((tc) => {
-        const name = tc.tool;
+      const isWriteTool = (name: string) => {
         if (name.startsWith("get_") || name.startsWith("list_") || name.startsWith("search_")) return false;
         if (name === "suggest_connections" || name === "ask_questions") return false;
         return true;
-      });
+      };
+      // In subagent mode, writes happen inside the write sub-agent's tool calls,
+      // not the top-level list — check both so the board/notes still refresh.
+      const subagentToolCalls = subagentsRef.current.flatMap((s) => s.toolCalls ?? []);
+      const hasPersistedWrite =
+        finalToolCalls.some((tc) => isWriteTool(tc.tool)) ||
+        subagentToolCalls.some((tc) => isWriteTool(tc.tool));
       if (hasPersistedWrite) {
         useCairnStore.getState().hydrateFromElectron(true).catch((err) => {
           console.error("[useChatStream] post-write hydrate failed", err);

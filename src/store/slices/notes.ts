@@ -19,6 +19,20 @@ import {
   makeLinkNoteToCardCmd,
 } from "@/lib/commands/note-commands";
 
+/**
+ * Notes in `projectId` that live at `source` (a normalized folder path) or any
+ * descendant of it. Folder matching is case-insensitive. Shared by moveFolder
+ * and moveFolderToProject so their subtree selection stays identical.
+ */
+function notesInFolderSubtree(notes: Note[], projectId: ID, source: string): Note[] {
+  const srcLower = source.toLowerCase();
+  return notes.filter((n) => {
+    if (n.projectId !== projectId) return false;
+    const f = normalizeFolderPath(n.folder).toLowerCase();
+    return f === srcLower || f.startsWith(`${srcLower}/`);
+  });
+}
+
 // ── Slice interface ───────────────────────────────────────────────────────────
 
 /**
@@ -216,12 +230,7 @@ export const createNotesSlice: StateCreator<CairnStore, [], [], NotesSlice> = (
     // would nest the folder inside itself and orphan the notes).
     if (newBase === source || newBase.startsWith(`${source}/`)) return;
 
-    const srcLower = source.toLowerCase();
-    const affected = get().notes.filter((n) => {
-      if (n.projectId !== projectId) return false;
-      const f = normalizeFolderPath(n.folder).toLowerCase();
-      return f === srcLower || f.startsWith(`${srcLower}/`);
-    });
+    const affected = notesInFolderSubtree(get().notes, projectId, source);
     if (affected.length === 0) return;
 
     const nowTs = now();
@@ -252,12 +261,7 @@ export const createNotesSlice: StateCreator<CairnStore, [], [], NotesSlice> = (
     const targetProject = get().projects.find((p) => p.id === targetProjectId);
     if (!targetProject) return;
 
-    const srcLower = source.toLowerCase();
-    const affected = get().notes.filter((n) => {
-      if (n.projectId !== sourceProjectId) return false;
-      const f = normalizeFolderPath(n.folder).toLowerCase();
-      return f === srcLower || f.startsWith(`${srcLower}/`);
-    });
+    const affected = notesInFolderSubtree(get().notes, sourceProjectId, source);
     if (affected.length === 0) return;
 
     const nowTs = now();

@@ -34,30 +34,3 @@ export function setActiveCrossProjectDrag(payload: CrossProjectDragPayload | nul
 export function getActiveCrossProjectDrag(): CrossProjectDragPayload | null {
   return active;
 }
-
-/** Attach the payload to a native drag event's dataTransfer (best-effort). */
-export function writeCrossProjectDrag(
-  dt: DataTransfer | null | undefined,
-  payload: CrossProjectDragPayload,
-): void {
-  setActiveCrossProjectDrag(payload);
-  try {
-    dt?.setData(CROSS_PROJECT_DND_MIME, JSON.stringify(payload));
-    if (dt) dt.effectAllowed = "move";
-  } catch {
-    /* dataTransfer unavailable — the module mirror still carries the payload */
-  }
-}
-
-/** Read the payload from a drop event, falling back to the module mirror. */
-export function readCrossProjectDrag(
-  dt: DataTransfer | null | undefined,
-): CrossProjectDragPayload | null {
-  try {
-    const raw = dt?.getData(CROSS_PROJECT_DND_MIME);
-    if (raw) return JSON.parse(raw) as CrossProjectDragPayload;
-  } catch {
-    /* fall through to the module mirror */
-  }
-  return getActiveCrossProjectDrag();
-}

@@ -37,12 +37,9 @@ import {
 } from "../db/queries";
 import { buildSystemPrompt, type ChatRequest } from "./tools";
 import { normaliseBaseUrl } from "./llm";
+import { BASE_URL, MODEL, API_KEY, endpointUp } from "./bench-endpoint";
 import { runToolLoop } from "./chat-loop";
 import { runDispatchLoop } from "./chat-subagent-loop";
-
-const BASE_URL = normaliseBaseUrl(process.env.TEST_LLM_BASE_URL?.trim() || "http://localhost:1234/v1");
-const MODEL = process.env.TEST_LLM_MODEL?.trim() || "gpt-4o-mini";
-const API_KEY = process.env.TEST_LLM_API_KEY?.trim() || "";
 
 // Judge endpoint — defaults to the agent endpoint if not overridden.
 const JUDGE_BASE_URL = normaliseBaseUrl(process.env.JUDGE_BASE_URL?.trim() || BASE_URL);
@@ -128,13 +125,6 @@ function captureNew(db: Database.Database, beforeNoteIds: Set<string>, beforeCar
     .filter((c) => !beforeCardIds.has(c.id as string))
     .map((c) => ({ id: c.id as string, title: c.title as string }));
   return { notes, cards };
-}
-
-async function endpointUp(url: string, key: string): Promise<boolean> {
-  try {
-    const res = await fetch(`${url}/v1/models`, { headers: key ? { Authorization: `Bearer ${key}` } : {}, signal: AbortSignal.timeout(2500) });
-    return res.ok || res.status === 401 || res.status === 404;
-  } catch { return false; }
 }
 
 // ── The judge ─────────────────────────────────────────────────────────────────

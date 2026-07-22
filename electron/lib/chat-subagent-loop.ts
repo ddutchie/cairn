@@ -247,6 +247,7 @@ async function runSubagent(
   argMutator?: (name: string, args: Record<string, unknown>) => Record<string, unknown>,
   childId?: string,
   events?: SubagentEvents,
+  signal?: AbortSignal,
 ): Promise<string> {
   metrics.subagentRuns += 1;
   const messages: OpenAIMessage[] = [
@@ -266,7 +267,7 @@ async function runSubagent(
       metrics.toolCalls += 1;
       if (childId) events?.onSubagentToolCall?.({ childId, tool: e.tool, label: e.label, args: e.args, callId: e.callId });
     },
-    undefined,
+    signal,
     getWin,
     cfg.provider,
     (pt, ct, rt) => {
@@ -300,7 +301,7 @@ async function runSubagent(
   // explicit nudge to write the findings. This is the standard "force final
   // answer" pattern and rescues most empty-output cases on small models.
   if (metrics.toolCalls > 0 || messages.some((m) => m.role === "tool")) {
-    const forced = await forceFinalAnswer(cfg, messages, metrics);
+    const forced = await forceFinalAnswer(cfg, messages, metrics, signal);
     if (forced.trim()) {
       if (childId) events?.onSubagentToken?.({ childId, delta: forced.trim() });
       return forced.trim();
@@ -319,6 +320,7 @@ async function forceFinalAnswer(
   cfg: DispatchConfig,
   messages: OpenAIMessage[],
   metrics: SubagentMetrics,
+  signal?: AbortSignal,
 ): Promise<string> {
   const nudged: OpenAIMessage[] = [
     ...messages,
@@ -338,6 +340,7 @@ async function forceFinalAnswer(
     const response = await fetch(`${cfg.baseUrl}/v1/chat/completions`, {
       method: "POST",
       headers,
+      signal,
       body: JSON.stringify({
         model: cfg.model,
         messages: nudged,
@@ -376,6 +379,8 @@ export interface DispatchOptions {
   argMutator?: (name: string, args: Record<string, unknown>) => Record<string, unknown>;
   /** Streaming callbacks for a live, expandable subagent trace in the UI. */
   events?: SubagentEvents;
+  /** Abort signal so user cancellation stops every model/tool fetch. */
+  signal?: AbortSignal;
 }
 
 export async function runDispatchLoop(
@@ -390,6 +395,7 @@ export async function runDispatchLoop(
   const researchTools = opts?.researchTools ?? RESEARCH_TOOL_NAMES;
   const argMutator = opts?.argMutator;
   const events = opts?.events;
+  const signal = opts?.signal;
   let subSeq = 0;
   const date = new Date().toLocaleDateString("en-US", {
     weekday: "long", year: "numeric", month: "long", day: "numeric",
@@ -420,23 +426,35 @@ export async function runDispatchLoop(
   let finalReasoning = "";
 
   for (let round = 0; round < maxSteps; round++) {
+    if (signal?.aborted) {
+      return { content: finalContent, reasoning: finalReasoning, metrics };
+    }
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (cfg.apiKey) headers["Authorization"] = `Bearer ${cfg.apiKey}`;
 
-    const response = await fetch(`${cfg.baseUrl}/v1/chat/completions`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        model: cfg.model,
-        messages,
-        tools: DISPATCH_TOOLS,
-        tool_choice: "auto",
-        max_tokens: 4096,
-        temperature,
-        stream: false,
-        stream_options: undefined,
-      }),
-    });
+    let response: Response;
+    try {
+      response = await fetch(`${cfg.baseUrl}/v1/chat/completions`, {
+        method: "POST",
+        headers,
+        signal,
+        body: JSON.stringify({
+          model: cfg.model,
+          messages,
+          tools: DISPATCH_TOOLS,
+          tool_choice: "auto",
+          max_tokens: 4096,
+          temperature,
+          stream: false,
+          stream_options: undefined,
+        }),
+      });
+    } catch (_err) {
+      if (signal?.aborted) return { content: finalContent, reasoning: finalReasoning, metrics };
+      // Match the single-agent loop's graceful network-failure shape rather than
+      // letting the fetch rejection escape the dispatch loop.
+      return { content: `Could not reach the AI endpoint at \`${cfg.baseUrl}\`. Check your endpoint URL and make sure the server is running.`, reasoning: finalReasoning, metrics };
+    }
 
     if (!response.ok) {
       const errText = await response.text().catch(() => response.statusText);
@@ -479,7 +497,7 @@ export async function runDispatchLoop(
       // subagents did real work. Force a final synthesis from the gathered
       // subagent results rather than returning nothing.
       if (!finalContent && metrics.subagentRuns > 0) {
-        finalContent = (await forceFinalAnswer(cfg, messages, metrics)).trim();
+        finalContent = (await forceFinalAnswer(cfg, messages, metrics, signal)).trim();
       }
       return { content: finalContent, reasoning: finalReasoning, metrics };
     }
@@ -498,7 +516,7 @@ export async function runDispatchLoop(
         events?.onSubagentStart?.({ childId, role: "research", instruction });
         subResult = await runSubagent(
           db, req, workspacePath, cfg, RESEARCH_SYSTEM_PROMPT(date),
-          instruction, researchTools, metrics, getWin, argMutator, childId, events,
+          instruction, researchTools, metrics, getWin, argMutator, childId, events, signal,
         );
         events?.onSubagentDone?.({ childId, role: "research", result: subResult });
       } else if (call.function.name === "write") {
@@ -507,7 +525,7 @@ export async function runDispatchLoop(
         events?.onSubagentStart?.({ childId, role: "write", instruction });
         subResult = await runSubagent(
           db, req, workspacePath, cfg, WRITE_SYSTEM_PROMPT(date),
-          instruction, writeTools, metrics, getWin, argMutator, childId, events,
+          instruction, writeTools, metrics, getWin, argMutator, childId, events, signal,
         );
         events?.onSubagentDone?.({ childId, role: "write", result: subResult });
       } else {

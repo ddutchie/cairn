@@ -302,8 +302,9 @@ export function KanbanBoard() {
     if (!activeCard) { return; }
     const p = livePointer.current;
     if (!p) return;
-    // Highlight a sidebar project row if the pointer is over one.
-    updateSidebarDropHighlight(p.x, p.y, activeCard.projectId);
+    // Sidebar project-row highlighting is driven solely by the pointermove/
+    // touchmove listeners in the activeCard effect (they have accurate,
+    // auto-scroll-aware coordinates), so we don't duplicate it here.
     const barRect = titleBarRef.current?.getBoundingClientRect() ?? null;
     const archive = archiveBtnRef.current?.getBoundingClientRect() ?? null;
     const del = deleteBtnRef.current?.getBoundingClientRect() ?? null;

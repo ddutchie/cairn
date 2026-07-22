@@ -342,21 +342,34 @@ function isStaleDuplicate(from: string, to: string): boolean {
 }
 
 /**
- * Remove `dir` if it holds no note (`.md`) files, recursively. A merge can leave
+ * Remove `dir` if it holds no real data, recursively. A merge/rename can leave
  * behind OS cruft (a macOS `.DS_Store`) or now-empty subdirectories that would
  * otherwise keep the renamed-away folder alive on disk. We never delete a dir
- * that still contains real note data.
+ * that still contains real data — that includes note (`.md`) files AND any
+ * other user file (attachments, `.canvas`, images, etc.), so we don't destroy
+ * non-note content that happens to live in a folder.
  */
 function removeDirIfNoNotesLeft(dir: string): void {
   try {
     if (!fs.existsSync(dir)) return;
-    if (dirContainsNote(dir)) return; // real note data remains — keep it
+    if (dirContainsRealData(dir)) return; // real data remains — keep it
     fs.rmSync(dir, { recursive: true, force: true });
   } catch { /* best-effort */ }
 }
 
-/** True if `dir` (recursively) contains at least one `.md` file. */
-function dirContainsNote(dir: string): boolean {
+/**
+ * OS/tooling cruft filenames that never count as user data — safe to delete
+ * along with an otherwise-empty directory.
+ */
+const OS_CRUFT_NAMES = new Set([".DS_Store", "Thumbs.db", "desktop.ini", ".localized"]);
+
+/**
+ * True if `dir` (recursively) contains at least one real file — i.e. any file
+ * that is not explicitly-recognised OS cruft. Empty subdirectories and cruft
+ * files do not count; everything else (notes, attachments, etc.) blocks
+ * deletion so we never destroy non-note content.
+ */
+function dirContainsRealData(dir: string): boolean {
   let entries: string[];
   try {
     entries = fs.readdirSync(dir);
@@ -368,8 +381,8 @@ function dirContainsNote(dir: string): boolean {
     let stat: fs.Stats;
     try { stat = fs.lstatSync(full); } catch { continue; }
     if (stat.isDirectory()) {
-      if (dirContainsNote(full)) return true;
-    } else if (entry.endsWith(".md")) {
+      if (dirContainsRealData(full)) return true;
+    } else if (!OS_CRUFT_NAMES.has(entry)) {
       return true;
     }
   }

@@ -17,20 +17,9 @@ import os from "os";
 import path from "path";
 import { applySchema } from "../db/schema";
 import { createWorkspace, createProject, createColumn, createNote } from "../db/queries";
-import { normaliseBaseUrl } from "./llm";
+import { BASE_URL, MODEL, API_KEY, endpointUp } from "./bench-endpoint";
 import { runDispatchLoop, type SubagentEvents } from "./chat-subagent-loop";
 import type { ChatRequest } from "./tools";
-
-const BASE_URL = normaliseBaseUrl(process.env.TEST_LLM_BASE_URL?.trim() || "http://localhost:1234/v1");
-const MODEL = process.env.TEST_LLM_MODEL?.trim() || "gpt-4o-mini";
-const API_KEY = process.env.TEST_LLM_API_KEY?.trim() || "";
-
-async function endpointUp(): Promise<boolean> {
-  try {
-    const res = await fetch(`${BASE_URL}/v1/models`, { headers: API_KEY ? { Authorization: `Bearer ${API_KEY}` } : {}, signal: AbortSignal.timeout(2500) });
-    return res.ok || res.status === 401 || res.status === 404;
-  } catch { return false; }
-}
 
 describe.skipIf(!!process.env.CAIRN_SKIP_LIVE_TESTS)("subagent chat streaming (live smoke)", () => {
   let up = false;

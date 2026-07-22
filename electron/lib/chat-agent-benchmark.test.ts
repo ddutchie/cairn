@@ -41,19 +41,13 @@ import {
   updateNote, updateCard, createTag,
 } from "../db/queries";
 import { TOOLS, type ChatRequest } from "./tools";
-import { normaliseBaseUrl } from "./llm";
+import { BASE_URL, MODEL, API_KEY, endpointUp } from "./bench-endpoint";
 import { runToolLoop } from "./chat-loop";
 import {
   runDispatchLoop, RESEARCH_TOOL_NAMES, WRITE_TOOL_NAMES, type SubagentMetrics,
 } from "./chat-subagent-loop";
 
 // ── Endpoint config ─────────────────────────────────────────────────────────
-
-const BASE_URL = normaliseBaseUrl(
-  process.env.TEST_LLM_BASE_URL?.trim() || "http://localhost:1234/v1",
-);
-const MODEL = process.env.TEST_LLM_MODEL?.trim() || "gpt-4o-mini";
-const API_KEY = process.env.TEST_LLM_API_KEY?.trim() || "";
 
 const tok = (s: string) => encode(s).length;
 
@@ -68,18 +62,6 @@ function toolStr(t: { function: { name: string; description: string; parameters:
 function toolArrayTokens(names?: ReadonlySet<string>): number {
   const list = names ? (TOOLS as ReadonlyArray<typeof TOOLS[number]>).filter((t) => names.has(t.function.name)) : TOOLS;
   return list.reduce((sum, t) => sum + tok(toolStr(t)), 0);
-}
-
-async function endpointUp(): Promise<boolean> {
-  try {
-    const res = await fetch(`${BASE_URL}/v1/models`, {
-      headers: API_KEY ? { Authorization: `Bearer ${API_KEY}` } : {},
-      signal: AbortSignal.timeout(2500),
-    });
-    return res.ok || res.status === 401 || res.status === 404;
-  } catch {
-    return false;
-  }
 }
 
 // ── Seed a representative workspace ───────────────────────────────────────────

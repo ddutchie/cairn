@@ -34,7 +34,7 @@ import path from "path";
 import { applySchema } from "../db/schema";
 import { createWorkspace, createProject, createColumn, createNote, getNoteById } from "../db/queries";
 import { buildSystemPrompt, type ChatRequest } from "./tools";
-import { normaliseBaseUrl } from "./llm";
+import { BASE_URL, MODEL, API_KEY, endpointUp } from "./bench-endpoint";
 import { runToolLoop } from "./chat-loop";
 import { runDispatchLoop, WRITE_TOOL_NAMES, WRITE_TOOL_NAMES_STRICT } from "./chat-subagent-loop";
 
@@ -44,10 +44,6 @@ import { runDispatchLoop, WRITE_TOOL_NAMES, WRITE_TOOL_NAMES_STRICT } from "./ch
 const noAppend = (s: ReadonlySet<string>) => new Set([...s].filter((n) => n !== "append_to_note"));
 const HYBRID_WRITE = noAppend(WRITE_TOOL_NAMES);         // still has get_note
 const STRICT_WRITE = noAppend(WRITE_TOOL_NAMES_STRICT);  // no read tools at all
-
-const BASE_URL = normaliseBaseUrl(process.env.TEST_LLM_BASE_URL?.trim() || "http://localhost:1234/v1");
-const MODEL = process.env.TEST_LLM_MODEL?.trim() || "gpt-4o-mini";
-const API_KEY = process.env.TEST_LLM_API_KEY?.trim() || "";
 
 const WS = "ws-fault";
 const PROJ = "proj-fault";
@@ -89,15 +85,6 @@ function seed(db: Database.Database) {
   createNote(db, { id: NOTE_ID, projectId: PROJ, workspaceId: WS, title: NOTE_TITLE, content: NOTE_BODY });
 }
 
-async function endpointUp(): Promise<boolean> {
-  try {
-    const res = await fetch(`${BASE_URL}/v1/models`, {
-      headers: API_KEY ? { Authorization: `Bearer ${API_KEY}` } : {},
-      signal: AbortSignal.timeout(2500),
-    });
-    return res.ok || res.status === 401 || res.status === 404;
-  } catch { return false; }
-}
 
 /**
  * Fault injector factory. Corrupts the FIRST patch_note call's oldString so it

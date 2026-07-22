@@ -216,45 +216,58 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
     // chat:subagent* events, then streams the dispatcher's final reply as tokens.
     if (req.useSubagents && provider !== "localllm") {
       const { runDispatchLoop } = await import("../lib/chat-subagent-loop");
-      const dispatchResult = await runDispatchLoop(
-        db, req, workspacePath, { baseUrl, model, apiKey, provider },
-        getWin,
-        {
-          events: {
-            onSubagentStart: (e) => send("chat:subagent", { ...e, status: "start" }),
-            onSubagentDone: (e) => send("chat:subagent", { ...e, status: "done" }),
-            onSubagentToken: (e) => send("chat:subagent-token", e),
-            onSubagentThought: (e) => send("chat:subagent-thought", e),
-            onSubagentToolCall: (e) => send("chat:subagent-tool-call", e),
-            onSubagentToolCallDone: (e) => send("chat:subagent-tool-call-done", e),
-            onSubagentUsage: (e) => send("chat:subagent-usage", e),
+      try {
+        const dispatchResult = await runDispatchLoop(
+          db, req, workspacePath, { baseUrl, model, apiKey, provider },
+          getWin,
+          {
+            signal: abortCtrl.signal,
+            events: {
+              onSubagentStart: (e) => send("chat:subagent", { ...e, status: "start" }),
+              onSubagentDone: (e) => send("chat:subagent", { ...e, status: "done" }),
+              onSubagentToken: (e) => send("chat:subagent-token", e),
+              onSubagentThought: (e) => send("chat:subagent-thought", e),
+              onSubagentToolCall: (e) => send("chat:subagent-tool-call", e),
+              onSubagentToolCallDone: (e) => send("chat:subagent-tool-call-done", e),
+              onSubagentUsage: (e) => send("chat:subagent-usage", e),
+            },
           },
-        },
-      );
+        );
 
-      // The main/total ContextRing must reflect the DISPATCHER's context window —
-      // the system prompt + the subagent briefs fed back — NOT the summed cost of
-      // every subagent turn. Each subagent reports its own usage via
-      // chat:subagent-usage for its own ring. (metrics.promptTokens is the total
-      // cost figure; metrics.dispatcherPromptTokens is the context figure.)
-      const m = dispatchResult.metrics;
-      promptTokens = m.dispatcherPromptTokens;
-      completionTokens = m.dispatcherCompletionTokens;
-      reasoningTokens = m.dispatcherReasoningTokens;
-      send("chat:usage", { promptTokens, completionTokens, reasoningTokens, breakdown: lastBreakdown });
+        // The main/total ContextRing must reflect the DISPATCHER's context window —
+        // the system prompt + the subagent briefs fed back — NOT the summed cost of
+        // every subagent turn. Each subagent reports its own usage via
+        // chat:subagent-usage for its own ring. (metrics.promptTokens is the total
+        // cost figure; metrics.dispatcherPromptTokens is the context figure.)
+        const m = dispatchResult.metrics;
+        promptTokens = m.dispatcherPromptTokens;
+        completionTokens = m.dispatcherCompletionTokens;
+        reasoningTokens = m.dispatcherReasoningTokens;
+        send("chat:usage", { promptTokens, completionTokens, reasoningTokens, breakdown: lastBreakdown });
 
-      // Stream the dispatcher's final reply as content tokens so it renders like
-      // a normal assistant message.
-      if (dispatchResult.content) send("chat:token", { delta: dispatchResult.content });
+        // Stream the dispatcher's final reply as content tokens so it renders like
+        // a normal assistant message.
+        if (!abortCtrl.signal.aborted && dispatchResult.content) send("chat:token", { delta: dispatchResult.content });
 
-      abortControllers.delete(event.sender.id);
-      if (!abortCtrl.signal.aborted) broadcastEvent("db:changed", null);
-      send("chat:done", {
-        content: dispatchResult.content,
-        reasoning: dispatchResult.reasoning,
-        contextRefs: [],
-        usage: promptTokens > 0 ? { promptTokens, completionTokens, reasoningTokens, breakdown: lastBreakdown } : undefined,
-      });
+        if (!abortCtrl.signal.aborted) broadcastEvent("db:changed", null);
+        send("chat:done", {
+          content: abortCtrl.signal.aborted ? "" : dispatchResult.content,
+          reasoning: dispatchResult.reasoning,
+          contextRefs: [],
+          usage: promptTokens > 0 ? { promptTokens, completionTokens, reasoningTokens, breakdown: lastBreakdown } : undefined,
+        });
+      } catch (err) {
+        // Cancellation or an unexpected failure must never leave the input
+        // disabled — always emit chat:done so the renderer resolves the turn.
+        if (!abortCtrl.signal.aborted) {
+          console.error("[chat] subagent dispatch failed:", err);
+          send("chat:done", { content: `Subagent run failed: ${String(err)}`, contextRefs: [] });
+        } else {
+          send("chat:done", { content: "", contextRefs: [] });
+        }
+      } finally {
+        abortControllers.delete(event.sender.id);
+      }
       return;
     }
 
