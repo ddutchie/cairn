@@ -341,7 +341,11 @@ export const useCairnStore = create<CairnStore>()(
         set({ aiConfig: mergedAiConfig });
         // Persist the FULLY-merged config so localStorage never loses fields.
         storage.set(AI_CONFIG_KEY, mergedAiConfig);
-        if (!backendAiConfig && window.electron && window.electron.saveAiSettings) {
+        // Also write the merged config back to the backend cache — even when a
+        // backendAiConfig already existed, since it may have been field-poor
+        // (missing maxSteps/temperature/…). This lets the backend cache
+        // self-heal in one hydrate instead of staying stale.
+        if (window.electron && window.electron.saveAiSettings) {
           window.electron.saveAiSettings(mergedAiConfig as unknown as Record<string, unknown>).catch(() => {});
         }
       } else if (window.electron && window.electron.ai && window.electron.ai.localLLMStatus) {
