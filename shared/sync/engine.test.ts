@@ -749,6 +749,35 @@ describe("sync engine — trigger→drain capture of real queries.ts writes", ()
       expect((B.db.prepare("SELECT COUNT(*) c FROM notes WHERE id='n1' AND deleted_at IS NULL").get() as { c: number }).c).toBe(0);
     });
 
+    it("a stale peer put drained AFTER a local hard-delete does not resurrect the row", () => {
+      // Real-world timing bug: desktop deletes a note (physical DELETE, no local
+      // tombstone), publishes the delete, then syncs AGAIN and reads the phone's
+      // still-stale oplog (a put@lowerHLC published before the phone saw the
+      // delete). With no local tombstone the staleness guard has nothing to
+      // compare against, so the older put would resurrect the note. The
+      // drainPending tombstone-shell fix keeps the delete sticky.
+      const clkA = clockFrom(12_150_000);
+      const clkB = clockFrom(12_150_000);
+      const A = makeDevice("A", clkA.now);
+      const B = makeDevice("B", clkB.now);
+      seedNoteOnBoth(A, B);
+      // Phone publishes its current (live) state — a put with the seed's HLC.
+      writeOplogFile(dir, "B", B.engine.exportOplog());
+      expect((B.db.prepare("SELECT COUNT(*) c FROM notes WHERE id='n1' AND deleted_at IS NULL").get() as { c: number }).c).toBe(1);
+
+      // Desktop deletes and republishes (higher HLC).
+      clkA.advance(100);
+      q.deleteNote(A.db, "n1");
+      A.engine.drainPending();
+      writeOplogFile(dir, "A", A.engine.exportOplog());
+      expect((A.db.prepare("SELECT COUNT(*) c FROM notes WHERE id='n1' AND deleted_at IS NULL").get() as { c: number }).c).toBe(0);
+
+      // Desktop syncs again while the phone is still offline: it reconciles the
+      // phone's stale put. The note must STAY deleted on desktop.
+      A.engine.applyRemote(readPeerOplogs(dir, "A"));
+      expect((A.db.prepare("SELECT COUNT(*) c FROM notes WHERE id='n1' AND deleted_at IS NULL").get() as { c: number }).c).toBe(0);
+    });
+
     it("a concurrent higher-HLC peer edit wins over an earlier hard-delete (row comes back on both)", () => {
       // Desktop hard-deletes n1, but the phone had a LATER edit it hadn't synced
       // yet. LWW: the higher-HLC edit wins, so the note is restored — and both

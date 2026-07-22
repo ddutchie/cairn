@@ -31,7 +31,6 @@ export interface ChatSlice {
   confirmAction: (action: PendingAction) => void;
   deleteThread: (threadId: ID) => void;
   renameThread: (threadId: ID, title: string) => void;
-  setThreadUseSubagents: (threadId: ID, useSubagents: boolean) => void;
   createNewThread: (workspaceId: ID, projectId?: ID) => ChatThread;
   compactChatThread: (threadId: ID) => Promise<void>;
   clearThreadMessages: (threadId: ID) => Promise<void>;
@@ -143,17 +142,6 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
     set((s) => ({
       chatThreads: s.chatThreads.map((t) =>
         t.id === threadId ? { ...t, title: title.trim() || undefined, updatedAt: now() } : t
-      ),
-    }));
-    get().persist();
-    const thread = get().chatThreads.find((t) => t.id === threadId);
-    if (thread) ipc((e) => e.chat.upsertThread(thread));
-  },
-
-  setThreadUseSubagents(threadId, useSubagents) {
-    set((s) => ({
-      chatThreads: s.chatThreads.map((t) =>
-        t.id === threadId ? { ...t, useSubagents, updatedAt: now() } : t
       ),
     }));
     get().persist();

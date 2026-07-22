@@ -40,7 +40,9 @@ export const FolderTreeNode = memo(function FolderTreeNode({
   onFolderDragStart, onFolderDragEndSource,
   onFolderDragOver, onFolderDragLeave, onFolderDrop,
 }: FolderTreeNodeProps) {
-  const isCollapsed = collapsed[node.path];
+  // The collapsed map is keyed by LOWERCASED folder path (persisted state uses
+  // case-insensitive keys, matching buildFolderTree's case-insensitive dedupe).
+  const isCollapsed = collapsed[node.path.toLowerCase()];
   const indent = depth * 10;
   const isDragOver = dropTarget === node.path;
 
