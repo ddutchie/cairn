@@ -6,7 +6,7 @@ import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
 import type { ID, AppUIState, SettingsSection } from "@/types";
 import { storage } from "@/lib/storage";
-import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KEY, ACTIVE_PROJECT_KEY, CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY } from "@/lib/constants";
+import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KEY, ACTIVE_PROJECT_KEY, CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY, NOTES_COLLAPSED_FOLDERS_KEY } from "@/lib/constants";
 
 // ── View visibility ───────────────────────────────────────────────────────────
 
@@ -37,6 +37,12 @@ export interface AIConfig {
   contextLimit: number;
   /** When false, all in-app AI features are hidden/disabled. Defaults to true. */
   aiEnabled: boolean;
+  /**
+   * Route chat through the dispatch → research/write subagent architecture.
+   * Global preference. Ignored on the on-device Llama provider (small models are
+   * unreliable with the multi-hop split).
+   */
+  subagentsEnabled: boolean;
 }
 
 export interface AgentConfig {
@@ -144,6 +150,14 @@ export interface UISlice extends AppUIState {
   notesSidebarWidth: number;
   setNotesSidebarWidth: (width: number) => void;
 
+  // Notes folder tree collapse state. Keyed by `${projectId}:${lowercasedPath}`
+  // so each project remembers its own tree and the key survives the
+  // case-insensitive folder dedupe in buildFolderTree. Presence = collapsed;
+  // absence = expanded (folders default open). Persisted to localStorage.
+  notesCollapsedFolders: Record<string, boolean>;
+  toggleNotesFolder: (projectId: ID, folderPath: string) => void;
+  setNotesFolderCollapsed: (projectId: ID, folderPath: string, collapsed: boolean) => void;
+
   // Distraction-free note editing: hides the notes-list sidebar (and app rail)
   // so the editor fills the window. Session-scoped (not persisted).
   notesFullscreen: boolean;
@@ -221,6 +235,7 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
   hiddenViews: new Set<ToggleableView>(),
   chatPanelWidth: DEFAULT_CHAT_PANEL_WIDTH,
   notesSidebarWidth: DEFAULT_NOTES_SIDEBAR_WIDTH,
+  notesCollapsedFolders: {},
   chatPoppedOut: false,
   notesFullscreen: false,
   // ── AI config ──────────────────────────────────
@@ -300,6 +315,28 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
     const clamped = Math.min(MAX_NOTES_SIDEBAR_WIDTH, Math.max(MIN_NOTES_SIDEBAR_WIDTH, width));
     set({ notesSidebarWidth: clamped });
     storage.set(NOTES_SIDEBAR_WIDTH_KEY, clamped);
+  },
+
+  // ── Notes folder collapse state ────────────────
+  toggleNotesFolder(projectId, folderPath) {
+    const key = `${projectId}:${folderPath.toLowerCase()}`;
+    set((s) => {
+      const next = { ...s.notesCollapsedFolders };
+      if (next[key]) delete next[key]; // collapsed → expanded (drop entry)
+      else next[key] = true;           // expanded → collapsed
+      storage.set(NOTES_COLLAPSED_FOLDERS_KEY, next);
+      return { notesCollapsedFolders: next };
+    });
+  },
+  setNotesFolderCollapsed(projectId, folderPath, collapsed) {
+    const key = `${projectId}:${folderPath.toLowerCase()}`;
+    set((s) => {
+      const next = { ...s.notesCollapsedFolders };
+      if (collapsed) next[key] = true;
+      else delete next[key];
+      storage.set(NOTES_COLLAPSED_FOLDERS_KEY, next);
+      return { notesCollapsedFolders: next };
+    });
   },
 
   // ── Distraction-free note editing ──────────────

@@ -19,7 +19,7 @@ import type {
 import { storage } from "@/lib/storage";
 import { historyManager } from "@/lib/history";
 import { isOwnNoteWrite, isAiNoteWrite } from "./ipc";
-import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KEY, ACTIVE_PROJECT_KEY, CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY } from "@/lib/constants";
+import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KEY, ACTIVE_PROJECT_KEY, CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY, NOTES_COLLAPSED_FOLDERS_KEY } from "@/lib/constants";
 import { MIN_NOTES_SIDEBAR_WIDTH, MAX_NOTES_SIDEBAR_WIDTH } from "./slices/ui";
 
 // ── Slice imports ─────────────────────────────────────────────────────────────
@@ -235,6 +235,11 @@ function restorePersistedUiPrefs(set: PartialSetter): void {
   if (savedNotesWidth != null) {
     set({ notesSidebarWidth: Math.min(MAX_NOTES_SIDEBAR_WIDTH, Math.max(MIN_NOTES_SIDEBAR_WIDTH, savedNotesWidth)) });
   }
+
+  const savedCollapsedFolders = storage.get<Record<string, boolean>>(NOTES_COLLAPSED_FOLDERS_KEY);
+  if (savedCollapsedFolders && typeof savedCollapsedFolders === "object") {
+    set({ notesCollapsedFolders: savedCollapsedFolders });
+  }
 }
 
 // ── Store creation ────────────────────────────────────────────────────────────
@@ -319,15 +324,25 @@ export const useCairnStore = create<CairnStore>()(
         restorePersistedTheme(set);
       }
 
-      const savedConfig = backendAiConfig || storage.get<AIConfig>(AI_CONFIG_KEY);
+      // Merge, don't shadow: an older backend cache may be missing behavioural
+      // fields (maxSteps/temperature/contextLimit/aiEnabled). Layering
+      // localStorage UNDER the backend config preserves those fields instead of
+      // letting a field-poor backend object reset them to DEFAULT_AI_CONFIG on
+      // every hydrate (the "maxSteps reverts to 30" bug).
+      const localAiConfig = storage.get<AIConfig>(AI_CONFIG_KEY);
+      const savedConfig = backendAiConfig
+        ? { ...localAiConfig, ...backendAiConfig }
+        : localAiConfig;
       if (savedConfig) {
         if (savedConfig.provider === ("apple-fm" as unknown as "openai" | "localllm")) {
           savedConfig.provider = "localllm";
         }
-        set({ aiConfig: { ...DEFAULT_AI_CONFIG, ...savedConfig } });
-        storage.set(AI_CONFIG_KEY, savedConfig);
+        const mergedAiConfig = { ...DEFAULT_AI_CONFIG, ...savedConfig };
+        set({ aiConfig: mergedAiConfig });
+        // Persist the FULLY-merged config so localStorage never loses fields.
+        storage.set(AI_CONFIG_KEY, mergedAiConfig);
         if (!backendAiConfig && window.electron && window.electron.saveAiSettings) {
-          window.electron.saveAiSettings(savedConfig as unknown as Record<string, unknown>).catch(() => {});
+          window.electron.saveAiSettings(mergedAiConfig as unknown as Record<string, unknown>).catch(() => {});
         }
       } else if (window.electron && window.electron.ai && window.electron.ai.localLLMStatus) {
         try {

@@ -228,8 +228,6 @@ export interface ChatThread {
   title?: string;
   createdAt: string;
   updatedAt: string;
-  /** When true, this thread runs the dispatch → research/write subagent architecture instead of the single-agent loop. Per-thread, persisted. */
-  useSubagents?: boolean;
   lastUsage?: {
     promptTokens: number;
     completionTokens: number;

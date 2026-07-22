@@ -101,6 +101,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
   temperature:  0.3,
   contextLimit: 128000,
   aiEnabled:    true,
+  subagentsEnabled: false,
 };
 
 /** Default Coding Agent config values. */
@@ -130,6 +131,9 @@ export const CHAT_PANEL_WIDTH_KEY = "chatPanelWidth";
 
 /** localStorage key for the persisted notes sidebar width (px). */
 export const NOTES_SIDEBAR_WIDTH_KEY = "notesSidebarWidth";
+
+/** localStorage key for per-project collapsed notes folders (Record<`${projectId}:${lowercasedPath}`, true>). */
+export const NOTES_COLLAPSED_FOLDERS_KEY = "notesCollapsedFolders";
 
 /** localStorage key for the last-used note editor mode ("write" | "read"). */
 export const NOTE_EDITOR_MODE_KEY = "noteEditorMode";

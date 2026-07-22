@@ -15,6 +15,15 @@ export interface CachedConfig {
     baseUrl?: string;
     model?: string;
     apiKey?: string;
+    // Persist the FULL renderer AIConfig, not just connection fields. Dropping
+    // these here caused hydrateFromElectron() to reset them to DEFAULT_AI_CONFIG
+    // after every write-tool turn — e.g. the chat tool-call limit (maxSteps)
+    // silently "reverted to 30" mid-conversation.
+    maxSteps?: number;
+    temperature?: number;
+    contextLimit?: number;
+    aiEnabled?: boolean;
+    subagentsEnabled?: boolean;
   };
   agentConfig?: {
     baseUrl?: string;
@@ -80,6 +89,13 @@ export function saveCachedConfig(type: "ai" | "agent" | "embeddings" | "theme" |
         baseUrl: typeof configRecord.baseUrl === "string" ? configRecord.baseUrl : current.aiConfig?.baseUrl,
         model: typeof configRecord.model === "string" ? configRecord.model : current.aiConfig?.model,
         apiKey: typeof configRecord.apiKey === "string" ? configRecord.apiKey : current.aiConfig?.apiKey,
+        // Preserve behavioural fields too — omitting maxSteps here made the chat
+        // tool-call limit reset to the default on the next hydrate.
+        maxSteps: typeof configRecord.maxSteps === "number" ? configRecord.maxSteps : current.aiConfig?.maxSteps,
+        temperature: typeof configRecord.temperature === "number" ? configRecord.temperature : current.aiConfig?.temperature,
+        contextLimit: typeof configRecord.contextLimit === "number" ? configRecord.contextLimit : current.aiConfig?.contextLimit,
+        aiEnabled: typeof configRecord.aiEnabled === "boolean" ? configRecord.aiEnabled : current.aiConfig?.aiEnabled,
+        subagentsEnabled: typeof configRecord.subagentsEnabled === "boolean" ? configRecord.subagentsEnabled : current.aiConfig?.subagentsEnabled,
       };
     } else if (type === "agent" && configRecord) {
       current.agentConfig = {

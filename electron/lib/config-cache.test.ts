@@ -14,7 +14,70 @@
  *   2. getEmbeddingsSettingsCached() must run without throwing when electron
  *      is unavailable — returning a plain object (possibly empty).
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import fs from "fs";
+import os from "os";
+import path from "path";
+
+// Point config-cache's userData resolver at a temp dir so the round-trip tests
+// below never touch the developer's real ai-settings-cache.json.
+let tmpDir: string;
+vi.mock("../runtime/port-discovery", () => ({
+  findUserDataDir: () => tmpDir,
+}));
+
+describe("config-cache AI settings round-trip", () => {
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "cairn-cfg-"));
+  });
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("persists maxSteps (and other behavioural fields) for the 'ai' config", async () => {
+    const { saveCachedConfig, getCachedConfig } = await import("./config-cache");
+    saveCachedConfig("ai", {
+      provider: "openai",
+      baseUrl: "https://api.openai.com",
+      model: "gpt-4o",
+      apiKey: "sk-x",
+      maxSteps: 1000,
+      temperature: 0.5,
+      contextLimit: 200000,
+      aiEnabled: true,
+      subagentsEnabled: true,
+    });
+    const ai = getCachedConfig().aiConfig;
+    // Regression: maxSteps used to be silently dropped here, which reset the
+    // chat tool-call limit to the default (30) on the next hydrate.
+    expect(ai?.maxSteps).toBe(1000);
+    expect(ai?.temperature).toBe(0.5);
+    expect(ai?.contextLimit).toBe(200000);
+    expect(ai?.aiEnabled).toBe(true);
+    expect(ai?.subagentsEnabled).toBe(true);
+    expect(ai?.model).toBe("gpt-4o");
+  });
+
+  it("persists subagentsEnabled (global subagents preference)", async () => {
+    const { saveCachedConfig, getCachedConfig } = await import("./config-cache");
+    saveCachedConfig("ai", { subagentsEnabled: true });
+    expect(getCachedConfig().aiConfig?.subagentsEnabled).toBe(true);
+    // A later connection-only save must not clobber it.
+    saveCachedConfig("ai", { model: "gpt-4o" });
+    expect(getCachedConfig().aiConfig?.subagentsEnabled).toBe(true);
+  });
+
+  it("a later connection-only save preserves an existing maxSteps", async () => {
+    const { saveCachedConfig, getCachedConfig } = await import("./config-cache");
+    saveCachedConfig("ai", { maxSteps: 500 });
+    // A subsequent save that only carries connection fields (e.g. from the
+    // provider picker) must not wipe the previously-stored maxSteps.
+    saveCachedConfig("ai", { model: "gpt-4o-mini" });
+    const ai = getCachedConfig().aiConfig;
+    expect(ai?.maxSteps).toBe(500);
+    expect(ai?.model).toBe("gpt-4o-mini");
+  });
+});
 
 describe("config-cache without Electron", () => {
   it("imports without throwing the electron install error", async () => {

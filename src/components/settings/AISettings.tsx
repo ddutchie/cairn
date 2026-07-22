@@ -144,6 +144,20 @@ export function AISettings() {
             {/* Max Steps — applies to all providers */}
             {maxStepsRow}
 
+            {/* Subagents — dispatch → research/write architecture. Cloud only
+                (small on-device models are unreliable with the multi-hop split),
+                mirroring the chat toolbar's original provider !== "localllm" guard. */}
+            <SettingsRow
+              label="Subagents"
+              description="Route chat through a dispatcher that delegates research and writing to focused sub-agents. Cheaper on long, tool-heavy tasks; adds overhead on quick questions."
+            >
+              <Toggle
+                checked={aiConfig.subagentsEnabled ?? false}
+                onChange={(v) => updateAIConfig({ subagentsEnabled: v })}
+                label="Enable subagents"
+              />
+            </SettingsRow>
+
             {/* Cloud connection status */}
             <div className="flex items-center gap-3 pt-1 text-xs">
               <CloudConnectionStatus testState={testState} baseUrl={baseUrl} model={model} />

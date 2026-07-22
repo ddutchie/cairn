@@ -188,6 +188,15 @@ export class SyncEngine {
       if (p.seq > maxSeq) maxSeq = p.seq;
     }
 
+    // A hard-deleted row leaves no tombstone, so we may need to insert a
+    // tombstone SHELL (placeholder FK columns) to keep the staleness guard armed
+    // against a later stale peer 'put'. Shells legitimately violate FKs, so
+    // disable enforcement around the transaction (the pragma is a no-op inside
+    // one) exactly as applyRemote does. Restored in `finally`.
+    const fkRow = this.db.prepare("PRAGMA foreign_keys").get() as { foreign_keys?: number } | undefined;
+    const fkWasOn = fkRow?.foreign_keys === 1;
+    if (fkWasOn) this.db.prepare("PRAGMA foreign_keys = OFF").run();
+
     const run = this.db.transaction(() => {
       this.setSuppress(true); // our hlc/deleted_at writes below must not re-stage
       for (const { entity, entity_id, op } of latest.values()) {
@@ -195,7 +204,19 @@ export class SyncEngine {
         const row = readRow(this.db, entity, entity_id);
         if (op === "delete" || !row) {
           // Row gone (hard delete) or explicitly tombstoned.
-          this.db.prepare(`UPDATE ${entity} SET deleted_at = COALESCE(deleted_at, ?), hlc = ? WHERE id = ?`).run(nowIso(), stamp, entity_id);
+          const upd = this.db
+            .prepare(`UPDATE ${entity} SET deleted_at = COALESCE(deleted_at, ?), hlc = ? WHERE id = ?`)
+            .run(nowIso(), stamp, entity_id) as { changes?: number };
+          // Desktop's q.deleteNote does a physical `DELETE FROM notes`, so by the
+          // time we drain the staged 'delete' the row is already gone and the
+          // UPDATE above matches zero rows — leaving NO local tombstone. Without a
+          // tombstone, a later peer 'put' with an OLDER HLC hits reconcileOne with
+          // local=undefined (localHlc=null), bypasses the staleness guard, and
+          // RESURRECTS the deleted row. Insert a tombstone shell (same as the
+          // delete-arrives-before-insert case) so the staleness guard trips and
+          // the stale put stays dead. FK columns on the shell are placeholders;
+          // the row is a tombstone and never read as live data.
+          if ((upd.changes ?? 0) === 0) this.insertTombstoneShell(entity, entity_id, stamp);
           this.appendOplog({ hlc: stamp, origin: this.deviceId, entity, entity_id, op: "delete", payload: null });
         } else {
           this.db.prepare(`UPDATE ${entity} SET hlc = ? WHERE id = ?`).run(stamp, entity_id);
@@ -218,7 +239,11 @@ export class SyncEngine {
       this.setSuppress(false);
       this.persistHlc();
     });
-    run();
+    try {
+      run();
+    } finally {
+      if (fkWasOn) this.db.prepare("PRAGMA foreign_keys = ON").run();
+    }
     return latest.size;
   }
 

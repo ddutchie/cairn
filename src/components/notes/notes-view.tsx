@@ -46,6 +46,9 @@ export function NotesView() {
     aiConfig,
     notesSidebarWidth,
     setNotesSidebarWidth,
+    notesCollapsedFolders,
+    toggleNotesFolder,
+    setNotesFolderCollapsed,
     notesFullscreen,
     toggleNotesFullscreen,
   } = useCairnStore(useShallow((s) => ({
@@ -69,6 +72,9 @@ export function NotesView() {
     aiConfig:                s.aiConfig,
     notesSidebarWidth:       s.notesSidebarWidth,
     setNotesSidebarWidth:    s.setNotesSidebarWidth,
+    notesCollapsedFolders:   s.notesCollapsedFolders,
+    toggleNotesFolder:       s.toggleNotesFolder,
+    setNotesFolderCollapsed: s.setNotesFolderCollapsed,
     notesFullscreen:         s.notesFullscreen,
     toggleNotesFullscreen:   s.toggleNotesFullscreen,
   })));
@@ -134,8 +140,19 @@ export function NotesView() {
     };
   }, [setNotesSidebarWidth]);
 
-  // folder → collapsed state; true = collapsed, undefined/false = open
-  const [collapsedFolders, setCollapsedFolders]  = useState<Record<string, boolean>>({});
+  // Folder collapse state is persisted per-project in the store (keyed by
+  // `${projectId}:${lowercasedPath}`). Derive a plain-path map for the ACTIVE
+  // project so FolderTreeNode can keep looking up by node.path unchanged.
+  // Presence = collapsed; absence = expanded (folders default open).
+  const collapsedFolders = useMemo(() => {
+    if (!activeProjectId) return {} as Record<string, boolean>;
+    const prefix = `${activeProjectId}:`;
+    const out: Record<string, boolean> = {};
+    for (const [key, val] of Object.entries(notesCollapsedFolders)) {
+      if (val && key.startsWith(prefix)) out[key.slice(prefix.length)] = true;
+    }
+    return out;
+  }, [notesCollapsedFolders, activeProjectId]);
 
   // ⌘F / Ctrl+F — focus the filter input, but only when the CM6 editor
   // is NOT focused (CM6's own searchKeymap handles it when the editor is active).
@@ -246,6 +263,28 @@ export function NotesView() {
     setIsDragging(false);
   }, [moveNoteToFolder, moveFolder, activeProjectId]);
 
+  // Belt-and-suspenders drag-state reset. The source element's onDragEnd is the
+  // primary reset, but when a note/folder is dropped onto ANOTHER project it is
+  // moved out of this project's list and its DOM node unmounts mid-drag — so its
+  // onDragEnd never fires and the pinned "Move to root" zone would linger. A
+  // document-level dragend/drop listener (active only while dragging) clears the
+  // local drag UI regardless of which element ended the drag.
+  useEffect(() => {
+    if (!isDragging) return;
+    const reset = () => {
+      dragNoteIdRef.current = null;
+      dragFolderPathRef.current = null;
+      setDropTarget(null);
+      setIsDragging(false);
+    };
+    document.addEventListener("dragend", reset);
+    document.addEventListener("drop", reset);
+    return () => {
+      document.removeEventListener("dragend", reset);
+      document.removeEventListener("drop", reset);
+    };
+  }, [isDragging]);
+
 
   // Subscribe to allNotes directly so this component re-renders when note
   // content changes (e.g. while typing). The selector functions are stable
@@ -329,8 +368,8 @@ export function NotesView() {
   }
 
   const toggleFolder = useCallback((folderPath: string) => {
-    setCollapsedFolders((prev) => ({ ...prev, [folderPath]: !prev[folderPath] }));
-  }, []);
+    if (activeProjectId) toggleNotesFolder(activeProjectId, folderPath);
+  }, [activeProjectId, toggleNotesFolder]);
 
   function handleCreateDashboard() {
     if (!activeProjectId) return;
@@ -609,22 +648,6 @@ export function NotesView() {
                   onFolderDrop={handleFolderDrop}
                 />
               ))}
-              {/* Root drop zone — visible only while dragging, when folders exist */}
-              {folderTree.length > 0 && (dropTarget !== null || isDragging) && (
-                <div
-                  className={cn(
-                    "mx-2 my-1 px-3 py-1.5 rounded text-[0.714rem] text-center transition-colors border border-dashed",
-                    dropTarget === "__root__"
-                      ? "border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] text-[var(--accent)]"
-                      : "border-[var(--border)] text-[var(--text-tertiary)]",
-                  )}
-                  onDragOver={(e) => { e.preventDefault(); setDropTarget("__root__"); }}
-                  onDragLeave={() => setDropTarget(null)}
-                  onDrop={(e) => { e.preventDefault(); handleFolderDrop(""); }}
-                >
-                  Move to root
-                </div>
-              )}
               {/* Root notes (no folder) */}
               {rootNotes.map((note) => (
                 <NoteListItem
@@ -661,6 +684,26 @@ export function NotesView() {
             </div>
           )}
         </div>
+
+        {/* Move-to-root drop zone — pinned to the bottom of the panel, shown only
+            while dragging a note/folder within THIS project (not a cross-project
+            drag). Sits above the New-note footer as a flex-shrink-0 sibling so it
+            never scrolls with the list. */}
+        {!isFiltering && folderTree.length > 0 && isDragging && (
+          <div
+            className={cn(
+              "flex-shrink-0 mx-2 mb-1 px-3 py-2 rounded text-[0.714rem] text-center transition-colors border border-dashed",
+              dropTarget === "__root__"
+                ? "border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] text-[var(--accent)]"
+                : "border-[var(--border)] text-[var(--text-tertiary)]",
+            )}
+            onDragOver={(e) => { e.preventDefault(); setDropTarget("__root__"); }}
+            onDragLeave={() => setDropTarget(null)}
+            onDrop={(e) => { e.preventDefault(); handleFolderDrop(""); }}
+          >
+            Move to root
+          </div>
+        )}
 
         {/* Footer */}
         <div className="p-2 border-t border-[var(--border)]">
@@ -728,7 +771,7 @@ export function NotesView() {
           mode="create"
           onSelect={(path) => {
             handleCreateNote(path);
-            setCollapsedFolders((prev) => ({ ...prev, [path]: false }));
+            if (activeProjectId) setNotesFolderCollapsed(activeProjectId, path, false);
             setNewFolderOpen(false);
           }}
           onClose={() => setNewFolderOpen(false)}
