@@ -340,8 +340,14 @@ export const createBoardSlice: StateCreator<CairnStore, [], [], BoardSlice> = (
     const targetColumns = state.columns
       .filter((c) => c.projectId === targetProjectId)
       .sort((a, b) => a.order - b.order);
+    // Preserve the card's state: land it in the target project's column of the
+    // SAME type (e.g. in_progress → in_progress). Fall back to the target's
+    // backlog column, then to its first column, if no same-type column exists.
+    const sourceColumn = state.columns.find((c) => c.id === card.columnId);
     const targetColumn =
-      targetColumns.find((c) => c.type === "backlog") ?? targetColumns[0];
+      (sourceColumn && targetColumns.find((c) => c.type === sourceColumn.type)) ??
+      targetColumns.find((c) => c.type === "backlog") ??
+      targetColumns[0];
     if (!targetColumn) return;
     const newOrder = state.cards.filter(
       (c) => c.columnId === targetColumn.id && !c.archivedAt

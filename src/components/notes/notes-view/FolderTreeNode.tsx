@@ -25,6 +25,8 @@ export interface FolderTreeNodeProps {
   dropTarget: string | null;
   onNoteDragStart: (noteId: string) => void;
   onNoteDragEnd: () => void;
+  onFolderDragStart: (folderPath: string) => void;
+  onFolderDragEndSource: () => void;
   onFolderDragOver: (folderPath: string) => void;
   onFolderDragLeave: () => void;
   onFolderDrop: (folderPath: string) => void;
@@ -34,7 +36,9 @@ export const FolderTreeNode = memo(function FolderTreeNode({
   node, activeNoteId, collapsed, depth = 0,
   onToggle, onNoteClick, onNotePin, onNoteDelete,
   onNoteArchive, onNoteMove, onNoteMoveToFolder, onNoteReveal, onCreateInFolder,
-  dropTarget, onNoteDragStart, onNoteDragEnd, onFolderDragOver, onFolderDragLeave, onFolderDrop,
+  dropTarget, onNoteDragStart, onNoteDragEnd,
+  onFolderDragStart, onFolderDragEndSource,
+  onFolderDragOver, onFolderDragLeave, onFolderDrop,
 }: FolderTreeNodeProps) {
   const isCollapsed = collapsed[node.path];
   const indent = depth * 10;
@@ -51,6 +55,9 @@ export const FolderTreeNode = memo(function FolderTreeNode({
         )}
         style={{ paddingLeft: `${8 + indent}px` }}
         onClick={() => onToggle(node.path)}
+        draggable
+        onDragStart={(e) => { e.stopPropagation(); onFolderDragStart(node.path); }}
+        onDragEnd={(e) => { e.stopPropagation(); onFolderDragEndSource(); }}
         onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); onFolderDragOver(node.path); }}
         onDragLeave={(e) => { e.stopPropagation(); onFolderDragLeave(); }}
         onDrop={(e) => { e.preventDefault(); e.stopPropagation(); onFolderDrop(node.path); }}
@@ -94,6 +101,8 @@ export const FolderTreeNode = memo(function FolderTreeNode({
               dropTarget={dropTarget}
               onNoteDragStart={onNoteDragStart}
               onNoteDragEnd={onNoteDragEnd}
+              onFolderDragStart={onFolderDragStart}
+              onFolderDragEndSource={onFolderDragEndSource}
               onFolderDragOver={onFolderDragOver}
               onFolderDragLeave={onFolderDragLeave}
               onFolderDrop={onFolderDrop}

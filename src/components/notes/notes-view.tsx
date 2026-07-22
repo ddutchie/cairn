@@ -22,6 +22,7 @@ import { buildFolderTree, type FolderNode } from "./notes-view/buildFolderTree";
 import { NoteListItem } from "./notes-view/NoteListItem";
 import { ArchivedNoteListItem } from "./notes-view/ArchivedNoteListItem";
 import { FolderTreeNode } from "./notes-view/FolderTreeNode";
+import { setActiveCrossProjectDrag } from "@/lib/cross-project-dnd";
 import { FolderPickerDialog } from "./notes-view/FolderPickerDialog";
 import { instantiateTemplate, defaultTitleFromTemplate } from "../../../shared/notes/templates";
 import { STARTER_TEMPLATES } from "../../../shared/notes/starter-templates";
@@ -37,7 +38,7 @@ export function NotesView() {
     activeProjectId, activeWorkspaceId,
     getProjectNotes, getArchivedProjectNotes, getProjectTemplates,
     createNote, updateNote, deleteNote,
-    archiveNote, restoreNote, moveNoteToProject, moveNoteToFolder,
+    archiveNote, restoreNote, moveNoteToProject, moveNoteToFolder, moveFolder,
     revealNote,
     getTagById,
     getWorkspaceProjects,
@@ -60,6 +61,7 @@ export function NotesView() {
     restoreNote:             s.restoreNote,
     moveNoteToProject:       s.moveNoteToProject,
     moveNoteToFolder:        s.moveNoteToFolder,
+    moveFolder:              s.moveFolder,
     revealNote:              s.revealNote,
     getTagById:              s.getTagById,
     getWorkspaceProjects:    s.getWorkspaceProjects,
@@ -160,20 +162,67 @@ export function NotesView() {
   const [folderMoveNoteId, setFolderMoveNoteId]  = useState<string | null>(null);
   const [, setFolderMoveDest]       = useState("");
 
-  // Drag-and-drop: note → folder
+  // Drag-and-drop: note → folder, and folder → folder (reparent subtree)
   const dragNoteIdRef = useRef<string | null>(null);
+  const dragFolderPathRef = useRef<string | null>(null);
   const [dropTarget, setDropTarget]              = useState<string | null>(null); // folder path or "__root__"
+  const [isDragging, setIsDragging]              = useState(false);
 
   const handleNoteDragStart = useCallback((noteId: string) => {
     dragNoteIdRef.current = noteId;
-  }, []);
+    dragFolderPathRef.current = null;
+    setIsDragging(true);
+    // Also expose the drag to the leftmost project sidebar so a single note can
+    // be dropped onto another project (moves just that note, keeping its folder).
+    if (activeProjectId) {
+      const note = allNotes.find((n) => n.id === noteId);
+      setActiveCrossProjectDrag({
+        kind: "note",
+        noteId,
+        sourceProjectId: activeProjectId,
+        label: note?.title ?? "note",
+      });
+    }
+  }, [activeProjectId, allNotes]);
 
   const handleNoteDragEnd = useCallback(() => {
     dragNoteIdRef.current = null;
     setDropTarget(null);
+    setIsDragging(false);
+    setActiveCrossProjectDrag(null);
+  }, []);
+
+  const handleFolderDragStart = useCallback((folderPath: string) => {
+    dragFolderPathRef.current = folderPath;
+    dragNoteIdRef.current = null;
+    setIsDragging(true);
+    // Also expose the drag to the leftmost project sidebar so the folder can be
+    // dropped onto another project (moves the whole subtree cross-project).
+    if (activeProjectId) {
+      setActiveCrossProjectDrag({
+        kind: "folder",
+        sourceProjectId: activeProjectId,
+        folderPath,
+        label: folderPath.split("/").pop() ?? folderPath,
+      });
+    }
+  }, [activeProjectId]);
+
+  const handleFolderDragEndSource = useCallback(() => {
+    dragFolderPathRef.current = null;
+    setDropTarget(null);
+    setIsDragging(false);
+    setActiveCrossProjectDrag(null);
   }, []);
 
   const handleFolderDragOver = useCallback((folderPath: string) => {
+    // Don't highlight a folder as a drop target when dragging it onto itself
+    // or into one of its own descendants (an illegal reparent).
+    const dragged = dragFolderPathRef.current;
+    if (dragged && (folderPath === dragged || folderPath.startsWith(`${dragged}/`))) {
+      setDropTarget(null);
+      return;
+    }
     setDropTarget(folderPath);
   }, []);
 
@@ -182,11 +231,21 @@ export function NotesView() {
   }, []);
 
   const handleFolderDrop = useCallback((folderPath: string) => {
-    const noteId = dragNoteIdRef.current;
-    if (noteId) moveNoteToFolder(noteId, folderPath);
+    const folderPathDragged = dragFolderPathRef.current;
+    if (folderPathDragged && activeProjectId) {
+      // folderPath is the DESTINATION folder ("" = root). Reparent the dragged
+      // subtree so it lives inside the destination folder.
+      moveFolder(activeProjectId, folderPathDragged, folderPath);
+    } else {
+      const noteId = dragNoteIdRef.current;
+      if (noteId) moveNoteToFolder(noteId, folderPath);
+    }
     dragNoteIdRef.current = null;
+    dragFolderPathRef.current = null;
     setDropTarget(null);
-  }, [moveNoteToFolder]);
+    setIsDragging(false);
+  }, [moveNoteToFolder, moveFolder, activeProjectId]);
+
 
   // Subscribe to allNotes directly so this component re-renders when note
   // content changes (e.g. while typing). The selector functions are stable
@@ -543,13 +602,15 @@ export function NotesView() {
                   dropTarget={dropTarget}
                   onNoteDragStart={handleNoteDragStart}
                   onNoteDragEnd={handleNoteDragEnd}
+                  onFolderDragStart={handleFolderDragStart}
+                  onFolderDragEndSource={handleFolderDragEndSource}
                   onFolderDragOver={handleFolderDragOver}
                   onFolderDragLeave={handleFolderDragLeave}
                   onFolderDrop={handleFolderDrop}
                 />
               ))}
               {/* Root drop zone — visible only while dragging, when folders exist */}
-              {folderTree.length > 0 && dropTarget !== null && (
+              {folderTree.length > 0 && (dropTarget !== null || isDragging) && (
                 <div
                   className={cn(
                     "mx-2 my-1 px-3 py-1.5 rounded text-[0.714rem] text-center transition-colors border border-dashed",

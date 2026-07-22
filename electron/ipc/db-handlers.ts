@@ -14,7 +14,7 @@ import path from "path";
 import { registerIpcHandle, registerIpcOn } from "./registry";
 import { handle, getProjectName, type DbContext } from "./result-helpers";
 import * as q from "../db/queries";
-import { writeNoteFile, deleteNoteFile, deleteProjectNotesDir, renameProjectNotesDir, stripMarkdown, findNoteFilePath } from "../notes-files";
+import { writeNoteFile, deleteNoteFile, deleteProjectNotesDir, renameProjectNotesDir, reconcileProjectFolders, stripMarkdown, findNoteFilePath } from "../notes-files";
 import { suppressNextChange } from "../file-watcher";
 import { executeTool as executeMcpTool } from "../mcp/tools";
 import { executeReadTool } from "../lib/read-tools";
@@ -151,7 +151,14 @@ export function registerDbHandlers(ctx: DbContext): void {
     const before = q.getProjectById(ctx.db, id);
     const project = q.updateProject(ctx.db, id, patch);
     if (before && project && before.name !== project.name) {
-      renameProjectNotesDir(ctx.workspacePath, before.name, project.name);
+      // Primary path: move the old-slug directory to the new slug directly.
+      const moved = renameProjectNotesDir(ctx.workspacePath, before.name, project.name);
+      // Self-heal fallback: if the direct move was a no-op (e.g. the project had
+      // no on-disk folder yet, its notes live at the vault root, or a concurrent
+      // write raced the rename), run the same reconciliation the app does at
+      // startup so any stranded old-slug folder is relocated immediately — the
+      // user should never have to restart for the folder to follow the rename.
+      if (!moved) reconcileProjectFolders(ctx.db, ctx.workspacePath);
     }
     return project;
   }));

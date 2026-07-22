@@ -290,8 +290,10 @@ export function renameProjectNotesDir(
     // Target exists (rare): merge children instead of overwriting, so we never
     // lose notes. Move each entry that doesn't collide; recurse into subdirs.
     mergeDirInto(oldDir, newDir);
-    // Remove the old dir if it's now empty (a collision may leave files behind).
-    try { fs.rmdirSync(oldDir); } catch { /* not empty / ignore */ }
+    // Remove the old dir if it's now empty. If only OS cruft remains (e.g. a
+    // macOS .DS_Store) and no note files are left, clear it too so the renamed
+    // folder doesn't linger on disk until the next app restart.
+    removeDirIfNoNotesLeft(oldDir);
     return true;
   } catch {
     return false; // best-effort — leave files where they are on failure
@@ -310,8 +312,68 @@ function mergeDirInto(src: string, dst: string): void {
       try { fs.rmdirSync(from); } catch { /* ignore */ }
     } else if (!fs.existsSync(to)) {
       try { fs.renameSync(from, to); } catch { /* ignore collision/error */ }
+    } else if (isStaleDuplicate(from, to)) {
+      // Collision, but both files are the SAME Cairn note (same frontmatter id).
+      // This happens when a note write raced the rename and already wrote the
+      // note under the new slug — the destination copy is authoritative and the
+      // source copy under the old slug is a stale duplicate. Remove it so the
+      // old directory can be emptied (otherwise it lingers until an app restart).
+      try { fs.unlinkSync(from); } catch { /* ignore */ }
+    }
+    // Otherwise: a genuine collision between different files — leave the source
+    // in place (never destroy unrelated note data).
+  }
+}
+
+/**
+ * True if `from` and `to` are the same Cairn note file — i.e. both parse to the
+ * same frontmatter `id`. Used by the merge to distinguish a stale duplicate
+ * (safe to delete) from a genuine name collision between two different notes.
+ */
+function isStaleDuplicate(from: string, to: string): boolean {
+  try {
+    if (!from.endsWith(".md") || !to.endsWith(".md")) return false;
+    const fromId = matter(fs.readFileSync(from, "utf-8")).data?.id;
+    const toId = matter(fs.readFileSync(to, "utf-8")).data?.id;
+    return typeof fromId === "string" && fromId.length > 0 && fromId === toId;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Remove `dir` if it holds no note (`.md`) files, recursively. A merge can leave
+ * behind OS cruft (a macOS `.DS_Store`) or now-empty subdirectories that would
+ * otherwise keep the renamed-away folder alive on disk. We never delete a dir
+ * that still contains real note data.
+ */
+function removeDirIfNoNotesLeft(dir: string): void {
+  try {
+    if (!fs.existsSync(dir)) return;
+    if (dirContainsNote(dir)) return; // real note data remains — keep it
+    fs.rmSync(dir, { recursive: true, force: true });
+  } catch { /* best-effort */ }
+}
+
+/** True if `dir` (recursively) contains at least one `.md` file. */
+function dirContainsNote(dir: string): boolean {
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(dir);
+  } catch {
+    return false;
+  }
+  for (const entry of entries) {
+    const full = path.join(dir, entry);
+    let stat: fs.Stats;
+    try { stat = fs.lstatSync(full); } catch { continue; }
+    if (stat.isDirectory()) {
+      if (dirContainsNote(full)) return true;
+    } else if (entry.endsWith(".md")) {
+      return true;
     }
   }
+  return false;
 }
 
 export function parseNoteFile(filePath: string): NoteFileData | null {

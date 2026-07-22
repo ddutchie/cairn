@@ -565,7 +565,33 @@ describe("renameProjectNotesDir", () => {
     expect(fs.existsSync(path.join(oldDir, "From Old.md"))).toBe(false);
     expect(fs.existsSync(path.join(oldDir, "Existing.md"))).toBe(true);
   });
+
+  it("removes the whole old dir when a note write raced the rename (stale duplicate)", () => {
+    // Reproduces the live-rename bug: an autosave note write resolves the fresh
+    // (new) project name and writes the note under the new slug BEFORE the
+    // rename runs, pre-creating newDir. The merge then hit a same-name collision
+    // and left a stale copy behind in oldDir, so the old folder lingered on disk
+    // until the next app restart. Same-id duplicates must be removed instead.
+    const oldDir = path.join(notesDir(tmpDir), toSlug("Old"));
+    const newDir = path.join(notesDir(tmpDir), toSlug("New"));
+    fs.mkdirSync(oldDir, { recursive: true });
+    fs.mkdirSync(newDir, { recursive: true });
+    const noteFile = "Note A.md";
+    // Same note id in both copies → the old one is a stale duplicate.
+    fs.writeFileSync(path.join(oldDir, noteFile), "---\nid: n1\nprojectId: p1\n---\nold body", "utf-8");
+    fs.writeFileSync(path.join(newDir, noteFile), "---\nid: n1\nprojectId: p1\n---\nnew body", "utf-8");
+    // A macOS cruft file that must not keep the old dir alive.
+    fs.writeFileSync(path.join(oldDir, ".DS_Store"), "\u0000", "utf-8");
+
+    const moved = renameProjectNotesDir(tmpDir, "Old", "New");
+    expect(moved).toBe(true);
+
+    // The authoritative (new) copy is untouched, and the old dir is gone.
+    expect(fs.readFileSync(path.join(newDir, noteFile), "utf-8")).toContain("new body");
+    expect(fs.existsSync(oldDir)).toBe(false);
+  });
 });
+
 
 describe("reconcileProjectFolders", () => {
   let db: Database.Database;
