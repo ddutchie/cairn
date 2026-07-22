@@ -38,7 +38,7 @@ describe.skipIf(!!process.env.CAIRN_SKIP_LIVE_TESTS)("subagent chat streaming (l
 
   it("emits subagent start/done + token/tool-call events", async () => {
     if (!up) {
-      // eslint-disable-next-line no-console
+       
       console.log(`[skip] no endpoint at ${BASE_URL}`);
       return;
     }
@@ -74,11 +74,11 @@ describe.skipIf(!!process.env.CAIRN_SKIP_LIVE_TESTS)("subagent chat streaming (l
     db.close();
 
     const m = result.metrics;
-    // eslint-disable-next-line no-console
+     
     console.log(`starts=${starts.length} dones=${dones.length} tokens=${tokenCount} finalChars=${result.content.length}`);
-    // eslint-disable-next-line no-console
+     
     console.log(`subagent roles: ${starts.join(", ")}`);
-    // eslint-disable-next-line no-console
+     
     console.log(`TOTAL promptTokens=${m.promptTokens}  DISPATCHER context=${m.dispatcherPromptTokens}  perSubagentUsage=${[...subUsage.values()].join(",")}`);
 
     // At least one subagent must have started + finished, and produced a final reply.

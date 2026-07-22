@@ -28,7 +28,7 @@
  *     npx vitest run electron/lib/chat-agent-benchmark.test.ts
  */
 
-import { describe, it, beforeEach, afterEach, expect } from "vitest";
+import { describe, it, beforeEach, expect } from "vitest";
 import type Database from "better-sqlite3";
 import BetterSqlite3 from "better-sqlite3";
 import fs from "fs";
@@ -270,11 +270,11 @@ describe("chat agent benchmark — tool-array context cost (offline)", () => {
       `write-subagent,${WRITE_TOOL_NAMES.size},${write}`,
       `dispatcher,2,${dispatch}`,
     ];
-    // eslint-disable-next-line no-console
+     
     console.log("\n=== Tool-array context cost (tokens sent EVERY turn) ===\n" + rows.join("\n"));
 
     const worstSubagentTurn = Math.max(research, write, dispatch);
-    // eslint-disable-next-line no-console
+     
     console.log(
       `\nSingle-agent pays ${single} tok/turn for tools.` +
       `\nWorst subagent turn pays ${worstSubagentTurn} tok/turn (${Math.round((1 - worstSubagentTurn / single) * 100)}% less).`,
@@ -295,7 +295,7 @@ describe.skipIf(!!process.env.CAIRN_SKIP_LIVE_TESTS)("chat agent benchmark — l
 
   it("runs the task set through both architectures and logs CSV", async () => {
     if (!up) {
-      // eslint-disable-next-line no-console
+       
       console.log(`[skip] No LLM endpoint reachable at ${BASE_URL}. Set TEST_LLM_BASE_URL/MODEL/API_KEY to run the live benchmark.`);
       return;
     }
@@ -311,7 +311,7 @@ describe.skipIf(!!process.env.CAIRN_SKIP_LIVE_TESTS)("chat agent benchmark — l
         try {
           const rec = arch === "single" ? await runSingle(db, wp, task) : await runSub(db, wp, task);
           rows.push(rec);
-          // eslint-disable-next-line no-console
+           
           console.log(
             `${arch.padEnd(9)} ${task.id}  ptok=${String(rec.promptTokens).padStart(6)}  ` +
             `ctok=${String(rec.completionTokens).padStart(5)}  ${String(rec.latencyMs).padStart(6)}ms  ` +
@@ -326,14 +326,14 @@ describe.skipIf(!!process.env.CAIRN_SKIP_LIVE_TESTS)("chat agent benchmark — l
     const csv = toCsv(rows);
     const outPath = path.join(wp, "chat-agent-benchmark.csv");
     fs.writeFileSync(outPath, csv);
-    // eslint-disable-next-line no-console
+     
     console.log("\n=== CSV ===\n" + csv + "\n\nWritten to: " + outPath);
 
     // Aggregate: per-arch totals.
     for (const arch of ["single", "subagent"] as const) {
       const a = rows.filter((r) => r.arch === arch);
       const sum = (f: (r: RunRecord) => number) => a.reduce((s, r) => s + f(r), 0);
-      // eslint-disable-next-line no-console
+       
       console.log(
         `TOTAL ${arch.padEnd(9)} ptok=${sum((r) => r.promptTokens)} ctok=${sum((r) => r.completionTokens)} ` +
         `latency=${sum((r) => r.latencyMs)}ms calls=${sum((r) => r.toolCalls)} errors=${sum((r) => r.toolErrors)}`,

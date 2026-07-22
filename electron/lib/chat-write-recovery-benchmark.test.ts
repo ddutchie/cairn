@@ -191,7 +191,7 @@ describe.skipIf(!!process.env.CAIRN_SKIP_LIVE_TESTS)("write-failure recovery (fa
 
   it("compares strict-write vs hybrid-write vs single on a forced bad oldString", async () => {
     if (!up) {
-      // eslint-disable-next-line no-console
+       
       console.log(`[skip] No LLM endpoint at ${BASE_URL}. Set TEST_LLM_* to run.`);
       return;
     }
@@ -216,7 +216,7 @@ describe.skipIf(!!process.env.CAIRN_SKIP_LIVE_TESTS)("write-failure recovery (fa
     }
 
     for (const r of rows) {
-      // eslint-disable-next-line no-console
+       
       console.log(
         `${r.config.padEnd(9)} recovered=${r.recovered ? "YES" : "NO "}  ` +
         `faultFired=${r.faultFired ? "y" : "n"}  ptok=${String(r.promptTokens).padStart(6)}  ` +
@@ -230,7 +230,7 @@ describe.skipIf(!!process.env.CAIRN_SKIP_LIVE_TESTS)("write-failure recovery (fa
       [r.config, r.recovered, r.faultFired, r.promptTokens, r.completionTokens, r.latencyMs, r.toolCalls, r.toolErrors, r.writeInvocations].join(","))].join("\n");
     const outPath = path.join(wp, "write-recovery.csv");
     fs.writeFileSync(outPath, csv);
-    // eslint-disable-next-line no-console
+     
     console.log("\n=== CSV ===\n" + csv + "\n\nWritten to: " + outPath);
 
     // faultFired / recovered / writeInvocations are the FINDINGS, logged above.

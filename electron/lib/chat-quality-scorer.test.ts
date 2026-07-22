@@ -242,11 +242,11 @@ describe.skipIf(!!process.env.CAIRN_SKIP_LIVE_TESTS)("chat output-quality scorer
 
   it("scores single vs subagent deliverables against the rubric", async () => {
     if (!up) {
-      // eslint-disable-next-line no-console
+       
       console.log(`[skip] agent endpoint ${BASE_URL} or judge ${JUDGE_BASE_URL} unreachable.`);
       return;
     }
-    // eslint-disable-next-line no-console
+     
     console.log(`Agent: ${MODEL} @ ${BASE_URL}   Judge: ${JUDGE_MODEL} @ ${JUDGE_BASE_URL}`);
 
     const wp = fs.mkdtempSync(path.join(os.tmpdir(), "cairn-quality-"));
@@ -261,7 +261,7 @@ describe.skipIf(!!process.env.CAIRN_SKIP_LIVE_TESTS)("chat output-quality scorer
           const total = CRITERIA.reduce((sum, c) => sum + s[c], 0);
           const noteChars = artifact.notes.reduce((sum, n) => sum + n.content.length, 0);
           rows.push({ arch, task: task.id, s, total, noteChars });
-          // eslint-disable-next-line no-console
+           
           console.log(
             `${arch.padEnd(9)} ${task.id}  total=${total}/25  ` +
             `[tc=${s.task_completion} th=${s.theme_coverage} f=${s.faithfulness} st=${s.structure} act=${s.actionability}]  ` +
@@ -275,13 +275,13 @@ describe.skipIf(!!process.env.CAIRN_SKIP_LIVE_TESTS)("chat output-quality scorer
     const csv = [header, ...rows.map((r) =>
       [r.arch, r.task, r.s.task_completion, r.s.theme_coverage, r.s.faithfulness, r.s.structure, r.s.actionability, r.total, r.noteChars].join(","))].join("\n");
     fs.writeFileSync(path.join(wp, "quality-scores.csv"), csv);
-    // eslint-disable-next-line no-console
+     
     console.log("\n=== CSV ===\n" + csv);
 
     for (const arch of ["single", "subagent"] as const) {
       const a = rows.filter((r) => r.arch === arch);
       const avg = (f: (r: ScoreRow) => number) => (a.reduce((s, r) => s + f(r), 0) / a.length).toFixed(2);
-      // eslint-disable-next-line no-console
+       
       console.log(
         `AVG ${arch.padEnd(9)} total=${avg((r) => r.total)}/25  ` +
         `tc=${avg((r) => r.s.task_completion)} th=${avg((r) => r.s.theme_coverage)} ` +
