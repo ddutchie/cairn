@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
-import { Trash2, ChevronDown, ArrowLeftFromLine } from "lucide-react";
+import { Trash2, ChevronDown, ArrowLeftFromLine, GitBranch } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { useChatStream } from "@/hooks/useChatStream";
@@ -13,6 +13,7 @@ import type { ChatHistoryEntry } from "@/types";
 
 import { Tooltip } from "@/components/ui/tooltip";
 import { ChatMessageBubble } from "./ChatMessageBubble";
+import { ChatSubagentBlock } from "./ChatSubagentBlock";
 import { SuggestedPrompts } from "./SuggestedPrompts";
 import { ToolCallIndicator } from "./ToolCallIndicator";
 import { QuestionForm } from "./QuestionForm";
@@ -127,7 +128,8 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   const projectRef     = useRef<HTMLDivElement>(null);
   const [projectOpen, setProjectOpen] = useState(false);
 
-  const { isLoading, toolCalls, streamingContent, streamingThought, pendingQuestions, sendStream, stopStream } = useChatStream(threadId);
+  const { isLoading, toolCalls, streamingContent, streamingThought, subagents, pendingQuestions, sendStream, stopStream } = useChatStream(threadId);
+  const setThreadUseSubagents = useCairnStore((s) => s.setThreadUseSubagents);
 
   const project   = useMemo(() => projects.find((p) => p.id === activeProjectId),   [projects, activeProjectId]);
   const workspace = useMemo(() => workspaces.find((w) => w.id === activeWorkspaceId), [workspaces, activeWorkspaceId]);
@@ -468,8 +470,9 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
       },
       systemPrompt,
       images: imagesToSend?.map((img) => ({ name: img.name, dataUrl: img.dataUrl })),
+      useSubagents: activeThread?.useSubagents ?? false,
     });
-  }, [input, threadId, addMessage, sendStream, activeProjectId, activeWorkspaceId, messages, aiConfig, activeView, graphData, selectedNode, handleArchiveChat, project, pendingImages]);
+  }, [input, threadId, addMessage, sendStream, activeProjectId, activeWorkspaceId, messages, aiConfig, activeView, graphData, selectedNode, handleArchiveChat, project, pendingImages, activeThread]);
 
   const handleRetry = useCallback((content: string) => {
     handleSend(content);
@@ -570,6 +573,30 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
           />
         )}
 
+        {threadId && aiConfig.provider !== "localllm" && (
+          <Tooltip
+            content={
+              (activeThread?.useSubagents ? "Subagents ON — research/write are delegated to focused sub-agents (cheaper on long tasks). Click to turn off." : "Subagents OFF — single agent handles everything. Click to delegate research/write to sub-agents.")
+            }
+            side="left"
+          >
+            <button
+              onClick={() => { if (!isLoadingRef.current) setThreadUseSubagents(threadId, !(activeThread?.useSubagents ?? false)); }}
+              disabled={isLoading}
+              aria-pressed={activeThread?.useSubagents ?? false}
+              className={cn(
+                "flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[0.643rem] font-medium transition-colors disabled:opacity-50",
+                activeThread?.useSubagents
+                  ? "border-[var(--accent)] text-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_12%,transparent)]"
+                  : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-3)]",
+              )}
+            >
+              <GitBranch size={10} />
+              <span>Subagents</span>
+            </button>
+          </Tooltip>
+        )}
+
 
         {messages.length > 0 && (
           <Tooltip content="Clear conversation" side="left">
@@ -616,6 +643,13 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
               onSubmit={(text) => handleSend(text)}
               disabled={isLoading && !pendingQuestions}
             />
+          )}
+          {isLoading && subagents.length > 0 && (
+            <div className="flex flex-col gap-1">
+              {subagents.map((sub) => (
+                <ChatSubagentBlock key={sub.childId} sub={sub} />
+              ))}
+            </div>
           )}
           {isLoading && <ToolCallIndicator toolCalls={toolCalls} streamingContent={streamingContent} streamingThought={streamingThought} />}
           <div ref={messagesEndRef} />

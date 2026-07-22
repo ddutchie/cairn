@@ -226,6 +226,43 @@ const api = {
       ipcRenderer.on("chat:usage", handler);
       return () => ipcRenderer.off("chat:usage", handler);
     },
+    // ── Subagent mode (dispatch → research/write) live trace ────────────────
+    onSubagent: (cb: (e: { childId: string; role: string; instruction?: string; result?: string; status: "start" | "done"; threadId?: string }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: any) => cb(e);
+      ipcRenderer.on("chat:subagent", handler);
+      return () => ipcRenderer.off("chat:subagent", handler);
+    },
+    onSubagentToken: (cb: (e: { childId: string; delta: string; threadId?: string }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: any) => cb(e);
+      ipcRenderer.on("chat:subagent-token", handler);
+      return () => ipcRenderer.off("chat:subagent-token", handler);
+    },
+    onSubagentThought: (cb: (e: { childId: string; delta: string; threadId?: string }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: any) => cb(e);
+      ipcRenderer.on("chat:subagent-thought", handler);
+      return () => ipcRenderer.off("chat:subagent-thought", handler);
+    },
+    onSubagentToolCall: (cb: (e: { childId: string; tool: string; label: string; args: Record<string, unknown>; callId?: string; threadId?: string }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: any) => cb(e);
+      ipcRenderer.on("chat:subagent-tool-call", handler);
+      return () => ipcRenderer.off("chat:subagent-tool-call", handler);
+    },
+    onSubagentToolCallDone: (cb: (e: { childId: string; tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; output?: string; callId?: string; threadId?: string }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: any) => cb(e);
+      ipcRenderer.on("chat:subagent-tool-call-done", handler);
+      return () => ipcRenderer.off("chat:subagent-tool-call-done", handler);
+    },
+    onSubagentUsage: (cb: (e: { childId: string; promptTokens: number; completionTokens: number; reasoningTokens?: number; threadId?: string }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: any) => cb(e);
+      ipcRenderer.on("chat:subagent-usage", handler);
+      return () => ipcRenderer.off("chat:subagent-usage", handler);
+    },
     // ── Pop-out window ──────────────────────────
     /** Called by main window: sends current chat state, triggers window creation. */
     popOut: (payload: {

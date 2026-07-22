@@ -740,6 +740,21 @@ const MIGRATIONS: Migration[] = [
       db.prepare("DELETE FROM sync_oplog WHERE entity = ?").run(t);
     }
   },
+
+  // v29: Subagent chat mode. `chat_threads.use_subagents` persists the per-thread
+  // toggle that routes a conversation through the dispatch → research/write
+  // subagent loop; `chat_messages.subagents` (JSON) persists the expandable
+  // subagent traces so they survive restarts (mirrors v14 tool_calls / v20 reasoning).
+  (db) => {
+    const threadCols = db.prepare("PRAGMA table_info(chat_threads)").all() as { name: string }[];
+    if (!threadCols.some((c) => c.name === "use_subagents")) {
+      db.exec("ALTER TABLE chat_threads ADD COLUMN use_subagents INTEGER NOT NULL DEFAULT 0");
+    }
+    const msgCols = db.prepare("PRAGMA table_info(chat_messages)").all() as { name: string }[];
+    if (!msgCols.some((c) => c.name === "subagents")) {
+      db.exec("ALTER TABLE chat_messages ADD COLUMN subagents TEXT");
+    }
+  },
 ];
 
 export function applySchema(db: Database.Database): void {
@@ -747,6 +762,30 @@ export function applySchema(db: Database.Database): void {
   db.pragma("foreign_keys = ON");
   db.exec(SCHEMA_SQL);
   runMigrations(db);
+  ensureColumns(db);
+}
+
+/**
+ * Idempotent, version-independent column guards. Migrations only run for
+ * `user_version` values below MIGRATIONS.length, so a DB whose user_version was
+ * already advanced past a migration index (e.g. by an interim/renumbered build)
+ * can miss a column even though its version looks current. This defensively
+ * ensures late-added columns exist on every connection, regardless of version.
+ * Each check is a no-op once the column is present.
+ */
+function ensureColumns(db: Database.Database): void {
+  const ensure = (table: string, column: string, ddl: string) => {
+    try {
+      const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+      if (cols.length > 0 && !cols.some((c) => c.name === column)) {
+        db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
+      }
+    } catch {
+      /* table may not exist on some connections — safe to skip */
+    }
+  };
+  ensure("chat_threads", "use_subagents", "use_subagents INTEGER NOT NULL DEFAULT 0");
+  ensure("chat_messages", "subagents", "subagents TEXT");
 }
 
 function runMigrations(db: Database.Database): void {

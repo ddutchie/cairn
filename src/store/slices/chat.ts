@@ -26,10 +26,12 @@ export interface ChatSlice {
     actions?: ChatMessage["actions"],
     reasoning?: string,
     images?: ChatMessage["images"],
+    subagents?: ChatMessage["subagents"],
   ) => ChatMessage;
   confirmAction: (action: PendingAction) => void;
   deleteThread: (threadId: ID) => void;
   renameThread: (threadId: ID, title: string) => void;
+  setThreadUseSubagents: (threadId: ID, useSubagents: boolean) => void;
   createNewThread: (workspaceId: ID, projectId?: ID) => ChatThread;
   compactChatThread: (threadId: ID) => Promise<void>;
   clearThreadMessages: (threadId: ID) => Promise<void>;
@@ -77,7 +79,7 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
     return thread;
   },
 
-  addMessage(threadId, role, content, contextRefs, toolCalls, actions, reasoning, images) {
+  addMessage(threadId, role, content, contextRefs, toolCalls, actions, reasoning, images, subagents) {
     const msg: ChatMessage = {
       id: id(),
       threadId,
@@ -88,6 +90,7 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
       toolCalls: toolCalls && toolCalls.length > 0 ? toolCalls : undefined,
       actions: actions && actions.length > 0 ? actions : undefined,
       images: images && images.length > 0 ? images : undefined,
+      subagents: subagents && subagents.length > 0 ? subagents : undefined,
       createdAt: now(),
     };
     set((s) => ({
@@ -140,6 +143,17 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
     set((s) => ({
       chatThreads: s.chatThreads.map((t) =>
         t.id === threadId ? { ...t, title: title.trim() || undefined, updatedAt: now() } : t
+      ),
+    }));
+    get().persist();
+    const thread = get().chatThreads.find((t) => t.id === threadId);
+    if (thread) ipc((e) => e.chat.upsertThread(thread));
+  },
+
+  setThreadUseSubagents(threadId, useSubagents) {
+    set((s) => ({
+      chatThreads: s.chatThreads.map((t) =>
+        t.id === threadId ? { ...t, useSubagents, updatedAt: now() } : t
       ),
     }));
     get().persist();

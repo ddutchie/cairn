@@ -651,14 +651,14 @@ export function getChatThreads(db: Database.Database, workspaceId: string) {
 }
 
 export function upsertChatThread(db: Database.Database, t: {
-  id: string; scope: string; workspaceId: string; projectId?: string; title?: string;
+  id: string; scope: string; workspaceId: string; projectId?: string; title?: string; useSubagents?: boolean;
 }) {
   const now = ts();
   db.prepare(`
-    INSERT INTO chat_threads (id, scope, workspace_id, project_id, title, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET title = excluded.title, updated_at = excluded.updated_at
-  `).run(t.id, t.scope, t.workspaceId, t.projectId ?? null, t.title ?? null, now, now);
+    INSERT INTO chat_threads (id, scope, workspace_id, project_id, title, use_subagents, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET title = excluded.title, use_subagents = excluded.use_subagents, updated_at = excluded.updated_at
+  `).run(t.id, t.scope, t.workspaceId, t.projectId ?? null, t.title ?? null, t.useSubagents ? 1 : 0, now, now);
   return toChatThread(db.prepare("SELECT * FROM chat_threads WHERE id = ?").get(t.id));
 }
 
@@ -672,13 +672,13 @@ export function getChatMessages(db: Database.Database, threadId: string) {
 }
 
 export function addChatMessage(db: Database.Database, m: {
-  id: string; threadId: string; role: string; content: string; contextRefs?: unknown; toolCalls?: unknown; reasoning?: string;
+  id: string; threadId: string; role: string; content: string; contextRefs?: unknown; toolCalls?: unknown; reasoning?: string; subagents?: unknown;
 }) {
   const now = ts();
   db.prepare(`
-    INSERT INTO chat_messages (id, thread_id, role, content, context_refs, tool_calls, reasoning, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(m.id, m.threadId, m.role, m.content, m.contextRefs ? JSON.stringify(m.contextRefs) : null, m.toolCalls ? JSON.stringify(m.toolCalls) : null, m.reasoning ?? null, now);
+    INSERT INTO chat_messages (id, thread_id, role, content, context_refs, tool_calls, reasoning, subagents, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(m.id, m.threadId, m.role, m.content, m.contextRefs ? JSON.stringify(m.contextRefs) : null, m.toolCalls ? JSON.stringify(m.toolCalls) : null, m.reasoning ?? null, m.subagents ? JSON.stringify(m.subagents) : null, now);
   return toChatMessage(db.prepare("SELECT * FROM chat_messages WHERE id = ?").get(m.id));
 }
 
