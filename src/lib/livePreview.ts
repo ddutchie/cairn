@@ -14,7 +14,7 @@
  * mutated — only the *rendering* is decorated. Raw markdown stays on disk.
  */
 
-import { EditorState, Range } from "@codemirror/state";
+import { EditorState, Range, StateField } from "@codemirror/state";
 import {
   Decoration,
   DecorationSet,
@@ -24,6 +24,7 @@ import {
   WidgetType,
 } from "@codemirror/view";
 import { syntaxTree } from "@codemirror/language";
+import { makeCalloutWidget, parseCalloutSource, calloutWidgetTheme } from "./callout-widget";
 
 // ── Widgets ────────────────────────────────────────────────────────────────
 
@@ -85,6 +86,88 @@ function activeLines(state: EditorState): Set<number> {
   return lines;
 }
 
+// ── Callout block widgets (StateField) ───────────────────────────────────────
+// Block-level replace decorations MUST be supplied via a StateField, not a
+// ViewPlugin (CodeMirror throws "Block decorations may not be specified via
+// plugins"). So callouts get their own field; the inline decorations stay in
+// the ViewPlugin below. Both share `findCalloutBlocks` so the inline passes can
+// skip lines a widget covers.
+
+interface CalloutBlock {
+  from: number;
+  to: number;
+  lineStart: number;
+  lineEnd: number;
+}
+
+/** Find every callout blockquote in the document, with its char + line range. */
+function findCalloutBlocks(state: EditorState): (CalloutBlock & { raw: string })[] {
+  const { doc } = state;
+  const out: (CalloutBlock & { raw: string })[] = [];
+  syntaxTree(state).iterate({
+    enter: (node) => {
+      if (node.name !== "Blockquote") return;
+      const nodeTo = Math.min(node.to, doc.length);
+      const raw = doc.sliceString(node.from, nodeTo);
+      if (!parseCalloutSource(raw)) return;
+      const lineStart = doc.lineAt(node.from).number;
+      const lineEnd = doc.lineAt(nodeTo).number;
+      out.push({
+        from: doc.line(lineStart).from,
+        to: doc.line(lineEnd).to,
+        lineStart,
+        lineEnd,
+        raw,
+      });
+    },
+  });
+  return out;
+}
+
+/** Line numbers covered by a callout widget (cursor outside) — used by the
+ *  inline ViewPlugin to skip those lines. */
+function calloutWidgetLineSet(state: EditorState): Set<number> {
+  const active = activeLines(state);
+  const set = new Set<number>();
+  for (const block of findCalloutBlocks(state)) {
+    let cursorInside = false;
+    for (let ln = block.lineStart; ln <= block.lineEnd; ln++) {
+      if (active.has(ln)) { cursorInside = true; break; }
+    }
+    if (cursorInside) continue;
+    for (let ln = block.lineStart; ln <= block.lineEnd; ln++) set.add(ln);
+  }
+  return set;
+}
+
+const calloutField = StateField.define<DecorationSet>({
+  create(state) {
+    return buildCalloutDecorations(state);
+  },
+  update(deco, tr) {
+    if (tr.docChanged || tr.selection) return buildCalloutDecorations(tr.state);
+    return deco.map(tr.changes);
+  },
+  provide: (f) => EditorView.decorations.from(f),
+});
+
+function buildCalloutDecorations(state: EditorState): DecorationSet {
+  const active = activeLines(state);
+  const decos: Range<Decoration>[] = [];
+  for (const block of findCalloutBlocks(state)) {
+    let cursorInside = false;
+    for (let ln = block.lineStart; ln <= block.lineEnd; ln++) {
+      if (active.has(ln)) { cursorInside = true; break; }
+    }
+    if (cursorInside) continue; // show raw source for editing
+    const data = parseCalloutSource(block.raw)!;
+    decos.push(
+      Decoration.replace({ widget: makeCalloutWidget(data), block: true }).range(block.from, block.to),
+    );
+  }
+  return Decoration.set(decos, true);
+}
+
 // ── Decoration builder ───────────────────────────────────────────────────────
 
 function buildDecorations(view: EditorView): DecorationSet {
@@ -96,6 +179,10 @@ function buildDecorations(view: EditorView): DecorationSet {
   const otherDecos: Range<Decoration>[] = [];
   const { doc } = view.state;
 
+  // Lines covered by a callout widget (from the StateField) — the inline passes
+  // below skip these so we don't emit decorations that overlap the block
+  // widget's replaced range.
+  const calloutWidgetLines = calloutWidgetLineSet(view.state);
   for (const { from, to } of view.visibleRanges) {
     syntaxTree(view.state).iterate({
       from,
@@ -107,6 +194,8 @@ function buildDecorations(view: EditorView): DecorationSet {
         // Skip if this mark sits on a line the user is editing.
         const line = doc.lineAt(node.from).number;
         if (active.has(line)) return;
+        // Skip marks inside a callout that's being widget-replaced.
+        if (calloutWidgetLines.has(line)) return;
 
         if (name === "HeaderMark" || name === "QuoteMark") {
           // Hide the mark AND the single trailing space so the heading/quote
@@ -122,8 +211,8 @@ function buildDecorations(view: EditorView): DecorationSet {
       },
     });
 
-    // Blockquotes: draw the Read-mode left border on each quote line. The
-    // Blockquote node spans all its lines; decorate each line start.
+    // Blockquotes: draw the Read-mode left border on each quote line. Skip
+    // callout blockquotes handled by the widget above.
     syntaxTree(view.state).iterate({
       from,
       to,
@@ -132,6 +221,7 @@ function buildDecorations(view: EditorView): DecorationSet {
         const startLine = doc.lineAt(node.from).number;
         const endLine = doc.lineAt(Math.min(node.to, doc.length)).number;
         for (let ln = startLine; ln <= endLine; ln++) {
+          if (calloutWidgetLines.has(ln)) continue;
           const line = doc.line(ln);
           otherDecos.push(blockquoteLine.range(line.from));
         }
@@ -168,6 +258,7 @@ function buildDecorations(view: EditorView): DecorationSet {
         if (node.name !== "ListMark") return;
         const line = doc.lineAt(node.from).number;
         if (active.has(line)) return;
+        if (calloutWidgetLines.has(line)) return;
         const text = doc.sliceString(node.from, node.to);
         if (text === "-" || text === "*" || text === "+") {
           replaceDecos.push(hideBulletMark.range(node.from, node.to));
@@ -177,7 +268,7 @@ function buildDecorations(view: EditorView): DecorationSet {
 
     // Highlight (`==text==`) and wikilinks (`[[Title]]`) — scanned via regex on
     // the visible text since neither is a distinct node in the base grammar.
-    scanInlinePatterns(view, from, to, active, replaceDecos, otherDecos);
+    scanInlinePatterns(view, from, to, active, calloutWidgetLines, replaceDecos, otherDecos);
   }
 
   // RangeSet requires ascending, non-overlapping ranges sorted by `from`.
@@ -193,7 +284,8 @@ function buildDecorations(view: EditorView): DecorationSet {
     lastTo = w.to;
   }
   // Merge replace + mark/line decorations. CodeMirror sorts internally when we
-  // pass `sort: true`; line/mark decorations coexist with replaces.
+  // pass `sort: true`; line/mark decorations coexist with replaces. Block
+  // (callout) decorations are provided separately by `calloutField`.
   return Decoration.set([...nonOverlapping, ...otherDecos], true);
 }
 
@@ -204,6 +296,7 @@ function scanInlinePatterns(
   from: number,
   to: number,
   active: Set<number>,
+  calloutWidgetLines: Set<number>,
   replaceDecos: Range<Decoration>[],
   otherDecos: Range<Decoration>[],
 ): void {
@@ -216,6 +309,7 @@ function scanInlinePatterns(
   while ((m = HIGHLIGHT_RE.exec(text)) !== null) {
     const start = from + m.index;
     const end = start + m[0].length;
+    if (calloutWidgetLines.has(doc.lineAt(start).number)) continue;
     // Always style the inner text; only hide the "==" markers off-active-line.
     const innerFrom = start + 2;
     const innerTo = end - 2;
@@ -231,6 +325,7 @@ function scanInlinePatterns(
   while ((m = WIKILINK_RE.exec(text)) !== null) {
     const start = from + m.index;
     const end = start + m[0].length;
+    if (calloutWidgetLines.has(doc.lineAt(start).number)) continue;
     const innerFrom = start + 2;
     const innerTo = end - 2;
     otherDecos.push(wikilinkMark.range(innerFrom, innerTo));
@@ -309,5 +404,5 @@ const livePreviewTheme = EditorView.theme({
  * Compartment if you want to toggle it at runtime.
  */
 export function livePreview() {
-  return [livePreviewPlugin, livePreviewTheme];
+  return [calloutField, livePreviewPlugin, livePreviewTheme, calloutWidgetTheme];
 }

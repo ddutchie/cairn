@@ -3,6 +3,7 @@ import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { livePreview } from "@/lib/livePreview";
+import { parseCalloutSource } from "@/lib/callout-widget";
 
 /**
  * Live Preview decoration tests. The main risk in mixing replace + mark + line
@@ -85,5 +86,50 @@ describe("livePreview decorations", () => {
     // The raw "==" should still be present in the text on the active line.
     expect(firstLine?.textContent).toContain("==marked==");
     view.destroy();
+  });
+
+  it("replaces a callout blockquote with a widget when the cursor is outside", async () => {
+    const doc = "intro line\n\n> [!note] Heads up\n> body text here\n\nafter";
+    // Cursor on the first line (offset 0) — callout is inactive → widget.
+    const view = mount(doc, 0);
+    const widget = view.contentDOM.querySelector(".cm-lp-callout");
+    expect(widget).toBeTruthy();
+    // React renders the callout body asynchronously; wait a tick then assert
+    // the header title from the <Callout> component appears.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(widget?.textContent).toContain("Heads up");
+    view.destroy();
+  });
+
+  it("shows raw callout source when the cursor is inside it", () => {
+    const doc = "intro line\n\n> [!note] Heads up\n> body text here\n\nafter";
+    // Put the cursor inside the callout (line 3, "[!note]" region ~ offset 14).
+    const view = mount(doc, 16);
+    const widget = view.contentDOM.querySelector(".cm-lp-callout");
+    expect(widget).toBeNull();
+    // Raw directive text should be visible for editing.
+    expect(view.contentDOM.textContent).toContain("[!note]");
+    view.destroy();
+  });
+});
+
+describe("parseCalloutSource", () => {
+  it("parses type, title and body from a callout block", () => {
+    const raw = "> [!warning] Be careful\n> line one\n> line two";
+    const data = parseCalloutSource(raw);
+    expect(data).not.toBeNull();
+    expect(data?.type).toBe("warning");
+    expect(data?.title).toBe("Be careful");
+    expect(data?.body).toBe("line one\nline two");
+  });
+
+  it("detects collapsible modifiers", () => {
+    expect(parseCalloutSource("> [!tip]- Closed")?.collapsible).toBe(true);
+    expect(parseCalloutSource("> [!tip]- Closed")?.defaultOpen).toBe(false);
+    expect(parseCalloutSource("> [!tip]+ Open")?.defaultOpen).toBe(true);
+  });
+
+  it("returns null for an ordinary blockquote", () => {
+    expect(parseCalloutSource("> just a quote\n> more")).toBeNull();
   });
 });
