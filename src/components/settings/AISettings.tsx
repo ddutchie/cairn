@@ -2,8 +2,10 @@
 
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
+import { useEffect, useState } from "react";
 import { Cpu, Globe } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { contextLimitForModel } from "@/lib/models-dev";
 import { SettingsGroup, SettingsRow, Toggle, StepperSettingsRow } from "./shared";
 import {
   BaseUrlRow, ApiKeyRow, ModelSelectionRow, CloudConnectionStatus,
@@ -39,6 +41,39 @@ export function AISettings() {
     : ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo", "gpt-4", "o1-mini", "o3-mini"];
 
   const modelOptions = availableModels.length > 0 ? availableModels : fallbackModels;
+
+  // Look up the current model's context window from models.dev (cached). When
+  // Auto is enabled, the detected value is applied to contextLimit automatically
+  // as the model changes; the user can still override with a manual value or
+  // preset (which turns Auto off). Best-effort — null when not in the catalog.
+  // Cloud provider only.
+  const contextAuto = aiConfig.contextAuto ?? true;
+  const [detectedContext, setDetectedContext] = useState<number | null>(null);
+  const [autoState, setAutoState] = useState<"idle" | "loading" | "detected" | "not_found">("idle");
+  useEffect(() => {
+    if (provider === "localllm") return;
+    let cancelled = false;
+    const id = (model ?? "").trim();
+    if (!id) { setDetectedContext(null); setAutoState("idle"); return; }
+    setAutoState("loading");
+    contextLimitForModel(id, 0).then((n) => {
+      if (cancelled) return;
+      const found = n > 0 ? n : null;
+      setDetectedContext(found);
+      setAutoState(found ? "detected" : "not_found");
+      // Auto-apply the detected value when Auto mode is on. Read the LATEST config
+      // from the store (not the captured render value) to avoid stale-closure
+      // races when switching models quickly, and only write when it differs.
+      if (found) {
+        const cur = useCairnStore.getState().aiConfig;
+        if ((cur.contextAuto ?? true) && cur.contextLimit !== found) {
+          setAIConfig({ contextLimit: found });
+        }
+      }
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [model, provider, contextAuto]);
 
   // Shared Max-steps control — rendered after the provider-specific block for
   // both providers (passed into the Llama console so its position is unchanged).
@@ -83,13 +118,13 @@ export function AISettings() {
         {/* Provider Switcher */}
         <SettingsRow
           label="AI Provider"
-          description="Choose between local on-device Apple Intelligence or standard cloud/local API connections."
+          description="Choose between a fully offline on-device Llama model or a standard cloud / local API connection (OpenAI-compatible)."
         >
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button
               onClick={() => updateAIConfig({ provider: "openai" })}
               className={cn(
-                "px-3 py-1.5 text-xs rounded-md border transition-all flex items-center gap-2 cursor-pointer",
+                "px-3 py-1.5 text-xs rounded-md border transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap",
                 provider === "openai"
                   ? "border-[var(--accent)] text-[var(--text-primary)] bg-[var(--accent-dim)] font-medium"
                   : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]"
@@ -101,7 +136,7 @@ export function AISettings() {
             <button
               onClick={() => updateAIConfig({ provider: "localllm" })}
               className={cn(
-                "px-3 py-1.5 text-xs rounded-md border transition-all flex items-center gap-2 relative cursor-pointer",
+                "px-3 py-1.5 text-xs rounded-md border transition-all flex items-center gap-2 relative cursor-pointer whitespace-nowrap",
                 provider === "localllm"
                   ? "border-[var(--accent)] text-[var(--text-primary)] bg-[var(--accent-dim)] font-medium"
                   : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]"
@@ -143,6 +178,51 @@ export function AISettings() {
 
             {/* Max Steps — applies to all providers */}
             {maxStepsRow}
+
+            {/* Temperature */}
+            <StepperSettingsRow
+              label="Temperature"
+              description="Sampling temperature for chat & inline AI (0–1). Lower = more deterministic, higher = more creative."
+              icon="thermometer"
+              value={aiConfig.temperature ?? 0.3}
+              onChange={(v) => updateAIConfig({ temperature: v })}
+              presets={[0.1, 0.3, 0.5, 0.7]}
+              min={0}
+              max={1}
+              step={0.05}
+            />
+
+            {/* Context window — auto-detected from models.dev, with manual override */}
+            <StepperSettingsRow
+              label="Context window"
+              description={
+                contextAuto && autoState === "detected" && detectedContext
+                  ? `Auto: using ${detectedContext.toLocaleString()} tokens detected from models.dev for "${model}". Set a value to override.`
+                  : contextAuto && autoState === "not_found"
+                    ? `"${model}" isn't in the models.dev catalog, so Auto can't detect its size. Set the context size manually.`
+                    : autoState === "detected" && detectedContext
+                      ? `Manual override. models.dev reports ${detectedContext.toLocaleString()} tokens for "${model}" — tap Auto to use it.`
+                      : "Token limit used to render the chat context ring. Tap Auto to detect it from models.dev, or set a value."
+              }
+              icon="layers"
+              value={aiConfig.contextLimit ?? 128000}
+              onChange={(v) => updateAIConfig({ contextLimit: v, contextAuto: false })}
+              presets={[8000, 32000, 128000, 200000]}
+              min={1000}
+              max={2000000}
+              step={1000}
+              inputWidth="w-28"
+              formatPreset={(n) => (n >= 1000 ? `${n / 1000}k` : String(n))}
+              autoValue={detectedContext ?? undefined}
+              autoState={contextAuto ? autoState : "idle"}
+              autoActive={contextAuto}
+              onAuto={() =>
+                updateAIConfig({
+                  contextAuto: true,
+                  contextLimit: detectedContext ?? aiConfig.contextLimit ?? 128000,
+                })
+              }
+            />
 
             {/* Subagents — dispatch → research/write architecture. Cloud only
                 (small on-device models are unreliable with the multi-hop split),

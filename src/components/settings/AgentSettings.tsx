@@ -8,6 +8,7 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
 import { id, cn } from "@/lib/utils";
+import { contextLimitForModel } from "@/lib/models-dev";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
 import type { CodingAgent } from "@/store/slices/coding-agents";
 import { SettingsGroup, SettingsRow, StepperSettingsRow } from "./shared";
@@ -431,6 +432,35 @@ export function AgentSettings() {
 
   const modelOptionsAgent = availableModelsAgent.length > 0 ? availableModelsAgent : fallbackModelsAgent;
 
+  // Look up the agent model's context window from models.dev (cached). When Auto
+  // is enabled, the detected value is applied to contextLimit automatically as
+  // the model changes; a manual value or preset turns Auto off. Cloud only.
+  const contextAutoAgent = agentConfig.contextAuto ?? true;
+  const [detectedContextAgent, setDetectedContextAgent] = useState<number | null>(null);
+  const [autoStateAgent, setAutoStateAgent] = useState<"idle" | "loading" | "detected" | "not_found">("idle");
+  useEffect(() => {
+    let cancelled = false;
+    const mid = (modelAgent ?? "").trim();
+    if (!mid) { setDetectedContextAgent(null); setAutoStateAgent("idle"); return; }
+    setAutoStateAgent("loading");
+    contextLimitForModel(mid, 0).then((n) => {
+      if (cancelled) return;
+      const found = n > 0 ? n : null;
+      setDetectedContextAgent(found);
+      setAutoStateAgent(found ? "detected" : "not_found");
+      // Auto-apply when Auto mode is on. Read the LATEST config from the store to
+      // avoid stale-closure races when switching models quickly.
+      if (found) {
+        const cur = useCairnStore.getState().agentConfig;
+        if ((cur.contextAuto ?? true) && cur.contextLimit !== found) {
+          setAgentConfig({ contextLimit: found });
+        }
+      }
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modelAgent, contextAutoAgent]);
+
   async function handleSaveAgent(agent: Omit<CodingAgent, "createdAt" | "updatedAt">) {
     await saveAgent(agent);
     setAdding(false);
@@ -505,16 +535,33 @@ export function AgentSettings() {
         {/* Context window */}
         <StepperSettingsRow
           label="Context window"
-          description="Token limit of your model. Used to display the context usage ring in the coding agent — does not truncate or limit API calls."
+          description={
+            contextAutoAgent && autoStateAgent === "detected" && detectedContextAgent
+              ? `Auto: using ${detectedContextAgent.toLocaleString()} tokens detected from models.dev for "${modelAgent}". Set a value to override. Displays the context usage ring — does not truncate API calls.`
+              : contextAutoAgent && autoStateAgent === "not_found"
+                ? `"${modelAgent}" isn't in the models.dev catalog, so Auto can't detect its size. Set the context size manually.`
+                : autoStateAgent === "detected" && detectedContextAgent
+                  ? `Manual override. models.dev reports ${detectedContextAgent.toLocaleString()} tokens for "${modelAgent}" — tap Auto to use it.`
+                  : "Token limit of your model. Used to display the context usage ring in the coding agent — does not truncate or limit API calls. Tap Auto to detect it from models.dev."
+          }
           icon="layers"
           value={contextLimitAgent ?? 128000}
-          onChange={(v) => updateAgent({ contextLimit: v })}
+          onChange={(v) => updateAgent({ contextLimit: v, contextAuto: false })}
           presets={[8000, 32000, 128000, 200000]}
           min={1000}
           max={2000000}
           step={1000}
           inputWidth="w-28"
           formatPreset={(n) => (n >= 1000 ? `${n / 1000}k` : String(n))}
+          autoValue={detectedContextAgent ?? undefined}
+          autoState={contextAutoAgent ? autoStateAgent : "idle"}
+          autoActive={contextAutoAgent}
+          onAuto={() =>
+            updateAgent({
+              contextAuto: true,
+              contextLimit: detectedContextAgent ?? contextLimitAgent ?? 128000,
+            })
+          }
         />
 
         {/* Auto-approve */}
