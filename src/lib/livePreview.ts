@@ -107,6 +107,11 @@ function findCalloutBlocks(state: EditorState): (CalloutBlock & { raw: string })
   syntaxTree(state).iterate({
     enter: (node) => {
       if (node.name !== "Blockquote") return;
+      // Skip a blockquote nested inside another blockquote: a nested callout
+      // (`> [!note]` containing `> > [!tip]`) would otherwise emit overlapping
+      // block ranges, which throw when added to a Decoration.set(sorted) during
+      // measurement. Only the outermost blockquote becomes a callout widget.
+      if (node.node.parent?.name === "Blockquote") return;
       const nodeTo = Math.min(node.to, doc.length);
       const raw = doc.sliceString(node.from, nodeTo);
       if (!parseCalloutSource(raw)) return;

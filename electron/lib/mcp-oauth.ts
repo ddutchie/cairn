@@ -287,8 +287,10 @@ export async function startServerAuth(
   onComplete?: AuthCompletionListener,
 ): Promise<AuthStartResult> {
   sweepPending();
-  // Drop any earlier in-flight attempt for this server before starting a new one.
-  cancelPendingForServer(cfg.id);
+  // Drop any earlier in-flight attempt for this server before starting a new
+  // one — including a prior loopback listener, so a re-initiated sign-in fully
+  // supersedes the old flow (cancelServerAuth handles both loopback + deep-link).
+  cancelServerAuth(cfg.id);
 
   let listener: LoopbackListener | null = null;
   try {
@@ -343,7 +345,12 @@ export async function startServerAuth(
         error: e instanceof Error ? e.message : String(e),
       });
     } finally {
-      activeLoopbacks.delete(cfg.id);
+      // Only clear the map entry if it still points at OUR listener — a newer
+      // sign-in for the same server may have replaced it, and we must not delete
+      // (and thereby orphan) the newer flow's listener.
+      if (activeLoopbacks.get(cfg.id) === listener) {
+        activeLoopbacks.delete(cfg.id);
+      }
     }
   })();
 
@@ -362,9 +369,10 @@ export function cancelServerAuth(serverId: string): boolean {
     activeLoopbacks.delete(serverId);
     listener.close("Sign-in cancelled."); // rejects waitForCallback → completion listener fires "error"
   }
-  // Also drop any deep-link pending attempt for the same server.
-  cancelPendingForServer(serverId);
-  return listener != null;
+  // Also drop any deep-link pending attempt for the same server. Either path
+  // counts as a real cancellation, so the IPC result reflects both.
+  const deepLinkCancelled = cancelPendingForServer(serverId);
+  return listener != null || deepLinkCancelled;
 }
 
 /**
@@ -428,14 +436,18 @@ export async function completeServerAuth(cb: OAuthCallback): Promise<AuthComplet
   }
 }
 
-/** Drop any pending attempt for a server (e.g. when its config changes). */
-export function cancelPendingForServer(serverId: string): void {
+/** Drop any pending attempt for a server (e.g. when its config changes). Returns
+ * true if at least one pending deep-link attempt was removed. */
+export function cancelPendingForServer(serverId: string): boolean {
+  let removed = false;
   for (const [state, p] of pending) {
     if (p.serverId === serverId) {
       void p.client.close().catch(() => {});
       pending.delete(state);
+      removed = true;
     }
   }
+  return removed;
 }
 
 // Keep the registry from leaking across app lifetime.

@@ -99,7 +99,7 @@ const serviceDefinition = z.object({
   headers,
   toolDefinition: z.string().min(1),
   responseKeys: z.array(z.string()).optional(),
-  apiKeyUrl: z.string().optional(),
+  apiKeyUrl: z.string().url().startsWith("https://").optional(),
   enabled: z.boolean(),
 });
 
@@ -110,21 +110,40 @@ const entryMeta = {
   blurb: z.string(),
   logo: z.string().optional(),
   brandColor: z.string().optional(),
-  homepage: z.string().optional(),
+  // Validated as an https URL — it is rendered as an anchor href in the Browse
+  // modal, so an unvalidated string could smuggle a javascript:/data: URI.
+  homepage: z.string().url().startsWith("https://").optional(),
 };
 
+const mcpEntry = z.object({ ...entryMeta, definition: mcpDefinition }).passthrough();
+const serviceEntry = z.object({ ...entryMeta, definition: serviceDefinition }).passthrough();
+
+// Manifest-level shape only validates the envelope; entries are validated
+// individually in parseManifest so ONE bad community entry can't blank the
+// whole catalog (the reject-all behaviour of z.array(z.object(...)) would).
 const manifestSchema = z.object({
   version: z.number(),
   updatedAt: z.string(),
-  // Drop individual malformed entries rather than reject the whole manifest, so
-  // one bad community PR can't blank the catalog for everyone.
-  mcpServers: z.array(z.object({ ...entryMeta, definition: mcpDefinition }).passthrough()),
-  services: z.array(z.object({ ...entryMeta, definition: serviceDefinition }).passthrough()),
+  mcpServers: z.array(z.unknown()),
+  services: z.array(z.unknown()),
 });
 
 /** Parse + validate an unknown payload into a CommunityManifest, or throw. */
 export function parseManifest(raw: unknown): CommunityManifest {
-  return manifestSchema.parse(raw) as CommunityManifest;
+  const m = manifestSchema.parse(raw);
+  return {
+    version: m.version,
+    updatedAt: m.updatedAt,
+    // Drop malformed entries individually rather than failing the whole parse.
+    mcpServers: m.mcpServers.flatMap((e) => {
+      const r = mcpEntry.safeParse(e);
+      return r.success ? [r.data] : [];
+    }),
+    services: m.services.flatMap((e) => {
+      const r = serviceEntry.safeParse(e);
+      return r.success ? [r.data] : [];
+    }),
+  } as CommunityManifest;
 }
 
 // ── cache ───────────────────────────────────────────────────────────────────

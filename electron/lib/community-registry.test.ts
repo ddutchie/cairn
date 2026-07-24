@@ -88,18 +88,27 @@ describe("parseManifest", () => {
     expect(m.services[0].definition.name).toBe("Weather");
   });
 
-  it("rejects a non-https baseUrl", () => {
+  it("drops an entry with a non-https baseUrl (never trusts an insecure URL)", () => {
     const bad = structuredClone(VALID);
     bad.mcpServers[0].definition.baseUrl = "http://insecure.example.com/mcp";
-    expect(() => parseManifest(bad)).toThrow();
+    // The insecure entry is filtered out rather than throwing (which would blank
+    // the whole catalog); the valid service still comes through.
+    const parsed = parseManifest(bad);
+    expect(parsed.mcpServers).toHaveLength(0);
+    expect(parsed.services).toHaveLength(1);
   });
 
-  it("rejects an entry missing a required field", () => {
-    const bad = structuredClone(VALID) as Record<string, unknown>;
-    // drop toolDefinition (required on service definitions)
-    const svc = (bad.services as Array<{ definition: Record<string, unknown> }>)[0];
-    delete svc.definition.toolDefinition;
-    expect(() => parseManifest(bad)).toThrow();
+  it("drops a malformed entry instead of rejecting the whole manifest", () => {
+    const mixed = structuredClone(VALID) as Record<string, unknown>;
+    // Add a second, invalid service (missing toolDefinition) alongside the good one.
+    const services = mixed.services as Array<Record<string, unknown>>;
+    const bad = structuredClone(services[0]) as { definition: Record<string, unknown> };
+    delete bad.definition.toolDefinition;
+    services.push(bad);
+    const parsed = parseManifest(mixed);
+    // The good service survives; the malformed one is filtered out.
+    expect(parsed.services).toHaveLength(1);
+    expect(parsed.services[0].definition.name).toBe("Weather");
   });
 });
 
