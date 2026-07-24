@@ -3,11 +3,18 @@
  * tools. Runs on-device via expo/fetch (no vendor SDK), mirroring the direct
  * fetch pattern in models-dev.ts / providers/openai.ts.
  *
- * Two search providers (see web-config.ts):
- *   - Tavily (https://api.tavily.com) — POST /search (Bearer auth). LLM-ready
- *     snippets. Also powers /extract for the `web_extract` tool.
- *   - Brave  (https://api.search.brave.com) — GET /res/v1/web/search
- *     (X-Subscription-Token header). Web index; search only.
+ * TAVILY-ONLY. Brave search now lives in the community registry as an HTTP
+ * `service` (install it from Settings → AI → Tools & Services) — routed through
+ * the generic service executor in services.ts. Keeping a second hardcoded Brave
+ * client here would mean maintaining the SAME connector twice, so the built-in
+ * path is Tavily's alone:
+ *   - Tavily (https://api.tavily.com) — POST /search (Bearer auth) for
+ *     `web_search`, POST /extract for `web_extract` (page reading).
+ *
+ * These built-in tools are slated for full removal in Track 3, once the mobile
+ * MCP client + a registry Tavily connector land and EVERYTHING is registry-
+ * driven. Until then they remain the Tavily path so mobile never loses search
+ * or page extraction (the registry has no Tavily entry yet).
  *
  * Results are deliberately COMPACT (title + url + short snippet, capped count):
  * tool outputs are serialised into the model context via JSON.stringify in the
@@ -17,16 +24,10 @@
  */
 
 import { fetch as expoFetch } from "expo/fetch";
-import {
-  getWebProvider,
-  getWebApiKey,
-  getTavilyApiKey,
-  type WebProvider,
-} from "./web-config";
+import { getTavilyApiKey } from "./web-config";
 
 const TAVILY_SEARCH_URL = "https://api.tavily.com/search";
 const TAVILY_EXTRACT_URL = "https://api.tavily.com/extract";
-const BRAVE_SEARCH_URL = "https://api.search.brave.com/res/v1/web/search";
 
 /** Hard cap on results returned to the model (keeps tool output compact). */
 const MAX_RESULTS = 5;
@@ -99,52 +100,29 @@ async function tavilySearch(
   }));
 }
 
-/** Brave GET /res/v1/web/search → normalised hits. */
-async function braveSearch(
-  apiKey: string,
-  query: string,
-  count: number,
-): Promise<WebSearchHit[]> {
-  const url = `${BRAVE_SEARCH_URL}?q=${encodeURIComponent(query)}&count=${count}`;
-  const res = await expoFetch(url, {
-    method: "GET",
-    headers: { Accept: "application/json", "X-Subscription-Token": apiKey },
-  });
-  if (!res.ok) throw new Error(await errorMessage(res, `Brave search failed (${res.status})`));
-  const data = (await res.json()) as {
-    web?: { results?: { title?: string; url?: string; description?: string }[] };
-  };
-  return (data.web?.results ?? []).slice(0, count).map((r) => ({
-    title: trimSnippet(r.title, 200),
-    url: typeof r.url === "string" ? r.url : "",
-    snippet: trimSnippet(r.description),
-  }));
-}
+/** Brave GET /res/v1/web/search → normalised hits.
+ * REMOVED — Brave is now a community-registry HTTP service (services.ts). */
 
 /**
- * Run a web search with the user's configured provider. Returns compact hits or
- * an { error } object the model can read and relay to the user (missing key,
- * quota, network). Never throws.
+ * Run a web search via Tavily. Returns compact hits or an { error } object the
+ * model can read and relay to the user (missing key, quota, network). Never
+ * throws. Brave search is available separately as an installed registry service.
  */
 export async function webSearch(query: string, count?: number): Promise<
-  { provider: WebProvider; results: WebSearchHit[] } | { error: string }
+  { provider: "tavily"; results: WebSearchHit[] } | { error: string }
 > {
   const q = query.trim();
   if (!q) return { error: "Empty search query." };
-  const provider = getWebProvider();
-  const apiKey = await getWebApiKey(provider);
+  const apiKey = await getTavilyApiKey();
   if (!apiKey) {
     return {
-      error: `No ${provider === "brave" ? "Brave" : "Tavily"} API key is set. Add one in Settings → AI → Web search.`,
+      error: "No Tavily API key is set. Add one in Settings → AI → Web search, or install Brave Search from Tools & Services.",
     };
   }
   const n = clampCount(count);
   try {
-    const results =
-      provider === "brave"
-        ? await braveSearch(apiKey, q, n)
-        : await tavilySearch(apiKey, q, n);
-    return { provider, results };
+    const results = await tavilySearch(apiKey, q, n);
+    return { provider: "tavily", results };
   } catch (e) {
     return { error: e instanceof Error ? e.message : String(e) };
   }

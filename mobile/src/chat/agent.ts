@@ -18,7 +18,7 @@ import {
   type FilePart,
   type ChatUsage,
 } from "./providers/types";
-import { toolsForAgent, TOOL_MAP } from "./tools";
+import { toolsForAgent, allToolMap } from "./tools";
 
 // Max model round-trips per user turn. Each turn is one model call; a turn that
 // requests tools runs them all, then loops for the model's follow-up (which sees
@@ -115,6 +115,10 @@ export async function runAgent(
   signal?: AbortSignal,
 ): Promise<string> {
   const tools = toolsForAgent();
+  // Resolve the executable map ONCE for this run so the tools we advertise and
+  // the tools we can execute stay in lock-step even if a toggle/install changes
+  // mid-run. Includes built-ins + enabled installed services.
+  const toolMap = allToolMap();
   let finalText = "";
   // Accumulated reasoning ("thinking") text across the run's turns (PCC only).
   let reasoning = "";
@@ -217,7 +221,7 @@ export async function runAgent(
       };
       assistant.parts.push(toolPart as UIPart);
 
-      const tool = TOOL_MAP.get(call.name);
+      const tool = toolMap.get(call.name);
       let result: unknown;
       if (!tool) {
         result = { error: `Unknown tool: ${call.name}` };

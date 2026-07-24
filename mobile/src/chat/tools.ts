@@ -11,6 +11,8 @@ import * as q from "@/db/queries";
 import { semanticSearch, semanticSearchTasks, catchUpIndex, finalizeRanking, type SemanticHit } from "@/notes/embeddings";
 import { isAppleEmbeddingsSupported } from "@modules/apple-embeddings";
 import { webSearch, webExtract } from "./web-tools";
+import { serviceToolDefs } from "./services";
+import { isToolEnabled } from "./tool-toggles";
 
 export interface ToolDef {
   name: string;
@@ -370,9 +372,29 @@ export const TOOLS: ToolDef[] = [
 
 export const TOOL_MAP = new Map(TOOLS.map((t) => [t.name, t]));
 
+/**
+ * The FULL tool set exposed to the agent: the built-in TOOLS plus any installed
+ * community `service` tools (device-global), FILTERED by the per-tool toggle
+ * map. A tool absent from the toggle map defaults ENABLED (see tool-toggles.ts),
+ * so this only ever removes tools a user has explicitly switched off. Installed
+ * services are namespaced so they can't collide with built-ins.
+ *
+ * This is recomputed on each call (cheap) so a just-installed service or a
+ * flipped toggle takes effect on the very next agent run — no app restart.
+ */
+export function allTools(): ToolDef[] {
+  const merged = [...TOOLS, ...serviceToolDefs()];
+  return merged.filter((t) => isToolEnabled(t.name));
+}
+
+/** Name→ToolDef map over allTools() (built-ins + enabled services). */
+export function allToolMap(): Map<string, ToolDef> {
+  return new Map(allTools().map((t) => [t.name, t]));
+}
+
 /** Tool defs in the /agent/chat shape: { name: { description, jsonSchema } }. */
 export function toolsForAgent(): Record<string, { description: string; jsonSchema: Record<string, unknown> }> {
   const out: Record<string, { description: string; jsonSchema: Record<string, unknown> }> = {};
-  for (const t of TOOLS) out[t.name] = { description: t.description, jsonSchema: t.jsonSchema };
+  for (const t of allTools()) out[t.name] = { description: t.description, jsonSchema: t.jsonSchema };
   return out;
 }

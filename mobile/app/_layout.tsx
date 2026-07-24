@@ -141,6 +141,7 @@ export default function RootLayout() {
               <Stack.Screen name="sync" options={{ title: "Sync", presentation: "modal" }} />
               <Stack.Screen name="conflicts" options={{ title: "Sync Conflicts" }} />
               <Stack.Screen name="settings/ai" options={{ title: "AI settings", presentation: "modal" }} />
+              <Stack.Screen name="settings/tools" options={{ title: "Tools & Services", presentation: "modal" }} />
             </Stack>
           </ThemeProvider>
           <UpdateBanner />

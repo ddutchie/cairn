@@ -39,7 +39,7 @@ import {
   type AppleTool,
   type AppleToolCallEvent,
 } from "@modules/apple-llm";
-import { TOOL_MAP } from "../tools";
+import { allToolMap } from "../tools";
 import { getAppleReasoningLevel } from "../ai-config";
 import { parseToolArgs } from "@cairn/shared/chat/parse-tool-args";
 import {
@@ -256,7 +256,9 @@ function buildTools(tools: Record<string, AiTool>, server: boolean): AppleTool[]
 
 /** Execute a tool locally and return its result as a JSON string. */
 async function runToolToJson(toolName: string, inputJson: string): Promise<{ resultJson: string; error?: string }> {
-  const tool = TOOL_MAP.get(toolName);
+  // Resolve against the FULL enabled tool set (built-ins + installed services),
+  // matching what buildTools advertised to the model.
+  const tool = allToolMap().get(toolName);
   if (!tool) {
     return { resultJson: JSON.stringify({ error: `Unknown tool: ${toolName}` }) };
   }
