@@ -23,6 +23,7 @@ import type Database from "better-sqlite3";
 import type { OpenAIMessage } from "./llm";
 import { TOOLS, type ChatRequest } from "./tools";
 import { runToolLoop, type RunToolLoopResult } from "./chat-loop";
+import { parseToolArgs } from "./parse-tool-args";
 
 /** Loosely-typed OpenAI function tool — the synthetic dispatch tools ("research",
  *  "write") aren't in the schema-derived `typeof TOOLS` union, so we widen. */
@@ -203,7 +204,7 @@ export interface SubagentEvents {
   /** A tool call started inside a subagent. */
   onSubagentToolCall?: (e: { childId: string; tool: string; label: string; args: Record<string, unknown>; callId?: string }) => void;
   /** A tool call finished inside a subagent. */
-  onSubagentToolCallDone?: (e: { childId: string; tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; output?: string; callId?: string }) => void;
+  onSubagentToolCallDone?: (e: { childId: string; tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; externalRef?: { url: string; title?: string; snippet?: string }; output?: string; callId?: string; ok?: boolean; error?: string }) => void;
   /** Latest token usage for a subagent (its OWN context window) — drives its ring. */
   onSubagentUsage?: (e: { childId: string; promptTokens: number; completionTokens: number; reasoningTokens?: number }) => void;
 }
@@ -283,7 +284,7 @@ async function runSubagent(
       if (e.output) {
         try { if (JSON.parse(e.output)?.error) metrics.toolErrors += 1; } catch { /* non-JSON output */ }
       }
-      if (childId) events?.onSubagentToolCallDone?.({ childId, tool: e.tool, cairnRef: e.cairnRef, output: e.output, callId: e.callId });
+      if (childId) events?.onSubagentToolCallDone?.({ childId, tool: e.tool, cairnRef: e.cairnRef, externalRef: e.externalRef, output: e.output, callId: e.callId, ok: e.ok, error: e.error });
     },
     childId ? (delta) => events?.onSubagentToken?.({ childId, delta }) : undefined,
     childId ? (delta) => events?.onSubagentThought?.({ childId, delta }) : undefined,
@@ -505,8 +506,15 @@ export async function runDispatchLoop(
     messages.push(msgClean);
     for (const call of msgClean.tool_calls) {
       metrics.toolCalls += 1;
-      let args: { instruction?: string } = {};
-      try { args = JSON.parse(call.function.arguments || "{}"); } catch { /* keep empty */ }
+      const parsed = parseToolArgs(call.function.arguments);
+      if (!parsed.ok) {
+        // Don't dispatch a subagent with a blank instruction from unparseable
+        // args — return the structured error so the dispatcher can re-issue.
+        metrics.toolErrors += 1;
+        messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify({ error: parsed.error }) });
+        continue;
+      }
+      const args = parsed.value as { instruction?: string };
       const instruction = args.instruction ?? "";
 
       let subResult: string;

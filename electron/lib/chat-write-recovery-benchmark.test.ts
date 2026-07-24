@@ -34,7 +34,7 @@ import path from "path";
 import { applySchema } from "../db/schema";
 import { createWorkspace, createProject, createColumn, createNote, getNoteById } from "../db/queries";
 import { buildSystemPrompt, type ChatRequest } from "./tools";
-import { BASE_URL, MODEL, API_KEY, endpointUp } from "./bench-endpoint";
+import { BASE_URL, MODEL, API_KEY, endpointUp, LIVE_TESTS_ENABLED } from "./bench-endpoint";
 import { runToolLoop } from "./chat-loop";
 import { runDispatchLoop, WRITE_TOOL_NAMES, WRITE_TOOL_NAMES_STRICT } from "./chat-subagent-loop";
 
@@ -172,7 +172,7 @@ async function runSub(db: Database.Database, wp: string, label: string, writeToo
   };
 }
 
-describe.skipIf(!!process.env.CAIRN_SKIP_LIVE_TESTS)("write-failure recovery (fault injection, live)", () => {
+describe.skipIf(!LIVE_TESTS_ENABLED)("write-failure recovery (fault injection, live)", () => {
   let up = false;
   beforeEach(async () => { up = await endpointUp(); });
 

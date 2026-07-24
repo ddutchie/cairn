@@ -182,6 +182,27 @@ export interface CustomServiceConfig {
   responseKeys?: string[];
   /** Where the user can obtain an API key. */
   apiKeyUrl?: string;
+  /**
+   * Authentication mode. "none" (default) uses static/keychain header secrets;
+   * "oauth" runs the OAuth 2.1 flow (browser sign-in, tokens auto-refreshed and
+   * injected as `Authorization: Bearer`). OAuth tokens/registration live in the
+   * OS keychain, never in SQLite.
+   */
+  authMode?: "none" | "oauth";
+  /**
+   * OAuth parameters for `authMode: "oauth"`. `serverUrl` is the base the SDK
+   * runs authorization-server discovery against (defaults to the apiUrl origin
+   * when absent). `scope` is the requested scope string. Reserved
+   * `clientId`/`authorizationUrl`/`tokenUrl` support vendors that require a
+   * preregistered client (Phase C) — absent means discovery + DCR.
+   */
+  oauth?: {
+    serverUrl?: string;
+    scope?: string;
+    clientId?: string;
+    authorizationUrl?: string;
+    tokenUrl?: string;
+  };
   enabled: boolean;
   source: ToolSource;
   communityId?: string;
@@ -236,6 +257,15 @@ export interface RegistryServiceDefinition {
   toolDefinition: string;
   responseKeys?: string[];
   apiKeyUrl?: string;
+  /** Mirror of CustomServiceConfig auth fields so the registry can ship an OAuth preset. */
+  authMode?: "none" | "oauth";
+  oauth?: {
+    serverUrl?: string;
+    scope?: string;
+    clientId?: string;
+    authorizationUrl?: string;
+    tokenUrl?: string;
+  };
   enabled: boolean;
 }
 
@@ -344,9 +374,23 @@ export interface ChatToolCallRecord {
   tool: string;
   label: string;
   cairnRef?: { type: "note" | "task"; id: ID; title: string };
+  /**
+   * A linkable external artefact extracted from an MCP-server / custom-service
+   * tool result (a Confluence page, web-search hit, GitHub PR, …). Rendered as a
+   * browser-opening chip. Absent for native tools (which use `cairnRef`) and for
+   * results with no usable http(s) URL.
+   */
+  externalRef?: { url: string; title?: string; snippet?: string };
   callId?: string;
   args?: string;      // JSON arguments string
   output?: string;    // JSON output string
+  /**
+   * Tool execution status. `ok: false` means the tool returned an error result
+   * or threw — the chip renders a failure state and `error` carries the reason.
+   * Absent (undefined) on older persisted records → treated as success.
+   */
+  ok?: boolean;
+  error?: string;
 }
 
 /**

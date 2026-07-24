@@ -4,23 +4,50 @@ import { useState, useEffect, useCallback } from "react";
 import { Loader2, CheckCircle, XCircle, LogIn, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-/** OAuth sign-in / sign-out control for an MCP server that uses OAuth auth. */
-export function McpAuthButton({ serverId }: { serverId: string }) {
+type ToolType = "mcp" | "service";
+
+/** The IPC method set differs only by tool type; pick the right one. */
+function api(toolType: ToolType) {
+  const t = window.electron?.tools;
+  if (!t) return null;
+  return toolType === "mcp"
+    ? {
+        status: t.mcpAuthStatus,
+        start: t.startMcpAuth,
+        signOut: t.signOutMcp,
+        cancel: t.cancelMcpAuth,
+      }
+    : {
+        status: t.serviceAuthStatus,
+        start: t.startServiceAuth,
+        signOut: t.signOutService,
+        cancel: t.cancelServiceAuth,
+      };
+}
+
+/**
+ * OAuth sign-in / sign-out control for an MCP server OR custom HTTP service that
+ * uses OAuth. Both share the exact same browser flow (loopback redirect +
+ * `tools:oauthCallback` completion event); only the four IPC method names differ,
+ * selected by {@link toolType}.
+ */
+export function AuthButton({ toolId, toolType }: { toolId: string; toolType: ToolType }) {
   const [connected, setConnected] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    const r = await window.electron?.tools.mcpAuthStatus(serverId);
+    const r = await api(toolType)?.status(toolId);
     setConnected(r?.connected ?? false);
-  }, [serverId]);
+  }, [toolId, toolType]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void refresh();
-    // Refresh when an OAuth callback for this server completes.
+    // Refresh when an OAuth callback for this tool completes. Both MCP and
+    // service flows emit the same event keyed by the tool id (as serverId).
     const off = window.electron?.tools.onOauthCallback((e) => {
-      if (e.serverId && e.serverId !== serverId) return;
+      if (e.serverId && e.serverId !== toolId) return;
       setBusy(false);
       if (e.status === "authorized") {
         setError(null);
@@ -30,13 +57,13 @@ export function McpAuthButton({ serverId }: { serverId: string }) {
       }
     });
     return () => { off?.(); };
-  }, [serverId, refresh]);
+  }, [toolId, refresh]);
 
   const signIn = useCallback(async () => {
     setBusy(true);
     setError(null);
     try {
-      const r = await window.electron?.tools.startMcpAuth(serverId);
+      const r = await api(toolType)?.start(toolId);
       if (r?.status === "already_authorized") {
         setBusy(false);
         void refresh();
@@ -49,20 +76,20 @@ export function McpAuthButton({ serverId }: { serverId: string }) {
       setBusy(false);
       setError(err instanceof Error ? err.message : "Sign-in failed");
     }
-  }, [serverId, refresh]);
+  }, [toolId, toolType, refresh]);
 
   const signOut = useCallback(async () => {
-    await window.electron?.tools.signOutMcp(serverId);
+    await api(toolType)?.signOut(toolId);
     setError(null);
     void refresh();
-  }, [serverId, refresh]);
+  }, [toolId, toolType, refresh]);
 
   const cancel = useCallback(async () => {
-    await window.electron?.tools.cancelMcpAuth(serverId);
+    await api(toolType)?.cancel(toolId);
     // The completion listener will flip busy off with a "cancelled" error;
     // clear busy eagerly so the button is responsive even if that races.
     setBusy(false);
-  }, [serverId]);
+  }, [toolId, toolType]);
 
   return (
     <div className="flex items-center gap-2">
@@ -96,4 +123,9 @@ export function McpAuthButton({ serverId }: { serverId: string }) {
       )}
     </div>
   );
+}
+
+/** Back-compat thin wrapper for the MCP call site. */
+export function McpAuthButton({ serverId }: { serverId: string }) {
+  return <AuthButton toolId={serverId} toolType="mcp" />;
 }

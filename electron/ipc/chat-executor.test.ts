@@ -778,6 +778,81 @@ describe("ensure_note", () => {
     expect(result).toHaveProperty("error");
   });
 
+  it("returns a structured error when required title is missing", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "ensure_note", { projectId: "proj1", content: "orphan body" }) as Record<string, unknown>;
+    expect(result.error).toBe("missing_required_field");
+    expect(result.field).toBe("title");
+    expect(result.received_keys).toEqual(expect.arrayContaining(["projectId", "content"]));
+  });
+
+  it("returns a structured error when title is blank/whitespace", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "ensure_note", { projectId: "proj1", title: "   ", content: "x" }) as Record<string, unknown>;
+    expect(result.error).toBe("missing_required_field");
+    expect(result.field).toBe("title");
+  });
+
+  it("returns a structured error when content is a non-string", async () => {
+    const db = makeDb();
+    seed(db);
+    const result = await exec(db, "ensure_note", { projectId: "proj1", title: "Bad", content: { nope: 1 } }) as Record<string, unknown>;
+    expect(result.error).toBe("invalid_field");
+    expect(result.field).toBe("content");
+  });
+
+  it("refuses to drastically shrink a substantial existing note (accidental-clobber guard)", async () => {
+    const db = makeDb();
+    seed(db);
+    const big = "x".repeat(500);
+    const r1 = await exec(db, "ensure_note", { projectId: "proj1", title: "Big Doc", content: big }) as Record<string, unknown>;
+    // Simulate a truncated payload landing on the large note.
+    const result = await exec(db, "ensure_note", { projectId: "proj1", title: "Big Doc", content: "wip" }) as Record<string, unknown>;
+    expect(result.error).toBe("possible_accidental_overwrite");
+    expect(result.existing_length).toBe(500);
+    expect(result.new_length).toBe(3);
+    // The original content must be intact.
+    const note = await exec(db, "get_note", { noteId: r1.id }) as Record<string, unknown>;
+    expect(note.content).toBe(big);
+  });
+
+  it("allows a drastic shrink when overwrite:true is set", async () => {
+    const db = makeDb();
+    seed(db);
+    const big = "x".repeat(500);
+    await exec(db, "ensure_note", { projectId: "proj1", title: "Big Doc", content: big });
+    const result = await exec(db, "ensure_note", { projectId: "proj1", title: "Big Doc", content: "wip", overwrite: true }) as Record<string, unknown>;
+    expect(result.action).toBe("updated");
+    const note = await exec(db, "get_note", { noteId: result.id }) as Record<string, unknown>;
+    expect(note.content).toBe("wip");
+  });
+
+  it("does not trigger the clobber guard on small notes (below the substantial threshold)", async () => {
+    const db = makeDb();
+    seed(db);
+    // 15-char note cleared to "" — must still work (mirrors existing behaviour).
+    await exec(db, "ensure_note", { projectId: "proj1", title: "Small", content: "initial content" });
+    const result = await exec(db, "ensure_note", { projectId: "proj1", title: "Small", content: "" }) as Record<string, unknown>;
+    expect(result.action).toBe("updated");
+    const note = await exec(db, "get_note", { noteId: result.id }) as Record<string, unknown>;
+    expect(note.content).toBe("");
+  });
+
+  it("does not trigger the guard for a moderate edit of a large note (only drastic shrinks)", async () => {
+    const db = makeDb();
+    seed(db);
+    const big = "x".repeat(500);
+    await exec(db, "ensure_note", { projectId: "proj1", title: "Doc", content: big });
+    // New content is 300 chars — a 40% shrink, above the 20% ratio floor, so allowed.
+    const mid = "y".repeat(300);
+    const result = await exec(db, "ensure_note", { projectId: "proj1", title: "Doc", content: mid }) as Record<string, unknown>;
+    expect(result.action).toBe("updated");
+    const note = await exec(db, "get_note", { noteId: result.id }) as Record<string, unknown>;
+    expect(note.content).toBe(mid);
+  });
+
   it("updates an existing note found in the LIVE DB, not a stale snapshot", async () => {
     const db = makeDb();
     seed(db);

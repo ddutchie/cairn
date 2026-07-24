@@ -21,6 +21,7 @@ import type Database from "better-sqlite3";
 import * as q from "../db/queries";
 import * as mcpClient from "./mcp-client";
 import * as services from "./custom-services";
+import * as mcpOauth from "./mcp-oauth";
 
 /** Mirrors GLOBAL_TOOL_SCOPE in src/types — electron cannot import from src. */
 const GLOBAL_TOOL_SCOPE = "__global__";
@@ -224,13 +225,54 @@ export async function executeExternalTool(
         headers: svc.headers,
         toolDefinition: svc.toolDefinition,
         responseKeys: svc.responseKeys,
+        authMode: svc.authMode,
       },
       name,
-      args
+      args,
+      makeServiceBearerResolver(svc),
     );
   }
 
   return `Error: "${name}" is not an external tool`;
+}
+
+/**
+ * Derive the OAuth discovery base for a service: an explicit `oauth.serverUrl`
+ * when provided, else the API URL's origin (the SDK follows the
+ * `WWW-Authenticate`/RFC 9728 metadata from there to the real authorization
+ * server). Used both to resolve bearers at call time and to key stored tokens.
+ */
+export function serviceOAuthServerUrl(svc: {
+  apiUrl: string;
+  oauth?: { serverUrl?: string };
+}): string {
+  const explicit = svc.oauth?.serverUrl?.trim();
+  if (explicit) return explicit;
+  try {
+    return new URL(svc.apiUrl).origin;
+  } catch {
+    return svc.apiUrl;
+  }
+}
+
+/**
+ * Build the per-request bearer resolver for an OAuth service (null for others).
+ * Delegates to the transport-independent {@link mcpOauth.getAccessToken}, which
+ * reads the keychain token and refreshes it when expired.
+ */
+export function makeServiceBearerResolver(svc: {
+  id: string;
+  name: string;
+  apiUrl: string;
+  authMode?: "none" | "oauth";
+  oauth?: { serverUrl?: string; scope?: string };
+}): services.BearerResolver | undefined {
+  if (svc.authMode !== "oauth") return undefined;
+  return () =>
+    mcpOauth.getAccessToken(
+      { id: svc.id, serverUrl: serviceOAuthServerUrl(svc), scope: svc.oauth?.scope },
+      svc.name,
+    );
 }
 
 // ── Display labels ──────────────────────────────────────────────────────────

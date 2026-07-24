@@ -18,6 +18,21 @@ import {
 } from "../db";
 import { traceTool } from "../../lib/tool-trace";
 
+/**
+ * Accidental-clobber guard thresholds for ensure_note updates.
+ *
+ * The guard only fires when BOTH conditions hold, so it never blocks routine
+ * edits — only the pathological "a truncated tiny payload lands on a large
+ * existing document" case that motivated it.
+ *   - CLOBBER_GUARD_MIN_EXISTING: existing note must be at least this many chars
+ *     to be considered "substantial" and worth protecting.
+ *   - CLOBBER_GUARD_SHRINK_RATIO: new content must be below this fraction of the
+ *     old length to count as a "drastic" shrink.
+ * A caller that genuinely wants a big shrink passes overwrite:true.
+ */
+export const CLOBBER_GUARD_MIN_EXISTING = 200;
+export const CLOBBER_GUARD_SHRINK_RATIO = 0.2;
+
 export function get_note(db: Database.Database, snap: Snapshot, args: Record<string, any>) {
   const note = snap.notes.find((n) => n.id === args.noteId);
   if (!note) return { error: "Note not found" };
@@ -119,7 +134,22 @@ export function instantiate_template(db: Database.Database, snap: Snapshot, work
 export function ensure_note(db: Database.Database, snap: Snapshot, workspacePath: string, args: Record<string, any>) {
   // Idempotent: finds a note by title+projectId and updates it, or creates it.
   // Prevents duplicate notes when agents re-run (e.g. syncing a README).
-  const { projectId, title, content, tagIds: ensureTagIds, tagNames, isPinned: ensureIsPinned } = args;
+  const { projectId, title, content, tagIds: ensureTagIds, tagNames, isPinned: ensureIsPinned, overwrite } = args;
+
+  // ── Required-field validation ──────────────────────────────────────────────
+  // A fragmented / re-escaped tool-call payload can arrive with required fields
+  // missing or garbled. Fail loud with a structured, machine-actionable error so
+  // the model retries correctly — never silently no-op on a half-formed call.
+  if (typeof projectId !== "string" || projectId.trim() === "") {
+    return { error: "missing_required_field", field: "projectId", message: "ensure_note requires a non-empty 'projectId'. The arguments may have been truncated — re-issue the call with all fields.", received_keys: Object.keys(args) };
+  }
+  if (typeof title !== "string" || title.trim() === "") {
+    return { error: "missing_required_field", field: "title", message: "ensure_note requires a non-empty 'title'. The arguments may have been truncated — re-issue the call with all fields.", received_keys: Object.keys(args) };
+  }
+  if (content !== undefined && typeof content !== "string") {
+    return { error: "invalid_field", field: "content", message: "'content' must be a string when provided. Omit it entirely to preserve existing content on update.", received_keys: Object.keys(args) };
+  }
+
   const project = snap.projects.find((p) => p.id === projectId);
   if (!project) return { error: "Project not found" };
   const resolvedFromNameIds = resolveTagNames(db, project.workspaceId, tagNames);
@@ -147,6 +177,29 @@ export function ensure_note(db: Database.Database, snap: Snapshot, workspacePath
     matchedId: existing?.id ?? "none",
   });
   const ensureNoteId = existing?.id ?? newId();
+
+  // ── Accidental-clobber guard ───────────────────────────────────────────────
+  // A truncated/fragmented payload can arrive as a tiny content string (e.g.
+  // "wip") aimed at a title that already holds a large document. Silently
+  // overwriting it would destroy the doc. Refuse the write when new content is
+  // BOTH much shorter than existing AND the existing note was substantial —
+  // unless the caller explicitly opts in with overwrite:true. This targets the
+  // pathological "tiny blob clobbers big note" case without blocking normal
+  // edits, condensing, or clearing a small note.
+  if (existing && content !== undefined && overwrite !== true) {
+    const oldLen = ((existing.content as string) ?? "").length;
+    const newLen = (content as string).length;
+    if (oldLen >= CLOBBER_GUARD_MIN_EXISTING && newLen < oldLen * CLOBBER_GUARD_SHRINK_RATIO) {
+      return {
+        error: "possible_accidental_overwrite",
+        message: `Refusing to shrink note "${title}" from ${oldLen} to ${newLen} characters. This often means the content arrived truncated. If the shrink is intentional, retry with overwrite:true. To add content instead of replacing, use append_to_note; to edit a section, use patch_note.`,
+        existing_length: oldLen,
+        new_length: newLen,
+        note_id: existing.id,
+      };
+    }
+  }
+
   lockNote(db, ensureNoteId);
   try {
     if (existing) {

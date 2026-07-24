@@ -63,6 +63,8 @@ interface RegistryServiceEntry extends RegistryEntryMeta {
     toolDefinition: string;
     responseKeys?: string[];
     apiKeyUrl?: string;
+    authMode?: "none" | "oauth";
+    oauth?: { serverUrl?: string; scope?: string; clientId?: string; authorizationUrl?: string; tokenUrl?: string };
     enabled: boolean;
   };
 }
@@ -94,6 +96,16 @@ const mcpDefinition = z.object({
   enabled: z.boolean(),
 });
 
+const oauthConfig = z
+  .object({
+    serverUrl: z.string().url().startsWith("https://").optional(),
+    scope: z.string().optional(),
+    clientId: z.string().optional(),
+    authorizationUrl: z.string().url().startsWith("https://").optional(),
+    tokenUrl: z.string().url().startsWith("https://").optional(),
+  })
+  .optional();
+
 const serviceDefinition = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
@@ -103,6 +115,8 @@ const serviceDefinition = z.object({
   toolDefinition: z.string().min(1),
   responseKeys: z.array(z.string()).optional(),
   apiKeyUrl: z.string().url().startsWith("https://").optional(),
+  authMode: z.enum(["none", "oauth"]).optional(),
+  oauth: oauthConfig,
   enabled: z.boolean(),
 });
 

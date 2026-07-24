@@ -33,6 +33,8 @@ import type { ChatRequest, ToolArgs } from "./tools";
 import type { SkillMeta } from "./skills";
 import { iterSseData } from "./sse";
 import { traceTool } from "./tool-trace";
+import { parseToolArgs } from "./parse-tool-args";
+import { resultContentError } from "./tool-result";
 
 // ── LLM config ───────────────────────────────────────────────────────────────
 
@@ -766,17 +768,18 @@ export async function runAgentLoop(
       // the parse error so the model can re-issue the call.
       let args: ToolArgs;
       let parseError: string | null = null;
-      try {
-        const rawArgs = tc.function.arguments?.trim() || "{}";
-        args = JSON.parse(rawArgs) as ToolArgs;
+      const parsed = parseToolArgs(tc.function.arguments);
+      if (parsed.ok) {
+        args = parsed.value as ToolArgs;
         traceTool("parse", {
           toolName: tc.function.name,
           title: typeof (args as Record<string, unknown>).title === "string" ? (args as Record<string, unknown>).title as string : "",
           content: typeof (args as Record<string, unknown>).content === "string" ? (args as Record<string, unknown>).content as string : "",
           rawArguments: tc.function.arguments || "",
+          repaired: parsed.repaired ? 1 : 0,
         });
-      } catch (err) {
-        parseError = `malformed tool-call arguments JSON from model: ${(err as Error).message}`;
+      } else {
+        parseError = parsed.error;
         args = {};
       }
 
@@ -842,6 +845,11 @@ export async function runAgentLoop(
           mode,
           allowedToolNames,
         );
+        // A Cairn tool signals failure by RETURNING { error: … } without throwing
+        // (the dominant pattern). Detect it so `ok` — which drives the red/failed
+        // chip and the plan-note hook below — reflects reality instead of always
+        // reporting success for non-throwing errors.
+        if (resultContentError(resultContent) !== undefined) ok = false;
       } catch (e) {
         ok = false;
         resultContent = `Error: ${(e as Error).message}`;

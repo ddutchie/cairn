@@ -1096,6 +1096,8 @@ interface CustomServiceInput {
   id: string; workspaceId: string; name: string; description?: string;
   apiUrl: string; method: "GET" | "POST" | "PUT" | "DELETE"; headers?: Record<string, string>;
   toolDefinition: string; responseKeys?: string[]; apiKeyUrl?: string;
+  authMode?: "none" | "oauth";
+  oauth?: { serverUrl?: string; scope?: string; clientId?: string; authorizationUrl?: string; tokenUrl?: string };
   enabled: boolean; source: string; communityId?: string; version?: string;
 }
 
@@ -1112,8 +1114,8 @@ export function getCustomServiceById(db: Database.Database, id: string) {
 export function saveCustomService(db: Database.Database, s: CustomServiceInput) {
   const now = ts();
   db.prepare(`
-    INSERT INTO custom_services (id, workspace_id, name, description, api_url, method, headers, tool_definition, response_keys, api_key_url, enabled, source, community_id, version, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO custom_services (id, workspace_id, name, description, api_url, method, headers, tool_definition, response_keys, api_key_url, enabled, source, community_id, version, auth_mode, oauth_config, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       name            = excluded.name,
       description     = excluded.description,
@@ -1127,11 +1129,14 @@ export function saveCustomService(db: Database.Database, s: CustomServiceInput) 
       source          = excluded.source,
       community_id    = excluded.community_id,
       version         = excluded.version,
+      auth_mode       = excluded.auth_mode,
+      oauth_config    = excluded.oauth_config,
       updated_at      = excluded.updated_at
   `).run(
     s.id, s.workspaceId, s.name, s.description ?? null, s.apiUrl, s.method,
     j(s.headers ?? {}), s.toolDefinition, j(s.responseKeys ?? []), s.apiKeyUrl ?? null,
-    s.enabled ? 1 : 0, s.source, s.communityId ?? null, s.version ?? null, now, now,
+    s.enabled ? 1 : 0, s.source, s.communityId ?? null, s.version ?? null,
+    s.authMode ?? "none", s.oauth ? JSON.stringify(s.oauth) : null, now, now,
   );
   return getCustomServiceById(db, s.id)!;
 }

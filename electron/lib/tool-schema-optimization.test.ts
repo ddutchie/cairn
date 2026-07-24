@@ -368,7 +368,7 @@ const MULTI_TURN: MultiTurn[] = [
   },
 ];
 
-describe.skipIf(!!process.env.CAIRN_SKIP_LIVE_TESTS)("tool-schema compression — selection + argument correctness (live)", () => {
+describe.skipIf(!!process.env.CAIRN_SKIP_LIVE_TESTS || process.env.CAIRN_LIVE_TESTS !== "1")("tool-schema compression — selection + argument correctness (live)", () => {
   const full = fullOpenaiTools();
   const safe = safeOpenaiTools();
   const aggressive = aggressiveOpenaiTools();

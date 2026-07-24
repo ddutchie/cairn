@@ -1,10 +1,11 @@
 "use client";
 
 import React from "react";
-import { Loader2, CheckCircle } from "lucide-react";
+import { Loader2, CheckCircle, XCircle } from "lucide-react";
 import { MarkdownContent } from "./MarkdownContent";
 import { ThinkingPanel } from "./ThinkingPanel";
 import { MessageAvatar, StreamingCursor } from "./message-ui";
+import { ExternalRefChip } from "@/components/shared/cairn-ref-chip";
 import { prettifyToolLabel } from "@/lib/utils";
 import type { ChatToolCall } from "@/hooks/useChatStream";
 
@@ -21,16 +22,26 @@ export const ToolCallIndicator = React.memo(function ToolCallIndicator({ toolCal
     <div className="flex gap-2 items-start">
       <MessageAvatar role="bot" size="lg" />
       <div className="flex flex-col gap-1 min-w-0 flex-1">
-        {toolCalls.map((tc, i) => (
-          <div key={i} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--surface-2)] border border-[var(--border)] w-fit">
-            {tc.status === "running" ? (
-              <Loader2 size={10} className="text-[var(--accent)] animate-spin shrink-0" />
-            ) : (
-              <CheckCircle size={10} className="text-[var(--accent)] shrink-0" />
-            )}
-            <span className="text-[0.786rem] text-[var(--text-secondary)]">{prettifyToolLabel(tc.label)}</span>
-          </div>
-        ))}
+        {toolCalls.map((tc, i) =>
+          tc.status === "done" && tc.ok === false ? (
+            <div key={i} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] border border-[color-mix(in_srgb,var(--danger)_30%,transparent)] w-fit max-w-full" title={tc.error}>
+              <XCircle size={10} className="text-[var(--danger)] shrink-0" />
+              <span className="text-[0.786rem] text-[var(--text-secondary)]">{prettifyToolLabel(tc.label)} failed</span>
+              {tc.error && <span className="text-[0.714rem] text-[var(--text-tertiary)] truncate max-w-[220px]">— {tc.error}</span>}
+            </div>
+          ) : tc.status === "done" && tc.externalRef ? (
+            <ExternalRefChip key={i} toolName={tc.tool} externalRef={tc.externalRef} />
+          ) : (
+            <div key={i} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--surface-2)] border border-[var(--border)] w-fit">
+              {tc.status === "running" ? (
+                <Loader2 size={10} className="text-[var(--accent)] animate-spin shrink-0" />
+              ) : (
+                <CheckCircle size={10} className="text-[var(--accent)] shrink-0" />
+              )}
+              <span className="text-[0.786rem] text-[var(--text-secondary)]">{prettifyToolLabel(tc.label)}</span>
+            </div>
+          )
+        )}
         {hasThought && (
           <div className="max-w-full w-fit">
             <ThinkingPanel

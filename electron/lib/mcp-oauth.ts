@@ -28,8 +28,9 @@ import { app, shell } from "electron";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
-import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
+import { UnauthorizedError, auth } from "@modelcontextprotocol/sdk/client/auth.js";
 import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
+import type { ToolKind } from "./secure-store";
 import type {
   OAuthClientMetadata,
   OAuthClientInformationFull,
@@ -105,6 +106,7 @@ export interface OAuthServerConfig {
 export class KeychainOAuthProvider implements OAuthClientProvider {
   private _state: string;
   private _redirectUri: string;
+  private readonly _toolType: ToolKind;
 
   constructor(
     private readonly serverId: string,
@@ -114,9 +116,17 @@ export class KeychainOAuthProvider implements OAuthClientProvider {
     state?: string,
     /** Redirect URI to advertise (loopback or custom scheme). Defaults to cairn://. */
     redirectUri?: string,
+    /**
+     * Keychain namespace the artefacts are stored under. Defaults to "mcp" so
+     * existing MCP-server call sites are unchanged; custom HTTP services pass
+     * "service" so their tokens can never collide with an MCP server of the
+     * same id (mirrors the secretRef namespacing in secure-store).
+     */
+    toolType: ToolKind = "mcp",
   ) {
     this._state = state ?? randomUUID();
     this._redirectUri = redirectUri ?? OAUTH_REDIRECT_URI;
+    this._toolType = toolType;
   }
 
   get redirectUrl(): string {
@@ -141,29 +151,36 @@ export class KeychainOAuthProvider implements OAuthClientProvider {
 
   clientInformation(): OAuthClientInformationMixed | undefined {
     return (
-      secrets.getToolJson<OAuthClientInformationFull>("mcp", this.serverId, KEY_CLIENT_INFO) ??
+      secrets.getToolJson<OAuthClientInformationFull>(this._toolType, this.serverId, KEY_CLIENT_INFO) ??
       undefined
     );
   }
 
   saveClientInformation(info: OAuthClientInformationFull): void {
-    secrets.setToolJson("mcp", this.serverId, KEY_CLIENT_INFO, info);
+    secrets.setToolJson(this._toolType, this.serverId, KEY_CLIENT_INFO, info);
   }
 
   tokens(): OAuthTokens | undefined {
-    return secrets.getToolJson<OAuthTokens>("mcp", this.serverId, KEY_TOKENS) ?? undefined;
+    return secrets.getToolJson<OAuthTokens>(this._toolType, this.serverId, KEY_TOKENS) ?? undefined;
   }
 
   saveTokens(tokens: OAuthTokens): void {
-    secrets.setToolJson("mcp", this.serverId, KEY_TOKENS, tokens);
+    // Stamp an absolute expiry from the relative `expires_in` at write time, so
+    // getAccessToken can later decide whether to refresh without knowing when the
+    // token was issued. Purely additive — the SDK ignores unknown fields.
+    const stamped =
+      typeof tokens.expires_in === "number"
+        ? { ...tokens, expires_at: Date.now() + tokens.expires_in * 1000 }
+        : tokens;
+    secrets.setToolJson(this._toolType, this.serverId, KEY_TOKENS, stamped);
   }
 
   saveCodeVerifier(verifier: string): void {
-    secrets.setToolJson("mcp", this.serverId, KEY_VERIFIER, verifier);
+    secrets.setToolJson(this._toolType, this.serverId, KEY_VERIFIER, verifier);
   }
 
   codeVerifier(): string {
-    const v = secrets.getToolJson<string>("mcp", this.serverId, KEY_VERIFIER);
+    const v = secrets.getToolJson<string>(this._toolType, this.serverId, KEY_VERIFIER);
     if (!v) throw new Error("Missing PKCE code verifier — restart the sign-in flow.");
     return v;
   }
@@ -175,13 +192,13 @@ export class KeychainOAuthProvider implements OAuthClientProvider {
 
   invalidateCredentials(scope: "all" | "client" | "tokens" | "verifier" | "discovery"): void {
     if (scope === "all" || scope === "client") {
-      secrets.deleteSecret("mcp", this.serverId, KEY_CLIENT_INFO);
+      secrets.deleteSecret(this._toolType, this.serverId, KEY_CLIENT_INFO);
     }
     if (scope === "all" || scope === "tokens") {
-      secrets.deleteSecret("mcp", this.serverId, KEY_TOKENS);
+      secrets.deleteSecret(this._toolType, this.serverId, KEY_TOKENS);
     }
     if (scope === "all" || scope === "verifier") {
-      secrets.deleteSecret("mcp", this.serverId, KEY_VERIFIER);
+      secrets.deleteSecret(this._toolType, this.serverId, KEY_VERIFIER);
     }
   }
 }
@@ -217,15 +234,15 @@ function makeOAuthTransport(cfg: OAuthServerConfig, provider: OAuthClientProvide
 }
 
 /** True if the server already has stored OAuth tokens (i.e. is "connected"). */
-export function hasTokens(serverId: string): boolean {
-  return secrets.getToolJson<OAuthTokens>("mcp", serverId, KEY_TOKENS) !== null;
+export function hasTokens(serverId: string, toolType: ToolKind = "mcp"): boolean {
+  return secrets.getToolJson<OAuthTokens>(toolType, serverId, KEY_TOKENS) !== null;
 }
 
 /** Forget every OAuth artefact for a server (sign out). */
-export function signOut(serverId: string): void {
-  secrets.deleteSecret("mcp", serverId, KEY_CLIENT_INFO);
-  secrets.deleteSecret("mcp", serverId, KEY_TOKENS);
-  secrets.deleteSecret("mcp", serverId, KEY_VERIFIER);
+export function signOut(serverId: string, toolType: ToolKind = "mcp"): void {
+  secrets.deleteSecret(toolType, serverId, KEY_CLIENT_INFO);
+  secrets.deleteSecret(toolType, serverId, KEY_TOKENS);
+  secrets.deleteSecret(toolType, serverId, KEY_VERIFIER);
 }
 
 // ── Pending-authorization registry ───────────────────────────────────────────
@@ -477,6 +494,212 @@ export function cancelPendingForServer(serverId: string): boolean {
   }
   return removed;
 }
+
+// ── HTTP-service OAuth (transport-independent) ───────────────────────────────
+//
+// Custom HTTP services authenticate with the SAME OAuth 2.1 machinery as MCP
+// servers, but they have no MCP transport/session — a service call is a plain
+// `fetch` with an `Authorization: Bearer` header. So instead of driving the flow
+// through `transport.finishAuth`/`client.connect` (which speak MCP), we call the
+// SDK's transport-agnostic `auth()` orchestrator directly. `auth()`:
+//   - with no `authorizationCode`: runs discovery + (if needed) DCR, then either
+//     returns "AUTHORIZED" (valid/refreshable tokens already stored) or opens the
+//     browser via the provider's redirectToAuthorization and returns "REDIRECT".
+//   - with an `authorizationCode`: exchanges the code (using the stored PKCE
+//     verifier) for tokens and persists them via the provider's saveTokens.
+// The provider's keychain storage is namespaced under toolType "service".
+
+/** OAuth config for a custom HTTP service. */
+export interface OAuthServiceConfig {
+  id: string;
+  /**
+   * Resource/authorization-server base the SDK runs discovery against. For most
+   * modern services this is the API's origin (e.g. https://api.example.com); the
+   * `WWW-Authenticate`/RFC 9728 metadata points `auth()` at the real AS.
+   */
+  serverUrl: string;
+  scope?: string;
+}
+
+/** Active loopback listeners for in-flight SERVICE sign-ins, keyed by service id. */
+const activeServiceLoopbacks = new Map<string, LoopbackListener>();
+/** Per-service generation counter guarding the concurrent-start race. */
+const serviceAuthGeneration = new Map<string, number>();
+
+/**
+ * Begin an OAuth sign-in for a custom HTTP service. Mirrors {@link startServerAuth}
+ * (loopback-first with the generation/cancellation guards) but never constructs
+ * an MCP client — token exchange is driven entirely by the SDK `auth()` helper.
+ *
+ * @param onComplete Called when the loopback flow finishes (success or error),
+ *   so the IPC layer can forward a `tools:oauthCallback` event.
+ */
+export async function startServiceAuth(
+  cfg: OAuthServiceConfig,
+  serviceName: string,
+  onComplete?: AuthCompletionListener,
+): Promise<AuthStartResult> {
+  cancelServiceAuth(cfg.id);
+
+  const myGen = (serviceAuthGeneration.get(cfg.id) ?? 0) + 1;
+  serviceAuthGeneration.set(cfg.id, myGen);
+  const isStale = () => serviceAuthGeneration.get(cfg.id) !== myGen;
+
+  let listener: LoopbackListener;
+  try {
+    listener = await startLoopbackListener();
+  } catch (e) {
+    // Unlike MCP, services have no cairn:// deep-link fallback path yet (the
+    // deep-link pending registry is tied to MCP transports), so a bind failure
+    // is a hard error rather than a silent downgrade.
+    return { status: "error", error: e instanceof Error ? e.message : String(e) };
+  }
+
+  if (isStale()) {
+    listener.close();
+    return { status: "error", error: "Superseded by a newer sign-in." };
+  }
+
+  // The loopback port changes each attempt, so a client registration saved with
+  // a previous redirect URI no longer applies — clear it so DCR re-registers with
+  // the current loopback URL. Tokens are kept (they may still be valid).
+  secrets.deleteSecret("service", cfg.id, KEY_CLIENT_INFO);
+  secrets.deleteSecret("service", cfg.id, KEY_VERIFIER);
+
+  const provider = new KeychainOAuthProvider(
+    cfg.id,
+    serviceName,
+    cfg.scope,
+    undefined,
+    listener.redirectUri,
+    "service",
+  );
+
+  let result: Awaited<ReturnType<typeof auth>>;
+  try {
+    result = await auth(provider, { serverUrl: cfg.serverUrl, scope: cfg.scope });
+  } catch (e) {
+    listener.close();
+    return { status: "error", error: e instanceof Error ? e.message : String(e) };
+  }
+
+  if (result === "AUTHORIZED") {
+    // Stored tokens were still valid (or refreshed in place) — no browser needed.
+    listener.close();
+    return { status: "already_authorized" };
+  }
+
+  // "REDIRECT": the browser was opened. Await the loopback callback off the
+  // critical path, exchange the code via auth(authorizationCode), then notify.
+  if (isStale()) {
+    listener.close();
+    return { status: "error", error: "Superseded by a newer sign-in." };
+  }
+  activeServiceLoopbacks.set(cfg.id, listener);
+  void (async () => {
+    try {
+      const cb = await listener.waitForCallback;
+      const done = await auth(provider, {
+        serverUrl: cfg.serverUrl,
+        authorizationCode: cb.code,
+        scope: cfg.scope,
+      });
+      if (done !== "AUTHORIZED") {
+        throw new Error("Token exchange did not complete.");
+      }
+      onComplete?.({ status: "authorized", serverId: cfg.id });
+    } catch (e) {
+      onComplete?.({
+        status: "error",
+        serverId: cfg.id,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    } finally {
+      if (activeServiceLoopbacks.get(cfg.id) === listener) {
+        activeServiceLoopbacks.delete(cfg.id);
+      }
+    }
+  })();
+
+  return { status: "redirected" };
+}
+
+/**
+ * Cancel an in-flight service sign-in (the in-app "Cancel" button). Closing the
+ * listener rejects its pending callback → the flow's catch fires an `error`
+ * completion. Returns true if an attempt was actually in flight.
+ */
+export function cancelServiceAuth(serviceId: string): boolean {
+  const listener = activeServiceLoopbacks.get(serviceId);
+  if (listener) {
+    activeServiceLoopbacks.delete(serviceId);
+    listener.close("Sign-in cancelled.");
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Return a valid bearer access token for a service, refreshing it if expired.
+ * Called by the custom-services executor per request. Returns null when the
+ * service has never been authorized or a refresh fails (so the caller drops the
+ * Authorization header rather than sending an expired/absent token).
+ *
+ * Refresh is delegated to the SDK `auth()` helper: with stored tokens present
+ * and no authorizationCode, `auth()` uses the refresh_token grant when the
+ * access token is expired and persists the rotated tokens via saveTokens. We
+ * therefore proactively refresh when the stored token is at/near expiry, then
+ * read the (possibly rotated) token back from the keychain.
+ */
+export async function getAccessToken(
+  cfg: OAuthServiceConfig,
+  serviceName: string,
+): Promise<string | null> {
+  const provider = new KeychainOAuthProvider(
+    cfg.id,
+    serviceName,
+    cfg.scope,
+    undefined,
+    // Redirect URI is irrelevant for a non-interactive refresh; keep the default.
+    undefined,
+    "service",
+  );
+
+  const stored = provider.tokens();
+  if (!stored?.access_token) return null; // never authorized
+
+  if (!isTokenExpired(stored)) return stored.access_token;
+
+  // Expired (or near-expiry) and we hold a refresh_token → let auth() run the
+  // refresh grant. It won't open a browser: with tokens present it either
+  // refreshes and returns "AUTHORIZED", or (refresh failed/absent) throws.
+  if (!stored.refresh_token) return null;
+  try {
+    const result = await auth(provider, { serverUrl: cfg.serverUrl, scope: cfg.scope });
+    if (result !== "AUTHORIZED") return null;
+  } catch (e) {
+    console.error(`[service-oauth] refresh failed for ${cfg.id}:`, e instanceof Error ? e.message : e);
+    return null;
+  }
+  return provider.tokens()?.access_token ?? null;
+}
+
+/** True if the stored access token is expired or within the refresh skew window. */
+function isTokenExpired(tokens: OAuthTokens): boolean {
+  // Expiry is read from the absolute `expires_at` timestamp that stampExpiry
+  // records on save (derived from expires_in at issue time). We refresh eagerly,
+  // treating the token as expired once we're within TOKEN_REFRESH_SKEW_MS of it.
+  const expiresAt = (tokens as OAuthTokens & { expires_at?: number }).expires_at;
+  if (typeof expiresAt !== "number") {
+    // No absolute expiry recorded → cannot prove expiry; assume still valid.
+    // (New tokens are stamped with expires_at by stampExpiry on save.)
+    return false;
+  }
+  return Date.now() >= expiresAt - TOKEN_REFRESH_SKEW_MS;
+}
+
+/** Refresh a little before the real expiry to avoid racing a 401 mid-request. */
+const TOKEN_REFRESH_SKEW_MS = 60_000;
 
 // Keep the registry from leaking across app lifetime.
 app?.on?.("before-quit", () => {

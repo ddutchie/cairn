@@ -37,7 +37,7 @@ import {
 } from "../db/queries";
 import { buildSystemPrompt, type ChatRequest } from "./tools";
 import { normaliseBaseUrl } from "./llm";
-import { BASE_URL, MODEL, API_KEY, endpointUp } from "./bench-endpoint";
+import { BASE_URL, MODEL, API_KEY, endpointUp, LIVE_TESTS_ENABLED } from "./bench-endpoint";
 import { runToolLoop } from "./chat-loop";
 import { runDispatchLoop } from "./chat-subagent-loop";
 
@@ -226,7 +226,7 @@ async function runSub(db: Database.Database, wp: string, task: QTask): Promise<{
 
 interface ScoreRow { arch: string; task: string; s: RubricScore; total: number; noteChars: number; }
 
-describe.skipIf(!!process.env.CAIRN_SKIP_LIVE_TESTS)("chat output-quality scorer (LLM-as-judge, live)", () => {
+describe.skipIf(!LIVE_TESTS_ENABLED)("chat output-quality scorer (LLM-as-judge, live)", () => {
   let up = false;
   beforeEach(async () => { up = (await endpointUp(BASE_URL, API_KEY)) && (await endpointUp(JUDGE_BASE_URL, JUDGE_API_KEY)); });
 

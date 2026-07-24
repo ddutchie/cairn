@@ -396,6 +396,11 @@ export function buildIpcMock(opts?: { needsWorkspaceSetup?: boolean }): string {
       startMcpAuth:    () => Promise.resolve({ status: "already_authorized" }),
       mcpAuthStatus:   () => Promise.resolve({ connected: false }),
       signOutMcp:      noop,
+      cancelMcpAuth:   () => Promise.resolve({ cancelled: false }),
+      startServiceAuth:   () => Promise.resolve({ status: "already_authorized" }),
+      serviceAuthStatus:  () => Promise.resolve({ connected: false }),
+      signOutService:     noop,
+      cancelServiceAuth:  () => Promise.resolve({ cancelled: false }),
       onOauthCallback: makeListener("tools.onOauthCallback"),
     },
 

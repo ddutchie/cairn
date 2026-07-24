@@ -17,6 +17,7 @@ import {
   filterResponse,
   coerceArgs,
   sampleArgsFromSchema,
+  callService,
   type CustomServiceRuntimeConfig,
 } from "./custom-services";
 
@@ -231,5 +232,79 @@ describe("custom-services sample args (Test connection)", () => {
   it("returns empty object when there is no schema", () => {
     expect(sampleArgsFromSchema(undefined)).toEqual({});
     expect(sampleArgsFromSchema({ type: "object" })).toEqual({});
+  });
+});
+
+describe("custom-services OAuth bearer injection", () => {
+  const oauthCfg: CustomServiceRuntimeConfig = {
+    id: "svc1",
+    apiUrl: "https://api.example.com/search",
+    method: "GET",
+    headers: { "X-Static": "keep" },
+    toolDefinition: JSON.stringify({
+      name: "search",
+      description: "Search",
+      parameters: { type: "object", properties: { q: { type: "string" } } },
+    }),
+    authMode: "oauth",
+  };
+
+  function mockFetchOnce(): { calls: { url: string; init: RequestInit }[] } {
+    const calls: { url: string; init: RequestInit }[] = [];
+    vi.stubGlobal("fetch", (url: string, init: RequestInit) => {
+      calls.push({ url, init });
+      return Promise.resolve(
+        new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "Content-Type": "application/json" } }),
+      );
+    });
+    return { calls };
+  }
+
+  it("injects a resolved Authorization: Bearer header for oauth services", async () => {
+    const { calls } = mockFetchOnce();
+    const resolveBearer = vi.fn(async () => "fresh-token");
+    await callService(oauthCfg, "svc__svc1__search", { q: "hi" }, resolveBearer);
+    vi.unstubAllGlobals();
+
+    expect(resolveBearer).toHaveBeenCalledWith("svc1");
+    const sent = calls[0].init.headers as Record<string, string>;
+    expect(sent.Authorization).toBe("Bearer fresh-token");
+    expect(sent["X-Static"]).toBe("keep");
+  });
+
+  it("overrides any pre-existing Authorization header with the fresh token", async () => {
+    const { calls } = mockFetchOnce();
+    const cfg = { ...oauthCfg, headers: { Authorization: "Bearer stale", "X-Static": "keep" } };
+    await callService(cfg, "svc__svc1__search", {}, async () => "new-token");
+    vi.unstubAllGlobals();
+
+    const sent = calls[0].init.headers as Record<string, string>;
+    expect(sent.Authorization).toBe("Bearer new-token");
+  });
+
+  it("omits Authorization when the resolver returns null (not connected / refresh failed)", async () => {
+    const { calls } = mockFetchOnce();
+    // Seed a stale bearer under a lower-case header name to prove removal is
+    // case-insensitive — a failed resolve must not leave the old token behind.
+    const cfg = { ...oauthCfg, headers: { authorization: "Bearer stale", "X-Static": "keep" } };
+    await callService(cfg, "svc__svc1__search", {}, async () => null);
+    vi.unstubAllGlobals();
+
+    const sent = calls[0].init.headers as Record<string, string>;
+    expect(sent.Authorization).toBeUndefined();
+    expect(sent.authorization).toBeUndefined();
+    expect(sent["X-Static"]).toBe("keep");
+  });
+
+  it("does not resolve a bearer for non-oauth services", async () => {
+    const { calls } = mockFetchOnce();
+    const resolveBearer = vi.fn(async () => "should-not-be-used");
+    const cfg = { ...oauthCfg, authMode: "none" as const };
+    await callService(cfg, "svc__svc1__search", {}, resolveBearer);
+    vi.unstubAllGlobals();
+
+    expect(resolveBearer).not.toHaveBeenCalled();
+    const sent = calls[0].init.headers as Record<string, string>;
+    expect(sent.Authorization).toBeUndefined();
   });
 });

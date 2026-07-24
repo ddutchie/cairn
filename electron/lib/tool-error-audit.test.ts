@@ -155,7 +155,7 @@ const CASES: Case[] = [
   },
 ];
 
-describe.skipIf(!!process.env.CAIRN_SKIP_LIVE_TESTS)("tool error self-correction audit (live)", () => {
+describe.skipIf(!!process.env.CAIRN_SKIP_LIVE_TESTS || process.env.CAIRN_LIVE_TESTS !== "1")("tool error self-correction audit (live)", () => {
   let up = false;
   beforeAll(async () => {
     up = await endpointUp();

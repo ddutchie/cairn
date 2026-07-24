@@ -25,6 +25,9 @@ export function ServiceForm({
   const [toolDefinition, setToolDefinition] = useState(initial?.toolDefinition ?? "");
   const [responseKeys, setResponseKeys] = useState((initial?.responseKeys ?? []).join(", "));
   const [rows, setRows] = useState<HeaderRow[]>(headersToRows(initial?.headers));
+  const [authMode, setAuthMode] = useState<"none" | "oauth">(initial?.authMode ?? "none");
+  const [oauthScope, setOauthScope] = useState(initial?.oauth?.scope ?? "");
+  const [oauthServerUrl, setOauthServerUrl] = useState(initial?.oauth?.serverUrl ?? "");
 
   let toolDefValid = false;
   try {
@@ -62,7 +65,46 @@ export function ServiceForm({
           <input value={apiUrl} onChange={(e) => setApiUrl(e.target.value)} placeholder="https://api.example.com/search" className={cn(inputCls, "font-mono")} />
         </div>
       </div>
-      <HeaderEditor rows={rows} onChange={setRows} />
+      <div>
+        <label className={labelCls}>Authentication</label>
+        <div className="inline-flex rounded border border-[var(--border)] overflow-hidden">
+          {(["none", "oauth"] as const).map((m) => (
+            <button
+              key={m}
+              onClick={() => setAuthMode(m)}
+              className={cn(
+                "px-3 py-1 text-xs transition-colors",
+                authMode === m ? "bg-[var(--accent)] text-[var(--accent-fg)]" : "text-[var(--text-secondary)] hover:bg-[var(--surface-3)]"
+              )}
+            >
+              {m === "none" ? "Headers / API key" : "OAuth"}
+            </button>
+          ))}
+        </div>
+        {authMode === "oauth" && (
+          <p className="mt-1 text-[0.714rem] text-[var(--text-tertiary)]">
+            Sign in via your browser after saving. Cairn stores the tokens in your OS keychain, refreshes them
+            automatically, and adds <span className="font-mono">Authorization: Bearer</span> to each request.
+          </p>
+        )}
+      </div>
+      {authMode === "oauth" ? (
+        <>
+          <div>
+            <label className={labelCls}>Scope (optional)</label>
+            <input value={oauthScope} onChange={(e) => setOauthScope(e.target.value)} placeholder="e.g. read:things offline_access" className={cn(inputCls, "font-mono")} />
+          </div>
+          <div>
+            <label className={labelCls}>Authorization server (optional)</label>
+            <input value={oauthServerUrl} onChange={(e) => setOauthServerUrl(e.target.value)} placeholder="Defaults to the API URL's origin" className={cn(inputCls, "font-mono")} />
+            <p className="text-[0.714rem] text-[var(--text-tertiary)] mt-1">
+              Leave empty to auto-discover the OAuth server from the API URL (works for most modern services).
+            </p>
+          </div>
+        </>
+      ) : (
+        <HeaderEditor rows={rows} onChange={setRows} />
+      )}
       <div>
         <label className={labelCls}>Tool definition (JSON) *</label>
         <textarea
@@ -96,10 +138,22 @@ export function ServiceForm({
                 method,
                 toolDefinition: toolDefinition.trim(),
                 responseKeys: responseKeys.split(",").map((s) => s.trim()).filter(Boolean),
+                authMode,
+                oauth:
+                  authMode === "oauth"
+                    ? {
+                        // Preserve preregistered fields (clientId / authorizationUrl /
+                        // tokenUrl) that the form doesn't expose but a registry preset
+                        // may have set — editing must not drop them.
+                        ...initial?.oauth,
+                        ...(oauthScope.trim() ? { scope: oauthScope.trim() } : {}),
+                        ...(oauthServerUrl.trim() ? { serverUrl: oauthServerUrl.trim() } : {}),
+                      }
+                    : undefined,
                 enabled: initial?.enabled ?? false,
                 source: initial?.source ?? "manual",
               },
-              rows
+              authMode === "oauth" ? [] : rows
             )
           }
         >

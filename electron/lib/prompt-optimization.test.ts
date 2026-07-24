@@ -275,7 +275,7 @@ async function runComparison(
   return { oldScore, prodScore };
 }
 
-describe.skipIf(!!process.env.CAIRN_SKIP_LIVE_TESTS)("prompt optimization — tool selection (live)", () => {
+describe.skipIf(!!process.env.CAIRN_SKIP_LIVE_TESTS || process.env.CAIRN_LIVE_TESTS !== "1")("prompt optimization — tool selection (live)", () => {
   const desktopToolset = openaiTools();
   const mobileToolset = mobileTools();
   let up = false;

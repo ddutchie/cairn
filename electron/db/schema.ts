@@ -755,6 +755,23 @@ const MIGRATIONS: Migration[] = [
       db.exec("ALTER TABLE chat_messages ADD COLUMN subagents TEXT");
     }
   },
+
+  // v30: OAuth for custom HTTP services. Mirrors v23 (MCP OAuth) for the service
+  // table: auth_mode 'none' keeps the existing static/keychain-header behaviour;
+  // 'oauth' drives the transport-independent OAuth flow (browser sign-in, tokens
+  // auto-refreshed and injected as Authorization: Bearer). oauth_config is an
+  // optional JSON blob {serverUrl?, scope?, clientId?, authorizationUrl?, tokenUrl?}
+  // for vendors needing a preconfigured client. Tokens/registration are NOT stored
+  // here — they live encrypted in the OS keychain (secure store, namespace "service").
+  (db) => {
+    const cols = db.prepare("PRAGMA table_info(custom_services)").all() as { name: string }[];
+    if (!cols.some((c) => c.name === "auth_mode")) {
+      db.exec("ALTER TABLE custom_services ADD COLUMN auth_mode TEXT NOT NULL DEFAULT 'none'");
+    }
+    if (!cols.some((c) => c.name === "oauth_config")) {
+      db.exec("ALTER TABLE custom_services ADD COLUMN oauth_config TEXT");
+    }
+  },
 ];
 
 export function applySchema(db: Database.Database): void {
@@ -786,6 +803,8 @@ function ensureColumns(db: Database.Database): void {
   };
   ensure("chat_threads", "use_subagents", "use_subagents INTEGER NOT NULL DEFAULT 0");
   ensure("chat_messages", "subagents", "subagents TEXT");
+  ensure("custom_services", "auth_mode", "auth_mode TEXT NOT NULL DEFAULT 'none'");
+  ensure("custom_services", "oauth_config", "oauth_config TEXT");
 }
 
 function runMigrations(db: Database.Database): void {

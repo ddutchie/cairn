@@ -10,8 +10,9 @@
  * `chat/chat-panel/ChatMessageBubble.tsx` (P3-2 of the cleanup plan).
  */
 
-import { FileText, SquareCheck, CheckCircle } from "lucide-react";
+import { FileText, SquareCheck, CheckCircle, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { prettifyToolLabel } from "@/lib/utils";
 import { revealNote, revealCard } from "@/lib/events";
 import { useCairnStore } from "@/store";
 
@@ -96,6 +97,60 @@ export function CairnRefChip({ toolName, cairnRef, ok = true }: {
       </div>
 
       <CheckCircle size={9} className={cn("shrink-0 ml-auto", ok ? "text-[var(--accent)]" : "text-[var(--danger)]")} />
+    </button>
+  );
+}
+
+// ── External reference chip (MCP / custom-service results) ───────────────────
+
+export interface ExternalRef {
+  url: string;
+  title?: string;
+  snippet?: string;
+}
+
+/** Best-effort friendly host for the sub-label (e.g. "github.com"). */
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * Clickable chip for a linkable artefact returned by an MCP-server / custom-HTTP
+ * -service tool call (a Confluence page, web-search hit, GitHub PR, …). Opens the
+ * URL in the system browser. The URL is already http(s)-validated at extraction
+ * time (electron/lib/external-ref.ts) and re-guarded at the openExternal IPC.
+ */
+export function ExternalRefChip({ toolName, externalRef }: { toolName?: string; externalRef: ExternalRef }) {
+  const label = externalRef.title || hostOf(externalRef.url);
+  const sub = externalRef.title ? hostOf(externalRef.url) : (toolName ? prettifyToolLabel(toolName) : "Open link");
+
+  function handleClick() {
+    window.electron?.openExternal(externalRef.url);
+  }
+
+  return (
+    <button
+      onClick={handleClick}
+      title={externalRef.snippet ? `${externalRef.url}\n\n${externalRef.snippet}` : externalRef.url}
+      className={cn(
+        "flex items-center gap-2 px-2.5 py-1.5 rounded-lg w-fit max-w-full text-left transition-colors group",
+        "bg-[var(--surface-2)] border border-[var(--border)]",
+        "hover:border-[color-mix(in_srgb,var(--accent)_50%,transparent)] hover:bg-[color-mix(in_srgb,var(--accent)_4%,var(--surface-2))]",
+      )}
+    >
+      <div className="w-5 h-5 rounded flex items-center justify-center flex-shrink-0 bg-[color-mix(in_srgb,var(--accent)_12%,transparent)]">
+        <ExternalLink size={10} className="text-[var(--accent)]" />
+      </div>
+      <div className="flex flex-col min-w-0">
+        <span className="text-[0.714rem] font-medium text-[var(--text-primary)] truncate max-w-[220px] leading-none group-hover:text-[var(--accent)] transition-colors">
+          {label}
+        </span>
+        <span className="text-[0.643rem] text-[var(--text-tertiary)] leading-none mt-0.5 truncate max-w-[220px]">{sub}</span>
+      </div>
     </button>
   );
 }

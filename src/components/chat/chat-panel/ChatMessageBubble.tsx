@@ -2,27 +2,39 @@
 
 import React from "react";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
-import { FileText, Kanban, FolderOpen, Search, Copy, Check, RotateCcw, CheckCircle } from "lucide-react";
+import { FileText, Kanban, FolderOpen, Search, Copy, Check, RotateCcw, CheckCircle, XCircle } from "lucide-react";
 import { cn, formatRelative, prettifyToolLabel } from "@/lib/utils";
 import { MarkdownContent } from "./MarkdownContent";
 import { ActionsList } from "./ActionsList";
 import { ThinkingPanel } from "./ThinkingPanel";
 import { ChatSubagentBlock } from "./ChatSubagentBlock";
 import { MessageAvatar } from "./message-ui";
-import { CairnRefChip } from "@/components/shared/cairn-ref-chip";
+import { CairnRefChip, ExternalRefChip } from "@/components/shared/cairn-ref-chip";
 import type { ChatMessage, LinkedContextReference, ChatToolCallRecord } from "@/types";
 
 function ChatToolCallChip({ tc }: { tc: ChatToolCallRecord }) {
-  if (!tc.cairnRef) {
+  // A failed tool never produced a usable ref — show the failure reason.
+  if (tc.ok === false) {
     return (
-      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--surface-2)] border border-[var(--border)] w-fit">
-        <CheckCircle size={10} className="text-[var(--accent)] shrink-0" />
-        <span className="text-[0.786rem] text-[var(--text-secondary)]">{prettifyToolLabel(tc.label)}</span>
+      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] border border-[color-mix(in_srgb,var(--danger)_30%,transparent)] w-fit max-w-full" title={tc.error}>
+        <XCircle size={10} className="text-[var(--danger)] shrink-0" />
+        <span className="text-[0.786rem] text-[var(--text-secondary)]">{prettifyToolLabel(tc.label)} failed</span>
+        {tc.error && <span className="text-[0.714rem] text-[var(--text-tertiary)] truncate max-w-[220px]">— {tc.error}</span>}
       </div>
     );
   }
-
-  return <CairnRefChip toolName={tc.tool} cairnRef={tc.cairnRef} />;
+  if (tc.cairnRef) {
+    return <CairnRefChip toolName={tc.tool} cairnRef={tc.cairnRef} />;
+  }
+  if (tc.externalRef) {
+    return <ExternalRefChip toolName={tc.tool} externalRef={tc.externalRef} />;
+  }
+  return (
+    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--surface-2)] border border-[var(--border)] w-fit">
+      <CheckCircle size={10} className="text-[var(--accent)] shrink-0" />
+      <span className="text-[0.786rem] text-[var(--text-secondary)]">{prettifyToolLabel(tc.label)}</span>
+    </div>
+  );
 }
 
 interface ChatMessageBubbleProps {

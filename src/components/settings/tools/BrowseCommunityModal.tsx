@@ -49,7 +49,9 @@ function secretHeaderNames(e: CardEntry): string[] {
     .map(([k]) => k);
 }
 function isOAuth(e: CardEntry): boolean {
-  return e.kind === "mcp" && e.mcp!.definition.authMode === "oauth";
+  return e.kind === "mcp"
+    ? e.mcp!.definition.authMode === "oauth"
+    : e.service!.definition.authMode === "oauth";
 }
 function baseUrlOf(e: CardEntry): string {
   return e.kind === "mcp" ? e.mcp!.definition.baseUrl : e.service!.definition.apiUrl;

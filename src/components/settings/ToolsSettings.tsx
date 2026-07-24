@@ -13,7 +13,7 @@ import { BrowseCommunityModal } from "./tools/BrowseCommunityModal";
 import { ConnectorLogo } from "./tools/ConnectorLogo";
 import { type HeaderRow, looksLikeCredential } from "./tools/helpers";
 import { TestButton } from "./tools/TestButton";
-import { McpAuthButton } from "./tools/McpAuthButton";
+import { McpAuthButton, AuthButton } from "./tools/McpAuthButton";
 import { McpForm } from "./tools/McpForm";
 import { ServiceForm } from "./tools/ServiceForm";
 import { ToolRow } from "./tools/ToolRow";
@@ -275,13 +275,16 @@ export function ToolsSettings() {
               onEdit={() => setEditingSvc(svc.id)}
               onDelete={() => deleteCustomService(svc.id)}
             >
-              <TestButton
-                onTest={async () => {
-                  const r = await window.electron?.tools.testService(svc.id);
-                  if (r?.ok) return { status: "ok", detail: `HTTP ${r.status ?? 200}` };
-                  return { status: "error", detail: r?.error ?? `HTTP ${r?.status ?? "?"}` };
-                }}
-              />
+              <div className="flex flex-col gap-2">
+                {svc.authMode === "oauth" && <AuthButton toolId={svc.id} toolType="service" />}
+                <TestButton
+                  onTest={async () => {
+                    const r = await window.electron?.tools.testService(svc.id);
+                    if (r?.ok) return { status: "ok", detail: `HTTP ${r.status ?? 200}` };
+                    return { status: "error", detail: r?.error ?? `HTTP ${r?.status ?? "?"}` };
+                  }}
+                />
+              </div>
             </ToolRow>
           )
         )}

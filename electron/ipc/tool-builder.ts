@@ -26,6 +26,7 @@ import * as q from "../db/queries";
 import * as builder from "../lib/tool-builder";
 import * as secrets from "../lib/secure-store";
 import { buildBuilderSystemPrompt, BUILDER_TOOL_DEFS } from "../lib/tool-builder-prompt";
+import { parseToolArgs } from "../lib/parse-tool-args";
 
 interface OpenAIMessage {
   role: "system" | "user" | "assistant" | "tool";
@@ -303,12 +304,15 @@ async function runBuilderLoop(
       }
 
       for (const call of toolCalls) {
-        let args: Record<string, unknown> = {};
-        try {
-          args = JSON.parse(call.function.arguments || "{}");
-        } catch {
-          /* leave empty */
+        const parsed = parseToolArgs(call.function.arguments);
+        if (!parsed.ok) {
+          // Never dispatch a builder tool with empty/guessed args — surface the
+          // structured parse error to the model so it can re-issue the call.
+          send("tool-builder:step", { sessionId: session.id, name: call.function.name, args: {} });
+          session.messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify({ error: parsed.error }) });
+          continue;
         }
+        const args: Record<string, unknown> = parsed.value;
         send("tool-builder:step", {
           sessionId: session.id,
           name: call.function.name,
