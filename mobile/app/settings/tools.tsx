@@ -157,7 +157,7 @@ export default function ToolsSettingsScreen() {
       try {
         const res = await startAuth(oauthCfg(s), s.name);
         if (res.status === "error") {
-          Alert.alert("Sign-in failed", res.error);
+          Alert.alert(res.desktopOnly ? "Connect on desktop" : "Sign-in failed", res.error);
         } else if (res.status === "authorized") {
           haptics.success();
           await refreshServerTools(s.id).catch(() => null);

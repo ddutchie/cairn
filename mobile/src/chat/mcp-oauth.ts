@@ -191,7 +191,38 @@ export class SecureStoreOAuthProvider implements OAuthClientProvider {
 export type AuthStartResult =
   | { status: "authorized" }
   | { status: "cancelled" }
-  | { status: "error"; error: string };
+  // `desktopOnly` marks a failure caused by the provider refusing our mobile
+  // redirect at registration (it only allows a loopback/pre-registered client,
+  // e.g. Asana, Vercel) — the UI phrases these as "connect on desktop" rather
+  // than a scary raw error.
+  | { status: "error"; error: string; desktopOnly?: boolean };
+
+/**
+ * Translate a raw SDK/OAuth error into a friendly message. Detects the
+ * "provider won't accept our mobile redirect / register" class (Asana-style
+ * invalid_redirect_uri, registration 4xx) and flags it desktopOnly so the caller
+ * can suggest desktop sign-in. Everything else gets a clean generic message
+ * (the raw SDK text is often a JSON-parse error on the provider's non-JSON body).
+ */
+function friendlyAuthError(serverName: string, raw: string): { error: string; desktopOnly: boolean } {
+  const r = raw.toLowerCase();
+  const looksDesktopOnly =
+    r.includes("invalid_redirect_uri") ||
+    r.includes("redirect uri") ||
+    r.includes("redirect_uri") ||
+    r.includes("/register") || // registration was rejected (non-JSON 400 etc.)
+    r.includes("registration");
+  if (looksDesktopOnly) {
+    return {
+      error: `${serverName} doesn't allow sign-in from a phone — it only accepts a desktop connection. Connect it in the Cairn desktop app instead.`,
+      desktopOnly: true,
+    };
+  }
+  return {
+    error: `Couldn't connect ${serverName}. Please try again, or connect it in the Cairn desktop app.`,
+    desktopOnly: false,
+  };
+}
 
 /**
  * Begin (and complete) an interactive OAuth sign-in for an MCP server via CIMD.
@@ -224,7 +255,9 @@ export async function startAuth(cfg: OAuthServerConfig, serverName: string): Pro
   try {
     step1 = await auth(provider, { serverUrl: cfg.serverUrl, scope: cfg.scope });
   } catch (e) {
-    return { status: "error", error: e instanceof Error ? e.message : String(e) };
+    // Most commonly the provider rejecting our mobile redirect at registration
+    // (Asana/Vercel loopback-only). Surface a human message + desktopOnly flag.
+    return { status: "error", ...friendlyAuthError(serverName, e instanceof Error ? e.message : String(e)) };
   }
   if (step1 === "AUTHORIZED") return { status: "authorized" };
 
@@ -255,10 +288,10 @@ export async function startAuth(cfg: OAuthServerConfig, serverName: string): Pro
       authorizationCode: cb.code,
       scope: cfg.scope,
     });
-    if (done !== "AUTHORIZED") return { status: "error", error: `Token exchange returned "${done}".` };
+    if (done !== "AUTHORIZED") return { status: "error", error: `Couldn't finish signing in to ${serverName}. Please try again.` };
     return { status: "authorized" };
   } catch (e) {
-    return { status: "error", error: e instanceof Error ? e.message : String(e) };
+    return { status: "error", ...friendlyAuthError(serverName, e instanceof Error ? e.message : String(e)) };
   }
 }
 
