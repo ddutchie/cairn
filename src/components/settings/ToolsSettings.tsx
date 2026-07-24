@@ -10,6 +10,7 @@ import type { McpServerConfig, CustomServiceConfig } from "@/types";
 import { SettingsGroup } from "./shared";
 import { ToolBuilderModal } from "./ToolBuilderModal";
 import { BrowseCommunityModal } from "./tools/BrowseCommunityModal";
+import { ConnectorLogo } from "./tools/ConnectorLogo";
 import { type HeaderRow, looksLikeCredential } from "./tools/helpers";
 import { TestButton } from "./tools/TestButton";
 import { McpAuthButton } from "./tools/McpAuthButton";
@@ -52,6 +53,29 @@ export function ToolsSettings() {
   useEffect(() => {
     if (activeWorkspaceId) fetchTools(activeWorkspaceId);
   }, [activeWorkspaceId, fetchTools]);
+
+  // Registry logos for community-installed rows, keyed by communityId (== the
+  // connector's definition name, which is what install records). Fetched once
+  // (cache-first) so the configured-servers list shows the same brand marks as
+  // Browse Community, instead of the generic Server/Globe icon.
+  const [logoMap, setLogoMap] = useState<Record<string, { iconSvg?: string; brandColor?: string }>>({});
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const reg = window.electron?.registry;
+      if (!reg) return;
+      try {
+        const { manifest } = await reg.fetch();
+        if (cancelled) return;
+        const map: Record<string, { iconSvg?: string; brandColor?: string }> = {};
+        for (const e of [...manifest.mcpServers, ...manifest.services]) {
+          map[e.definition.name] = { iconSvg: e.iconSvg, brandColor: e.brandColor };
+        }
+        setLogoMap(map);
+      } catch { /* offline / no registry — rows fall back to the generic icon */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // Persist secret-header values to the OS keychain, replacing the row value
   // with the returned secret:// ref before saving the config.
@@ -181,7 +205,11 @@ export function ToolsSettings() {
           ) : (
             <ToolRow
               key={server.id}
-              icon={<Server size={15} />}
+              icon={
+                logoMap[server.communityId ?? server.name]?.iconSvg
+                  ? <ConnectorLogo iconSvg={logoMap[server.communityId ?? server.name].iconSvg} kind="mcp" color={logoMap[server.communityId ?? server.name].brandColor} size={16} />
+                  : <Server size={15} />
+              }
               name={server.name}
               subtitle={server.baseUrl}
               enabled={server.enabled}
@@ -235,7 +263,11 @@ export function ToolsSettings() {
           ) : (
             <ToolRow
               key={svc.id}
-              icon={<Globe size={15} />}
+              icon={
+                logoMap[svc.communityId ?? svc.name]?.iconSvg
+                  ? <ConnectorLogo iconSvg={logoMap[svc.communityId ?? svc.name].iconSvg} kind="service" color={logoMap[svc.communityId ?? svc.name].brandColor} size={16} />
+                  : <Globe size={15} />
+              }
               name={svc.name}
               subtitle={`${svc.method} ${svc.apiUrl}`}
               enabled={svc.enabled}
