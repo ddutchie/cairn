@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { toolResultError, isToolResultOk, resultContentError } from "./tool-result";
+import { toolResultError, isToolResultOk, resultContentError, externalOutputError } from "./tool-result";
 
 describe("toolResultError", () => {
   it("returns the message for an object with a string error", () => {
@@ -60,5 +60,23 @@ describe("resultContentError (serialised results)", () => {
 
   it("treats malformed JSON as success rather than throwing", () => {
     expect(resultContentError('{"error": ')).toBeUndefined();
+  });
+});
+
+describe("externalOutputError (plain-string external tool output)", () => {
+  it("detects the conventional Error: prefix", () => {
+    expect(externalOutputError("Error: MCP server x is not enabled")).toBe("Error: MCP server x is not enabled");
+    expect(externalOutputError("Error calling svc__x__y: boom")).toBe("Error calling svc__x__y: boom");
+  });
+
+  it("detects an Error prefix after leading whitespace", () => {
+    expect(externalOutputError("  Error: nope")).toBe("Error: nope");
+  });
+
+  it("treats normal output as success (including text that merely contains 'error')", () => {
+    expect(externalOutputError("Results: 3 items found")).toBeUndefined();
+    expect(externalOutputError("The build had no errors")).toBeUndefined();
+    expect(externalOutputError("")).toBeUndefined();
+    expect(externalOutputError('{"ok":true}')).toBeUndefined();
   });
 });

@@ -29,6 +29,7 @@ import { applySchema } from "../db/schema";
 import { createWorkspace, createProject, createColumn } from "../db/queries";
 import { runAgentLoop, type PiAgentSession, type AgentLoopCallbacks, type AgentToolContext } from "./pi-agent-loop";
 import { normaliseBaseUrl } from "./llm";
+import { LIVE_TESTS_ENABLED } from "./bench-endpoint";
 import type { ChatRequest } from "./tools";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -458,7 +459,9 @@ const liveBaseUrl = process.env.TEST_LLM_BASE_URL
 const liveModel   = process.env.TEST_LLM_MODEL   ?? "claude-sonnet-4-6";
 const liveApiKey  = process.env.TEST_LLM_API_KEY  ?? "";
 
-describe.skipIf(!liveBaseUrl || process.env.CAIRN_LIVE_TESTS !== "1")("runAgentLoop — live endpoint", () => {
+// Live suite requires BOTH the opt-in flag (which honours the CAIRN_SKIP_LIVE_TESTS
+// hard override via LIVE_TESTS_ENABLED) AND a configured endpoint URL.
+describe.skipIf(!LIVE_TESTS_ENABLED || !liveBaseUrl)("runAgentLoop — live endpoint", () => {
   let db: Database.Database;
 
   beforeEach(() => { db = makeDb(); });

@@ -162,7 +162,6 @@ describe("Case 2 — unicode that shifts byte offsets (patch_note)", () => {
 describe("Case 3 — empty / partial arguments must fail loud", () => {
   it("{} → structured missing_required_field (projectId)", async () => {
     const ctx = makeCtx();
-    const db = ctx.db;
     const out = await runRaw(ctx, "ensure_note", "{}");
     expect(out.stage).toBe("execute");
     if (out.stage === "execute") {
@@ -173,7 +172,6 @@ describe("Case 3 — empty / partial arguments must fail loud", () => {
 
   it("missing projectId → structured error naming projectId", async () => {
     const ctx = makeCtx();
-    const db = ctx.db;
     const out = await runRaw(ctx, "ensure_note", JSON.stringify({ title: "Orphan", content: "no projectId here" }));
     if (out.stage === "execute") {
       expect(out.result.error).toBe("missing_required_field");
@@ -183,7 +181,6 @@ describe("Case 3 — empty / partial arguments must fail loud", () => {
 
   it("blank title → structured error naming title", async () => {
     const ctx = makeCtx();
-    const db = ctx.db;
     const out = await runRaw(ctx, "ensure_note", JSON.stringify({ projectId: "qMM4mUBTnZGz", title: "" }));
     if (out.stage === "execute") {
       expect(out.result.error).toBe("missing_required_field");

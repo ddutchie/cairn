@@ -686,10 +686,9 @@ export async function getAccessToken(
 
 /** True if the stored access token is expired or within the refresh skew window. */
 function isTokenExpired(tokens: OAuthTokens): boolean {
-  // OAuthTokens carries expires_in (seconds) at issue time. We persist the token
-  // blob as returned, so derive an absolute expiry from the keychain write time
-  // is not available; instead treat a token WITHOUT expires_in as non-expiring
-  // and, when expires_in is present, refresh eagerly using a stored issued-at.
+  // Expiry is read from the absolute `expires_at` timestamp that stampExpiry
+  // records on save (derived from expires_in at issue time). We refresh eagerly,
+  // treating the token as expired once we're within TOKEN_REFRESH_SKEW_MS of it.
   const expiresAt = (tokens as OAuthTokens & { expires_at?: number }).expires_at;
   if (typeof expiresAt !== "number") {
     // No absolute expiry recorded → cannot prove expiry; assume still valid.

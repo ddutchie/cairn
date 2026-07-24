@@ -10,7 +10,7 @@
  */
 
 import React, { useState } from "react";
-import { Loader2, GitBranch, Search, PencilLine, ChevronDown, ChevronRight, CheckCircle } from "lucide-react";
+import { Loader2, GitBranch, Search, PencilLine, ChevronDown, ChevronRight, CheckCircle, XCircle } from "lucide-react";
 import { prettifyToolLabel } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { MarkdownContent } from "./MarkdownContent";
@@ -19,6 +19,14 @@ import { CairnRefChip, ExternalRefChip } from "@/components/shared/cairn-ref-chi
 import type { ChatSubagent, ChatToolCallRecord } from "@/types";
 
 function SubToolChip({ tc }: { tc: ChatToolCallRecord }) {
+  if (tc.ok === false) {
+    return (
+      <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] border border-[color-mix(in_srgb,var(--danger)_30%,transparent)] w-fit max-w-full" title={tc.error}>
+        <XCircle size={9} className="text-[var(--danger)] shrink-0" />
+        <span className="text-[0.714rem] text-[var(--text-tertiary)]">{prettifyToolLabel(tc.label)} failed</span>
+      </div>
+    );
+  }
   if (tc.cairnRef) return <CairnRefChip toolName={tc.tool} cairnRef={tc.cairnRef} />;
   if (tc.externalRef) return <ExternalRefChip toolName={tc.tool} externalRef={tc.externalRef} />;
   const running = !tc.output;

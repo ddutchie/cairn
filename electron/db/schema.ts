@@ -553,8 +553,6 @@ const MIGRATIONS: Migration[] = [
         source          TEXT NOT NULL DEFAULT 'manual',
         community_id    TEXT,
         version         TEXT,
-        auth_mode       TEXT NOT NULL DEFAULT 'none',
-        oauth_config    TEXT,
         created_at      TEXT NOT NULL,
         updated_at      TEXT NOT NULL
       );

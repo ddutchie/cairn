@@ -318,12 +318,13 @@ async function withOAuthBearer(
 ): Promise<Record<string, string>> {
   if (cfg.authMode !== "oauth" || !resolveBearer) return resolvedHeaders;
   const token = await resolveBearer(cfg.id);
-  if (!token) return resolvedHeaders;
-  // Drop any existing Authorization header (case-insensitively) before setting.
+  // Strip any existing Authorization header (case-insensitively) up front so a
+  // failed resolve can't leave a stale/static token on the request.
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(resolvedHeaders)) {
     if (k.toLowerCase() !== "authorization") out[k] = v;
   }
+  if (!token) return out;
   out.Authorization = `Bearer ${token}`;
   return out;
 }

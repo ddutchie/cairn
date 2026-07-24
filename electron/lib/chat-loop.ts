@@ -19,7 +19,7 @@ import { TOOLS, type ChatRequest } from "./tools";
 import { executeTool } from "../ipc/chat-executor";
 import { executeExternalTool, isExternalToolName, externalToolLabel } from "./external-tools";
 import { extractExternalRef } from "./external-ref";
-import { toolResultError } from "./tool-result";
+import { externalOutputError } from "./tool-result";
 import { iterSseData } from "./sse";
 import { traceTool } from "./tool-trace";
 import { parseToolArgs } from "./parse-tool-args";
@@ -292,7 +292,7 @@ export async function runToolLoop(
           // Surface a linkable artefact (Confluence page, web-search hit, …) from
           // the vendor-specific output so the UI can render a browser-opening chip.
           const externalRef = extractExternalRef(output);
-          const externalError = toolResultError(output);
+          const externalError = externalOutputError(output);
           emitToolCallDone?.({ tool: call.function.name, externalRef, output, callId: call.id, ok: externalError === undefined, error: externalError });
           result = output;
         } else {

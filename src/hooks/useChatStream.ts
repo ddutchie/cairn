@@ -223,7 +223,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
           const rev = [...tcs].reverse().findIndex((t) => t.tool === e.tool);
           if (rev !== -1) idx = tcs.length - 1 - rev;
         }
-        if (idx !== -1) tcs[idx] = { ...tcs[idx], cairnRef: e.cairnRef, externalRef: e.externalRef, output: e.output };
+        if (idx !== -1) tcs[idx] = { ...tcs[idx], cairnRef: e.cairnRef, externalRef: e.externalRef, output: e.output, ok: e.ok, error: e.error };
         return { ...s, toolCalls: tcs };
       });
     });

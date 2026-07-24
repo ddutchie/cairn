@@ -23,14 +23,14 @@ export const ToolCallIndicator = React.memo(function ToolCallIndicator({ toolCal
       <MessageAvatar role="bot" size="lg" />
       <div className="flex flex-col gap-1 min-w-0 flex-1">
         {toolCalls.map((tc, i) =>
-          tc.status === "done" && tc.externalRef ? (
-            <ExternalRefChip key={i} toolName={tc.tool} externalRef={tc.externalRef} />
-          ) : tc.status === "done" && tc.ok === false ? (
+          tc.status === "done" && tc.ok === false ? (
             <div key={i} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] border border-[color-mix(in_srgb,var(--danger)_30%,transparent)] w-fit max-w-full" title={tc.error}>
               <XCircle size={10} className="text-[var(--danger)] shrink-0" />
               <span className="text-[0.786rem] text-[var(--text-secondary)]">{prettifyToolLabel(tc.label)} failed</span>
               {tc.error && <span className="text-[0.714rem] text-[var(--text-tertiary)] truncate max-w-[220px]">— {tc.error}</span>}
             </div>
+          ) : tc.status === "done" && tc.externalRef ? (
+            <ExternalRefChip key={i} toolName={tc.tool} externalRef={tc.externalRef} />
           ) : (
             <div key={i} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--surface-2)] border border-[var(--border)] w-fit">
               {tc.status === "running" ? (

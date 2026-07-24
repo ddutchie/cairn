@@ -304,9 +304,15 @@ async function runBuilderLoop(
       }
 
       for (const call of toolCalls) {
-        let args: Record<string, unknown> = {};
         const parsed = parseToolArgs(call.function.arguments);
-        if (parsed.ok) args = parsed.value;
+        if (!parsed.ok) {
+          // Never dispatch a builder tool with empty/guessed args — surface the
+          // structured parse error to the model so it can re-issue the call.
+          send("tool-builder:step", { sessionId: session.id, name: call.function.name, args: {} });
+          session.messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify({ error: parsed.error }) });
+          continue;
+        }
+        const args: Record<string, unknown> = parsed.value;
         send("tool-builder:step", {
           sessionId: session.id,
           name: call.function.name,

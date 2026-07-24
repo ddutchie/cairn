@@ -284,11 +284,15 @@ describe("custom-services OAuth bearer injection", () => {
 
   it("omits Authorization when the resolver returns null (not connected / refresh failed)", async () => {
     const { calls } = mockFetchOnce();
-    await callService(oauthCfg, "svc__svc1__search", {}, async () => null);
+    // Seed a stale bearer under a lower-case header name to prove removal is
+    // case-insensitive — a failed resolve must not leave the old token behind.
+    const cfg = { ...oauthCfg, headers: { authorization: "Bearer stale", "X-Static": "keep" } };
+    await callService(cfg, "svc__svc1__search", {}, async () => null);
     vi.unstubAllGlobals();
 
     const sent = calls[0].init.headers as Record<string, string>;
     expect(sent.Authorization).toBeUndefined();
+    expect(sent.authorization).toBeUndefined();
     expect(sent["X-Static"]).toBe("keep");
   });
 

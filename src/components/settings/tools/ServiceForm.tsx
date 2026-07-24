@@ -142,6 +142,10 @@ export function ServiceForm({
                 oauth:
                   authMode === "oauth"
                     ? {
+                        // Preserve preregistered fields (clientId / authorizationUrl /
+                        // tokenUrl) that the form doesn't expose but a registry preset
+                        // may have set — editing must not drop them.
+                        ...initial?.oauth,
                         ...(oauthScope.trim() ? { scope: oauthScope.trim() } : {}),
                         ...(oauthServerUrl.trim() ? { serverUrl: oauthServerUrl.trim() } : {}),
                       }

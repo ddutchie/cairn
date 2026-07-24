@@ -46,3 +46,16 @@ export function resultContentError(content: string): string | undefined {
     return undefined;
   }
 }
+
+/**
+ * Detect failure in an EXTERNAL tool's string output. MCP servers and custom
+ * HTTP services return a plain string; by convention a failure is prefixed with
+ * `Error:` / `Error calling …` (see external-tools.ts, custom-services.ts,
+ * mcp-client.ts). Returns the message when the output signals an error, else
+ * undefined. (These are plain text, not JSON, so `resultContentError` can't be
+ * used here.)
+ */
+export function externalOutputError(output: string): string | undefined {
+  const trimmed = output.trimStart();
+  return /^Error[:\s]/.test(trimmed) ? output.trim() : undefined;
+}
