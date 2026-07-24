@@ -38,6 +38,25 @@ import { TOOLS, WRITE_TOOL_NAMES, type ToolDef } from "@/chat/tools";
 import { getToggleMap, setToolEnabled } from "@/chat/tool-toggles";
 import type { RegistryServiceEntry, RegistryMcpEntry } from "@cairn/shared/chat/registry-schema";
 import { ConnectorLogo } from "@/components/ConnectorLogo";
+import { SearchField } from "@/components/SearchField";
+
+/**
+ * Does a browsable registry entry match the search query? Mirrors desktop's
+ * BrowseCommunityModal filter: name + blurb + category + tags (tags feed search
+ * only, never shown as chips). `q` must already be lowercased + trimmed.
+ */
+function entryMatchesQuery(
+  entry: { blurb: string; category?: string; tags: string[]; definition: { name: string } },
+  q: string,
+): boolean {
+  if (!q) return true;
+  return (
+    entry.definition.name.toLowerCase().includes(q) ||
+    entry.blurb.toLowerCase().includes(q) ||
+    (entry.category ?? "").toLowerCase().includes(q) ||
+    entry.tags.some((tag) => tag.toLowerCase().includes(q))
+  );
+}
 
 /**
  * Tools & Services settings — the mobile side of the community registry (Track
@@ -51,8 +70,13 @@ import { ConnectorLogo } from "@/components/ConnectorLogo";
  *      shows what the assistant can do, split into Read vs Write. No switches:
  *      built-ins are always on (turning off e.g. search would silently break the
  *      assistant), so this is purely informational.
- *   3. Add a service        — the catalog of installable services (authMode:none
+ *   3. Browse community    — a search box + category chips (mirroring desktop's
+ *      Browse Community modal) that filter both the installable services and MCP
+ *      servers below. Freeform tags feed search only; the chips are the fixed
+ *      category vocabulary and shrink as you install things.
+ *   4. Add a service        — the catalog of installable services (authMode:none
  *      only for now; OAuth services are shown but not yet installable).
+ *   5. Add an MCP server     — installable MCP servers (OAuth via deep-link).
  */
 
 // Split the always-on built-in tools into Read vs Write for the disclosure.
@@ -81,6 +105,10 @@ export default function ToolsSettingsScreen() {
   const [expandedMcp, setExpandedMcp] = useState<string | null>(null);
   // Which installed multi-op service's tool list is expanded (one at a time).
   const [expandedService, setExpandedService] = useState<string | null>(null);
+  // Browse filters (services + MCP catalog) — mirror desktop's search + category
+  // chips. Freeform tags feed search only; the chips are the fixed category set.
+  const [browseQuery, setBrowseQuery] = useState("");
+  const [browseCategory, setBrowseCategory] = useState<string | null>(null);
 
   const reloadLocal = useCallback(() => {
     setInstalled(listInstalledServices());
@@ -292,15 +320,44 @@ export default function ToolsSettingsScreen() {
     [reloadLocal],
   );
 
-  // Registry entries not already installed (installed ones move to section 1).
-  const browsable = useMemo(
+  // Registry entries not already installed (installed ones move to section 1),
+  // then narrowed by the search query + category chip.
+  const notInstalledServices = useMemo(
     () => services.filter((s) => !isServiceInstalled(s.id)),
     [services, installed], // eslint-disable-line react-hooks/exhaustive-deps
   );
-  const browsableMcp = useMemo(
+  const notInstalledMcp = useMemo(
     () => mcpEntries.filter((s) => !isMcpServerInstalled(s.id)),
     [mcpEntries, installedMcp], // eslint-disable-line react-hooks/exhaustive-deps
   );
+
+  // Category chips are the union of categories present across everything still
+  // installable (services + MCP), so the chip set shrinks as you install things.
+  const browseCategories = useMemo(() => {
+    const set = new Set<string>();
+    for (const e of [...notInstalledServices, ...notInstalledMcp]) {
+      if (e.category) set.add(e.category);
+    }
+    return [...set].sort();
+  }, [notInstalledServices, notInstalledMcp]);
+
+  const q = browseQuery.trim().toLowerCase();
+  const browsable = useMemo(
+    () =>
+      notInstalledServices.filter(
+        (s) => (!browseCategory || s.category === browseCategory) && entryMatchesQuery(s, q),
+      ),
+    [notInstalledServices, browseCategory, q],
+  );
+  const browsableMcp = useMemo(
+    () =>
+      notInstalledMcp.filter(
+        (s) => (!browseCategory || s.category === browseCategory) && entryMatchesQuery(s, q),
+      ),
+    [notInstalledMcp, browseCategory, q],
+  );
+  // Are there any installable entries at all (before search/category narrowing)?
+  const hasAnyBrowsable = notInstalledServices.length > 0 || notInstalledMcp.length > 0;
 
   const renderBuiltinGroup = (label: string, tools: ToolDef[]) => (
     <View style={styles.builtinGroup}>
@@ -538,17 +595,62 @@ export default function ToolsSettingsScreen() {
             )}
           </View>
 
-          {/* 3. Add a service */}
-          <View style={styles.section}>
-            <View style={styles.sectionHead}>
-              <Text style={styles.sectionLabel}>Add a service</Text>
-              <Pressable onPress={onRefresh} hitSlop={8} disabled={refreshing} style={styles.iconBtn}>
-                <RefreshCw size={16} color={refreshing ? t.textTertiary : t.textSecondary} />
-              </Pressable>
+          {/* 3. Browse filters — search + category chips (govern both Add lists) */}
+          {hasAnyBrowsable && (
+            <View style={styles.section}>
+              <View style={styles.sectionHead}>
+                <Text style={styles.sectionLabel}>Browse community</Text>
+                <Pressable onPress={onRefresh} hitSlop={8} disabled={refreshing} style={styles.iconBtn}>
+                  <RefreshCw size={16} color={refreshing ? t.textTertiary : t.textSecondary} />
+                </Pressable>
+              </View>
+              <SearchField
+                value={browseQuery}
+                onChangeText={setBrowseQuery}
+                placeholder="Search connectors and services…"
+              />
+              {browseCategories.length > 0 && (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.chipRow}
+                >
+                  <CategoryChip
+                    label="All"
+                    active={browseCategory === null}
+                    onPress={() => {
+                      haptics.selection();
+                      setBrowseCategory(null);
+                    }}
+                    styles={styles}
+                  />
+                  {browseCategories.map((cat) => (
+                    <CategoryChip
+                      key={cat}
+                      label={cat}
+                      active={browseCategory === cat}
+                      onPress={() => {
+                        haptics.selection();
+                        setBrowseCategory((cur) => (cur === cat ? null : cat));
+                      }}
+                      styles={styles}
+                    />
+                  ))}
+                </ScrollView>
+              )}
             </View>
+          )}
+
+          {/* 3b. Add a service */}
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>Services</Text>
             {error && <Text style={styles.errorText}>{error}</Text>}
             {browsable.length === 0 && !error ? (
-              <Text style={styles.sectionHint}>Nothing new to add — you&apos;ve installed everything available.</Text>
+              <Text style={styles.sectionHint}>
+                {!hasAnyBrowsable
+                  ? "Nothing new to add — you've installed everything available."
+                  : "No services match your search."}
+              </Text>
             ) : (
               browsable.map((entry) => {
                 const oauth = entry.definition.authMode === "oauth";
@@ -587,9 +689,13 @@ export default function ToolsSettingsScreen() {
 
           {/* 4. Add an MCP server (OAuth supported via deep-link sign-in) */}
           <View style={styles.section}>
-            <Text style={styles.sectionLabel}>Add an MCP server</Text>
+            <Text style={styles.sectionLabel}>MCP servers</Text>
             {browsableMcp.length === 0 ? (
-              <Text style={styles.sectionHint}>No new MCP servers to add.</Text>
+              <Text style={styles.sectionHint}>
+                {notInstalledMcp.length === 0
+                  ? "No new MCP servers to add."
+                  : "No MCP servers match your search."}
+              </Text>
             ) : (
               <>
                 <Text style={styles.sectionHint}>
@@ -653,6 +759,28 @@ export default function ToolsSettingsScreen() {
   );
 }
 
+function CategoryChip({
+  label,
+  active,
+  onPress,
+  styles,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+  styles: ReturnType<typeof makeStyles>;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={[styles.chip, active && styles.chipActive]}
+      hitSlop={4}
+    >
+      <Text style={[styles.chipText, active && styles.chipTextActive]}>{label}</Text>
+    </Pressable>
+  );
+}
+
 function makeStyles(t: Theme) {
   return StyleSheet.create({
     flex: { flex: 1, backgroundColor: t.surface },
@@ -663,6 +791,21 @@ function makeStyles(t: Theme) {
     sectionHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
     sectionLabel: { ...typeScale.overline, color: t.textTertiary },
     sectionHint: { ...typeScale.caption, color: t.textTertiary, marginBottom: 2 },
+    chipRow: { gap: 6, paddingVertical: 2, paddingRight: 4 },
+    chip: {
+      borderWidth: 1,
+      borderColor: t.border,
+      borderRadius: 999,
+      paddingHorizontal: 12,
+      paddingVertical: 5,
+      backgroundColor: t.surface2,
+    },
+    chipActive: {
+      borderColor: t.accent,
+      backgroundColor: t.accentDim,
+    },
+    chipText: { ...typeScale.caption, color: t.textSecondary },
+    chipTextActive: { color: t.textPrimary },
     row: {
       flexDirection: "row",
       alignItems: "center",
