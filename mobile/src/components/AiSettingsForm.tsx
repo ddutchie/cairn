@@ -422,6 +422,8 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                 haptics.selection();
                 router.push("/settings/tools");
               }}
+              accessibilityRole="button"
+              accessibilityLabel="Open Tools & Services"
             >
               <Wrench size={16} color={t.textSecondary} />
               <View style={styles.navRowMain}>

@@ -70,18 +70,21 @@ export async function callService(
   args: Record<string, unknown>,
   resolveBearer?: BearerResolver,
 ): Promise<string> {
-  const op = resolveOperation(cfg, namespaced);
-  if (!op) {
-    return `Error: "${namespaced}" is not a tool of service ${cfg.id}`;
-  }
   try {
+    // resolveOperation → normalizeOperations → parseToolDefinition can throw on
+    // a malformed operation definition; keep it inside the try so it becomes the
+    // standard error string rather than rejecting into the tool loop.
+    const op = resolveOperation(cfg, namespaced);
+    if (!op) {
+      return `Error: "${namespaced}" is not a tool of service ${cfg.id}`;
+    }
     const headers = await withOAuthBearer(cfg, resolveSecrets(cfg.headers ?? {}), resolveBearer);
     const { parameters } = parseToolDefinition(op.toolDefinition);
     const { url, init } = buildOperationRequest(op, args, headers, parameters);
     const res = await fetchWithTimeout(url, init, CALL_TIMEOUT_MS);
     const text = await res.text();
     if (!res.ok) {
-      return `Error: ${op.method} ${op.url} returned ${res.status} ${res.statusText}\n${text.slice(0, 1000)}`;
+      return `Error: ${op.method} ${url} returned ${res.status} ${res.statusText}\n${text.slice(0, 1000)}`;
     }
     const parsedBody = tryParseJson(text);
     const filtered = filterResponse(parsedBody, op.responseKeys);

@@ -116,11 +116,24 @@ const oauthConfig = z
 const method = z.enum(["GET", "POST", "PUT", "DELETE"]);
 const paramLocations = z.record(z.string(), z.enum(["path", "query", "body"])).optional();
 
+/**
+ * An operation `path` must be RELATIVE — it is appended to the service baseUrl,
+ * so it must not carry its own scheme/host or the request could be redirected to
+ * a different origin than the one shown + trusted at install time. Reject absolute
+ * URLs ("https://…"), scheme-relative values ("//host") and any embedded scheme.
+ */
+const relativePath = z
+  .string()
+  .refine(
+    (p) => !/^[a-z][a-z0-9+.-]*:\/\//i.test(p) && !p.startsWith("//") && !p.includes("://"),
+    { message: "operation path must be relative to baseUrl (no scheme or host)" }
+  );
+
 const serviceOperation = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
   method,
-  path: z.string().optional(),
+  path: relativePath.optional(),
   toolDefinition: z.string().min(1),
   paramLocations,
   query: z.record(z.string(), z.string()).optional(),

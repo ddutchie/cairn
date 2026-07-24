@@ -183,10 +183,12 @@ async function runService(svc: InstalledService, toolName: string, args: Record<
   const cfg = toRuntimeConfig(svc);
   const op = resolveOperation(cfg, toolName);
   if (!op) return { error: `Unknown operation ${toolName} for ${svc.name}.` };
-  const parameters = parseToolDefinition(op.toolDefinition).parameters;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
+    // parseToolDefinition can throw on a malformed toolDefinition — keep it in
+    // the try so it resolves to the standard { error } path, never a throw.
+    const parameters = parseToolDefinition(op.toolDefinition).parameters;
     const headers = await resolveHeaders(svc);
     const { url, init } = buildOperationRequest(op, args, headers, parameters);
     const res = await expoFetch(url, {

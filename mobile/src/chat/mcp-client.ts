@@ -106,7 +106,15 @@ async function connect(cfg: McpServerRuntimeConfig): Promise<Conn> {
 
   const client = new Client({ name: "cairn-mobile", version: "1.0.0" }, { capabilities: {} });
   const transport = makeTransport(cfg);
-  await withTimeout(client.connect(transport), CONNECT_TIMEOUT_MS, `MCP connect to ${cfg.id}`);
+  try {
+    await withTimeout(client.connect(transport), CONNECT_TIMEOUT_MS, `MCP connect to ${cfg.id}`);
+  } catch (e) {
+    // Connect (or its timeout) failed — close the half-open client/transport so
+    // the socket + refresh timers don't leak, then rethrow the original error.
+    await client.close().catch(() => {});
+    await transport.close().catch(() => {});
+    throw e;
+  }
   const conn: Conn = { client, transport, idleTimer: null, signature };
   conns.set(cfg.id, conn);
   touch(conn, cfg.id);

@@ -22,6 +22,9 @@ const META_MANIFEST = "registry.manifest"; // cached CommunityManifest JSON
 const META_ETAG = "registry.etag"; // last ETag for conditional GET
 const META_FETCHED_AT = "registry.fetchedAt"; // ISO of last successful fetch
 
+/** Give up on a slow/hung manifest fetch and fall back to the cache. */
+const FETCH_TIMEOUT_MS = 20_000;
+
 /** The cached manifest, or null if nothing has been fetched yet / cache is corrupt. */
 export function getCachedManifest(): CommunityManifest | null {
   const raw = getMeta(META_MANIFEST);
@@ -48,10 +51,13 @@ export function getManifestFetchedAt(): string | null {
 export async function fetchManifest(force = false): Promise<{ manifest: CommunityManifest | null; error?: string }> {
   const cached = getCachedManifest();
   const etag = force ? null : getMeta(META_ETAG);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
     const res = await expoFetch(MANIFEST_URL, {
       method: "GET",
       headers: etag ? { "If-None-Match": etag } : {},
+      signal: controller.signal,
     });
     if (res.status === 304) {
       return { manifest: cached };
@@ -68,7 +74,14 @@ export async function fetchManifest(force = false): Promise<{ manifest: Communit
     setMeta(META_FETCHED_AT, new Date().toISOString());
     return { manifest };
   } catch (e) {
-    return { manifest: cached, error: e instanceof Error ? e.message : String(e) };
+    const msg = controller.signal.aborted
+      ? "Registry fetch timed out."
+      : e instanceof Error
+        ? e.message
+        : String(e);
+    return { manifest: cached, error: msg };
+  } finally {
+    clearTimeout(timer);
   }
 }
 

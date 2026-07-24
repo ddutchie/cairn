@@ -208,7 +208,11 @@ export function normalizeOperations(cfg: CustomServiceRuntimeConfig): ResolvedOp
     const locations: Record<string, ParamLocation> = { ...(op.paramLocations ?? {}) };
     for (const p of pathParams(op.path)) locations[p] = "path";
     return {
-      toolName: op.name,
+      // Derive from the toolDefinition name (falling back to op.name) so
+      // ResolvedOperation.toolName is the SAME identifier the model calls —
+      // serviceOperationsToOpenAI + resolveOperation both key off the
+      // toolDefinition name, and op.name can legitimately differ from it.
+      toolName: parseToolDefinition(op.toolDefinition).name || op.name,
       method: op.method,
       url: joinUrl(base, op.path),
       toolDefinition: op.toolDefinition,
@@ -245,7 +249,7 @@ export function resolveOperation(
   const parsed = parseServiceToolName(namespaced);
   if (!parsed || parsed.serviceId !== cfg.id) return null;
   for (const op of normalizeOperations(cfg)) {
-    if (parseToolDefinition(op.toolDefinition).name === parsed.toolName) return op;
+    if (op.toolName === parsed.toolName) return op;
   }
   return null;
 }

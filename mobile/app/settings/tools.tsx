@@ -9,6 +9,9 @@ import {
   Alert,
   StyleSheet,
   Linking,
+  Platform,
+  Modal,
+  TextInput,
 } from "react-native";
 import { Stack, useRouter } from "expo-router";
 import { RefreshCw, Plus, Trash2, ExternalLink, Wrench, ChevronRight, ChevronDown, LogIn, LogOut } from "lucide-react-native";
@@ -83,6 +86,11 @@ function entryMatchesQuery(
 const READ_BUILTINS: ToolDef[] = TOOLS.filter((t) => !WRITE_TOOL_NAMES.has(t.name));
 const WRITE_BUILTINS: ToolDef[] = TOOLS.filter((t) => WRITE_TOOL_NAMES.has(t.name));
 
+/** Map an installed OAuth MCP server to the OAuth flow's server config. */
+function oauthCfg(s: InstalledMcpServer): OAuthServerConfig {
+  return { id: s.id, serverUrl: s.baseUrl, scope: s.oauthScope };
+}
+
 export default function ToolsSettingsScreen() {
   const t = useTheme();
   const styles = useMemo(() => makeStyles(t), [t]);
@@ -95,7 +103,10 @@ export default function ToolsSettingsScreen() {
   const [toggles, setToggles] = useState<Record<string, boolean>>(() => getToggleMap());
   const [connected, setConnected] = useState<Record<string, boolean>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Start un-blocked when we already have a cached catalog: render it instantly
+  // and let loadRegistry refresh in the background. Only show the full-screen
+  // spinner on a cold start (nothing cached yet).
+  const [loading, setLoading] = useState(() => getCachedManifest() === null);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Built-in tools are collapsed by default so the screen stays compact — the
@@ -109,6 +120,10 @@ export default function ToolsSettingsScreen() {
   // chips. Freeform tags feed search only; the chips are the fixed category set.
   const [browseQuery, setBrowseQuery] = useState("");
   const [browseCategory, setBrowseCategory] = useState<string | null>(null);
+  // Android has no Alert.prompt, so key-based installs use an in-app modal. iOS
+  // keeps the native prompt. `keyPrompt` holds the entry being keyed + the typed
+  // value; null when closed.
+  const [keyPrompt, setKeyPrompt] = useState<{ entry: RegistryServiceEntry; value: string } | null>(null);
 
   const reloadLocal = useCallback(() => {
     setInstalled(listInstalledServices());
@@ -165,12 +180,6 @@ export default function ToolsSettingsScreen() {
   }, []);
 
   // ── MCP servers ─────────────────────────────────────────────────────────────
-
-  const oauthCfg = (s: InstalledMcpServer): OAuthServerConfig => ({
-    id: s.id,
-    serverUrl: s.baseUrl,
-    scope: s.oauthScope,
-  });
 
   /** Sign in to an OAuth MCP server (deep-link browser flow), then cache tools. */
   const onConnect = useCallback(
@@ -267,6 +276,20 @@ export default function ToolsSettingsScreen() {
     }
   }, []);
 
+  // Perform the install with a (possibly empty) API key, surfacing failures.
+  const installWithKey = useCallback(
+    async (entry: RegistryServiceEntry, apiKey: string) => {
+      const res = await installService(entry, apiKey);
+      if (!res.ok) {
+        Alert.alert("Couldn't install", res.error ?? "Unknown error.");
+        return;
+      }
+      haptics.success();
+      reloadLocal();
+    },
+    [reloadLocal],
+  );
+
   const onInstall = useCallback(
     (entry: RegistryServiceEntry) => {
       if (entry.definition.authMode === "oauth") {
@@ -274,32 +297,29 @@ export default function ToolsSettingsScreen() {
         return;
       }
       const needsKey = JSON.stringify(entry.definition.headers ?? {}).includes("<API_KEY>");
-      const finish = async (apiKey: string) => {
-        const res = await installService(entry, apiKey);
-        if (!res.ok) {
-          Alert.alert("Couldn't install", res.error ?? "Unknown error.");
-          return;
-        }
-        haptics.success();
-        reloadLocal();
-      };
       if (!needsKey) {
-        void finish("");
+        void installWithKey(entry, "");
         return;
       }
-      Alert.prompt(
-        `Add ${entry.definition.name}`,
-        entry.definition.apiKeyUrl
-          ? `Paste your API key. Get one at ${entry.definition.apiKeyUrl}.`
-          : "Paste your API key for this service.",
-        [
-          { text: "Cancel", style: "cancel" },
-          { text: "Install", onPress: (v?: string) => void finish(v ?? "") },
-        ],
-        "plain-text",
-      );
+      const message = entry.definition.apiKeyUrl
+        ? `Paste your API key. Get one at ${entry.definition.apiKeyUrl}.`
+        : "Paste your API key for this service.";
+      // Alert.prompt is iOS-only; Android falls back to an in-app modal.
+      if (Platform.OS === "ios") {
+        Alert.prompt(
+          `Add ${entry.definition.name}`,
+          message,
+          [
+            { text: "Cancel", style: "cancel" },
+            { text: "Install", onPress: (v?: string) => void installWithKey(entry, v ?? "") },
+          ],
+          "plain-text",
+        );
+      } else {
+        setKeyPrompt({ entry, value: "" });
+      }
     },
-    [reloadLocal],
+    [installWithKey],
   );
 
   const onUninstall = useCallback(
@@ -413,7 +433,13 @@ export default function ToolsSettingsScreen() {
                           trackColor={{ true: t.accent, false: t.border }}
                         />
                       )}
-                      <Pressable onPress={() => onUninstall(svc)} hitSlop={8} style={styles.iconBtn}>
+                      <Pressable
+                        onPress={() => onUninstall(svc)}
+                        hitSlop={8}
+                        style={styles.iconBtn}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Remove ${svc.name}`}
+                      >
                         <Trash2 size={18} color={t.danger} />
                       </Pressable>
                     </View>
@@ -427,6 +453,8 @@ export default function ToolsSettingsScreen() {
                             setExpandedService((cur) => (cur === svc.id ? null : svc.id));
                           }}
                           hitSlop={6}
+                          accessibilityRole="button"
+                          accessibilityLabel={`${open ? "Collapse" : "Expand"} ${svc.name} tools`}
                         >
                           {open ? (
                             <ChevronDown size={14} color={t.textSecondary} />
@@ -492,6 +520,8 @@ export default function ToolsSettingsScreen() {
                           onPress={() => (isConnected ? onSignOut(s) : void onConnect(s))}
                           style={styles.iconBtn}
                           hitSlop={8}
+                          accessibilityRole="button"
+                          accessibilityLabel={isConnected ? `Sign out of ${s.name}` : `Connect to ${s.name}`}
                         >
                           {isConnected ? (
                             <LogOut size={18} color={t.textSecondary} />
@@ -500,7 +530,13 @@ export default function ToolsSettingsScreen() {
                           )}
                         </Pressable>
                       ) : null}
-                      <Pressable onPress={() => onUninstallMcp(s)} hitSlop={8} style={styles.iconBtn}>
+                      <Pressable
+                        onPress={() => onUninstallMcp(s)}
+                        hitSlop={8}
+                        style={styles.iconBtn}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Remove ${s.name}`}
+                      >
                         <Trash2 size={18} color={t.danger} />
                       </Pressable>
                     </View>
@@ -514,6 +550,8 @@ export default function ToolsSettingsScreen() {
                           setExpandedMcp((cur) => (cur === s.id ? null : s.id));
                         }}
                         hitSlop={6}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${open ? "Collapse" : "Expand"} ${s.name} tools`}
                       >
                         {open ? (
                           <ChevronDown size={14} color={t.textSecondary} />
@@ -529,6 +567,8 @@ export default function ToolsSettingsScreen() {
                         hitSlop={8}
                         disabled={busyId === `refresh:${s.id}`}
                         style={styles.iconBtn}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Refresh ${s.name} tools`}
                       >
                         {busyId === `refresh:${s.id}` ? (
                           <ActivityIndicator color={t.textSecondary} size="small" />
@@ -575,6 +615,8 @@ export default function ToolsSettingsScreen() {
                 haptics.selection();
                 setBuiltinsOpen((o) => !o);
               }}
+              accessibilityRole="button"
+              accessibilityLabel={`${builtinsOpen ? "Collapse" : "Expand"} built-in tools`}
             >
               {builtinsOpen ? (
                 <ChevronDown size={16} color={t.textSecondary} />
@@ -600,7 +642,14 @@ export default function ToolsSettingsScreen() {
             <View style={styles.section}>
               <View style={styles.sectionHead}>
                 <Text style={styles.sectionLabel}>Browse community</Text>
-                <Pressable onPress={onRefresh} hitSlop={8} disabled={refreshing} style={styles.iconBtn}>
+                <Pressable
+                  onPress={onRefresh}
+                  hitSlop={8}
+                  disabled={refreshing}
+                  style={styles.iconBtn}
+                  accessibilityRole="button"
+                  accessibilityLabel="Refresh community catalog"
+                >
                   <RefreshCw size={16} color={refreshing ? t.textTertiary : t.textSecondary} />
                 </Pressable>
               </View>
@@ -755,6 +804,61 @@ export default function ToolsSettingsScreen() {
           </View>
         </ScrollView>
       )}
+
+      {/* Android API-key prompt (iOS uses the native Alert.prompt). */}
+      <Modal
+        visible={keyPrompt !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setKeyPrompt(null)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>
+              Add {keyPrompt?.entry.definition.name}
+            </Text>
+            <Text style={styles.modalMessage}>
+              {keyPrompt?.entry.definition.apiKeyUrl
+                ? `Paste your API key. Get one at ${keyPrompt.entry.definition.apiKeyUrl}.`
+                : "Paste your API key for this service."}
+            </Text>
+            <TextInput
+              style={styles.modalInput}
+              value={keyPrompt?.value ?? ""}
+              onChangeText={(v) => setKeyPrompt((cur) => (cur ? { ...cur, value: v } : cur))}
+              placeholder="API key"
+              placeholderTextColor={t.textTertiary}
+              autoCapitalize="none"
+              autoCorrect={false}
+              secureTextEntry
+              autoFocus
+            />
+            <View style={styles.modalActions}>
+              <Pressable
+                onPress={() => setKeyPrompt(null)}
+                style={styles.modalBtn}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel"
+              >
+                <Text style={styles.modalBtnText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  if (!keyPrompt) return;
+                  const { entry, value } = keyPrompt;
+                  setKeyPrompt(null);
+                  void installWithKey(entry, value);
+                }}
+                style={[styles.modalBtn, styles.modalBtnPrimary]}
+                accessibilityRole="button"
+                accessibilityLabel="Install service"
+              >
+                <Text style={styles.modalBtnPrimaryText}>Install</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -899,5 +1003,39 @@ function makeStyles(t: Theme) {
     builtinDesc: { ...typeScale.caption, color: t.textSecondary },
     footer: { flexDirection: "row", alignItems: "center", gap: 6, paddingTop: 4 },
     footerText: { ...typeScale.micro, color: t.textTertiary, flex: 1 },
+    modalBackdrop: {
+      flex: 1,
+      backgroundColor: t.scrim,
+      alignItems: "center",
+      justifyContent: "center",
+      padding: 24,
+    },
+    modalCard: {
+      width: "100%",
+      maxWidth: 420,
+      backgroundColor: t.surface,
+      borderWidth: 1,
+      borderColor: t.border,
+      borderRadius: 14,
+      padding: 18,
+      gap: 10,
+    },
+    modalTitle: { ...typeScale.subtitle, color: t.textPrimary },
+    modalMessage: { ...typeScale.caption, color: t.textSecondary },
+    modalInput: {
+      ...typeScale.body,
+      color: t.textPrimary,
+      backgroundColor: t.surface2,
+      borderWidth: 1,
+      borderColor: t.border,
+      borderRadius: 10,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+    },
+    modalActions: { flexDirection: "row", justifyContent: "flex-end", gap: 8, marginTop: 4 },
+    modalBtn: { paddingVertical: 8, paddingHorizontal: 14, borderRadius: 8 },
+    modalBtnText: { ...typeScale.label, color: t.textSecondary },
+    modalBtnPrimary: { backgroundColor: t.accent },
+    modalBtnPrimaryText: { ...typeScale.label, color: t.accentFg },
   });
 }
