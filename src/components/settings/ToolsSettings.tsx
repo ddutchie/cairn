@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Plus, Server, Globe, Sparkles } from "lucide-react";
+import { Plus, Server, Globe, Sparkles, Download } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import { id } from "@/lib/utils";
 import type { McpServerConfig, CustomServiceConfig } from "@/types";
 import { SettingsGroup } from "./shared";
 import { ToolBuilderModal } from "./ToolBuilderModal";
+import { BrowseCommunityModal } from "./tools/BrowseCommunityModal";
 import { type HeaderRow, looksLikeCredential } from "./tools/helpers";
 import { TestButton } from "./tools/TestButton";
 import { McpAuthButton } from "./tools/McpAuthButton";
@@ -45,6 +46,7 @@ export function ToolsSettings() {
   const [addingSvc, setAddingSvc] = useState(false);
   const [editingSvc, setEditingSvc] = useState<string | null>(null);
   const [builderOpen, setBuilderOpen] = useState(false);
+  const [browseOpen, setBrowseOpen] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -131,6 +133,22 @@ export function ToolsSettings() {
         </div>
         <Button size="sm" onClick={() => setBuilderOpen(true)} className="shrink-0">
           <Sparkles size={12} /> Build with AI
+        </Button>
+      </div>
+
+      <div className="flex items-center justify-between gap-4 rounded-lg border border-[var(--border)] bg-[color-mix(in_srgb,var(--accent)_5%,var(--surface))] px-4 py-3">
+        <div className="flex items-start gap-3 min-w-0">
+          <span className="text-[var(--accent)] mt-0.5"><Download size={16} /></span>
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold text-[var(--text-primary)]">Browse community tools</h3>
+            <p className="text-xs text-[var(--text-tertiary)] mt-0.5">
+              Install curated MCP servers (Jira, Linear, Notion, GitHub…) and HTTP services with one click. New tools
+              appear here without an app update.
+            </p>
+          </div>
+        </div>
+        <Button size="sm" variant="outline" onClick={() => setBrowseOpen(true)} className="shrink-0">
+          <Download size={12} /> Browse
         </Button>
       </div>
 
@@ -242,6 +260,15 @@ export function ToolsSettings() {
           workspaceId={activeWorkspaceId}
           onClose={() => {
             setBuilderOpen(false);
+            if (activeWorkspaceId) fetchTools(activeWorkspaceId);
+          }}
+        />
+      )}
+
+      {browseOpen && (
+        <BrowseCommunityModal
+          onClose={() => {
+            setBrowseOpen(false);
             if (activeWorkspaceId) fetchTools(activeWorkspaceId);
           }}
         />
