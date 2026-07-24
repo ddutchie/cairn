@@ -85,7 +85,18 @@ export interface CustomServiceRuntimeConfig {
   headers?: Record<string, string>;
   toolDefinition: string;
   responseKeys?: string[];
+  /** "oauth" services inject a Bearer token resolved at call time (see resolveBearer). */
+  authMode?: "none" | "oauth";
 }
+
+/**
+ * Resolves a fresh OAuth bearer for an "oauth" service at call time. Injected by
+ * the caller (external-tools) rather than imported directly so this module stays
+ * free of the Electron `shell` dependency pulled in by mcp-oauth, keeping it
+ * unit-testable in plain Node. Returns null when the service isn't connected or
+ * a refresh fails, in which case no Authorization header is added.
+ */
+export type BearerResolver = (serviceId: string) => Promise<string | null>;
 
 /** Convert a service config into a namespaced OpenAI function def. */
 export function serviceToOpenAI(cfg: CustomServiceRuntimeConfig): OpenAIToolDef {
@@ -267,14 +278,15 @@ async function fetchWithTimeout(url: string, init: RequestInit, ms: number): Pro
 export async function callService(
   cfg: CustomServiceRuntimeConfig,
   namespaced: string,
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
+  resolveBearer?: BearerResolver,
 ): Promise<string> {
   const parsed = parseServiceToolName(namespaced);
   if (!parsed || parsed.serviceId !== cfg.id) {
     return `Error: "${namespaced}" is not a tool of service ${cfg.id}`;
   }
   try {
-    const headers = resolveSecrets(cfg.headers ?? {});
+    const headers = await withOAuthBearer(cfg, resolveSecrets(cfg.headers ?? {}), resolveBearer);
     const { parameters } = parseToolDefinition(cfg.toolDefinition);
     const { url, init } = buildRequest(cfg, args, headers, parameters);
     const res = await fetchWithTimeout(url, init, CALL_TIMEOUT_MS);
@@ -292,6 +304,30 @@ export async function callService(
   }
 }
 
+/**
+ * When a service uses OAuth, resolve a fresh bearer and set the Authorization
+ * header (overriding any static one). For "none" services, or when no resolver
+ * is supplied, the already-resolved headers pass through unchanged. A failed
+ * resolve leaves the header unset so the request surfaces a clean 401 rather
+ * than sending a stale/absent token — the caller can then prompt a re-connect.
+ */
+async function withOAuthBearer(
+  cfg: CustomServiceRuntimeConfig,
+  resolvedHeaders: Record<string, string>,
+  resolveBearer?: BearerResolver,
+): Promise<Record<string, string>> {
+  if (cfg.authMode !== "oauth" || !resolveBearer) return resolvedHeaders;
+  const token = await resolveBearer(cfg.id);
+  if (!token) return resolvedHeaders;
+  // Drop any existing Authorization header (case-insensitively) before setting.
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(resolvedHeaders)) {
+    if (k.toLowerCase() !== "authorization") out[k] = v;
+  }
+  out.Authorization = `Bearer ${token}`;
+  return out;
+}
+
 function tryParseJson(text: string): unknown {
   try {
     return JSON.parse(text);
@@ -306,10 +342,11 @@ function tryParseJson(text: string): unknown {
  */
 export async function testService(
   cfg: CustomServiceRuntimeConfig,
-  sampleArgs?: Record<string, unknown>
+  sampleArgs?: Record<string, unknown>,
+  resolveBearer?: BearerResolver,
 ): Promise<{ ok: boolean; status?: number; preview?: string; error?: string }> {
   try {
-    const headers = resolveSecrets(cfg.headers ?? {});
+    const headers = await withOAuthBearer(cfg, resolveSecrets(cfg.headers ?? {}), resolveBearer);
     const { parameters } = parseToolDefinition(cfg.toolDefinition);
     // When the caller doesn't supply args, synthesise a realistic body from the
     // tool's parameter schema so endpoints with required fields (e.g. a /search

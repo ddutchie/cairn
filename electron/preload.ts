@@ -23,6 +23,8 @@ interface CustomServiceConfig {
   id: string; workspaceId: string; name: string; description?: string;
   apiUrl: string; method: "GET" | "POST" | "PUT" | "DELETE"; headers?: Record<string, string>;
   toolDefinition: string; responseKeys?: string[]; apiKeyUrl?: string;
+  authMode?: "none" | "oauth";
+  oauth?: { serverUrl?: string; scope?: string; clientId?: string; authorizationUrl?: string; tokenUrl?: string };
   enabled: boolean; source: string; communityId?: string; version?: string;
   createdAt: string; updatedAt: string;
 }
@@ -45,7 +47,10 @@ interface RegistryServiceEntry extends RegistryEntryMeta {
   definition: {
     name: string; description?: string; apiUrl: string;
     method: "GET" | "POST" | "PUT" | "DELETE"; headers?: Record<string, string>;
-    toolDefinition: string; responseKeys?: string[]; apiKeyUrl?: string; enabled: boolean;
+    toolDefinition: string; responseKeys?: string[]; apiKeyUrl?: string;
+    authMode?: "none" | "oauth";
+    oauth?: { serverUrl?: string; scope?: string; clientId?: string; authorizationUrl?: string; tokenUrl?: string };
+    enabled: boolean;
   };
 }
 interface CommunityManifest {
@@ -637,6 +642,18 @@ const api = {
     signOutMcp: (id: string) => invoke("tools:signOutMcp", { id }),
     /** Cancel an in-flight OAuth sign-in (user abandoned the browser step). */
     cancelMcpAuth: (id: string) => invoke<{ cancelled: boolean }>("tools:cancelMcpAuth", { id }),
+
+    // OAuth for custom HTTP services (same flow as MCP, no transport).
+    startServiceAuth: (id: string) =>
+      invoke<{ status: "redirected" | "already_authorized" | "error"; error?: string }>(
+        "tools:startServiceAuth",
+        { id }
+      ),
+    serviceAuthStatus: (id: string) =>
+      invoke<{ connected: boolean }>("tools:serviceAuthStatus", { id }),
+    signOutService: (id: string) => invoke("tools:signOutService", { id }),
+    cancelServiceAuth: (id: string) =>
+      invoke<{ cancelled: boolean }>("tools:cancelServiceAuth", { id }),
     /** Fires when a cairn://oauth/callback deep link finishes a sign-in. */
     onOauthCallback: (
       cb: (e: { status: string; serverId?: string; error?: string }) => void

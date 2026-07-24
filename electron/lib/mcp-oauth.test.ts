@@ -36,15 +36,20 @@ vi.mock("fs", () => ({
 vi.mock("@modelcontextprotocol/sdk/client/index.js", () => ({ Client: class {} }));
 vi.mock("@modelcontextprotocol/sdk/client/streamableHttp.js", () => ({ StreamableHTTPClientTransport: class {} }));
 vi.mock("@modelcontextprotocol/sdk/client/sse.js", () => ({ SSEClientTransport: class {} }));
-vi.mock("@modelcontextprotocol/sdk/client/auth.js", () => ({ UnauthorizedError: class extends Error {} }));
+vi.mock("@modelcontextprotocol/sdk/client/auth.js", () => ({
+  UnauthorizedError: class extends Error {},
+  auth: vi.fn(),
+}));
 
 import {
   parseOAuthCallback,
   KeychainOAuthProvider,
   hasTokens,
   signOut,
+  getAccessToken,
   OAUTH_REDIRECT_URI,
 } from "./mcp-oauth";
+import { auth } from "@modelcontextprotocol/sdk/client/auth.js";
 
 beforeEach(() => {
   virtualFiles = {};
@@ -152,5 +157,92 @@ describe("KeychainOAuthProvider", () => {
     signOut("srv1");
     expect(p.clientInformation()).toBeUndefined();
     expect(() => p.codeVerifier()).toThrow();
+  });
+});
+
+describe("KeychainOAuthProvider — HTTP-service (toolType) namespace", () => {
+  it("isolates service tokens from an MCP server of the same id", () => {
+    const mcp = new KeychainOAuthProvider("dup", "MCP");
+    const svc = new KeychainOAuthProvider("dup", "Service", undefined, undefined, undefined, "service");
+
+    mcp.saveTokens({ access_token: "mcp-tok", token_type: "Bearer" });
+    expect(hasTokens("dup", "mcp")).toBe(true);
+    // The service namespace must NOT see the MCP token.
+    expect(hasTokens("dup", "service")).toBe(false);
+    expect(svc.tokens()).toBeUndefined();
+
+    svc.saveTokens({ access_token: "svc-tok", token_type: "Bearer" });
+    expect(hasTokens("dup", "service")).toBe(true);
+    expect(svc.tokens()?.access_token).toBe("svc-tok");
+    // MCP token still intact and distinct.
+    expect(mcp.tokens()?.access_token).toBe("mcp-tok");
+
+    // Signing the service out leaves the MCP token untouched.
+    signOut("dup", "service");
+    expect(hasTokens("dup", "service")).toBe(false);
+    expect(hasTokens("dup", "mcp")).toBe(true);
+  });
+
+  it("stamps an absolute expires_at from expires_in on save", () => {
+    const before = Date.now();
+    const p = new KeychainOAuthProvider("svc", "S", undefined, undefined, undefined, "service");
+    p.saveTokens({ access_token: "t", token_type: "Bearer", expires_in: 3600 });
+    const stored = p.tokens() as { expires_at?: number } | undefined;
+    expect(stored?.expires_at).toBeGreaterThanOrEqual(before + 3600 * 1000);
+    expect(stored?.expires_at).toBeLessThanOrEqual(Date.now() + 3600 * 1000);
+  });
+
+  it("does not add expires_at when the token has no expires_in", () => {
+    const p = new KeychainOAuthProvider("svc2", "S", undefined, undefined, undefined, "service");
+    p.saveTokens({ access_token: "t", token_type: "Bearer" });
+    expect((p.tokens() as { expires_at?: number }).expires_at).toBeUndefined();
+  });
+});
+
+describe("getAccessToken", () => {
+  const authMock = vi.mocked(auth);
+  beforeEach(() => authMock.mockReset());
+
+  const cfg = { id: "svc", serverUrl: "https://api.example.com", scope: "read" };
+
+  function saveServiceTokens(t: Record<string, unknown>): void {
+    new KeychainOAuthProvider("svc", "S", undefined, undefined, undefined, "service").saveTokens(
+      t as never,
+    );
+  }
+
+  it("returns null when the service was never authorized", async () => {
+    expect(await getAccessToken(cfg, "S")).toBeNull();
+    expect(authMock).not.toHaveBeenCalled();
+  });
+
+  it("returns the stored token without refreshing when not expired", async () => {
+    saveServiceTokens({ access_token: "valid", token_type: "Bearer", expires_in: 3600 });
+    expect(await getAccessToken(cfg, "S")).toBe("valid");
+    expect(authMock).not.toHaveBeenCalled();
+  });
+
+  it("refreshes via auth() when the token is expired, then returns the rotated token", async () => {
+    // Store an already-expired token (expires_at in the past) with a refresh token.
+    saveServiceTokens({ access_token: "old", token_type: "Bearer", refresh_token: "r", expires_at: Date.now() - 1000 });
+    authMock.mockImplementationOnce(async () => {
+      // Simulate the SDK persisting rotated tokens through the provider.
+      saveServiceTokens({ access_token: "rotated", token_type: "Bearer", refresh_token: "r2", expires_in: 3600 });
+      return "AUTHORIZED";
+    });
+    expect(await getAccessToken(cfg, "S")).toBe("rotated");
+    expect(authMock).toHaveBeenCalledOnce();
+  });
+
+  it("returns null when an expired token has no refresh_token", async () => {
+    saveServiceTokens({ access_token: "old", token_type: "Bearer", expires_at: Date.now() - 1000 });
+    expect(await getAccessToken(cfg, "S")).toBeNull();
+    expect(authMock).not.toHaveBeenCalled();
+  });
+
+  it("returns null when the refresh attempt fails", async () => {
+    saveServiceTokens({ access_token: "old", token_type: "Bearer", refresh_token: "r", expires_at: Date.now() - 1000 });
+    authMock.mockRejectedValueOnce(new Error("refresh failed"));
+    expect(await getAccessToken(cfg, "S")).toBeNull();
   });
 });

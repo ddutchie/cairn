@@ -94,6 +94,23 @@ function pObj(v: string | null | undefined): Record<string, string> {
   }
 }
 
+/**
+ * Parse the custom-service `oauth_config` JSON blob. Returns undefined when
+ * absent/invalid so the field is simply omitted from the config object (matching
+ * the optional `oauth?` type), rather than surfacing an empty object.
+ */
+function parseOAuthConfig(v: string | null | undefined):
+  | { serverUrl?: string; scope?: string; clientId?: string; authorizationUrl?: string; tokenUrl?: string }
+  | undefined {
+  if (!v) return undefined;
+  try {
+    const parsed = JSON.parse(v);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function toMcpServer(row: any) {
   return {
     id: row.id as string,
@@ -127,6 +144,8 @@ export function toCustomService(row: any) {
     toolDefinition: row.tool_definition as string,
     responseKeys: j2(row.response_keys),
     apiKeyUrl: (row.api_key_url ?? undefined) as string | undefined,
+    authMode: (row.auth_mode ?? "none") as "none" | "oauth",
+    oauth: parseOAuthConfig(row.oauth_config),
     enabled: row.enabled === 1,
     source: (row.source ?? "manual") as "manual" | "community" | "ai-builder",
     communityId: (row.community_id ?? undefined) as string | undefined,

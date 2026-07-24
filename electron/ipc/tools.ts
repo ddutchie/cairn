@@ -20,6 +20,7 @@ import * as secrets from "../lib/secure-store";
 import * as mcpClient from "../lib/mcp-client";
 import * as services from "../lib/custom-services";
 import * as mcpOauth from "../lib/mcp-oauth";
+import * as externalTools from "../lib/external-tools";
 
 type SaveMcpArgs = Omit<Parameters<typeof q.saveMcpServer>[1], "id"> & { id?: string };
 type SaveServiceArgs = Omit<Parameters<typeof q.saveCustomService>[1], "id"> & { id?: string };
@@ -75,6 +76,28 @@ function oauthConfigChanged(
     (next.transport !== undefined && next.transport !== prev.transport) ||
     (next.authMode !== undefined && (next.authMode ?? "none") !== (prev.authMode ?? "none")) ||
     (next.oauthScope !== undefined && (next.oauthScope ?? "") !== (prev.oauthScope ?? ""))
+  );
+}
+
+/**
+ * True if a service save changes a field that invalidates previously-issued
+ * OAuth state (tokens / DCR): the API URL (its origin is the OAuth discovery
+ * base), the auth mode, or any explicit OAuth parameter. Mirrors
+ * {@link oauthConfigChanged} for custom services.
+ */
+function serviceOAuthConfigChanged(
+  prev: { apiUrl: string; authMode?: string; oauth?: { serverUrl?: string; scope?: string; clientId?: string } },
+  next: { apiUrl?: string; authMode?: string; oauth?: { serverUrl?: string; scope?: string; clientId?: string } },
+): boolean {
+  const p = prev.oauth ?? {};
+  const n = next.oauth;
+  return (
+    (next.apiUrl !== undefined && next.apiUrl !== prev.apiUrl) ||
+    (next.authMode !== undefined && (next.authMode ?? "none") !== (prev.authMode ?? "none")) ||
+    (n !== undefined &&
+      ((n.serverUrl ?? "") !== (p.serverUrl ?? "") ||
+        (n.scope ?? "") !== (p.scope ?? "") ||
+        (n.clientId ?? "") !== (p.clientId ?? "")))
   );
 }
 
@@ -191,17 +214,33 @@ export function registerToolsHandlers(db: Database): void {
   );
 
   registerIpcHandle("tools:saveService", (_e, service: SaveServiceArgs) =>
-    handle(() => q.saveCustomService(db, { ...service, id: service.id ?? newId(), headers: sanitizeHeaders(service.headers) }))
+    handle(() => {
+      const id = service.id ?? newId();
+      // On edit, if any auth-relevant field changed, previously-issued OAuth
+      // artefacts (tokens + client registration) no longer apply — clear them so
+      // the id only preserves OAuth state when the auth config is unchanged.
+      if (service.id) {
+        const prev = q.getCustomServiceById(db, service.id);
+        if (prev && serviceOAuthConfigChanged(prev, service)) {
+          mcpOauth.signOut(id, "service");
+          mcpOauth.cancelServiceAuth(id);
+        }
+      }
+      return q.saveCustomService(db, { ...service, id, headers: sanitizeHeaders(service.headers) });
+    })
   );
 
   registerIpcHandle("tools:deleteService", (_e, { id }: { id: string }) =>
     handle(() => {
       q.deleteCustomService(db, id);
-      secrets.deleteToolSecrets("service", id); // purge any keychain credentials
+      mcpOauth.signOut(id, "service"); // purge keychain OAuth tokens/registration
+      mcpOauth.cancelServiceAuth(id); // drop any in-flight sign-in
+      secrets.deleteToolSecrets("service", id); // purge any keychain header credentials
     })
   );
 
-  // Settings dry-run for a service.
+  // Settings dry-run for a service. Injects the OAuth bearer resolver so an
+  // "oauth" service is tested with a live access token, mirroring a real call.
   registerIpcHandle(
     "tools:testService",
     (_e, { id, sampleArgs }: { id: string; sampleArgs?: Record<string, unknown> }) =>
@@ -216,10 +255,51 @@ export function registerToolsHandlers(db: Database): void {
             headers: svc.headers,
             toolDefinition: svc.toolDefinition,
             responseKeys: svc.responseKeys,
+            authMode: svc.authMode,
           },
-          sampleArgs ?? {}
+          sampleArgs ?? {},
+          externalTools.makeServiceBearerResolver(svc),
         );
       })
+  );
+
+  // ── Custom-service OAuth ─────────────────────────────────────────────────
+  // Begin sign-in for an OAuth service: opens the system browser via the SDK
+  // auth() orchestrator (loopback redirect). Completion forwards a
+  // tools:oauthCallback event, same as MCP servers.
+  registerIpcHandle("tools:startServiceAuth", (_e, { id }: { id: string }) =>
+    handle(() => {
+      const svc = q.getCustomServiceById(db, id);
+      if (!svc) throw new Error("Service not found");
+      if (svc.authMode !== "oauth") throw new Error("Service is not configured for OAuth");
+      return mcpOauth.startServiceAuth(
+        {
+          id: svc.id,
+          serverUrl: externalTools.serviceOAuthServerUrl(svc),
+          scope: svc.oauth?.scope,
+        },
+        svc.name,
+        (result) => broadcastEvent("tools:oauthCallback", result),
+      );
+    })
+  );
+
+  // Whether the service currently holds OAuth tokens (i.e. is "connected").
+  registerIpcHandle("tools:serviceAuthStatus", (_e, { id }: { id: string }) =>
+    handle(() => ({ connected: mcpOauth.hasTokens(id, "service") }))
+  );
+
+  // Sign out: forget tokens/registration.
+  registerIpcHandle("tools:signOutService", (_e, { id }: { id: string }) =>
+    handle(() => {
+      mcpOauth.signOut(id, "service");
+      mcpOauth.cancelServiceAuth(id);
+    })
+  );
+
+  // Cancel an in-flight service sign-in.
+  registerIpcHandle("tools:cancelServiceAuth", (_e, { id }: { id: string }) =>
+    handle(() => ({ cancelled: mcpOauth.cancelServiceAuth(id) }))
   );
 
   // ── Per-project attachments ──────────────────────────────────────────────
