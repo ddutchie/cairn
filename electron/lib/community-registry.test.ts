@@ -80,6 +80,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals(); // remove any fetch stub created via vi.stubGlobal
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
@@ -158,6 +159,11 @@ describe("fetchManifest", () => {
     vi.stubGlobal("fetch", spy);
     const res = await fetchManifest({ force: true });
     expect(res.fromCache).toBe(true);
+    // The cache is served intact — the previously cached VALID entries survive
+    // and no error is surfaced.
+    expect(res.error).toBeUndefined();
+    expect(res.manifest.mcpServers[0].definition.name).toBe("Jira");
+    expect(res.manifest.services[0].definition.name).toBe("Weather");
     // Sent the conditional header.
     const headers = (spy.mock.calls[0] as unknown as [string, { headers: Record<string, string> }])[1].headers;
     expect(headers["If-None-Match"]).toBe('W/"v1"');
@@ -173,6 +179,10 @@ describe("fetchManifest", () => {
   });
 
   it("refreshManifest forces the network path", async () => {
+    // Seed the cache first so we can prove refreshManifest bypasses it.
+    vi.stubGlobal("fetch", vi.fn(async () => fetchResponse({ status: 200, json: VALID })));
+    await fetchManifest({ force: true });
+
     const spy = vi.fn(async () => fetchResponse({ status: 200, json: VALID }));
     vi.stubGlobal("fetch", spy);
     const res = await refreshManifest();

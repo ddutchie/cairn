@@ -696,13 +696,21 @@ describe("deleteNote (soft delete / tombstone)", () => {
     expect(searchNotes(db, { query: "Doomed" }).find((n) => n.id === "n1")).toBeUndefined();
   });
 
-  it("is idempotent — re-deleting keeps the original tombstone timestamp", () => {
+  it("is idempotent — re-deleting preserves deleted_at, updated_at, and version", () => {
     createNote(db, { id: "n1", projectId: "proj1", workspaceId: "ws1", title: "Doomed", content: "x" });
     deleteNote(db, "n1");
-    const first = (db.prepare("SELECT deleted_at FROM notes WHERE id='n1'").get() as { deleted_at: string }).deleted_at;
+    const first = db
+      .prepare("SELECT deleted_at, updated_at, version FROM notes WHERE id='n1'")
+      .get() as { deleted_at: string; updated_at: string; version: number };
     deleteNote(db, "n1");
-    const second = (db.prepare("SELECT deleted_at FROM notes WHERE id='n1'").get() as { deleted_at: string }).deleted_at;
-    expect(second).toBe(first);
+    const second = db
+      .prepare("SELECT deleted_at, updated_at, version FROM notes WHERE id='n1'")
+      .get() as { deleted_at: string; updated_at: string; version: number };
+    // The `deleted_at IS NULL` guard means the retry matches zero rows, so none
+    // of the tombstone stamps churn.
+    expect(second.deleted_at).toBe(first.deleted_at);
+    expect(second.updated_at).toBe(first.updated_at);
+    expect(second.version).toBe(first.version);
   });
 
   it("is a no-op for an unknown id", () => {

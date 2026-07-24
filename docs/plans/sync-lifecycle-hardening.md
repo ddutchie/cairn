@@ -84,13 +84,23 @@ the delete**. Concretely:
 
 - Persist the delete as a **durable tombstone** carrying the delete's HLC (`deleted_at` +
   the HLC at delete time), never garbage-collected within a retention window.
+- **Causal-evidence mechanism.** "Causally after" is proven, not inferred from a raw HLC
+  comparison (which stale-but-current wall clocks defeat — see 2.1/2.4). Every `put` and
+  `delete` op carries an **observation token**: the origin device's acknowledged-HLC
+  frontier for the target entity's origin — i.e. the highest HLC that origin had *observed*
+  from the deleting device at the time it produced the op. Equivalently this may be carried
+  as a compact **version vector** (per-origin max-HLC map) attached to the op. A `put`
+  counts as causal-after a delete **iff** its observation token/vector dominates the
+  tombstone's `delete_hlc` for the deleting origin — meaning the put's author had already
+  seen the delete. A bare `compareHlc(putHlc, deleteHlc) > 0` is **not** sufficient evidence.
 - In `reconcileOne`, when an incoming `put` targets a row that is **tombstoned locally**:
-  - Apply the put (un-delete) **only if** the put's HLC is strictly greater than the
-    tombstone's delete-HLC **AND** the put's origin has demonstrably observed the delete
-    (causal-after), i.e. it is a genuine edit-after-delete-elsewhere.
+  - Apply the put (un-delete) **only if** `reconcileOne` can prove, using the put's
+    observation token/version vector, that the put's origin had observed the delete
+    (i.e. the token dominates the tombstone's `delete_hlc`). A higher raw HLC alone must
+    **not** cause resurrection.
   - Otherwise the delete wins: keep the row tombstoned, do **not** resurrect.
 - Symmetrically, a `delete` arriving against a live local row wins unless the local row was
-  edited causally-after the delete.
+  edited causally-after the delete (same observation-token test, mirrored).
 
 This blocks the stale-peer resurrection (2.2) while still allowing the legitimate
 "someone edited it on device B after I deleted it on device A, and device B had seen my
@@ -105,7 +115,24 @@ is silently lost.
 ### Phase 1 — Delete-wins reconciliation (fixes Symptom 2)
 - **1a.** Add a durable tombstone record keyed by (entity, entity_id) storing `delete_hlc`
   (persisted independently of the row, so a compacted/absent row still carries the delete
-  fact). Engine-owned table like `sync_row_base`.
+  fact). Engine-owned table: **`sync_row_base`**.
+  - **Ownership.** The table is owned by the sync engine, not the domain schema. It is
+    created and versioned by the engine's own migration path (not the note/task CRUD layer),
+    so both runtimes agree on its shape and the domain queries never touch it directly.
+  - **Schema migrations (both runtimes).** Desktop adds the table via a new schema version in
+    `electron/db/schema.ts` (current head is v26 — add v27) guarded by the existing
+    `PRAGMA user_version` migration runner in `electron/db/client.ts`. Mobile adds the mirror
+    migration in `mobile/src/db/schema.ts` / its migration runner so existing installs get
+    `sync_row_base` on upgrade without a full reset. Both migrations must be idempotent
+    (`CREATE TABLE IF NOT EXISTS`) and back-compatible with a populated DB.
+  - **Read/write adapters.** The engine accesses `sync_row_base` only through a small adapter
+    pair so existing databases have a deployable persistence path:
+    `getRowBase(entity, id)` / `upsertRowBase(entity, id, deleteHlc)` in the engine's DB
+    layer (`shared/sync/engine.ts` plus the per-runtime query modules
+    `electron/db/queries.ts` and `mobile/src/db/queries.ts`). Existing rows with no base
+    record are treated as "no recorded delete" (adapter returns `null`), so pre-migration
+    data degrades gracefully rather than erroring. The adapter must **create** the row base
+    on delete, **access** it in `reconcileOne`, and **preserve** it across compaction.
 - **1b.** In `reconcileOne`, gate `put`-over-tombstone on causal-after semantics (§3). Add
   the mirror gate for `delete`-over-live.
 - **1c.** Preserve losing content as a conflict copy when delete wins over a divergent put
@@ -133,8 +160,14 @@ is silently lost.
 
 ### Phase 3 — Backfill causality safety
 - **3a.** `backfill()` must **not** mint fresh HLCs that could leapfrog a peer's delete.
-  Either preserve each row's existing `hlc` in the seeded op, or stamp backfill ops with a
-  clock derived from the row's `updated_at` (never `Date.now()` for pre-existing rows).
+  Preserve each row's **existing `hlc`** in the seeded op wherever one exists — the stored
+  HLC is the only authoritative causal stamp. Only where a pre-existing row has *no* HLC at
+  all may backfill derive a placeholder from the row's `updated_at` (never `Date.now()`).
+- **3b.** An `updated_at`-derived backfill stamp is a **best-effort ordering hint only** and
+  must be explicitly prohibited from counting as authoritative causal evidence in the §3
+  delete-wins test: a backfilled op carrying such a derived stamp must **not** be treated as
+  having observed a peer's delete (its observation token is empty/unknown), so it can never
+  resurrect a tombstoned row. Only a genuine, HLC-carrying, observation-tokened op can.
 - **Tests:** a device backfilling old rows cannot resurrect a note another device already
   deleted.
 
@@ -169,5 +202,21 @@ is silently lost.
   op still in the peer's oplog file" — compaction (`compactOplog`) can drop that op, so the
   file is not a stable signal. GC only when every known peer's watermark is past the delete HLC
   **and** the grace period has elapsed (guards unknown / reinstalled peers).
+- **Stale/lost-peer safety for GC.** A tombstone must **not** be collected when a peer's
+  acknowledged-HLC watermark is **missing or no longer trustworthy** — specifically after a
+  peer reinstall or app-data loss, where the local watermark record may claim the peer is
+  "caught up" while the peer has actually lost the acknowledgement:
+  - Bind each watermark to an **install-independent peer identity** (a persistent device/sync
+    identity that survives, and is regenerated on, reinstall — not the ephemeral oplog file or
+    install path). Treat any **newly discovered or re-registered** peer identity as **unsafe**
+    until that identity is validated against the recorded one.
+  - While a peer is unsafe (identity unvalidated, watermark missing, or a reinstall/app-data
+    loss is detected), it does **not** count toward the "every known peer past the delete HLC"
+    GC condition. The affected tombstones are **retained beyond the grace period** until the
+    peer either completes a **full resync** (re-establishing a trustworthy watermark) or its
+    install-independent identity is re-validated.
+  - This protocol lives **alongside** the per-peer watermark and the wall-clock grace floor:
+    GC requires (a) every known peer's watermark past the delete HLC, (b) the grace floor
+    elapsed, **and** (c) no known peer in the unsafe/unvalidated state.
 - Two-device single-user scope (per `mobile-app-viability.md` §4) keeps this tractable — no
   CRDT needed; delete-wins + conflict-copy is sufficient.

@@ -247,6 +247,15 @@ const PENDING_TTL_MS = 10 * 60_000;
 // waitForCallback → the flow reports a cancelled sign-in to the renderer).
 const activeLoopbacks = new Map<string, LoopbackListener>();
 
+// Per-server generation counter. Bumped synchronously at the top of every
+// startServerAuth so a newer invocation supersedes any older one still in its
+// async setup: an older attempt whose generation is stale must abort (closing
+// any listener it managed to bind) instead of registering listeners or leaving
+// an orphaned loopback behind. Guards the concurrent-start race that the
+// cancelServerAuth-at-entry call cannot cover, because two calls can both pass
+// that point before either has registered anything in activeLoopbacks.
+const authGeneration = new Map<string, number>();
+
 function sweepPending(): void {
   const now = Date.now();
   for (const [state, p] of pending) {
@@ -292,12 +301,26 @@ export async function startServerAuth(
   // supersedes the old flow (cancelServerAuth handles both loopback + deep-link).
   cancelServerAuth(cfg.id);
 
+  // Claim a generation token synchronously, before any await. A concurrent
+  // start for the same server bumps this again; the older attempt then sees its
+  // token is stale after the async loopback bind and aborts (see isStale).
+  const myGen = (authGeneration.get(cfg.id) ?? 0) + 1;
+  authGeneration.set(cfg.id, myGen);
+  const isStale = () => authGeneration.get(cfg.id) !== myGen;
+
   let listener: LoopbackListener | null = null;
   try {
     listener = await startLoopbackListener();
   } catch {
     // Loopback couldn't bind; fall back to the cairn:// deep-link flow.
     return startServerAuthDeepLink(cfg, serverName);
+  }
+
+  // A newer start superseded us while we were binding — abort and close our
+  // listener so it doesn't leak (the newer attempt owns cfg.id now).
+  if (isStale()) {
+    listener.close();
+    return { status: "error", error: "Superseded by a newer sign-in." };
   }
 
   // The loopback port changes every attempt, so a client registration saved with
@@ -327,6 +350,11 @@ export async function startServerAuth(
   // Browser opened. Await the loopback callback off the critical path, then
   // exchange the code and notify the caller. We return "redirected" immediately
   // so the UI can show a waiting state.
+  if (isStale()) {
+    listener.close();
+    await client.close().catch(() => {});
+    return { status: "error", error: "Superseded by a newer sign-in." };
+  }
   activeLoopbacks.set(cfg.id, listener);
   void (async () => {
     try {

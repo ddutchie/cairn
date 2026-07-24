@@ -283,13 +283,15 @@ export function updateNote(db: Database.Database, id: string, patch: Partial<{
  *     the orphan file on disk can't re-import it. See file-watcher.ts
  *     suppressNextChange() (backed by suppressedNoteIds).
  *
- * Idempotent: re-deleting an already-tombstoned note leaves the original
- * `deleted_at` intact (COALESCE) so the tombstone HLC/time doesn't churn.
+ * Idempotent: re-deleting an already-tombstoned note is a no-op. The
+ * `deleted_at IS NULL` guard means a retry touches zero rows, so the original
+ * `deleted_at`, `updated_at`, and `version` are all left intact and the
+ * tombstone HLC/time never churns.
  */
 export function deleteNote(db: Database.Database, id: string) {
   const now = ts();
   db.prepare(
-    "UPDATE notes SET deleted_at = COALESCE(deleted_at, ?), updated_at = ?, version = version + 1 WHERE id = ?",
+    "UPDATE notes SET deleted_at = ?, updated_at = ?, version = version + 1 WHERE id = ? AND deleted_at IS NULL",
   ).run(now, now, id);
 }
 

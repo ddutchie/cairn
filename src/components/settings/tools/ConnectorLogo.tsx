@@ -36,9 +36,11 @@ export interface ConnectorLogoProps {
  */
 function looksSafeSvg(svg: string): boolean {
   const s = svg.trim();
-  if (!/^<svg[\s>]/i.test(s) || !/<\/svg>\s*$/i.test(s)) return false;
+  if (/^<svg[\s>]/i.test(s) === false || !/<\/svg>\s*$/i.test(s)) return false;
   if (/<script|<foreignobject|<iframe|<image|<use\b/i.test(s)) return false;
-  if (/\son\w+\s*=/i.test(s)) return false; // inline event handlers
+  // Reject inline event handlers regardless of the preceding delimiter — after
+  // whitespace, a closing quote, or another attribute char (e.g. `x"onload=`).
+  if (/(?:^|[\s"'/])on\w+\s*=/i.test(s)) return false;
   if (/href\s*=|javascript:|data:(?!image\/)/i.test(s)) return false;
   if (/url\(\s*(?!['"]?#)/i.test(s)) return false; // url() to anything but a local #ref
   return true;
@@ -71,7 +73,10 @@ export function ConnectorLogo({
         aria-hidden
         // Safe: SVG is sanitized by cairn-community CI + guarded by looksSafeSvg above.
         dangerouslySetInnerHTML={{
-          __html: iconSvg.replace(/<svg /i, '<svg width="100%" height="100%" '),
+          // Inject sizing on the opening tag. Match every form looksSafeSvg
+          // accepts: `<svg ` / `<svg\t` / `<svg\n` (attributes follow) and
+          // `<svg>` (no attributes) — preserving the trailing delimiter.
+          __html: iconSvg.replace(/<svg(\s|>)/i, '<svg width="100%" height="100%"$1'),
         }}
       />
     );
