@@ -119,6 +119,7 @@ function applyNoteLinkChange(
   if (!card) return { error: "Card not found" };
   const newCardIds = transform.nextCardIds((note.linkedCardIds as string[]) ?? []);
   const newNoteIds = transform.nextNoteIds((card.linkedNoteIds as string[]) ?? []);
+  const proj = snap.projects.find((p) => p.id === note.projectId);
   lockNote(db, noteId);
   let updatedNote: any;
   try {
@@ -127,20 +128,25 @@ function applyNoteLinkChange(
       q.updateCard(db, cardId, { linkedNoteIds: newNoteIds });
       return u;
     })();
+    // Must stay INSIDE the lock: writeNoteFile can relocate the .md (and unlink
+    // the old path). The Electron file-watcher runs in a separate process, so its
+    // only cross-process guard against treating that unlink as a delete is the
+    // mcp_active_writes lock. Releasing the lock before this write (as this
+    // function used to) let the watcher delete the note's DB row. See notes.ts —
+    // every other note tool writes the file inside the lock for this reason.
+    writeNoteFile(workspacePath, {
+      id: noteId, projectId: note.projectId as string, workspaceId: note.workspaceId as string,
+      title: note.title as string, content: updatedNote?.content ?? note.content as string,
+      tagIds: note.tagIds as string[], linkedNoteIds: note.linkedNoteIds as string[],
+      linkedCardIds: newCardIds, isPinned: note.isPinned as boolean,
+      createdAt: note.createdAt as string, updatedAt: updatedNote?.updatedAt ?? new Date().toISOString(),
+      archivedAt: note.archivedAt as string | undefined,
+      projectName: proj?.name ?? note.projectId as string,
+      folder: (note.folder as string) ?? "",
+    });
   } finally {
     unlockNote(db, noteId);
   }
-  const proj = snap.projects.find((p) => p.id === note.projectId);
-  writeNoteFile(workspacePath, {
-    id: noteId, projectId: note.projectId as string, workspaceId: note.workspaceId as string,
-    title: note.title as string, content: updatedNote?.content ?? note.content as string,
-    tagIds: note.tagIds as string[], linkedNoteIds: note.linkedNoteIds as string[],
-    linkedCardIds: newCardIds, isPinned: note.isPinned as boolean,
-    createdAt: note.createdAt as string, updatedAt: updatedNote?.updatedAt ?? new Date().toISOString(),
-    archivedAt: note.archivedAt as string | undefined,
-    projectName: proj?.name ?? note.projectId as string,
-    folder: (note.folder as string) ?? "",
-  });
   insertNotification(
     db,
     transform.notificationType,
