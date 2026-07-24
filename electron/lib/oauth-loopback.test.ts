@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { startLoopbackListener } from "./oauth-loopback";
+import { startLoopbackListener, OAuthDeniedError } from "./oauth-loopback";
 
 /** Perform a GET against the loopback listener and return the status code. */
 async function get(url: string): Promise<number> {
@@ -45,6 +45,26 @@ describe("startLoopbackListener", () => {
     const l = await startLoopbackListener();
     l.close();
     await expect(l.waitForCallback).rejects.toThrow(/closed before completion/);
+  });
+
+  it("treats ?error=access_denied as a cancellation (OAuthDeniedError, HTTP 200)", async () => {
+    const l = await startLoopbackListener();
+    const status = await get(`${l.redirectUri}?error=access_denied&state=s`);
+    expect(status).toBe(200); // friendly 'cancelled' page, not a 400
+    await expect(l.waitForCallback).rejects.toBeInstanceOf(OAuthDeniedError);
+    await expect(l.waitForCallback).rejects.toThrow(/cancelled/i);
+  });
+
+  it("surfaces a generic OAuth error with its description", async () => {
+    const l = await startLoopbackListener();
+    await get(`${l.redirectUri}?error=server_error&error_description=boom&state=s`);
+    await expect(l.waitForCallback).rejects.toThrow(/boom/);
+  });
+
+  it("close(reason) rejects with the supplied cancellation message", async () => {
+    const l = await startLoopbackListener();
+    l.close("Sign-in cancelled.");
+    await expect(l.waitForCallback).rejects.toThrow(/Sign-in cancelled/);
   });
 
   it("uses a fresh port for each listener", async () => {

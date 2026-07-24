@@ -35,6 +35,13 @@ export const KNOWN_CONNECTOR_LOGOS = [
   "sentry",
   "brave",
   "hackernews",
+  "asana",
+  "stripe",
+  "hubspot",
+  "canva",
+  "intercom",
+  "cloudflare",
+  "vercel",
 ] as const;
 
 export function ConnectorLogo({
@@ -154,6 +161,70 @@ export function ConnectorLogo({
             fill="var(--background)"
             d="M12 13.3 8.7 7.5h1.7L12 10.9l1.6-3.4h1.7L12 13.3v3.2h-1.3v-3.2H12Z"
           />
+        </svg>
+      );
+    case "asana":
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="6.3" r="3.1" fill={fill} />
+          <circle cx="6.4" cy="15.6" r="3.1" fill={fill} />
+          <circle cx="17.6" cy="15.6" r="3.1" fill={fill} />
+        </svg>
+      );
+    case "stripe":
+      return (
+        <svg {...common}>
+          <path
+            fill={fill}
+            d="M11.6 9.6c0-.6.5-.85 1.3-.85 1.15 0 2.6.35 3.75.97V6.15A9.9 9.9 0 0 0 12.9 5.4C10 5.4 8 6.9 8 9.5c0 4 5.35 3.3 5.35 5.05 0 .7-.6.93-1.45.93-1.25 0-2.9-.52-4.2-1.2v3.6c1.4.6 2.85.86 4.2.86 3 0 5.05-1.45 5.05-4.1 0-4.3-5.35-3.5-5.35-5.04Z"
+          />
+        </svg>
+      );
+    case "hubspot":
+      return (
+        <svg {...common}>
+          <path
+            fill={fill}
+            d="M16.5 8.6V6.2a1.9 1.9 0 1 0-1.7 0v2.4a5.3 5.3 0 0 0-2.2.95L7 5.7a2 2 0 1 0-1 1.35l5.4 4.2a5 5 0 1 0 5.1-2.65Zm-1 8.9a2.6 2.6 0 1 1 0-5.2 2.6 2.6 0 0 1 0 5.2Z"
+          />
+        </svg>
+      );
+    case "canva":
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="9.2" fill={fill} />
+          <path
+            fill="var(--background)"
+            d="M14.9 14.2c-.9 1.1-2.1 1.8-3.3 1.8-1.9 0-3.1-1.5-3.1-3.7 0-2.9 1.8-5.2 3.9-5.2 1 0 1.7.6 1.7 1.4 0 .5-.2.9-.5 1.2-.2-.7-.6-1.1-1.2-1.1-1.2 0-2.2 1.7-2.2 3.6 0 1.3.6 2.1 1.5 2.1.8 0 1.6-.5 2.3-1.4l.9 1.3Z"
+          />
+        </svg>
+      );
+    case "intercom":
+      return (
+        <svg {...common}>
+          <rect x="3" y="3" width="18" height="18" rx="4" fill={fill} />
+          <path
+            stroke="var(--background)"
+            strokeWidth="1.4"
+            strokeLinecap="round"
+            fill="none"
+            d="M8 8v4.5M12 8.4v5M16 8v4.5M8 16c2.5 1.2 5.5 1.2 8 0"
+          />
+        </svg>
+      );
+    case "cloudflare":
+      return (
+        <svg {...common}>
+          <path
+            fill={fill}
+            d="M16.9 15.5c.15-.5.1-1-.15-1.35-.23-.32-.6-.5-1.05-.52l-8.2-.1a.16.16 0 0 1-.13-.07.17.17 0 0 1 0-.16c.02-.06.08-.1.15-.11l8.3-.1c.98-.05 2.05-.85 2.42-1.83l.47-1.24a.28.28 0 0 0 .01-.16 5.4 5.4 0 0 0-10.38-.55A2.44 2.44 0 0 0 4.5 12.9c0 .18.01.36.04.53a.16.16 0 0 1-.16.18l-.2.01c-.72.1-1.28.72-1.28 1.46 0 .16.02.32.06.47a.16.16 0 0 0 .15.11h13.5a.2.2 0 0 0 .19-.14l.1-.5Z"
+          />
+        </svg>
+      );
+    case "vercel":
+      return (
+        <svg {...common}>
+          <path fill={fill} d="M12 3.5 21 20H3L12 3.5Z" />
         </svg>
       );
     default:

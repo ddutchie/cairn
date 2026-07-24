@@ -242,6 +242,11 @@ interface PendingAuth {
 const pending = new Map<string, PendingAuth>();
 const PENDING_TTL_MS = 10 * 60_000;
 
+// Loopback listeners awaiting a browser callback, keyed by server id, so an
+// in-app "Cancel" can tear one down (closing the listener rejects its
+// waitForCallback → the flow reports a cancelled sign-in to the renderer).
+const activeLoopbacks = new Map<string, LoopbackListener>();
+
 function sweepPending(): void {
   const now = Date.now();
   for (const [state, p] of pending) {
@@ -320,6 +325,7 @@ export async function startServerAuth(
   // Browser opened. Await the loopback callback off the critical path, then
   // exchange the code and notify the caller. We return "redirected" immediately
   // so the UI can show a waiting state.
+  activeLoopbacks.set(cfg.id, listener);
   void (async () => {
     try {
       const cb = await listener.waitForCallback;
@@ -336,10 +342,29 @@ export async function startServerAuth(
         serverId: cfg.id,
         error: e instanceof Error ? e.message : String(e),
       });
+    } finally {
+      activeLoopbacks.delete(cfg.id);
     }
   })();
 
   return { status: "redirected" };
+}
+
+/**
+ * Cancel an in-flight loopback sign-in for a server (the in-app "Cancel"
+ * button). Closing the listener rejects its pending callback, which drives the
+ * flow's catch → an `error` completion the renderer surfaces. Returns true if an
+ * attempt was actually in flight.
+ */
+export function cancelServerAuth(serverId: string): boolean {
+  const listener = activeLoopbacks.get(serverId);
+  if (listener) {
+    activeLoopbacks.delete(serverId);
+    listener.close("Sign-in cancelled."); // rejects waitForCallback → completion listener fires "error"
+  }
+  // Also drop any deep-link pending attempt for the same server.
+  cancelPendingForServer(serverId);
+  return listener != null;
 }
 
 /**

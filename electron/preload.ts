@@ -635,6 +635,8 @@ const api = {
       ),
     mcpAuthStatus: (id: string) => invoke<{ connected: boolean }>("tools:mcpAuthStatus", { id }),
     signOutMcp: (id: string) => invoke("tools:signOutMcp", { id }),
+    /** Cancel an in-flight OAuth sign-in (user abandoned the browser step). */
+    cancelMcpAuth: (id: string) => invoke<{ cancelled: boolean }>("tools:cancelMcpAuth", { id }),
     /** Fires when a cairn://oauth/callback deep link finishes a sign-in. */
     onOauthCallback: (
       cb: (e: { status: string; serverId?: string; error?: string }) => void

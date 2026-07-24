@@ -179,6 +179,12 @@ export function registerToolsHandlers(db: Database): void {
     })
   );
 
+  // Cancel an in-flight sign-in (user abandoned the browser step). Tears down
+  // the waiting loopback listener → the flow reports a cancelled completion.
+  registerIpcHandle("tools:cancelMcpAuth", (_e, { id }: { id: string }) =>
+    handle(() => ({ cancelled: mcpOauth.cancelServerAuth(id) }))
+  );
+
   // ── Custom HTTP services ─────────────────────────────────────────────────
   registerIpcHandle("tools:listServices", (_e, { workspaceId }: { workspaceId: string }) =>
     handle(() => q.getCustomServices(db, workspaceId))
