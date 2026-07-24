@@ -42,6 +42,7 @@ export const KNOWN_CONNECTOR_LOGOS = [
   "intercom",
   "cloudflare",
   "vercel",
+  "zapier",
 ] as const;
 
 export function ConnectorLogo({
@@ -225,6 +226,15 @@ export function ConnectorLogo({
       return (
         <svg {...common}>
           <path fill={fill} d="M12 3.5 21 20H3L12 3.5Z" />
+        </svg>
+      );
+    case "zapier":
+      return (
+        <svg {...common}>
+          <path
+            fill={fill}
+            d="M14.4 12a5.9 5.9 0 0 1-.38 2.08c-.66.24-1.36.37-2.02.37-.67 0-1.37-.13-2.02-.37A5.9 5.9 0 0 1 9.6 12c0-.72.13-1.42.38-2.08A5.9 5.9 0 0 1 12 9.55c.67 0 1.36.13 2.02.37.25.66.38 1.36.38 2.08Zm7.35-1.47h-5.03l3.56-3.56-1.25-1.25-3.56 3.56V3.75h-1.77v5.03l-1.7-1.7-1.86 1.86 1.7 1.7H3.75v1.77h5.03l-3.56 3.56 1.25 1.25 3.56-3.56v5.03h1.77v-5.03l3.56 3.56 1.25-1.25-3.56-3.56h5.03v-1.77Z"
+          />
         </svg>
       );
     default:
