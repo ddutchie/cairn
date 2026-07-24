@@ -28,7 +28,7 @@ export async function executeTool(
   args: ToolArgs,
   emit?: (event: { tool: string; label: string; args: Record<string, unknown>; callId?: string }) => void,
   getWin?: () => BrowserWindow | null,
-  emitDone?: (event: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; output?: string; callId?: string }) => void,
+  emitDone?: (event: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; externalRef?: { url: string; title?: string; snippet?: string }; output?: string; callId?: string }) => void,
   callId?: string,
 ): Promise<unknown> {
   emit?.({ tool: name, label: TOOL_LABELS[name]?.(args) ?? name, args, callId });

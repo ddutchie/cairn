@@ -18,8 +18,10 @@ import type { OpenAIMessage } from "./llm";
 import { TOOLS, type ChatRequest } from "./tools";
 import { executeTool } from "../ipc/chat-executor";
 import { executeExternalTool, isExternalToolName, externalToolLabel } from "./external-tools";
+import { extractExternalRef } from "./external-ref";
 import { iterSseData } from "./sse";
 import { traceTool } from "./tool-trace";
+import { parseToolArgs } from "./parse-tool-args";
 
 export type RunToolLoopResult =
   | { exhausted: true; content: string; reasoning: string }
@@ -45,7 +47,7 @@ export async function runToolLoop(
   getWin?: () => BrowserWindow | null,
   provider?: string,
   onUsage?: (pt: number, ct: number, rt?: number) => void,
-  emitToolCallDone?: (e: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; output?: string; callId?: string }) => void,
+  emitToolCallDone?: (e: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; externalRef?: { url: string; title?: string; snippet?: string }; output?: string; callId?: string }) => void,
   onToken?: (delta: string) => void,
   onThought?: (delta: string) => void,
   extraTools: typeof TOOLS = [],
@@ -250,17 +252,18 @@ export async function runToolLoop(
     for (const call of assistantMsg.tool_calls) {
       let args: Record<string, unknown>;
       let parseError: string | null = null;
-      try {
-        const rawArgs = call.function.arguments?.trim() || "{}";
-        args = JSON.parse(rawArgs) as Record<string, unknown>;
+      const parsed = parseToolArgs(call.function.arguments);
+      if (parsed.ok) {
+        args = parsed.value;
         traceTool("parse", {
           toolName: call.function.name,
           title: typeof args.title === "string" ? args.title : "",
           content: typeof args.content === "string" ? args.content : "",
           rawArguments: call.function.arguments || "",
+          repaired: parsed.repaired ? 1 : 0,
         });
-      } catch (err) {
-        parseError = `Malformed tool-call arguments JSON from model: ${(err as Error).message}`;
+      } else {
+        parseError = parsed.error;
         args = {};
       }
 
@@ -285,7 +288,10 @@ export async function runToolLoop(
           // MCP server / custom service tool — route to the external executor.
           emitToolCall({ tool: call.function.name, label: externalToolLabel(call.function.name, db), args, callId: call.id });
           const output = await executeExternalTool(db, req.workspaceId ?? "", req.projectId ?? "", call.function.name, args);
-          emitToolCallDone?.({ tool: call.function.name, output, callId: call.id });
+          // Surface a linkable artefact (Confluence page, web-search hit, …) from
+          // the vendor-specific output so the UI can render a browser-opening chip.
+          const externalRef = extractExternalRef(output);
+          emitToolCallDone?.({ tool: call.function.name, externalRef, output, callId: call.id });
           result = output;
         } else {
           result = await executeTool(db, req, workspacePath, { baseUrl, model, apiKey, provider: provider as "openai" | "localllm" }, call.function.name, args, emitToolCall, getWin, emitToolCallDone, call.id);

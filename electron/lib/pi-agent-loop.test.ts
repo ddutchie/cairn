@@ -458,7 +458,7 @@ const liveBaseUrl = process.env.TEST_LLM_BASE_URL
 const liveModel   = process.env.TEST_LLM_MODEL   ?? "claude-sonnet-4-6";
 const liveApiKey  = process.env.TEST_LLM_API_KEY  ?? "";
 
-describe.skipIf(!liveBaseUrl)("runAgentLoop — live endpoint", () => {
+describe.skipIf(!liveBaseUrl || process.env.CAIRN_LIVE_TESTS !== "1")("runAgentLoop — live endpoint", () => {
   let db: Database.Database;
 
   beforeEach(() => { db = makeDb(); });

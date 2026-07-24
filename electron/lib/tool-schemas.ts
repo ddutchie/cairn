@@ -86,7 +86,7 @@ export const TOOL_SCHEMAS = {
   // ── Notes ────────────────────────────────────────────────────────────────────
 
   ensure_note: {
-    description: "Create-or-update a note by title+projectId. Idempotent — safe to call repeatedly. Content is optional; if omitted on update, existing content is preserved.",
+    description: "Create-or-update a note by title+projectId. Idempotent — safe to call repeatedly. Content is optional; if omitted on update, existing content is preserved. As a safety guard, an update that would drastically shrink an existing note is rejected unless overwrite:true is set.",
     schema: z.object({
       projectId: sId,
       title:     sStr,
@@ -95,6 +95,7 @@ export const TOOL_SCHEMAS = {
       tagNames:  sTagNames,
       isPinned:  sBoolOpt,
       folder:    sStrOpt.describe("Subfolder path. Empty = project root."),
+      overwrite: sBoolOpt.describe("Set true to allow replacing a note's content with much shorter content (bypasses the accidental-clobber guard)."),
     }),
   },
 

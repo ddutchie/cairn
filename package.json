@@ -7,6 +7,7 @@
   "scripts": {
     "test": "npm run compile && vitest run",
     "test:fast": "vitest run",
+    "test:live": "CAIRN_LIVE_TESTS=1 vitest run",
     "test:unit": "vitest run --project node",
     "test:component": "vitest run --project component",
     "test:watch": "vitest",

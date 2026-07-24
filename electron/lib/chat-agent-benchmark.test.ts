@@ -41,7 +41,7 @@ import {
   updateNote, updateCard, createTag,
 } from "../db/queries";
 import { TOOLS, type ChatRequest } from "./tools";
-import { BASE_URL, MODEL, API_KEY, endpointUp } from "./bench-endpoint";
+import { BASE_URL, MODEL, API_KEY, endpointUp, LIVE_TESTS_ENABLED } from "./bench-endpoint";
 import { runToolLoop } from "./chat-loop";
 import {
   runDispatchLoop, RESEARCH_TOOL_NAMES, WRITE_TOOL_NAMES, type SubagentMetrics,
@@ -271,7 +271,7 @@ describe("chat agent benchmark — tool-array context cost (offline)", () => {
 
 // ── Suite 2: live end-to-end benchmark ───────────────────────────────────────
 
-describe.skipIf(!!process.env.CAIRN_SKIP_LIVE_TESTS)("chat agent benchmark — live end-to-end", () => {
+describe.skipIf(!LIVE_TESTS_ENABLED)("chat agent benchmark — live end-to-end", () => {
   let up = false;
   beforeEach(async () => { up = await endpointUp(); });
 

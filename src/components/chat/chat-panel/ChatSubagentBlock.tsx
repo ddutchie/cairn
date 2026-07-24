@@ -15,11 +15,12 @@ import { prettifyToolLabel } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { MarkdownContent } from "./MarkdownContent";
 import { ContextRing } from "@/components/agent/ContextRing";
-import { CairnRefChip } from "@/components/shared/cairn-ref-chip";
+import { CairnRefChip, ExternalRefChip } from "@/components/shared/cairn-ref-chip";
 import type { ChatSubagent, ChatToolCallRecord } from "@/types";
 
 function SubToolChip({ tc }: { tc: ChatToolCallRecord }) {
   if (tc.cairnRef) return <CairnRefChip toolName={tc.tool} cairnRef={tc.cairnRef} />;
+  if (tc.externalRef) return <ExternalRefChip toolName={tc.tool} externalRef={tc.externalRef} />;
   const running = !tc.output;
   return (
     <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[var(--surface-3)] border border-[var(--border)] w-fit">

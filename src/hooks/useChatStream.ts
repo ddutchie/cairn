@@ -26,6 +26,7 @@ export interface ChatToolCall {
   /** "running" = currently executing; "done" = completed this turn */
   status: "running" | "done";
   cairnRef?: { type: "note" | "task"; id: string; title: string };
+  externalRef?: { url: string; title?: string; snippet?: string };
   callId?: string;
   args?: string;
   output?: string;
@@ -150,7 +151,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
         }
         if (idx === -1) return prev;
         const updated = [...prev];
-        updated[idx] = { ...updated[idx], cairnRef: e.cairnRef, output: e.output };
+        updated[idx] = { ...updated[idx], cairnRef: e.cairnRef, externalRef: e.externalRef, output: e.output };
         toolCallsRef.current = updated;
         return updated;
       });
@@ -219,7 +220,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
           const rev = [...tcs].reverse().findIndex((t) => t.tool === e.tool);
           if (rev !== -1) idx = tcs.length - 1 - rev;
         }
-        if (idx !== -1) tcs[idx] = { ...tcs[idx], cairnRef: e.cairnRef, output: e.output };
+        if (idx !== -1) tcs[idx] = { ...tcs[idx], cairnRef: e.cairnRef, externalRef: e.externalRef, output: e.output };
         return { ...s, toolCalls: tcs };
       });
     });

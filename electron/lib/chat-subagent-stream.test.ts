@@ -17,11 +17,11 @@ import os from "os";
 import path from "path";
 import { applySchema } from "../db/schema";
 import { createWorkspace, createProject, createColumn, createNote } from "../db/queries";
-import { BASE_URL, MODEL, API_KEY, endpointUp } from "./bench-endpoint";
+import { BASE_URL, MODEL, API_KEY, endpointUp, LIVE_TESTS_ENABLED } from "./bench-endpoint";
 import { runDispatchLoop, type SubagentEvents } from "./chat-subagent-loop";
 import type { ChatRequest } from "./tools";
 
-describe.skipIf(!!process.env.CAIRN_SKIP_LIVE_TESTS)("subagent chat streaming (live smoke)", () => {
+describe.skipIf(!LIVE_TESTS_ENABLED)("subagent chat streaming (live smoke)", () => {
   let up = false;
   beforeEach(async () => { up = await endpointUp(); });
 

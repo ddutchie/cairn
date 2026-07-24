@@ -9,20 +9,22 @@ import { ActionsList } from "./ActionsList";
 import { ThinkingPanel } from "./ThinkingPanel";
 import { ChatSubagentBlock } from "./ChatSubagentBlock";
 import { MessageAvatar } from "./message-ui";
-import { CairnRefChip } from "@/components/shared/cairn-ref-chip";
+import { CairnRefChip, ExternalRefChip } from "@/components/shared/cairn-ref-chip";
 import type { ChatMessage, LinkedContextReference, ChatToolCallRecord } from "@/types";
 
 function ChatToolCallChip({ tc }: { tc: ChatToolCallRecord }) {
-  if (!tc.cairnRef) {
-    return (
-      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--surface-2)] border border-[var(--border)] w-fit">
-        <CheckCircle size={10} className="text-[var(--accent)] shrink-0" />
-        <span className="text-[0.786rem] text-[var(--text-secondary)]">{prettifyToolLabel(tc.label)}</span>
-      </div>
-    );
+  if (tc.cairnRef) {
+    return <CairnRefChip toolName={tc.tool} cairnRef={tc.cairnRef} />;
   }
-
-  return <CairnRefChip toolName={tc.tool} cairnRef={tc.cairnRef} />;
+  if (tc.externalRef) {
+    return <ExternalRefChip toolName={tc.tool} externalRef={tc.externalRef} />;
+  }
+  return (
+    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--surface-2)] border border-[var(--border)] w-fit">
+      <CheckCircle size={10} className="text-[var(--accent)] shrink-0" />
+      <span className="text-[0.786rem] text-[var(--text-secondary)]">{prettifyToolLabel(tc.label)}</span>
+    </div>
+  );
 }
 
 interface ChatMessageBubbleProps {

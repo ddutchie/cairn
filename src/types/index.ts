@@ -374,6 +374,13 @@ export interface ChatToolCallRecord {
   tool: string;
   label: string;
   cairnRef?: { type: "note" | "task"; id: ID; title: string };
+  /**
+   * A linkable external artefact extracted from an MCP-server / custom-service
+   * tool result (a Confluence page, web-search hit, GitHub PR, …). Rendered as a
+   * browser-opening chip. Absent for native tools (which use `cairnRef`) and for
+   * results with no usable http(s) URL.
+   */
+  externalRef?: { url: string; title?: string; snippet?: string };
   callId?: string;
   args?: string;      // JSON arguments string
   output?: string;    // JSON output string
