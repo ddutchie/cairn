@@ -206,6 +206,79 @@ export interface ToolAttachment {
 /** Sentinel projectId for workspace-global ("always-on") attachments. */
 export const GLOBAL_TOOL_SCOPE = "__global__";
 
+// ── Community registry (cairn-community) ───────────────────────────────────
+// Mirrors the manifest published at
+// https://github.com/ddutchie/cairn-community (manifest.json). Fetched at
+// runtime; each entry's `definition` is the install-relevant subset of a
+// McpServerConfig / CustomServiceConfig — id/workspaceId/timestamps are assigned
+// locally on install.
+
+/** The install-relevant subset of McpServerConfig carried by a registry entry. */
+export interface RegistryMcpDefinition {
+  name: string;
+  description?: string;
+  transport: "sse" | "http";
+  baseUrl: string;
+  headers?: Record<string, string>;
+  authMode?: "none" | "oauth";
+  oauthScope?: string;
+  disabledTools?: string[];
+  enabled: boolean;
+}
+
+/** The install-relevant subset of CustomServiceConfig carried by a registry entry. */
+export interface RegistryServiceDefinition {
+  name: string;
+  description?: string;
+  apiUrl: string;
+  method: "GET" | "POST" | "PUT" | "DELETE";
+  headers?: Record<string, string>;
+  toolDefinition: string;
+  responseKeys?: string[];
+  apiKeyUrl?: string;
+  enabled: boolean;
+}
+
+/** Registry metadata common to every catalog entry (shown on the browse card). */
+export interface RegistryEntryMeta {
+  author: string;
+  /** SemVer of THIS entry — bump drives the "update available" badge. */
+  version: string;
+  tags: string[];
+  blurb: string;
+  /** Stable logo id mapped to a bundled SVG by ConnectorLogo; "" = fallback. */
+  logo?: string;
+  brandColor?: string;
+  homepage?: string;
+}
+
+export interface RegistryMcpEntry extends RegistryEntryMeta {
+  definition: RegistryMcpDefinition;
+}
+
+export interface RegistryServiceEntry extends RegistryEntryMeta {
+  definition: RegistryServiceDefinition;
+}
+
+/** The parsed cairn-community manifest. */
+export interface CommunityManifest {
+  version: number;
+  updatedAt: string;
+  mcpServers: RegistryMcpEntry[];
+  services: RegistryServiceEntry[];
+}
+
+/** Result of a registry fetch — the manifest plus cache provenance. */
+export interface RegistryFetchResult {
+  manifest: CommunityManifest;
+  /** true when served from the local cache (offline / 304 Not Modified). */
+  fromCache: boolean;
+  /** ISO time the cache was last populated from the network. */
+  cachedAt?: string;
+  /** Set when the network fetch failed and no cache was available. */
+  error?: string;
+}
+
 // ── Chat ──────────────────────────────────────
 export type ChatThreadScope = "workspace" | "project";
 

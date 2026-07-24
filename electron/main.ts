@@ -23,6 +23,7 @@ import { registerIpcHandlers, registerAppHandlers } from "./ipc/handlers";
 import { registerAgentHandlers } from "./ipc/agent";
 import { registerToolsHandlers } from "./ipc/tools";
 import { registerToolBuilderHandlers } from "./ipc/tool-builder";
+import { registerCommunityRegistryHandlers } from "./ipc/community-registry-handlers";
 import { registerGitHandlers } from "./ipc/git";
 import { registerPiAgentHandler } from "./ipc/pi-agent";
 import { readWorkspaceConfig, getDbPathForWorkspace } from "./workspace-config";
@@ -253,6 +254,7 @@ app.whenReady().then(async () => {
   registerAgentHandlers(ctx.db);
   registerToolsHandlers(ctx.db);
   registerToolBuilderHandlers(ctx.db, ctx.getWin);
+  registerCommunityRegistryHandlers();
   registerGitHandlers(ctx.db);
   registerPiAgentHandler(ctx);
   registerChatPopoutHandlers();
