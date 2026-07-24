@@ -82,9 +82,16 @@ describe("parseOAuthCallback", () => {
     expect(parseOAuthCallback("cairn:///deep/oauth/callback?code=a&state=b")).toBeNull();
   });
 
-  it("rejects missing code or state", () => {
-    expect(parseOAuthCallback("cairn://oauth/callback?code=a")).toBeNull();
+  it("rejects missing code", () => {
+    expect(parseOAuthCallback("cairn://oauth/callback?code=a")).toEqual({ code: "a", state: "" });
     expect(parseOAuthCallback("cairn://oauth/callback?state=b")).toBeNull();
+  });
+
+  it("accepts an empty/missing state (state is optional in OAuth 2.1)", () => {
+    // Observed with Tavily: the MCP SDK's auth() flow can omit `state`, so the
+    // provider echoes back `state=` empty. `code` is the only required param.
+    expect(parseOAuthCallback("cairn://oauth/callback?code=abc&state=")).toEqual({ code: "abc", state: "" });
+    expect(parseOAuthCallback("cairn://oauth/callback?code=abc")).toEqual({ code: "abc", state: "" });
   });
 
   it("rejects non-cairn / garbage", () => {

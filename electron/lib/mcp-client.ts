@@ -24,75 +24,25 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { resolveSecrets } from "./secure-store";
 import { isOAuthServer, makeProvider } from "./mcp-oauth";
+// Pure namespacing + shape conversion now live in shared so desktop + mobile
+// namespace/convert/stringify identically. Re-exported below for existing
+// callers (electron/mcp/tools, agent loop) that import them from this module.
+import {
+  namespaceToolName,
+  parseToolName,
+  isMcpToolName,
+  mcpToolsToOpenAI,
+  stringifyToolResult,
+  type OpenAIToolDef,
+  type McpToolDef,
+} from "../../shared/chat/mcp-namespace";
 
-/** Namespacing prefix so MCP tools never collide with built-ins or each other. */
-const NS_PREFIX = "mcp__";
-const NS_SEP = "__";
+export { namespaceToolName, parseToolName, isMcpToolName, mcpToolsToOpenAI };
+export type { OpenAIToolDef };
 
 const CONNECT_TIMEOUT_MS = 15_000;
 const CALL_TIMEOUT_MS = 60_000;
 const IDLE_TIMEOUT_MS = 5 * 60_000;
-
-// ── Pure helpers (unit-testable) ─────────────────────────────────────────────
-
-/** Build the namespaced tool name exposed to the model. */
-export function namespaceToolName(serverId: string, toolName: string): string {
-  return `${NS_PREFIX}${serverId}${NS_SEP}${toolName}`;
-}
-
-/**
- * Parse a namespaced tool name back into { serverId, toolName }. Returns null if
- * the name is not an MCP-namespaced name (so callers can fall through to other
- * tool sources).
- */
-export function parseToolName(namespaced: string): { serverId: string; toolName: string } | null {
-  if (!namespaced.startsWith(NS_PREFIX)) return null;
-  const rest = namespaced.slice(NS_PREFIX.length);
-  const sep = rest.indexOf(NS_SEP);
-  if (sep <= 0 || sep >= rest.length - NS_SEP.length) return null;
-  return {
-    serverId: rest.slice(0, sep),
-    toolName: rest.slice(sep + NS_SEP.length),
-  };
-}
-
-/** True if a tool name belongs to an MCP server (vs a built-in or service). */
-export function isMcpToolName(name: string): boolean {
-  return name.startsWith(NS_PREFIX);
-}
-
-/** OpenAI function-calling tool definition shape. */
-export interface OpenAIToolDef {
-  type: "function";
-  function: {
-    name: string;
-    description: string;
-    parameters: Record<string, unknown>;
-  };
-}
-
-/** Minimal shape of an MCP tool definition as returned by listTools(). */
-interface McpToolDef {
-  name: string;
-  description?: string;
-  inputSchema?: Record<string, unknown>;
-}
-
-/**
- * Convert a server's MCP tool list into namespaced OpenAI function defs. Tools
- * with no input schema get an empty-object schema (the model still must call
- * with `{}`).
- */
-export function mcpToolsToOpenAI(serverId: string, tools: McpToolDef[]): OpenAIToolDef[] {
-  return tools.map((t) => ({
-    type: "function" as const,
-    function: {
-      name: namespaceToolName(serverId, t.name),
-      description: t.description ?? "",
-      parameters: t.inputSchema ?? { type: "object", properties: {} },
-    },
-  }));
-}
 
 // ── Server config (subset of McpServerConfig from src/types) ─────────────────
 
@@ -321,14 +271,4 @@ export async function testConnection(
   } finally {
     await dispose(cfg.id);
   }
-}
-
-/** Collapse an MCP CallToolResult content array into a single string. */
-function stringifyToolResult(res: unknown): string {
-  const r = res as { content?: Array<{ type?: string; text?: string }>; isError?: boolean };
-  if (!r || !Array.isArray(r.content)) return JSON.stringify(res);
-  const text = r.content
-    .map((c) => (c.type === "text" && typeof c.text === "string" ? c.text : JSON.stringify(c)))
-    .join("\n");
-  return r.isError ? `Error: ${text}` : text;
 }

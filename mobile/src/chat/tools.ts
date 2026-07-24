@@ -10,9 +10,11 @@
 import * as q from "@/db/queries";
 import { semanticSearch, semanticSearchTasks, catchUpIndex, finalizeRanking, type SemanticHit } from "@/notes/embeddings";
 import { isAppleEmbeddingsSupported } from "@modules/apple-embeddings";
-import { webSearch, webExtract } from "./web-tools";
 import { serviceToolDefs } from "./services";
 import { isToolEnabled } from "./tool-toggles";
+import { getCachedMcpToolDefs, getInstalledMcpServer, toRuntimeConfig } from "./mcp-store";
+import * as mcpClient from "./mcp-client";
+import { parseToolName } from "@cairn/shared/chat/mcp-namespace";
 
 export interface ToolDef {
   name: string;
@@ -352,22 +354,6 @@ export const TOOLS: ToolDef[] = [
     ),
     run: (a) => q.tagTask(str(a.card_id), strArray(a.tag_names), tagMode(a.mode)),
   },
-  {
-    name: "web_search",
-    description:
-      "Search the live web for CURRENT or external information the user's notes/tasks can't answer — news, docs, facts, product info, anything post-training. Returns a compact list of { title, url, snippet }. Use web_extract on a returned url to read a page in full. Requires a web-search API key configured in AI settings.",
-    params: '{ "query": string, "count"?: number }',
-    jsonSchema: obj({ query: S, count: { type: "number" } }, ["query"]),
-    run: (a) => webSearch(str(a.query), typeof a.count === "number" ? a.count : undefined),
-  },
-  {
-    name: "web_extract",
-    description:
-      "Read the full cleaned content (markdown) of a single web page by URL — use after web_search to dig into a result, or when the user gives a link to summarise. Content is truncated to stay within context. Requires a Tavily API key (page extraction isn't available with Brave).",
-    params: '{ "url": string }',
-    jsonSchema: obj({ url: S }, ["url"]),
-    run: (a) => webExtract(str(a.url)),
-  },
 ];
 
 export const TOOL_MAP = new Map(TOOLS.map((t) => [t.name, t]));
@@ -399,21 +385,51 @@ export const WRITE_TOOL_NAMES = new Set<string>([
 
 /**
  * The FULL tool set exposed to the agent: the built-in TOOLS (ALWAYS on) plus
- * any installed community `service` tools that are enabled.
+ * any installed community `service` tools AND installed MCP-server tools that
+ * are enabled.
  *
  * Built-in tools are never toggled off — they ARE the assistant (turning off
  * e.g. get_cairn_context or search_notes would silently break it), and this
  * matches desktop, where the tool gating only ever applies to external MCP
- * servers / HTTP services, never Cairn's own tools. Only installed services are
- * subject to the per-tool toggle map (default ON; a user switches one off).
+ * servers / HTTP services, never Cairn's own tools. Installed services + MCP
+ * tools are subject to the per-tool toggle map (default ON).
  *
- * Recomputed on each call (cheap) so a just-installed service or a flipped
- * toggle takes effect on the very next agent run — no app restart. Installed
- * services are namespaced so they can't collide with built-ins.
+ * MCP tool defs are read from the SYNCHRONOUS meta-DB cache (populated by
+ * mcp-store on connect / Settings-open) — discovery is a network call, so the
+ * model-facing list uses the last-known tools; execution reconnects as needed.
+ *
+ * Recomputed on each call (cheap) so a just-installed service/server or a flipped
+ * toggle takes effect on the very next agent run — no app restart. Service + MCP
+ * tools are namespaced so they can't collide with built-ins or each other.
  */
 export function allTools(): ToolDef[] {
   const services = serviceToolDefs().filter((t) => isToolEnabled(t.name));
-  return [...TOOLS, ...services];
+  const mcp = mcpToolDefs().filter((t) => isToolEnabled(t.name));
+  return [...TOOLS, ...services, ...mcp];
+}
+
+/**
+ * Cached MCP tool defs (from mcp-store) adapted to the mobile ToolDef shape. The
+ * `run` routes the namespaced call to the owning server via mcp-client.callTool.
+ */
+function mcpToolDefs(): ToolDef[] {
+  return getCachedMcpToolDefs().map((def) => ({
+    name: def.function.name,
+    description: def.function.description,
+    params: JSON.stringify(def.function.parameters),
+    jsonSchema: def.function.parameters,
+    run: async (args: Record<string, unknown>) => {
+      const parsed = parseToolName(def.function.name);
+      const server = parsed ? getInstalledMcpServer(parsed.serverId) : undefined;
+      if (!parsed || !server) {
+        return { error: `MCP server for ${def.function.name} is not installed.` };
+      }
+      // callTool returns a string (text result or an error string); wrap so the
+      // agent serialises it consistently with other tools.
+      const text = await mcpClient.callTool(toRuntimeConfig(server), def.function.name, args);
+      return text;
+    },
+  }));
 }
 
 /** Name→ToolDef map over allTools() (built-ins + enabled services). */

@@ -1,4 +1,8 @@
 import { useEffect, useState } from "react";
+// Install the WebCrypto shim (crypto.getRandomValues + subtle.digest via
+// expo-crypto) BEFORE anything else, so the MCP OAuth PKCE path has it. Side-
+// effect import; must stay at the very top.
+import "@/chat/crypto-polyfill";
 import { Stack, ThemeProvider, DarkTheme, DefaultTheme } from "expo-router";
 import { View, Text, ActivityIndicator, StyleSheet, useColorScheme } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";

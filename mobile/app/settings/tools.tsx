@@ -11,7 +11,7 @@ import {
   Linking,
 } from "react-native";
 import { Stack, useRouter } from "expo-router";
-import { RefreshCw, Plus, Trash2, ExternalLink, Wrench, ChevronRight, ChevronDown } from "lucide-react-native";
+import { RefreshCw, Plus, Trash2, ExternalLink, Wrench, ChevronRight, ChevronDown, LogIn, LogOut } from "lucide-react-native";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 import { haptics, toolbarPress } from "@/haptics";
 import { ICON_CHECK } from "@/components/toolbar-icons";
@@ -23,10 +23,21 @@ import {
   isServiceInstalled,
   type InstalledService,
 } from "@/chat/services";
+import {
+  listInstalledMcpServers,
+  installMcpServer,
+  uninstallMcpServer,
+  isMcpServerInstalled,
+  refreshServerTools,
+  getCachedMcpToolDefsForServer,
+  type InstalledMcpServer,
+} from "@/chat/mcp-store";
+import { startAuth, signOut, hasTokens, type OAuthServerConfig } from "@/chat/mcp-oauth";
 import { TOOLS, WRITE_TOOL_NAMES, type ToolDef } from "@/chat/tools";
 import { getToggleMap, setToolEnabled } from "@/chat/tool-toggles";
 import { namespaceServiceTool, parseToolDefinition } from "@cairn/shared/chat/service-exec";
-import type { RegistryServiceEntry } from "@cairn/shared/chat/registry-schema";
+import type { RegistryServiceEntry, RegistryMcpEntry } from "@cairn/shared/chat/registry-schema";
+import { ConnectorLogo } from "@/components/ConnectorLogo";
 
 /**
  * Tools & Services settings — the mobile side of the community registry (Track
@@ -54,24 +65,39 @@ export default function ToolsSettingsScreen() {
   const router = useRouter();
 
   const [installed, setInstalled] = useState<InstalledService[]>(() => listInstalledServices());
+  const [installedMcp, setInstalledMcp] = useState<InstalledMcpServer[]>(() => listInstalledMcpServers());
   const [services, setServices] = useState<RegistryServiceEntry[]>(() => getCachedManifest()?.services ?? []);
+  const [mcpEntries, setMcpEntries] = useState<RegistryMcpEntry[]>(() => getCachedManifest()?.mcpServers ?? []);
   const [toggles, setToggles] = useState<Record<string, boolean>>(() => getToggleMap());
+  const [connected, setConnected] = useState<Record<string, boolean>>({});
+  const [busyId, setBusyId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Built-in tools are collapsed by default so the screen stays compact — the
   // list is long and informational, not something you act on often.
   const [builtinsOpen, setBuiltinsOpen] = useState(false);
+  // Which installed MCP server's tool list is expanded (one at a time).
+  const [expandedMcp, setExpandedMcp] = useState<string | null>(null);
 
   const reloadLocal = useCallback(() => {
     setInstalled(listInstalledServices());
+    setInstalledMcp(listInstalledMcpServers());
     setToggles(getToggleMap());
+  }, []);
+
+  // Refresh the per-OAuth-server connected (has-tokens) map for the badges.
+  const refreshConnected = useCallback(async () => {
+    const servers = listInstalledMcpServers().filter((s) => s.authMode === "oauth");
+    const entries = await Promise.all(servers.map(async (s) => [s.id, await hasTokens(s.id)] as const));
+    setConnected(Object.fromEntries(entries));
   }, []);
 
   const loadRegistry = useCallback(
     async (force: boolean) => {
       const { manifest, error: err } = await fetchManifest(force);
       setServices(manifest?.services ?? []);
+      setMcpEntries(manifest?.mcpServers ?? []);
       setError(err ?? null);
     },
     [],
@@ -90,10 +116,11 @@ export default function ToolsSettingsScreen() {
     loadRegistry(false).finally(() => {
       if (!cancelled) setLoading(false);
     });
+    void refreshConnected();
     return () => {
       cancelled = true;
     };
-  }, [loadRegistry]);
+  }, [loadRegistry, refreshConnected]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -113,6 +140,109 @@ export default function ToolsSettingsScreen() {
     haptics.selection();
     setToolEnabled(name, next);
     setToggles(getToggleMap());
+  }, []);
+
+  // ── MCP servers ─────────────────────────────────────────────────────────────
+
+  const oauthCfg = (s: InstalledMcpServer): OAuthServerConfig => ({
+    id: s.id,
+    serverUrl: s.baseUrl,
+    scope: s.oauthScope,
+  });
+
+  /** Sign in to an OAuth MCP server (deep-link browser flow), then cache tools. */
+  const onConnect = useCallback(
+    async (s: InstalledMcpServer) => {
+      setBusyId(s.id);
+      try {
+        const res = await startAuth(oauthCfg(s), s.name);
+        if (res.status === "error") {
+          Alert.alert("Sign-in failed", res.error);
+        } else if (res.status === "authorized") {
+          haptics.success();
+          await refreshServerTools(s.id).catch(() => null);
+        }
+        // "cancelled" → no-op.
+      } finally {
+        setBusyId(null);
+        await refreshConnected();
+      }
+    },
+    [refreshConnected],
+  );
+
+  const onSignOut = useCallback(
+    (s: InstalledMcpServer) => {
+      Alert.alert(`Sign out of ${s.name}?`, "Cairn will forget this server's tokens on this device.", [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Sign out",
+          style: "destructive",
+          onPress: async () => {
+            await signOut(s.id);
+            haptics.success();
+            await refreshConnected();
+          },
+        },
+      ]);
+    },
+    [refreshConnected],
+  );
+
+  /** Install an MCP server from the registry; auto-start OAuth for oauth servers. */
+  const onInstallMcp = useCallback(
+    async (entry: RegistryMcpEntry) => {
+      if (entry.definition.transport !== "http") {
+        Alert.alert("Not supported", "Only streamable-HTTP MCP servers work on mobile right now.");
+        return;
+      }
+      installMcpServer(entry);
+      reloadLocal();
+      const server = listInstalledMcpServers().find((s) => s.id === entry.id);
+      if (server && server.authMode === "oauth") {
+        await onConnect(server);
+      } else if (server) {
+        // No-auth (or API-key header) server: discover tools immediately.
+        setBusyId(server.id);
+        try {
+          await refreshServerTools(server.id).catch(() => null);
+        } finally {
+          setBusyId(null);
+        }
+      }
+    },
+    [reloadLocal, onConnect],
+  );
+
+  const onUninstallMcp = useCallback(
+    (s: InstalledMcpServer) => {
+      Alert.alert(`Remove ${s.name}?`, "This disconnects the server and forgets its tokens on this device.", [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: async () => {
+            await uninstallMcpServer(s.id);
+            haptics.success();
+            reloadLocal();
+            await refreshConnected();
+          },
+        },
+      ]);
+    },
+    [reloadLocal, refreshConnected],
+  );
+
+  /** Manually re-discover a server's tools (refresh the cached list). */
+  const onRefreshServer = useCallback(async (id: string) => {
+    setBusyId(`refresh:${id}`);
+    try {
+      await refreshServerTools(id).catch(() => null);
+      // Nudge a re-render so the freshly-cached tools appear.
+      setToggles(getToggleMap());
+    } finally {
+      setBusyId(null);
+    }
   }, []);
 
   const onInstall = useCallback(
@@ -173,6 +303,10 @@ export default function ToolsSettingsScreen() {
     () => services.filter((s) => !isServiceInstalled(s.id)),
     [services, installed], // eslint-disable-line react-hooks/exhaustive-deps
   );
+  const browsableMcp = useMemo(
+    () => mcpEntries.filter((s) => !isMcpServerInstalled(s.id)),
+    [mcpEntries, installedMcp], // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
   const renderBuiltinGroup = (label: string, tools: ToolDef[]) => (
     <View style={styles.builtinGroup}>
@@ -211,6 +345,7 @@ export default function ToolsSettingsScreen() {
                 const name = serviceToolName(svc);
                 return (
                   <View key={svc.id} style={styles.row}>
+                    <ConnectorLogo iconSvg={svc.iconSvg} kind="service" color={svc.brandColor} size={22} />
                     <View style={styles.rowMain}>
                       <Text style={styles.rowTitle}>{svc.name}</Text>
                       {!!svc.blurb && <Text style={styles.rowSub} numberOfLines={2}>{svc.blurb}</Text>}
@@ -223,6 +358,111 @@ export default function ToolsSettingsScreen() {
                     <Pressable onPress={() => onUninstall(svc)} hitSlop={8} style={styles.iconBtn}>
                       <Trash2 size={18} color={t.danger} />
                     </Pressable>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+
+          {/* 1b. Installed MCP servers (connect/sign-out for OAuth; uninstall) */}
+          {installedMcp.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionLabel}>MCP servers</Text>
+              {installedMcp.map((s) => {
+                const isOAuth = s.authMode === "oauth";
+                const isConnected = connected[s.id] === true;
+                const busy = busyId === s.id;
+                const tools = getCachedMcpToolDefsForServer(s.id);
+                const open = expandedMcp === s.id;
+                return (
+                  <View key={s.id} style={styles.mcpCard}>
+                    <View style={styles.mcpHeader}>
+                      <ConnectorLogo iconSvg={s.iconSvg} kind="mcp" color={s.brandColor} size={22} />
+                      <View style={styles.rowMain}>
+                        <Text style={styles.rowTitle}>{s.name}</Text>
+                        {!!s.blurb && <Text style={styles.rowSub} numberOfLines={2}>{s.blurb}</Text>}
+                        {isOAuth && (
+                          <Text style={[styles.statusText, { color: isConnected ? t.success : t.textTertiary }]}>
+                            {isConnected ? "Connected" : "Not connected"}
+                          </Text>
+                        )}
+                      </View>
+                      {busy ? (
+                        <ActivityIndicator color={t.accent} />
+                      ) : isOAuth ? (
+                        <Pressable
+                          onPress={() => (isConnected ? onSignOut(s) : void onConnect(s))}
+                          style={styles.iconBtn}
+                          hitSlop={8}
+                        >
+                          {isConnected ? (
+                            <LogOut size={18} color={t.textSecondary} />
+                          ) : (
+                            <LogIn size={18} color={t.accent} />
+                          )}
+                        </Pressable>
+                      ) : null}
+                      <Pressable onPress={() => onUninstallMcp(s)} hitSlop={8} style={styles.iconBtn}>
+                        <Trash2 size={18} color={t.danger} />
+                      </Pressable>
+                    </View>
+
+                    {/* Per-server tool manager: expand to toggle individual tools. */}
+                    <View style={styles.mcpToolsBar}>
+                      <Pressable
+                        style={styles.mcpToolsToggle}
+                        onPress={() => {
+                          haptics.selection();
+                          setExpandedMcp((cur) => (cur === s.id ? null : s.id));
+                        }}
+                        hitSlop={6}
+                      >
+                        {open ? (
+                          <ChevronDown size={14} color={t.textSecondary} />
+                        ) : (
+                          <ChevronRight size={14} color={t.textSecondary} />
+                        )}
+                        <Text style={styles.mcpToolsLabel}>
+                          {tools.length === 0 ? "No tools discovered yet" : `${tools.length} tools`}
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => void onRefreshServer(s.id)}
+                        hitSlop={8}
+                        disabled={busyId === `refresh:${s.id}`}
+                        style={styles.iconBtn}
+                      >
+                        {busyId === `refresh:${s.id}` ? (
+                          <ActivityIndicator color={t.textSecondary} size="small" />
+                        ) : (
+                          <RefreshCw size={14} color={t.textSecondary} />
+                        )}
+                      </Pressable>
+                    </View>
+
+                    {open &&
+                      tools.map((def) => {
+                        const name = def.function.name;
+                        // Show the un-namespaced tool name (after mcp__<id>__).
+                        const short = name.split("__").slice(2).join("__") || name;
+                        return (
+                          <View key={name} style={styles.mcpToolRow}>
+                            <View style={styles.rowMain}>
+                              <Text style={styles.mcpToolName}>{short}</Text>
+                              {!!def.function.description && (
+                                <Text style={styles.builtinDesc} numberOfLines={2}>
+                                  {def.function.description}
+                                </Text>
+                              )}
+                            </View>
+                            <Switch
+                              value={toggles[name] !== false}
+                              onValueChange={(v) => onToggleService(name, v)}
+                              trackColor={{ true: t.accent, false: t.border }}
+                            />
+                          </View>
+                        );
+                      })}
                   </View>
                 );
               })}
@@ -273,6 +513,7 @@ export default function ToolsSettingsScreen() {
                 const oauth = entry.definition.authMode === "oauth";
                 return (
                   <View key={entry.id} style={styles.row}>
+                    <ConnectorLogo iconSvg={entry.iconSvg} kind="service" color={entry.brandColor} size={22} />
                     <View style={styles.rowMain}>
                       <Text style={styles.rowTitle}>{entry.definition.name}</Text>
                       <Text style={styles.rowSub} numberOfLines={2}>{entry.blurb}</Text>
@@ -303,10 +544,66 @@ export default function ToolsSettingsScreen() {
             )}
           </View>
 
+          {/* 4. Add an MCP server (OAuth supported via deep-link sign-in) */}
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>Add an MCP server</Text>
+            {browsableMcp.length === 0 ? (
+              <Text style={styles.sectionHint}>No new MCP servers to add.</Text>
+            ) : (
+              <>
+                <Text style={styles.sectionHint}>
+                  Some providers only allow sign-in from a desktop browser and will reject the
+                  mobile connection — connect those in the desktop app instead.
+                </Text>
+                {browsableMcp.map((entry) => {
+                 const httpOk = entry.definition.transport === "http";
+                 const oauth = entry.definition.authMode === "oauth";
+                return (
+                  <View key={entry.id} style={styles.row}>
+                    <ConnectorLogo iconSvg={entry.iconSvg} kind="mcp" color={entry.brandColor} size={22} />
+                    <View style={styles.rowMain}>
+                      <Text style={styles.rowTitle}>{entry.definition.name}</Text>
+                      <Text style={styles.rowSub} numberOfLines={2}>{entry.blurb}</Text>
+                      {!httpOk && <Text style={styles.statusText}>SSE transport not supported on mobile</Text>}
+                      {!!entry.homepage && (
+                        <Pressable
+                          onPress={() => entry.homepage && Linking.openURL(entry.homepage)}
+                          style={styles.linkRow}
+                          hitSlop={6}
+                        >
+                          <ExternalLink size={12} color={t.textTertiary} />
+                          <Text style={styles.linkText}>Learn more</Text>
+                        </Pressable>
+                      )}
+                    </View>
+                    <Pressable
+                      onPress={() => void onInstallMcp(entry)}
+                      disabled={!httpOk || busyId === entry.id}
+                      style={[styles.addBtn, !httpOk && styles.addBtnDisabled]}
+                      hitSlop={6}
+                    >
+                      {busyId === entry.id ? (
+                        <ActivityIndicator color={t.accentFg} />
+                      ) : (
+                        <>
+                          <Plus size={14} color={httpOk ? t.accentFg : t.textTertiary} />
+                          <Text style={[styles.addBtnText, !httpOk && styles.addBtnTextDisabled]}>
+                            {oauth ? "Connect" : "Add"}
+                          </Text>
+                        </>
+                      )}
+                    </Pressable>
+                  </View>
+                );
+                })}
+              </>
+            )}
+          </View>
+
           <View style={styles.footer}>
             <Wrench size={12} color={t.textTertiary} />
             <Text style={styles.footerText}>
-              Services and toggles are stored on this device only and never sync.
+              Services, servers, and toggles are stored on this device only and never sync.
             </Text>
           </View>
         </ScrollView>
@@ -355,6 +652,40 @@ function makeStyles(t: Theme) {
     addBtnText: { ...typeScale.label, color: t.accentFg },
     addBtnTextDisabled: { color: t.textTertiary },
     errorText: { ...typeScale.caption, color: t.danger },
+    statusText: { ...typeScale.micro, color: t.textTertiary, marginTop: 2 },
+    // MCP server card: header + collapsible per-tool manager.
+    mcpCard: {
+      backgroundColor: t.surface2,
+      borderWidth: 1,
+      borderColor: t.border,
+      borderRadius: 12,
+      paddingVertical: 10,
+      paddingHorizontal: 12,
+      gap: 8,
+    },
+    mcpHeader: { flexDirection: "row", alignItems: "center", gap: 12 },
+    mcpToolsBar: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      borderTopWidth: 1,
+      borderTopColor: t.border,
+      paddingTop: 8,
+    },
+    mcpToolsToggle: { flexDirection: "row", alignItems: "center", gap: 6, flex: 1 },
+    mcpToolsLabel: { ...typeScale.micro, color: t.textSecondary },
+    mcpToolRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+      backgroundColor: t.surface,
+      borderWidth: 1,
+      borderColor: t.border,
+      borderRadius: 10,
+      paddingVertical: 8,
+      paddingHorizontal: 10,
+    },
+    mcpToolName: { ...typeScale.label, color: t.textPrimary },
     // Built-in disclosure
     disclosureHead: { flexDirection: "row", alignItems: "center", gap: 6 },
     disclosureTitle: { ...typeScale.overline, color: t.textTertiary },
@@ -369,7 +700,7 @@ function makeStyles(t: Theme) {
       paddingVertical: 1,
       overflow: "hidden",
     },
-    builtinGroup: { gap: 2, marginTop: 4 },
+    builtinGroup: { gap: 6, marginTop: 4 },
     builtinGroupLabel: { ...typeScale.micro, color: t.textTertiary, marginTop: 4, marginBottom: 2 },
     builtinRow: {
       backgroundColor: t.surface2,

@@ -3,7 +3,7 @@
  * `service` connectors (Track 2). An installed service is a stored HTTP call
  * definition that the chat agent can invoke as a namespaced tool.
  *
- * Storage split (mirrors web-config.ts):
+  * Storage split (non-secret config in the meta DB, secrets in the keychain):
  *   - The non-secret definition lives in the DEVICE-GLOBAL meta DB
  *     (getMeta/setMeta) as a JSON array — local-only, never synced, so an
  *     installed service is available in EVERY workspace/project on this device.
@@ -46,6 +46,8 @@ export interface InstalledService {
   id: string; // registry entry id (namespacing key)
   name: string; // display name
   blurb?: string;
+  iconSvg?: string; // brand logo markup (registry, CI-sanitized) for ConnectorLogo
+  brandColor?: string;
   definition: RegistryServiceEntry["definition"];
 }
 
@@ -96,6 +98,8 @@ export async function installService(entry: RegistryServiceEntry, apiKey: string
     id: entry.id,
     name: entry.definition.name || entry.id,
     blurb: entry.blurb,
+    iconSvg: entry.iconSvg,
+    brandColor: entry.brandColor,
     definition: entry.definition,
   };
   const list = listInstalledServices().filter((s) => s.id !== entry.id);

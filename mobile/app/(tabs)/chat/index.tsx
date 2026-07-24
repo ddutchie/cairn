@@ -138,6 +138,12 @@ export default function ChatScreen() {
         } else if (e.type === "reasoning-delta" && e.delta) {
           reasoningAcc += e.delta;
           patchAssistant({ reasoning: reasoningAcc });
+        } else if (e.type === "tool-start" && e.tool) {
+          // Show a "running" chip immediately so slow tools (MCP / web search)
+          // aren't invisible until they finish.
+          toolTrail.push({ tool: e.tool, ok: true, id: e.toolCallId, running: true });
+          patchAssistant({ tools: [...toolTrail] });
+          haptics.impact(); // agent started a tool
         } else if (e.type === "tool" && e.tool) {
           const ok = !(e.result && typeof e.result === "object" && "error" in (e.result as object));
           // A note/card ref opens in-app; otherwise try for a linkable external
@@ -146,7 +152,12 @@ export default function ChatScreen() {
           const externalRef = ref
             ? undefined
             : extractExternalRef(typeof e.result === "string" ? e.result : JSON.stringify(e.result ?? null));
-          toolTrail.push({ tool: e.tool, ok, ref, externalRef });
+          // Finalize the matching "running" chip in place (by tool-call id);
+          // fall back to appending if no start was seen (provider-ran tools).
+          const idx = e.toolCallId ? toolTrail.findIndex((c) => c.id === e.toolCallId && c.running) : -1;
+          const finalized = { tool: e.tool, ok, id: e.toolCallId, running: false, ref, externalRef };
+          if (idx >= 0) toolTrail[idx] = finalized;
+          else toolTrail.push(finalized);
           patchAssistant({ tools: [...toolTrail] });
           haptics.impact(); // agent ran a tool
         } else if (e.type === "final" && e.usage) {

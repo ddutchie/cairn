@@ -28,6 +28,14 @@ module.exports = [
       // Reanimated API works (it's not a React prop/hook value). Off for RN.
       "react-hooks/immutability": "off",
 
+      // The MCP SDK ships subpath entry points via package.json "exports" with
+      // .js specifiers (e.g. @modelcontextprotocol/sdk/client/streamableHttp.js).
+      // Metro (unstable_enablePackageExports) and tsc both resolve these, but
+      // eslint-plugin-import's resolver doesn't read the exports map, so it false-
+      // positives on no-unresolved. Ignore that one package rather than weaken the
+      // rule globally.
+      "import/no-unresolved": ["error", { ignore: ["^@modelcontextprotocol/sdk/"] }],
+
       // Fires on well-established patterns like seeding a controlled input when
       // a modal opens or restoring state on mount. These are correct uses of
       // useEffect — downgrade to warn (matches the repo-root web config).
