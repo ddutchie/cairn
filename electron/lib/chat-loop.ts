@@ -19,6 +19,7 @@ import { TOOLS, type ChatRequest } from "./tools";
 import { executeTool } from "../ipc/chat-executor";
 import { executeExternalTool, isExternalToolName, externalToolLabel } from "./external-tools";
 import { extractExternalRef } from "./external-ref";
+import { toolResultError } from "./tool-result";
 import { iterSseData } from "./sse";
 import { traceTool } from "./tool-trace";
 import { parseToolArgs } from "./parse-tool-args";
@@ -47,7 +48,7 @@ export async function runToolLoop(
   getWin?: () => BrowserWindow | null,
   provider?: string,
   onUsage?: (pt: number, ct: number, rt?: number) => void,
-  emitToolCallDone?: (e: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; externalRef?: { url: string; title?: string; snippet?: string }; output?: string; callId?: string }) => void,
+  emitToolCallDone?: (e: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; externalRef?: { url: string; title?: string; snippet?: string }; output?: string; callId?: string; ok?: boolean; error?: string }) => void,
   onToken?: (delta: string) => void,
   onThought?: (delta: string) => void,
   extraTools: typeof TOOLS = [],
@@ -272,7 +273,7 @@ export async function runToolLoop(
       // a tool with destructured args.
       if (parseError) {
         emitToolCall({ tool: call.function.name, label: externalToolLabel(call.function.name, db), args: {}, callId: call.id });
-        emitToolCallDone?.({ tool: call.function.name, callId: call.id });
+        emitToolCallDone?.({ tool: call.function.name, callId: call.id, ok: false, error: parseError });
         messages.push({
           role: "tool",
           tool_call_id: call.id,
@@ -291,13 +292,20 @@ export async function runToolLoop(
           // Surface a linkable artefact (Confluence page, web-search hit, …) from
           // the vendor-specific output so the UI can render a browser-opening chip.
           const externalRef = extractExternalRef(output);
-          emitToolCallDone?.({ tool: call.function.name, externalRef, output, callId: call.id });
+          const externalError = toolResultError(output);
+          emitToolCallDone?.({ tool: call.function.name, externalRef, output, callId: call.id, ok: externalError === undefined, error: externalError });
           result = output;
         } else {
           result = await executeTool(db, req, workspacePath, { baseUrl, model, apiKey, provider: provider as "openai" | "localllm" }, call.function.name, args, emitToolCall, getWin, emitToolCallDone, call.id);
         }
       } catch (toolErr) {
-        result = { error: `Tool "${call.function.name}" failed: ${String(toolErr)}` };
+        const message = `Tool "${call.function.name}" failed: ${String(toolErr)}`;
+        result = { error: message };
+        // executeTool fires its own emitDone only on the success return path; a
+        // thrown exception skips it, so emit a failure done here (keyed by callId
+        // so the renderer updates the same chip) — otherwise the chip would hang
+        // in its running state with no failure signal.
+        emitToolCallDone?.({ tool: call.function.name, callId: call.id, ok: false, error: message });
       }
       messages.push({ role: "tool", tool_call_id: call.id, content: typeof result === "string" ? result : JSON.stringify(result) });
     }

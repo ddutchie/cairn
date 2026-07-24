@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { CheckCircle, Loader2, ChevronDown, ChevronRight, GitBranch } from "lucide-react";
+import { CheckCircle, XCircle, Loader2, ChevronDown, ChevronRight, GitBranch } from "lucide-react";
 import { cn, prettifyToolLabel } from "@/lib/utils";
 import { MarkdownContent } from "@/components/chat/chat-panel/MarkdownContent";
 import { MessageAvatar, StreamingCursor } from "@/components/chat/chat-panel/message-ui";
@@ -114,8 +114,12 @@ function ToolChip({ tc, sessionId }: {
           !hasOutput && "cursor-default",
         )}
       >
-        <CheckCircle size={9} className={cn("shrink-0", tc.ok ? "text-[var(--accent)]" : "text-[var(--danger)]")} />
-        <span className="text-[0.714rem] text-[var(--text-secondary)]">{prettifyToolLabel(tc.label)}</span>
+        {tc.ok ? (
+          <CheckCircle size={9} className="shrink-0 text-[var(--accent)]" />
+        ) : (
+          <XCircle size={9} className="shrink-0 text-[var(--danger)]" />
+        )}
+        <span className="text-[0.714rem] text-[var(--text-secondary)]">{prettifyToolLabel(tc.label)}{tc.ok === false && " failed"}</span>
         {hasOutput && (
           expanded
             ? <ChevronDown size={9} className="text-[var(--text-tertiary)] shrink-0 ml-0.5" />

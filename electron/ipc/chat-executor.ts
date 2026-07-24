@@ -16,6 +16,7 @@ import { callLLM, type LLMConfig } from "../lib/llm";
 import { TOOL_LABELS, type ChatRequest, type ToolArgs } from "../lib/tools";
 import { aiWriteLock } from "../lib/ai-write-lock";
 import { executeTool as executeMcpTool } from "../mcp/tools";
+import { toolResultError } from "../lib/tool-result";
 
 // ── Static reference constants (returned by get_dashboard_constants / get_idea_flow_rules) ──
 
@@ -28,7 +29,7 @@ export async function executeTool(
   args: ToolArgs,
   emit?: (event: { tool: string; label: string; args: Record<string, unknown>; callId?: string }) => void,
   getWin?: () => BrowserWindow | null,
-  emitDone?: (event: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; externalRef?: { url: string; title?: string; snippet?: string }; output?: string; callId?: string }) => void,
+  emitDone?: (event: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; externalRef?: { url: string; title?: string; snippet?: string }; output?: string; callId?: string; ok?: boolean; error?: string }) => void,
   callId?: string,
 ): Promise<unknown> {
   emit?.({ tool: name, label: TOOL_LABELS[name]?.(args) ?? name, args, callId });
@@ -308,7 +309,8 @@ export async function executeTool(
   }
 
   if (emitDone) {
-    emitDone({ tool: name, cairnRef, output: JSON.stringify(result), callId });
+    const errorMessage = toolResultError(result);
+    emitDone({ tool: name, cairnRef, output: JSON.stringify(result), callId, ok: errorMessage === undefined, error: errorMessage });
   }
 
   return result;

@@ -384,6 +384,13 @@ export interface ChatToolCallRecord {
   callId?: string;
   args?: string;      // JSON arguments string
   output?: string;    // JSON output string
+  /**
+   * Tool execution status. `ok: false` means the tool returned an error result
+   * or threw — the chip renders a failure state and `error` carries the reason.
+   * Absent (undefined) on older persisted records → treated as success.
+   */
+  ok?: boolean;
+  error?: string;
 }
 
 /**

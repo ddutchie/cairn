@@ -178,7 +178,7 @@ export function registerChatHandler(db: Database.Database, workspacePath: string
       send("chat:tool-call", e);
     };
 
-    const emitToolCallDone = (e: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; externalRef?: { url: string; title?: string; snippet?: string }; output?: string; callId?: string }) => {
+    const emitToolCallDone = (e: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; externalRef?: { url: string; title?: string; snippet?: string }; output?: string; callId?: string; ok?: boolean; error?: string }) => {
       send("chat:tool-call-done", e);
     };
 

@@ -30,6 +30,9 @@ export interface ChatToolCall {
   callId?: string;
   args?: string;
   output?: string;
+  /** Tool execution status; `ok: false` + `error` when the tool failed. */
+  ok?: boolean;
+  error?: string;
 }
 
 export interface PendingQuestion {
@@ -151,7 +154,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
         }
         if (idx === -1) return prev;
         const updated = [...prev];
-        updated[idx] = { ...updated[idx], cairnRef: e.cairnRef, externalRef: e.externalRef, output: e.output };
+        updated[idx] = { ...updated[idx], cairnRef: e.cairnRef, externalRef: e.externalRef, output: e.output, ok: e.ok, error: e.error };
         toolCallsRef.current = updated;
         return updated;
       });

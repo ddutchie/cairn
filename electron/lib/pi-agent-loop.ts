@@ -34,6 +34,7 @@ import type { SkillMeta } from "./skills";
 import { iterSseData } from "./sse";
 import { traceTool } from "./tool-trace";
 import { parseToolArgs } from "./parse-tool-args";
+import { resultContentError } from "./tool-result";
 
 // ── LLM config ───────────────────────────────────────────────────────────────
 
@@ -844,6 +845,11 @@ export async function runAgentLoop(
           mode,
           allowedToolNames,
         );
+        // A Cairn tool signals failure by RETURNING { error: … } without throwing
+        // (the dominant pattern). Detect it so `ok` — which drives the red/failed
+        // chip and the plan-note hook below — reflects reality instead of always
+        // reporting success for non-throwing errors.
+        if (resultContentError(resultContent) !== undefined) ok = false;
       } catch (e) {
         ok = false;
         resultContent = `Error: ${(e as Error).message}`;
