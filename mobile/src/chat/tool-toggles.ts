@@ -1,17 +1,18 @@
 /**
- * Tool toggles — device-global on/off switches for chat tools + installed
- * services. Stored in the meta DB (getMeta/setMeta), so a toggle applies across
- * EVERY workspace/project on this device and is never synced.
+ * Tool toggles — device-global on/off switches for INSTALLED community services.
+ * Stored in the meta DB (getMeta/setMeta), so a toggle applies across EVERY
+ * workspace/project on this device and is never synced.
  *
- * Desktop has an equivalent via `disabledTools` + ToolAttachment rows
- * (electron/lib/external-tools.ts); mobile had no such concept — every tool was
- * always exposed. This is the mobile-side implementation: a single JSON map of
- * tool-name → enabled. Absence means "use the default", so we DON'T have to
- * write a row for every built-in tool up front.
+ * Scope: only installed HTTP-service (and, later, MCP) tools are toggleable.
+ * Built-in Cairn tools are ALWAYS on and are never written here — they are the
+ * assistant itself, and this matches desktop, where gating only applies to
+ * external MCP servers / HTTP services (see electron/lib/external-tools.ts),
+ * never Cairn's own tools. The Settings screen therefore lists built-ins
+ * read-only and only puts switches on installed services.
  *
- * The enabled set gates what `allTools()` / `allToolMap()` expose to the agent,
- * which keeps the PCC 32K context lean and lets a user silence tools they don't
- * want the assistant to use.
+ * The enabled set gates what `allTools()` / `allToolMap()` expose for installed
+ * services, which keeps the PCC 32K context lean and lets a user silence a
+ * service they don't want the assistant to reach for.
  */
 
 import { getMeta, setMeta } from "../db";

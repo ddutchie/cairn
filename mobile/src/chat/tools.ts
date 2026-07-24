@@ -373,18 +373,47 @@ export const TOOLS: ToolDef[] = [
 export const TOOL_MAP = new Map(TOOLS.map((t) => [t.name, t]));
 
 /**
- * The FULL tool set exposed to the agent: the built-in TOOLS plus any installed
- * community `service` tools (device-global), FILTERED by the per-tool toggle
- * map. A tool absent from the toggle map defaults ENABLED (see tool-toggles.ts),
- * so this only ever removes tools a user has explicitly switched off. Installed
- * services are namespaced so they can't collide with built-ins.
+ * Built-in tools that MUTATE the user's workspace (create/edit/delete/link/tag).
+ * Everything else is read-only (search/get/list) or reads external data
+ * (web_*). Used only by the Settings → Tools & Services screen to group the
+ * read-only built-in list into Read vs Write sections. Keep in sync when adding
+ * a mutating built-in tool.
+ */
+export const WRITE_TOOL_NAMES = new Set<string>([
+  "ensure_note",
+  "append_to_note",
+  "patch_note",
+  "rename_note",
+  "bulk_move_notes",
+  "move_note_to_project",
+  "delete_note",
+  "create_task",
+  "update_task",
+  "delete_task",
+  "link_note_to_task",
+  "unlink_note_from_task",
+  "bulk_update_task_status",
+  "tag_note",
+  "tag_task",
+]);
+
+/**
+ * The FULL tool set exposed to the agent: the built-in TOOLS (ALWAYS on) plus
+ * any installed community `service` tools that are enabled.
  *
- * This is recomputed on each call (cheap) so a just-installed service or a
- * flipped toggle takes effect on the very next agent run — no app restart.
+ * Built-in tools are never toggled off — they ARE the assistant (turning off
+ * e.g. get_cairn_context or search_notes would silently break it), and this
+ * matches desktop, where the tool gating only ever applies to external MCP
+ * servers / HTTP services, never Cairn's own tools. Only installed services are
+ * subject to the per-tool toggle map (default ON; a user switches one off).
+ *
+ * Recomputed on each call (cheap) so a just-installed service or a flipped
+ * toggle takes effect on the very next agent run — no app restart. Installed
+ * services are namespaced so they can't collide with built-ins.
  */
 export function allTools(): ToolDef[] {
-  const merged = [...TOOLS, ...serviceToolDefs()];
-  return merged.filter((t) => isToolEnabled(t.name));
+  const services = serviceToolDefs().filter((t) => isToolEnabled(t.name));
+  return [...TOOLS, ...services];
 }
 
 /** Name→ToolDef map over allTools() (built-ins + enabled services). */

@@ -11,7 +11,7 @@ import {
   Linking,
 } from "react-native";
 import { Stack, useRouter } from "expo-router";
-import { RefreshCw, Plus, Trash2, ExternalLink, Wrench } from "lucide-react-native";
+import { RefreshCw, Plus, Trash2, ExternalLink, Wrench, ChevronRight, ChevronDown } from "lucide-react-native";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 import { haptics, toolbarPress } from "@/haptics";
 import { ICON_CHECK } from "@/components/toolbar-icons";
@@ -23,25 +23,31 @@ import {
   isServiceInstalled,
   type InstalledService,
 } from "@/chat/services";
-import { TOOLS } from "@/chat/tools";
-import { getToggleMap, isToolEnabled, setToolEnabled } from "@/chat/tool-toggles";
+import { TOOLS, WRITE_TOOL_NAMES, type ToolDef } from "@/chat/tools";
+import { getToggleMap, setToolEnabled } from "@/chat/tool-toggles";
 import { namespaceServiceTool, parseToolDefinition } from "@cairn/shared/chat/service-exec";
 import type { RegistryServiceEntry } from "@cairn/shared/chat/registry-schema";
 
 /**
  * Tools & Services settings — the mobile side of the community registry (Track
- * 2). Three sections, all DEVICE-GLOBAL (they apply across every workspace):
+ * 2). All DEVICE-GLOBAL (they apply across every workspace) and unsynced:
  *
  *   1. Installed services  — HTTP `service` connectors the user has added, each
  *      with an on/off toggle + uninstall. Their API keys live in the keychain.
- *   2. Built-in tools      — on/off toggles for the app's own chat tools, so a
- *      user can trim what the assistant may do (and keep the PCC context lean).
- *   3. Browse registry     — the catalog of installable services (authMode:none
+ *      These are the ONLY toggleable tools — matching desktop, which gates only
+ *      external MCP/HTTP tools, never Cairn's own.
+ *   2. Built-in tools       — a READ-ONLY, collapsed-by-default disclosure that
+ *      shows what the assistant can do, split into Read vs Write. No switches:
+ *      built-ins are always on (turning off e.g. search would silently break the
+ *      assistant), so this is purely informational.
+ *   3. Add a service        — the catalog of installable services (authMode:none
  *      only for now; OAuth services are shown but not yet installable).
- *
- * Non-secret state (installed list, toggles, cached manifest) is in the
- * device-global meta DB; secrets are in expo-secure-store. Nothing here syncs.
  */
+
+// Split the always-on built-in tools into Read vs Write for the disclosure.
+const READ_BUILTINS: ToolDef[] = TOOLS.filter((t) => !WRITE_TOOL_NAMES.has(t.name));
+const WRITE_BUILTINS: ToolDef[] = TOOLS.filter((t) => WRITE_TOOL_NAMES.has(t.name));
+
 export default function ToolsSettingsScreen() {
   const t = useTheme();
   const styles = useMemo(() => makeStyles(t), [t]);
@@ -53,6 +59,9 @@ export default function ToolsSettingsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Built-in tools are collapsed by default so the screen stays compact — the
+  // list is long and informational, not something you act on often.
+  const [builtinsOpen, setBuiltinsOpen] = useState(false);
 
   const reloadLocal = useCallback(() => {
     setInstalled(listInstalledServices());
@@ -92,24 +101,19 @@ export default function ToolsSettingsScreen() {
     void loadRegistry(true).finally(() => setRefreshing(false));
   }, [loadRegistry]);
 
-  const toolNameForService = useCallback((svc: InstalledService | RegistryServiceEntry): string => {
-    const id = "id" in svc ? svc.id : "";
-    const def = "definition" in svc ? svc.definition : (svc as InstalledService).definition;
+  const serviceToolName = useCallback((svc: InstalledService): string => {
     try {
-      return namespaceServiceTool(id, parseToolDefinition(def.toolDefinition).name);
+      return namespaceServiceTool(svc.id, parseToolDefinition(svc.definition.toolDefinition).name);
     } catch {
-      return id;
+      return svc.id;
     }
   }, []);
 
-  const onToggle = useCallback(
-    (name: string, next: boolean) => {
-      haptics.selection();
-      setToolEnabled(name, next);
-      setToggles(getToggleMap());
-    },
-    [],
-  );
+  const onToggleService = useCallback((name: string, next: boolean) => {
+    haptics.selection();
+    setToolEnabled(name, next);
+    setToggles(getToggleMap());
+  }, []);
 
   const onInstall = useCallback(
     (entry: RegistryServiceEntry) => {
@@ -170,6 +174,18 @@ export default function ToolsSettingsScreen() {
     [services, installed], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
+  const renderBuiltinGroup = (label: string, tools: ToolDef[]) => (
+    <View style={styles.builtinGroup}>
+      <Text style={styles.builtinGroupLabel}>{label}</Text>
+      {tools.map((tool) => (
+        <View key={tool.name} style={styles.builtinRow}>
+          <Text style={styles.builtinName}>{tool.name}</Text>
+          <Text style={styles.builtinDesc} numberOfLines={2}>{tool.description}</Text>
+        </View>
+      ))}
+    </View>
+  );
+
   return (
     <View style={styles.flex}>
       <Stack.Screen options={{ title: "Tools & Services" }} />
@@ -187,12 +203,12 @@ export default function ToolsSettingsScreen() {
         </View>
       ) : (
         <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent}>
-          {/* 1. Installed services */}
+          {/* 1. Installed services (the only toggleable tools) */}
           {installed.length > 0 && (
             <View style={styles.section}>
               <Text style={styles.sectionLabel}>Installed services</Text>
               {installed.map((svc) => {
-                const name = toolNameForService(svc);
+                const name = serviceToolName(svc);
                 return (
                   <View key={svc.id} style={styles.row}>
                     <View style={styles.rowMain}>
@@ -201,7 +217,7 @@ export default function ToolsSettingsScreen() {
                     </View>
                     <Switch
                       value={toggles[name] !== false}
-                      onValueChange={(v) => onToggle(name, v)}
+                      onValueChange={(v) => onToggleService(name, v)}
                       trackColor={{ true: t.accent, false: t.border }}
                     />
                     <Pressable onPress={() => onUninstall(svc)} hitSlop={8} style={styles.iconBtn}>
@@ -213,28 +229,35 @@ export default function ToolsSettingsScreen() {
             </View>
           )}
 
-          {/* 2. Built-in tools */}
+          {/* 2. Built-in tools — read-only, collapsed-by-default disclosure */}
           <View style={styles.section}>
-            <Text style={styles.sectionLabel}>Built-in tools</Text>
-            <Text style={styles.sectionHint}>
-              Turn off tools you don&apos;t want the assistant to use. Applies across all projects on this device.
-            </Text>
-            {TOOLS.map((tool) => (
-              <View key={tool.name} style={styles.row}>
-                <View style={styles.rowMain}>
-                  <Text style={styles.rowTitle}>{tool.name}</Text>
-                  <Text style={styles.rowSub} numberOfLines={2}>{tool.description}</Text>
-                </View>
-                <Switch
-                  value={isToolEnabled(tool.name)}
-                  onValueChange={(v) => onToggle(tool.name, v)}
-                  trackColor={{ true: t.accent, false: t.border }}
-                />
-              </View>
-            ))}
+            <Pressable
+              style={styles.disclosureHead}
+              onPress={() => {
+                haptics.selection();
+                setBuiltinsOpen((o) => !o);
+              }}
+            >
+              {builtinsOpen ? (
+                <ChevronDown size={16} color={t.textSecondary} />
+              ) : (
+                <ChevronRight size={16} color={t.textSecondary} />
+              )}
+              <Text style={styles.disclosureTitle}>Built-in tools</Text>
+              <Text style={styles.disclosureCount}>{TOOLS.length}</Text>
+            </Pressable>
+            {builtinsOpen && (
+              <>
+                <Text style={styles.sectionHint}>
+                  What the assistant can do with your notes and tasks. Always on.
+                </Text>
+                {renderBuiltinGroup("Read", READ_BUILTINS)}
+                {renderBuiltinGroup("Write", WRITE_BUILTINS)}
+              </>
+            )}
           </View>
 
-          {/* 3. Browse registry */}
+          {/* 3. Add a service */}
           <View style={styles.section}>
             <View style={styles.sectionHead}>
               <Text style={styles.sectionLabel}>Add a service</Text>
@@ -332,6 +355,33 @@ function makeStyles(t: Theme) {
     addBtnText: { ...typeScale.label, color: t.accentFg },
     addBtnTextDisabled: { color: t.textTertiary },
     errorText: { ...typeScale.caption, color: t.danger },
+    // Built-in disclosure
+    disclosureHead: { flexDirection: "row", alignItems: "center", gap: 6 },
+    disclosureTitle: { ...typeScale.overline, color: t.textTertiary },
+    disclosureCount: {
+      ...typeScale.micro,
+      color: t.textTertiary,
+      backgroundColor: t.surface2,
+      borderWidth: 1,
+      borderColor: t.border,
+      borderRadius: 999,
+      paddingHorizontal: 7,
+      paddingVertical: 1,
+      overflow: "hidden",
+    },
+    builtinGroup: { gap: 2, marginTop: 4 },
+    builtinGroupLabel: { ...typeScale.micro, color: t.textTertiary, marginTop: 4, marginBottom: 2 },
+    builtinRow: {
+      backgroundColor: t.surface2,
+      borderWidth: 1,
+      borderColor: t.border,
+      borderRadius: 10,
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      gap: 1,
+    },
+    builtinName: { ...typeScale.label, color: t.textPrimary },
+    builtinDesc: { ...typeScale.caption, color: t.textSecondary },
     footer: { flexDirection: "row", alignItems: "center", gap: 6, paddingTop: 4 },
     footerText: { ...typeScale.micro, color: t.textTertiary, flex: 1 },
   });
