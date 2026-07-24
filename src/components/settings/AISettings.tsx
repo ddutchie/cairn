@@ -54,7 +54,7 @@ export function AISettings() {
     if (provider === "localllm") return;
     let cancelled = false;
     const id = (model ?? "").trim();
-    if (!id) { setDetectedContext(null); setAutoState("idle"); return; }
+    if (!id) { setDetectedContext(null); setAutoState("idle"); return; } // eslint-disable-line react-hooks/set-state-in-effect
     setAutoState("loading");
     contextLimitForModel(id, 0).then((n) => {
       if (cancelled) return;

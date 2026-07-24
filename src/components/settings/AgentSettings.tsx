@@ -441,7 +441,7 @@ export function AgentSettings() {
   useEffect(() => {
     let cancelled = false;
     const mid = (modelAgent ?? "").trim();
-    if (!mid) { setDetectedContextAgent(null); setAutoStateAgent("idle"); return; }
+    if (!mid) { setDetectedContextAgent(null); setAutoStateAgent("idle"); return; } // eslint-disable-line react-hooks/set-state-in-effect
     setAutoStateAgent("loading");
     contextLimitForModel(mid, 0).then((n) => {
       if (cancelled) return;

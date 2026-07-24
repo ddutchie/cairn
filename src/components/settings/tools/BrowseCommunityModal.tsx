@@ -103,7 +103,7 @@ export function BrowseCommunityModal({ onClose }: { onClose: () => void }) {
   }, []);
 
   useEffect(() => {
-    void load(false);
+    void load(false); // eslint-disable-line react-hooks/set-state-in-effect
   }, [load]);
 
   const entries: CardEntry[] = useMemo(() => {
