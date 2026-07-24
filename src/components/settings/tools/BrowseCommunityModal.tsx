@@ -86,7 +86,7 @@ export function BrowseCommunityModal({ onClose }: { onClose: () => void }) {
   const load = useCallback(async (force: boolean) => {
     const reg = window.electron?.registry;
     if (!reg) { setLoading(false); return; }
-    force ? setRefreshing(true) : setLoading(true);
+    if (force) setRefreshing(true); else setLoading(true);
     try {
       const r = force ? await reg.refresh() : await reg.fetch();
       setResult(r);
@@ -102,7 +102,9 @@ export function BrowseCommunityModal({ onClose }: { onClose: () => void }) {
     }
   }, []);
 
-  useEffect(() => { void load(false); }, [load]);
+  useEffect(() => {
+    void load(false);
+  }, [load]);
 
   const entries: CardEntry[] = useMemo(() => {
     if (!result) return [];

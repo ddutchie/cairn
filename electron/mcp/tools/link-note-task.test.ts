@@ -67,7 +67,10 @@ describe("link_note_to_task lock ordering", () => {
     seedNote("n1");
     seedCard("c1");
     const snap = getSnapshot(db);
-    const res = link_note_to_task(db, snap, tmpDir, { noteId: "n1", cardId: "c1" }) as any;
+    const res = link_note_to_task(db, snap, tmpDir, { noteId: "n1", cardId: "c1" }) as {
+      linked?: boolean;
+      error?: string;
+    };
     expect(res.linked).toBe(true);
 
     // The row must still exist and carry the link.
@@ -87,17 +90,18 @@ describe("link_note_to_task lock ordering", () => {
     // held (this is the window in which the watcher could see the unlink).
     const realWrite = fs.writeFileSync;
     let lockHeldDuringWrite: boolean | null = null;
-    (fs as any).writeFileSync = (...a: unknown[]) => {
+    const fsMut = fs as { writeFileSync: typeof fs.writeFileSync };
+    fsMut.writeFileSync = ((...a: Parameters<typeof fs.writeFileSync>) => {
       const p = String(a[0]);
       if (p.endsWith(".md.tmp") || p.endsWith(".md")) {
         lockHeldDuringWrite = getActiveMcpWrites(db).has("n1");
       }
-      return (realWrite as any)(...a);
-    };
+      return realWrite(...a);
+    }) as typeof fs.writeFileSync;
     try {
       link_note_to_task(db, snap, tmpDir, { noteId: "n1", cardId: "c1" });
     } finally {
-      (fs as any).writeFileSync = realWrite;
+      fsMut.writeFileSync = realWrite;
     }
 
     expect(lockHeldDuringWrite).toBe(true);
@@ -112,7 +116,10 @@ describe("link_note_to_task lock ordering", () => {
     link_note_to_task(db, snap, tmpDir, { noteId: "n1", cardId: "c1" });
 
     snap = getSnapshot(db);
-    const res = unlink_note_from_task(db, snap, tmpDir, { noteId: "n1", cardId: "c1" }) as any;
+    const res = unlink_note_from_task(db, snap, tmpDir, { noteId: "n1", cardId: "c1" }) as {
+      unlinked?: boolean;
+      error?: string;
+    };
     expect(res.unlinked).toBe(true);
 
     const row = db.prepare("SELECT linked_card_ids FROM notes WHERE id = 'n1'").get() as

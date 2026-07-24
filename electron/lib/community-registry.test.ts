@@ -97,7 +97,8 @@ describe("parseManifest", () => {
   it("rejects an entry missing a required field", () => {
     const bad = structuredClone(VALID) as Record<string, unknown>;
     // drop toolDefinition (required on service definitions)
-    delete (bad.services as any)[0].definition.toolDefinition;
+    const svc = (bad.services as Array<{ definition: Record<string, unknown> }>)[0];
+    delete svc.definition.toolDefinition;
     expect(() => parseManifest(bad)).toThrow();
   });
 });
