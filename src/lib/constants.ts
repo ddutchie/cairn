@@ -100,6 +100,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
   maxSteps:     30,
   temperature:  0.3,
   contextLimit: 128000,
+  contextAuto:  true,
   aiEnabled:    true,
   subagentsEnabled: false,
 };
@@ -112,6 +113,7 @@ export const DEFAULT_AGENT_CONFIG: AgentConfig = {
   maxSteps:     30,
   temperature:  0.3,
   contextLimit: 128000,
+  contextAuto:  true,
   autoApprove:  true,
 };
 

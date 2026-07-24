@@ -35,6 +35,12 @@ export interface AIConfig {
   temperature: number;
   /** Context window size in tokens. Used to render the context usage ring. */
   contextLimit: number;
+  /**
+   * When true, `contextLimit` tracks the models.dev-detected value for the
+   * current model automatically. Turned off the moment the user sets a manual
+   * value (custom input or preset). Defaults to true.
+   */
+  contextAuto?: boolean;
   /** When false, all in-app AI features are hidden/disabled. Defaults to true. */
   aiEnabled: boolean;
   /**
@@ -58,6 +64,12 @@ export interface AgentConfig {
   temperature: number;
   /** Context window size in tokens. Used to render the context usage ring. */
   contextLimit: number;
+  /**
+   * When true, `contextLimit` tracks the models.dev-detected value for the
+   * current model automatically. Turned off the moment the user sets a manual
+   * value (custom input or preset). Defaults to true.
+   */
+  contextAuto?: boolean;
   /** Automatically approve tool execution without prompt. */
   autoApprove: boolean;
 }

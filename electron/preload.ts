@@ -29,6 +29,32 @@ interface CustomServiceConfig {
 interface ToolAttachment {
   projectId: string; toolType: "mcp" | "service"; toolId: string; enabled: boolean;
 }
+// ── Community registry (cairn-community manifest) ───────────────────────────
+interface RegistryEntryMeta {
+  id: string; author: string; version: string; category?: string; tags: string[]; blurb: string;
+  brandColor?: string; homepage?: string; iconSvg?: string;
+}
+interface RegistryMcpEntry extends RegistryEntryMeta {
+  definition: {
+    name: string; description?: string; transport: "sse" | "http"; baseUrl: string;
+    headers?: Record<string, string>; authMode?: "none" | "oauth"; oauthScope?: string;
+    disabledTools?: string[]; enabled: boolean;
+  };
+}
+interface RegistryServiceEntry extends RegistryEntryMeta {
+  definition: {
+    name: string; description?: string; apiUrl: string;
+    method: "GET" | "POST" | "PUT" | "DELETE"; headers?: Record<string, string>;
+    toolDefinition: string; responseKeys?: string[]; apiKeyUrl?: string; enabled: boolean;
+  };
+}
+interface CommunityManifest {
+  version: number; updatedAt: string;
+  mcpServers: RegistryMcpEntry[]; services: RegistryServiceEntry[];
+}
+interface RegistryFetchResult {
+  manifest: CommunityManifest; fromCache: boolean; cachedAt?: string; error?: string;
+}
 // ── Inline types for the codebase index / Architecture tab ──────────────────
 interface CodebaseSymbol {
   id: string; file_id: string; name: string; kind: string; line: number;
@@ -609,6 +635,8 @@ const api = {
       ),
     mcpAuthStatus: (id: string) => invoke<{ connected: boolean }>("tools:mcpAuthStatus", { id }),
     signOutMcp: (id: string) => invoke("tools:signOutMcp", { id }),
+    /** Cancel an in-flight OAuth sign-in (user abandoned the browser step). */
+    cancelMcpAuth: (id: string) => invoke<{ cancelled: boolean }>("tools:cancelMcpAuth", { id }),
     /** Fires when a cairn://oauth/callback deep link finishes a sign-in. */
     onOauthCallback: (
       cb: (e: { status: string; serverId?: string; error?: string }) => void
@@ -629,6 +657,14 @@ const api = {
       invoke<boolean>("secrets:has", { toolType, toolId, key }),
     delete: (toolType: "mcp" | "service", toolId: string, key: string) =>
       invoke("secrets:delete", { toolType, toolId, key }),
+  },
+
+  // ── Community registry (cairn-community catalog) ──────────────
+  registry: {
+    /** Cache-first: instant/offline, background-revalidates. */
+    fetch: () => invoke<RegistryFetchResult>("registry:fetch"),
+    /** Force a network refresh (explicit Refresh button). */
+    refresh: () => invoke<RegistryFetchResult>("registry:refresh"),
   },
 
   // ── Git operations (Agent Git tab) ────────────

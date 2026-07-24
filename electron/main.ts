@@ -23,12 +23,13 @@ import { registerIpcHandlers, registerAppHandlers } from "./ipc/handlers";
 import { registerAgentHandlers } from "./ipc/agent";
 import { registerToolsHandlers } from "./ipc/tools";
 import { registerToolBuilderHandlers } from "./ipc/tool-builder";
+import { registerCommunityRegistryHandlers } from "./ipc/community-registry-handlers";
 import { registerGitHandlers } from "./ipc/git";
 import { registerPiAgentHandler } from "./ipc/pi-agent";
 import { readWorkspaceConfig, getDbPathForWorkspace } from "./workspace-config";
 import { startFileWatcher, suppressNextChange } from "./file-watcher";
 import { syncNotesFromDisk, writeNoteFile, deleteNoteFile } from "./notes-files";
-import { markMcpNotificationsRead, getNoteById, findNestedConflictCopies } from "./db/queries";
+import { markMcpNotificationsRead, getNoteByIdIncludingTombstoned, findNestedConflictCopies } from "./db/queries";
 import { getProjectName } from "./ipc/result-helpers";
 import { setupProtocol, registerAssetProtocol, setAssetWorkspacePath } from "./lib/protocol";
 import { createTray } from "./lib/tray";
@@ -253,6 +254,7 @@ app.whenReady().then(async () => {
   registerAgentHandlers(ctx.db);
   registerToolsHandlers(ctx.db);
   registerToolBuilderHandlers(ctx.db, ctx.getWin);
+  registerCommunityRegistryHandlers();
   registerGitHandlers(ctx.db);
   registerPiAgentHandler(ctx);
   registerChatPopoutHandlers();
@@ -449,11 +451,15 @@ app.whenReady().then(async () => {
   // that arrive from the phone. Echo-suppressed so the file-watcher doesn't
   // re-import our own write as an external edit and loop it back into the DB.
   function projectNoteToDisk(noteId: string, op: "put" | "delete") {
-    const note = getNoteById(ctx.db, noteId);
+    // Read INCLUDING tombstones: on an inbound `delete` the row is soft-deleted
+    // (deleted_at set), and getNoteById() now filters those out — using it here
+    // would return null and skip removing the orphaned .md file. We still want
+    // the live row's data for a `put`.
+    const note = getNoteByIdIncludingTombstoned(ctx.db, noteId);
     if (!note || note.type === "dashboard") return; // dashboards have no .md
     suppressNextChange(noteId);
     const projectName = getProjectName(ctx.db, note.projectId);
-    if (op === "delete" || note.archivedAt) {
+    if (op === "delete" || note.deletedAt || note.archivedAt) {
       deleteNoteFile(ctx.workspacePath, projectName, note.id);
     } else {
       writeNoteFile(ctx.workspacePath, { ...note, projectName });

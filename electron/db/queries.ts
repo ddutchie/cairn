@@ -267,17 +267,32 @@ export function updateNote(db: Database.Database, id: string, patch: Partial<{
 }
 
 /**
- * Hard-delete a note. The row is physically removed (desktop live queries do
- * not filter tombstones, so a soft-delete would leak ghost notes into every
- * list/search). Delete-safety across sync is handled two ways:
- *   1. The AFTER DELETE capture trigger stages a `delete` op so peers tombstone.
- *   2. The .md file MUST be removed too (see callers), and the file-watcher
- *      records the id in a short-lived "recently deleted" set so a peer that
- *      re-materialises the orphan file on disk can't re-import it. See
- *      electron/file-watcher.ts suppressNextChange() (backed by suppressedNoteIds).
+ * Soft-delete a note (tombstone). The row is KEPT with `deleted_at` set rather
+ * than physically removed. Desktop live queries all filter `deleted_at IS NULL`
+ * (see getNotes/findLiveNoteByTitle/searchNotes/graph reads), so a tombstoned
+ * note disappears from every list/search exactly like a hard delete — but the
+ * durable tombstone row makes sync delete-safe:
+ *   - The AFTER UPDATE capture trigger stages a `delete` op (it keys off
+ *     `NEW.deleted_at IS NOT NULL`, schema.ts v26), so peers tombstone too.
+ *   - Because the row survives, drainPending's normal delete branch stamps it
+ *     in place — no tombstone-SHELL reconstruction needed (that hack existed
+ *     ONLY to compensate for the old physical DELETE leaving no local row), and
+ *     the staleness guard has a real row+hlc to compare a stale peer put against.
+ *   - The .md file MUST still be removed by callers, and the file-watcher records
+ *     the id in a short-lived "recently deleted" set so a peer that re-materialises
+ *     the orphan file on disk can't re-import it. See file-watcher.ts
+ *     suppressNextChange() (backed by suppressedNoteIds).
+ *
+ * Idempotent: re-deleting an already-tombstoned note is a no-op. The
+ * `deleted_at IS NULL` guard means a retry touches zero rows, so the original
+ * `deleted_at`, `updated_at`, and `version` are all left intact and the
+ * tombstone HLC/time never churns.
  */
 export function deleteNote(db: Database.Database, id: string) {
-  db.prepare("DELETE FROM notes WHERE id = ?").run(id);
+  const now = ts();
+  db.prepare(
+    "UPDATE notes SET deleted_at = ?, updated_at = ?, version = version + 1 WHERE id = ? AND deleted_at IS NULL",
+  ).run(now, now, id);
 }
 
 /**
@@ -321,7 +336,22 @@ export function findNestedConflictCopies(
   return candidates.filter((r) => (r.id.match(/_conflict_/g)?.length ?? 0) >= 2);
 }
 
+/**
+ * Fetch a live note by id. Tombstoned rows (`deleted_at` set) are treated as
+ * absent — now that desktop soft-deletes (see deleteNote), a raw `SELECT *`
+ * would hand a "deleted" note back to callers (MCP append/patch/tag, the disk
+ * projector) that would then edit or re-write it, effectively resurrecting it.
+ * Excluding tombstones keeps a delete final. `getNoteByIdIncludingTombstoned`
+ * exists for the rare caller that must inspect a tombstone.
+ */
 export function getNoteById(db: Database.Database, id: string) {
+  const row = db.prepare("SELECT * FROM notes WHERE id = ? AND deleted_at IS NULL").get(id);
+  return row ? toNote(row) : null;
+}
+
+/** Fetch a note by id INCLUDING tombstoned rows (deleted_at set). For the few
+ *  paths that must read a tombstone (e.g. cleanup / projection bookkeeping). */
+export function getNoteByIdIncludingTombstoned(db: Database.Database, id: string) {
   const row = db.prepare("SELECT * FROM notes WHERE id = ?").get(id);
   return row ? toNote(row) : null;
 }

@@ -87,7 +87,7 @@ export function SettingsView() {
             <div className="text-xs text-[var(--text-tertiary)]">v{process.env.NEXT_PUBLIC_APP_VERSION ?? "0.1.0"}</div>
           </div>
         </div>
-        <div key={section} className="max-w-2xl mx-auto px-4 md:px-8 py-4 md:py-8 space-y-6 md:space-y-8 animate-fade-in">
+        <div key={section} className="@container max-w-2xl mx-auto px-4 md:px-8 py-4 md:py-8 space-y-6 md:space-y-8 animate-fade-in">
           {section === "general" && <GeneralSettings />}
           {section === "ai" && <AISettings />}
           {section === "embeddings" && <EmbeddingsSettings />}

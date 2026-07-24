@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { Footprints, Thermometer, Layers } from "lucide-react";
+import { Footprints, Thermometer, Layers, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Toggle as UiToggle, type ToggleProps } from "@/components/ui/toggle";
 
@@ -40,14 +40,14 @@ export function SettingsRow({
 }) {
   const id = React.useId();
   return (
-    <div className="flex items-start justify-between gap-6 py-3 border-b border-[var(--border-subtle)]">
+    <div className="flex flex-col @sm:flex-row @sm:items-start @sm:justify-between gap-2 @sm:gap-6 py-3 border-b border-[var(--border-subtle)]">
       <div className="flex-1 min-w-0">
         <label htmlFor={id} className="text-sm text-[var(--text-secondary)] cursor-default">{label}</label>
         {description && (
           <div className="text-xs text-[var(--text-tertiary)] mt-0.5 leading-relaxed">{description}</div>
         )}
       </div>
-      <div className="flex-shrink-0">
+      <div className="flex-shrink-0 @sm:self-auto">
         {/* Inject id into the first form-control child if it accepts it */}
         {React.isValidElement(children)
           ? React.cloneElement(children as React.ReactElement<{ id?: string }>, { id })
@@ -115,6 +115,10 @@ export function StepperSettingsRow({
   step,
   inputWidth = "w-24",
   formatPreset,
+  autoValue,
+  autoState,
+  autoActive,
+  onAuto,
 }: {
   label: string;
   description?: string;
@@ -127,6 +131,14 @@ export function StepperSettingsRow({
   step?: number;
   inputWidth?: string;
   formatPreset?: (n: number) => string;
+  /** When set, the "Auto" button reflects this detected value (highlighted when applied). */
+  autoValue?: number;
+  /** Lifecycle of the auto-detect lookup, drives the Auto button label/spinner. */
+  autoState?: "idle" | "loading" | "detected" | "not_found";
+  /** When true, the Auto button is shown active regardless of value equality (source of truth for Auto mode). */
+  autoActive?: boolean;
+  /** Handler for the "Auto" quick-button (e.g. detect + apply a models.dev value). Always renders the button when provided. */
+  onAuto?: () => void;
 }) {
   const Icon = ICON_MAP[icon];
   const [draft, setDraft] = useState(String(value));
@@ -173,7 +185,30 @@ export function StepperSettingsRow({
             )}
           />
         </div>
-        <div className="flex gap-1.5">
+        <div className="flex flex-wrap justify-end gap-1.5">
+          {onAuto && (
+            <button
+              onClick={onAuto}
+              disabled={autoState === "loading"}
+              title={
+                autoState === "detected" && autoValue
+                  ? `Detected ${autoValue.toLocaleString()} tokens from models.dev`
+                  : autoState === "not_found"
+                    ? "Not found in models.dev — applies a safe default"
+                    : "Detect from models.dev"
+              }
+              className={cn(
+                "px-2 py-1 text-[0.714rem] rounded border transition-colors inline-flex items-center gap-1",
+                (autoActive ?? (autoState === "detected" && autoValue != null && value === autoValue))
+                  ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
+                  : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]",
+                autoState === "loading" && "opacity-60 cursor-wait",
+              )}
+            >
+              {autoState === "loading" && <Loader2 size={10} className="animate-spin" />}
+              Auto
+            </button>
+          )}
           {presets.map((n) => (
             <button
               key={n}

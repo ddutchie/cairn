@@ -22,6 +22,7 @@ import {
   findTombstonedNotes,
   findNestedConflictCopies,
   getNoteById,
+  getNoteByIdIncludingTombstoned,
   moveNoteToProject,
   createColumn,
   createCard,
@@ -672,7 +673,7 @@ describe("tool attachment queries", () => {
   });
 });
 
-describe("deleteNote (hard delete)", () => {
+describe("deleteNote (soft delete / tombstone)", () => {
   let db: Database.Database;
 
   beforeEach(() => {
@@ -681,12 +682,35 @@ describe("deleteNote (hard delete)", () => {
     seedProject(db);
   });
 
-  it("physically removes the row (desktop lists don't filter tombstones)", () => {
+  it("tombstones the row (kept, but hidden from live reads/search)", () => {
     createNote(db, { id: "n1", projectId: "proj1", workspaceId: "ws1", title: "Doomed", content: "x" });
     expect(getNoteById(db, "n1")).not.toBeNull();
     deleteNote(db, "n1");
+    // getNoteById filters tombstones → treated as absent.
     expect(getNoteById(db, "n1")).toBeNull();
+    // …but the row survives so the sync staleness guard has something to compare.
+    expect(getNoteByIdIncludingTombstoned(db, "n1")).not.toBeNull();
+    expect(
+      (db.prepare("SELECT deleted_at FROM notes WHERE id='n1'").get() as { deleted_at: string | null }).deleted_at,
+    ).not.toBeNull();
     expect(searchNotes(db, { query: "Doomed" }).find((n) => n.id === "n1")).toBeUndefined();
+  });
+
+  it("is idempotent — re-deleting preserves deleted_at, updated_at, and version", () => {
+    createNote(db, { id: "n1", projectId: "proj1", workspaceId: "ws1", title: "Doomed", content: "x" });
+    deleteNote(db, "n1");
+    const first = db
+      .prepare("SELECT deleted_at, updated_at, version FROM notes WHERE id='n1'")
+      .get() as { deleted_at: string; updated_at: string; version: number };
+    deleteNote(db, "n1");
+    const second = db
+      .prepare("SELECT deleted_at, updated_at, version FROM notes WHERE id='n1'")
+      .get() as { deleted_at: string; updated_at: string; version: number };
+    // The `deleted_at IS NULL` guard means the retry matches zero rows, so none
+    // of the tombstone stamps churn.
+    expect(second.deleted_at).toBe(first.deleted_at);
+    expect(second.updated_at).toBe(first.updated_at);
+    expect(second.version).toBe(first.version);
   });
 
   it("is a no-op for an unknown id", () => {
@@ -714,7 +738,7 @@ describe("findTombstonedNotes + getNotes tombstone filtering", () => {
     expect(found[0].projectId).toBe("proj1");
 
     // The tombstone row is KEPT (so the sync staleness guard trips) …
-    expect(getNoteById(db, "dead")).not.toBeNull();
+    expect(getNoteByIdIncludingTombstoned(db, "dead")).not.toBeNull();
     // … but getNotes filters it out, so it doesn't show in the UI.
     const listed = getNotes(db, "proj1").map((n: { id: string }) => n.id);
     expect(listed).toContain("live");

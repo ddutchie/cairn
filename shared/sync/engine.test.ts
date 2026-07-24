@@ -529,7 +529,7 @@ describe("sync engine — trigger→drain capture of real queries.ts writes", ()
     B.engine.applyRemote(readPeerOplogs(dir, "B"));
     expect((B.db.prepare("SELECT content FROM notes WHERE id='n1'").get() as { content: string }).content).toBe("updated");
 
-    // A hard delete through queries.ts becomes a tombstone op → B removes it.
+    // A delete through queries.ts (soft-delete/tombstone) becomes a delete op → B removes it.
     clkA.advance(5);
     q.deleteNote(A.db, "n1");
     A.engine.drainPending();
@@ -687,15 +687,16 @@ describe("sync engine — trigger→drain capture of real queries.ts writes", ()
     expect(base?.base_body).toBe("hello");
   });
 
-  // ── hard-delete propagation (desktop physically removes the row) ────────────
-  // The desktop's q.deleteNote does a physical `DELETE FROM notes` (not a
-  // soft-delete), because desktop live queries don't filter tombstones. The
-  // AFTER DELETE capture trigger stages a 'delete' op, and drainPending appends
-  // a delete oplog entry even though the local row is already gone. These tests
-  // pin that the deletion reaches the peer and both devices converge — the
-  // concern behind "delete is hard on Windows; does it remove the item on
-  // mobile?". (It does; the physical delete still tombstones the peer.)
-  describe("hard-delete propagation + convergence", () => {
+  // ── delete propagation (desktop soft-deletes / tombstones the row) ──────────
+  // The desktop's q.deleteNote sets `deleted_at` (a soft-delete), because every
+  // desktop live read filters `deleted_at IS NULL`, so a tombstoned note vanishes
+  // from lists/search exactly like a removal — while the surviving row keeps the
+  // sync staleness guard armed. The AFTER UPDATE capture trigger stages a 'delete'
+  // op (it keys off NEW.deleted_at), and drainPending appends a delete oplog entry
+  // via its normal delete branch (no tombstone SHELL needed — that hack only
+  // existed to compensate for the old physical DELETE leaving no local row). These
+  // tests pin that the deletion reaches the peer and both devices converge.
+  describe("soft-delete propagation + convergence", () => {
     let dir: string;
     beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), "cairn-del-")); });
     afterEach(() => { fs.rmSync(dir, { recursive: true, force: true }); });
@@ -717,7 +718,7 @@ describe("sync engine — trigger→drain capture of real queries.ts writes", ()
       expect((B.db.prepare("SELECT COUNT(*) c FROM notes WHERE id='n1' AND deleted_at IS NULL").get() as { c: number }).c).toBe(1);
 
       clkA.advance(10);
-      q.deleteNote(A.db, "n1"); // physical DELETE
+      q.deleteNote(A.db, "n1"); // soft-delete → tombstone
       A.engine.drainPending();
       syncFolder(dir, A.engine, B.engine);
 
@@ -749,13 +750,14 @@ describe("sync engine — trigger→drain capture of real queries.ts writes", ()
       expect((B.db.prepare("SELECT COUNT(*) c FROM notes WHERE id='n1' AND deleted_at IS NULL").get() as { c: number }).c).toBe(0);
     });
 
-    it("a stale peer put drained AFTER a local hard-delete does not resurrect the row", () => {
-      // Real-world timing bug: desktop deletes a note (physical DELETE, no local
-      // tombstone), publishes the delete, then syncs AGAIN and reads the phone's
-      // still-stale oplog (a put@lowerHLC published before the phone saw the
-      // delete). With no local tombstone the staleness guard has nothing to
-      // compare against, so the older put would resurrect the note. The
-      // drainPending tombstone-shell fix keeps the delete sticky.
+    it("a stale peer put drained AFTER a local delete does not resurrect the row", () => {
+      // Real-world timing bug: desktop deletes a note, publishes the delete, then
+      // syncs AGAIN and reads the phone's still-stale oplog (a put@lowerHLC
+      // published before the phone saw the delete). The surviving tombstone row
+      // (soft-delete) keeps the staleness guard armed so the older put can't
+      // resurrect the note. (Historically the desktop hard-deleted and relied on
+      // drainPending's tombstone-shell to reconstruct the guard; soft-delete makes
+      // the durable row the guard, so the shell is no longer needed here.)
       const clkA = clockFrom(12_150_000);
       const clkB = clockFrom(12_150_000);
       const A = makeDevice("A", clkA.now);

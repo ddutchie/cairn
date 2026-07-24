@@ -242,6 +242,20 @@ interface PendingAuth {
 const pending = new Map<string, PendingAuth>();
 const PENDING_TTL_MS = 10 * 60_000;
 
+// Loopback listeners awaiting a browser callback, keyed by server id, so an
+// in-app "Cancel" can tear one down (closing the listener rejects its
+// waitForCallback → the flow reports a cancelled sign-in to the renderer).
+const activeLoopbacks = new Map<string, LoopbackListener>();
+
+// Per-server generation counter. Bumped synchronously at the top of every
+// startServerAuth so a newer invocation supersedes any older one still in its
+// async setup: an older attempt whose generation is stale must abort (closing
+// any listener it managed to bind) instead of registering listeners or leaving
+// an orphaned loopback behind. Guards the concurrent-start race that the
+// cancelServerAuth-at-entry call cannot cover, because two calls can both pass
+// that point before either has registered anything in activeLoopbacks.
+const authGeneration = new Map<string, number>();
+
 function sweepPending(): void {
   const now = Date.now();
   for (const [state, p] of pending) {
@@ -282,8 +296,17 @@ export async function startServerAuth(
   onComplete?: AuthCompletionListener,
 ): Promise<AuthStartResult> {
   sweepPending();
-  // Drop any earlier in-flight attempt for this server before starting a new one.
-  cancelPendingForServer(cfg.id);
+  // Drop any earlier in-flight attempt for this server before starting a new
+  // one — including a prior loopback listener, so a re-initiated sign-in fully
+  // supersedes the old flow (cancelServerAuth handles both loopback + deep-link).
+  cancelServerAuth(cfg.id);
+
+  // Claim a generation token synchronously, before any await. A concurrent
+  // start for the same server bumps this again; the older attempt then sees its
+  // token is stale after the async loopback bind and aborts (see isStale).
+  const myGen = (authGeneration.get(cfg.id) ?? 0) + 1;
+  authGeneration.set(cfg.id, myGen);
+  const isStale = () => authGeneration.get(cfg.id) !== myGen;
 
   let listener: LoopbackListener | null = null;
   try {
@@ -291,6 +314,13 @@ export async function startServerAuth(
   } catch {
     // Loopback couldn't bind; fall back to the cairn:// deep-link flow.
     return startServerAuthDeepLink(cfg, serverName);
+  }
+
+  // A newer start superseded us while we were binding — abort and close our
+  // listener so it doesn't leak (the newer attempt owns cfg.id now).
+  if (isStale()) {
+    listener.close();
+    return { status: "error", error: "Superseded by a newer sign-in." };
   }
 
   // The loopback port changes every attempt, so a client registration saved with
@@ -320,6 +350,12 @@ export async function startServerAuth(
   // Browser opened. Await the loopback callback off the critical path, then
   // exchange the code and notify the caller. We return "redirected" immediately
   // so the UI can show a waiting state.
+  if (isStale()) {
+    listener.close();
+    await client.close().catch(() => {});
+    return { status: "error", error: "Superseded by a newer sign-in." };
+  }
+  activeLoopbacks.set(cfg.id, listener);
   void (async () => {
     try {
       const cb = await listener.waitForCallback;
@@ -336,10 +372,35 @@ export async function startServerAuth(
         serverId: cfg.id,
         error: e instanceof Error ? e.message : String(e),
       });
+    } finally {
+      // Only clear the map entry if it still points at OUR listener — a newer
+      // sign-in for the same server may have replaced it, and we must not delete
+      // (and thereby orphan) the newer flow's listener.
+      if (activeLoopbacks.get(cfg.id) === listener) {
+        activeLoopbacks.delete(cfg.id);
+      }
     }
   })();
 
   return { status: "redirected" };
+}
+
+/**
+ * Cancel an in-flight loopback sign-in for a server (the in-app "Cancel"
+ * button). Closing the listener rejects its pending callback, which drives the
+ * flow's catch → an `error` completion the renderer surfaces. Returns true if an
+ * attempt was actually in flight.
+ */
+export function cancelServerAuth(serverId: string): boolean {
+  const listener = activeLoopbacks.get(serverId);
+  if (listener) {
+    activeLoopbacks.delete(serverId);
+    listener.close("Sign-in cancelled."); // rejects waitForCallback → completion listener fires "error"
+  }
+  // Also drop any deep-link pending attempt for the same server. Either path
+  // counts as a real cancellation, so the IPC result reflects both.
+  const deepLinkCancelled = cancelPendingForServer(serverId);
+  return listener != null || deepLinkCancelled;
 }
 
 /**
@@ -403,14 +464,18 @@ export async function completeServerAuth(cb: OAuthCallback): Promise<AuthComplet
   }
 }
 
-/** Drop any pending attempt for a server (e.g. when its config changes). */
-export function cancelPendingForServer(serverId: string): void {
+/** Drop any pending attempt for a server (e.g. when its config changes). Returns
+ * true if at least one pending deep-link attempt was removed. */
+export function cancelPendingForServer(serverId: string): boolean {
+  let removed = false;
   for (const [state, p] of pending) {
     if (p.serverId === serverId) {
       void p.client.close().catch(() => {});
       pending.delete(state);
+      removed = true;
     }
   }
+  return removed;
 }
 
 // Keep the registry from leaking across app lifetime.

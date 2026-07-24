@@ -57,6 +57,13 @@ export function McpAuthButton({ serverId }: { serverId: string }) {
     void refresh();
   }, [serverId, refresh]);
 
+  const cancel = useCallback(async () => {
+    await window.electron?.tools.cancelMcpAuth(serverId);
+    // The completion listener will flip busy off with a "cancelled" error;
+    // clear busy eagerly so the button is responsive even if that races.
+    setBusy(false);
+  }, [serverId]);
+
   return (
     <div className="flex items-center gap-2">
       {connected ? (
@@ -68,10 +75,18 @@ export function McpAuthButton({ serverId }: { serverId: string }) {
             <LogOut size={12} /> Sign out
           </Button>
         </>
+      ) : busy ? (
+        <>
+          <span className="flex items-center gap-1 text-[0.714rem] text-[var(--text-tertiary)]">
+            <Loader2 size={12} className="animate-spin" /> Waiting for browser…
+          </span>
+          <Button variant="ghost" size="sm" onClick={() => void cancel()}>
+            Cancel
+          </Button>
+        </>
       ) : (
-        <Button variant="outline" size="sm" disabled={busy} onClick={() => void signIn()}>
-          {busy ? <Loader2 size={12} className="animate-spin" /> : <LogIn size={12} />}
-          {busy ? "Waiting for browser…" : "Sign in"}
+        <Button variant="outline" size="sm" onClick={() => void signIn()}>
+          <LogIn size={12} /> Sign in
         </Button>
       )}
       {error && (

@@ -893,6 +893,7 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
             placeholder="Write here…"
             readOnly={isAiWriting}
             changedLines={changedLines}
+            livePreview={mode === "write"}
           />
         </div>
 

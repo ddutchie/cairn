@@ -95,7 +95,7 @@ export function registerToolsHandlers(db: Database): void {
         const prev = q.getMcpServerById(db, server.id);
         if (prev && oauthConfigChanged(prev, server)) {
           mcpOauth.signOut(id);
-          mcpOauth.cancelPendingForServer(id);
+          mcpOauth.cancelServerAuth(id); // tear down loopback listener + deep-link attempt
           void mcpClient.dispose(id);
         }
       }
@@ -106,7 +106,7 @@ export function registerToolsHandlers(db: Database): void {
   registerIpcHandle("tools:deleteMcpServer", (_e, { id }: { id: string }) =>
     handle(() => {
       q.deleteMcpServer(db, id);
-      mcpOauth.cancelPendingForServer(id); // drop any in-flight OAuth attempt
+      mcpOauth.cancelServerAuth(id); // drop any in-flight OAuth attempt (loopback + deep-link)
       secrets.deleteToolSecrets("mcp", id); // purge keychain credentials + OAuth tokens
       void mcpClient.dispose(id); // drop any live connection
     })
@@ -174,9 +174,15 @@ export function registerToolsHandlers(db: Database): void {
   registerIpcHandle("tools:signOutMcp", (_e, { id }: { id: string }) =>
     handle(() => {
       mcpOauth.signOut(id);
-      mcpOauth.cancelPendingForServer(id);
+      mcpOauth.cancelServerAuth(id); // tear down loopback listener + deep-link attempt
       void mcpClient.dispose(id);
     })
+  );
+
+  // Cancel an in-flight sign-in (user abandoned the browser step). Tears down
+  // the waiting loopback listener → the flow reports a cancelled completion.
+  registerIpcHandle("tools:cancelMcpAuth", (_e, { id }: { id: string }) =>
+    handle(() => ({ cancelled: mcpOauth.cancelServerAuth(id) }))
   );
 
   // ── Custom HTTP services ─────────────────────────────────────────────────

@@ -133,7 +133,7 @@ export function setupProtocol(outDir: string): void {
           "style-src-elem 'self' 'unsafe-inline'",
           "img-src 'self' data: blob: asset: https:",
           "font-src 'self' data: https://fonts.gstatic.com",
-          "connect-src 'self' http://localhost:* ws://localhost:*",
+          "connect-src 'self' https: http://localhost:* ws://localhost:*",
           "worker-src blob: 'self'",
           "frame-src blob: https:",
         ].join("; ")

@@ -162,6 +162,7 @@ export function toNote(row: any) {
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
     archivedAt: row.archived_at as string | undefined,
+    deletedAt: (row.deleted_at ?? undefined) as string | undefined,
     version: (row.version ?? 0) as number,
   };
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Plus, Server, Globe, Sparkles } from "lucide-react";
+import { Plus, Server, Globe, Sparkles, Download } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,8 @@ import { id } from "@/lib/utils";
 import type { McpServerConfig, CustomServiceConfig } from "@/types";
 import { SettingsGroup } from "./shared";
 import { ToolBuilderModal } from "./ToolBuilderModal";
+import { BrowseCommunityModal } from "./tools/BrowseCommunityModal";
+import { ConnectorLogo } from "./tools/ConnectorLogo";
 import { type HeaderRow, looksLikeCredential } from "./tools/helpers";
 import { TestButton } from "./tools/TestButton";
 import { McpAuthButton } from "./tools/McpAuthButton";
@@ -45,11 +47,35 @@ export function ToolsSettings() {
   const [addingSvc, setAddingSvc] = useState(false);
   const [editingSvc, setEditingSvc] = useState<string | null>(null);
   const [builderOpen, setBuilderOpen] = useState(false);
+  const [browseOpen, setBrowseOpen] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     if (activeWorkspaceId) fetchTools(activeWorkspaceId);
   }, [activeWorkspaceId, fetchTools]);
+
+  // Registry logos for community-installed rows, keyed by communityId (== the
+  // connector's definition name, which is what install records). Fetched once
+  // (cache-first) so the configured-servers list shows the same brand marks as
+  // Browse Community, instead of the generic Server/Globe icon.
+  const [logoMap, setLogoMap] = useState<Record<string, { iconSvg?: string; brandColor?: string }>>({});
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const reg = window.electron?.registry;
+      if (!reg) return;
+      try {
+        const { manifest } = await reg.fetch();
+        if (cancelled) return;
+        const map: Record<string, { iconSvg?: string; brandColor?: string }> = {};
+        for (const e of [...manifest.mcpServers, ...manifest.services]) {
+          map[e.definition.name] = { iconSvg: e.iconSvg, brandColor: e.brandColor };
+        }
+        setLogoMap(map);
+      } catch { /* offline / no registry — rows fall back to the generic icon */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // Persist secret-header values to the OS keychain, replacing the row value
   // with the returned secret:// ref before saving the config.
@@ -134,6 +160,22 @@ export function ToolsSettings() {
         </Button>
       </div>
 
+      <div className="flex items-center justify-between gap-4 rounded-lg border border-[var(--border)] bg-[color-mix(in_srgb,var(--accent)_5%,var(--surface))] px-4 py-3">
+        <div className="flex items-start gap-3 min-w-0">
+          <span className="text-[var(--accent)] mt-0.5"><Download size={16} /></span>
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold text-[var(--text-primary)]">Browse community tools</h3>
+            <p className="text-xs text-[var(--text-tertiary)] mt-0.5">
+              Install curated MCP servers (Jira, Linear, Notion, GitHub…) and HTTP services with one click. New tools
+              appear here without an app update.
+            </p>
+          </div>
+        </div>
+        <Button size="sm" variant="outline" onClick={() => setBrowseOpen(true)} className="shrink-0">
+          <Download size={12} /> Browse
+        </Button>
+      </div>
+
       <SettingsGroup
         title="MCP Servers"
         description="Connect the AI to remote MCP servers (SSE or streamable-HTTP). Enable a server here, then attach it per-project from the project Overview."
@@ -163,7 +205,11 @@ export function ToolsSettings() {
           ) : (
             <ToolRow
               key={server.id}
-              icon={<Server size={15} />}
+              icon={
+                logoMap[server.communityId ?? server.name]?.iconSvg
+                  ? <ConnectorLogo iconSvg={logoMap[server.communityId ?? server.name].iconSvg} kind="mcp" color={logoMap[server.communityId ?? server.name].brandColor} size={16} />
+                  : <Server size={15} />
+              }
               name={server.name}
               subtitle={server.baseUrl}
               enabled={server.enabled}
@@ -217,7 +263,11 @@ export function ToolsSettings() {
           ) : (
             <ToolRow
               key={svc.id}
-              icon={<Globe size={15} />}
+              icon={
+                logoMap[svc.communityId ?? svc.name]?.iconSvg
+                  ? <ConnectorLogo iconSvg={logoMap[svc.communityId ?? svc.name].iconSvg} kind="service" color={logoMap[svc.communityId ?? svc.name].brandColor} size={16} />
+                  : <Globe size={15} />
+              }
               name={svc.name}
               subtitle={`${svc.method} ${svc.apiUrl}`}
               enabled={svc.enabled}
@@ -242,6 +292,15 @@ export function ToolsSettings() {
           workspaceId={activeWorkspaceId}
           onClose={() => {
             setBuilderOpen(false);
+            if (activeWorkspaceId) fetchTools(activeWorkspaceId);
+          }}
+        />
+      )}
+
+      {browseOpen && (
+        <BrowseCommunityModal
+          onClose={() => {
+            setBrowseOpen(false);
             if (activeWorkspaceId) fetchTools(activeWorkspaceId);
           }}
         />

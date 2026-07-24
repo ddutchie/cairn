@@ -11,7 +11,15 @@
 
 import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
-import type { McpServerConfig, CustomServiceConfig, ToolAttachment, ToolType } from "@/types";
+import type {
+  McpServerConfig,
+  CustomServiceConfig,
+  ToolAttachment,
+  ToolType,
+  RegistryMcpEntry,
+  RegistryServiceEntry,
+} from "@/types";
+import { id } from "@/lib/utils";
 
 /** A single tool exposed by an MCP server (raw name + description). */
 export interface McpToolInfo {
@@ -48,6 +56,22 @@ export interface ToolsSlice {
   fetchToolAttachments: (projectId: string) => Promise<void>;
   setToolAttachment: (projectId: string, toolType: ToolType, toolId: string, enabled: boolean) => Promise<void>;
   clearToolAttachment: (projectId: string, toolType: ToolType, toolId: string) => Promise<void>;
+
+  /**
+   * Install (or re-install / update) a community-registry MCP entry into the
+   * active workspace. `secrets` maps a placeholder header NAME → the real value
+   * the user supplied; each is stored in the OS keychain and the header is
+   * rewritten to a secret:// ref before save. Returns the installed id.
+   */
+  installCommunityMcp: (entry: RegistryMcpEntry, secrets?: Record<string, string>) => Promise<string>;
+  /** Install (or update) a community-registry HTTP service entry. */
+  installCommunityService: (entry: RegistryServiceEntry, secrets?: Record<string, string>) => Promise<string>;
+}
+
+/** Placeholder tokens in a header value that must be filled at install. */
+const PLACEHOLDER_RE = /<API_KEY>|YOUR_API_KEY|<ACCESS_TOKEN>|<TOKEN>/;
+export function headerNeedsSecret(value: string): boolean {
+  return PLACEHOLDER_RE.test(value);
 }
 
 export const createToolsSlice: StateCreator<CairnStore, [], [], ToolsSlice> = (set, get) => ({
@@ -201,4 +225,92 @@ export const createToolsSlice: StateCreator<CairnStore, [], [], ToolsSlice> = (s
       get().fetchToolAttachments(projectId);
     }
   },
+
+  async installCommunityMcp(entry, secrets = {}) {
+    if (typeof window === "undefined" || !window.electron?.tools) throw new Error("Unavailable");
+    const workspaceId = get().activeWorkspaceId;
+    if (!workspaceId) throw new Error("No active workspace");
+    // Re-install onto the SAME row when this community item is already present,
+    // so an update preserves the id (and its keychain-stored secrets keyed by id)
+    // instead of creating a duplicate.
+    const existing = get().mcpServers.find((m) => m.communityId === entry.definition.name);
+    const toolId = existing?.id ?? id();
+
+    const headers = await resolveInstallHeaders("mcp", toolId, entry.definition.headers, secrets);
+    await get().saveMcpServer({
+      id: toolId,
+      workspaceId,
+      name: entry.definition.name,
+      description: entry.definition.description,
+      transport: entry.definition.transport,
+      baseUrl: entry.definition.baseUrl,
+      headers,
+      authMode: entry.definition.authMode ?? "none",
+      oauthScope: entry.definition.oauthScope,
+      disabledTools: entry.definition.disabledTools,
+      // Install DISABLED so the user reviews (and, for OAuth, connects) before it goes live.
+      enabled: false,
+      source: "community",
+      communityId: entry.definition.name,
+      version: entry.version,
+    });
+    return toolId;
+  },
+
+  async installCommunityService(entry, secrets = {}) {
+    if (typeof window === "undefined" || !window.electron?.tools) throw new Error("Unavailable");
+    const workspaceId = get().activeWorkspaceId;
+    if (!workspaceId) throw new Error("No active workspace");
+    const existing = get().customServices.find((c) => c.communityId === entry.definition.name);
+    const toolId = existing?.id ?? id();
+
+    const headers = await resolveInstallHeaders("service", toolId, entry.definition.headers, secrets);
+    await get().saveCustomService({
+      id: toolId,
+      workspaceId,
+      name: entry.definition.name,
+      description: entry.definition.description,
+      apiUrl: entry.definition.apiUrl,
+      method: entry.definition.method,
+      headers,
+      toolDefinition: entry.definition.toolDefinition,
+      responseKeys: entry.definition.responseKeys,
+      apiKeyUrl: entry.definition.apiKeyUrl,
+      enabled: false,
+      source: "community",
+      communityId: entry.definition.name,
+      version: entry.version,
+    });
+    return toolId;
+  },
 });
+
+/**
+ * Turn a registry definition's headers into save-ready headers: for each header
+ * whose value is a placeholder, store the user-supplied secret in the keychain
+ * and substitute a secret:// ref. Non-placeholder headers pass through as-is.
+ * A placeholder with no supplied secret is dropped (the tool installs without
+ * it; the user can add it later in Settings).
+ */
+async function resolveInstallHeaders(
+  toolType: "mcp" | "service",
+  toolId: string,
+  headers: Record<string, string> | undefined,
+  secrets: Record<string, string>,
+): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  for (const [name, value] of Object.entries(headers ?? {})) {
+    if (headerNeedsSecret(value)) {
+      const supplied = secrets[name];
+      if (supplied) {
+        const ref = await window.electron?.secrets.set(toolType, toolId, name, supplied);
+        if (!ref) throw new Error(`Could not securely store the secret for "${name}".`);
+        out[name] = ref as string;
+      }
+      // else: drop the unfilled placeholder — never persist a raw placeholder.
+    } else {
+      out[name] = value;
+    }
+  }
+  return out;
+}

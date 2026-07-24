@@ -364,7 +364,13 @@ export const useCairnStore = create<CairnStore>()(
         set({ aiConfig: DEFAULT_AI_CONFIG });
       }
 
-      const savedAgentConfig = backendAgentConfig || storage.get<AgentConfig>(AGENT_CONFIG_KEY);
+      // Layer localStorage UNDER the backend config (mirroring the AI path) so
+      // UI-only fields the backend cache doesn't track (e.g. contextAuto) survive
+      // a hydrate instead of being dropped when a backend config exists.
+      const localAgentConfig = storage.get<AgentConfig>(AGENT_CONFIG_KEY);
+      const savedAgentConfig = backendAgentConfig
+        ? { ...localAgentConfig, ...backendAgentConfig }
+        : localAgentConfig;
       if (savedAgentConfig) {
         set({ agentConfig: { ...DEFAULT_AGENT_CONFIG, ...savedAgentConfig } });
         storage.set(AGENT_CONFIG_KEY, savedAgentConfig);
