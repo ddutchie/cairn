@@ -22,6 +22,12 @@ export interface ToolCall {
   ok: boolean;
   /** Set when the tool created/returned a note or card, so the chip can open it. */
   ref?: { kind: "note" | "card"; id: string };
+  /**
+   * Set when a web/MCP/service tool result carries a linkable external artefact
+   * (a web-search hit, a docs page, …), so the chip can open it in the browser.
+   * https-guarded at extraction (shared/chat/external-ref).
+   */
+  externalRef?: { url: string; title?: string; snippet?: string };
 }
 
 interface ChatLocalRow {

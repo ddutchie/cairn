@@ -1,8 +1,9 @@
 import { useMemo } from "react";
-import { View, Text, Pressable, StyleSheet } from "react-native";
-import { CheckCircle, ChevronRight } from "lucide-react-native";
+import { View, Text, Pressable, StyleSheet, Linking } from "react-native";
+import { CheckCircle, ChevronRight, ExternalLink } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import { prettifyToolLabel } from "@cairn/shared/ui/constants";
+import { isHttpUrl } from "@cairn/shared/chat/external-ref";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 import { haptics } from "@/haptics";
 import type { ToolCall } from "@/db/chat-store";
@@ -39,6 +40,27 @@ export function ToolTrail({ tools }: { tools: ToolCall[] }) {
             </Pressable>
           );
         }
+        if (tt.externalRef && isHttpUrl(tt.externalRef.url)) {
+          const er = tt.externalRef;
+          const chipLabel = er.title || hostOf(er.url);
+          return (
+            <Pressable
+              key={i}
+              style={styles.toolChip}
+              hitSlop={6}
+              accessibilityRole="link"
+              accessibilityLabel={`Open ${chipLabel}`}
+              onPress={() => {
+                haptics.impact();
+                void Linking.openURL(er.url);
+              }}
+            >
+              <ExternalLink size={10} color={t.accent} />
+              <Text style={[styles.toolChipText, styles.toolChipLink]} numberOfLines={1}>{chipLabel}</Text>
+              <ChevronRight size={10} color={t.accent} />
+            </Pressable>
+          );
+        }
         return (
           <View key={i} style={styles.toolChip}>
             <CheckCircle size={10} color={tt.ok ? t.accent : t.danger} />
@@ -48,6 +70,15 @@ export function ToolTrail({ tools }: { tools: ToolCall[] }) {
       })}
     </View>
   );
+}
+
+/** Best-effort friendly host label for an external URL (e.g. "github.com"). */
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
 }
 
 function makeStyles(t: Theme) {
@@ -66,6 +97,6 @@ function makeStyles(t: Theme) {
       paddingVertical: 4,
     },
     toolChipText: { ...typeScale.caption, color: t.textSecondary },
-    toolChipLink: { color: t.accent },
+    toolChipLink: { color: t.accent, maxWidth: 220 },
   });
 }
