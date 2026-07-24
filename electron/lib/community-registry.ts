@@ -32,6 +32,7 @@ interface RegistryEntryMeta {
   id: string;
   author: string;
   version: string;
+  category?: string;
   tags: string[];
   blurb: string;
   brandColor?: string;
@@ -109,6 +110,7 @@ const entryMeta = {
   id: z.string(),
   author: z.string(),
   version: z.string(),
+  category: z.string().optional(),
   tags: z.array(z.string()),
   blurb: z.string(),
   brandColor: z.string().optional(),

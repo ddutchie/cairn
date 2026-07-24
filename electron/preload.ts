@@ -31,7 +31,7 @@ interface ToolAttachment {
 }
 // ── Community registry (cairn-community manifest) ───────────────────────────
 interface RegistryEntryMeta {
-  id: string; author: string; version: string; tags: string[]; blurb: string;
+  id: string; author: string; version: string; category?: string; tags: string[]; blurb: string;
   brandColor?: string; homepage?: string; iconSvg?: string;
 }
 interface RegistryMcpEntry extends RegistryEntryMeta {

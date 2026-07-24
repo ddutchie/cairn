@@ -76,7 +76,7 @@ export function BrowseCommunityModal({ onClose }: { onClose: () => void }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [query, setQuery] = useState("");
-  const [activeTag, setActiveTag] = useState<string | null>(null);
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [installing, setInstalling] = useState<string | null>(null);
   const [installError, setInstallError] = useState<string | null>(null);
   // Entry currently prompting for secrets: name → the header names + values.
@@ -114,9 +114,14 @@ export function BrowseCommunityModal({ onClose }: { onClose: () => void }) {
     ];
   }, [result]);
 
-  const allTags = useMemo(() => {
+  // Chips are CATEGORIES (a small fixed vocabulary), not tags — the freeform
+  // tags are too many/too granular to be useful filters. Tags still feed search.
+  const categories = useMemo(() => {
     const set = new Set<string>();
-    for (const e of entries) for (const t of entryMeta(e).tags) set.add(t);
+    for (const e of entries) {
+      const cat = entryMeta(e).category;
+      if (cat) set.add(cat);
+    }
     return [...set].sort();
   }, [entries]);
 
@@ -124,15 +129,16 @@ export function BrowseCommunityModal({ onClose }: { onClose: () => void }) {
     const q = query.trim().toLowerCase();
     return entries.filter((e) => {
       const meta = entryMeta(e);
-      if (activeTag && !meta.tags.includes(activeTag)) return false;
+      if (activeCategory && meta.category !== activeCategory) return false;
       if (!q) return true;
       return (
         entryName(e).toLowerCase().includes(q) ||
         meta.blurb.toLowerCase().includes(q) ||
+        (meta.category ?? "").toLowerCase().includes(q) ||
         meta.tags.some((t) => t.includes(q))
       );
     });
-  }, [entries, query, activeTag]);
+  }, [entries, query, activeCategory]);
 
   // Installed state, keyed by communityId (== the entry definition name).
   const installedVersion = useCallback(
@@ -218,11 +224,11 @@ export function BrowseCommunityModal({ onClose }: { onClose: () => void }) {
           </Button>
         </div>
 
-        {allTags.length > 0 && (
+        {categories.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
-            <TagChip label="All" active={activeTag === null} onClick={() => setActiveTag(null)} />
-            {allTags.map((t) => (
-              <TagChip key={t} label={t} active={activeTag === t} onClick={() => setActiveTag(t)} />
+            <TagChip label="All" active={activeCategory === null} onClick={() => setActiveCategory(null)} />
+            {categories.map((cat) => (
+              <TagChip key={cat} label={cat} active={activeCategory === cat} onClick={() => setActiveCategory(cat)} />
             ))}
           </div>
         )}

@@ -246,6 +246,8 @@ export interface RegistryEntryMeta {
   author: string;
   /** SemVer of THIS entry — bump drives the "update available" badge. */
   version: string;
+  /** Fixed category vocabulary — shown as the Browse Community filter chip. */
+  category?: string;
   tags: string[];
   blurb: string;
   brandColor?: string;
