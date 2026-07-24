@@ -88,27 +88,19 @@ describe("livePreview decorations", () => {
     view.destroy();
   });
 
-  it("replaces a callout blockquote with a widget when the cursor is outside", async () => {
+  it("does not render a callout widget while callouts are disabled", () => {
+    // Inline callout block widgets are temporarily disabled (CALLOUTS_ENABLED
+    // = false) due to a block-widget layout/cursor bug. Callout blockquotes
+    // should fall back to ordinary blockquote rendering (Tier 1 border), not a
+    // widget. Re-enable + restore the widget-behaviour tests when the layout
+    // issue is fixed.
     const doc = "intro line\n\n> [!note] Heads up\n> body text here\n\nafter";
-    // Cursor on the first line (offset 0) — callout is inactive → widget.
     const view = mount(doc, 0);
     const widget = view.contentDOM.querySelector(".cm-lp-callout");
-    expect(widget).toBeTruthy();
-    // React renders the callout body asynchronously; wait a tick then assert
-    // the header title from the <Callout> component appears.
-    await new Promise((r) => setTimeout(r, 0));
-    expect(widget?.textContent).toContain("Heads up");
-    view.destroy();
-  });
-
-  it("shows raw callout source when the cursor is inside it", () => {
-    const doc = "intro line\n\n> [!note] Heads up\n> body text here\n\nafter";
-    // Put the cursor inside the callout (line 3, "[!note]" region ~ offset 14).
-    const view = mount(doc, 16);
-    const widget = view.contentDOM.querySelector(".cm-lp-callout");
     expect(widget).toBeNull();
-    // Raw directive text should be visible for editing.
-    expect(view.contentDOM.textContent).toContain("[!note]");
+    // Callout lines are still styled as blockquotes.
+    const quoted = view.contentDOM.querySelectorAll(".cm-lp-blockquote");
+    expect(quoted.length).toBeGreaterThan(0);
     view.destroy();
   });
 });

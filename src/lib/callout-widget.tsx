@@ -59,7 +59,7 @@ export class CalloutWidget extends WidgetType {
     );
   }
 
-  toDOM(): HTMLElement {
+  toDOM(view: EditorView): HTMLElement {
     const container = document.createElement("div");
     container.className = "cm-lp-callout";
     // Mount the React callout. NoteMarkdownPreview renders the body markdown so
@@ -75,7 +75,22 @@ export class CalloutWidget extends WidgetType {
         {this.data.body ? <NoteMarkdownPreview content={this.data.body} /> : null}
       </Callout>,
     );
+    // React renders asynchronously, so the container has ~0 height when CM first
+    // measures it. That desyncs the layout below the widget (the cursor lands
+    // several lines off). Ask CM to re-measure once React has painted. A double
+    // rAF ensures the commit + layout have flushed before we remeasure.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (this.root) view.requestMeasure();
+      });
+    });
     return container;
+  }
+
+  // The rendered callout height differs from the source lines it replaces, so
+  // CM must always re-measure rather than assume the widget matches text.
+  get estimatedHeight(): number {
+    return -1;
   }
 
   destroy(): void {
@@ -86,10 +101,13 @@ export class CalloutWidget extends WidgetType {
     if (root) queueMicrotask(() => root.unmount());
   }
 
-  // Clicks inside the widget (e.g. collapsible header, links) should reach the
-  // React handlers rather than moving the editor cursor.
+  // Let clicks fall through to CodeMirror so clicking the callout places the
+  // cursor into its source range (which then reveals the raw markdown for
+  // editing). The collapsible header's own React onClick still fires on the
+  // way through. Returning true here would swallow the click and make the
+  // callout un-selectable ("can't click in").
   ignoreEvent(): boolean {
-    return true;
+    return false;
   }
 }
 

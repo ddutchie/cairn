@@ -26,6 +26,14 @@ import {
 import { syntaxTree } from "@codemirror/language";
 import { makeCalloutWidget, parseCalloutSource, calloutWidgetTheme } from "./callout-widget";
 
+// TEMPORARILY DISABLED — inline callout block widgets have a layout/cursor bug
+// (cursor drifts below the widget; clicking in is unreliable). The plumbing is
+// left intact behind this flag so it can be re-enabled once the block-widget
+// height/measurement issue is solved. See the Cairn "Notes Editor" board task.
+// When false: callout blockquotes render as ordinary blockquotes (Tier 1 border)
+// and the calloutField / widget are not added to the editor.
+const CALLOUTS_ENABLED = false;
+
 // ── Widgets ────────────────────────────────────────────────────────────────
 
 /** Renders a "•" in place of a "-"/"*"/"+" list bullet marker. */
@@ -132,8 +140,9 @@ function findCalloutBlocks(state: EditorState): (CalloutBlock & { raw: string })
 /** Line numbers covered by a callout widget (cursor outside) — used by the
  *  inline ViewPlugin to skip those lines. */
 function calloutWidgetLineSet(state: EditorState): Set<number> {
-  const active = activeLines(state);
   const set = new Set<number>();
+  if (!CALLOUTS_ENABLED) return set; // feature disabled → treat as ordinary blockquotes
+  const active = activeLines(state);
   for (const block of findCalloutBlocks(state)) {
     let cursorInside = false;
     for (let ln = block.lineStart; ln <= block.lineEnd; ln++) {
@@ -409,5 +418,7 @@ const livePreviewTheme = EditorView.theme({
  * Compartment if you want to toggle it at runtime.
  */
 export function livePreview() {
-  return [calloutField, livePreviewPlugin, livePreviewTheme, calloutWidgetTheme];
+  const exts = [livePreviewPlugin, livePreviewTheme];
+  if (CALLOUTS_ENABLED) exts.unshift(calloutField, calloutWidgetTheme);
+  return exts;
 }
