@@ -46,14 +46,32 @@ export interface RegistryMcpEntry extends RegistryEntryMeta {
   };
 }
 
+/** One operation of a multi-operation HTTP service. */
+export interface RegistryServiceOperation {
+  name: string;
+  description?: string;
+  method: "GET" | "POST" | "PUT" | "DELETE";
+  path?: string;
+  toolDefinition: string;
+  paramLocations?: Record<string, "path" | "query" | "body">;
+  query?: Record<string, string>;
+  responseKeys?: string[];
+}
+
 export interface RegistryServiceEntry extends RegistryEntryMeta {
   definition: {
     name: string;
     description?: string;
-    apiUrl: string;
-    method: "GET" | "POST" | "PUT" | "DELETE";
+    /** Legacy single-op endpoint. Use baseUrl + operations for multi-op. */
+    apiUrl?: string;
+    method?: "GET" | "POST" | "PUT" | "DELETE";
     headers?: Record<string, string>;
-    toolDefinition: string;
+    /** Legacy single-op tool. */
+    toolDefinition?: string;
+    /** Base URL shared by all operations (multi-op). */
+    baseUrl?: string;
+    /** Multi-operation definition — each becomes its own namespaced tool. */
+    operations?: RegistryServiceOperation[];
     responseKeys?: string[];
     apiKeyUrl?: string;
     authMode?: "none" | "oauth";
@@ -95,19 +113,47 @@ const oauthConfig = z
   })
   .optional();
 
-const serviceDefinition = z.object({
+const method = z.enum(["GET", "POST", "PUT", "DELETE"]);
+const paramLocations = z.record(z.string(), z.enum(["path", "query", "body"])).optional();
+
+const serviceOperation = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
-  apiUrl: z.string().url().startsWith("https://"),
-  method: z.enum(["GET", "POST", "PUT", "DELETE"]),
-  headers,
+  method,
+  path: z.string().optional(),
   toolDefinition: z.string().min(1),
+  paramLocations,
+  query: z.record(z.string(), z.string()).optional(),
   responseKeys: z.array(z.string()).optional(),
-  apiKeyUrl: z.string().url().startsWith("https://").optional(),
-  authMode: z.enum(["none", "oauth"]).optional(),
-  oauth: oauthConfig,
-  enabled: z.boolean(),
 });
+
+const serviceDefinition = z
+  .object({
+    name: z.string().min(1),
+    description: z.string().optional(),
+    // Legacy single-op fields (optional now that operations[] exists).
+    apiUrl: z.string().url().startsWith("https://").optional(),
+    method: method.optional(),
+    headers,
+    toolDefinition: z.string().min(1).optional(),
+    // Multi-op fields.
+    baseUrl: z.string().url().startsWith("https://").optional(),
+    operations: z.array(serviceOperation).optional(),
+    responseKeys: z.array(z.string()).optional(),
+    apiKeyUrl: z.string().url().startsWith("https://").optional(),
+    authMode: z.enum(["none", "oauth"]).optional(),
+    oauth: oauthConfig,
+    enabled: z.boolean(),
+  })
+  // A service is valid if it's either legacy single-op (apiUrl+method+
+  // toolDefinition) OR multi-op (baseUrl+operations). Reject a def that is
+  // neither, so a malformed connector is caught at parse time.
+  .refine(
+    (d) =>
+      (d.operations && d.operations.length > 0 && d.baseUrl) ||
+      (d.apiUrl && d.method && d.toolDefinition),
+    { message: "service must define either baseUrl+operations or apiUrl+method+toolDefinition" }
+  );
 
 const entryMeta = {
   id: z.string(),

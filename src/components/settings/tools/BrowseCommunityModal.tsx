@@ -54,7 +54,10 @@ function isOAuth(e: CardEntry): boolean {
     : e.service!.definition.authMode === "oauth";
 }
 function baseUrlOf(e: CardEntry): string {
-  return e.kind === "mcp" ? e.mcp!.definition.baseUrl : e.service!.definition.apiUrl;
+  if (e.kind === "mcp") return e.mcp!.definition.baseUrl;
+  // Services: multi-op uses baseUrl; legacy single-op uses apiUrl.
+  const d = e.service!.definition;
+  return d.baseUrl ?? d.apiUrl ?? "";
 }
 
 /**

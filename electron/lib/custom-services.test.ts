@@ -51,7 +51,7 @@ describe("custom-services namespacing", () => {
 
 describe("custom-services tool definition parsing", () => {
   it("parses a bare definition object", () => {
-    const def = parseToolDefinition(baseCfg.toolDefinition);
+    const def = parseToolDefinition(baseCfg.toolDefinition!);
     expect(def.name).toBe("search");
     expect(def.description).toBe("Search things");
     expect(def.parameters).toEqual({ type: "object", properties: { q: { type: "string" } } });

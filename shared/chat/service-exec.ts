@@ -75,13 +75,61 @@ export function parseToolDefinition(toolDefinition: string): ParsedToolDefinitio
 
 // ── Service config (subset of CustomServiceConfig) ───────────────────────────
 
+/** Where a tool argument is placed in the HTTP request. */
+export type ParamLocation = "path" | "query" | "body";
+
+/**
+ * One operation of a (possibly multi-operation) HTTP service. A service groups
+ * several operations that share a base URL + headers/auth; each operation is
+ * exposed to the model as its own namespaced tool.
+ */
+export interface ServiceOperation {
+  /** Un-namespaced tool name, unique within the service. */
+  name: string;
+  method: "GET" | "POST" | "PUT" | "DELETE";
+  /**
+   * Path appended to the service baseUrl, with `{placeholder}` segments filled
+   * from arguments (e.g. "/repos/{owner}/{repo}/issues/{number}"). May be "" when
+   * the baseUrl is already the full endpoint (legacy single-op services).
+   */
+  path?: string;
+  /** Stringified OpenAI tool JSON (name/description/parameters) for THIS op. */
+  toolDefinition: string;
+  /**
+   * Where each argument goes: "path" | "query" | "body". Args named by a
+   * `{placeholder}` in `path` are treated as "path" automatically. Any arg not
+   * listed defaults by method (query for GET/DELETE, body for POST/PUT) — so the
+   * legacy behaviour is the zero-config case.
+   */
+  paramLocations?: Record<string, ParamLocation>;
+  /**
+   * Static query params ALWAYS sent for this operation (e.g. { format: "json",
+   * units: "metric" }, or Open-Meteo's `current` field list). These are supplied
+   * by the connector, not the model — so results don't depend on the model
+   * remembering to pass an optional arg (function-calling `default`s are NOT
+   * auto-applied). A model-supplied arg of the same name overrides the static one.
+   */
+  query?: Record<string, string>;
+  /** Response key allow-list for THIS op (falls back to the service default). */
+  responseKeys?: string[];
+}
+
 export interface CustomServiceRuntimeConfig {
   id: string;
-  apiUrl: string;
-  method: "GET" | "POST" | "PUT" | "DELETE";
+  /**
+   * Legacy single-op endpoint. For multi-op services use `baseUrl` + `operations`
+   * instead. When `operations` is present these are ignored (normalizeOperations
+   * prefers operations).
+   */
+  apiUrl?: string;
+  method?: "GET" | "POST" | "PUT" | "DELETE";
   headers?: Record<string, string>;
-  toolDefinition: string;
+  toolDefinition?: string;
   responseKeys?: string[];
+  /** Base URL shared by all operations (multi-op). Operations' `path` is appended. */
+  baseUrl?: string;
+  /** Multi-operation definition. When present, each becomes its own tool. */
+  operations?: ServiceOperation[];
   /** "oauth" services inject a Bearer token resolved at call time (see resolveBearer). */
   authMode?: "none" | "oauth";
 }
@@ -96,7 +144,7 @@ export type BearerResolver = (serviceId: string) => Promise<string | null>;
 
 /** Convert a service config into a namespaced OpenAI function def. */
 export function serviceToOpenAI(cfg: CustomServiceRuntimeConfig): OpenAIToolDef {
-  const def = parseToolDefinition(cfg.toolDefinition);
+  const def = parseToolDefinition(cfg.toolDefinition ?? "{}");
   return {
     type: "function",
     function: {
@@ -105,6 +153,101 @@ export function serviceToOpenAI(cfg: CustomServiceRuntimeConfig): OpenAIToolDef 
       parameters: def.parameters,
     },
   };
+}
+
+// ── Multi-operation support (pure) ────────────────────────────────────────────
+
+/**
+ * A normalized operation resolved against its owning service — the internal
+ * shape every code path uses so single-op and multi-op services share one flow.
+ */
+export interface ResolvedOperation {
+  toolName: string; // un-namespaced
+  method: "GET" | "POST" | "PUT" | "DELETE";
+  url: string; // full URL (baseUrl + path), placeholders still present
+  toolDefinition: string;
+  paramLocations: Record<string, ParamLocation>;
+  /** Static query params always sent (model args of the same name override). */
+  query?: Record<string, string>;
+  responseKeys?: string[];
+}
+
+/** Join a base URL and a path fragment without doubling or dropping slashes. */
+function joinUrl(base: string, path?: string): string {
+  if (!path) return base;
+  return `${base.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
+}
+
+/** Arg names referenced as {placeholders} in a path template. */
+function pathParams(path?: string): string[] {
+  if (!path) return [];
+  return [...path.matchAll(/\{([^}]+)\}/g)].map((m) => m[1]);
+}
+
+/**
+ * Normalize a service config into a uniform list of operations. A multi-op
+ * service yields its `operations`; a legacy single-op service (apiUrl + method +
+ * toolDefinition) yields exactly one operation whose URL is the apiUrl. Path
+ * placeholders are folded into paramLocations as "path" automatically.
+ */
+export function normalizeOperations(cfg: CustomServiceRuntimeConfig): ResolvedOperation[] {
+  const ops: ServiceOperation[] =
+    cfg.operations && cfg.operations.length > 0
+      ? cfg.operations
+      : [
+          {
+            name: parseToolDefinition(cfg.toolDefinition ?? "{}").name,
+            method: cfg.method ?? "GET",
+            path: "",
+            toolDefinition: cfg.toolDefinition ?? "{}",
+            responseKeys: cfg.responseKeys,
+          },
+        ];
+  const base = cfg.baseUrl ?? cfg.apiUrl ?? "";
+  return ops.map((op) => {
+    const locations: Record<string, ParamLocation> = { ...(op.paramLocations ?? {}) };
+    for (const p of pathParams(op.path)) locations[p] = "path";
+    return {
+      toolName: op.name,
+      method: op.method,
+      url: joinUrl(base, op.path),
+      toolDefinition: op.toolDefinition,
+      paramLocations: locations,
+      query: op.query,
+      responseKeys: op.responseKeys ?? cfg.responseKeys,
+    };
+  });
+}
+
+/** Every operation of a service as namespaced OpenAI function defs (one per op). */
+export function serviceOperationsToOpenAI(cfg: CustomServiceRuntimeConfig): OpenAIToolDef[] {
+  return normalizeOperations(cfg).map((op) => {
+    const def = parseToolDefinition(op.toolDefinition);
+    return {
+      type: "function" as const,
+      function: {
+        name: namespaceServiceTool(cfg.id, def.name),
+        description: def.description,
+        parameters: def.parameters,
+      },
+    };
+  });
+}
+
+/**
+ * Resolve a namespaced tool name (svc__<id>__<op>) back to its operation within
+ * a service config. Returns null if the name isn't one of this service's ops.
+ */
+export function resolveOperation(
+  cfg: CustomServiceRuntimeConfig,
+  namespaced: string
+): ResolvedOperation | null {
+  const parsed = parseServiceToolName(namespaced);
+  if (!parsed || parsed.serviceId !== cfg.id) return null;
+  for (const op of normalizeOperations(cfg)) {
+    if (parseToolDefinition(op.toolDefinition).name === parsed.toolName) return op;
+  }
+  return null;
 }
 
 // ── Request shaping (pure) ────────────────────────────────────────────────────
@@ -174,11 +317,10 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Build the final URL + fetch init for a call. GET/DELETE put args on the query
- * string; POST/PUT put them in a JSON body. Header secret refs are resolved by
- * the caller before this runs (kept pure here for testing) — pass already-
- * resolved headers. `parameters` is the tool's JSON-schema parameter object,
- * used to coerce stringified numbers/booleans the model may have emitted.
+ * Build the final URL + fetch init for a legacy single-op service. GET/DELETE
+ * put args on the query string; POST/PUT put them in a JSON body. Kept for
+ * backward-compatible callers; internally delegates to buildOperationRequest via
+ * a normalized single operation. Header secret refs must already be resolved.
  */
 export function buildRequest(
   cfg: CustomServiceRuntimeConfig,
@@ -186,23 +328,78 @@ export function buildRequest(
   resolvedHeaders: Record<string, string>,
   parameters?: Record<string, unknown>
 ): { url: string; init: RequestInit } {
-  const usesQuery = cfg.method === "GET" || cfg.method === "DELETE";
-  const url = new URL(cfg.apiUrl);
+  const [op] = normalizeOperations(cfg);
+  return buildOperationRequest(op, args, resolvedHeaders, parameters);
+}
+
+/**
+ * Build the URL + fetch init for a resolved operation. Arguments are placed by
+ * `op.paramLocations`:
+ *   - "path"  → fills a {placeholder} in the URL (URL-encoded).
+ *   - "query" → query-string param.
+ *   - "body"  → JSON body field.
+ * Unlisted args default by method: query for GET/DELETE, body for POST/PUT (the
+ * legacy zero-config behaviour). `parameters` is the op's JSON-schema parameters,
+ * used to coerce stringified numbers/booleans the model may have emitted.
+ */
+export function buildOperationRequest(
+  op: ResolvedOperation,
+  args: Record<string, unknown>,
+  resolvedHeaders: Record<string, string>,
+  parameters?: Record<string, unknown>
+): { url: string; init: RequestInit } {
   const headers: Record<string, string> = { ...resolvedHeaders };
   const coerced = coerceArgs(args ?? {}, parameters);
-  let body: string | undefined;
+  const defaultLoc: ParamLocation = op.method === "GET" || op.method === "DELETE" ? "query" : "body";
 
-  if (usesQuery) {
-    for (const [k, v] of Object.entries(coerced)) {
-      if (v === undefined || v === null) continue;
-      url.searchParams.set(k, typeof v === "object" ? JSON.stringify(v) : String(v));
+  // 1) Fill path placeholders, then build the URL.
+  let filledPath = op.url;
+  const body: Record<string, unknown> = {};
+  const queryEntries: [string, unknown][] = [];
+
+  for (const [k, v] of Object.entries(coerced)) {
+    if (v === undefined || v === null) continue;
+    const loc = op.paramLocations[k] ?? defaultLoc;
+    if (loc === "path") {
+      // Replace {k} in the URL; encode the value. If the placeholder isn't
+      // present (mis-declared), fall through to query so the value isn't lost.
+      const token = `{${k}}`;
+      if (filledPath.includes(token)) {
+        // Global replace without String.replaceAll (shared targets ES2020).
+        filledPath = filledPath.split(token).join(encodeURIComponent(String(v)));
+      } else {
+        queryEntries.push([k, v]);
+      }
+    } else if (loc === "query") {
+      queryEntries.push([k, v]);
+    } else {
+      body[k] = v;
     }
-  } else {
-    body = JSON.stringify(coerced);
+  }
+
+  const url = new URL(filledPath);
+  // Static query params first (connector-supplied), then model args — so a
+  // model-provided value of the same name overrides the static default.
+  for (const [k, v] of Object.entries(op.query ?? {})) {
+    url.searchParams.set(k, v);
+  }
+  for (const [k, v] of queryEntries) {
+    url.searchParams.set(k, typeof v === "object" ? JSON.stringify(v) : String(v));
+  }
+
+  let bodyStr: string | undefined;
+  if (op.method === "POST" || op.method === "PUT") {
+    // Always send a body for write methods (even if empty) to match prior
+    // behaviour where POST/PUT stringified all args.
+    bodyStr = JSON.stringify(body);
+    if (!hasHeader(headers, "content-type")) headers["Content-Type"] = "application/json";
+  } else if (Object.keys(body).length > 0) {
+    // A GET/DELETE op that explicitly routed args to "body" (unusual but allowed).
+    bodyStr = JSON.stringify(body);
     if (!hasHeader(headers, "content-type")) headers["Content-Type"] = "application/json";
   }
 
-  return { url: url.toString(), init: { method: cfg.method, headers, body } };
+  return { url: url.toString(), init: { method: op.method, headers, body: bodyStr } };
 }
 
 function hasHeader(headers: Record<string, string>, name: string): boolean {

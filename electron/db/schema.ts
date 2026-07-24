@@ -547,6 +547,8 @@ const MIGRATIONS: Migration[] = [
         method          TEXT NOT NULL DEFAULT 'GET',
         headers         TEXT NOT NULL DEFAULT '{}',
         tool_definition TEXT NOT NULL,
+        base_url        TEXT,
+        operations      TEXT,
         response_keys   TEXT NOT NULL DEFAULT '[]',
         api_key_url     TEXT,
         enabled         INTEGER NOT NULL DEFAULT 1,
@@ -805,6 +807,10 @@ function ensureColumns(db: Database.Database): void {
   ensure("chat_messages", "subagents", "subagents TEXT");
   ensure("custom_services", "auth_mode", "auth_mode TEXT NOT NULL DEFAULT 'none'");
   ensure("custom_services", "oauth_config", "oauth_config TEXT");
+  // Multi-operation services: baseUrl + operations[] (JSON). Nullable — legacy
+  // single-op rows leave them empty and use api_url/method/tool_definition.
+  ensure("custom_services", "base_url", "base_url TEXT");
+  ensure("custom_services", "operations", "operations TEXT");
 }
 
 function runMigrations(db: Database.Database): void {

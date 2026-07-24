@@ -21,6 +21,7 @@ import {
   installService,
   uninstallService,
   isServiceInstalled,
+  serviceOperationDefs,
   type InstalledService,
 } from "@/chat/services";
 import {
@@ -35,7 +36,6 @@ import {
 import { startAuth, signOut, hasTokens, type OAuthServerConfig } from "@/chat/mcp-oauth";
 import { TOOLS, WRITE_TOOL_NAMES, type ToolDef } from "@/chat/tools";
 import { getToggleMap, setToolEnabled } from "@/chat/tool-toggles";
-import { namespaceServiceTool, parseToolDefinition } from "@cairn/shared/chat/service-exec";
 import type { RegistryServiceEntry, RegistryMcpEntry } from "@cairn/shared/chat/registry-schema";
 import { ConnectorLogo } from "@/components/ConnectorLogo";
 
@@ -79,6 +79,8 @@ export default function ToolsSettingsScreen() {
   const [builtinsOpen, setBuiltinsOpen] = useState(false);
   // Which installed MCP server's tool list is expanded (one at a time).
   const [expandedMcp, setExpandedMcp] = useState<string | null>(null);
+  // Which installed multi-op service's tool list is expanded (one at a time).
+  const [expandedService, setExpandedService] = useState<string | null>(null);
 
   const reloadLocal = useCallback(() => {
     setInstalled(listInstalledServices());
@@ -127,14 +129,6 @@ export default function ToolsSettingsScreen() {
     haptics.selection();
     void loadRegistry(true).finally(() => setRefreshing(false));
   }, [loadRegistry]);
-
-  const serviceToolName = useCallback((svc: InstalledService): string => {
-    try {
-      return namespaceServiceTool(svc.id, parseToolDefinition(svc.definition.toolDefinition).name);
-    } catch {
-      return svc.id;
-    }
-  }, []);
 
   const onToggleService = useCallback((name: string, next: boolean) => {
     haptics.selection();
@@ -337,27 +331,74 @@ export default function ToolsSettingsScreen() {
         </View>
       ) : (
         <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent}>
-          {/* 1. Installed services (the only toggleable tools) */}
+          {/* 1. Installed services — expandable per-operation tool toggles */}
           {installed.length > 0 && (
             <View style={styles.section}>
               <Text style={styles.sectionLabel}>Installed services</Text>
               {installed.map((svc) => {
-                const name = serviceToolName(svc);
+                const ops = serviceOperationDefs(svc);
+                const open = expandedService === svc.id;
+                // A single-operation service shows its lone toggle inline; a
+                // multi-operation one gets an expandable tool list like MCP.
+                const multi = ops.length > 1;
                 return (
-                  <View key={svc.id} style={styles.row}>
-                    <ConnectorLogo iconSvg={svc.iconSvg} kind="service" color={svc.brandColor} size={22} />
-                    <View style={styles.rowMain}>
-                      <Text style={styles.rowTitle}>{svc.name}</Text>
-                      {!!svc.blurb && <Text style={styles.rowSub} numberOfLines={2}>{svc.blurb}</Text>}
+                  <View key={svc.id} style={styles.mcpCard}>
+                    <View style={styles.mcpHeader}>
+                      <ConnectorLogo iconSvg={svc.iconSvg} kind="service" color={svc.brandColor} size={22} />
+                      <View style={styles.rowMain}>
+                        <Text style={styles.rowTitle}>{svc.name}</Text>
+                        {!!svc.blurb && <Text style={styles.rowSub} numberOfLines={2}>{svc.blurb}</Text>}
+                      </View>
+                      {!multi && ops[0] && (
+                        <Switch
+                          value={toggles[ops[0].name] !== false}
+                          onValueChange={(v) => onToggleService(ops[0].name, v)}
+                          trackColor={{ true: t.accent, false: t.border }}
+                        />
+                      )}
+                      <Pressable onPress={() => onUninstall(svc)} hitSlop={8} style={styles.iconBtn}>
+                        <Trash2 size={18} color={t.danger} />
+                      </Pressable>
                     </View>
-                    <Switch
-                      value={toggles[name] !== false}
-                      onValueChange={(v) => onToggleService(name, v)}
-                      trackColor={{ true: t.accent, false: t.border }}
-                    />
-                    <Pressable onPress={() => onUninstall(svc)} hitSlop={8} style={styles.iconBtn}>
-                      <Trash2 size={18} color={t.danger} />
-                    </Pressable>
+
+                    {multi && (
+                      <>
+                        <Pressable
+                          style={styles.mcpToolsToggle}
+                          onPress={() => {
+                            haptics.selection();
+                            setExpandedService((cur) => (cur === svc.id ? null : svc.id));
+                          }}
+                          hitSlop={6}
+                        >
+                          {open ? (
+                            <ChevronDown size={14} color={t.textSecondary} />
+                          ) : (
+                            <ChevronRight size={14} color={t.textSecondary} />
+                          )}
+                          <Text style={styles.mcpToolsLabel}>{ops.length} tools</Text>
+                        </Pressable>
+                        {open &&
+                          ops.map((op) => {
+                            const short = op.name.split("__").slice(2).join("__") || op.name;
+                            return (
+                              <View key={op.name} style={styles.mcpToolRow}>
+                                <View style={styles.rowMain}>
+                                  <Text style={styles.mcpToolName}>{short}</Text>
+                                  {!!op.description && (
+                                    <Text style={styles.builtinDesc} numberOfLines={2}>{op.description}</Text>
+                                  )}
+                                </View>
+                                <Switch
+                                  value={toggles[op.name] !== false}
+                                  onValueChange={(v) => onToggleService(op.name, v)}
+                                  trackColor={{ true: t.accent, false: t.border }}
+                                />
+                              </View>
+                            );
+                          })}
+                      </>
+                    )}
                   </View>
                 );
               })}

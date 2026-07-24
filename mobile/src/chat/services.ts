@@ -21,11 +21,11 @@
 import { fetch as expoFetch } from "expo/fetch";
 import * as SecureStore from "expo-secure-store";
 import {
-  serviceToOpenAI,
-  buildRequest,
+  serviceOperationsToOpenAI,
+  resolveOperation,
+  buildOperationRequest,
   filterResponse,
   parseToolDefinition,
-  namespaceServiceTool,
   type CustomServiceRuntimeConfig,
 } from "@cairn/shared/chat/service-exec";
 import type { RegistryServiceEntry } from "@cairn/shared/chat/registry-schema";
@@ -108,16 +108,19 @@ export async function installService(entry: RegistryServiceEntry, apiKey: string
   return { ok: true };
 }
 
-/** Uninstall a service: drop its record, secret, and any toggle entry. */
+/** Uninstall a service: drop its record, secret, and any toggle entries. */
 export async function uninstallService(id: string): Promise<void> {
   const list = listInstalledServices();
   const svc = list.find((s) => s.id === id);
   writeInstalled(list.filter((s) => s.id !== id));
   await SecureStore.deleteItemAsync(secureKey(id)).catch(() => {});
-  // Remove the toggle for the namespaced tool so a reinstall starts default-on.
+  // Remove the toggle for EVERY operation's namespaced tool so a reinstall
+  // starts default-on (a multi-op service has one tool per operation).
   if (svc) {
     try {
-      clearToolToggle(namespaceServiceTool(id, parseToolDefinition(svc.definition.toolDefinition).name));
+      for (const def of serviceOperationsToOpenAI(toRuntimeConfig(svc))) {
+        clearToolToggle(def.function.name);
+      }
     } catch {
       /* best-effort */
     }
@@ -136,11 +139,15 @@ function toRuntimeConfig(svc: InstalledService): CustomServiceRuntimeConfig {
   const d = svc.definition;
   return {
     id: svc.id,
+    // Legacy single-op fields (may be undefined for multi-op services).
     apiUrl: d.apiUrl,
     method: d.method,
-    headers: d.headers,
     toolDefinition: d.toolDefinition,
     responseKeys: d.responseKeys,
+    // Multi-op fields.
+    baseUrl: d.baseUrl,
+    operations: d.operations,
+    headers: d.headers,
     authMode: d.authMode,
   };
 }
@@ -167,19 +174,21 @@ async function resolveHeaders(svc: InstalledService): Promise<Record<string, str
 }
 
 /**
- * Execute an installed service call. Uses the shared pure request-shaping
- * (buildRequest) + response filtering (filterResponse); adds only expo/fetch +
- * secret resolution. Returns a plain object the agent serialises into context.
- * Never throws — errors come back as { error } the model can read.
+ * Execute one OPERATION of an installed service (by its namespaced tool name).
+ * Uses the shared operation resolver + request-shaping (resolveOperation +
+ * buildOperationRequest) + response filtering; adds only expo/fetch + secret
+ * resolution. Returns a plain object the agent serialises. Never throws.
  */
-async function runService(svc: InstalledService, args: Record<string, unknown>): Promise<unknown> {
+async function runService(svc: InstalledService, toolName: string, args: Record<string, unknown>): Promise<unknown> {
   const cfg = toRuntimeConfig(svc);
-  const parameters = parseToolDefinition(cfg.toolDefinition).parameters;
+  const op = resolveOperation(cfg, toolName);
+  if (!op) return { error: `Unknown operation ${toolName} for ${svc.name}.` };
+  const parameters = parseToolDefinition(op.toolDefinition).parameters;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
     const headers = await resolveHeaders(svc);
-    const { url, init } = buildRequest(cfg, args, headers, parameters);
+    const { url, init } = buildOperationRequest(op, args, headers, parameters);
     const res = await expoFetch(url, {
       method: init.method,
       headers: init.headers as Record<string, string>,
@@ -191,7 +200,7 @@ async function runService(svc: InstalledService, args: Record<string, unknown>):
     }
     const contentType = res.headers.get("content-type") ?? "";
     const body = contentType.includes("application/json") ? await res.json() : await res.text();
-    return filterResponse(body, cfg.responseKeys);
+    return filterResponse(body, op.responseKeys);
   } catch (e) {
     if (controller.signal.aborted) return { error: `${svc.name} timed out.` };
     return { error: e instanceof Error ? e.message : String(e) };
@@ -201,19 +210,35 @@ async function runService(svc: InstalledService, args: Record<string, unknown>):
 }
 
 /**
- * The installed services as mobile ToolDefs, ready to fold into TOOLS. The tool
- * name is namespaced (`<serviceId>__<toolName>`) via the shared helper so it
- * can't collide with a built-in tool.
+ * The installed services as mobile ToolDefs — ONE per operation, ready to fold
+ * into TOOLS. Each tool name is namespaced (`svc__<serviceId>__<opName>`) via the
+ * shared helper so it can't collide with a built-in or another service's tools.
  */
 export function serviceToolDefs(): ToolDef[] {
-  return listInstalledServices().map((svc) => {
-    const openai = serviceToOpenAI(toRuntimeConfig(svc));
-    return {
-      name: openai.function.name,
-      description: openai.function.description,
-      params: JSON.stringify(openai.function.parameters),
-      jsonSchema: openai.function.parameters,
-      run: (args: Record<string, unknown>) => runService(svc, args),
-    };
-  });
+  const out: ToolDef[] = [];
+  for (const svc of listInstalledServices()) {
+    const cfg = toRuntimeConfig(svc);
+    for (const def of serviceOperationsToOpenAI(cfg)) {
+      const toolName = def.function.name;
+      out.push({
+        name: toolName,
+        description: def.function.description,
+        params: JSON.stringify(def.function.parameters),
+        jsonSchema: def.function.parameters,
+        run: (args: Record<string, unknown>) => runService(svc, toolName, args),
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * The namespaced tool defs (name + description) for ONE installed service — used
+ * by the Settings screen to list a service's operations with per-tool toggles.
+ */
+export function serviceOperationDefs(svc: InstalledService): { name: string; description: string }[] {
+  return serviceOperationsToOpenAI(toRuntimeConfig(svc)).map((d) => ({
+    name: d.function.name,
+    description: d.function.description,
+  }));
 }

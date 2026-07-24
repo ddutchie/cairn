@@ -167,17 +167,34 @@ export interface McpServerConfig {
 }
 
 /** Custom HTTP API exposed to the AI as a single function-calling tool. */
+/** One operation of a multi-operation HTTP service (mirrors the registry shape). */
+export interface ServiceOperationConfig {
+  name: string;
+  description?: string;
+  method: "GET" | "POST" | "PUT" | "DELETE";
+  path?: string;
+  toolDefinition: string;
+  paramLocations?: Record<string, "path" | "query" | "body">;
+  query?: Record<string, string>;
+  responseKeys?: string[];
+}
+
 export interface CustomServiceConfig {
   id: ID;
   workspaceId: ID;
   name: string;
   description?: string;
-  apiUrl: string;
-  method: "GET" | "POST" | "PUT" | "DELETE";
-  /** Header values may be literal or a "secret://" ref. */
+  /** Legacy single-op endpoint. For multi-op services use baseUrl + operations. */
+  apiUrl?: string;
+  method?: "GET" | "POST" | "PUT" | "DELETE";
+  /** Header values may be literal or a "secret://" ref. Shared across operations. */
   headers?: Record<string, string>;
-  /** Stringified OpenAI tool JSON (name/description/parameters). */
-  toolDefinition: string;
+  /** Legacy single-op stringified OpenAI tool JSON (name/description/parameters). */
+  toolDefinition?: string;
+  /** Base URL shared by all operations (multi-op); each operation's path appends. */
+  baseUrl?: string;
+  /** Multi-operation definition — each becomes its own namespaced tool. */
+  operations?: ServiceOperationConfig[];
   /** Keys to keep from the API response (token optimisation). */
   responseKeys?: string[];
   /** Where the user can obtain an API key. */
@@ -251,10 +268,16 @@ export interface RegistryMcpDefinition {
 export interface RegistryServiceDefinition {
   name: string;
   description?: string;
-  apiUrl: string;
-  method: "GET" | "POST" | "PUT" | "DELETE";
+  /** Legacy single-op endpoint. Multi-op services use baseUrl + operations. */
+  apiUrl?: string;
+  method?: "GET" | "POST" | "PUT" | "DELETE";
   headers?: Record<string, string>;
-  toolDefinition: string;
+  /** Legacy single-op tool. */
+  toolDefinition?: string;
+  /** Base URL shared by all operations (multi-op). */
+  baseUrl?: string;
+  /** Multi-operation definition — each becomes its own namespaced tool. */
+  operations?: ServiceOperationConfig[];
   responseKeys?: string[];
   apiKeyUrl?: string;
   /** Mirror of CustomServiceConfig auth fields so the registry can ship an OAuth preset. */

@@ -13,9 +13,10 @@
 
 import { resolveSecrets } from "./secure-store";
 import {
-  parseServiceToolName,
   parseToolDefinition,
-  buildRequest,
+  resolveOperation,
+  normalizeOperations,
+  buildOperationRequest,
   filterResponse,
   sampleArgsFromSchema,
   type CustomServiceRuntimeConfig,
@@ -30,12 +31,17 @@ export {
   isServiceToolName,
   parseToolDefinition,
   serviceToOpenAI,
+  serviceOperationsToOpenAI,
+  resolveOperation,
+  normalizeOperations,
   coerceArgs,
   buildRequest,
+  buildOperationRequest,
   filterResponse,
   sampleArgsFromSchema,
   type OpenAIToolDef,
   type CustomServiceRuntimeConfig,
+  type ServiceOperation,
   type BearerResolver,
 } from "../../shared/chat/service-exec";
 
@@ -64,21 +70,21 @@ export async function callService(
   args: Record<string, unknown>,
   resolveBearer?: BearerResolver,
 ): Promise<string> {
-  const parsed = parseServiceToolName(namespaced);
-  if (!parsed || parsed.serviceId !== cfg.id) {
+  const op = resolveOperation(cfg, namespaced);
+  if (!op) {
     return `Error: "${namespaced}" is not a tool of service ${cfg.id}`;
   }
   try {
     const headers = await withOAuthBearer(cfg, resolveSecrets(cfg.headers ?? {}), resolveBearer);
-    const { parameters } = parseToolDefinition(cfg.toolDefinition);
-    const { url, init } = buildRequest(cfg, args, headers, parameters);
+    const { parameters } = parseToolDefinition(op.toolDefinition);
+    const { url, init } = buildOperationRequest(op, args, headers, parameters);
     const res = await fetchWithTimeout(url, init, CALL_TIMEOUT_MS);
     const text = await res.text();
     if (!res.ok) {
-      return `Error: ${cfg.method} ${cfg.apiUrl} returned ${res.status} ${res.statusText}\n${text.slice(0, 1000)}`;
+      return `Error: ${op.method} ${op.url} returned ${res.status} ${res.statusText}\n${text.slice(0, 1000)}`;
     }
     const parsedBody = tryParseJson(text);
-    const filtered = filterResponse(parsedBody, cfg.responseKeys);
+    const filtered = filterResponse(parsedBody, op.responseKeys);
     return typeof filtered === "string" ? filtered : JSON.stringify(filtered);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -128,10 +134,16 @@ export async function testService(
   cfg: CustomServiceRuntimeConfig,
   sampleArgs?: Record<string, unknown>,
   resolveBearer?: BearerResolver,
+  /** Which operation to test (namespaced tool name); defaults to the first. */
+  namespaced?: string,
 ): Promise<{ ok: boolean; status?: number; preview?: string; error?: string }> {
   try {
+    const op = namespaced
+      ? resolveOperation(cfg, namespaced)
+      : normalizeOperations(cfg)[0];
+    if (!op) return { ok: false, error: "Service has no operations to test." };
     const headers = await withOAuthBearer(cfg, resolveSecrets(cfg.headers ?? {}), resolveBearer);
-    const { parameters } = parseToolDefinition(cfg.toolDefinition);
+    const { parameters } = parseToolDefinition(op.toolDefinition);
     // When the caller doesn't supply args, synthesise a realistic body from the
     // tool's parameter schema so endpoints with required fields (e.g. a /search
     // API needing `query`) aren't rejected with a 400 just for being empty.
@@ -139,10 +151,10 @@ export async function testService(
       sampleArgs && Object.keys(sampleArgs).length > 0
         ? sampleArgs
         : sampleArgsFromSchema(parameters);
-    const { url, init } = buildRequest(cfg, args, headers, parameters);
+    const { url, init } = buildOperationRequest(op, args, headers, parameters);
     const res = await fetchWithTimeout(url, init, CALL_TIMEOUT_MS);
     const text = await res.text();
-    const filtered = filterResponse(tryParseJson(text), cfg.responseKeys);
+    const filtered = filterResponse(tryParseJson(text), op.responseKeys);
     const preview = (typeof filtered === "string" ? filtered : JSON.stringify(filtered)).slice(0, 500);
     return { ok: res.ok, status: res.status, preview };
   } catch (e) {
