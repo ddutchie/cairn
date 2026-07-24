@@ -241,15 +241,21 @@ export interface RegistryServiceDefinition {
 
 /** Registry metadata common to every catalog entry (shown on the browse card). */
 export interface RegistryEntryMeta {
+  /** Stable connector id (the cairn-community folder name). */
+  id: string;
   author: string;
   /** SemVer of THIS entry — bump drives the "update available" badge. */
   version: string;
   tags: string[];
   blurb: string;
-  /** Stable logo id mapped to a bundled SVG by ConnectorLogo; "" = fallback. */
-  logo?: string;
   brandColor?: string;
   homepage?: string;
+  /**
+   * Brand logo as inline SVG markup, compiled and allowlist-sanitized by the
+   * cairn-community CI (never raw contributor SVG). Rendered inline by
+   * ConnectorLogo. Absent → the app's fallback glyph.
+   */
+  iconSvg?: string;
 }
 
 export interface RegistryMcpEntry extends RegistryEntryMeta {

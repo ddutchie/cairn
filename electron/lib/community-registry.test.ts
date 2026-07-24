@@ -25,12 +25,13 @@ const VALID = {
   updatedAt: "2026-07-24T00:00:00Z",
   mcpServers: [
     {
+      id: "jira",
       author: "cairn",
       version: "1.0.0",
       tags: ["issues"],
       blurb: "Jira.",
-      logo: "jira",
       brandColor: "#0052cc",
+      iconSvg: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M1 1h2"/></svg>',
       definition: {
         name: "Jira",
         transport: "http",
@@ -42,6 +43,7 @@ const VALID = {
   ],
   services: [
     {
+      id: "weather",
       author: "cairn",
       version: "1.0.0",
       tags: ["weather"],

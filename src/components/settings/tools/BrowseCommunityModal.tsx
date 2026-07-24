@@ -273,7 +273,7 @@ export function BrowseCommunityModal({ onClose }: { onClose: () => void }) {
                       : "var(--surface-2, transparent)",
                   }}
                 >
-                  <ConnectorLogo logo={meta.logo} color={meta.brandColor} size={22} />
+                  <ConnectorLogo iconSvg={meta.iconSvg} kind={e.kind} color={meta.brandColor} size={22} />
                 </div>
 
                 <div className="min-w-0 flex-1">

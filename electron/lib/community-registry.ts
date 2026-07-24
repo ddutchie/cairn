@@ -29,13 +29,15 @@ export interface CommunityManifest {
   services: RegistryServiceEntry[];
 }
 interface RegistryEntryMeta {
+  id: string;
   author: string;
   version: string;
   tags: string[];
   blurb: string;
-  logo?: string;
   brandColor?: string;
   homepage?: string;
+  /** Brand logo, compiled + allowlist-sanitized by cairn-community CI. */
+  iconSvg?: string;
 }
 interface RegistryMcpEntry extends RegistryEntryMeta {
   definition: {
@@ -104,15 +106,18 @@ const serviceDefinition = z.object({
 });
 
 const entryMeta = {
+  id: z.string(),
   author: z.string(),
   version: z.string(),
   tags: z.array(z.string()),
   blurb: z.string(),
-  logo: z.string().optional(),
   brandColor: z.string().optional(),
   // Validated as an https URL — it is rendered as an anchor href in the Browse
   // modal, so an unvalidated string could smuggle a javascript:/data: URI.
   homepage: z.string().url().startsWith("https://").optional(),
+  // Brand logo, compiled + allowlist-sanitized by cairn-community CI (never raw
+  // user SVG). Rendered inline by ConnectorLogo. Absent → app fallback glyph.
+  iconSvg: z.string().optional(),
 };
 
 const mcpEntry = z.object({ ...entryMeta, definition: mcpDefinition }).passthrough();
