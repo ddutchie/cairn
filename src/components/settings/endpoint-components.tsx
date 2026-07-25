@@ -94,9 +94,14 @@ export function useEndpointConfig(): UseEndpointConfigResult {
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const resetTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Advances on every fetch so a slow older request can't overwrite the state of
+  // a newer one (endpoint/key changed, or a rapid re-fetch).
+  const fetchGenRef = React.useRef(0);
 
   const fetchModels = useCallback(async (baseUrl: string, apiKey: string) => {
     if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
+    const gen = ++fetchGenRef.current;
+    const isCurrent = () => gen === fetchGenRef.current;
 
     setModelsLoading(true);
     setTestState("testing");
@@ -111,25 +116,36 @@ export function useEndpointConfig(): UseEndpointConfigResult {
         const url = normBaseUrl(baseUrl);
         const headers: Record<string, string> = {};
         if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
-        const res = await fetch(`${url}/v1/models`, { headers });
-        if (!res.ok) throw new Error(`${res.status}`);
-        const data = await res.json();
-        ids = (data?.data ?? [])
-          .map((m: { id: string }) => m.id)
-          .filter((id: string) => !id.includes("embed") && !id.includes("whisper") && !id.includes("tts") && !id.includes("dall-e"))
-          .sort();
+        // Abort a hung endpoint after 12s (matches the main-process handler).
+        const ac = new AbortController();
+        const timer = setTimeout(() => ac.abort(), 12_000);
+        try {
+          const res = await fetch(`${url}/v1/models`, { headers, signal: ac.signal });
+          if (!res.ok) throw new Error(`${res.status}`);
+          const data = await res.json();
+          ids = (data?.data ?? [])
+            .map((m: { id: string }) => m.id)
+            .filter((id: string) => !id.includes("embed") && !id.includes("whisper") && !id.includes("tts") && !id.includes("dall-e"))
+            .sort();
+        } finally {
+          clearTimeout(timer);
+        }
       }
 
+      if (!isCurrent()) return; // a newer fetch superseded this one
       setAvailableModels(ids);
       writeModelCache(baseUrl, apiKey, ids); // persist for next open (keyed by endpoint, not the key value)
       setTestState("ok");
     } catch (err) {
+      if (!isCurrent()) return;
       setTestState("error");
       setTestError(err instanceof Error ? err.message : "Failed to fetch models");
       setAvailableModels([]);
     } finally {
-      setModelsLoading(false);
-      resetTimerRef.current = setTimeout(() => setTestState("idle"), 5000);
+      if (isCurrent()) {
+        setModelsLoading(false);
+        resetTimerRef.current = setTimeout(() => setTestState("idle"), 5000);
+      }
     }
   }, []);
 

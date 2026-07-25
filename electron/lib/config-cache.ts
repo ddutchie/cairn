@@ -90,10 +90,17 @@ export function saveCachedConfig(type: "ai" | "agent" | "embeddings" | "theme" |
     const configRecord = config as Record<string, string | number | boolean | undefined> | null | undefined;
 
     // Only keychain reference tokens (`secret://…`) may be cached for an apiKey —
-    // never a raw key. Anything else is dropped so plaintext keys can't land on
-    // disk (defence-in-depth; callers already send refs).
-    const refOnly = (v: unknown): string | undefined =>
-      typeof v === "string" && v.startsWith("secret://") ? v : undefined;
+    // never a raw key. Resolve the cached value for an incoming apiKey field:
+    //   - field absent            → keep the current cached value
+    //   - a `secret://…` ref      → store the ref
+    //   - anything else (incl "") → store "" (explicit clear; never a raw key)
+    // (Local check rather than importing secure-store's isSecretRef, which pulls
+    // in `electron` and would break the MCP runtime that also loads this module.)
+    const isRef = (v: unknown): v is string => typeof v === "string" && v.startsWith("secret://");
+    const resolveCachedKey = (incoming: unknown, current: string | undefined): string | undefined => {
+      if (!("apiKey" in (configRecord as object))) return current; // omitted → preserve
+      return isRef(incoming) ? incoming : "";                       // ref kept, else cleared
+    };
 
     if (type === "ai" && configRecord) {
       current.aiConfig = {
@@ -101,7 +108,7 @@ export function saveCachedConfig(type: "ai" | "agent" | "embeddings" | "theme" |
         provider: typeof configRecord.provider === "string" ? configRecord.provider : current.aiConfig?.provider,
         baseUrl: typeof configRecord.baseUrl === "string" ? configRecord.baseUrl : current.aiConfig?.baseUrl,
         model: typeof configRecord.model === "string" ? configRecord.model : current.aiConfig?.model,
-        apiKey: refOnly(configRecord.apiKey) ?? current.aiConfig?.apiKey,
+        apiKey: resolveCachedKey(configRecord.apiKey, current.aiConfig?.apiKey),
         // Preserve behavioural fields too — omitting maxSteps here made the chat
         // tool-call limit reset to the default on the next hydrate.
         maxSteps: typeof configRecord.maxSteps === "number" ? configRecord.maxSteps : current.aiConfig?.maxSteps,
@@ -113,7 +120,7 @@ export function saveCachedConfig(type: "ai" | "agent" | "embeddings" | "theme" |
         // apiKey is scrubbed to a ref (or dropped) so no raw key is cached.
         savedProviders: Array.isArray((config as { savedProviders?: unknown }).savedProviders)
           ? (config as { savedProviders: NonNullable<CachedConfig["aiConfig"]>["savedProviders"] }).savedProviders!.map(
-              (p) => ({ ...p, apiKey: refOnly(p.apiKey) ?? "" }),
+              (p) => ({ ...p, apiKey: isRef(p.apiKey) ? p.apiKey : "" }),
             )
           : current.aiConfig?.savedProviders,
         activeProviderId: typeof configRecord.activeProviderId === "string" ? configRecord.activeProviderId : current.aiConfig?.activeProviderId,
@@ -123,7 +130,7 @@ export function saveCachedConfig(type: "ai" | "agent" | "embeddings" | "theme" |
         ...current.agentConfig,
         baseUrl: typeof configRecord.baseUrl === "string" ? configRecord.baseUrl : current.agentConfig?.baseUrl,
         model: typeof configRecord.model === "string" ? configRecord.model : current.agentConfig?.model,
-        apiKey: refOnly(configRecord.apiKey) ?? current.agentConfig?.apiKey,
+        apiKey: resolveCachedKey(configRecord.apiKey, current.agentConfig?.apiKey),
         maxSteps: typeof configRecord.maxSteps === "number" ? configRecord.maxSteps : current.agentConfig?.maxSteps,
         temperature: typeof configRecord.temperature === "number" ? configRecord.temperature : current.agentConfig?.temperature,
         autoApprove: typeof configRecord.autoApprove === "boolean" ? configRecord.autoApprove : current.agentConfig?.autoApprove,
@@ -162,3 +169,20 @@ export function getCachedConfig(): CachedConfig {
 export function getEmbeddingsSettingsCached(): CachedEmbeddingsConfig {
   return getCachedConfig().embeddingsConfig ?? {};
 }
+
+/**
+ * Persist an LLM connection to the cache from an IPC request config. Shared by
+ * the chat / prd / flow / pi-agent handlers so the "cache only a keychain ref,
+ * never a raw key" rule lives in one place. `saveCachedConfig` scrubs the apiKey
+ * (a non-ref value is stored as an explicit clear), so callers can pass the
+ * request config straight through without their own guard.
+ */
+export function cacheLlmConnection(
+  type: "ai" | "agent",
+  config: { provider?: string; baseUrl?: string; model?: string; apiKey?: string; maxSteps?: number; temperature?: number; autoApprove?: boolean } | undefined,
+): void {
+  if (!config) return;
+  if (config.baseUrl === undefined && config.model === undefined && config.apiKey === undefined) return;
+  saveCachedConfig(type, config);
+}
+

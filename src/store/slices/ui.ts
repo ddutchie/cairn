@@ -153,7 +153,10 @@ export async function migrateLlmKeysToKeychain(
   // 2. Mirror the active provider's (now-ref) key onto the top-level field.
   const activeAi = migratedProviders.find((p) => p.id === nextAi.activeProviderId);
   if (activeAi) {
-    nextAi = { ...nextAi, apiKey: activeAi.apiKey };
+    if (nextAi.apiKey !== activeAi.apiKey) {
+      nextAi = { ...nextAi, apiKey: activeAi.apiKey };
+      changed = true; // persist the refreshed top-level key
+    }
   } else if (nextAi.apiKey && !isKeyRef(nextAi.apiKey)) {
     // No provider selected but a legacy raw top-level key exists: store it under
     // a stable synthetic id so it survives as a ref (keyless if it fails).

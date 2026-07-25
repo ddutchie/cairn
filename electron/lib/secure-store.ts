@@ -332,5 +332,8 @@ export function resolveLlmApiKey(apiKey: string | undefined | null): string {
   const v = apiKey ?? "";
   if (!v) return "";
   if (isSecretRef(v)) return getSecretByRef(v) ?? "";
+  // A literal key: guard against an unfilled placeholder ever reaching the wire,
+  // mirroring setSecret/getSecretByRef.
+  if (isPlaceholder(v) || containsPlaceholder(v)) return "";
   return v; // literal key
 }

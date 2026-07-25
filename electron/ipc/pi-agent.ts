@@ -27,8 +27,8 @@ import { normaliseBaseUrl } from "../lib/llm";
 import type { DbContext } from "./handlers";
 import * as q from "../db/queries";
 import { ts } from "../db/utils";
-import { saveCachedConfig, getCachedConfig } from "../lib/config-cache";
-import { resolveLlmApiKey, isSecretRef } from "../lib/secure-store";
+import { getCachedConfig, cacheLlmConnection } from "../lib/config-cache";
+import { resolveLlmApiKey } from "../lib/secure-store";
 
 // ── Session registry ──────────────────────────────────────────────────────────
 
@@ -193,11 +193,12 @@ export function registerPiAgentHandler(
       return;
     }
 
-    // Persist connection fields; only cache a keychain ref for the key, never raw.
-    saveCachedConfig("agent", {
+    // Cache the connection + behavioural fields (apiKey scrubbed to a ref-or-clear
+    // by the cache layer, never a raw key).
+    cacheLlmConnection("agent", {
       baseUrl: req.config?.baseUrl,
       model: req.config?.model,
-      ...(req.config?.apiKey && isSecretRef(req.config.apiKey) ? { apiKey: req.config.apiKey } : {}),
+      apiKey: req.config?.apiKey,
       maxSteps: req.config?.maxSteps,
       temperature: req.config?.temperature,
       autoApprove: req.config?.autoApprove,
@@ -284,11 +285,12 @@ export function registerPiAgentHandler(
       return;
     }
 
-    // Persist connection fields; only cache a keychain ref for the key, never raw.
-    saveCachedConfig("agent", {
+    // Cache the connection + behavioural fields (apiKey scrubbed to a ref-or-clear
+    // by the cache layer, never a raw key).
+    cacheLlmConnection("agent", {
       baseUrl: req.config?.baseUrl,
       model: req.config?.model,
-      ...(req.config?.apiKey && isSecretRef(req.config.apiKey) ? { apiKey: req.config.apiKey } : {}),
+      apiKey: req.config?.apiKey,
       maxSteps: req.config?.maxSteps,
       temperature: req.config?.temperature,
       autoApprove: req.config?.autoApprove,
@@ -366,11 +368,11 @@ export function registerPiAgentHandler(
       broadcastEvent(channel, payload);
     };
 
-    // Persist connection fields; only cache a keychain ref for the key, never raw.
-    saveCachedConfig("agent", {
+    // Cache the connection (apiKey scrubbed to a ref-or-clear by the cache layer).
+    cacheLlmConnection("agent", {
       baseUrl: req.config?.baseUrl,
       model: req.config?.model,
-      ...(req.config?.apiKey && isSecretRef(req.config.apiKey) ? { apiKey: req.config.apiKey } : {}),
+      apiKey: req.config?.apiKey,
     });
 
     let reqConfig = req.config;

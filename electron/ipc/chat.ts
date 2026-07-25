@@ -14,9 +14,9 @@ import type Database from "better-sqlite3";
 import { isLocalEndpoint, normaliseBaseUrl, type OpenAIMessage, calculatePromptBreakdown, scaleBreakdown, type TokenBreakdown } from "../lib/llm";
 import { TOOLS, buildSystemPrompt, type ChatRequest } from "../lib/tools";
 import { getExternalToolDefs } from "../lib/external-tools";
-import { saveCachedConfig, getCachedConfig } from "../lib/config-cache";
+import { getCachedConfig, cacheLlmConnection } from "../lib/config-cache";
 import { runToolLoop } from "../lib/chat-loop";
-import { resolveLlmApiKey, isSecretRef } from "../lib/secure-store";
+import { resolveLlmApiKey } from "../lib/secure-store";
 
 // Track one AbortController per renderer webContents ID
 const abortControllers = new Map<number, AbortController>();
@@ -32,25 +32,9 @@ function resolveAIConfig(config?: {
   model: string;
   apiKey: string;
 } {
-  // `config.apiKey` from the renderer is a keychain reference token
-  // (`secret://llm:…/apiKey`), not a raw key. Persist only refs to the on-disk
-  // cache — never a plaintext key. (A literal key can still arrive from older
-  // callers; we tolerate it for the request but keep it out of the cache.)
-  if (config?.apiKey && isSecretRef(config.apiKey)) {
-    saveCachedConfig("ai", {
-      provider: config.provider,
-      baseUrl: config.baseUrl,
-      model: config.model,
-      apiKey: config.apiKey,
-    });
-  } else if (config?.provider || config?.baseUrl || config?.model) {
-    // Persist connection fields without touching the cached (ref) key.
-    saveCachedConfig("ai", {
-      provider: config.provider,
-      baseUrl: config.baseUrl,
-      model: config.model,
-    });
-  }
+  // Persist the connection (provider/baseUrl/model + a keychain-ref apiKey only;
+  // cacheLlmConnection scrubs any raw key). The renderer sends a ref, not a key.
+  cacheLlmConnection("ai", config);
 
   let reqConfig = config;
   const isLocal = config?.baseUrl ? isLocalEndpoint(normaliseBaseUrl(config.baseUrl)) : false;

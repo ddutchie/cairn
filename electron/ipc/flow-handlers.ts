@@ -18,8 +18,8 @@ import { registerIpcHandle } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
 import * as q from "../db/queries";
 import { isLocalEndpoint, callLLM, normaliseBaseUrl } from "../lib/llm";
-import { saveCachedConfig, getCachedConfig } from "../lib/config-cache";
-import { resolveLlmApiKey, isSecretRef } from "../lib/secure-store";
+import { getCachedConfig, cacheLlmConnection } from "../lib/config-cache";
+import { resolveLlmApiKey } from "../lib/secure-store";
 
 /**
  * Resolve the effective AI config (cache fallback + normalisation).
@@ -104,16 +104,8 @@ export function registerFlowHandlers(ctx: DbContext): void {
     "db:flow:node:summarize",
     (_e, args: { nodeId: string; config: { baseUrl: string; model: string; apiKey: string } }) =>
       handle(async () => {
-        // Persist only a keychain ref to the cache — never a raw key.
-        if (args.config?.apiKey && isSecretRef(args.config.apiKey)) {
-          saveCachedConfig("ai", {
-            baseUrl: args.config.baseUrl,
-            model: args.config.model,
-            apiKey: args.config.apiKey,
-          });
-        } else if (args.config?.baseUrl || args.config?.model) {
-          saveCachedConfig("ai", { baseUrl: args.config.baseUrl, model: args.config.model });
-        }
+        // Cache the connection (apiKey scrubbed to a ref-or-clear by the cache layer).
+        cacheLlmConnection("ai", args.config);
 
         const resolved = resolveAiConfig(args.config);
         if ("error" in resolved) throw new Error(resolved.error);

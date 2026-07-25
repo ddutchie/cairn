@@ -160,20 +160,26 @@ export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
               // and save the returned reference token — the raw key never lands
               // in the store, localStorage, or the settings cache.
               const id = addSavedProvider({ name, baseUrl, model, apiKey: "" }, kind);
-              if (keyDirty) {
-                const ref = rawKey
-                  ? await window.electron?.secrets?.set("llm", id, "apiKey", rawKey)
-                  : "";
-                updateSavedProvider(id, { apiKey: ref ?? "" });
+              if (keyDirty && rawKey) {
+                try {
+                  const ref = await window.electron?.secrets?.set("llm", id, "apiKey", rawKey);
+                  updateSavedProvider(id, { apiKey: ref ?? "" });
+                } catch (e) {
+                  // Don't leave an orphaned empty-key provider on keychain failure.
+                  deleteSavedProvider(id);
+                  throw e;
+                }
               }
             } else {
               const patch: { name: string; baseUrl: string; model: string; apiKey?: string } = { name, baseUrl, model };
               if (keyDirty) {
-                const ref = rawKey
-                  ? await window.electron?.secrets?.set("llm", editing, "apiKey", rawKey)
-                  : "";
-                if (!rawKey) window.electron?.secrets?.delete("llm", editing, "apiKey");
-                patch.apiKey = ref ?? "";
+                if (rawKey) {
+                  const ref = await window.electron?.secrets?.set("llm", editing, "apiKey", rawKey);
+                  patch.apiKey = ref ?? "";
+                } else {
+                  await window.electron?.secrets?.delete("llm", editing, "apiKey");
+                  patch.apiKey = "";
+                }
               }
               updateSavedProvider(editing, patch);
             }
@@ -193,7 +199,7 @@ function ProviderForm({
 }: {
   initial?: SavedProvider;
   defaultModel: string;
-  onSave: (data: { name: string; baseUrl: string; model: string; rawKey: string; keyDirty: boolean }) => void;
+  onSave: (data: { name: string; baseUrl: string; model: string; rawKey: string; keyDirty: boolean }) => Promise<void>;
   onCancel: () => void;
 }) {
   const [name, setName] = useState(initial?.name ?? "");
@@ -203,6 +209,8 @@ function ProviderForm({
   // newly-typed raw key; `keyDirty` marks that the user changed it.
   const [keyInput, setKeyInput] = useState("");
   const [keyDirty, setKeyDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   // Whether this provider already has a key stored (drives the placeholder).
   const hadKey = !!(initial?.apiKey && initial.apiKey.startsWith("secret://"));
 
@@ -217,7 +225,22 @@ function ProviderForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const canSave = name.trim().length > 0 && baseUrl.trim().length > 0;
+  const canSave = name.trim().length > 0 && baseUrl.trim().length > 0 && !saving;
+
+  async function handleSave() {
+    if (!canSave) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await onSave({ name: name.trim(), baseUrl: baseUrl.trim(), model: model.trim(), rawKey: keyInput.trim(), keyDirty });
+      // onSave closes the form on success.
+    } catch (e) {
+      // Keychain (or persistence) failure — keep the form open so the user can
+      // retry; the caller has already cleaned up any half-created provider.
+      setSaveError(e instanceof Error ? e.message : "Couldn't save the provider — please try again.");
+      setSaving(false);
+    }
+  }
 
   const inputCls = "px-2.5 py-1.5 text-xs w-full rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)]";
 
@@ -266,6 +289,9 @@ function ProviderForm({
           <span className="text-[0.643rem] text-[var(--text-tertiary)]">Stored in your OS keychain, never synced.</span>
         </label>
       </div>
+      {saveError && (
+        <p className="text-[0.714rem] text-[var(--danger)]">{saveError}</p>
+      )}
       <div className="flex justify-end gap-1.5 pt-0.5">
         <button
           onClick={onCancel}
@@ -274,7 +300,7 @@ function ProviderForm({
           <X size={11} /> Cancel
         </button>
         <button
-          onClick={() => canSave && onSave({ name: name.trim(), baseUrl: baseUrl.trim(), model: model.trim(), rawKey: keyInput.trim(), keyDirty })}
+          onClick={handleSave}
           disabled={!canSave}
           className={cn(
             "px-2.5 py-1 text-[0.714rem] rounded border transition-colors flex items-center gap-1",
@@ -283,7 +309,7 @@ function ProviderForm({
               : "border-[var(--border)] text-[var(--text-tertiary)] opacity-50 cursor-not-allowed",
           )}
         >
-          <Check size={11} /> {initial ? "Save" : "Add"}
+          <Check size={11} /> {saving ? "Saving…" : initial ? "Save" : "Add"}
         </button>
       </div>
     </div>

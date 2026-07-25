@@ -11,8 +11,8 @@ import { registerIpcHandle } from "./registry";
 import { err, handle, type DbContext } from "./result-helpers";
 import { generatePrd } from "../lib/prd";
 import { callLLM, isLocalEndpoint, normaliseBaseUrl, type LLMConfig } from "../lib/llm";
-import { saveCachedConfig, getCachedConfig } from "../lib/config-cache";
-import { resolveLlmApiKey, isSecretRef } from "../lib/secure-store";
+import { getCachedConfig, cacheLlmConnection } from "../lib/config-cache";
+import { resolveLlmApiKey } from "../lib/secure-store";
 
 function resolveConfig(
   config: { baseUrl?: string; model?: string; apiKey?: string } | undefined,
@@ -112,13 +112,20 @@ export function registerAiHandlers(ctx: DbContext): void {
         const realKey = resolveLlmApiKey(args.apiKey);
         const headers: Record<string, string> = {};
         if (realKey) headers["Authorization"] = `Bearer ${realKey}`;
-        const res = await fetch(`${url}/v1/models`, { headers });
-        if (!res.ok) throw new Error(`${res.status}`);
-        const data = (await res.json()) as { data?: Array<{ id: string }> };
-        return (data?.data ?? [])
-          .map((m) => m.id)
-          .filter((id) => !id.includes("embed") && !id.includes("whisper") && !id.includes("tts") && !id.includes("dall-e"))
-          .sort();
+        // Abort a hung endpoint after 12s so the picker's spinner can't hang forever.
+        const ac = new AbortController();
+        const timer = setTimeout(() => ac.abort(), 12_000);
+        try {
+          const res = await fetch(`${url}/v1/models`, { headers, signal: ac.signal });
+          if (!res.ok) throw new Error(`${res.status}`);
+          const data = (await res.json()) as { data?: Array<{ id: string }> };
+          return (data?.data ?? [])
+            .map((m) => m.id)
+            .filter((id) => !id.includes("embed") && !id.includes("whisper") && !id.includes("tts") && !id.includes("dall-e"))
+            .sort();
+        } finally {
+          clearTimeout(timer);
+        }
       })
   );
 
@@ -130,16 +137,8 @@ export function registerAiHandlers(ctx: DbContext): void {
     config: { baseUrl: string; model: string; apiKey: string };
   }) => {
     // PRD returns its own { error } shape for user-facing validation errors.
-    // Only persist a keychain ref to the cache — never a raw key.
-    if (args.config?.apiKey && isSecretRef(args.config.apiKey)) {
-      saveCachedConfig("ai", {
-        baseUrl: args.config.baseUrl,
-        model: args.config.model,
-        apiKey: args.config.apiKey,
-      });
-    } else if (args.config?.baseUrl || args.config?.model) {
-      saveCachedConfig("ai", { baseUrl: args.config.baseUrl, model: args.config.model });
-    }
+    // Cache the connection (apiKey scrubbed to a ref-or-clear by the cache layer).
+    cacheLlmConnection("ai", args.config);
 
     const resolved = resolveConfig(args.config, "ai");
     if ("error" in resolved) {
