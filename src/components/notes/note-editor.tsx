@@ -691,7 +691,7 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
               <button
                 onClick={handleSpawnTasks}
                 className={cn(
-                  "flex items-center gap-1.5 px-2 py-1 rounded-md text-xs transition-colors",
+                  "flex items-center gap-1.5 px-2 py-1 rounded-md text-xs transition-colors whitespace-nowrap",
                   spawnResult
                     ? "text-[var(--success)] bg-[var(--success)]/10"
                     : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]"
@@ -710,7 +710,7 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
                   onClick={() => setShowExportMenu((v) => !v)}
                   disabled={exportState === "exporting"}
                   className={cn(
-                    "flex items-center gap-1.5 px-2 py-1 rounded-md text-xs transition-colors",
+                    "flex items-center gap-1.5 px-2 py-1 rounded-md text-xs transition-colors whitespace-nowrap",
                     exportState === "done"
                       ? "text-[var(--success)]"
                       : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] disabled:opacity-50"
@@ -753,6 +753,7 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
               )}
             </div>
           )}
+          <div className="flex items-center gap-1">
           <Tooltip content={note.isPinned ? "Unpin note" : "Pin note"}>
             <button
               onClick={() => updateNote(note.id, { isPinned: !note.isPinned })}
@@ -792,10 +793,8 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
               {notesFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
             </button>
           </Tooltip>
-          <span className="text-[0.786rem] text-[var(--text-tertiary)]">
-            {wordCount.toLocaleString()} {wordCount === 1 ? "word" : "words"} · {Math.max(1, Math.ceil(wordCount / 200))} min read
-          </span>
-          <span className="text-[0.786rem] text-[var(--text-tertiary)] flex items-center gap-1">
+          </div>
+          <span className="text-[0.786rem] text-[var(--text-tertiary)] flex items-center gap-1 whitespace-nowrap">
             <Calendar size={10} />
             {formatRelative(note.updatedAt)}
           </span>
@@ -812,6 +811,9 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
           placeholder="Note title"
           className="w-full bg-transparent text-2xl font-bold text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none tracking-tight max-w-4xl mx-auto block"
         />
+        <div className="max-w-4xl mx-auto mt-1 text-[0.786rem] text-[var(--text-tertiary)]">
+          {wordCount.toLocaleString()} {wordCount === 1 ? "word" : "words"} · {Math.max(1, Math.ceil(wordCount / 200))} min read
+        </div>
         {/* Tag bar */}
         <NoteTagBar
           note={note}

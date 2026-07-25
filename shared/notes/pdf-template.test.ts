@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildPdfHtml, pdfSafeFilename } from "./pdf-template";
+import { buildPdfHtml, buildPdfFooterTemplate, buildPdfHeaderTemplate, pdfSafeFilename } from "./pdf-template";
 
 describe("pdfSafeFilename", () => {
   it("strips filesystem-illegal characters, replacing them with underscore", () => {
@@ -31,6 +31,13 @@ describe("buildPdfHtml", () => {
     expect(html).toContain('<div class="prose-cairn"><p>hi</p></div>');
   });
 
+  it("omits the in-body title heading when titleMode is 'none'", () => {
+    const html = buildPdfHtml("My Title", "<p>hi</p>", "light", "none");
+    expect(html).toContain("<title>My Title</title>"); // document <title> still set
+    expect(html).not.toContain('class="pdf-title"'); // but no in-body heading
+    expect(html).toContain('<div class="prose-cairn"><p>hi</p></div>');
+  });
+
   it("escapes < in the title to prevent injection", () => {
     const html = buildPdfHtml("a<b", "", "light");
     expect(html).toContain("a&lt;b");
@@ -39,5 +46,29 @@ describe("buildPdfHtml", () => {
   it("applies dark theme background when theme=dark", () => {
     const html = buildPdfHtml("T", "", "dark");
     expect(html).toContain("#141414"); // DARK_VARS.bg
+  });
+});
+
+describe("buildPdfFooterTemplate", () => {
+  it("renders the title on the left and page numbers on the right", () => {
+    const footer = buildPdfFooterTemplate("My Title");
+    expect(footer).toContain("My Title");
+    expect(footer).toContain('class="pageNumber"');
+    expect(footer).toContain('class="totalPages"');
+  });
+
+  it("escapes < and & in the title to prevent injection", () => {
+    const footer = buildPdfFooterTemplate("a<b&c");
+    expect(footer).toContain("a&lt;b&amp;c");
+  });
+
+  it("uses the dark secondary colour when theme=dark", () => {
+    expect(buildPdfFooterTemplate("T", "dark")).toContain("#9e9a94"); // DARK_VARS.textSecondary
+  });
+});
+
+describe("buildPdfHeaderTemplate", () => {
+  it("returns a minimal empty header", () => {
+    expect(buildPdfHeaderTemplate()).toBe("<div></div>");
   });
 });
