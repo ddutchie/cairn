@@ -5,7 +5,7 @@
   "author": "Cairn",
   "private": true,
   "scripts": {
-    "test": "npm run compile && vitest run",
+    "test": "node scripts/generate-licenses.js && node scripts/generate-features.js && npm run compile && vitest run",
     "test:fast": "vitest run",
     "test:live": "CAIRN_LIVE_TESTS=1 vitest run",
     "test:unit": "vitest run --project node",
