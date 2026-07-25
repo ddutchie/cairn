@@ -6,6 +6,7 @@ import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
 import type { ID, AppUIState, SettingsSection } from "@/types";
 import { storage } from "@/lib/storage";
+import { id as genId } from "@/lib/utils";
 import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KEY, ACTIVE_PROJECT_KEY, CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY, NOTES_COLLAPSED_FOLDERS_KEY } from "@/lib/constants";
 
 // ── View visibility ───────────────────────────────────────────────────────────
@@ -19,6 +20,71 @@ export const SEEN_FEATURES_KEY = "seenFeatures";
 
 
 // ── AI / MCP config ───────────────────────────────────────────────────────────
+
+/**
+ * A named, reusable cloud/local API connection. Lets the user save several
+ * OpenAI-compatible endpoints (e.g. "OpenAI", "OpenRouter", "Local Ollama") and
+ * switch between them without retyping the base URL, key, and model each time.
+ * Applies only to the cloud/local API provider — On-Device Llama is unaffected.
+ */
+export interface SavedProvider {
+  /** Stable id (uuid). */
+  id: string;
+  /** User-facing label shown in the switcher. */
+  name: string;
+  /** OpenAI-compatible chat completions endpoint root. */
+  baseUrl: string;
+  /** API key. Empty = use the server-side OPENAI_API_KEY env var / keyless local. */
+  apiKey: string;
+  /** Default model id for this provider. */
+  model: string;
+}
+
+/**
+ * The connection-carrying subset shared by AIConfig and AgentConfig, so the
+ * mirror-into-config helpers below can operate on either one generically. The
+ * saved-provider *list* itself is shared and lives on aiConfig.savedProviders.
+ */
+type ProviderCarrier = {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  activeProviderId?: string;
+};
+
+/** Mirror a provider's connection into a config + mark it that config's active. */
+function mirrorProvider<C extends ProviderCarrier>(config: C, p: SavedProvider): C {
+  return { ...config, activeProviderId: p.id, baseUrl: p.baseUrl, apiKey: p.apiKey, model: p.model };
+}
+
+/**
+ * Reconcile a config after the shared provider list changed: if its active
+ * provider still exists, re-mirror it (picks up edits); if it was removed, fall
+ * back to the first remaining provider (or leave as-is when the list is empty).
+ */
+function reconcileConfig<C extends ProviderCarrier>(config: C, list: SavedProvider[]): C {
+  const active = list.find((p) => p.id === config.activeProviderId);
+  if (active) return mirrorProvider(config, active);
+  const fallback = list[0];
+  return fallback ? mirrorProvider(config, fallback) : config;
+}
+
+/** Persist an AIConfig to localStorage + the Electron backend cache. */
+function persistAi(next: AIConfig): void {
+  storage.set(AI_CONFIG_KEY, next);
+  if (typeof window !== "undefined" && window.electron?.saveAiSettings) {
+    window.electron.saveAiSettings(next as unknown as Record<string, unknown>).catch(() => {});
+  }
+}
+
+/** Persist an AgentConfig to localStorage + the Electron backend cache. */
+function persistAgent(next: AgentConfig): void {
+  storage.set(AGENT_CONFIG_KEY, next);
+  if (typeof window !== "undefined" && window.electron?.saveAgentSettings) {
+    window.electron.saveAgentSettings(next as unknown as Record<string, unknown>).catch(() => {});
+  }
+}
+
 
 export interface AIConfig {
   /** The AI provider ('openai' or 'localllm') */
@@ -49,6 +115,16 @@ export interface AIConfig {
    * unreliable with the multi-hop split).
    */
   subagentsEnabled: boolean;
+  /**
+   * Saved cloud/local API connections the user can switch between. This list is
+   * the single, SHARED source of truth — the coding agent picks from the same
+   * list (it only tracks its own `activeProviderId` on `agentConfig`). The
+   * active one's baseUrl/apiKey/model are mirrored into the top-level fields
+   * above so every existing consumer keeps working unchanged.
+   */
+  savedProviders?: SavedProvider[];
+  /** Id of the AI Chat's active saved provider (matches an entry in `savedProviders`). */
+  activeProviderId?: string;
 }
 
 export interface AgentConfig {
@@ -72,6 +148,14 @@ export interface AgentConfig {
   contextAuto?: boolean;
   /** Automatically approve tool execution without prompt. */
   autoApprove: boolean;
+  /**
+   * Id of the active saved provider for the coding agent. The saved-provider
+   * *list* is shared and lives on `aiConfig.savedProviders` (single source of
+   * truth); the agent only tracks which one it has selected. The active
+   * provider's baseUrl/apiKey/model are mirrored into the fields above so every
+   * existing consumer keeps working unchanged.
+   */
+  activeProviderId?: string;
 }
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
@@ -136,6 +220,15 @@ export interface UISlice extends AppUIState {
   // AI config
   aiConfig: AIConfig;
   setAIConfig: (patch: Partial<AIConfig>) => void;
+
+  // Saved cloud/local API providers — one SHARED list (on aiConfig), with a
+  // per-config active selection. add/update/delete mutate the shared list and
+  // reconcile both configs; select* choose the active provider for one config.
+  addSavedProvider: (provider: Omit<SavedProvider, "id">, selectFor?: "ai" | "agent" | "both") => string;
+  updateSavedProvider: (id: string, patch: Partial<Omit<SavedProvider, "id">>) => void;
+  deleteSavedProvider: (id: string) => void;
+  selectSavedProvider: (id: string) => void;
+  selectAgentProvider: (id: string) => void;
 
   // Agent config
   agentConfig: AgentConfig;
@@ -256,9 +349,80 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
       const next = { ...s.aiConfig, ...patch };
       storage.set(AI_CONFIG_KEY, next);
       if (typeof window !== "undefined" && window.electron && window.electron.saveAiSettings) {
-        window.electron.saveAiSettings(next).catch(() => {});
+        window.electron.saveAiSettings(next as unknown as Record<string, unknown>).catch(() => {});
       }
       return { aiConfig: next };
+    });
+  },
+
+  // ── Saved cloud/local API providers (shared list, per-config active) ───
+  //
+  // The provider LIST is a single shared source of truth on aiConfig; both the
+  // AI Chat and the coding agent pick from it, each keeping its own
+  // activeProviderId. add/update/delete mutate the list and reconcile BOTH
+  // configs; select*/persistence write only the touched config(s).
+  addSavedProvider(provider, selectFor = "ai") {
+    const id = genId();
+    set((s) => {
+      const list = [...(s.aiConfig.savedProviders ?? []), { id, ...provider }];
+      const added: SavedProvider = { id, ...provider };
+      // AI config always owns the list; select it there when asked.
+      const nextAi: AIConfig =
+        selectFor === "ai" || selectFor === "both"
+          ? { ...mirrorProvider(s.aiConfig, added), savedProviders: list }
+          : { ...s.aiConfig, savedProviders: list };
+      const nextAgent: AgentConfig =
+        selectFor === "agent" || selectFor === "both"
+          ? mirrorProvider(s.agentConfig, added)
+          : s.agentConfig;
+      persistAi(nextAi);
+      if (nextAgent !== s.agentConfig) persistAgent(nextAgent);
+      return { aiConfig: nextAi, agentConfig: nextAgent };
+    });
+    return id;
+  },
+
+  updateSavedProvider(id, patch) {
+    set((s) => {
+      const list = (s.aiConfig.savedProviders ?? []).map((p) => (p.id === id ? { ...p, ...patch } : p));
+      // Re-mirror into whichever config(s) have this provider active.
+      const nextAi: AIConfig = { ...reconcileConfig(s.aiConfig, list), savedProviders: list };
+      const nextAgent: AgentConfig = reconcileConfig(s.agentConfig, list);
+      persistAi(nextAi);
+      if (nextAgent !== s.agentConfig) persistAgent(nextAgent);
+      return { aiConfig: nextAi, agentConfig: nextAgent };
+    });
+  },
+
+  deleteSavedProvider(id) {
+    set((s) => {
+      const list = (s.aiConfig.savedProviders ?? []).filter((p) => p.id !== id);
+      const nextAi: AIConfig = { ...reconcileConfig(s.aiConfig, list), savedProviders: list };
+      const nextAgent: AgentConfig = reconcileConfig(s.agentConfig, list);
+      persistAi(nextAi);
+      if (nextAgent !== s.agentConfig) persistAgent(nextAgent);
+      return { aiConfig: nextAi, agentConfig: nextAgent };
+    });
+  },
+
+  selectSavedProvider(id) {
+    set((s) => {
+      const p = (s.aiConfig.savedProviders ?? []).find((x) => x.id === id);
+      if (!p) return {};
+      const nextAi = mirrorProvider(s.aiConfig, p);
+      persistAi(nextAi);
+      return { aiConfig: nextAi };
+    });
+  },
+
+  selectAgentProvider(id) {
+    set((s) => {
+      // The list lives on aiConfig; read it there.
+      const p = (s.aiConfig.savedProviders ?? []).find((x) => x.id === id);
+      if (!p) return {};
+      const nextAgent = mirrorProvider(s.agentConfig, p);
+      persistAgent(nextAgent);
+      return { agentConfig: nextAgent };
     });
   },
 

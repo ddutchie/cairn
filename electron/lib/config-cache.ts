@@ -24,6 +24,10 @@ export interface CachedConfig {
     contextLimit?: number;
     aiEnabled?: boolean;
     subagentsEnabled?: boolean;
+    // Saved cloud/local API connections the user can switch between, plus the
+    // id of the active one. Persisted so the switcher survives restarts.
+    savedProviders?: Array<{ id: string; name: string; baseUrl: string; apiKey: string; model: string }>;
+    activeProviderId?: string;
   };
   agentConfig?: {
     baseUrl?: string;
@@ -32,6 +36,9 @@ export interface CachedConfig {
     maxSteps?: number;
     temperature?: number;
     autoApprove?: boolean;
+    // The coding agent's active saved-provider id. The provider LIST itself is
+    // shared and persisted under aiConfig.savedProviders (single source of truth).
+    activeProviderId?: string;
   };
   embeddingsConfig?: CachedEmbeddingsConfig;
   theme?: string;
@@ -96,6 +103,12 @@ export function saveCachedConfig(type: "ai" | "agent" | "embeddings" | "theme" |
         contextLimit: typeof configRecord.contextLimit === "number" ? configRecord.contextLimit : current.aiConfig?.contextLimit,
         aiEnabled: typeof configRecord.aiEnabled === "boolean" ? configRecord.aiEnabled : current.aiConfig?.aiEnabled,
         subagentsEnabled: typeof configRecord.subagentsEnabled === "boolean" ? configRecord.subagentsEnabled : current.aiConfig?.subagentsEnabled,
+        // Saved-provider switcher state (array + active id). `configRecord` is
+        // typed for scalars, so read the raw config object for these.
+        savedProviders: Array.isArray((config as { savedProviders?: unknown }).savedProviders)
+          ? (config as { savedProviders: NonNullable<CachedConfig["aiConfig"]>["savedProviders"] }).savedProviders
+          : current.aiConfig?.savedProviders,
+        activeProviderId: typeof configRecord.activeProviderId === "string" ? configRecord.activeProviderId : current.aiConfig?.activeProviderId,
       };
     } else if (type === "agent" && configRecord) {
       current.agentConfig = {
@@ -106,6 +119,7 @@ export function saveCachedConfig(type: "ai" | "agent" | "embeddings" | "theme" |
         maxSteps: typeof configRecord.maxSteps === "number" ? configRecord.maxSteps : current.agentConfig?.maxSteps,
         temperature: typeof configRecord.temperature === "number" ? configRecord.temperature : current.agentConfig?.temperature,
         autoApprove: typeof configRecord.autoApprove === "boolean" ? configRecord.autoApprove : current.agentConfig?.autoApprove,
+        activeProviderId: typeof configRecord.activeProviderId === "string" ? configRecord.activeProviderId : current.agentConfig?.activeProviderId,
       };
     } else if (type === "embeddings" && configRecord) {
       current.embeddingsConfig = {

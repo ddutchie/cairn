@@ -14,8 +14,9 @@ import type { CodingAgent } from "@/store/slices/coding-agents";
 import { SettingsGroup, SettingsRow, StepperSettingsRow } from "./shared";
 import {
   BaseUrlRow, ApiKeyRow, ModelSelectionRow, CloudConnectionStatus,
-  useEndpointConfig, isLocalBaseUrl, LOCAL_FALLBACK_MODELS,
+  useEndpointConfig, isLocalBaseUrl,
 } from "./endpoint-components";
+import { ProviderManager } from "./ProviderManager";
 
 // ── Agent form ────────────────────────────────────────────────────────────────
 
@@ -411,7 +412,7 @@ export function AgentSettings() {
   const {
     showKey: showKeyAgent, testState: testStateAgent, testError: testErrorAgent,
     availableModels: availableModelsAgent, modelsLoading: modelsLoadingAgent,
-    setShowKey: setShowKeyAgent, fetchModels: fetchModelsAgent, resetModels: resetModelsAgent,
+    setShowKey: setShowKeyAgent, fetchModels: fetchModelsAgent, ensureModels: ensureModelsAgent, resetModels: resetModelsAgent,
   } = useEndpointConfig();
 
   useEffect(() => { fetchAgents(); }, [fetchAgents]);
@@ -426,11 +427,14 @@ export function AgentSettings() {
     }
   }
 
-  const fallbackModelsAgent = isLocalAgent
-    ? LOCAL_FALLBACK_MODELS
-    : ["gpt-4o", "gpt-4-turbo", "gpt-4o-mini", "o1-mini", "o3-mini"];
-
-  const modelOptionsAgent = availableModelsAgent.length > 0 ? availableModelsAgent : fallbackModelsAgent;
+  // Populate the agent's model list from cache (or fetch once) on mount and when
+  // the active saved provider changes. Not on every keystroke in the URL/key
+  // fields — Refresh in the picker re-queries after edits. No hardcoded
+  // fallbacks — the picker shows only real models.
+  useEffect(() => {
+    ensureModelsAgent(baseUrlAgent, apiKeyAgent);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentConfig.activeProviderId]);
 
   // Look up the agent model's context window from models.dev (cached). When Auto
   // is enabled, the detected value is applied to contextLimit automatically as
@@ -481,8 +485,11 @@ export function AgentSettings() {
         title="Cairn Coding Agent (Pi)"
         description="Configure endpoint parameters for the native autonomous coding agent. Coding agents require high-capacity cloud/local models supporting function calling."
       >
+        {/* Saved providers switcher */}
+        <ProviderManager kind="agent" />
+
         {/* Base URL */}
-        <BaseUrlRow baseUrl={baseUrlAgent} onChange={(url) => updateAgent({ baseUrl: url })} />
+        <BaseUrlRow baseUrl={baseUrlAgent} onChange={(url) => updateAgent({ baseUrl: url })} showPresets={false} />
 
         {/* API Key */}
         <ApiKeyRow
@@ -496,7 +503,7 @@ export function AgentSettings() {
         {/* Model Selection */}
         <ModelSelectionRow
           model={modelAgent}
-          modelOptions={modelOptionsAgent}
+          modelOptions={availableModelsAgent}
           availableModelsCount={availableModelsAgent.length}
           modelsLoading={modelsLoadingAgent}
           testState={testStateAgent}
