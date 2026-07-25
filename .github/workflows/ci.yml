@@ -34,6 +34,9 @@ jobs:
       - name: Generate licenses (required by type check)
         run: node scripts/generate-licenses.js
 
+      - name: Generate What's New feature registry (required by type check)
+        run: node scripts/generate-features.js
+
       - name: Type check
         run: npm run type-check:all
 
@@ -138,6 +141,9 @@ jobs:
 
       - name: Generate licenses
         run: node scripts/generate-licenses.js
+
+      - name: Generate What's New feature registry
+        run: node scripts/generate-features.js
 
       - name: Build
         run: npx cross-env ELECTRON_BUILD=true npx next build

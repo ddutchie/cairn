@@ -20,6 +20,7 @@
 - [ ] `npm run lint` passes
 - [ ] `npm test` passes (runs `npm run compile` first so `electron/bundle-guard.test.ts` actually executes — `npm run test:bundle` to run just that)
 - [ ] `npm run test:e2e` passes (run before merging UI changes or cutting a release)
+- [ ] If this ships a **major, user-facing feature**: added an entry to `scripts/features.config.js` so it appears in the "What's New" modal (generated JSON — run `node scripts/generate-features.js`)
 - [ ] No hardcoded colours — CSS variables only (`var(--accent)`, `var(--text-primary)`, etc.)
 - [ ] No `text-[Npx]` pixel font classes — rem equivalents only (`text-[0.714rem]`, `text-xs`, etc.)
 - [ ] New IPC handlers wrapped in `handle()` and return `IpcResult<T>`

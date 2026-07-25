@@ -48,6 +48,16 @@ Procedure for the relevant target (desktop and/or mobile):
 
 This guarantees `release.sh`'s gate (`changelogs/v<next>.md` must exist for the chosen bump) is satisfied, so the pending changelog and the version bump stay in lockstep — you never have to be told which changelog to touch.
 
+### "What's New" modal rule (announce major features)
+
+The What's New modal (`src/components/layout/NewFeatureModal.tsx`) is generated from a curated source, exactly like `licenses.json`:
+
+- **Source of truth**: `scripts/features.config.js` (the `FEATURES` array). Hand-authored.
+- **Generator**: `scripts/generate-features.js` → `src/generated/new-features.json` (git-ignored, baked into the static export). Runs in `build.js`, the `dev` script, and CI (next to `generate-licenses.js`).
+- **Runtime**: `src/lib/new-features-registry.ts` reads the generated JSON — never edit the registry by hand.
+
+**When you ship a MAJOR, user-facing feature, add an entry to `scripts/features.config.js`** (not every changelog line — only headline features worth announcing on launch; fixes and internal work stay in `changelogs/` only). Append at the end in release order with a stable, never-reused `id` (e.g. `v2.6.0-my-feature`), the release `version` (`vX.Y.Z`), a short `title`, a one-word-ish `category`, a `description`, and 3–4 `highlights` (a `"Prefix: rest"` highlight bolds the prefix). The modal auto-shows unseen entries belonging to the newest `version` present. Run `node scripts/generate-features.js` after editing; it validates the shape and rejects duplicate ids.
+
 ## Views and navigation
 
 | View | Key | Component |

@@ -12,7 +12,7 @@
     "test:component": "vitest run --project component",
     "test:watch": "vitest",
     "test:coverage": "npm run compile && vitest run --coverage",
-    "dev": "node scripts/generate-licenses.js && concurrently -n next,esbuild,electron -c cyan,magenta,yellow \"next dev\" \"npm run compile:watch\" \"wait-on http://localhost:3000 dist-electron/main.js && node scripts/electron-dev.js\"",
+    "dev": "node scripts/generate-licenses.js && node scripts/generate-features.js && concurrently -n next,esbuild,electron -c cyan,magenta,yellow \"next dev\" \"npm run compile:watch\" \"wait-on http://localhost:3000 dist-electron/main.js && node scripts/electron-dev.js\"",
     "build:mac": "node scripts/build.js --mac",
     "build:win": "node scripts/build.js --win",
     "build:linux": "node scripts/build.js --linux",
