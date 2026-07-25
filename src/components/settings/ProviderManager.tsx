@@ -29,17 +29,22 @@ const EMPTY_PROVIDERS: SavedProvider[] = [];
  */
 export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
   const {
-    savedProviders, activeProviderId,
-    addSavedProvider, updateSavedProvider, deleteSavedProvider, selectProvider,
+    savedProviders, activeProviderId, activeModel,
+    addSavedProvider, updateSavedProvider, deleteSavedProvider, selectProvider, setModel,
   } = useCairnStore(useShallow((s) => ({
     // The list is always shared — read it from aiConfig.
     savedProviders:      s.aiConfig.savedProviders,
-    // Active id + select target depend on which config this instance drives.
+    // Active id + the surface's chosen model depend on which config this drives.
     activeProviderId:    kind === "agent" ? s.agentConfig.activeProviderId : s.aiConfig.activeProviderId,
+    activeModel:         kind === "agent" ? s.agentConfig.model : s.aiConfig.model,
     addSavedProvider:    s.addSavedProvider,
     updateSavedProvider: s.updateSavedProvider,
     deleteSavedProvider: s.deleteSavedProvider,
     selectProvider:      kind === "agent" ? s.selectAgentProvider : s.selectSavedProvider,
+    // Model is a PER-SURFACE choice on the config, not the shared provider.
+    setModel:            kind === "agent"
+      ? (model: string) => s.setAgentConfig({ model })
+      : (model: string) => s.setAIConfig({ model }),
   })));
 
   const providers = savedProviders ?? EMPTY_PROVIDERS;
@@ -91,7 +96,9 @@ export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
                     </span>
                     <span className="flex flex-col min-w-0">
                       <span className="truncate">{p.name}</span>
-                      <span className="truncate text-[0.714rem] text-[var(--text-tertiary)] font-mono">{p.model}</span>
+                      <span className="truncate text-[0.714rem] text-[var(--text-tertiary)] font-mono">
+                        {p.id === activeProviderId ? (activeModel || p.model) : p.model}
+                      </span>
                     </span>
                   </DropdownMenuItem>
                 ))}
@@ -128,6 +135,18 @@ export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
           )}
         </div>
       </SettingsRow>
+
+      {/* Quick model switch for THIS surface's active provider — writes to the
+          config (aiConfig/agentConfig), not the shared provider, so chat and the
+          agent can run different models on the same connection. */}
+      {active && (
+        <ActiveModelRow
+          key={active.id}
+          provider={active}
+          model={activeModel || active.model}
+          onModelChange={setModel}
+        />
+      )}
 
       {editing && (
         <ProviderForm
@@ -213,7 +232,7 @@ function ProviderForm({
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="OpenAI" className={inputCls} />
         </label>
         <div className="flex flex-col gap-1">
-          <span className="text-[0.714rem] text-[var(--text-tertiary)]">Model</span>
+          <span className="text-[0.714rem] text-[var(--text-tertiary)]">Default model</span>
           <ModelPicker
             value={model}
             options={availableModels}
@@ -268,5 +287,47 @@ function ProviderForm({
         </button>
       </div>
     </div>
+  );
+}
+
+/**
+ * A standalone "Model" settings row for the currently-active provider, so the
+ * model can be changed without opening the full Add/Edit form. Fetches the
+ * provider's model list (cache-first, via the main-process IPC that resolves the
+ * key ref) and writes the chosen model to THIS surface's config — the coding
+ * agent and chat keep independent models on the same shared provider.
+ */
+function ActiveModelRow({
+  provider,
+  model,
+  onModelChange,
+}: {
+  provider: SavedProvider;
+  model: string;
+  onModelChange: (model: string) => void;
+}) {
+  const { availableModels, fetchModels, ensureModels, modelsLoading, testState } = useEndpointConfig();
+  useEffect(() => {
+    ensureModels(provider.baseUrl, provider.apiKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [provider.id]);
+
+  return (
+    <SettingsRow label="Model" description="Model for the active provider. Chat and the coding agent keep separate models on the same provider.">
+      <div className="w-64">
+        <ModelPicker
+          value={model}
+          options={availableModels}
+          loading={modelsLoading}
+          errored={testState === "error"}
+          placeholder={provider.model || "gpt-4o-mini"}
+          size="md"
+          align="end"
+          className="w-full"
+          onChange={onModelChange}
+          onRefresh={() => fetchModels(provider.baseUrl, provider.apiKey)}
+        />
+      </div>
+    </SettingsRow>
   );
 }

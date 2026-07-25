@@ -36,7 +36,12 @@ export interface SavedProvider {
   baseUrl: string;
   /** API key. Empty = use the server-side OPENAI_API_KEY env var / keyless local. */
   apiKey: string;
-  /** Default model id for this provider. */
+  /**
+   * Default model id for this provider. Used to SEED a surface's model when it
+   * first selects this provider. Each consumer (AI Chat, coding agent) then
+   * keeps its own `model` on `aiConfig`/`agentConfig` and can diverge — so the
+   * same provider can run a different model in chat vs. the agent.
+   */
   model: string;
 }
 
@@ -52,22 +57,34 @@ type ProviderCarrier = {
   activeProviderId?: string;
 };
 
-/** Mirror a provider's connection into a config + mark it that config's active. */
+/**
+ * Mirror a provider's connection into a config + mark it that config's active.
+ * Seeds `model` from the provider default (used on select/add). Once selected,
+ * the config's model is independent — see `reconcileConfig`, which preserves it.
+ */
 function mirrorProvider<C extends ProviderCarrier>(config: C, p: SavedProvider): C {
   return { ...config, activeProviderId: p.id, baseUrl: p.baseUrl, apiKey: p.apiKey, model: p.model };
+}
+
+/** Re-sync only the CONNECTION (baseUrl/apiKey) from a provider, keeping the
+ *  config's own chosen model. Used when the shared list is edited/deleted. */
+function syncConnection<C extends ProviderCarrier>(config: C, p: SavedProvider): C {
+  return { ...config, activeProviderId: p.id, baseUrl: p.baseUrl, apiKey: p.apiKey };
 }
 
 /**
  * Reconcile a config after the shared provider list changed. Only touches a
  * config that had a provider selected: if its active provider still exists,
- * re-mirror it (picks up edits); if it was just deleted, fall back to the first
- * remaining provider. A config with NO active provider is left untouched — an
- * unselected surface must never inherit list[0] or the other surface's choice.
+ * re-sync its connection (baseUrl/apiKey) while KEEPING the config's own model;
+ * if it was just deleted, fall back to the first remaining provider (seeding
+ * that provider's default model). A config with NO active provider is left
+ * untouched — an unselected surface must never inherit list[0] or the other
+ * surface's choice.
  */
 function reconcileConfig<C extends ProviderCarrier>(config: C, list: SavedProvider[]): C {
   if (!config.activeProviderId) return config; // never auto-select for an unselected surface
   const active = list.find((p) => p.id === config.activeProviderId);
-  if (active) return mirrorProvider(config, active);
+  if (active) return syncConnection(config, active); // keep the config's own model
   const fallback = list[0];
   return fallback ? mirrorProvider(config, fallback) : config;
 }
@@ -492,7 +509,11 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
     set((s) => {
       const p = (s.aiConfig.savedProviders ?? []).find((x) => x.id === id);
       if (!p) return {};
-      const nextAi = mirrorProvider(s.aiConfig, p);
+      // Switching provider seeds the model from the provider default; re-selecting
+      // the current provider keeps the surface's chosen model.
+      const nextAi = s.aiConfig.activeProviderId === id
+        ? syncConnection(s.aiConfig, p)
+        : mirrorProvider(s.aiConfig, p);
       persistAi(nextAi);
       return { aiConfig: nextAi };
     });
@@ -503,7 +524,9 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
       // The list lives on aiConfig; read it there.
       const p = (s.aiConfig.savedProviders ?? []).find((x) => x.id === id);
       if (!p) return {};
-      const nextAgent = mirrorProvider(s.agentConfig, p);
+      const nextAgent = s.agentConfig.activeProviderId === id
+        ? syncConnection(s.agentConfig, p)
+        : mirrorProvider(s.agentConfig, p);
       persistAgent(nextAgent);
       return { agentConfig: nextAgent };
     });
