@@ -88,6 +88,89 @@ function persistAgent(next: AgentConfig): void {
   }
 }
 
+/** True if a value is a keychain reference token (not a raw key). */
+function isKeyRef(v: string | undefined | null): boolean {
+  return typeof v === "string" && v.startsWith("secret://");
+}
+
+/**
+ * One-time migration: move any RAW LLM API key found in the persisted configs
+ * (legacy top-level `apiKey`, or `savedProviders[].apiKey`) into the OS keychain
+ * and replace it with a `secret://llm:…/apiKey` reference token. Returns the
+ * possibly-updated configs (or the originals if nothing changed / no electron).
+ *
+ * Runs during hydration so upgrading users' plaintext keys are relocated to the
+ * keychain and scrubbed from localStorage + the settings cache on next launch.
+ */
+export async function migrateLlmKeysToKeychain(
+  ai: AIConfig,
+  agent: AgentConfig,
+): Promise<{ ai: AIConfig; agent: AgentConfig; changed: boolean }> {
+  const secrets = typeof window !== "undefined" ? window.electron?.secrets : undefined;
+  if (!secrets) return { ai, agent, changed: false };
+
+  let changed = false;
+
+  // 1. Saved providers: convert each provider's raw key to a keychain ref.
+  const providers = ai.savedProviders ?? [];
+  const migratedProviders: SavedProvider[] = [];
+  for (const p of providers) {
+    if (p.apiKey && !isKeyRef(p.apiKey)) {
+      try {
+        const ref = await secrets.set("llm", p.id, "apiKey", p.apiKey);
+        migratedProviders.push({ ...p, apiKey: ref });
+        changed = true;
+      } catch {
+        // Keychain unavailable — drop the raw key rather than keep it in plaintext.
+        migratedProviders.push({ ...p, apiKey: "" });
+        changed = true;
+      }
+    } else {
+      migratedProviders.push(p);
+    }
+  }
+
+  let nextAi = ai;
+  if (changed) nextAi = { ...ai, savedProviders: migratedProviders };
+
+  // 2. Mirror the active provider's (now-ref) key onto the top-level field.
+  const activeAi = migratedProviders.find((p) => p.id === nextAi.activeProviderId);
+  if (activeAi) {
+    nextAi = { ...nextAi, apiKey: activeAi.apiKey };
+  } else if (nextAi.apiKey && !isKeyRef(nextAi.apiKey)) {
+    // No provider selected but a legacy raw top-level key exists: store it under
+    // a stable synthetic id so it survives as a ref (keyless if it fails).
+    try {
+      const ref = await secrets.set("llm", "legacy-ai", "apiKey", nextAi.apiKey);
+      nextAi = { ...nextAi, apiKey: ref };
+    } catch {
+      nextAi = { ...nextAi, apiKey: "" };
+    }
+    changed = true;
+  }
+
+  // 3. Coding agent top-level key (shares the provider list, but may carry its
+  //    own legacy raw key / its active provider's ref).
+  let nextAgent = agent;
+  const activeAgent = migratedProviders.find((p) => p.id === agent.activeProviderId);
+  if (activeAgent) {
+    if (agent.apiKey !== activeAgent.apiKey) {
+      nextAgent = { ...agent, apiKey: activeAgent.apiKey };
+      changed = true;
+    }
+  } else if (agent.apiKey && !isKeyRef(agent.apiKey)) {
+    try {
+      const ref = await secrets.set("llm", "legacy-agent", "apiKey", agent.apiKey);
+      nextAgent = { ...agent, apiKey: ref };
+    } catch {
+      nextAgent = { ...agent, apiKey: "" };
+    }
+    changed = true;
+  }
+
+  return { ai: nextAi, agent: nextAgent, changed };
+}
+
 
 export interface AIConfig {
   /** The AI provider ('openai' or 'localllm') */

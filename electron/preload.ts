@@ -362,6 +362,8 @@ const api = {
     explainArchitecture: (args: { summary: string; config: { baseUrl: string; model: string; apiKey: string } }) =>
       invoke<{ overview: string; modules: string }>("ai:explainArchitecture", args),
     localLLMStatus: () => invoke<{ available: boolean; reason?: string }>("ai:localLLMStatus"),
+    fetchModels: (args: { baseUrl?: string; apiKey?: string }) =>
+      invoke<string[]>("ai:fetchModels", args),
   },
 
   // ── App paths ─────────────────────────────────
@@ -668,11 +670,11 @@ const api = {
   // ── Secrets (OS keychain). No get() by design — renderer only learns set/not-set.
   secrets: {
     available: () => invoke<boolean>("secrets:available"),
-    set: (toolType: "mcp" | "service", toolId: string, key: string, value: string) =>
+    set: (toolType: "mcp" | "service" | "llm", toolId: string, key: string, value: string) =>
       invoke<string>("secrets:set", { toolType, toolId, key, value }),
-    has: (toolType: "mcp" | "service", toolId: string, key: string) =>
+    has: (toolType: "mcp" | "service" | "llm", toolId: string, key: string) =>
       invoke<boolean>("secrets:has", { toolType, toolId, key }),
-    delete: (toolType: "mcp" | "service", toolId: string, key: string) =>
+    delete: (toolType: "mcp" | "service" | "llm", toolId: string, key: string) =>
       invoke("secrets:delete", { toolType, toolId, key }),
   },
 

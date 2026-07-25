@@ -12,6 +12,7 @@ import { err, handle, type DbContext } from "./result-helpers";
 import { generatePrd } from "../lib/prd";
 import { callLLM, isLocalEndpoint, normaliseBaseUrl, type LLMConfig } from "../lib/llm";
 import { saveCachedConfig, getCachedConfig } from "../lib/config-cache";
+import { resolveLlmApiKey, isSecretRef } from "../lib/secure-store";
 
 function resolveConfig(
   config: { baseUrl?: string; model?: string; apiKey?: string } | undefined,
@@ -19,7 +20,8 @@ function resolveConfig(
 ): { error: string } | LLMConfig {
   const cached = cacheKey === "ai" ? getCachedConfig().aiConfig : getCachedConfig().agentConfig;
 
-  // Merge request config with cached config, always merging cached values if not provided.
+  // Merge request config with cached config, always merging cached values if not
+  // provided. `apiKey` here is a keychain reference token (or empty), not a raw key.
   const mergedConfig = {
     baseUrl: config?.baseUrl || cached?.baseUrl || "",
     model: config?.model || cached?.model || "",
@@ -28,13 +30,14 @@ function resolveConfig(
 
   const baseUrl = normaliseBaseUrl(mergedConfig.baseUrl || "https://api.openai.com");
   const model = mergedConfig.model || "gpt-4o-mini";
-  const apiKey = mergedConfig.apiKey || "";
+  const keyRef = mergedConfig.apiKey || "";
   const isLocal = isLocalEndpoint(baseUrl);
-  if (!apiKey && !isLocal) {
+  if (!keyRef && !isLocal) {
     const sectionName = cacheKey === "ai" ? "Settings → AI & Chat" : "Settings";
     return { error: `AI is not configured. Add an API key in ${sectionName}, or use a local endpoint.` };
   }
-  return { baseUrl, model, apiKey };
+  // Resolve the ref to the real key only now, for this request.
+  return { baseUrl, model, apiKey: resolveLlmApiKey(keyRef) };
 }
 
 function cleanOutput(text: string): string {
@@ -98,6 +101,27 @@ export function registerAiHandlers(ctx: DbContext): void {
     });
   });
 
+  // ── Model discovery (GET {baseUrl}/v1/models) ─────
+  // Runs in the main process so the API key (a keychain ref) is resolved here
+  // and the raw key never lives in the renderer or crosses the CSP boundary.
+  registerIpcHandle(
+    "ai:fetchModels",
+    async (_e, args: { baseUrl?: string; apiKey?: string }) =>
+      handle(async () => {
+        const url = normaliseBaseUrl(args.baseUrl || "https://api.openai.com");
+        const realKey = resolveLlmApiKey(args.apiKey);
+        const headers: Record<string, string> = {};
+        if (realKey) headers["Authorization"] = `Bearer ${realKey}`;
+        const res = await fetch(`${url}/v1/models`, { headers });
+        if (!res.ok) throw new Error(`${res.status}`);
+        const data = (await res.json()) as { data?: Array<{ id: string }> };
+        return (data?.data ?? [])
+          .map((m) => m.id)
+          .filter((id) => !id.includes("embed") && !id.includes("whisper") && !id.includes("tts") && !id.includes("dall-e"))
+          .sort();
+      })
+  );
+
   // ── AI PRD generation (direct, no chat loop) ──────
   registerIpcHandle("ai:generatePrd", async (_e, args: {
     projectId: string;
@@ -105,13 +129,16 @@ export function registerAiHandlers(ctx: DbContext): void {
     requirements: string;
     config: { baseUrl: string; model: string; apiKey: string };
   }) => {
-    // PRD returns its own { error } shape for user-facing validation errors
-    if (args.config?.apiKey) {
+    // PRD returns its own { error } shape for user-facing validation errors.
+    // Only persist a keychain ref to the cache — never a raw key.
+    if (args.config?.apiKey && isSecretRef(args.config.apiKey)) {
       saveCachedConfig("ai", {
         baseUrl: args.config.baseUrl,
         model: args.config.model,
         apiKey: args.config.apiKey,
       });
+    } else if (args.config?.baseUrl || args.config?.model) {
+      saveCachedConfig("ai", { baseUrl: args.config.baseUrl, model: args.config.model });
     }
 
     const resolved = resolveConfig(args.config, "ai");

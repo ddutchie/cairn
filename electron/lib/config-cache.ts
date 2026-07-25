@@ -88,14 +88,20 @@ export function saveCachedConfig(type: "ai" | "agent" | "embeddings" | "theme" |
     
     // Type-guard/assert type safe access
     const configRecord = config as Record<string, string | number | boolean | undefined> | null | undefined;
-    
+
+    // Only keychain reference tokens (`secret://…`) may be cached for an apiKey —
+    // never a raw key. Anything else is dropped so plaintext keys can't land on
+    // disk (defence-in-depth; callers already send refs).
+    const refOnly = (v: unknown): string | undefined =>
+      typeof v === "string" && v.startsWith("secret://") ? v : undefined;
+
     if (type === "ai" && configRecord) {
       current.aiConfig = {
         ...current.aiConfig,
         provider: typeof configRecord.provider === "string" ? configRecord.provider : current.aiConfig?.provider,
         baseUrl: typeof configRecord.baseUrl === "string" ? configRecord.baseUrl : current.aiConfig?.baseUrl,
         model: typeof configRecord.model === "string" ? configRecord.model : current.aiConfig?.model,
-        apiKey: typeof configRecord.apiKey === "string" ? configRecord.apiKey : current.aiConfig?.apiKey,
+        apiKey: refOnly(configRecord.apiKey) ?? current.aiConfig?.apiKey,
         // Preserve behavioural fields too — omitting maxSteps here made the chat
         // tool-call limit reset to the default on the next hydrate.
         maxSteps: typeof configRecord.maxSteps === "number" ? configRecord.maxSteps : current.aiConfig?.maxSteps,
@@ -103,10 +109,12 @@ export function saveCachedConfig(type: "ai" | "agent" | "embeddings" | "theme" |
         contextLimit: typeof configRecord.contextLimit === "number" ? configRecord.contextLimit : current.aiConfig?.contextLimit,
         aiEnabled: typeof configRecord.aiEnabled === "boolean" ? configRecord.aiEnabled : current.aiConfig?.aiEnabled,
         subagentsEnabled: typeof configRecord.subagentsEnabled === "boolean" ? configRecord.subagentsEnabled : current.aiConfig?.subagentsEnabled,
-        // Saved-provider switcher state (array + active id). `configRecord` is
-        // typed for scalars, so read the raw config object for these.
+        // Saved-provider switcher state (array + active id). Each provider's
+        // apiKey is scrubbed to a ref (or dropped) so no raw key is cached.
         savedProviders: Array.isArray((config as { savedProviders?: unknown }).savedProviders)
-          ? (config as { savedProviders: NonNullable<CachedConfig["aiConfig"]>["savedProviders"] }).savedProviders
+          ? (config as { savedProviders: NonNullable<CachedConfig["aiConfig"]>["savedProviders"] }).savedProviders!.map(
+              (p) => ({ ...p, apiKey: refOnly(p.apiKey) ?? "" }),
+            )
           : current.aiConfig?.savedProviders,
         activeProviderId: typeof configRecord.activeProviderId === "string" ? configRecord.activeProviderId : current.aiConfig?.activeProviderId,
       };
@@ -115,7 +123,7 @@ export function saveCachedConfig(type: "ai" | "agent" | "embeddings" | "theme" |
         ...current.agentConfig,
         baseUrl: typeof configRecord.baseUrl === "string" ? configRecord.baseUrl : current.agentConfig?.baseUrl,
         model: typeof configRecord.model === "string" ? configRecord.model : current.agentConfig?.model,
-        apiKey: typeof configRecord.apiKey === "string" ? configRecord.apiKey : current.agentConfig?.apiKey,
+        apiKey: refOnly(configRecord.apiKey) ?? current.agentConfig?.apiKey,
         maxSteps: typeof configRecord.maxSteps === "number" ? configRecord.maxSteps : current.agentConfig?.maxSteps,
         temperature: typeof configRecord.temperature === "number" ? configRecord.temperature : current.agentConfig?.temperature,
         autoApprove: typeof configRecord.autoApprove === "boolean" ? configRecord.autoApprove : current.agentConfig?.autoApprove,

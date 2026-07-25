@@ -116,7 +116,10 @@ export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
                 <Pencil size={10} /> Edit
               </button>
               <button
-                onClick={() => deleteSavedProvider(active.id)}
+                onClick={() => {
+                  window.electron?.secrets?.delete("llm", active.id, "apiKey");
+                  deleteSavedProvider(active.id);
+                }}
                 className="px-2 py-1 text-[0.714rem] rounded border border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--danger)] hover:text-[var(--danger)] transition-colors flex items-center gap-1 cursor-pointer"
               >
                 <Trash2 size={10} /> Delete
@@ -132,9 +135,29 @@ export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
           initial={editingProvider}
           defaultModel={kind === "agent" ? "gpt-4o" : "gpt-4o-mini"}
           onCancel={() => setEditing(null)}
-          onSave={(data) => {
-            if (editing === "new") addSavedProvider(data, kind);
-            else updateSavedProvider(editing, data);
+          onSave={async ({ name, baseUrl, model, rawKey, keyDirty }) => {
+            if (editing === "new") {
+              // Create first (no key), then store the raw key in the OS keychain
+              // and save the returned reference token — the raw key never lands
+              // in the store, localStorage, or the settings cache.
+              const id = addSavedProvider({ name, baseUrl, model, apiKey: "" }, kind);
+              if (keyDirty) {
+                const ref = rawKey
+                  ? await window.electron?.secrets?.set("llm", id, "apiKey", rawKey)
+                  : "";
+                updateSavedProvider(id, { apiKey: ref ?? "" });
+              }
+            } else {
+              const patch: { name: string; baseUrl: string; model: string; apiKey?: string } = { name, baseUrl, model };
+              if (keyDirty) {
+                const ref = rawKey
+                  ? await window.electron?.secrets?.set("llm", editing, "apiKey", rawKey)
+                  : "";
+                if (!rawKey) window.electron?.secrets?.delete("llm", editing, "apiKey");
+                patch.apiKey = ref ?? "";
+              }
+              updateSavedProvider(editing, patch);
+            }
             setEditing(null);
           }}
         />
@@ -151,21 +174,27 @@ function ProviderForm({
 }: {
   initial?: SavedProvider;
   defaultModel: string;
-  onSave: (data: Omit<SavedProvider, "id">) => void;
+  onSave: (data: { name: string; baseUrl: string; model: string; rawKey: string; keyDirty: boolean }) => void;
   onCancel: () => void;
 }) {
   const [name, setName] = useState(initial?.name ?? "");
   const [baseUrl, setBaseUrl] = useState(initial?.baseUrl ?? "https://api.openai.com");
-  const [apiKey, setApiKey] = useState(initial?.apiKey ?? "");
   const [model, setModel] = useState(initial?.model ?? defaultModel);
+  // The stored key is a keychain reference, never shown. `keyInput` holds only a
+  // newly-typed raw key; `keyDirty` marks that the user changed it.
+  const [keyInput, setKeyInput] = useState("");
+  const [keyDirty, setKeyDirty] = useState(false);
+  // Whether this provider already has a key stored (drives the placeholder).
+  const hadKey = !!(initial?.apiKey && initial.apiKey.startsWith("secret://"));
 
-  // Fetch this provider's own model list (from its baseUrl/apiKey) so the model
-  // picker can offer real options + a Refresh, matching the chat model picker.
-  // Hydrate from the per-endpoint cache (or fetch once) on open — no hardcoded
-  // fallbacks, so the dropdown only ever lists real models.
+  // Fetch this provider's own model list so the picker can offer real options +
+  // Refresh. Hydrate from cache (or fetch once) on open — no hardcoded
+  // fallbacks. The key passed is the stored ref (resolved in main) or, once the
+  // user types a new one, the raw key.
   const { availableModels, fetchModels, ensureModels, resetModels, modelsLoading, testState } = useEndpointConfig();
+  const keyForFetch = keyDirty ? keyInput : (initial?.apiKey ?? "");
   useEffect(() => {
-    ensureModels(baseUrl, apiKey);
+    ensureModels(baseUrl, keyForFetch);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -193,7 +222,7 @@ function ProviderForm({
             placeholder={defaultModel}
             size="md"
             onChange={setModel}
-            onRefresh={() => fetchModels(baseUrl, apiKey)}
+            onRefresh={() => fetchModels(baseUrl, keyForFetch)}
           />
         </div>
         <label className="flex flex-col gap-1">
@@ -210,11 +239,12 @@ function ProviderForm({
           <span className="text-[0.714rem] text-[var(--text-tertiary)]">API Key</span>
           <input
             type="password"
-            value={apiKey}
-            onChange={(e) => { setApiKey(e.target.value); resetModels(); }}
-            placeholder="sk-… (optional for local)"
+            value={keyInput}
+            onChange={(e) => { setKeyInput(e.target.value); setKeyDirty(true); resetModels(); }}
+            placeholder={hadKey ? "•••••••• stored — type to replace" : "sk-… (optional for local)"}
             className={inputCls}
           />
+          <span className="text-[0.643rem] text-[var(--text-tertiary)]">Stored in your OS keychain, never synced.</span>
         </label>
       </div>
       <div className="flex justify-end gap-1.5 pt-0.5">
@@ -225,7 +255,7 @@ function ProviderForm({
           <X size={11} /> Cancel
         </button>
         <button
-          onClick={() => canSave && onSave({ name: name.trim(), baseUrl: baseUrl.trim(), apiKey: apiKey.trim(), model: model.trim() })}
+          onClick={() => canSave && onSave({ name: name.trim(), baseUrl: baseUrl.trim(), model: model.trim(), rawKey: keyInput.trim(), keyDirty })}
           disabled={!canSave}
           className={cn(
             "px-2.5 py-1 text-[0.714rem] rounded border transition-colors flex items-center gap-1",

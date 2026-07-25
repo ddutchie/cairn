@@ -19,6 +19,7 @@ import { handle, type DbContext } from "./result-helpers";
 import * as q from "../db/queries";
 import { isLocalEndpoint, callLLM, normaliseBaseUrl } from "../lib/llm";
 import { saveCachedConfig, getCachedConfig } from "../lib/config-cache";
+import { resolveLlmApiKey, isSecretRef } from "../lib/secure-store";
 
 /**
  * Resolve the effective AI config (cache fallback + normalisation).
@@ -46,12 +47,13 @@ function resolveAiConfig(input: { baseUrl?: string; model?: string; apiKey?: str
 
   const baseUrl = normaliseBaseUrl(reqConfig?.baseUrl || "https://api.openai.com");
   const model = reqConfig?.model || "gpt-4o-mini";
-  const apiKey = reqConfig?.apiKey || "";
+  const keyRef = reqConfig?.apiKey || "";
   const isLocal = isLocalEndpoint(baseUrl);
-  if (!apiKey && !isLocal) {
+  if (!keyRef && !isLocal) {
     return { error: "AI is not configured. Add an API key in Settings → AI & Chat, or use a local endpoint." };
   }
-  return { baseUrl, model, apiKey };
+  // `keyRef` is a keychain reference token; resolve to the real key for this request only.
+  return { baseUrl, model, apiKey: resolveLlmApiKey(keyRef) };
 }
 
 export function registerFlowHandlers(ctx: DbContext): void {
@@ -102,12 +104,15 @@ export function registerFlowHandlers(ctx: DbContext): void {
     "db:flow:node:summarize",
     (_e, args: { nodeId: string; config: { baseUrl: string; model: string; apiKey: string } }) =>
       handle(async () => {
-        if (args.config?.apiKey) {
+        // Persist only a keychain ref to the cache — never a raw key.
+        if (args.config?.apiKey && isSecretRef(args.config.apiKey)) {
           saveCachedConfig("ai", {
             baseUrl: args.config.baseUrl,
             model: args.config.model,
             apiKey: args.config.apiKey,
           });
+        } else if (args.config?.baseUrl || args.config?.model) {
+          saveCachedConfig("ai", { baseUrl: args.config.baseUrl, model: args.config.model });
         }
 
         const resolved = resolveAiConfig(args.config);

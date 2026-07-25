@@ -158,3 +158,53 @@ describe("secure-store persistence round-trip", () => {
     expect(store.hasSecret("service", "shared", "Authorization")).toBe(true);
   });
 });
+
+describe("LLM API keys", () => {
+  it("stores a provider key and returns its reference token", () => {
+    const ref = store.setLlmApiKey("prov1", "sk-abc123");
+    expect(ref).toBe("secret://llm:prov1/apiKey");
+    expect(store.llmSecretRef("prov1")).toBe(ref);
+    expect(store.hasSecret("llm", "prov1", "apiKey")).toBe(true);
+  });
+
+  it("resolves a reference token back to the raw key", () => {
+    const ref = store.setLlmApiKey("prov1", "sk-abc123");
+    expect(store.resolveLlmApiKey(ref)).toBe("sk-abc123");
+  });
+
+  it("passes a literal (non-ref) key through unchanged", () => {
+    expect(store.resolveLlmApiKey("sk-literal")).toBe("sk-literal");
+  });
+
+  it("returns empty for empty/undefined input", () => {
+    expect(store.resolveLlmApiKey("")).toBe("");
+    expect(store.resolveLlmApiKey(undefined)).toBe("");
+    expect(store.resolveLlmApiKey(null)).toBe("");
+  });
+
+  it("returns empty when a ref can't be resolved (never leaks the token)", () => {
+    expect(store.resolveLlmApiKey("secret://llm:missing/apiKey")).toBe("");
+  });
+
+  it("clears the stored key when set to empty and returns empty ref", () => {
+    store.setLlmApiKey("prov1", "sk-abc123");
+    expect(store.hasSecret("llm", "prov1", "apiKey")).toBe(true);
+    const ref = store.setLlmApiKey("prov1", "");
+    expect(ref).toBe("");
+    expect(store.hasSecret("llm", "prov1", "apiKey")).toBe(false);
+  });
+
+  it("deleteLlmApiKey removes the stored key", () => {
+    store.setLlmApiKey("prov1", "sk-abc123");
+    store.deleteLlmApiKey("prov1");
+    expect(store.hasSecret("llm", "prov1", "apiKey")).toBe(false);
+  });
+
+  it("never writes the raw key to disk (only ciphertext)", () => {
+    store.setLlmApiKey("prov1", "super-secret-llm-key");
+    const dump = JSON.stringify(virtualFiles);
+    expect(dump).not.toContain("super-secret-llm-key");
+    // Stored as base64 of the mock cipher ("enc:<value>"), never the plaintext.
+    expect(dump).toContain(Buffer.from("enc:super-secret-llm-key", "utf-8").toString("base64"));
+  });
+});

@@ -25,7 +25,7 @@ import { MIN_NOTES_SIDEBAR_WIDTH, MAX_NOTES_SIDEBAR_WIDTH } from "./slices/ui";
 // ── Slice imports ─────────────────────────────────────────────────────────────
 import { createUISlice } from "./slices/ui";
 import type { UISlice, AIConfig, AgentConfig, Theme, ToggleableView } from "./slices/ui";
-import { applyTheme, THEME_KEY, applyFontScale, FONT_SCALE_KEY, DEFAULT_FONT_SCALE, HIDDEN_VIEWS_KEY, SEEN_FEATURES_KEY, MIN_CHAT_PANEL_WIDTH, MAX_CHAT_PANEL_WIDTH } from "./slices/ui";
+import { applyTheme, THEME_KEY, applyFontScale, FONT_SCALE_KEY, DEFAULT_FONT_SCALE, HIDDEN_VIEWS_KEY, SEEN_FEATURES_KEY, MIN_CHAT_PANEL_WIDTH, MAX_CHAT_PANEL_WIDTH, migrateLlmKeysToKeychain } from "./slices/ui";
 import type { FontScale } from "./slices/ui";
 import { createWorkspaceSlice } from "./slices/workspace";
 import type { WorkspaceSlice } from "./slices/workspace";
@@ -392,6 +392,27 @@ export const useCairnStore = create<CairnStore>()(
         storage.set(AGENT_CONFIG_KEY, migrated);
       } else {
         set({ agentConfig: DEFAULT_AGENT_CONFIG });
+      }
+
+      // One-time: relocate any raw LLM API keys (legacy top-level or per-provider)
+      // into the OS keychain, replacing them with reference tokens. Persists the
+      // scrubbed configs so plaintext keys leave localStorage + the settings cache.
+      try {
+        const cur = get();
+        const migrated = await migrateLlmKeysToKeychain(cur.aiConfig, cur.agentConfig);
+        if (migrated.changed) {
+          set({ aiConfig: migrated.ai, agentConfig: migrated.agent });
+          storage.set(AI_CONFIG_KEY, migrated.ai);
+          storage.set(AGENT_CONFIG_KEY, migrated.agent);
+          if (window.electron?.saveAiSettings) {
+            window.electron.saveAiSettings(migrated.ai as unknown as Record<string, unknown>).catch(() => {});
+          }
+          if (window.electron?.saveAgentSettings) {
+            window.electron.saveAgentSettings(migrated.agent as unknown as Record<string, unknown>).catch(() => {});
+          }
+        }
+      } catch (e) {
+        console.warn("LLM key keychain migration failed:", e);
       }
 
       restorePersistedUiPrefs(set);

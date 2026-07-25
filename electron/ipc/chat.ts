@@ -16,6 +16,7 @@ import { TOOLS, buildSystemPrompt, type ChatRequest } from "../lib/tools";
 import { getExternalToolDefs } from "../lib/external-tools";
 import { saveCachedConfig, getCachedConfig } from "../lib/config-cache";
 import { runToolLoop } from "../lib/chat-loop";
+import { resolveLlmApiKey, isSecretRef } from "../lib/secure-store";
 
 // Track one AbortController per renderer webContents ID
 const abortControllers = new Map<number, AbortController>();
@@ -31,12 +32,23 @@ function resolveAIConfig(config?: {
   model: string;
   apiKey: string;
 } {
-  if (config?.apiKey) {
+  // `config.apiKey` from the renderer is a keychain reference token
+  // (`secret://llm:…/apiKey`), not a raw key. Persist only refs to the on-disk
+  // cache — never a plaintext key. (A literal key can still arrive from older
+  // callers; we tolerate it for the request but keep it out of the cache.)
+  if (config?.apiKey && isSecretRef(config.apiKey)) {
     saveCachedConfig("ai", {
       provider: config.provider,
       baseUrl: config.baseUrl,
       model: config.model,
       apiKey: config.apiKey,
+    });
+  } else if (config?.provider || config?.baseUrl || config?.model) {
+    // Persist connection fields without touching the cached (ref) key.
+    saveCachedConfig("ai", {
+      provider: config.provider,
+      baseUrl: config.baseUrl,
+      model: config.model,
     });
   }
 
@@ -59,7 +71,9 @@ function resolveAIConfig(config?: {
     provider: reqConfig?.provider ?? "openai",
     baseUrl: normaliseBaseUrl(reqConfig?.baseUrl ?? "https://api.openai.com"),
     model: reqConfig?.model ?? "gpt-4o-mini",
-    apiKey: reqConfig?.apiKey ?? "",
+    // Resolve the keychain ref (or pass a literal through) to the real key used
+    // for this request only. Never stored anywhere from here on.
+    apiKey: resolveLlmApiKey(reqConfig?.apiKey),
   };
 }
 
