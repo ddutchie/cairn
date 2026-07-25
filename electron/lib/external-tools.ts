@@ -156,18 +156,36 @@ export async function getExternalToolDefs(
     return [];
   });
 
-  const svcDefs = customServices.map((s) =>
-    services.serviceToOpenAI({
-      id: s.id,
-      apiUrl: s.apiUrl,
-      method: s.method,
-      headers: s.headers,
-      toolDefinition: s.toolDefinition,
-      responseKeys: s.responseKeys,
-    })
+  const svcDefs = customServices.flatMap((s) =>
+    services.serviceOperationsToOpenAI(svcToRuntimeConfig(s))
   );
 
   return [...mcpDefs, ...svcDefs];
+}
+
+/** Build the shared runtime config for a stored custom service (single- or multi-op). */
+function svcToRuntimeConfig(s: {
+  id: string;
+  apiUrl?: string;
+  method?: "GET" | "POST" | "PUT" | "DELETE";
+  headers?: Record<string, string>;
+  toolDefinition?: string;
+  baseUrl?: string;
+  operations?: unknown[];
+  responseKeys?: string[];
+  authMode?: "none" | "oauth";
+}): services.CustomServiceRuntimeConfig {
+  return {
+    id: s.id,
+    apiUrl: s.apiUrl,
+    method: s.method,
+    headers: s.headers,
+    toolDefinition: s.toolDefinition,
+    baseUrl: s.baseUrl,
+    operations: s.operations as services.ServiceOperation[] | undefined,
+    responseKeys: s.responseKeys,
+    authMode: s.authMode,
+  };
 }
 
 // ── Routing ───────────────────────────────────────────────────────────────────
@@ -218,15 +236,7 @@ export async function executeExternalTool(
       return `Error: service ${svcParsed.serviceId} is not enabled/attached for this project`;
     }
     return services.callService(
-      {
-        id: svc.id,
-        apiUrl: svc.apiUrl,
-        method: svc.method,
-        headers: svc.headers,
-        toolDefinition: svc.toolDefinition,
-        responseKeys: svc.responseKeys,
-        authMode: svc.authMode,
-      },
+      svcToRuntimeConfig(svc),
       name,
       args,
       makeServiceBearerResolver(svc),

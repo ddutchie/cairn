@@ -269,7 +269,9 @@ export function ToolsSettings() {
                   : <Globe size={15} />
               }
               name={svc.name}
-              subtitle={`${svc.method} ${svc.apiUrl}`}
+              subtitle={svc.operations && svc.operations.length > 0
+                ? `${svc.baseUrl ?? ""} · ${svc.operations.length} tools`
+                : `${svc.method ?? ""} ${svc.apiUrl ?? ""}`.trim()}
               enabled={svc.enabled}
               onToggle={(v) => { void saveCustomService({ ...svc, enabled: v }).catch((e) => setSaveError(e instanceof Error ? e.message : "Failed to update service.")); }}
               onEdit={() => setEditingSvc(svc.id)}

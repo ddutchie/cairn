@@ -18,7 +18,7 @@ import {
   type FilePart,
   type ChatUsage,
 } from "./providers/types";
-import { toolsForAgent, TOOL_MAP } from "./tools";
+import { toolsForAgent, allToolMap } from "./tools";
 
 // Max model round-trips per user turn. Each turn is one model call; a turn that
 // requests tools runs them all, then loops for the model's follow-up (which sees
@@ -28,9 +28,10 @@ import { toolsForAgent, TOOL_MAP } from "./tools";
 const MAX_TURNS = 30;
 
 export interface AgentEvent {
-  type: "text-delta" | "reasoning-delta" | "tool" | "final" | "error";
+  type: "text-delta" | "reasoning-delta" | "tool-start" | "tool" | "final" | "error";
   delta?: string; // for text-delta / reasoning-delta
   tool?: string;
+  toolCallId?: string; // correlates a "tool-start" with its later "tool"
   args?: unknown;
   result?: unknown;
   text?: string; // full text for final / error
@@ -64,7 +65,7 @@ function systemMessage(): UIMessage {
           "You are Cairn's mobile assistant for the user's notes and tasks; writes sync to their desktop.",
           `The current date is ${humanDate} (${isoDate}). Resolve relative dates like "tomorrow"/"next week" against it, and pass dates to tools as YYYY-MM-DD.`,
           "Call get_cairn_context first to get project ids, columns, and tags (there is no separate 'list projects' tool), then reuse them — never invent an id. Choose the tool whose description matches the request.",
-          "For information not in the user's notes/tasks — current events, external facts, docs — use web_search, then web_extract to read a result in full. Cite sources as markdown links.",
+          "For information beyond the user's notes/tasks — current events, external facts, docs — use any connected web/search tools available to you, and cite sources as markdown links.",
           "When you mention a specific note or task, link it as [[id]] using its exact id (it renders as the title and can't be confused with a same-titled item); if you don't have the id, [[Title]] also works. After a write, briefly confirm. Answer in concise markdown.",
         ].join(" "),
       },
@@ -115,6 +116,10 @@ export async function runAgent(
   signal?: AbortSignal,
 ): Promise<string> {
   const tools = toolsForAgent();
+  // Resolve the executable map ONCE for this run so the tools we advertise and
+  // the tools we can execute stay in lock-step even if a toggle/install changes
+  // mid-run. Includes built-ins + enabled installed services.
+  const toolMap = allToolMap();
   let finalText = "";
   // Accumulated reasoning ("thinking") text across the run's turns (PCC only).
   let reasoning = "";
@@ -217,7 +222,12 @@ export async function runAgent(
       };
       assistant.parts.push(toolPart as UIPart);
 
-      const tool = TOOL_MAP.get(call.name);
+      // Announce the call BEFORE running it, so the UI can show a "running" chip
+      // for slow tools (MCP/web search can take seconds) instead of nothing until
+      // the result lands.
+      onEvent?.({ type: "tool-start", tool: call.name, toolCallId: call.id, args: call.input });
+
+      const tool = toolMap.get(call.name);
       let result: unknown;
       if (!tool) {
         result = { error: `Unknown tool: ${call.name}` };
@@ -228,7 +238,7 @@ export async function runAgent(
           result = { error: err instanceof Error ? err.message : String(err) };
         }
       }
-      onEvent?.({ type: "tool", tool: call.name, args: call.input, result });
+      onEvent?.({ type: "tool", tool: call.name, toolCallId: call.id, args: call.input, result });
 
       toolPart.state = "output-available";
       toolPart.output = { type: "text", value: JSON.stringify(result) };

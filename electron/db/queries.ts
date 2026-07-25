@@ -1094,8 +1094,9 @@ export function deleteMcpServer(db: Database.Database, id: string) {
 
 interface CustomServiceInput {
   id: string; workspaceId: string; name: string; description?: string;
-  apiUrl: string; method: "GET" | "POST" | "PUT" | "DELETE"; headers?: Record<string, string>;
-  toolDefinition: string; responseKeys?: string[]; apiKeyUrl?: string;
+  apiUrl?: string; method?: "GET" | "POST" | "PUT" | "DELETE"; headers?: Record<string, string>;
+  toolDefinition?: string; responseKeys?: string[]; apiKeyUrl?: string;
+  baseUrl?: string; operations?: unknown[];
   authMode?: "none" | "oauth";
   oauth?: { serverUrl?: string; scope?: string; clientId?: string; authorizationUrl?: string; tokenUrl?: string };
   enabled: boolean; source: string; communityId?: string; version?: string;
@@ -1114,8 +1115,8 @@ export function getCustomServiceById(db: Database.Database, id: string) {
 export function saveCustomService(db: Database.Database, s: CustomServiceInput) {
   const now = ts();
   db.prepare(`
-    INSERT INTO custom_services (id, workspace_id, name, description, api_url, method, headers, tool_definition, response_keys, api_key_url, enabled, source, community_id, version, auth_mode, oauth_config, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO custom_services (id, workspace_id, name, description, api_url, method, headers, tool_definition, base_url, operations, response_keys, api_key_url, enabled, source, community_id, version, auth_mode, oauth_config, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       name            = excluded.name,
       description     = excluded.description,
@@ -1123,6 +1124,8 @@ export function saveCustomService(db: Database.Database, s: CustomServiceInput) 
       method          = excluded.method,
       headers         = excluded.headers,
       tool_definition = excluded.tool_definition,
+      base_url        = excluded.base_url,
+      operations      = excluded.operations,
       response_keys   = excluded.response_keys,
       api_key_url     = excluded.api_key_url,
       enabled         = excluded.enabled,
@@ -1133,8 +1136,10 @@ export function saveCustomService(db: Database.Database, s: CustomServiceInput) 
       oauth_config    = excluded.oauth_config,
       updated_at      = excluded.updated_at
   `).run(
-    s.id, s.workspaceId, s.name, s.description ?? null, s.apiUrl, s.method,
-    j(s.headers ?? {}), s.toolDefinition, j(s.responseKeys ?? []), s.apiKeyUrl ?? null,
+    s.id, s.workspaceId, s.name, s.description ?? null, s.apiUrl ?? "", s.method ?? "GET",
+    j(s.headers ?? {}), s.toolDefinition ?? "", s.baseUrl ?? null,
+    s.operations ? JSON.stringify(s.operations) : null,
+    j(s.responseKeys ?? []), s.apiKeyUrl ?? null,
     s.enabled ? 1 : 0, s.source, s.communityId ?? null, s.version ?? null,
     s.authMode ?? "none", s.oauth ? JSON.stringify(s.oauth) : null, now, now,
   );

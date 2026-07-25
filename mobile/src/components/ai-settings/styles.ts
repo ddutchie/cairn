@@ -119,6 +119,22 @@ export function makeAiSettingsStyles(t: Theme) {
     modelChipActive: { backgroundColor: t.accent, borderColor: t.accent },
     modelChipText: { ...typeScale.caption, color: t.textSecondary, flexShrink: 1 },
     modelChipTextActive: { color: t.accentFg, fontWeight: "600" },
+
+    navRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+      backgroundColor: t.surface2,
+      borderWidth: 1,
+      borderColor: t.border,
+      borderRadius: 12,
+      paddingVertical: 12,
+      paddingHorizontal: 12,
+      marginTop: 4,
+    },
+    navRowMain: { flex: 1, gap: 2 },
+    navRowTitle: { ...typeScale.control, color: t.textPrimary },
+    navRowSub: { ...typeScale.caption, color: t.textSecondary },
   });
 }
 

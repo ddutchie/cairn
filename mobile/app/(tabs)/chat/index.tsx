@@ -24,6 +24,7 @@ import { resetAppleSession } from "@/chat/providers/apple";
 import type { UIMessage, ChatUsage } from "@/chat/providers/types";
 import { ContextRing } from "@/components/ContextRing";
 import { toolRef } from "@cairn/shared/chat/tool-ref";
+import { extractExternalRef } from "@cairn/shared/chat/external-ref";
 import { loadInitialChat, type UiMessage } from "@/chat/history";
 import { useChatScroll } from "@/chat/useChatScroll";
 import { MessageBubble } from "@/components/chat/MessageBubble";
@@ -137,9 +138,26 @@ export default function ChatScreen() {
         } else if (e.type === "reasoning-delta" && e.delta) {
           reasoningAcc += e.delta;
           patchAssistant({ reasoning: reasoningAcc });
+        } else if (e.type === "tool-start" && e.tool) {
+          // Show a "running" chip immediately so slow tools (MCP / web search)
+          // aren't invisible until they finish.
+          toolTrail.push({ tool: e.tool, ok: true, id: e.toolCallId, running: true });
+          patchAssistant({ tools: [...toolTrail] });
+          haptics.impact(); // agent started a tool
         } else if (e.type === "tool" && e.tool) {
           const ok = !(e.result && typeof e.result === "object" && "error" in (e.result as object));
-          toolTrail.push({ tool: e.tool, ok, ref: toolRef(e.tool, e.args, e.result) });
+          // A note/card ref opens in-app; otherwise try for a linkable external
+          // URL (web-search hit, docs page, …) the chip can open in the browser.
+          const ref = toolRef(e.tool, e.args, e.result);
+          const externalRef = ref
+            ? undefined
+            : extractExternalRef(typeof e.result === "string" ? e.result : JSON.stringify(e.result ?? null));
+          // Finalize the matching "running" chip in place (by tool-call id);
+          // fall back to appending if no start was seen (provider-ran tools).
+          const idx = e.toolCallId ? toolTrail.findIndex((c) => c.id === e.toolCallId && c.running) : -1;
+          const finalized = { tool: e.tool, ok, id: e.toolCallId, running: false, ref, externalRef };
+          if (idx >= 0) toolTrail[idx] = finalized;
+          else toolTrail.push(finalized);
           patchAssistant({ tools: [...toolTrail] });
           haptics.impact(); // agent ran a tool
         } else if (e.type === "final" && e.usage) {

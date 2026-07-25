@@ -39,8 +39,9 @@ import {
   type AppleTool,
   type AppleToolCallEvent,
 } from "@modules/apple-llm";
-import { TOOL_MAP } from "../tools";
+import { allToolMap } from "../tools";
 import { getAppleReasoningLevel } from "../ai-config";
+import { parseToolArgs } from "@cairn/shared/chat/parse-tool-args";
 import {
   type AiTool,
   type ChatProvider,
@@ -255,16 +256,25 @@ function buildTools(tools: Record<string, AiTool>, server: boolean): AppleTool[]
 
 /** Execute a tool locally and return its result as a JSON string. */
 async function runToolToJson(toolName: string, inputJson: string): Promise<{ resultJson: string; error?: string }> {
-  const tool = TOOL_MAP.get(toolName);
+  // Resolve against the FULL enabled tool set (built-ins + installed services),
+  // matching what buildTools advertised to the model.
+  const tool = allToolMap().get(toolName);
   if (!tool) {
     return { resultJson: JSON.stringify({ error: `Unknown tool: ${toolName}` }) };
   }
-  let args: Record<string, unknown> = {};
-  try {
-    args = inputJson ? (JSON.parse(inputJson) as Record<string, unknown>) : {};
-  } catch {
-    args = {};
+  // Tolerant, LOSSLESS parse of the model's argument JSON (strict-first, then a
+  // structure-only repair pass). Critically, a genuinely-unparseable payload is
+  // NOT run with `{}` — that silently wrote empty notes for malformed
+  // ensure_note/patch_note calls. Instead we surface a parse error the model can
+  // read and re-issue the call against.
+  const parsed = parseToolArgs(inputJson);
+  if (!parsed.ok) {
+    return {
+      resultJson: JSON.stringify({ error: parsed.error }),
+      error: parsed.error,
+    };
   }
+  const args = parsed.value;
   try {
     // Tools may be sync or async (e.g. search_notes_semantic) — await either so
     // a Promise isn't stringified as "{}" and the real output lost.
@@ -382,12 +392,11 @@ function makeStreamApple(server: boolean) {
           // Execute locally, surface for the UI tool-trail (as an already-executed
           // tool so agent.ts doesn't re-run it), then resolve back into the native
           // turn. Apple continues generating once resolved.
-          let input: unknown = {};
-          try {
-            input = item.input ? JSON.parse(item.input) : {};
-          } catch {
-            input = { _raw: item.input };
-          }
+          // Parse for DISPLAY in the tool-trail (execution below re-parses via
+          // runToolToJson). Use the same tolerant parser so the shown args match
+          // what actually ran; fall back to a raw echo if even that fails.
+          const parsedInput = parseToolArgs(item.input);
+          const input: unknown = parsedInput.ok ? parsedInput.value : { _raw: item.input };
           const { resultJson, error } = await runToolToJson(item.toolName, item.input);
           let output: unknown;
           try {

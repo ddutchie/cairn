@@ -40,54 +40,32 @@ import type {
 import * as secrets from "./secure-store";
 import { randomUUID } from "crypto";
 import { startLoopbackListener, type LoopbackListener } from "./oauth-loopback";
+// Deep-link callback parsing + the cairn:// constants now live in shared so
+// desktop + mobile parse the redirect identically. Re-exported below for
+// existing callers that import them from this module.
+import {
+  parseOAuthCallback,
+  OAUTH_REDIRECT_URI,
+  DEEP_LINK_SCHEME,
+  type OAuthCallback,
+} from "../../shared/chat/oauth-callback";
+
+export { parseOAuthCallback, OAUTH_REDIRECT_URI, DEEP_LINK_SCHEME };
+export type { OAuthCallback };
 
 /**
  * Default OAuth redirect target — the `cairn://` custom scheme, registered as an
  * OS protocol in main.ts. Used as a fallback; most providers (Canva, Google, …)
  * reject custom schemes at `/authorize` and require the loopback redirect
  * instead, so {@link startServerAuth} prefers loopback by default.
+ * (Definition + the deep-link parser now live in shared/chat/oauth-callback and
+ * are re-exported at the top of this file.)
  */
-export const OAUTH_REDIRECT_URI = "cairn://oauth/callback";
-/** Custom protocol scheme Cairn registers for deep links. */
-export const DEEP_LINK_SCHEME = "cairn";
 
 /** Secret-store keys for the per-server OAuth artefacts. */
 const KEY_CLIENT_INFO = "oauth_client";
 const KEY_TOKENS = "oauth_tokens";
 const KEY_VERIFIER = "oauth_verifier";
-
-// ── Deep-link parsing (pure, unit-testable) ──────────────────────────────────
-
-export interface OAuthCallback {
-  code: string;
-  state: string;
-}
-
-/**
- * Parse a `cairn://oauth/callback?code=…&state=…` deep link. Returns null if the
- * URL is not a well-formed OAuth callback (wrong scheme/host, missing params) so
- * unrelated deep links are ignored. Tolerant of host vs. path styles
- * (`cairn://oauth/callback` and `cairn:///oauth/callback`).
- */
-export function parseOAuthCallback(rawUrl: string): OAuthCallback | null {
-  if (typeof rawUrl !== "string" || !rawUrl.startsWith(`${DEEP_LINK_SCHEME}://`)) return null;
-  let url: URL;
-  try {
-    url = new URL(rawUrl);
-  } catch {
-    return null;
-  }
-  // Accept only the two documented forms, exactly:
-  //   cairn://oauth/callback   → host="oauth"  pathname="/callback"   → "oauth/callback"
-  //   cairn:///oauth/callback  → host=""       pathname="/oauth/callback" → "/oauth/callback"
-  // Reject any deeper route that merely ends with oauth/callback.
-  const path = `${url.host}${url.pathname}`.replace(/\/+$/, "");
-  if (path !== "oauth/callback" && path !== "/oauth/callback") return null;
-  const code = url.searchParams.get("code");
-  const state = url.searchParams.get("state");
-  if (!code || !state) return null;
-  return { code, state };
-}
 
 // ── Provider config ──────────────────────────────────────────────────────────
 

@@ -142,6 +142,8 @@ export function toCustomService(row: any) {
     method: (row.method ?? "GET") as "GET" | "POST" | "PUT" | "DELETE",
     headers: pObj(row.headers),
     toolDefinition: row.tool_definition as string,
+    baseUrl: (row.base_url ?? undefined) as string | undefined,
+    operations: row.operations ? (j2(row.operations) as unknown[]) : undefined,
     responseKeys: j2(row.response_keys),
     apiKeyUrl: (row.api_key_url ?? undefined) as string | undefined,
     authMode: (row.auth_mode ?? "none") as "none" | "oauth",

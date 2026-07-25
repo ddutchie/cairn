@@ -274,6 +274,8 @@ export const createToolsSlice: StateCreator<CairnStore, [], [], ToolsSlice> = (s
       method: entry.definition.method,
       headers,
       toolDefinition: entry.definition.toolDefinition,
+      baseUrl: entry.definition.baseUrl,
+      operations: entry.definition.operations,
       responseKeys: entry.definition.responseKeys,
       apiKeyUrl: entry.definition.apiKeyUrl,
       authMode: entry.definition.authMode,
