@@ -9,10 +9,11 @@ import { contextLimitForModel } from "@/lib/models-dev";
 import { SettingsGroup, SettingsRow, Toggle, StepperSettingsRow } from "./shared";
 import {
   BaseUrlRow, ApiKeyRow, ModelSelectionRow, CloudConnectionStatus,
-  useEndpointConfig, isLocalBaseUrl, LOCAL_FALLBACK_MODELS,
+  useEndpointConfig, isLocalBaseUrl,
 } from "./endpoint-components";
 import { MCPServerSettings } from "./MCPSettings";
 import { LlamaServerConsole } from "./LlamaServerConsole";
+import { ProviderManager } from "./ProviderManager";
 
 export function AISettings() {
   const { aiConfig, setAIConfig } = useCairnStore(useShallow((s) => ({
@@ -22,11 +23,11 @@ export function AISettings() {
 
   const {
     showKey, testState, testError, availableModels, modelsLoading,
-    setShowKey, fetchModels, resetModels,
+    setShowKey, fetchModels, ensureModels, resetModels,
   } = useEndpointConfig();
 
   // General config destructuring
-  const { provider = "openai", baseUrl, model, apiKey, aiEnabled } = aiConfig;
+  const { provider = "openai", baseUrl, model, apiKey, aiEnabled, activeProviderId } = aiConfig;
   const isLocal = isLocalBaseUrl(baseUrl);
 
   function updateAIConfig(patch: Partial<typeof aiConfig>) {
@@ -36,11 +37,14 @@ export function AISettings() {
     }
   }
 
-  const fallbackModels = isLocal
-    ? LOCAL_FALLBACK_MODELS
-    : ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo", "gpt-4", "o1-mini", "o3-mini"];
-
-  const modelOptions = availableModels.length > 0 ? availableModels : fallbackModels;
+  // Populate the model list from cache (or fetch once) when the cloud provider
+  // is selected or the active saved provider changes. Not on every keystroke in
+  // the URL/key fields (Refresh in the picker re-queries after edits). No
+  // hardcoded fallbacks — the picker shows only real models.
+  useEffect(() => {
+    if (provider !== "localllm") ensureModels(baseUrl, apiKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [provider, activeProviderId]);
 
   // Look up the current model's context window from models.dev (cached). When
   // Auto is enabled, the detected value is applied to contextLimit automatically
@@ -118,7 +122,7 @@ export function AISettings() {
         {/* Provider Switcher */}
         <SettingsRow
           label="AI Provider"
-          description="Choose between a fully offline on-device Llama model or a standard cloud / local API connection (OpenAI-compatible)."
+          description="Choose between a fully offline on-device model or an OpenAI-compatible cloud / local API connection."
         >
           <div className="flex flex-wrap gap-2">
             <button
@@ -131,7 +135,7 @@ export function AISettings() {
               )}
             >
               <Globe size={12} />
-              Cloud / Local API
+              OpenAI
             </button>
             <button
               onClick={() => updateAIConfig({ provider: "localllm" })}
@@ -143,7 +147,7 @@ export function AISettings() {
               )}
             >
               <Cpu size={12} className={provider === "localllm" ? "text-[var(--accent)] animate-pulse" : ""} />
-              On-Device Llama
+              On-Device
             </button>
           </div>
         </SettingsRow>
@@ -156,7 +160,8 @@ export function AISettings() {
           />
         ) : (
           <>
-            <BaseUrlRow baseUrl={baseUrl} onChange={(url) => updateAIConfig({ baseUrl: url })} />
+            <ProviderManager kind="ai" />
+            <BaseUrlRow baseUrl={baseUrl} onChange={(url) => updateAIConfig({ baseUrl: url })} showPresets={false} />
             <ApiKeyRow
               apiKey={apiKey}
               isLocal={isLocal}
@@ -166,7 +171,7 @@ export function AISettings() {
             />
             <ModelSelectionRow
               model={model}
-              modelOptions={modelOptions}
+              modelOptions={availableModels}
               availableModelsCount={availableModels.length}
               modelsLoading={modelsLoading}
               testState={testState}

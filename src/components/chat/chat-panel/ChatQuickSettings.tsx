@@ -1,19 +1,16 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
-import { Settings2, GitBranch, ExternalLink, ChevronDown, RefreshCw, Check, Pencil } from "lucide-react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
+import { Settings2, GitBranch, ExternalLink } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
 import { Toggle } from "@/components/ui/toggle";
-import {
-  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
-} from "@/components/ui/dropdown";
-import { useEndpointConfig, isLocalBaseUrl, LOCAL_FALLBACK_MODELS } from "@/components/settings/endpoint-components";
+import { ModelPicker } from "@/components/ui/model-picker";
+import { useEndpointConfig, isLocalBaseUrl } from "@/components/settings/endpoint-components";
 
 const MAX_STEPS_PRESETS = [10, 20, 30, 50, 1000] as const;
-const CLOUD_FALLBACK_MODELS = ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo", "gpt-4", "o1-mini", "o3-mini"];
 
 /**
  * In-chat quick-settings popover. Surfaces the handful of AI settings people
@@ -37,17 +34,18 @@ export function ChatQuickSettings({ disabled }: { disabled?: boolean }) {
 
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
-  const { availableModels, fetchModels, modelsLoading, testState } = useEndpointConfig();
+  const { availableModels, fetchModels, ensureModels, modelsLoading, testState } = useEndpointConfig();
 
   const provider = aiConfig.provider ?? "openai";
   const isLocal = isLocalBaseUrl(aiConfig.baseUrl);
   const subagentsSupported = provider !== "localllm";
 
-  // Fetch the endpoint's model list once when the popover opens (cloud only).
-  // Users can re-fetch anytime via the Refresh action in the model picker.
+  // Populate the endpoint's model list when the popover opens (cloud only) —
+  // from the per-endpoint cache if present, else fetch once. No hardcoded
+  // fallbacks: the picker shows only real models. Refresh re-queries anytime.
   useEffect(() => {
     if (open && provider !== "localllm") {
-      fetchModels(aiConfig.baseUrl, aiConfig.apiKey);
+      ensureModels(aiConfig.baseUrl, aiConfig.apiKey);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -76,10 +74,6 @@ export function ChatQuickSettings({ disabled }: { disabled?: boolean }) {
     setView("settings");
     setOpen(false);
   }, [setSettingsSection, setView]);
-
-  const modelOptions = availableModels.length > 0
-    ? availableModels
-    : (isLocal ? LOCAL_FALLBACK_MODELS : CLOUD_FALLBACK_MODELS);
 
   const maxSteps = aiConfig.maxSteps ?? 30;
   const temperature = aiConfig.temperature ?? 0.3;
@@ -116,7 +110,7 @@ export function ChatQuickSettings({ disabled }: { disabled?: boolean }) {
             <span className="text-[0.714rem] text-[var(--text-secondary)]">Model</span>
             <ModelPicker
               value={aiConfig.model ?? ""}
-              options={modelOptions}
+              options={availableModels}
               loading={modelsLoading}
               errored={testState === "error"}
               disabled={disabled}
@@ -196,150 +190,6 @@ export function ChatQuickSettings({ disabled }: { disabled?: boolean }) {
           </button>
         </div>
       )}
-    </div>
-  );
-}
-
-/**
- * A single-line, truncated label that shows the app Tooltip with the full text
- * ONLY when the text is actually cut off (scrollWidth > clientWidth). Avoids a
- * pointless tooltip on names that already fit.
- */
-function TruncatedModel({ text, className }: { text: string; className?: string }) {
-  const ref = useRef<HTMLSpanElement>(null);
-  const [overflowing, setOverflowing] = useState(false);
-
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    setOverflowing(el.scrollWidth > el.clientWidth);
-  }, [text]);
-
-  const span = (
-    <span ref={ref} className={cn("truncate block min-w-0 flex-1", className)}>
-      {text}
-    </span>
-  );
-
-  if (!overflowing) return span;
-  return (
-    <Tooltip content={text} side="top">
-      {span}
-    </Tooltip>
-  );
-}
-
-/**
- * Compact model selector for the quick-settings popover. Uses the shared Radix
- * dropdown (consistent floating panel + click-away) to pick from the endpoint's
- * fetched models, with a Refresh action to re-query the endpoint and a
- * "Custom model…" affordance for typing any model id the endpoint didn't list.
- */
-function ModelPicker({
-  value,
-  options,
-  loading,
-  errored,
-  disabled,
-  placeholder,
-  onChange,
-  onRefresh,
-}: {
-  value: string;
-  options: string[];
-  loading: boolean;
-  errored: boolean;
-  disabled?: boolean;
-  placeholder?: string;
-  onChange: (model: string) => void;
-  onRefresh: () => void;
-}) {
-  // Custom-entry mode: a free-text input for a model id not in the list.
-  const [custom, setCustom] = useState(false);
-  const customRef = useRef<HTMLInputElement>(null);
-  useEffect(() => { if (custom) customRef.current?.focus(); }, [custom]);
-
-  if (custom) {
-    return (
-      <div className="flex gap-1">
-        <input
-          ref={customRef}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") setCustom(false); }}
-          disabled={disabled}
-          placeholder={placeholder}
-          className="flex-1 min-w-0 px-2 py-1 text-[0.714rem] font-mono rounded-md border border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] disabled:opacity-50"
-        />
-        <Tooltip content="Done" side="top">
-          <button
-            onClick={() => setCustom(false)}
-            className="flex items-center justify-center px-1.5 rounded-md border border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--surface-3)] transition-colors"
-          >
-            <Check size={12} />
-          </button>
-        </Tooltip>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex gap-1">
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild disabled={disabled}>
-          <button
-            className={cn(
-              "flex-1 min-w-0 flex items-center justify-between gap-1 px-2 py-1 text-[0.714rem] rounded-md border bg-[var(--surface-2)] text-[var(--text-primary)] transition-colors disabled:opacity-50",
-              errored ? "border-[var(--danger)]" : "border-[var(--border)] hover:border-[var(--muted)]",
-            )}
-          >
-            {value ? (
-              <TruncatedModel text={value} className="font-mono" />
-            ) : (
-              <span className="truncate font-sans text-[var(--text-tertiary)]">
-                {placeholder || "Select model"}
-              </span>
-            )}
-            <ChevronDown size={11} className="text-[var(--text-tertiary)] flex-shrink-0" />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="max-w-[240px] max-h-64 overflow-y-auto">
-          <DropdownMenuItem
-            onSelect={(e) => { e.preventDefault(); onRefresh(); }}
-            className="text-[var(--text-secondary)]"
-          >
-            <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
-            {loading ? "Refreshing…" : "Refresh models"}
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => setCustom(true)}>
-            <Pencil size={12} />
-            Custom model…
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          {errored && (
-            <div className="px-2.5 py-1.5 text-[0.643rem] text-[var(--danger)]">
-              Couldn&apos;t load models — check the endpoint in settings.
-            </div>
-          )}
-          {options.length === 0 && !errored && (
-            <div className="px-2.5 py-1.5 text-[0.643rem] text-[var(--text-tertiary)]">
-              No models — Refresh or add a custom one.
-            </div>
-          )}
-          {options.map((m) => (
-            <DropdownMenuItem
-              key={m}
-              onSelect={() => onChange(m)}
-              className={cn("font-mono text-xs", m === value && "text-[var(--accent)]")}
-            >
-              <span className="w-3.5 flex-shrink-0">
-                {m === value && <Check size={12} />}
-              </span>
-              <TruncatedModel text={m} />
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
     </div>
   );
 }

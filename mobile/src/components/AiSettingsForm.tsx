@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -25,7 +25,15 @@ import {
   setProviderPref,
   getAppleReasoningLevel,
   setAppleReasoningLevel,
+  listSavedProviders,
+  getActiveProviderId,
+  getProviderApiKey,
+  addSavedProvider,
+  updateSavedProvider,
+  deleteSavedProvider,
+  selectSavedProvider,
   type ProviderPref,
+  type SavedProvider,
 } from "@/chat/ai-config";
 import { isRorkAvailable } from "@/chat/providers/rork";import {
   isAppleProviderAvailable,
@@ -46,6 +54,7 @@ import { useAiSettingsStyles } from "./ai-settings/styles";
 import { SegmentButton } from "./ai-settings/SegmentButton";
 import { Field } from "./ai-settings/Field";
 import { QuotaBar } from "./ai-settings/QuotaBar";
+import { ProviderList } from "./ai-settings/ProviderList";
 
 /**
  * AI settings form body. Presented as a native `formSheet` route
@@ -105,6 +114,11 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
     return v ? String(v) : "";
   });
   const [apiKey, setApiKey] = useState("");
+  // Saved providers + the active one. Loaded (with migration) in an effect since
+  // listSavedProviders is async. `name` is the active provider's editable label.
+  const [providers, setProviders] = useState<SavedProvider[]>([]);
+  const [activeId, setActiveId] = useState<string | null>(() => getActiveProviderId());
+  const [name, setName] = useState("");
   // Context window detected from models.dev for the current model (null = not
   // found / not looked up). Shown as a hint when there's no manual override.
   const [detectedContext, setDetectedContext] = useState<number | null>(null);
@@ -117,21 +131,131 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
   const [fetchingModels, setFetchingModels] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
 
-  // Load the API key (async, from secure store) once on mount. The synchronous
-  // provider/baseUrl/model values are already seeded above.
+  // Load saved providers (runs the flat→list migration) + the active provider's
+  // key on mount. The active provider's baseUrl/model are already reflected by
+  // the synchronous getters seeded above; here we sync the name + full list.
   useEffect(() => {
     let cancelled = false;
-    getOpenAIApiKey().then((openai) => {
-      if (cancelled) return;
-      setHadKey(openai != null);
-      setApiKey(openai ?? "");
-      setLoadedKey(openai ?? "");
-      setLoading(false);
-    });
+    (async () => {
+      try {
+        const list = await listSavedProviders();
+        if (cancelled) return;
+        setProviders(list);
+        const active = list.find((p) => p.id === getActiveProviderId()) ?? list[0] ?? null;
+        setActiveId(active?.id ?? null);
+        setName(active?.name ?? "");
+        if (active) {
+          setBaseUrl(active.baseUrl);
+          setModel(active.model);
+          setContextLimit(active.contextLimit ? String(active.contextLimit) : "");
+        }
+        const openai = active ? await getProviderApiKey(active.id) : await getOpenAIApiKey();
+        if (cancelled) return;
+        setHadKey(openai != null);
+        setApiKey(openai ?? "");
+        setLoadedKey(openai ?? "");
+      } catch {
+        // Best-effort — a failed load leaves the (default) seeded fields in place
+        // rather than hanging on the spinner forever.
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
     return () => {
       cancelled = true;
     };
   }, []);
+
+  // Switch the active provider: persist any pending edits to the current one,
+  // then load the target provider's values into the fields. Guarded against
+  // concurrent invocations so a rapid tap-tap can't persist edits to the wrong
+  // provider (the outgoing setOpenAI* writes race with the next switch's reads).
+  const providerOpInFlight = useRef(false);
+  const switchProvider = async (id: string) => {
+    if (id === activeId || providerOpInFlight.current) return;
+    providerOpInFlight.current = true;
+    try {
+      // Persist current edits to the (still) active provider before switching.
+      if (activeId) {
+        setOpenAIEndpoint(baseUrl, model, contextLimit.trim() ? parseInt(contextLimit, 10) : undefined);
+        if (apiKey !== loadedKey) await setOpenAIApiKey(apiKey);
+      }
+      selectSavedProvider(id);
+      setActiveId(id);
+      // Re-read the list so we load the just-persisted values, not a stale copy.
+      const list = await listSavedProviders();
+      setProviders(list);
+      const target = list.find((p) => p.id === id);
+      if (target) {
+        setName(target.name);
+        setBaseUrl(target.baseUrl);
+        setModel(target.model);
+        setContextLimit(target.contextLimit ? String(target.contextLimit) : "");
+      }
+      const key = await getProviderApiKey(id);
+      setApiKey(key ?? "");
+      setLoadedKey(key ?? "");
+      setHadKey(key != null);
+      setModels([]);
+      setModelsError(null);
+      haptics.selection();
+    } finally {
+      providerOpInFlight.current = false;
+    }
+  };
+
+  // Add a new blank provider: persist current edits, create the provider, make
+  // it active, and reset the fields to defaults for editing. Shares the in-flight
+  // guard with switchProvider so the two can't interleave.
+  const addProvider = async () => {
+    if (providerOpInFlight.current) return;
+    providerOpInFlight.current = true;
+    try {
+      if (activeId) {
+        setOpenAIEndpoint(baseUrl, model, contextLimit.trim() ? parseInt(contextLimit, 10) : undefined);
+        if (apiKey !== loadedKey) await setOpenAIApiKey(apiKey);
+      }
+      const count = providers.length + 1;
+      const id = await addSavedProvider({
+        name: `Provider ${count}`,
+        baseUrl: DEFAULT_OPENAI_BASE_URL,
+        model: DEFAULT_OPENAI_MODEL,
+      });
+      const list = await listSavedProviders();
+      setProviders(list);
+      setActiveId(id);
+      setName(`Provider ${count}`);
+      setBaseUrl(DEFAULT_OPENAI_BASE_URL);
+      setModel(DEFAULT_OPENAI_MODEL);
+      setContextLimit("");
+      setApiKey("");
+      setLoadedKey("");
+      setHadKey(false);
+      setModels([]);
+      setModelsError(null);
+      haptics.selection();
+    } finally {
+      providerOpInFlight.current = false;
+    }
+  };
+
+  // Delete a provider and fall back to the first remaining one.
+  const removeProvider = async (id: string) => {
+    await deleteSavedProvider(id);
+    const list = await listSavedProviders();
+    setProviders(list);
+    const fallback = list.find((p) => p.id === getActiveProviderId()) ?? list[0] ?? null;
+    setActiveId(fallback?.id ?? null);
+    setName(fallback?.name ?? "");
+    setBaseUrl(fallback?.baseUrl ?? DEFAULT_OPENAI_BASE_URL);
+    setModel(fallback?.model ?? DEFAULT_OPENAI_MODEL);
+    setContextLimit(fallback?.contextLimit ? String(fallback.contextLimit) : "");
+    const key = fallback ? await getProviderApiKey(fallback.id) : null;
+    setApiKey(key ?? "");
+    setLoadedKey(key ?? "");
+    setHadKey(key != null);
+    haptics.selection();
+  };
 
   // Look up the model's context window from models.dev (cached) so we can show
   // it as a hint. Only meaningful for the OpenAI provider; re-runs when the
@@ -171,6 +295,9 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
       // Persist the chosen provider. When there's no chooser (only OpenAI is
       // available), force "openai".
       setProviderPref(showChooser ? pref : "openai");
+      // Persist the active provider's name (endpoint/model/context route through
+      // setOpenAIEndpoint to the active provider), then endpoint + key.
+      if (activeId) updateSavedProvider(activeId, { name: name.trim() || "Provider" });
       setOpenAIEndpoint(baseUrl, model, contextLimit.trim() ? parseInt(contextLimit, 10) : undefined);
       // Only touch the keychain if the key field actually changed from what we
       // loaded — avoids a redundant write (and allows clearing it).
@@ -314,6 +441,23 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
 
             {usingOpenAI && (
               <View style={styles.fields}>
+                <ProviderList
+                  providers={providers}
+                  activeId={activeId}
+                  onSelect={switchProvider}
+                  onAdd={addProvider}
+                  onDelete={removeProvider}
+                  t={t}
+                  styles={styles}
+                />
+                <Field
+                  label="Name"
+                  value={name}
+                  onChangeText={setName}
+                  placeholder="OpenAI"
+                  t={t}
+                  styles={styles}
+                />
                 <Field
                   label="Base URL"
                   value={baseUrl}

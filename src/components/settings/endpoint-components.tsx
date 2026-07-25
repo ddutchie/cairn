@@ -1,10 +1,12 @@
 "use client";
 
 import React, { useState, useCallback } from "react";
-import { Globe, Key, Cpu, RefreshCw, Eye, EyeOff, CheckCircle, Wifi, WifiOff } from "lucide-react";
+import { Globe, Key, Eye, EyeOff, CheckCircle, Wifi, WifiOff } from "lucide-react";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { storage } from "@/lib/storage";
 import { SettingsRow } from "./shared";
+import { ModelPicker } from "@/components/ui/model-picker";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -24,9 +26,41 @@ export function isLocalBaseUrl(baseUrl: string): boolean {
   );
 }
 
-export const LOCAL_FALLBACK_MODELS = ["llama3.2", "llama3.1", "qwen2.5:14b", "mistral", "phi4", "gemma3:12b"];
+// ── Per-endpoint model cache ────────────────────────────────────────────────
+//
+// The model list is cached per endpoint in localStorage so the picker can show
+// real models immediately on reopen (no hardcoded fallbacks, no re-fetch). Keyed
+// by the normalised base URL + whether a key is present (a key can unlock a
+// different catalog on the same host).
 
-export const CLOUD_FALLBACK_MODELS = ["gpt-4o", "gpt-4-turbo", "gpt-4o-mini", "o1-mini", "o3-mini"];
+const MODEL_CACHE_KEY = "endpoint-models-cache";
+/** How long a cached model list is considered fresh (7 days). */
+const MODEL_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+type ModelCache = Record<string, { models: string[]; ts: number }>;
+
+/** Normalise a base URL to a stable cache-key root (drop trailing / and /v1). */
+function normBaseUrl(baseUrl: string): string {
+  return (baseUrl || "https://api.openai.com").trim().replace(/\/+$/, "").replace(/\/v1$/, "");
+}
+
+function endpointCacheKey(baseUrl: string, apiKey: string): string {
+  return `${normBaseUrl(baseUrl)}::${apiKey ? "keyed" : "anon"}`;
+}
+
+function readModelCache(baseUrl: string, apiKey: string): string[] | null {
+  const all = storage.get<ModelCache>(MODEL_CACHE_KEY);
+  const entry = all?.[endpointCacheKey(baseUrl, apiKey)];
+  if (!entry) return null;
+  if (Date.now() - entry.ts > MODEL_CACHE_TTL_MS) return null; // stale
+  return entry.models;
+}
+
+function writeModelCache(baseUrl: string, apiKey: string, models: string[]): void {
+  const all = storage.get<ModelCache>(MODEL_CACHE_KEY) ?? {};
+  all[endpointCacheKey(baseUrl, apiKey)] = { models, ts: Date.now() };
+  storage.set(MODEL_CACHE_KEY, all);
+}
 
 // ── useEndpointConfig hook ────────────────────────────────────────────────────
 
@@ -41,6 +75,12 @@ export interface EndpointConfigState {
 export interface UseEndpointConfigResult extends EndpointConfigState {
   setShowKey: React.Dispatch<React.SetStateAction<boolean>>;
   fetchModels: (baseUrl: string, apiKey: string) => Promise<void>;
+  /**
+   * Populate `availableModels` for an endpoint without a forced network call:
+   * hydrate from the per-endpoint cache if present, else fetch once. Safe to
+   * call on open/mount — a no-op when a fresh cache already covers the endpoint.
+   */
+  ensureModels: (baseUrl: string, apiKey: string) => void;
   resetModels: () => void;
 }
 
@@ -65,7 +105,7 @@ export function useEndpointConfig(): UseEndpointConfigResult {
     setModelsLoading(true);
     setTestState("testing");
     try {
-      const url = (baseUrl || "https://api.openai.com").replace(/\/+$/, "").replace(/\/v1$/, "");
+      const url = normBaseUrl(baseUrl);
       const headers: Record<string, string> = {};
       if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
 
@@ -82,6 +122,7 @@ export function useEndpointConfig(): UseEndpointConfigResult {
 
       if (ac.signal.aborted) return;
       setAvailableModels(ids);
+      writeModelCache(baseUrl, apiKey, ids); // persist for next open
       setTestState("ok");
     } catch (err) {
       if (ac.signal.aborted) return;
@@ -96,9 +137,18 @@ export function useEndpointConfig(): UseEndpointConfigResult {
     }
   }, []);
 
+  const ensureModels = useCallback((baseUrl: string, apiKey: string) => {
+    const cached = readModelCache(baseUrl, apiKey);
+    if (cached && cached.length > 0) {
+      setAvailableModels(cached); // instant hydrate from cache — no network
+      return;
+    }
+    void fetchModels(baseUrl, apiKey); // nothing cached → fetch once
+  }, [fetchModels]);
+
   const resetModels = useCallback(() => setAvailableModels([]), []);
 
-  return { showKey, testState, testError, availableModels, modelsLoading, setShowKey, fetchModels, resetModels };
+  return { showKey, testState, testError, availableModels, modelsLoading, setShowKey, fetchModels, ensureModels, resetModels };
 }
 
 // ── BaseUrlRow ────────────────────────────────────────────────────────────────
@@ -107,10 +157,14 @@ export function BaseUrlRow({
   baseUrl,
   onChange,
   description = "Root URL. The chat route appends /v1/chat/completions.",
+  showPresets = true,
 }: {
   baseUrl: string;
   onChange: (url: string) => void;
   description?: string;
+  /** Show the OpenAI/Ollama/LM Studio quick-preset pills. Off where a saved-
+   *  providers switcher already covers that role (AISettings cloud path). */
+  showPresets?: boolean;
 }) {
   return (
     <SettingsRow label="Base URL" description={description}>
@@ -125,22 +179,24 @@ export function BaseUrlRow({
             className="pl-7 pr-3 py-1.5 text-xs w-64 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)]"
           />
         </div>
-        <div className="flex gap-1.5">
-          {BASE_URL_PRESETS.map(({ label, url }) => (
-            <button
-              key={label}
-              onClick={() => onChange(url)}
-              className={cn(
-                "px-2 py-1 text-[0.714rem] rounded border transition-colors cursor-pointer",
-                baseUrl === url
-                  ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
-                  : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]"
-              )}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        {showPresets && (
+          <div className="flex gap-1.5">
+            {BASE_URL_PRESETS.map(({ label, url }) => (
+              <button
+                key={label}
+                onClick={() => onChange(url)}
+                className={cn(
+                  "px-2 py-1 text-[0.714rem] rounded border transition-colors cursor-pointer",
+                  baseUrl === url
+                    ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
+                    : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]"
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </SettingsRow>
   );
@@ -202,7 +258,6 @@ export function ModelSelectionRow({
   modelsLoading,
   testState,
   testError,
-  fetchLabel = "Fetch",
   placeholder = "gpt-4o",
   onModelChange,
   onFetch,
@@ -213,6 +268,7 @@ export function ModelSelectionRow({
   modelsLoading: boolean;
   testState: TestState;
   testError: string;
+  /** @deprecated retained for call-site compatibility; the picker labels itself. */
   fetchLabel?: string;
   placeholder?: string;
   onModelChange: (model: string) => void;
@@ -224,35 +280,22 @@ export function ModelSelectionRow({
       description={
         availableModelsCount > 0
           ? `${availableModelsCount} models loaded from endpoint`
-          : "Type a model name or fetch the list from your endpoint."
+          : "Pick a model, refresh the list from your endpoint, or enter a custom one."
       }
     >
       <div className="flex flex-col gap-1.5 items-end w-64">
-        <div className="flex gap-1.5 w-full">
-          <div className="relative flex-1">
-            <Cpu size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]" />
-            <input
-              type="text"
-              value={model}
-              onChange={(e) => onModelChange(e.target.value)}
-              placeholder={placeholder}
-              className="pl-7 pr-3 py-1.5 text-xs w-full rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)]"
-            />
-          </div>
-          <button
-            onClick={onFetch}
-            disabled={modelsLoading}
-            aria-label={`${fetchLabel} models from endpoint`}
-            className={cn(
-              "px-2 py-1.5 text-[0.714rem] rounded-md border transition-colors flex items-center gap-1 min-w-[52px] justify-center",
-              "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]",
-              modelsLoading && "opacity-50 cursor-wait"
-            )}
-          >
-            <RefreshCw size={11} className={modelsLoading ? "animate-spin" : ""} />
-            {modelsLoading ? "…" : "Fetch"}
-          </button>
-        </div>
+        <ModelPicker
+          value={model}
+          options={modelOptions}
+          loading={modelsLoading}
+          errored={testState === "error"}
+          placeholder={placeholder}
+          size="md"
+          align="end"
+          className="w-full"
+          onChange={onModelChange}
+          onRefresh={onFetch}
+        />
 
         {testState === "error" && (
           <p className="text-[0.786rem] text-[var(--danger)] self-start" title={testError}>
@@ -264,23 +307,6 @@ export function ModelSelectionRow({
             <CheckCircle size={10} /> {availableModelsCount} models available
           </p>
         )}
-
-        <div className="flex flex-wrap gap-1 max-h-28 overflow-y-auto w-full pr-0.5">
-          {modelOptions.map((m) => (
-            <button
-              key={m}
-              onClick={() => onModelChange(m)}
-              className={cn(
-                "px-2 py-0.5 text-[0.714rem] rounded border transition-colors font-mono whitespace-nowrap",
-                model === m
-                  ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
-                  : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]"
-              )}
-            >
-              {m}
-            </button>
-          ))}
-        </div>
       </div>
     </SettingsRow>
   );

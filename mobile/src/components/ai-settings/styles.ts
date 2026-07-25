@@ -120,6 +120,36 @@ export function makeAiSettingsStyles(t: Theme) {
     modelChipText: { ...typeScale.caption, color: t.textSecondary, flexShrink: 1 },
     modelChipTextActive: { color: t.accentFg, fontWeight: "600" },
 
+    // Saved-provider switcher chips.
+    providerChips: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 2 },
+    providerChip: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      maxWidth: "100%",
+      backgroundColor: t.surface2,
+      borderWidth: 1,
+      borderColor: t.border,
+      borderRadius: 9,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+    },
+    providerChipActive: { backgroundColor: t.accent, borderColor: t.accent },
+    providerChipText: { ...typeScale.control, color: t.textSecondary, flexShrink: 1 },
+    providerChipTextActive: { color: t.accentFg, fontWeight: "600" },
+    providerAddChip: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 5,
+      borderWidth: 1,
+      borderColor: t.accent,
+      borderRadius: 9,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      backgroundColor: t.accentDim,
+    },
+    providerAddText: { ...typeScale.control, color: t.accent },
+
     navRow: {
       flexDirection: "row",
       alignItems: "center",

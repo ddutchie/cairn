@@ -133,7 +133,10 @@ export function setupProtocol(outDir: string): void {
           "style-src-elem 'self' 'unsafe-inline'",
           "img-src 'self' data: blob: asset: https:",
           "font-src 'self' data: https://fonts.gstatic.com",
-          "connect-src 'self' https: http://localhost:* ws://localhost:*",
+          // Loopback LLM endpoints (fetched from the renderer) need both spellings
+          // — CSP matches origins literally. Scope the expansion to connect-src;
+          // script/default only need the dev server (localhost:3000).
+          "connect-src 'self' https: http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*",
           "worker-src blob: 'self'",
           "frame-src blob: https:",
         ].join("; ")
@@ -144,7 +147,10 @@ export function setupProtocol(outDir: string): void {
           "style-src-elem 'self' 'unsafe-inline' app:",
           "img-src 'self' data: blob: app: asset: https:",
           "font-src 'self' data: app:",
-          "connect-src 'self' app: http://localhost:* https:",
+          // Allow loopback LLM endpoints over plain http (local servers like
+          // Ollama / LM Studio). Both spellings must be listed — CSP matches the
+          // origin string literally, so localhost and 127.0.0.1 are distinct.
+          "connect-src 'self' app: http://localhost:* http://127.0.0.1:* https:",
           "worker-src blob: 'self' app:",
           "frame-src blob: https:",
         ].join("; ");
