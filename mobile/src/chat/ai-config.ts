@@ -92,7 +92,11 @@ function readProviders(): SavedProvider[] {
     if (!Array.isArray(parsed)) return [];
     return parsed.filter(
       (p): p is SavedProvider =>
-        p && typeof p.id === "string" && typeof p.name === "string" && typeof p.baseUrl === "string",
+        p &&
+        typeof p.id === "string" &&
+        typeof p.name === "string" &&
+        typeof p.baseUrl === "string" &&
+        typeof p.model === "string",
     );
   } catch {
     return [];
@@ -112,27 +116,44 @@ function secureKeyFor(id: string): string {
  * contextLimit + the single secure-store API key) into the saved-providers list
  * as a default "OpenAI" provider, and mark it active. Idempotent, guarded by a
  * meta flag. Best-effort — the flat getters keep working regardless.
+ *
+ * Concurrent callers share one execution via `migrationInFlight` so a rapid
+ * burst (e.g. list + resolve + isConfigured firing together on launch) can't run
+ * the migration twice and create duplicate default providers.
  */
+let migrationInFlight: Promise<void> | null = null;
+
 async function migrateToProvidersOnce(): Promise<void> {
-  if (getSetting(PROVIDERS_MIGRATION_FLAG) === "1") return;
-  // Only run once there's a source DB to read/write meta from.
-  try {
-    if (readProviders().length > 0) {
+  if (migrationInFlight) return migrationInFlight;
+  migrationInFlight = (async () => {
+    try {
+      // Read the flag inside the guarded block so a getSetting failure (e.g. no
+      // source DB yet) is swallowed and the migration is retried on next access.
+      if (getSetting(PROVIDERS_MIGRATION_FLAG) === "1") return;
+      if (readProviders().length > 0) {
+        setSetting(PROVIDERS_MIGRATION_FLAG, "1");
+        return;
+      }
+      const baseUrl = getSetting(KEY_BASE_URL)?.trim() || DEFAULT_OPENAI_BASE_URL;
+      const model = getSetting(KEY_MODEL)?.trim() || DEFAULT_OPENAI_MODEL;
+      const contextLimit = getOpenAIContextLimit();
+      const legacyKey = (await getLegacyApiKey()) ?? "";
+      const id = newProviderId();
+      writeProviders([{ id, name: "OpenAI", baseUrl, model, contextLimit }]);
+      setSetting(KEY_ACTIVE_PROVIDER, id);
+      if (legacyKey) {
+        await SecureStore.setItemAsync(secureKeyFor(id), legacyKey).catch(() => {});
+        // Drop the legacy copy so the key doesn't linger under two keychain keys.
+        await SecureStore.deleteItemAsync(SECURE_KEY_APIKEY).catch(() => {});
+      }
       setSetting(PROVIDERS_MIGRATION_FLAG, "1");
-      return;
+    } catch {
+      // No source yet — leave unmigrated; we'll retry on the next access.
+    } finally {
+      migrationInFlight = null;
     }
-    const baseUrl = getSetting(KEY_BASE_URL)?.trim() || DEFAULT_OPENAI_BASE_URL;
-    const model = getSetting(KEY_MODEL)?.trim() || DEFAULT_OPENAI_MODEL;
-    const contextLimit = getOpenAIContextLimit();
-    const legacyKey = (await getLegacyApiKey()) ?? "";
-    const id = newProviderId();
-    writeProviders([{ id, name: "OpenAI", baseUrl, model, contextLimit }]);
-    setSetting(KEY_ACTIVE_PROVIDER, id);
-    if (legacyKey) await SecureStore.setItemAsync(secureKeyFor(id), legacyKey).catch(() => {});
-    setSetting(PROVIDERS_MIGRATION_FLAG, "1");
-  } catch {
-    // No source yet — retry on next access (don't set the flag).
-  }
+  })();
+  return migrationInFlight;
 }
 
 /** List saved providers (runs the flat→list migration first). */
@@ -359,13 +380,13 @@ export function setAppleReasoningLevel(level: AppleReasoningLevel): void {
 
 /** Read the API key from the keychain (null if none stored). */
 export async function getOpenAIApiKey(): Promise<string | null> {
-  // Prefer the active saved provider's key; fall back to the legacy single key
-  // (pre-migration / if no providers exist yet).
+  // When a provider is active, its key is authoritative — return it as-is
+  // (including null for a keyless local server). Never fall back to the legacy
+  // single key here, or an unrelated provider / a deliberately-cleared key would
+  // silently inherit it. The legacy key is only relevant pre-migration, when no
+  // providers exist yet.
   const active = getActiveProvider();
-  if (active) {
-    const k = await getProviderApiKey(active.id);
-    if (k != null) return k;
-  }
+  if (active) return getProviderApiKey(active.id);
   return getLegacyApiKey();
 }
 

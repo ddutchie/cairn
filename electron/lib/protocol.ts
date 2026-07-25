@@ -127,12 +127,15 @@ export function setupProtocol(outDir: string): void {
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     const csp = isDev
       ? [
-          "default-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*",
-          "script-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:* http://127.0.0.1:*",
+          "default-src 'self' http://localhost:* ws://localhost:*",
+          "script-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:*",
           "style-src 'self' 'unsafe-inline'",
           "style-src-elem 'self' 'unsafe-inline'",
           "img-src 'self' data: blob: asset: https:",
           "font-src 'self' data: https://fonts.gstatic.com",
+          // Loopback LLM endpoints (fetched from the renderer) need both spellings
+          // — CSP matches origins literally. Scope the expansion to connect-src;
+          // script/default only need the dev server (localhost:3000).
           "connect-src 'self' https: http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*",
           "worker-src blob: 'self'",
           "frame-src blob: https:",

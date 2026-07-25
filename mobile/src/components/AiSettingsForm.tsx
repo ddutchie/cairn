@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -137,23 +137,29 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const list = await listSavedProviders();
-      if (cancelled) return;
-      setProviders(list);
-      const active = list.find((p) => p.id === getActiveProviderId()) ?? list[0] ?? null;
-      setActiveId(active?.id ?? null);
-      setName(active?.name ?? "");
-      if (active) {
-        setBaseUrl(active.baseUrl);
-        setModel(active.model);
-        setContextLimit(active.contextLimit ? String(active.contextLimit) : "");
+      try {
+        const list = await listSavedProviders();
+        if (cancelled) return;
+        setProviders(list);
+        const active = list.find((p) => p.id === getActiveProviderId()) ?? list[0] ?? null;
+        setActiveId(active?.id ?? null);
+        setName(active?.name ?? "");
+        if (active) {
+          setBaseUrl(active.baseUrl);
+          setModel(active.model);
+          setContextLimit(active.contextLimit ? String(active.contextLimit) : "");
+        }
+        const openai = active ? await getProviderApiKey(active.id) : await getOpenAIApiKey();
+        if (cancelled) return;
+        setHadKey(openai != null);
+        setApiKey(openai ?? "");
+        setLoadedKey(openai ?? "");
+      } catch {
+        // Best-effort — a failed load leaves the (default) seeded fields in place
+        // rather than hanging on the spinner forever.
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-      const openai = active ? await getProviderApiKey(active.id) : await getOpenAIApiKey();
-      if (cancelled) return;
-      setHadKey(openai != null);
-      setApiKey(openai ?? "");
-      setLoadedKey(openai ?? "");
-      setLoading(false);
     })();
     return () => {
       cancelled = true;
@@ -161,58 +167,76 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
   }, []);
 
   // Switch the active provider: persist any pending edits to the current one,
-  // then load the target provider's values into the fields.
+  // then load the target provider's values into the fields. Guarded against
+  // concurrent invocations so a rapid tap-tap can't persist edits to the wrong
+  // provider (the outgoing setOpenAI* writes race with the next switch's reads).
+  const providerOpInFlight = useRef(false);
   const switchProvider = async (id: string) => {
-    if (id === activeId) return;
-    // Persist current edits to the (still) active provider before switching.
-    if (activeId) {
-      setOpenAIEndpoint(baseUrl, model, contextLimit.trim() ? parseInt(contextLimit, 10) : undefined);
-      if (apiKey !== loadedKey) await setOpenAIApiKey(apiKey);
+    if (id === activeId || providerOpInFlight.current) return;
+    providerOpInFlight.current = true;
+    try {
+      // Persist current edits to the (still) active provider before switching.
+      if (activeId) {
+        setOpenAIEndpoint(baseUrl, model, contextLimit.trim() ? parseInt(contextLimit, 10) : undefined);
+        if (apiKey !== loadedKey) await setOpenAIApiKey(apiKey);
+      }
+      selectSavedProvider(id);
+      setActiveId(id);
+      // Re-read the list so we load the just-persisted values, not a stale copy.
+      const list = await listSavedProviders();
+      setProviders(list);
+      const target = list.find((p) => p.id === id);
+      if (target) {
+        setName(target.name);
+        setBaseUrl(target.baseUrl);
+        setModel(target.model);
+        setContextLimit(target.contextLimit ? String(target.contextLimit) : "");
+      }
+      const key = await getProviderApiKey(id);
+      setApiKey(key ?? "");
+      setLoadedKey(key ?? "");
+      setHadKey(key != null);
+      setModels([]);
+      setModelsError(null);
+      haptics.selection();
+    } finally {
+      providerOpInFlight.current = false;
     }
-    selectSavedProvider(id);
-    setActiveId(id);
-    const target = providers.find((p) => p.id === id);
-    if (target) {
-      setName(target.name);
-      setBaseUrl(target.baseUrl);
-      setModel(target.model);
-      setContextLimit(target.contextLimit ? String(target.contextLimit) : "");
-    }
-    const key = await getProviderApiKey(id);
-    setApiKey(key ?? "");
-    setLoadedKey(key ?? "");
-    setHadKey(key != null);
-    setModels([]);
-    setModelsError(null);
-    haptics.selection();
   };
 
   // Add a new blank provider: persist current edits, create the provider, make
-  // it active, and reset the fields to defaults for editing.
+  // it active, and reset the fields to defaults for editing. Shares the in-flight
+  // guard with switchProvider so the two can't interleave.
   const addProvider = async () => {
-    if (activeId) {
-      setOpenAIEndpoint(baseUrl, model, contextLimit.trim() ? parseInt(contextLimit, 10) : undefined);
-      if (apiKey !== loadedKey) await setOpenAIApiKey(apiKey);
+    if (providerOpInFlight.current) return;
+    providerOpInFlight.current = true;
+    try {
+      if (activeId) {
+        setOpenAIEndpoint(baseUrl, model, contextLimit.trim() ? parseInt(contextLimit, 10) : undefined);
+        if (apiKey !== loadedKey) await setOpenAIApiKey(apiKey);
+      }
+      const count = providers.length + 1;
+      const id = await addSavedProvider({
+        name: `Provider ${count}`,
+        baseUrl: DEFAULT_OPENAI_BASE_URL,
+        model: DEFAULT_OPENAI_MODEL,
+      });
+      const list = await listSavedProviders();
+      setProviders(list);
+      setActiveId(id);
+      setName(`Provider ${count}`);
+      setBaseUrl(DEFAULT_OPENAI_BASE_URL);
+      setModel(DEFAULT_OPENAI_MODEL);
+      setContextLimit("");
+      setApiKey("");
+      setLoadedKey("");
+      setHadKey(false);
+      setModels([]);
+      setModelsError(null);
+      haptics.selection();
+    } finally {
+      providerOpInFlight.current = false;
     }
-    const count = providers.length + 1;
-    const id = await addSavedProvider({
-      name: `Provider ${count}`,
-      baseUrl: DEFAULT_OPENAI_BASE_URL,
-      model: DEFAULT_OPENAI_MODEL,
-    });
-    const list = await listSavedProviders();
-    setProviders(list);
-    setActiveId(id);
-    setName(`Provider ${count}`);
-    setBaseUrl(DEFAULT_OPENAI_BASE_URL);
-    setModel(DEFAULT_OPENAI_MODEL);
-    setContextLimit("");
-    setApiKey("");
-    setLoadedKey("");
-    setHadKey(false);
-    setModels([]);
-    setModelsError(null);
-    haptics.selection();
   };
 
   // Delete a provider and fall back to the first remaining one.

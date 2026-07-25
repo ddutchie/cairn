@@ -1,4 +1,4 @@
-import { View, Text, Pressable } from "react-native";
+import { View, Text, Pressable, Alert } from "react-native";
 import { Check, Plus, Trash2 } from "lucide-react-native";
 import { type Theme } from "@/theme";
 import type { SavedProvider } from "@/chat/ai-config";
@@ -47,7 +47,21 @@ export function ProviderList({
                 {p.name}
               </Text>
               {selected && providers.length > 1 && (
-                <Pressable hitSlop={8} onPress={() => onDelete(p.id)}>
+                <Pressable
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Delete provider ${p.name}`}
+                  onPress={() =>
+                    Alert.alert(
+                      "Delete provider",
+                      `Delete “${p.name}”? This can't be undone.`,
+                      [
+                        { text: "Cancel", style: "cancel" },
+                        { text: "Delete", style: "destructive", onPress: () => onDelete(p.id) },
+                      ],
+                    )
+                  }
+                >
                   <Trash2 size={12} color={t.accentFg} />
                 </Pressable>
               )}

@@ -58,11 +58,14 @@ function mirrorProvider<C extends ProviderCarrier>(config: C, p: SavedProvider):
 }
 
 /**
- * Reconcile a config after the shared provider list changed: if its active
- * provider still exists, re-mirror it (picks up edits); if it was removed, fall
- * back to the first remaining provider (or leave as-is when the list is empty).
+ * Reconcile a config after the shared provider list changed. Only touches a
+ * config that had a provider selected: if its active provider still exists,
+ * re-mirror it (picks up edits); if it was just deleted, fall back to the first
+ * remaining provider. A config with NO active provider is left untouched — an
+ * unselected surface must never inherit list[0] or the other surface's choice.
  */
 function reconcileConfig<C extends ProviderCarrier>(config: C, list: SavedProvider[]): C {
+  if (!config.activeProviderId) return config; // never auto-select for an unselected surface
   const active = list.find((p) => p.id === config.activeProviderId);
   if (active) return mirrorProvider(config, active);
   const fallback = list[0];
@@ -347,10 +350,7 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
   setAIConfig(patch) {
     set((s) => {
       const next = { ...s.aiConfig, ...patch };
-      storage.set(AI_CONFIG_KEY, next);
-      if (typeof window !== "undefined" && window.electron && window.electron.saveAiSettings) {
-        window.electron.saveAiSettings(next as unknown as Record<string, unknown>).catch(() => {});
-      }
+      persistAi(next);
       return { aiConfig: next };
     });
   },
@@ -430,10 +430,7 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
   setAgentConfig(patch) {
     set((s) => {
       const next = { ...s.agentConfig, ...patch };
-      storage.set(AGENT_CONFIG_KEY, next);
-      if (typeof window !== "undefined" && window.electron && window.electron.saveAgentSettings) {
-        window.electron.saveAgentSettings(next).catch(() => {});
-      }
+      persistAgent(next);
       return { agentConfig: next };
     });
   },
