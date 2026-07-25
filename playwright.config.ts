@@ -42,7 +42,15 @@ export default defineConfig({
   // Start the Next.js dev server automatically before the suite runs.
   // The server is reused across test files.
   webServer: {
-    command: "node scripts/generate-licenses.js && npx next dev --port 3000",
+    // Generate BOTH baked-in JSON artifacts before starting the dev server:
+    // licenses.json AND new-features.json are git-ignored (built at build time),
+    // and the What's New smoke tests import `@/generated/new-features.json`. If
+    // it's missing the Next build fails to resolve the import and every test
+    // fails — this is what broke the release pipeline's e2e job, which runs
+    // `npm run test:e2e` without going through the `dev` script that normally
+    // generates these. Generating them here keeps `test:e2e` self-sufficient.
+    command:
+      "node scripts/generate-licenses.js && node scripts/generate-features.js && npx next dev --port 3000",
     url: "http://localhost:3000",
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,

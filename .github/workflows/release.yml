@@ -32,12 +32,12 @@ jobs:
           FILE="changelogs/${TAG}.md"
           PRERELEASE=""
           if [[ "$TAG" == *"-"* ]]; then PRERELEASE="--prerelease"; fi
-          # Always create as draft. After CI finishes building the DMG/installer,
-          # the developer downloads it, smoke-tests the actual packaged app,
-          # then promotes the release to public + latest so auto-update picks it up:
-          #   gh release edit v2.1.x --draft=false
-          # This prevents shipping a broken build (e.g. v2.1.4 umap-js crash) to
-          # auto-update users before anyone has opened the actual .app.
+          # Create as a draft first so the platform build jobs can upload their
+          # DMG/installer assets to it. The final `publish-release` job flips the
+          # draft off and marks it `latest` only after E2E + all three builds
+          # pass — so a failed build leaves the release as an unpublished draft
+          # (never shipped to auto-update users). To inspect a packaged build
+          # before it goes public, cancel/fail the run or gate publish-release.
           if [ -f "$FILE" ]; then
             gh release create "$TAG" \
               --title "Cairn ${TAG}" \
@@ -99,7 +99,14 @@ jobs:
         run: npx playwright install-deps chromium
 
       - name: Run E2E smoke tests
-        run: npm run test:e2e
+        # Generate the git-ignored artifacts the app/tests import (licenses.json
+        # + new-features.json for the What's New smoke tests) before running.
+        # The playwright.config webServer also does this, but generating here
+        # keeps parity with ci.yml and guards against config drift.
+        run: |
+          node scripts/generate-licenses.js
+          node scripts/generate-features.js
+          npm run test:e2e
 
       - name: Upload Playwright report
         if: failure()
@@ -329,3 +336,33 @@ jobs:
           node scripts/build-mcp-binary.js --linux
           chmod +x dist-mcp/cairn-mcp-linux
           npx electron-builder --linux --publish onTagOrDraft
+
+  # ── Publish the release ───────────────────────────────────────────────────
+  # Runs only if E2E and all three platform builds succeeded (default `needs`
+  # semantics — any failed/cancelled dependency skips this job, so the release
+  # stays a draft for manual inspection). Flips the draft off and, for a stable
+  # (non-prerelease) tag, marks it as `latest` so auto-update picks it up.
+  publish-release:
+    name: Publish Release
+    runs-on: ubuntu-latest
+    needs: [smoke-e2e, build-mac, build-win, build-linux]
+
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          persist-credentials: false
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          # Prerelease tags (containing a hyphen, e.g. v2.6.0-beta.1) are
+          # published but must NOT become `latest` — only stable releases feed
+          # auto-update.
+          if [[ "$TAG" == *"-"* ]]; then
+            gh release edit "$TAG" --draft=false --latest=false
+          else
+            gh release edit "$TAG" --draft=false --latest
+          fi
+
