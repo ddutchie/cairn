@@ -28,6 +28,12 @@ import {
   createCard,
   updateCard,
   getCards,
+  mergeProject,
+  getProjectById,
+  getColumns,
+  getOrCreateFlow,
+  createFlowNode,
+  getFlowNodes,
   searchNotes,
   searchTasks,
   getFullSnapshot,
@@ -941,5 +947,84 @@ describe("getCodebaseModuleGraph", () => {
     expect(g.edges).toHaveLength(1);
     expect(g.edges[0]).toMatchObject({ source: "core", target: "util", weight: 1 });
     expect(g.nodes.find((n) => n.id === "core")!.internalRefs).toBe(1);
+  });
+});
+
+describe("mergeProject", () => {
+  let db: Database.Database;
+
+  beforeEach(() => {
+    db = makeDb();
+    seedWorkspace(db);
+    // Source project + its 5 standard columns
+    createProject(db, { id: "src", workspaceId: "ws1", name: "Source" });
+    createColumn(db, { id: "s_backlog", projectId: "src", workspaceId: "ws1", name: "Backlog", type: "backlog", order: 0 });
+    createColumn(db, { id: "s_todo", projectId: "src", workspaceId: "ws1", name: "Todo", type: "todo", order: 1 });
+    createColumn(db, { id: "s_done", projectId: "src", workspaceId: "ws1", name: "Done", type: "done", order: 2 });
+    // Target project + its 5 standard columns
+    createProject(db, { id: "dst", workspaceId: "ws1", name: "Target" });
+    createColumn(db, { id: "d_backlog", projectId: "dst", workspaceId: "ws1", name: "Backlog", type: "backlog", order: 0 });
+    createColumn(db, { id: "d_todo", projectId: "dst", workspaceId: "ws1", name: "Todo", type: "todo", order: 1 });
+    createColumn(db, { id: "d_done", projectId: "dst", workspaceId: "ws1", name: "Done", type: "done", order: 2 });
+  });
+
+  it("moves notes and cards to the target, mapping cards by column type", () => {
+    createNote(db, { id: "n1", projectId: "src", workspaceId: "ws1", title: "Note A", content: "x" });
+    createNote(db, { id: "n2", projectId: "src", workspaceId: "ws1", title: "Note B", content: "y" });
+    createCard(db, { id: "c1", columnId: "s_todo", projectId: "src", workspaceId: "ws1", title: "Card in Todo", order: 0 });
+    createCard(db, { id: "c2", columnId: "s_done", projectId: "src", workspaceId: "ws1", title: "Card in Done", order: 0 });
+
+    const result = mergeProject(db, "src", "dst");
+
+    expect(result.counts.notes).toBe(2);
+    expect(result.counts.cards).toBe(2);
+
+    // Notes now belong to the target project.
+    expect(getNotes(db, "dst").map((n) => n.id).sort()).toEqual(["n1", "n2"]);
+    expect(getNotes(db, "src")).toHaveLength(0);
+
+    // Cards landed in the target's SAME-TYPE columns.
+    const dstCards = getCards(db, { projectId: "dst" });
+    const todoCard = dstCards.find((c) => c.id === "c1")!;
+    const doneCard = dstCards.find((c) => c.id === "c2")!;
+    expect(todoCard.columnId).toBe("d_todo");
+    expect(todoCard.projectId).toBe("dst");
+    expect(doneCard.columnId).toBe("d_done");
+
+    // Source project is gone.
+    expect(getProjectById(db, "src")).toBeNull();
+    expect(getProjectById(db, "dst")).not.toBeNull();
+  });
+
+  it("recreates custom columns in the target and routes their cards there", () => {
+    createColumn(db, { id: "s_custom", projectId: "src", workspaceId: "ws1", name: "Blocked", type: "custom", order: 3 });
+    createCard(db, { id: "cc", columnId: "s_custom", projectId: "src", workspaceId: "ws1", title: "Custom card", order: 0 });
+
+    mergeProject(db, "src", "dst");
+
+    const dstCols = getColumns(db, "dst");
+    const recreated = dstCols.find((c) => c.name === "Blocked" && c.type === "custom");
+    expect(recreated).toBeTruthy();
+
+    const movedCard = getCards(db, { projectId: "dst" }).find((c) => c.id === "cc")!;
+    expect(movedCard.columnId).toBe(recreated!.id);
+    expect(movedCard.projectId).toBe("dst");
+  });
+
+  it("moves idea-flow nodes from the source flow into the target flow", () => {
+    const srcFlow = getOrCreateFlow(db, "src");
+    createFlowNode(db, { id: "fn1", flowId: srcFlow.id, type: "idea", x: 0, y: 0, data: { title: "hi" } });
+
+    mergeProject(db, "src", "dst");
+
+    const dstFlow = getOrCreateFlow(db, "dst");
+    const nodes = getFlowNodes(db, dstFlow.id);
+    expect(nodes.map((n) => n.id)).toContain("fn1");
+  });
+
+  it("rejects merging a project into itself and unknown projects", () => {
+    expect(() => mergeProject(db, "src", "src")).toThrow(/into itself/);
+    expect(() => mergeProject(db, "nope", "dst")).toThrow(/Source project not found/);
+    expect(() => mergeProject(db, "src", "nope")).toThrow(/Target project not found/);
   });
 });

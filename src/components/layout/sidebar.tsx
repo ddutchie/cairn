@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   FileText, Kanban, Settings, Search, MessageSquare,
   ChevronDown, ChevronRight, Plus, MoreHorizontal,
-  FolderOpen, Hash, Layers, Pencil, Trash2, GitBranch, BarChart2, Workflow, Terminal, CalendarDays, Download,
+  FolderOpen, Hash, Layers, Pencil, Trash2, GitBranch, BarChart2, Workflow, Terminal, CalendarDays, Download, GitMerge, Check,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
@@ -52,7 +52,7 @@ export function Sidebar() {
     activeWorkspaceId, activeProjectId, activeView,
     workspaces, projects: allProjects, getWorkspaceProjects,
     setActiveProject, setView, toggleSearch, toggleChat,
-    createProject, updateProject, deleteProject,
+    createProject, updateProject, deleteProject, mergeProject,
     cards, chatOpen, searchOpen,
     hiddenViews,
     moveFolderToProject, moveCardToProject, moveNoteToProject,
@@ -71,6 +71,7 @@ export function Sidebar() {
     createProject:       s.createProject,
     updateProject:       s.updateProject,
     deleteProject:       s.deleteProject,
+    mergeProject:        s.mergeProject,
     cards:               s.cards,
     chatOpen:            s.chatOpen,
     searchOpen:          s.searchOpen,
@@ -276,6 +277,8 @@ export function Sidebar() {
                     onSelectView={(view) => { setActiveProject(project.id); setView(view); closeSidebarOnMobile(); }}
                     onRename={(name) => updateProject(project.id, { name })}
                     onDelete={() => deleteProject(project.id)}
+                    mergeTargets={projects.filter((p) => p.id !== project.id)}
+                    onMerge={(targetId) => mergeProject(project.id, targetId)}
                     openCardCount={openCardCountByProject.get(project.id) ?? 0}
                     hiddenViews={hiddenViews}
                     visibleNavItems={visibleNavItems}
@@ -336,16 +339,23 @@ interface ProjectItemProps {
   activeView: string;
   onSelectView: (view: "overview" | "notes" | "board" | "calendar" | "flow" | "graph" | "chat" | "agent") => void;
   onRename: (name: string) => void; onDelete: () => void;
+  /** Other projects in this workspace this one can be merged into. */
+  mergeTargets: Project[];
+  /** Merge THIS project into the given target project id. */
+  onMerge: (targetId: string) => Promise<{ notes: number; cards: number } | null>;
   openCardCount: number;
   hiddenViews: Set<string>;
   visibleNavItems: ViewNavItem[];
   onCrossProjectDrop: (targetProjectId: string) => boolean;
 }
 
-function ProjectItem({ project, isActive, isExpanded, onToggleExpand, onSelectProject, activeView, onSelectView, onRename, onDelete, openCardCount, hiddenViews: _hiddenViews, visibleNavItems, onCrossProjectDrop }: ProjectItemProps) {
+function ProjectItem({ project, isActive, isExpanded, onToggleExpand, onSelectProject, activeView, onSelectView, onRename, onDelete, mergeTargets, onMerge, openCardCount, hiddenViews: _hiddenViews, visibleNavItems, onCrossProjectDrop }: ProjectItemProps) {
   const [renaming, setRenaming]             = useState(false);
   const [renameValue, setRenameValue]       = useState(project.name);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
+  const [mergeTargetId, setMergeTargetId]   = useState<string>("");
+  const [merging, setMerging]               = useState(false);
   const [isDropTarget, setIsDropTarget]     = useState(false);
   const renameInputRef = useRef<HTMLInputElement>(null);
 
@@ -364,6 +374,18 @@ function ProjectItem({ project, isActive, isExpanded, onToggleExpand, onSelectPr
     setRenaming(false);
   }
 
+  async function commitMerge() {
+    if (!mergeTargetId || merging) return;
+    setMerging(true);
+    try {
+      await onMerge(mergeTargetId);
+      setMergeDialogOpen(false);
+      setMergeTargetId("");
+    } finally {
+      setMerging(false);
+    }
+  }
+
   return (
     <>
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
@@ -378,6 +400,70 @@ function ProjectItem({ project, isActive, isExpanded, onToggleExpand, onSelectPr
               <Button variant="ghost" size="sm" className="text-[var(--danger)] hover:bg-[var(--danger)]/10"
                 onClick={() => { setDeleteDialogOpen(false); onDelete(); }}>
                 <Trash2 size={13} />Delete project
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={mergeDialogOpen} onOpenChange={(o) => { setMergeDialogOpen(o); if (!o) setMergeTargetId(""); }}>
+        <DialogContent size="sm">
+          <DialogHeader><DialogTitle>Merge project</DialogTitle></DialogHeader>
+          <div className="px-5 py-4 space-y-4">
+            <p className="text-sm text-[var(--text-secondary)]">
+              All notes, tasks, columns, and idea-flow nodes from{" "}
+              <strong className="text-[var(--text-primary)]">{project.name}</strong> will be moved into the project you pick below, and{" "}
+              <strong className="text-[var(--text-primary)]">{project.name}</strong> will then be deleted. This cannot be undone.
+            </p>
+            {mergeTargets.length === 0 ? (
+              <p className="text-sm text-[var(--text-tertiary)]">
+                There are no other projects in this workspace to merge into.
+              </p>
+            ) : (
+              <label className="block space-y-1.5">
+                <span className="text-xs font-medium text-[var(--text-secondary)]">Merge into</span>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      className={cn(
+                        "w-full flex items-center justify-between gap-2 pl-2.5 pr-2 py-1.5 text-sm rounded-md",
+                        "bg-[var(--surface-2)] border border-[var(--border)]",
+                        "hover:border-[var(--muted)] focus:outline-none focus:border-[var(--accent)] transition-colors cursor-pointer",
+                        mergeTargetId ? "text-[var(--text-primary)]" : "text-[var(--text-tertiary)]",
+                      )}
+                    >
+                      <span className="truncate">
+                        {mergeTargets.find((p) => p.id === mergeTargetId)?.name ?? "Select a project…"}
+                      </span>
+                      <ChevronDown size={11} className="text-[var(--text-tertiary)] flex-shrink-0" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-[var(--radix-dropdown-menu-trigger-width)] max-h-64 overflow-y-auto">
+                    {mergeTargets.map((p) => (
+                      <DropdownMenuItem
+                        key={p.id}
+                        onSelect={() => setMergeTargetId(p.id)}
+                        className={cn("text-sm", p.id === mergeTargetId && "text-[var(--accent)]")}
+                      >
+                        <span className="w-3.5 flex-shrink-0">
+                          {p.id === mergeTargetId && <Check size={12} />}
+                        </span>
+                        <span className="truncate">{p.name}</span>
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </label>
+            )}
+            <div className="flex justify-end gap-2">
+              <DialogClose asChild><Button variant="ghost" size="sm" disabled={merging}>Cancel</Button></DialogClose>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-[var(--accent)] hover:bg-[var(--accent-dim)]"
+                disabled={!mergeTargetId || merging || mergeTargets.length === 0}
+                onClick={commitMerge}
+              >
+                <GitMerge size={13} />{merging ? "Merging…" : "Merge & delete"}
               </Button>
             </div>
           </div>
@@ -445,6 +531,12 @@ function ProjectItem({ project, isActive, isExpanded, onToggleExpand, onSelectPr
                 className="flex items-center gap-2 text-xs"
               >
                 <Download size={11} />Export as Markdown
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={(e: React.MouseEvent) => { e.stopPropagation(); setMergeDialogOpen(true); }}
+                className="flex items-center gap-2 text-xs"
+              >
+                <GitMerge size={11} />Merge into…
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={(e: React.MouseEvent) => { e.stopPropagation(); setDeleteDialogOpen(true); }}

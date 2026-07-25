@@ -147,6 +147,7 @@ const api = {
     update: (id: string, patch: unknown) => invoke("db:project:update", { id, patch }),
     updateSettings: (id: string, settings: unknown) => invoke("db:project:updateSettings", { id, settings }),
     delete: (id: string) => invoke("db:project:delete", { id }),
+    merge:  (sourceId: string, targetId: string) => invoke("db:project:merge", { sourceId, targetId }),
   },
 
   // ── Notes ────────────────────────────────────

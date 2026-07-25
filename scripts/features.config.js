@@ -204,6 +204,19 @@ const FEATURES = [
       "Keys In Your OS Keychain: Provider API keys are stored encrypted in your operating system's keychain — never in plain text — and moved there automatically from any existing setup.",
     ],
   },
+  {
+    id: "v2.5.9-merge-projects",
+    version: "v2.5.9",
+    title: "Merge Projects",
+    category: "Projects",
+    description: "Consolidate two projects into one — move all notes, tasks, columns, and Idea Flow nodes across, then drop the empty project.",
+    highlights: [
+      "One Action: Open a project's ⋯ menu, choose Merge into…, and pick the destination project.",
+      "Everything Moves: Notes, task cards, board columns, and Idea Flow nodes are all repointed to the destination in a single transactional move.",
+      "Smart Board Merge: Cards land in the destination's matching column by type (Todo → Todo, Done → Done), and custom columns are recreated so nothing is lost.",
+      "Great For Cleanup: The tidy way to consolidate duplicate or overlapping projects — including two projects that accidentally share a name.",
+    ],
+  },
 ];
 
 module.exports = { FEATURES };
