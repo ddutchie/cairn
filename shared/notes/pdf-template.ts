@@ -24,6 +24,20 @@ export function pdfSafeFilename(title: string): string {
   return (title ?? "").replace(/[\/\\:*?"<>|]/g, "_").trim() || "untitled";
 }
 
+/**
+ * Escape a string for insertion into an HTML **text** context (element content,
+ * not attribute values). Escapes `&` first so already-escaped entities aren't
+ * double-escaped, then the angle brackets. Used for every place the note title
+ * is rendered into the PDF document — the `<title>`, the in-body heading, and
+ * the running footer — so escaping stays consistent across them.
+ */
+export function escapeHtmlText(text: string): string {
+  return (text ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 const LIGHT_VARS = {
   bg: "#ffffff",
   textPrimary: "#1a1917",
@@ -70,7 +84,7 @@ export function buildPdfHtml(
 <html>
 <head>
 <meta charset="utf-8">
-<title>${title.replace(/</g, "&lt;")}</title>
+<title>${escapeHtmlText(title)}</title>
 <style>
 *, *::before, *::after { box-sizing: border-box; }
 :root {
@@ -196,7 +210,7 @@ pre, blockquote, table { page-break-inside: avoid; }
 </style>
 </head>
 <body>
-${titleMode === "heading" ? `<h1 class="pdf-title">${title.replace(/</g, "&lt;")}</h1>` : ""}
+${titleMode === "heading" ? `<h1 class="pdf-title">${escapeHtmlText(title)}</h1>` : ""}
 <div class="prose-cairn">${htmlBody}</div>
 </body>
 </html>`;
@@ -214,8 +228,13 @@ ${titleMode === "heading" ? `<h1 class="pdf-title">${title.replace(/</g, "&lt;")
  */
 export function buildPdfFooterTemplate(title: string, theme: PdfTheme = "light"): string {
   const color = theme === "dark" ? DARK_VARS.textSecondary : LIGHT_VARS.textSecondary;
-  const safeTitle = title.replace(/&/g, "&amp;").replace(/</g, "&lt;");
-  return `<div style="width:100%;font-size:8px;color:${color};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:0 2.2cm;display:flex;align-items:center;justify-content:space-between;">
+  const safeTitle = escapeHtmlText(title);
+  // box-sizing:border-box so the 100% width includes the 2.2cm horizontal
+  // padding — Chromium's footer template is an isolated document that does NOT
+  // inherit the main document's global border-box rule, so without this the
+  // padded footer overflows the page box and the right-aligned page number can
+  // be clipped.
+  return `<div style="box-sizing:border-box;width:100%;font-size:8px;color:${color};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:0 2.2cm;display:flex;align-items:center;justify-content:space-between;">
   <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:70%;">${safeTitle}</span>
   <span><span class="pageNumber"></span> / <span class="totalPages"></span></span>
 </div>`;

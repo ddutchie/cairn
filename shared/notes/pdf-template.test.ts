@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildPdfHtml, buildPdfFooterTemplate, buildPdfHeaderTemplate, pdfSafeFilename } from "./pdf-template";
+import { buildPdfHtml, buildPdfFooterTemplate, buildPdfHeaderTemplate, pdfSafeFilename, escapeHtmlText } from "./pdf-template";
 
 describe("pdfSafeFilename", () => {
   it("strips filesystem-illegal characters, replacing them with underscore", () => {
@@ -43,6 +43,12 @@ describe("buildPdfHtml", () => {
     expect(html).toContain("a&lt;b");
   });
 
+  it("escapes & in both the document <title> and the in-body heading", () => {
+    const html = buildPdfHtml("Tom & Jerry <x>", "", "light");
+    expect(html).toContain("<title>Tom &amp; Jerry &lt;x&gt;</title>");
+    expect(html).toContain('class="pdf-title">Tom &amp; Jerry &lt;x&gt;</h1>');
+  });
+
   it("applies dark theme background when theme=dark", () => {
     const html = buildPdfHtml("T", "", "dark");
     expect(html).toContain("#141414"); // DARK_VARS.bg
@@ -64,6 +70,21 @@ describe("buildPdfFooterTemplate", () => {
 
   it("uses the dark secondary colour when theme=dark", () => {
     expect(buildPdfFooterTemplate("T", "dark")).toContain("#9e9a94"); // DARK_VARS.textSecondary
+  });
+
+  it("sets border-box sizing so padding stays inside the page width", () => {
+    expect(buildPdfFooterTemplate("T")).toContain("box-sizing:border-box");
+  });
+});
+
+describe("escapeHtmlText", () => {
+  it("escapes &, <, and > in text-context order (& first, no double-escape)", () => {
+    expect(escapeHtmlText("Tom & Jerry <x>")).toBe("Tom &amp; Jerry &lt;x&gt;");
+    expect(escapeHtmlText("&lt;")).toBe("&amp;lt;"); // literal &lt; is escaped, not treated as an entity
+  });
+
+  it("handles nullish input", () => {
+    expect(escapeHtmlText(undefined as unknown as string)).toBe("");
   });
 });
 
