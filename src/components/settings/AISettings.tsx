@@ -122,7 +122,7 @@ export function AISettings() {
         {/* Provider Switcher */}
         <SettingsRow
           label="AI Provider"
-          description="Choose between a fully offline on-device Llama model or a standard cloud / local API connection (OpenAI-compatible)."
+          description="Choose between a fully offline on-device model or an OpenAI-compatible cloud / local API connection."
         >
           <div className="flex flex-wrap gap-2">
             <button
@@ -135,7 +135,7 @@ export function AISettings() {
               )}
             >
               <Globe size={12} />
-              Cloud / Local API
+              OpenAI
             </button>
             <button
               onClick={() => updateAIConfig({ provider: "localllm" })}
@@ -147,7 +147,7 @@ export function AISettings() {
               )}
             >
               <Cpu size={12} className={provider === "localllm" ? "text-[var(--accent)] animate-pulse" : ""} />
-              On-Device Llama
+              On-Device
             </button>
           </div>
         </SettingsRow>
