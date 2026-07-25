@@ -679,6 +679,45 @@ export function updateCard(db: Database.Database, id: string, patch: Partial<{
   return toCard(db.prepare("SELECT * FROM task_cards WHERE id = ?").get(id));
 }
 
+/**
+ * Move a card to a different project (and its owning workspace), landing it in a
+ * specific column of that project.
+ *
+ * Like moveNoteToProject, this uses a direct SET rather than updateCard()'s
+ * COALESCE list, which has no project_id/workspace_id columns — so routing a
+ * cross-project move through updateCard() silently dropped the project change,
+ * leaving the row with a column_id in the new project but project_id still in
+ * the old one. On the next board refresh / sync reconcile (both scope by
+ * project_id) the card resurfaced in the source project.
+ *
+ * The destination workspace is resolved from the target project itself (not
+ * trusted from the caller); the target column must belong to the target project.
+ */
+export function moveCardToProject(
+  db: Database.Database,
+  id: string,
+  projectId: string,
+  columnId: string,
+  order: number,
+) {
+  const project = db.prepare("SELECT workspace_id FROM projects WHERE id = ?").get(projectId) as
+    | { workspace_id: string }
+    | undefined;
+  if (!project) throw new Error(`Target project not found: ${projectId}`);
+  const column = db.prepare("SELECT project_id FROM board_columns WHERE id = ?").get(columnId) as
+    | { project_id: string }
+    | undefined;
+  if (!column) throw new Error(`Target column not found: ${columnId}`);
+  if (column.project_id !== projectId) {
+    throw new Error(`Target column ${columnId} does not belong to project ${projectId}`);
+  }
+  const now = ts();
+  db.prepare(
+    `UPDATE task_cards SET project_id = ?, workspace_id = ?, column_id = ?, "order" = ?, updated_at = ?, version = version + 1 WHERE id = ?`,
+  ).run(projectId, project.workspace_id, columnId, order, now, id);
+  return toCard(db.prepare("SELECT * FROM task_cards WHERE id = ?").get(id));
+}
+
 export function deleteCard(db: Database.Database, id: string) {
   // Remove this card from any other card's blocked_by_ids before deleting
   const affected = db.prepare(

@@ -355,6 +355,7 @@ export const createBoardSlice: StateCreator<CairnStore, [], [], BoardSlice> = (
     const prevProjectId = card.projectId;
     const prevColumnId = card.columnId;
     const prevOrder = card.order;
+    const prevWorkspaceId = card.workspaceId;
     set((s) => ({
       cards: s.cards.map((c) =>
         c.id === cardId
@@ -371,16 +372,14 @@ export const createBoardSlice: StateCreator<CairnStore, [], [], BoardSlice> = (
     }));
     get().persist();
     ipc((e) =>
-      e.card.update(cardId, {
-        projectId: targetProjectId,
-        workspaceId: targetProject.workspaceId,
-        columnId: targetColumn.id,
-        order: newOrder,
-      })
+      (e.card as {
+        moveToProject: (id: string, projectId: string, columnId: string, order: number) => Promise<unknown>;
+      }).moveToProject(cardId, targetProjectId, targetColumn.id, newOrder)
     );
     historyManager.push(makeMoveCardToProjectCmd(
       cardId, prevProjectId, prevColumnId, prevOrder,
       targetProjectId, targetColumn.id, newOrder, targetProject.workspaceId,
+      prevWorkspaceId,
       set,
     ));
   },

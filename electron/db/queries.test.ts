@@ -28,6 +28,7 @@ import {
   createCard,
   updateCard,
   getCards,
+  moveCardToProject,
   mergeProject,
   getProjectById,
   getColumns,
@@ -352,6 +353,40 @@ describe("card ordering", () => {
     const cards = getCards(db, { columnId: "col1" });
     expect(cards.map((c) => c.order)).toEqual([0, 1, 2]);
     expect(cards.map((c) => c.id)).toEqual(["c1", "c2", "c3"]);
+  });
+});
+
+describe("moveCardToProject", () => {
+  let db: Database.Database;
+
+  beforeEach(() => {
+    db = makeDb();
+    createWorkspace(db, { id: "ws1", name: "WS One" });
+    createWorkspace(db, { id: "ws2", name: "WS Two" });
+    createProject(db, { id: "proj1", workspaceId: "ws1", name: "Source" });
+    createColumn(db, { id: "col1", projectId: "proj1", workspaceId: "ws1", name: "Todo", type: "todo", order: 0 });
+    createProject(db, { id: "proj2", workspaceId: "ws2", name: "Dest" });
+    createColumn(db, { id: "col2", projectId: "proj2", workspaceId: "ws2", name: "Todo", type: "todo", order: 0 });
+    createCard(db, { id: "c1", columnId: "col1", projectId: "proj1", workspaceId: "ws1", title: "Card", order: 0 });
+  });
+
+  it("repoints project_id AND workspace_id AND column_id (not just the column)", () => {
+    const moved = moveCardToProject(db, "c1", "proj2", "col2", 0);
+    expect(moved.projectId).toBe("proj2");
+    expect(moved.workspaceId).toBe("ws2"); // resolved from the target project
+    expect(moved.columnId).toBe("col2");
+
+    // The card leaves the source project entirely and appears in the target.
+    expect(getCards(db, { projectId: "proj1" })).toHaveLength(0);
+    expect(getCards(db, { projectId: "proj2" }).map((c) => c.id)).toEqual(["c1"]);
+  });
+
+  it("rejects a missing target project or column, or a column in another project", () => {
+    expect(() => moveCardToProject(db, "c1", "nope", "col2", 0)).toThrow(/Target project not found/);
+    expect(() => moveCardToProject(db, "c1", "proj2", "nope", 0)).toThrow(/Target column not found/);
+    // col1 belongs to proj1, not proj2 → mismatch is rejected so the card can't
+    // land in a column outside its new project.
+    expect(() => moveCardToProject(db, "c1", "proj2", "col1", 0)).toThrow(/does not belong to project/);
   });
 });
 

@@ -514,6 +514,28 @@ export function registerDbHandlers(ctx: DbContext): void {
   }));
   registerIpcHandle("db:card:delete", (_e, { id }) => handle(() => q.deleteCard(ctx.db, id)));
 
+  registerIpcHandle(
+    "db:card:moveToProject",
+    (_e, { id, projectId, columnId, order }: { id: string; projectId: string; columnId: string; order: number }) =>
+      handle(() => {
+        // Cross-project card moves previously went through updateCard(), whose
+        // UPDATE has no project_id/workspace_id columns — so the move was
+        // silently dropped and the card re-surfaced in the old project (board
+        // reads and sync reconcile both scope by project_id). Persist it with a
+        // dedicated direct-SET query that also validates the target column
+        // belongs to the target project.
+        const card = q.moveCardToProject(ctx.db, id, projectId, columnId, order);
+        // Membership changed → relationships/semantic edges are workspace-scoped,
+        // so recompute for the (possibly new) workspace.
+        invalidateRelationshipCache(ctx.db, id);
+        if (card.workspaceId) {
+          computeAutoRelationships(ctx.db, card.workspaceId, [id]);
+          recomputeCardSemanticEdges(ctx, id, card.workspaceId);
+        }
+        return card;
+      }),
+  );
+
   registerIpcHandle("db:cards:archive-done", (_e, { columnId }: { columnId: string }) => handle(() => {
     const cards = q.getCards(ctx.db, { columnId });
     const now = new Date().toISOString();
