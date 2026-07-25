@@ -6,7 +6,7 @@ import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
 import type { Workspace, Project, BoardColumn, ID } from "@/types";
 import { id, now } from "@/lib/utils";
-import { ipc, ipcAwait, isElectron } from "../ipc";
+import { ipc, ipcAwait, ipcAwaitResult, isElectron } from "../ipc";
 
 // ── Slice interface ───────────────────────────────────────────────────────────
 
@@ -27,6 +27,12 @@ export interface WorkspaceSlice {
   updateProject: (id: ID, patch: Partial<Project>) => void;
   archiveProject: (id: ID) => void;
   deleteProject: (id: ID) => void;
+  /**
+   * Merge every note, card, column, and idea-flow of `sourceId` into
+   * `targetId`, then delete the (now empty) source project. Resolves with a
+   * summary of what moved. Re-hydrates all slices from the DB afterwards.
+   */
+  mergeProject: (sourceId: ID, targetId: ID) => Promise<{ notes: number; cards: number } | null>;
 
   /**
    * Open the OS folder picker, persist the chosen path to workspace-config.json,
@@ -171,6 +177,29 @@ export const createWorkspaceSlice: StateCreator<
           projId
         )
     );
+  },
+
+  async mergeProject(sourceId, targetId) {
+    if (sourceId === targetId) return null;
+    if (!isElectron() || !window.electron) return null;
+
+    // If the source is the active project, switch to the target before the row
+    // disappears so the UI doesn't land on a deleted project.
+    if (get().activeProjectId === sourceId) {
+      set({ activeProjectId: targetId, activeView: "overview" });
+    }
+
+    // The merge touches notes, cards, columns, idea-flow and more across three
+    // slices; rather than surgically patching each, do the authoritative DB move
+    // then re-hydrate every slice from the DB so local state matches exactly.
+    const result = await ipcAwaitResult<{ counts: { notes: number; cards: number } }>(
+      (e) =>
+        (e.project as {
+          merge: (s: string, t: string) => Promise<{ data: { counts: { notes: number; cards: number } } } | { error: string }>;
+        }).merge(sourceId, targetId)
+    );
+    await get().hydrateFromElectron(true);
+    return "data" in result ? { notes: result.data.counts.notes, cards: result.data.counts.cards } : null;
   },
 
   async selectAndInitWorkspace() {

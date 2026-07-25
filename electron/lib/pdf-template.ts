@@ -6,4 +6,4 @@
  * the same self-contained document. This shim keeps the existing
  * `../lib/pdf-template` import path working.
  */
-export { buildPdfHtml, type PdfTheme } from "../../shared/notes/pdf-template";
+export { buildPdfHtml, buildPdfFooterTemplate, buildPdfHeaderTemplate, type PdfTheme } from "../../shared/notes/pdf-template";

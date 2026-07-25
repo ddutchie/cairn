@@ -24,6 +24,20 @@ export function pdfSafeFilename(title: string): string {
   return (title ?? "").replace(/[\/\\:*?"<>|]/g, "_").trim() || "untitled";
 }
 
+/**
+ * Escape a string for insertion into an HTML **text** context (element content,
+ * not attribute values). Escapes `&` first so already-escaped entities aren't
+ * double-escaped, then the angle brackets. Used for every place the note title
+ * is rendered into the PDF document — the `<title>`, the in-body heading, and
+ * the running footer — so escaping stays consistent across them.
+ */
+export function escapeHtmlText(text: string): string {
+  return (text ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 const LIGHT_VARS = {
   bg: "#ffffff",
   textPrimary: "#1a1917",
@@ -52,13 +66,25 @@ const DARK_VARS = {
   danger: "#e06c75",
 };
 
-export function buildPdfHtml(title: string, htmlBody: string, theme: PdfTheme = "light"): string {
+export function buildPdfHtml(
+  title: string,
+  htmlBody: string,
+  theme: PdfTheme = "light",
+  /**
+   * How to render the note title inside the document body.
+   * - "heading" (default): a small heading at the top of the first page. Used
+   *   by mobile (expo-print), which cannot render Chromium running footers.
+   * - "none": no in-body title. Used by the desktop app, which renders the
+   *   title in a repeating page footer via printToPDF's headerTemplate/footerTemplate.
+   */
+  titleMode: "heading" | "none" = "heading",
+): string {
   const v = theme === "dark" ? DARK_VARS : LIGHT_VARS;
   return `<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
-<title>${title.replace(/</g, "&lt;")}</title>
+<title>${escapeHtmlText(title)}</title>
 <style>
 *, *::before, *::after { box-sizing: border-box; }
 :root {
@@ -179,13 +205,42 @@ body {
 /* Page break hints */
 h1, h2, h3 { page-break-after: avoid; }
 pre, blockquote, table { page-break-inside: avoid; }
-/* Note title at top of PDF */
-.pdf-title { font-size: 1.75rem; font-weight: 700; margin: 0 0 1.5rem; color: var(--text-primary); }
+/* In-body note title (mobile only; desktop uses a running page footer) */
+.pdf-title { font-size: 1.5rem; font-weight: 700; margin: 0 0 1.25rem; color: var(--text-primary); }
 </style>
 </head>
 <body>
-<h1 class="pdf-title">${title.replace(/</g, "&lt;")}</h1>
+${titleMode === "heading" ? `<h1 class="pdf-title">${escapeHtmlText(title)}</h1>` : ""}
 <div class="prose-cairn">${htmlBody}</div>
 </body>
 </html>`;
+}
+
+/**
+ * Build the running footer template used by Electron's `printToPDF`
+ * (`displayHeaderFooter: true`). Renders the note title on the left and the
+ * current/total page number on the right, on every page.
+ *
+ * Chromium's header/footer templates are isolated documents that only support
+ * inline styles and a fixed set of magic classes (`.title`, `.pageNumber`,
+ * `.totalPages`, `.date`, `.url`). Font size must be set explicitly and small,
+ * and colours are constrained by print rendering — we use a muted grey.
+ */
+export function buildPdfFooterTemplate(title: string, theme: PdfTheme = "light"): string {
+  const color = theme === "dark" ? DARK_VARS.textSecondary : LIGHT_VARS.textSecondary;
+  const safeTitle = escapeHtmlText(title);
+  // box-sizing:border-box so the 100% width includes the 2.2cm horizontal
+  // padding — Chromium's footer template is an isolated document that does NOT
+  // inherit the main document's global border-box rule, so without this the
+  // padded footer overflows the page box and the right-aligned page number can
+  // be clipped.
+  return `<div style="box-sizing:border-box;width:100%;font-size:8px;color:${color};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:0 2.2cm;display:flex;align-items:center;justify-content:space-between;">
+  <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:70%;">${safeTitle}</span>
+  <span><span class="pageNumber"></span> / <span class="totalPages"></span></span>
+</div>`;
+}
+
+/** Minimal empty header (Chromium requires one when displayHeaderFooter is on). */
+export function buildPdfHeaderTemplate(): string {
+  return `<div></div>`;
 }

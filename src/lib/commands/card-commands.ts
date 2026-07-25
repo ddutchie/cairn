@@ -414,19 +414,34 @@ export function makeMoveCardToProjectCmd(
   newColumnId: ID,
   newOrder: number,
   newWorkspaceId: ID,
+  prevWorkspaceId: ID,
   set: StoreSet,
 ): Command {
+  // Cross-project card moves must go through card.moveToProject, not card.update:
+  // updateCard()'s SQL has no project_id/workspace_id columns, so routing the
+  // undo/redo through card.update would silently drop the project change and the
+  // card would re-surface in the wrong project on the next refresh/sync.
+  const move = (
+    e: NonNullable<Window["electron"]>,
+    id: ID,
+    projectId: ID,
+    columnId: ID,
+    order: number,
+  ) =>
+    (e.card as {
+      moveToProject: (id: ID, projectId: ID, columnId: ID, order: number) => Promise<unknown>;
+    }).moveToProject(id, projectId, columnId, order);
   return {
     label: `Move task to project`,
     async undo() {
       set((s) => ({
         cards: s.cards.map((c) =>
           c.id === cardId
-            ? { ...c, projectId: prevProjectId, columnId: prevColumnId, order: prevOrder, updatedAt: now() }
+            ? { ...c, projectId: prevProjectId, workspaceId: prevWorkspaceId, columnId: prevColumnId, order: prevOrder, updatedAt: now() }
             : c
         ),
       }));
-      ipc((e) => e.card.update(cardId, { projectId: prevProjectId, columnId: prevColumnId, order: prevOrder }));
+      ipc((e) => move(e, cardId, prevProjectId, prevColumnId, prevOrder));
     },
     async redo() {
       set((s) => ({
@@ -436,7 +451,7 @@ export function makeMoveCardToProjectCmd(
             : c
         ),
       }));
-      ipc((e) => e.card.update(cardId, { projectId: newProjectId, workspaceId: newWorkspaceId, columnId: newColumnId, order: newOrder }));
+      ipc((e) => move(e, cardId, newProjectId, newColumnId, newOrder));
     },
   };
 }

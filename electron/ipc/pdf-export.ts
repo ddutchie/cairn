@@ -13,7 +13,7 @@ import { dialog, BrowserWindow } from "electron";
 import fs from "fs";
 import { registerIpcHandle } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
-import { buildPdfHtml, type PdfTheme } from "../lib/pdf-template";
+import { buildPdfHtml, buildPdfFooterTemplate, buildPdfHeaderTemplate, type PdfTheme } from "../lib/pdf-template";
 
 /** Strip characters that are invalid in filenames on macOS/Windows. */
 function sanitizeFilename(name: string): string {
@@ -46,7 +46,7 @@ export function registerPdfExportHandler(ctx: DbContext): void {
           savePath = filePath;
         }
 
-        const fullHtml = buildPdfHtml(title, html, theme);
+        const fullHtml = buildPdfHtml(title, html, theme, "none");
 
         // Open a hidden window, load the HTML, print to PDF, then close
         const printWin = new BrowserWindow({
@@ -60,9 +60,13 @@ export function registerPdfExportHandler(ctx: DbContext): void {
           const pdfBuffer = await printWin.webContents.printToPDF({
             printBackground: true,
             pageSize: "A4",
-            // Margins are defined via @page in the HTML — use "default" so the
-            // CSS @page rule is respected rather than being overridden here.
-            margins: { marginType: "default" },
+            // Running footer: note title (left) + page number (right) on every page.
+            displayHeaderFooter: true,
+            headerTemplate: buildPdfHeaderTemplate(),
+            footerTemplate: buildPdfFooterTemplate(title, theme),
+            // Explicit margins so the footer has room. Values in inches:
+            // ~0.79in ≈ 2cm sides/top, ~0.59in ≈ 1.5cm bottom for the footer.
+            margins: { marginType: "custom", top: 0.79, bottom: 0.59, left: 0.87, right: 0.87 },
           });
 
           if (returnBuffer) {

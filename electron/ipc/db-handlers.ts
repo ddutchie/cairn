@@ -172,6 +172,64 @@ export function registerDbHandlers(ctx: DbContext): void {
     }
   }));
 
+  // Merge every entity of `sourceId` into `targetId`, then remove the source.
+  // The DB repoint runs in one transaction (q.mergeProject); afterwards we
+  // relocate each moved note's .md file into the target project's folder and
+  // remove the now-empty source folder. File moves are best-effort: the
+  // authoritative move already happened in SQLite, and startup
+  // reconcileProjectFolders would heal any stragglers, but we do it eagerly so
+  // the user doesn't have to restart.
+  registerIpcHandle(
+    "db:project:merge",
+    (_e, { sourceId, targetId }: { sourceId: string; targetId: string }) =>
+      handle(() => {
+        const result = q.mergeProject(ctx.db, sourceId, targetId);
+
+        // Relocate .md files: write each moved note into the TARGET folder (its
+        // project_id/workspaceId now point at the target, so getProjectName
+        // resolves the destination), then delete the source project's folder.
+        if (result.sourceName !== result.targetName) {
+          for (const moved of result.movedNotes) {
+            if (moved.type === "dashboard") continue; // dashboards have no .md file
+            const note = q.getNoteById(ctx.db, moved.id);
+            if (!note) continue;
+            try {
+              suppressNextChange(note.id);
+              writeNoteFile(ctx.workspacePath, {
+                ...note,
+                projectName: getProjectName(ctx.db, note.projectId),
+              });
+            } catch (e) {
+              console.warn("[merge] failed to relocate note file:", e instanceof Error ? e.message : e);
+            }
+          }
+          // Remove the source project's on-disk folder (now that its notes have
+          // been rewritten under the target). Best-effort.
+          try {
+            deleteProjectNotesDir(ctx.workspacePath, result.sourceName);
+          } catch (e) {
+            console.warn("[merge] failed to remove source project folder:", e instanceof Error ? e.message : e);
+          }
+          // Self-heal any stragglers (e.g. a note whose file write failed) so the
+          // filesystem matches the DB without needing a restart.
+          reconcileProjectFolders(ctx.db, ctx.workspacePath);
+        }
+
+        // Membership changed en masse → recompute relationships for the target
+        // workspace so the graph/semantic links reflect the merged project.
+        const target = q.getProjectById(ctx.db, targetId);
+        if (target?.workspaceId) {
+          const movedNoteIds = result.movedNotes.map((n) => n.id);
+          if (movedNoteIds.length > 0) {
+            for (const nid of movedNoteIds) invalidateRelationshipCache(ctx.db, nid);
+            computeAutoRelationships(ctx.db, target.workspaceId, movedNoteIds);
+          }
+        }
+
+        return result;
+      }),
+  );
+
   // ── Notes ─────────────────────────────────────────
   // All note mutations also write/update/delete the corresponding .md file.
   registerIpcHandle("db:note:list", (_e, { projectId }) => handle(() => q.getNotes(ctx.db, projectId)));
@@ -455,6 +513,28 @@ export function registerDbHandlers(ctx: DbContext): void {
     return card;
   }));
   registerIpcHandle("db:card:delete", (_e, { id }) => handle(() => q.deleteCard(ctx.db, id)));
+
+  registerIpcHandle(
+    "db:card:moveToProject",
+    (_e, { id, projectId, columnId, order }: { id: string; projectId: string; columnId: string; order: number }) =>
+      handle(() => {
+        // Cross-project card moves previously went through updateCard(), whose
+        // UPDATE has no project_id/workspace_id columns — so the move was
+        // silently dropped and the card re-surfaced in the old project (board
+        // reads and sync reconcile both scope by project_id). Persist it with a
+        // dedicated direct-SET query that also validates the target column
+        // belongs to the target project.
+        const card = q.moveCardToProject(ctx.db, id, projectId, columnId, order);
+        // Membership changed → relationships/semantic edges are workspace-scoped,
+        // so recompute for the (possibly new) workspace.
+        invalidateRelationshipCache(ctx.db, id);
+        if (card.workspaceId) {
+          computeAutoRelationships(ctx.db, card.workspaceId, [id]);
+          recomputeCardSemanticEdges(ctx, id, card.workspaceId);
+        }
+        return card;
+      }),
+  );
 
   registerIpcHandle("db:cards:archive-done", (_e, { columnId }: { columnId: string }) => handle(() => {
     const cards = q.getCards(ctx.db, { columnId });

@@ -147,6 +147,7 @@ const api = {
     update: (id: string, patch: unknown) => invoke("db:project:update", { id, patch }),
     updateSettings: (id: string, settings: unknown) => invoke("db:project:updateSettings", { id, settings }),
     delete: (id: string) => invoke("db:project:delete", { id }),
+    merge:  (sourceId: string, targetId: string) => invoke("db:project:merge", { sourceId, targetId }),
   },
 
   // ── Notes ────────────────────────────────────
@@ -175,6 +176,8 @@ const api = {
     list:         (opts?: unknown) => invoke("db:card:list", opts),
     create:       (args: unknown) => invoke("db:card:create", args),
     update:       (id: string, patch: unknown) => invoke("db:card:update", { id, patch }),
+    moveToProject:(id: string, projectId: string, columnId: string, order: number) =>
+      invoke("db:card:moveToProject", { id, projectId, columnId, order }),
     delete:       (id: string) => invoke("db:card:delete", { id }),
     archiveDone:  (columnId: string) => invoke("db:cards:archive-done", { columnId }),
     addBlocker:   (cardId: string, blockerCardId: string) => invoke("db:card:addBlocker", { cardId, blockerCardId }),
