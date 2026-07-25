@@ -197,6 +197,88 @@ function latestPrompt(messages: UIMessage[]): string {
 }
 
 /**
+ * Coerce a JSON Schema into the subset Apple Foundation Models accepts. The
+ * native guided-generation parser only understands the types object, array,
+ * string, number, integer, boolean — it rejects the whole tool if any node has
+ * `type: "null"` (or a nullable union like `["string","null"]`, the common JSON
+ * Schema idiom for optional fields). Community `toolDefinition`s are author-
+ * controlled, so a connector can legitimately carry these; we normalise rather
+ * than reject:
+ *   - `["string","null"]`  → `"string"`  (drop null from the union)
+ *   - `"null"` / `["null"]`→ `"string"`  (no representable null type; fall back)
+ *   - anyOf/oneOf/allOf    → recurse, dropping pure-null branches
+ * Applied to BOTH the PCC and on-device paths since it's an Apple-only limit.
+ */
+const APPLE_TYPES = new Set(["object", "array", "string", "number", "integer", "boolean"]);
+
+function sanitizeAppleSchema(schema: unknown): unknown {
+  if (Array.isArray(schema)) return schema.map(sanitizeAppleSchema);
+  if (!schema || typeof schema !== "object") return schema;
+  const s = schema as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+
+  for (const [k, v] of Object.entries(s)) {
+    if (k === "type") {
+      // A null-only node isn't representable in Apple's type set — fall back to
+      // "string" so the field still validates (rather than dropping the type and
+      // risking rejection). Real types + nullable unions collapse to the type.
+      out.type = normalizeType(v) ?? "string";
+    } else if (k === "properties" && v && typeof v === "object") {
+      const props: Record<string, unknown> = {};
+      for (const [pk, pv] of Object.entries(v as Record<string, unknown>)) {
+        props[pk] = sanitizeAppleSchema(pv);
+      }
+      out.properties = props;
+    } else if (k === "items") {
+      out.items = sanitizeAppleSchema(v);
+    } else if ((k === "anyOf" || k === "oneOf" || k === "allOf") && Array.isArray(v)) {
+      // Drop pure-null branches (the nullable idiom), then sanitise the rest.
+      const branches = v
+        .filter((b) => normalizeType((b as Record<string, unknown>)?.type) !== undefined)
+        .map(sanitizeAppleSchema);
+      if (branches.length === 1) {
+        // A single surviving branch — inline it so we don't emit a 1-element union.
+        Object.assign(out, branches[0]);
+      } else if (branches.length > 1) {
+        out[k] = branches;
+      }
+      // 0 branches → omit the combinator entirely.
+    } else {
+      out[k] = sanitizeAppleSchema(v);
+    }
+  }
+  // A schema node that ended up with no `type` (e.g. a property whose only
+  // constraint was a null-only combinator) is not representable — Apple expects
+  // every node to declare a supported type, so default the leftover to "string".
+  if (!("type" in out) && !("properties" in out) && !("items" in out) && !hasCombinator(out)) {
+    out.type = "string";
+  }
+  return out;
+}
+
+function hasCombinator(o: Record<string, unknown>): boolean {
+  return "anyOf" in o || "oneOf" in o || "allOf" in o;
+}
+
+/**
+ * Reduce a schema node's `type` to a single Apple-supported type string, or
+ * `undefined` if the node is null-only (caller decides how to handle that).
+ * A bare unsupported/absent type falls back to "string".
+ */
+function normalizeType(type: unknown): string | undefined {
+  if (Array.isArray(type)) {
+    const supported = type.filter((t): t is string => typeof t === "string" && APPLE_TYPES.has(t));
+    if (supported.length > 0) return supported[0];
+    // Only "null" (or other unsupported) present → not representable.
+    return undefined;
+  }
+  if (typeof type === "string") {
+    return APPLE_TYPES.has(type) ? type : undefined;
+  }
+  return undefined;
+}
+
+/**
  * Strip a JSON Schema down to what guided generation needs, dropping token-heavy
  * fields (descriptions, additionalProperties, titles) that bloat the 4096-token
  * window. Keeps structure: type, properties, required, items, enum, and numeric
@@ -237,7 +319,10 @@ function leanSchema(schema: unknown): unknown {
  */
 function buildTools(tools: Record<string, AiTool>, server: boolean): AppleTool[] {
   return Object.entries(tools).map(([name, t]) => {
-    const rawSchema = t.jsonSchema ?? { type: "object", properties: {} };
+    // Sanitise to Apple's supported type set FIRST (both paths) so an author-
+    // supplied nullable/`null` type in a community tool schema can't get the
+    // whole tool rejected by the native parser.
+    const rawSchema = sanitizeAppleSchema(t.jsonSchema ?? { type: "object", properties: {} });
     if (server) {
       return {
         name,
