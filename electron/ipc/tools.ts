@@ -356,7 +356,7 @@ export function registerToolsHandlers(db: Database): void {
  * never create a junk ref or address the wrong tool kind's namespace.
  */
 function assertSecretIdentity(toolType: string, toolId: string, key: string): void {
-  if (toolType !== "mcp" && toolType !== "service") {
+  if (toolType !== "mcp" && toolType !== "service" && toolType !== "llm") {
     throw new Error(`Invalid secret toolType: ${String(toolType)}`);
   }
   if (typeof toolId !== "string" || !toolId.trim()) {

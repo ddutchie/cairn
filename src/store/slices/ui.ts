@@ -36,7 +36,12 @@ export interface SavedProvider {
   baseUrl: string;
   /** API key. Empty = use the server-side OPENAI_API_KEY env var / keyless local. */
   apiKey: string;
-  /** Default model id for this provider. */
+  /**
+   * Default model id for this provider. Used to SEED a surface's model when it
+   * first selects this provider. Each consumer (AI Chat, coding agent) then
+   * keeps its own `model` on `aiConfig`/`agentConfig` and can diverge — so the
+   * same provider can run a different model in chat vs. the agent.
+   */
   model: string;
 }
 
@@ -52,22 +57,34 @@ type ProviderCarrier = {
   activeProviderId?: string;
 };
 
-/** Mirror a provider's connection into a config + mark it that config's active. */
+/**
+ * Mirror a provider's connection into a config + mark it that config's active.
+ * Seeds `model` from the provider default (used on select/add). Once selected,
+ * the config's model is independent — see `reconcileConfig`, which preserves it.
+ */
 function mirrorProvider<C extends ProviderCarrier>(config: C, p: SavedProvider): C {
   return { ...config, activeProviderId: p.id, baseUrl: p.baseUrl, apiKey: p.apiKey, model: p.model };
+}
+
+/** Re-sync only the CONNECTION (baseUrl/apiKey) from a provider, keeping the
+ *  config's own chosen model. Used when the shared list is edited/deleted. */
+function syncConnection<C extends ProviderCarrier>(config: C, p: SavedProvider): C {
+  return { ...config, activeProviderId: p.id, baseUrl: p.baseUrl, apiKey: p.apiKey };
 }
 
 /**
  * Reconcile a config after the shared provider list changed. Only touches a
  * config that had a provider selected: if its active provider still exists,
- * re-mirror it (picks up edits); if it was just deleted, fall back to the first
- * remaining provider. A config with NO active provider is left untouched — an
- * unselected surface must never inherit list[0] or the other surface's choice.
+ * re-sync its connection (baseUrl/apiKey) while KEEPING the config's own model;
+ * if it was just deleted, fall back to the first remaining provider (seeding
+ * that provider's default model). A config with NO active provider is left
+ * untouched — an unselected surface must never inherit list[0] or the other
+ * surface's choice.
  */
 function reconcileConfig<C extends ProviderCarrier>(config: C, list: SavedProvider[]): C {
   if (!config.activeProviderId) return config; // never auto-select for an unselected surface
   const active = list.find((p) => p.id === config.activeProviderId);
-  if (active) return mirrorProvider(config, active);
+  if (active) return syncConnection(config, active); // keep the config's own model
   const fallback = list[0];
   return fallback ? mirrorProvider(config, fallback) : config;
 }
@@ -86,6 +103,92 @@ function persistAgent(next: AgentConfig): void {
   if (typeof window !== "undefined" && window.electron?.saveAgentSettings) {
     window.electron.saveAgentSettings(next as unknown as Record<string, unknown>).catch(() => {});
   }
+}
+
+/** True if a value is a keychain reference token (not a raw key). */
+function isKeyRef(v: string | undefined | null): boolean {
+  return typeof v === "string" && v.startsWith("secret://");
+}
+
+/**
+ * One-time migration: move any RAW LLM API key found in the persisted configs
+ * (legacy top-level `apiKey`, or `savedProviders[].apiKey`) into the OS keychain
+ * and replace it with a `secret://llm:…/apiKey` reference token. Returns the
+ * possibly-updated configs (or the originals if nothing changed / no electron).
+ *
+ * Runs during hydration so upgrading users' plaintext keys are relocated to the
+ * keychain and scrubbed from localStorage + the settings cache on next launch.
+ */
+export async function migrateLlmKeysToKeychain(
+  ai: AIConfig,
+  agent: AgentConfig,
+): Promise<{ ai: AIConfig; agent: AgentConfig; changed: boolean }> {
+  const secrets = typeof window !== "undefined" ? window.electron?.secrets : undefined;
+  if (!secrets) return { ai, agent, changed: false };
+
+  let changed = false;
+
+  // 1. Saved providers: convert each provider's raw key to a keychain ref.
+  const providers = ai.savedProviders ?? [];
+  const migratedProviders: SavedProvider[] = [];
+  for (const p of providers) {
+    if (p.apiKey && !isKeyRef(p.apiKey)) {
+      try {
+        const ref = await secrets.set("llm", p.id, "apiKey", p.apiKey);
+        migratedProviders.push({ ...p, apiKey: ref });
+        changed = true;
+      } catch {
+        // Keychain unavailable — drop the raw key rather than keep it in plaintext.
+        migratedProviders.push({ ...p, apiKey: "" });
+        changed = true;
+      }
+    } else {
+      migratedProviders.push(p);
+    }
+  }
+
+  let nextAi = ai;
+  if (changed) nextAi = { ...ai, savedProviders: migratedProviders };
+
+  // 2. Mirror the active provider's (now-ref) key onto the top-level field.
+  const activeAi = migratedProviders.find((p) => p.id === nextAi.activeProviderId);
+  if (activeAi) {
+    if (nextAi.apiKey !== activeAi.apiKey) {
+      nextAi = { ...nextAi, apiKey: activeAi.apiKey };
+      changed = true; // persist the refreshed top-level key
+    }
+  } else if (nextAi.apiKey && !isKeyRef(nextAi.apiKey)) {
+    // No provider selected but a legacy raw top-level key exists: store it under
+    // a stable synthetic id so it survives as a ref (keyless if it fails).
+    try {
+      const ref = await secrets.set("llm", "legacy-ai", "apiKey", nextAi.apiKey);
+      nextAi = { ...nextAi, apiKey: ref };
+    } catch {
+      nextAi = { ...nextAi, apiKey: "" };
+    }
+    changed = true;
+  }
+
+  // 3. Coding agent top-level key (shares the provider list, but may carry its
+  //    own legacy raw key / its active provider's ref).
+  let nextAgent = agent;
+  const activeAgent = migratedProviders.find((p) => p.id === agent.activeProviderId);
+  if (activeAgent) {
+    if (agent.apiKey !== activeAgent.apiKey) {
+      nextAgent = { ...agent, apiKey: activeAgent.apiKey };
+      changed = true;
+    }
+  } else if (agent.apiKey && !isKeyRef(agent.apiKey)) {
+    try {
+      const ref = await secrets.set("llm", "legacy-agent", "apiKey", agent.apiKey);
+      nextAgent = { ...agent, apiKey: ref };
+    } catch {
+      nextAgent = { ...agent, apiKey: "" };
+    }
+    changed = true;
+  }
+
+  return { ai: nextAi, agent: nextAgent, changed };
 }
 
 
@@ -409,7 +512,11 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
     set((s) => {
       const p = (s.aiConfig.savedProviders ?? []).find((x) => x.id === id);
       if (!p) return {};
-      const nextAi = mirrorProvider(s.aiConfig, p);
+      // Switching provider seeds the model from the provider default; re-selecting
+      // the current provider keeps the surface's chosen model.
+      const nextAi = s.aiConfig.activeProviderId === id
+        ? syncConnection(s.aiConfig, p)
+        : mirrorProvider(s.aiConfig, p);
       persistAi(nextAi);
       return { aiConfig: nextAi };
     });
@@ -420,7 +527,9 @@ export const createUISlice: StateCreator<CairnStore, [], [], UISlice> = (
       // The list lives on aiConfig; read it there.
       const p = (s.aiConfig.savedProviders ?? []).find((x) => x.id === id);
       if (!p) return {};
-      const nextAgent = mirrorProvider(s.agentConfig, p);
+      const nextAgent = s.agentConfig.activeProviderId === id
+        ? syncConnection(s.agentConfig, p)
+        : mirrorProvider(s.agentConfig, p);
       persistAgent(nextAgent);
       return { agentConfig: nextAgent };
     });

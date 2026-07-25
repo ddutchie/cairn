@@ -14,8 +14,9 @@ import type Database from "better-sqlite3";
 import { isLocalEndpoint, normaliseBaseUrl, type OpenAIMessage, calculatePromptBreakdown, scaleBreakdown, type TokenBreakdown } from "../lib/llm";
 import { TOOLS, buildSystemPrompt, type ChatRequest } from "../lib/tools";
 import { getExternalToolDefs } from "../lib/external-tools";
-import { saveCachedConfig, getCachedConfig } from "../lib/config-cache";
+import { getCachedConfig, cacheLlmConnection } from "../lib/config-cache";
 import { runToolLoop } from "../lib/chat-loop";
+import { resolveLlmApiKey } from "../lib/secure-store";
 
 // Track one AbortController per renderer webContents ID
 const abortControllers = new Map<number, AbortController>();
@@ -31,14 +32,9 @@ function resolveAIConfig(config?: {
   model: string;
   apiKey: string;
 } {
-  if (config?.apiKey) {
-    saveCachedConfig("ai", {
-      provider: config.provider,
-      baseUrl: config.baseUrl,
-      model: config.model,
-      apiKey: config.apiKey,
-    });
-  }
+  // Persist the connection (provider/baseUrl/model + a keychain-ref apiKey only;
+  // cacheLlmConnection scrubs any raw key). The renderer sends a ref, not a key.
+  cacheLlmConnection("ai", config);
 
   let reqConfig = config;
   const isLocal = config?.baseUrl ? isLocalEndpoint(normaliseBaseUrl(config.baseUrl)) : false;
@@ -59,7 +55,9 @@ function resolveAIConfig(config?: {
     provider: reqConfig?.provider ?? "openai",
     baseUrl: normaliseBaseUrl(reqConfig?.baseUrl ?? "https://api.openai.com"),
     model: reqConfig?.model ?? "gpt-4o-mini",
-    apiKey: reqConfig?.apiKey ?? "",
+    // Resolve the keychain ref (or pass a literal through) to the real key used
+    // for this request only. Never stored anywhere from here on.
+    apiKey: resolveLlmApiKey(reqConfig?.apiKey),
   };
 }
 

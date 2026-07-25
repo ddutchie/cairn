@@ -29,17 +29,22 @@ const EMPTY_PROVIDERS: SavedProvider[] = [];
  */
 export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
   const {
-    savedProviders, activeProviderId,
-    addSavedProvider, updateSavedProvider, deleteSavedProvider, selectProvider,
+    savedProviders, activeProviderId, activeModel,
+    addSavedProvider, updateSavedProvider, deleteSavedProvider, selectProvider, setModel,
   } = useCairnStore(useShallow((s) => ({
     // The list is always shared — read it from aiConfig.
     savedProviders:      s.aiConfig.savedProviders,
-    // Active id + select target depend on which config this instance drives.
+    // Active id + the surface's chosen model depend on which config this drives.
     activeProviderId:    kind === "agent" ? s.agentConfig.activeProviderId : s.aiConfig.activeProviderId,
+    activeModel:         kind === "agent" ? s.agentConfig.model : s.aiConfig.model,
     addSavedProvider:    s.addSavedProvider,
     updateSavedProvider: s.updateSavedProvider,
     deleteSavedProvider: s.deleteSavedProvider,
     selectProvider:      kind === "agent" ? s.selectAgentProvider : s.selectSavedProvider,
+    // Model is a PER-SURFACE choice on the config, not the shared provider.
+    setModel:            kind === "agent"
+      ? (model: string) => s.setAgentConfig({ model })
+      : (model: string) => s.setAIConfig({ model }),
   })));
 
   const providers = savedProviders ?? EMPTY_PROVIDERS;
@@ -91,7 +96,9 @@ export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
                     </span>
                     <span className="flex flex-col min-w-0">
                       <span className="truncate">{p.name}</span>
-                      <span className="truncate text-[0.714rem] text-[var(--text-tertiary)] font-mono">{p.model}</span>
+                      <span className="truncate text-[0.714rem] text-[var(--text-tertiary)] font-mono">
+                        {p.id === activeProviderId ? (activeModel || p.model) : p.model}
+                      </span>
                     </span>
                   </DropdownMenuItem>
                 ))}
@@ -116,7 +123,10 @@ export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
                 <Pencil size={10} /> Edit
               </button>
               <button
-                onClick={() => deleteSavedProvider(active.id)}
+                onClick={() => {
+                  window.electron?.secrets?.delete("llm", active.id, "apiKey");
+                  deleteSavedProvider(active.id);
+                }}
                 className="px-2 py-1 text-[0.714rem] rounded border border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--danger)] hover:text-[var(--danger)] transition-colors flex items-center gap-1 cursor-pointer"
               >
                 <Trash2 size={10} /> Delete
@@ -126,15 +136,53 @@ export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
         </div>
       </SettingsRow>
 
+      {/* Quick model switch for THIS surface's active provider — writes to the
+          config (aiConfig/agentConfig), not the shared provider, so chat and the
+          agent can run different models on the same connection. */}
+      {active && (
+        <ActiveModelRow
+          key={active.id}
+          provider={active}
+          model={activeModel || active.model}
+          onModelChange={setModel}
+        />
+      )}
+
       {editing && (
         <ProviderForm
           key={editing}
           initial={editingProvider}
           defaultModel={kind === "agent" ? "gpt-4o" : "gpt-4o-mini"}
           onCancel={() => setEditing(null)}
-          onSave={(data) => {
-            if (editing === "new") addSavedProvider(data, kind);
-            else updateSavedProvider(editing, data);
+          onSave={async ({ name, baseUrl, model, rawKey, keyDirty }) => {
+            if (editing === "new") {
+              // Create first (no key), then store the raw key in the OS keychain
+              // and save the returned reference token — the raw key never lands
+              // in the store, localStorage, or the settings cache.
+              const id = addSavedProvider({ name, baseUrl, model, apiKey: "" }, kind);
+              if (keyDirty && rawKey) {
+                try {
+                  const ref = await window.electron?.secrets?.set("llm", id, "apiKey", rawKey);
+                  updateSavedProvider(id, { apiKey: ref ?? "" });
+                } catch (e) {
+                  // Don't leave an orphaned empty-key provider on keychain failure.
+                  deleteSavedProvider(id);
+                  throw e;
+                }
+              }
+            } else {
+              const patch: { name: string; baseUrl: string; model: string; apiKey?: string } = { name, baseUrl, model };
+              if (keyDirty) {
+                if (rawKey) {
+                  const ref = await window.electron?.secrets?.set("llm", editing, "apiKey", rawKey);
+                  patch.apiKey = ref ?? "";
+                } else {
+                  await window.electron?.secrets?.delete("llm", editing, "apiKey");
+                  patch.apiKey = "";
+                }
+              }
+              updateSavedProvider(editing, patch);
+            }
             setEditing(null);
           }}
         />
@@ -151,25 +199,48 @@ function ProviderForm({
 }: {
   initial?: SavedProvider;
   defaultModel: string;
-  onSave: (data: Omit<SavedProvider, "id">) => void;
+  onSave: (data: { name: string; baseUrl: string; model: string; rawKey: string; keyDirty: boolean }) => Promise<void>;
   onCancel: () => void;
 }) {
   const [name, setName] = useState(initial?.name ?? "");
   const [baseUrl, setBaseUrl] = useState(initial?.baseUrl ?? "https://api.openai.com");
-  const [apiKey, setApiKey] = useState(initial?.apiKey ?? "");
   const [model, setModel] = useState(initial?.model ?? defaultModel);
+  // The stored key is a keychain reference, never shown. `keyInput` holds only a
+  // newly-typed raw key; `keyDirty` marks that the user changed it.
+  const [keyInput, setKeyInput] = useState("");
+  const [keyDirty, setKeyDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  // Whether this provider already has a key stored (drives the placeholder).
+  const hadKey = !!(initial?.apiKey && initial.apiKey.startsWith("secret://"));
 
-  // Fetch this provider's own model list (from its baseUrl/apiKey) so the model
-  // picker can offer real options + a Refresh, matching the chat model picker.
-  // Hydrate from the per-endpoint cache (or fetch once) on open — no hardcoded
-  // fallbacks, so the dropdown only ever lists real models.
+  // Fetch this provider's own model list so the picker can offer real options +
+  // Refresh. Hydrate from cache (or fetch once) on open — no hardcoded
+  // fallbacks. The key passed is the stored ref (resolved in main) or, once the
+  // user types a new one, the raw key.
   const { availableModels, fetchModels, ensureModels, resetModels, modelsLoading, testState } = useEndpointConfig();
+  const keyForFetch = keyDirty ? keyInput : (initial?.apiKey ?? "");
   useEffect(() => {
-    ensureModels(baseUrl, apiKey);
+    ensureModels(baseUrl, keyForFetch);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const canSave = name.trim().length > 0 && baseUrl.trim().length > 0;
+  const canSave = name.trim().length > 0 && baseUrl.trim().length > 0 && !saving;
+
+  async function handleSave() {
+    if (!canSave) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await onSave({ name: name.trim(), baseUrl: baseUrl.trim(), model: model.trim(), rawKey: keyInput.trim(), keyDirty });
+      // onSave closes the form on success.
+    } catch (e) {
+      // Keychain (or persistence) failure — keep the form open so the user can
+      // retry; the caller has already cleaned up any half-created provider.
+      setSaveError(e instanceof Error ? e.message : "Couldn't save the provider — please try again.");
+      setSaving(false);
+    }
+  }
 
   const inputCls = "px-2.5 py-1.5 text-xs w-full rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)]";
 
@@ -184,7 +255,7 @@ function ProviderForm({
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="OpenAI" className={inputCls} />
         </label>
         <div className="flex flex-col gap-1">
-          <span className="text-[0.714rem] text-[var(--text-tertiary)]">Model</span>
+          <span className="text-[0.714rem] text-[var(--text-tertiary)]">Default model</span>
           <ModelPicker
             value={model}
             options={availableModels}
@@ -193,7 +264,7 @@ function ProviderForm({
             placeholder={defaultModel}
             size="md"
             onChange={setModel}
-            onRefresh={() => fetchModels(baseUrl, apiKey)}
+            onRefresh={() => fetchModels(baseUrl, keyForFetch)}
           />
         </div>
         <label className="flex flex-col gap-1">
@@ -210,13 +281,17 @@ function ProviderForm({
           <span className="text-[0.714rem] text-[var(--text-tertiary)]">API Key</span>
           <input
             type="password"
-            value={apiKey}
-            onChange={(e) => { setApiKey(e.target.value); resetModels(); }}
-            placeholder="sk-… (optional for local)"
+            value={keyInput}
+            onChange={(e) => { setKeyInput(e.target.value); setKeyDirty(true); resetModels(); }}
+            placeholder={hadKey ? "•••••••• stored — type to replace" : "sk-… (optional for local)"}
             className={inputCls}
           />
+          <span className="text-[0.643rem] text-[var(--text-tertiary)]">Stored in your OS keychain, never synced.</span>
         </label>
       </div>
+      {saveError && (
+        <p className="text-[0.714rem] text-[var(--danger)]">{saveError}</p>
+      )}
       <div className="flex justify-end gap-1.5 pt-0.5">
         <button
           onClick={onCancel}
@@ -225,7 +300,7 @@ function ProviderForm({
           <X size={11} /> Cancel
         </button>
         <button
-          onClick={() => canSave && onSave({ name: name.trim(), baseUrl: baseUrl.trim(), apiKey: apiKey.trim(), model: model.trim() })}
+          onClick={handleSave}
           disabled={!canSave}
           className={cn(
             "px-2.5 py-1 text-[0.714rem] rounded border transition-colors flex items-center gap-1",
@@ -234,9 +309,51 @@ function ProviderForm({
               : "border-[var(--border)] text-[var(--text-tertiary)] opacity-50 cursor-not-allowed",
           )}
         >
-          <Check size={11} /> {initial ? "Save" : "Add"}
+          <Check size={11} /> {saving ? "Saving…" : initial ? "Save" : "Add"}
         </button>
       </div>
     </div>
+  );
+}
+
+/**
+ * A standalone "Model" settings row for the currently-active provider, so the
+ * model can be changed without opening the full Add/Edit form. Fetches the
+ * provider's model list (cache-first, via the main-process IPC that resolves the
+ * key ref) and writes the chosen model to THIS surface's config — the coding
+ * agent and chat keep independent models on the same shared provider.
+ */
+function ActiveModelRow({
+  provider,
+  model,
+  onModelChange,
+}: {
+  provider: SavedProvider;
+  model: string;
+  onModelChange: (model: string) => void;
+}) {
+  const { availableModels, fetchModels, ensureModels, modelsLoading, testState } = useEndpointConfig();
+  useEffect(() => {
+    ensureModels(provider.baseUrl, provider.apiKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [provider.id]);
+
+  return (
+    <SettingsRow label="Model" description="Model for the active provider. Chat and the coding agent keep separate models on the same provider.">
+      <div className="w-64">
+        <ModelPicker
+          value={model}
+          options={availableModels}
+          loading={modelsLoading}
+          errored={testState === "error"}
+          placeholder={provider.model || "gpt-4o-mini"}
+          size="md"
+          align="end"
+          className="w-full"
+          onChange={onModelChange}
+          onRefresh={() => fetchModels(provider.baseUrl, provider.apiKey)}
+        />
+      </div>
+    </SettingsRow>
   );
 }

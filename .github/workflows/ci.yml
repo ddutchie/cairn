@@ -34,6 +34,9 @@ jobs:
       - name: Generate licenses (required by type check)
         run: node scripts/generate-licenses.js
 
+      - name: Generate What's New feature registry (required by type check)
+        run: node scripts/generate-features.js
+
       - name: Type check
         run: npm run type-check:all
 
@@ -101,6 +104,8 @@ jobs:
           cp node_modules/better-sqlite3/build/Release/better_sqlite3.node vitest-native/
 
       - name: Run tests
+        # `npm test` generates licenses + the What's New registry (imported by app
+        # code under test) and compiles before running vitest.
         run: npm test
 
   # ── Build ───────────────────────────────────────────────────────────────────
@@ -138,6 +143,9 @@ jobs:
 
       - name: Generate licenses
         run: node scripts/generate-licenses.js
+
+      - name: Generate What's New feature registry
+        run: node scripts/generate-features.js
 
       - name: Build
         run: npx cross-env ELECTRON_BUILD=true npx next build
@@ -185,6 +193,11 @@ jobs:
 
       - name: Install Playwright system dependencies
         run: npx playwright install-deps chromium
+
+      - name: Generate licenses + What's New registry (baked into the built app)
+        run: |
+          node scripts/generate-licenses.js
+          node scripts/generate-features.js
 
       - name: Run E2E tests
         run: npm run test:e2e

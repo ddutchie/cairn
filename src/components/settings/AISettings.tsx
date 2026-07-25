@@ -7,10 +7,6 @@ import { Cpu, Globe } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { contextLimitForModel } from "@/lib/models-dev";
 import { SettingsGroup, SettingsRow, Toggle, StepperSettingsRow } from "./shared";
-import {
-  BaseUrlRow, ApiKeyRow, ModelSelectionRow, CloudConnectionStatus,
-  useEndpointConfig, isLocalBaseUrl,
-} from "./endpoint-components";
 import { MCPServerSettings } from "./MCPSettings";
 import { LlamaServerConsole } from "./LlamaServerConsole";
 import { ProviderManager } from "./ProviderManager";
@@ -21,30 +17,15 @@ export function AISettings() {
     setAIConfig:          s.setAIConfig,
   })));
 
-  const {
-    showKey, testState, testError, availableModels, modelsLoading,
-    setShowKey, fetchModels, ensureModels, resetModels,
-  } = useEndpointConfig();
-
-  // General config destructuring
-  const { provider = "openai", baseUrl, model, apiKey, aiEnabled, activeProviderId } = aiConfig;
-  const isLocal = isLocalBaseUrl(baseUrl);
+  // General config destructuring. Connection fields (baseUrl/apiKey/model) are
+  // now managed entirely by the ProviderManager switcher below; here we only
+  // need `provider` (which backend), `model` (for the context lookup), and the
+  // behavioural fields.
+  const { provider = "openai", model, aiEnabled } = aiConfig;
 
   function updateAIConfig(patch: Partial<typeof aiConfig>) {
     setAIConfig(patch);
-    if (patch.baseUrl !== undefined || patch.apiKey !== undefined) {
-      resetModels();
-    }
   }
-
-  // Populate the model list from cache (or fetch once) when the cloud provider
-  // is selected or the active saved provider changes. Not on every keystroke in
-  // the URL/key fields (Refresh in the picker re-queries after edits). No
-  // hardcoded fallbacks — the picker shows only real models.
-  useEffect(() => {
-    if (provider !== "localllm") ensureModels(baseUrl, apiKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [provider, activeProviderId]);
 
   // Look up the current model's context window from models.dev (cached). When
   // Auto is enabled, the detected value is applied to contextLimit automatically
@@ -161,25 +142,6 @@ export function AISettings() {
         ) : (
           <>
             <ProviderManager kind="ai" />
-            <BaseUrlRow baseUrl={baseUrl} onChange={(url) => updateAIConfig({ baseUrl: url })} showPresets={false} />
-            <ApiKeyRow
-              apiKey={apiKey}
-              isLocal={isLocal}
-              showKey={showKey}
-              onToggleShowKey={() => setShowKey((s) => !s)}
-              onChange={(key) => updateAIConfig({ apiKey: key })}
-            />
-            <ModelSelectionRow
-              model={model}
-              modelOptions={availableModels}
-              availableModelsCount={availableModels.length}
-              modelsLoading={modelsLoading}
-              testState={testState}
-              testError={testError}
-              placeholder="gpt-4o-mini"
-              onModelChange={(m) => updateAIConfig({ model: m })}
-              onFetch={() => fetchModels(baseUrl, apiKey)}
-            />
 
             {/* Max Steps — applies to all providers */}
             {maxStepsRow}
@@ -242,11 +204,6 @@ export function AISettings() {
                 label="Enable subagents"
               />
             </SettingsRow>
-
-            {/* Cloud connection status */}
-            <div className="flex items-center gap-3 pt-1 text-xs">
-              <CloudConnectionStatus testState={testState} baseUrl={baseUrl} model={model} />
-            </div>
           </>
         )}
       </SettingsGroup>

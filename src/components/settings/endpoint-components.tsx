@@ -93,44 +93,56 @@ export function useEndpointConfig(): UseEndpointConfigResult {
   const [testError, setTestError] = useState("");
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
-  const abortRef = React.useRef<AbortController | null>(null);
   const resetTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Advances on every fetch so a slow older request can't overwrite the state of
+  // a newer one (endpoint/key changed, or a rapid re-fetch).
+  const fetchGenRef = React.useRef(0);
 
   const fetchModels = useCallback(async (baseUrl: string, apiKey: string) => {
-    if (abortRef.current) abortRef.current.abort();
     if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
-    const ac = new AbortController();
-    abortRef.current = ac;
+    const gen = ++fetchGenRef.current;
+    const isCurrent = () => gen === fetchGenRef.current;
 
     setModelsLoading(true);
     setTestState("testing");
     try {
-      const url = normBaseUrl(baseUrl);
-      const headers: Record<string, string> = {};
-      if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+      // Fetch via the main process so the key (a keychain ref) is resolved there
+      // and never crosses into the renderer or the CSP boundary. Falls back to a
+      // renderer fetch only in the web/no-electron context.
+      let ids: string[];
+      if (typeof window !== "undefined" && window.electron?.ai?.fetchModels) {
+        ids = await window.electron.ai.fetchModels({ baseUrl, apiKey });
+      } else {
+        const url = normBaseUrl(baseUrl);
+        const headers: Record<string, string> = {};
+        if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+        // Abort a hung endpoint after 12s (matches the main-process handler).
+        const ac = new AbortController();
+        const timer = setTimeout(() => ac.abort(), 12_000);
+        try {
+          const res = await fetch(`${url}/v1/models`, { headers, signal: ac.signal });
+          if (!res.ok) throw new Error(`${res.status}`);
+          const data = await res.json();
+          ids = (data?.data ?? [])
+            .map((m: { id: string }) => m.id)
+            .filter((id: string) => !id.includes("embed") && !id.includes("whisper") && !id.includes("tts") && !id.includes("dall-e"))
+            .sort();
+        } finally {
+          clearTimeout(timer);
+        }
+      }
 
-      const res = await fetch(`${url}/v1/models`, { headers, signal: ac.signal });
-      if (!res.ok) throw new Error(`${res.status}`);
-
-      const data = await res.json();
-      const ids: string[] = (data?.data ?? [])
-        .map((m: { id: string }) => m.id)
-        .filter((id: string) => {
-          return !id.includes("embed") && !id.includes("whisper") && !id.includes("tts") && !id.includes("dall-e");
-        })
-        .sort();
-
-      if (ac.signal.aborted) return;
+      if (!isCurrent()) return; // a newer fetch superseded this one
       setAvailableModels(ids);
-      writeModelCache(baseUrl, apiKey, ids); // persist for next open
+      writeModelCache(baseUrl, apiKey, ids); // persist for next open (keyed by endpoint, not the key value)
       setTestState("ok");
     } catch (err) {
-      if (ac.signal.aborted) return;
+      if (!isCurrent()) return;
       setTestState("error");
       setTestError(err instanceof Error ? err.message : "Failed to fetch models");
       setAvailableModels([]);
     } finally {
-      if (!ac.signal.aborted) {
+      if (isCurrent()) {
         setModelsLoading(false);
         resetTimerRef.current = setTimeout(() => setTestState("idle"), 5000);
       }

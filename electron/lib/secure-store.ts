@@ -34,8 +34,11 @@ type SecretStore = Record<string, string>;
 
 // ── Pure helpers (unit-testable, no Electron) ────────────────────────────────
 
-/** Tool kinds that own secrets. Mirrors ToolType in src/types. */
-export type ToolKind = "mcp" | "service";
+/**
+ * Tool kinds that own secrets. Mirrors ToolType in src/types, plus "llm" for
+ * the built-in AI provider API keys (the OpenAI-compatible chat/agent endpoints).
+ */
+export type ToolKind = "mcp" | "service" | "llm";
 
 /**
  * Build the canonical reference token for a tool's named secret. The toolType is
@@ -279,4 +282,58 @@ export function resolveSecrets(headers: Record<string, string>): Record<string, 
     }
   }
   return out;
+}
+
+// ── LLM API keys ─────────────────────────────────────────────────────────────
+//
+// The built-in AI providers (chat + coding agent, one entry per saved provider)
+// keep their API key here in the OS keychain instead of in the Zustand store,
+// localStorage, or ai-settings-cache.json. The renderer only ever holds a
+// reference token (`secret://llm:<providerId>/apiKey`); the raw key is resolved
+// exclusively in the main process, at the IPC boundary, right before a request.
+
+/** Canonical secret key under which every LLM provider stores its API key. */
+export const LLM_API_KEY = "apiKey";
+
+/** The reference token for a saved provider's API key. */
+export function llmSecretRef(providerId: string): string {
+  return secretRef("llm", providerId, LLM_API_KEY);
+}
+
+/**
+ * Store a provider's raw API key in the keychain and return its reference token.
+ * Empty/placeholder input clears any stored key and returns "" (meaning "no
+ * key" — e.g. a keyless local server). Main-process only.
+ */
+export function setLlmApiKey(providerId: string, rawKey: string): string {
+  const trimmed = (rawKey ?? "").trim();
+  if (!trimmed || isPlaceholder(trimmed) || containsPlaceholder(trimmed)) {
+    deleteSecret("llm", providerId, LLM_API_KEY);
+    return "";
+  }
+  return setSecret("llm", providerId, LLM_API_KEY, trimmed);
+}
+
+/** Delete a provider's stored API key. No-op if absent. */
+export function deleteLlmApiKey(providerId: string): void {
+  deleteSecret("llm", providerId, LLM_API_KEY);
+}
+
+/**
+ * Resolve an incoming `apiKey` config value to the real key for an outbound
+ * request. Accepts either:
+ *   - a `secret://llm:…/apiKey` reference token → decrypt from the keychain
+ *   - any other non-empty string → treat as a literal key (already raw)
+ *   - "" / undefined → "" (no key; keyless local endpoint)
+ * Returns "" when a ref can't be resolved, so we never send the token on the wire.
+ * Main-process only.
+ */
+export function resolveLlmApiKey(apiKey: string | undefined | null): string {
+  const v = apiKey ?? "";
+  if (!v) return "";
+  if (isSecretRef(v)) return getSecretByRef(v) ?? "";
+  // A literal key: guard against an unfilled placeholder ever reaching the wire,
+  // mirroring setSecret/getSecretByRef.
+  if (isPlaceholder(v) || containsPlaceholder(v)) return "";
+  return v; // literal key
 }

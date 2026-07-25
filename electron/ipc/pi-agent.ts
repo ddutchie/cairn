@@ -27,7 +27,8 @@ import { normaliseBaseUrl } from "../lib/llm";
 import type { DbContext } from "./handlers";
 import * as q from "../db/queries";
 import { ts } from "../db/utils";
-import { saveCachedConfig, getCachedConfig } from "../lib/config-cache";
+import { getCachedConfig, cacheLlmConnection } from "../lib/config-cache";
+import { resolveLlmApiKey } from "../lib/secure-store";
 
 // ── Session registry ──────────────────────────────────────────────────────────
 
@@ -192,16 +193,16 @@ export function registerPiAgentHandler(
       return;
     }
 
-    if (req.config?.apiKey) {
-      saveCachedConfig("agent", {
-        baseUrl: req.config.baseUrl,
-        model: req.config.model,
-        apiKey: req.config.apiKey,
-        maxSteps: req.config.maxSteps,
-        temperature: req.config.temperature,
-        autoApprove: req.config.autoApprove,
-      });
-    }
+    // Cache the connection + behavioural fields (apiKey scrubbed to a ref-or-clear
+    // by the cache layer, never a raw key).
+    cacheLlmConnection("agent", {
+      baseUrl: req.config?.baseUrl,
+      model: req.config?.model,
+      apiKey: req.config?.apiKey,
+      maxSteps: req.config?.maxSteps,
+      temperature: req.config?.temperature,
+      autoApprove: req.config?.autoApprove,
+    });
 
     let reqConfig = req.config;
     const cached = getCachedConfig().agentConfig;
@@ -225,7 +226,7 @@ export function registerPiAgentHandler(
     const llmConfig: AgentLLMConfig = {
       baseUrl:     normaliseBaseUrl(reqConfig?.baseUrl || "https://api.openai.com"),
       model:       reqConfig?.model       || "gpt-4o",
-      apiKey:      reqConfig?.apiKey      || "",
+      apiKey:      resolveLlmApiKey(reqConfig?.apiKey),
       maxSteps:    reqConfig?.maxSteps    ?? 20,
       temperature: reqConfig?.temperature ?? 0.3,
       autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : true,
@@ -284,16 +285,16 @@ export function registerPiAgentHandler(
       return;
     }
 
-    if (req.config?.apiKey) {
-      saveCachedConfig("agent", {
-        baseUrl: req.config.baseUrl,
-        model: req.config.model,
-        apiKey: req.config.apiKey,
-        maxSteps: req.config.maxSteps,
-        temperature: req.config.temperature,
-        autoApprove: req.config.autoApprove,
-      });
-    }
+    // Cache the connection + behavioural fields (apiKey scrubbed to a ref-or-clear
+    // by the cache layer, never a raw key).
+    cacheLlmConnection("agent", {
+      baseUrl: req.config?.baseUrl,
+      model: req.config?.model,
+      apiKey: req.config?.apiKey,
+      maxSteps: req.config?.maxSteps,
+      temperature: req.config?.temperature,
+      autoApprove: req.config?.autoApprove,
+    });
 
     let reqConfig = req.config;
     const cached = getCachedConfig().agentConfig;
@@ -317,7 +318,7 @@ export function registerPiAgentHandler(
     const llmConfig: AgentLLMConfig = {
       baseUrl:     normaliseBaseUrl(reqConfig?.baseUrl || "https://api.openai.com"),
       model:       reqConfig?.model       || "gpt-4o",
-      apiKey:      reqConfig?.apiKey      || "",
+      apiKey:      resolveLlmApiKey(reqConfig?.apiKey),
       maxSteps:    reqConfig?.maxSteps    ?? 20,
       temperature: reqConfig?.temperature ?? 0.3,
       autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : true,
@@ -367,13 +368,12 @@ export function registerPiAgentHandler(
       broadcastEvent(channel, payload);
     };
 
-    if (req.config?.apiKey) {
-      saveCachedConfig("agent", {
-        baseUrl: req.config.baseUrl,
-        model: req.config.model,
-        apiKey: req.config.apiKey,
-      });
-    }
+    // Cache the connection (apiKey scrubbed to a ref-or-clear by the cache layer).
+    cacheLlmConnection("agent", {
+      baseUrl: req.config?.baseUrl,
+      model: req.config?.model,
+      apiKey: req.config?.apiKey,
+    });
 
     let reqConfig = req.config;
     if (!reqConfig?.apiKey) {
@@ -391,7 +391,7 @@ export function registerPiAgentHandler(
     const llmConfig: AgentLLMConfig = {
       baseUrl:     normaliseBaseUrl(reqConfig?.baseUrl || "https://api.openai.com"),
       model:       reqConfig?.model  || "gpt-4o",
-      apiKey:      reqConfig?.apiKey || "",
+      apiKey:      resolveLlmApiKey(reqConfig?.apiKey),
       maxSteps:    20,
       temperature: 0.1,
     };

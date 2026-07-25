@@ -50,6 +50,9 @@ console.log(`\nBuilding Cairn for: ${platformFlags}`);
 // 1. Generate licenses + stack metadata (baked into the Next.js static export)
 run("node scripts/generate-licenses.js");
 
+// 1b. Generate the What's New feature registry (baked into the static export)
+run("node scripts/generate-features.js");
+
 // 2. Next.js static export
 run("cross-env ELECTRON_BUILD=true next build");
 

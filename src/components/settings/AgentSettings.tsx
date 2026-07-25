@@ -12,10 +12,6 @@ import { contextLimitForModel } from "@/lib/models-dev";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
 import type { CodingAgent } from "@/store/slices/coding-agents";
 import { SettingsGroup, SettingsRow, StepperSettingsRow } from "./shared";
-import {
-  BaseUrlRow, ApiKeyRow, ModelSelectionRow, CloudConnectionStatus,
-  useEndpointConfig, isLocalBaseUrl,
-} from "./endpoint-components";
 import { ProviderManager } from "./ProviderManager";
 
 // ── Agent form ────────────────────────────────────────────────────────────────
@@ -409,32 +405,15 @@ export function AgentSettings() {
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  const {
-    showKey: showKeyAgent, testState: testStateAgent, testError: testErrorAgent,
-    availableModels: availableModelsAgent, modelsLoading: modelsLoadingAgent,
-    setShowKey: setShowKeyAgent, fetchModels: fetchModelsAgent, ensureModels: ensureModelsAgent, resetModels: resetModelsAgent,
-  } = useEndpointConfig();
-
   useEffect(() => { fetchAgents(); }, [fetchAgents]);
 
-  const { baseUrl: baseUrlAgent, model: modelAgent, apiKey: apiKeyAgent, maxSteps: maxStepsAgent, temperature: temperatureAgent, contextLimit: contextLimitAgent, autoApprove = true } = agentConfig;
-  const isLocalAgent = isLocalBaseUrl(baseUrlAgent);
+  // Connection fields (baseUrl/apiKey/model) are managed by the ProviderManager
+  // switcher below; here we only need `model` (context lookup) + behavioural fields.
+  const { model: modelAgent, maxSteps: maxStepsAgent, temperature: temperatureAgent, contextLimit: contextLimitAgent, autoApprove = true } = agentConfig;
 
   function updateAgent(patch: Partial<typeof agentConfig>) {
     setAgentConfig(patch);
-    if (patch.baseUrl !== undefined || patch.apiKey !== undefined) {
-      resetModelsAgent();
-    }
   }
-
-  // Populate the agent's model list from cache (or fetch once) on mount and when
-  // the active saved provider changes. Not on every keystroke in the URL/key
-  // fields — Refresh in the picker re-queries after edits. No hardcoded
-  // fallbacks — the picker shows only real models.
-  useEffect(() => {
-    ensureModelsAgent(baseUrlAgent, apiKeyAgent);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agentConfig.activeProviderId]);
 
   // Look up the agent model's context window from models.dev (cached). When Auto
   // is enabled, the detected value is applied to contextLimit automatically as
@@ -485,33 +464,8 @@ export function AgentSettings() {
         title="Cairn Coding Agent (Pi)"
         description="Configure endpoint parameters for the native autonomous coding agent. Coding agents require high-capacity cloud/local models supporting function calling."
       >
-        {/* Saved providers switcher */}
+        {/* Saved providers switcher (base URL, key, model all live in the form) */}
         <ProviderManager kind="agent" />
-
-        {/* Base URL */}
-        <BaseUrlRow baseUrl={baseUrlAgent} onChange={(url) => updateAgent({ baseUrl: url })} showPresets={false} />
-
-        {/* API Key */}
-        <ApiKeyRow
-          apiKey={apiKeyAgent}
-          isLocal={isLocalAgent}
-          showKey={showKeyAgent}
-          onToggleShowKey={() => setShowKeyAgent((s) => !s)}
-          onChange={(key) => updateAgent({ apiKey: key })}
-        />
-
-        {/* Model Selection */}
-        <ModelSelectionRow
-          model={modelAgent}
-          modelOptions={availableModelsAgent}
-          availableModelsCount={availableModelsAgent.length}
-          modelsLoading={modelsLoadingAgent}
-          testState={testStateAgent}
-          testError={testErrorAgent}
-          placeholder="gpt-4o"
-          onModelChange={(m) => updateAgent({ model: m })}
-          onFetch={() => fetchModelsAgent(baseUrlAgent, apiKeyAgent)}
-        />
 
         {/* Max steps */}
         <StepperSettingsRow
@@ -584,11 +538,6 @@ export function AgentSettings() {
             className="w-4 h-4 rounded border-[var(--border)] bg-[var(--surface-2)] text-[var(--accent)] accent-[var(--accent)] cursor-pointer"
           />
         </SettingsRow>
-
-        {/* Agent Connection Status */}
-        <div className="flex items-center gap-3 pt-1 text-xs">
-          <CloudConnectionStatus testState={testStateAgent} baseUrl={baseUrlAgent} model={modelAgent} />
-        </div>
       </SettingsGroup>
 
       {/* Agent list */}
