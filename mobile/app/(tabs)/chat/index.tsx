@@ -294,6 +294,26 @@ export default function ChatScreen() {
         />
       </Stack.Toolbar>
       <View style={{ flex: 1 }}>
+        {/* Empty state is a SIBLING of the scroll view (not a child) and pinned
+            as an absolute overlay, so the keyboard-driven content inset that
+            KeyboardChatScrollView applies never shifts it around. It only shows
+            when there are no messages; once a conversation exists the scroll
+            view's content takes over. `pointerEvents="none"` (in EmptyState)
+            lets taps fall through to the composer / scroll view beneath. */}
+        {messages.length === 0 ? (
+          <EmptyState
+            title="Ask Cairn"
+            subtitle="Ask about your notes, or tell the assistant to create or edit them. Changes sync to your desktop."
+            pinned
+          >
+            {!configured ? (
+              <Pressable style={styles.configureBtn} onPress={() => router.push("/settings/ai")}>
+                <Settings2 size={14} color={t.accentFg} />
+                <Text style={styles.configureBtnText}>Set up AI</Text>
+              </Pressable>
+            ) : null}
+          </EmptyState>
+        ) : null}
         {/* Full-height chat scroll: messages scroll BEHIND the sticky composer
             and the translucent native tab bar. KeyboardChatScrollView manages
             the keyboard lift natively via content inset (keyboardLiftBehavior
@@ -308,7 +328,7 @@ export default function ChatScreen() {
           <KeyboardChatScrollView
             ref={scrollRef}
             style={styles.scroll}
-            contentContainerStyle={[styles.list, messages.length === 0 && styles.listEmpty]}
+            contentContainerStyle={styles.list}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="interactive"
             keyboardLiftBehavior="whenAtEnd"
@@ -322,20 +342,7 @@ export default function ChatScreen() {
               if (nearBottom.current) scrollToEndSoon(true);
             }}
           >
-            {messages.length === 0 ? (
-              <EmptyState
-                title="Ask Cairn"
-                subtitle="Ask about your notes, or tell the assistant to create or edit them. Changes sync to your desktop."
-                align="top"
-              >
-                {!configured ? (
-                  <Pressable style={styles.configureBtn} onPress={() => router.push("/settings/ai")}>
-                    <Settings2 size={14} color={t.accentFg} />
-                    <Text style={styles.configureBtnText}>Set up AI</Text>
-                  </Pressable>
-                ) : null}
-              </EmptyState>
-            ) : (
+            {messages.length === 0 ? null : (
               // Remount ONLY the message content (not the KeyboardChatScrollView)
               // on resume, keyed by resumeKey. This invalidates the stale iOS
               // Liquid-Glass backdrop the composer samples over the transformed
@@ -384,9 +391,6 @@ function makeStyles(t: Theme) {
     // size"). It sits inside the absoluteFill KeyboardGestureArea.
     scroll: { flex: 1 },
     list: { padding: 14, paddingBottom: 20 },
-    // Grow to fill the viewport when empty so the branded EmptyState's top-bias
-    // measures against the full content area (below the header).
-    listEmpty: { flexGrow: 1 },
     configureBtn: {
       flexDirection: "row",
       alignItems: "center",

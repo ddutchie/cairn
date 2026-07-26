@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react";
-import { Text, View, FlatList, StyleSheet, RefreshControl, Pressable, Alert, Keyboard, useWindowDimensions } from "react-native";
+import { Text, View, FlatList, StyleSheet, RefreshControl, Pressable, Alert, Keyboard } from "react-native";
 import { Stack, useRouter, useFocusEffect, type Href } from "expo-router";
 import type { SearchBarCommands } from "react-native-screens";
 import { searchNotes, searchTasks, listWorkspaceIds, embeddingIndexStats, type NoteRow, type CardRow } from "@/db/queries";
@@ -48,14 +48,6 @@ export default function SearchScreen() {
   const styles = useMemo(() => makeStyles(t), [t]);
   const searchRef = useRef<SearchBarCommands>(null);
   const insets = useSafeAreaInsets();
-  const { height: screenH } = useWindowDimensions();
-  // Match the chat empty state's icon position exactly. Chat's ScrollView fills
-  // the screen and its EmptyState biases 25% down, so its icon lands ~25.7% of
-  // the screen height from the top. Search's FlatList content box isn't the full
-  // screen height on iOS 27 (the search header/insets shrink it), so a relative
-  // 25% would land too high (behind the header). Anchor from the SCREEN TOP with
-  // the same fraction instead, so both screens match on any device.
-  const emptyTop = screenH * 0.257;
   // Monotonic token so a slow semantic query can't overwrite a newer one.
   const semanticSeq = useRef(0);
 
@@ -235,35 +227,25 @@ export default function SearchScreen() {
   // scrolls the first result up under the header. IndexingBar rides as the list
   // header so the FlatList stays the screen's first (and only) scroll view —
   // required for iOS to apply the automatic search-header inset.
-  // Empty/hint state rendered INSIDE the list (as ListEmptyComponent) so it
-  // sits below the native search header — an absolute screen overlay would
-  // render behind it. With no query it's the branded resting state; during an
-  // active search with no matches it's a light top-anchored text hint.
-  const listEmpty = hasQuery ? (
-    <View style={[styles.emptyHint, { paddingTop: emptyTop }]} pointerEvents="none">
-      <Text style={styles.hint}>{emptyHint.primary}</Text>
-      {emptyHint.secondary ? <Text style={styles.statHint}>{emptyHint.secondary}</Text> : null}
-    </View>
-  ) : (
-    // topBias = screen-top-relative position matching chat's icon (~25.7% down),
-    // since the search list frame isn't the full screen on iOS 27.
-    <EmptyState title={emptyHint.primary} subtitle={emptyHint.secondary} align="top" topBias={emptyTop} />
-  );
-
+  //
+  // The empty/hint state is NO LONGER a ListEmptyComponent — it's a pinned
+  // absolute-overlay SIBLING of the list (see below). Rendering it inside the
+  // list coupled it to the list's keyboard-driven content inset, so it jumped
+  // around when the keyboard opened. As a screen-pinned sibling it stays put,
+  // and uses the same anchoring system as Chat's empty state.
   const listProps = {
     // Empty state: use flexGrow-only (no results padding) so the content is
     // exactly the viewport height and the screen doesn't scroll. With results:
     // apply the list padding that clears the scope bar / tab bar / keyboard.
     contentContainerStyle: isListEmpty ? styles.listGrow : styles.list,
-    // Nothing to scroll when empty — also stops the anchored empty state from
-    // being draggable past the header. EXCEPT semantic mode, which needs to stay
-    // scrollable when empty so its pull-to-reindex RefreshControl works.
+    // Nothing to scroll when empty — also stops the list being draggable under
+    // the header. EXCEPT semantic mode, which needs to stay scrollable when
+    // empty so its pull-to-reindex RefreshControl works.
     scrollEnabled: !isListEmpty || semanticMode,
     contentInsetAdjustmentBehavior: "automatic" as const,
     keyboardShouldPersistTaps: "handled" as const,
     keyboardDismissMode: "on-drag" as const,
     ListHeaderComponent: <IndexingBar />,
-    ListEmptyComponent: listEmpty,
   };
 
   return (
@@ -348,6 +330,32 @@ export default function SearchScreen() {
         />
       )}
 
+      {/* Empty state as a screen-pinned overlay SIBLING of the list (not a
+          ListEmptyComponent). Decoupled from the list's keyboard/content inset,
+          so it never jumps when the keyboard opens — and it shares Chat's exact
+          anchoring system (pinned + default 25% top bias). `insetTop` clears the
+          native search header; `pointerEvents="none"` (inside EmptyState) lets
+          scroll / pull-to-reindex gestures pass through to the list beneath.
+          Only shown when the list is empty. */}
+      {isListEmpty ? (
+        hasQuery ? (
+          // Active search with no matches → light top-anchored text hint (no
+          // branded splash — that's the resting state, not a "found nothing"
+          // state). Pinned so it holds position when the keyboard is open.
+          <View
+            pointerEvents="none"
+            style={[styles.hintOverlay, { paddingTop: insets.top }]}
+          >
+            <View style={styles.hintBias} />
+            <Text style={styles.hint}>{emptyHint.primary}</Text>
+            {emptyHint.secondary ? <Text style={styles.statHint}>{emptyHint.secondary}</Text> : null}
+          </View>
+        ) : (
+          // Resting (no query) → branded Cairn empty state.
+          <EmptyState title={emptyHint.primary} subtitle={emptyHint.secondary} pinned insetTop={insets.top} />
+        )
+      ) : null}
+
       {/* Type filter, pinned to the bottom. Positioning mirrors the old scope
           bar (docks above the tab-bar search field on iOS ≤26 / above the tab
           bar on iOS 27). Content type only — the ranking mode is the header ✨. */}
@@ -400,12 +408,15 @@ function makeStyles(t: Theme) {
     // Bottom pad clears the pinned scope bar + tab bar (+ the native search
     // field on iOS ≤26; none on iOS 27, so drop that reservation).
     list: { padding: 12, paddingBottom: 12 + TAB_BAR_BASE + (hasTabBarSearchField ? SEARCH_FIELD_H : 0) + 48 },
-    // Lets ListEmptyComponent fill the viewport so the branded state's top-bias
-    // is measured against the full content area (below the header).
+    // Lets an empty list stay exactly the viewport height (no scroll) — the
+    // pinned empty-state overlay sits on top of it as a sibling.
     listGrow: { flexGrow: 1 },
-    // Active-search "no matches" hint — paddingTop supplied inline (emptyTop) so
-    // it matches the branded state and clears the header / keyboard.
-    emptyHint: { flex: 1, alignItems: "center", paddingHorizontal: 32 },
+    // Active-search "no matches" hint — a screen-pinned overlay sibling of the
+    // list (matches the branded EmptyState's positioning) so it doesn't jump
+    // when the keyboard opens. Icon-less; just the top-biased text.
+    hintOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: "center", paddingHorizontal: 32 },
+    // Push the hint text down to the same ~25% position as the branded state.
+    hintBias: { height: "25%" },
     hint: { textAlign: "center", color: t.textTertiary },
     statHint: { ...typeScale.caption, textAlign: "center", color: t.textTertiary, marginTop: 8 },
   });
