@@ -175,7 +175,7 @@ export function makeAiSettingsStyles(t: Theme) {
     },
     creditsMain: { flex: 1, gap: 2 },
     creditsValue: { ...typeScale.control, color: t.textPrimary, fontWeight: "600" },
-    creditsSub: { ...typeScale.caption, color: t.textTertiary },
+    creditsSub: { ...typeScale.caption, color: t.textSecondary },
 
     // Saved-provider switcher chips.
     providerChips: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 2 },

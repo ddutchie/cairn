@@ -112,6 +112,10 @@ export default function ToolsSettingsScreen() {
   const [builtinsOpen, setBuiltinsOpen] = useState(false);
   // Which installed MCP server's tool list is expanded (one at a time).
   const [expandedMcp, setExpandedMcp] = useState<string | null>(null);
+  // Bumped after each successful refreshServerTools() so the memoised per-server
+  // tool-def map (mcpToolsById) recomputes against the freshly-cached defs —
+  // installedMcp alone doesn't change when only the cached tool list updates.
+  const [mcpToolsRev, setMcpToolsRev] = useState(0);
   // Which installed multi-op service's tool list is expanded (one at a time).
   const [expandedService, setExpandedService] = useState<string | null>(null);
   // Browse filters (services + MCP catalog) — mirror desktop's search + category
@@ -190,6 +194,7 @@ export default function ToolsSettingsScreen() {
         } else if (res.status === "authorized") {
           haptics.success();
           await refreshServerTools(s.id).catch(() => null);
+          setMcpToolsRev((r) => r + 1);
         }
         // "cancelled" → no-op.
       } finally {
@@ -235,6 +240,7 @@ export default function ToolsSettingsScreen() {
         setBusyId(server.id);
         try {
           await refreshServerTools(server.id).catch(() => null);
+          setMcpToolsRev((r) => r + 1);
         } finally {
           setBusyId(null);
         }
@@ -269,6 +275,7 @@ export default function ToolsSettingsScreen() {
       await refreshServerTools(id).catch(() => null);
       // Nudge a re-render so the freshly-cached tools appear.
       setToggles(getToggleMap());
+      setMcpToolsRev((r) => r + 1);
     } finally {
       setBusyId(null);
     }
@@ -354,7 +361,11 @@ export default function ToolsSettingsScreen() {
   );
   const mcpToolsById = useMemo(
     () => new Map(installedMcp.map((s) => [s.id, getCachedMcpToolDefsForServer(s.id)])),
-    [installedMcp],
+    // mcpToolsRev is an intentional recompute trigger (bumped after each
+    // refreshServerTools) — the map reads the freshly-cached defs, which the
+    // linter can't see aren't derived from a value in the deps array.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [installedMcp, mcpToolsRev],
   );
   const notInstalledServices = useMemo(
     () => services.filter((s) => !installedServiceIds.has(s.id)),

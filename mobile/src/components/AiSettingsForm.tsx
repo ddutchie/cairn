@@ -56,11 +56,12 @@ import { Field } from "./ai-settings/Field";
 import { QuotaBar } from "./ai-settings/QuotaBar";
 import { ProviderList } from "./ai-settings/ProviderList";
 
-/** Format a USD credit amount compactly (e.g. $12.34, $0.0500, $1,234). */
+/** Format a USD credit amount compactly (e.g. $12.34, $0.0500, $1,234, -$5.00). */
 function formatCredits(n: number): string {
   const abs = Math.abs(n);
   const digits = abs > 0 && abs < 1 ? 4 : 2;
-  return `$${n.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: digits })}`;
+  const body = `$${abs.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: digits })}`;
+  return n < 0 ? `-${body}` : body;
 }
 
 /**
@@ -142,6 +143,10 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
   // Remaining credits for providers that expose it (e.g. OpenRouter). null =
   // not supported / unknown, so the display is hidden.
   const [keyInfo, setKeyInfo] = useState<ProviderKeyInfo | null>(null);
+  // Advances whenever a credits lookup starts or keyInfo is cleared, so a slow
+  // older getKeyInfo response can't overwrite current or freshly-cleared state
+  // (e.g. after switching to a provider that exposes no credits).
+  const keyInfoGenRef = useRef(0);
 
   // Load saved providers (runs the flat→list migration) + the active provider's
   // key on mount. The active provider's baseUrl/model are already reflected by
@@ -211,6 +216,7 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
       setModels([]);
       setModelsError(null);
       setModelQuery("");
+      keyInfoGenRef.current += 1; // invalidate any in-flight credits lookup
       setKeyInfo(null);
       haptics.selection();
     } finally {
@@ -248,6 +254,7 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
       setModels([]);
       setModelsError(null);
       setModelQuery("");
+      keyInfoGenRef.current += 1; // invalidate any in-flight credits lookup
       setKeyInfo(null);
       haptics.selection();
     } finally {
@@ -305,9 +312,12 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
       setFetchingModels(false);
     }
     // Best-effort credits lookup alongside models (never blocks / throws).
+    // Guarded by a generation so a slow response can't overwrite state after the
+    // active provider changed (or its credits were cleared).
+    const gen = ++keyInfoGenRef.current;
     getKeyInfo(base, key)
-      .then((info) => setKeyInfo(info))
-      .catch(() => setKeyInfo(null));
+      .then((info) => { if (gen === keyInfoGenRef.current) setKeyInfo(info); })
+      .catch(() => { if (gen === keyInfoGenRef.current) setKeyInfo(null); });
   };
 
   const save = async () => {
@@ -602,6 +612,9 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                                   key={id}
                                   style={[styles.modelRow, active && styles.modelRowActive]}
                                   onPress={() => setModel(id)}
+                                  accessibilityRole="button"
+                                  accessibilityLabel={`Model ${id}`}
+                                  accessibilityState={{ selected: active }}
                                 >
                                   {active ? (
                                     <Check size={14} color={t.accent} />

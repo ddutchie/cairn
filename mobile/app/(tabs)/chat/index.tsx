@@ -294,26 +294,6 @@ export default function ChatScreen() {
         />
       </Stack.Toolbar>
       <View style={{ flex: 1 }}>
-        {/* Empty state is a SIBLING of the scroll view (not a child) and pinned
-            as an absolute overlay, so the keyboard-driven content inset that
-            KeyboardChatScrollView applies never shifts it around. It only shows
-            when there are no messages; once a conversation exists the scroll
-            view's content takes over. `pointerEvents="none"` (in EmptyState)
-            lets taps fall through to the composer / scroll view beneath. */}
-        {messages.length === 0 ? (
-          <EmptyState
-            title="Ask Cairn"
-            subtitle="Ask about your notes, or tell the assistant to create or edit them. Changes sync to your desktop."
-            pinned
-          >
-            {!configured ? (
-              <Pressable style={styles.configureBtn} onPress={() => router.push("/settings/ai")}>
-                <Settings2 size={14} color={t.accentFg} />
-                <Text style={styles.configureBtnText}>Set up AI</Text>
-              </Pressable>
-            ) : null}
-          </EmptyState>
-        ) : null}
         {/* Full-height chat scroll: messages scroll BEHIND the sticky composer
             and the translucent native tab bar. KeyboardChatScrollView manages
             the keyboard lift natively via content inset (keyboardLiftBehavior
@@ -358,6 +338,31 @@ export default function ChatScreen() {
             )}
           </KeyboardChatScrollView>
         </KeyboardGestureArea>
+
+        {/* Empty state is a SIBLING of the scroll view (not a child) and pinned
+            as an absolute overlay, so the keyboard-driven content inset that
+            KeyboardChatScrollView applies never shifts it around. Rendered AFTER
+            (on top of) the absolute-fill KeyboardGestureArea so it paints above
+            the scroll view — otherwise the scroll view would cover it and swallow
+            taps on the "Set up AI" button. It only shows when there are no
+            messages; once a conversation exists the scroll view's content takes
+            over. `pointerEvents="box-none"` (in EmptyState) lets taps fall
+            through the blank areas to the composer / scroll view beneath, while
+            the Cairn icon and "Set up AI" button stay tappable. */}
+        {messages.length === 0 ? (
+          <EmptyState
+            title="Ask Cairn"
+            subtitle="Ask about your notes, or tell the assistant to create or edit them. Changes sync to your desktop."
+            pinned
+          >
+            {!configured ? (
+              <Pressable style={styles.configureBtn} onPress={() => router.push("/settings/ai")}>
+                <Settings2 size={14} color={t.accentFg} />
+                <Text style={styles.configureBtnText}>Set up AI</Text>
+              </Pressable>
+            ) : null}
+          </EmptyState>
+        ) : null}
 
         <Composer
           input={input}

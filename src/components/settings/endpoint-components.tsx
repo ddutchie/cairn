@@ -116,6 +116,9 @@ export function useEndpointConfig(): UseEndpointConfigResult {
   // Advances on every fetch so a slow older request can't overwrite the state of
   // a newer one (endpoint/key changed, or a rapid re-fetch).
   const fetchGenRef = React.useRef(0);
+  // Separate generation for the credits lookup, so its own stale-guard can't
+  // interfere with (or be clobbered by) fetchModels' generation.
+  const keyInfoGenRef = React.useRef(0);
 
   const fetchKeyInfo = useCallback(async (baseUrl: string, apiKey: string) => {
     // Only available through the main process (needs to resolve the key ref and
@@ -124,10 +127,16 @@ export function useEndpointConfig(): UseEndpointConfigResult {
       setKeyInfo(null);
       return;
     }
+    // Guard against a slow older request overwriting a newer one (endpoint/key
+    // changed, or a rapid re-fetch).
+    const gen = ++keyInfoGenRef.current;
+    const isCurrent = () => gen === keyInfoGenRef.current;
     try {
       const info = await window.electron.ai.fetchKeyInfo({ baseUrl, apiKey });
+      if (!isCurrent()) return; // a newer request superseded this one
       setKeyInfo(info ?? null);
     } catch {
+      if (!isCurrent()) return;
       setKeyInfo(null); // provider doesn't expose credits — hide silently
     }
   }, []);
@@ -195,6 +204,9 @@ export function useEndpointConfig(): UseEndpointConfigResult {
   }, [fetchModels, fetchKeyInfo]);
 
   const resetModels = useCallback(() => {
+    // Invalidate any in-flight credits lookup so it can't re-populate keyInfo
+    // after we've cleared it (e.g. switching to a provider with no credits).
+    keyInfoGenRef.current += 1;
     setAvailableModels([]);
     setKeyInfo(null);
   }, []);
@@ -202,11 +214,12 @@ export function useEndpointConfig(): UseEndpointConfigResult {
   return { showKey, testState, testError, availableModels, modelsLoading, keyInfo, setShowKey, fetchModels, ensureModels, fetchKeyInfo, resetModels };
 }
 
-/** Format a USD credit amount compactly (e.g. $12.34, $0.05, $1,234). */
+/** Format a USD credit amount compactly (e.g. $12.34, $0.05, $1,234, -$5.00). */
 export function formatCredits(n: number): string {
   const abs = Math.abs(n);
   const digits = abs > 0 && abs < 1 ? 4 : 2;
-  return `$${n.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: digits })}`;
+  const body = `$${abs.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: digits })}`;
+  return n < 0 ? `-${body}` : body;
 }
 
 /**

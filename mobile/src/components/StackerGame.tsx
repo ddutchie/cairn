@@ -261,6 +261,11 @@ export function StackerGame({ visible, onClose }: { visible: boolean; onClose: (
     const step = () => {
       if (!started) { started = true; reset(); }
       const g = gameState;
+      // Only publish a fresh snapshot when the state actually advanced this frame
+      // (the stone moved or particles updated). While paused / stopped / idle the
+      // snapshot is unchanged, so skipping publish() avoids a needless setState +
+      // re-render every frame.
+      let changed = false;
       if (g.running && !g.paused) {
         // Slide the moving stone, bouncing off the walls.
         const m = g.moving;
@@ -268,6 +273,7 @@ export function StackerGame({ visible, onClose }: { visible: boolean; onClose: (
           m.x += g.speed * m.dir;
           if (m.x <= WALL_PAD) { m.x = WALL_PAD; m.dir = 1; }
           if (m.x + m.w >= g.width - WALL_PAD) { m.x = g.width - WALL_PAD - m.w; m.dir = -1; }
+          changed = true;
         }
         // Advance particles (gravity + fade).
         if (g.particles.length) {
@@ -281,17 +287,21 @@ export function StackerGame({ visible, onClose }: { visible: boolean; onClose: (
             if (p.life > 0) alive.push(p);
           }
           g.particles = alive;
+          changed = true;
         }
       }
-      publish();
+      if (changed) publish();
       rafRef.current = requestAnimationFrame(step);
     };
     rafRef.current = requestAnimationFrame(step);
     return () => {
       if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
     };
+    // Depend only on `visible` — the loop reads live dimensions off `gameState`
+    // (kept in sync every render, above), so a width/height change (rotation,
+    // keyboard) no longer recreates the effect and wipes the tower/score.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, W, H]);
+  }, [visible]);
 
   // Pause physics whenever the app isn't foregrounded (see BreakoutGame for the
   // rationale — rAF bursts on return would teleport the sliding stone).
@@ -305,10 +315,25 @@ export function StackerGame({ visible, onClose }: { visible: boolean; onClose: (
 
   if (!visible) return null;
 
-  // Only render the top ~14 stones (the rest have scrolled below the screen);
-  // the tower conceptually keeps growing but off-screen rows needn't paint.
-  const VISIBLE_ROWS = Math.ceil((fieldBottom - fieldTop) / (STONE_H + STONE_GAP)) + 1;
-  const firstVisible = Math.max(0, snap.tower.length - VISIBLE_ROWS);
+  // Camera: once the tower is tall enough to fill the field, scroll the view up
+  // so the tower TOP stays at a stable screen position (a fixed number of rows
+  // below fieldTop) instead of climbing off the top of the screen as it grows.
+  // A positive offset is ADDED to every rendered top/y so lower stones slide
+  // down and off the bottom while the growing top stays put.
+  const ROW_H = STONE_H + STONE_GAP;
+  const VISIBLE_ROWS = Math.ceil((fieldBottom - fieldTop) / ROW_H) + 1;
+  // Keep the tower top ~3 rows below the HUD so the moving stone (which rides
+  // APPROACH_GAP above the top) stays comfortably on screen.
+  const TOP_MARGIN_ROWS = 3;
+  const overflowRows = Math.max(0, snap.tower.length - (VISIBLE_ROWS - TOP_MARGIN_ROWS));
+  const cameraY = overflowRows * ROW_H;
+
+  // Render a stone (or the moving stone / a particle) at its camera-adjusted
+  // screen position, culling anything scrolled outside the field.
+  const onScreen = (top: number) => {
+    const y = top + cameraY;
+    return { y, visible: y + STONE_H > fieldTop && y < fieldBottom };
+  };
 
   return (
     <Modal visible transparent={false} animationType="fade" statusBarTranslucent onRequestClose={onClose}>
@@ -331,16 +356,18 @@ export function StackerGame({ visible, onClose }: { visible: boolean; onClose: (
           <Text style={styles.tapHint} pointerEvents="none">Tap anywhere to drop</Text>
         ) : null}
 
-        {/* Tower stones */}
-        {snap.tower.map((s, i) =>
-          i >= firstVisible ? (
+        {/* Tower stones — cull by adjusted on-screen position (not raw index), so
+            low-index stones stay visible until they actually scroll off. */}
+        {snap.tower.map((s, i) => {
+          const { y, visible: onScreenNow } = onScreen(stoneTop(i));
+          return onScreenNow ? (
             <View
               key={i}
               style={[
                 styles.stone,
                 {
                   left: s.x,
-                  top: stoneTop(i),
+                  top: y,
                   width: s.w,
                   height: STONE_H,
                   backgroundColor: kindColor(s.kind, t),
@@ -349,8 +376,8 @@ export function StackerGame({ visible, onClose }: { visible: boolean; onClose: (
             >
               <Text style={styles.stoneLabel} numberOfLines={1}>{s.label}</Text>
             </View>
-          ) : null,
-        )}
+          ) : null;
+        })}
 
         {/* Moving stone (rides above the tower top) */}
         {snap.moving ? (
@@ -360,7 +387,7 @@ export function StackerGame({ visible, onClose }: { visible: boolean; onClose: (
               styles.moving,
               {
                 left: snap.moving.x,
-                top: stoneTop(snap.tower.length - 1) - APPROACH_GAP,
+                top: stoneTop(snap.tower.length - 1) - APPROACH_GAP + cameraY,
                 width: snap.moving.w,
                 height: STONE_H,
                 backgroundColor: kindColor(snap.moving.kind, t),
@@ -378,7 +405,7 @@ export function StackerGame({ visible, onClose }: { visible: boolean; onClose: (
             style={{
               position: "absolute",
               left: p.x - p.size / 2,
-              top: p.y - p.size / 2,
+              top: p.y - p.size / 2 + cameraY,
               width: p.size,
               height: p.size,
               borderRadius: p.size / 2,
@@ -437,7 +464,7 @@ function makeStyles(t: Theme) {
     },
     // Subtle lift on the in-flight stone so it reads as "not yet placed".
     moving: { opacity: 0.92 },
-    stoneLabel: { ...typeScale.micro, color: "#fff", fontWeight: "600" },
+    stoneLabel: { ...typeScale.micro, color: t.accentFg, fontWeight: "600" },
     overlay: {
       position: "absolute",
       top: 0,
@@ -459,6 +486,7 @@ function makeStyles(t: Theme) {
     },
     playAgainText: { ...typeScale.control, color: t.accentFg },
     overlayClose: { marginTop: 14 },
-    overlayCloseText: { ...typeScale.control, color: t.textTertiary },
+    // textSecondary (not textTertiary) so it stays legible over the scrim overlay.
+    overlayCloseText: { ...typeScale.control, color: t.textSecondary },
   });
 }
