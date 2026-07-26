@@ -303,7 +303,7 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
     // New-note / new-task are modals in the root stack (they present over the
     // tab bar by design), so they stay absolute for both variants. On the
     // Overview segment the + is hidden, so default the action to a new note.
-    if (tab === "board") router.push({ pathname: "/card/new", params: { project: id } });
+    if (tab === "board") router.push({ pathname: "/card/new", params: { project: id, back: project?.name || "Project" } });
     else router.push({ pathname: "/note/new", params: { project: id } });
   };
 
@@ -421,7 +421,7 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
             }
           }}
           onOpenCard={(cid) => router.push(cardHref(cid))}
-          onAddCard={(colId) => router.push({ pathname: "/card/new", params: { project: id, column: colId } })}
+          onAddCard={(colId) => router.push({ pathname: "/card/new", params: { project: id, column: colId, back: project?.name || "Project" } })}
         />
       )}
 

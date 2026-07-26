@@ -214,11 +214,13 @@ export function BreakoutGame({ visible, onClose }: { visible: boolean; onClose: 
           haptics.rigid();
         }
 
-        // Bricks.
-        let liveCount = 0;
+        // Bricks: handle at most one collision this frame, then count how many
+        // bricks remain alive. The collision detection breaks out early, so the
+        // live count MUST be computed in its own pass over every brick —
+        // otherwise a hit on an early brick makes it look like the board is
+        // clear (false "won").
         for (const br of g.bricks) {
           if (!br.alive) continue;
-          liveCount++;
           if (
             b.x + BALL_R >= br.x &&
             b.x - BALL_R <= br.x + br.w &&
@@ -226,7 +228,6 @@ export function BreakoutGame({ visible, onClose }: { visible: boolean; onClose: 
             b.y - BALL_R <= br.y + br.h
           ) {
             br.alive = false;
-            liveCount--;
             b.vy = -b.vy; // bounce vertically (simple + reliable for a grid)
             spawnParticles(g.particles, br, t);
             haptics.impactMedium();
@@ -234,6 +235,8 @@ export function BreakoutGame({ visible, onClose }: { visible: boolean; onClose: 
             break;
           }
         }
+        let liveCount = 0;
+        for (const br of g.bricks) if (br.alive) liveCount++;
 
         // Advance particles (gravity + fade), dropping dead ones.
         if (g.particles.length) {
@@ -430,6 +433,7 @@ function makeStyles(t: Theme) {
     },
     playAgainText: { ...typeScale.control, color: t.accentFg },
     overlayClose: { marginTop: 14 },
-    overlayCloseText: { ...typeScale.control, color: t.textTertiary },
+    // textSecondary (not textTertiary) so it stays legible over the scrim overlay.
+    overlayCloseText: { ...typeScale.control, color: t.textSecondary },
   });
 }
