@@ -29,6 +29,7 @@ import { haptics, toolbarPress } from "@/haptics";
 import { DraggableBoard } from "@/components/DraggableBoard";
 import { OverviewTab } from "@/components/overview/OverviewTab";
 import { EmptyState } from "@/components/EmptyState";
+import { celebrateTaskDone, isDoneColumn } from "@/gamification/rewards";
 import { useRefreshOnFocus } from "@/sync/useSyncStatus";
 import { useTheme, TAB_BAR_BASE, type Theme } from "@/theme";
 import { buildFolderTree, type FolderNode } from "@cairn/shared/notes/folder-tree";
@@ -398,8 +399,26 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
           cards={cards}
           bottomInset={insets.bottom + (nested ? TAB_BAR_BASE : 0)}
           onMove={(cardId, colId) => {
+            // Detect a genuine "into done" transition before mutating: the card
+            // must be moving INTO a done column from a non-done one — not a
+            // reorder within done. Celebrate with haptic + toast (+ future
+            // confetti) and message how many open tasks remain.
+            const targetCol = columns.find((c) => c.id === colId);
+            const card = cards.find((c) => c.id === cardId);
+            const fromCol = card ? columns.find((c) => c.id === card.column_id) : undefined;
+            const completing = isDoneColumn(targetCol) && !isDoneColumn(fromCol);
+
             moveCardToColumn(cardId, colId);
             load();
+
+            if (completing) {
+              const doneColIds = new Set(columns.filter((c) => isDoneColumn(c)).map((c) => c.id));
+              // After this move, count cards still outside any done column.
+              const remainingOpen = cards.filter(
+                (c) => c.id !== cardId && !doneColIds.has(c.column_id),
+              ).length;
+              celebrateTaskDone(remainingOpen);
+            }
           }}
           onOpenCard={(cid) => router.push(cardHref(cid))}
           onAddCard={(colId) => router.push({ pathname: "/card/new", params: { project: id, column: colId } })}
