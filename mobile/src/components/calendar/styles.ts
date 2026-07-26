@@ -70,18 +70,28 @@ export function makeCalendarStyles(t: Theme) {
       borderRightColor: t.border,
     },
     // Grid
-    gridScroll: { flex: 1 },
-    grid: { flexDirection: "row", flexWrap: "wrap" },
+    // The grid fills the space between the weekday header and the bottom band,
+    // laying its week rows out as equal-height flex rows (they stretch/shrink to
+    // fit) rather than a fixed-height wrap that scrolls.
+    grid: { flex: 1 },
+    weekRow: { flex: 1, flexDirection: "row" },
     cell: {
-      width: `${100 / 7}%`,
-      minHeight: 76,
+      flex: 1,
+      minHeight: 0,
       padding: 2,
       gap: 2,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderRightWidth: StyleSheet.hairlineWidth,
       borderColor: t.border,
     },
-    cellWeek: { minHeight: 200 },
+    // Fixed-height, independently-scrolling area below the grid: the selected-day
+    // list + the Unscheduled tray. Height is set inline (proportional to the
+    // screen); a top border separates it from the grid.
+    bottomBand: {
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: t.border,
+      backgroundColor: t.surface,
+    },
     cellHighlight: {
       position: "absolute",
       top: 0,
@@ -129,10 +139,8 @@ export function makeCalendarStyles(t: Theme) {
       marginTop: -1,
     },
     moreText: { fontSize: 9.5, fontWeight: "600", color: t.textTertiary, paddingHorizontal: 4, paddingTop: 1 },
-    // Selected-day list (below the grid)
+    // Selected-day list (top of the bottom band; the band owns the top border).
     dayList: {
-      borderTopWidth: StyleSheet.hairlineWidth,
-      borderTopColor: t.border,
       backgroundColor: t.surface,
       paddingHorizontal: 16,
       paddingTop: 12,
@@ -186,9 +194,6 @@ export function makeCalendarStyles(t: Theme) {
     trayTitle: { ...typeScale.label, color: t.textSecondary },
     trayCount: { ...typeScale.label, fontWeight: "400", color: t.textTertiary },
     trayEmpty: { ...typeScale.caption, color: t.textTertiary, paddingBottom: 8 },
-    // Cap the tray so a large backlog of undated tasks scrolls within a fixed
-    // band instead of pushing the calendar grid off-screen.
-    trayScroll: { maxHeight: 168 },
     trayChips: { flexDirection: "row", flexWrap: "wrap", paddingBottom: 8 },
     trayGroup: { paddingBottom: 4 },
     trayGroupLabel: { ...typeScale.micro, fontWeight: "700", color: t.textSecondary, textTransform: "uppercase", letterSpacing: 0.4, paddingBottom: 4 },

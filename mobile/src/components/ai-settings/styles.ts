@@ -71,7 +71,7 @@ export function makeAiSettingsStyles(t: Theme) {
     quotaSegFirst: { borderTopLeftRadius: 3, borderBottomLeftRadius: 3 },
     quotaSegLast: { borderTopRightRadius: 3, borderBottomRightRadius: 3 },
     quotaFootRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
-    quotaHint: { flex: 1, ...typeScale.caption, color: t.textTertiary },
+    quotaHint: { flex: 1, ...typeScale.caption, color: t.textSecondary },
     quotaUpgrade: { ...typeScale.caption, color: t.accent, fontWeight: "600" },
 
     fields: { gap: 14, marginTop: 12 },
@@ -88,8 +88,11 @@ export function makeAiSettingsStyles(t: Theme) {
       color: t.textPrimary,
     },
     keyNote: { flexDirection: "row", gap: 6, alignItems: "flex-start", marginTop: -2 },
-    keyNoteText: { flex: 1, ...typeScale.caption, color: t.textTertiary, lineHeight: 16 },
-    compatHint: { ...typeScale.caption, color: t.textTertiary, lineHeight: 16, marginTop: 2 },
+    // Instructional/helper copy uses textSecondary (not textTertiary) so it meets
+    // WCAG AA contrast on the light surface — tertiary (~2.4:1) failed for text
+    // the user is meant to read. Tertiary stays for purely decorative meta.
+    keyNoteText: { flex: 1, ...typeScale.caption, color: t.textSecondary, lineHeight: 16 },
+    compatHint: { ...typeScale.caption, color: t.textSecondary, lineHeight: 16, marginTop: 2 },
 
     modelHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
     fetchBtn: {

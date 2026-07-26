@@ -5,9 +5,8 @@
    worklets / useAnimatedStyle — never during JS render. The plain fields
    (ctrl.dragging, ctrl.scrollLocked, ctrl.setContainer) are safe to read here. */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, ScrollView, Pressable } from "react-native";
+import { View, Text, ScrollView, Pressable, useWindowDimensions } from "react-native";
 import { ChevronLeft, ChevronRight, AlertTriangle } from "lucide-react-native";
-import Animated from "react-native-reanimated";
 import { useDragController, DragOverlay } from "@/dnd";
 import { tagsByRow, type CalendarCard } from "@/db/queries";
 import { useTheme, iconSize } from "@/theme";
@@ -37,6 +36,12 @@ const EMPTY_CARDS: CalendarCard[] = [];
  * cell holds its task chips, an overdue tray banner up top, prev/next/Today
  * navigation, and a month/week layout toggle. Tapping a chip opens the card;
  * tapping "+N more" opens the day detail sheet.
+ *
+ * Layout is full-height and non-scrolling for the grid: the toolbar, overdue
+ * banner and weekday header sit fixed at the top, the month/week grid flexes to
+ * fill the middle (week rows share the height, stretching/shrinking to fit), and
+ * a fixed-height bottom band scrolls independently — holding the selected-day
+ * task list and the Unscheduled tray, padded to clear the native tab bar.
  */
 export function CalendarView({
   cards,
@@ -116,6 +121,16 @@ export function CalendarView({
     [layout, anchor, todayKey],
   );
 
+  // Chunk the flat cell list into week rows (7 per row) so the grid can lay them
+  // out as flex rows that share the available height — the grid stretches to
+  // fill the space above the bottom band instead of scrolling. Week layout is a
+  // single row.
+  const weekRows = useMemo(() => {
+    const rows: (typeof cells)[] = [];
+    for (let i = 0; i < cells.length; i += 7) rows.push(cells.slice(i, i + 7));
+    return rows;
+  }, [cells]);
+
   const selectedCards = useMemo(() => byDay.get(selectedKey) ?? [], [byDay, selectedKey]);
 
   // Resolve tags for the selected day's cards in one query (memoised), so each
@@ -123,6 +138,13 @@ export function CalendarView({
   const selectedTagMap = useMemo(() => tagsByRow(selectedCards), [selectedCards]);
 
   const maxVisible = layout === "month" ? 2 : 6;
+
+  // Bottom band (selected-day list + Unscheduled tray) takes a proportional
+  // share of the screen so it adapts across devices; the grid flexes to fill
+  // the rest. Clamped so it never eats the grid on short screens or grows
+  // unwieldy on tall ones.
+  const { height: windowHeight } = useWindowDimensions();
+  const bottomBandHeight = Math.round(Math.min(360, Math.max(200, windowHeight * 0.35)));
 
   // Drag-to-reschedule (shared drag core). Drop zones are each day cell (keyed
   // by its yyyy-MM-dd key) plus the Unscheduled tray (UNSCHEDULED_DROP_ID). On
@@ -270,71 +292,79 @@ export function CalendarView({
         ))}
       </View>
 
-      {/* Grid + selected-day list (scroll together) */}
-      <Animated.ScrollView
-        ref={ctrl.scrollRef}
-        onScroll={ctrl.scrollHandler}
-        onLayout={ctrl.onScrollLayout}
-        onContentSizeChange={ctrl.onScrollContentSizeChange}
-        scrollEventThrottle={16}
-        style={styles.gridScroll}
-        contentContainerStyle={{ paddingBottom: bottomInset + 16 }}
-        showsVerticalScrollIndicator={false}
-        scrollEnabled={!ctrl.scrollLocked}
-      >
-        <View style={styles.grid}>
-          {cells.map((cell) => (
-            <DayCell
-              key={cell.key}
-              cell={cell}
-              cards={byDay.get(cell.key) ?? EMPTY_CARDS}
-              maxVisible={maxVisible}
-              selected={cell.key === selectedKey}
-              layoutWeek={layout === "week"}
-              dragEnabled={dragEnabled}
-              ctrl={ctrl}
-              onSelect={setSelectedKey}
-              t={t}
-              styles={styles}
-            />
-          ))}
-        </View>
-
-        {/* Selected-day item list — the "meet halfway" mobile affordance:
-            tapping any day fills this list instead of cramming everything into
-            tiny cells or a modal sheet. */}
-        <View style={styles.dayList}>
-          <Text style={styles.dayListTitle}>{formatDayLabel(selectedKey)}</Text>
-          {selectedCards.length === 0 ? (
-            <Text style={styles.dayListEmpty}>No tasks due this day.</Text>
-          ) : (
-            selectedCards.map((card) => (
-              <DayDetailRow
-                key={card.id}
-                card={card}
-                tags={selectedTagMap.get(card.id)}
-                showProject={showProject}
-                onPress={() => onOpenCard(card.id)}
+      {/* Grid — flexes to fill the space above the bottom band. Week rows share
+          the height equally (stretch/shrink), so the grid never scrolls; the day
+          cells are static drop zones with stable frames. */}
+      <View style={styles.grid}>
+        {weekRows.map((row, ri) => (
+          <View key={ri} style={styles.weekRow}>
+            {row.map((cell) => (
+              <DayCell
+                key={cell.key}
+                cell={cell}
+                cards={byDay.get(cell.key) ?? EMPTY_CARDS}
+                maxVisible={maxVisible}
+                selected={cell.key === selectedKey}
+                dragEnabled={dragEnabled}
+                ctrl={ctrl}
+                onSelect={setSelectedKey}
                 t={t}
                 styles={styles}
               />
-            ))
-          )}
-        </View>
+            ))}
+          </View>
+        ))}
+      </View>
 
-        {/* Unscheduled tray — droppable list of undated tasks. Drag a chip onto
-            a day to schedule it; drag a dated task here to clear its due date. */}
-        {dragEnabled ? (
-          <UnscheduledTray
-            cards={unscheduled}
-            ctrl={ctrl}
-            showProject={showProject}
-            onOpenCard={onOpenCard}
-            t={t}
-            styles={styles}
-          />
-        ) : null}
-      </Animated.ScrollView>
+      {/* Bottom band — a fixed-height, independently-scrolling area holding the
+          selected-day list and the Unscheduled tray, with padding to clear the
+          native tab bar. Scroll is locked while a chip is lifted so the drag
+          gesture isn't stolen; the grid above stays fully visible so day drops
+          need no auto-scroll (the tray is a single drop zone). */}
+      <View style={[styles.bottomBand, { height: bottomBandHeight }]}>
+        <ScrollView
+          contentContainerStyle={{ paddingBottom: bottomInset + 16 }}
+          showsVerticalScrollIndicator
+          scrollEnabled={!ctrl.scrollLocked}
+          nestedScrollEnabled
+        >
+          {/* Selected-day item list — the "meet halfway" mobile affordance:
+              tapping any day fills this list instead of cramming everything into
+              tiny cells or a modal sheet. */}
+          <View style={styles.dayList}>
+            <Text style={styles.dayListTitle}>{formatDayLabel(selectedKey)}</Text>
+            {selectedCards.length === 0 ? (
+              <Text style={styles.dayListEmpty}>No tasks due this day.</Text>
+            ) : (
+              selectedCards.map((card) => (
+                <DayDetailRow
+                  key={card.id}
+                  card={card}
+                  tags={selectedTagMap.get(card.id)}
+                  showProject={showProject}
+                  onPress={() => onOpenCard(card.id)}
+                  t={t}
+                  styles={styles}
+                />
+              ))
+            )}
+          </View>
+
+          {/* Unscheduled tray — droppable list of undated tasks. Drag a chip onto
+              a day to schedule it; drag a dated task here to clear its due date. */}
+          {dragEnabled ? (
+            <UnscheduledTray
+              cards={unscheduled}
+              ctrl={ctrl}
+              showProject={showProject}
+              onOpenCard={onOpenCard}
+              bottomInset={0}
+              t={t}
+              styles={styles}
+            />
+          ) : null}
+        </ScrollView>
+      </View>
 
       {/* Floating clone that follows the finger while a chip is lifted. Lifted
           above the finger (liftOffsetY) with a small tail pointing down to the

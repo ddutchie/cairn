@@ -57,8 +57,12 @@ export const lightTheme: Theme = {
   surface: "#ffffff",
   surface2: "#f0eeeb",
   surface3: "#e8e5e1",
-  border: "#dddad6",
-  borderSubtle: "#eae7e3",
+  // Bumped darker (was #dddad6) so a 1px border reads clearly against the light
+  // surface/surface2 fills — the old value was ~1.1:1 against surface2 and made
+  // bordered inputs/cards look like flat fills. borderSubtle stays lighter for
+  // hairline row separators where a hard edge would be too heavy.
+  border: "#cdc9c4",
+  borderSubtle: "#e4e0dc",
   accent: "#6457e8",
   accentHover: "#7c6af7",
   accentDim: "rgba(100, 87, 232, 0.12)",
