@@ -367,6 +367,14 @@ const api = {
     localLLMStatus: () => invoke<{ available: boolean; reason?: string }>("ai:localLLMStatus"),
     fetchModels: (args: { baseUrl?: string; apiKey?: string }) =>
       invoke<string[]>("ai:fetchModels", args),
+    fetchKeyInfo: (args: { baseUrl?: string; apiKey?: string }) =>
+      invoke<{
+        remaining: number | null;
+        usage: number | null;
+        limit: number | null;
+        isFreeTier: boolean | null;
+        currency: "USD";
+      } | null>("ai:fetchKeyInfo", args),
   },
 
   // ── App paths ─────────────────────────────────

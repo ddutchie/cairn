@@ -9,7 +9,7 @@ import type { SavedProvider } from "@/store/slices/ui";
 import { SettingsRow } from "./shared";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown";
 import { ModelPicker } from "@/components/ui/model-picker";
-import { useEndpointConfig } from "./endpoint-components";
+import { useEndpointConfig, CreditsBadge } from "./endpoint-components";
 
 // A stable empty array so the selector never returns a fresh reference (which
 // would break useShallow's snapshot caching and spin an infinite render loop).
@@ -30,7 +30,8 @@ const EMPTY_PROVIDERS: SavedProvider[] = [];
 export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
   const {
     savedProviders, activeProviderId, activeModel,
-    addSavedProvider, updateSavedProvider, deleteSavedProvider, selectProvider, setModel,
+    addSavedProvider, updateSavedProvider, deleteSavedProvider, selectProvider,
+    setAgentConfig, setAIConfig,
   } = useCairnStore(useShallow((s) => ({
     // The list is always shared — read it from aiConfig.
     savedProviders:      s.aiConfig.savedProviders,
@@ -41,11 +42,18 @@ export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
     updateSavedProvider: s.updateSavedProvider,
     deleteSavedProvider: s.deleteSavedProvider,
     selectProvider:      kind === "agent" ? s.selectAgentProvider : s.selectSavedProvider,
-    // Model is a PER-SURFACE choice on the config, not the shared provider.
-    setModel:            kind === "agent"
-      ? (model: string) => s.setAgentConfig({ model })
-      : (model: string) => s.setAIConfig({ model }),
+    // Select the STABLE store actions — never build new closures inside the
+    // selector, or useShallow's snapshot never caches and we spin an infinite
+    // render loop.
+    setAgentConfig:      s.setAgentConfig,
+    setAIConfig:         s.setAIConfig,
   })));
+
+  // Model is a PER-SURFACE choice on the config, not the shared provider.
+  // Build the wrapper OUTSIDE the selector against the stable actions above.
+  const setModel = kind === "agent"
+    ? (model: string) => setAgentConfig({ model })
+    : (model: string) => setAIConfig({ model });
 
   const providers = savedProviders ?? EMPTY_PROVIDERS;
   const active = providers.find((p) => p.id === activeProviderId);
@@ -218,7 +226,7 @@ function ProviderForm({
   // Refresh. Hydrate from cache (or fetch once) on open — no hardcoded
   // fallbacks. The key passed is the stored ref (resolved in main) or, once the
   // user types a new one, the raw key.
-  const { availableModels, fetchModels, ensureModels, resetModels, modelsLoading, testState } = useEndpointConfig();
+  const { availableModels, fetchModels, ensureModels, resetModels, modelsLoading, testState, keyInfo } = useEndpointConfig();
   const keyForFetch = keyDirty ? keyInput : (initial?.apiKey ?? "");
   useEffect(() => {
     ensureModels(baseUrl, keyForFetch);
@@ -289,6 +297,11 @@ function ProviderForm({
           <span className="text-[0.643rem] text-[var(--text-tertiary)]">Stored in your OS keychain, never synced.</span>
         </label>
       </div>
+      {keyInfo && (
+        <div className="flex items-center gap-1.5">
+          <CreditsBadge info={keyInfo} />
+        </div>
+      )}
       {saveError && (
         <p className="text-[0.714rem] text-[var(--danger)]">{saveError}</p>
       )}
@@ -332,7 +345,7 @@ function ActiveModelRow({
   model: string;
   onModelChange: (model: string) => void;
 }) {
-  const { availableModels, fetchModels, ensureModels, modelsLoading, testState } = useEndpointConfig();
+  const { availableModels, fetchModels, ensureModels, modelsLoading, testState, keyInfo } = useEndpointConfig();
   useEffect(() => {
     ensureModels(provider.baseUrl, provider.apiKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -340,7 +353,7 @@ function ActiveModelRow({
 
   return (
     <SettingsRow label="Model" description="Model for the active provider. Chat and the coding agent keep separate models on the same provider.">
-      <div className="w-64">
+      <div className="flex flex-col gap-1.5 items-end w-64">
         <ModelPicker
           value={model}
           options={availableModels}
@@ -353,6 +366,7 @@ function ActiveModelRow({
           onChange={onModelChange}
           onRefresh={() => fetchModels(provider.baseUrl, provider.apiKey)}
         />
+        <CreditsBadge info={keyInfo} />
       </div>
     </SettingsRow>
   );

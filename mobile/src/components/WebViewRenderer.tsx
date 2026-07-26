@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from "react";
-import { View, ActivityIndicator, StyleSheet } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { View, ActivityIndicator, StyleSheet, AppState } from "react-native";
 import { WebView, type WebViewMessageEvent } from "react-native-webview";
 import { useTheme, type Theme } from "@/theme";
 
@@ -27,6 +27,29 @@ export function WebViewRenderer({
   const styles = useMemo(() => makeStyles(t), [t]);
   const ref = useRef<WebView>(null);
 
+  // iOS reclaims a backgrounded WKWebView's content process under memory
+  // pressure, leaving math/diagram blocks blank. reload() on a dead process is
+  // unreliable, so we REMOUNT (bump a key → fresh native view from the in-memory
+  // html) instead — immediately if foregrounded, else on the next foreground
+  // (the terminate callback can arrive while JS is suspended). Android uses
+  // onRenderProcessGone.
+  const [webKey, setWebKey] = useState(0);
+  const terminatedRef = useRef(false);
+  const remount = useCallback(() => { setLoading(true); setWebKey((k) => k + 1); }, []);
+  const handleTerminate = useCallback(() => {
+    if (AppState.currentState === "active") remount();
+    else terminatedRef.current = true;
+  }, [remount]);
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (next) => {
+      if (next === "active" && terminatedRef.current) {
+        terminatedRef.current = false;
+        remount();
+      }
+    });
+    return () => sub.remove();
+  }, [remount]);
+
   const onMessage = (e: WebViewMessageEvent) => {
     try {
       const msg = JSON.parse(e.nativeEvent.data) as { type: string; height?: number; error?: string };
@@ -47,6 +70,7 @@ export function WebViewRenderer({
       {loading ? <ActivityIndicator style={StyleSheet.absoluteFill} color={t.textTertiary} size="small" /> : null}
       <WebView
         ref={ref}
+        key={webKey}
         originWhitelist={["*"]}
         source={{ html }}
         style={[styles.web, { opacity: loading ? 0 : 1 }]}
@@ -62,9 +86,10 @@ export function WebViewRenderer({
         }
         // iOS terminates the WKWebView content process when the app is
         // backgrounded under memory pressure, leaving math/diagram blocks blank.
-        // Reload to re-render (Android: onRenderProcessGone).
-        onContentProcessDidTerminate={() => { setLoading(true); ref.current?.reload(); }}
-        onRenderProcessGone={() => { setLoading(true); ref.current?.reload(); }}
+        // reload() is unreliable on a dead process, so remount to re-render
+        // (Android: onRenderProcessGone).
+        onContentProcessDidTerminate={handleTerminate}
+        onRenderProcessGone={handleTerminate}
         javaScriptEnabled
         setSupportMultipleWindows={false}
       />

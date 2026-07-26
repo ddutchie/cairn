@@ -17,7 +17,6 @@ export function DayCell({
   cards,
   maxVisible,
   selected,
-  layoutWeek,
   dragEnabled,
   ctrl,
   onSelect,
@@ -28,7 +27,6 @@ export function DayCell({
   cards: CalendarCard[];
   maxVisible: number;
   selected: boolean;
-  layoutWeek: boolean;
   dragEnabled: boolean;
   ctrl: DragController<CalendarCard>;
   onSelect: (key: string) => void;
@@ -45,7 +43,6 @@ export function DayCell({
       onPress={() => onSelect(cell.key)}
       style={[
         styles.cell,
-        layoutWeek && styles.cellWeek,
         { backgroundColor: cell.inMonth ? t.surface : t.background },
         // Match desktop: today + the selected day are shown with a soft accent
         // background wash (no outline). Selected is a touch stronger than today

@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { View, Text, ScrollView, Pressable } from "react-native";
+import { View, Text, Pressable } from "react-native";
 import { ChevronDown, Inbox } from "lucide-react-native";
 import Animated from "react-native-reanimated";
 import { useZoneHighlight, type DragController } from "@/dnd";
@@ -18,6 +18,7 @@ export function UnscheduledTray({
   ctrl,
   showProject,
   onOpenCard,
+  bottomInset,
   t,
   styles,
 }: {
@@ -25,6 +26,10 @@ export function UnscheduledTray({
   ctrl: DragController<CalendarCard>;
   showProject: boolean;
   onOpenCard: (id: string) => void;
+  /** Extra bottom padding for the tray container. Normally 0 — the parent
+   *  scroll band reserves the tab-bar clearance now that the tray renders its
+   *  chips inline rather than in its own capped scroll. */
+  bottomInset: number;
   t: Theme;
   styles: CalendarStyles;
 }) {
@@ -70,7 +75,7 @@ export function UnscheduledTray({
     <View
       ref={registerTrayZone}
       collapsable={false}
-      style={styles.tray}
+      style={[styles.tray, { paddingBottom: 8 + bottomInset }]}
     >
       <Animated.View pointerEvents="none" style={[styles.trayHighlight, hoverStyle]} />
       <Pressable style={styles.trayHeader} onPress={() => setOpen((o) => !o)}>
@@ -83,14 +88,11 @@ export function UnscheduledTray({
         cards.length === 0 ? (
           <Text style={styles.trayEmpty}>No unscheduled tasks. Drag a task here to clear its due date.</Text>
         ) : (
-          <ScrollView
-            style={styles.trayScroll}
-            nestedScrollEnabled
-            showsVerticalScrollIndicator
-            // While a chip is lifted the outer grid scroll is locked; keep the
-            // tray's own scroll locked too so the drag gesture isn't stolen.
-            scrollEnabled={!ctrl.scrollLocked}
-          >
+          // Chips render inline (no nested scroll) — the parent bottom band owns
+          // the scroll, so a long backlog flows into it instead of a cramped
+          // 168pt inner window. The whole tray is one drop zone, so its frame
+          // spans all chips for accurate hit-testing.
+          <View>
             {groups ? (
               groups.map((g) => (
                 <View key={g.name} style={styles.trayGroup}>
@@ -103,7 +105,7 @@ export function UnscheduledTray({
             ) : (
               <View style={styles.trayChips}>{cards.map(renderChip)}</View>
             )}
-          </ScrollView>
+          </View>
         )
       ) : null}
     </View>

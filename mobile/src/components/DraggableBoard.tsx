@@ -274,7 +274,7 @@ function makeStyles(t: Theme) {
     columnCards: { flex: 1 },
     columnTitle: { fontSize: 14, fontWeight: "700", color: t.textPrimary, marginBottom: 8 },
     count: { color: t.textTertiary, fontWeight: "400" },
-    card: { backgroundColor: t.surface2, borderRadius: 8, padding: 10, marginBottom: 8, borderWidth: 1, borderColor: t.borderSubtle },
+    card: { backgroundColor: t.surface2, borderRadius: 8, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: t.borderSubtle },
     cardLiftedOverlay: { borderColor: t.accent, backgroundColor: t.surface2 },
     addCard: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 10, borderRadius: 8, borderWidth: 1, borderColor: t.border, borderStyle: "dashed", marginTop: 2 },
     addCardText: { ...typeScale.label, color: t.textTertiary },

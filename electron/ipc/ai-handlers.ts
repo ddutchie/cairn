@@ -129,6 +129,65 @@ export function registerAiHandlers(ctx: DbContext): void {
       })
   );
 
+  // ── Provider credits / key info ──────────────────
+  // Best-effort lookup of remaining credits for providers that expose it.
+  // OpenRouter returns account/key balance at GET {base}/v1/key as
+  // { data: { limit, limit_remaining, usage, is_free_tier } } (credits are USD).
+  // Returns null when the provider doesn't implement it (any non-2xx / parse
+  // failure) so the caller can simply hide the display — never throws.
+  registerIpcHandle(
+    "ai:fetchKeyInfo",
+    async (_e, args: { baseUrl?: string; apiKey?: string }) =>
+      handle(async () => {
+        const url = normaliseBaseUrl(args.baseUrl || "https://api.openai.com");
+        const realKey = resolveLlmApiKey(args.apiKey);
+        // No key → nothing to query (credit endpoints are all authed).
+        if (!realKey) return null;
+        const ac = new AbortController();
+        const timer = setTimeout(() => ac.abort(), 12_000);
+        try {
+          const res = await fetch(`${url}/v1/key`, {
+            headers: { Authorization: `Bearer ${realKey}` },
+            signal: ac.signal,
+          });
+          if (!res.ok) return null;
+          const json = (await res.json()) as {
+            data?: {
+              limit?: number | null;
+              limit_remaining?: number | null;
+              usage?: number | null;
+              is_free_tier?: boolean;
+            };
+          };
+          const d = json?.data;
+          if (!d || typeof d !== "object") return null;
+          const usage = typeof d.usage === "number" ? d.usage : null;
+          const limit = typeof d.limit === "number" ? d.limit : null;
+          // Prefer the explicit remaining figure; else derive from limit - usage.
+          const remaining =
+            typeof d.limit_remaining === "number"
+              ? d.limit_remaining
+              : limit != null && usage != null
+                ? limit - usage
+                : null;
+          // Nothing usable to show.
+          if (remaining == null && usage == null && limit == null) return null;
+          return {
+            remaining,
+            usage,
+            limit,
+            isFreeTier: d.is_free_tier ?? null,
+            currency: "USD" as const,
+          };
+        } catch {
+          // Endpoint absent / offline / aborted — treat as "no credits info".
+          return null;
+        } finally {
+          clearTimeout(timer);
+        }
+      })
+  );
+
   // ── AI PRD generation (direct, no chat loop) ──────
   registerIpcHandle("ai:generatePrd", async (_e, args: {
     projectId: string;

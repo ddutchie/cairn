@@ -67,8 +67,9 @@ export const ICON_ARCHIVE: ToolbarIcon = ios ? "archivebox" : ArchiveXml;
 export const ICON_UNARCHIVE: ToolbarIcon = ios ? "tray.and.arrow.up" : UnarchiveXml;
 /** Settings (gear). */
 export const ICON_SETTINGS: ToolbarIcon = ios ? "gearshape" : SettingsXml;
-/** AI / model settings (brain). */
-export const ICON_AI: ToolbarIcon = ios ? "brain" : NeurologyXml;
+/** AI / model settings. A settings cog — this opens the AI settings sheet, so
+ *  a gear reads more clearly than the earlier ambiguous "brain" glyph. */
+export const ICON_AI: ToolbarIcon = ios ? "gearshape" : SettingsXml;
 /** Export / share (share sheet). */
 export const ICON_EXPORT: ToolbarIcon = ios ? "square.and.arrow.up" : ShareXml;
 /** Export as PDF. */

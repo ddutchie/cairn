@@ -23,7 +23,6 @@ import {
   listInstalledServices,
   installService,
   uninstallService,
-  isServiceInstalled,
   serviceOperationDefs,
   type InstalledService,
 } from "@/chat/services";
@@ -31,7 +30,6 @@ import {
   listInstalledMcpServers,
   installMcpServer,
   uninstallMcpServer,
-  isMcpServerInstalled,
   refreshServerTools,
   getCachedMcpToolDefsForServer,
   type InstalledMcpServer,
@@ -114,6 +112,10 @@ export default function ToolsSettingsScreen() {
   const [builtinsOpen, setBuiltinsOpen] = useState(false);
   // Which installed MCP server's tool list is expanded (one at a time).
   const [expandedMcp, setExpandedMcp] = useState<string | null>(null);
+  // Bumped after each successful refreshServerTools() so the memoised per-server
+  // tool-def map (mcpToolsById) recomputes against the freshly-cached defs —
+  // installedMcp alone doesn't change when only the cached tool list updates.
+  const [mcpToolsRev, setMcpToolsRev] = useState(0);
   // Which installed multi-op service's tool list is expanded (one at a time).
   const [expandedService, setExpandedService] = useState<string | null>(null);
   // Browse filters (services + MCP catalog) — mirror desktop's search + category
@@ -192,6 +194,7 @@ export default function ToolsSettingsScreen() {
         } else if (res.status === "authorized") {
           haptics.success();
           await refreshServerTools(s.id).catch(() => null);
+          setMcpToolsRev((r) => r + 1);
         }
         // "cancelled" → no-op.
       } finally {
@@ -237,6 +240,7 @@ export default function ToolsSettingsScreen() {
         setBusyId(server.id);
         try {
           await refreshServerTools(server.id).catch(() => null);
+          setMcpToolsRev((r) => r + 1);
         } finally {
           setBusyId(null);
         }
@@ -271,6 +275,7 @@ export default function ToolsSettingsScreen() {
       await refreshServerTools(id).catch(() => null);
       // Nudge a re-render so the freshly-cached tools appear.
       setToggles(getToggleMap());
+      setMcpToolsRev((r) => r + 1);
     } finally {
       setBusyId(null);
     }
@@ -341,14 +346,34 @@ export default function ToolsSettingsScreen() {
   );
 
   // Registry entries not already installed (installed ones move to section 1),
-  // then narrowed by the search query + category chip.
+  // then narrowed by the search query + category chip. Membership is tested
+  // against Sets built from the in-state installed lists — NOT isServiceInstalled
+  // / isMcpServerInstalled, which each re-read + JSON.parse the whole installed
+  // list from SQLite per element (O(catalog × parse) on every recompute).
+  const installedServiceIds = useMemo(() => new Set(installed.map((s) => s.id)), [installed]);
+  const installedMcpIds = useMemo(() => new Set(installedMcp.map((s) => s.id)), [installedMcp]);
+  // Precompute the per-row tool defs once per installed-list change, so unrelated
+  // re-renders (busyId / connected / expand toggles) don't rebuild service
+  // operation defs or re-read + JSON.parse the MCP tool cache for every row.
+  const serviceOpsById = useMemo(
+    () => new Map(installed.map((svc) => [svc.id, serviceOperationDefs(svc)])),
+    [installed],
+  );
+  const mcpToolsById = useMemo(
+    () => new Map(installedMcp.map((s) => [s.id, getCachedMcpToolDefsForServer(s.id)])),
+    // mcpToolsRev is an intentional recompute trigger (bumped after each
+    // refreshServerTools) — the map reads the freshly-cached defs, which the
+    // linter can't see aren't derived from a value in the deps array.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [installedMcp, mcpToolsRev],
+  );
   const notInstalledServices = useMemo(
-    () => services.filter((s) => !isServiceInstalled(s.id)),
-    [services, installed], // eslint-disable-line react-hooks/exhaustive-deps
+    () => services.filter((s) => !installedServiceIds.has(s.id)),
+    [services, installedServiceIds],
   );
   const notInstalledMcp = useMemo(
-    () => mcpEntries.filter((s) => !isMcpServerInstalled(s.id)),
-    [mcpEntries, installedMcp], // eslint-disable-line react-hooks/exhaustive-deps
+    () => mcpEntries.filter((s) => !installedMcpIds.has(s.id)),
+    [mcpEntries, installedMcpIds],
   );
 
   // Category chips are the union of categories present across everything still
@@ -413,7 +438,7 @@ export default function ToolsSettingsScreen() {
             <View style={styles.section}>
               <Text style={styles.sectionLabel}>Installed services</Text>
               {installed.map((svc) => {
-                const ops = serviceOperationDefs(svc);
+                const ops = serviceOpsById.get(svc.id) ?? [];
                 const open = expandedService === svc.id;
                 // A single-operation service shows its lone toggle inline; a
                 // multi-operation one gets an expandable tool list like MCP.
@@ -498,7 +523,7 @@ export default function ToolsSettingsScreen() {
                 const isOAuth = s.authMode === "oauth";
                 const isConnected = connected[s.id] === true;
                 const busy = busyId === s.id;
-                const tools = getCachedMcpToolDefsForServer(s.id);
+                const tools = mcpToolsById.get(s.id) ?? [];
                 const open = expandedMcp === s.id;
                 return (
                   <View key={s.id} style={styles.mcpCard}>

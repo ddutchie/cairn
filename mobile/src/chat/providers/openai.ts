@@ -301,3 +301,54 @@ export async function listModels(baseUrl: string, apiKey: string): Promise<strin
     .filter((id): id is string => typeof id === "string" && id.length > 0);
   return Array.from(new Set(ids)).sort((a, b) => a.localeCompare(b));
 }
+
+/**
+ * Remaining-credits / balance for a provider key. All figures are USD credits.
+ * `null` fields mean unlimited / not reported. Currently backed by OpenRouter's
+ * `GET {base}/key` ({ data: { limit, limit_remaining, usage, is_free_tier } }).
+ */
+export interface ProviderKeyInfo {
+  remaining: number | null;
+  usage: number | null;
+  limit: number | null;
+  isFreeTier: boolean | null;
+}
+
+/**
+ * Best-effort lookup of the key's remaining credits via `GET {base}/key`.
+ * Returns null (never throws) when the provider doesn't expose it — a non-2xx
+ * response, a parse failure, or a network error all mean "no credits info", so
+ * the settings UI can simply hide the display.
+ */
+export async function getKeyInfo(baseUrl: string, apiKey: string): Promise<ProviderKeyInfo | null> {
+  if (!apiKey) return null;
+  const url = new URL("key", baseUrl.replace(/\/?$/, "/")).toString();
+  let res: Awaited<ReturnType<typeof expoFetch>>;
+  try {
+    res = await expoFetch(url, {
+      method: "GET",
+      headers: { Accept: "application/json", Authorization: `Bearer ${apiKey}` },
+    });
+  } catch {
+    return null; // offline / DNS / TLS — treat as "not supported"
+  }
+  if (!res.ok) return null;
+  let json: { data?: { limit?: number | null; limit_remaining?: number | null; usage?: number | null; is_free_tier?: boolean } };
+  try {
+    json = (await res.json()) as typeof json;
+  } catch {
+    return null;
+  }
+  const d = json?.data;
+  if (!d || typeof d !== "object") return null;
+  const usage = typeof d.usage === "number" ? d.usage : null;
+  const limit = typeof d.limit === "number" ? d.limit : null;
+  const remaining =
+    typeof d.limit_remaining === "number"
+      ? d.limit_remaining
+      : limit != null && usage != null
+        ? limit - usage
+        : null;
+  if (remaining == null && usage == null && limit == null) return null;
+  return { remaining, usage, limit, isFreeTier: d.is_free_tier ?? null };
+}

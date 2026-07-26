@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useCallback } from "react";
-import { Globe, Key, Eye, EyeOff, CheckCircle, Wifi, WifiOff } from "lucide-react";
+import { Globe, Key, Eye, EyeOff, CheckCircle, Wifi, WifiOff, Wallet } from "lucide-react";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { storage } from "@/lib/storage";
@@ -64,12 +64,28 @@ function writeModelCache(baseUrl: string, apiKey: string, models: string[]): voi
 
 // ── useEndpointConfig hook ────────────────────────────────────────────────────
 
+/**
+ * Remaining-credits / balance info for providers that expose it (e.g.
+ * OpenRouter's GET /v1/key). All figures are in USD credits. `null` fields mean
+ * "unlimited / not reported"; a `null` KeyInfo means the provider doesn't
+ * expose credits at all (so the UI hides the display).
+ */
+export interface KeyInfo {
+  remaining: number | null;
+  usage: number | null;
+  limit: number | null;
+  isFreeTier: boolean | null;
+  currency: "USD";
+}
+
 export interface EndpointConfigState {
   showKey: boolean;
   testState: TestState;
   testError: string;
   availableModels: string[];
   modelsLoading: boolean;
+  /** Provider credits/balance, or null when unavailable. */
+  keyInfo: KeyInfo | null;
 }
 
 export interface UseEndpointConfigResult extends EndpointConfigState {
@@ -81,6 +97,8 @@ export interface UseEndpointConfigResult extends EndpointConfigState {
    * call on open/mount — a no-op when a fresh cache already covers the endpoint.
    */
   ensureModels: (baseUrl: string, apiKey: string) => void;
+  /** Best-effort fetch of the provider's remaining credits (null if none). */
+  fetchKeyInfo: (baseUrl: string, apiKey: string) => Promise<void>;
   resetModels: () => void;
 }
 
@@ -93,10 +111,35 @@ export function useEndpointConfig(): UseEndpointConfigResult {
   const [testError, setTestError] = useState("");
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
+  const [keyInfo, setKeyInfo] = useState<KeyInfo | null>(null);
   const resetTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   // Advances on every fetch so a slow older request can't overwrite the state of
   // a newer one (endpoint/key changed, or a rapid re-fetch).
   const fetchGenRef = React.useRef(0);
+  // Separate generation for the credits lookup, so its own stale-guard can't
+  // interfere with (or be clobbered by) fetchModels' generation.
+  const keyInfoGenRef = React.useRef(0);
+
+  const fetchKeyInfo = useCallback(async (baseUrl: string, apiKey: string) => {
+    // Only available through the main process (needs to resolve the key ref and
+    // hit a provider-specific endpoint). No-op / clears on web or when unset.
+    if (typeof window === "undefined" || !window.electron?.ai?.fetchKeyInfo) {
+      setKeyInfo(null);
+      return;
+    }
+    // Guard against a slow older request overwriting a newer one (endpoint/key
+    // changed, or a rapid re-fetch).
+    const gen = ++keyInfoGenRef.current;
+    const isCurrent = () => gen === keyInfoGenRef.current;
+    try {
+      const info = await window.electron.ai.fetchKeyInfo({ baseUrl, apiKey });
+      if (!isCurrent()) return; // a newer request superseded this one
+      setKeyInfo(info ?? null);
+    } catch {
+      if (!isCurrent()) return;
+      setKeyInfo(null); // provider doesn't expose credits — hide silently
+    }
+  }, []);
 
   const fetchModels = useCallback(async (baseUrl: string, apiKey: string) => {
     if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
@@ -136,6 +179,7 @@ export function useEndpointConfig(): UseEndpointConfigResult {
       setAvailableModels(ids);
       writeModelCache(baseUrl, apiKey, ids); // persist for next open (keyed by endpoint, not the key value)
       setTestState("ok");
+      void fetchKeyInfo(baseUrl, apiKey); // refresh credits alongside models
     } catch (err) {
       if (!isCurrent()) return;
       setTestState("error");
@@ -147,20 +191,73 @@ export function useEndpointConfig(): UseEndpointConfigResult {
         resetTimerRef.current = setTimeout(() => setTestState("idle"), 5000);
       }
     }
-  }, []);
+  }, [fetchKeyInfo]);
 
   const ensureModels = useCallback((baseUrl: string, apiKey: string) => {
     const cached = readModelCache(baseUrl, apiKey);
     if (cached && cached.length > 0) {
       setAvailableModels(cached); // instant hydrate from cache — no network
+      void fetchKeyInfo(baseUrl, apiKey); // still refresh credits (not cached)
       return;
     }
     void fetchModels(baseUrl, apiKey); // nothing cached → fetch once
-  }, [fetchModels]);
+  }, [fetchModels, fetchKeyInfo]);
 
-  const resetModels = useCallback(() => setAvailableModels([]), []);
+  const resetModels = useCallback(() => {
+    // Invalidate any in-flight credits lookup so it can't re-populate keyInfo
+    // after we've cleared it (e.g. switching to a provider with no credits).
+    keyInfoGenRef.current += 1;
+    setAvailableModels([]);
+    setKeyInfo(null);
+  }, []);
 
-  return { showKey, testState, testError, availableModels, modelsLoading, setShowKey, fetchModels, ensureModels, resetModels };
+  return { showKey, testState, testError, availableModels, modelsLoading, keyInfo, setShowKey, fetchModels, ensureModels, fetchKeyInfo, resetModels };
+}
+
+/** Format a USD credit amount compactly (e.g. $12.34, $0.05, $1,234, -$5.00). */
+export function formatCredits(n: number): string {
+  const abs = Math.abs(n);
+  const digits = abs > 0 && abs < 1 ? 4 : 2;
+  const body = `$${abs.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: digits })}`;
+  return n < 0 ? `-${body}` : body;
+}
+
+/**
+ * Small inline badge showing a provider's remaining credits (and used, when a
+ * finite limit is known). Renders nothing when the provider doesn't expose
+ * credits, so it's safe to always mount.
+ */
+export function CreditsBadge({ info, className }: { info: KeyInfo | null; className?: string }) {
+  if (!info) return null;
+  const { remaining, usage, limit } = info;
+  // Nothing meaningful to show.
+  if (remaining == null && usage == null) return null;
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 text-[0.714rem] text-[var(--text-tertiary)]",
+        className,
+      )}
+      title={
+        limit != null
+          ? `Remaining ${formatCredits(remaining ?? Math.max(0, limit - (usage ?? 0)))} of ${formatCredits(limit)} limit`
+          : usage != null
+            ? `Used ${formatCredits(usage)} so far`
+            : undefined
+      }
+    >
+      <Wallet size={11} className="text-[var(--text-tertiary)] flex-shrink-0" />
+      {remaining != null ? (
+        <span>
+          <span className="text-[var(--text-secondary)] font-medium">{formatCredits(remaining)}</span> credits left
+        </span>
+      ) : (
+        <span>
+          <span className="text-[var(--text-secondary)] font-medium">{formatCredits(usage ?? 0)}</span> used
+        </span>
+      )}
+    </span>
+  );
 }
 
 // ── BaseUrlRow ────────────────────────────────────────────────────────────────

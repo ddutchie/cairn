@@ -86,22 +86,38 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
   const changeMark = noteChangeMarks[noteId];
   const [changedLines, setChangedLines] = useState<number[]>([]);
   const changeCount = changedLines.length;
+  // Tracks the last change mark we've already turned into a highlight, keyed by
+  // note. This lets us ignore the store re-render caused by our own
+  // `clearNoteChangeMark` call below — otherwise clearing the mark would make
+  // `changeMark` become undefined, re-run this effect, and immediately wipe the
+  // highlight we just set (the banner would flash and vanish on navigation).
+  const processedMarkRef = useRef<{ noteId: string; changedAt: number } | null>(null);
   useEffect(() => {
     if (!changeMark) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setChangedLines([]);
+      // No pending mark. Only reset the highlight when we switch to a note that
+      // genuinely has nothing new — not when the mark we just consumed for THIS
+      // note was cleared by us (that re-render must not erase the highlight).
+      if (processedMarkRef.current?.noteId !== noteId) {
+        setChangedLines([]);
+      }
       return;
     }
+    // Skip marks we've already turned into a highlight for this note.
+    if (
+      processedMarkRef.current?.noteId === noteId &&
+      processedMarkRef.current?.changedAt === changeMark.changedAt
+    ) {
+      return;
+    }
+    processedMarkRef.current = { noteId, changedAt: changeMark.changedAt };
     const lines = diffChangedLines(changeMark.previousContent, noteContent0);
     setChangedLines(lines);
     // Clear the store mark now that we've captured its diff — it's a one-shot
     // "since you last looked" signal. The local `changedLines` keeps driving the
-    // fade animation and the banner until the user dismisses / it times out.
+    // banner + highlights until the user dismisses it (✕), edits, or navigates
+    // away. No auto-timeout — a stale highlight is better than one that vanishes
+    // before the user has read the change.
     clearNoteChangeMark(noteId);
-    // Auto-dismiss the highlight after the fade completes so stale highlights
-    // don't linger if the user leaves the note open.
-    const t = setTimeout(() => setChangedLines([]), 6500);
-    return () => clearTimeout(t);
     // Depend on the mark's timestamp so a fresh external edit re-triggers.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [noteId, changeMark?.changedAt]);
@@ -215,6 +231,10 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
   const handleContentChange = useCallback(
     (markdown: string) => {
       setWordCount(countWords(markdown));
+
+      // Once the user starts editing, the "what's new" line highlights become
+      // stale (line numbers shift), so clear them on the first edit.
+      setChangedLines((prev) => (prev.length ? [] : prev));
 
       // Detect [[ wikilink trigger
       const view = editorRef.current?.getView();
